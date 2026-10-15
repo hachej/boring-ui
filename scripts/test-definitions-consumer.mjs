@@ -97,23 +97,18 @@ if (checked.kind === 'valid') { const total: number = checked.value.total; void 
 `);
   writeFileSync(join(directory, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, exactOptionalPropertyTypes: true, skipLibCheck: false, noEmit: true, types: ['node'], lib: ['ES2023', 'DOM'] }, include: ['consumer.ts'] }));
   assertConsumerTypeFiles(run(process.execPath, ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.json', '--listFiles'], isolated), directory);
-  for (const path of ['test/packages', 'test/fixtures', 'test/compatibility', 'test/contracts', 'examples/current-hub', 'examples/redaction', 'examples/validated-output', 'examples/shared']) mkdirSync(join(directory, path), { recursive: true });
+  for (const path of ['test/packages', 'test/fixtures', 'test/compatibility', 'test/contracts', 'examples/current-hub', 'examples/validated-output', 'examples/shared']) mkdirSync(join(directory, path), { recursive: true });
   const tests = ['test/packages/agent-validation.test.mjs', 'test/compatibility/validated-output.test.mjs',
     'test/contracts/validation-repair-crash.test.mjs', 'test/packages/agent-definitions.test.mjs', 'test/packages/agent-definitions-native.test.mjs',
     'test/packages/agent.test.mjs', 'test/packages/agent-delivery.test.mjs', 'test/compatibility/current-hub.test.mjs',
     'test/compatibility/current-hub-definitions.test.mjs', 'test/compatibility/current-hub-crash.test.mjs',
     'test/compatibility/current-hub-handoff.test.mjs', 'test/compatibility/current-hub-handoff-crash.test.mjs',
-    'test/contracts/delivery-guards-crash.test.mjs', 'test/contracts/delivery-crash.test.mjs',
-    'test/compatibility/redaction.test.mjs', 'test/contracts/redaction-crash.test.mjs',
-    'test/compatibility/redaction-proposals.test.mjs', 'test/compatibility/redaction-adoption.test.mjs', 'test/contracts/redaction-adoption-crash.test.mjs'];
+    'test/contracts/delivery-guards-crash.test.mjs', 'test/contracts/delivery-crash.test.mjs'];
   for (const path of [...tests, 'test/fixtures/native-document.mjs', 'test/fixtures/hub-retention.mjs',
     'test/fixtures/current-hub-crash-child.mjs', 'examples/current-hub/app.mjs', 'examples/current-hub/definition.mjs',
     'examples/current-hub/companion.mjs', 'examples/current-hub/change-path.mjs', 'examples/current-hub/change-tools.mjs',
     'test/fixtures/current-hub-handoff-crash-child.mjs', 'test/fixtures/delivery-guards-crash-child.mjs',
-    'test/fixtures/delivery-crash-child.mjs', 'test/fixtures/redaction-crash-child.mjs',
-    'examples/redaction/app.mjs', 'examples/redaction/bindings.mjs', 'examples/redaction/reservation.mjs',
-    'examples/redaction/proposals.mjs', 'examples/redaction/scripted-model.mjs', 'examples/redaction/adoption.mjs',
-    'examples/redaction/adoption-bindings.mjs', 'examples/redaction/corrections.mjs', 'test/fixtures/redaction-adoption-crash-child.mjs',
+    'test/fixtures/delivery-crash-child.mjs',
     'examples/validated-output/app.mjs', 'examples/validated-output/scripted-model.mjs', 'test/fixtures/validation-repair-crash-child.mjs',
     'examples/shared/sqlite-workspaces.mjs', 'test/fixtures/metering-crash-child.mjs']) copyFileSync(join(root, path), join(directory, path));
   writeFileSync(join(directory, 'pure-import.mjs'), `import { registerHooks } from 'node:module';
@@ -126,5 +121,5 @@ if (typeof loadAgentDefinition !== 'function') throw new Error('Missing public d
 `);
   run(process.execPath, ['pure-import.mjs'], isolated);
   run(process.execPath, ['--test', '--experimental-test-isolation=none', ...tests], isolated);
-  console.log('PASS: isolated files and agent archives, strict declarations, data-only import, exact definition loading and native configuration/publication/reopen, pinned current-hub execution, fictional redaction reservation/admission, typed proposals, stable item corrections and atomic record/letter adoption, structured validation/native repair, guarded delivery and actual SIGKILL recovery/version cases; no UI or execution packages installed');
+  console.log('PASS: isolated files and agent archives, strict declarations, data-only import, exact definition loading and native configuration/publication/reopen, pinned current-hub execution, structured validation/native repair, guarded delivery and actual SIGKILL recovery/version cases; no UI or execution packages installed');
 } finally { rmSync(temporary, { recursive: true, force: true }); }

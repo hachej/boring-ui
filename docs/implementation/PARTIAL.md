@@ -133,7 +133,7 @@ The public package tests are `test/packages/files.test.mjs`, `test/packages/agen
 | W09 | Public seam probe only | P14; optional upstream code mode and A14/A22 |
 | W10 | Partial | Canvas and HTML controllers/renderers; installed Markdown/chat/HTML recipes; browser, other custom viewers and SDK qualifications pending |
 | W11 | Reference layouts, conditional Keep/Pin, native metadata composition and bounded generated regions implemented | Partial P12/A25-A29/A31; live evaluators, actions, browser and full A25-A32 pending |
-| W12 | Partial | Fictional current-hub pinned execution, privacy/recovery, fixed cells and source-owned local issue handoff; browser/remote actions, external issue delivery/sharing and full redaction pending; fictional reservation/admission added below; full H01-H10 unqualified |
+| W12 | Partial | Fictional current-hub pinned execution, privacy/recovery, fixed cells and source-owned local issue handoff; browser/remote actions, external issue delivery/sharing and full redaction pending (the redaction example moved out of this repository); full H01-H10 unqualified |
 | W13 | Partial | Isolated document/editor consumers and development gates exercised; global qualification, browser journeys and release remain pending |
 
 P01-P14 and A01-A48 remain in scope. No complete P, A or H obligation is marked passed by this checkpoint. H09, live providers, model quality, expert acceptance, licensing and release authorization require their own evidence.
@@ -435,13 +435,7 @@ The installed files/agent consumer checks both old and guarded admission signatu
 
 ## Fictional redaction reservation and recovery
 
-The source-owned fixture now commits an immutable request reservation and per-subject generation guard together through the real SQLite publication batch. The shared reservation path fences changed principals/initiators before they can advance a guard, despite actor-scoped operation receipts. Canonical original source/config/output/edit expectations and an opaque generation UUID survive retries. One native transaction then records the request and creates producer/delivery tasks. These provider/native transactions are a recoverable boundary, not one atomic commit.
-
-A/B/C complete independently. Human edits block stale output without being overwritten. Twelve functional cases cover duplicates, different-actor and same-actor concurrency, caller mutation, source/config rebinding, admission revocation and protected reference disclosure. Five actual child-process SIGKILL cases prove recovery after reservation, native admission and output commits, including superseded and revoked recovery. Read revocation after a provider commit returns a reference-free reserved outcome rather than a pre-effect refusal; native commit uncertainty retains the original request for reconciliation.
-
-Delivery access resolution now accepts async callbacks plus explicit admission access. Real tests found that querying tx.task after producer creation throws native ReadAfterWrite; the host instead captures authenticated identity before creation, and publication resolves the original actor from committed native state. A separate delivery SIGKILL regression mutates the resolver's retained credentials during lookup and proves publication uses the detached original credentials. Rejected async admission resolution rolls back both native tasks.
-
-Run `node examples/redaction.mjs` after building for three actual native deliveries with fictional text and no model/browser. The installed files/agent consumer repeats fixture and public/crash cases with strict declarations. Raw review, focused results and final candidate gates are under `.cache/evidence/implementation/`. Stable per-item corrections/adoption, actual tool evidence and bounded native repair, structured record-plus-letter delivery, browser/flush journeys and expert/live-model acceptance remain unfinished. W03/W12 remain partial; no complete P/A/H or global release guarantee is promoted.
+Moved out of this repository with the redaction example; the downstream consumer owns these proofs now.
 
 ## Native structured validation and bounded repair increment
 
@@ -453,11 +447,7 @@ Run `npm run build` then `node examples/validated-output.mjs`. This is partial W
 
 ## Fictional record and letter adoption increment
 
-The redaction fixture now implements typed native proposals, stable host item IDs, independent corrections and explicit conditional adoption. The effective record and letter publish in one real SQLite transaction. Original native request/task bindings, immutable correction request resources and durable attempted intent preserve duplicate and recovery semantics. Provider reconciliation remains authoritative for current receipt disclosure. See [the feature map](FEATURES.md#fictional-redaction-corrections-and-adoption) for tests and limits.
-
-Run `npm run build && node examples/redaction-adoption.mjs` for a fictional proposal, human correction and mixed adoption. Final clean command logs, exact commits, independent review findings, installed-consumer evidence and the recovery bundle remain under `.cache/evidence/implementation/`. The previous full checkpoint was `23dace8ed6562e9d3939ad1e30d9854c43e5d0ab`; current evidence records the new candidate exactly.
-
-W12 remains partial. W00 stays reconciled, W01-W08/W10-W13 remain partial and W09 remains a public-seam probe. P01-P14, A01-A48 and H01-H10 remain in scope without a full qualification claim. Six BORING-PI release deferrals remain. Browser/live/clinical and external consumer delivery are still separate gates. GitHub pushes remain blocked by the recorded automatic approval rejection and invalid CLI credentials; implementation commits and a verified bundle are retained locally.
+Moved out of this repository with the redaction example; the downstream consumer owns these proofs now.
 
 ## Native chat grouping increment
 
@@ -576,21 +566,11 @@ W11 and A25-A32 remain partial. Live application connectors, evaluator quality, 
 
 ## Fictional consultation browser candidate, 2026-10-08
 
-The candidate composes the existing redaction fixture with concrete Markdown controllers and semantic proposal/correction cards. Two consultations own separate native runtimes. Each consultation keeps independent A/B/C generations. Generation requires the receipt for the exact selected notes buffer; later typing stays local. Source-mode dictation retains its consultation, mount, buffer and cursor, and a stale transcript remains available for inspection.
-
-Adoption checks the displayed correction, record and letter revisions before native admission. The client verifies publication receipts against the selected text. Browser mutation IDs bind the authenticated actor, consultation and semantic arguments; they do not attest a malicious host. Read-only latest-request discovery observes reservations and native bindings without starting work, including after actual process death. It preserves the original actor and request for an explicit retry.
-
-Focused native tests, real SQLite DOM controls, an isolated tarball consumer and the actual Chromium journey establish separate claims. Independent review covers late proposal replies, typing during adoption capture, unresolved request retention and stale client review caches. Exact command results, failed probes and corrected runs stay under ignored `.cache/evidence/redaction-browser/`. Run `npm run redaction:browser` after building; the [example guide](../../examples/redaction-browser/README.md) describes the controls and test commands.
-
-This increment addresses bounded fictional R03-R06/R08/R11 behavior. W12 remains partial. Full P01-P14/A01-A48/H01-H10 and every global VERIFY.json deferral remain unchanged. The generated preparation region, live transcription and model quality, real identity/provider policy, clinical expert acceptance and consumer migration still require their own qualification.
+Moved out of this repository with the redaction example; the downstream consumer owns these proofs now.
 
 ## Fictional preparation experience, 2026-10-08
 
-Branch `feat/redaction-preparation-20261008` starts at reviewed PR50 commit `202d3eb`. It adds native typed preparation, actual source-return validation, independent conditional delivery and a fixed six-section experience above the notes. The evaluator receives twelve individual card candidates with enumerated metadata only. The host preserves complete sections and recent chronology. Preparation observation, composition offers and local adoption retain their original request/revision targets. Notes and A/B/C corrections retain their own authority.
-
-The [feature entry](FEATURES.md#fictional-preparation-experience) names native, crash, installed-consumer and browser gates. Raw results and independent review belong under ignored `.cache/evidence/redaction-preparation/`. Local loopback EPERM prevents actual Chromium execution in this environment; CI execution is recorded separately. Final checks compare local test failures with the same-base baseline rather than treating an environment failure as a pass.
-
-W00 remains reconciled; W01-W08/W10-W13 partial; W09 a public-seam probe. Full P01-P14/A01-A48/H01-H10 remain the target. Eleven global VERIFY.json deferrals remain unchanged. Live model/transcription quality, clinical expert acceptance, production identity and processing policy, licenses and consumer migrations are not established by fictional preparation fixtures.
+Moved out of this repository with the redaction example; the downstream consumer owns these proofs now.
 
 ## View-open acknowledgement, 2026-10-12
 
