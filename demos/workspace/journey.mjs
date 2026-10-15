@@ -397,6 +397,7 @@ try {
       await browser.until('the chat is back', `!!${q('[data-boring=ambient-chat]')} && !${q('[data-testid=floating-viewer]')}`, 10000);
     }
     await browser.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await browser.until('the floating chat has reflowed to the phone before tapping its Library icon', `${q('[data-boring=ambient-chat]')}?.dataset.phone === 'true' && ${rect('[data-boring=ambient-chat]')}?.w === 390`, 10000);
     await library();
     await browser.click(q('[role=treeitem][data-path="Contracts"]'));
     await browser.until('the phone contract', `!!${q('[role=treeitem][data-path="Contracts/fernhill-agreement.pdf"]')}`, 15000);
@@ -408,6 +409,7 @@ try {
     assert.deepEqual([phone.back, phone.close, phone.window, phone.pageOverflow, phone.windowOverflow], [true, true, true, false, false], JSON.stringify(phone));
     await browser.click(q('[data-testid=file-back]'));
     await browser.send('Emulation.clearDeviceMetricsOverride');
+    await browser.until('desktop header controls are back after the phone', `!!${q('[data-testid=ambient-dock]')} && !${q('[data-boring=ambient-chat]')}?.dataset.phone`, 10000);
     await browser.evaluate(`sessionStorage.removeItem('boring.ambient.position')`);
   });
 
