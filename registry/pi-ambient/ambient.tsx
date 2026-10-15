@@ -234,6 +234,7 @@ export function AmbientChat(props: AmbientChatProps) {
   if (mount.controller !== props.controller) setMount({ controller: props.controller, sequence: mount.sequence + 1 });
   // The window state and the toasts belong to the bar, not to one conversation: they survive switching conversations.
   const [local, setLocal] = useState<AmbientState>(props.defaultState ?? 'bar');
+  if (props.embedded && local !== 'expanded') setLocal('expanded');
   const internalStore = useMemo(createNotificationStore, []);
   const text = useMergedText<AmbientLabels, AmbientIcons>(props.labels, props.icons, AMBIENT_TEXT);
   return <ChatTextProvider value={text}><AmbientSession key={mount.sequence} {...props} labels={text.labels} icons={text.icons} activeController={active} windowState={props.embedded ? 'expanded' : props.state ?? local} store={props.notifications || internalStore}
@@ -383,7 +384,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
   const refocusTitle = useRef(false);
   useEffect(() => { if (!expanded && refocusTitle.current) { refocusTitle.current = false; titleButton.current?.focus(); } }, [expanded]);
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== 'Escape' || event.defaultPrevented || !expanded || picking) return;
+    if (embedded || event.key !== 'Escape' || event.defaultPrevented || !expanded || picking) return;
     event.preventDefault();
     // Escape steps back: full screen, then the artifact, then the window.
     if (fullscreen) return setFullscreen(false);

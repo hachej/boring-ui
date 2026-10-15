@@ -50,6 +50,35 @@ async function moveOnce(t, props) {
   return { key, local: read(window.localStorage), session: read(window.sessionStorage) };
 }
 
+test('embedding a pill resets its remembered state before floating again, preserving the page composer and transcript', async t => {
+  const { element, root, chat, act, createElement, AmbientChat } = await harness(t);
+  const render = embedded => act(async () => root.render(createElement(AmbientChat, { controller: chat, defaultState: 'minimized', embedded })));
+  await render(false);
+  assert.ok(element.querySelector('[data-testid=ambient-pill]'));
+  await render(true);
+  const composer = element.querySelector('[data-testid=composer-input]'), transcript = element.querySelector('[data-testid=transcript]');
+  assert.ok(composer && transcript, 'the page expands the pill');
+  for (const embedded of [false, true]) {
+    await render(embedded);
+    assert.ok(element.querySelector('[data-testid=composer-input]') === composer, 'placement keeps the exact composer');
+    assert.ok(element.querySelector('[data-testid=transcript]') === transcript, 'placement keeps the exact transcript');
+  }
+});
+
+test('Escape in an embedded conversation does not remember a collapsed floating state', async t => {
+  const { window, element, root, chat, act, createElement, AmbientChat } = await harness(t);
+  const changes = [];
+  const render = embedded => act(async () => root.render(createElement(AmbientChat, { controller: chat, defaultState: 'expanded', embedded, onStateChange: state => changes.push(state) })));
+  await render(true);
+  const composer = element.querySelector('[data-testid=composer-input]'), transcript = element.querySelector('[data-testid=transcript]');
+  await act(async () => composer.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+  assert.deepEqual(changes, [], 'embedded Escape does not request a hidden state change');
+  await render(false);
+  assert.equal(element.querySelector('[data-boring=ambient-chat]').dataset.state, 'expanded');
+  assert.ok(element.querySelector('[data-testid=composer-input]') === composer);
+  assert.ok(element.querySelector('[data-testid=transcript]') === transcript);
+});
+
 test('ambient bar remembers its position in localStorage with storage="local"', async t => {
   const { key, local, session } = await moveOnce(t, { storage: 'local' });
   assert.ok(local, 'the position is written to localStorage');
