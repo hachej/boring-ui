@@ -112,6 +112,59 @@ try {
     await headerShots('docked-empty');
   });
 
+  await step('phone Agent page: a Library file replaces chat, keeps its header in bounds, and Back restores the same conversation', async () => {
+    await browser.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await browser.until('phone page', `${placement} === 'page' && ${rect('[data-dock=chat]')}.w >= 388`, 10000);
+    await browser.evaluate(`window.__phoneComposer = ${INPUT}; window.__phoneTranscript = ${q('[data-testid=transcript]')}; void 0;`);
+    await library();
+    await browser.click(q('[role=treeitem][data-path="Policies"]'));
+    await browser.until('phone policy listed', `!!${q('[role=treeitem][data-path="Policies/AP policy.md"]')}`, 10000);
+    await browser.click(q('[role=treeitem][data-path="Policies/AP policy.md"]'));
+    await browser.until('phone page file loaded', `!!${q('[data-testid=library-document]')} && !${q('[data-sidebar=sidebar][data-mobile=true]')}`, 15000);
+    assert.equal(await browser.evaluate(placement), 'page', 'opening a file does not float the Agent page');
+    const header = await browser.evaluate(`(() => { const buttons = [...document.querySelectorAll('[data-testid=agent-panel-header] button')]; return { back: !!document.querySelector('[data-testid=file-back]'), controls: buttons.map(button => { const r=button.getBoundingClientRect(); return { id:button.dataset.testid, inside:r.left>=0 && r.top>=0 && r.right<=innerWidth && r.bottom<=innerHeight && r.width>0 }; }), chatVisible: ${INPUT}.checkVisibility(), overflow: document.documentElement.scrollWidth > innerWidth }; })()`);
+    assert.equal(header.back, true, 'the phone page file has a Chat back button');
+    assert.ok(header.controls.length > 1 && header.controls.every(control => control.inside), JSON.stringify(header));
+    assert.equal(header.chatVisible, false, 'the file replaces the split chat on a phone');
+    assert.equal(header.overflow, false);
+    assert.equal(await browser.evaluate(`window.__phoneComposer === ${INPUT} && window.__phoneTranscript === ${q('[data-testid=transcript]')}`), true, 'the hidden conversation stays mounted');
+    await shot('review-phone-page-file.png');
+    await browser.click(q('[data-testid=file-back]'));
+    await browser.until('Back restores and focuses the same page composer', `${placement} === 'page' && !${q('[data-testid=library-document]')} && ${INPUT}.checkVisibility() && document.activeElement === window.__phoneComposer`, 10000);
+    assert.equal(await browser.evaluate(`window.__phoneComposer === ${INPUT} && window.__phoneTranscript === ${q('[data-testid=transcript]')}`), true);
+    await shot('review-phone-page-back.png');
+    await browser.send('Emulation.clearDeviceMetricsOverride');
+    await browser.until('desktop page controls', `!!${q('[data-testid=chat-action-float]')} && !${q('[data-sidebar=sidebar][data-mobile=true]')}`, 10000);
+  });
+
+  await step('keyboard placement controls focus the surviving composer', async () => {
+    await browser.evaluate(`${q('[data-testid=chat-action-float]')}.focus()`);
+    await browser.press('Enter');
+    await browser.until('keyboard Float transfers focus', `${placement} === 'floating' && document.activeElement === ${INPUT} && ${INPUT}.checkVisibility()`, 5000);
+    await browser.evaluate(`${q('[data-testid=ambient-action-page]')}.focus()`);
+    await browser.press('Enter');
+    await browser.until('keyboard Page transfers focus', `${placement} === 'page' && document.activeElement === ${INPUT} && ${INPUT}.checkVisibility()`, 5000);
+    assert.equal(await browser.evaluate(`window.__composer === ${INPUT}`), true);
+  });
+
+  await step('pill → page → float → page normalizes window state without remounting the page conversation', async () => {
+    await browser.click(q('[data-testid=chat-action-float]'));
+    await browser.click(q('[data-testid=ambient-minimize]'));
+    await browser.click(q('[data-testid=ambient-minimize]'));
+    await browser.until('the floating pill', `${q('[data-boring=ambient-chat]')}?.dataset.state === 'minimized'`, 5000);
+    await browser.click(q('[data-testid=nav-agent]'));
+    await browser.until('the pill opens as the Agent page', `${placement} === 'page' && !!${INPUT} && !!${q('[data-testid=transcript]')}`, 5000);
+    await browser.evaluate(`window.__pageComposer = ${INPUT}; window.__pageTranscript = ${q('[data-testid=transcript]')}; void 0;`);
+    await browser.press('Escape');
+    await browser.click(q('[data-testid=chat-action-float]'));
+    await browser.until('floating is expanded, not the remembered pill or bar', `${placement} === 'floating' && ${q('[data-boring=ambient-chat]')}?.dataset.state === 'expanded'`, 5000);
+    assert.equal(await browser.evaluate(`window.__pageComposer === ${INPUT} && window.__pageTranscript === ${q('[data-testid=transcript]')}`), true);
+    await browser.click(q('[data-testid=nav-agent]'));
+    await browser.until('back to page with focus', `${placement} === 'page' && document.activeElement === ${INPUT}`, 5000);
+    assert.equal(await browser.evaluate(`window.__pageComposer === ${INPUT} && window.__pageTranscript === ${q('[data-testid=transcript]')}`), true);
+    await browser.evaluate(`window.__conversation = ${q('[data-boring=pi-chat]')}; window.__composer = ${INPUT}; void 0;`);
+  });
+
   await step('Agent page → show Approvals → floating → dock beside → back to page, without a remount', async () => {
     await say('Hello, what needs my approval this week?');
     await sees('the answer', 'I opened the queue in the viewer.');

@@ -284,6 +284,7 @@ function Chat({ api, provider, file, openFile, closeFile, setUnsaved, active, co
   // The agent area widens by the viewer's width while a file is open beside the chat, and goes back when it closes.
   if (api.placement === 'docked' && !file && !widened.current) base.current = api.width;
   const side = api.placement === 'docked' && Boolean(file);
+  const replaceChat = Boolean(file) && (api.floating || isMobile);
   useLayoutEffect(() => {
     const panel = document.querySelector('[data-testid=workspace-panel]');
     if (!side || !panel || typeof ResizeObserver === 'undefined') return;
@@ -297,6 +298,11 @@ function Chat({ api, provider, file, openFile, closeFile, setUnsaved, active, co
     if (side && !widened.current) { widened.current = true; api.setWidth(Math.min(base.current + PANEL, Math.max(base.current, Math.round(window.innerWidth * 0.62)))); }
     else if (!side && widened.current) { widened.current = false; if (!api.floating) api.setWidth(base.current); }
   }, [side]); // eslint-disable-line react-hooks/exhaustive-deps
+  useLayoutEffect(() => {
+    if (chat.status !== 'ready' || file) return;
+    const composer = document.querySelector<HTMLTextAreaElement>('[data-dock=chat] [data-testid=composer-input]');
+    if (composer?.checkVisibility()) composer.focus({ preventScroll: true });
+  }, [api.placement, file, chat.status]);
   if (chat.status !== 'ready') return <p role="status" data-testid="chat-connecting" className="p-4 text-sm text-muted-foreground">{chat.status === 'offline' ? 'Server unreachable. Retrying…' : 'Connecting…'}</p>;
   const headerActions = [
     ...(isMobile ? [{ id: 'navigation', label: 'Open navigation', icon: PanelLeftIcon, onSelect: () => setOpenMobile(true) }] : []),
@@ -310,18 +316,18 @@ function Chat({ api, provider, file, openFile, closeFile, setUnsaved, active, co
   const common = { controller: chat.controller, actions: chat.actions, headerActions, tools, ...(attachments ? { attachments, pasteToFile: {} } : {}), onOpenFile: openFile, fileChanges: true };
   const viewer = file && provider ? <ViewerWindowProvider value={viewerWindow}><Document path={file} provider={provider} close={closeFile} onUnsaved={setUnsaved} /></ViewerWindowProvider> : null;
   const header = <div data-testid="agent-panel-header" className="pi-chat flex h-14 shrink-0 items-center text-foreground [&_button]:min-h-11 [&_button]:min-w-11">
-    {api.floating
+    {replaceChat
       ? <Button data-testid="file-back" aria-label="Back to Chat" title="Back to Chat" onClick={closeFile} className="gap-1 px-2 text-sm"><ArrowLeftIcon className="size-4" aria-hidden="true" />Chat</Button>
       : <div className="flex min-w-0 flex-1 items-center gap-1 px-4"><h2 className="m-0 mr-2 truncate text-sm font-semibold tracking-tight">AP helper</h2><BlockActions actions={placementActions} testId="chat-action" menuLabel="More actions" /></div>}
-    {file && <div ref={setHeaderTarget} data-testid="agent-file-header" title={file} style={api.floating ? undefined : { width: panelWidth }}
-      className={cn('relative mr-2 min-w-0 [&>header]:h-14 [&>header]:border-0 [&>header]:px-3 [&>header]:py-0', !file.includes('/') && '[&_[data-testid=viewer-subtitle]]:hidden', api.floating ? 'flex-1' : 'shrink-0')} />}
+    {file && <div ref={setHeaderTarget} data-testid="agent-file-header" title={file} style={replaceChat ? undefined : { width: panelWidth }}
+      className={cn('relative mr-2 min-w-0 [&>header]:h-14 [&>header]:border-0 [&>header]:px-3 [&>header]:py-0', !file.includes('/') && '[&_[data-testid=viewer-subtitle]]:hidden', replaceChat ? 'flex-1' : 'shrink-0')} />}
   </div>;
-  const conversation = <div hidden={api.floating && Boolean(file)} inert={api.floating && Boolean(file)} className={cn('min-h-0 flex-1 flex-col', api.floating && file ? 'hidden' : 'flex')}>
+  const conversation = <div hidden={replaceChat} inert={replaceChat} className={cn('min-h-0 flex-1 flex-col', replaceChat ? 'hidden' : 'flex')}>
     <AmbientChat key={active} {...common} conversations={conversations} embedded={!api.floating} variant="surface" defaultState="expanded" labels={{ title: 'AP helper' }} onDock={() => { api.dock(); api.setWidth(base.current); }} />
   </div>;
-  return <FloatingViewer active={api.floating && Boolean(file)} header={!api.floating || file ? header : null}>
-    <ArtifactWorkspace chat={conversation} open={Boolean(file)} panel={viewer} onClose={closeFile} sheetBelow={0} minPanel={api.floating ? 0 : 360} minChat={api.floating ? 0 : 340} defaultWidth={PANEL} storageKey="workspace-demo.file-panel" panelLabel="File viewer" variant="inset"
-      className={cn('bg-transparent', api.floating && file && '[&>[data-testid=workspace-chat]]:hidden [&>[data-testid=workspace-divider]]:hidden [&>[data-testid=workspace-panel]]:!m-0 [&>[data-testid=workspace-panel]]:!w-full [&>[data-testid=workspace-panel]]:flex-1 [&>[data-testid=workspace-panel]]:border-0 [&>[data-testid=workspace-panel]]:rounded-none')} />
+  return <FloatingViewer active={replaceChat} header={!api.floating || file ? header : null}>
+    <ArtifactWorkspace chat={conversation} open={Boolean(file)} panel={viewer} onClose={closeFile} sheetBelow={0} minPanel={replaceChat ? 0 : 360} minChat={replaceChat ? 0 : 340} defaultWidth={PANEL} storageKey="workspace-demo.file-panel" panelLabel="File viewer" variant="inset"
+      className={cn('bg-transparent', replaceChat && '[&>[data-testid=workspace-chat]]:hidden [&>[data-testid=workspace-divider]]:hidden [&>[data-testid=workspace-panel]]:!m-0 [&>[data-testid=workspace-panel]]:!w-full [&>[data-testid=workspace-panel]]:flex-1 [&>[data-testid=workspace-panel]]:border-0 [&>[data-testid=workspace-panel]]:rounded-none')} />
   </FloatingViewer>;
 }
 
