@@ -34,13 +34,13 @@ try {
   // One union of the closure's package pins: pack the @boring ones, lock the others to this repository's lock.
   const union = { dependencies: [...new Set([...closure.values()].flatMap(entry => entry.dependencies ?? []))] };
   const archiveByName = packBoringDependencies(root, union, join(directory, 'packs'), run);
-  const dependencies = consumerDependencies(root, union, ['typescript', '@types/react', '@types/react-dom', 'happy-dom', 'esbuild', 'shadcn', 'tailwindcss']);
+  const dependencies = consumerDependencies(root, union, ['typescript', '@types/react', '@types/react-dom', 'happy-dom', 'esbuild', 'shadcn', 'tailwindcss', 'cn', '@base-ui/react']);
   writeLockedManifest(root, directory, 'isolated-feedback-consumer', dependencies);
   run('npm', ['install', '--package-lock-only', ...npmInstallFlags(cache), ...archiveByName.values()]);
   run('npm', ['ci', ...npmInstallFlags(cache)]);
   ({ url: registry, server } = await serveRegistry(root, directory, closure, archiveByName, join(directory, 'packs'), cache, run));
   for (const path of ['src', 'test/fixtures', 'dist']) mkdirSync(join(directory, path), { recursive: true });
-  writeFileSync(join(directory, 'components.json'), JSON.stringify({ $schema: 'https://ui.shadcn.com/schema.json', style: 'new-york', rsc: false, tsx: true, tailwind: { config: '', css: 'src/index.css', baseColor: '', cssVariables: true, prefix: '' }, iconLibrary: 'lucide', aliases: { components: '@/components', utils: '@/lib/utils', ui: '@/components/ui', lib: '@/lib', hooks: '@/hooks' } }));
+  writeFileSync(join(directory, 'components.json'), JSON.stringify({ $schema: 'https://ui.shadcn.com/schema.json', style: 'base-nova', rsc: false, tsx: true, tailwind: { config: '', css: 'src/index.css', baseColor: '', cssVariables: true, prefix: '' }, iconLibrary: 'lucide', aliases: { components: '@/components', utils: '@/lib/utils', ui: '@/components/ui', lib: '@/lib', hooks: '@/hooks' } }));
   writeFileSync(join(directory, 'src/index.css'), '@import "tailwindcss";\n');
   writeFileSync(join(directory, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'ESNext', moduleResolution: 'Bundler', jsx: 'react-jsx', strict: true, exactOptionalPropertyTypes: true, noUncheckedIndexedAccess: true, skipLibCheck: true, noEmit: true, types: [], lib: ['ES2023', 'DOM', 'DOM.Iterable'], baseUrl: '.', paths: { '@/*': ['./src/*'] } }, include: ['src/**/*.tsx', 'src/**/*.ts', 'consumer.ts'] }));
   const installer = { ...process.env, npm_config_cache: cache, npm_config_offline: 'true', npm_config_ignore_scripts: 'true', npm_config_audit: 'false', npm_config_fund: 'false' };
@@ -48,6 +48,7 @@ try {
   run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', `${registry}/feedback.json`, '--cwd', directory, '--yes'], installer);
   for (const name of excludedPackages) assert.equal(existsSync(join(directory, 'node_modules', name)), false, `${name} must not be installed`);
   for (const [name, entry] of closure) for (const file of entry.files ?? []) assert.ok(existsSync(join(directory, 'src', file.target)), `the CLI must create ${file.target} (${name})`);
+  for (const name of ['trace', 'collapsible']) assert.ok(existsSync(join(directory, `src/components/ui/${name}.tsx`)), `the feedback host installs the ${name} built-in`);
   const css = readFileSync(join(directory, 'src/index.css'), 'utf8');
   assert.ok(css.includes('[data-boring="feedback"]'), 'scoped css merged into the host stylesheet');
 

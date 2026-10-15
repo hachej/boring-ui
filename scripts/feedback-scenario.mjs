@@ -28,6 +28,7 @@ import { runCaptured } from './run-captured.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const template = join(root, 'examples/feedback-scenario/ledgerly');
+const style = 'base-nova';
 const { values: options } = parseArgs({ options: { config: { type: 'string' }, url: { type: 'string' }, fresh: { type: 'boolean' }, build: { type: 'boolean' }, kit: { type: 'string' } } });
 const evidence = resolve(root, process.env.FEEDBACK_EVIDENCE ?? '.cache/evidence/feedback-scenario');
 const chromium = process.env.CHROMIUM ?? `${process.env.HOME}/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome`;
@@ -65,7 +66,7 @@ async function installLedgerly() {
   const archives = packBoringDependencies(root, union, staging, (command, args) => runIn(staging, command, args));
   const hash = createHash('sha256');
   for (const [name, path] of [...archives].sort()) hash.update(name).update(readFileSync(path));
-  hash.update(JSON.stringify([...closure])).update(readFileSync(join(root, 'package-lock.json')));
+  hash.update(style).update(JSON.stringify([...closure])).update(readFileSync(join(root, 'package-lock.json')));
   const key = hash.digest('hex').slice(0, 16);
   const app = join(tmpdir(), 'boring-feedback-scenario', 'ledgerly-' + key);
   timings.packMs = Date.now() - at; at = Date.now();
@@ -75,13 +76,13 @@ async function installLedgerly() {
     mkdirSync(join(app, 'packs'), { recursive: true });
     const moved = new Map([...archives].map(([name, path]) => { const target = join(app, 'packs', path.split('/').pop()); cpSync(path, target); return [name, target]; }));
     const run = (command, args, env) => runIn(app, command, args, env);
-    writeLockedManifest(root, app, 'ledgerly', consumerDependencies(root, union, ['esbuild', 'shadcn', 'tailwindcss']));
+    writeLockedManifest(root, app, 'ledgerly', consumerDependencies(root, union, ['esbuild', 'shadcn', 'tailwindcss', 'cn', '@base-ui/react']));
     // --prefer-offline: the archives come from the cache when present; only a missing packument (npm checks optional peers) is fetched.
     run('npm', ['install', '--package-lock-only', '--prefer-offline', '--ignore-scripts', '--no-audit', '--no-fund', '--cache', cache, ...moved.values()]);
     run('npm', ['ci', '--prefer-offline', '--ignore-scripts', '--no-audit', '--no-fund', '--cache', cache]);
     mkdirSync(join(app, 'src'), { recursive: true });
     const { url: registry, server } = await serveRegistry(root, app, closure, moved, join(app, 'packs'), cache, run);
-    writeFileSync(join(app, 'components.json'), JSON.stringify({ $schema: 'https://ui.shadcn.com/schema.json', style: 'new-york', rsc: false, tsx: true, tailwind: { config: '', css: 'src/index.css', baseColor: '', cssVariables: true, prefix: '' }, iconLibrary: 'lucide', aliases: { components: '@/components', utils: '@/lib/utils', ui: '@/components/ui', lib: '@/lib', hooks: '@/hooks' } }));
+    writeFileSync(join(app, 'components.json'), JSON.stringify({ $schema: 'https://ui.shadcn.com/schema.json', style, rsc: false, tsx: true, tailwind: { config: '', css: 'src/index.css', baseColor: '', cssVariables: true, prefix: '' }, iconLibrary: 'lucide', aliases: { components: '@/components', utils: '@/lib/utils', ui: '@/components/ui', lib: '@/lib', hooks: '@/hooks' } }));
     writeFileSync(join(app, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'ESNext', moduleResolution: 'Bundler', jsx: 'react-jsx', strict: true, noEmit: true, baseUrl: '.', paths: { '@/*': ['./src/*'] } }, include: ['src'] }));
     writeFileSync(join(app, 'src/index.css'), '@import "tailwindcss";\n');
     const installer = { ...process.env, npm_config_prefer_offline: 'true', npm_config_ignore_scripts: 'true', npm_config_audit: 'false', npm_config_fund: 'false' };
@@ -89,6 +90,7 @@ async function installLedgerly() {
     run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', `${registry}/feedback.json`, '--cwd', app, '--yes'], installer);
     server.kill();
     for (const [name, entry] of closure) for (const file of entry.files ?? []) assert.ok(existsSync(join(app, 'src', file.target)), `the shadcn CLI must create src/${file.target} (${name})`);
+    for (const name of ['trace', 'collapsible']) assert.ok(existsSync(join(app, `src/components/ui/${name}.tsx`)), `the feedback host installs the ${name} built-in`);
     assert.ok(readFileSync(join(app, 'src/index.css'), 'utf8').includes('[data-boring="feedback"]'), 'the CLI merges the scoped feedback CSS into the host stylesheet');
     writeFileSync(join(app, '.installed'), new Date().toISOString());
     timings.installMs = Date.now() - at; at = Date.now();
