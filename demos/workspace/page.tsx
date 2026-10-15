@@ -5,7 +5,7 @@
 // a screen of the app (Approvals, Invoice, Supplier: each a fixed experience over registered cells, ./cells.mjs) or a Library document.
 // Every screen publishes `useAgentContext`; the chat reports its placement (docked or floating) by itself.
 // @ts-nocheck: an example page, bundled by esbuild and not part of the typechecked sources.
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Experience } from '@hachej/boring-ui-kit/experience';
 import { FileTree } from '@hachej/boring-ui-kit/file-tree-view';
@@ -115,7 +115,7 @@ function InvoiceSummary({ cell }) {
       <div><dt className={label}>Account</dt><dd data-testid="invoice-account" className="font-medium">{invoice.account}</dd></div>
     </dl>
     <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-4">
-      <Button size="sm" data-testid="approve" disabled={done} onClick={() => decide('approve')}>Approve</Button>
+      <Button size="sm" variant="default" data-testid="approve" disabled={done} onClick={() => decide('approve')}>Approve</Button>
       <select aria-label="Account for re-code" data-testid="recode-account" value={account} onChange={event => setAccount(event.target.value)} disabled={done} className="h-8 rounded-md border border-border bg-background px-2 text-sm">
         <option value="">Code to another account…</option>{accounts.filter(name => name !== invoice.account).map(name => <option key={name}>{name}</option>)}
       </select>
@@ -214,15 +214,18 @@ function Column({ view, go, provider }) {
 }
 
 // ---- The left dock: the sessions pane (conversations, Library) beside the chat while docked; AmbientChat alone while floating.
+const WIDE = 640;
 function Chat({ api, provider, go, view }) {
   const [active, setActive] = useState(firstConversation);
   const [pane, setPane] = useState('conversations');
+  const wide = useRef(760);
   const conversations = useConversations({ endpoint: at('/api/conversations'), fetch: authorized, activeId: active, onSelect: setActive });
   const chat = useRemoteChat({ conversationId: active, endpoint: id => at(`/api/chat?conversation=${id}`), fetch: authorized, identity, requestContext: readAgentContext });
   if (chat.status !== 'ready') return <p role="status" data-testid="chat-connecting" className="p-4 text-sm text-muted-foreground">{chat.status === 'offline' ? 'Server unreachable. Retrying…' : 'Connecting…'}</p>;
-  if (api.floating) return <AmbientChat controller={chat.controller} actions={chat.actions} variant="surface" defaultState="expanded" onDock={api.dock} />;
-  // The sessions pane needs room: a narrow dock keeps only the chat.
-  const sessions = api.width >= 640;
+  // The sessions pane needs room: a narrow dock keeps only the chat. Docking back returns to the last width that had room for it.
+  const sessions = api.width >= WIDE;
+  if (!api.floating && sessions) wide.current = api.width;
+  if (api.floating) return <AmbientChat controller={chat.controller} actions={chat.actions} variant="surface" defaultState="expanded" onDock={() => { api.dock(); api.setWidth(wide.current); }} />;
   return <div className="flex min-h-0 flex-1">
     {sessions && <SessionsPane drawer={false} conversations={conversations} view={pane} onViewChange={setPane}
       libraryContent={() => provider ? <FileTree revisionProvider={provider} upload={false} history={false} selectedPath={view.screen === 'file' ? view.path : undefined} onOpen={path => go({ screen: 'file', path })} /> : <p role="status" className="p-3 text-sm text-muted-foreground">Loading…</p>} />}
