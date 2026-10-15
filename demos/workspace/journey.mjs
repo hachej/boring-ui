@@ -110,14 +110,15 @@ try {
     assert.ok(/read/.test(tools) && /get_invoice/.test(tools), `the agent read the document and the invoice: ${tools}`);
     await browser.screenshot('4-policy.png');
     // The document is editable: leaving it with an unsaved edit asks first, and declining keeps the document and the edit.
-    await browser.type(q('[data-testid=library-document] [contenteditable=true]'), ' Draft edit.');
+    await browser.click(q('[data-testid=library-document] [data-testid$=-mode-source]'));
+    await browser.type(q('[data-testid=library-document] textarea.boring-markdown-source'), ' Draft edit.');
     await browser.until('the edit is unsaved', `/Unsaved/.test(${q('[data-testid=library-document]')}.innerText)`, 10000);
     await browser.evaluate(`window.__asked = 0; window.confirm = () => { window.__asked++; return false; }`);
     await browser.click(q('[data-testid=nav-approvals]'));
     await pause(300);
     assert.equal(await browser.evaluate('window.__asked'), 1, 'leaving asked once');
     assert.equal(await browser.evaluate(viewing), 'Library/AP policy.md', 'declining stays on the document');
-    assert.ok((await browser.evaluate(`${q('[data-testid=library-document]')}.innerText`)).includes('Draft edit.'), 'the edit is still there');
+    assert.ok((await browser.evaluate(`${q('[data-testid=library-document] textarea.boring-markdown-source')}.value`)).includes('Draft edit.'), 'the edit is still there');
     await browser.evaluate(`window.confirm = () => true`);
     await browser.click(q('[data-testid=nav-approvals]'));
     await browser.until('left the document', `${viewing} === 'Approvals'`, 5000);

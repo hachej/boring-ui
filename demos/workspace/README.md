@@ -16,7 +16,7 @@ A fictional company, Harbor & Pine Foods, pays its suppliers. One person approve
 6. On the supplier page you ask "why is this flagged?". The agent answers in a line and does not move the page, because the chat is floating and you lead.
 7. You dock the chat back. The three columns return and the conversation is intact.
 
-Along the way: earlier conversations are listed and each keeps its transcript, and the Library opens the AP policy in the right column so the agent can answer "does this invoice respect the policy?" from the document and the invoice.
+Along the way: an open Library document with unsaved edits asks before you leave it, agent commands that move the viewer are addressed to one conversation and tab (a late or foreign one is dropped), and earlier conversations are listed and each keeps its transcript, and the Library opens the AP policy in the right column so the agent can answer "does this invoice respect the policy?" from the document and the invoice.
 
 ## What it shows
 
@@ -25,7 +25,7 @@ Along the way: earlier conversations are listed and each keeps its transcript, a
 | Placement (`docked` or `floating`) travels with each request and changes the agent's role, never its permissions | `docs/architecture/PAGE-TOOLS.md` (draft PR #1698), `renderRequestContext` in `@hachej/boring-agent/prompt-context` |
 | Layout: the chat `Dock` that floats into `AmbientChat`, the sessions pane with the Library, `FileViewer` for documents | `registry/dock`, `registry/pi-app`, `page.tsx` |
 | Screens as fixed experiences over registered cells (props schema, `$state` bindings, named actions, metadata) | [EXPERIENCE.md](../../docs/architecture/EXPERIENCE.md), `cells.mjs` |
-| One way to change an invoice: a conditional write that names the revision you saw and returns a receipt. The buttons and the agent's `decide_invoice` tool (behind the approval card) call the same function | `ap.mjs`, `server.mjs` |
+| One way to change an invoice: a conditional write that names the revision that was reviewed (the agent reads it with `get_invoice` and the approval card shows it) and returns a receipt; a stale revision is refused and repeating a committed decision returns the same receipt. The buttons and the agent's `decide_invoice` tool (behind the approval card) call the same function | `ap.mjs`, `server.mjs` |
 
 ## Run it
 
