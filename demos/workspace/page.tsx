@@ -97,9 +97,9 @@ function CashDue({ cell }) {
   const { resolve } = useAp();
   const rows = [...(resolve(cell.state.rows) ?? [])].sort((a, b) => a.due.localeCompare(b.due));
   const total = rows.reduce((sum, row) => sum + row.amount, 0);
-  return <section data-testid="cash-due" className={card} aria-label="Cash due">
+  return <section data-testid="cash-due" className={`${card} @container`} aria-label="Cash due">
     <div className="mb-5 flex items-baseline justify-between gap-4"><h2 className="text-sm font-semibold">Upcoming due dates</h2><p className="text-sm font-semibold tabular-nums">{money(total)} <span className="text-xs font-normal text-muted-foreground">total due</span></p></div>
-    <ul className="grid gap-x-8 gap-y-3 text-sm sm:grid-cols-3">{rows.map(row => <li key={row.id} className="flex items-center justify-between gap-3 border-b border-border pb-3"><span><span className="block text-xs text-muted-foreground">{row.id}</span><span className="text-sm">{day(row.due)}</span></span><span className="text-sm font-medium tabular-nums">{money(row.amount, row.currency)}</span></li>)}</ul>
+    <ul className="grid gap-x-8 gap-y-3 text-sm @[38rem]:grid-cols-3">{rows.map(row => <li key={row.id} className="flex items-center justify-between gap-3 border-b border-border pb-3"><span><span className="block text-xs text-muted-foreground">{row.id}</span><span className="text-sm">{day(row.due)}</span></span><span className="text-sm font-medium tabular-nums">{money(row.amount, row.currency)}</span></li>)}</ul>
   </section>;
 }
 

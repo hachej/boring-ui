@@ -404,7 +404,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
   const status = waitingForAnswer ? 'input' : working ? 'working' : outcome;
   const label = waitingForAnswer ? labels.waitingForAnswer : labels.working(seconds);
   const panelOpen = expanded && shownArtifact !== undefined && artifactPanel !== undefined;
-  const surface = embedded ? 'relative flex min-h-0 flex-1 flex-col overflow-hidden bg-transparent text-foreground' : cn('relative flex flex-col border border-border bg-background text-foreground shadow-lg', phone && expanded ? 'h-dvh rounded-none border-0 pt-[env(safe-area-inset-top)]' : 'rounded-3xl',
+  const surface = embedded ? 'relative flex min-h-0 flex-1 flex-col overflow-clip bg-transparent text-foreground' : cn('relative flex flex-col border border-border bg-background text-foreground shadow-lg', phone && expanded ? 'h-dvh rounded-none border-0 pt-[env(safe-area-inset-top)]' : 'rounded-3xl',
     !phone && expanded && (panelOpen ? 'h-full overflow-hidden' : 'max-h-[70dvh]'));
   // With an artifact open the window widens (most of the viewport, at most 72rem) and takes a fixed height so the panel fills it.
   const rootClass = embedded ? cn('pi-chat relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden', className) : cn('pi-chat pi-ambient fixed z-50', variant === 'contrast' && 'dark scheme-dark', phone ? (expanded ? 'inset-0' : 'inset-x-2 bottom-[max(0.5rem,env(safe-area-inset-bottom))]')

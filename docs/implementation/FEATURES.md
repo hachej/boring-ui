@@ -217,6 +217,12 @@ navigation, retained docked/floating chat and mobile navigation. The required
 `test:app-registry-consumer` checks stylesheet delivery in the installed recipe.
 See [PARTIAL](PARTIAL.md#portable-library-tree) for candidate qualifications.
 
+## Workspace AP demo and inset viewer headers
+
+The [workspace demo](../../demos/workspace/README.md) composes fixed registered cells, one mounted chat and a file column across page, docked and floating placements. App navigation excludes History and Library; their top-bar icons open Base UI popovers. The app presentation adapts the pinned MIT Tremor Planner template.
+
+`AmbientChat.headerTools` accepts host-owned header controls. `ViewerWindow.headerLayout: 'stacked'` places viewer controls below the title and window actions inside the inset card. Both options are opt-in. `test/contracts/viewers-source.test.mjs` drives stacked and default headers, menus and handlers. `workspace-demo:journey` drives AP decisions, retained DOM identity and drafts, live Library updates, popover placement, in-card header geometry and narrow-table layout. Its screenshot matrix covers nine screens, light and dark, at 1440×900, 1280×720 and 390×844 under `.cache/evidence/saas-v2/`. The headless browser shows the PDF download fallback; this is not native PDF plug-in qualification or a real-model judgment.
+
 ## View-open acknowledgement
 
 A `present` call can wait until the page has shown the file: `createPresentTool({ ack: { timeoutMs?, viewers? } })`. The page confirms the revision it mounted, or refuses (for example when the person closed the panel on purpose), and the result says so. A timeout is `unconfirmed`, not an error, and a headless conversation without a page returns `viewer: 'none'` at once. The [agent README](../../packages/agent/README.md) owns the contract and the [registry README](../../registry/README.md) owns the page side.

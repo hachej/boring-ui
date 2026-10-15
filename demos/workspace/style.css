@@ -25,6 +25,18 @@ progress::-webkit-progress-value { background: var(--primary); border-radius: 2p
 progress.over-budget::-webkit-progress-value { background: var(--destructive); }
 [data-testid="library-document"] [data-testid="viewer-bar"] button { min-height: 44px; min-width: 44px; }
 [data-testid="library-document"] [data-testid="viewer-subtitle"] { text-overflow: ellipsis; }
+.ap-ledger { container: ledger / inline-size; }
+@container ledger (width < 54rem) {
+  .ap-ledger :is(th, td):nth-child(2) { display: none; }
+}
+@container ledger (width < 38rem) {
+  .ap-ledger :is(th, td):is(:nth-child(3), :nth-child(4), :nth-child(6)) { display: none; }
+  .ap-ledger .ledger-due { display: inline; }
+  .ap-ledger .ledger-status { display: block; }
+}
+@container ledger (width < 30rem) {
+  .ap-ledger .ledger-mark { display: none; }
+}
 @media (max-width: 639px) {
   [data-testid="app-scroll"] { padding-bottom: 10rem; }
   [data-testid="screen-invoice"] [data-boring="experience-row"] { flex-direction: column; }

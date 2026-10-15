@@ -21,13 +21,13 @@ export function ChatTools({ conversations, provider, file, openFile, feed }) {
     return () => cancelAnimationFrame(frame);
   }, [panel, provider]);
   return <div className="flex shrink-0 items-center gap-0.5" data-testid="chat-tools">
-    {([['history', 'History', HistoryIcon], ['library', 'Library', FolderOpenIcon]] as const).map(([id, title, Icon]) => <Popover.Root key={id} open={panel === id} onOpenChange={open => { picked.current = false; setPanel(open ? id : null); }}>
+    {([['history', 'History', HistoryIcon], ['library', 'Library', FolderOpenIcon]] as const).map(([id, title, Icon]) => <Popover.Root key={id} open={panel === id} onOpenChange={open => { if (open) picked.current = false; setPanel(current => open ? id : current === id ? null : current); }}>
       <Popover.Trigger render={<Button size="icon" variant="ghost" />} data-testid={`chat-action-${id}`} aria-label={title} title={title} className="size-11 text-muted-foreground"><Icon className="size-4" aria-hidden="true" /></Popover.Trigger>
       <Popover.Portal>
         <Popover.Positioner side="bottom" align="end" sideOffset={8} collisionPadding={8} className="z-[70]">
           <Popover.Popup ref={panel === id ? popup : undefined} data-testid={id === 'history' ? 'conversations' : 'library-popover'}
             initialFocus={type => type === 'touch' ? false : popup.current?.querySelector('input[type=search]') ?? true}
-            finalFocus={() => picked.current ? false : true}
+            finalFocus={() => picked.current || panel !== null && panel !== id ? false : true}
             onKeyDown={event => { if (event.key === 'Escape') event.stopPropagation(); }}
             className="pi-chat flex max-h-[min(32rem,var(--available-height))] w-[min(24rem,calc(100vw-1rem))] flex-col overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-lg outline-none">
             <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3">

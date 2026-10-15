@@ -53,6 +53,10 @@ try {
     assert.ok(geometry.toolbarBelow && geometry.closeInRow && geometry.menuInRow, JSON.stringify(geometry));
     assert.equal(geometry.internalBars, 1, 'exactly one header, inside the rounded card');
     assert.ok(geometry.targets.every(target => target.w >= 44 && target.h >= 44 && target.inside), JSON.stringify(geometry));
+    if (await browser.evaluate(`${placement} === 'docked'`)) {
+      const chatGeometry = await browser.evaluate(`(() => { const input = ${INPUT}, panel = document.querySelector('[data-testid=workspace-panel]').getBoundingClientRect(); return { composerBottom: input.getBoundingClientRect().bottom, panelBottom: panel.bottom }; })()`);
+      assert.ok(chatGeometry.composerBottom >= chatGeometry.panelBottom - 140, `the docked chat fills the available height beside its file: ${JSON.stringify(chatGeometry)}`);
+    }
   };
   const say = async text => { await browser.until('the composer', `!!${INPUT}`, 20000); await browser.type(INPUT, text); await browser.press('Enter'); };
   const sees = (label, text, timeout = 30000) => browser.until(label, `${body}.includes(${JSON.stringify(text)})`, timeout);
@@ -115,6 +119,11 @@ try {
     await browser.until('the filter is off', `${archived}.getAttribute('aria-pressed') === 'false'`, 5000);
     await browser.press('Escape');
     await browser.until('the list closed', `!${q('[data-testid=conversations]')}`, 5000);
+    await history();
+    await library();
+    await browser.until('switching top-bar icons closes History and opens only Library', `!${q('[data-testid=conversations]')} && !!${q('[data-testid=library-popover]')}`, 5000);
+    await browser.press('Escape');
+    await browser.until('Library returns focus to its icon', `!${q('[data-testid=library-popover]')} && document.activeElement?.dataset.testid === 'chat-action-library'`, 5000);
     await browser.screenshot('1-start.png');
     assert.equal(await browser.evaluate(`!!${q('[data-boring=pi-chat] > header')}`), false, 'the host owns the one header');
     await headerShots('docked-empty');
@@ -192,6 +201,7 @@ try {
     await browser.until('beside the app again', `${placement} === 'docked'`, 5000);
     assert.deepEqual(app.navigation.map(item => item.screen), ['approvals']);
     await browser.until('three rows', `document.querySelectorAll('[data-testid^=queue-row-]').length === 3`, 5000);
+    assert.equal(await browser.evaluate(`(() => { const table = document.querySelector('[data-testid=approval-queue] table'); return table.scrollWidth > table.parentElement.clientWidth; })()`), false, 'the approval table adapts to the docked app width without a horizontal scrollbar');
     await browser.screenshot('2-approvals.png');
   });
 
@@ -581,6 +591,7 @@ try {
         await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] });
         await pause(screen === 'invoice' ? 1200 : 300);
         assert.equal(await browser.evaluate('document.documentElement.scrollWidth > innerWidth'), false, `${screen} has no phone page overflow`);
+        if (['dashboard', 'approvals', 'invoices', 'payments', 'suppliers'].includes(screen)) assert.equal(await browser.evaluate(`[...document.querySelectorAll('[data-testid=screen-${screen}] table')].some(table => table.scrollWidth > table.parentElement.clientWidth)`), false, `${screen} table fits the phone width`);
         await shot(`${screen}-${scheme}-390x844.png`);
       }
     }

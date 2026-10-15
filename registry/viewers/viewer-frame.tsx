@@ -201,7 +201,7 @@ export function ViewerFrame({ title, subtitle, status, target, revision, control
   const stacked = host?.headerLayout === 'stacked';
   const toolbar = controls && <div data-testid={`${testId}-controls`} className={cn('flex shrink-0 items-center gap-1', stacked && 'flex-wrap border-t border-border px-3 py-2')}>{controls}</div>;
   const titlebar = <>
-        <div className="min-w-0 flex-1 basis-0 text-left">
+        <div className={cn('min-w-0 flex-1 basis-0', stacked && 'text-left')}>
           <h2 data-testid={titleTestId ?? `${testId}-title`} title={title} className="m-0 truncate text-sm leading-5 font-semibold tracking-tight">{title}</h2>
           {(subtitle || reading) && <p data-testid={`${testId}-subtitle`} className="m-0 flex min-w-0 items-center gap-x-1.5 overflow-hidden text-xs leading-4 whitespace-nowrap text-muted-foreground">{subtitle}{subtitle && reading && <span aria-hidden="true">·</span>}{reading && <span data-testid={`${testId}-readonly`}>{labels.readOnly}</span>}</p>}
         </div>
