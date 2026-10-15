@@ -46,6 +46,17 @@ test('scripted model: prompt rules answer with tool calls, streamed chunks, pric
   assert.equal(misses.length, 1);
 });
 
+test('scripted model: a request-context message is not the person\'s message, so a script keeps its turns across tool results', async () => {
+  const context = text => user(`<request-context>\n${text}\n</request-context>`);
+  const { models, definitions } = createScriptedModel({ script: { 'Open the queue': [{ tools: [{ name: 'show', args: {} }] }, ctx => `Opened; ${ctx.last.json.ok}, ${ctx.messages.some(message => JSON.stringify(message).includes('Placement: docked'))}`] } });
+  const chosen = definitions[0];
+  const first = await models.complete(chosen, { messages: [context('Placement: docked'), user('Open the queue')] });
+  const call = first.content.find(part => part.type === 'toolCall');
+  // After a tool result the host puts the context at the tail, after the results (withRequestContext).
+  const second = await models.complete(chosen, { messages: [user('Open the queue'), first, toolResult(call, '{"ok":true}'), context('Placement: docked')] });
+  assert.equal(second.content.at(-1).text, 'Opened; true, true');
+});
+
 test('scripted model: Stop aborts a slow answer between chunks', async () => {
   const { models, definitions } = createScriptedModel({ script: { 'Tell a story': [{ text: { chunks: ['One. ', 'Two. ', 'Three. '], ms: 200 } }] } });
   const controller = new AbortController();

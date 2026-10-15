@@ -6,7 +6,7 @@ import { Type } from '@earendil-works/pi-ai';
 import { createModels, createProvider } from '@earendil-works/pi-ai/models';
 import { createAssistantMessageEventStream } from '@earendil-works/pi-ai/utils/event-stream';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
-import { createPromptContext, withRequestContext } from '@hachej/boring-agent/prompt-context';
+import { createPromptContext, renderRequestContext, withRequestContext } from '@hachej/boring-agent/prompt-context';
 
 const MODEL = { id: 'scripted', name: 'Scripted', provider: 'scripted', api: 'scripted-api', baseUrl: 'https://fixture.invalid', input: ['text'], reasoning: false, contextWindow: 200000, maxTokens: 1024, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
 const MODEL_REF = { provider: 'scripted', modelId: 'scripted' };
@@ -267,4 +267,32 @@ test('the subpath is exported by the package and the module uses only Pi public 
   assert.deepEqual(specifiers, ['@earendil-works/pi-ai', '@earendil-works/pi-durable'], 'no private Pi subpath');
   const manifest = JSON.parse(readFileSync(new URL('../../packages/agent/package.json', import.meta.url), 'utf8'));
   assert.equal(manifest.exports['./prompt-context'].import, './dist/prompt-context.js');
+});
+
+test('renderRequestContext: the request names the placement and the screen, and the role changes with the placement', { timeout: 20000 }, async t => {
+  const { models, requests } = recordingModels();
+  let stored = { name: 'invoice', params: { id: 42 }, placement: 'docked' };
+  const extension = createPromptContext({ context: () => renderRequestContext(stored) });
+  const { harness, registry } = await open(models);
+  t.after(() => harness.close(context));
+  registry.install(extension);
+  const conversation = await newConversation(harness, { extensions: [extension] });
+  await say(conversation, 'Where am I?');
+  stored = { name: 'supplier', params: {}, placement: 'floating' };
+  await say(conversation, 'Why is it flagged?');
+  const [docked, floating] = requests.map(request => contextMessages(request).map(textOf).join('\n'));
+  assert.match(docked, /Placement: docked\. .*you lead.*in the viewer/);
+  assert.match(docked, /looking at: invoice \{"id":42\}/);
+  assert.match(floating, /Placement: floating\. .*the person leads.*Do not move the page unless asked/);
+  assert.match(floating, /looking at: supplier$/m);
+  assert.ok(!floating.includes('you lead'), 'only the current placement is described');
+});
+
+test('renderRequestContext: advisory only; unknown placements and malformed values add nothing', () => {
+  assert.equal(renderRequestContext(undefined), undefined);
+  assert.equal(renderRequestContext({ placement: 'admin', screen: 7 }), undefined);
+  assert.equal(renderRequestContext({ placement: 'floating' }), 'Placement: floating. The chat floats over the page: the person leads. Do not move the page unless asked; answer briefly about what is on screen and suggest where to go.');
+  assert.equal(renderRequestContext({ screen: { name: 'home', params: {} } }), 'The person is looking at: home', 'a screen wrapper is read too');
+  // An older client sends only the flat screen context: it renders as before, with no placement line.
+  assert.equal(renderRequestContext({ name: 'Progrès', params: { range: 30 } }), 'The person is looking at: Progrès {"range":30}');
 });

@@ -56,3 +56,29 @@ export function createPromptContext(options: PromptContextOptions): Extension {
     })],
   });
 }
+
+const ROLES = {
+  docked: 'The chat is docked beside the page: you lead. Open the pages, records and files that answer the question in the viewer, and say what you opened.',
+  floating: 'The chat floats over the page: the person leads. Do not move the page unless asked; answer briefly about what is on screen and suggest where to go.',
+} as const;
+
+/**
+ * The text for the browser's request context: the screen's `{ name, params }` with `placement` beside them, as `useRemoteChat` sends it
+ * (an older client sends only `{ name, params }`, which still renders; a `{ screen }` wrapper is read too). The host calls this in
+ * `createPromptContext({ context })` on the value it stored by conversation id. `placement` is `docked` or `floating` and picks the
+ * agent's role. Both are advisory text from the browser: placement changes behaviour and never authority (a docked agent writes no
+ * more than a floating one), and anything else in the value is ignored.
+ * See docs/architecture/PAGE-TOOLS.md (PLACE-1..3).
+ */
+export function renderRequestContext(value: unknown): string | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const { placement, screen } = value as { placement?: unknown; screen?: unknown };
+  const lines: string[] = [];
+  if (placement === 'docked' || placement === 'floating') lines.push(`Placement: ${placement}. ${ROLES[placement]}`);
+  const shown = typeof screen === 'object' && screen !== null ? screen : value;
+  if (typeof (shown as { name?: unknown }).name === 'string') {
+    const { name, params } = shown as { name: string; params?: unknown };
+    lines.push(`The person is looking at: ${name}${params && typeof params === 'object' && Object.keys(params).length ? ` ${JSON.stringify(params)}` : ''}`);
+  }
+  return lines.length ? lines.join('\n') : undefined;
+}

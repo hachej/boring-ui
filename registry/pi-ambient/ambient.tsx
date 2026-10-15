@@ -9,6 +9,7 @@ import { BellIcon, ChevronDownIcon, ExternalLinkIcon, GripVerticalIcon, Loader2I
 import { Button } from '../button/button';
 import { BlockActions } from '../button/actions';
 import type { BlockAction, BlockIcon } from '../button/actions';
+import { useChatPlacement } from '../pi-chat/use-remote-chat';
 import { CopyButton } from '../pi-chat/code-block';
 import { Composer } from '../pi-chat/composer';
 import type { ComposerFeedback } from '../pi-chat/composer';
@@ -246,6 +247,7 @@ function AmbientSession({ controller, labels, icons, avatar, headerActions, mess
   renderEntry, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept = 'image/*', slash, mentions, attachments, onOpenFile, pasteToFile, model, effort, replyFooter, artifacts: hostArtifacts, artifactPanel, artifactTarget, conversations, onDock, feedback: composerFeedback, className,
   activeController }: SessionProps) {
   const { title } = labels;
+  useChatPlacement(controller, 'floating');
   const stateRef = useRef(windowState); stateRef.current = windowState;
   // The artifact open inside the window, and whether it follows the newest version. It belongs to the expanded window: leaving that state closes it.
   const [opened, setOpened] = useState<{ readonly descriptor: ArtifactDescriptor; readonly follow: boolean } | null>(null);

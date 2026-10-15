@@ -3,7 +3,33 @@ import { createNativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import type { ChatIdentity, NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { createRemoteChat } from '@hachej/boring-ui-kit/remote-chat';
 import type { RemoteChat } from '@hachej/boring-ui-kit/remote-chat';
-import type { PiChatActions } from './pi-chat';
+import type { PiChatActions } from './session';
+
+// ---- Placement: where the chat is shown, reported by the component that shows it and sent with each submit (see `useRemoteChat`).
+// `PiChat` reports `docked`, `AmbientChat` (also a docked chat floated by its divider) reports `floating`. Advisory for the model, never
+// authority. See docs/architecture/PAGE-TOOLS.md (PLACE-1..3).
+export type ChatPlacement = 'docked' | 'floating';
+
+// Keyed by controller (a page can hold several chats; floating or docking keeps the controller, PLACE-3). Each mounted presenter has its own
+// registration, so unmounting one never clears another's; the latest surviving registration wins.
+const placements = new WeakMap<NativeChatController, { readonly placement: ChatPlacement }[]>();
+
+/** Reports the placement of the chat showing `controller` while the caller is mounted. */
+export function useChatPlacement(controller: NativeChatController, placement: ChatPlacement): void {
+  useLayoutEffect(() => {
+    const entry = { placement };
+    const list = placements.get(controller) ?? [];
+    placements.set(controller, [...list, entry]);
+    return () => {
+      const rest = (placements.get(controller) ?? []).filter(item => item !== entry);
+      if (rest.length) placements.set(controller, rest); else placements.delete(controller);
+    };
+  }, [controller, placement]);
+}
+
+export function readChatPlacement(controller: NativeChatController | undefined): ChatPlacement | undefined {
+  return controller ? placements.get(controller)?.at(-1)?.placement : undefined;
+}
 
 export type RemoteChatState =
   | { readonly status: 'connecting'; readonly conversationId: string | undefined }
@@ -21,7 +47,10 @@ export function useRemoteChat({ conversationId, endpoint, fetch, identity, reque
   readonly endpoint: (conversationId: string) => string | URL;
   readonly fetch: (request: Request) => Promise<Response>;
   readonly identity: ChatIdentity | undefined;
-  /** The current screen context, read at each submit and sent as the submit's `context` (for example `readAgentContext` of the app-shell item). */
+  /**
+   * The current screen context, read at each submit (for example `readAgentContext` of the app-shell item). The submit's `context` is this
+   * value as it is (so a host reading `name` and `params` keeps working) plus `placement`: `docked` or `floating`, reported by the chat.
+   */
   readonly requestContext?: () => Readonly<Record<string, unknown>> | undefined;
 }): RemoteChatState {
   const url = conversationId === undefined ? undefined : String(endpoint(conversationId));
@@ -33,11 +62,15 @@ export function useRemoteChat({ conversationId, endpoint, fetch, identity, reque
     if (conversationId === undefined || !identity || url === undefined) return;
     const setChat = (chat: RemoteChatState) => setStored({ binding, chat });
     let disposed = false, controller: NativeChatController | undefined, remote: RemoteChat | undefined;
+    const context = () => {
+      const placement = readChatPlacement(controller), screen = binding.requestContext?.();
+      return placement || screen ? { ...screen, ...(placement && { placement }) } : undefined;
+    };
     setChat({ status: 'connecting', conversationId });
     void (async () => {
       while (!disposed) {
         try {
-          remote = await createRemoteChat({ endpoint: url, fetch: request => binding.fetch(request), requestContext: () => binding.requestContext?.() });
+          remote = await createRemoteChat({ endpoint: url, fetch: request => binding.fetch(request), requestContext: context });
           if (disposed) return void remote.close();
           controller = createNativeChatController({ identity, ...remote });
           await controller.connect();
