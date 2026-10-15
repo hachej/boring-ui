@@ -97,7 +97,7 @@ export function ViewerToggle<T extends string>({ label, value, options, onChange
     event.preventDefault();
     buttons[(at + step + buttons.length) % buttons.length]?.focus();
   };
-  return <div role="group" aria-label={label} onKeyDown={move} className="inline-flex shrink-0 rounded-lg border border-border bg-muted/40 p-0.5">
+  return <div role="group" aria-label={label} onKeyDown={move} className="inline-flex shrink-0 rounded-lg bg-muted/60 p-0.5">
     {options.map(option => <button key={option.id} type="button" aria-label={option.label} title={option.label} aria-pressed={value === option.id} disabled={option.disabled}
       data-testid={option.testId} data-mode={option.id} onClick={() => onChange(option.id)}
       className={cn('inline-flex size-7 cursor-pointer items-center justify-center rounded-md outline-none max-sm:size-10 pointer-coarse:size-10 focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-45',
