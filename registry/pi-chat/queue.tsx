@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChatDraft } from '@hachej/boring-ui-kit/native-chat';
 import { CornerDownRightIcon, EllipsisIcon, ListEndIcon, LoaderIcon, PencilIcon, RouteIcon, Trash2Icon } from 'lucide-react';
+import { TraceIcon, TraceLine, TraceTitle } from '@/components/ui/trace';
 import { isFileBlock, type QueuedMessage } from './rows';
 import { defaultChatLabels, useChatText } from './labels';
 
@@ -84,8 +85,10 @@ export function MessageQueue({ items, sending = [], withdraw, actions }: {
         const working = busy.has(String(item.id));
         const steering = item.mode === 'steer';
         return <li key={String(item.id)} data-testid="queue-item" data-mode={item.mode} className={`flex min-h-10 items-center gap-1.5 pr-1.5 pl-3 ${index > 0 ? 'border-t border-border/70' : ''}`}>
-          {steering ? <RouteIcon className="size-4 shrink-0 text-muted-foreground" aria-label={labels.steering} /> : <ListEndIcon className="size-4 shrink-0 text-muted-foreground" aria-label={labels.queued} />}
-          <span data-testid="queue-text" className="min-w-0 flex-1 truncate px-1 text-sm">{queuedText(item, labels.images)}</span>
+          <TraceLine status="pending" className="flex-1">
+            <TraceIcon>{steering ? <RouteIcon /> : <ListEndIcon />}</TraceIcon>
+            <TraceTitle data-testid="queue-text"><span className="sr-only">{steering ? labels.steering : labels.queued}: </span>{queuedText(item, labels.images)}</TraceTitle>
+          </TraceLine>
           {!steering && actions?.steer && <button type="button" data-testid="queue-steer" title={labels.steerHint} disabled={working} onClick={() => { void run(item, () => actions.steer!(item)); }}
             className={`${rowButton} h-8 px-2 text-sm max-sm:h-10 max-sm:px-2.5`}><CornerDownRightIcon className="size-3.5" aria-hidden="true" />{labels.steer}</button>}
           {steering && <span className="shrink-0 px-1 text-xs text-muted-foreground">{labels.steering}</span>}
@@ -95,8 +98,10 @@ export function MessageQueue({ items, sending = [], withdraw, actions }: {
         </li>;
       })}
       {sending.map((draft, index) => <li key={`sending-${index}`} data-testid="queue-sending" className={`flex min-h-10 items-center gap-1.5 pr-1.5 pl-3 ${items.length + index > 0 ? 'border-t border-border/70' : ''}`}>
-        <LoaderIcon className="size-4 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" aria-label={labels.sending} />
-        <span data-testid="queue-text" className="min-w-0 flex-1 truncate px-1 text-sm">{draft.text}{draft.attachments.length ? `${draft.text ? '\n' : ''}${labels.images(draft.attachments.length)}` : ''}</span>
+        <TraceLine status="running" className="flex-1">
+          <TraceIcon><LoaderIcon className="animate-spin motion-reduce:animate-none" /></TraceIcon>
+          <TraceTitle data-testid="queue-text">{draft.text}{draft.attachments.length ? `${draft.text ? '\n' : ''}${labels.images(draft.attachments.length)}` : ''}</TraceTitle>
+        </TraceLine>
         <span className="shrink-0 px-1 text-xs text-muted-foreground">{labels.sending}</span>
       </li>)}
     </ul>

@@ -449,7 +449,8 @@
       ],
       "registryDependencies": [
         "@boring-ui/utils",
-        "@boring-ui/button"
+        "@boring-ui/button",
+        "trace"
       ],
       "files": [
         {
@@ -627,7 +628,7 @@
             "--chat-warning-soft": "var(--warning-soft, color-mix(in oklab, var(--chat-warning) 26%, var(--background)))",
             "--chat-warning-soft-foreground": "var(--warning-soft-foreground, color-mix(in oklab, var(--chat-warning) 55%, var(--foreground)))"
           },
-          ".pi-chat-shimmer": {
+          ".pi-chat-shimmer, .pi-chat [data-slot=trace-line][data-status=running] > [data-slot=trace-title]": {
             "background-image": "linear-gradient(100deg, var(--muted-foreground) 35%, var(--foreground) 50%, var(--muted-foreground) 65%)",
             "background-size": "250% 100%",
             "background-clip": "text",
