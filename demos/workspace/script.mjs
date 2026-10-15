@@ -1,4 +1,4 @@
-// The scripted model's side of the journey (format: examples/studio/scripted-model.mjs; yes, current path): what the "model" answers to each
+// The scripted model's side of the journey (format: lab/studio/scripted-model.mjs): what the "model" answers to each
 // prompt, so the journey runs the same way every time without a key. Used with STUDIO_MODEL=scripted. Fictional content only.
 // The turns that matter read the request they answer: they check the request-context block the host rendered (placement and screen), so a
 // regression in what travels with the request shows up as a different answer.

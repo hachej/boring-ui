@@ -1,10 +1,10 @@
-// The accounts-payable backend: one invoice record per file in a workspace provider (examples/shared/sqlite-workspaces.mjs; re-point
+// The accounts-payable backend: one invoice record per file in a workspace provider (shared/sqlite-workspaces.mjs; re-point
 // after the examples restructure). A decision is a conditional write: it names the revision the person saw, a stale revision is refused,
 // and the committed write returns a receipt. The page's buttons and the agent's `decide_invoice` tool (behind the approval card) call
 // the same `decide`, so there is one way to change an invoice. Fictional data only.
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import { openSqliteWorkspaces } from '../../examples/shared/sqlite-workspaces.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 import { ACCOUNTS, INVOICES, SUPPLIERS } from './data.mjs';
 
 const encoder = new TextEncoder(), decoder = new TextDecoder();

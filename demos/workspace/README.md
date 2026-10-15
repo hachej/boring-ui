@@ -47,4 +47,3 @@ The journey needs a Chromium binary (`CHROMIUM=/path/to/chrome-headless-shell`, 
 ## Roadmap
 
 - "Today in AP": a fixed shell with a generated region whose candidates are these cells, composed from metadata only (`candidates()` in `cells.mjs` already lists ids, kinds and flags).
-- The shared helpers are imported from `examples/shared` and `examples/studio` by their current paths; they get re-pointed when the examples restructure lands.

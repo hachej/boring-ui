@@ -29,8 +29,8 @@ import { createWorkspaceJournal } from '@hachej/boring-files/journal';
 import { createWorkspaceProvider } from '@hachej/boring-files/workspace';
 import { createRevisionHandler } from '@hachej/boring-files/revision-handler';
 import { sendWebResponse, webRequest } from '@hachej/boring-files/node-http';
-import { readFiles } from '../../examples/shared/workspace-tools.mjs';
-import { buildTailwind } from '../../examples/studio/tailwind.mjs';
+import { readFiles } from '../../shared/workspace-tools.mjs';
+import { buildTailwind } from '../../lab/studio/tailwind.mjs';
 import { openAccountsPayable, decisionSchema } from './ap.mjs';
 import { ACCOUNTS, COMPANY, POLICY, SUPPLIERS, contractPdf, invoicePdf } from './data.mjs';
 
@@ -54,7 +54,7 @@ async function seedLibrary(files, access) {
 
 export async function startWorkspaceDemo({ directory = mkdtempSync(join(tmpdir(), 'boring-workspace-demo-')), port = 0, token = randomUUID(), scripted = process.env.STUDIO_MODEL === 'scripted' } = {}) {
   mkdirSync(join(directory, 'workspace'), { recursive: true });
-  const models = scripted ? (await (await import('../../examples/studio/scripted-model.mjs')).createScriptedModels({ sources: (await import('./script.mjs')).SOURCES })).models : createModels();
+  const models = scripted ? (await (await import('../../lab/studio/scripted-model.mjs')).createScriptedModels({ sources: (await import('./script.mjs')).SOURCES })).models : createModels();
   if (!scripted) models.setProvider((await import('@earendil-works/pi-ai/providers/openai')).openaiProvider());
   const person = { scopeId: 'fictional-ap-team', principalId: 'fictional-approver', initiatorId: 'fictional-approver' };
   const agentAccess = { ...person, principalId: 'fictional-agent' };
