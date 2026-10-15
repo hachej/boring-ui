@@ -9,7 +9,7 @@ import { BellIcon, ChevronDownIcon, ExternalLinkIcon, GripVerticalIcon, Loader2I
 import { Button } from '../button/button';
 import { BlockActions } from '../button/actions';
 import type { BlockAction, BlockIcon } from '../button/actions';
-import { useChatPlacement } from '../pi-chat/chat-placement';
+import { useChatPlacement } from '../pi-chat/use-remote-chat';
 import { CopyButton } from '../pi-chat/code-block';
 import { Composer } from '../pi-chat/composer';
 import type { ComposerFeedback } from '../pi-chat/composer';
