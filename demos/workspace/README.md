@@ -4,10 +4,10 @@ A fictional company, Harbor & Pine Foods, pays its suppliers. One person approve
 
 ```
  agent area (one surface)                                          |  the app: its own chrome and screens
- chat (header icons: conversations, Library)  | file viewer        |  Approvals, Invoice, Supplier
- docked: the viewer opens beside the chat,    | (only while a      |  (no documents here)
- the agent area widens                        |  file is open)     |
- floating: the viewer replaces the chat in the same window, with a Chat back button
+ chat (header icons: conversations, Library)  | file viewer (an inset|  Approvals, Invoice, Supplier
+ docked: the viewer opens beside the chat,    | card, only while a |  (no documents here)
+ the agent area widens                        | file is open)      |
+ floating: the viewer (the same inset card) replaces the chat in the same window, with a Chat back button, clamped to the viewport
 ```
 
 ## The story
@@ -31,7 +31,7 @@ The composer can attach files (they are uploaded into the workspace under `uploa
 | Piece | Where |
 | --- | --- |
 | Placement (`docked` or `floating`) travels with each request and changes the agent's role, never its permissions | [PAGE-TOOLS.md](../../docs/architecture/PAGE-TOOLS.md), `renderRequestContext` in `@hachej/boring-agent/prompt-context` |
-| Layout: the agent area is the chat `Dock` (it floats into `AmbientChat`) with `ArtifactWorkspace` pairing the chat and the file viewer; header icon actions open `ConversationHistory` and a Library `FileTree` (`variant="list"`), `FileViewer` for documents | `registry/dock`, `registry/pi-app`, `page.tsx` |
+| Layout: the agent area is the chat `Dock` (it floats into `AmbientChat`) with `ArtifactWorkspace` (`variant="inset"`: the viewer is a rounded card inside the panel, no hard divider) pairing the chat and the file viewer; header icon actions open `ConversationHistory` and a Library `FileTree` (`variant="list"`), `FileViewer` for documents | `registry/dock`, `registry/pi-app`, `page.tsx` |
 | Screens as fixed experiences over registered cells (props schema, `$state` bindings, named actions, metadata) | [EXPERIENCE.md](../../docs/architecture/EXPERIENCE.md), `cells.mjs` |
 | One way to change an invoice: a conditional write that names the revision that was reviewed (the agent reads it with `get_invoice` and the approval card shows it) and returns a receipt; a stale revision is refused and repeating a committed decision returns the same receipt. The buttons and the agent's `decide_invoice` tool (behind the approval card) call the same function | `ap.mjs`, `server.mjs` |
 

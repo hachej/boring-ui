@@ -36,6 +36,7 @@ let browser;
 try {
   browser = await launch(insecureUrl(app.url), { evidence });
   if (process.env.APP_SCHEME) await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: process.env.APP_SCHEME }] });
+  const shot = name => browser.screenshot(name);
   const say = async text => { await browser.until('the composer', `!!${INPUT}`, 20000); await browser.type(INPUT, text); await browser.press('Enter'); };
   const sees = (label, text, timeout = 30000) => browser.until(label, `${body}.includes(${JSON.stringify(text)})`, timeout);
   const click = (label, expression) => browser.click(expression).then(() => label);
@@ -252,6 +253,23 @@ try {
     await browser.press('Escape');
     await browser.until('the Library closed, focus on its icon', `!${q('[data-testid=library-popover]')} && document.activeElement?.dataset.testid === 'chat-action-library'`, 5000);
     stop.abort();
+  });
+
+  await step('d3 docked, a PDF opens as an inset card inside the agent panel (a column of the chat, no hard divider) and closing gives the width back', async () => {
+    const before = (await browser.evaluate(rect('[data-dock=chat]'))).w;
+    await library();
+    await browser.click(q('[role=treeitem][data-path="Contracts"]'));
+    await browser.until('the contract in the tree', `!!${q('[role=treeitem][data-path="Contracts/fernhill-agreement.pdf"]')}`, 15000);
+    await browser.click(q('[role=treeitem][data-path="Contracts/fernhill-agreement.pdf"]'));
+    await browser.until('the PDF in the agent panel', `${q('[data-dock=chat] [data-testid=library-document]')}?.dataset.path === 'Contracts/fernhill-agreement.pdf'`, 15000);
+    await pause(500);
+    const card = await browser.evaluate(`(() => { const panel = document.querySelector('[data-testid=workspace-panel]'), dock = document.querySelector('[data-dock=chat]').getBoundingClientRect(), chat = document.querySelector('[data-boring=pi-chat]').getBoundingClientRect(), r = panel.getBoundingClientRect(), style = getComputedStyle(panel);
+      return { top: r.top - dock.top, bottom: dock.bottom - r.bottom, right: dock.right - r.right, gap: r.left - chat.right, radius: parseFloat(style.borderTopLeftRadius), borderLeft: parseFloat(style.borderLeftWidth), divider: getComputedStyle(document.querySelector('[data-testid=workspace-divider] span')).backgroundColor }; })()`);
+    assert.ok(card.top >= 4 && card.bottom >= 4 && card.right >= 4 && card.radius >= 8, `an inset rounded card inside the panel: ${JSON.stringify(card)}`);
+    assert.ok(/rgba\(0, 0, 0, 0\)|transparent/.test(card.divider), `no visible divider between the chat and the card: ${card.divider}`);
+    await shot('9-docked-pdf.png');
+    await browser.click(q('[data-testid=library-document] [data-testid=viewer-close]'));
+    await browser.until('closed: the width is back', `!${q('[data-testid=library-document]')} && Math.abs(${rect('[data-dock=chat]')}.w - ${before}) < 2`, 5000);
   });
 
   await step('5 dragging the divider floats the chat: placement floating, the sessions pane goes, the app takes the full width', async () => {

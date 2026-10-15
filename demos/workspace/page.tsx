@@ -248,8 +248,8 @@ function FloatingViewer({ children }) {
   const clamp = (value: number, max: number) => Math.max(MARGIN, Math.min(value, max));
   const style = phone ? undefined : { width, height, right: clamp(stored.right, viewport.w - width - MARGIN), bottom: clamp(stored.bottom, viewport.h - height - MARGIN) };
   return <div data-testid="floating-viewer" role="region" aria-label="File viewer" style={style}
-    className={cn('pi-chat fixed z-50 flex flex-col overflow-hidden border border-border bg-background text-foreground shadow-lg', phone ? 'inset-0 h-dvh rounded-none border-0' : 'rounded-3xl')}>
-    {children}
+    className={cn('pi-chat fixed z-50 flex flex-col overflow-hidden border border-border bg-muted text-foreground shadow-lg', phone ? 'inset-0 h-dvh rounded-none border-0 p-2' : 'rounded-3xl p-2')}>
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-sm [&>*]:min-h-0 [&>*]:flex-1">{children}</div>
   </div>;
 }
 
@@ -341,7 +341,7 @@ function Chat({ api, provider, file, openFile, closeFile, setUnsaved, active, se
   return <div className="flex min-h-0 flex-1">
     {api.floating
       ? (viewer ? <FloatingViewer>{viewer}</FloatingViewer> : <AmbientChat {...common} variant="surface" defaultState="expanded" onDock={() => { api.dock(); api.setWidth(base.current); }} />)
-      : <ArtifactWorkspace chat={pi} open={Boolean(file)} panel={viewer} onClose={closeFile} sheetBelow={0} minPanel={360} minChat={340} defaultWidth={PANEL} storageKey="workspace-demo.file-panel" panelLabel="File viewer" className="bg-transparent [&_[data-testid=workspace-panel]]:bg-transparent" />}
+      : <ArtifactWorkspace chat={pi} open={Boolean(file)} panel={viewer} onClose={closeFile} sheetBelow={0} minPanel={360} minChat={340} defaultWidth={PANEL} storageKey="workspace-demo.file-panel" panelLabel="File viewer" variant="inset" className="bg-transparent" />}
     {panel === 'history' && conversations && <OverChat>{above => <ConversationHistory conversations={conversations} placement={above ? 'above' : 'below'} onClose={() => closePanel(true)} />}</OverChat>}
     {panel === 'library' && <OverChat>{above => <LibraryPanel provider={provider} file={file} openFile={openFile} close={closePanel} feed={feed} above={above} />}</OverChat>}
   </div>;
