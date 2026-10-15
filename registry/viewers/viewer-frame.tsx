@@ -157,7 +157,7 @@ export function ViewerFrame({ title, subtitle, status, target, revision, control
     const observer = new ResizeObserver(measure);
     observer.observe(element);
     return () => observer.disconnect();
-  }, []);
+  }, [host?.renderHeader]);
   useEffect(() => {
     if (!notice) return;
     const timer = setTimeout(() => setNotice(undefined), NOTICE_MS);
@@ -198,10 +198,7 @@ export function ViewerFrame({ title, subtitle, status, target, revision, control
     ...menuActions(hostActions).map(action => actionMenuItem(action, testId)),
   ] as ViewerMenuItem[]).map(entry => ({ ...entry, testId: entry.testId ?? `${testId}-${entry.id}` }));
 
-  return <ViewerBarContext.Provider value={space}>
-    <section data-boring="viewer-frame" data-testid={`${testId}-frame`} data-tight={space.tight || undefined}
-      className={cn('boring-viewer flex h-full min-h-0 min-w-0 flex-col bg-background text-foreground', className)}>
-      <header ref={bar} data-testid={`${testId}-bar`} className="relative flex shrink-0 flex-nowrap items-center gap-x-1.5 border-b border-border px-3 py-1.5">
+  const header = <header ref={bar} data-testid={`${testId}-bar`} className="relative flex shrink-0 flex-nowrap items-center gap-x-1.5 border-b border-border px-3 py-1.5">
         <div className="min-w-0 flex-1 basis-0">
           <h2 data-testid={titleTestId ?? `${testId}-title`} title={title} className="m-0 truncate text-sm leading-5 font-semibold tracking-tight">{title}</h2>
           {(subtitle || reading) && <p data-testid={`${testId}-subtitle`} className="m-0 flex min-w-0 items-center gap-x-1.5 overflow-hidden text-xs leading-4 whitespace-nowrap text-muted-foreground">{subtitle}{subtitle && reading && <span aria-hidden="true">·</span>}{reading && <span data-testid={`${testId}-readonly`}>{labels.readOnly}</span>}</p>}
@@ -218,7 +215,11 @@ export function ViewerFrame({ title, subtitle, status, target, revision, control
         </div>
         {notice && <span role="status" aria-live="polite" data-testid={`${testId}-notice`} data-tone={notice.tone} className={cn('absolute top-full right-3 z-40 mt-1 rounded-full border border-border px-2.5 py-1 text-xs font-medium shadow-md', TONES[notice.tone])}>{notice.text}</span>}
         {manual && <ManualCopy testId={testId} link={manual.link} text={manual.text} labels={labels} onClose={() => setManual(undefined)} />}
-      </header>
+      </header>;
+  return <ViewerBarContext.Provider value={space}>
+    <section data-boring="viewer-frame" data-testid={`${testId}-frame`} data-tight={space.tight || undefined}
+      className={cn('boring-viewer flex h-full min-h-0 min-w-0 flex-col bg-background text-foreground', className)}>
+      {host?.renderHeader ? host.renderHeader(header) : header}
       <div data-testid={`${testId}-body`} className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
     </section>
   </ViewerBarContext.Provider>;

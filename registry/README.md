@@ -44,6 +44,12 @@ A sent message that mentions an upload (`@uploads/<path>`, what `attachments` sa
 
 `pasteToFile` (default `{ minChars: 2000, minLines: 40 }`, more than either) turns a long paste into an upload through `attachments`: the file is `Pasted text <time>.md` (or `.txt`, or the French name), shown as a pending card in the composer. Its restore button (also on a failed upload) abandons the upload and puts the pasted text back where it was pasted, inserting it without deleting what was typed since; a paste over a selection removes the selection at once. Ctrl+Z does the same only while the message text is still what it was right after the paste. When the upload finishes its mention is in the composer, and Send references it like any attachment. Without `attachments` a paste stays inline. The host's `accept` still applies to the saved file, so a host whose picker refuses `.md` and `.txt` refuses pasted text too.
 
+`fileChanges` on `PiChat` or `AmbientChat` opts into the same file-card renderer for successful native `write` and `edit` calls with a `path`. One card per path appears below the reply, outside collapsed activity, labelled Created for `write` or Edited for `edit`. A write followed by edits stays Created. Failed, pending and unrelated calls show no file card. Clicking uses `onOpenFile`, falling back to `mentions.open`; without either, the card is not clickable. This is a view of native tool results, not publication evidence or a pinned revision. It is off by default because a host's tools named `write` or `edit` need not operate on workspace files. The workspace demo enables it.
+
+## Shared chat and file header
+
+`PiChat header={false}` omits its built-in header so a host can render one row around chat and files. The default remains `true`. `ViewerWindowProvider value={{ renderHeader: header => createPortal(header, target) }}` moves the existing viewer bar into that row, including its menu, status and editor controls. Without `renderHeader`, each viewer keeps its bar above its body. The workspace demo composes these options, with 44px header targets and a Chat back button when a floating file replaces the conversation.
+
 ## Reply footer in `pi-chat`
 
 Pass `replyFooter={reply => <small>…</small>}` to `PiChat` or `AmbientChat` and every finished reply gets that node under its actions, including replies listed under earlier records (which have no actions). `reply` is the

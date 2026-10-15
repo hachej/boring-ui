@@ -60,6 +60,8 @@ export interface PiChatProps extends ChatFeatureProps {
   readonly avatar?: ReactNode;
   /** Host actions in the header beside History: `header` ones as buttons, `menu` ones in a "…" menu. Test ids `chat-action-<id>`, the menu `chat-action-more`. */
   readonly headerActions?: readonly BlockAction[] | undefined;
+  /** `false` lets the host supply one shared header around chat and viewers. Default true. */
+  readonly header?: boolean;
   readonly className?: string;
   readonly decisions?: ReactNode;
   readonly controls?: ReactNode;
@@ -108,8 +110,8 @@ function ConnectionBadge({ kind }: { readonly kind: string }) {
   </span>;
 }
 
-function PiChatSession({ controller, placement = 'docked', mode = 'expert', className, actions, avatar, headerActions, decisions, controls, tools, headerStart, renderEntry, renderTool, groupTool, commandMentions,
-  onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = true, feedback, draftKey, onOpenFile, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: NativeChatController } }) {
+function PiChatSession({ controller, placement = 'docked', mode = 'expert', className, actions, avatar, headerActions, header = true, decisions, controls, tools, headerStart, renderEntry, renderTool, groupTool, commandMentions,
+  onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = true, feedback, draftKey, onOpenFile, fileChanges, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: NativeChatController } }) {
   const { labels, icons } = useChatText();
   useChatDraft(controller, draftKey);
   useChatPlacement(controller, placement);
@@ -122,7 +124,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
   const canFork = Boolean(conversations?.fork);
   const rowExtras = useMemo(() => canFork ? { onFork: (entryId: string) => { void fork.current?.(entryId).catch(() => {}); } } : undefined, [canFork]);
   const session = useChatSession({ controller, activeController: active, mode, actions, renderEntry, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept,
-    slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => scrollToBottom.current(), feedback, rowExtras, onOpenFile, pasteToFile });
+    slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => scrollToBottom.current(), feedback, rowExtras, onOpenFile, fileChanges, pasteToFile });
   const { state, derived, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, empty, loading, developer } = session;
   const { rows, pinned, retry } = derived;
   const transcript = useTranscript(rows, PAGE, MORE);
@@ -133,7 +135,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
   const connectionKind = state.connection.kind;
 
   return <section data-boring="pi-chat" aria-label={title} className={cn('pi-chat relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background text-foreground', className)}>
-    <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2 sm:gap-3 sm:px-4 sm:py-2.5">
+    {header && <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2 sm:gap-3 sm:px-4 sm:py-2.5">
       {headerStart}
       {avatar && <span data-testid="chat-avatar" className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full [&>img]:size-full [&>img]:object-cover [&>svg]:size-4">{avatar}</span>}
       <h2 className="m-0 min-w-0 flex-1 truncate font-(family-name:--chat-display) text-sm font-semibold tracking-tight">{title}</h2>
@@ -145,7 +147,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
       <BlockActions actions={headerActions} testId="chat-action" menuLabel={labels.moreActions} />
       {showConnectionStatus && <ConnectionBadge kind={connectionKind} />}
       {controls}
-    </header>
+    </header>}
 
     {decisions && <div data-boring="required-decisions" className="shrink-0 border-b border-border px-4 py-2">{decisions}</div>}
     {pinned.length > 0 && <aside aria-label={labels.requiredActions} className="shrink-0 space-y-2 border-b border-border px-4 py-2">{pinned.map(card => <div key={card.key}>{card.content}</div>)}</aside>}

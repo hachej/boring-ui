@@ -37,6 +37,31 @@ try {
   browser = await launch(insecureUrl(app.url), { evidence });
   if (process.env.APP_SCHEME) await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: process.env.APP_SCHEME }] });
   const shot = name => browser.screenshot(name);
+  const headerShots = async name => {
+    await browser.evaluate('document.activeElement?.blur()');
+    await pause(1200); // The browser PDF plug-in paints after the viewer frame mounts.
+    for (const scheme of ['light', 'dark']) {
+      await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] });
+      await pause(250);
+      await shot(`header-${name}-${scheme}.png`);
+    }
+    await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: process.env.APP_SCHEME ?? 'light' }] });
+  };
+  const coherentHeader = async () => {
+    const geometry = await browser.evaluate(`(() => {
+      const header = document.querySelector('[data-testid=agent-panel-header]'), bar = header.querySelector('[data-testid=viewer-bar]');
+      const h = header.getBoundingClientRect(), b = bar?.getBoundingClientRect();
+      return { height: h.height, offset: b && b.top - h.top, barHeight: b?.height, border: bar && getComputedStyle(bar).borderBottomWidth,
+        internalBars: document.querySelectorAll('[data-testid=library-document] [data-testid=viewer-bar]').length,
+        targets: [...header.querySelectorAll('button')].map(button => { const r = button.getBoundingClientRect(); return { id: button.dataset.testid, w: r.width, h: r.height }; }) };
+    })()`);
+    assert.equal(geometry.height, 56);
+    assert.equal(geometry.offset, 0, JSON.stringify(geometry));
+    assert.equal(geometry.barHeight, 56);
+    assert.equal(geometry.border, '0px', 'no separate viewer border across the shared header');
+    assert.equal(geometry.internalBars, 0, 'no duplicate top bar inside the card');
+    assert.ok(geometry.targets.every(target => target.w >= 44 && target.h >= 44), JSON.stringify(geometry));
+  };
   const say = async text => { await browser.until('the composer', `!!${INPUT}`, 20000); await browser.type(INPUT, text); await browser.press('Enter'); };
   const sees = (label, text, timeout = 30000) => browser.until(label, `${body}.includes(${JSON.stringify(text)})`, timeout);
   const click = (label, expression) => browser.click(expression).then(() => label);
@@ -80,6 +105,8 @@ try {
     await browser.press('Escape');
     await browser.until('the list closed', `!${q('[data-testid=conversations]')}`, 5000);
     await browser.screenshot('1-start.png');
+    assert.equal(await browser.evaluate(`!!${q('[data-boring=pi-chat] > header')}`), false, 'the host owns the one header');
+    await headerShots('docked-empty');
   });
 
   await step('1 docked: the agent opens the Approvals queue in the viewer', async () => {
@@ -149,17 +176,17 @@ try {
     assert.ok(/read/.test(tools) && /get_invoice/.test(tools), `the agent read the document and the invoice: ${tools}`);
     await browser.screenshot('4-policy.png');
     // The document is editable: leaving it with an unsaved edit asks first, and declining keeps the document and the edit.
-    await browser.click(q('[data-testid=library-document] [data-testid$=-mode-source]'));
+    await browser.click(q('[data-testid=agent-panel-header] [data-testid$=-mode-source]'));
     await browser.type(q('[data-testid=library-document] textarea.boring-markdown-source'), ' Draft edit.');
-    await browser.until('the edit is unsaved', `/Unsaved/.test(${q('[data-testid=library-document]')}.innerText)`, 10000);
+    await browser.until('the edit is unsaved', `/Unsaved/.test(${q('[data-testid=agent-panel-header]')}.innerText)`, 10000);
     await browser.evaluate(`window.__asked = 0; window.confirm = () => { window.__asked++; return false; }`);
-    await browser.click(q('[data-testid=library-document] [data-testid=viewer-close]'));
+    await browser.click(q('[data-testid=agent-panel-header] [data-testid=viewer-close]'));
     await pause(300);
     assert.equal(await browser.evaluate('window.__asked'), 1, 'leaving asked once');
     assert.equal(await browser.evaluate(`${q('[data-testid=library-document]')}?.dataset.path`), 'Policies/AP policy.md', 'declining stays on the document');
     assert.ok((await browser.evaluate(`${q('[data-testid=library-document] textarea.boring-markdown-source')}.value`)).includes('Draft edit.'), 'the edit is still there');
     await browser.evaluate(`window.confirm = () => true`);
-    await browser.click(q('[data-testid=library-document] [data-testid=viewer-close]'));
+    await browser.click(q('[data-testid=agent-panel-header] [data-testid=viewer-close]'));
     await browser.until('the viewer closed, the agent area is narrow again', `!${q('[data-testid=library-document]')} && ${rect('[data-dock=chat]')}.w < 800`, 5000);
     await browser.click(q('[data-testid=nav-approvals]'));
     await browser.until('Approvals', `${viewing} === 'Approvals'`, 5000);
@@ -224,12 +251,22 @@ try {
     const versions = await reader.history('tt.md');
     assert.ok(versions.length >= 1 && versions.every(version => version.source === 'agent'), `history entries are the agent's: ${JSON.stringify(versions)}`);
     assert.equal((await app.ap.read('INV-2043')).status, 'pending', 'a file write is not an invoice decision');
+    const card = q('[data-testid=reply-files] [data-testid=message-mention][data-path="tt.md"]');
+    await browser.until('a Created file card outside the collapsed activity', `${card}?.innerText.includes('Created')`, 10000);
+    assert.equal(await browser.evaluate(`document.querySelectorAll('[data-testid=reply-files] [data-path="tt.md"]').length`), 1);
+    await browser.click(q('[data-testid=agent-panel-header] [data-testid=viewer-close]'));
+    await browser.until('the file closed', `!${q('[data-testid=library-document]')}`, 5000);
+    await browser.click(card);
+    await browser.until('clicking the card opens tt.md in the agent file column', `${q('[data-dock=chat] [data-testid=library-document]')}?.dataset.path === 'tt.md'`, 15000);
+    await pause(300);
+    await coherentHeader();
+    await headerShots('docked-created-file');
     await library();
     await browser.until('tt.md in the tree', `!!${q('[role=treeitem][data-path="tt.md"]')}`, 15000);
     await browser.screenshot('4e-agent-file.png');
     await browser.press('Escape');
     await browser.until('the Library closed', `!${q('[data-testid=library-popover]')}`, 5000);
-    await browser.click(q('[data-testid=library-document] [data-testid=viewer-close]'));
+    await browser.click(q('[data-testid=agent-panel-header] [data-testid=viewer-close]'));
     await browser.until('the viewer closed', `!${q('[data-testid=library-document]')}`, 5000);
   });
 
@@ -267,8 +304,9 @@ try {
       return { top: r.top - dock.top, bottom: dock.bottom - r.bottom, right: dock.right - r.right, gap: r.left - chat.right, radius: parseFloat(style.borderTopLeftRadius), borderLeft: parseFloat(style.borderLeftWidth), divider: getComputedStyle(document.querySelector('[data-testid=workspace-divider] span')).backgroundColor }; })()`);
     assert.ok(card.top >= 4 && card.bottom >= 4 && card.right >= 4 && card.radius >= 8, `an inset rounded card inside the panel: ${JSON.stringify(card)}`);
     assert.ok(/rgba\(0, 0, 0, 0\)|transparent/.test(card.divider), `no visible divider between the chat and the card: ${card.divider}`);
+    await coherentHeader();
     await shot('9-docked-pdf.png');
-    await browser.click(q('[data-testid=library-document] [data-testid=viewer-close]'));
+    await browser.click(q('[data-testid=agent-panel-header] [data-testid=viewer-close]'));
     await browser.until('closed: the width is back', `!${q('[data-testid=library-document]')} && Math.abs(${rect('[data-dock=chat]')}.w - ${before}) < 2`, 5000);
   });
 
@@ -313,6 +351,8 @@ try {
     assert.ok(await browser.evaluate(`!${q('[data-testid=right-column] [data-testid=library-document]')}`), 'not in the app column');
     await pause(400);
     await browser.screenshot('7a-floating-file.png');
+    await coherentHeader();
+    await headerShots('floating-file');
     await browser.click(q('[data-testid=file-back]'));
     await browser.until('the conversation is back', `!!${q('[data-boring=ambient-chat]')} && !${q('[data-testid=floating-viewer]')}`, 10000);
     // From the collapsed bar (about 48px high) the Library opens above it, inside the viewport, and stays usable.
@@ -356,6 +396,17 @@ try {
       await browser.click(q('[data-testid=file-back]'));
       await browser.until('the chat is back', `!!${q('[data-boring=ambient-chat]')} && !${q('[data-testid=floating-viewer]')}`, 10000);
     }
+    await browser.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await library();
+    await browser.click(q('[role=treeitem][data-path="Contracts"]'));
+    await browser.until('the phone contract', `!!${q('[role=treeitem][data-path="Contracts/fernhill-agreement.pdf"]')}`, 15000);
+    await browser.click(q('[role=treeitem][data-path="Contracts/fernhill-agreement.pdf"]'));
+    await browser.until('the phone file header', `!!${q('[data-testid=floating-viewer] [data-testid=viewer-close]')}`, 15000);
+    await coherentHeader();
+    await headerShots('phone-file');
+    const phone = await browser.evaluate(inside);
+    assert.deepEqual([phone.back, phone.close, phone.window, phone.pageOverflow, phone.windowOverflow], [true, true, true, false, false], JSON.stringify(phone));
+    await browser.click(q('[data-testid=file-back]'));
     await browser.send('Emulation.clearDeviceMetricsOverride');
     await browser.evaluate(`sessionStorage.removeItem('boring.ambient.position')`);
   });

@@ -54,7 +54,10 @@ async function harness(t, { attachments, mentions, onOpenFile, pasteToFile, loca
   const Component = component ?? PiChat;
   const renderWith = async next => { Object.assign(props, next); await act(async () => ui.render(createElement(Component, props))); };
   await renderWith({});
-  return { window, controller, container, act, rerender: renderWith };
+  return { window, controller, container, act, rerender: renderWith, write: async model => {
+    await act(async () => { await conversation.submit({ type: 'write', entry: { kind: 'message', model } }, context); });
+    await act(async () => new Promise(resolve => setTimeout(resolve, 30)));
+  } };
 }
 
 /** A paste as the browser delivers it: the event carries the clipboard text; `prevented` says whether the composer took it. */
@@ -191,6 +194,40 @@ test('without attachments a large paste stays inline exactly as before', async t
   assert.equal(result.prevented, false);
   assert.equal(container.querySelector('[data-testid=upload-chip]'), null);
   assert.equal(controller.getSnapshot().draft.text, '');
+});
+
+test('a host can omit PiChat’s header without losing its composer', async t => {
+  const { container, rerender } = await harness(t);
+  assert.ok(container.querySelector('[data-boring=pi-chat] > header'));
+  await rerender({ header: false });
+  assert.equal(Boolean(container.querySelector('[data-boring=pi-chat] > header')), false);
+  assert.ok(container.querySelector('[data-testid=composer-input]'));
+});
+
+const toolCall = (id, name, path) => ({ type: 'toolCall', id, name, arguments: { path } });
+const modelReply = content => ({ role: 'assistant', content, api: 'fictional', provider: 'fictional', model: 'fictional', usage: {}, stopReason: 'stop', timestamp: 0 });
+const toolResult = (id, toolName, isError = false) => ({ role: 'toolResult', toolCallId: id, toolName, content: [{ type: 'text', text: isError ? 'Refused' : 'Saved' }], isError, timestamp: 0 });
+
+test('native write/edit results reuse file cards below the reply, deduplicate paths and open through onOpenFile', async t => {
+  const opened = [];
+  const { container, write, act, rerender } = await harness(t, { onOpenFile: path => opened.push(path), extra: { fileChanges: true } });
+  await write([
+    modelReply([toolCall('w1', 'write', 'tt.md'), toolCall('e1', 'edit', './tt.md'), toolCall('e2', 'edit', 'budget.xlsx'), toolCall('bad', 'write', 'failed.md'), toolCall('read', 'read', 'read.md'), toolCall('pending', 'write', 'pending.md')]),
+    toolResult('w1', 'write'), toolResult('e1', 'edit'), toolResult('e2', 'edit'), toolResult('bad', 'write', true), toolResult('read', 'read'),
+    modelReply([{ type: 'text', text: 'The fictional files are ready.' }]),
+  ]);
+  const cards = [...container.querySelectorAll('[data-testid=reply-files] [data-testid=message-mention]')];
+  assert.deepEqual(cards.map(card => card.dataset.path), ['tt.md', 'budget.xlsx']);
+  assert.match(cards[0].textContent, /tt.md.*Created/s, 'a write followed by edits is one created file');
+  assert.match(cards[1].textContent, /budget.xlsx.*Edited/s);
+  const prose = [...container.querySelectorAll('[data-role=assistant] p')].find(node => node.textContent === 'The fictional files are ready.');
+  assert.ok(prose.compareDocumentPosition(container.querySelector('[data-testid=reply-files]')) & 4, 'file cards follow the reply text');
+  await act(async () => cards[0].click());
+  assert.deepEqual(opened, ['tt.md']);
+  await rerender({ locale: 'fr' });
+  assert.match(container.querySelector('[data-testid=reply-files]').textContent, /Créé|Modifié/);
+  await rerender({ fileChanges: false });
+  assert.equal(container.querySelector('[data-testid=reply-files]'), null, 'opt-in, so unrelated tools named write never gain file semantics by default');
 });
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));

@@ -37,7 +37,8 @@ export interface RowContext {
   /** Which tokens of a sent message get a styled treatment (`@path` mentions, a leading `/skill`). */
   readonly pieces: { readonly mentions: boolean; readonly uploads?: boolean; readonly skills: readonly string[]; readonly openMention?: ((path: string) => void) | undefined; readonly renderMention?: ((path: string) => ReactNode | undefined) | undefined;
     readonly preview?: PreviewRead | undefined } | undefined;
-  /** Opens an `uploads/` file from its card in a sent message (`PiChat`'s `onOpenFile`). Absent: the card is not clickable. */
+  readonly fileChanges?: boolean | undefined;
+  /** Opens a file card through the host's workspace opener. */
   readonly openFile?: ((path: string) => void) | undefined;
   readonly answer: ((questionId: string, answer: string) => Promise<AnswerOutcome>) | undefined;
   readonly artifacts: { readonly open: ArtifactsConfig['open']; readonly isOpen?: ArtifactsConfig['isOpen'] | undefined } | undefined;
@@ -86,9 +87,9 @@ function FileGlyph({ kind }: { readonly kind: FileKind }) {
 }
 
 /** A file a person sent (an `uploads/` mention): its icon or thumbnail, name and type. A button when it can be opened. */
-function FileCard({ path, open, preview }: { readonly path: string; readonly open: ((path: string) => void) | undefined; readonly preview: PreviewRead | undefined }) {
+function FileCard({ path, open, preview, change }: { readonly path: string; readonly open: ((path: string) => void) | undefined; readonly preview: PreviewRead | undefined; readonly change?: 'created' | 'edited' }) {
   const { labels } = useChatText();
-  const kind = fileKind(path), name = displayName(path);
+  const kind = fileKind(path), name = change ? path.split('/').pop() || path : displayName(path);
   const [src, setSrc] = useState<string | undefined>();
   // A thumbnail belongs to the provider that read it: a new provider, or a read that is refused or unavailable, shows the icon.
   useEffect(() => {
@@ -106,7 +107,7 @@ function FileCard({ path, open, preview }: { readonly path: string; readonly ope
     </span>
     <span className="flex min-w-0 flex-col text-left">
       <span className="truncate text-sm font-medium text-foreground">{name}</span>
-      <span className="truncate text-xs text-muted-foreground">{labels.fileKind[kind]}</span>
+      <span className="truncate text-xs text-muted-foreground">{change ? labels.fileChange[change] : labels.fileKind[kind]}</span>
     </span>
   </>;
   return open
@@ -173,6 +174,15 @@ export function RowView({ row, context }: { readonly row: Row; readonly context:
       <strong className="font-semibold">{labels.toolFailed(row.message.toolName)}</strong><span className="mt-1 block font-mono text-xs whitespace-pre-wrap">{resultText(row.message)}</span></Notice></article>;
     case 'assistant': {
       const settled = !row.streaming;
+      const files = new Map<string, 'created' | 'edited'>();
+      if (context.fileChanges) for (const part of row.parts) {
+        if (part.kind !== 'tool' || part.entry.status !== 'completed') continue;
+        const { call, result } = part.entry;
+        const path = call.arguments['path'];
+        if (!result || result.isError || result.toolName !== call.name || (call.name !== 'write' && call.name !== 'edit') || typeof path !== 'string' || !path.trim()) continue;
+        const normalized = path.replace(/^(\.\/)+/, '');
+        if (normalized) files.set(normalized, files.get(normalized) === 'created' || call.name === 'write' ? 'created' : 'edited');
+      }
       const chunks = segments(row.parts, context.groupTool);
       const active = row.active === true || row.streaming;
       const lastText = [...row.parts].reverse().find(part => part.kind === 'text');
@@ -194,10 +204,14 @@ export function RowView({ row, context }: { readonly row: Row; readonly context:
             if (part.kind === 'thinking') return null; // reasoning is a step of an activity block
             if (part.kind === 'approval') return <ApprovalCard key={part.key} call={part.call} result={part.result} questionId={part.questionId} answer={context.answer} summary={part.summary} decision={part.decision} live={part.live} />;
             if (part.kind === 'question') return <QuestionCard key={part.key} call={part.call} result={part.result} questionId={part.questionId} answer={context.answer} live={part.live} />;
+            if (part.kind === 'artifact' && part.artifact && files.has(part.artifact.target.resource.path.replace(/^(\.\/)+/, ''))) return null;
             if (part.kind === 'artifact') return <ArtifactCard key={part.key} artifact={part.artifact} title={part.title} {...(part.state === 'ready' ? {} : { pending: part.state })}
               open={part.artifact !== undefined && (context.artifacts?.isOpen?.(part.artifact) ?? false)} onOpen={context.artifacts?.open} />;
             return part.entry.custom ? <div key={part.key}>{part.entry.custom}</div> : <ToolCard key={part.key} entry={part.entry} {...(context.onOpenImage ? { onOpenImage: context.onOpenImage } : {})} />;
           })}
+          {files.size > 0 && <ul data-testid="reply-files" className="m-0 flex list-none flex-wrap gap-2 p-0">
+            {[...files].map(([path, change]) => <li key={path} data-testid="message-file"><FileCard path={path} change={change} open={context.openFile} preview={context.pieces?.preview} /></li>)}
+          </ul>}
           {row.streaming && row.parts.length === 0 && <p data-testid="working" className="m-0 text-sm"><Shimmer>{labels.thinking}</Shimmer></p>}
         </div>
         {row.stopReason === 'error' && <Notice tone="error" testid="response-error" icon={<AlertCircleIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />}>{row.errorMessage ?? labels.responseFailed}</Notice>}
