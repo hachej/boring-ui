@@ -20,7 +20,7 @@ The app is therefore a better acceptance consumer than a generic chat demo. It a
 
 `agents/preparation/index.mjs:26–40` checks returned calculator percentages and opened URLs only when trace is supplied. `agents/assistant/index.mjs:36–42` similarly gates source markers. The installed Flue path calls `run.validate(reply.text.trim())` without trace (`vendor/boring/agent/src/runtime/flue.ts:171`); its captured helper trace lacks actual return evidence (`:90–91`). The direct runner supplies evidence (`runtime/agent.mjs:89,108`), so its tests do not certify the installed seam.
 
-**Executed probe:** invented unsupported SCORE2 and source-marker text is accepted without trace and refused with `trace: []`. This confirms validator behavior, not a production incident or a model's actual answer. Reproduce with `node scripts/probe-redaction.mjs ../boring-clinic-redaction`.
+**Executed probe:** invented unsupported SCORE2 and source-marker text is accepted without trace and refused with `trace: []`. This confirms validator behavior, not a production incident or a model's actual answer. The probe script was removed with the redaction example; it is historical, at revision a752da78e.
 
 **v4 change:** this consumer installs optional native validation/repair and delivery features. Their producing/validating/repairing/ready application-result states use native tasks/documents, not a replacement Pi generation loop or throwing observational hook. Required missing evidence fails closed. Persist actual nested tool evidence independently of code-mode output. Classify full-section search returns as opened content when appropriate (`runtime/knowledge.mjs:237–250`), not simply by an action called search.
 
