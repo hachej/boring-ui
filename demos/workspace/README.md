@@ -22,7 +22,7 @@ Along the way: an open Library document with unsaved edits asks before you leave
 
 | Piece | Where |
 | --- | --- |
-| Placement (`docked` or `floating`) travels with each request and changes the agent's role, never its permissions | `docs/architecture/PAGE-TOOLS.md` (draft PR #1698), `renderRequestContext` in `@hachej/boring-agent/prompt-context` |
+| Placement (`docked` or `floating`) travels with each request and changes the agent's role, never its permissions | [PAGE-TOOLS.md](../../docs/architecture/PAGE-TOOLS.md), `renderRequestContext` in `@hachej/boring-agent/prompt-context` |
 | Layout: the chat `Dock` that floats into `AmbientChat`, the sessions pane with the Library, `FileViewer` for documents | `registry/dock`, `registry/pi-app`, `page.tsx` |
 | Screens as fixed experiences over registered cells (props schema, `$state` bindings, named actions, metadata) | [EXPERIENCE.md](../../docs/architecture/EXPERIENCE.md), `cells.mjs` |
 | One way to change an invoice: a conditional write that names the revision that was reviewed (the agent reads it with `get_invoice` and the approval card shows it) and returns a receipt; a stale revision is refused and repeating a committed decision returns the same receipt. The buttons and the agent's `decide_invoice` tool (behind the approval card) call the same function | `ap.mjs`, `server.mjs` |
