@@ -91,6 +91,8 @@ export type ViewerIcons = typeof defaultViewerIcons;
 export interface ViewerWindow {
   /** Place the existing bar in a host-owned shared header (for example with createPortal). Default: above the viewer body. */
   readonly renderHeader?: ((header: ReactNode) => ReactNode) | undefined;
+  /** `stacked` keeps the title and window actions above a separate content toolbar. Default: `inline`, one row. */
+  readonly headerLayout?: 'inline' | 'stacked' | undefined;
   readonly fullscreen?: boolean | undefined;
   readonly onFullscreenChange?: ((next: boolean) => void) | undefined;
   readonly actions?: readonly BlockAction[] | undefined;

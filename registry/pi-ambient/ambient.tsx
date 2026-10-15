@@ -114,6 +114,8 @@ export interface AmbientChatProps extends ChatFeatureProps {
   readonly avatar?: ReactNode;
   /** Host actions in the bar, before Dock: `header` ones as buttons, `menu` ones in a "…" menu. Test ids `ambient-action-<id>`, the menu `ambient-action-more`. */
   readonly headerActions?: readonly BlockAction[] | undefined;
+  /** Host-owned header controls, such as icon-anchored popovers, before the actions and Dock button. */
+  readonly headerTools?: ReactNode;
   /** `contrast` is a dark window on any page: the root carries `.dark`, so it shows the host's own dark tokens; `surface` follows the host's theme. */
   readonly variant?: 'contrast' | 'surface';
   /** Controlled window state; otherwise `defaultState` starts it and the window keeps it. */
@@ -245,7 +247,7 @@ const iconButton = 'inline-flex size-8 shrink-0 cursor-pointer items-center just
 
 type SessionProps = Omit<AmbientChatProps, 'labels' | 'icons'> & { readonly labels: AmbientLabels; readonly icons: AmbientIcons; readonly activeController: { readonly current: NativeChatController }; readonly windowState: AmbientState; readonly store: NotificationStore; readonly onWindowState: (state: AmbientState) => void };
 
-function AmbientSession({ controller, embedded = false, labels, icons, avatar, headerActions, messageActions, variant = 'contrast', mode = 'expert', actions,
+function AmbientSession({ controller, embedded = false, labels, icons, avatar, headerActions, headerTools, messageActions, variant = 'contrast', mode = 'expert', actions,
   windowState, onWindowState, store, storageKey = 'boring.ambient.position', storage = 'session', tools, onOpenFull, onFeedback, notifications, autoDismissMs, maxToasts, systemNotifications = false,
   renderEntry, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept = 'image/*', slash, mentions, attachments, onOpenFile, fileChanges, pasteToFile, model, effort, replyFooter, artifacts: hostArtifacts, artifactPanel, artifactTarget, conversations, onDock, feedback: composerFeedback, className,
   activeController }: SessionProps) {
@@ -441,6 +443,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
         {expanded ? <span className="flex-1" /> : <button type="button" tabIndex={-1} aria-hidden="true" data-testid="ambient-header-fill" onClick={expand} className="h-full min-w-2 flex-1 cursor-pointer" />}
         {systemNotifications && permission === 'default' && <button type="button" data-testid="ambient-enable-notifications" aria-label={labels.enableNotifications} title={labels.enableNotifications}
           onClick={() => { void requestNotifyPermission().then(setPermission); }} className={iconButton}><icons.notify className="size-4" aria-hidden="true" /></button>}
+        {headerTools}
         <BlockActions actions={headerActions} testId="ambient-action" menuLabel={labels.moreActions} className="[&_button]:max-sm:size-11 [&_button]:pointer-coarse:size-11" />
         {onDock && !phone && <button type="button" data-testid="ambient-dock" aria-label={labels.dock} title={labels.dockHint} onClick={() => { setPicking(false); onDock(); }} className={iconButton}><icons.dock className="size-4" aria-hidden="true" /></button>}
         {!phone && grip()}

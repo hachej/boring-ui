@@ -48,7 +48,9 @@ A sent message that mentions an upload (`@uploads/<path>`, what `attachments` sa
 
 ## Shared chat and file header
 
-`PiChat header={false}` omits its built-in header so a host can render one row around chat and files. The default remains `true`. `ViewerWindowProvider value={{ renderHeader: header => createPortal(header, target) }}` moves the existing viewer bar into that row, including its menu, status and editor controls. Without `renderHeader`, each viewer keeps its bar above its body. The workspace demo composes these options, with 44px header targets and a Chat back button when a floating file replaces the conversation.
+`PiChat header={false}` omits its built-in header so a host can render its own row. The default remains `true`. `ViewerWindowProvider value={{ renderHeader: header => createPortal(header, target) }}` moves the existing viewer bar into a host row, including its menu, status and editor controls. Without `renderHeader`, each viewer keeps its bar above its body.
+
+`ViewerWindowProvider value={{ headerLayout: 'stacked' }}` keeps a compact, left-aligned title and facts with the menu and Close on one row, and places viewer controls directly below in the same frame. The default `inline` layout is unchanged. The workspace demo uses `stacked` inside `ArtifactWorkspace variant="inset"`, with 44px header targets. It does not portal the file header outside its card.
 
 ## Reply footer in `pi-chat`
 
@@ -150,7 +152,7 @@ The account theme is one switch (« Mode sombre » / "Dark mode") when the accou
 
 ## Whole agent app (`pi-app`: `AgentWorkspace`)
 
-History and Library are independently placeable. `ConversationList` is the searchable history piece shared by the chat's `ConversationHistory` popover and `SessionsPane`. `FileTree` is the Library list over a borrowed revision provider. Both are re-exported from `pi-app/agent-workspace`. A host can render them inside its own nav, as [the workspace demo](../demos/workspace/README.md) does, or keep the chat-header popovers. They need no agent workspace or Dock.
+History and Library are independently placeable. `ConversationList` is the searchable history piece shared by the chat's `ConversationHistory` popover and `SessionsPane`. `FileTree` is the Library list over a borrowed revision provider. Both are re-exported from `pi-app/agent-workspace`. A host can render them inside its own nav or keep chat-header popovers. [The workspace demo](../demos/workspace/README.md) places them in icon-anchored top-bar popovers in every agent placement. They need no agent workspace or Dock.
 
 `AgentWorkspace sessions={props => <MyNavigation {...props} />}` replaces its sessions rendering with host navigation. The props are exactly `SessionsPane`'s, including `conversations`, drawer state and Library content when `libraryPlacement="pane"`. Omit `sessions` to retain the existing default. `sessions={false}` leaves navigation to the host and removes the workspace toggle, while `conversations` still supplies Fork to the chat.
 
@@ -335,6 +337,8 @@ const store = createNotificationStore();            // optional: share it to fee
 // A conversation the host keeps connected in the background (a task, a subagent):
 const stop = watchConversation(otherController, store, { conversationId: 'task-7', title: 'Nightly export' });
 ```
+
+`headerTools` is an optional React node before the header actions and Dock, for host-owned controls such as icon-anchored popovers. `embedded` hosts supply their own header and can render the same controls there. Without it the header is unchanged.
 
 States: `bar` (title row with minimise, a spinner while working and a check when done, ⌄ and a drag grip; queued prompts as a tab tucked behind the composer; the composer row, which is the same `Composer` as `PiChat`'s in its one-row layout: paperclip, `/` and `@` menus typed in the input, which reads "Working for 40s" while the agent runs and "Do anything" when idle, model and effort pickers as icons (the brain for effort), host slots and one round Send/Stop button), `expanded` (the same window grown upward in place: the shared transcript with Markdown replies, the activity block, answerable `ask_user` cards, artifact cards, and per reply copy, optional feedback, "open in full chat" and the time; height follows the content up to 70% of the viewport, then scrolls) and `minimized` (a pill with the spinner, the title and an unread dot). Click the title or a toast to expand, minimise to step back down (bar, then pill), Escape returns from the window to the bar. `state` and `onStateChange` control it; `defaultState` starts it. The window stays alive while the host switches conversation.
 

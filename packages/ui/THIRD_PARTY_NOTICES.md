@@ -50,17 +50,21 @@ SOFTWARE.
 
 ```
 
-## Workspace demo: shadcn-fintech
+## Workspace demo: Tremor Planner
 
-The workspace demo adapts the sidebar, site header, KPI cards, transactions table,
-budget rings and savings-goal cards from [shadcn-fintech](https://github.com/abderrahimghazali/shadcn-fintech/tree/e338240d10c908ab49403adbcd0bb4cc980ebfce),
-pinned at `e338240d10c908ab49403adbcd0bb4cc980ebfce`. It uses existing shadcn components
-and fictional supplier initials, without the template's logos, avatars or runtime dependencies.
+The workspace demo adapts the sidebar, breadcrumbs, flat metric summaries,
+filter bars, tables, status badges and budget progress layouts from
+[tremorlabs/template-planner](https://github.com/tremorlabs/template-planner/tree/7b5d1f10e2705c9a2dca108c41910793185cdbb8),
+pinned at `7b5d1f10e2705c9a2dca108c41910793185cdbb8`. The source's `LICENSE.md`
+contains the MIT licence below. Its README still links a commercial Tremor licence.
+This adaptation uses the explicit repository licence and copies no logos, fonts,
+customer data, images or runtime dependencies. The demo uses the existing
+Base UI shadcn components and fictional initials.
 
 ```text
-MIT License
+The MIT License (MIT)
 
-Copyright (c) 2026 Abderrahim Ghazali
+Copyright (c) 2025 Tremor Labs, Inc.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

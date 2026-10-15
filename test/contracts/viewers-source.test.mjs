@@ -97,6 +97,29 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     assert.equal(view.q('[data-testid=viewer-bar] h2').textContent, 'default.md', 'the default still renders its own bar');
   });
 
+  await t.test('stacked header keeps title, menu and close together above viewer controls inside the same frame', async t => {
+    let closed = 0, toggled = 0;
+    const control = h('button', { 'data-testid': 'fixture-mode', onClick: () => { toggled++; } }, 'Source');
+    const props = { title: 'AP policy.md', subtitle: 'Policies/AP policy.md · Markdown · 2 KB', controls: control, onCopy() {}, onClose: () => { closed++; } };
+    const view = await mount(t, h(frame.ViewerWindowProvider, { value: { headerLayout: 'stacked' } }, h(frame.ViewerFrame, props, 'document')));
+    const titlebar = view.q('[data-testid=viewer-titlebar]');
+    const toolbar = view.q('[data-testid=viewer-controls]');
+    assert.ok(titlebar, 'a title row separate from the content toolbar');
+    assert.equal(titlebar.querySelector('h2').textContent, 'AP policy.md');
+    assert.ok(titlebar.querySelector('[data-testid=viewer-more]'));
+    assert.ok(titlebar.querySelector('[data-testid=viewer-close]'));
+    assert.equal(titlebar.contains(toolbar), false);
+    assert.equal(titlebar.nextElementSibling, toolbar, 'controls immediately under the title row');
+    assert.equal(toolbar.parentElement, view.q('[data-testid=viewer-bar]'));
+    assert.equal(view.q('[data-testid=viewer-frame]').contains(titlebar), true);
+    await view.click('[data-testid=fixture-mode]');
+    await view.click('[data-testid=viewer-close]');
+    assert.deepEqual([toggled, closed], [1, 1]);
+    await view.render(h(frame.ViewerFrame, props, 'document'));
+    assert.equal(view.q('[data-testid=viewer-titlebar]'), null, 'default header structure is unchanged');
+    assert.equal(view.q('[data-testid=viewer-controls]').parentElement, view.q('[data-testid=viewer-bar]'));
+  });
+
   await t.test('Reload (in the menu) runs the handler and reports a failure instead of throwing', async t => {
     let calls = 0;
     const view = await mount(t, h(frame.ViewerFrame, { title: 'a', onRefresh: () => { calls++; return calls === 1 ? undefined : Promise.reject(new Error('fictional')); } }));
