@@ -73,6 +73,10 @@ jobs:
         run: npm run studio:journey:scripted
         env:
           STUDIO_EVIDENCE: ${{ runner.temp }}/evidence/studio
+      - name: Workspace demo journey (accounts payable)
+        run: npm run workspace-demo:journey
+        env:
+          APP_EVIDENCE: ${{ runner.temp }}/evidence/workspace-demo
       - name: Ambient journey with the scripted model
         run: npm run ambient:journey:scripted
         env:

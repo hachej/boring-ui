@@ -25,6 +25,8 @@
     "ambient:journey:scripted": "node examples/ambient/journey.mjs --scripted",
     "workspace-app": "node examples/workspace-app/server.mjs",
     "workspace-app:journey": "node examples/workspace-app/journey.mjs",
+    "workspace-demo": "node demos/workspace/server.mjs",
+    "workspace-demo:journey": "node demos/workspace/journey.mjs",
     "dock-app": "node examples/dock-app/server.mjs",
     "dock-app:journey": "node examples/dock-app/journey.mjs",
     "app-shell": "node examples/app-shell/server.mjs",
