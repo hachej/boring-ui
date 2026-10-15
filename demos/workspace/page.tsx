@@ -1,28 +1,39 @@
 // The browser side of the accounts-payable demo (served by ./server.mjs).
-//   [ sessions pane | chat ] [ right column ]
-// The left `Dock` holds the sessions pane (conversations and the Library) beside the chat; dragging its divider narrow floats the chat as
-// `AmbientChat` and the right column takes the whole width; docking it back restores all three. The right column shows one thing at a time:
-// a screen of the app (Approvals, Invoice, Supplier: each a fixed experience over registered cells, ./cells.mjs) or a Library document.
-// Every screen publishes `useAgentContext`; the chat reports its placement (docked or floating) by itself.
+//   [ agent area: chat (+ file viewer) ] [ the app: its own screens ]
+// The agent is self-contained in the left `Dock`: the chat, and the files it works with (Library documents, files the agent wrote, uploads).
+// A file opens in the agent's own viewer, beside the chat (`ArtifactWorkspace`, the dock widens while it is open) or, when the chat is
+// floating (`AmbientChat`), in place of the chat in the same floating window with a back button. The chat header's two icons open the
+// conversations list and the Library as popovers anchored to the chat. The app column holds only the app's screens (Approvals, Invoice,
+// Supplier: each a fixed experience over registered cells, ./cells.mjs). Dragging the divider narrow floats the whole agent area.
 // @ts-nocheck: an example page, bundled by esbuild and not part of the typechecked sources.
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { Component, createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { ArrowLeftIcon, FolderOpenIcon, HistoryIcon, PlusIcon, XIcon } from 'lucide-react';
+import { Popover } from '@base-ui/react/popover';
+import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { Experience } from '@hachej/boring-ui-kit/experience';
 import { FileTree } from '@hachej/boring-ui-kit/file-tree-view';
 import { connectRevisionProvider } from '@hachej/boring-files/revision';
 import { Dock, DockLayout, DockMain } from '../../registry/dock/dock.tsx';
+import { ArtifactWorkspace } from '../../registry/pi-workspace/workspace.tsx';
 import { PiChat } from '../../registry/pi-chat/pi-chat.tsx';
 import { AmbientChat } from '../../registry/pi-ambient/ambient.tsx';
 import { useRemoteChat } from '../../registry/pi-chat/use-remote-chat.ts';
-import { SessionsPane } from '../../registry/pi-app/sessions.tsx';
+import { ConversationList } from '../../registry/pi-chat/history.tsx';
+import { VoiceInput } from '../../registry/feedback/voice-input.tsx';
+import { useRevisionAttachments } from '../../registry/pi-app/use-revision-attachments.ts';
 import { useConversations } from '../../registry/pi-app/use-conversations.ts';
 import { FileViewer } from '../../registry/pi-app/file-viewer.tsx';
+import { ViewerWindowProvider } from '../../registry/viewers/viewer-window.ts';
+import { BlockActions } from '../../registry/button/actions.tsx';
 import { PdfPane } from '../../registry/viewers/pdf-pane.tsx';
 import { Button } from '../../registry/button/button.tsx';
+import { cn } from '../../registry/utils/utils.ts';
 import { AgentContextProvider, readAgentContext, useAgentContext } from '../../registry/app-shell/agent-context.ts';
 import { ACTIONS, CELLS, SCREENS, experienceCells } from './cells.mjs';
+import { validWorkspacePath } from './paths.mjs';
 
-const { token, identity, conversation: firstConversation } = window.__APP__;
+const { token, identity, conversation: firstConversation, voice } = window.__APP__;
 const authorized = (request: Request) => { const headers = new Headers(request.headers); headers.set('authorization', `Bearer ${token}`); return fetch(new Request(request, { headers })); };
 const at = (path: string) => new URL(path, location.href);
 const money = (amount: number, currency = 'EUR') => new Intl.NumberFormat('en-GB', { style: 'currency', currency }).format(amount);
@@ -48,7 +59,7 @@ function ApProvider({ children, view, go, conversation }) {
     if (current.current !== asked) return;
     if (skip.current) { skip.current = false; seen.current = body.latest; return; }
     const last = body.navigation.at(-1);
-    if (last) { seen.current = last.seq; go(last.screen === 'approvals' ? { screen: 'approvals' } : { screen: last.screen, id: last.id }); }
+    if (last) { seen.current = last.seq; go(last.screen === 'approvals' ? { screen: 'approvals' } : last.screen === 'file' ? { screen: 'file', path: last.path } : { screen: last.screen, id: last.id }); }
   }, [conversation, go]);
   useEffect(() => { void refresh(); const timer = setInterval(() => void refresh(), 400); return () => clearInterval(timer); }, [refresh]);
   const invoice = state.invoices.find(item => item.id === view.id);
@@ -200,67 +211,220 @@ function Screen({ view }) {
   return <div data-testid={`screen-${view.screen}`} className="mx-auto w-full max-w-4xl"><Experience key={view.screen} descriptor={SCREENS[view.screen]} cells={renderedCells} canView={() => true} /></div>;
 }
 
-function Document({ view, provider, close, onUnsaved }) {
-  useAgentContext({ name: 'Library document', params: { path: view.path } });
+/** A viewer that cannot render (a path the workspace refuses, a failed read) shows its error inline, with a way back, never a blank page. */
+class ViewerBoundary extends Component {
+  state = { error: undefined };
+  static getDerivedStateFromError(error) { return { error }; }
+  render() {
+    if (!this.state.error) return this.props.children;
+    return <div role="alert" data-testid="viewer-error" className="flex min-h-0 flex-1 flex-col items-start gap-3 p-4 text-sm">
+      <p className="m-0 font-medium">This file cannot be shown.</p>
+      <p className="m-0 text-muted-foreground">{String(this.state.error?.message ?? this.state.error)}</p>
+      <Button size="sm" variant="outline" data-testid="viewer-error-close" onClick={this.props.onClose}>Close</Button>
+    </div>;
+  }
+}
+
+/** The agent's file viewer: one flat frame (a single header with the name, path, mode toggle and close) over the editor. `onBack` returns to the chat where the file replaces it. */
+function Document({ path, provider, close, onBack, onUnsaved }) {
+  useAgentContext({ name: 'Library document', params: { path } });
   const options = useMemo(() => ({ client: provider, identity: provider.identity, history: provider.history }), [provider]);
-  return <div data-testid="library-document" data-path={view.path} className="flex min-h-0 flex-1 flex-col [&>*]:min-h-0 [&>*]:flex-1">
-    <FileViewer key={view.path} path={view.path} locator={provider.locate(view.path)} options={options} onClose={close} onUnsavedChange={onUnsaved} />
+  return <div data-testid="library-document" data-path={path} className="flex min-h-0 min-w-0 flex-1 flex-col [&>*]:min-h-0 [&>*]:flex-1">
+    <ViewerBoundary key={path} onClose={close}>
+      <FileViewer path={path} locator={provider.locate(path)} options={options} onClose={close} {...(onBack ? { onBack, backLabel: 'Chat' } : {})} onUnsavedChange={onUnsaved} />
+    </ViewerBoundary>
   </div>;
 }
 
-function Column({ view, go, provider, dirty }) {
-  return <div data-testid="right-column" className="flex min-h-0 flex-1 flex-col bg-muted/30">
+/**
+ * While the chat floats, a file replaces the chat in a floating window at the same corner (the chat's remembered position). The window is
+ * clamped to the viewport on every resize: its top and left edges can never leave the screen, so the header with the back and close buttons
+ * is always reachable. Only the content below the pinned header scrolls.
+ */
+function FloatingViewer({ children, header }) {
+  const MARGIN = 8;
+  const measure = () => ({ w: window.innerWidth, h: window.innerHeight });
+  const [viewport, setViewport] = useState(measure);
+  useEffect(() => { const on = () => setViewport(measure()); window.addEventListener('resize', on); return () => window.removeEventListener('resize', on); }, []);
+  const phone = viewport.w < 640;
+  const width = Math.min(704, viewport.w - 2 * MARGIN), height = Math.min(736, viewport.h - 2 * MARGIN);
+  const stored = (() => { try { const value = JSON.parse(sessionStorage.getItem('boring.ambient.position') ?? 'null'); return typeof value?.right === 'number' && typeof value?.bottom === 'number' ? value : { right: 16, bottom: 16 }; } catch { return { right: 16, bottom: 16 }; } })();
+  const clamp = (value: number, max: number) => Math.max(MARGIN, Math.min(value, max));
+  const style = phone ? undefined : { width, height, right: clamp(stored.right, viewport.w - width - MARGIN), bottom: clamp(stored.bottom, viewport.h - height - MARGIN) };
+  return <div data-testid="floating-viewer" role="region" aria-label="File viewer" style={style}
+    className={cn('pi-chat fixed z-50 flex flex-col overflow-hidden border border-border bg-muted text-foreground shadow-lg', phone ? 'inset-0 h-dvh rounded-none border-0 p-2' : 'rounded-3xl p-2')}>
+    {header}
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-sm [&>*]:min-h-0 [&>*]:flex-1">{children}</div>
+  </div>;
+}
+
+/** The app column: its own chrome (title, navigation) and its own screens. No documents here. */
+function Column({ view, go }) {
+  return <div data-testid="right-column" className="flex min-h-0 flex-1 flex-col bg-background">
     <header className="flex h-12 shrink-0 items-center gap-1 border-b border-border bg-background px-4">
       <h1 className="mr-4 text-sm font-semibold">Harbor &amp; Pine · Accounts payable</h1>
       <Button size="sm" variant={view.screen === 'approvals' ? 'secondary' : 'ghost'} data-testid="nav-approvals" onClick={() => go({ screen: 'approvals' })}>Approvals</Button>
-      <span data-testid="viewing" className="ml-auto truncate text-xs text-muted-foreground">{view.screen === 'file' ? view.path : `${SCREEN_NAMES[view.screen]}${view.id ? ` ${view.id}` : ''}`}</span>
+      <span data-testid="viewing" className="ml-auto truncate text-xs text-muted-foreground">{`${SCREEN_NAMES[view.screen]}${view.id ? ` ${view.id}` : ''}`}</span>
     </header>
-    <div className="flex min-h-0 flex-1 flex-col overflow-auto p-4 sm:p-6">
-      {view.screen === 'file' ? (provider ? <Document view={view} provider={provider} close={() => go({ screen: 'approvals' })} onUnsaved={unsaved => { dirty.current = unsaved; }} /> : null) : <Screen view={view} />}
-    </div>
+    <div className="flex min-h-0 flex-1 flex-col overflow-auto bg-muted/20 p-4 sm:p-6"><Screen view={view} /></div>
   </div>;
 }
 
-// ---- The left dock: the sessions pane (conversations, Library) beside the chat while docked; AmbientChat alone while floating.
-const WIDE = 640;
-function Chat({ api, provider, go, view, active, setActive }) {
-  const [pane, setPane] = useState('conversations');
-  const wide = useRef(760);
+// ---- The left dock: the chat, with the conversations and the Library as header icons that open popovers anchored to it.
+const PANEL = 560; // the file viewer's width beside the chat
+const transcribe = async (audio: Blob, signal: AbortSignal) => (await (await authorized(new Request(at('/api/transcribe'), { method: 'POST', headers: { 'content-type': audio.type || 'audio/webm' }, body: audio, signal }))).json()).text ?? '';
+
+/** Base UI owns positioning, collision shifting and dismissal. Only the collapsed bar may use the space above its own surface. */
+function AgentPopover({ name, close, children }) {
+  const [anchor, setAnchor] = useState();
+  const popup = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    const trigger = document.querySelector<HTMLElement>(`[data-testid=chat-action-${name}], [data-testid=ambient-action-${name}]`);
+    const surface = trigger?.closest('[data-boring=ambient-chat], [data-dock=chat]');
+    if (!trigger || !surface) return;
+    const measure = () => {
+      const rect = surface.getBoundingClientRect(), above = surface.dataset.state === 'bar';
+      setAnchor({ trigger, above, offset: above ? trigger.getBoundingClientRect().top - rect.top + 6 : 6, width: Math.min(360, rect.width - 16), boundary: above ? { x: rect.left, y: 0, width: rect.width, height: window.innerHeight } : surface });
+    };
+    measure();
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(measure);
+    observer?.observe(surface);
+    window.addEventListener('resize', measure);
+    return () => { observer?.disconnect(); window.removeEventListener('resize', measure); };
+  }, [name]);
+  if (!anchor) return null;
+  return <Popover.Root open onOpenChange={(open, details) => { if (!open && details.reason !== 'focus-out' && !anchor.trigger.contains(details.event.target)) close(true); }}>
+    <Popover.Portal>
+      <Popover.Positioner anchor={anchor.trigger} positionMethod="fixed" side={anchor.above ? 'top' : 'bottom'} sideOffset={anchor.offset} align="start"
+        collisionBoundary={anchor.boundary} collisionPadding={8} collisionAvoidance={{ side: 'flip', align: 'shift' }} style={{ width: anchor.width }} className="z-50">
+        <Popover.Popup ref={popup} data-testid={name === 'history' ? 'conversations' : 'library-popover'} aria-label={name === 'history' ? 'History' : 'Library'}
+          initialFocus={() => popup.current?.querySelector('input[type=search]') ?? true} finalFocus={false}
+          className="pi-chat flex max-h-[min(34rem,var(--available-height))] w-full flex-col overflow-hidden rounded-2xl border border-border bg-background text-foreground shadow-lg outline-none">
+          {children}
+        </Popover.Popup>
+      </Popover.Positioner>
+    </Popover.Portal>
+  </Popover.Root>;
+}
+
+function HistoryPanel({ conversations, close }) {
+  return <>
+    <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2.5">
+      <Popover.Title className="m-0 min-w-0 flex-1 text-sm font-semibold tracking-tight">History</Popover.Title>
+      {conversations.onNew && <Button size="sm" variant="outline" data-testid="conversation-new" onClick={() => { conversations.onNew(); close(false); }}><PlusIcon className="size-3.5" aria-hidden="true" />New</Button>}
+      <Button size="icon-bar" variant="ghost" aria-label="Close History" title="Close History" onClick={() => close(true)}><XIcon className="size-4" aria-hidden="true" /></Button>
+    </header>
+    <ConversationList conversations={conversations} onPicked={() => close(false)} autoFocus />
+  </>;
+}
+
+function LibraryPanel({ provider, file, openFile, close, feed }) {
+  const panel = useRef<HTMLElement>(null);
+  // The search field takes focus once the tree has loaded, so typing filters at once.
+  useEffect(() => {
+    let frame = 0, tries = 0;
+    const focus = () => { const input = panel.current?.querySelector('input[type=search]'); if (input) input.focus(); else if (tries++ < 60) frame = requestAnimationFrame(focus); };
+    focus();
+    return () => cancelAnimationFrame(frame);
+  }, [provider]);
+  return <div ref={panel} className="flex min-h-0 flex-1 flex-col">
+      <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2.5">
+        <Popover.Title className="m-0 min-w-0 flex-1 text-sm font-semibold tracking-tight">Library</Popover.Title>
+        <Button size="icon-sm" variant="ghost" aria-label="Close Library" title="Close" onClick={() => close(true)}><XIcon className="size-4" aria-hidden="true" /></Button>
+      </header>
+      <div className="min-h-0 flex-1 overflow-auto">
+        {provider ? <FileTree variant="list" refresh={false} upload={false} history={false} revisionProvider={provider} refreshKey={feed} selectedPath={file} onOpen={path => { if (openFile(path)) close(false); }} />
+          : <p role="status" className="p-3 text-sm text-muted-foreground">Loading…</p>}
+      </div>
+  </div>;
+}
+
+function Chat({ api, provider, file, openFile, closeFile, setUnsaved, active, setActive }) {
+  const [panel, setPanel] = useState<'history' | 'library' | undefined>();
+  const base = useRef(760), widened = useRef(false);
+  const [headerTarget, setHeaderTarget] = useState<HTMLElement | null>(null);
+  const [panelWidth, setPanelWidth] = useState(PANEL);
+  const renderHeader = useCallback(header => headerTarget ? createPortal(header, headerTarget) : null, [headerTarget]);
+  const viewerWindow = useMemo(() => ({ renderHeader }), [renderHeader]);
   const conversations = useConversations({ endpoint: at('/api/conversations'), fetch: authorized, activeId: active, onSelect: setActive });
   const chat = useRemoteChat({ conversationId: active, endpoint: id => at(`/api/chat?conversation=${id}`), fetch: authorized, identity, requestContext: () => ({ ...readAgentContext(), tab: TAB }) });
+  // The files the person attaches (and a long paste) are saved in the workspace, under uploads/, through the same provider as the Library.
+  const attachments = useRevisionAttachments({ revisionProvider: provider });
+  // The workspace's change feed: the Library list reloads when the agent (or anyone) writes a file.
+  const [feed, setFeed] = useState(0);
+  useEffect(() => {
+    if (!provider?.changes) return;
+    const stop = new AbortController();
+    void (async () => { try { for await (const event of provider.changes({ signal: stop.signal })) setFeed(event.seq); } catch { /* the list keeps what it has */ } })();
+    return () => stop.abort();
+  }, [provider]);
+  // The agent area widens by the viewer's width while a file is open beside the chat, and goes back when it closes.
+  if (!api.floating && !file && !widened.current) base.current = api.width;
+  const side = !api.floating && Boolean(file);
+  useLayoutEffect(() => {
+    const panel = document.querySelector('[data-testid=workspace-panel]');
+    if (!side || !panel || typeof ResizeObserver === 'undefined') return;
+    const measure = () => setPanelWidth(panel.getBoundingClientRect().width);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(panel);
+    return () => observer.disconnect();
+  }, [side, chat.status]);
+  useEffect(() => {
+    if (side && !widened.current) { widened.current = true; api.setWidth(Math.min(base.current + PANEL, Math.max(base.current, Math.round(window.innerWidth * 0.62)))); }
+    else if (!side && widened.current) { widened.current = false; if (!api.floating) api.setWidth(base.current); }
+  }, [side]); // eslint-disable-line react-hooks/exhaustive-deps
   if (chat.status !== 'ready') return <p role="status" data-testid="chat-connecting" className="p-4 text-sm text-muted-foreground">{chat.status === 'offline' ? 'Server unreachable. Retrying…' : 'Connecting…'}</p>;
-  // The sessions pane needs room: a narrow dock keeps only the chat. Docking back returns to the last width that had room for it.
-  const sessions = api.width >= WIDE;
-  if (!api.floating && sessions) wide.current = api.width;
-  if (api.floating) return <AmbientChat controller={chat.controller} actions={chat.actions} variant="surface" defaultState="expanded" onDock={() => { api.dock(); api.setWidth(wide.current); }} />;
-  return <div className="flex min-h-0 flex-1">
-    {sessions && <SessionsPane drawer={false} conversations={conversations} view={pane} onViewChange={setPane}
-      libraryContent={() => provider ? <FileTree revisionProvider={provider} upload={false} history={false} selectedPath={view.screen === 'file' ? view.path : undefined} onOpen={path => go({ screen: 'file', path })} /> : <p role="status" className="p-3 text-sm text-muted-foreground">Loading…</p>} />}
-    <PiChat key={active} controller={chat.controller} actions={chat.actions} conversations={conversations} historyList={false} showHistory={false} labels={{ title: 'AP helper' }} className="min-h-0 min-w-0 flex-1" />
+  // Closing returns focus to the icon that opened the panel (a pick moves focus to the opened file instead).
+  const closePanel = (refocus: boolean) => { const name = panel; setPanel(undefined); if (refocus && name) requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-testid=chat-action-${name}], [data-testid=ambient-action-${name}]`)?.focus()); };
+  const toggle = (name: 'history' | 'library') => setPanel(current => current === name ? undefined : name);
+  const headerActions = [
+    { id: 'history', label: 'Conversations', icon: HistoryIcon, pressed: panel === 'history', onSelect: () => toggle('history') },
+    { id: 'library', label: 'Library', icon: FolderOpenIcon, pressed: panel === 'library', onSelect: () => toggle('library') },
+  ];
+  const tools = voice ? <VoiceInput controller={chat.controller} transcribe={transcribe} /> : undefined;
+  const common = { controller: chat.controller, actions: chat.actions, headerActions, tools, ...(attachments ? { attachments, pasteToFile: {} } : {}), onOpenFile: openFile, fileChanges: true };
+  const viewer = file && provider ? <ViewerWindowProvider value={viewerWindow}><Document path={file} provider={provider} close={closeFile} onUnsaved={setUnsaved} /></ViewerWindowProvider> : null;
+  const header = <div data-testid="agent-panel-header" className="pi-chat flex h-14 shrink-0 items-center text-foreground [&_button]:min-h-11 [&_button]:min-w-11">
+    {api.floating
+      ? <Button data-testid="file-back" aria-label="Back to Chat" title="Back to Chat" onClick={closeFile} className="gap-1 px-2 text-sm"><ArrowLeftIcon className="size-4" aria-hidden="true" />Chat</Button>
+      : <div className="flex min-w-0 flex-1 items-center gap-1 px-4"><h2 className="m-0 mr-2 truncate text-sm font-semibold tracking-tight">AP helper</h2><BlockActions actions={headerActions} testId="chat-action" menuLabel="More actions" /></div>}
+    {file && <div ref={setHeaderTarget} data-testid="agent-file-header" title={file} style={api.floating ? undefined : { width: panelWidth }}
+      className={cn('relative mr-2 min-w-0 [&>header]:h-14 [&>header]:border-0 [&>header]:px-3 [&>header]:py-0', !file.includes('/') && '[&_[data-testid=viewer-subtitle]]:hidden', api.floating ? 'flex-1' : 'shrink-0')} />}
+  </div>;
+  const pi = <PiChat key={active} {...common} header={false} conversations={conversations} historyList={false} showHistory={false} showConnectionStatus={false} labels={{ title: 'AP helper' }} className="min-h-0 min-w-0 flex-1 bg-transparent" />;
+  return <div className="flex min-h-0 min-w-0 flex-1 flex-col [&_[data-action]]:min-h-11 [&_[data-action]]:min-w-11 [&_[data-action]]:rounded-full [&_[data-action][aria-pressed=true]]:bg-foreground/10 [&_[data-action][aria-pressed=true]]:text-foreground">
+    {!api.floating && header}
+    {api.floating
+      ? (viewer ? <FloatingViewer header={header}>{viewer}</FloatingViewer> : <AmbientChat {...common} variant="surface" defaultState="expanded" onDock={() => { api.dock(); api.setWidth(base.current); }} />)
+      : <ArtifactWorkspace chat={pi} open={Boolean(file)} panel={viewer} onClose={closeFile} sheetBelow={0} minPanel={360} minChat={340} defaultWidth={PANEL} storageKey="workspace-demo.file-panel" panelLabel="File viewer" variant="inset" className="bg-transparent" />}
+    {panel && <AgentPopover key={panel} name={panel} close={closePanel}>
+      {panel === 'history' ? <HistoryPanel conversations={conversations} close={closePanel} /> : <LibraryPanel provider={provider} file={file} openFile={openFile} close={closePanel} feed={feed} />}
+    </AgentPopover>}
   </div>;
 }
 
 function App() {
   const [view, setView] = useState({ screen: 'approvals' });
+  const [file, setFile] = useState<string | undefined>();
   const [provider, setProvider] = useState();
   useEffect(() => { void connectRevisionProvider({ endpoint: at('/api/resources'), fetch: authorized }).then(setProvider); }, []);
   const [active, setActive] = useState(firstConversation);
-  // An open Library document may hold unsaved edits: leaving it (another file, a screen, an agent command) asks first.
+  // An open document may hold unsaved edits: leaving it (another file, closing it, an agent command) asks first. App screens never touch it.
   const dirty = useRef(false);
-  const go = useCallback(next => {
-    if (dirty.current && !globalThis.confirm('This document has unsaved changes. Discard them and leave?')) return false;
-    dirty.current = false;
-    setView(next);
-    return true;
-  }, []);
+  const leave = () => !dirty.current || globalThis.confirm('This document has unsaved changes. Discard them and leave?');
+  const openFile = useCallback((raw: string) => { const path = validWorkspacePath(raw); if (!path) return false; if (path === file) return true; if (!leave()) return false; dirty.current = false; setFile(path); return true; }, [file]);
+  const closeFile = useCallback(() => { if (!leave()) return false; dirty.current = false; setFile(undefined); return true; }, []);
+  // Commands (the agent's `show`) reach the app's screens, or the agent's own viewer for a file.
+  const go = useCallback(next => { if (next.screen === 'file') return openFile(next.path); setView(next); return true; }, [openFile]);
   return <AgentContextProvider>
     <ApProvider view={view} go={go} conversation={active}>
-      <OpenFile.Provider value={path => go({ screen: 'file', path })}>
+      <OpenFile.Provider value={openFile}>
         <DockLayout storageKey="workspace-demo" className="h-full">
-          <Dock id="chat" side="left" floatable dragBelow={260} narrowBelow={720} defaultWidth={760} minWidth={300} labels={{ region: 'Agent chat', resize: 'Resize chat' }}>
-            {api => <Chat api={api} provider={provider} go={go} view={view} active={active} setActive={setActive} />}
+          <Dock id="chat" side="left" floatable dragBelow={260} narrowBelow={720} defaultWidth={760} minWidth={300} className="bg-muted/70" labels={{ region: 'Agent chat', resize: 'Resize chat' }}>
+            {api => <Chat api={api} provider={provider} file={file} openFile={openFile} closeFile={closeFile} setUnsaved={unsaved => { dirty.current = unsaved; }} active={active} setActive={setActive} />}
           </Dock>
-          <DockMain><Column view={view} go={go} provider={provider} dirty={dirty} /></DockMain>
+          <DockMain><Column view={view} go={go} /></DockMain>
         </DockLayout>
       </OpenFile.Provider>
     </ApProvider>

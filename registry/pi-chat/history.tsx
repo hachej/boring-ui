@@ -97,12 +97,12 @@ export function ConversationList({ conversations, onPicked, autoFocus = false }:
   const action = 'text-muted-foreground';
   const total = shown.reduce((sum, group) => sum + group.items.length, 0);
   return <>
-      <div className="relative flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
+      <div className="relative flex shrink-0 items-center border-b border-border px-3 py-2">
         <SearchIcon className="pointer-events-none absolute top-1/2 left-5.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
         <input ref={search} type="search" value={query} onChange={event => setQuery(event.currentTarget.value)} placeholder={labels.searchConversations} aria-label={labels.searchConversations} data-testid="conversation-search"
-          className="h-9 w-full rounded-lg border border-border bg-background pr-3 pl-8 text-base outline-none max-sm:h-11 pointer-coarse:h-11 placeholder:text-muted-foreground focus-visible:border-ring/60 focus-visible:ring-[3px] focus-visible:ring-ring/15 sm:text-sm" />
-        {conversations.archive && serverSearch && <Button size="sm" variant={archived ? 'secondary' : 'ghost'} aria-pressed={archived} data-testid="conversations-archived" className="shrink-0 text-muted-foreground"
-          onClick={() => setArchived(value => !value)}><ArchiveIcon className="size-3.5" aria-hidden="true" />{labels.archived}</Button>}
+          className={cn('h-9 w-full rounded-lg border border-border bg-background pr-3 pl-8 text-base outline-none max-sm:h-11 pointer-coarse:h-11 placeholder:text-muted-foreground focus-visible:border-ring/60 focus-visible:ring-[3px] focus-visible:ring-ring/15 sm:text-sm', conversations.archive && serverSearch && 'pr-10')} />
+        {conversations.archive && serverSearch && <Button size="icon-sm" variant={archived ? 'secondary' : 'ghost'} aria-pressed={archived} aria-label={labels.archived} title={labels.archived} data-testid="conversations-archived"
+          className="absolute top-1/2 right-4 size-7 -translate-y-1/2 text-muted-foreground" onClick={() => setArchived(value => !value)}><ArchiveIcon className="size-3.5" aria-hidden="true" /></Button>}
       </div>
       {failure && <p role="alert" className="m-0 shrink-0 px-3 pt-2 text-xs text-destructive">{failure}</p>}
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-1.5 py-1.5" aria-busy={loading ? 'true' : undefined}>

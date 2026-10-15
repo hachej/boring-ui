@@ -3,7 +3,11 @@
 A fictional company, Harbor & Pine Foods, pays its suppliers. One person approves invoices with an agent beside the page. Everything here is invented: names, amounts, invoices and PDFs.
 
 ```
- sessions + Library  |  chat (docked)  |  the app: Approvals, Invoice, Supplier, or a Library document
+ agent area (one surface)                                          |  the app: its own chrome and screens
+ chat (header icons: conversations, Library)  | file viewer (an inset|  Approvals, Invoice, Supplier
+ docked: the viewer opens beside the chat,    | card, only while a |  (no documents here)
+ the agent area widens                        | file is open)      |
+ floating: the viewer (the same inset card) replaces the chat in the same window, with a Chat back button, clamped to the viewport
 ```
 
 ## The story
@@ -12,18 +16,22 @@ A fictional company, Harbor & Pine Foods, pays its suppliers. One person approve
 2. You open an invoice: the PDF and its extracted fields.
 3. You click another invoice. The agent sees where you are (the screen context) and notices it is a duplicate of the first.
 4. The agent proposes "approve it, coded to Marketing". An approval card asks you; once you approve, the app's backend saves it and returns a receipt.
-5. You drag the divider. The chat floats, the sessions pane goes with it and the app takes the full width.
+5. You drag the divider. The agent area floats (its header keeps the history and Library icons) and the app takes the full width. A file opened now replaces the chat in the floating window, with a Chat button to go back.
 6. On the supplier page you ask "why is this flagged?". The agent answers in a line and does not move the page, because the chat is floating and you lead.
-7. You dock the chat back. The three columns return and the conversation is intact.
+7. You dock the agent area back. The conversation is intact.
 
-Along the way: an open Library document with unsaved edits asks before you leave it, agent commands that move the viewer are addressed to one conversation and tab (a late or foreign one is dropped), and earlier conversations are listed and each keeps its transcript, and the Library opens the AP policy in the right column so the agent can answer "does this invoice respect the policy?" from the document and the invoice.
+Along the way: an open Library document with unsaved edits asks before you leave it, agent commands that move the viewer are addressed to one conversation and tab (a late or foreign one is dropped), and the history icon in the chat header opens the searchable conversations list (a search field with an Archived icon toggle) where each keeps its transcript. The Library icon opens the workspace's files (Policies, Contracts) and picking one opens it in the agent's own viewer (beside the chat when docked, the agent area widening; in place of the chat when floating), never in the app, so the agent can answer "does this invoice respect the policy?" from the document and the invoice.
+
+The composer can attach files (they are uploaded into the workspace under `uploads/` and the message shows a file card; a long paste becomes a file too). Ask "create a new file tt.md and open it": the agent writes it with Pi's native `write` over the same workspace provider the Library uses (observed: a history entry with source `agent` and a change event, no receipt), then opens it with `show`, which opens a file in the agent's viewer (and an app screen in the app); the Library list updates from the change feed. Closing the viewer, opening another file or an agent command that replaces the open file asks first when it holds unsaved edits.
+
+**Voice:** the composer shows a microphone only when the server has a transcription provider. Set `OPENAI_API_KEY` (not the scripted model) and `/api/transcribe` forwards the recording to OpenAI; without a key the microphone is hidden.
 
 ## What it shows
 
 | Piece | Where |
 | --- | --- |
 | Placement (`docked` or `floating`) travels with each request and changes the agent's role, never its permissions | [PAGE-TOOLS.md](../../docs/architecture/PAGE-TOOLS.md), `renderRequestContext` in `@hachej/boring-agent/prompt-context` |
-| Layout: the chat `Dock` that floats into `AmbientChat`, the sessions pane with the Library, `FileViewer` for documents | `registry/dock`, `registry/pi-app`, `page.tsx` |
+| Layout: the agent area is the chat `Dock` (it floats into `AmbientChat`) with `ArtifactWorkspace` (`variant="inset"`: the viewer is a rounded card inside the panel, no hard divider) pairing the chat and the file viewer; header icon actions open `ConversationHistory` and a Library `FileTree` (`variant="list"`), `FileViewer` for documents | `registry/dock`, `registry/pi-app`, `page.tsx` |
 | Screens as fixed experiences over registered cells (props schema, `$state` bindings, named actions, metadata) | [EXPERIENCE.md](../../docs/architecture/EXPERIENCE.md), `cells.mjs` |
 | One way to change an invoice: a conditional write that names the revision that was reviewed (the agent reads it with `get_invoice` and the approval card shows it) and returns a receipt; a stale revision is refused and repeating a committed decision returns the same receipt. The buttons and the agent's `decide_invoice` tool (behind the approval card) call the same function | `ap.mjs`, `server.mjs` |
 

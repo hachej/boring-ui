@@ -4,6 +4,7 @@
  */
 import { createContext, useContext, useMemo } from 'react';
 import { EllipsisIcon, Maximize2Icon, Minimize2Icon, Share2Icon, XIcon } from 'lucide-react';
+import type { ReactNode } from 'react';
 import type { BlockAction, BlockIcon } from '../button/actions';
 import { withDefaults } from '../utils/utils';
 
@@ -88,6 +89,8 @@ export type ViewerIcons = typeof defaultViewerIcons;
  * `icons` reach every viewer below. Without a provider nothing changes.
  */
 export interface ViewerWindow {
+  /** Place the existing bar in a host-owned shared header (for example with createPortal). Default: above the viewer body. */
+  readonly renderHeader?: ((header: ReactNode) => ReactNode) | undefined;
   readonly fullscreen?: boolean | undefined;
   readonly onFullscreenChange?: ((next: boolean) => void) | undefined;
   readonly actions?: readonly BlockAction[] | undefined;

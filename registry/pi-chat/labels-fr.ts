@@ -81,6 +81,7 @@ export const frenchChatLabels: ChatLabels = {
   attachments: 'Pièces jointes',
   fileKind: { document: 'Document', image: 'Image', pdf: 'PDF', sheet: 'Tableur', slides: 'Présentation', file: 'Fichier' },
   openFile: name => `Ouvrir ${name}`,
+  fileChange: { created: 'Créé', edited: 'Modifié' },
   pastedFileName: stamp => `Texte collé ${stamp}`,
   restorePaste: 'Remettre le texte collé dans le message',
   searchCommands: 'Rechercher une commande',

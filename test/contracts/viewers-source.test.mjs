@@ -76,6 +76,27 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     assert.deepEqual([...all.container.querySelectorAll('[role="menuitem"]')].map(node => node.textContent), ['Reload', 'Copy', 'Download', 'Open in new tab']);
   });
 
+  await t.test('a host can portal the existing bar into its shared header and keep the same menu and close handlers', async t => {
+    const { createPortal } = await import('react-dom');
+    const header = document.createElement('div'); document.body.append(header);
+    t.after(() => header.remove());
+    let copied = 0, closed = 0;
+    const view = await mount(t, h(frame.ViewerWindowProvider, { value: { renderHeader: bar => createPortal(bar, header) } },
+      h(frame.ViewerFrame, { title: 'notes.md', onCopy: () => { copied++; }, onClose: () => { closed++; } }, 'editor body')));
+    assert.equal(Boolean(view.q('[data-testid=viewer-bar]')), false, 'no second bar above the editor');
+    assert.equal(header.querySelector('h2').textContent, 'notes.md');
+    assert.equal(view.q('[data-testid=viewer-body]').textContent, 'editor body');
+    await act(async () => header.querySelector('[data-testid=viewer-more]').click());
+    await act(async () => header.querySelector('[data-testid=viewer-copy]').click());
+    await settle();
+    assert.equal(copied, 1);
+    await act(async () => header.querySelector('[data-testid=viewer-close]').click());
+    assert.equal(closed, 1);
+    await view.render(h(frame.ViewerFrame, { title: 'default.md' }, 'body'));
+    assert.equal(header.childElementCount, 0, 'a detached viewer leaves no bar behind');
+    assert.equal(view.q('[data-testid=viewer-bar] h2').textContent, 'default.md', 'the default still renders its own bar');
+  });
+
   await t.test('Reload (in the menu) runs the handler and reports a failure instead of throwing', async t => {
     let calls = 0;
     const view = await mount(t, h(frame.ViewerFrame, { title: 'a', onRefresh: () => { calls++; return calls === 1 ? undefined : Promise.reject(new Error('fictional')); } }));

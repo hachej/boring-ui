@@ -44,7 +44,9 @@ export interface ChatFeatureProps {
   readonly fileAccept?: string;
   /** `/` menu of host commands and skills. Omit it and `/` is just text. */
   readonly slash?: SlashConfig;
-  /** Opens an `uploads/` file from its card in a sent message. Without it the card is not clickable. */
+  /** Show successful native write/edit paths as file cards under each reply. Off by default: only hosts with workspace file tools should opt in. */
+  readonly fileChanges?: boolean;
+  /** Opens a file from an upload or write/edit card. Falls back to mentions.open. */
   readonly onOpenFile?: (path: string) => void;
   /** Pastes above these limits become a file through `attachments` (on by default, 2000 characters or 40 lines). Needs `attachments`. */
   readonly pasteToFile?: PasteToFile;
@@ -88,7 +90,7 @@ export interface ChatSessionOptions extends Readonly<{ [Key in keyof ChatFeature
 
 export function useChatSession(options: ChatSessionOptions) {
   const { controller, activeController: active, mode, actions, renderEntry, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept,
-    slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend, rowExtras, feedback, onOpenFile, pasteToFile } = options;
+    slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend, rowExtras, feedback, onOpenFile, fileChanges, pasteToFile } = options;
   const { labels } = useChatText();
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const [error, setError] = useState<string | null>(null);
@@ -271,7 +273,7 @@ export function useChatSession(options: ChatSessionOptions) {
     if (catalog && selected) act(async () => catalog.onActivate({ name: selected.name, behavior: selected.behavior }));
   };
   const rowContext = useMemo<RowContext>(() => ({
-    developer, groupTool, onOpenImage, onCopy, openFile: onOpenFile,
+    developer, groupTool, onOpenImage, onCopy, openFile: onOpenFile ?? mentions?.open, fileChanges,
     commandMentions: commandMentions ? { commands: commandMentions.commands, onActivate: activateMention } : undefined,
     answer: actions?.answer,
     artifacts: artifacts ? { open: artifacts.open, isOpen: artifacts.isOpen } : undefined,
@@ -280,7 +282,7 @@ export function useChatSession(options: ChatSessionOptions) {
     pieces: slash?.skills?.length || mentions || attachments ? { mentions: Boolean(mentions), uploads: Boolean(attachments), skills: (slash?.skills ?? []).map(skill => skill.name), openMention: mentions?.open, renderMention: mentions?.render, preview: mentions?.preview } : undefined,
     ...rowExtras,
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [developer, groupTool, onOpenImage, onCopy, onOpenFile, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, mentions?.preview, attachments, artifacts?.open, artifacts?.isOpen, messageActions, replyFooter, rowExtras]);
+  }), [developer, groupTool, onOpenImage, onCopy, onOpenFile, fileChanges, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, mentions?.preview, attachments, artifacts?.open, artifacts?.isOpen, messageActions, replyFooter, rowExtras]);
 
   /** The model-and-effort pill and the note that reports a refused change. */
   const pickers = () => {

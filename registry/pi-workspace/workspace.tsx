@@ -51,6 +51,12 @@ export interface ArtifactWorkspaceProps {
   readonly floatBelow?: number;
   /** The panel's accessible name. */
   readonly panelLabel?: string;
+  /**
+   * `split` (default): the panel is a full-height column with a hard border and a visible divider. `inset`: the panel is a rounded card inside the
+   * workspace (a margin around it, a border and a soft shadow on the card only) and the divider shows only on hover, focus or drag, so the panel
+   * reads as part of the chat's own surface, as in Claude's artifact panel. Resizing works the same.
+   */
+  readonly variant?: 'split' | 'inset';
   /** The divider's accessible name and the hint shown while a drag would float the chat. */
   readonly labels?: { readonly resize?: string | undefined; readonly floatHint?: string | undefined } | undefined;
   readonly className?: string;
@@ -68,7 +74,7 @@ const writeFlag = (key: string, on: boolean) => { try { if (on) sessionStorage.s
  * (Escape leaves) and on a phone it is a full-screen sheet. With `floatBelow` the chat can float over a full-width panel instead of sitting beside it. The workspace owns layout only: what is open, and the viewer in it, are the host's.
  */
 export function ArtifactWorkspace({ chat, open, panel, onClose, fullscreen: controlledFullscreen, onFullscreenChange, storageKey = 'boring.artifact-panel.width', defaultWidth = 640,
-  minPanel = 360, minChat = 340, sheetBelow = 768, floatBelow, panelLabel = 'Artifact panel', labels, className }: ArtifactWorkspaceProps) {
+  minPanel = 360, minChat = 340, sheetBelow = 768, floatBelow, panelLabel = 'Artifact panel', variant = 'split', labels, className }: ArtifactWorkspaceProps) {
   const root = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState(0);
   const [stored, setStored] = useState<number>(() => read(storageKey) ?? defaultWidth);
@@ -148,12 +154,12 @@ export function ArtifactWorkspace({ chat, open, panel, onClose, fullscreen: cont
         onPointerUp={release} onPointerCancel={() => { setDragging(false); setFloatHint(false); }}
         onKeyDown={keys} onDoubleClick={() => resize(defaultWidth)}
         className="group relative z-10 -mx-1 w-2 shrink-0 cursor-col-resize touch-none outline-none">
-        <span aria-hidden="true" className={cn('absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border transition-[width,background-color] group-hover:w-0.5 group-hover:bg-ring/70 group-focus-visible:w-0.5 group-focus-visible:bg-ring motion-reduce:transition-none', dragging && 'w-0.5 bg-ring')} />
+        <span aria-hidden="true" className={cn('absolute inset-y-0 left-1/2 w-px -translate-x-1/2', variant === 'inset' ? 'bg-transparent' : 'bg-border', 'transition-[width,background-color] group-hover:w-0.5 group-hover:bg-ring/70 group-focus-visible:w-0.5 group-focus-visible:bg-ring motion-reduce:transition-none', dragging && 'w-0.5 bg-ring')} />
       </div>}
       <aside data-testid="workspace-panel" aria-label={panelLabel} data-state={entered ? 'open' : 'entering'} data-floating={floating ? 'true' : undefined} data-fullscreen={fullscreen ? 'true' : 'false'} data-sheet={sheet ? 'true' : 'false'}
         style={sheet || fullscreen || floating ? undefined : { width, minWidth: minPanel }}
         className={cn('flex min-h-0 min-w-0 flex-col overflow-hidden bg-background text-foreground transition-[transform,opacity] motion-reduce:transition-none',
-          sheet || fullscreen ? 'fixed inset-0 z-50' : floating ? 'flex-1' : 'shrink-0 border-l border-border',
+          sheet || fullscreen ? 'fixed inset-0 z-50' : floating ? 'flex-1' : variant === 'inset' ? 'my-2 me-2 ms-0 shrink-0 rounded-xl border border-border shadow-sm' : 'shrink-0 border-l border-border',
           entered ? 'translate-x-0 opacity-100' : 'translate-x-8 opacity-0', dragging && 'pointer-events-none select-none')}>
         {typeof panel === 'function' ? panel(api) : panel}
       </aside>

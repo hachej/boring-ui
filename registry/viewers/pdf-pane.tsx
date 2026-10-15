@@ -24,6 +24,8 @@ export interface PdfPaneProps extends MediaSource {
   readonly onClose?: () => unknown;
   /** Force the fallback (for a host that knows its browser cannot render PDFs). Defaults to the browser's own report. */
   readonly inline?: boolean;
+  /** How the browser's viewer opens the page: `width` (default) fits the page to the pane's width, `page` fits the whole page, `none` leaves the browser's own zoom. */
+  readonly fit?: 'width' | 'page' | 'none';
   readonly testId?: string;
   /** Overrides the title's `data-testid` (default `<testId>-title`). */
   readonly titleTestId?: string;
@@ -41,7 +43,7 @@ export function browserShowsPdf(): boolean {
  * (so its page navigation, zoom, search and print come with it). Where the browser cannot render PDFs inline, a clear message with
  * Download and Open in new tab replaces the frame.
  */
-export function PdfPane({ name, bytes, blob, url: hostUrl, subtitle, status, target, revision, controls, onRefresh, onShare, onOpenInNewTab, onClose, inline, testId = 'viewer', titleTestId, className }: PdfPaneProps) {
+export function PdfPane({ name, bytes, blob, url: hostUrl, subtitle, status, target, revision, controls, onRefresh, onShare, onOpenInNewTab, onClose, inline, fit = 'width', testId = 'viewer', titleTestId, className }: PdfPaneProps) {
   const source = useMemo<MediaSource>(() => ({ ...(bytes ? { bytes } : {}), ...(blob ? { blob } : {}), ...(hostUrl ? { url: hostUrl } : {}) }), [bytes, blob, hostUrl]);
   const { url, size, blob: made } = useMediaUrl(source, 'application/pdf');
   const canShow = inline ?? browserShowsPdf();
@@ -53,7 +55,7 @@ export function PdfPane({ name, bytes, blob, url: hostUrl, subtitle, status, tar
     onRefresh={onRefresh} onShare={onShare} onDownload={url ? download : undefined} onOpenInNewTab={open} onClose={onClose} controls={controls}>
     <div data-testid={`${testId}-stage`} data-pdf={url ? (canShow ? 'inline' : 'fallback') : 'loading'} className="boring-viewer-stage relative flex min-h-0 flex-1">
       {!url ? <p role="status" className="m-auto p-6 text-sm text-muted-foreground">{labels.loading}</p>
-        : canShow ? <iframe src={url} title={`${downloadName} (PDF)`} data-testid={`${testId}-frame-pdf`} className="size-full min-h-0 flex-1 border-0 bg-background" />
+        : canShow ? <iframe src={fit === 'none' ? url : `${url}#view=${fit === 'page' ? 'Fit' : 'FitH'}`} title={`${downloadName} (PDF)`} data-testid={`${testId}-frame-pdf`} className="size-full min-h-0 flex-1 border-0 bg-background" />
           : <div role="alert" data-testid={`${testId}-pdf-fallback`} className="m-auto flex max-w-sm flex-col items-center gap-3 p-6 text-center">
             <span className="grid size-12 place-items-center rounded-full bg-muted text-muted-foreground"><FileTextIcon className="size-6" aria-hidden="true" /></span>
             <p className="m-0 text-sm font-medium">{labels.pdfUnsupported}</p>

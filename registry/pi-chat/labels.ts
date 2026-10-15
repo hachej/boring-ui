@@ -83,6 +83,7 @@ export const defaultChatLabels = {
   /** The type line of a file card in a sent message. */
   fileKind: { document: 'Document', image: 'Image', pdf: 'PDF', sheet: 'Spreadsheet', slides: 'Presentation', file: 'File' },
   openFile: (name: string) => `Open ${name}`,
+  fileChange: { created: 'Created', edited: 'Edited' },
   /** The name of a pasted text file: the words and the time it was pasted. */
   pastedFileName: (stamp: string) => `Pasted text ${stamp}`,
   restorePaste: 'Put the pasted text back in the message',

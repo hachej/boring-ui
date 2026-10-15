@@ -99,7 +99,9 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
   const page = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Forme (fictional)</title>
 <link rel="stylesheet" href="/app.css"></head><body><div id="root"></div><script>window.__APP__=${JSON.stringify({ token, conversations: { coach: String(created.coach.id), pm: String(created.pm.id) }, identity: { runtimeId: 'app', ...person } })}</script>
 <script type="module" src="/app.js"></script></body></html>`;
-  const statics = { '/': ['text/html; charset=utf-8', page], '/app.js': ['text/javascript; charset=utf-8', bundle.outputFiles.find(file => file.path.endsWith('.js')).text], '/app.css': ['text/css; charset=utf-8', css] };
+  // Journey link destinations are fictional pages, not Chromium's network-error document (whose location is chrome-error://).
+  const destination = ['text/html; charset=utf-8', '<!doctype html><html lang="fr"><meta charset="utf-8"><title>Exemple fictif</title><p>Destination fictive. Aucun message envoyé et aucune invitation créée.</p></html>'];
+  const statics = { '/invite': destination, '/whatsapp/open': destination, '/': ['text/html; charset=utf-8', page], '/app.js': ['text/javascript; charset=utf-8', bundle.outputFiles.find(file => file.path.endsWith('.js')).text], '/app.css': ['text/css; charset=utf-8', css] };
 
   const server = createServer(async (incoming, outgoing) => {
     const url = new URL(incoming.url, `http://${incoming.headers.host}`);
