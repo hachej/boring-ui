@@ -9,6 +9,12 @@ import { z } from 'zod';
 const none = z.strictObject({});
 /** The kinds. `flags` are the enumerated metadata a composer may see; `actions` the named actions a cell of the kind may use. */
 export const KINDS = {
+  'ap/kpis': { version: 1, description: 'Accounts payable totals and pending decisions', props: none, actions: [], flags: ['summary'] },
+  'ap/transactions': { version: 1, description: 'Searchable invoices and payment statuses', props: none, actions: ['open_invoice'], flags: ['time-bound'] },
+  'ap/suppliers': { version: 1, description: 'Supplier directory and open balances', props: none, actions: ['open_supplier'], flags: [] },
+  'ap/budgets': { version: 1, description: 'Spend against each expense account budget', props: none, actions: [], flags: ['amount-bucket'] },
+  'ap/goals': { version: 1, description: 'Savings targets for each expense account', props: none, actions: [], flags: [] },
+  'ap/payments': { version: 1, description: 'Approved invoices ready for payment', props: none, actions: ['open_invoice'], flags: ['time-bound'] },
   'ap/approval-queue': { version: 1, description: 'Invoices waiting for a decision', props: none, actions: ['open_invoice'], flags: ['needs-decision'] },
   'ap/cash-due': { version: 1, description: 'What falls due and when', props: z.strictObject({ scope: z.enum(['all', 'supplier']) }), actions: [], flags: ['time-bound'] },
   'ap/invoice-summary': { version: 1, description: 'The extracted fields of one invoice, with its decision buttons', props: none, actions: ['approve', 'recode', 'hold', 'open_supplier'], flags: ['needs-decision', 'amount-bucket'] },
@@ -23,6 +29,8 @@ export const ACTIONS = { open_invoice: { durable: false }, open_supplier: { dura
 
 /** Cell instances: `state` maps a binding name to a path of the app's state (resolved per viewer by the page). */
 export const CELLS = [
+  ...[['dashboard/kpis', 'ap/kpis'], ['invoices/table', 'ap/transactions'], ['suppliers/list', 'ap/suppliers'], ['spend/rings', 'ap/budgets'], ['spend/goals', 'ap/goals'], ['payments/table', 'ap/payments']].map(([ref, kind]) => ({ ref, kind, props: {}, state: { rows: '/ap/invoices', suppliers: '/ap/suppliers', budgets: '/ap/budgets' } })),
+
   { ref: 'approvals/queue', kind: 'ap/approval-queue', props: {}, state: { rows: '/ap/approvals' } },
   { ref: 'approvals/cash-due', kind: 'ap/cash-due', props: { scope: 'all' }, state: { rows: '/ap/approvals' } },
   { ref: 'invoice/summary', kind: 'ap/invoice-summary', props: {}, state: { invoice: '/ap/invoice' } },
@@ -51,6 +59,11 @@ const cell = ref => ({ type: 'boring/cell', props: { ref }, children: [] });
 const screen = (name, title, elements) => validateExperience({ format: 'boring.experience', version: 1, name, title, source: 'fixed', kinds, root: 'page', elements }, { cells: experienceCells, canView: () => true });
 
 export const SCREENS = {
+  dashboard: screen('dashboard', 'Dashboard', { page: stack(['kpis', 'transactions']), kpis: cell('dashboard/kpis'), transactions: cell('invoices/table') }),
+  invoices: screen('invoices', 'Invoices', { page: stack(['table']), table: cell('invoices/table') }),
+  suppliers: screen('suppliers', 'Suppliers', { page: stack(['list']), list: cell('suppliers/list') }),
+  spend: screen('spend', 'Spend', { page: stack(['rings', 'goals']), rings: cell('spend/rings'), goals: cell('spend/goals') }),
+  payments: screen('payments', 'Payments', { page: stack(['table']), table: cell('payments/table') }),
   approvals: screen('approvals', 'Approvals', { page: stack(['queue', 'due']), queue: cell('approvals/queue'), due: cell('approvals/cash-due') }),
   invoice: screen('invoice', 'Invoice', { page: stack(['summary', 'duplicates', 'documents']), summary: cell('invoice/summary'), duplicates: cell('invoice/duplicates'),
     documents: row(['pdf', 'policy']), pdf: cell('invoice/pdf'), policy: cell('invoice/policy') }),

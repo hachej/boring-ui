@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { build } from 'esbuild';
 import { Window } from 'happy-dom';
 import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
@@ -18,8 +18,8 @@ test('Library is a right-side column by default: toggled from the viewer bar and
   const { createElement, act } = await import('react'); const { createRoot } = await import('react-dom/client');
   const out = new URL('../../.cache/file-tree-test/', import.meta.url); mkdirSync(out, { recursive: true });
   const output = new URL('library-side.mjs', out);
-  await build({ entryPoints: [new URL('../../registry/pi-app/agent-workspace.tsx', import.meta.url).pathname], outfile: output.pathname, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', plugins: [{ name: 'bundle-file-tree-css', setup(builder) { builder.onResolve({ filter: /^@hachej\/boring-ui-kit\/file-tree\.css$/ }, () => ({ path: new URL(import.meta.resolve('@hachej/boring-ui-kit/file-tree.css')).pathname, external: false })); } }] });
-  const { AgentWorkspace } = await import(output.href);
+  await build({ entryPoints: [new URL('../../registry/pi-app/agent-workspace.tsx', import.meta.url).pathname], outfile: output.pathname, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', plugins: [{ name: 'bundle-file-tree-css', setup(builder) { if (process.env.AGENT_PAGE_BEFORE) builder.onLoad({ filter: /registry\/pi-app\/agent-workspace\.tsx$/ }, args => ({ contents: readFileSync(process.env.AGENT_PAGE_BEFORE, 'utf8'), loader: 'tsx', resolveDir: new URL('../../registry/pi-app/', import.meta.url).pathname })); builder.onResolve({ filter: /^@hachej\/boring-ui-kit\/file-tree\.css$/ }, () => ({ path: new URL(import.meta.resolve('@hachej/boring-ui-kit/file-tree.css')).pathname, external: false })); } }] });
+  const { AgentWorkspace, ConversationList } = await import(output.href);
   const element = window.document.createElement('div'); window.document.body.append(element); const root = createRoot(element);
   t.after(async () => {
     await act(async () => root.unmount()); await window.happyDOM.close();
@@ -94,6 +94,25 @@ test('Library is a right-side column by default: toggled from the viewer bar and
   await act(async () => file('second.html').click());
   assert.equal(dock().dataset.placement, 'closed', 'choosing a file closes the sheet');
   assert.equal(q('[data-testid=file-viewer]').dataset.path, 'second.html');
+
+  // The default sessions list is still the same searchable list with New, Library and the active conversation.
+  measuredWidth = 1400;
+  await render({ key: 'default-sessions', storageKey: 'default-sessions-proof' });
+  assert.equal(q('[data-testid=conversations]').tagName, 'ASIDE');
+  assert.equal(q('[data-testid=conversation-row]').textContent.includes('Fictional chat'), true);
+  assert.ok(q('[data-testid=conversation-new]') && q('[data-testid=conversation-search]') && paneButton());
+  // A host can place the very same list in its own navigation, without a second sessions implementation.
+  let offered;
+  await render({ key: 'custom-sessions', storageKey: 'custom-sessions-proof', sessions: props => {
+    offered = props;
+    return createElement('nav', { 'data-testid': 'host-history', 'aria-label': 'App history' }, createElement(ConversationList, { conversations: props.conversations }));
+  } });
+  assert.equal(offered.conversations, conversations);
+  assert.ok(q('[data-testid=host-history] [data-testid=conversation-search]'));
+  assert.equal(q('[data-testid=conversations]'), null);
+  await render({ key: 'external-sessions', sessions: false });
+  assert.equal(q('[data-testid=sessions-toggle]'), null, 'external navigation needs no workspace toggle');
+  assert.equal(q('[data-testid=conversations]'), null);
 
   // 'center' and 'pane' keep their layouts.
   measuredWidth = 1400;
