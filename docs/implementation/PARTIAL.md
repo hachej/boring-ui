@@ -457,9 +457,7 @@ Public native/DOM tests, strict isolated chat archives and the actual installed 
 
 ## Native adoption cancellation increment
 
-Three regressions use the actual native Harness abort API and held publication boundaries. Before the fix, cancellation inside the publisher still created both outputs. Passing `runtime.signal` to the existing publication access checks prevents that write. Cancellation after commit preserves the original receipt and revisions. Recorded intent, acknowledgement and terminal native state are asserted separately.
-
-The focused adoption and crash suites pass 28 tests. Raw failing-before and passing-after evidence is retained under `.cache/evidence/implementation/adoption-cancel-*.log`. This qualifies cooperative cancellation at the tested boundaries only. Arbitrary external interruption, browser and live-provider qualifications remain open. No global deferral or full P/A/H obligation is promoted.
+Moved out of this repository with the redaction example; the downstream consumer owns these proofs now.
 
 ## Native assistant command mentions increment
 
