@@ -1,16 +1,6 @@
-// Real-browser journey for the workspace demo (scripted model, no key): one person, one accounts-payable week, a dozen moments.
-//   1  chat docked: "what needs my approval this week?" and the agent opens the Approvals queue in the viewer
-//   2  the person opens an invoice (PDF and extracted fields)
-//   a  the history icon in the chat header lists earlier conversations (a search field with an Archived icon toggle); switching keeps each transcript
-//   3  the person clicks another invoice; the agent sees it (screen context) and spots a duplicate
-//   b  the Library icon in the chat header opens the file list; the AP policy opened from it lands in the agent's own viewer beside the chat (the agent area widens; the app column shows no document); the viewer closes with a guard for unsaved edits; "does this invoice respect the policy?" is answered from the document and the invoice
-//   c  attaching a file uploads it into the workspace (a file card in the message); the composer has no microphone without a transcription key
-//   d  "create a new file tt.md and open it": the agent writes it (history entry 'agent', no receipt) and opens it in the viewer; the Library lists it live
-//   4  the agent proposes "approve, coded to another account"; the person approves the card; the backend returns a receipt
-//   5  dragging the divider floats the chat: placement is floating, the right column takes the full width
-//   6  on the supplier page "why is this flagged?" gets a short answer and the page does not move
-//   7  docking back restores the chat column and the conversation goes on
-// Screenshots go to .cache/evidence/workspace-demo/. Run: npm run workspace-demo:journey
+// Scripted real-browser journey: one mounted agent across page, docked and floating placements; app-owned History and Library.
+// Retains the AP decisions, file guards, uploads and conversation/tab command checks. Adds the finance screen and theme/size matrix.
+// Screenshots go to .cache/evidence/agent-page/. Run: npm run workspace-demo:journey
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -83,7 +73,7 @@ try {
   const library = async () => {
     await navigation();
     await browser.click(q('[data-testid=nav-library]'));
-    await browser.until('the Library', `!!${q('[data-testid=library-popover]')}`, 10000);
+    await browser.until('the Library search is ready before choosing a row', `!!${q('[data-testid=library-popover]')} && document.activeElement?.type === 'search' && !!document.activeElement.closest('[data-testid=library-popover]')`, 10000);
   };
   const dockAgent = async () => {
     if (await browser.evaluate(placement) === 'floating') await browser.click(q('[data-testid=ambient-dock]'));
@@ -151,6 +141,7 @@ try {
     const fields = await browser.evaluate(`${q('[data-testid=invoice-summary]')}.innerText`);
     for (const text of ['Linden Print Co', 'LP-7710', 'PO-771', '6200 Printing']) assert.ok(fields.includes(text), `${text} in the fields`);
     await browser.until('the PDF viewer', `!!${q('[data-testid=invoice-pdf] [data-pdf]')}`, 15000);
+    assert.equal(await browser.evaluate(`${q('[data-testid=screen-invoice]')}.scrollWidth > ${q('[data-testid=screen-invoice]')}.clientWidth`), false, 'invoice cells wrap inside the app while the agent is docked');
     await pause(500);
     await browser.screenshot('3-invoice.png');
   });
@@ -324,8 +315,6 @@ try {
     await browser.click(q('[role=treeitem][data-path="Contracts/fernhill-agreement.pdf"]'));
     await browser.until('the PDF in the agent panel', `${q('[data-dock=chat] [data-testid=library-document]')}?.dataset.path === 'Contracts/fernhill-agreement.pdf'`, 15000);
     await pause(500);
-    await shot('9-docked-pdf-before-geometry.png');
-    writeFileSync(join(evidence, 'docked-geometry.json'), JSON.stringify(await browser.evaluate(`(() => { let e=document.querySelector('[data-testid=workspace-panel]'), rows=[]; while(e){ const r=e.getBoundingClientRect(), s=getComputedStyle(e); rows.push({ tag:e.tagName, test:e.dataset.testid, boring:e.dataset.boring, slot:e.dataset.slot, top:r.top, height:r.height, scrollTop:e.scrollTop, scrollHeight:e.scrollHeight, overflow:s.overflow, flex:s.flex }); e=e.parentElement; } e = document.querySelector('[data-testid=transcript-scroll]'); while(e){ const r=e.getBoundingClientRect(), s=getComputedStyle(e); rows.push({ tag:e.tagName, test:e.dataset.testid, boring:e.dataset.boring, top:r.top, height:r.height, scrollTop:e.scrollTop, scrollHeight:e.scrollHeight, overflow:s.overflow, flex:s.flex, minHeight:s.minHeight }); e=e.parentElement; } return rows; })()`), null, 2));
     const card = await browser.evaluate(`(() => { const panel = document.querySelector('[data-testid=workspace-panel]'), dock = document.querySelector('[data-dock=chat]').getBoundingClientRect(), chat = document.querySelector('[data-boring=pi-chat]').getBoundingClientRect(), r = panel.getBoundingClientRect(), style = getComputedStyle(panel);
       return { top: r.top - dock.top, bottom: dock.bottom - r.bottom, right: dock.right - r.right, gap: r.left - chat.right, radius: parseFloat(style.borderTopLeftRadius), borderLeft: parseFloat(style.borderLeftWidth), divider: getComputedStyle(document.querySelector('[data-testid=workspace-divider] span')).backgroundColor }; })()`);
     assert.ok(card.top >= 4 && card.bottom >= 4 && card.right >= 4 && card.radius >= 8, `an inset rounded card inside the panel: ${JSON.stringify(card)}`);

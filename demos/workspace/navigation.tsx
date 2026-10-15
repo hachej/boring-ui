@@ -18,7 +18,7 @@ export function WorkspaceNav({ view, go, api, count, panel, setPanel, conversati
   useEffect(() => {
     if (panel !== 'library') return;
     let frame = 0, tries = 0;
-    const focus = () => { const input = document.querySelector('[data-testid=library-popover] input[type=search]'); if (input) input.focus(); else if (tries++ < 60) frame = requestAnimationFrame(focus); };
+    const focus = () => { const input = document.querySelector('[data-testid=library-popover] input[type=search]'); if (input) input.focus({ preventScroll: true }); else if (tries++ < 60) frame = requestAnimationFrame(focus); };
     focus(); return () => cancelAnimationFrame(frame);
   }, [panel, provider]);
   useEffect(() => {
@@ -28,7 +28,7 @@ export function WorkspaceNav({ view, go, api, count, panel, setPanel, conversati
   }, [panel]);
   return <Sidebar variant="inset" className="border-r border-border">
     <SidebarHeader className="px-4 py-5"><div className="flex items-center gap-3"><span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-emerald-700 text-emerald-50"><LeafIcon className="size-5" aria-hidden="true" /></span><div><p className="text-sm font-semibold tracking-tight">Harbor &amp; Pine</p><p className="text-xs text-muted-foreground">Accounts payable</p></div></div></SidebarHeader>
-    <SidebarContent className="gap-0 px-3"><p className="px-2 pb-2 pt-3 text-[11px] font-medium tracking-wider text-muted-foreground uppercase">Workspace</p><SidebarMenu>{entries.map(([screen, Icon]) => <SidebarMenuItem key={screen}><SidebarMenuButton isActive={api?.placement !== 'page' && view.screen === screen} data-testid={`nav-${screen}`} onClick={() => pick(screen)} className="h-10"><Icon aria-hidden="true" /><span>{SCREEN_NAMES[screen]}</span>{screen === 'approvals' && <span className="ml-auto rounded-md bg-muted px-1.5 text-xs tabular-nums">{count}</span>}</SidebarMenuButton></SidebarMenuItem>)}</SidebarMenu>
+    <SidebarContent className="gap-0 px-3"><div hidden={Boolean(panel)}><p className="px-2 pb-2 pt-3 text-[11px] font-medium tracking-wider text-muted-foreground uppercase">Workspace</p><SidebarMenu>{entries.map(([screen, Icon]) => <SidebarMenuItem key={screen}><SidebarMenuButton isActive={api?.placement !== 'page' && view.screen === screen} data-testid={`nav-${screen}`} onClick={() => pick(screen)} className="h-10"><Icon aria-hidden="true" /><span>{SCREEN_NAMES[screen]}</span>{screen === 'approvals' && <span className="ml-auto rounded-md bg-muted px-1.5 text-xs tabular-nums">{count}</span>}</SidebarMenuButton></SidebarMenuItem>)}</SidebarMenu></div>
     <p className="px-2 pb-2 pt-7 text-[11px] font-medium tracking-wider text-muted-foreground uppercase">Assistant</p><SidebarMenu>
       <SidebarMenuItem><SidebarMenuButton data-testid="nav-agent" isActive={api?.placement === 'page'} onClick={() => { close(); api?.setPlacement('page'); }} className="h-10"><BotIcon aria-hidden="true" /><span>Agent</span></SidebarMenuButton></SidebarMenuItem>
       {[['history', 'History', HistoryIcon], ['library', 'Library', FolderOpenIcon]].map(([id, title, Icon]) => <SidebarMenuItem key={id}><SidebarMenuButton data-testid={`nav-${id}`} aria-expanded={panel === id} onClick={() => setPanel(current => current === id ? undefined : id)} className="h-10"><Icon aria-hidden="true" /><span>{title}</span></SidebarMenuButton></SidebarMenuItem>)}
