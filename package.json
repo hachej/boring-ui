@@ -48,7 +48,7 @@
     "studio:smoke": "node lab/studio/journey.mjs --smoke",
     "studio:journey:correctness": "node lab/studio/journey-correctness.mjs",
     "studio:journey:team": "node lab/studio/journey-team.mjs",
-    "slice:journey": "node fixtures/live-slice/journey.mjs",
+    "slice:journey": "node examples/live-slice/journey.mjs",
     "bot": "node examples/bot/server.mjs",
     "bot:journey": "node examples/bot/journey.mjs",
     "browser-agent": "node examples/browser-agent/serve.mjs",

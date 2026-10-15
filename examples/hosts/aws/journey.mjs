@@ -32,7 +32,7 @@ const SCRIPT = [{ name: 'aws journey', entries: Object.entries({
     ctx => `Interpreter output:\n${ctx.last.text.trim()}`,
   ],
   'Neighbour check': [
-    call('read', { path: '../../user-a/notes/plan.md' }),
+    call('read', { path: '../user-a/notes/plan.md' }),
     call('read', { path: '/mnt/efs/users/user-a/notes/plan.md' }),
     call('bash', { command: 'ls -A /mnt/workspace; cat notes/plan.md 2>&1 || echo NO-PLAN-HERE' }),
     ctx => `Done: ${ctx.last.text.trim()}`,
@@ -129,7 +129,7 @@ try {
     assert.deepEqual(accessPointsUsedSince(mark), [ARN('user-b')], "B's commands ran in B's own interpreter session");
     assert.deepEqual((await ok(await invoke('user-b', { op: 'files' }))).files, []);
     assert.equal((await invoke('user-b', { op: 'file', params: { path: 'notes/plan.md' } })).status, 404);
-    assert.equal((await invoke('user-b', { op: 'file', params: { path: '../../user-a/notes/plan.md' } })).status, 400);
+    assert.equal((await invoke('user-b', { op: 'file', params: { path: '../user-a/notes/plan.md' } })).status, 400);
     const started = fake.calls.filter(item => item.operation === 'StartCodeInterpreterSession').map(item => item.filesystemConfigurations[0].efsConfiguration.accessPointArn);
     assert.deepEqual(started, [ARN('user-a'), ARN('user-b')]);
     // One harness, one Pi file: the two users' conversations are two conversations of it, each user's workspace one cache entry.
