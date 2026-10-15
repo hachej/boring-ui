@@ -1,13 +1,13 @@
 # Placement and page tools
 
-Status: proposed, 2026-10-15. Section 1 (placement) is to build. Section 2 (page tools) is specified only. This document refines the "page commands" surface of [WEBSITE-INTEGRATION.md](WEBSITE-INTEGRATION.md).
+Status: placement is implemented in the registry components. Section 2 (page tools) is specified only. This document refines the "page commands" surface of [WEBSITE-INTEGRATION.md](WEBSITE-INTEGRATION.md).
 
 An agent beside a page needs three things, each with one mechanism:
 
 | Need | Mechanism | Status |
 | --- | --- | --- |
 | Where the person is | **Screen context**: a screen calls `useAgentContext({ name, params })` (`registry/app-shell/agent-context.ts`); the browser sends it with each submit (`useRemoteChat({ requestContext: readAgentContext })`); the server receives it (`createChatTransportHandler`'s `requestContext`) and renders it per request with `createPromptContext` (`@hachej/boring-agent/prompt-context`), never stored in the transcript | Exists |
-| How the agent is placed (docked or floating) | **Placement**, added to the same context | To build (section 1) |
+| How the agent is placed | **Placement**, added to the same context | Exists (section 1) |
 | Act on the page (show, navigate, fill) | **Page tools**: WebMCP tools the page registers | Specified, deferred (section 2) |
 | Change data | The application's backend actions, with receipts | Exists (host operations) |
 
@@ -17,7 +17,9 @@ The library defines no verbs of its own (navigate, highlight, prefill…) and no
 
 ### 1.1 Shape
 
-The same chat is either **docked**, beside the page (`PiChat` in a `Dock` or `ArtifactWorkspace`, and the `AgentLayer` panel expanded beside the app on a wide screen), or **floating**, over the page (`AmbientChat`, including a docked chat floated by its divider, the `AgentLayer` panel floated over the app, and the `AgentLayer` phone drawer). The component that sends a submit adds its placement to the request context:
+The registry Dock also supports `page`, where the self-contained agent workspace replaces the main area. It reports `docked` in request context because the agent leads. The [Dock guide](../../registry/README.md#docks-dock) owns its API and persistence.
+
+The request-context role of the same chat is either **docked**, beside the page (`PiChat` in a `Dock` or `ArtifactWorkspace`, and the `AgentLayer` panel expanded beside the app on a wide screen), or **floating**, over the page (`AmbientChat`, including a docked chat floated by its divider, the `AgentLayer` panel floated over the app, and the `AgentLayer` phone drawer). The component that sends a submit adds its placement to the request context:
 
 ```json
 { "name": "invoice", "params": { "id": 42 }, "placement": "docked" }

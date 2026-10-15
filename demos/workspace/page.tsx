@@ -26,7 +26,7 @@ import { validWorkspacePath } from './paths.mjs';
 import { FinanceCell, Mark, Status } from './finance';
 import { WorkspaceNav, SiteHeader } from './navigation';
 import { SCREEN_NAMES } from './screen-names.mjs';
-import { SidebarProvider, SidebarInset } from '../../examples/app-shell/components/ui/sidebar';
+import { SidebarProvider, SidebarInset, useSidebar } from '../../examples/app-shell/components/ui/sidebar';
 
 const { token, identity, conversation: firstConversation, voice } = window.__APP__;
 const authorized = (request: Request) => { const headers = new Headers(request.headers); headers.set('authorization', `Bearer ${token}`); return fetch(new Request(request, { headers })); };
@@ -90,14 +90,14 @@ const Badge = ({ tone = 'muted', children }) => <span className={`inline-flex it
 function ApprovalQueue({ cell }) {
   const { resolve, act } = useAp();
   const rows = resolve(cell.state.rows) ?? [];
-  return <section data-testid="approval-queue" className={card} aria-label="Approval queue">
+  return <section data-testid="approval-queue" className={`${card} @container`} aria-label="Approval queue">
     <h2 className="mb-3 text-sm font-semibold">Waiting for your approval <span className="font-normal text-muted-foreground">({rows.length})</span></h2>
     {rows.length === 0 ? <p className="text-sm text-muted-foreground">Nothing is waiting.</p> : <ul className="divide-y divide-border">
       {rows.map(row => <li key={row.id}><button type="button" data-testid={`queue-row-${row.id}`} onClick={() => act('open_invoice', { id: row.id })} className="flex w-full items-center gap-3 py-2.5 text-left hover:bg-muted/50">
         <Mark name={row.supplierName} />
         <span className="min-w-0 flex-1"><span className="block truncate font-medium">{row.supplierName}</span><span className="text-xs text-muted-foreground">{row.id} · {row.account.slice(5)}</span></span>
-        <Status value={row.status} />
-        <span className="hidden shrink-0 text-muted-foreground sm:inline">due {day(row.due)}</span>
+        <span className="hidden @[32rem]:inline"><Status value={row.status} /></span>
+        <span className="hidden shrink-0 text-muted-foreground @[32rem]:inline">due {day(row.due)}</span>
         <span className="w-24 shrink-0 text-right tabular-nums">{money(row.amount, row.currency)}</span>
       </button></li>)}
     </ul>}
@@ -272,7 +272,8 @@ const PANEL = 560; // the file viewer's width beside the chat
 const transcribe = async (audio: Blob, signal: AbortSignal) => (await (await authorized(new Request(at('/api/transcribe'), { method: 'POST', headers: { 'content-type': audio.type || 'audio/webm' }, body: audio, signal }))).json()).text ?? '';
 
 function Chat({ api, provider, file, openFile, closeFile, setUnsaved, active, conversations }) {
-  const base = useRef(760), widened = useRef(false);
+  const { isMobile, setOpenMobile } = useSidebar();
+  const base = useRef(620), widened = useRef(false);
   const [headerTarget, setHeaderTarget] = useState<HTMLElement | null>(null);
   const [panelWidth, setPanelWidth] = useState(PANEL);
   const renderHeader = useCallback(header => headerTarget ? createPortal(header, headerTarget) : null, [headerTarget]);
@@ -298,6 +299,7 @@ function Chat({ api, provider, file, openFile, closeFile, setUnsaved, active, co
   }, [side]); // eslint-disable-line react-hooks/exhaustive-deps
   if (chat.status !== 'ready') return <p role="status" data-testid="chat-connecting" className="p-4 text-sm text-muted-foreground">{chat.status === 'offline' ? 'Server unreachable. Retrying…' : 'Connecting…'}</p>;
   const headerActions = [
+    ...(isMobile ? [{ id: 'navigation', label: 'Open navigation', icon: PanelLeftIcon, onSelect: () => setOpenMobile(true) }] : []),
     { id: 'page', label: 'Agent as page', icon: MaximizeIcon, onSelect: () => api.setPlacement('page') },
   ];
   const placementActions = [
@@ -369,7 +371,7 @@ function App() {
   const openFile = useCallback((raw: string) => { const path = validWorkspacePath(raw); if (!path) return false; if (path === file) return true; if (!leave()) return false; dirty.current = false; setFile(path); return true; }, [file]);
   const closeFile = useCallback(() => { if (!leave()) return false; dirty.current = false; setFile(undefined); return true; }, []);
   // Commands (the agent's `show`) reach the app's screens, or the agent's own viewer for a file.
-  const go = useCallback(next => { if (next.screen === 'file') return openFile(next.path); setView(next); dock.current?.setPlacement('floating'); return true; }, [openFile]);
+  const go = useCallback((next, fromAgent = false) => { if (next.screen === 'file') return openFile(next.path); setView(next); if (fromAgent || dock.current?.placement === 'page') dock.current?.setPlacement('floating'); return true; }, [openFile]);
   return <AgentContextProvider>
     <ApProvider view={view} go={go} conversation={active}>
       <OpenFile.Provider value={openFile}>

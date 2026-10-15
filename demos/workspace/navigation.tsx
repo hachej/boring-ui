@@ -16,6 +16,12 @@ export function WorkspaceNav({ view, go, api, count, panel, setPanel, conversati
   const close = () => { setPanel(undefined); if (isMobile) setOpenMobile(false); };
   const pick = screen => { close(); go({ screen }); };
   useEffect(() => {
+    if (panel !== 'library') return;
+    let frame = 0, tries = 0;
+    const focus = () => { const input = document.querySelector('[data-testid=library-popover] input[type=search]'); if (input) input.focus(); else if (tries++ < 60) frame = requestAnimationFrame(focus); };
+    focus(); return () => cancelAnimationFrame(frame);
+  }, [panel, provider]);
+  useEffect(() => {
     if (!panel) return;
     const escape = event => { if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); setPanel(undefined); requestAnimationFrame(() => document.querySelector(`[data-testid=nav-${panel}]`)?.focus()); } };
     document.addEventListener('keydown', escape); return () => document.removeEventListener('keydown', escape);
