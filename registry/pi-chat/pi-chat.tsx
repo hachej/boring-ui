@@ -19,7 +19,7 @@ import { ChatNotices, Notice } from './notice';
 import { Shimmer } from './shimmer';
 import { useChatSession, useTranscript } from './session';
 import { useChatDraft } from './use-chat-draft';
-import { useChatPlacement } from './chat-placement';
+import { useChatPlacement } from './use-remote-chat';
 import type { ChatFeatureProps, FilesHandler } from './session';
 import { ChatTextProvider, useChatText, useMergedText } from './labels';
 import { chatTextFor } from './locale';

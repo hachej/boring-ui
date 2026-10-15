@@ -468,11 +468,6 @@
           "target": "components/pi-chat/approval-card.tsx"
         },
         {
-          "path": "registry/pi-chat/chat-placement.ts",
-          "type": "registry:lib",
-          "target": "components/pi-chat/chat-placement.ts"
-        },
-        {
           "path": "registry/pi-chat/artifact.ts",
           "type": "registry:lib",
           "target": "components/pi-chat/artifact.ts"

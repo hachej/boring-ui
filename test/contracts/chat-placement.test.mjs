@@ -15,8 +15,7 @@ test('floating and docking a chat changes the placement sent with the next submi
   writeFileSync(`${out}/entry.tsx`, `
     import { createElement as h } from 'react';
     import { Dock, DockLayout, DockMain } from '${root}registry/dock/dock.tsx';
-    import { useChatPlacement } from '${root}registry/pi-chat/chat-placement.ts';
-    import { useRemoteChat } from '${root}registry/pi-chat/use-remote-chat.ts';
+    import { useChatPlacement, useRemoteChat } from '${root}registry/pi-chat/use-remote-chat.ts';
     export const mount = ({ fetch, onReady, screen }) => {
       // A host's chat: what PiChat (docked) and AmbientChat (floating) each do on mount, without their whole UI.
       const Reporter = ({ controller, floating }) => { useChatPlacement(controller, floating ? 'floating' : 'docked'); return null; };
