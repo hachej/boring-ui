@@ -17,13 +17,13 @@ The library defines no verbs of its own (navigate, highlight, prefill…) and no
 
 ### 1.1 Shape
 
-The same chat is either **docked** (`PiChat` in a `Dock` or `ArtifactWorkspace`, or the `AgentLayer` panel) or **floating** (`AmbientChat`, including a docked chat floated by its divider, and the `AgentLayer` drawer). The component that sends a submit adds its placement to the request context:
+The same chat is either **docked** (`PiChat` in a `Dock` or `ArtifactWorkspace`) or **floating** (`AmbientChat`, including a docked chat floated by its divider, and the `AgentLayer` over the app: the phone drawer and the wide-screen panel). The component that sends a submit adds its placement to the request context:
 
 ```json
-{ "placement": "docked", "screen": { "name": "invoice", "params": { "id": 42 } } }
+{ "name": "invoice", "params": { "id": 42 }, "placement": "docked" }
 ```
 
-`placement` is `docked` or `floating`, set by the component, never by the host or the model. `screen` is today's `readAgentContext()` value, unchanged.
+`placement` is `docked` or `floating`, set by the component, never by the host or the model. It is added beside today's `readAgentContext()` fields (`name`, `params`), which stay flat and unchanged, so existing hosts keep reading them.
 
 ### 1.2 The agent's role per placement
 
