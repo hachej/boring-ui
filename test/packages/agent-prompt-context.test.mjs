@@ -271,14 +271,14 @@ test('the subpath is exported by the package and the module uses only Pi public 
 
 test('renderRequestContext: the request names the placement and the screen, and the role changes with the placement', { timeout: 20000 }, async t => {
   const { models, requests } = recordingModels();
-  let stored = { placement: 'docked', screen: { name: 'invoice', params: { id: 42 } } };
+  let stored = { name: 'invoice', params: { id: 42 }, placement: 'docked' };
   const extension = createPromptContext({ context: () => renderRequestContext(stored) });
   const { harness, registry } = await open(models);
   t.after(() => harness.close(context));
   registry.install(extension);
   const conversation = await newConversation(harness, { extensions: [extension] });
   await say(conversation, 'Where am I?');
-  stored = { placement: 'floating', screen: { name: 'supplier', params: {} } };
+  stored = { name: 'supplier', params: {}, placement: 'floating' };
   await say(conversation, 'Why is it flagged?');
   const [docked, floating] = requests.map(request => contextMessages(request).map(textOf).join('\n'));
   assert.match(docked, /Placement: docked\. .*you lead.*in the viewer/);
@@ -292,5 +292,7 @@ test('renderRequestContext: advisory only; unknown placements and malformed valu
   assert.equal(renderRequestContext(undefined), undefined);
   assert.equal(renderRequestContext({ placement: 'admin', screen: 7 }), undefined);
   assert.equal(renderRequestContext({ placement: 'floating' }), 'Placement: floating. The chat floats over the page: the person leads. Do not move the page unless asked; answer briefly about what is on screen and suggest where to go.');
-  assert.equal(renderRequestContext({ screen: { name: 'home', params: {} } }), 'The person is looking at: home');
+  assert.equal(renderRequestContext({ screen: { name: 'home', params: {} } }), 'The person is looking at: home', 'a screen wrapper is read too');
+  // An older client sends only the flat screen context: it renders as before, with no placement line.
+  assert.equal(renderRequestContext({ name: 'Progrès', params: { range: 30 } }), 'The person is looking at: Progrès {"range":30}');
 });

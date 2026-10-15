@@ -429,8 +429,8 @@ try {
     for (let i = 0; i < 100 && app.submits.length === before; i++) await pause(100);
     const sent = app.submits.at(-1);
     assert.equal(sent.agent, 'coach');
-    assert.deepEqual(sent.body.context, { placement: 'docked', screen: { name: 'Progrès', params: { range: 30 } } });
-    assert.equal(app.contexts.at(-1).value.screen.name, 'Progrès', 'the transport handed the context to the host');
+    assert.deepEqual(sent.body.context, { name: 'Progrès', params: { range: 30 }, placement: 'floating' }, 'the compact drawer is a floating placement');
+    assert.equal(app.contexts.at(-1).value.name, 'Progrès', 'the transport handed the context to the host');
     await browser.until('the reply', `document.body.innerText.includes('Hier : 8 200 pas')`, 20000);
   });
 
@@ -687,6 +687,34 @@ try {
     // Leave the floating state behind for the next steps (the remembered placement lives in localStorage).
     await browser.send('Page.navigate', { url: app.url });
     await live();
+    await browser.evaluate('localStorage.clear()');
+    await browser.send('Page.navigate', { url: app.url });
+    await live();
+  });
+
+  await step('expanded 1280x800: the layer reports its real placement with each submit: docked, floating, docked again', async () => {
+    await browser.emulate('desktop');
+    await browser.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+    await browser.send('Page.navigate', { url: app.url });
+    await live();
+    await browser.click(q(TRIGGER));
+    await browser.until('the coach docked', `${q(LAYER)}?.dataset.state === 'open' && ${q(LAYER)}?.dataset.placement === 'docked'`);
+    const say = async (text, placement) => {
+      const before = app.contexts.length;
+      await browser.type(q(INPUT), text);
+      await browser.press('Enter');
+      for (let i = 0; i < 100 && app.contexts.length === before; i++) await pause(100);
+      assert.equal(app.contexts.at(-1)?.value.placement, placement, `${text}: ${JSON.stringify(app.contexts.at(-1)?.value)}`);
+      assert.equal(typeof app.contexts.at(-1).value.name, 'string', 'the screen fields stay at the top level');
+      await browser.until('the reply', `document.body.innerText.includes(${JSON.stringify(text === 'Dis bonjour' ? 'Bonjour ! Que veux-tu écrire ?' : 'Hier : 8 200 pas')})`, 20000);
+    };
+    await say('Dis bonjour', 'docked');
+    await browser.click(q('[data-testid=agent-layer-float]'));
+    await browser.until('floating', `${q(LAYER)}?.dataset.placement === 'floating'`);
+    await say('Combien de pas hier ?', 'floating');
+    await browser.click(q('[data-testid=agent-layer-dock-right]'));
+    await browser.until('docked again', `${q(LAYER)}?.dataset.placement === 'docked'`);
+    await say('Combien de pas hier ? Merci', 'docked');
     await browser.evaluate('localStorage.clear()');
     await browser.send('Page.navigate', { url: app.url });
     await live();

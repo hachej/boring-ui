@@ -68,5 +68,8 @@ test('floating and docking a chat changes the placement sent with the next submi
   } finally { await act(async () => root_.unmount()); } // closes the chat's stream
   assert.equal(controller, first, 'floating and docking keep the controller');
   assert.deepEqual(submits.map(body => body.context), [
-    { placement: 'docked', screen }, { placement: 'floating', screen }, { placement: 'docked', screen }]);
+    { ...screen, placement: 'docked' }, { ...screen, placement: 'floating' }, { ...screen, placement: 'docked' }]);
+  // A host written before placement existed reads `name` and `params` at the top level of what the transport hands it.
+  const oldHost = body => `${body.context.name} ${JSON.stringify(body.context.params)}`;
+  assert.deepEqual(submits.map(oldHost), Array(3).fill('Invoice {"id":"INV-1"}'));
 });

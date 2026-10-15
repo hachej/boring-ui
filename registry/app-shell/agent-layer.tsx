@@ -97,6 +97,9 @@ interface Internal extends AgentLayerApi {
   readonly improve: AgentSpec | undefined;
   readonly snap: Snap;
   readonly setSnap: (snap: Snap) => void;
+  /** Whether the wide layout's dock is floating over the app (reported by the panel); with `expanded` it gives the chats' placement. */
+  readonly dockFloating: boolean;
+  readonly setDockFloating: (floating: boolean) => void;
   readonly showAgent: () => void;
   /** Until this time (ms) an outside press is the AgentTrigger's own click. */
   readonly triggerUntil: { current: number };
@@ -246,6 +249,7 @@ export function AgentLayerProvider({ agent, improve, locale, children }: { reado
   const compact = useIsMobile();
   const expanded = !compact;
   const [snap, setSnapState] = useState<Snap>('closed');
+  const [dockFloating, setDockFloating] = useState(false);
   const [shown, setShown] = useState<Which>(agent ? 'agent' : 'improve');
   const probe = useRef<HTMLDivElement>(null);
   const { peekPoint, tabbar } = useMeasuredPeek(probe);
@@ -288,8 +292,8 @@ export function AgentLayerProvider({ agent, improve, locale, children }: { reado
 
   const state: AgentLayerState = snap === 'closed' ? 'closed' : expanded ? 'open' : snap;
   const value = useMemo<Internal>(() => ({
-    state, showing: snap === 'closed' ? null : shown, open, close, expanded, agent, improve, snap, setSnap, showAgent, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, restoreFocus,
-  }), [state, snap, shown, open, close, expanded, agent, improve, setSnap, showAgent, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide]);
+    state, showing: snap === 'closed' ? null : shown, open, close, expanded, agent, improve, snap, setSnap, dockFloating, setDockFloating, showAgent, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, restoreFocus,
+  }), [state, snap, shown, open, close, expanded, agent, improve, setSnap, dockFloating, showAgent, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide]);
 
   // The shell's z-scale (tabs 20, peek 30, drawer and panel 40, other sheets 50, point bar 60) as custom properties; `display: contents` keeps the box tree unchanged.
   const scale = { '--app-shell-z-tabs': Z.tabs, '--app-shell-z-peek': Z.peek, '--app-shell-z-layer': Z.layer, '--app-shell-z-sheet': Z.sheet, '--app-shell-z-point': Z.point } as CSSProperties;
@@ -397,7 +401,7 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const transcribe = (spec.voice ?? layer.agent?.voice)?.transcribe;
   const fr = locale === 'fr';
   return <div data-spec={role} hidden={!visible} className={cn('min-h-0 min-w-0 flex-1', visible ? 'flex flex-col' : 'hidden')}>
-    <PiChat {...spec.chatProps} {...(locale ? { locale } : {})} controller={spec.controller} {...(feedback ? { feedback } : {})}
+    <PiChat {...spec.chatProps} {...(locale ? { locale } : {})} controller={spec.controller} placement={layer.expanded && !layer.dockFloating ? 'docked' : 'floating'} {...(feedback ? { feedback } : {})}
       {...(role === 'agent' && spec.voice ? { tools: <>{spec.chatProps?.tools}<TalkButton text={appShellText(locale)} /></> } : {})} />
     {/* The note editor of ordinary feedback lives inside the layer, in the modal's focus tree; while pointing the layer steps aside and AgentLayer renders it. */}
     {/* In the flow, inside the visible content box: the popup is transformed (a fixed element would be placed against its off-screen bottom). */}
@@ -554,6 +558,9 @@ function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSi
   const { text, title } = useTitle();
   const open = layer.snap !== 'closed';
   const floating = api.floating;
+  // The chats report this as their placement: the phone drawer and the floating panel are `floating`, the dock is `docked`.
+  const { setDockFloating } = layer;
+  useLayoutEffect(() => { setDockFloating(floating); return () => setDockFloating(false); }, [floating, setDockFloating]);
   const box = useRef<HTMLDivElement>(null);
   const drag = useRef<{ dx: number; dy: number } | null>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
