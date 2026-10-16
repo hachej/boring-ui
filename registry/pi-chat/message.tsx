@@ -70,7 +70,7 @@ function UserMention({ path, text, open, render }: { readonly path: string; read
   const custom = render?.(path);
   if (custom !== undefined) return <>{custom}</>;
   return open
-    ? <button type="button" data-testid="message-mention" data-path={path} aria-label={`Open ${path}`} onClick={() => open(path)} className={cn(MENTION_CLASS, 'cursor-pointer outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 pointer-coarse:inline-flex pointer-coarse:min-h-10 pointer-coarse:items-center')}>{text}</button>
+    ? <button type="button" data-testid="message-mention" data-path={path} aria-label={`Open ${path}`} onClick={() => open(path)} className={cn(MENTION_CLASS, 'cursor-pointer outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 pointer-coarse:inline-flex pointer-coarse:min-h-11 pointer-coarse:items-center')}>{text}</button>
     : <span data-testid="message-mention" data-path={path} className={MENTION_CLASS}>{text}</span>;
 }
 
@@ -102,7 +102,7 @@ function FileCard({ path, open, preview, change }: { readonly path: string; read
     return () => abort.abort();
   }, [kind, path, preview]);
   const body = <>
-    <span className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-background ring-1 ring-border">
+    <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-md text-muted-foreground">
       {src ? <img src={src} alt="" className="size-full object-cover" /> : <FileGlyph kind={kind} />}
     </span>
     <span className="flex min-w-0 flex-col text-left">
@@ -113,8 +113,8 @@ function FileCard({ path, open, preview, change }: { readonly path: string; read
   return open
     // The card keeps the `message-mention` test id of the chip it replaces, so a journey that clicks a sent mention still finds it.
     ? <button type="button" data-testid="message-mention" data-path={path} aria-label={labels.openFile(name)} onClick={() => open(path)}
-      className="flex min-h-11 max-w-[16rem] cursor-pointer items-center gap-2.5 rounded-xl border border-border bg-card p-1.5 pr-3 outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60">{body}</button>
-    : <div data-testid="message-mention" data-path={path} className="flex min-h-11 max-w-[16rem] items-center gap-2.5 rounded-xl border border-border bg-card p-1.5 pr-3">{body}</div>;
+      className="flex min-h-11 max-w-[16rem] cursor-pointer items-center gap-3 rounded-lg border border-border bg-card px-3 py-2 outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60">{body}</button>
+    : <div data-testid="message-mention" data-path={path} className="flex min-h-11 max-w-[16rem] items-center gap-3 rounded-lg border border-border bg-card px-3 py-2">{body}</div>;
 }
 
 /** The file cards of a message, above its text bubble. */
@@ -131,7 +131,7 @@ function FileCards({ paths, open, preview }: { readonly paths: readonly string[]
 function UserText({ text, context }: { readonly text: string; readonly context: RowContext }) {
   const open = context.pieces?.openMention;
   const render = context.pieces?.renderMention;
-  const bubble = 'max-w-[85%] rounded-2xl rounded-br-md bg-muted px-4 py-2.5 text-sm leading-6 whitespace-pre-wrap text-foreground [overflow-wrap:anywhere]';
+  const bubble = 'max-w-[85%] rounded-xl rounded-br-sm bg-muted px-4 py-3 text-sm leading-6 whitespace-pre-wrap text-foreground [overflow-wrap:anywhere]';
   if (!context.pieces) return <div data-testid="user-text" className={bubble}>{text}</div>;
   const all = pieces(text, context.pieces);
   const isFile = (piece: Piece) => piece.kind === 'mention' && isUploadPath(piece.value!);

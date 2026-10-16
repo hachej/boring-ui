@@ -94,15 +94,15 @@ export interface ComposerProps {
   readonly feedback?: ComposerFeedback | undefined;
 }
 
-/** Round bar buttons share one look: a tinted circle, 44px so a thumb can hit it. */
-const ROUND = 'inline-flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-muted text-foreground transition-colors outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-45 motion-reduce:transition-none';
+/** Compact bar buttons expand to 44px for touch. */
+const ROUND = 'inline-flex size-8 max-sm:size-11 pointer-coarse:size-11 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-45 motion-reduce:transition-none';
 
 /** The annotate toggle (a round bar button beside the "+" menu in both layouts). */
 function AnnotateButton({ feedback, disabled }: { readonly feedback: ComposerFeedback; readonly disabled: boolean }) {
   const { labels } = useChatText();
   return <button type="button" data-testid="composer-annotate" aria-pressed={feedback.active} disabled={disabled}
     title={labels.annotateHint} onClick={() => feedback.annotate()}
-    className={cn(ROUND, feedback.active && 'bg-accent')}>
+    className={cn(ROUND, 'size-11', feedback.active && 'bg-accent')}>
     <MessageSquarePlusIcon className="size-4" aria-hidden="true" /><span className="sr-only">{labels.annotate}</span>
   </button>;
 }
@@ -143,7 +143,7 @@ function PlusMenu({ disabled, onAttach, onCommands }: { readonly disabled: boole
   return <div ref={root} className="relative shrink-0" onKeyDown={onKeyDown}>
     <button ref={trigger} type="button" data-testid="composer-plus" aria-label={labels.add} title={labels.add} aria-haspopup="menu" aria-expanded={open} disabled={disabled} onClick={() => setOpen(value => !value)} className={ROUND}>
       <icons.add className="size-5" aria-hidden="true" /></button>
-    {open && <div role="menu" aria-label={labels.add} data-testid="composer-plus-menu" className="absolute bottom-full left-0 z-30 mb-2 w-52 rounded-2xl border border-border bg-popover p-1.5 text-popover-foreground shadow-lg">
+    {open && <div role="menu" aria-label={labels.add} data-testid="composer-plus-menu" className="absolute bottom-full left-0 z-30 mb-2 w-52 rounded-lg border border-border bg-popover p-1.5 text-popover-foreground shadow-lg">
       {entries.map((entry, index) => entry && <button key={entry.testid} type="button" role="menuitem" data-testid={entry.testid} autoFocus={index === 0}
         onClick={() => { setOpen(false); entry.run(); }}
         className="flex min-h-11 w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm text-foreground outline-none hover:bg-accent focus-visible:bg-accent">{entry.icon}{entry.label}</button>)}
@@ -279,14 +279,14 @@ export function Composer(props: ComposerProps) {
       onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }}
       className={props.layout === 'inline'
         ? 'block max-h-40 min-h-11 min-w-0 flex-1 resize-none order-first basis-full border-0 bg-transparent px-1.5 py-2.5 text-base leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed sm:text-sm'
-        : 'block max-h-52 min-h-[3.5rem] w-full resize-none border-0 bg-transparent px-5 pt-4 pb-2 text-base leading-6 sm:text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed'} />;
+        : 'block max-h-52 min-h-[3.5rem] w-full resize-none border-0 bg-transparent px-4 pt-3 pb-2 text-base leading-6 sm:text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed'} />;
   const plus = (canAttach || items.length > 0) && <PlusMenu disabled={disabled} onAttach={canAttach ? () => fileInput.current?.click() : undefined} onCommands={items.length > 0 ? openCommands : undefined} />;
   const fileEl = canAttach && <input ref={fileInput} type="file" multiple accept={props.fileAccept} disabled={disabled} tabIndex={-1} aria-hidden="true" className="sr-only" data-testid="composer-file" data-attach="true"
     onChange={event => { const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ''; props.onPickFiles(files); }} />;
   const send = working
-    ? <Button variant="default" size="icon" data-testid="composer-submit" data-state="stop" aria-label={labels.stop} title={labels.stop} disabled={disabled || stopRequested} onClick={props.onStop} className="ml-auto size-11 shrink-0">
+    ? <Button variant="default" size="icon" data-testid="composer-submit" data-state="stop" aria-label={labels.stop} title={labels.stop} disabled={disabled || stopRequested} onClick={props.onStop} className="ml-auto size-8 max-sm:size-11 pointer-coarse:size-11 shrink-0">
       {stopRequested ? <Loader2Icon className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <icons.stop className="size-4 fill-current" aria-hidden="true" />}</Button>
-    : <Button variant="default" size="icon" type="submit" data-testid="composer-submit" data-state="send" aria-label={labels.send} title={labels.sendHint} disabled={!canSubmit} className="ml-auto size-11 shrink-0 disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100">
+    : <Button variant="default" size="icon" type="submit" data-testid="composer-submit" data-state="send" aria-label={labels.send} title={labels.sendHint} disabled={!canSubmit} className="ml-auto size-8 max-sm:size-11 pointer-coarse:size-11 shrink-0 disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100">
       <icons.send className="size-5" aria-hidden="true" /></Button>;
 
   if (props.layout === 'inline') return <form data-testid="composer" data-layout="inline" onSubmit={event => { event.preventDefault(); if (canSubmit) props.onSend(); }} onDragOver={drag} onDragLeave={drag} onDrop={drop}
@@ -310,14 +310,14 @@ export function Composer(props: ComposerProps) {
   </form>;
 
   return <form data-testid="composer" onSubmit={event => { event.preventDefault(); if (canSubmit) props.onSend(); }} onDragOver={drag} onDragLeave={drag} onDrop={drop}
-    className={cn('relative rounded-3xl border border-border bg-card shadow-sm transition-[border-color,box-shadow] focus-within:border-ring/60 focus-within:ring-[3px] focus-within:ring-ring/15 motion-reduce:transition-none',
+    className={cn('relative rounded-xl border border-input bg-card transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20 motion-reduce:transition-none',
       dragging && 'border-ring ring-[3px] ring-ring/20', disabled && 'opacity-70')}>
     {slashOpen && <SlashMenu query={query!} items={items} onSelect={pickSlash} onDismiss={dismiss} />}
     {mentionOpen && mentions && <MentionMenu query={trigger!.query} search={mentions.search} generation={mentions.generation} onSelect={pickMention} onDismiss={dismiss} />}
     {chipRows}
     {attachmentRow}
     {textareaEl}
-    <div className="flex flex-nowrap items-center gap-x-2 px-3 pt-1 pb-3">
+    <div className="flex flex-nowrap items-center gap-x-2 px-3 pt-1 pb-2">
       {fileEl}
       {plus}
       {feedback && <AnnotateButton feedback={feedback} disabled={disabled} />}

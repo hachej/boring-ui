@@ -1209,9 +1209,6 @@
             "font-size": "0.8125rem",
             "line-height": "1.5"
           },
-          ".boring-viewer .boring-markdown-notice": {
-            "border-left": "3px solid color-mix(in oklab, var(--primary) 55%, transparent)"
-          },
           ".boring-viewer .boring-markdown-alert": {
             "display": "flex",
             "flex-wrap": "wrap",
@@ -1293,7 +1290,7 @@
             "width": "100%",
             "min-height": "0",
             "margin": "0",
-            "padding": "1rem 1.25rem",
+            "padding": "1.5rem",
             "border": "0",
             "border-radius": "0",
             "outline": "none",
@@ -1311,10 +1308,10 @@
             "background": "color-mix(in oklab, var(--primary) 24%, transparent)"
           },
           ".boring-viewer .boring-markdown-content": {
-            "max-width": "46rem",
+            "max-width": "72ch",
             "min-height": "100%",
             "margin": "0 auto",
-            "padding": "1.25rem 1.25rem 3rem",
+            "padding": "1.5rem 1.5rem 3rem",
             "outline": "none",
             "color": "var(--foreground)",
             "font-size": "0.9375rem",
@@ -1333,7 +1330,6 @@
             "float": "left",
             "height": "0",
             "color": "var(--muted-foreground)",
-            "opacity": "0.8",
             "pointer-events": "none"
           },
           ".boring-viewer .boring-markdown-content :is(h1, h2, h3, h4, h5, h6)": {
@@ -1344,13 +1340,11 @@
           },
           ".boring-viewer .boring-markdown-content h1": {
             "margin": "1.75rem 0 0.75rem",
-            "font-size": "1.875rem"
+            "font-size": "1.5rem"
           },
           ".boring-viewer .boring-markdown-content h2": {
-            "margin": "1.5rem 0 0.625rem",
-            "padding-bottom": "0.25rem",
-            "border-bottom": "1px solid color-mix(in oklab, var(--border) 70%, transparent)",
-            "font-size": "1.375rem"
+            "margin": "2rem 0 0.75rem",
+            "font-size": "1.25rem"
           },
           ".boring-viewer .boring-markdown-content h3": {
             "margin": "1.25rem 0 0.5rem",
@@ -1449,10 +1443,10 @@
           ".boring-viewer .boring-markdown-content blockquote": {
             "margin": "1rem 0",
             "padding": "0.5rem 1rem",
-            "border-left": "3px solid color-mix(in oklab, var(--primary) 35%, transparent)",
-            "border-radius": "0 0.375rem 0.375rem 0",
-            "background": "color-mix(in oklab, var(--foreground) 4%, transparent)",
-            "color": "color-mix(in oklab, var(--foreground) 85%, transparent)"
+            "border": "1px solid var(--border)",
+            "border-radius": "0.375rem",
+            "background": "var(--muted)",
+            "color": "var(--foreground)"
           },
           ".boring-viewer .boring-markdown-content blockquote > :first-child": {
             "margin-top": "0"
@@ -1476,8 +1470,8 @@
           ".boring-viewer .boring-markdown-content mark": {
             "padding": "0 0.15em",
             "border-radius": "0.2em",
-            "background": "color-mix(in oklab, #facc15 40%, transparent)",
-            "color": "inherit"
+            "background": "var(--accent)",
+            "color": "var(--accent-foreground)"
           },
           ".boring-viewer .boring-markdown-content .tableWrapper": {
             "margin": "1rem 0",
@@ -1580,8 +1574,8 @@
             "color-scheme": "light"
           },
           ".boring-viewer .boring-viewer-checker": {
-            "background-color": "#fff",
-            "background-image": "linear-gradient(45deg, #d4d4d8 25%, transparent 25%, transparent 75%, #d4d4d8 75%), linear-gradient(45deg, #d4d4d8 25%, transparent 25%, transparent 75%, #d4d4d8 75%)",
+            "background-color": "var(--background)",
+            "background-image": "linear-gradient(45deg, var(--muted) 25%, transparent 25%, transparent 75%, var(--muted) 75%), linear-gradient(45deg, var(--muted) 25%, transparent 25%, transparent 75%, var(--muted) 75%)",
             "background-position": "0 0, 8px 8px",
             "background-size": "16px 16px"
           },
@@ -1593,7 +1587,7 @@
             "outline": "2px solid color-mix(in oklab, var(--ring) 60%, transparent)",
             "outline-offset": "-2px"
           },
-          "@media (pointer: coarse)": {
+          "@media (pointer: coarse), (max-width: 639px)": {
             ".boring-viewer .boring-markdown-tool": {
               "width": "2.75rem",
               "height": "2.75rem"

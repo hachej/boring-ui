@@ -71,7 +71,7 @@ export function ModelEffortPicker({ model, effort, currentModel, currentEffort, 
     onMouseEnter={() => setActive(index)} onMouseDown={event => { event.preventDefault(); choose(index); trigger.current?.focus(); }}
     className={cn('flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm max-sm:min-h-11 pointer-coarse:min-h-11', index === active ? 'bg-accent text-foreground' : 'text-muted-foreground')}>
     <span className="flex min-w-0 flex-1 flex-col"><span className="truncate font-medium text-foreground">{choice.label}</span>
-      {choice.detail && <span className="truncate text-xs opacity-70">{choice.detail}</span>}</span>
+      {choice.detail && <span className="truncate text-xs text-muted-foreground">{choice.detail}</span>}</span>
     {isCurrent(choice) && <CheckIcon className="size-4 shrink-0" aria-hidden="true" />}
   </li>;
   const section = (title: string, items: readonly Choice[], offset: number) => items.length > 0 && <li role="presentation" key={title}>
@@ -82,12 +82,12 @@ export function ModelEffortPicker({ model, effort, currentModel, currentEffort, 
   return <div ref={root} className="relative min-w-0 shrink" onKeyDown={onKeyDown}>
     <button ref={trigger} type="button" data-testid="composer-model" data-value={modelValue} data-effort={currentEffort ?? ''} disabled={disabled} aria-haspopup="listbox" aria-expanded={open} aria-label={description} title={description}
       onClick={() => setOpen(value => !value)}
-      className="inline-flex h-11 min-w-0 max-w-full cursor-pointer items-center gap-1.5 rounded-full bg-muted px-4 text-sm font-medium text-foreground transition-colors outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-60 motion-reduce:transition-none max-sm:px-3">
+      className="inline-flex h-8 min-w-0 max-w-full cursor-pointer items-center gap-1.5 rounded-md px-2 text-xs font-medium max-sm:h-11 pointer-coarse:h-11 text-foreground transition-colors outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-60 motion-reduce:transition-none max-sm:px-3">
       {busy && <Loader2Icon className="size-3.5 shrink-0 animate-spin motion-reduce:animate-none" aria-hidden="true" />}
       <span data-testid="composer-model-label" className="min-w-0 truncate">{summary}</span>
       <ChevronDownIcon className="size-3.5 shrink-0 opacity-50" aria-hidden="true" />
     </button>
-    {open && <ul ref={list} role="listbox" aria-label={labels.modelAndEffort} data-testid="composer-model-menu" className="absolute bottom-full left-0 z-20 mb-2 m-0 max-h-80 min-w-56 list-none overflow-y-auto rounded-2xl border border-border bg-popover p-1.5 text-popover-foreground shadow-lg max-sm:fixed max-sm:inset-x-0 max-sm:bottom-0 max-sm:mb-0 max-sm:max-h-[70dvh] max-sm:rounded-b-none max-sm:p-2 max-sm:pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+    {open && <ul ref={list} role="listbox" aria-label={labels.modelAndEffort} data-testid="composer-model-menu" className="absolute bottom-full left-0 z-20 mb-2 m-0 max-h-80 min-w-56 list-none overflow-y-auto rounded-lg border border-border bg-popover p-1.5 text-popover-foreground shadow-lg max-sm:fixed max-sm:inset-x-0 max-sm:bottom-0 max-sm:mb-0 max-sm:max-h-[70dvh] max-sm:rounded-b-none max-sm:p-2 max-sm:pb-[max(0.5rem,env(safe-area-inset-bottom))]">
       {model && section(labels.model, models, 0)}
       {effort && section(labels.effort, levels, models.length)}
     </ul>}

@@ -63,10 +63,10 @@ function FileDocument({ path, kind, locator, options, onClose, back, onUnsavedCh
   const { labels } = useAppText();
   const [mode, setMode] = useState<string>(kind === 'markdown' ? 'rich' : 'preview');
   useReportShown(options.onShown, path, saved.kind === 'open' && saved.controller ? saved.snapshot.ref.revision : undefined);
-  const common = { title: nameOf(path), subtitle: subtitleOf(locator), target: { file: path }, onClose, titleTestId: 'file-title', controls: back, ...(options.share ? { onShare: options.share } : {}) };
+  const common = { title: nameOf(path), subtitle: subtitleOf(locator), target: { file: path }, onClose, titleTestId: 'file-title', headerStart: back, ...(options.share ? { onShare: options.share } : {}) };
   // Until the document is open the bar offers no Share, Copy or menu actions of its own: they would act on a document that is not shown.
   if (saved.kind !== 'open' || !saved.controller) {
-    return <ViewerFrame title={common.title} subtitle={common.subtitle} onClose={onClose} controls={back}>
+    return <ViewerFrame title={common.title} subtitle={common.subtitle} onClose={onClose} headerStart={back}>
       <p role="status" className="m-0 p-4 text-sm text-muted-foreground">{saved.kind === 'loading' ? labels.loading : saved.kind === 'missing' ? labels.fileMissing : labels.fileNotText}</p>
     </ViewerFrame>;
   }
@@ -111,11 +111,11 @@ function FileBytes({ path, kind, locator, options, onClose, back }: Common) {
     const timer = kind === 'text' ? setInterval(() => { void load(); }, POLL_MS) : undefined;
     return () => { running.current?.abort(); clearInterval(timer); };
   }, [load, kind]);
-  const common = { subtitle: subtitleOf(locator), target: { file: path }, onClose, titleTestId: 'file-title', controls: back, ...(options.share ? { onShare: options.share } : {}) };
+  const common = { subtitle: subtitleOf(locator), target: { file: path }, onClose, titleTestId: 'file-title', headerStart: back, ...(options.share ? { onShare: options.share } : {}) };
   // Until the file is read the bar offers no Share: the image and PDF panes bring their own frame, so this one is replaced (remounted)
   // when the bytes arrive, and a Share pressed just then would copy the link with its "Link copied" notice lost with the old frame.
   if (file.kind !== 'ready') {
-    return <ViewerFrame title={nameOf(path)} subtitle={common.subtitle} onClose={onClose} titleTestId="file-title" controls={back}>
+    return <ViewerFrame title={nameOf(path)} subtitle={common.subtitle} onClose={onClose} titleTestId="file-title" headerStart={back}>
       <p role="status" className="m-0 p-4 text-sm text-muted-foreground">{file.kind === 'loading' ? labels.loading : labels.fileMissing}</p>
     </ViewerFrame>;
   }
@@ -146,13 +146,13 @@ export function FileViewer({ path, locator, options, onClose, onBack, backLabel,
 }) {
   const kind = viewerKindOf(path);
   const { labels, icons } = useAppText();
-  const back = onBack ? <button type="button" data-testid="file-back" onClick={onBack} className="inline-flex h-10 cursor-pointer items-center gap-1 rounded-lg border border-border bg-background px-2 text-sm md:h-8 md:text-xs"><icons.back className="size-3.5" aria-hidden="true" />{backLabel ?? labels.back}</button> : undefined;
+  const back = onBack ? <button type="button" data-testid="file-back" onClick={onBack} className="inline-flex h-8 min-w-8 shrink-0 cursor-pointer items-center justify-center gap-1 rounded-md px-2 text-xs text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 max-sm:h-11 max-sm:min-w-11 pointer-coarse:h-11 pointer-coarse:min-w-11"><icons.back className="size-4" aria-hidden="true" /><span className="max-sm:sr-only">{backLabel ?? labels.back}</span></button> : undefined;
   const custom = options.viewers?.[kind];
   const common: Common = { path, kind, locator, options, onClose, back, onUnsavedChange };
   return <div data-testid="file-viewer" data-kind={kind} data-path={path} aria-label={labels.fileViewer(KIND_LABEL[kind])} className="flex h-full min-h-0 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1">
-    {custom ? custom({ target: locator, title: nameOf(path), frame: { titleTestId: 'file-title', onClose, target: { file: path }, controls: back } })
+    {custom ? custom({ target: locator, title: nameOf(path), frame: { titleTestId: 'file-title', onClose, target: { file: path }, headerStart: back } })
       : kind === 'markdown' || kind === 'html' ? <FileDocument {...common} />
-      : kind === 'canvas' ? <ViewerFrame title={nameOf(path)} subtitle={subtitleOf(locator)} onClose={onClose} controls={back}><p role="status" className="m-0 p-4 text-sm text-muted-foreground">{labels.noCanvasViewer}</p></ViewerFrame>
+      : kind === 'canvas' ? <ViewerFrame title={nameOf(path)} subtitle={subtitleOf(locator)} onClose={onClose} headerStart={back}><p role="status" className="m-0 p-4 text-sm text-muted-foreground">{labels.noCanvasViewer}</p></ViewerFrame>
       : <FileBytes {...common} />}
   </div>;
 }

@@ -46,7 +46,7 @@ function Thinking({ text, streaming, details }: { readonly text: string; readonl
     <TraceIcon><BrainIcon /></TraceIcon><TraceTitle>{streaming ? labels.thinking : labels.reasoning}</TraceTitle>
   </TraceLine>;
   return <TraceCollapsible data-testid="reasoning" data-state={open ? 'open' : 'closed'} data-streaming={streaming ? 'true' : undefined} open={details && open} onOpenChange={setOpen}>
-    {details ? <TraceCollapsibleTrigger className="min-h-8 pointer-coarse:min-h-10">{line}</TraceCollapsibleTrigger> : line}
+    {details ? <TraceCollapsibleTrigger className="min-h-8 max-sm:min-h-11 pointer-coarse:min-h-11">{line}</TraceCollapsibleTrigger> : line}
     {details && <TraceCollapsibleContent><div data-testid="reasoning-text" className="max-h-72 overflow-y-auto text-sm whitespace-pre-wrap [overflow-wrap:anywhere]">{text}</div></TraceCollapsibleContent>}
   </TraceCollapsible>;
 }
@@ -61,11 +61,11 @@ export function ActivityBlock({ steps, state, streaming, developer, onOpenImage 
   const Icon = state === 'running' ? Loader2Icon : state === 'failed' ? AlertCircleIcon : state === 'stopped' ? CircleSlashIcon : CheckIcon;
   return <Trace data-testid="activity" data-boring="activity" data-state={state} data-open={open ? 'true' : 'false'} className="my-1.5">
     <TraceCollapsible open={open} onOpenChange={setChosen}>
-      <TraceCollapsibleTrigger className="min-h-9 max-sm:min-h-10 pointer-coarse:min-h-10">
+      <TraceCollapsibleTrigger className="min-h-8 max-sm:min-h-11 pointer-coarse:min-h-11">
         <TraceLine {...(state === 'running' ? { status: 'running' } : state === 'failed' ? { status: 'error' } : {})}>
           <TraceIcon><Icon className={state === 'running' ? 'animate-spin motion-reduce:animate-none' : undefined} /></TraceIcon>
           <TraceTitle data-testid="activity-label">{header(steps, state, streaming, labels)}</TraceTitle>
-          <TraceDescription data-testid="activity-count" className="text-xs">{labels.steps(steps.length)}</TraceDescription>
+          <TraceDescription data-testid="activity-count" className="text-xs text-muted-foreground">{labels.steps(steps.length)}</TraceDescription>
         </TraceLine>
       </TraceCollapsibleTrigger>
       <TraceCollapsibleContent>

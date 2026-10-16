@@ -33,6 +33,8 @@ export interface HtmlPaneProps {
    * script-free rendering of `@hachej/boring-ui-kit/html-viewer`.
    */
   readonly interactive?: InteractiveHtml;
+  /** Leading header content, before the title. */
+  readonly headerStart?: ReactNode;
   readonly controls?: ReactNode;
   readonly onRefresh?: () => unknown;
   readonly onShare?: ViewerShare;
@@ -56,7 +58,7 @@ export function htmlStatus(state: ReturnType<HtmlController['getSnapshot']>, lab
 }
 
 /** The HTML safe preview and source editor in the standard viewer frame. The preview never runs scripts; a host-enabled interactive preview runs them, in a sandbox. */
-export function HtmlPane({ controller, labels: ownLabels, title = 'HTML document', subtitle, target, revision, initialMode = 'preview', onModeChange, interactive, controls, onRefresh, onShare, onOpenInNewTab, onClose, testId = 'viewer', titleTestId, className }: HtmlPaneProps) {
+export function HtmlPane({ controller, labels: ownLabels, title = 'HTML document', subtitle, target, revision, initialMode = 'preview', onModeChange, interactive, headerStart, controls, onRefresh, onShare, onOpenInNewTab, onClose, testId = 'viewer', titleTestId, className }: HtmlPaneProps) {
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const { labels } = useViewerText(ownLabels);
   const [mode, setModeState] = useState<HtmlPaneMode>(initialMode);
@@ -72,7 +74,7 @@ export function HtmlPane({ controller, labels: ownLabels, title = 'HTML document
       .catch(() => setError(labels.operationFailed));
   };
   const filename = useMemo(() => fileNameFor(title, 'html'), [title]);
-  return <ViewerFrame title={title} subtitle={subtitle} status={htmlStatus(state, labels)} labels={labels} target={target} revision={revision} testId={testId} {...(titleTestId ? { titleTestId } : {})} className={className}
+  return <ViewerFrame title={title} subtitle={subtitle} headerStart={headerStart} status={htmlStatus(state, labels)} labels={labels} target={target} revision={revision} testId={testId} {...(titleTestId ? { titleTestId } : {})} className={className}
     onRefresh={() => { if (interactive && mode === 'preview') setReload(count => count + 1); return (onRefresh ?? (() => controller.actions.refresh()))(); }} onShare={onShare} onCopy={() => copyText(controller.getSnapshot().text)}
     onDownload={() => downloadFile(filename, controller.getSnapshot().text, 'text/html;charset=utf-8')} onOpenInNewTab={onOpenInNewTab} onClose={onClose}
     controls={<>

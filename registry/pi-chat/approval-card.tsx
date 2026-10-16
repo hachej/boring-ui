@@ -73,13 +73,13 @@ export function ApprovalCard({ call, result, answer, questionId, summary, decisi
   const approved = state === 'approved' || state === 'approved-sent', denied = state === 'denied' || state === 'denied-sent';
 
   return <section data-testid="approval-card" data-state={state} data-call-id={call.id} data-tool={call.name} aria-label={labels.approvalNeeded}
-    className={cn('my-2 rounded-xl border bg-card p-4 text-card-foreground shadow-xs', open ? 'border-(--chat-warning)/60' : 'border-border')}>
+    className={cn('my-2 rounded-lg border bg-card p-4 text-card-foreground', open ? 'border-(--chat-warning)/60' : 'border-border')}>
     <div className="flex items-start gap-3">
       <span className={cn('mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg', open ? 'bg-(--chat-warning-soft) text-(--chat-warning-soft-foreground)' : denied ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground')}>
         {approved ? <CheckIcon className="size-4" aria-hidden="true" /> : denied ? <XIcon className="size-4" aria-hidden="true" /> : <ShieldAlertIcon className="size-4" aria-hidden="true" />}
       </span>
       <div className="min-w-0 flex-1">
-        <p className="m-0 text-xs font-medium tracking-wider text-muted-foreground uppercase">{open ? labels.needsApproval : approved ? labels.approved : denied ? labels.denied : labels.notDecided}</p>
+        <p className="m-0 text-xs font-medium text-muted-foreground">{open ? labels.needsApproval : approved ? labels.approved : denied ? labels.denied : labels.notDecided}</p>
         {summary && <p data-testid="approval-summary" className="mt-1 mb-0 text-base leading-6 font-semibold [overflow-wrap:anywhere]">{summary}</p>}
         <p data-testid="approval-tool" className={cn('mb-0 [overflow-wrap:anywhere]', summary ? 'mt-1 text-xs text-muted-foreground' : 'mt-1 text-sm leading-6 font-medium')}>{labels.wantsToRun} <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">{call.name}</code></p>
         {args.length > 0 && (() => {
@@ -87,12 +87,12 @@ export function ApprovalCard({ call, result, answer, questionId, summary, decisi
             {args.map(item => [<dt key={`${item.name}:n`} className="text-muted-foreground">{item.name}</dt>, <dd key={`${item.name}:v`} className="m-0 font-mono whitespace-pre-wrap [overflow-wrap:anywhere]">{item.value}</dd>])}
           </dl>;
           // With a summary the raw arguments are the detail behind it; without one they are all the person has to decide on.
-          return summary ? <details data-testid="approval-details" className="mt-2 text-xs"><summary className="cursor-pointer text-muted-foreground select-none">{labels.arguments}</summary>{list}</details> : list;
+          return summary ? <details data-testid="approval-details" className="mt-2 text-xs"><summary className="inline-flex min-h-8 cursor-pointer items-center text-muted-foreground select-none max-sm:min-h-11 pointer-coarse:min-h-11">{labels.arguments}</summary>{list}</details> : list;
         })()}
         {open && <>
           <div role="group" aria-label={labels.decision} className="mt-3 flex flex-wrap gap-2">
-            <Button variant="default" data-testid="approval-approve" disabled={!answer || !questionId || busy} onClick={() => { void decide(APPROVE); }} className={cn('min-h-11 sm:min-h-9', sending === APPROVE && 'opacity-70')}><CheckIcon className="size-3.5" aria-hidden="true" />{labels.approve}</Button>
-            <Button variant="outline" data-testid="approval-deny" disabled={!answer || !questionId || busy} onClick={() => { void decide(DENY); }} className={cn('min-h-11 sm:min-h-9', sending === DENY && 'border-ring')}><XIcon className="size-3.5" aria-hidden="true" />{labels.deny}</Button>
+            <Button variant="default" data-testid="approval-approve" disabled={!answer || !questionId || busy} onClick={() => { void decide(APPROVE); }} className={cn('min-h-11 sm:min-h-9 pointer-coarse:min-h-11', sending === APPROVE && 'opacity-70')}><CheckIcon className="size-3.5" aria-hidden="true" />{labels.approve}</Button>
+            <Button variant="outline" data-testid="approval-deny" disabled={!answer || !questionId || busy} onClick={() => { void decide(DENY); }} className={cn('min-h-11 sm:min-h-9 pointer-coarse:min-h-11', sending === DENY && 'border-ring')}><XIcon className="size-3.5" aria-hidden="true" />{labels.deny}</Button>
           </div>
           {live && <p className="mt-3 mb-0 text-xs text-muted-foreground">{labels.stillWritingCall}</p>}
           {(!answer || !questionId) && !live && <p className="mt-3 mb-0 text-xs text-muted-foreground">{labels.decidingUnavailable}</p>}

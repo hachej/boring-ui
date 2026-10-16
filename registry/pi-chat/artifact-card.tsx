@@ -27,8 +27,8 @@ export function ArtifactCard({ artifact, pending, title, open = false, onOpen }:
   const { labels } = useChatText();
   if (!artifact) {
     return <div data-testid="artifact-card" data-state={pending ?? 'presenting'} role="status" aria-busy="true"
-      className="my-2 flex min-h-16 items-center gap-3 rounded-xl border border-dashed border-border bg-muted/30 px-3 py-2.5">
-      <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"><FileTextIcon className="size-5" aria-hidden="true" /></span>
+      className="my-2 flex min-h-16 items-center gap-3 rounded-lg border border-dashed border-border bg-card px-4 py-3">
+      <span className="flex size-8 shrink-0 items-center justify-center text-muted-foreground"><FileTextIcon className="size-5" aria-hidden="true" /></span>
       <span className="min-w-0 flex-1">
         <span data-testid="artifact-title" className="block truncate text-sm font-medium"><Shimmer>{title ?? labels.artifact}</Shimmer></span>
         <span className="block text-xs text-muted-foreground"><Shimmer>{labels.opening}</Shimmer></span>
@@ -39,10 +39,10 @@ export function ArtifactCard({ artifact, pending, title, open = false, onOpen }:
   return <button type="button" data-testid="artifact-card" data-state="ready" data-artifact-id={artifactKey(artifact)} data-artifact-revision={artifact.revision} data-artifact-version={artifact.ordinal} data-artifact-type={artifact.type}
     data-open={open ? 'true' : undefined} aria-pressed={onOpen ? open : undefined} aria-label={labels.openArtifact(artifact.title, artifact.ordinal)} disabled={!onOpen}
     onClick={() => onOpen?.(artifact)}
-    className={cn('group/artifact my-2 flex min-h-16 w-full max-w-md cursor-pointer items-center gap-3 rounded-xl border bg-card px-3 py-2.5 text-left text-card-foreground shadow-xs outline-none transition-[border-color,background-color,box-shadow] motion-reduce:transition-none',
-      'hover:border-ring/50 hover:bg-muted/40 hover:shadow-sm focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-default',
-      open ? 'border-ring bg-muted/50' : 'border-border')}>
-    <span className={cn('flex size-10 shrink-0 items-center justify-center rounded-lg transition-colors motion-reduce:transition-none', open ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground group-hover/artifact:bg-background group-hover/artifact:text-foreground')}>
+    className={cn('group/artifact my-2 flex min-h-16 w-full max-w-md cursor-pointer items-center gap-3 rounded-lg border bg-card px-4 py-3 text-left text-card-foreground outline-none transition-[border-color,background-color] motion-reduce:transition-none',
+      'hover:border-ring/50 hover:bg-accent focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-default',
+      open ? 'border-ring/50 bg-accent' : 'border-border')}>
+    <span className={cn('flex size-8 shrink-0 items-center justify-center transition-colors motion-reduce:transition-none', open ? 'text-foreground' : 'text-muted-foreground group-hover/artifact:text-foreground')}>
       <Icon className="size-5" aria-hidden="true" /></span>
     <span className="min-w-0 flex-1">
       <span data-testid="artifact-title" className="block truncate text-sm leading-5 font-medium">{artifact.title}</span>

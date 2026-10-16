@@ -14,7 +14,6 @@ import { VoiceInput } from '../../registry/feedback/voice-input.tsx';
 import { useRevisionAttachments } from '../../registry/pi-app/use-revision-attachments.ts';
 import { useConversations } from '../../registry/pi-app/use-conversations.ts';
 import { FileViewer } from '../../registry/pi-app/file-viewer.tsx';
-import { ViewerWindowProvider } from '../../registry/viewers/viewer-window.ts';
 import { BlockActions } from '../../registry/button/actions.tsx';
 import { PdfPane } from '../../registry/viewers/pdf-pane.tsx';
 import { Button } from '../../registry/button/button.tsx';
@@ -113,7 +112,7 @@ function InvoiceSummary({ cell }) {
   const decide = (action, extra = {}) => act(action, { invoice: invoice.id, expected: invoice.revision, ...extra });
   return <section data-testid="invoice-summary" data-invoice={invoice.id} className={`${card} @container`} aria-label={`Invoice ${invoice.id}`}>
     <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-      <div className="flex items-center gap-3"><Mark name={invoice.supplierName} /><div><h2 className="text-base font-semibold"><button type="button" data-testid="open-supplier" className="underline-offset-4 hover:underline" onClick={() => act('open_supplier', { id: invoice.supplier })}>{invoice.supplierName}</button></h2><p className="text-sm text-muted-foreground">{invoice.id} · {invoice.number} · {invoice.description}</p></div></div>
+      <div className="flex items-center gap-3"><Mark name={invoice.supplierName} /><div><h2 className="text-base font-semibold"><button type="button" data-testid="open-supplier" className="inline-flex min-h-8 items-center underline-offset-4 hover:underline max-sm:min-h-11 pointer-coarse:min-h-11" onClick={() => act('open_supplier', { id: invoice.supplier })}>{invoice.supplierName}</button></h2><p className="text-sm text-muted-foreground">{invoice.id} · {invoice.number} · {invoice.description}</p></div></div>
       <div><Status value={invoice.status} /><span data-testid="invoice-status" className="sr-only">{invoice.status}</span></div>
     </div>
     <dl className="grid grid-cols-2 gap-x-6 gap-y-3 @[36rem]:grid-cols-4 [&_dd]:m-0">
@@ -138,7 +137,7 @@ function DuplicateAlert({ cell }) {
   if (!matches.length) return null;
   return <section data-testid="duplicate-alert" role="note" className="rounded-lg border border-destructive/40 bg-destructive/5 p-4" aria-label="Possible duplicate">
     <h2 className="mb-1 text-sm font-semibold text-destructive">Possible duplicate</h2>
-    <p className="text-sm">Same supplier, PO and amount as {matches.map((match, index) => <span key={match.id}>{index ? ', ' : ''}<button type="button" className="font-medium underline underline-offset-4" onClick={() => act('open_invoice', { id: match.id })}>{match.id}</button></span>)}.</p>
+    <p className="text-sm">Same supplier, PO and amount as {matches.map((match, index) => <span key={match.id}>{index ? ', ' : ''}<button type="button" className="inline-flex min-h-8 items-center font-medium underline underline-offset-4 max-sm:min-h-11 pointer-coarse:min-h-11" onClick={() => act('open_invoice', { id: match.id })}>{match.id}</button></span>)}.</p>
   </section>;
 }
 
@@ -262,7 +261,6 @@ const transcribe = async (audio: Blob, signal: AbortSignal) => (await (await aut
 function Chat({ api, provider, file, openFile, closeFile, setUnsaved, active, conversations, feed }) {
   const { isMobile, setOpenMobile } = useSidebar();
   const base = useRef(620), widened = useRef(false);
-  const viewerWindow = useMemo(() => ({ headerLayout: 'stacked' }), []);
   const chat = useRemoteChat({ conversationId: active, endpoint: id => at(`/api/chat?conversation=${id}`), fetch: authorized, identity, requestContext: () => ({ ...readAgentContext(), tab: TAB }) });
   // The files the person attaches (and a long paste) are saved in the workspace, under uploads/, through the same provider as the Library.
   const attachments = useRevisionAttachments({ revisionProvider: provider });
@@ -281,23 +279,23 @@ function Chat({ api, provider, file, openFile, closeFile, setUnsaved, active, co
   }, [api.placement, file, chat.status]);
   if (chat.status !== 'ready') return <p role="status" data-testid="chat-connecting" className="p-4 text-sm text-muted-foreground">{chat.status === 'offline' ? 'Server unreachable. Retrying…' : 'Connecting…'}</p>;
   const headerActions = [
-    ...(isMobile ? [{ id: 'navigation', label: 'Open navigation', icon: PanelLeftIcon, onSelect: () => setOpenMobile(true) }] : []),
+    { id: 'navigation', label: 'Open navigation', icon: PanelLeftIcon, onSelect: () => setOpenMobile(true) },
     { id: 'page', label: 'Agent as page', icon: MaximizeIcon, onSelect: () => api.setPlacement('page') },
   ];
   const placementActions = api.placement === 'page' ? [
-    ...(isMobile ? headerActions.filter(action => action.id === 'navigation') : []),
+    ...headerActions.filter(action => action.id === 'navigation'),
     { id: 'dock', label: 'Dock beside app', icon: PanelLeftIcon, onSelect: api.dock },
   ] : headerActions;
   const barTools = <ChatTools conversations={conversations} provider={provider} file={file} openFile={openFile} feed={feed} />;
   const tools = voice ? <VoiceInput controller={chat.controller} transcribe={transcribe} /> : undefined;
-  const common = { controller: chat.controller, actions: chat.actions, headerActions, tools, ...(attachments ? { attachments, pasteToFile: {} } : {}), onOpenFile: openFile, fileChanges: true };
-  const viewer = file && provider ? <ViewerWindowProvider value={viewerWindow}><Document path={file} provider={provider} close={closeFile} onBack={replaceChat ? closeFile : undefined} onUnsaved={setUnsaved} /></ViewerWindowProvider> : null;
+  const common = { controller: chat.controller, actions: chat.actions, headerActions, className: '[&_[data-action=navigation]]:md:hidden', tools, ...(attachments ? { attachments, pasteToFile: {} } : {}), onOpenFile: openFile, fileChanges: true };
+  const viewer = file && provider ? <Document path={file} provider={provider} close={closeFile} onBack={replaceChat ? closeFile : undefined} onUnsaved={setUnsaved} /> : null;
   const header = <div data-testid="agent-panel-header" className="pi-chat flex h-14 shrink-0 items-center gap-0.5 px-3 text-foreground [&_button]:min-h-11 [&_button]:min-w-11">
     <h2 className="m-0 min-w-0 flex-1 truncate text-sm font-semibold tracking-tight">AP helper</h2>
-    {barTools}<BlockActions actions={placementActions} testId="chat-action" menuLabel="More actions" />
+    {barTools}<BlockActions actions={placementActions} testId="chat-action" menuLabel="More actions" className="[&_[data-action=navigation]]:md:hidden" />
   </div>;
   const conversation = <div hidden={replaceChat} inert={replaceChat} className={cn('min-h-0 flex-1 flex-col', replaceChat ? 'hidden' : 'flex')}>
-    <AmbientChat key={active} {...common} headerTools={api.floating ? barTools : undefined} embedded={!api.floating} variant="surface" defaultState="expanded" labels={{ title: 'AP helper' }} onDock={() => { api.dock(); api.setWidth(base.current); }} />
+    <AmbientChat key={active} {...common} headerTools={api.floating ? barTools : undefined} embedded={!api.floating} variant="surface" defaultState="expanded" labels={{ title: 'AP helper', placeholder: 'Ask about your payables…', empty: 'Review an invoice, check the policy, or ask what needs your approval.' }} onDock={() => { api.dock(); api.setWidth(base.current); }} />
   </div>;
   return <FloatingViewer active={replaceChat} header={!api.floating && !replaceChat ? header : null}>
     <ArtifactWorkspace chat={conversation} open={Boolean(file)} panel={viewer} onClose={closeFile} sheetBelow={0} minPanel={replaceChat ? 0 : 360} minChat={replaceChat ? 0 : 340} defaultWidth={PANEL} storageKey="workspace-demo.file-panel" panelLabel="File viewer" variant="inset"

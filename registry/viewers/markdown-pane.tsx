@@ -25,6 +25,8 @@ export interface MarkdownPaneProps {
   /** Reports the person's choice, so a host that remounts the pane (for a new revision) can start it in the same mode. */
   readonly onModeChange?: (mode: 'rich' | 'source') => void;
   readonly placeholder?: string;
+  /** Leading header content, before the title. */
+  readonly headerStart?: ReactNode;
   /** Extra viewer controls, for example a version switcher. */
   readonly controls?: ReactNode;
   /** Defaults to the controller's refresh: a clean document follows the saved one, unsaved edits are kept and shown as changed elsewhere. */
@@ -54,7 +56,7 @@ export function markdownStatus(state: ReturnType<MarkdownController['getSnapshot
 }
 
 /** The Markdown editor in the standard viewer frame: mode toggle, Save while there are edits, Share, and Reload, Copy and Download under the "…" menu. */
-export function MarkdownPane({ controller, title: givenTitle, labels: ownLabels, subtitle, target, revision, initialMode = 'rich', onModeChange, placeholder, controls, onRefresh, onShare, onOpenInNewTab, onClose, resolveImage, onMountedTools, testId = 'viewer', titleTestId, className }: MarkdownPaneProps) {
+export function MarkdownPane({ controller, title: givenTitle, labels: ownLabels, subtitle, target, revision, initialMode = 'rich', onModeChange, placeholder, headerStart, controls, onRefresh, onShare, onOpenInNewTab, onClose, resolveImage, onMountedTools, testId = 'viewer', titleTestId, className }: MarkdownPaneProps) {
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const { labels } = useViewerText(ownLabels);
   const title = givenTitle ?? labels.document;
@@ -77,7 +79,7 @@ export function MarkdownPane({ controller, title: givenTitle, labels: ownLabels,
     }, () => setRefused({ version, label: labels.notSaved(labels.saveFailedReason) }));
   };
   const filename = useMemo(() => fileNameFor(title, 'md'), [title]);
-  return <ViewerFrame title={title} subtitle={subtitle} status={refused && refused.version === state.bufferVersion && state.save.kind !== 'pending' ? { label: refused.label, tone: 'warning' } : markdownStatus(state, labels)} target={target} labels={labels} revision={revision} testId={testId} {...(titleTestId ? { titleTestId } : {})} className={className}
+  return <ViewerFrame title={title} subtitle={subtitle} headerStart={headerStart} status={refused && refused.version === state.bufferVersion && state.save.kind !== 'pending' ? { label: refused.label, tone: 'warning' } : markdownStatus(state, labels)} target={target} labels={labels} revision={revision} testId={testId} {...(titleTestId ? { titleTestId } : {})} className={className}
     onRefresh={onRefresh ?? (() => controller.actions.refresh())} onShare={onShare} onCopy={() => copyText(controller.getSnapshot().text)}
     onDownload={() => downloadFile(filename, controller.getSnapshot().text, 'text/markdown;charset=utf-8')} onOpenInNewTab={onOpenInNewTab} onClose={onClose}
     controls={<>

@@ -99,7 +99,7 @@ test('pending feedback preserves the originating live controller after its prese
   }
 });
 
-test('without the feedback prop the composer renders byte-identical markup to the composer of main', () => {
+test('without the feedback prop the composer renders byte-identical markup to the approved presentation baseline', () => {
   const golden = JSON.parse(readFileSync(join(root, 'test/fixtures/pi-chat-composer-baseline.json'), 'utf8'));
   const cases = composerCases();
   assert.deepEqual(Object.keys(cases), Object.keys(golden));
