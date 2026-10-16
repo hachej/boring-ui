@@ -23,8 +23,12 @@ for (const [name, start, trigger] of [
   try {
     browser = await launch(app.url, { evidence });
     const open = async () => {
+      if (name === 'standalone') await browser.until('navigation matches the resized viewport', `(() => { const mode=${q('[data-boring=agent-workspace]')}?.dataset.sessions; return innerWidth<=640 ? ['closed','drawer'].includes(mode) : ['docked','hidden'].includes(mode); })()`);
       if (await browser.evaluate(`!!${q(tree)}`)) return;
-      if (name === 'standalone' && !(await browser.evaluate(`${q(trigger)}?.checkVisibility()`))) await browser.click(q('[data-testid=sessions-toggle]'));
+      if (name === 'standalone' && !(await browser.evaluate(`${q(trigger)}?.checkVisibility()`))) {
+        await browser.click(q('[data-testid=sessions-toggle]'));
+        await browser.until('phone navigation drawer opened', `${q('[data-boring=agent-workspace]')}?.dataset.sessions === 'drawer' && ${q(trigger)}?.checkVisibility()`);
+      }
       await browser.click(q(trigger));
       await browser.until('Library search', `!!${q(`${tree} input[type=search]`)}`, 20000);
       await browser.until('Library entrance settled', `(() => { const popup = ${q(tree)}?.closest('[data-testid=library-popover], [data-slot=drawer-popup]') ?? ${q(tree)}; return popup && popup.getAnimations({subtree:true}).every(a=>a.playState!=='running'); })()`);
