@@ -15,7 +15,7 @@ import { createVoiceCapture } from '@hachej/boring-feedback/page';
 import type { VoiceCapture, VoiceRefusal } from '@hachej/boring-feedback/page';
 import type { FeedbackSession } from '@hachej/boring-feedback/ui';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
-import { Drawer, DrawerContent } from '@/components/ui/drawer';
+import { Drawer, DrawerContent } from '../drawer/drawer';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Dock, DockLayout, DockMain } from '../dock/dock';
 import type { DockApi } from '../dock/dock';

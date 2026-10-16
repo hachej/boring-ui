@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useId, useRef, useState } from 'react';
-import type { ComponentType, KeyboardEvent, ReactNode } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import type { ComponentType, CSSProperties, KeyboardEvent, ReactNode } from 'react';
 import { CheckIcon, EllipsisIcon } from 'lucide-react';
 import { Button, IconButton } from './button';
 import { cn } from '../utils/utils';
@@ -50,6 +51,8 @@ export interface ActionMenuProps {
   readonly size?: 'icon-bar' | 'icon-sm';
   readonly className?: string;
   readonly children?: ReactNode;
+  /** Escape a viewer's clipped pane while retaining the shared menu's interactions. */
+  readonly portal?: boolean;
 }
 
 const ITEM = 'flex h-9 w-full cursor-pointer items-center gap-2 rounded-md px-2.5 text-left text-sm outline-none hover:bg-muted focus-visible:bg-muted disabled:pointer-events-none disabled:opacity-45 max-sm:h-11 pointer-coarse:h-11';
@@ -58,26 +61,40 @@ const ITEM = 'flex h-9 w-full cursor-pointer items-center gap-2 rounded-md px-2.
  * An icon button that opens a small menu: arrow keys, Home/End and roving focus, Escape (focus returns to the trigger), Tab and an outside
  * press close it. The one menu of the blocks' "…" buttons and the viewers' version history.
  */
-export function ActionMenu({ label, icon, items, testId = 'menu', align = 'end', size = 'icon-bar', className, children }: ActionMenuProps) {
+export function ActionMenu({ label, icon, items, testId = 'menu', align = 'end', size = 'icon-bar', className, children, portal = false }: ActionMenuProps) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
   const menuId = useId();
-  const radio = items.some(item => item.checked !== undefined);
+  const [position, setPosition] = useState<CSSProperties & { '--menu-top': string; '--menu-edge': string }>();
+
+  useLayoutEffect(() => {
+    if (!open || !portal) return;
+    const place = () => {
+      const bounds = trigger.current?.getBoundingClientRect();
+      if (bounds) setPosition({ '--menu-top': `${bounds.bottom + 4}px`, '--menu-edge': `${Math.max(8, align === 'end' ? window.innerWidth - bounds.right : bounds.left)}px` });
+    };
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => { window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); };
+  }, [open, portal, align]);
 
   useEffect(() => {
     if (!open) return;
-    const list = root.current?.querySelectorAll<HTMLElement>('[role^=menuitem]:not(:disabled)');
-    const wanted = root.current?.querySelector<HTMLElement>('[aria-checked=true]:not(:disabled)') ?? list?.[0];
+    const list = menu.current?.querySelectorAll<HTMLElement>('[role^=menuitem]:not(:disabled)');
+    const wanted = menu.current?.querySelector<HTMLElement>('[aria-checked=true]:not(:disabled)') ?? list?.[0];
     wanted?.focus();
-    const away = (event: Event) => { if (!(event.target instanceof Node) || !root.current?.contains(event.target)) setOpen(false); };
+    const away = (event: Event) => { if (!(event.target instanceof Node) || (!root.current?.contains(event.target) && !menu.current?.contains(event.target))) setOpen(false); };
     document.addEventListener('pointerdown', away);
     return () => document.removeEventListener('pointerdown', away);
   }, [open]);
 
   const close = (refocus: boolean) => { setOpen(false); if (refocus) trigger.current?.focus(); };
   const keys = (event: KeyboardEvent<HTMLElement>) => {
-    const rows = [...(root.current?.querySelectorAll<HTMLElement>('[role^=menuitem]:not(:disabled)') ?? [])];
+    if (['Escape', 'Tab', 'ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) event.stopPropagation();
+    const rows = [...(menu.current?.querySelectorAll<HTMLElement>('[role^=menuitem]:not(:disabled)') ?? [])];
     const at = rows.indexOf(document.activeElement as HTMLElement);
     const go = (index: number) => { event.preventDefault(); rows[(index + rows.length) % rows.length]?.focus(); };
     if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(true); }
@@ -88,21 +105,26 @@ export function ActionMenu({ label, icon, items, testId = 'menu', align = 'end',
     else if (event.key === 'End') go(-1);
   };
 
+  const popup = open && <div ref={menu} id={menuId} role="menu" aria-label={label} data-slot="dropdown-menu-content" data-testid={`${testId}-list`} style={portal ? position : undefined}
+    onPointerDown={event => event.stopPropagation()}
+    className={cn('z-50 grid max-h-72 min-w-48 max-w-[calc(100vw-16px)] gap-0.5 overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-lg',
+      'max-sm:fixed max-sm:inset-x-2 max-sm:top-auto max-sm:bottom-2 max-sm:mt-0 max-sm:max-h-[70vh] max-sm:rounded-xl max-sm:p-1.5',
+      portal ? cn('fixed sm:top-(--menu-top)', align === 'end' ? 'sm:right-(--menu-edge)' : 'sm:left-(--menu-edge)') : cn('absolute top-full mt-1', align === 'end' ? 'right-0' : 'left-0'))}>
+    {children}
+    {items.map(item => <button key={item.id} type="button" tabIndex={-1} role={item.checked !== undefined ? 'menuitemradio' : 'menuitem'} {...(item.checked !== undefined ? { 'aria-checked': item.checked } : {})}
+      disabled={item.disabled} data-testid={item.testId ?? `${testId}-${item.id}`} data-item={item.id} className={ITEM}
+      onClick={() => { close(true); item.onSelect(); }}>
+      {item.icon ?? (item.checked !== undefined ? <span className="size-4 shrink-0">{item.checked && <CheckIcon className="size-4" aria-hidden="true" />}</span> : null)}
+      <span className="min-w-0 flex-1 truncate">{item.label}</span>
+      {item.hint && <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">{item.hint}</span>}
+    </button>)}
+  </div>;
+
   return <div ref={root} data-viewer-menu className={cn('relative', className)} onKeyDown={event => { if (open) keys(event); }}>
     <IconButton ref={trigger} label={label} size={size} data-testid={testId} aria-haspopup="menu" aria-expanded={open} aria-controls={open ? menuId : undefined}
       onClick={() => setOpen(value => !value)}
       onKeyDown={event => { if (!open && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) { event.preventDefault(); setOpen(true); } }}>{icon}</IconButton>
-    {open && <div id={menuId} role="menu" aria-label={label} data-testid={`${testId}-list`}
-      className={cn('absolute top-full z-50 mt-1 grid max-h-72 min-w-48 gap-0.5 overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-lg', 'max-sm:fixed max-sm:inset-x-2 max-sm:top-auto max-sm:bottom-2 max-sm:mt-0 max-sm:max-h-[70vh] max-sm:rounded-xl max-sm:p-1.5', align === 'end' ? 'right-0' : 'left-0')}>
-      {children}
-      {items.map(item => <button key={item.id} type="button" tabIndex={-1} role={radio ? 'menuitemradio' : 'menuitem'} {...(radio ? { 'aria-checked': item.checked === true } : {})}
-        disabled={item.disabled} data-testid={item.testId ?? `${testId}-${item.id}`} data-item={item.id} className={ITEM}
-        onClick={() => { close(true); item.onSelect(); }}>
-        {item.icon ?? (radio ? <span className="size-4 shrink-0">{item.checked && <CheckIcon className="size-4" aria-hidden="true" />}</span> : null)}
-        <span className="min-w-0 flex-1 truncate">{item.label}</span>
-        {item.hint && <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">{item.hint}</span>}
-      </button>)}
-    </div>}
+    {portal && popup ? createPortal(popup, document.body) : popup}
   </div>;
 }
 

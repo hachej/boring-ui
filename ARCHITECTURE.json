@@ -539,6 +539,11 @@
   "sourceDistribution": {
     "manifest": "registry.json",
     "format": "shadcn@4.21.4",
+    "nativePresentationPrimitives": {
+      "drawer": "@base-ui/react/drawer@1.9.0; owned source recipe independent of the consumer's shadcn style",
+      "dropdown-menu": "@base-ui/react/menu@1.9.0; explicit app-shell dependency, not a style-selected built-in"
+    },
+    "actionMenus": "host presentation through React DOM portals; no consumer-style dropdown API or Pi lifecycle",
     "chatActivity": "shadcn built-in trace, resolved by the consumer style; host presentation over native Pi views, no execution state",
     "runtimeImports": [
       "@hachej/boring-ui-kit/markdown-editor",

@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer';
+import { Drawer, DrawerContent, DrawerTitle } from '../drawer/drawer';
 import { Button, NavigationMenuIcon } from '../button/button';
 import { useAppText } from './app-labels';
 import { ConversationList } from '../pi-chat/pi-chat';

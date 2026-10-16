@@ -7,7 +7,7 @@ import type { AssistantMessage, Message } from '@earendil-works/pi-ai';
 import type { ChatHistoryState } from '@hachej/boring-ui-kit/native-chat';
 import { ArchiveIcon, ArchiveRestoreIcon, ArrowLeftIcon, CheckIcon, EllipsisIcon, MessageSquareIcon, PencilIcon, SearchIcon, Trash2Icon, XIcon } from 'lucide-react';
 import { Button } from '../button/button';
-import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer';
+import { Drawer, DrawerContent, DrawerTitle } from '../drawer/drawer';
 import { ActionButton, ActionMenu, actionMenuItem, headerActions, menuActions } from '../button/actions';
 import type { ConversationItem, ConversationsConfig, ReplyRef } from './config';
 import { Markdown } from './markdown';

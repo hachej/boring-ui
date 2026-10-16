@@ -4,7 +4,7 @@
 // Both list « Améliorer l’app » (when the app has an `improve` agent, opened in the AgentLayer), the app's own `menu`, then sign out.
 import { ChevronsUpDownIcon, LogOutIcon, MoonIcon, SparklesIcon } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '../dropdown-menu/dropdown-menu';
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { useAgentLayer } from './agent-layer';
 import { afterBack } from './back';
@@ -39,7 +39,7 @@ export function initials(name: string): string {
 }
 
 export function AccountAvatar({ account, size }: { readonly account: AccountSpec | undefined; readonly size?: 'default' | 'lg' }) {
-  return <Avatar {...(size ? { size } : {})}><AvatarFallback>{initials(account?.name ?? '')}</AvatarFallback></Avatar>;
+  return <Avatar className={size === 'lg' ? 'size-10' : 'size-8'}><AvatarFallback>{initials(account?.name ?? '')}</AvatarFallback></Avatar>;
 }
 
 /** The compact account sheet's content. Every choice closes the sheet first (`done`). */
