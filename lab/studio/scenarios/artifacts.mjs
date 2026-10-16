@@ -227,8 +227,7 @@ document.getElementById('chart').append(svg);
       const SOURCE = `document.querySelector('${PANEL} textarea')`;
       await browser.until('source editor', `!!${SOURCE}`);
       await browser.type(SOURCE, '\n\nHUMAN-EDIT-MARKER: bring a thermos.\n');
-      await browser.click(button('Save'));
-      await browser.until('saved', `!${button('Save')}`);
+      await browser.until('autosaved', `${q('[data-testid=artifact-status]')}?.textContent === 'Saved'`);
       assert.match(await kit.stored(report.id), /HUMAN-EDIT-MARKER/);
       await t.say('Add a short final section titled "Packing" to the trail report. Keep everything else. One short sentence for the reply.');
       // The person closes the panel while the agent works: the new version does not open it again during this turn.

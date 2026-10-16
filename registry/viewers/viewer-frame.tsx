@@ -29,6 +29,8 @@ export interface ViewerFrameProps {
   readonly subtitle?: ReactNode;
   /** Saved, Unsaved, Saving, Changed elsewhere, Read-only. */
   readonly status?: ViewerStatus | undefined;
+  /** Keep a quiet saved acknowledgement visible, for autosaving editors. */
+  readonly showSavedStatus?: boolean | undefined;
   /** Opaque identifiers handed to `onShare` so the host can build a link to this exact thing. */
   readonly target?: unknown;
   readonly revision?: string | undefined;
@@ -139,7 +141,7 @@ function StatusMark({ status, testId }: { readonly status: ViewerStatus; readonl
 }
 
 /** The one top bar of every viewer, always a single row: title and facts, viewer controls, a status dot when something needs attention, Share, full screen, Close and the "…" menu. */
-export function ViewerFrame({ title, subtitle, status, target, revision, headerStart, controls, menu, actions, labels: ownLabels, icons: ownIcons, onRefresh, onShare, onCopy, onDownload, onOpenInNewTab, onClose, testId = 'viewer', titleTestId, compactHeader = true, className, children }: ViewerFrameProps) {
+export function ViewerFrame({ title, subtitle, status, showSavedStatus = false, target, revision, headerStart, controls, menu, actions, labels: ownLabels, icons: ownIcons, onRefresh, onShare, onCopy, onDownload, onOpenInNewTab, onClose, testId = 'viewer', titleTestId, compactHeader = true, className, children }: ViewerFrameProps) {
   const bar = useRef<HTMLElement>(null);
   const [space, setSpace] = useState<ViewerBarSpace>({ tight: false });
   const [busy, setBusy] = useState<'refresh' | 'share' | undefined>();
@@ -215,7 +217,7 @@ export function ViewerFrame({ title, subtitle, status, target, revision, headerS
           {(subtitle || reading) && <p data-testid={`${testId}-subtitle`} className={cn('m-0 flex min-w-0 items-center gap-x-1.5 text-xs leading-4 whitespace-nowrap text-muted-foreground', compactHeader ? 'pointer-events-none absolute top-full z-30 max-w-full overflow-hidden rounded-md bg-popover px-2 py-1 opacity-0 shadow-sm group-hover/title:opacity-100 max-[641px]:hidden' : 'overflow-hidden')}>{subtitle}{subtitle && reading && <span aria-hidden="true">·</span>}{reading && <span data-testid={`${testId}-readonly`}>{labels.readOnly}</span>}</p>}
         </div>
         {!stacked && toolbar}
-        {status && !reading && <StatusMark status={status} testId={testId} />}
+        {status && !reading && (showSavedStatus || status.kind !== 'saved' && status.label !== labels.saved) && <StatusMark status={status} testId={testId} />}
         <div className="flex shrink-0 items-center gap-0.5">
           {headerActions(hostActions).map(action => <ActionButton key={action.id} action={action} testId={testId} size="icon-bar" />)}
           {!compactHeader && onShare && <ViewerIconButton label={labels.share} data-testid={`${testId}-share`} disabled={busy === 'share'} onClick={share}><icons.share className="size-4" aria-hidden="true" /></ViewerIconButton>}

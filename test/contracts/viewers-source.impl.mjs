@@ -131,7 +131,7 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
 
   await t.test('the status is a dot only when something needs attention; read-only is a word in the subtitle', async t => {
     const saved = await mount(t, h(frame.ViewerFrame, { title: 'a', status: { label: 'Saved', tone: 'success' } }));
-    assert.equal(saved.q('[data-testid="viewer-status"]').textContent, 'Saved');
+    assert.equal(saved.q('[data-testid="viewer-status"]') === null, true);
     const unsaved = await mount(t, h(frame.ViewerFrame, { title: 'a', status: { label: 'Unsaved', tone: 'warning' } }));
     assert.equal(unsaved.q('[data-testid="viewer-status"]').getAttribute('title'), 'Unsaved');
     const reading = await mount(t, h(frame.ViewerFrame, { title: 'a', subtitle: 'HTML page', status: { label: 'Read-only' } }));
@@ -278,6 +278,6 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     await act(async () => { const area = view.q('textarea'); Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(area, '<p>edited</p>'); area.dispatchEvent(new window.Event('input', { bubbles: true })); });
     await view.click('[data-testid="viewer-save"]'); await saved(d.controller);
     assert.equal(new TextDecoder().decode((await d.read()).snapshot.bytes), '<p>edited</p>');
-    assert.equal(view.q('[data-testid="viewer-status"]').textContent, 'Saved');
+    assert.equal(view.q('[data-testid="viewer-status"]') === null, true);
   });
 });

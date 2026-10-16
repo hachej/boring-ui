@@ -78,7 +78,7 @@ export function MarkdownPane({ controller, title: givenTitle, labels: ownLabels,
   const [refused, setRefused] = useState<{ readonly save: typeof state.save; readonly label: string } | null>(null);
   const report: NonNullable<MarkdownEditorProps['onSaveResult']> = result => {
     if (result.kind === 'saved') setRefused(null);
-    else if (result.kind !== 'unknown') {
+    else if (result.kind === 'denied' || result.kind === 'conflict' || result.kind === 'unavailable' || result.kind === 'file_too_large') {
       const reason = result.reason ?? (result.kind === 'conflict' ? labels.changedElsewhereReason : result.kind);
       setRefused({ save: controller.getSnapshot().save, label: labels.notSaved(reason.length > 48 ? `${reason.slice(0, 47)}…` : reason) });
     }
@@ -88,7 +88,7 @@ export function MarkdownPane({ controller, title: givenTitle, labels: ownLabels,
     void controller.flush(controller.actions.selection()).then(report, () => setRefused({ save: controller.getSnapshot().save, label: labels.notSaved(labels.saveFailedReason) }));
   };
   const filename = useMemo(() => fileNameFor(title, 'md'), [title]);
-  return <ViewerFrame title={title} subtitle={subtitle} headerStart={headerStart} status={refused && refused.save === state.save && state.save.kind !== 'pending' ? { label: refused.label, tone: 'warning' } : markdownStatus(state, labels)} target={target} labels={labels} revision={revision} testId={testId} {...(titleTestId ? { titleTestId } : {})} className={className}
+  return <ViewerFrame showSavedStatus title={title} subtitle={subtitle} headerStart={headerStart} status={refused && refused.save === state.save && state.save.kind !== 'pending' ? { label: refused.label, tone: 'warning' } : markdownStatus(state, labels)} target={target} labels={labels} revision={revision} testId={testId} {...(titleTestId ? { titleTestId } : {})} className={className}
     onRefresh={onRefresh ?? (() => controller.actions.refresh())} onShare={onShare} onCopy={() => copyText(controller.getSnapshot().text)}
     onDownload={() => downloadFile(filename, controller.getSnapshot().text, 'text/markdown;charset=utf-8')} onOpenInNewTab={onOpenInNewTab} onClose={onClose}
     controls={<>
