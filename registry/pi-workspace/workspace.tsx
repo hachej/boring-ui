@@ -69,7 +69,7 @@ const readFlag = (key: string): boolean => { try { return sessionStorage.getItem
 const writeFlag = (key: string, on: boolean) => { try { if (on) sessionStorage.setItem(key, '1'); else sessionStorage.removeItem(key); } catch { /* the layout is a convenience */ } };
 
 /**
- * Chat with an artifact panel beside it, as in Claude's chat apps. The panel slides in from the right at full height and the chat
+ * Chat with an artifact panel beside it, as in Claude's chat apps. The panel opens on the right at full height and the chat
  * narrows; a divider (pointer or arrow keys) resizes it, the width is remembered for the session; the panel can go full screen
  * (Escape leaves) and on a phone it is a full-screen sheet. With `floatBelow` the chat can float over a full-width panel instead of sitting beside it. The workspace owns layout only: what is open, and the viewer in it, are the host's.
  */
@@ -99,7 +99,6 @@ export function ArtifactWorkspace({ chat, open, panel, onClose, fullscreen: cont
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
-  // The panel slides in on the frame after it mounts.
   const setFloating = useCallback((next: boolean) => { setFloatState(next); setFloatHint(false); writeFlag(`${storageKey}.floating`, next); }, [storageKey]);
   useEffect(() => {
     // With the panel closed there is nothing to float over: the chat docks back.
@@ -158,9 +157,9 @@ export function ArtifactWorkspace({ chat, open, panel, onClose, fullscreen: cont
       </div>}
       <aside data-testid="workspace-panel" aria-label={panelLabel} data-state={entered ? 'open' : 'entering'} data-floating={floating ? 'true' : undefined} data-fullscreen={fullscreen ? 'true' : 'false'} data-sheet={sheet ? 'true' : 'false'}
         style={sheet || fullscreen || floating ? undefined : { width, minWidth: minPanel }}
-        className={cn('flex min-h-0 min-w-0 flex-col overflow-hidden bg-background text-foreground transition-[transform,opacity] motion-reduce:transition-none',
+        className={cn('flex min-h-0 min-w-0 flex-col overflow-hidden bg-background text-foreground transition-opacity motion-reduce:transition-none',
           sheet || fullscreen ? 'fixed inset-0 z-50' : floating ? 'flex-1' : variant === 'inset' ? 'my-3 me-3 ms-0 shrink-0 rounded-lg border border-border' : 'shrink-0 border-l border-border',
-          entered ? 'translate-x-0 opacity-100' : 'translate-x-8 opacity-0', dragging && 'pointer-events-none select-none')}>
+          entered ? 'opacity-100' : 'opacity-0', dragging && 'pointer-events-none select-none')}>
         {typeof panel === 'function' ? panel(api) : panel}
       </aside>
     </>}
