@@ -68,17 +68,17 @@ export function createToolkit({ browser, pageUrl, step, app, restartHost, base, 
     await browser.until(`the ${id} tab`, `${q('[data-testid=workspace-tabpanel], [role=tabpanel]')}?.dataset.tab === ${JSON.stringify(id)}`, 10000); };
   // An action under a viewer bar's "…" menu: open the menu (unless open), then choose the item. `scope` is a selector prefix, `prefix` the bar's test id prefix.
   const menu = async (scope, prefix, id) => {
-    if (!await browser.evaluate(`!!${q(`${scope} [data-testid=${prefix}-more-list]`)}`)) await press(q(`${scope} [data-testid=${prefix}-more]`));
-    await browser.until('the overflow menu', `!!${q(`${scope} [data-testid=${prefix}-more-list]`)}`, 5000);
-    await press(q(`${scope} [data-testid=${prefix}-${id}]`));
+    if (!await browser.evaluate(`!!${q(`[data-testid=${prefix}-more-list]`)}`)) await press(q(`${scope} [data-testid=${prefix}-more]`));
+    await browser.until('the overflow menu', `!!${q(`[data-testid=${prefix}-more-list]`)}`, 5000);
+    await press(q(`[data-testid=${prefix}-more-list] [data-testid=${prefix}-${id}]`));
   };
   // The panel's top bar offers full screen (Escape leaves it) and Close, on a desktop viewport; a phone shows the sheet with Close.
   const panelControls = async name => {
     const inside = label => `[...document.querySelectorAll('[data-testid=workspace-panel] button')].find(b => b.getAttribute('aria-label') === ${JSON.stringify(label)})`;
     assert.equal(await browser.evaluate(`!!${inside('Close')}`), true, `${name}: Close in the panel bar`);
-    assert.equal(await browser.evaluate(`!!${inside('Enter full screen')}`), true, `${name}: full screen in the panel bar`);
-    await browser.click(inside('Enter full screen'));
-    await browser.until(`${name}: full screen`, `${WORKSPACE}?.dataset.fullscreen === 'true' && !!${inside('Exit full screen')}`, 5000);
+    const prefix = await browser.evaluate(`${q('[data-testid=workspace-panel] [data-boring=viewer-frame]')}.dataset.testid.replace(/-frame$/, '')`);
+    await menu('[data-testid=workspace-panel]', prefix, 'fullscreen');
+    await browser.until(`${name}: full screen`, `${WORKSPACE}?.dataset.fullscreen === 'true'`, 5000);
     await browser.press('Escape');
     await browser.until(`${name}: Escape leaves full screen`, `${WORKSPACE}?.dataset.fullscreen === 'false'`, 5000);
   };

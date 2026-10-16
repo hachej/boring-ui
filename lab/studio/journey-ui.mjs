@@ -6,9 +6,11 @@ export function conversations(t) {
   const { browser, logText } = t;
   /** Shows the list: docked it is already there (shown again if the person hid it); on a narrow screen the toggle opens the drawer. */
   const open = async () => {
-    if (await browser.evaluate(`!!${q('[data-testid=conversations]')}`)) return;
-    await browser.click(q('[data-testid=sessions-toggle]'));
-    await browser.until('the sessions list is shown', `!!${q('[data-testid=conversations]')}`, 5000);
+    if (!await browser.evaluate(`!!${q('[data-testid=conversations]')}`)) {
+      await browser.click(q('[data-testid=sessions-toggle]'));
+      await browser.until('the sessions list is shown', `!!${q('[data-testid=conversations]')}`, 5000);
+    }
+    if (!await browser.evaluate(`!!${q('[data-testid=conversation-search]')}`)) await browser.click(q('[data-testid=conversation-search-open]'));
   };
   /** Closes the drawer (Escape); a docked pane stays. */
   const close = async () => {

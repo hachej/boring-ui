@@ -213,7 +213,11 @@ async function composer(t) {
     await browser.until('developer mode restores step disclosures', `${completed}.length >= 4 && [...${completed}].every(card => card.querySelector('[data-slot=trace-collapsible-trigger]'))`);
     for (let index = 0; index < await browser.evaluate(`${completed}.length`); index++) {
       const trigger = `${completed}[${index}].querySelector('[data-slot=trace-collapsible-trigger]')`;
-      if (await browser.evaluate(`${trigger}.getAttribute('aria-expanded') === 'false'`)) await browser.click(trigger);
+      if (await browser.evaluate(`${trigger}.getAttribute('aria-expanded') === 'false'`)) {
+        await browser.evaluate(`${trigger}.focus()`);
+        await browser.press('Enter');
+        await browser.until('tool disclosure expanded', `${trigger}.getAttribute('aria-expanded') === 'true'`, 5000);
+      }
     }
     await browser.until('developer mode shows every successful output', `${qa('[data-testid=tool-card][data-status=completed] [data-testid=tool-details]')}.length >= 4`);
   });

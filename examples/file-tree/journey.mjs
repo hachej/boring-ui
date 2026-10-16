@@ -185,6 +185,8 @@ try {
       await tab.until('wide again', `innerWidth === 1440 && ${q('[data-dock=library]')}.dataset.placement === 'docked'`);
       await click('[data-testid=viewer-library]');
       await tab.until('column closed', `${q('[data-dock=library]')}.dataset.placement === 'closed'`);
+      await click('[data-testid=viewer-more]');
+      await tab.until('fullscreen menu action', `!!${q('[data-testid=viewer-fullscreen]')}`);
       await click('[data-testid=viewer-fullscreen]');
       await tab.until('full screen', `${q('[data-testid=workspace-panel]')}.dataset.fullscreen === 'true'`);
       await click('[data-testid=viewer-library]');

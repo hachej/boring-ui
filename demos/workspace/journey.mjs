@@ -187,13 +187,13 @@ try {
     await librarySelectionFocus('library-document');
     await browser.until('phone page file loaded', `!!${q('[data-testid=library-document]')} && !${q('[data-sidebar=sidebar][data-mobile=true]')}`, 15000);
     assert.equal(await browser.evaluate(placement), 'page', 'opening a file does not float the Agent page');
+    await coherentHeader();
     const header = await browser.evaluate(`(() => { const buttons = [...document.querySelectorAll('[data-testid=library-document] [data-testid=viewer-bar] button')].filter(button => button.checkVisibility()); return { back: !!document.querySelector('[data-testid=file-back]'), controls: buttons.map(button => { const r=button.getBoundingClientRect(); return { id:button.dataset.testid, inside:r.left>=0 && r.top>=0 && r.right<=innerWidth && r.bottom<=innerHeight && r.width>0 }; }), chatVisible: ${INPUT}.checkVisibility(), overflow: document.documentElement.scrollWidth > innerWidth }; })()`);
     assert.equal(header.back, true, 'the phone page file has a Chat back button');
     assert.ok(header.controls.length > 1 && header.controls.every(control => control.inside), JSON.stringify(header));
     assert.equal(header.chatVisible, false, 'the file replaces the split chat on a phone');
     assert.equal(header.overflow, false);
     assert.equal(await browser.evaluate(`window.__phoneComposer === ${INPUT} && window.__phoneTranscript === ${q('[data-testid=transcript]')}`), true, 'the hidden conversation stays mounted');
-    await coherentHeader();
     await shot('review-phone-page-file.png');
     await browser.click(q('[data-testid=file-back]'));
     await browser.until('Back restores and focuses the same page composer', `${placement} === 'page' && !${q('[data-testid=library-document]')} && ${INPUT}.checkVisibility() && document.activeElement === window.__phoneComposer`, 10000);

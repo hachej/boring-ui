@@ -19,7 +19,7 @@ export function ViewerMenu({ testId = 'viewer-menu', label, icon, items, align =
     <DropdownMenuContent aria-label={label} align={align} data-testid={`${testId}-list`} className="w-64 max-w-[calc(100vw-16px)] duration-150 motion-reduce:animate-none">
       {children}
       {items.map(item => <DropdownMenuItem key={item.id} role={item.checked === undefined ? 'menuitem' : 'menuitemradio'} aria-checked={item.checked} disabled={item.disabled} data-testid={item.testId ?? `${testId}-${item.id}`} data-item={item.id} onClick={item.onSelect} className="min-h-9 gap-2 max-sm:min-h-11">
-        {item.icon ?? (item.checked ? <CheckIcon className="size-4" aria-hidden="true" /> : null)}<span className="min-w-0 flex-1 truncate">{item.label}</span>{item.hint && <span className="text-xs text-muted-foreground">{item.hint}</span>}
+        {item.icon ?? (item.checked === undefined ? null : <span className="size-4 shrink-0">{item.checked && <CheckIcon className="size-4" aria-hidden="true" />}</span>)}<span className="min-w-0 flex-1 truncate">{item.label}</span>{item.hint && <span className="text-xs text-muted-foreground">{item.hint}</span>}
       </DropdownMenuItem>)}
     </DropdownMenuContent>
   </DropdownMenu>;
