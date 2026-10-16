@@ -65,6 +65,6 @@ ${extraCss}`;
     },
     loadModule: async () => { throw new Error('Tailwind plugins and configs are not used in the studio'); },
   });
-  const sources = [join(root, 'examples/app-shell/components/ui/trace.tsx'), ...[...TAILWIND_ITEMS.map(name => `registry/${name}`), ...extraDirectories].flatMap(directory => files(join(root, directory), /\.(tsx?|css)$/)), ...files(join(root, 'lab/studio'), /\.(jsx|mjs|css)$/).filter(path => !path.endsWith('tailwind.mjs'))];
+  const sources = [...files(join(root, 'examples/app-shell/components/ui'), /\.(tsx?|css)$/), ...[...TAILWIND_ITEMS.map(name => `registry/${name}`), ...extraDirectories].flatMap(directory => files(join(root, directory), /\.(tsx?|css)$/)), ...files(join(root, 'lab/studio'), /\.(jsx|mjs|css)$/).filter(path => !path.endsWith('tailwind.mjs'))];
   return compiler.build(candidates(sources));
 }

@@ -217,7 +217,7 @@ export function ConversationHistory({ conversations, onClose, onBrowseEarlier, p
           <icons.history className="size-3.5" aria-hidden="true" />{labels.earlierInConversation}</Button>
       </footer>}
   </>;
-  return phone ? <Drawer open showSwipeHandle onOpenChange={next => { if (!next) onClose(); }}><DrawerContent data-testid="conversations" aria-label={labels.historyDialog} className="h-[80dvh] pb-[env(safe-area-inset-bottom)] duration-200 motion-reduce:transition-none"><DrawerTitle className="sr-only">{labels.historyDialog}</DrawerTitle>{content}</DrawerContent></Drawer>
+  return phone ? <Drawer open showSwipeHandle onOpenChange={next => { if (!next) onClose(); }}><DrawerContent data-testid="conversations" aria-label={labels.historyDialog} className="pi-chat h-[80dvh] pb-[env(safe-area-inset-bottom)] duration-200 motion-reduce:transition-none"><DrawerTitle className="sr-only">{labels.historyDialog}</DrawerTitle>{content}</DrawerContent></Drawer>
     : <><button type="button" tabIndex={-1} aria-hidden="true" data-testid="conversations-backdrop" onClick={onClose} className={cn('z-20 cursor-default', placement === 'above' ? 'fixed inset-0' : 'absolute inset-0')} /><section role="dialog" aria-label={labels.historyDialog} data-testid="conversations" className={cn('absolute z-30 flex w-[23rem] flex-col rounded-2xl border border-border bg-background text-foreground shadow-lg', placement === 'above' ? 'bottom-full left-0 mb-2 max-h-[min(26rem,60dvh)]' : 'top-12 right-3 max-h-[min(34rem,calc(100%-4rem))]')}>{content}</section></>;
 }
 

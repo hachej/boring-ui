@@ -409,7 +409,7 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   const toggleSide = useCallback(() => setSideOpen(!sideOpen), [setSideOpen, sideOpen]);
   // The Library tree, one view for the side column, the center and the pane; `onOpen` is what choosing a file does there.
   const libraryTree = (onOpen: (path: string) => void) => fileTree
-    ? <FileTreeView key={JSON.stringify([revisionProvider?.workspace, revisionProvider?.identity])} {...(locale ? { locale } : {})} {...viewOptions} controller={fileTree} historyKey={feed.seq} onOpen={onOpen} {...(isFile(opened) ? { selectedPath: opened.path } : {})} />
+    ? <FileTreeView variant="list" refresh={false} className="[&_input[type=search]]:pl-9! [&_input[type=search]]:min-h-11 [&_button]:min-h-11" key={JSON.stringify([revisionProvider?.workspace, revisionProvider?.identity])} {...(locale ? { locale } : {})} {...viewOptions} controller={fileTree} historyKey={feed.seq} onOpen={onOpen} {...(isFile(opened) ? { selectedPath: opened.path } : {})} />
     : <p role="status" className="m-0 p-3 text-sm text-muted-foreground">{treeOptions?.labels?.loading ?? text.labels.loading}</p>;
   const hasNavigation = sessions !== false && Boolean(conversations || revisionProvider);
   const docked = hasNavigation && width > 0 && !narrow && !collapsed;
@@ -496,7 +496,7 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
       </section>}
     </Dock>}
     </DockLayout>
-    {panelLibrary && narrow && <Drawer open showSwipeHandle onOpenChange={next => { if (!next) setPanelLibrary(false); }}><DrawerContent aria-label={text.labels.library} className="h-[80dvh] pb-[env(safe-area-inset-bottom)] duration-200 motion-reduce:transition-none"><DrawerTitle className="px-5 py-3">{text.labels.library}</DrawerTitle><div data-testid="workspace-library-side" className="min-h-0 flex-1 overflow-auto">{libraryTree(openFile)}</div></DrawerContent></Drawer>}
+    {panelLibrary && narrow && <Drawer open showSwipeHandle onOpenChange={next => { if (!next) setPanelLibrary(false); }}><DrawerContent aria-label={text.labels.library} className="pi-chat h-[80dvh] pb-[env(safe-area-inset-bottom)] duration-200 motion-reduce:transition-none"><DrawerTitle className="px-5 py-3">{text.labels.library}</DrawerTitle><div data-testid="workspace-library-side" className="min-h-0 flex-1 overflow-auto">{libraryTree(openFile)}</div></DrawerContent></Drawer>}
   </div></ChatTextProvider></AppTextProvider>;
 }
 
