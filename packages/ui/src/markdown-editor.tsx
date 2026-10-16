@@ -4,6 +4,7 @@ import { TextDraftControls } from './text-draft-controls.js';
 
 import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
+import { BubbleMenu } from '@tiptap/react/menus';
 import type { SelectionBookmark } from '@tiptap/pm/state';
 import type { MarkdownController } from './markdown.js';
 import { createMarkdownExtensions, type MarkdownImageResolver } from './markdown-extensions.js';
@@ -32,6 +33,8 @@ export interface MarkdownEditorProps {
   readonly onRichSafety?: (safety: MarkdownRichSafety) => void;
   /** Images never load unless this maps their address to a URL (inline `data:` images load without it). */
   readonly resolveImage?: MarkdownImageResolver;
+  /** Selection bubble by default. `pinned` keeps the complete formatting row on desktop; phones always use the selection bubble. */
+  readonly formattingToolbar?: 'selection' | 'pinned';
 }
 
 /** Borrows the controller. The host owns document selection, access and disposal. */
@@ -43,7 +46,22 @@ export function MarkdownEditor(props: MarkdownEditorProps) {
   return <MarkdownEditorSession key={mount.sequence} {...props} activeController={active} />;
 }
 
-function MarkdownEditorSession({ controller, title = 'Document', initialMode = 'rich', placeholder = 'Start writing', className, onMountedTools, header = true, mode: controlledMode, onModeChange, onRichSafety, resolveImage, activeController: active }: MarkdownEditorProps & { readonly activeController: { readonly current: MarkdownController } }) {
+const PHONE_QUERY = '(max-width: 640px)';
+const phoneSnapshot = () => globalThis.matchMedia?.(PHONE_QUERY).matches === true;
+const desktopSnapshot = () => false;
+const subscribePhone = (notify: () => void) => {
+  const media = globalThis.matchMedia?.(PHONE_QUERY);
+  media?.addEventListener('change', notify);
+  return () => media?.removeEventListener('change', notify);
+};
+const BUBBLE_OPTIONS = { strategy: 'fixed', placement: 'top', offset: 8, shift: { padding: 12 }, flip: true } as const;
+const bubbleContainer = () => document.body;
+
+function MarkdownEditorSession({ controller, title = 'Document', initialMode = 'rich', placeholder = 'Start writing', className, onMountedTools, header = true, mode: controlledMode, onModeChange, onRichSafety, resolveImage, formattingToolbar = 'selection', activeController: active }: MarkdownEditorProps & { readonly activeController: { readonly current: MarkdownController } }) {
+  const phone = useSyncExternalStore(subscribePhone, phoneSnapshot, desktopSnapshot);
+  const [pinned, setPinned] = useState(formattingToolbar === 'pinned');
+  useEffect(() => { setPinned(formattingToolbar === 'pinned'); }, [formattingToolbar]);
+  const showPinned = pinned && !phone;
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const projected = useRef<string | null>(null);
   const emitted = useRef<string | null>(null);
@@ -210,11 +228,12 @@ function MarkdownEditorSession({ controller, title = 'Document', initialMode = '
       <strong>{title}</strong>
       {state.readOnly && <span>Read only</span>}
       <span role="status">{state.lifecycle === 'disposed' ? 'Closed' : pending ? 'Saving' : uncertain ? 'Save unconfirmed' : conflict ? 'Changed elsewhere' : state.dirty ? 'Unsaved changes' : 'Saved'}</span>
+      {mode === 'rich' && !phone && !unavailable && <button type="button" className="boring-markdown-pin" aria-label="Pin formatting toolbar" title="Pin formatting toolbar" aria-pressed={pinned} onClick={() => setPinned(value => !value)}>Aa</button>}
       <button type="button" aria-pressed={mode === 'source'} disabled={!richOffered} onClick={switchMode}>Markdown source</button>
       <button type="button" disabled={unavailable || !state.dirty || pending || uncertain} onClick={save}>Save</button>
     </header>}
     <TextDraftControls recovery={state.recovery} actions={controller.actions} readOnly={state.readOnly} blocked={state.lifecycle !== 'active' || state.save.kind === 'pending' || (state.save.kind === 'settled' && state.save.result.kind === 'unknown')} />
-    {mode === 'rich' && <div role="toolbar" aria-label="Text formatting" className="boring-markdown-toolbar">
+    {mode === 'rich' && showPinned && <div role="toolbar" aria-label="Text formatting" className="boring-markdown-toolbar">
       {tool('Bold', 'Bold', marks?.bold, () => chain().toggleBold().run())}
       {tool('Italic', 'Italic', marks?.italic, () => chain().toggleItalic().run())}
       {tool('Strikethrough', 'Strike', marks?.strike, () => chain().toggleStrike().run())}
@@ -239,6 +258,14 @@ function MarkdownEditorSession({ controller, title = 'Document', initialMode = '
         {tool('Add table column', 'Columns', false, () => chain().addColumnAfter().run())}
         {tool('Delete table', 'Trash', false, () => chain().deleteTable().run())}</>}
     </div>}
+    {mode === 'rich' && editor && !showPinned && !unavailable && <BubbleMenu editor={editor} updateDelay={0} options={BUBBLE_OPTIONS} appendTo={bubbleContainer}
+      role="toolbar" aria-label="Text formatting" className="boring-markdown-bubble">
+      {tool('Bold', 'Bold', marks?.bold, () => chain().toggleBold().run())}
+      {tool('Italic', 'Italic', marks?.italic, () => chain().toggleItalic().run())}
+      {tool('Highlight', 'Highlight', marks?.highlight, () => chain().toggleHighlight().run())}
+      {tool('Code', 'Code', marks?.code, () => chain().toggleCode().run())}
+      {tool('Link', 'Link', marks?.link || linkDraft !== null, openLink)}
+    </BubbleMenu>}
     {mode === 'rich' && linkDraft !== null && <form className="boring-markdown-link" aria-label="Link address" onSubmit={event => { event.preventDefault(); applyLink(); }}>
       <input type="text" inputMode="url" autoFocus aria-label="Link address" placeholder="https://" value={linkDraft} onChange={event => setLinkDraft(event.currentTarget.value)}
         onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); setLinkDraft(null); editor?.commands.focus(); } }} />

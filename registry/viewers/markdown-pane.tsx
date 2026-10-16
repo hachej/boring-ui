@@ -4,7 +4,7 @@ import { useMemo, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { CodeXmlIcon, PencilLineIcon, SaveIcon } from 'lucide-react';
 import { MarkdownEditor } from '@hachej/boring-ui-kit/markdown-editor';
-import type { MarkdownImageResolver, MarkdownMountedTools, MarkdownRichSafety } from '@hachej/boring-ui-kit/markdown-editor';
+import type { MarkdownEditorProps, MarkdownImageResolver, MarkdownMountedTools, MarkdownRichSafety } from '@hachej/boring-ui-kit/markdown-editor';
 import type { MarkdownController } from '@hachej/boring-ui-kit/markdown';
 import { IconButton } from '../button/button';
 import { downloadFile, fileNameFor } from './download';
@@ -25,6 +25,8 @@ export interface MarkdownPaneProps {
   /** Reports the person's choice, so a host that remounts the pane (for a new revision) can start it in the same mode. */
   readonly onModeChange?: (mode: 'rich' | 'source') => void;
   readonly placeholder?: string;
+  /** Selection bubble by default; `pinned` restores the full formatting row on desktop. Phones always use the bubble. */
+  readonly formattingToolbar?: MarkdownEditorProps['formattingToolbar'];
   /** Leading header content, before the title. */
   readonly headerStart?: ReactNode;
   /** Extra viewer controls, for example a version switcher. */
@@ -56,12 +58,13 @@ export function markdownStatus(state: ReturnType<MarkdownController['getSnapshot
 }
 
 /** The Markdown editor in the standard viewer frame: mode toggle, Save while there are edits, Share, and Reload, Copy and Download under the "…" menu. */
-export function MarkdownPane({ controller, title: givenTitle, labels: ownLabels, subtitle, target, revision, initialMode = 'rich', onModeChange, placeholder, headerStart, controls, onRefresh, onShare, onOpenInNewTab, onClose, resolveImage, onMountedTools, testId = 'viewer', titleTestId, className }: MarkdownPaneProps) {
+export function MarkdownPane({ controller, title: givenTitle, labels: ownLabels, subtitle, target, revision, initialMode = 'rich', onModeChange, placeholder, formattingToolbar = 'selection', headerStart, controls, onRefresh, onShare, onOpenInNewTab, onClose, resolveImage, onMountedTools, testId = 'viewer', titleTestId, className }: MarkdownPaneProps) {
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const { labels } = useViewerText(ownLabels);
   const title = givenTitle ?? labels.document;
   const [requested, setRequestedState] = useState<'rich' | 'source'>(initialMode);
   const setRequested = (next: 'rich' | 'source') => { setRequestedState(next); onModeChange?.(next); };
+  const [toolbar, setToolbar] = useState(formattingToolbar);
   const [safety, setSafety] = useState<MarkdownRichSafety>({ safe: true });
   const mode = safety.safe ? requested : 'source';
   const unavailable = state.readOnly || state.lifecycle !== 'active';
@@ -83,13 +86,15 @@ export function MarkdownPane({ controller, title: givenTitle, labels: ownLabels,
     onRefresh={onRefresh ?? (() => controller.actions.refresh())} onShare={onShare} onCopy={() => copyText(controller.getSnapshot().text)}
     onDownload={() => downloadFile(filename, controller.getSnapshot().text, 'text/markdown;charset=utf-8')} onOpenInNewTab={onOpenInNewTab} onClose={onClose}
     controls={<>
+      {mode === 'rich' && !unavailable && <button type="button" className="boring-markdown-pin max-[640px]:hidden" aria-label="Pin formatting toolbar" title="Pin formatting toolbar" aria-pressed={toolbar === 'pinned'}
+        onClick={() => setToolbar(value => value === 'pinned' ? 'selection' : 'pinned')}>Aa</button>}
       <ViewerToggle label={labels.editorMode} value={mode} onChange={setRequested} options={[
         { id: 'rich', label: labels.richText, text: labels.rich, icon: <PencilLineIcon className="size-4" aria-hidden="true" />, disabled: !safety.safe, testId: `${testId}-mode-rich` },
         { id: 'source', label: labels.markdownSource, text: labels.source, icon: <CodeXmlIcon className="size-4" aria-hidden="true" />, testId: `${testId}-mode-source` }]} />
       {!state.readOnly && state.dirty && <IconButton label={labels.save} variant="default" data-testid={`${testId}-save`} disabled={unavailable || pending || unconfirmed} onClick={save}><SaveIcon className="size-4" aria-hidden="true" /></IconButton>}
       {controls}
     </>}>
-    <MarkdownEditor controller={controller} title={title} header={false} mode={mode} onModeChange={setRequested} onRichSafety={setSafety}
+    <MarkdownEditor controller={controller} title={title} header={false} formattingToolbar={toolbar} mode={mode} onModeChange={setRequested} onRichSafety={setSafety}
       {...(placeholder === undefined ? {} : { placeholder })} {...(resolveImage ? { resolveImage } : {})} {...(onMountedTools ? { onMountedTools } : {})} className="boring-markdown-editor" />
   </ViewerFrame>;
 }
