@@ -276,6 +276,7 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     assert.equal(view.q('[data-testid="viewer-status"]').textContent, 'Changed elsewhere');
     assert.match(view.container.textContent, /Your local text has been kept/);
     await view.click('[data-testid="viewer-save"]'); await saved(d.controller);
+    assert.equal(view.q('[data-testid="viewer-status"]').textContent, 'Changed elsewhere', 'a refused stale write retains the existing conflict status');
     // Unsupported constructs: rich is unavailable.
     const raw = await documents(t, 'text/markdown', '---\ntitle: x\n---\n\n<div>raw</div>\n');
     const unsafe = await mount(t, h(markdownPane.MarkdownPane, { controller: raw.controller, title: 'Raw' }));

@@ -83,9 +83,9 @@ export function MarkdownPane({ controller, title: givenTitle, labels: ownLabels,
   const unconfirmed = state.save.kind === 'settled' && state.save.result.kind === 'unknown';
   const [refused, setRefused] = useState<{ readonly save: typeof state.save; readonly label: string } | null>(null);
   const report: NonNullable<MarkdownEditorProps['onSaveResult']> = result => {
-    if (result.kind === 'saved') setRefused(null);
-    else if (result.kind === 'denied' || result.kind === 'conflict' || result.kind === 'unavailable' || result.kind === 'file_too_large') {
-      const reason = result.reason ?? (result.kind === 'conflict' ? labels.changedElsewhereReason : result.kind);
+    if (result.kind === 'saved' || result.kind === 'conflict') setRefused(null);
+    else if (result.kind === 'denied' || result.kind === 'unavailable' || result.kind === 'file_too_large') {
+      const reason = result.reason ?? result.kind;
       setRefused({ save: controller.getSnapshot().save, label: labels.notSaved(reason.length > 48 ? `${reason.slice(0, 47)}…` : reason) });
     }
   };
