@@ -38,6 +38,8 @@ const SIDEWAYS = `(() => { const pane = ${q('[data-testid=conversations]')}; ret
 const inside = selector => `(() => { const r = ${q(selector)}?.getBoundingClientRect(); return !!r && r.width > 0 && r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight; })()`;
 
 const app = await startWorkspaceApp({ directory: mkdtempSync(join(tmpdir(), 'boring-workspace-app-')) });
+const { connectRevisionProvider } = await import('@hachej/boring-files/revision');
+const reader = await connectRevisionProvider({ endpoint: new URL('/api/resources', app.url), fetch: request => { const headers = new Headers(request.headers); headers.set('authorization', `Bearer ${app.token}`); return fetch(new Request(request, { headers })); } });
 let browser;
 try {
   browser = await launch(insecureUrl(app.url), { evidence });
@@ -129,6 +131,29 @@ try {
     assert.ok(sessions.x < 2 && panel.x + panel.w > 1400, `sessions on the left, panel on the right: ${JSON.stringify({ sessions, panel })}`);
     await pause(300);
     await browser.screenshot('workspace-app-desktop.png');
+  });
+
+  await step('markdown artifact controls, pinned toolbar and visible divider resize on desktop', async () => {
+    for (const selector of ['[data-testid=artifact-mode-source]', '[aria-label="Pin formatting toolbar"]', '[data-testid=artifact-more]', '.boring-markdown-toolbar']) assert.equal(await browser.evaluate(`!!${q(`[data-testid=artifact-panel] ${selector}`)}?.checkVisibility()`), true, selector);
+    const divider = await browser.evaluate(`(() => { const e = ${q('[data-testid=workspace-divider]')}, r = e.getBoundingClientRect(), line = e.firstElementChild; return { x: r.x + r.width / 2, y: r.y + r.height / 2, hit: r.width, line: line.getBoundingClientRect().width, color: getComputedStyle(line).backgroundColor, before: Number(e.getAttribute('aria-valuenow')) }; })()`);
+    assert.equal(divider.line, 1); assert.ok(divider.hit >= 8 && divider.hit <= 12);
+    assert.doesNotMatch(divider.color, /transparent|rgba\(0, 0, 0, 0\)/);
+    await browser.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: divider.x, y: divider.y, button: 'left', clickCount: 1 });
+    await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: divider.x - 50, y: divider.y, button: 'left', buttons: 1 });
+    await browser.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: divider.x - 50, y: divider.y, button: 'left', clickCount: 1 });
+    await browser.until('divider drag resizes the artifact', `Number(${q('[data-testid=workspace-divider]')}.getAttribute('aria-valuenow')) > ${divider.before}`, 5000);
+    await browser.evaluate(`${q('[data-testid=workspace-divider]')}.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
+    await browser.click(q('[data-testid=artifact-mode-source]'));
+    await browser.type(q('[data-testid=artifact-panel] textarea'), '\nA fictional desktop autosave.');
+    await browser.until('artifact autosaved', `${q('[data-testid=artifact-status]')}?.textContent === 'Saved'`, 10000);
+    assert.equal(await browser.evaluate(`!!${q('[data-testid=artifact-save]')}`), false);
+    await browser.click(q('[data-testid=artifact-mode-rich]'));
+    for (const scheme of ['light', 'dark']) {
+      await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] });
+      await browser.evaluate(`${q('[data-testid=artifact-panel] [contenteditable]')}.focus()`); await pause(200);
+      await browser.screenshot(`markdown-desktop-${scheme}.png`);
+    }
+    await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] });
   });
 
   await step('the artifacts chip counts the file and opens its desktop list', async () => {
@@ -325,7 +350,7 @@ try {
     await browser.emulate('desktop');
   });
 
-  await step('declining phone Back preserves the file draft and restores its history entry', async () => {
+  await step('phone autosave survives reload; failed flush still guards Back and preserves its draft', async () => {
     await browser.emulate('phone');
     await browser.click(q('[data-testid=sessions-toggle]'));
     await browser.until('navigation before file edit', `!!${q('[data-testid=workspace-library]')}`, 5000);
@@ -339,7 +364,26 @@ try {
     await browser.click(q('[data-testid=viewer-more-list] [data-testid=viewer-mode-source]'));
     const source = q('[data-testid=file-viewer] textarea');
     await browser.until('file source', `!!${source}`, 5000);
+    await browser.type(source, '\nA fictional autosaved note.');
+    await browser.until('phone file autosaved', `${q('[data-testid=file-viewer] [data-testid=viewer-status]')}?.textContent === 'Saved'`, 10000);
+    const persisted = await browser.evaluate(`${source}.value`);
+    const read = await reader.read({ target: reader.locate('picnic-plan.md'), revision: { kind: 'latest' } });
+    assert.equal(new TextDecoder().decode(read.snapshot.bytes), persisted);
+    for (const scheme of ['light', 'dark']) {
+      await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }); await pause(200);
+      await browser.screenshot(`markdown-phone-${scheme}.png`);
+    }
+    await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] });
+    await browser.reload(); await live();
+    await browser.click(q('[data-testid=sessions-toggle]')); await browser.click(q('[data-testid=workspace-library]'));
+    await browser.until('persisted file listed', `!!${item}`, 5000); await browser.click(item);
+    await browser.until('persisted file opens after reload', `!!${q('[data-testid=file-viewer] [data-testid=viewer-more]')}`, 10000);
+    await browser.click(q('[data-testid=viewer-more]')); await browser.click(q('[data-testid=viewer-more-list] [data-testid=viewer-mode-source]'));
+    await browser.until('persisted source after reload', `!!${source} && ${source}.value === ${JSON.stringify(persisted)}`, 10000);
+    // A real concurrent workspace write makes the next conditional flush refuse.
     await browser.type(source, '\nA fictional unsaved note.');
+    const remote = await reader.read({ target: reader.locate('picnic-plan.md'), revision: { kind: 'latest' } });
+    await reader.publish({ operationId: 'phone-back-concurrent-write', atomicity: 'all-or-nothing', changes: [{ kind: 'replace', target: remote.snapshot.ref, bytes: new TextEncoder().encode(`${persisted}\nChanged by another writer.`), mediaType: 'text/markdown' }] });
     await browser.until('dirty file', `${q('[data-testid=file-viewer] [data-boring=markdown-editor]')}?.dataset.dirty === 'true'`, 5000);
     await browser.evaluate(`new Promise(requestAnimationFrame).then(() => new Promise(requestAnimationFrame))`);
     const draft = await browser.evaluate(`${source}.value`);

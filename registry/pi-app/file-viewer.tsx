@@ -51,7 +51,7 @@ function FileDocument({ path, kind, locator, options, onClose, back, onUnsavedCh
   const autosave = useRef<{ controller: MarkdownController | HtmlController; flush: () => Promise<boolean> } | null>(null);
   const saved = useSaved({ client, target: locator, create, beforeDispose: controller => autosave.current?.controller === controller ? autosave.current.flush() : undefined });
   const registerAutosave = useCallback((flush: (() => Promise<boolean>) | null) => {
-    if (flush && saved.controller) autosave.current = { controller: saved.controller, flush };
+    autosave.current = flush && saved.controller ? { controller: saved.controller, flush } : null;
     onBeforeLeaveChange?.(flush);
   }, [saved.controller, onBeforeLeaveChange]);
   useLayoutEffect(() => {

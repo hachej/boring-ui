@@ -288,7 +288,7 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   const onShown = useCallback((view: { readonly path: string; readonly revision: string; readonly hidden?: true }) => {
     if (view.hidden) presentAcks.current?.hidden(view); else presentAcks.current?.shown(view);
   }, []);
-  const options: ViewerOptions = useMemo(() => ({ client, identity, history, viewers, interactive, share, onShown }), [client, identityKey, history, viewers, interactive, share, onShown]); // eslint-disable-line react-hooks/exhaustive-deps
+  const options: ViewerOptions = useMemo(() => ({ client, identity, history, viewers, interactive, share, onShown, onUnsavedChange: noteUnsaved, onBeforeLeaveChange: registerBeforeLeave }), [client, identityKey, history, viewers, interactive, share, onShown, noteUnsaved, registerBeforeLeave]); // eslint-disable-line react-hooks/exhaustive-deps
   const locate = revisionProvider?.locate ?? resources?.locate ?? defaultLocate;
   const [fileBinding, setFileBinding] = useState<{ readonly provider: RevisionProvider; readonly tree: FileTreeController }>();
   useEffect(() => {

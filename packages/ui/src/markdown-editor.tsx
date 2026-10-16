@@ -207,7 +207,11 @@ function MarkdownEditorSession({ controller, title = 'Document', initialMode = '
   };
   const saving = useMarkdownAutosave(controller, autosave, result => { report(result); onSaveResult?.(result); });
   useEffect(() => { onAutosaveChange?.(saving.enabled ? saving.immediate : null); return () => onAutosaveChange?.(null); }, [onAutosaveChange, saving.enabled, saving.immediate]);
-  const save = () => { setError(null); void saving.manual(); };
+  const save = () => {
+    setError(null);
+    if (saving.enabled) void saving.manual();
+    else void controller.flush(controller.actions.selection()).then(report);
+  };
   const run = (operation: () => Promise<unknown>) => {
     setError(null);
     void operation().then(report, () => { if (active.current === controller) setError('The operation could not be completed. Your text is still available.'); });

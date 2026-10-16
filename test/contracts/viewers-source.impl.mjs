@@ -131,7 +131,7 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
 
   await t.test('the status is a dot only when something needs attention; read-only is a word in the subtitle', async t => {
     const saved = await mount(t, h(frame.ViewerFrame, { title: 'a', status: { label: 'Saved', tone: 'success' } }));
-    assert.equal(saved.q('[data-testid="viewer-status"]') === null, true);
+    assert.equal(saved.q('[data-testid="viewer-status"]').textContent, 'Saved');
     const unsaved = await mount(t, h(frame.ViewerFrame, { title: 'a', status: { label: 'Unsaved', tone: 'warning' } }));
     assert.equal(unsaved.q('[data-testid="viewer-status"]').getAttribute('title'), 'Unsaved');
     const reading = await mount(t, h(frame.ViewerFrame, { title: 'a', subtitle: 'HTML page', status: { label: 'Read-only' } }));
@@ -240,13 +240,13 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
 
   await t.test('the Markdown pane puts mode, Save and status in the bar; Refresh never drops unsaved edits; unsafe documents stay in source', async t => {
     const d = await documents(t, 'text/markdown', '# Plan\n\n- [x] done\n');
-    const view = await mount(t, h(markdownPane.MarkdownPane, { controller: d.controller, title: 'Plan', subtitle: 'Markdown', onShare() {} }));
+    const view = await mount(t, h(markdownPane.MarkdownPane, { controller: d.controller, title: 'Plan', subtitle: 'Markdown', autosave: false, onShare() {} }));
     assert.equal(view.q('section[data-boring="markdown-editor"] > header') === null, true, 'the editor has no header of its own');
-    assert.equal(view.q('[data-testid="viewer-status"]') === null, true, 'a clean document shows no status');
+    assert.equal(view.q('[data-testid="viewer-status"]').textContent, 'Saved', 'a clean document quietly confirms persistence');
     assert.equal(view.q('[data-testid="viewer-save"]') === null, true, 'Save waits for an edit');
-    assert.equal(view.q('.boring-markdown-toolbar'), null, 'no permanent formatting row by default');
+    assert.ok(view.q('.boring-markdown-toolbar button[aria-label="Bold"] svg'), 'formatting is pinned by default');
     await view.click('[aria-label="Pin formatting toolbar"]');
-    assert.ok(view.q('.boring-markdown-toolbar button[aria-label="Bold"] svg'), 'Aa pins the full formatting controls');
+    assert.equal(view.q('.boring-markdown-toolbar'), null, 'Aa switches to selection formatting');
     await view.click('[data-testid="viewer-mode-source"]');
     const area = view.q('textarea');
     await act(async () => { Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(area, '# Plan\n\n- [x] done\n- [ ] local edit\n'); area.dispatchEvent(new window.Event('input', { bubbles: true })); });
@@ -278,6 +278,6 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     await act(async () => { const area = view.q('textarea'); Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(area, '<p>edited</p>'); area.dispatchEvent(new window.Event('input', { bubbles: true })); });
     await view.click('[data-testid="viewer-save"]'); await saved(d.controller);
     assert.equal(new TextDecoder().decode((await d.read()).snapshot.bytes), '<p>edited</p>');
-    assert.equal(view.q('[data-testid="viewer-status"]') === null, true);
+    assert.equal(view.q('[data-testid="viewer-status"]').textContent, 'Saved');
   });
 });

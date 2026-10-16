@@ -86,7 +86,7 @@ Pass `actions.answer` to `PiChat`. A call to a tool wrapped with `requireApprova
 
 ## Panel (`pi-workspace`), History and queue (`pi-chat`)
 
-`ArtifactWorkspace` (`pi-workspace/workspace.tsx`) lays out the chat with a right-hand panel: it slides in at full height, the divider resizes it (pointer and arrow keys, width kept for the session), the panel can go full screen (Escape leaves) and below `sheetBelow` it is a full-screen sheet. Opt in with `floatBelow={320}` and the chat can float: dragging the divider until the chat is narrower than that shows a dimmed "Release to float the chat" hint, releasing floats it, Alt+Left on the divider or "Float chat" in the viewer "…" menu (pi-app's `AgentWorkspace` turns `api.floatChat` into one of the `ViewerWindow.actions`, see [host actions](#labels-icons-and-host-actions)) does the same, and the panel takes the full width. `chat` is then a function `({ floating, dock }) => node`: return the docked `PiChat` or, while floating, `<AmbientChat controller={same} onDock={dock} defaultState="expanded" />` with the same props. Both use one controller, so transcript, queue, draft and the single watch stream carry over (`PiChat`/`AmbientChat` only borrow it). Dock returns the chat at the last width above the threshold; the floating state is remembered for the session, closing the panel docks, and the phone sheet ignores it. Off by default. It owns layout only; what is open is the host's, and the viewer inside uses `ViewerFrame`, which shows an Enter/Exit full screen button when wrapped in `ViewerWindowProvider` (viewers item). It is its own block (`pi-workspace`) because it is self-contained and driven by props; the studio uses it for artifacts and workspace files. Pass `conversations={{ items, activeId, onSelect, onNew }}` to `PiChat` and the header History button opens a searchable list of past conversations (the open conversation's persisted records stay reachable at the transcript top, even with `header={false}` or `showHistory={false}`). A message sent while the agent works waits in the queue, where each message offers Steer now, edit and remove (steer and edit need `actions.withdraw`); the composer has no mode toggle. Enter empties the composer at once; a message sent while the previous one is still being confirmed shows as a "Sending" row (the controller's `outbox`) until it is submitted, and a refused message comes back into the composer above what was typed since.
+`ArtifactWorkspace` (`pi-workspace/workspace.tsx`) lays out the chat with a right-hand panel: it slides in at full height, the full-height divider resizes it (pointer and arrow keys, width kept for the session; double-click resets it). Both `split` and `inset` keep a quiet 1px `border` seam with a centred 12px hit area. Hover, keyboard focus and dragging strengthen it to 2px in `ring`. Docked agent panels use the same seam, the panel can go full screen (Escape leaves) and below `sheetBelow` it is a full-screen sheet. Opt in with `floatBelow={320}` and the chat can float: dragging the divider until the chat is narrower than that shows a dimmed "Release to float the chat" hint, releasing floats it, Alt+Left on the divider or "Float chat" in the viewer "…" menu (pi-app's `AgentWorkspace` turns `api.floatChat` into one of the `ViewerWindow.actions`, see [host actions](#labels-icons-and-host-actions)) does the same, and the panel takes the full width. `chat` is then a function `({ floating, dock }) => node`: return the docked `PiChat` or, while floating, `<AmbientChat controller={same} onDock={dock} defaultState="expanded" />` with the same props. Both use one controller, so transcript, queue, draft and the single watch stream carry over (`PiChat`/`AmbientChat` only borrow it). Dock returns the chat at the last width above the threshold; the floating state is remembered for the session, closing the panel docks, and the phone sheet ignores it. Off by default. It owns layout only; what is open is the host's, and the viewer inside uses `ViewerFrame`, which shows an Enter/Exit full screen button when wrapped in `ViewerWindowProvider` (viewers item). It is its own block (`pi-workspace`) because it is self-contained and driven by props; the studio uses it for artifacts and workspace files. Pass `conversations={{ items, activeId, onSelect, onNew }}` to `PiChat` and the header History button opens a searchable list of past conversations (the open conversation's persisted records stay reachable at the transcript top, even with `header={false}` or `showHistory={false}`). A message sent while the agent works waits in the queue, where each message offers Steer now, edit and remove (steer and edit need `actions.withdraw`); the composer has no mode toggle. Enter empties the composer at once; a message sent while the previous one is still being confirmed shows as a "Sending" row (the controller's `outbox`) until it is submitted, and a refused message comes back into the composer above what was typed since.
 
 `@` mentions name workspace files; a path with whitespace or a quote is written quoted (`@"docs/Meeting notes.md"`, with `\"` and `\\` escaped), and bare paths keep their form. `mentionToken(path)` writes the text, `pieces` and `mentionedPaths` (the agent package, which must match it) read it back, and the composer chip and `removeMention` treat the quoted form as one token. A bare mention ends at whitespace, so the composer never inserts a bare path that contains a space.
 
@@ -467,10 +467,29 @@ artifact without replacing the mounted conversation. `ArtifactWorkspace.onClose`
 to refuse a synchronous close; declining the file's discard prompt restores the sheet's Back entry.
 Reselecting the current file closes Library without changing the selected path or the chat draft.
 
-`MarkdownEditor` and `MarkdownPane` default to `formattingToolbar="selection"`, using Tiptap's
-native bubble menu. Keyboard shortcuts and Markdown input rules remain available. The desktop Aa
-control pins the full toolbar; `formattingToolbar="pinned"` starts pinned. Phones always use selection
-formatting. `MarkdownEditor showOutline` controls heading navigation; by default it follows `header`.
+`MarkdownEditor` and `MarkdownPane` now default to `formattingToolbar="pinned"` on desktop.
+The toolbar stays on one row, with scrolling and a fade at the overflow edge. The header's Aa
+control switches to selection formatting; `formattingToolbar="selection"` starts with Tiptap's native
+bubble menu instead. Phones always use selection formatting, with no pinned row. Keyboard shortcuts
+and Markdown input rules remain available.
+
+Markdown autosave is on by default. It calls the existing `controller.flush` after 1200ms without an
+edit, on blur outside the editor, before closing or switching files, and when the page becomes hidden.
+Saves run one at a time; edits during a save are flushed next. The header shows Saving… and then Saved.
+There is no Save button while autosave is on; Cmd/Ctrl+S still saves immediately.
+`autosave={false}` on `MarkdownEditor` or `MarkdownPane` restores explicit saving.
+`autosave={{ delayMs: 2000 }}` changes the idle delay. `ViewerWindowProvider value={{ autosave: false }}`
+sets the policy for its Markdown panes; a pane's own prop wins. Read-only panes never autosave.
+
+Autosave uses the same [conditional write, operation lookup and receipts](../docs/architecture/FILES-GIT-EXEC.md#one-place-for-files).
+Stale revisions still refuse. Conflicts, refused or unavailable writes, and unconfirmed acknowledgements
+pause that file's autosave and retain its buffer. Typing does not retry a refusal. The existing explicit
+resolution controls resume saving once the base or outcome is resolved. Agent writes retain their current
+change-event and stale-revision semantics. Workspace navigation flushes first and asks about discarding
+only when the flush failed or remains unconfirmed. A host with its own navigation can register the
+`onAutosaveChange` flush callback on the editor or pane, or `onBeforeLeaveChange` on `FileViewer`, and
+await it before unmounting. Hidden-page and unmount flushes are best effort, not a persistence guarantee
+when the browser terminates. `MarkdownEditor showOutline` controls heading navigation; by default it follows `header`.
 `onUnsavedChange` reports an open file's unsaved changes, so a host can ask before
 it switches workspace or identity. Chat attachments are saved as
 `uploads/<name>-<8 hex>.<ext>`, so a second pasted `image.png` never collides.

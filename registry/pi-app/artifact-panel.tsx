@@ -4,7 +4,7 @@
 // the artifact's type. It follows the latest saved revision while nothing is unsaved ("Latest") or pins one older version, read-only. It
 // lists the versions the host's workspace provider retains for the file (`history`) and reads through the host's resource client. It never
 // executes artifact content (HTML runs only in the viewers' sandboxed preview when the host passes `interactive`).
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { CodeXmlIcon, EyeIcon } from 'lucide-react';
 import { randomUUID } from '@hachej/boring-files/platform';
@@ -58,6 +58,8 @@ export interface ViewerOptions {
   /** The host's opt-in to running HTML pages in the sandboxed preview. */
   readonly interactive?: InteractiveHtml | undefined;
   readonly share?: ViewerShare | undefined;
+  readonly onUnsavedChange?: ((unsaved: boolean) => void) | undefined;
+  readonly onBeforeLeaveChange?: ((flush: (() => Promise<boolean>) | null) => void) | undefined;
   /** Told each revision a built-in viewer has mounted and shows (after it loads, never before): the page's acknowledgement of `present`. */
   readonly onShown?: ((shown: { readonly path: string; readonly revision: string; readonly hidden?: true }) => void) | undefined;
 }
@@ -150,8 +152,23 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose }: {
     if (type === 'html') return (snapshot: ResourceSnapshot): DocumentController => createHtmlController({ ...base(snapshot), readOnly: true });
     return undefined;
   }, [type, pinned, client, identity, custom]);
-  const saved = useSaved<DocumentController>({ client, target: artifact.target, revision: pinned ? artifact.revision : undefined, create });
+  const autosave = useRef<{ controller: DocumentController; flush: () => Promise<boolean> } | null>(null);
+  const saved = useSaved<DocumentController>({ client, target: artifact.target, revision: pinned ? artifact.revision : undefined, create,
+    beforeDispose: controller => autosave.current?.controller === controller ? autosave.current.flush() : undefined });
   const controller = saved.controller;
+  const registerAutosave = useCallback((flush: (() => Promise<boolean>) | null) => {
+    autosave.current = flush && controller ? { controller, flush } : null;
+    options.onBeforeLeaveChange?.(flush);
+  }, [controller, options.onBeforeLeaveChange]);
+  useLayoutEffect(() => {
+    if (!controller) return;
+    const notify = () => {
+      const state = controller.getSnapshot();
+      options.onUnsavedChange?.(state.dirty || state.save.kind === 'pending' || state.save.kind === 'settled' && state.save.result.kind === 'unknown');
+    };
+    notify(); const stop = controller.subscribe(notify);
+    return () => { stop(); options.onUnsavedChange?.(false); };
+  }, [controller, options.onUnsavedChange]);
   // The text to copy and download is the buffer when a viewer holds one, so the person's unsaved edits are included.
   const text = useSyncExternalStore(controller ? controller.subscribe : NOOP, () => controller ? controller.getSnapshot().text : saved.text, () => saved.text);
   const extension = EXTENSION.exec(path)?.[1] ?? 'txt';
@@ -181,7 +198,7 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose }: {
     return body(<ViewerFrame {...waiting}><p className="m-0 p-4 text-sm text-muted-foreground" role="status">{saved.kind === 'loading' ? labels.loading : saved.kind === 'invalid' ? labels.artifactNotText : labels.versionUnavailable}</p></ViewerFrame>);
   }
   const document = (children: ReactNode) => <div data-testid="document" data-revision={saved.snapshot.ref.revision} className="h-full min-h-0">{children}</div>;
-  if (type === 'markdown' && controller) return body(document(<MarkdownPane controller={controller as MarkdownController} initialMode="rich" {...frame} />));
+  if (type === 'markdown' && controller) return body(document(<MarkdownPane controller={controller as MarkdownController} initialMode="rich" onAutosaveChange={registerAutosave} {...frame} />));
   if (type === 'html' && controller) return body(document(<HtmlPane controller={controller as HtmlController} {...(options.interactive ? { interactive: options.interactive } : {})} {...frame} />));
   const actions = { onCopy: () => copyText(text ?? ''), onDownload: () => downloadFile(filename, text ?? '', `${artifact.mediaType};charset=utf-8`) };
   if (type === 'svg') return body(<SvgView text={saved.text} title={artifact.title} frame={{ ...frame, ...actions }} />);

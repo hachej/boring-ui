@@ -67,14 +67,95 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
   });
 
   await t.test('autosave debounces edits once, hides Save, and keeps the exact persisted text', async t => {
-    const f = await fixture(t, 'original', { props: { initialMode: 'source', autosave: { delayMs: 30 } } });
+    const f = await fixture(t, 'original', { props: { initialMode: 'source', autosave: { delayMs: 250 } } });
     assert.equal([...f.container.querySelectorAll('button')].find(button => button.textContent === 'Save'), undefined);
     await f.input('one'); await f.input('two'); await f.input('final');
-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 90)); });
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 350)); });
     assert.equal(f.writes(), 1);
     assert.equal(await f.saved(), 'final');
     assert.equal(f.controller.getSnapshot().dirty, false);
     assert.match(f.container.querySelector('[role=status]').textContent, /Saved/);
+  });
+
+  await t.test('autosave queues edits during a flush and Ctrl+S never starts a competing write', async t => {
+    const started = Promise.withResolvers(), release = Promise.withResolvers();
+    let active = 0, maxActive = 0, calls = 0;
+    const f = await fixture(t, 'original', { props: { initialMode: 'source', autosave: true }, publish: async (request, commit) => {
+      calls++; active++; maxActive = Math.max(active, maxActive);
+      const result = await commit();
+      if (calls === 1) { started.resolve(); await release.promise; }
+      active--; return result;
+    } });
+    const shortcut = async () => act(async () => { f.container.querySelector('textarea').dispatchEvent(new window.KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true, cancelable: true })); });
+    await f.input('first'); await shortcut(); await started.promise;
+    assert.equal(f.container.querySelector('[role=status]').textContent, 'Saving…');
+    await f.input('second'); await shortcut();
+    assert.equal(f.writes(), 1);
+    await act(async () => { release.resolve(); await new Promise(resolve => setTimeout(resolve, 50)); });
+    await f.settled();
+    assert.equal(f.writes(), 2); assert.equal(maxActive, 1);
+    assert.equal(await f.saved(), 'second'); assert.equal(f.controller.getSnapshot().dirty, false);
+  });
+
+  await t.test('autosave conflicts pause typing, blur and hide saves until explicit resolution, retaining the buffer', async t => {
+    const f = await fixture(t, 'original', { props: { initialMode: 'source', autosave: { delayMs: 100 } } });
+    await f.client.publish({ operationId: 'agent-write', atomicity: 'all-or-nothing', changes: [{ kind: 'replace', target: f.controller.getSnapshot().base.target, bytes: new TextEncoder().encode('agent text'), mediaType: 'text/markdown' }] });
+    await f.input('human draft');
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 200)); });
+    assert.equal(f.controller.getSnapshot().save.result.kind, 'conflict');
+    await f.input('newer human draft');
+    await act(async () => { f.container.querySelector('textarea').dispatchEvent(new window.FocusEvent('focusout', { bubbles: true })); window.dispatchEvent(new window.Event('pagehide')); await new Promise(resolve => setTimeout(resolve, 200)); });
+    assert.equal(f.writes(), 2, 'one agent write and one refused autosave, no retries');
+    assert.equal(f.container.querySelector('textarea').value, 'newer human draft');
+    assert.equal(await f.saved(), 'agent text');
+    await f.click('Discard local changes and reload');
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
+    await f.input('resolved edit');
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 200)); });
+    assert.equal(await f.saved(), 'resolved edit');
+  });
+
+  await t.test('refused and unavailable autosaves stop without losing the draft', async t => {
+    for (const kind of ['denied', 'unavailable']) {
+      const f = await fixture(t, 'original', { props: { initialMode: 'source', autosave: { delayMs: 80 } }, publish: async () => ({ kind, reason: 'Fictional refusal' }) });
+      await f.input('kept draft');
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 160)); });
+      await f.input('kept newer draft');
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 160)); });
+      assert.equal(f.writes(), 1); assert.equal(f.controller.getSnapshot().text, 'kept newer draft');
+      assert.match(f.container.textContent, /Fictional refusal/);
+      assert.equal(await f.saved(), 'original');
+    }
+  });
+
+  await t.test('blur, page hide, unmount and switching controllers flush before the idle delay', async t => {
+    for (const trigger of ['blur', 'hide', 'unmount', 'switch']) {
+      const f = await fixture(t, 'original', { props: { initialMode: 'source', autosave: true } });
+      await f.input(`saved on ${trigger}`);
+      assert.equal(f.writes(), 0);
+      if (trigger === 'switch') {
+        const other = await fixture(t, 'other file'); await f.render(other.controller);
+        assert.equal(other.writes(), 0);
+      } else await act(async () => {
+        if (trigger === 'blur') f.container.querySelector('textarea').dispatchEvent(new window.FocusEvent('focusout', { bubbles: true }));
+        else if (trigger === 'hide') window.dispatchEvent(new window.Event('pagehide'));
+        else f.root.unmount();
+        await new Promise(resolve => setTimeout(resolve, 30));
+      });
+      await f.settled();
+      assert.equal(await f.saved(), `saved on ${trigger}`); assert.equal(f.writes(), 1);
+    }
+  });
+
+  await t.test('opt-out never automatically flushes and read-only documents never publish', async t => {
+    const f = await fixture(t, 'original', { props: { initialMode: 'source', autosave: false } });
+    await f.input('manual draft');
+    await act(async () => { f.container.querySelector('textarea').dispatchEvent(new window.FocusEvent('focusout', { bubbles: true })); window.dispatchEvent(new window.Event('pagehide')); await new Promise(resolve => setTimeout(resolve, 1300)); });
+    assert.equal(f.writes(), 0); assert.equal(await f.saved(), 'original');
+    await f.click('Save'); await f.settled(); assert.equal(await f.saved(), 'manual draft');
+    const readonly = await fixture(t, 'reference', { readOnly: true, props: { initialMode: 'source', autosave: { delayMs: 10 } } });
+    await act(async () => { readonly.container.querySelector('textarea').dispatchEvent(new window.FocusEvent('focusout', { bubbles: true })); window.dispatchEvent(new window.Event('pagehide')); await new Promise(resolve => setTimeout(resolve, 50)); });
+    assert.equal(readonly.writes(), 0);
   });
 
   await t.test('selection formatting formats the native selection and can be pinned without a write', async t => {
