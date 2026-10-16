@@ -277,14 +277,14 @@
 
   /* Markdown editor: prose (ported from boring-ui v2 .tiptap-prose) */
   .boring-viewer .boring-markdown-content {
-    max-width: 72ch;
+    max-width: 68ch;
     min-height: 100%;
     margin: 0 auto;
     padding: 1.5rem 1.5rem 3rem;
     outline: none;
     color: var(--foreground);
-    font-size: 0.9375rem;
-    line-height: 1.7;
+    font-size: 1rem;
+    line-height: 1.6;
     letter-spacing: -0.005em;
     overflow-wrap: anywhere;
   }
@@ -447,6 +447,10 @@
     outline-offset: -2px;
   }
 
+  @media (max-width: 640px) {
+    .boring-viewer .boring-markdown-content { padding: 1.25rem 1.25rem 3rem; font-size: 1.0625rem; line-height: 1.65; }
+    .boring-viewer .boring-markdown-toolbar { display: none; }
+  }
   @media (pointer: coarse), (max-width: 639px) {
     .boring-viewer .boring-markdown-tool {
       width: 2.75rem;

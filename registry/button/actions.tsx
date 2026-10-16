@@ -49,6 +49,7 @@ export interface ActionMenuProps {
   /** The trigger's size: the viewer bar's (default) or a small chat button. */
   readonly size?: 'icon-bar' | 'icon-sm';
   readonly className?: string;
+  readonly children?: ReactNode;
 }
 
 const ITEM = 'flex h-9 w-full cursor-pointer items-center gap-2 rounded-md px-2.5 text-left text-sm outline-none hover:bg-muted focus-visible:bg-muted disabled:pointer-events-none disabled:opacity-45 max-sm:h-11 pointer-coarse:h-11';
@@ -57,7 +58,7 @@ const ITEM = 'flex h-9 w-full cursor-pointer items-center gap-2 rounded-md px-2.
  * An icon button that opens a small menu: arrow keys, Home/End and roving focus, Escape (focus returns to the trigger), Tab and an outside
  * press close it. The one menu of the blocks' "…" buttons and the viewers' version history.
  */
-export function ActionMenu({ label, icon, items, testId = 'menu', align = 'end', size = 'icon-bar', className }: ActionMenuProps) {
+export function ActionMenu({ label, icon, items, testId = 'menu', align = 'end', size = 'icon-bar', className, children }: ActionMenuProps) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -93,6 +94,7 @@ export function ActionMenu({ label, icon, items, testId = 'menu', align = 'end',
       onKeyDown={event => { if (!open && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) { event.preventDefault(); setOpen(true); } }}>{icon}</IconButton>
     {open && <div id={menuId} role="menu" aria-label={label} data-testid={`${testId}-list`}
       className={cn('absolute top-full z-50 mt-1 grid max-h-72 min-w-48 gap-0.5 overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-lg', 'max-sm:fixed max-sm:inset-x-2 max-sm:top-auto max-sm:bottom-2 max-sm:mt-0 max-sm:max-h-[70vh] max-sm:rounded-xl max-sm:p-1.5', align === 'end' ? 'right-0' : 'left-0')}>
+      {children}
       {items.map(item => <button key={item.id} type="button" tabIndex={-1} role={radio ? 'menuitemradio' : 'menuitem'} {...(radio ? { 'aria-checked': item.checked === true } : {})}
         disabled={item.disabled} data-testid={item.testId ?? `${testId}-${item.id}`} data-item={item.id} className={ITEM}
         onClick={() => { close(true); item.onSelect(); }}>

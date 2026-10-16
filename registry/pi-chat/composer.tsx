@@ -87,7 +87,7 @@ export interface ComposerProps {
   readonly textareaRef: Ref<HTMLTextAreaElement>;
   readonly placeholder?: string;
   /** Both layouts have the same controls (the + menu, `/` and `@` menus, the model and effort pill, Send/Stop). `inline` puts them in one compact row; `stacked` is the two-row chat composer. */
-  readonly layout?: 'stacked' | 'inline';
+  readonly layout?: 'pill' | 'stacked' | 'inline';
   /** Host controls (for example a voice button) as round buttons between the model pill and the send button. */
   readonly barEnd?: ReactNode;
   /** The optional Feedback button and chip. */
@@ -95,7 +95,7 @@ export interface ComposerProps {
 }
 
 /** Compact bar buttons expand to 44px for touch. */
-const ROUND = 'inline-flex size-8 max-sm:size-11 pointer-coarse:size-11 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-45 motion-reduce:transition-none';
+const ROUND = 'inline-flex size-8 max-sm:size-11 pointer-coarse:size-11 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-45 motion-reduce:transition-none';
 
 /** The annotate toggle (a round bar button beside the "+" menu in both layouts). */
 function AnnotateButton({ feedback, disabled }: { readonly feedback: ComposerFeedback; readonly disabled: boolean }) {
@@ -278,15 +278,16 @@ export function Composer(props: ComposerProps) {
       onChange={onChange} onKeyDown={onKeyDown} onPaste={onPaste} onKeyUp={event => trackCaret(event.currentTarget)} onClick={event => trackCaret(event.currentTarget)}
       onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }}
       className={props.layout === 'inline'
-        ? 'block max-h-40 min-h-11 min-w-0 flex-1 resize-none order-first basis-full border-0 bg-transparent px-1.5 py-2.5 text-base leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed sm:text-sm'
-        : 'block max-h-52 min-h-[3.5rem] w-full resize-none border-0 bg-transparent px-4 pt-3 pb-2 text-base leading-6 sm:text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed'} />;
+        ? 'block max-h-40 min-h-11 min-w-0 flex-1 resize-none order-first basis-full border-0 bg-transparent px-1.5 py-2.5 text-base leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed'
+        : props.layout === 'stacked' ? 'block max-h-52 min-h-11 w-full resize-none border-0 bg-transparent px-4 py-3 text-base leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed'
+        : 'block max-h-52 min-h-11 min-w-0 flex-1 resize-none border-0 bg-transparent px-1 py-2.5 text-base leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed'} />;
   const plus = (canAttach || items.length > 0) && <PlusMenu disabled={disabled} onAttach={canAttach ? () => fileInput.current?.click() : undefined} onCommands={items.length > 0 ? openCommands : undefined} />;
   const fileEl = canAttach && <input ref={fileInput} type="file" multiple accept={props.fileAccept} disabled={disabled} tabIndex={-1} aria-hidden="true" className="sr-only" data-testid="composer-file" data-attach="true"
     onChange={event => { const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ''; props.onPickFiles(files); }} />;
   const send = working
-    ? <Button variant="default" size="icon" data-testid="composer-submit" data-state="stop" aria-label={labels.stop} title={labels.stop} disabled={disabled || stopRequested} onClick={props.onStop} className="ml-auto size-8 max-sm:size-11 pointer-coarse:size-11 shrink-0">
+    ? <Button variant="default" size="icon" data-testid="composer-submit" data-state="stop" aria-label={labels.stop} title={labels.stop} disabled={disabled || stopRequested} onClick={props.onStop} className="ml-auto size-9 rounded-full max-sm:size-11 pointer-coarse:size-11 shrink-0">
       {stopRequested ? <Loader2Icon className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <icons.stop className="size-4 fill-current" aria-hidden="true" />}</Button>
-    : <Button variant="default" size="icon" type="submit" data-testid="composer-submit" data-state="send" aria-label={labels.send} title={labels.sendHint} disabled={!canSubmit} className="ml-auto size-8 max-sm:size-11 pointer-coarse:size-11 shrink-0 disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100">
+    : <Button variant="default" size="icon" type="submit" data-testid="composer-submit" data-state="send" aria-label={labels.send} title={labels.sendHint} disabled={!canSubmit} className="ml-auto size-9 rounded-full max-sm:size-11 pointer-coarse:size-11 shrink-0 disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100">
       <icons.send className="size-5" aria-hidden="true" /></Button>;
 
   if (props.layout === 'inline') return <form data-testid="composer" data-layout="inline" onSubmit={event => { event.preventDefault(); if (canSubmit) props.onSend(); }} onDragOver={drag} onDragLeave={drag} onDrop={drop}
@@ -310,16 +311,17 @@ export function Composer(props: ComposerProps) {
   </form>;
 
   return <form data-testid="composer" onSubmit={event => { event.preventDefault(); if (canSubmit) props.onSend(); }} onDragOver={drag} onDragLeave={drag} onDrop={drop}
-    className={cn('relative rounded-xl border border-input bg-card transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20 motion-reduce:transition-none',
+    className={cn('relative rounded-[26px] border border-input/60 bg-card shadow-[0_2px_12px_rgb(0_0_0/0.04)] transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20 motion-reduce:transition-none',
       dragging && 'border-ring ring-[3px] ring-ring/20', disabled && 'opacity-70')}>
     {slashOpen && <SlashMenu query={query!} items={items} onSelect={pickSlash} onDismiss={dismiss} />}
     {mentionOpen && mentions && <MentionMenu query={trigger!.query} search={mentions.search} generation={mentions.generation} onSelect={pickMention} onDismiss={dismiss} />}
     {chipRows}
     {attachmentRow}
-    {textareaEl}
-    <div className="flex flex-nowrap items-center gap-x-2 px-3 pt-1 pb-2">
+    {props.layout === 'stacked' && textareaEl}
+    <div className="flex flex-nowrap items-end gap-x-2 px-2 py-2">
       {fileEl}
       {plus}
+      {props.layout !== 'stacked' && textareaEl}
       {feedback && <AnnotateButton feedback={feedback} disabled={disabled} />}
       {props.barStart}
       {props.barNote}

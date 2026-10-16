@@ -7,6 +7,7 @@ import type { AssistantMessage, Message } from '@earendil-works/pi-ai';
 import type { ChatHistoryState } from '@hachej/boring-ui-kit/native-chat';
 import { ArchiveIcon, ArchiveRestoreIcon, ArrowLeftIcon, CheckIcon, EllipsisIcon, MessageSquareIcon, PencilIcon, SearchIcon, Trash2Icon, XIcon } from 'lucide-react';
 import { Button } from '../button/button';
+import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer';
 import { ActionButton, ActionMenu, actionMenuItem, headerActions, menuActions } from '../button/actions';
 import type { ConversationItem, ConversationsConfig, ReplyRef } from './config';
 import { Markdown } from './markdown';
@@ -40,8 +41,9 @@ type Group = 'today' | 'yesterday' | 'previousWeek' | 'older' | 'conversations';
 function groupOf(value: ConversationItem['updatedAt'], now: number): Group {
   const ms = toMs(value);
   if (ms === undefined) return 'conversations';
-  const age = now - ms;
-  return age < DAY ? 'today' : age < 2 * DAY ? 'yesterday' : age < 7 * DAY ? 'previousWeek' : 'older';
+  const start = new Date(now); start.setHours(0, 0, 0, 0);
+  const age = start.getTime() - ms;
+  return age <= 0 ? 'today' : age <= DAY ? 'yesterday' : age < 7 * DAY ? 'previousWeek' : 'older';
 }
 const ORDER: readonly Group[] = ['today', 'yesterday', 'previousWeek', 'older', 'conversations'];
 
@@ -50,14 +52,20 @@ const ORDER: readonly Group[] = ['today', 'yesterday', 'previousWeek', 'older', 
  * recency with the open one marked, and the row actions the host offers (rename, archive, delete). It fills its container; `ConversationHistory`
  * puts it in a popover or sheet, the `pi-app` block in its sessions pane. `onPicked` runs after a row is chosen.
  */
-export function ConversationList({ conversations, onPicked, autoFocus = false }: {
+export function ConversationList({ conversations, onPicked, autoFocus = false, searchMode = 'disclosure', rowActionLayout = 'menu', navigation }: {
   readonly conversations: ConversationsConfig;
+  /** `inline` retains the always-visible search field. */
+  readonly searchMode?: 'disclosure' | 'inline';
+  /** `inline` retains the separate rename/archive/delete buttons. */
+  readonly rowActionLayout?: 'menu' | 'inline';
+  readonly navigation?: ReactNode;
   readonly onPicked?: (() => void) | undefined;
   /** Focus the search box on mount (not on touch screens). */
   readonly autoFocus?: boolean;
 }) {
   const { labels } = useChatText();
   const [query, setQuery] = useState('');
+  const [searchOpen, setSearchOpen] = useState(autoFocus || searchMode === 'inline');
   const [archived, setArchived] = useState(false);
   // Server-side results while a query is typed or the Archived filter is on (when the host offers `search`).
   const [found, setFound] = useState<{ readonly items: readonly ConversationItem[]; readonly loading: boolean } | null>(null);
@@ -97,13 +105,15 @@ export function ConversationList({ conversations, onPicked, autoFocus = false }:
   const action = 'text-muted-foreground';
   const total = shown.reduce((sum, group) => sum + group.items.length, 0);
   return <>
-      <div className="relative flex shrink-0 items-center border-b border-border px-3 py-2">
-        <SearchIcon className="pointer-events-none absolute top-1/2 left-5.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+      {!searchOpen && <Button variant="ghost" data-testid="conversation-search-open" className="mx-2 justify-start" onClick={() => { setSearchOpen(true); requestAnimationFrame(() => search.current?.focus()); }}><SearchIcon className="size-4" aria-hidden="true" />{labels.searchConversations}</Button>}
+      {searchOpen && <div className="relative flex shrink-0 flex-wrap items-center gap-2 px-3 py-2">
+        <SearchIcon className="pointer-events-none absolute top-5 left-5.5 size-4 text-muted-foreground" aria-hidden="true" />
         <input ref={search} type="search" value={query} onChange={event => setQuery(event.currentTarget.value)} placeholder={labels.searchConversations} aria-label={labels.searchConversations} data-testid="conversation-search"
           className={cn('h-9 w-full rounded-lg border border-border bg-background pr-3 pl-8 text-base outline-none max-sm:h-11 pointer-coarse:h-11 placeholder:text-muted-foreground focus-visible:border-ring/60 focus-visible:ring-[3px] focus-visible:ring-ring/15 sm:text-sm', conversations.archive && serverSearch && 'pr-10')} />
         {conversations.archive && serverSearch && <Button size="icon-sm" variant={archived ? 'secondary' : 'ghost'} aria-pressed={archived} aria-label={labels.archived} title={labels.archived} data-testid="conversations-archived"
-          className="absolute top-1/2 right-4 size-7 -translate-y-1/2 text-muted-foreground" onClick={() => setArchived(value => !value)}><ArchiveIcon className="size-3.5" aria-hidden="true" /></Button>}
-      </div>
+          className="h-8 w-auto gap-2 rounded-full px-3 text-muted-foreground" onClick={() => setArchived(value => !value)}><ArchiveIcon className="size-3.5" aria-hidden="true" />{labels.archived}</Button>}
+      </div>}
+      {navigation}
       {failure && <p role="alert" className="m-0 shrink-0 px-3 pt-2 text-xs text-destructive">{failure}</p>}
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-1.5 py-1.5" aria-busy={loading ? 'true' : undefined}>
         {total === 0 && <p role="status" data-testid="conversations-empty" className="m-0 px-3 py-8 text-center text-sm text-muted-foreground">
@@ -151,7 +161,12 @@ export function ConversationList({ conversations, onPicked, autoFocus = false }:
                   {confirming === item.id && conversations.remove ? <>
                     <Button size="sm" variant="destructive" data-testid="conversation-delete-confirm" onClick={() => { const remove = conversations.remove!; setConfirming(null); run(() => remove(item.id)); }}>{labels.delete}</Button>
                     <Button size="icon-sm" variant="ghost" aria-label={labels.keep} className={action} onClick={() => setConfirming(null)}><XIcon className="size-3.5" aria-hidden="true" /></Button>
-                  </> : <>
+                  </> : rowActionLayout === 'menu' ? <ActionMenu label={labels.moreActions} size="icon-sm" testId="conversation-action-more" icon={<EllipsisIcon className="size-4" aria-hidden="true" />} items={[
+                    ...(conversations.rename ? [{ id: 'rename', label: labels.rename, testId: 'conversation-rename', onSelect: () => setRenaming(item.id) }] : []),
+                    ...(conversations.archive ? [{ id: 'archive', label: item.archived ? labels.restore : labels.archive, testId: 'conversation-archive', onSelect: () => run(() => conversations.archive!(item.id, !item.archived)) }] : []),
+                    ...(conversations.remove ? [{ id: 'delete', label: labels.delete, testId: 'conversation-delete', onSelect: () => setConfirming(item.id) }] : []),
+                    ...[...extraButtons, ...extraMenu].map(entry => actionMenuItem(entry, 'conversation-action')),
+                  ]} /> : <>
                     {conversations.rename && <Button size="icon-sm" variant="ghost" aria-label={labels.renameItem(title)} title={labels.rename} data-testid="conversation-rename" className={action} onClick={() => setRenaming(item.id)}><PencilIcon className="size-3.5" aria-hidden="true" /></Button>}
                     {conversations.archive && <Button size="icon-sm" variant="ghost" aria-label={labels.archiveItem(title, item.archived === true)} title={item.archived ? labels.restore : labels.archive} data-testid="conversation-archive" className={action}
                       onClick={() => { const archive = conversations.archive!; run(() => archive(item.id, !item.archived)); }}>{item.archived ? <ArchiveRestoreIcon className="size-3.5" aria-hidden="true" /> : <ArchiveIcon className="size-3.5" aria-hidden="true" />}</Button>}
@@ -182,16 +197,14 @@ export function ConversationHistory({ conversations, onClose, onBrowseEarlier, p
   readonly placement?: 'below' | 'above';
 }) {
   const { labels, icons } = useChatText();
+  const [phone, setPhone] = useState(() => globalThis.matchMedia?.('(max-width: 640px)').matches === true);
+  useEffect(() => { const media = globalThis.matchMedia?.('(max-width: 640px)'); if (!media) return; const change = () => setPhone(media.matches); media.addEventListener('change', change); return () => media.removeEventListener('change', change); }, []);
   useEffect(() => {
     const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
     document.addEventListener('keydown', escape);
     return () => document.removeEventListener('keydown', escape);
   }, [onClose]);
-  return <>
-    <button type="button" tabIndex={-1} aria-hidden="true" data-testid="conversations-backdrop" onClick={onClose} className={cn('z-20 hidden cursor-default sm:block', placement === 'above' ? 'fixed inset-0' : 'absolute inset-0')} />
-    <section role="dialog" aria-label={labels.historyDialog} data-testid="conversations"
-      className={cn('fixed inset-0 z-50 flex flex-col bg-background text-foreground sm:absolute sm:inset-auto sm:z-30 sm:w-[23rem] sm:rounded-2xl sm:border sm:border-border sm:shadow-lg',
-        placement === 'above' ? 'sm:bottom-full sm:left-0 sm:mb-2 sm:max-h-[min(26rem,60dvh)]' : 'sm:top-12 sm:right-3 sm:max-h-[min(34rem,calc(100%-4rem))]')}>
+  const content = <>
       <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2.5 max-sm:pt-[max(0.625rem,env(safe-area-inset-top))]">
         <Button size="icon-sm" variant="ghost" aria-label={labels.closeHistory} title={labels.close} data-testid="conversations-close" onClick={onClose} className="sm:hidden"><ArrowLeftIcon className="size-4" aria-hidden="true" /></Button>
         <h3 className="m-0 min-w-0 flex-1 font-(family-name:--chat-display) text-sm font-semibold tracking-tight">{labels.history}</h3>
@@ -203,8 +216,9 @@ export function ConversationHistory({ conversations, onClose, onBrowseEarlier, p
         <Button size="sm" variant="ghost" data-testid="history-earlier" className="w-full justify-start text-muted-foreground" onClick={() => { onBrowseEarlier(); onClose(); }}>
           <icons.history className="size-3.5" aria-hidden="true" />{labels.earlierInConversation}</Button>
       </footer>}
-    </section>
   </>;
+  return phone ? <Drawer open showSwipeHandle onOpenChange={next => { if (!next) onClose(); }}><DrawerContent data-testid="conversations" aria-label={labels.historyDialog} className="h-[80dvh] pb-[env(safe-area-inset-bottom)] duration-200 motion-reduce:transition-none"><DrawerTitle className="sr-only">{labels.historyDialog}</DrawerTitle>{content}</DrawerContent></Drawer>
+    : <><button type="button" tabIndex={-1} aria-hidden="true" data-testid="conversations-backdrop" onClick={onClose} className={cn('z-20 cursor-default', placement === 'above' ? 'fixed inset-0' : 'absolute inset-0')} /><section role="dialog" aria-label={labels.historyDialog} data-testid="conversations" className={cn('absolute z-30 flex w-[23rem] flex-col rounded-2xl border border-border bg-background text-foreground shadow-lg', placement === 'above' ? 'bottom-full left-0 mb-2 max-h-[min(26rem,60dvh)]' : 'top-12 right-3 max-h-[min(34rem,calc(100%-4rem))]')}>{content}</section></>;
 }
 
 function line(message: Message, developer: boolean, labels: ChatLabels): { readonly role: string; readonly body: string; readonly assistant?: AssistantMessage } | undefined {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { Loader2Icon } from 'lucide-react';
@@ -82,7 +82,12 @@ export interface PiChatProps extends ChatFeatureProps {
   readonly historyList?: boolean;
   /** Show the header History button. Default true; paging remains available through the controller. */
   readonly showHistory?: boolean;
-  /** Show the header connection badge. Default true; connection state still controls actions. */
+  /** Empty desktop composition. `centered` puts the composer beneath the greeting; `docked` keeps the former layout. Phones always dock it. */
+  readonly emptyLayout?: 'centered' | 'docked';
+  /** A conversation title, separate from the agent name, with optional click-to-rename. */
+  readonly conversationTitle?: string | undefined;
+  readonly onRenameTitle?: ((title: string) => void) | undefined;
+  /** Show the header connection badge. Default false; connection state still controls actions and failures stay visible. */
   readonly showConnectionStatus?: boolean;
   /** The optional annotate toggle and notes chip in the composer (the registry `feedback` item's `useComposerFeedback`). Omit it and nothing changes. */
   readonly feedback?: ComposerFeedback;
@@ -111,7 +116,7 @@ function ConnectionBadge({ kind }: { readonly kind: string }) {
 }
 
 function PiChatSession({ controller, placement = 'docked', mode = 'expert', className, actions, avatar, headerActions, header = true, decisions, controls, tools, headerStart, renderEntry, renderTool, groupTool, commandMentions,
-  onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = true, feedback, draftKey, onOpenFile, fileChanges, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: NativeChatController } }) {
+  onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = false, emptyLayout = 'centered', conversationTitle, onRenameTitle, feedback, draftKey, onOpenFile, fileChanges, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: NativeChatController } }) {
   const { labels, icons } = useChatText();
   useChatDraft(controller, draftKey);
   useChatPlacement(controller, placement);
@@ -133,12 +138,23 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
   const visible = transcript.visible(rows);
   const { barStart, barNote } = session.pickers();
   const connectionKind = state.connection.kind;
+  const [renamingTitle, setRenamingTitle] = useState(false);
+  const page = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const viewport = globalThis.visualViewport;
+    if (!viewport) return;
+    const measure = () => page.current?.style.setProperty('--chat-keyboard-inset', `${Math.max(0, innerHeight - viewport.height - viewport.offsetTop)}px`);
+    measure(); viewport.addEventListener('resize', measure); viewport.addEventListener('scroll', measure);
+    return () => { viewport.removeEventListener('resize', measure); viewport.removeEventListener('scroll', measure); };
+  }, []);
 
-  return <section data-boring="pi-chat" aria-label={title} className={cn('pi-chat relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background text-foreground', className)}>
-    {header && <header className="flex min-h-14 shrink-0 items-center gap-2 border-b border-border px-3 py-2 sm:gap-3 sm:px-4">
+  return <section ref={page} data-boring="pi-chat" data-empty={empty && !loading ? emptyLayout : undefined} aria-label={title} className={cn('pi-chat relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background text-foreground max-sm:pb-(--chat-keyboard-inset)', empty && emptyLayout === 'centered' && 'sm:justify-center', className)}>
+    {header && <header className={cn(empty && emptyLayout === 'centered' && 'sm:absolute sm:inset-x-0 sm:top-0', 'flex h-13 shrink-0 items-center gap-2 px-3 sm:gap-3 sm:px-4')}>
       {headerStart}
       {avatar && <span data-testid="chat-avatar" className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full [&>img]:size-full [&>img]:object-cover [&>svg]:size-4">{avatar}</span>}
-      <h2 className="m-0 min-w-0 flex-1 truncate font-(family-name:--chat-display) text-sm font-semibold tracking-tight">{title}</h2>
+      {renamingTitle && onRenameTitle ? <form className="min-w-0 flex-1" onSubmit={event => { event.preventDefault(); const value = new FormData(event.currentTarget).get('title')?.toString().trim(); if (value) onRenameTitle(value); setRenamingTitle(false); }}>
+        <input name="title" aria-label={labels.conversationName} autoFocus defaultValue={conversationTitle ?? title} onBlur={() => setRenamingTitle(false)} onKeyDown={event => { if (event.key === 'Escape') setRenamingTitle(false); }} className="w-full min-w-0 rounded-md bg-muted px-2 py-1 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+      </form> : <h2 className="m-0 min-w-0 flex-1 truncate font-(family-name:--chat-display) text-sm font-medium tracking-tight">{onRenameTitle ? <button type="button" className="max-w-full cursor-pointer truncate rounded-md px-1 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setRenamingTitle(true)}>{conversationTitle ?? title}</button> : conversationTitle ?? title}</h2>}
       {showHistory && (conversations && historyList
         ? <Button size="sm" data-testid="history-open" className="text-muted-foreground" aria-haspopup="dialog" aria-expanded={pickingConversation} disabled={state.disposed}
           onClick={() => setPickingConversation(open => !open)}><icons.history className="size-3.5" aria-hidden="true" />{labels.history}</Button>
@@ -161,9 +177,9 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
     {browsingHistory && state.history.kind !== 'disabled' && <HistoryPanel history={state.history} developer={developer} replyFooter={replyFooter} connected={!state.disposed && connected}
       onLoad={() => act(controller.loadEarlier)} onClose={() => { setBrowsingHistory(false); if (!state.disposed) controller.clearHistory(); }} />}
 
-    <div className="relative min-h-0 flex-1">
+    <div data-testid="conversation-content" className={cn('relative min-h-0 flex-1', empty && emptyLayout === 'centered' && 'sm:min-h-60 sm:flex-none')}>
       <div ref={stick.scrollRef} data-testid="transcript-scroll" className="h-full overflow-x-hidden overflow-y-auto overscroll-contain">
-        <div ref={stick.contentRef} role="log" aria-label={labels.messages} aria-live="polite" data-testid="transcript" className="mx-auto flex min-h-full w-full max-w-3xl flex-col gap-6 px-4 pt-6 pb-8 sm:px-6">
+        <div ref={stick.contentRef} role="log" aria-label={labels.messages} aria-live="polite" data-testid="transcript" className="mx-auto flex min-h-full w-full max-w-[720px] flex-col gap-6 px-4 pt-6 pb-8 sm:px-6">
           {hidden > 0 && <div className="flex justify-center"><Button size="sm" variant="outline" data-testid="show-earlier" className="text-muted-foreground" onClick={transcript.reveal}>{labels.showEarlier}</Button></div>}
           {visible.map(row => <RowView key={row.key} row={row} context={rowContext} />)}
         </div>
@@ -173,12 +189,12 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
           {loading ? <p role="status" data-testid="loading" className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2Icon className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />{labels.loading}</p>
             : emptyState ?? <EmptyState title={title} description={labels.emptyDescription} {...(avatar ? { avatar } : {})} {...(suggestions ? { suggestions } : {})} onSelect={text => { controller.setText(text); textarea.current?.focus(); }} />}
         </div></div>}
-      {!stick.isAtBottom && <Button variant="outline" size="icon" data-testid="jump-latest" aria-label={labels.jumpToLatest} title={labels.jumpToLatest} onClick={() => { transcript.reset(); void stick.scrollToBottom(); }}
+      {!empty && !stick.isAtBottom && <Button variant="outline" size="icon" data-testid="jump-latest" aria-label={labels.jumpToLatest} title={labels.jumpToLatest} onClick={() => { transcript.reset(); void stick.scrollToBottom(); }}
         className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-background/95 shadow-md backdrop-blur"><icons.jumpToLatest className="size-4" aria-hidden="true" /></Button>}
     </div>
 
-    <footer className="shrink-0 px-4 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6">
-      <div className="mx-auto w-full max-w-3xl space-y-2">
+    <footer data-testid="composer-dock" className="shrink-0 px-4 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6">
+      <div className="mx-auto w-full max-w-[720px] space-y-2">
         <div aria-live="polite" className="space-y-2 empty:hidden">
           {working && <p role="status" data-testid="agent-status" className="m-0 flex items-center gap-2 px-1 text-xs text-muted-foreground"><span aria-hidden="true" className="size-1.5 animate-pulse rounded-full bg-(--chat-success) motion-reduce:animate-none" />
             <Shimmer active={!waitingForAnswer}>{waitingForAnswer ? labels.waitingForAnswer : retry ? labels.retryPending : labels.agentWorking}</Shimmer></p>}
@@ -187,7 +203,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
         </div>
         <div>
           <MessageQueue items={queued} sending={state.outbox} withdraw={actions?.withdraw} actions={queueActions} />
-          <Composer {...composer} barStart={barStart} barNote={barNote} barEnd={tools} />
+          <Composer {...composer} placeholder={labels.placeholder === 'Message the agent…' ? `Message ${title}…` : labels.placeholder} barStart={barStart} barNote={barNote} barEnd={tools} />
         </div>
       </div>
     </footer>

@@ -2,6 +2,7 @@
 
 import '@hachej/boring-ui-kit/file-tree.css';
 
+import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import type { ResourceLocator } from '@hachej/boring-files';
@@ -96,7 +97,7 @@ interface AgentWorkspaceBaseProps {
    * the chat in the center (the chat stays mounted). `pane`: the Library is a tab beside the conversations in the left pane, or the
    * whole pane on a single-session page without `conversations`; files open in the right panel as usual.
    */
-  readonly libraryPlacement?: 'side' | 'center' | 'pane' | undefined;
+  readonly libraryPlacement?: 'panel' | 'side' | 'center' | 'pane' | undefined;
   /** The page's language: `en` (default) or `fr`, for the chat, the panes, the viewers and the Library. `labels` and `chat.labels` override any word. */
   readonly locale?: ChatLocale | undefined;
   /**
@@ -195,7 +196,7 @@ export type AgentWorkspaceProps = AgentWorkspaceBaseProps & (
 );
 
 // The Library column is docked only while the chat and the viewer (their `ArtifactWorkspace` minimums) keep their room beside it; otherwise it is Dock's sheet.
-const SESSIONS_WIDTH = 288, LIBRARY_WIDTH = 320, CHAT_MIN = 340, VIEWER_MIN = 360;
+const SESSIONS_WIDTH = 260, LIBRARY_WIDTH = 320, CHAT_MIN = 360, VIEWER_MIN = 360;
 const readFlag = (key: string): boolean => { try { return sessionStorage.getItem(key) === '1'; } catch { return false; } };
 const writeFlag = (key: string, on: boolean) => { try { if (on) sessionStorage.setItem(key, '1'); else sessionStorage.removeItem(key); } catch { /* the layout is a convenience */ } };
 const defaultLocate = (path: string): ResourceLocator => ({ resource: { providerId: 'workspace', path: workspacePath(path) }, view: { kind: 'published' } });
@@ -206,9 +207,10 @@ const defaultLocate = (path: string): ResourceLocator => ({ resource: { provider
  * its versions, the file viewer and the host's own views). Agent artifacts open the panel as they appear. Every prop is data or a callback:
  * the host owns the routes, authentication, the controller and what is open (when controlled).
  */
-export function AgentWorkspace({ controller, conversationId, chat = {}, labels, icons, panelActions, connecting, conversations, sessions, resources, revisionProvider, libraryPlacement = 'side', locale, fileTree: treeOptions, uploads, agents, detect, viewers, interactive, share, opened: controlled,
-  defaultOpened = null, onOpenedChange, onUnsavedChange, panels, autoOpen = true, fileBack, floatingChat, chatTop, controls, storageKey = 'boring.agent-workspace', sheetBelow = 768, drawerBelow = 768, floatBelow, className }: AgentWorkspaceProps) {
+export function AgentWorkspace({ controller, conversationId, chat = {}, labels, icons, panelActions, connecting, conversations, sessions, resources, revisionProvider, libraryPlacement = 'panel', locale, fileTree: treeOptions, uploads, agents, detect, viewers, interactive, share, opened: controlled,
+  defaultOpened = null, onOpenedChange, onUnsavedChange, panels, autoOpen = true, fileBack, floatingChat, chatTop, controls, storageKey = 'boring.agent-workspace', sheetBelow = 641, drawerBelow = 641, floatBelow, className }: AgentWorkspaceProps) {
   const [own, setOwn] = useState<OpenedView | null>(defaultOpened);
+  const [panelLibrary, setPanelLibrary] = useState(false);
   const opened = controlled !== undefined ? controlled : own;
   const change = useRef(onOpenedChange); change.current = onOpenedChange;
   const isControlled = controlled !== undefined;
@@ -222,6 +224,7 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
     if (isFile(current) && isFile(next) && current.path === next.path) return true;
     if (unsaved.current && !globalThis.confirm?.('This file has unsaved or unconfirmed changes. Discard the local draft and leave this file?')) return false;
     noteUnsaved(false);
+    setPanelLibrary(false);
     if (!isControlled) setOwn(next); change.current?.(next);
     return true;
   }, [isControlled, noteUnsaved]);
@@ -235,7 +238,7 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   // Opening the column leaves a full-screen viewer, whose overlay would otherwise cover it.
   const setSideOpen = useCallback((next: boolean) => { setSideOpenState(next); if (next) setFullscreen(false); }, []);
   const libraryOpen = Boolean(revisionProvider) && libraryPlacement === 'center' && centerMode === 'library';
-  const openLibrary = useCallback(() => { setCenterMode('library'); setFullscreen(false); }, []);
+  const openLibrary = useCallback(() => { if (libraryPlacement === 'panel') setPanelLibrary(value => !value); else setCenterMode('library'); setFullscreen(false); }, [libraryPlacement]);
   const text = useMemo(() => ({ labels: withDefaults(locale === 'fr' ? frenchAppLabels : defaultAppLabels, labels), icons: withDefaults(defaultAppIcons, icons) }), [labels, icons, locale]);
   // The sessions pane shows the chat's conversation list, so it reads the chat's labels too.
   const chatText = useMergedText(chat.labels, chat.icons, chatTextFor(locale));
@@ -337,11 +340,11 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   const active = isArtifact(opened) && opened.conversation === conversationId ? opened : null;
   const file = isFile(opened) ? opened : null;
   const host = opened && !isArtifact(opened) && !isFile(opened) && panels?.[opened.kind] ? opened : null;
-  const panelOpen = Boolean(active || file || host);
+  const panelOpen = Boolean(active || file || host || panelLibrary);
   const seen = useRef(new Map<string, Set<string>>());
   const closedInTurn = useRef(new Map<string, number>());
   // Kept editing after the unsaved-changes question: the panel stays as it was, and the next artifact may still open it.
-  const close = () => { if (!setOpened(null)) return; if (conversationId !== undefined) closedInTurn.current.set(conversationId, turn); setFullscreen(false); };
+  const close = () => { if (panelLibrary) { setPanelLibrary(false); return; } if (!setOpened(null)) return; if (conversationId !== undefined) closedInTurn.current.set(conversationId, turn); setFullscreen(false); };
   useEffect(() => {
     if (!controller || conversationId === undefined) return;
     const keys = versions.map(version => `${artifactKey(version)}:${version.revision}`);
@@ -404,7 +407,7 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
     : <p role="status" className="m-0 p-3 text-sm text-muted-foreground">{treeOptions?.labels?.loading ?? text.labels.loading}</p>;
   const hasNavigation = sessions !== false && Boolean(conversations || revisionProvider);
   const docked = hasNavigation && width > 0 && !narrow && !collapsed;
-  const toggle = hasNavigation && <SessionsToggle navigation={Boolean(revisionProvider)} open={narrow ? drawer : !collapsed} drawer={narrow}
+  const toggle = hasNavigation && !docked && !drawer && <SessionsToggle navigation={Boolean(revisionProvider)} open={narrow ? drawer : !collapsed} drawer={narrow}
     onToggle={() => { if (narrow) setDrawer(value => !value); else setCollapsed(value => { writeFlag(`${storageKey}.sessions-hidden`, !value); return !value; }); }} />;
 
   // ---- The docked chat's header is replaced on every switch and connect (the `connecting` row, then a new `PiChat`). The toggle is not
@@ -423,8 +426,9 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   const toggleSpace = toggle && <Button ref={headerSlot} size="icon-sm" aria-hidden="true" tabIndex={-1} className="invisible -ml-1" />;
 
   // ---- The chat in the center: docked PiChat, or the host's floating surface over the same controller (with the toggle in its header).
-  const header = typeof controls === 'function' ? controls({ panelOpen }) : controls ?? chat.controls;
-  const chatProps: PiChatProps | undefined = controller && { ...(mentionsForChat ? { mentions: mentionsForChat } : {}), ...(attachments ? { attachments } : {}), ...(locale ? { locale } : {}), ...chat, controller, artifacts, ...(conversations ? { conversations, historyList: false } : {}),
+  const header = <>{conversations?.onNew && <Button variant="ghost" size="icon-sm" data-testid="workspace-new-chat" aria-label={text.labels.newChat} className="sm:hidden" onClick={conversations.onNew}><text.icons.newChat className="size-4" aria-hidden="true" /></Button>}{typeof controls === 'function' ? controls({ panelOpen }) : controls ?? chat.controls}</>;
+  const conversationTitle = conversations?.items.find(item => item.id === conversationId)?.title;
+  const chatProps: PiChatProps | undefined = controller && { ...(mentionsForChat ? { mentions: mentionsForChat } : {}), ...(attachments ? { attachments } : {}), ...(locale ? { locale } : {}), ...chat, controller, artifacts, ...(conversations ? { conversations, historyList: false, showHistory: false, conversationTitle, onRenameTitle: conversations.rename && conversationId ? (title: string) => { void conversations.rename!(conversationId, title); } : undefined } : {}),
     headerStart: <>{toggle}{chat.headerStart}</>, ...(header === undefined ? {} : { controls: header }) };
   const docked_chat = <div data-testid="workspace-center" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
     {attachmentFailure?.tree === fileTree && attachmentFailure?.reasons.map((reason, index) => <p key={index} role="alert" className="m-0 px-4 py-2 text-sm">{reason}</p>)}
@@ -441,32 +445,33 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   const kind = active ? 'artifact' : file ? 'file' : host?.kind;
   const shown = active ?? file ?? host;
   const actionsFor = (floatChat: (() => void) | undefined): readonly BlockAction[] => [
+    ...(revisionProvider && libraryPlacement === 'panel' ? [{ id: 'library', label: text.labels.library, icon: text.icons.library, placement: 'menu' as const, onSelect: openLibrary }] : []),
     ...(librarySide ? [{ id: 'library', label: text.labels.library, icon: text.icons.library, pressed: sideOpen, onSelect: toggleSide }] : []),
     ...(floatChat ? [{ id: 'float-chat', label: text.labels.floatChat, icon: text.icons.floatChat, placement: 'menu' as const, onSelect: floatChat }] : []),
     ...(shown ? typeof panelActions === 'function' ? panelActions(shown) : panelActions ?? [] : []),
   ];
-  const sessionProps: ComponentProps<typeof SessionsPane> = { conversations, drawer: narrow, onClose: () => setDrawer(false), onChat: () => setCenterMode('chat'),
+  const sessionProps: ComponentProps<typeof SessionsPane> = { conversations, drawer: narrow, onClose: () => setDrawer(false), onChat: () => setCenterMode('chat'), onCollapse: () => { writeFlag(`${storageKey}.sessions-hidden`, true); setCollapsed(true); }, title: chat.labels?.title,
     agents, view: paneView, onViewChange: changePaneView,
-    ...(librarySide ? { library: { selected: sideOpen, onSelect: toggleSide, side: true } } : revisionProvider && !libraryInPane ? { library: { selected: libraryOpen, onSelect: openLibrary } } : {}),
+    ...(librarySide ? { library: { selected: sideOpen, onSelect: toggleSide, side: true } } : revisionProvider && !libraryInPane ? { library: { selected: libraryOpen || panelLibrary, onSelect: openLibrary } } : {}),
     ...(libraryInPane ? { libraryContent: (onPicked: () => void) => libraryTree(path => { openFile(path); onPicked(); }) } : {}),
   };
   return <AppTextProvider value={text}><ChatTextProvider value={chatText}><div ref={root} data-boring="agent-workspace" data-sessions={!hasNavigation ? undefined : narrow ? (drawer ? 'drawer' : 'closed') : docked ? 'docked' : 'hidden'}
     className={cn('relative flex h-full min-h-0 min-w-0 flex-1 overflow-hidden', className)}>
     <DockLayout storageKey={`${storageKey}.dock`} minMain={SESSIONS_WIDTH + 480}>
     {hasNavigation && (docked || (narrow && drawer)) && (sessions ? sessions(sessionProps) : <SessionsPane {...sessionProps} />)}
-    <DockMain><ArtifactWorkspace open={panelOpen} onClose={close} panelLabel={text.labels.artifactPanel} labels={{ resize: text.labels.resizePanel, floatHint: text.labels.floatHint }} fullscreen={fullscreen} onFullscreenChange={setFullscreen} storageKey={`${storageKey}.panel-width`}
+    <DockMain><ArtifactWorkspace open={panelOpen && !(panelLibrary && narrow)} onClose={close} panelLabel={text.labels.artifactPanel} labels={{ resize: text.labels.resizePanel, floatHint: text.labels.floatHint }} fullscreen={fullscreen} onFullscreenChange={setFullscreen} storageKey={`${storageKey}.panel-width`}
       sheetBelow={docked ? Math.max(0, sheetBelow - SESSIONS_WIDTH) : sheetBelow} {...(floatBelow === undefined || libraryOpen ? {} : { floatBelow })}
       chat={layout => <WorkspaceCenter libraryOpen={libraryOpen} floating={layout.floating} chat={docked_chat}
         floatingChat={floatingChat && chatProps ? floatingChat(chatProps, layout.dock) : undefined}
         // With the Library in the pane, the center holds only the chat (no second, hidden toggle or tree).
-        library={libraryInPane || librarySide ? null : <section data-testid="workspace-library-view" aria-label={text.labels.library} className="flex min-h-0 flex-1 flex-col">
+        library={libraryInPane || librarySide || libraryPlacement === 'panel' ? null : <section data-testid="workspace-library-view" aria-label={text.labels.library} className="flex min-h-0 flex-1 flex-col">
           <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">{toggle}<h2 className="m-0 flex-1 text-sm font-semibold">{text.labels.library}</h2>
             <Button variant="ghost" size="sm" onClick={() => setCenterMode('chat')}>{text.labels.backToChat}</Button></header>
           <div className="min-h-0 flex-1 overflow-auto">{libraryTree(openFile)}</div>
         </section>} />}
       panel={win => <ViewerWindowProvider value={{ fullscreen: win.fullscreen, onFullscreenChange: win.onFullscreenChange, actions: actionsFor(win.floatChat), labels: text.labels, icons: text.icons }}>
         <div data-testid="viewer-panel" data-kind={kind} className="flex min-h-0 flex-1 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1">
-          {active
+          {panelLibrary ? <section data-testid="workspace-library-side" aria-label={text.labels.library} className="flex min-h-0 flex-1 flex-col"><header className="flex h-13 items-center gap-2 px-3"><Button size="icon-sm" variant="ghost" aria-label={text.labels.close} onClick={() => setPanelLibrary(false)}><text.icons.closeSessions className="size-4" aria-hidden="true" /></Button><h2 className="m-0 text-sm font-medium">{text.labels.library}</h2></header><div className="min-h-0 flex-1 overflow-auto">{libraryTree(openFile)}</div></section> : active
             ? <ArtifactPanel key={artifactKey(active.descriptor)} active={active} versions={newestOf(artifactKey(active.descriptor))} options={options} onClose={win.close}
                 onSelect={value => {
                   const known = newestOf(artifactKey(active.descriptor));
@@ -485,6 +490,7 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
       </section>}
     </Dock>}
     </DockLayout>
+    {panelLibrary && narrow && <Drawer open showSwipeHandle onOpenChange={next => { if (!next) setPanelLibrary(false); }}><DrawerContent aria-label={text.labels.library} className="h-[80dvh] pb-[env(safe-area-inset-bottom)] duration-200 motion-reduce:transition-none"><DrawerTitle className="px-5 py-3">{text.labels.library}</DrawerTitle><div data-testid="workspace-library-side" className="min-h-0 flex-1 overflow-auto">{libraryTree(openFile)}</div></DrawerContent></Drawer>}
   </div></ChatTextProvider></AppTextProvider>;
 }
 

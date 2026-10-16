@@ -73,11 +73,15 @@ const writeFlag = (key: string, on: boolean) => { try { if (on) sessionStorage.s
  * narrows; a divider (pointer or arrow keys) resizes it, the width is remembered for the session; the panel can go full screen
  * (Escape leaves) and on a phone it is a full-screen sheet. With `floatBelow` the chat can float over a full-width panel instead of sitting beside it. The workspace owns layout only: what is open, and the viewer in it, are the host's.
  */
-export function ArtifactWorkspace({ chat, open, panel, onClose, fullscreen: controlledFullscreen, onFullscreenChange, storageKey = 'boring.artifact-panel.width', defaultWidth = 640,
-  minPanel = 360, minChat = 340, sheetBelow = 768, floatBelow, panelLabel = 'Artifact panel', variant = 'split', labels, className }: ArtifactWorkspaceProps) {
+export function ArtifactWorkspace({ chat, open, panel, onClose, fullscreen: controlledFullscreen, onFullscreenChange, storageKey = 'boring.artifact-panel.width', defaultWidth,
+  minPanel = 360, minChat = 360, sheetBelow = 641, floatBelow, panelLabel = 'Artifact panel', variant = 'split', labels, className }: ArtifactWorkspaceProps) {
   const root = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState(0);
-  const [stored, setStored] = useState<number>(() => read(storageKey) ?? defaultWidth);
+  const [stored, setStored] = useState<number | undefined>(() => read(storageKey) ?? defaultWidth);
+  const closeRef = useRef(onClose); closeRef.current = onClose;
+  const fullscreenRef = useRef(false);
+  const opener = useRef<HTMLElement | null>(null);
+  const swipe = useRef<{ x: number; y: number } | null>(null);
   const [local, setLocal] = useState(false);
   const [entered, setEntered] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -87,6 +91,7 @@ export function ArtifactWorkspace({ chat, open, panel, onClose, fullscreen: cont
   const sheet = size > 0 && size < sheetBelow;
   const floating = open && !sheet && floatBelow !== undefined && floatState;
   const fullscreen = open && !sheet && (controlled ? controlledFullscreen : local);
+  fullscreenRef.current = fullscreen;
   const setFullscreen = useCallback((next: boolean) => { if (controlled) onFullscreenChange!(next); else setLocal(next); }, [controlled, onFullscreenChange]);
 
   useLayoutEffect(() => {
@@ -113,8 +118,27 @@ export function ArtifactWorkspace({ chat, open, panel, onClose, fullscreen: cont
     return () => document.removeEventListener('keydown', escape);
   }, [fullscreen, setFullscreen]);
 
+  useEffect(() => {
+    if (!open) return;
+    opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const escape = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || fullscreenRef.current) return;
+      event.preventDefault(); closeRef.current();
+    };
+    document.addEventListener('keydown', escape);
+    return () => { document.removeEventListener('keydown', escape); const target = opener.current; if (target?.isConnected) target.focus({ preventScroll: true }); };
+  }, [open]);
+  useEffect(() => {
+    if (!open || !sheet) return;
+    const key = `artifact-${Math.random()}`;
+    history.pushState({ ...history.state, boringArtifact: key }, '');
+    const back = () => { if (history.state?.boringArtifact !== key) closeRef.current(); };
+    addEventListener('popstate', back);
+    return () => { removeEventListener('popstate', back); if (history.state?.boringArtifact === key) history.back(); };
+  }, [open, sheet]); // The mounted sheet keeps its own Back entry, independent of renders.
+
   const max = Math.max(minPanel, size - minChat);
-  const width = Math.min(Math.max(stored, minPanel), max);
+  const width = Math.min(Math.max(stored ?? Math.max(minPanel, size - 420), minPanel), max);
   const resize = (next: number) => { const clamped = Math.min(Math.max(next, minPanel), max); setStored(clamped); write(storageKey, clamped); };
   const drag = (event: PointerEvent<HTMLElement>) => {
     if (!dragging) return;
@@ -151,14 +175,14 @@ export function ArtifactWorkspace({ chat, open, panel, onClose, fullscreen: cont
         data-testid="workspace-divider" data-dragging={dragging ? 'true' : undefined}
         onPointerDown={event => { event.currentTarget.setPointerCapture(event.pointerId); setDragging(true); }} onPointerMove={drag}
         onPointerUp={release} onPointerCancel={() => { setDragging(false); setFloatHint(false); }}
-        onKeyDown={keys} onDoubleClick={() => resize(defaultWidth)}
+        onKeyDown={keys} onDoubleClick={() => resize(defaultWidth ?? size - 420)}
         className="group relative z-10 -mx-1 w-2 shrink-0 cursor-col-resize touch-none outline-none">
-        <span aria-hidden="true" className={cn('absolute inset-y-0 left-1/2 w-px -translate-x-1/2', variant === 'inset' ? 'bg-transparent' : 'bg-border', 'transition-colors group-hover:w-0.5 group-hover:bg-ring/70 group-focus-visible:w-0.5 group-focus-visible:bg-ring motion-reduce:transition-none', dragging && 'w-0.5 bg-ring')} />
+        <span aria-hidden="true" className={cn('absolute inset-y-0 left-1/2 w-px -translate-x-1/2', 'bg-transparent', 'transition-colors group-hover:w-0.5 group-hover:bg-ring/70 group-focus-visible:w-0.5 group-focus-visible:bg-ring motion-reduce:transition-none', dragging && 'w-0.5 bg-ring')} />
       </div>}
-      <aside data-testid="workspace-panel" aria-label={panelLabel} data-state={entered ? 'open' : 'entering'} data-floating={floating ? 'true' : undefined} data-fullscreen={fullscreen ? 'true' : 'false'} data-sheet={sheet ? 'true' : 'false'}
+      <aside onTouchStart={event => { const point = event.touches[0]; swipe.current = sheet && point && point.clientX < 32 ? { x: point.clientX, y: point.clientY } : null; }} onTouchEnd={event => { const point = event.changedTouches[0], start = swipe.current; swipe.current = null; if (point && start && point.clientX - start.x > 80 && Math.abs(point.clientY - start.y) < 60) onClose(); }} data-testid="workspace-panel" aria-label={panelLabel} data-state={entered ? 'open' : 'entering'} data-floating={floating ? 'true' : undefined} data-fullscreen={fullscreen ? 'true' : 'false'} data-sheet={sheet ? 'true' : 'false'}
         style={sheet || fullscreen || floating ? undefined : { width, minWidth: minPanel }}
         className={cn('flex min-h-0 min-w-0 flex-col overflow-hidden bg-background text-foreground transition-opacity motion-reduce:transition-none',
-          sheet || fullscreen ? 'fixed inset-0 z-50' : floating ? 'flex-1' : variant === 'inset' ? 'my-3 me-3 ms-0 shrink-0 rounded-lg border border-border' : 'shrink-0 border-l border-border',
+          sheet || fullscreen ? 'fixed inset-0 z-50' : floating ? 'flex-1' : variant === 'inset' ? 'my-3 me-3 ms-0 shrink-0 rounded-lg border border-border' : 'shrink-0',
           entered ? 'opacity-100' : 'opacity-0', dragging && 'pointer-events-none select-none')}>
         {typeof panel === 'function' ? panel(api) : panel}
       </aside>
