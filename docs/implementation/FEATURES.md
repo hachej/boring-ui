@@ -214,7 +214,9 @@ existing revision provider, not a Pi extension or a second file service. Public
 DOM coverage is in `test/ui/file-tree.mjs`; live invalidation remains covered by
 `test/ui/change-feed.test.mjs`. `node examples/file-tree/journey-library.mjs` drives
 the standalone app and workspace demo in Chromium, including empty/drop publication,
-nested-menu Escape/focus, version history, light/dark and 360px geometry. Screenshots
+exact downloaded bytes, nested-menu Escape/focus, version history, light/dark and
+360px geometry. `npm run file-tree:journey` includes that journey in the blocking
+browser CI job, which uploads its screenshots with the file-tree evidence. Screenshots
 are under `.cache/evidence/library/`. Physical devices remain unqualified.
 
 The [UI guide](../../packages/ui/README.md#file-tree-and-filename-mentions) owns
