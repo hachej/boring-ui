@@ -84,6 +84,8 @@ export interface PiChatProps extends ChatFeatureProps {
   readonly showHistory?: boolean;
   /** Empty desktop composition. `centered` puts the composer beneath the greeting; `docked` keeps the former layout. Phones always dock it. */
   readonly emptyLayout?: 'centered' | 'docked';
+  /** `stacked` retains the former two-row composer. */
+  readonly composerLayout?: 'pill' | 'stacked';
   /** A conversation title, separate from the agent name, with optional click-to-rename. */
   readonly conversationTitle?: string | undefined;
   readonly onRenameTitle?: ((title: string) => void) | undefined;
@@ -116,7 +118,7 @@ function ConnectionBadge({ kind }: { readonly kind: string }) {
 }
 
 function PiChatSession({ controller, placement = 'docked', mode = 'expert', className, actions, avatar, headerActions, header = true, decisions, controls, tools, headerStart, renderEntry, renderTool, groupTool, commandMentions,
-  onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = false, emptyLayout = 'centered', conversationTitle, onRenameTitle, feedback, draftKey, onOpenFile, fileChanges, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: NativeChatController } }) {
+  onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = false, emptyLayout = 'centered', composerLayout = 'pill', conversationTitle, onRenameTitle, feedback, draftKey, onOpenFile, fileChanges, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: NativeChatController } }) {
   const { labels, icons } = useChatText();
   useChatDraft(controller, draftKey);
   useChatPlacement(controller, placement);
@@ -154,7 +156,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
       {avatar && <span data-testid="chat-avatar" className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full [&>img]:size-full [&>img]:object-cover [&>svg]:size-4">{avatar}</span>}
       {renamingTitle && onRenameTitle ? <form className="min-w-0 flex-1" onSubmit={event => { event.preventDefault(); const value = new FormData(event.currentTarget).get('title')?.toString().trim(); if (value) onRenameTitle(value); setRenamingTitle(false); }}>
         <input name="title" aria-label={labels.conversationName} autoFocus defaultValue={conversationTitle ?? title} onBlur={() => setRenamingTitle(false)} onKeyDown={event => { if (event.key === 'Escape') setRenamingTitle(false); }} className="w-full min-w-0 rounded-md bg-muted px-2 py-1 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring" />
-      </form> : <h2 className="m-0 min-w-0 flex-1 truncate font-(family-name:--chat-display) text-sm font-medium tracking-tight">{onRenameTitle ? <button type="button" className="max-w-full cursor-pointer truncate rounded-md px-1 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setRenamingTitle(true)}>{conversationTitle ?? title}</button> : conversationTitle ?? title}</h2>}
+      </form> : <h2 className="m-0 min-w-0 flex-1 truncate font-(family-name:--chat-display) text-sm font-medium tracking-tight max-sm:text-center">{onRenameTitle ? <button type="button" className="max-w-full cursor-pointer truncate rounded-md px-1 py-2 text-left max-sm:text-center outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setRenamingTitle(true)}>{conversationTitle ?? title}</button> : conversationTitle ?? title}</h2>}
       {showHistory && (conversations && historyList
         ? <Button size="sm" data-testid="history-open" className="text-muted-foreground" aria-haspopup="dialog" aria-expanded={pickingConversation} disabled={state.disposed}
           onClick={() => setPickingConversation(open => !open)}><icons.history className="size-3.5" aria-hidden="true" />{labels.history}</Button>
@@ -203,7 +205,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
         </div>
         <div>
           <MessageQueue items={queued} sending={state.outbox} withdraw={actions?.withdraw} actions={queueActions} />
-          <Composer {...composer} placeholder={labels.placeholder === 'Message the agent…' ? `Message ${title}…` : labels.placeholder} barStart={barStart} barNote={barNote} barEnd={tools} />
+          <Composer {...composer} layout={composerLayout} placeholder={labels.placeholder === 'Message the agent…' ? `Message ${title}…` : labels.placeholder} barStart={barStart} barNote={barNote} barEnd={tools} />
         </div>
       </div>
     </footer>

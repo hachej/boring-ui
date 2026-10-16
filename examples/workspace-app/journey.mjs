@@ -42,7 +42,7 @@ let browser;
 try {
   browser = await launch(insecureUrl(app.url), { evidence });
   const say = async text => { await browser.type(INPUT, text); await browser.press('Enter'); };
-  const live = () => browser.until('the chat is live', `${q('[data-testid=connection]')}?.dataset.state === 'connected' && !!${INPUT}`, 20000);
+  const live = () => browser.until('the chat is live', `!!${INPUT} && !${INPUT}.disabled`, 20000);
 
   await step('a failed discovery shows an alert, and Retry opens the workspace', async () => {
     await live();
@@ -60,16 +60,24 @@ try {
     assert.equal(await browser.evaluate(`${q('[data-boring=agent-workspace]')}.dataset.sessions`), 'docked');
     await browser.until('one chat listed', `${ROWS}.length === 1 && ${ROWS}[0].dataset.active === 'true'`, 10000);
     assert.equal(await browser.evaluate(`${q('[data-testid=sessions-toggle]')}.getAttribute('aria-expanded')`), 'true');
+    assert.equal(await browser.evaluate(`${qa('[data-testid=sessions-toggle]')}.filter(e=>e.getBoundingClientRect().width > 0).length`), 1, 'one sidebar toggle');
+    assert.equal(await browser.evaluate(`!!${q('[data-testid=connection]')}`), false, 'no default Live badge');
+    assert.equal(await browser.evaluate(`${q('[data-testid=composer-submit]')}.disabled`), true, 'empty send is disabled');
+    const composer = await browser.evaluate(rect('[data-testid=composer]'));
+    assert.ok(composer.y > 250 && composer.y < 650, 'empty desktop composer is centered');
+    await browser.screenshot('standalone-empty-desktop.png');
   });
 
   await step('defaults: without labels, icons or actions the blocks show their own words and no host actions', async () => {
-    assert.deepEqual(await browser.evaluate(TEXTS), { title: 'Writer', placeholder: 'Message the agent…', send: 'Send', sessions: 'Chats', newChat: 'New', toggle: 'Hide navigation', customIcon: false, hostActions: 0 });
+    assert.deepEqual(await browser.evaluate(TEXTS), { title: 'Writer', placeholder: 'Message Writer…', send: 'Send', sessions: 'Writer', newChat: 'New chat', toggle: 'Hide navigation', customIcon: false, hostActions: 0 });
   });
 
   const first = await browser.evaluate(ACTIVE);
   await step('a reply in the first chat', async () => {
     await say('Reply with exactly: AMBER-HARBOUR');
     await browser.until('the reply', `/AMBER-HARBOUR/.test(${REPLIES}) && ${idle}`, 20000);
+    const composer = await browser.evaluate(rect('[data-testid=composer]'));
+    assert.ok(composer.y > 700, 'composer docks after the first message');
   });
 
   let second;
@@ -93,6 +101,7 @@ try {
 
   await step('the sessions pane lists both chats by their first message, and search filters them', async () => {
     await browser.until('both chats titled', `!!${row('AMBER-HARBOUR')} && !!${row('picnic plan')}`, 15000);
+    await browser.click(q('[data-testid=conversation-search-open]'));
     await browser.type(q('[data-testid=conversation-search]'), 'amber');
     await browser.until('only the first chat', `${ROWS}.length === 1 && /AMBER/.test(${ROWS}[0].innerText)`, 10000);
     await browser.screenshot('workspace-app-search.png');
@@ -108,7 +117,7 @@ try {
     assert.equal(await browser.evaluate(`${q('[data-testid=conversation-row][data-active=true]')}.dataset.conversationId`), first);
     // The sessions toggle is one button for the page's life: the chat header is replaced on a switch (connecting, then the new chat), the
     // toggle is not, so a press during the swap still clicks.
-    await browser.evaluate(`${q('[data-testid=sessions-toggle]')}.dataset.mark = 'kept'`);
+    assert.equal(await browser.evaluate(`${qa('[data-testid=sessions-toggle]')}.filter(e=>e.getBoundingClientRect().width>0).length`), 1);
     await browser.click(row('picnic plan'));
     await browser.until('back to the second chat with its artifact', `${ACTIVE} === ${JSON.stringify(second)} && !!${q('[data-testid=artifact-panel]')}`, 20000);
   });
@@ -120,7 +129,7 @@ try {
     await browser.click(q('[data-testid=sessions-toggle]'));
     await browser.until('shown', `!!${q('[data-testid=conversations]')}`, 5000);
     await live();
-    assert.equal(await browser.evaluate(`${q('[data-testid=sessions-toggle]')}.dataset.mark`), 'kept', 'the toggle survived the switch and the connect');
+    assert.equal(await browser.evaluate(`${qa('[data-testid=sessions-toggle]')}.filter(e=>e.getBoundingClientRect().width>0).length`), 1, 'no duplicate toggle after switching');
   });
 
   await step('phone: sessions are a drawer, the artifact a full-screen sheet, no horizontal scroll', async () => {
@@ -131,6 +140,9 @@ try {
       await pause(400);
       assert.deepEqual(await browser.evaluate(`(() => { const r = ${q('[data-testid=workspace-panel]')}.getBoundingClientRect(); return { w: r.width, h: r.height }; })()`), { w: 390, h: 844 }, 'full screen');
       assert.ok(await browser.evaluate(noOverflow), 'no horizontal scroll with the sheet');
+      const bar = await browser.evaluate(rect('[data-testid=artifact-bar]'));
+      assert.ok(bar.h <= 56, 'single row artifact header');
+      assert.ok(await browser.evaluate(inside('[data-testid=artifact-close]')) && await browser.evaluate(inside('[data-testid=artifact-more]')), 'back and menu inside viewport');
       await browser.screenshot(name);
       await browser.tap(q('[data-testid=artifact-close]'));
       await browser.until('the sheet closed', `!${q('[data-testid=artifact-panel]')}`, 5000);
@@ -161,10 +173,11 @@ try {
   // ---- The same app, configured through the blocks' props only.
   await step('configured: custom labels and one custom icon replace the defaults', async () => {
     await browser.evaluate(`location.search = '?configured'`);
-    await browser.until('the configured page, live', `${q('[data-testid=app]')}?.dataset.configured === 'true' && ${q('[data-testid=connection]')}?.dataset.state === 'connected' && !!${INPUT}`, 20000);
+    await browser.until('the configured page, live', `${q('[data-testid=app]')}?.dataset.configured === 'true' && !!${INPUT} && !${INPUT}.disabled`, 20000);
     await browser.until('the reply of the open chat', `${idle} && !!${q('[data-testid=reply-action-quote]')}`, 20000);
     const texts = await browser.evaluate(TEXTS);
-    assert.deepEqual({ ...texts, hostActions: undefined }, { title: 'Fernhill writer', placeholder: 'Ask Fernhill anything…', send: 'Ask', sessions: 'Projects', newChat: 'Start', toggle: 'Hide navigation', customIcon: true, hostActions: undefined });
+    assert.equal(texts.title, await browser.evaluate(`${q('[data-testid=conversation-row][data-active=true] > span')}.textContent`), 'header uses the current conversation title');
+    assert.deepEqual({ ...texts, hostActions: undefined }, { title: texts.title, placeholder: 'Ask Fernhill anything…', send: 'Ask', sessions: 'Projects', newChat: 'Start', toggle: 'Hide navigation', customIcon: true, hostActions: undefined });
     assert.equal(await browser.evaluate(`${q('[data-testid=composer-submit]')}.title`), 'Send (Enter)', 'a label the host did not set keeps its default');
     await browser.screenshot('workspace-app-configured.png');
   });
@@ -182,7 +195,8 @@ try {
 
   await step('configured: actions on a conversation row and on a reply', async () => {
     const ACTIONS = '[data-testid=conversation-row][data-active=true] ~ [data-testid=conversation-actions]';
-    await browser.click(q(`${ACTIONS} [data-testid=conversation-action-star]`));
+    await browser.click(q(`${ACTIONS} [data-testid=conversation-action-more]`));
+    await browser.click(q('[data-testid=conversation-action-star]'));
     await browser.until('the host got star', `${logged('star')} === 1`, 5000);
     // A row action without an icon lives in the row's "…" menu, so the pane never scrolls sideways.
     await browser.click(q(`${ACTIONS} [data-testid=conversation-action-more]`));

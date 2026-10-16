@@ -131,10 +131,11 @@ export function ArtifactWorkspace({ chat, open, panel, onClose, fullscreen: cont
   useEffect(() => {
     if (!open || !sheet) return;
     const key = `artifact-${Math.random()}`;
+    const history = window.history;
     history.pushState({ ...history.state, boringArtifact: key }, '');
     const back = () => { if (history.state?.boringArtifact !== key) closeRef.current(); };
-    addEventListener('popstate', back);
-    return () => { removeEventListener('popstate', back); if (history.state?.boringArtifact === key) history.back(); };
+    window.addEventListener('popstate', back);
+    return () => { window.removeEventListener('popstate', back); if (history.state?.boringArtifact === key) history.back(); };
   }, [open, sheet]); // The mounted sheet keeps its own Back entry, independent of renders.
 
   const max = Math.max(minPanel, size - minChat);

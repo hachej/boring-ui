@@ -152,12 +152,12 @@ export function ConversationList({ conversations, onPicked, autoFocus = false, s
                     active ? 'bg-muted font-medium' : 'hover:bg-muted/60')}>
                   <MessageSquareIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                   <span className="min-w-0 flex-1 truncate">{title}</span>
-                  {active ? <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground"><CheckIcon className="size-3.5" aria-hidden="true" />{labels.current}</span>
+                  {active ? <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground"><CheckIcon className="size-3.5" aria-hidden="true" /><span className="sr-only">{labels.current}</span></span>
                     : <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{relativeTime(item.updatedAt, now, labels)}</span>}
                 </button>
                 {(conversations.rename || conversations.archive || conversations.remove || extraButtons.length > 0 || extraMenu.length > 0) && <div data-testid="conversation-actions"
-                  className={cn('flex shrink-0 items-center gap-0.5 pr-1 pointer-fine:absolute pointer-fine:right-1 pointer-fine:rounded-md pointer-fine:bg-background pointer-fine:shadow-sm',
-                    confirming === item.id ? '' : 'pointer-fine:opacity-0 pointer-fine:group-hover/row:opacity-100 pointer-fine:group-focus-within/row:opacity-100')}>
+                  className={cn('absolute right-1 flex shrink-0 items-center gap-0.5 rounded-md bg-background pr-1',
+                    confirming === item.id ? '' : 'opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 pointer-coarse:opacity-100')}>
                   {confirming === item.id && conversations.remove ? <>
                     <Button size="sm" variant="destructive" data-testid="conversation-delete-confirm" onClick={() => { const remove = conversations.remove!; setConfirming(null); run(() => remove(item.id)); }}>{labels.delete}</Button>
                     <Button size="icon-sm" variant="ghost" aria-label={labels.keep} className={action} onClick={() => setConfirming(null)}><XIcon className="size-3.5" aria-hidden="true" /></Button>

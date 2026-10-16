@@ -326,7 +326,7 @@ export function Composer(props: ComposerProps) {
       {props.barStart}
       {props.barNote}
       {uploading && !(props.uploads?.length) && <span role="status" className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2Icon className="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />{labels.preparingAttachments}</span>}
-      <span className="flex-1" />
+      {props.layout === 'stacked' && <span className="flex-1" />}
       {props.barEnd}
       {working && hasContent && <Button variant="secondary" size="sm" data-testid="composer-queue" disabled={!canSubmit} onClick={props.onSend} className="h-11 shrink-0 rounded-full px-4">
         <icons.queue className="size-3.5" aria-hidden="true" />{labels.queue}</Button>}

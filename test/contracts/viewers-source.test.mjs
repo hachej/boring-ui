@@ -47,7 +47,7 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     const rootNode = createRoot(container);
     await act(async () => rootNode.render(element));
     t.after(async () => { await act(async () => rootNode.unmount()); container.remove(); });
-    const q = selector => container.querySelector(selector);
+    const q = selector => container.querySelector(selector) ?? document.querySelector('[data-slot="dropdown-menu-content"]')?.querySelector(selector) ?? null;
     const click = async selector => { const node = q(selector); assert.ok(node, selector); await act(async () => node.click()); };
     return { container, q, click, render: async next => { await act(async () => rootNode.render(next)); } };
   };
@@ -67,13 +67,13 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     assert.equal(none.q('[data-testid="viewer-bar"] h2').textContent, 'notes.md');
     for (const id of ['refresh', 'share', 'copy', 'download', 'open', 'close', 'more']) assert.equal(none.q(`[data-testid="viewer-${id}"]`) === null, true, id);
     const all = await mount(t, h(frame.ViewerFrame, { title: 'notes.md', onRefresh() {}, onShare() {}, onCopy() {}, onDownload() {}, onOpenInNewTab() {}, onClose() {} }, 'body'));
-    for (const [id, label] of [['share', 'Share'], ['more', 'More actions'], ['close', 'Close']]) {
+    for (const [id, label] of [['more', 'More actions'], ['close', 'Close']]) {
       const button = all.q(`[data-testid="viewer-${id}"]`);
       assert.equal(button.getAttribute('aria-label'), label); assert.equal(button.getAttribute('title'), label);
     }
-    for (const id of ['refresh', 'copy', 'download', 'open']) assert.equal(all.q(`[data-testid="viewer-${id}"]`) === null, true, `${id} waits in the menu`);
+    for (const id of ['refresh', 'share', 'copy', 'download', 'open']) assert.equal(all.q(`[data-testid="viewer-${id}"]`) === null, true, `${id} waits in the menu`);
     await all.click('[data-testid="viewer-more"]');
-    assert.deepEqual([...all.container.querySelectorAll('[role="menuitem"]')].map(node => node.textContent), ['Reload', 'Copy', 'Download', 'Open in new tab']);
+    assert.deepEqual([...document.querySelectorAll('[data-slot="dropdown-menu-content"] [role="menuitem"]')].map(node => node.textContent), ['Share', 'Reload', 'Copy', 'Download', 'Open in new tab']);
   });
 
   await t.test('a host can portal the existing bar into its shared header and keep the same menu and close handlers', async t => {
@@ -87,7 +87,7 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     assert.equal(header.querySelector('h2').textContent, 'notes.md');
     assert.equal(view.q('[data-testid=viewer-body]').textContent, 'editor body');
     await act(async () => header.querySelector('[data-testid=viewer-more]').click());
-    await act(async () => header.querySelector('[data-testid=viewer-copy]').click());
+    await act(async () => document.querySelector('[data-testid=viewer-copy]').click());
     await settle();
     assert.equal(copied, 1);
     await act(async () => header.querySelector('[data-testid=viewer-close]').click());
@@ -100,7 +100,7 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
   await t.test('stacked header keeps title, menu and close together above viewer controls inside the same frame', async t => {
     let closed = 0, toggled = 0;
     const control = h('button', { 'data-testid': 'fixture-mode', onClick: () => { toggled++; } }, 'Source');
-    const props = { title: 'AP policy.md', subtitle: 'Policies/AP policy.md · Markdown · 2 KB', controls: control, onCopy() {}, onClose: () => { closed++; } };
+    const props = { compactHeader: false, title: 'AP policy.md', subtitle: 'Policies/AP policy.md · Markdown · 2 KB', controls: control, onCopy() {}, onClose: () => { closed++; } };
     const view = await mount(t, h(frame.ViewerWindowProvider, { value: { headerLayout: 'stacked' } }, h(frame.ViewerFrame, props, 'document')));
     const titlebar = view.q('[data-testid=viewer-titlebar]');
     const toolbar = view.q('[data-testid=viewer-controls]');
@@ -144,7 +144,7 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     const link = request => { seen = request; return `https://fictional.invalid/?open=${request.target}`; };
     const written = [];
     Object.defineProperty(window.navigator, 'clipboard', { configurable: true, value: { writeText: async text => { written.push(text); } } });
-    const view = await mount(t, h(frame.ViewerFrame, { title: 'notes.md', target: '/workspace/notes.md', revision: 'r7', onShare: sharing.createLinkShare(link) }));
+    const view = await mount(t, h(frame.ViewerFrame, { compactHeader: false, title: 'notes.md', target: '/workspace/notes.md', revision: 'r7', onShare: sharing.createLinkShare(link) }));
     await view.click('[data-testid="viewer-share"]'); await settle();
     assert.deepEqual(seen, { title: 'notes.md', target: '/workspace/notes.md', revision: 'r7' });
     assert.deepEqual(written, ['https://fictional.invalid/?open=/workspace/notes.md']);
@@ -160,14 +160,15 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     delete window.navigator.share;
   });
 
-  await t.test('Copy, Download and Open live in the menu at any width and Share and Close stay on the bar', async t => {
+  await t.test('Copy, Download and Share live in the menu while Close stays on the bar', async t => {
     let copied = 0;
     const view = await mount(t, h(frame.ViewerFrame, { title: 'a', onRefresh() {}, onShare() {}, onCopy: () => { copied++; }, onDownload() {}, onClose() {} }));
     assert.equal(view.q('[data-testid="viewer-copy"]') === null, true);
-    assert.ok(view.q('[data-testid="viewer-share"]') && view.q('[data-testid="viewer-close"]'));
+    assert.equal(view.q('[data-testid="viewer-share"]'), null);
+    assert.ok(view.q('[data-testid="viewer-close"]'));
     await view.click('[data-testid="viewer-more"]');
     assert.equal(view.q('[data-testid="viewer-more"]').getAttribute('aria-expanded'), 'true');
-    assert.deepEqual([...view.container.querySelectorAll('[role="menuitem"]')].map(node => node.textContent), ['Reload', 'Copy', 'Download']);
+    assert.deepEqual([...document.querySelectorAll('[data-slot="dropdown-menu-content"] [role="menuitem"]')].map(node => node.textContent), ['Share', 'Reload', 'Copy', 'Download']);
     await view.click('[role="menuitem"][data-testid="viewer-copy"]'); await settle();
     assert.equal(copied, 1);
   });
@@ -243,7 +244,9 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     assert.equal(view.q('section[data-boring="markdown-editor"] > header') === null, true, 'the editor has no header of its own');
     assert.equal(view.q('[data-testid="viewer-status"]') === null, true, 'a clean document shows no status');
     assert.equal(view.q('[data-testid="viewer-save"]') === null, true, 'Save waits for an edit');
-    assert.ok(view.q('[role="toolbar"][aria-label="Text formatting"] button[aria-label="Bold"] svg'), 'icon buttons');
+    assert.equal(view.q('.boring-markdown-toolbar'), null, 'no permanent formatting row by default');
+    await view.click('[aria-label="Pin formatting toolbar"]');
+    assert.ok(view.q('.boring-markdown-toolbar button[aria-label="Bold"] svg'), 'Aa pins the full formatting controls');
     await view.click('[data-testid="viewer-mode-source"]');
     const area = view.q('textarea');
     await act(async () => { Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(area, '# Plan\n\n- [x] done\n- [ ] local edit\n'); area.dispatchEvent(new window.Event('input', { bubbles: true })); });

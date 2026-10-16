@@ -26,6 +26,8 @@ export interface MarkdownEditorProps {
   readonly onMountedTools?: (tools: MarkdownMountedTools | null) => void;
   /** `false` omits the built-in header (title, status, source toggle, Save) so a host bar such as the viewer frame supplies them. */
   readonly header?: boolean;
+  /** Show local heading navigation. Defaults to the built-in header's visibility. */
+  readonly showOutline?: boolean;
   /** Controlled mode. The editor still falls back to `source` for a document that rich editing cannot keep exactly. */
   readonly mode?: 'rich' | 'source';
   readonly onModeChange?: (mode: 'rich' | 'source') => void;
@@ -57,7 +59,7 @@ const subscribePhone = (notify: () => void) => {
 const BUBBLE_OPTIONS = { strategy: 'fixed', placement: 'top', offset: 8, shift: { padding: 12 }, flip: true } as const;
 const bubbleContainer = () => document.body;
 
-function MarkdownEditorSession({ controller, title = 'Document', initialMode = 'rich', placeholder = 'Start writing', className, onMountedTools, header = true, mode: controlledMode, onModeChange, onRichSafety, resolveImage, formattingToolbar = 'selection', activeController: active }: MarkdownEditorProps & { readonly activeController: { readonly current: MarkdownController } }) {
+function MarkdownEditorSession({ controller, title = 'Document', initialMode = 'rich', placeholder = 'Start writing', className, onMountedTools, header = true, showOutline = header, mode: controlledMode, onModeChange, onRichSafety, resolveImage, formattingToolbar = 'selection', activeController: active }: MarkdownEditorProps & { readonly activeController: { readonly current: MarkdownController } }) {
   const phone = useSyncExternalStore(subscribePhone, phoneSnapshot, desktopSnapshot);
   const [pinned, setPinned] = useState(formattingToolbar === 'pinned');
   useEffect(() => { setPinned(formattingToolbar === 'pinned'); }, [formattingToolbar]);
@@ -273,7 +275,7 @@ function MarkdownEditorSession({ controller, title = 'Document', initialMode = '
       <button type="button" onClick={() => { setLinkDraft(null); editor?.commands.focus(); }}>Cancel</button>
     </form>}
     {!richOffered && <p role="note" className="boring-markdown-notice" data-testid="markdown-source-only">{describeUnsafe(safety)}</p>}
-    {mode === 'rich' && outline && outline.headings.length > 0 && <nav aria-label="Document outline">
+    {showOutline && mode === 'rich' && outline && outline.headings.length > 0 && <nav aria-label="Document outline">
       <ol>{outline.headings.map((heading, index) => <li key={heading.position} data-heading-level={heading.level}>
         <button type="button" aria-label={`Go to heading: ${heading.text || 'Untitled heading'}`} disabled={state.lifecycle !== 'active'} onClick={() => {
           if (!editor || editor.isDestroyed || active.current !== controller || controller.getSnapshot().lifecycle !== 'active'

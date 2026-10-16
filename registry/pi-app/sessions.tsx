@@ -1,7 +1,6 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { SearchIcon } from 'lucide-react';
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer';
 import { Button } from '../button/button';
 import { useAppText } from './app-labels';
@@ -48,7 +47,7 @@ export function SessionsPane({ conversations, title: givenTitle, drawer, onClose
   </aside>;
   if (!drawer) return pane;
   return <Drawer open onOpenChange={next => { if (!next) onClose?.(); }} swipeDirection="left">
-    <DrawerContent aria-label={title} className="left-0 w-[min(260px,85vw)]! flex-col! rounded-none! pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] duration-200 motion-reduce:transition-none">
+    <DrawerContent aria-label={title} className="left-0 h-dvh! max-h-dvh! w-[min(260px,85vw)]! flex-col! rounded-none! pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] duration-200 motion-reduce:transition-none">
       <DrawerTitle className="sr-only">{title}</DrawerTitle>{pane}
     </DrawerContent>
   </Drawer>;

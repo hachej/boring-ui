@@ -5,7 +5,7 @@ import { build } from 'esbuild';
 import { Window } from 'happy-dom';
 import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 
-test('Library is a right-side column by default: toggled from the viewer bar and the left pane, a sheet on a phone, center and pane unchanged', async t => {
+test('Library defaults to the artifact column; explicit side, center and pane placements remain reachable', async t => {
   const window = new Window({ url: 'https://fictional.invalid/', settings: { disableIframePageLoading: true } });
   const names = ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node', 'Text', 'DOMParser', 'MutationObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'IS_REACT_ACT_ENVIRONMENT', 'confirm', 'sessionStorage', 'ResizeObserver'];
   const globals = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
@@ -35,14 +35,20 @@ test('Library is a right-side column by default: toggled from the viewer bar and
   };
   for (const path of ['first.html', 'second.html']) await binding.publish({ operationId: path, atomicity: 'all-or-nothing', changes: [{ kind: 'create', target: locate(path), expected: { kind: 'absent' }, bytes: new TextEncoder().encode('<p>Original</p>'), mediaType: 'text/html' }] });
   const conversations = { items: [{ id: 'one', title: 'Fictional chat' }], activeId: 'one', onSelect() {}, onNew() {} };
-  const render = extra => act(async () => root.render(createElement(AgentWorkspace, { controller: undefined, conversationId: undefined, revisionProvider: binding, conversations, ...extra })));
-  const q = selector => element.querySelector(selector);
+  const render = extra => act(async () => root.render(createElement(AgentWorkspace, { controller: undefined, conversationId: undefined, revisionProvider: binding, conversations, libraryPlacement: 'side', ...extra })));
+  const q = selector => window.document.querySelector(selector);
   const settle = async ready => { for (let n = 0; n < 100 && !ready(); n++) await act(async () => new Promise(r => setTimeout(r, 10))); };
   const column = () => q('[data-testid=workspace-library-side]');
   const dock = () => q('[data-dock=library]');
   const file = path => q(`[data-testid=workspace-library-side] [role=treeitem][data-path="${path}"] button`);
 
-  // Default placement: a closed right dock, a Library button in the left pane, no center Library link behavior.
+  await render({ key: 'panel-default', storageKey: 'panel-default-proof', libraryPlacement: undefined });
+  assert.equal(dock(), null, 'default Library uses the artifact column, not a third column');
+  await act(async () => q('[data-testid=workspace-library]').click());
+  assert.ok(q('[data-testid=workspace-panel] [data-testid=workspace-library-side]'), 'Library opens inside the artifact panel');
+  assert.equal(q('[data-testid=workspace-chat-surface]').hidden, false, 'chat stays mounted and visible beside Library');
+
+  // The former right-side layout is still available explicitly.
   await render({ key: 'side', storageKey: 'side-proof' });
   assert.ok(dock(), 'the default placement is the side column');
   assert.equal(dock().dataset.side, 'right'); assert.equal(dock().dataset.placement, 'closed');
@@ -74,6 +80,7 @@ test('Library is a right-side column by default: toggled from the viewer bar and
   assert.equal(dock().dataset.placement, 'docked'); assert.equal(paneButton().getAttribute('aria-pressed'), 'true');
   // A full-screen viewer would cover the column: opening the Library leaves full screen.
   await act(async () => barButton().click());
+  await act(async () => q('[data-testid=viewer-more]').click());
   await act(async () => q('[data-testid=viewer-fullscreen]').click());
   assert.equal(q('[data-testid=workspace-panel]').dataset.fullscreen, 'true');
   await act(async () => barButton().click());
@@ -100,12 +107,14 @@ test('Library is a right-side column by default: toggled from the viewer bar and
   await render({ key: 'default-sessions', storageKey: 'default-sessions-proof' });
   assert.equal(q('[data-testid=conversations]').tagName, 'ASIDE');
   assert.equal(q('[data-testid=conversation-row]').textContent.includes('Fictional chat'), true);
-  assert.ok(q('[data-testid=conversation-new]') && q('[data-testid=conversation-search]') && paneButton());
+  assert.ok(q('[data-testid=conversation-new]') && q('[data-testid=conversation-search-open]') && paneButton());
+  await act(async () => q('[data-testid=conversation-search-open]').click());
+  assert.ok(q('[data-testid=conversation-search]'));
   // A host can place the very same list in its own navigation, without a second sessions implementation.
   let offered;
   await render({ key: 'custom-sessions', storageKey: 'custom-sessions-proof', sessions: props => {
     offered = props;
-    return createElement('nav', { 'data-testid': 'host-history', 'aria-label': 'App history' }, createElement(ConversationList, { conversations: props.conversations }));
+    return createElement('nav', { 'data-testid': 'host-history', 'aria-label': 'App history' }, createElement(ConversationList, { conversations: props.conversations, searchMode: 'inline' }));
   } });
   assert.equal(offered.conversations, conversations);
   assert.ok(q('[data-testid=host-history] [data-testid=conversation-search]'));

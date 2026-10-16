@@ -450,7 +450,8 @@
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/utils.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/button.json",
-        "trace"
+        "trace",
+        "drawer"
       ],
       "files": [
         {
@@ -780,7 +781,8 @@
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/pi-workspace.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/viewers.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/utils.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/button.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/button.json",
+        "drawer"
       ],
       "files": [
         {
@@ -997,7 +999,8 @@
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/theme.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/utils.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/button.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/button.json",
+        "dropdown-menu"
       ],
       "files": [
         {
@@ -1084,6 +1087,74 @@
           }
         },
         "@layer components": {
+          ".boring-markdown-bubble": {
+            "display": "flex",
+            "align-items": "center",
+            "gap": "0.125rem",
+            "max-width": "calc(100vw - 24px)",
+            "padding": "0.25rem",
+            "border": "1px solid var(--border)",
+            "border-radius": "0.75rem",
+            "background": "var(--popover)",
+            "color": "var(--popover-foreground)",
+            "box-shadow": "0 3px 16px rgb(0 0 0 / 0.08)",
+            "z-index": "60"
+          },
+          ".boring-markdown-bubble .boring-markdown-tool": {
+            "display": "inline-flex",
+            "align-items": "center",
+            "justify-content": "center",
+            "width": "2.25rem",
+            "height": "2.25rem",
+            "border": "0",
+            "border-radius": "0.375rem",
+            "background": "transparent",
+            "color": "inherit",
+            "cursor": "pointer"
+          },
+          ".boring-markdown-bubble .boring-markdown-tool:is(:hover, [aria-pressed=\"true\"])": {
+            "background": "var(--muted)"
+          },
+          ".boring-markdown-bubble .boring-markdown-tool:focus-visible": {
+            "outline": "2px solid var(--ring)"
+          },
+          "@media (max-width: 640px), (pointer: coarse)": {
+            ".boring-markdown-bubble .boring-markdown-tool": {
+              "width": "2.75rem",
+              "height": "2.75rem"
+            }
+          },
+          ".boring-viewer .boring-markdown-pin": {
+            "display": "inline-flex",
+            "align-items": "center",
+            "justify-content": "center",
+            "width": "2rem",
+            "height": "2rem",
+            "border-radius": "0.375rem",
+            "cursor": "pointer",
+            "color": "var(--muted-foreground)",
+            "font-size": "0.875rem"
+          },
+          ".boring-viewer .boring-markdown-pin:is(:hover, [aria-pressed=\"true\"])": {
+            "background": "var(--muted)",
+            "color": "var(--foreground)"
+          },
+          ".boring-viewer .boring-markdown-pin:focus-visible": {
+            "outline": "2px solid var(--ring)"
+          },
+          "@media (max-width: 640px)": {
+            ".boring-viewer .boring-markdown-pin": {
+              "display": "none"
+            },
+            ".boring-viewer .boring-markdown-content": {
+              "padding": "1.25rem 1.25rem 3rem",
+              "font-size": "1.0625rem",
+              "line-height": "1.65"
+            },
+            ".boring-viewer .boring-markdown-toolbar": {
+              "display": "none"
+            }
+          },
           ".boring-viewer .boring-markdown-editor": {
             "display": "flex",
             "flex-direction": "column",
@@ -1308,14 +1379,14 @@
             "background": "color-mix(in oklab, var(--primary) 24%, transparent)"
           },
           ".boring-viewer .boring-markdown-content": {
-            "max-width": "72ch",
+            "max-width": "68ch",
             "min-height": "100%",
             "margin": "0 auto",
             "padding": "1.5rem 1.5rem 3rem",
             "outline": "none",
             "color": "var(--foreground)",
-            "font-size": "0.9375rem",
-            "line-height": "1.7",
+            "font-size": "1rem",
+            "line-height": "1.6",
             "letter-spacing": "-0.005em",
             "overflow-wrap": "anywhere"
           },

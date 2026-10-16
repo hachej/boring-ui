@@ -238,7 +238,13 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   // Opening the column leaves a full-screen viewer, whose overlay would otherwise cover it.
   const setSideOpen = useCallback((next: boolean) => { setSideOpenState(next); if (next) setFullscreen(false); }, []);
   const libraryOpen = Boolean(revisionProvider) && libraryPlacement === 'center' && centerMode === 'library';
-  const openLibrary = useCallback(() => { if (libraryPlacement === 'panel') setPanelLibrary(value => !value); else setCenterMode('library'); setFullscreen(false); }, [libraryPlacement]);
+  const openLibrary = useCallback(() => {
+    if (libraryPlacement === 'panel') {
+      if (unsaved.current && !globalThis.confirm?.('This file has unsaved or unconfirmed changes. Discard the local draft and open Library?')) return;
+      noteUnsaved(false); setPanelLibrary(value => !value);
+    } else setCenterMode('library');
+    setFullscreen(false);
+  }, [libraryPlacement, noteUnsaved]);
   const text = useMemo(() => ({ labels: withDefaults(locale === 'fr' ? frenchAppLabels : defaultAppLabels, labels), icons: withDefaults(defaultAppIcons, icons) }), [labels, icons, locale]);
   // The sessions pane shows the chat's conversation list, so it reads the chat's labels too.
   const chatText = useMergedText(chat.labels, chat.icons, chatTextFor(locale));
@@ -450,7 +456,7 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
     ...(floatChat ? [{ id: 'float-chat', label: text.labels.floatChat, icon: text.icons.floatChat, placement: 'menu' as const, onSelect: floatChat }] : []),
     ...(shown ? typeof panelActions === 'function' ? panelActions(shown) : panelActions ?? [] : []),
   ];
-  const sessionProps: ComponentProps<typeof SessionsPane> = { conversations, drawer: narrow, onClose: () => setDrawer(false), onChat: () => setCenterMode('chat'), onCollapse: () => { writeFlag(`${storageKey}.sessions-hidden`, true); setCollapsed(true); }, title: chat.labels?.title,
+  const sessionProps: ComponentProps<typeof SessionsPane> = { conversations, drawer: narrow, onClose: () => setDrawer(false), onChat: () => setCenterMode('chat'), onCollapse: () => { writeFlag(`${storageKey}.sessions-hidden`, true); setCollapsed(true); }, title: labels?.sessionsTitle ?? chat.labels?.title,
     agents, view: paneView, onViewChange: changePaneView,
     ...(librarySide ? { library: { selected: sideOpen, onSelect: toggleSide, side: true } } : revisionProvider && !libraryInPane ? { library: { selected: libraryOpen || panelLibrary, onSelect: openLibrary } } : {}),
     ...(libraryInPane ? { libraryContent: (onPicked: () => void) => libraryTree(path => { openFile(path); onPicked(); }) } : {}),
@@ -460,13 +466,13 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
     <DockLayout storageKey={`${storageKey}.dock`} minMain={SESSIONS_WIDTH + 480}>
     {hasNavigation && (docked || (narrow && drawer)) && (sessions ? sessions(sessionProps) : <SessionsPane {...sessionProps} />)}
     <DockMain><ArtifactWorkspace open={panelOpen && !(panelLibrary && narrow)} onClose={close} panelLabel={text.labels.artifactPanel} labels={{ resize: text.labels.resizePanel, floatHint: text.labels.floatHint }} fullscreen={fullscreen} onFullscreenChange={setFullscreen} storageKey={`${storageKey}.panel-width`}
-      sheetBelow={docked ? Math.max(0, sheetBelow - SESSIONS_WIDTH) : sheetBelow} {...(floatBelow === undefined || libraryOpen ? {} : { floatBelow })}
+      sheetBelow={Math.max(CHAT_MIN + VIEWER_MIN, docked ? sheetBelow - SESSIONS_WIDTH : sheetBelow)} {...(floatBelow === undefined || libraryOpen ? {} : { floatBelow })}
       chat={layout => <WorkspaceCenter libraryOpen={libraryOpen} floating={layout.floating} chat={docked_chat}
         floatingChat={floatingChat && chatProps ? floatingChat(chatProps, layout.dock) : undefined}
         // With the Library in the pane, the center holds only the chat (no second, hidden toggle or tree).
         library={libraryInPane || librarySide || libraryPlacement === 'panel' ? null : <section data-testid="workspace-library-view" aria-label={text.labels.library} className="flex min-h-0 flex-1 flex-col">
           <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">{toggle}<h2 className="m-0 flex-1 text-sm font-semibold">{text.labels.library}</h2>
-            <Button variant="ghost" size="sm" onClick={() => setCenterMode('chat')}>{text.labels.backToChat}</Button></header>
+            <Button variant="ghost" size="sm" data-testid="workspace-chat-link" onClick={() => setCenterMode('chat')}>{text.labels.backToChat}</Button></header>
           <div className="min-h-0 flex-1 overflow-auto">{libraryTree(openFile)}</div>
         </section>} />}
       panel={win => <ViewerWindowProvider value={{ fullscreen: win.fullscreen, onFullscreenChange: win.onFullscreenChange, actions: actionsFor(win.floatChat), labels: text.labels, icons: text.icons }}>

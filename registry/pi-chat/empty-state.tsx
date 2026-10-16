@@ -7,9 +7,9 @@ export interface Suggestion { readonly label: string; readonly hint?: string; re
 export function EmptyState({ title, description, avatar, suggestions, onSelect, children }: {
   readonly title: string; readonly description?: string; readonly avatar?: ReactNode; readonly suggestions?: readonly Suggestion[]; readonly onSelect?: (text: string) => void; readonly children?: ReactNode;
 }) {
-  const { labels, icons } = useChatText();
-  return <div data-testid="empty-state" className="mx-auto flex h-full w-full max-w-[720px] flex-col items-center justify-center gap-5 px-6 text-center">
-    <span data-testid="empty-state-icon" className="flex size-8 items-center justify-center overflow-hidden text-muted-foreground [&>img]:size-full [&>img]:rounded-md [&>img]:object-cover [&>svg]:size-5">{avatar ?? <icons.agent className="size-6" aria-hidden="true" />}</span>
+  const { labels } = useChatText();
+  return <div data-testid="empty-state" className="mx-auto flex h-full w-full max-w-[720px] flex-col items-center justify-center gap-5 px-6 text-center max-sm:pb-24">
+    {avatar && <span data-testid="empty-state-icon" className="flex size-8 items-center justify-center overflow-hidden text-muted-foreground [&>img]:size-full [&>img]:rounded-md [&>img]:object-cover [&>svg]:size-5">{avatar}</span>}
     <div className="space-y-1.5">
       <p className="m-0 text-2xl font-semibold tracking-tight">{title}</p>
       <p className="m-0 max-w-sm text-base leading-6 text-muted-foreground">{description ?? labels.emptyDescription}</p>

@@ -207,7 +207,7 @@ export function ViewerFrame({ title, subtitle, status, target, revision, headerS
   const stacked = !compactHeader && host?.headerLayout === 'stacked';
   const toolbar = controls && <div data-testid={`${testId}-controls`} className={cn('flex shrink-0 items-center gap-1', compactHeader && 'max-sm:hidden', stacked && 'flex-wrap border-t border-border px-3 py-2')}>{controls}</div>;
   const titlebar = <>
-        {compactHeader && onClose && <ViewerIconButton label={labels.close} data-testid={`${testId}-close`} onClick={() => run(onClose)}><ArrowLeftIcon className="size-4 sm:hidden" aria-hidden="true" /><icons.close className="hidden size-4 sm:block" aria-hidden="true" /></ViewerIconButton>}
+        {compactHeader && !headerStart && onClose && <ViewerIconButton label={labels.close} data-testid={`${testId}-close`} onClick={() => run(onClose)}><ArrowLeftIcon className="size-4 sm:hidden" aria-hidden="true" /><icons.close className="hidden size-4 sm:block" aria-hidden="true" /></ViewerIconButton>}
         {headerStart}
         <div className="group/title relative min-w-0 flex-1 basis-0 text-left">
           <h2 data-testid={titleTestId ?? `${testId}-title`} title={title} className="m-0 truncate text-sm leading-5 font-semibold tracking-tight">{title}</h2>
@@ -221,7 +221,7 @@ export function ViewerFrame({ title, subtitle, status, target, revision, headerS
           {(menuItems.length > 0 || controls) && <ViewerMenu label={labels.moreActions} testId={`${testId}-more`} icon={<icons.more className="size-4" aria-hidden="true" />} items={menuItems}>{compactHeader && controls && <div className="flex flex-wrap items-center gap-2 p-2 sm:hidden">{controls}</div>}</ViewerMenu>}
           {!compactHeader && host?.onFullscreenChange && <ViewerIconButton label={host.fullscreen ? labels.exitFullscreen : labels.enterFullscreen} data-testid={`${testId}-fullscreen`} aria-pressed={host.fullscreen === true}
             onClick={() => host.onFullscreenChange!(!host.fullscreen)}>{host.fullscreen ? <icons.exitFullscreen className="size-4" aria-hidden="true" /> : <icons.enterFullscreen className="size-4" aria-hidden="true" />}</ViewerIconButton>}
-          {!compactHeader && onClose && <ViewerIconButton label={labels.close} data-testid={`${testId}-close`} onClick={() => run(onClose)}><icons.close className="size-4" aria-hidden="true" /></ViewerIconButton>}
+          {(!compactHeader || headerStart) && onClose && <ViewerIconButton className={compactHeader ? 'max-sm:hidden' : undefined} label={labels.close} data-testid={`${testId}-close`} onClick={() => run(onClose)}><icons.close className="size-4" aria-hidden="true" /></ViewerIconButton>}
         </div>
       </>;
   const header = <header ref={bar} data-testid={`${testId}-bar`} data-layout={stacked ? 'stacked' : undefined}

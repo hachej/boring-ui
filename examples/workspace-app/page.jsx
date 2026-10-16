@@ -57,7 +57,10 @@ function App() {
     <AmbientChat {...props} headerActions={config.dockActions} variant="surface" defaultState="expanded" onDock={dock} /> } : {};
   return <main data-testid="app" data-conversation={active} data-configured={configured || undefined} className="flex h-full min-h-0">
     {revisionProvider ? <AgentWorkspace conversationId={active} controller={chat.status === 'ready' ? chat.controller : undefined} conversations={conversations} revisionProvider={revisionProvider}
-      chat={{ labels: { title: 'Writer', emptyDescription: 'Draft a document, review a change, or attach a file to get started.' }, ...config.chat, ...(chat.status === 'ready' ? { actions: chat.actions } : {}) }}
+      chat={{ labels: { title: 'Writer', emptyDescription: 'What can I help you write today?' }, suggestions: [
+        { label: 'Draft a plan', text: 'Write a picnic plan and present it.' },
+        { label: 'Write a short reply', text: 'Reply with exactly: AMBER-HARBOUR' },
+      ], ...config.chat, ...(chat.status === 'ready' ? { actions: chat.actions } : {}) }}
       {...(config.labels ? { labels: config.labels, panelActions: config.panelActions } : {})} {...floating}
       connecting={<p role="status" className="p-4 text-sm text-muted-foreground">{chat.status === 'offline' ? 'Server unreachable. Retrying…' : 'Connecting…'}</p>} />
       : discovery.failed
