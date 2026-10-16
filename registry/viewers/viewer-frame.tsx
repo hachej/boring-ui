@@ -61,17 +61,17 @@ export interface ViewerFrameProps {
 
 const TONES: Record<ViewerTone, string> = {
   neutral: 'bg-muted text-muted-foreground',
-  success: 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300',
-  warning: 'bg-amber-500/15 text-amber-800 dark:text-amber-300',
+  success: 'bg-accent text-accent-foreground',
+  warning: 'bg-muted text-foreground',
   danger: 'bg-destructive/12 text-destructive',
 };
 const DOTS: Record<ViewerTone, string> = {
-  neutral: 'bg-muted-foreground/60',
-  success: 'bg-emerald-500',
-  warning: 'bg-amber-500',
+  neutral: 'bg-muted-foreground',
+  success: 'bg-primary',
+  warning: 'bg-foreground',
   danger: 'bg-destructive',
 };
-/** Buttons are 40-44px on a phone or touch screen (see Button), 32px with a mouse: below this width a pane drops its optional bar controls. */
+/** Buttons are 44px on touch and 32px with a mouse; narrow panes drop optional controls. */
 const TIGHT_WIDTH = { touch: 440, pointer: 340 };
 const touchScreen = () => typeof matchMedia === 'function' && matchMedia('(max-width: 639px), (pointer: coarse)').matches;
 
@@ -97,10 +97,10 @@ export function ViewerToggle<T extends string>({ label, value, options, onChange
     event.preventDefault();
     buttons[(at + step + buttons.length) % buttons.length]?.focus();
   };
-  return <div role="group" aria-label={label} onKeyDown={move} className="inline-flex shrink-0 rounded-lg bg-muted/60 p-0.5">
+  return <div role="group" aria-label={label} onKeyDown={move} className="inline-flex shrink-0 rounded-md bg-muted p-0.5">
     {options.map(option => <button key={option.id} type="button" aria-label={option.label} title={option.label} aria-pressed={value === option.id} disabled={option.disabled}
       data-testid={option.testId} data-mode={option.id} onClick={() => onChange(option.id)}
-      className={cn('inline-flex size-7 cursor-pointer items-center justify-center rounded-md outline-none max-sm:size-10 pointer-coarse:size-10 focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-45',
+      className={cn('inline-flex size-8 cursor-pointer items-center justify-center rounded-sm outline-none max-sm:size-11 pointer-coarse:size-11 focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-45',
         value === option.id ? 'bg-background text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground')}>
       {option.icon ?? option.text}</button>)}
   </div>;
@@ -198,7 +198,7 @@ export function ViewerFrame({ title, subtitle, status, target, revision, control
     ...menuActions(hostActions).map(action => actionMenuItem(action, testId)),
   ] as ViewerMenuItem[]).map(entry => ({ ...entry, testId: entry.testId ?? `${testId}-${entry.id}` }));
 
-  const stacked = host?.headerLayout === 'stacked';
+  const stacked = host?.headerLayout === 'stacked' || space.tight;
   const toolbar = controls && <div data-testid={`${testId}-controls`} className={cn('flex shrink-0 items-center gap-1', stacked && 'flex-wrap border-t border-border px-3 py-2')}>{controls}</div>;
   const titlebar = <>
         <div className={cn('min-w-0 flex-1 basis-0', stacked && 'text-left')}>
@@ -217,7 +217,7 @@ export function ViewerFrame({ title, subtitle, status, target, revision, control
         </div>
       </>;
   const header = <header ref={bar} data-testid={`${testId}-bar`} data-layout={stacked ? 'stacked' : undefined}
-    className={cn('relative flex shrink-0 border-b border-border', stacked ? 'flex-col' : 'flex-nowrap items-center gap-x-1.5 px-3 py-1.5')}>
+    className={cn('relative flex shrink-0 border-b border-border', stacked ? 'flex-col' : 'min-h-14 flex-nowrap items-center gap-x-1.5 px-3 py-1.5')}>
         {stacked ? <><div data-testid={`${testId}-titlebar`} className="flex min-h-14 min-w-0 items-center gap-x-1.5 px-3 py-1.5">{titlebar}</div>{toolbar}</> : titlebar}
         {notice && <span role="status" aria-live="polite" data-testid={`${testId}-notice`} data-tone={notice.tone} className={cn('absolute top-full right-3 z-40 mt-1 rounded-full border border-border px-2.5 py-1 text-xs font-medium shadow-md', TONES[notice.tone])}>{notice.text}</span>}
         {manual && <ManualCopy testId={testId} link={manual.link} text={manual.text} labels={labels} onClose={() => setManual(undefined)} />}

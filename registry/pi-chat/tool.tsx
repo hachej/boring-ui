@@ -45,7 +45,7 @@ export function ToolCard({ entry, onOpenImage, details = true }: { readonly entr
     <TraceDescription data-testid="tool-status" className="text-xs">{labels[STATUS_LABEL[status]]}</TraceDescription>
   </TraceLine>;
   return <TraceCollapsible data-testid="tool-card" data-boring="tool-card" data-status={status} data-tool={call.name} data-call-id={call.id} open={open} onOpenChange={setChosen}>
-    {details ? <TraceCollapsibleTrigger className="min-h-8 pointer-coarse:min-h-10">{line}</TraceCollapsibleTrigger> : line}
+    {details ? <TraceCollapsibleTrigger className="min-h-8 max-sm:min-h-11 pointer-coarse:min-h-11">{line}</TraceCollapsibleTrigger> : line}
     {details && <TraceCollapsibleContent><div data-testid="tool-details" className="space-y-3 text-foreground">
       <Section title={labels.arguments}><pre className="m-0 max-h-60 overflow-auto rounded-md bg-muted/60 p-2.5 font-mono text-xs leading-5 whitespace-pre-wrap [overflow-wrap:anywhere]">{JSON.stringify(call.arguments, null, 2)}</pre></Section>
       {result && <Section title={result.isError ? labels.error : labels.result}>

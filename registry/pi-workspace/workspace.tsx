@@ -154,12 +154,12 @@ export function ArtifactWorkspace({ chat, open, panel, onClose, fullscreen: cont
         onPointerUp={release} onPointerCancel={() => { setDragging(false); setFloatHint(false); }}
         onKeyDown={keys} onDoubleClick={() => resize(defaultWidth)}
         className="group relative z-10 -mx-1 w-2 shrink-0 cursor-col-resize touch-none outline-none">
-        <span aria-hidden="true" className={cn('absolute inset-y-0 left-1/2 w-px -translate-x-1/2', variant === 'inset' ? 'bg-transparent' : 'bg-border', 'transition-[width,background-color] group-hover:w-0.5 group-hover:bg-ring/70 group-focus-visible:w-0.5 group-focus-visible:bg-ring motion-reduce:transition-none', dragging && 'w-0.5 bg-ring')} />
+        <span aria-hidden="true" className={cn('absolute inset-y-0 left-1/2 w-px -translate-x-1/2', variant === 'inset' ? 'bg-transparent' : 'bg-border', 'transition-colors group-hover:w-0.5 group-hover:bg-ring/70 group-focus-visible:w-0.5 group-focus-visible:bg-ring motion-reduce:transition-none', dragging && 'w-0.5 bg-ring')} />
       </div>}
       <aside data-testid="workspace-panel" aria-label={panelLabel} data-state={entered ? 'open' : 'entering'} data-floating={floating ? 'true' : undefined} data-fullscreen={fullscreen ? 'true' : 'false'} data-sheet={sheet ? 'true' : 'false'}
         style={sheet || fullscreen || floating ? undefined : { width, minWidth: minPanel }}
         className={cn('flex min-h-0 min-w-0 flex-col overflow-hidden bg-background text-foreground transition-[transform,opacity] motion-reduce:transition-none',
-          sheet || fullscreen ? 'fixed inset-0 z-50' : floating ? 'flex-1' : variant === 'inset' ? 'my-2 me-2 ms-0 shrink-0 rounded-xl border border-border shadow-sm' : 'shrink-0 border-l border-border',
+          sheet || fullscreen ? 'fixed inset-0 z-50' : floating ? 'flex-1' : variant === 'inset' ? 'my-3 me-3 ms-0 shrink-0 rounded-lg border border-border' : 'shrink-0 border-l border-border',
           entered ? 'translate-x-0 opacity-100' : 'translate-x-8 opacity-0', dragging && 'pointer-events-none select-none')}>
         {typeof panel === 'function' ? panel(api) : panel}
       </aside>

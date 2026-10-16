@@ -54,7 +54,7 @@ export function SessionsPane({ conversations, title: givenTitle, drawer, onClose
   return <>
     {drawer && <button type="button" tabIndex={-1} aria-hidden="true" data-testid="sessions-backdrop" onClick={onClose} className="fixed inset-0 z-40 cursor-default bg-black/40" />}
     <aside data-testid="conversations" data-drawer={drawer ? 'true' : 'false'} aria-label={title} {...(drawer ? { role: 'dialog', 'aria-modal': true } : {})}
-      className={cn('pi-chat flex min-h-0 flex-col bg-background text-foreground', drawer
+      className={cn('pi-chat flex min-h-0 flex-col bg-muted/30 text-foreground', drawer
         ? 'fixed inset-y-0 left-0 z-50 w-[min(20rem,85vw)] border-r border-border shadow-xl pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]'
         : 'w-72 shrink-0 border-r border-border')}>
       {switcher && <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">

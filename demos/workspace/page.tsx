@@ -297,7 +297,7 @@ function Chat({ api, provider, file, openFile, closeFile, setUnsaved, active, co
     {barTools}<BlockActions actions={placementActions} testId="chat-action" menuLabel="More actions" />
   </div>;
   const conversation = <div hidden={replaceChat} inert={replaceChat} className={cn('min-h-0 flex-1 flex-col', replaceChat ? 'hidden' : 'flex')}>
-    <AmbientChat key={active} {...common} headerTools={api.floating ? barTools : undefined} embedded={!api.floating} variant="surface" defaultState="expanded" labels={{ title: 'AP helper' }} onDock={() => { api.dock(); api.setWidth(base.current); }} />
+    <AmbientChat key={active} {...common} headerTools={api.floating ? barTools : undefined} embedded={!api.floating} variant="surface" defaultState="expanded" labels={{ title: 'AP helper', placeholder: 'Ask about your payables…', empty: 'Review an invoice, check the policy, or ask what needs your approval.' }} onDock={() => { api.dock(); api.setWidth(base.current); }} />
   </div>;
   return <FloatingViewer active={replaceChat} header={!api.floating && !replaceChat ? header : null}>
     <ArtifactWorkspace chat={conversation} open={Boolean(file)} panel={viewer} onClose={closeFile} sheetBelow={0} minPanel={replaceChat ? 0 : 360} minChat={replaceChat ? 0 : 340} defaultWidth={PANEL} storageKey="workspace-demo.file-panel" panelLabel="File viewer" variant="inset"

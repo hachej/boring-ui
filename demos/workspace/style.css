@@ -1,6 +1,4 @@
 :root {
-  --primary: oklch(0.52 0.19 262);
-  --primary-foreground: oklch(0.99 0.003 262);
   --sidebar: color-mix(in oklab, var(--muted) 55%, var(--background));
   --sidebar-foreground: var(--foreground);
   --sidebar-border: var(--border);
@@ -19,7 +17,6 @@
 html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 body { background: var(--sidebar); color: var(--foreground); font: 14px/1.5 ui-sans-serif, system-ui, sans-serif; }
 [data-testid^="screen-"] [data-boring="experience-row"] > [data-boring="experience-cell"] { flex: 1 1 18rem; min-width: 0; }
-.dark { --primary: oklch(0.72 0.14 262); --primary-foreground: oklch(0.18 0.02 262); }
 progress::-webkit-progress-bar { background: var(--muted); border-radius: 2px; }
 progress::-webkit-progress-value { background: var(--primary); border-radius: 2px; }
 progress.over-budget::-webkit-progress-value { background: var(--destructive); }

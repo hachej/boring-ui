@@ -104,7 +104,7 @@ export function PiChat(props: PiChatProps) {
 function ConnectionBadge({ kind }: { readonly kind: string }) {
   const { labels } = useChatText();
   const live = kind === 'connected';
-  return <span data-testid="connection" data-state={kind} role="status" className="inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-0.5 text-xs text-muted-foreground">
+  return <span data-testid="connection" data-state={kind} role="status" className="inline-flex items-center gap-1.5 px-1 py-1 text-xs text-muted-foreground">
     <span aria-hidden="true" className={cn('size-1.5 rounded-full', live ? 'bg-(--chat-success)' : 'animate-pulse bg-(--chat-warning) motion-reduce:animate-none')} />
     {live ? labels.live : kind === 'connecting' || kind === 'idle' ? labels.connecting : labels.reconnecting}
   </span>;
@@ -135,7 +135,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
   const connectionKind = state.connection.kind;
 
   return <section data-boring="pi-chat" aria-label={title} className={cn('pi-chat relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background text-foreground', className)}>
-    {header && <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2 sm:gap-3 sm:px-4 sm:py-2.5">
+    {header && <header className="flex min-h-14 shrink-0 items-center gap-2 border-b border-border px-3 py-2 sm:gap-3 sm:px-4">
       {headerStart}
       {avatar && <span data-testid="chat-avatar" className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full [&>img]:size-full [&>img]:object-cover [&>svg]:size-4">{avatar}</span>}
       <h2 className="m-0 min-w-0 flex-1 truncate font-(family-name:--chat-display) text-sm font-semibold tracking-tight">{title}</h2>
@@ -163,7 +163,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
 
     <div className="relative min-h-0 flex-1">
       <div ref={stick.scrollRef} data-testid="transcript-scroll" className="h-full overflow-x-hidden overflow-y-auto overscroll-contain">
-        <div ref={stick.contentRef} role="log" aria-label={labels.messages} aria-live="polite" data-testid="transcript" className="mx-auto flex min-h-full w-full max-w-3xl flex-col gap-6 px-3 pt-6 pb-8 sm:px-4">
+        <div ref={stick.contentRef} role="log" aria-label={labels.messages} aria-live="polite" data-testid="transcript" className="mx-auto flex min-h-full w-full max-w-3xl flex-col gap-6 px-4 pt-6 pb-8 sm:px-6">
           {hidden > 0 && <div className="flex justify-center"><Button size="sm" variant="outline" data-testid="show-earlier" className="text-muted-foreground" onClick={transcript.reveal}>{labels.showEarlier}</Button></div>}
           {visible.map(row => <RowView key={row.key} row={row} context={rowContext} />)}
         </div>
@@ -177,7 +177,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
         className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-background/95 shadow-md backdrop-blur"><icons.jumpToLatest className="size-4" aria-hidden="true" /></Button>}
     </div>
 
-    <footer className="shrink-0 px-3 pt-1 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-4">
+    <footer className="shrink-0 px-4 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6">
       <div className="mx-auto w-full max-w-3xl space-y-2">
         <div aria-live="polite" className="space-y-2 empty:hidden">
           {working && <p role="status" data-testid="agent-status" className="m-0 flex items-center gap-2 px-1 text-xs text-muted-foreground"><span aria-hidden="true" className="size-1.5 animate-pulse rounded-full bg-(--chat-success) motion-reduce:animate-none" />
