@@ -157,7 +157,7 @@ try {
     report.proxy = { idleMs: proxyIdleMs, heartbeatMs, idleWindowMs: 3 * proxyIdleMs + 1500 };
     // The proxy drops every connection: the client notices and reopens the watch without a reload or a remount.
     await browser.evaluate(`window.__states = []; new MutationObserver(() => { const state = ${connection}; if (state && window.__states.at(-1) !== state) window.__states.push(state); })
-      .observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-state'] })`);
+      .observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-connection'] })`);
     const replies = await browser.evaluate(`${transcript}.split('Fictional plan complete.').length - 1`);
     proxy.cut();
     await browser.until('reopened after the drop', `${connection} === 'connected' && window.__states.includes('reconnecting')`);
