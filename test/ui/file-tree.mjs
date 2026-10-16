@@ -72,9 +72,28 @@ test('upload lost acknowledgement reconciles its original receipt and never auto
   assert.equal(first.state.result.kind, 'unknown');
   const again = await f.controller.upload({ path: 'lost.bin', bytes: new Uint8Array([2]) });
   assert.equal(again.operationId, first.operationId); assert.equal(f.publishes(), 1);
-  const settled = await f.controller.reconcile(first.operationId);
+  const settled = await f.controller.retry(first.operationId);
   assert.equal(settled.state.result.kind, 'committed'); assert.equal(f.publishes(), 1);
   assert.deepEqual((await f.binding.read({ target: f.binding.locate('lost.bin'), revision: { kind: 'latest' } })).snapshot.bytes, new Uint8Array([1]));
+});
+
+test('retry keeps captured bytes and the original revision condition', async t => {
+  const f = fixture(t), publish = f.binding.publish;
+  f.binding.publish = async () => ({ kind: 'unavailable', reason: 'Fictional temporary refusal' });
+  const bytes = new Uint8Array([1, 2]);
+  const refused = await f.controller.upload({ path: 'retry.bin', bytes }); bytes[0] = 99;
+  f.binding.publish = publish;
+  const saved = await f.controller.retry(refused.operationId);
+  assert.equal(saved.state.result.kind, 'committed');
+  const read = () => f.binding.read({ target: f.binding.locate('retry.bin'), revision: { kind: 'latest' } });
+  assert.deepEqual((await read()).snapshot.bytes, new Uint8Array([1, 2]));
+  const base = saved.state.result.receipt.changes[0].after;
+  f.binding.publish = async () => ({ kind: 'unavailable', reason: 'Fictional replacement refusal' });
+  const replacement = await f.controller.upload({ path: 'retry.bin', bytes: new Uint8Array([3]), replace: base });
+  f.binding.publish = publish;
+  await f.binding.publish({ operationId: 'fictional-intervening-write', atomicity: 'all-or-nothing', changes: [{ kind: 'replace', target: base, bytes: new Uint8Array([4]), mediaType: 'application/octet-stream' }] });
+  assert.equal((await f.controller.retry(replacement.operationId)).state.result.kind, 'conflict');
+  assert.deepEqual((await read()).snapshot.bytes, new Uint8Array([4]), 'Retry never replaces an intervening edit');
 });
 
 test('upload cancellation before dispatch and non-dispatch errors are known refusals', async t => {
@@ -126,6 +145,9 @@ test('file tree renders in StrictMode, expands by keyboard and reads history wit
   await act(async () => root.render(createElement(StrictMode, null, createElement(FileTree, { variant: 'list', revisionProvider: f.binding, onOpen: path => opened.push(path) }))));
   const directory = element.querySelector('[role=treeitem][data-path="docs"]');
   assert.ok(directory); assert.equal(directory.getAttribute('aria-expanded'), 'false');
+  await t.test('folder rows do not repeat the generic kind as metadata', () => {
+    assert.equal(Boolean(directory.querySelector('[data-file-meta]')), false);
+  });
   await act(async () => directory.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })));
   assert.equal(directory.getAttribute('aria-expanded'), 'true');
   const folderButton = directory.querySelector('[data-slot=sidebar-menu-button]'); assert.ok(folderButton);
@@ -164,17 +186,17 @@ test('file tree renders in StrictMode, expands by keyboard and reads history wit
   await act(async () => empty.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })));
   assert.equal(window.document.activeElement, empty, 'Right stays on an empty folder');
 
-  let uploaded = false;
+  const uploaded = new Set();
   const publish = f.binding.publish;
-  f.binding.publish = async request => { const result = await publish(request); if (result.kind === 'committed') uploaded = true; return result; };
-  f.binding.list = async ({ directory }) => ({ entries: uploaded ? directory ? [entry('uploads/dropped.md')] : [{ path: 'uploads', kind: 'directory', size: 0 }] : [] });
+  f.binding.publish = async request => { const result = await publish(request); if (result.kind === 'committed') uploaded.add(request.changes[0].target.resource.path); return result; };
+  f.binding.list = async ({ directory }) => ({ entries: uploaded.size ? directory ? [...uploaded].map(entry) : [{ path: 'uploads', kind: 'directory', size: 0 }] : [] });
   await act(async () => element.querySelector('[aria-label="Refresh"]').click());
   assert.match(element.querySelector('.file-tree-empty').textContent, /No files yetUpload or ask the agent to create oneUpload/);
   assert.ok(element.querySelector('.file-tree-empty button'), 'empty state offers the same upload picker');
   const dropped = new File(['Fictional dropped document'], 'dropped.md', { type: 'text/markdown' });
-  const drag = type => {
+  const drag = (type, file = dropped) => {
     const event = new window.Event(type, { bubbles: true, cancelable: true });
-    Object.defineProperty(event, 'dataTransfer', { value: { types: ['Files'], files: [dropped] } });
+    Object.defineProperty(event, 'dataTransfer', { value: { types: ['Files'], files: [file] } });
     return event;
   };
   const panel = element.querySelector('[data-boring=file-tree]');
@@ -182,13 +204,55 @@ test('file tree renders in StrictMode, expands by keyboard and reads history wit
   assert.equal(panel.dataset.dropping, 'true');
   await act(async () => panel.dispatchEvent(drag('drop')));
   assert.equal(panel.dataset.dropping, undefined);
-  for (let attempt = 0; attempt < 50 && !element.querySelector('[data-path="uploads/dropped.md"]'); attempt++) {
+  for (let attempt = 0; attempt < 50 && !element.querySelector('[data-path="uploads/dropped.md"]:not([data-upload-state])'); attempt++) {
     await act(async () => new Promise(resolve => setTimeout(resolve, 10)));
   }
-  assert.ok(element.querySelector('[data-path="uploads/dropped.md"]'), 'drop updates the real tree');
+  assert.ok(element.querySelector('[data-path="uploads/dropped.md"]:not([data-upload-state])'), 'drop updates the real tree after publication');
   const saved = await f.binding.read({ target: f.binding.locate('uploads/dropped.md'), revision: { kind: 'latest' } });
   assert.equal(new TextDecoder().decode(saved.snapshot.bytes), 'Fictional dropped document');
   assert.equal(f.publishes(), 3, 'two history seeds and one drop publication');
+  await t.test('upload results are announced politely instead of displayed as log lines', () => {
+    const live = element.querySelector('[aria-label="Uploads"]');
+    assert.equal(live?.getAttribute('aria-live'), 'polite');
+    assert.match(live.textContent, /dropped.md: Saved/);
+    assert.equal(Boolean(element.querySelector('.file-tree-uploads')), false);
+  });
+
+  const gate = later(); let attempts = 0;
+  f.binding.publish = async request => {
+    attempts++;
+    if (attempts === 1) return { kind: 'unavailable', reason: 'Fictional connection interrupted' };
+    await gate.promise;
+    const result = await publish(request); if (result.kind === 'committed') uploaded.add(request.changes[0].target.resource.path); return result;
+  };
+  const retryFile = new File(['Fictional retry document'], 'retry.md', { type: 'text/markdown' });
+  await act(async () => panel.dispatchEvent(drag('drop', retryFile)));
+  const retryRow = () => element.querySelector('[role=treeitem][data-path="uploads/retry.md"]');
+  for (let attempt = 0; attempt < 50 && !retryRow()?.querySelector('[data-upload-error]'); attempt++) await act(async () => new Promise(resolve => setTimeout(resolve, 10)));
+  assert.match(retryRow()?.textContent ?? '', /Fictional connection interrupted/);
+  await act(async () => retryRow().querySelector('button[data-upload-retry]').click());
+  for (let attempt = 0; attempt < 50 && retryRow()?.dataset.uploadState !== 'pending'; attempt++) await act(async () => new Promise(resolve => setTimeout(resolve, 10)));
+  assert.equal(retryRow()?.dataset.uploadState, 'pending');
+  assert.ok(retryRow().querySelector('[data-upload-spinner]'), 'pending upload progress belongs to its file row');
+  await act(async () => gate.resolve());
+  for (let attempt = 0; attempt < 50 && retryRow()?.dataset.uploadState; attempt++) await act(async () => new Promise(resolve => setTimeout(resolve, 10)));
+  assert.equal(retryRow()?.dataset.uploadState, undefined);
+  assert.equal(Boolean(retryRow()?.querySelector('[data-upload-spinner], [data-upload-error], [data-upload-retry]')), false);
+  assert.equal(attempts, 2);
+  const retried = await f.binding.read({ target: f.binding.locate('uploads/retry.md'), revision: { kind: 'latest' } });
+  assert.equal(new TextDecoder().decode(retried.snapshot.bytes), 'Fictional retry document');
+
+  const unreadable = new File(['Fictional readable retry'], 'unreadable.md', { type: 'text/markdown' });
+  const readBytes = unreadable.arrayBuffer.bind(unreadable); let reads = 0;
+  Object.defineProperty(unreadable, 'arrayBuffer', { value: () => ++reads === 1 ? Promise.reject(new Error('Fictional local read failure')) : readBytes() });
+  await act(async () => panel.dispatchEvent(drag('drop', unreadable)));
+  const unreadableRow = () => element.querySelector('[role=treeitem][data-path="uploads/unreadable.md"]');
+  assert.match(unreadableRow()?.textContent ?? '', /Fictional local read failure/);
+  await act(async () => unreadableRow().querySelector('[data-upload-retry]').click());
+  for (let attempt = 0; attempt < 50 && !element.querySelector('[data-path="uploads/unreadable.md"]:not([data-upload-state])'); attempt++) await act(async () => new Promise(resolve => setTimeout(resolve, 10)));
+  assert.equal(reads, 2);
+  const reread = await f.binding.read({ target: f.binding.locate('uploads/unreadable.md'), revision: { kind: 'latest' } });
+  assert.equal(new TextDecoder().decode(reread.snapshot.bytes), 'Fictional readable retry');
 });
 
 test('throwing file-tree subscribers cannot strand a publication before dispatch', async t => {

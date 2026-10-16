@@ -48,7 +48,7 @@ for (const [name, start, trigger] of [
       await browser.until('drop highlight', `${q(tree)}?.dataset.dropping === 'true'`);
       await browser.screenshot('standalone-drop.png');
       await browser.evaluate(`${q(tree)}.dispatchEvent(new DragEvent('drop', {bubbles:true,cancelable:true,dataTransfer:window.__libraryDrop})); delete window.__libraryDrop;`);
-      await browser.until('drop uploaded and expanded', `!!${q(`[role=treeitem][data-path=${JSON.stringify(`uploads/${longName}`)}]`)}`, 15000);
+      await browser.until('drop uploaded and expanded', `!!${q(`[role=treeitem][data-path=${JSON.stringify(`uploads/${longName}`)}]:not([data-upload-state])`)}`, 15000);
       assert.equal(await browser.evaluate(`${q(tree)}.dataset.dropping`), undefined);
       const provider = await connectRevisionProvider({ endpoint: new URL('/api/resources', app.url), fetch: request => {
         const headers = new Headers(request.headers); headers.set('authorization', `Bearer ${app.token}`); return fetch(new Request(request, { headers }));
@@ -87,6 +87,9 @@ for (const [name, start, trigger] of [
           return { left:s.left-p.left, right:p.right-s.right, indent:fileName.getBoundingClientRect().left-folderName.getBoundingClientRect().left,
             rows:[...panel.querySelectorAll('[data-slot=sidebar-menu-button]')].map(row=>row.getBoundingClientRect().height),
             allMeta:[...panel.querySelectorAll('[data-file-meta]')].every(meta=>meta.textContent.trim().length>0),
+            folderMeta:[...panel.querySelectorAll('[role=treeitem][aria-expanded] > div [data-file-meta]')].map(meta=>meta.textContent),
+            announcements:(() => { const live=panel.querySelector('[aria-live=polite]'), style=getComputedStyle(live), box=live.getBoundingClientRect(); return live && style.position==='absolute' && box.width<=1 && box.height<=1 && style.clip!=='auto'; })(),
+            settledRows:[...panel.querySelectorAll('[data-upload-state]')].length,
             overflow:document.documentElement.scrollWidth>innerWidth || panel.scrollWidth>panel.clientWidth,
             targets:[...panel.querySelectorAll('.file-tree-more,.file-tree-upload,.file-tree-close')].map(e=>({w:e.getBoundingClientRect().width,h:e.getBoundingClientRect().height})) };
         })()`);
@@ -94,6 +97,9 @@ for (const [name, start, trigger] of [
         assert.ok(geometry.rows.every(height => height >= 44 && height <= 48), JSON.stringify(geometry));
         assert.ok(geometry.indent >= 12 && geometry.indent <= 16, `nested files indent to the right of their folder: ${JSON.stringify(geometry)}`);
         assert.equal(geometry.allMeta, true);
+        assert.deepEqual(geometry.folderMeta, [], 'folders omit generic Folder metadata');
+        assert.equal(geometry.announcements, true, 'upload status is a clipped polite live region, not visible log lines');
+        assert.equal(geometry.settledRows, 0, 'completed uploads leave no row status or error');
         assert.equal(geometry.overflow, false, `${name}: no horizontal overflow at ${phone ? 360 : 1440}px`);
         if (phone) {
           assert.ok(geometry.targets.every(({ w, h }) => w >= 44 && h >= 44), JSON.stringify(geometry));

@@ -9,6 +9,7 @@ export type FileListing = { readonly kind: 'loading'; readonly entries: readonly
 export interface FileUpload {
   readonly operationId: string;
   readonly path: string;
+  readonly size: number;
   readonly state: { readonly kind: 'pending' } | { readonly kind: 'settled'; readonly result: PublicationResult };
 }
 export interface FileTreeState {
@@ -30,6 +31,8 @@ export interface FileTreeController {
   readonly moreSearch: () => Promise<void>;
   readonly upload: (input: { readonly path: string; readonly bytes: Uint8Array; readonly mediaType?: string; readonly replace?: ResourceRef; readonly signal?: AbortSignal }) => Promise<FileUpload>;
   readonly reconcile: (operationId: string) => Promise<FileUpload>;
+  /** Retry a refused upload with its captured bytes. Unconfirmed uploads only reconcile the original operation. */
+  readonly retry: (operationId: string) => Promise<FileUpload>;
   readonly history: (path: string, signal?: AbortSignal) => Promise<readonly SavedRevision[]>;
   readonly dispose: () => void;
 }
@@ -79,7 +82,7 @@ export function createFileTreeController({ revisionProvider }: { readonly revisi
   function uploadState(operationId: string, result: PublicationResult): FileUpload {
     const attempt = attempts.get(operationId);
     if (!attempt) throw new Error('Unknown upload operation');
-    const current: FileUpload = { operationId, path: attempt.current.path, state: { kind: 'settled', result } };
+    const current: FileUpload = { ...attempt.current, state: { kind: 'settled', result } };
     attempt.current = current;
     update({ ...state, uploads: state.uploads.map(item => item.operationId === operationId ? current : item) });
     if (result.kind === 'committed' && state.lifecycle === 'active') {
@@ -146,7 +149,7 @@ export function createFileTreeController({ revisionProvider }: { readonly revisi
       const request = publicationSnapshot({ operationId, atomicity: 'all-or-nothing', changes: [input.replace
         ? { kind: 'replace', target: input.replace, bytes, mediaType: input.mediaType ?? 'application/octet-stream' }
         : { kind: 'create', target, expected: { kind: 'absent' }, bytes, mediaType: input.mediaType ?? 'application/octet-stream' }] });
-      const current: FileUpload = { operationId, path: input.path, state: { kind: 'pending' } };
+      const current: FileUpload = { operationId, path: input.path, size: bytes.byteLength, state: { kind: 'pending' } };
       const digest = await publicationDigest(request);
       active();
       const concurrent = unresolved();
@@ -176,6 +179,16 @@ export function createFileTreeController({ revisionProvider }: { readonly revisi
         finally { delete attempt.reconciling; }
       };
       return attempt.reconciling = run();
+    },
+    retry: operationId => {
+      active(); const attempt = attempts.get(operationId);
+      if (!attempt) return Promise.reject(new Error('Unknown upload operation'));
+      if (attempt.current.state.kind === 'pending' || attempt.current.state.result.kind === 'committed') return Promise.resolve(attempt.current);
+      if (attempt.current.state.result.kind === 'unknown') return controller.reconcile(operationId);
+      const change = attempt.request.changes[0];
+      if (change.kind === 'delete') return Promise.reject(new Error('An upload cannot delete a file'));
+      return controller.upload({ path: attempt.current.path, bytes: attempt.bytes, mediaType: change.mediaType,
+        ...(change.kind === 'replace' ? { replace: change.target } : {}) });
     },
     history: (path, signal) => { active(); return revisionProvider.history(path, signal ? AbortSignal.any([signal, lifetime.signal]) : lifetime.signal); },
     dispose: () => { if (state.lifecycle === 'disposed') return; lifetime.abort(); for (const load of loads.values()) load.abort(); loads.clear(); state = { ...state, lifecycle: 'disposed' }; listeners.clear(); },

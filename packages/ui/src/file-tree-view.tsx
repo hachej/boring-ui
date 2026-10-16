@@ -1,7 +1,7 @@
 'use client';
 
 import { Collapsible, DropdownMenu } from 'radix-ui';
-import { ChevronRight, Download, File, FileCode, FileImage, FileSpreadsheet, FileText, Folder, FolderOpen, History, MoreHorizontal, Search, Upload, X } from 'lucide-react';
+import { ChevronRight, Download, File, FileCode, FileImage, FileSpreadsheet, FileText, Folder, FolderOpen, History, LoaderCircle, MoreHorizontal, Search, Upload, X } from 'lucide-react';
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarMenuSub } from './file-tree-shadcn.js';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { KeyboardEvent, ReactNode } from 'react';
@@ -169,6 +169,9 @@ export interface FileTreeViewProps extends Omit<FileTreeProps, 'revisionProvider
   readonly controller: FileTreeController;
 }
 
+type UploadRow = { readonly kind: 'pending'; readonly size: number }
+  | { readonly kind: 'failed'; readonly size: number; readonly reason: string; readonly retryLabel: string; readonly retry: () => void };
+
 /** Renders a borrowed controller, for a workspace whose chat and tree share upload state. */
 export function FileTreeView({ controller, onOpen, selectedPath, className, uploadDirectory = 'uploads', locale = 'en', labels: given, upload = true, history = true, refresh = true, variant = 'list', title, onClose, refreshKey, historyKey }: FileTreeViewProps) {
   const list = variant === 'list';
@@ -190,16 +193,26 @@ export function FileTreeView({ controller, onOpen, selectedPath, className, uplo
   const [focused, setFocused] = useState('');
   const [uploadError, setUploadError] = useState('');
   const [historyPath, setHistoryPath] = useState<string>();
+  const [localFailures, setLocalFailures] = useState<ReadonlyMap<string, { readonly file: globalThis.File; readonly reason: string }>>(new Map());
   const uploadFiles = async (files: readonly globalThis.File[]) => {
-    setUploadError('');
-    const errors: string[] = [];
     for (const file of files) {
       const path = uploadDirectory ? `${uploadDirectory}/${file.name}` : file.name;
+      setLocalFailures(previous => { const next = new Map(previous); next.delete(path); return next; });
       try { await controller.upload({ path, bytes: new Uint8Array(await file.arrayBuffer()), mediaType: file.type || 'application/octet-stream' }); }
-      catch (error) { errors.push(error instanceof Error ? error.message : labels.uploadFailed(file.name)); }
+      catch (error) { setLocalFailures(previous => new Map(previous).set(path, { file, reason: error instanceof Error ? error.message : labels.uploadFailed(file.name) })); }
     }
-    if (errors.length) setUploadError(errors.join(' '));
   };
+  const uploadRows = new Map<string, UploadRow>();
+  for (const item of state.uploads) {
+    if (item.state.kind === 'pending') uploadRows.set(item.path, { kind: 'pending', size: item.size });
+    else if (item.state.result.kind === 'committed') uploadRows.delete(item.path);
+    else uploadRows.set(item.path, { kind: 'failed', size: item.size,
+      reason: item.state.result.kind === 'partial' ? labels.unconfirmed : item.state.result.reason,
+      retryLabel: item.state.result.kind === 'unknown' ? labels.checkUpload : labels.retry,
+      retry: () => { void controller.retry(item.operationId).catch(error => setUploadError(error instanceof Error ? error.message : labels.uploadStatusUnavailable)); } });
+  }
+  for (const [path, failure] of localFailures) uploadRows.set(path, { kind: 'failed', size: failure.file.size, reason: failure.reason,
+    retryLabel: labels.retry, retry: () => { void uploadFiles([failure.file]); } });
   const uploadButton = <button type="button" className="file-tree-upload" onClick={() => fileInput.current?.click()}><Upload aria-hidden="true" />{labels.upload}</button>;
 
   const rows: { readonly entry: FileEntry; readonly level: number }[] = [];
@@ -210,6 +223,11 @@ export function FileTreeView({ controller, onOpen, selectedPath, className, uplo
     }
   }
   if (state.query) for (const entry of state.search.entries) rows.push({ entry, level: 1 }); else flatten('', 1);
+  const visiblePaths = new Set(rows.map(row => row.entry.path));
+  const temporaryEntries: FileEntry[] = [...uploadRows].filter(([path]) => !visiblePaths.has(path) && path.toLowerCase().includes(state.query.toLowerCase()))
+    .map(([path, status]) => ({ path, kind: 'file', size: status.size }));
+  const temporaryPaths = new Set(temporaryEntries.map(entry => entry.path));
+  for (const entry of temporaryEntries) rows.push({ entry, level: 1 });
   const focusPath = rows.some(row => row.entry.path === focused) ? focused : rows[0]?.entry.path;
   const focus = (path: string | undefined) => {
     if (path === undefined) return;
@@ -232,7 +250,7 @@ export function FileTreeView({ controller, onOpen, selectedPath, className, uplo
         if (entry.kind === 'directory' && expanded && !state.query) void controller.toggle(entry.path);
         else focus(entry.path.includes('/') ? entry.path.slice(0, entry.path.lastIndexOf('/')) : undefined);
         break;
-      case 'Enter': case ' ': if (entry.kind === 'directory') void controller.toggle(entry.path); else onOpen?.(entry.path); break;
+      case 'Enter': case ' ': if (entry.kind === 'directory') void controller.toggle(entry.path); else if (!temporaryPaths.has(entry.path)) onOpen?.(entry.path); break;
       default: return;
     }
     event.preventDefault();
@@ -241,7 +259,7 @@ export function FileTreeView({ controller, onOpen, selectedPath, className, uplo
     if (!listing || listing.kind === 'loading') return <li role="none"><span role="status">{labels.loading}</span></li>;
     if (listing.kind === 'error') return <li role="none"><span role="alert">{listing.reason}</span> <button type="button" onClick={() => { void (search ? controller.search(state.query) : controller.refresh(directory)); }}>{labels.retry}</button></li>;
     return <>
-      {listing.entries.length === 0 && <li role="none" className={list && !directory ? 'file-tree-empty' : 'file-tree-status'}>
+      {listing.entries.length === 0 && (directory || temporaryEntries.length === 0) && <li role="none" className={list && !directory ? 'file-tree-empty' : 'file-tree-status'}>
         {list && !directory && <FolderOpen aria-hidden="true" />}
         <span>{search ? labels.noMatches : labels.empty}</span>
         {list && !directory && !search && <><p>{labels.emptyHint}</p>{upload && uploadButton}</>}
@@ -255,21 +273,23 @@ export function FileTreeView({ controller, onOpen, selectedPath, className, uplo
   </>;
   const renderEntry = (entry: FileEntry, level: number): ReactNode => {
     const folder = entry.kind === 'directory';
-    // A search result shows its name, with its folder beside it in muted text.
+    const temporary = temporaryPaths.has(entry.path);
+    const status = uploadRows.get(entry.path);
     const name = entry.path.split('/').at(-1);
-    const parent = state.query && entry.path.includes('/') ? entry.path.slice(0, entry.path.lastIndexOf('/')) : '';
+    const parent = (state.query || temporary) && entry.path.includes('/') ? entry.path.slice(0, entry.path.lastIndexOf('/')) : '';
     const kind = folder ? { icon: Folder, label: labels.folder, tone: 'folder' } : fileKind(entry.path, labels);
     const Icon = kind.icon;
-    const button = <SidebarMenuButton tabIndex={-1} title={entry.path} isActive={selectedPath === entry.path}
+    const button = <SidebarMenuButton tabIndex={-1} title={entry.path} isActive={selectedPath === entry.path} disabled={temporary}
       className="min-w-0 flex-1"
       onClick={() => { focus(entry.path); if (!folder) onOpen?.(entry.path); }}>
       {folder ? <ChevronRight aria-hidden="true" /> : list && <span className="file-tree-chevron-space" aria-hidden="true" />}
       {list ? <span className="file-tree-tile" data-kind={kind.tone}><Icon aria-hidden="true" /></span> : <Icon aria-hidden="true" />}
       <span className="file-tree-copy"><span className="file-tree-name">{name}</span>
-        {list ? <span data-file-meta>{kind.label}{!folder && ` · ${fileSize(entry.size, locale)}`}{parent && ` · ${parent}`}</span> : parent && <span className="text-xs text-muted-foreground">{parent}</span>}
+        {list ? !folder && <span data-file-meta>{kind.label} · {fileSize(entry.size, locale)}{parent && ` · ${parent}`}</span> : parent && <span className="text-xs text-muted-foreground">{parent}</span>}
+        {status?.kind === 'failed' && <span data-upload-error>{status.reason}</span>}
       </span>
     </SidebarMenuButton>;
-    const item = <SidebarMenuItem key={entry.path} role="treeitem" data-path={entry.path}
+    const item = <SidebarMenuItem key={entry.path} role="treeitem" data-path={entry.path} data-upload-state={status?.kind} aria-busy={status?.kind === 'pending' || undefined}
       aria-level={level} aria-selected={selectedPath === entry.path} aria-expanded={folder ? state.expanded.has(entry.path) : undefined}
       tabIndex={focusPath === entry.path ? 0 : -1}
       onFocus={event => { if (event.target === event.currentTarget) setFocused(entry.path); }}
@@ -277,7 +297,9 @@ export function FileTreeView({ controller, onOpen, selectedPath, className, uplo
       className="group/collapsible rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring">
       <div className="flex items-center gap-1">
         {folder ? <Collapsible.Trigger asChild>{button}</Collapsible.Trigger> : button}
-        {!folder && <FileActions controller={controller} entry={entry} labels={labels} container={panel}
+        {status?.kind === 'pending' && <LoaderCircle data-upload-spinner aria-hidden="true" />}
+        {status?.kind === 'failed' && <button type="button" className="file-tree-retry" data-upload-retry aria-label={status.retryLabel} onClick={status.retry}>{labels.retry}</button>}
+        {!folder && !temporary && !status && <FileActions controller={controller} entry={entry} labels={labels} container={panel}
           onOpen={onOpen ? () => onOpen(entry.path) : undefined} onHistory={history ? () => setHistoryPath(entry.path) : undefined} onError={setUploadError} />}
       </div>
       {folder && !state.query && <Collapsible.Content asChild><SidebarMenuSub role="group" className={list ? 'border-border!' : undefined}>{renderEntries(entry.path, level + 1)}</SidebarMenuSub></Collapsible.Content>}
@@ -313,11 +335,11 @@ export function FileTreeView({ controller, onOpen, selectedPath, className, uplo
     {uploadError && <p role="alert">{uploadError}</p>}
     <SidebarMenu ref={tree} role="tree" aria-label={labels.tree} className={list ? 'm-0 list-none p-3' : 'm-0 list-none p-2'}>
       {state.query ? <>{state.search.entries.map(entry => renderEntry(entry, 1))}{listingStatus(state.search, '', true)}</> : renderEntries('', 1)}
+      {temporaryEntries.map(entry => renderEntry(entry, 1))}
     </SidebarMenu>
-    {state.uploads.length > 0 && <ul aria-label={labels.uploads} className="file-tree-uploads list-none p-2 text-sm">{state.uploads.map(upload => <li key={upload.operationId} data-operation={upload.operationId}>
-      <span>{upload.path}: {upload.state.kind === 'pending' ? labels.uploading : upload.state.result.kind === 'committed' ? labels.saved : upload.state.result.kind === 'partial' ? labels.unconfirmed : upload.state.result.reason}</span>
-      {upload.state.kind === 'settled' && upload.state.result.kind === 'unknown' && <button type="button" onClick={() => { void controller.reconcile(upload.operationId).catch(error => setUploadError(error instanceof Error ? error.message : labels.uploadStatusUnavailable)); }}>{labels.checkUpload}</button>}
-    </li>)}</ul>}
+    <ul aria-label={labels.uploads} aria-live="polite" aria-relevant="additions text" className="file-tree-announcements">{state.uploads.map(upload => <li key={upload.operationId} data-operation={upload.operationId}>
+      {upload.path}: {upload.state.kind === 'pending' ? labels.uploading : upload.state.result.kind === 'committed' ? labels.saved : upload.state.result.kind === 'partial' ? labels.unconfirmed : upload.state.result.reason}
+    </li>)}{[...localFailures].map(([path, failure]) => <li key={path}>{path}: {failure.reason}</li>)}</ul>
     {history && historyPath !== undefined && <FileHistory key={historyPath} controller={controller} path={historyPath} labels={labels} reload={historyKey} onClose={() => setHistoryPath(undefined)} />}
   </section>;
 }

@@ -301,9 +301,11 @@ author is invented or fetched per row. `variant="plain"` keeps the compact tree.
 The tree supports folder expansion, keyboard navigation, filename search,
 pagination, picker or drop uploads and read-only revision previews. Uploads go to `uploads/`
 by default (`uploadDirectory` overrides it). Duplicate names refuse publication.
-Unknown upload results show **Check upload status** and retain the operation ID;
-checking never republishes the bytes. Keep the local file until the result is
-known. Upload state is in memory and is not a durable cross-reload upload queue.
+Uploads show progress inline on their row. Successful uploads leave no visible
+status log; a visually hidden polite live region announces results. Failures keep
+an inline error and **Retry**. A refused upload retries its captured bytes with the
+same revision condition; an unconfirmed upload only checks its original operation
+and never republishes. Keep the local file until the result is known. Upload state is in memory and is not a durable cross-reload upload queue.
 
 Both components take `locale` (`en` by default, or `fr`; the words are exported as
 `defaultFileTreeLabels` and `frenchFileTreeLabels`) and `labels` to override any word,

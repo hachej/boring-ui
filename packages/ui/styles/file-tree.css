@@ -80,8 +80,14 @@
 [data-boring="file-tree"] .file-tree-empty > svg { width: 1.75rem; height: 1.75rem; margin-bottom: .5rem; color: var(--muted-foreground); stroke-width: 1.25; }
 [data-boring="file-tree"] .file-tree-empty p { margin: 0 0 .5rem; max-width: 24ch; color: var(--muted-foreground); font-size: .75rem; font-weight: 400; line-height: 1.6; }
 [data-boring="file-tree"] .file-tree-status { padding: .5rem; color: var(--muted-foreground); font-size: .75rem; }
-[data-boring="file-tree"] .file-tree-uploads { display: flex; flex-direction: column; gap: .375rem; margin: .25rem 1rem 1rem; padding: .75rem 0 0; border-top: 1px solid var(--border); color: var(--muted-foreground); font-size: .75rem; line-height: 1.5; }
-[data-boring="file-tree"] .file-tree-uploads button { margin-left: .5rem; }
+[data-boring="file-tree"] .file-tree-announcements { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+[data-boring="file-tree"] [data-upload-spinner] { flex-shrink: 0; width: 1rem; height: 1rem; margin: .5rem; color: var(--muted-foreground); animation: boring-file-upload-spin 1s linear infinite; }
+[data-boring="file-tree"] [data-upload-error] { color: var(--destructive); font-size: .6875rem; line-height: 1rem; white-space: normal; overflow-wrap: anywhere; }
+[data-boring="file-tree"] [data-upload-state="failed"] [data-slot="sidebar-menu-button"] { height: auto; min-height: 3rem; }
+[data-boring="file-tree"] [data-upload-state] [data-slot="sidebar-menu-button"]:disabled { opacity: 1; }
+[data-boring="file-tree"] .file-tree-retry { flex-shrink: 0; min-height: 2rem; padding: .5rem; border: 0; border-radius: .375rem; background: transparent; color: var(--foreground); font-size: .75rem; }
+[data-boring="file-tree"] .file-tree-retry:hover { background: var(--accent); }
+@keyframes boring-file-upload-spin { to { transform: rotate(360deg); } }
 [data-boring="file-tree"] > p[role="alert"], [data-boring="file-tree"] > ul[aria-label] { overflow-wrap: anywhere; }
 [data-boring="file-tree"] .file-tree-drop { position: absolute; inset: .25rem; z-index: 5; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: .75rem; padding: 1rem; border: 2px dashed var(--ring); border-radius: .75rem; background: color-mix(in oklch, var(--background) 94%, transparent); color: var(--foreground); font-size: .875rem; pointer-events: none; }
 [data-boring="file-actions"] { z-index: 100; min-width: 11rem; max-width: calc(100vw - 2rem); padding: .25rem; border: 1px solid var(--border, #e4e4e7); border-radius: .625rem; background: var(--popover, var(--background, #fff)); color: var(--popover-foreground, var(--foreground, #18181b)); box-shadow: 0 4px 16px color-mix(in oklch, var(--foreground) 10%, transparent); font-family: inherit; }
@@ -95,9 +101,10 @@
   [data-boring="file-tree"] .file-tree-more[data-state="open"] { opacity: 1; }
 }
 @media (max-width: 640px), (pointer: coarse) {
-  [data-boring="file-tree"] .file-tree-close, [data-boring="file-tree"] .file-tree-more { min-width: 2.75rem; min-height: 2.75rem; }
+  [data-boring="file-tree"] .file-tree-close, [data-boring="file-tree"] .file-tree-more, [data-boring="file-tree"] .file-tree-retry { min-width: 2.75rem; min-height: 2.75rem; }
   [data-boring="file-tree"] .file-tree-upload, [data-boring="file-tree"][data-variant="list"] input[type="search"], [data-boring="file-actions"] [role="menuitem"] { min-height: 2.75rem; }
 }
 @media (prefers-reduced-motion: reduce) {
+  [data-boring="file-tree"] [data-upload-spinner] { animation: none; }
   [data-boring="file-tree"] [data-slot="sidebar-menu-button"], [data-boring="file-tree"] [data-slot="sidebar-menu-button"] > svg { transition: none; }
 }
