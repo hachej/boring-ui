@@ -440,7 +440,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
         </span>
         {avatar && <span data-testid="ambient-avatar" className="flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-full [&>img]:size-full [&>img]:object-cover [&>svg]:size-4">{avatar}</span>}
         <button ref={titleButton} type="button" data-testid="ambient-title" onClick={expand} disabled={expanded} aria-label={expanded ? shownTitle : labels.openChat(shownTitle)}
-          className="min-w-0 max-w-full cursor-pointer truncate rounded-md border-0 bg-transparent px-1 py-1 text-left font-(family-name:--chat-display) text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-default max-sm:py-2.5">{shownTitle}</button>
+          className="min-h-8 min-w-0 max-w-full cursor-pointer truncate rounded-md border-0 bg-transparent px-1 py-1 text-left max-sm:min-h-11 pointer-coarse:min-h-11 font-(family-name:--chat-display) text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-default max-sm:py-2.5">{shownTitle}</button>
         {conversations && <button type="button" data-testid="ambient-switch" aria-label={labels.switchConversation} aria-haspopup="dialog" aria-expanded={picking} title={labels.switchConversation} onClick={() => setPicking(open => !open)}
           className={cn(iconButton, 'size-8 max-sm:size-11 pointer-coarse:size-11')}><icons.switchConversation className="size-3.5" aria-hidden="true" /></button>}
         {expanded ? <span className="flex-1" /> : <button type="button" tabIndex={-1} aria-hidden="true" data-testid="ambient-header-fill" onClick={expand} className="h-full min-w-2 flex-1 cursor-pointer" />}
