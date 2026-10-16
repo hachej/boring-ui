@@ -41,7 +41,7 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
     const controller = createMarkdownController({ source: options.newDocument ? { kind: 'new', target: selectedTarget } : { kind: 'saved', snapshot }, identity, client, instanceId: `editor-${++sequence}`, epoch: 'page', readOnly: options.readOnly });
     const container = document.createElement('div'); document.body.append(container);
     const root = createRoot(container);
-    const render = async (selected = controller) => { await act(async () => { root.render(createElement(MarkdownEditor, { controller: selected, title: 'Notes', ...(options.props ?? {}) })); }); };
+    const render = async (selected = controller) => { await act(async () => { root.render(createElement(MarkdownEditor, { controller: selected, title: 'Notes', autosave: false, ...(options.props ?? {}) })); }); };
     await render();
     t.after(async () => { await act(async () => root.unmount()); controller.dispose(); provider.close(); container.remove(); });
     const button = label => { const found = [...container.querySelectorAll('button')].find(node => (node.getAttribute('aria-label') || node.textContent) === label); assert.ok(found, label); return found; };
@@ -60,9 +60,26 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
     return { controller, client, target: selectedTarget, container, root, render, button, click, input, settled, writes: () => writes, saved: async () => new TextDecoder().decode((await client.read({ target: selectedTarget, revision: { kind: 'latest' } })).snapshot.bytes) };
   }
 
-  await t.test('selection formatting is the default, formats the native selection, and can be pinned without a write', async t => {
+  await t.test('desktop formatting is pinned by default and selection formatting remains an option', async t => {
+    const f = await fixture(t, 'original text\n');
+    assert.ok(f.container.querySelector('.boring-markdown-toolbar [aria-label="Bold"]'), 'desktop toolbar is visible by default');
+    assert.equal(f.writes(), 0);
+  });
+
+  await t.test('autosave debounces edits once, hides Save, and keeps the exact persisted text', async t => {
+    const f = await fixture(t, 'original', { props: { initialMode: 'source', autosave: { delayMs: 30 } } });
+    assert.equal([...f.container.querySelectorAll('button')].find(button => button.textContent === 'Save'), undefined);
+    await f.input('one'); await f.input('two'); await f.input('final');
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 90)); });
+    assert.equal(f.writes(), 1);
+    assert.equal(await f.saved(), 'final');
+    assert.equal(f.controller.getSnapshot().dirty, false);
+    assert.match(f.container.querySelector('[role=status]').textContent, /Saved/);
+  });
+
+  await t.test('selection formatting formats the native selection and can be pinned without a write', async t => {
     let tools;
-    const f = await fixture(t, 'original text\n', { props: { onMountedTools: value => { tools = value; } } });
+    const f = await fixture(t, 'original text\n', { props: { formattingToolbar: 'selection', onMountedTools: value => { tools = value; } } });
     assert.ok(f.container.querySelector('.boring-markdown-toolbar') === null, 'no permanent formatting row by default');
     assert.equal(document.querySelector('.boring-markdown-bubble'), null, 'no menu before a text selection');
     const target = tools.getTarget();

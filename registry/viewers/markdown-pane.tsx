@@ -11,7 +11,7 @@ import { downloadFile, fileNameFor } from './download';
 import { copyText } from '../utils/utils';
 import { ViewerFrame, ViewerToggle } from './viewer-frame';
 import type { ViewerShare, ViewerStatus } from './viewer-frame';
-import { defaultViewerLabels, useViewerText } from './viewer-window';
+import { defaultViewerLabels, useViewerText, useViewerWindow } from './viewer-window';
 import type { ViewerLabels } from './viewer-window';
 
 export interface MarkdownPaneProps {
@@ -25,7 +25,10 @@ export interface MarkdownPaneProps {
   /** Reports the person's choice, so a host that remounts the pane (for a new revision) can start it in the same mode. */
   readonly onModeChange?: (mode: 'rich' | 'source') => void;
   readonly placeholder?: string;
-  /** Selection bubble by default; `pinned` restores the full formatting row on desktop. Phones always use the bubble. */
+  /** Defaults to 1200ms idle autosave; false keeps the Save button. */
+  readonly autosave?: MarkdownEditorProps['autosave'];
+  readonly onAutosaveChange?: MarkdownEditorProps['onAutosaveChange'];
+  /** Pinned by default on desktop. Phones always use the selection bubble. */
   readonly formattingToolbar?: MarkdownEditorProps['formattingToolbar'];
   /** Leading header content, before the title. */
   readonly headerStart?: ReactNode;
@@ -58,9 +61,11 @@ export function markdownStatus(state: ReturnType<MarkdownController['getSnapshot
 }
 
 /** The Markdown editor in the standard viewer frame: mode toggle, Save while there are edits, Share, and Reload, Copy and Download under the "…" menu. */
-export function MarkdownPane({ controller, title: givenTitle, labels: ownLabels, subtitle, target, revision, initialMode = 'rich', onModeChange, placeholder, formattingToolbar = 'selection', headerStart, controls, onRefresh, onShare, onOpenInNewTab, onClose, resolveImage, onMountedTools, testId = 'viewer', titleTestId, className }: MarkdownPaneProps) {
+export function MarkdownPane({ controller, title: givenTitle, labels: ownLabels, subtitle, target, revision, initialMode = 'rich', onModeChange, placeholder, formattingToolbar = 'pinned', autosave: ownAutosave, onAutosaveChange, headerStart, controls, onRefresh, onShare, onOpenInNewTab, onClose, resolveImage, onMountedTools, testId = 'viewer', titleTestId, className }: MarkdownPaneProps) {
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const { labels } = useViewerText(ownLabels);
+  const window = useViewerWindow();
+  const autosave = ownAutosave ?? window?.autosave ?? true;
   const title = givenTitle ?? labels.document;
   const [requested, setRequestedState] = useState<'rich' | 'source'>(initialMode);
   const setRequested = (next: 'rich' | 'source') => { setRequestedState(next); onModeChange?.(next); };
@@ -70,19 +75,20 @@ export function MarkdownPane({ controller, title: givenTitle, labels: ownLabels,
   const unavailable = state.readOnly || state.lifecycle !== 'active';
   const pending = state.save.kind === 'pending';
   const unconfirmed = state.save.kind === 'settled' && state.save.result.kind === 'unknown';
-  const [refused, setRefused] = useState<{ readonly version: number; readonly label: string } | null>(null);
+  const [refused, setRefused] = useState<{ readonly save: typeof state.save; readonly label: string } | null>(null);
+  const report: NonNullable<MarkdownEditorProps['onSaveResult']> = result => {
+    if (result.kind === 'saved') setRefused(null);
+    else if (result.kind !== 'unknown') {
+      const reason = result.reason ?? (result.kind === 'conflict' ? labels.changedElsewhereReason : result.kind);
+      setRefused({ save: controller.getSnapshot().save, label: labels.notSaved(reason.length > 48 ? `${reason.slice(0, 47)}…` : reason) });
+    }
+  };
   const save = () => {
     setRefused(null);
-    const version = controller.getSnapshot().bufferVersion;
-    void controller.flush(controller.actions.selection()).then(result => {
-      if (result.kind === 'denied' || result.kind === 'conflict' || result.kind === 'unavailable' || result.kind === 'file_too_large') {
-        const reason = result.reason ?? (result.kind === 'conflict' ? labels.changedElsewhereReason : result.kind);
-        setRefused({ version, label: labels.notSaved(reason.length > 48 ? `${reason.slice(0, 47)}…` : reason) });
-      }
-    }, () => setRefused({ version, label: labels.notSaved(labels.saveFailedReason) }));
+    void controller.flush(controller.actions.selection()).then(report, () => setRefused({ save: controller.getSnapshot().save, label: labels.notSaved(labels.saveFailedReason) }));
   };
   const filename = useMemo(() => fileNameFor(title, 'md'), [title]);
-  return <ViewerFrame title={title} subtitle={subtitle} headerStart={headerStart} status={refused && refused.version === state.bufferVersion && state.save.kind !== 'pending' ? { label: refused.label, tone: 'warning' } : markdownStatus(state, labels)} target={target} labels={labels} revision={revision} testId={testId} {...(titleTestId ? { titleTestId } : {})} className={className}
+  return <ViewerFrame title={title} subtitle={subtitle} headerStart={headerStart} status={refused && refused.save === state.save && state.save.kind !== 'pending' ? { label: refused.label, tone: 'warning' } : markdownStatus(state, labels)} target={target} labels={labels} revision={revision} testId={testId} {...(titleTestId ? { titleTestId } : {})} className={className}
     onRefresh={onRefresh ?? (() => controller.actions.refresh())} onShare={onShare} onCopy={() => copyText(controller.getSnapshot().text)}
     onDownload={() => downloadFile(filename, controller.getSnapshot().text, 'text/markdown;charset=utf-8')} onOpenInNewTab={onOpenInNewTab} onClose={onClose}
     controls={<>
@@ -91,10 +97,10 @@ export function MarkdownPane({ controller, title: givenTitle, labels: ownLabels,
       <ViewerToggle label={labels.editorMode} value={mode} onChange={setRequested} options={[
         { id: 'rich', label: labels.richText, text: labels.rich, icon: <PencilLineIcon className="size-4" aria-hidden="true" />, disabled: !safety.safe, testId: `${testId}-mode-rich` },
         { id: 'source', label: labels.markdownSource, text: labels.source, icon: <CodeXmlIcon className="size-4" aria-hidden="true" />, testId: `${testId}-mode-source` }]} />
-      {!state.readOnly && state.dirty && <IconButton label={labels.save} variant="default" data-testid={`${testId}-save`} disabled={unavailable || pending || unconfirmed} onClick={save}><SaveIcon className="size-4" aria-hidden="true" /></IconButton>}
+      {autosave === false && !state.readOnly && state.dirty && <IconButton label={labels.save} variant="default" data-testid={`${testId}-save`} disabled={unavailable || pending || unconfirmed} onClick={save}><SaveIcon className="size-4" aria-hidden="true" /></IconButton>}
       {controls}
     </>}>
-    <MarkdownEditor controller={controller} title={title} header={false} formattingToolbar={toolbar} mode={mode} onModeChange={setRequested} onRichSafety={setSafety}
+    <MarkdownEditor controller={controller} title={title} header={false} autosave={autosave} {...(onAutosaveChange ? { onAutosaveChange } : {})} onSaveResult={report} formattingToolbar={toolbar} mode={mode} onModeChange={setRequested} onRichSafety={setSafety}
       {...(placeholder === undefined ? {} : { placeholder })} {...(resolveImage ? { resolveImage } : {})} {...(onMountedTools ? { onMountedTools } : {})} className="boring-markdown-editor" />
   </ViewerFrame>;
 }

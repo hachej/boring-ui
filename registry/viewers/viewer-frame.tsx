@@ -131,6 +131,7 @@ function ManualCopy({ testId, link, text, onClose, labels }: { readonly testId: 
 /** The status as a small dot with the words in a tooltip and for screen readers. The frame shows it only when the state is not plain "Saved". */
 function StatusMark({ status, testId }: { readonly status: ViewerStatus; readonly testId: string }) {
   const tone = status.tone ?? 'neutral';
+  if (status.kind === 'saved') return <span role="status" data-testid={`${testId}-status`} className="shrink-0 text-xs text-muted-foreground">{status.label}</span>;
   return <span role="status" data-testid={`${testId}-status`} data-tone={tone} title={status.label} className="inline-flex size-6 shrink-0 cursor-default items-center justify-center rounded-full">
     <span aria-hidden="true" className={cn('size-2 rounded-full', DOTS[tone], tone === 'warning' && status.label !== 'Unsaved' && 'animate-pulse motion-reduce:animate-none')} />
     <span className="sr-only">{status.label}</span>
@@ -214,7 +215,7 @@ export function ViewerFrame({ title, subtitle, status, target, revision, headerS
           {(subtitle || reading) && <p data-testid={`${testId}-subtitle`} className={cn('m-0 flex min-w-0 items-center gap-x-1.5 text-xs leading-4 whitespace-nowrap text-muted-foreground', compactHeader ? 'pointer-events-none absolute top-full z-30 max-w-full overflow-hidden rounded-md bg-popover px-2 py-1 opacity-0 shadow-sm group-hover/title:opacity-100 max-[641px]:hidden' : 'overflow-hidden')}>{subtitle}{subtitle && reading && <span aria-hidden="true">·</span>}{reading && <span data-testid={`${testId}-readonly`}>{labels.readOnly}</span>}</p>}
         </div>
         {!stacked && toolbar}
-        {status && !reading && status.kind !== 'saved' && status.label !== labels.saved && <span className={compactHeader ? 'max-[641px]:hidden' : undefined}><StatusMark status={status} testId={testId} /></span>}
+        {status && !reading && <StatusMark status={status} testId={testId} />}
         <div className="flex shrink-0 items-center gap-0.5">
           {headerActions(hostActions).map(action => <ActionButton key={action.id} action={action} testId={testId} size="icon-bar" />)}
           {!compactHeader && onShare && <ViewerIconButton label={labels.share} data-testid={`${testId}-share`} disabled={busy === 'share'} onClick={share}><icons.share className="size-4" aria-hidden="true" /></ViewerIconButton>}

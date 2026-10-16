@@ -54,7 +54,7 @@ export interface ArtifactWorkspaceProps {
   readonly panelLabel?: string;
   /**
    * `split` (default): the panel is a full-height column with a hard border and a visible divider. `inset`: the panel is a rounded card inside the
-   * workspace (a margin around it, a border and a soft shadow on the card only) and the divider shows only on hover, focus or drag, so the panel
+   * workspace (a margin around it, a border and a soft shadow on the card only) and the divider remains visible and strengthens on hover, focus or drag, so the panel
    * reads as part of the chat's own surface, as in Claude's artifact panel. Resizing works the same.
    */
   readonly variant?: 'split' | 'inset';
@@ -140,7 +140,10 @@ export function ArtifactWorkspace({ chat, open, panel, onClose, fullscreen: cont
     const history = window.history;
     const enter = () => history.pushState({ ...history.state, boringArtifact: key }, '');
     enter();
-    const back = () => { if (history.state?.boringArtifact !== key && closeRef.current() === false) enter(); };
+    const back = () => {
+      if (history.state?.boringArtifact === key) return;
+      void Promise.resolve(closeRef.current()).then(closed => { if (closed === false) enter(); });
+    };
     window.addEventListener('popstate', back);
     return () => { window.removeEventListener('popstate', back); if (history.state?.boringArtifact === key) history.back(); };
   }, [open, sheet]); // The mounted sheet keeps its own Back entry, independent of renders.
@@ -181,11 +184,11 @@ export function ArtifactWorkspace({ chat, open, panel, onClose, fullscreen: cont
     {open && <>
       {!sheet && !fullscreen && !floating && <div role="separator" tabIndex={0} aria-orientation="vertical" aria-label={labels?.resize ?? 'Resize artifact panel'} aria-valuemin={minPanel} aria-valuemax={max} aria-valuenow={Math.round(width)}
         data-testid="workspace-divider" data-dragging={dragging ? 'true' : undefined}
-        onPointerDown={event => { event.currentTarget.setPointerCapture(event.pointerId); setDragging(true); }} onPointerMove={drag}
+        onPointerDown={event => { event.preventDefault(); event.currentTarget.focus(); event.currentTarget.setPointerCapture(event.pointerId); setDragging(true); }} onPointerMove={drag}
         onPointerUp={release} onPointerCancel={() => { setDragging(false); setFloatHint(false); }}
         onKeyDown={keys} onDoubleClick={() => resize(defaultWidth ?? size - 420)}
-        className="group relative z-10 -mx-1 w-2 shrink-0 cursor-col-resize touch-none outline-none">
-        <span aria-hidden="true" className={cn('absolute inset-y-0 left-1/2 w-px -translate-x-1/2', 'bg-transparent', 'transition-colors group-hover:w-0.5 group-hover:bg-ring/70 group-focus-visible:w-0.5 group-focus-visible:bg-ring motion-reduce:transition-none', dragging && 'w-0.5 bg-ring')} />
+        className="group relative z-10 -mx-1.5 w-3 shrink-0 cursor-col-resize touch-none select-none outline-none">
+        <span aria-hidden="true" className={cn('absolute inset-y-0 left-1/2 w-px -translate-x-1/2', 'bg-border/65', 'transition-colors group-hover:w-0.5 group-hover:bg-ring group-focus-visible:w-0.5 group-focus-visible:bg-ring motion-reduce:transition-none', dragging && 'w-0.5 bg-ring')} />
       </div>}
       <aside onTouchStart={event => { const point = event.touches[0]; swipe.current = sheet && point && point.clientX < 32 ? { x: point.clientX, y: point.clientY } : null; }} onTouchEnd={event => { const point = event.changedTouches[0], start = swipe.current; swipe.current = null; if (point && start && point.clientX - start.x > 80 && Math.abs(point.clientY - start.y) < 60) onClose(); }} data-testid="workspace-panel" aria-label={panelLabel} data-state={entered ? 'open' : 'entering'} data-floating={floating ? 'true' : undefined} data-fullscreen={fullscreen ? 'true' : 'false'} data-sheet={sheet ? 'true' : 'false'}
         style={sheet || fullscreen || floating ? undefined : { width, minWidth: minPanel }}

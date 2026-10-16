@@ -5,6 +5,7 @@
 import { createContext, useContext, useMemo } from 'react';
 import { EllipsisIcon, Maximize2Icon, Minimize2Icon, Share2Icon, XIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
+import type { MarkdownEditorProps } from '@hachej/boring-ui-kit/markdown-editor';
 import type { BlockAction, BlockIcon } from '../button/actions';
 import { withDefaults } from '../utils/utils';
 
@@ -35,7 +36,7 @@ export const defaultViewerLabels = {
   // Save status
   saved: 'Saved',
   unsaved: 'Unsaved',
-  saving: 'Saving',
+  saving: 'Saving…',
   saveUnconfirmed: 'Save unconfirmed',
   changedElsewhere: 'Changed elsewhere',
   closed: 'Closed',
@@ -89,6 +90,8 @@ export type ViewerIcons = typeof defaultViewerIcons;
  * `icons` reach every viewer below. Without a provider nothing changes.
  */
 export interface ViewerWindow {
+  /** Markdown autosave policy for every pane below. Defaults to true, with a 1200ms idle delay. */
+  readonly autosave?: MarkdownEditorProps['autosave'];
   /** Place the existing bar in a host-owned shared header (for example with createPortal). Default: above the viewer body. */
   readonly renderHeader?: ((header: ReactNode) => ReactNode) | undefined;
   /** `stacked` keeps the title and window actions above a separate content toolbar. Default: `inline`, one row. */
