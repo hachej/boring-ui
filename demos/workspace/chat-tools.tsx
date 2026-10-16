@@ -8,7 +8,16 @@ import { Button } from '../../registry/button/button';
 export function ChatTools({ conversations, provider, file, openFile, feed }) {
   const [panel, setPanel] = useState<'history' | 'library' | null>(null);
   const popup = useRef<HTMLDivElement>(null);
+  const libraryTrigger = useRef<HTMLButtonElement>(null);
   const picked = useRef(false);
+  const focusAfterSelection = () => {
+    // Opening a file can hide or unmount the trigger, so resolve focus after that layout commits.
+    requestAnimationFrame(() => {
+      const trigger = libraryTrigger.current;
+      const target = trigger?.checkVisibility() ? trigger : document.querySelector<HTMLElement>('[data-testid=library-document]');
+      target?.focus({ preventScroll: true });
+    });
+  };
   useEffect(() => {
     if (panel !== 'library' || !provider) return;
     let frame = 0;
@@ -22,7 +31,7 @@ export function ChatTools({ conversations, provider, file, openFile, feed }) {
   }, [panel, provider]);
   return <div className="flex shrink-0 items-center gap-0.5" data-testid="chat-tools">
     {([['history', 'History', HistoryIcon], ['library', 'Library', FolderOpenIcon]] as const).map(([id, title, Icon]) => <Popover.Root key={id} open={panel === id} onOpenChange={open => { if (open) picked.current = false; setPanel(current => open ? id : current === id ? null : current); }}>
-      <Popover.Trigger render={<Button size="icon" variant="ghost" />} data-testid={`chat-action-${id}`} aria-label={title} title={title} className="size-11 text-muted-foreground"><Icon className="size-4" aria-hidden="true" /></Popover.Trigger>
+      <Popover.Trigger ref={id === 'library' ? libraryTrigger : undefined} render={<Button size="icon" variant="ghost" />} data-testid={`chat-action-${id}`} aria-label={title} title={title} className="size-11 text-muted-foreground"><Icon className="size-4" aria-hidden="true" /></Popover.Trigger>
       <Popover.Portal>
         <Popover.Positioner side="bottom" align="end" sideOffset={8} collisionPadding={8} className="z-[70]">
           <Popover.Popup ref={panel === id ? popup : undefined} data-testid={id === 'history' ? 'conversations' : 'library-popover'}
@@ -35,7 +44,7 @@ export function ChatTools({ conversations, provider, file, openFile, feed }) {
               {id === 'history' && conversations?.onNew && <Button size="sm" variant="outline" data-testid="conversation-new" onClick={() => { conversations.onNew(); setPanel(null); }}><PlusIcon className="size-3.5" aria-hidden="true" />New</Button>}
               <Popover.Close render={<Button size="icon" variant="ghost" />} aria-label={`Close ${title}`} className="size-11"><XIcon className="size-4" aria-hidden="true" /></Popover.Close>
             </header>
-            {id === 'history' ? conversations ? <ConversationList conversations={conversations} onPicked={() => setPanel(null)} /> : <p role="status" className="p-4 text-sm text-muted-foreground">Loading…</p> : provider ? <div className="min-h-48 flex-1 overflow-auto"><FileTree variant="list" refresh={false} upload={false} history={false} revisionProvider={provider} refreshKey={feed} selectedPath={file} onOpen={path => { if (openFile(path)) { picked.current = true; setPanel(null); } }} /></div> : <p role="status" className="p-4 text-sm text-muted-foreground">Loading…</p>}
+            {id === 'history' ? conversations ? <ConversationList conversations={conversations} onPicked={() => setPanel(null)} /> : <p role="status" className="p-4 text-sm text-muted-foreground">Loading…</p> : provider ? <div className="min-h-48 flex-1 overflow-auto"><FileTree variant="list" refresh={false} upload={false} history={false} revisionProvider={provider} refreshKey={feed} selectedPath={file} onOpen={path => { if (openFile(path)) { picked.current = true; setPanel(null); focusAfterSelection(); } }} /></div> : <p role="status" className="p-4 text-sm text-muted-foreground">Loading…</p>}
           </Popover.Popup>
         </Popover.Positioner>
       </Popover.Portal>

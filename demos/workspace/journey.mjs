@@ -80,6 +80,23 @@ try {
     await browser.click(q('[data-testid=chat-action-library]'));
     await browser.until('the Library search is ready before choosing a row', `!!${q('[data-testid=library-popover]')} && document.activeElement?.type === 'search' && !!document.activeElement.closest('[data-testid=library-popover]')`, 10000);
   };
+  const choosePolicyWithKeyboard = async () => {
+    const policy = q('[role=treeitem][data-path="Policies/AP policy.md"]');
+    if (!(await browser.evaluate(`!!${policy}`))) {
+      await browser.until('Policies folder', `!!${q('[role=treeitem][data-path="Policies"]')}`, 10000);
+      await browser.evaluate(`${q('[role=treeitem][data-path="Policies"]')}.focus()`);
+      await browser.press('ArrowRight');
+      await browser.until('policy listed', `!!${policy}`, 10000);
+    }
+    await browser.evaluate(`${policy}.focus()`);
+    await browser.press('Enter');
+    await browser.until('keyboard Library choice opens the policy and closes the popover', `${q('[data-testid=library-document]')}?.dataset.path === 'Policies/AP policy.md' && !${q('[data-testid=library-popover]')}`, 10000);
+  };
+  const librarySelectionFocus = async testId => {
+    const target = q(`[data-testid="${testId}"]`);
+    await browser.until(`keyboard Library selection focuses ${testId}`, `document.activeElement === ${target} && ${target}?.checkVisibility()`, 5000);
+    assert.equal(await browser.evaluate('document.activeElement?.dataset.testid'), testId);
+  };
   const dockAgent = async () => {
     if (await browser.evaluate(placement) === 'floating') await browser.click(q('[data-testid=ambient-dock]'));
     await browser.until('docked', `${placement} === 'docked'`, 10000);
@@ -130,14 +147,26 @@ try {
     await headerShots('docked-empty');
   });
 
+  await step('keyboard Library selection and re-selection restore focus to the visible top-bar icon', async () => {
+    await library();
+    await choosePolicyWithKeyboard();
+    await librarySelectionFocus('chat-action-library');
+    await browser.evaluate(`window.__keyboardDocument = ${q('[data-testid=library-document]')}; void 0;`);
+    await library();
+    await choosePolicyWithKeyboard();
+    await librarySelectionFocus('chat-action-library');
+    assert.equal(await browser.evaluate(`window.__keyboardDocument === ${q('[data-testid=library-document]')}`), true, 're-selecting the same file keeps its viewer');
+    await browser.click(q('[data-testid=library-document] [data-testid=viewer-close]'));
+    await browser.until('the policy closed before the phone flow', `!${q('[data-testid=library-document]')}`, 5000);
+  });
+
   await step('phone Agent page: a Library file replaces chat, keeps its header in bounds, and Back restores the same conversation', async () => {
     await browser.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
     await browser.until('phone page', `${placement} === 'page' && ${rect('[data-dock=chat]')}.w >= 388`, 10000);
     await browser.evaluate(`window.__phoneComposer = ${INPUT}; window.__phoneTranscript = ${q('[data-testid=transcript]')}; void 0;`);
     await library();
-    await browser.click(q('[role=treeitem][data-path="Policies"]'));
-    await browser.until('phone policy listed', `!!${q('[role=treeitem][data-path="Policies/AP policy.md"]')}`, 10000);
-    await browser.click(q('[role=treeitem][data-path="Policies/AP policy.md"]'));
+    await choosePolicyWithKeyboard();
+    await librarySelectionFocus('library-document');
     await browser.until('phone page file loaded', `!!${q('[data-testid=library-document]')} && !${q('[data-sidebar=sidebar][data-mobile=true]')}`, 15000);
     assert.equal(await browser.evaluate(placement), 'page', 'opening a file does not float the Agent page');
     const header = await browser.evaluate(`(() => { const buttons = [...document.querySelectorAll('[data-testid=library-document] [data-testid=viewer-bar] button')]; return { back: !!document.querySelector('[data-testid=file-back]'), controls: buttons.map(button => { const r=button.getBoundingClientRect(); return { id:button.dataset.testid, inside:r.left>=0 && r.top>=0 && r.right<=innerWidth && r.bottom<=innerHeight && r.width>0 }; }), chatVisible: ${INPUT}.checkVisibility(), overflow: document.documentElement.scrollWidth > innerWidth }; })()`);
@@ -439,9 +468,8 @@ try {
     const popover = await browser.evaluate(rect('[data-testid=library-popover]')), icon = await browser.evaluate(rect('[data-testid=chat-action-library]'));
     assert.ok(popover.x <= icon.x && popover.right >= icon.right - 1 && popover.y >= 0, 'Library is anchored to the floating top-bar icon');
     // A pick opens the file IN PLACE of the floating chat (same window, a back button); back returns to the conversation.
-    await browser.click(q('[role=treeitem][data-path="Policies"]'));
-    await browser.until('the policy in the tree', `!!${q('[role=treeitem][data-path="Policies/AP policy.md"]')}`, 15000);
-    await browser.click(q('[role=treeitem][data-path="Policies/AP policy.md"]'));
+    await choosePolicyWithKeyboard();
+    await librarySelectionFocus('library-document');
     await browser.until('the viewer replaces the floating chat without unmounting it', `!!${q('[data-testid=floating-viewer] [data-testid=library-document]')} && !${q('[data-boring=ambient-chat]')}.checkVisibility()`, 15000);
     assert.equal(await browser.evaluate(viewing), 'Supplier linden-print', 'the app did not move');
     assert.ok(await browser.evaluate(`!${q('[data-testid=right-column] [data-testid=library-document]')}`), 'not in the app column');
