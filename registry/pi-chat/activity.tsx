@@ -65,7 +65,7 @@ export function ActivityBlock({ steps, state, streaming, developer, onOpenImage 
         <TraceLine {...(state === 'running' ? { status: 'running' } : state === 'failed' ? { status: 'error' } : {})}>
           <TraceIcon><Icon className={state === 'running' ? 'animate-spin motion-reduce:animate-none' : undefined} /></TraceIcon>
           <TraceTitle data-testid="activity-label">{header(steps, state, streaming, labels)}</TraceTitle>
-          <TraceDescription data-testid="activity-count" className="text-xs">{labels.steps(steps.length)}</TraceDescription>
+          <TraceDescription data-testid="activity-count" className="text-xs text-muted-foreground">{labels.steps(steps.length)}</TraceDescription>
         </TraceLine>
       </TraceCollapsibleTrigger>
       <TraceCollapsibleContent>

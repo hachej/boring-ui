@@ -113,7 +113,7 @@ function InvoiceSummary({ cell }) {
   const decide = (action, extra = {}) => act(action, { invoice: invoice.id, expected: invoice.revision, ...extra });
   return <section data-testid="invoice-summary" data-invoice={invoice.id} className={`${card} @container`} aria-label={`Invoice ${invoice.id}`}>
     <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-      <div className="flex items-center gap-3"><Mark name={invoice.supplierName} /><div><h2 className="text-base font-semibold"><button type="button" data-testid="open-supplier" className="underline-offset-4 hover:underline" onClick={() => act('open_supplier', { id: invoice.supplier })}>{invoice.supplierName}</button></h2><p className="text-sm text-muted-foreground">{invoice.id} · {invoice.number} · {invoice.description}</p></div></div>
+      <div className="flex items-center gap-3"><Mark name={invoice.supplierName} /><div><h2 className="text-base font-semibold"><button type="button" data-testid="open-supplier" className="inline-flex min-h-8 items-center underline-offset-4 hover:underline max-sm:min-h-11 pointer-coarse:min-h-11" onClick={() => act('open_supplier', { id: invoice.supplier })}>{invoice.supplierName}</button></h2><p className="text-sm text-muted-foreground">{invoice.id} · {invoice.number} · {invoice.description}</p></div></div>
       <div><Status value={invoice.status} /><span data-testid="invoice-status" className="sr-only">{invoice.status}</span></div>
     </div>
     <dl className="grid grid-cols-2 gap-x-6 gap-y-3 @[36rem]:grid-cols-4 [&_dd]:m-0">
@@ -138,7 +138,7 @@ function DuplicateAlert({ cell }) {
   if (!matches.length) return null;
   return <section data-testid="duplicate-alert" role="note" className="rounded-lg border border-destructive/40 bg-destructive/5 p-4" aria-label="Possible duplicate">
     <h2 className="mb-1 text-sm font-semibold text-destructive">Possible duplicate</h2>
-    <p className="text-sm">Same supplier, PO and amount as {matches.map((match, index) => <span key={match.id}>{index ? ', ' : ''}<button type="button" className="font-medium underline underline-offset-4" onClick={() => act('open_invoice', { id: match.id })}>{match.id}</button></span>)}.</p>
+    <p className="text-sm">Same supplier, PO and amount as {matches.map((match, index) => <span key={match.id}>{index ? ', ' : ''}<button type="button" className="inline-flex min-h-8 items-center font-medium underline underline-offset-4 max-sm:min-h-11 pointer-coarse:min-h-11" onClick={() => act('open_invoice', { id: match.id })}>{match.id}</button></span>)}.</p>
   </section>;
 }
 

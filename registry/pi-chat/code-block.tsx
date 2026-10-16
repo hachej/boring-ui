@@ -14,7 +14,7 @@ export function CopyButton({ text, label: given, onCopy, className, iconOnly = f
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
   const settle = (next: 'copied' | 'failed') => { setState(next); clearTimeout(timer.current); timer.current = setTimeout(() => setState('idle'), 1600); };
-  return <Button size="sm" className={cn('max-sm:min-w-10 pointer-coarse:min-w-10', className)} data-testid="copy" aria-label={label} title={state === 'failed' ? labels.copyFailed : label}
+  return <Button size="sm" className={cn('max-sm:min-w-11 pointer-coarse:min-w-11', className)} data-testid="copy" aria-label={label} title={state === 'failed' ? labels.copyFailed : label}
     onClick={() => { copyText(text, onCopy).then(() => settle('copied'), () => settle('failed')); }}>
     {state === 'copied' ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
     <span className={iconOnly ? 'sr-only' : 'sr-only md:not-sr-only'}>{state === 'copied' ? labels.copied : state === 'failed' ? labels.failed : label}</span>
@@ -26,9 +26,9 @@ export function CodeBlock({ code, language, onCopy }: { readonly code: string; r
   const { labels } = useChatText();
   const label = language?.trim().split(/\s+/)[0]?.slice(0, 24);
   return <div data-testid="code-block" className="my-3 overflow-hidden rounded-lg border border-border bg-muted/40 text-foreground">
-    <div className="flex h-8 items-center justify-between border-b border-border bg-muted/60 pr-1 pl-3">
+    <div className="flex min-h-8 items-center justify-between border-b border-border bg-muted/60 pr-1 pl-3">
       <span data-testid="code-language" className="font-mono text-xs tracking-wide text-muted-foreground lowercase">{label || 'text'}</span>
-      <CopyButton text={code} label={labels.copyCode} {...(onCopy ? { onCopy } : {})} className="h-6 text-xs text-muted-foreground" />
+      <CopyButton text={code} label={labels.copyCode} {...(onCopy ? { onCopy } : {})} className="text-xs text-muted-foreground" />
     </div>
     <pre className="m-0 overflow-x-auto p-3 font-mono text-xs leading-5"><code>{code}</code></pre>
   </div>;
