@@ -77,6 +77,24 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
     assert.match(f.container.querySelector('[role=status]').textContent, /Saved/);
   });
 
+  await t.test('default autosave waits about 1200ms and visibilitychange flushes immediately', async t => {
+    const f = await fixture(t, 'original', { props: { initialMode: 'source', autosave: true } });
+    await f.input('default delay');
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 950)); });
+    assert.equal(f.writes(), 0, 'the default does not save early');
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 400)); });
+    assert.equal(f.writes(), 1); assert.equal(await f.saved(), 'default delay');
+    await f.input('saved when hidden');
+    const descriptor = Object.getOwnPropertyDescriptor(document, 'visibilityState');
+    try {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+      await act(async () => { document.dispatchEvent(new window.Event('visibilitychange')); await new Promise(resolve => setTimeout(resolve, 20)); });
+      await f.settled(); assert.equal(await f.saved(), 'saved when hidden');
+    } finally {
+      if (descriptor) Object.defineProperty(document, 'visibilityState', descriptor); else delete document.visibilityState;
+    }
+  });
+
   await t.test('autosave queues edits during a flush and Ctrl+S never starts a competing write', async t => {
     const started = Promise.withResolvers(), release = Promise.withResolvers();
     let active = 0, maxActive = 0, calls = 0;
@@ -126,6 +144,17 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
       assert.match(f.container.textContent, /Fictional refusal/);
       assert.equal(await f.saved(), 'original');
     }
+  });
+
+  await t.test('explicit refresh resolves a temporary refusal and resumes autosave without replacing the buffer', async t => {
+    let available = false;
+    const f = await fixture(t, 'original', { props: { initialMode: 'source', autosave: { delayMs: 100 } }, publish: (request, commit) => available ? commit() : Promise.resolve({ kind: 'unavailable', reason: 'Fictional offline provider' }) });
+    await f.input('retained edit');
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 180)); });
+    assert.equal(f.writes(), 1); assert.equal(await f.saved(), 'original');
+    available = true;
+    await act(async () => { await f.controller.actions.refresh(); await new Promise(resolve => setTimeout(resolve, 180)); });
+    assert.equal(await f.saved(), 'retained edit'); assert.equal(f.writes(), 2);
   });
 
   await t.test('blur, page hide, unmount and switching controllers flush before the idle delay', async t => {

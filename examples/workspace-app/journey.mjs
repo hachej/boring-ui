@@ -142,6 +142,11 @@ try {
     await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: divider.x - 50, y: divider.y, button: 'left', buttons: 1 });
     await browser.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: divider.x - 50, y: divider.y, button: 'left', clickCount: 1 });
     await browser.until('divider drag resizes the artifact', `Number(${q('[data-testid=workspace-divider]')}.getAttribute('aria-valuenow')) > ${divider.before}`, 5000);
+    await browser.evaluate(`${q('[data-testid=workspace-divider]')}.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); ${q('[data-testid=workspace-divider]')}.focus()`);
+    await browser.until('double click resets the artifact width', `Number(${q('[data-testid=workspace-divider]')}.getAttribute('aria-valuenow')) === ${divider.before}`, 5000);
+    await browser.press('ArrowRight');
+    await browser.until('keyboard resizes the artifact', `Number(${q('[data-testid=workspace-divider]')}.getAttribute('aria-valuenow')) === ${divider.before - 24}`, 5000);
+    assert.equal(await browser.evaluate(`${q('[data-testid=workspace-divider] span')}.getBoundingClientRect().width`), 2, 'focused divider strengthens');
     await browser.evaluate(`${q('[data-testid=workspace-divider]')}.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
     await browser.click(q('[data-testid=artifact-mode-source]'));
     await browser.type(q('[data-testid=artifact-panel] textarea'), '\nA fictional desktop autosave.');
@@ -359,7 +364,7 @@ try {
     await browser.until('editable file in Library', `!!${item}`, 5000);
     await browser.click(item);
     await browser.until('editable phone file', `!!${q('[data-testid=file-viewer] [data-testid=viewer-more]')}`, 10000);
-    await browser.click(q('[data-testid=viewer-more]'));
+    await browser.tap(q('[data-testid=file-viewer] [data-testid=viewer-more]'));
     await browser.until('source action in overflow', `!!${q('[data-testid=viewer-more-list] [data-testid=viewer-mode-source]')}`, 5000);
     await browser.click(q('[data-testid=viewer-more-list] [data-testid=viewer-mode-source]'));
     const source = q('[data-testid=file-viewer] textarea');
@@ -481,6 +486,7 @@ try {
   assert.deepEqual(browser.problems, [], 'no page errors');
   console.log(`PASS workspace-app journey; screenshots in ${evidence}`);
 } finally {
+  await browser?.screenshot('last-state.png');
   await browser?.close();
   await app.close();
 }

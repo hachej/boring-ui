@@ -210,7 +210,7 @@ function MarkdownEditorSession({ controller, title = 'Document', initialMode = '
   const save = () => {
     setError(null);
     if (saving.enabled) void saving.manual();
-    else void controller.flush(controller.actions.selection()).then(report);
+    else void controller.flush(controller.actions.selection()).then(report, () => { if (active.current === controller) setError('The save could not be completed. Your text is still available.'); });
   };
   const run = (operation: () => Promise<unknown>) => {
     setError(null);
