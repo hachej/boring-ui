@@ -155,6 +155,7 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
     available = true;
     await act(async () => { await f.controller.actions.refresh(); await new Promise(resolve => setTimeout(resolve, 180)); });
     assert.equal(await f.saved(), 'retained edit'); assert.equal(f.writes(), 2);
+    assert.doesNotMatch(f.container.textContent, /Fictional offline provider/);
   });
 
   await t.test('blur, page hide, unmount and switching controllers flush before the idle delay', async t => {

@@ -203,6 +203,7 @@ function MarkdownEditorSession({ controller, title = 'Document', initialMode = '
   const report = (result: unknown) => {
     if (active.current !== controller || !result || typeof result !== 'object') return;
     const { kind, reason } = result as { kind?: unknown; reason?: unknown };
+    if (kind === 'saved') setError(null);
     if (kind === 'denied' || kind === 'conflict' || kind === 'unavailable' || kind === 'file_too_large') setError(typeof reason === 'string' && reason ? reason : kind === 'conflict' ? 'The document changed elsewhere. Your text is still available.' : 'The document could not be saved. Your text is still available.');
   };
   const saving = useMarkdownAutosave(controller, autosave, result => { report(result); onSaveResult?.(result); });

@@ -238,6 +238,24 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     return { controller, client, read, publish, target };
   }
 
+  await t.test('standalone Markdown close awaits autosave and refuses to close over a failed save', async t => {
+    const d = await documents(t, 'text/markdown', 'original');
+    let closed = 0;
+    const view = await mount(t, h(markdownPane.MarkdownPane, { controller: d.controller, initialMode: 'source', onClose: () => { assert.equal(d.controller.getSnapshot().dirty, false); closed++; } }));
+    assert.equal(view.q('[data-testid="viewer-save"]'), null, 'autosave is the pane default');
+    const input = async text => act(async () => { const area = view.q('textarea'); Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(area, text); area.dispatchEvent(new window.Event('input', { bubbles: true })); });
+    await input('flushed before standalone close');
+    await view.click('[data-testid="viewer-close"]'); await settle();
+    assert.equal(closed, 1);
+    assert.equal(new TextDecoder().decode((await d.read()).snapshot.bytes), 'flushed before standalone close');
+    d.client.publish = async () => ({ kind: 'unavailable', reason: 'Fictional offline provider' });
+    await input('keep this failed draft');
+    await view.click('[data-testid="viewer-close"]'); await settle();
+    assert.equal(closed, 1, 'a bare pane never drops a draft when its save fails');
+    assert.equal(view.q('textarea').value, 'keep this failed draft');
+    assert.match(view.q('[data-testid="viewer-status"]').textContent, /Not saved/);
+  });
+
   await t.test('the Markdown pane puts mode, Save and status in the bar; Refresh never drops unsaved edits; unsafe documents stay in source', async t => {
     const d = await documents(t, 'text/markdown', '# Plan\n\n- [x] done\n');
     const view = await mount(t, h(markdownPane.MarkdownPane, { controller: d.controller, title: 'Plan', subtitle: 'Markdown', autosave: false, onShare() {} }));

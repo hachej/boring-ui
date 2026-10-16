@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { CodeXmlIcon, PencilLineIcon, SaveIcon } from 'lucide-react';
 import { MarkdownEditor } from '@hachej/boring-ui-kit/markdown-editor';
@@ -66,6 +66,12 @@ export function MarkdownPane({ controller, title: givenTitle, labels: ownLabels,
   const { labels } = useViewerText(ownLabels);
   const window = useViewerWindow();
   const autosave = ownAutosave ?? window?.autosave ?? true;
+  const flush = useRef<(() => Promise<boolean>) | null>(null);
+  const registerAutosave = useCallback((save: (() => Promise<boolean>) | null) => { flush.current = save; onAutosaveChange?.(save); }, [onAutosaveChange]);
+  const close = onClose ? async () => {
+    if (autosave !== false && flush.current && !await flush.current() && !onAutosaveChange) return false;
+    return onClose();
+  } : undefined;
   const title = givenTitle ?? labels.document;
   const [requested, setRequestedState] = useState<'rich' | 'source'>(initialMode);
   const setRequested = (next: 'rich' | 'source') => { setRequestedState(next); onModeChange?.(next); };
@@ -90,7 +96,7 @@ export function MarkdownPane({ controller, title: givenTitle, labels: ownLabels,
   const filename = useMemo(() => fileNameFor(title, 'md'), [title]);
   return <ViewerFrame showSavedStatus title={title} subtitle={subtitle} headerStart={headerStart} status={refused && refused.save === state.save && state.save.kind !== 'pending' ? { label: refused.label, tone: 'warning' } : markdownStatus(state, labels)} target={target} labels={labels} revision={revision} testId={testId} {...(titleTestId ? { titleTestId } : {})} className={className}
     onRefresh={onRefresh ?? (() => controller.actions.refresh())} onShare={onShare} onCopy={() => copyText(controller.getSnapshot().text)}
-    onDownload={() => downloadFile(filename, controller.getSnapshot().text, 'text/markdown;charset=utf-8')} onOpenInNewTab={onOpenInNewTab} onClose={onClose}
+    onDownload={() => downloadFile(filename, controller.getSnapshot().text, 'text/markdown;charset=utf-8')} onOpenInNewTab={onOpenInNewTab} onClose={close}
     controls={<>
       {mode === 'rich' && <button type="button" className="boring-markdown-pin max-[640px]:hidden" aria-label="Pin formatting toolbar" title="Pin formatting toolbar" aria-pressed={toolbar === 'pinned'}
         onClick={() => setToolbar(value => value === 'pinned' ? 'selection' : 'pinned')}>Aa</button>}
@@ -100,7 +106,7 @@ export function MarkdownPane({ controller, title: givenTitle, labels: ownLabels,
       {autosave === false && !state.readOnly && state.dirty && <IconButton label={labels.save} variant="default" data-testid={`${testId}-save`} disabled={unavailable || pending || unconfirmed} onClick={save}><SaveIcon className="size-4" aria-hidden="true" /></IconButton>}
       {controls}
     </>}>
-    <MarkdownEditor controller={controller} title={title} header={false} autosave={autosave} {...(onAutosaveChange ? { onAutosaveChange } : {})} onSaveResult={report} formattingToolbar={toolbar} mode={mode} onModeChange={setRequested} onRichSafety={setSafety}
+    <MarkdownEditor controller={controller} title={title} header={false} autosave={autosave} onAutosaveChange={registerAutosave} onSaveResult={report} formattingToolbar={toolbar} mode={mode} onModeChange={setRequested} onRichSafety={setSafety}
       {...(placeholder === undefined ? {} : { placeholder })} {...(resolveImage ? { resolveImage } : {})} {...(onMountedTools ? { onMountedTools } : {})} className="boring-markdown-editor" />
   </ViewerFrame>;
 }
