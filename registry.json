@@ -108,7 +108,8 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "@boring-ui/utils"
+        "@boring-ui/utils",
+        "dropdown-menu"
       ],
       "files": [
         {

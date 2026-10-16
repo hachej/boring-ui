@@ -34,6 +34,19 @@ test('Markdown renders fenced code as a labelled, copyable block', async () => {
   assert.match(html, /print\(&quot;hi&quot;\)/);
 });
 
+test('settled reply actions are icon-only, named and sized for pointer and touch', async () => {
+  const { RowView } = await load('reply-actions', 'message.tsx');
+  const row = { key: 'reply', type: 'assistant', parts: [{ kind: 'text', key: 'text', text: 'A fictional reply.' }], text: 'A fictional reply.', streaming: false, entryId: '4' };
+  const html = renderToStaticMarkup(createElement(RowView, { row, context: { developer: false, messageActions: () => [{ id: 'quote', label: 'Quote this reply', onSelect() {} }], onFork() {} } }));
+  assert.match(html, /aria-label="Copy response"/);
+  assert.match(html, /title="Copy response"/);
+  assert.match(html, /class="sr-only">Copy response<\/span>/);
+  assert.match(html, /size-8[^\"]*max-sm:size-11[^\"]*pointer-coarse:size-11/);
+  assert.match(html, /aria-label="Quote this reply"/);
+  assert.doesNotMatch(html, />Quote this reply<\/span>/);
+  assert.match(html, /group-hover\/message:opacity-100/);
+});
+
 const user = text => ({ role: 'user', content: text, timestamp: 0 });
 const call = (id, name, args = {}) => ({ type: 'toolCall', id, name, arguments: args });
 const assistant = (content, extra = {}) => ({ role: 'assistant', content, api: 'x', provider: 'x', model: 'x', usage: {}, stopReason: 'stop', timestamp: 0, ...extra });

@@ -187,7 +187,7 @@ export function RowView({ row, context }: { readonly row: Row; readonly context:
       const active = row.active === true || row.streaming;
       const lastText = [...row.parts].reverse().find(part => part.kind === 'text');
       const host = settled && row.text && context.messageActions
-        ? <BlockActions actions={context.messageActions(replyRef(row))} testId="reply-action" menuLabel={labels.moreActions} className="text-muted-foreground" />
+        ? <BlockActions iconOnly actions={context.messageActions(replyRef(row))} testId="reply-action" menuLabel={labels.moreActions} className="text-muted-foreground" />
         : null;
       return <article data-row-id={row.key} data-role="assistant" data-streaming={row.streaming ? 'true' : undefined} className="group/message">
         <div className="space-y-3">
@@ -218,7 +218,7 @@ export function RowView({ row, context }: { readonly row: Row; readonly context:
         {row.stopReason === 'aborted' && <Notice tone="muted" testid="interrupted" icon={<CircleSlashIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />}>{labels.interrupted}</Notice>}
         {settled && row.text && context.replyActions?.({ key: row.key, text: row.text, timestamp: row.timestamp }, host)}
         {settled && row.text && !context.replyActions && <div className="mt-1 -ml-2 flex opacity-0 transition-opacity group-focus-within/message:opacity-100 group-hover/message:opacity-100 pointer-coarse:opacity-100 max-sm:opacity-100 motion-reduce:transition-none">
-          <CopyButton text={row.text} label={labels.copyResponse} {...(context.onCopy ? { onCopy: context.onCopy } : {})} className="text-muted-foreground" />
+          <CopyButton iconOnly text={row.text} label={labels.copyResponse} {...(context.onCopy ? { onCopy: context.onCopy } : {})} className="text-muted-foreground" />
           {context.onFork && row.entryId && <Button size="icon-sm" variant="ghost" aria-label={labels.fork} title={labels.forkHint} data-testid="fork-reply"
             className="text-muted-foreground" onClick={() => context.onFork!(row.entryId!)}><icons.fork className="size-3.5" aria-hidden="true" /></Button>}
           {host}</div>}

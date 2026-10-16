@@ -199,12 +199,12 @@ export function ViewerFrame({ title, subtitle, status, showSavedStatus = false, 
   const menuItems: ViewerMenuItem[] = ([
     ...(compactHeader && onShare ? [{ id: 'share', label: labels.share, icon: <icons.share className="size-4" />, onSelect: share }] : []),
     ...(compactHeader && host?.onFullscreenChange ? [{ id: 'fullscreen', label: host.fullscreen ? labels.exitFullscreen : labels.enterFullscreen, icon: <icons.enterFullscreen className="size-4" />, onSelect: () => host.onFullscreenChange!(!host.fullscreen) }] : []),
-    ...(onRefresh ? [{ id: 'refresh', label: labels.reload, icon: <RefreshCwIcon className="size-4" />, disabled: busy === 'refresh', onSelect: refresh }] : []),
+    ...(onRefresh ? [{ id: 'refresh', separatorBefore: true, label: labels.reload, icon: <RefreshCwIcon className="size-4" />, disabled: busy === 'refresh', onSelect: refresh }] : []),
     ...(onCopy ? [{ id: 'copy', label: labels.copy, icon: copied ? <CheckIcon className="size-4" /> : <CopyIcon className="size-4" />, onSelect: copy }] : []),
     ...(onDownload ? [{ id: 'download', label: labels.download, icon: <DownloadIcon className="size-4" />, onSelect: () => run(onDownload) }] : []),
     ...(onOpenInNewTab ? [{ id: 'open', label: labels.openInNewTab, icon: <ExternalLinkIcon className="size-4" />, onSelect: () => run(onOpenInNewTab) }] : []),
-    ...(menu ?? []),
-    ...menuActions(hostActions).map(action => actionMenuItem(action, testId)),
+    ...(menu ?? []).map((item, index) => ({ ...item, separatorBefore: index === 0 || item.separatorBefore })),
+    ...menuActions(hostActions).map((action, index) => ({ ...actionMenuItem(action, testId), separatorBefore: index === 0 })),
   ] as ViewerMenuItem[]).map(entry => ({ ...entry, testId: entry.testId ?? `${testId}-${entry.id}` }));
 
   const stacked = !compactHeader && host?.headerLayout === 'stacked';

@@ -29,18 +29,18 @@ try {
   const popup = find('viewer-menu-list');
   assert.equal(container.contains(popup), false, 'viewer menu escapes its clipped container');
   assert.equal(find('menu-child').textContent, 'Retained versions');
-  assert.equal(document.activeElement, find('viewer-menu-current'), 'checked choice gets initial focus');
+  assert.equal(document.activeElement === find('viewer-menu-current'), true, 'first enabled choice gets native initial focus');
   assert.equal(find('viewer-menu-current').getAttribute('role'), 'menuitemradio');
   assert.equal(find('viewer-menu-copy').getAttribute('role'), 'menuitem');
   await key(document.activeElement, 'ArrowDown');
-  assert.equal(document.activeElement, find('viewer-menu-older'));
+  assert.equal(document.activeElement === find('viewer-menu-older'), true);
   await key(document.activeElement, 'End');
-  assert.equal(document.activeElement, find('viewer-menu-copy'));
+  assert.equal(document.activeElement === find('viewer-menu-copy'), true);
   await key(document.activeElement, 'Home');
-  assert.equal(document.activeElement, find('viewer-menu-current'), 'Home skips disabled rows');
+  assert.equal(document.activeElement === find('viewer-menu-current'), true, 'Home skips disabled rows');
   await key(document.activeElement, 'Escape');
   assert.equal(document.querySelector('[data-testid="viewer-menu-list"]'), null);
-  assert.equal(document.activeElement, find('viewer-menu'));
+  assert.equal(document.activeElement === find('viewer-menu'), true);
   await click('viewer-menu'); await click('viewer-menu-copy');
   assert.equal(selected, 'copy');
   await click('viewer-menu'); await key(document.activeElement, 'Tab');
@@ -54,7 +54,7 @@ try {
   const versions = [...document.querySelectorAll('[data-testid="viewer-versions-item"]')];
   assert.equal(versions.length, 2);
   assert.equal(versions[1].getAttribute('aria-checked'), 'true');
-  assert.match(versions[0].textContent, /Latest/);
+  assert.match(versions[1].textContent, /Current/);
   await act(async () => versions[0].click());
   assert.equal(selected, 'v2');
 
@@ -66,7 +66,7 @@ try {
   await click('viewer-menu'); await click('viewer-versions');
   await key(document.activeElement, 'Home');
   const nested = document.querySelector('[data-testid="viewer-versions-list"] [data-item="v2"]');
-  assert.equal(document.activeElement, nested, 'nested menu alone owns its arrow-key focus');
+  assert.equal(document.activeElement === nested, true, 'nested menu alone owns its arrow-key focus');
   await act(async () => {
     nested.dispatchEvent(new window.Event('pointerdown', { bubbles: true }));
     nested.click();

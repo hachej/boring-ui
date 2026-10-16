@@ -108,7 +108,8 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/utils.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/utils.json",
+        "dropdown-menu"
       ],
       "files": [
         {

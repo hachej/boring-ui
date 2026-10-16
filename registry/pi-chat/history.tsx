@@ -162,9 +162,9 @@ export function ConversationList({ conversations, onPicked, autoFocus = false, s
                     <Button size="sm" variant="destructive" data-testid="conversation-delete-confirm" onClick={() => { const remove = conversations.remove!; setConfirming(null); run(() => remove(item.id)); }}>{labels.delete}</Button>
                     <Button size="icon-sm" variant="ghost" aria-label={labels.keep} className={action} onClick={() => setConfirming(null)}><XIcon className="size-3.5" aria-hidden="true" /></Button>
                   </> : rowActionLayout === 'menu' ? <ActionMenu label={labels.moreActions} size="icon-sm" testId="conversation-action-more" icon={<EllipsisIcon className="size-4" aria-hidden="true" />} items={[
-                    ...(conversations.rename ? [{ id: 'rename', label: labels.rename, testId: 'conversation-rename', onSelect: () => setRenaming(item.id) }] : []),
-                    ...(conversations.archive ? [{ id: 'archive', label: item.archived ? labels.restore : labels.archive, testId: 'conversation-archive', onSelect: () => run(() => conversations.archive!(item.id, !item.archived)) }] : []),
-                    ...(conversations.remove ? [{ id: 'delete', label: labels.delete, testId: 'conversation-delete', onSelect: () => setConfirming(item.id) }] : []),
+                    ...(conversations.rename ? [{ id: 'rename', icon: <PencilIcon className="size-4" />, label: labels.rename, testId: 'conversation-rename', onSelect: () => setRenaming(item.id) }] : []),
+                    ...(conversations.archive ? [{ id: 'archive', icon: item.archived ? <ArchiveRestoreIcon className="size-4" /> : <ArchiveIcon className="size-4" />, label: item.archived ? labels.restore : labels.archive, testId: 'conversation-archive', onSelect: () => run(() => conversations.archive!(item.id, !item.archived)) }] : []),
+                    ...(conversations.remove ? [{ id: 'delete', icon: <Trash2Icon className="size-4" />, destructive: true, separatorBefore: true, label: labels.delete, testId: 'conversation-delete', onSelect: () => setConfirming(item.id) }] : []),
                     ...[...extraButtons, ...extraMenu].map(entry => actionMenuItem(entry, 'conversation-action')),
                   ]} /> : <>
                     {conversations.rename && <Button size="icon-sm" variant="ghost" aria-label={labels.renameItem(title)} title={labels.rename} data-testid="conversation-rename" className={action} onClick={() => setRenaming(item.id)}><PencilIcon className="size-3.5" aria-hidden="true" /></Button>}

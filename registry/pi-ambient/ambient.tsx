@@ -276,7 +276,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
 
   // Replies get copy, optional feedback and the time; the host may hand the conversation to its full chat.
   const conversationRef = useRef('');
-  const replyActions = useMemo<NonNullable<RowContext['replyActions']>>(() => (reply, host) => <div data-testid="reply-actions" className="mt-2 -ml-2 flex items-center gap-0.5 text-muted-foreground">
+  const replyActions = useMemo<NonNullable<RowContext['replyActions']>>(() => (reply, host) => <div data-testid="reply-actions" className="mt-2 -ml-2 flex items-center gap-0.5 text-muted-foreground opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 max-sm:opacity-100 pointer-coarse:opacity-100 motion-reduce:transition-none">
     <CopyButton text={reply.text} label={labels.copyResponse} iconOnly {...(onCopy ? { onCopy } : {})} className="size-8 p-0 text-muted-foreground max-sm:size-11" />
     {onFeedback && <>
       {(['up', 'down'] as const).map(value => <button key={value} type="button" data-testid={`feedback-${value}`} aria-pressed={feedback[reply.key] === value} aria-label={value === 'up' ? labels.goodResponse : labels.badResponse}

@@ -32,6 +32,7 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
   const imagePane = await load('image-pane.tsx');
   const pdfPane = await load('pdf-pane.tsx');
   const markdownPane = await load('markdown-pane.tsx');
+  const menus = await load('menu.tsx');
   const htmlPane = await load('html-pane.tsx');
   const { createMarkdownController } = await import('@hachej/boring-ui-kit/markdown');
   const { createHtmlController } = await import('@hachej/boring-ui-kit/html');
@@ -237,6 +238,25 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     t.after(() => { controller.dispose(); provider.close(); });
     return { controller, client, read, publish, target };
   }
+
+  await t.test('version menus show relative time, provenance, day groups and a quiet Current marker', async t => {
+    let selected;
+    const now = Date.now();
+    const view = await mount(t, h(menus.ViewerVersions, { current: 'new', onSelect: id => { selected = id; }, versions: [
+      { id: 'new', label: 'unused time', savedAt: now - 120000, source: 'agent' },
+      { id: 'old', label: 'unused time', savedAt: now - 86400000, source: 'publish', changeSummary: '+2 lines' },
+    ] }));
+    await view.click('[data-testid=viewer-versions]');
+    const rows = [...document.querySelectorAll('[data-testid=viewer-versions-item]')];
+    assert.equal(rows.length, 2);
+    assert.match(rows[0].textContent, /2 min ago/);
+    assert.equal(rows[0].querySelector('[data-testid=viewer-versions-description]').textContent, 'Agent');
+    assert.match(rows[0].textContent, /Current/);
+    assert.equal(rows[0].getAttribute('aria-checked'), 'true');
+    assert.match(rows[1].querySelector('[data-testid=viewer-versions-description]').textContent, /You · \+2 lines/);
+    assert.match(document.querySelector('[data-testid=viewer-versions-list]').textContent, /Today.*Yesterday/s);
+    await act(async () => rows[1].click()); assert.equal(selected, 'old');
+  });
 
   await t.test('standalone Markdown close awaits autosave and refuses to close over a failed save', async t => {
     const d = await documents(t, 'text/markdown', 'original');
