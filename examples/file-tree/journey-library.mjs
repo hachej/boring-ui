@@ -1,6 +1,6 @@
 // Shared Library presentation in both real consumers. Fictional files, scripted model, no credentials.
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { launch, q } from '@hachej/boring-testing/browser';
@@ -13,6 +13,7 @@ mkdirSync(evidence, { recursive: true });
 const tree = '[data-boring=file-tree]';
 const brief = '# Fictional project brief\nA calm workspace for a fictional team.';
 const figures = 'Quarter,Revenue\nQ1,2400\n';
+const longName = 'Fictional launch-plan supporting notes for the whole team and project collaborators.md';
 for (const [name, start, trigger] of [
   ['standalone', startWorkspaceApp, '[data-testid=workspace-library]'],
   ['workspace', startWorkspaceDemo, '[data-testid=chat-action-library]'],
@@ -40,13 +41,14 @@ for (const [name, start, trigger] of [
         const transfer = new DataTransfer();
         transfer.items.add(new File([${JSON.stringify(brief)}], 'Project brief.md', {type:'text/markdown'}));
         transfer.items.add(new File([${JSON.stringify(figures)}], 'Quarterly figures.csv', {type:'text/csv'}));
+        transfer.items.add(new File(['# Fictional supporting notes'], ${JSON.stringify(longName)}, {type:'text/markdown'}));
         window.__libraryDrop = transfer;
         ${q(tree)}.dispatchEvent(new DragEvent('dragenter', {bubbles:true,cancelable:true,dataTransfer:transfer}));
       })()`);
       await browser.until('drop highlight', `${q(tree)}?.dataset.dropping === 'true'`);
       await browser.screenshot('standalone-drop.png');
       await browser.evaluate(`${q(tree)}.dispatchEvent(new DragEvent('drop', {bubbles:true,cancelable:true,dataTransfer:window.__libraryDrop})); delete window.__libraryDrop;`);
-      await browser.until('drop uploaded and expanded', `!!${q('[role=treeitem][data-path="uploads/Project brief.md"]')}`, 15000);
+      await browser.until('drop uploaded and expanded', `!!${q(`[role=treeitem][data-path=${JSON.stringify(`uploads/${longName}`)}]`)}`, 15000);
       assert.equal(await browser.evaluate(`${q(tree)}.dataset.dropping`), undefined);
       const provider = await connectRevisionProvider({ endpoint: new URL('/api/resources', app.url), fetch: request => {
         const headers = new Headers(request.headers); headers.set('authorization', `Bearer ${app.token}`); return fetch(new Request(request, { headers }));
@@ -81,7 +83,8 @@ for (const [name, start, trigger] of [
         await new Promise(resolve => setTimeout(resolve, 300));
         const geometry = await browser.evaluate(`(() => {
           const panel=${q(tree)}, input=panel.querySelector('input[type=search]'), p=panel.getBoundingClientRect(), s=input.getBoundingClientRect();
-          return { left:s.left-p.left, right:p.right-s.right,
+          const folderName=${q(`[role=treeitem][data-path="${folder}"] > div .file-tree-name`)}, fileName=${q(`[role=treeitem][data-path=${JSON.stringify(file)}] > div .file-tree-name`)};
+          return { left:s.left-p.left, right:p.right-s.right, indent:fileName.getBoundingClientRect().left-folderName.getBoundingClientRect().left,
             rows:[...panel.querySelectorAll('[data-slot=sidebar-menu-button]')].map(row=>row.getBoundingClientRect().height),
             allMeta:[...panel.querySelectorAll('[data-file-meta]')].every(meta=>meta.textContent.trim().length>0),
             overflow:document.documentElement.scrollWidth>innerWidth || panel.scrollWidth>panel.clientWidth,
@@ -89,9 +92,13 @@ for (const [name, start, trigger] of [
         })()`);
         assert.ok(geometry.left >= 16 && geometry.right >= 16, `inset search: ${JSON.stringify(geometry)}`);
         assert.ok(geometry.rows.every(height => height >= 44 && height <= 48), JSON.stringify(geometry));
+        assert.ok(geometry.indent >= 12 && geometry.indent <= 16, `nested files indent to the right of their folder: ${JSON.stringify(geometry)}`);
         assert.equal(geometry.allMeta, true);
         assert.equal(geometry.overflow, false, `${name}: no horizontal overflow at ${phone ? 360 : 1440}px`);
-        if (phone) assert.ok(geometry.targets.every(({ w, h }) => w >= 44 && h >= 44), JSON.stringify(geometry));
+        if (phone) {
+          assert.ok(geometry.targets.every(({ w, h }) => w >= 44 && h >= 44), JSON.stringify(geometry));
+          if (name === 'standalone') assert.equal(await browser.evaluate(`(() => { const name=${q(`[data-path=${JSON.stringify(`uploads/${longName}`)}] .file-tree-name`)}; return name.scrollWidth>name.clientWidth && getComputedStyle(name).textOverflow==='ellipsis'; })()`), true, 'long names truncate instead of scrolling horizontally');
+        }
         await browser.screenshot(`${name}-${phone ? 'phone' : 'desktop'}-${dark ? 'dark' : 'light'}.png`);
 
         await browser.evaluate(`${q(actions)}.focus()`); await browser.press('Enter');
@@ -99,9 +106,22 @@ for (const [name, start, trigger] of [
         const menu = await browser.evaluate(`${q('[data-boring=file-actions]')}.innerText`);
         assert.match(menu, /Open/); assert.match(menu, /Version history/); assert.match(menu, /Download/);
         assert.doesNotMatch(menu, /Rename|Delete/, 'unsupported provider mutations are absent');
+        assert.equal(await browser.evaluate(`(() => { const r=${q('[data-boring=file-actions]')}.getBoundingClientRect(); return r.left>=0 && r.right<=innerWidth && r.top>=0 && r.bottom<=innerHeight; })()`), true, 'actions menu stays within the viewport');
+        await browser.screenshot(`${name}-${phone ? 'phone' : 'desktop'}-actions-${dark ? 'dark' : 'light'}.png`);
         await browser.press('Escape');
         await browser.until('Escape closes only actions', `!${q('[data-boring=file-actions]')} && !!${q(tree)}`);
         await browser.until('menu restores keyboard focus', `document.activeElement === ${q(actions)}`);
+        if (name === 'standalone' && !phone && !dark) {
+          const downloads = mkdtempSync(join(evidence, 'downloads-'));
+          await browser.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: downloads });
+          await browser.press('Enter');
+          await browser.until('download action', `!!${q('[data-boring=file-actions]')}`);
+          await browser.click(`[...document.querySelectorAll('[role=menuitem]')].find(item=>item.textContent==='Download')`);
+          const downloaded = join(downloads, 'Project brief.md');
+          for (let attempt = 0; attempt < 100 && !existsSync(downloaded); attempt++) await new Promise(resolve => setTimeout(resolve, 50));
+          assert.equal(readFileSync(downloaded, 'utf8'), brief, 'Download saves the exact provider bytes');
+          await browser.until('download restores focus', `document.activeElement === ${q(actions)}`);
+        }
         await browser.press('Enter');
         await browser.until('menu reopened', `!!${q('[role=menuitem][data-action=history]')}`);
         await browser.click(q('[role=menuitem][data-action=history]'));
@@ -112,6 +132,6 @@ for (const [name, start, trigger] of [
         await browser.until('Library dismissed', `!${q(tree)}`);
       }
     }
-    console.log(`ok: ${name} Library, empty/drop, metadata, history menu, light/dark and 360px geometry`);
+    console.log(`ok: ${name} Library, ${name === 'standalone' ? 'empty/drop publication and download, ' : ''}metadata, history menu, light/dark and 360px geometry`);
   } finally { await browser?.close(); await app.close(); }
 }

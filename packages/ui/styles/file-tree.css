@@ -69,6 +69,7 @@
 [data-boring="file-tree"][data-variant="list"] [data-slot="sidebar-menu-sub"] { margin: 0; padding: 0 0 0 .875rem; border: 0; transform: none; gap: .125rem; }
 [data-boring="file-tree"] [data-file-meta] { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-foreground); font-size: .6875rem; font-weight: 400; line-height: 1rem; }
 [data-boring="file-tree"] .file-tree-tile { --file-tint: var(--primary); display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 2rem; height: 2rem; border-radius: .5rem; background: color-mix(in oklch, var(--file-tint) 9%, var(--background)); color: var(--foreground); }
+[data-boring="file-tree"] .file-tree-chevron-space { display: block; flex: 0 0 1rem; }
 [data-boring="file-tree"] .file-tree-tile svg { width: 1rem; height: 1rem; stroke-width: 1.5; }
 [data-boring="file-tree"] .file-tree-tile[data-kind="pdf"] { --file-tint: var(--destructive); }
 [data-boring="file-tree"] .file-tree-tile[data-kind="table"] { --file-tint: var(--chart-2, var(--primary)); }

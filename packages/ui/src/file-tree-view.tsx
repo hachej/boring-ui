@@ -263,7 +263,7 @@ export function FileTreeView({ controller, onOpen, selectedPath, className, uplo
     const button = <SidebarMenuButton tabIndex={-1} title={entry.path} isActive={selectedPath === entry.path}
       className="min-w-0 flex-1"
       onClick={() => { focus(entry.path); if (!folder) onOpen?.(entry.path); }}>
-      {folder && <ChevronRight aria-hidden="true" />}
+      {folder ? <ChevronRight aria-hidden="true" /> : list && <span className="file-tree-chevron-space" aria-hidden="true" />}
       {list ? <span className="file-tree-tile" data-kind={kind.tone}><Icon aria-hidden="true" /></span> : <Icon aria-hidden="true" />}
       <span className="file-tree-copy"><span className="file-tree-name">{name}</span>
         {list ? <span data-file-meta>{kind.label}{!folder && ` · ${fileSize(entry.size, locale)}`}{parent && ` · ${parent}`}</span> : parent && <span className="text-xs text-muted-foreground">{parent}</span>}
