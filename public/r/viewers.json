@@ -180,19 +180,6 @@
       ".boring-viewer .boring-markdown-pin:focus-visible": {
         "outline": "2px solid var(--ring)"
       },
-      "@media (max-width: 640px)": {
-        ".boring-viewer .boring-markdown-pin": {
-          "display": "none"
-        },
-        ".boring-viewer .boring-markdown-content": {
-          "padding": "1.25rem 1.25rem 3rem",
-          "font-size": "1.0625rem",
-          "line-height": "1.65"
-        },
-        ".boring-viewer .boring-markdown-toolbar": {
-          "display": "none"
-        }
-      },
       ".boring-viewer .boring-markdown-editor": {
         "display": "flex",
         "flex-direction": "column",
@@ -695,6 +682,19 @@
       ".boring-viewer .boring-viewer-stage:focus-visible": {
         "outline": "2px solid color-mix(in oklab, var(--ring) 60%, transparent)",
         "outline-offset": "-2px"
+      },
+      "@media (max-width: 640px)": {
+        ".boring-viewer .boring-markdown-pin": {
+          "display": "none"
+        },
+        ".boring-viewer .boring-markdown-content": {
+          "padding": "1.25rem 1.25rem 3rem",
+          "font-size": "1.0625rem",
+          "line-height": "1.65"
+        },
+        ".boring-viewer .boring-markdown-toolbar": {
+          "display": "none"
+        }
       },
       "@media (pointer: coarse), (max-width: 639px)": {
         ".boring-viewer .boring-markdown-tool": {

@@ -52,6 +52,7 @@ test('transcript history loads real persisted native records without restoring t
     assert.match(element.querySelector('[data-testid=transcript-history]').textContent, /Archived fictional notebook/);
     assert.deepEqual(controller.getSnapshot().view.entries.map(entry => entry.id), activeIds, 'reading history never changes active model context');
     assert.equal(controller.getSnapshot().history.kind, 'ready');
+    assert.equal(element.querySelector('[data-empty=centered], [data-testid=ambient-empty]'), null, 'the empty greeting does not cover archived records');
     await act(async () => root.render(null));
     assert.equal(controller.getSnapshot().disposed, false, 'presentation borrows the native controller');
   });

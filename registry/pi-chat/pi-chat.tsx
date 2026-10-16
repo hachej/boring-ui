@@ -133,7 +133,8 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
   const rowExtras = useMemo(() => canFork ? { onFork: (entryId: string) => { void fork.current?.(entryId).catch(() => {}); } } : undefined, [canFork]);
   const session = useChatSession({ controller, activeController: active, mode, actions, renderEntry, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept,
     slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => scrollToBottom.current(), feedback, rowExtras, onOpenFile, fileChanges, pasteToFile, composerChips });
-  const { state, derived, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, files, empty, loading, developer } = session;
+  const { state, derived, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, files, loading, developer } = session;
+  const empty = session.empty && (state.history.kind === 'disabled' || state.history.kind === 'idle');
   const { rows, pinned, retry } = derived;
   const transcript = useTranscript(rows, PAGE, MORE);
   const { stick, hidden } = transcript;
@@ -189,11 +190,11 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
     <div data-testid="conversation-content" className={cn('relative min-h-0 flex-1', empty && emptyLayout === 'centered' && 'min-[641px]:min-h-60 min-[641px]:flex-none')}>
       <div ref={stick.scrollRef} data-testid="transcript-scroll" className="h-full overflow-x-hidden overflow-y-auto overscroll-contain">
         <div ref={stick.contentRef} className="flex min-h-full flex-col">
-        {!browsingHistory && <TranscriptHistory history={state.history} developer={developer} replyFooter={replyFooter} connected={!state.disposed && connected} onLoad={() => { stick.stopScroll(); act(controller.loadEarlier); }} onClose={() => { if (!state.disposed) controller.clearHistory(); }} />}
-        <div role="log" aria-label={labels.messages} aria-live="polite" data-testid="transcript" className="mx-auto flex min-h-0 w-full max-w-[720px] flex-1 flex-col gap-6 px-4 pt-6 pb-8 sm:px-6">
-          {hidden > 0 && <div className="flex justify-center"><Button size="sm" variant="outline" data-testid="show-earlier" className="text-muted-foreground" onClick={transcript.reveal}>{labels.showEarlier}</Button></div>}
-          {visible.map(row => <RowView key={row.key} row={row} context={rowContext} />)}
-        </div>
+          {!browsingHistory && <TranscriptHistory history={state.history} developer={developer} replyFooter={replyFooter} connected={!state.disposed && connected} onLoad={() => { stick.stopScroll(); act(controller.loadEarlier); }} onClose={() => { if (!state.disposed) controller.clearHistory(); }} />}
+          <div role="log" aria-label={labels.messages} aria-live="polite" data-testid="transcript" className="mx-auto flex min-h-0 w-full max-w-[720px] flex-1 flex-col gap-6 px-4 pt-6 pb-8 sm:px-6">
+            {hidden > 0 && <div className="flex justify-center"><Button size="sm" variant="outline" data-testid="show-earlier" className="text-muted-foreground" onClick={transcript.reveal}>{labels.showEarlier}</Button></div>}
+            {visible.map(row => <RowView key={row.key} row={row} context={rowContext} />)}
+          </div>
         </div>
       </div>
       {(empty || loading) && <div className="pointer-events-none absolute inset-0">

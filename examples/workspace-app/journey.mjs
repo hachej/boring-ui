@@ -198,6 +198,9 @@ try {
   });
 
   await step('Library reselecting the current file closes Library and returns to that file', async () => {
+    const draft = 'A fictional draft retained through Library';
+    await browser.type(INPUT, draft);
+    await browser.evaluate(`window.__libraryChat = ${q('[data-boring=pi-chat]')}; window.__libraryDraft = ${INPUT}; true`);
     const item = q('[data-testid=workspace-library-side] [data-path="picnic-plan.md"] button');
     await browser.click(q('[data-testid=workspace-library]'));
     await browser.until('Library file', `!!${item}`, 5000);
@@ -207,6 +210,9 @@ try {
     await browser.until('Library reopened', `!!${item}`, 5000);
     await browser.click(item);
     await browser.until('same file selection closes Library', `!${q('[data-testid=workspace-library-side]')} && ${q('[data-testid=file-viewer]')}?.dataset.path === 'picnic-plan.md'`, 5000);
+    assert.equal(await browser.evaluate(`${INPUT}.value`), draft);
+    assert.equal(await browser.evaluate(`${INPUT} === window.__libraryDraft && ${q('[data-boring=pi-chat]')} === window.__libraryChat`), true, 'Library does not replace the mounted chat or draft');
+    await browser.click(INPUT); await browser.press('Control+a'); await browser.press('Backspace');
     await browser.click(q('[data-testid=viewer-close]'));
     await browser.click(q('[data-testid=artifact-card]'));
     await browser.until('artifact restored for phone flow', `!!${q('[data-testid=artifact-panel]')}`, 5000);
@@ -220,6 +226,10 @@ try {
       await pause(400);
       assert.deepEqual(await browser.evaluate(`(() => { const r = ${q('[data-testid=workspace-panel]')}.getBoundingClientRect(); return { w: r.width, h: r.height }; })()`), { w: 390, h: 844 }, 'full screen');
       assert.ok(await browser.evaluate(noOverflow), 'no horizontal scroll with the sheet');
+      await browser.until('phone Markdown content', `!!${q('[data-testid=artifact-panel] .boring-markdown-content')}`, 5000);
+      const typography = await browser.evaluate(`(() => { const css = getComputedStyle(${q('[data-testid=artifact-panel] .boring-markdown-content')}); return { size: parseFloat(css.fontSize), line: parseFloat(css.lineHeight) }; })()`);
+      assert.equal(typography.size, 17, 'generated phone typography wins after the base prose rules');
+      assert.ok(Math.abs(typography.line - 17 * 1.65) < .1);
       const bar = await browser.evaluate(rect('[data-testid=artifact-bar]'));
       assert.ok(bar.h <= 56, 'single row artifact header');
       assert.ok(await browser.evaluate(inside('[data-testid=artifact-close]')) && await browser.evaluate(inside('[data-testid=artifact-more]')), 'back and menu inside viewport');

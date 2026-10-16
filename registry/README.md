@@ -465,7 +465,7 @@ Compact headers show metadata on hover. On phones, Back, the title, and overflow
 editing controls and revision history move into overflow. Escape and browser Back close the phone
 artifact without replacing the mounted conversation. `ArtifactWorkspace.onClose` may return `false`
 to refuse a synchronous close; declining the file's discard prompt restores the sheet's Back entry.
-Reselecting an already open file closes Library without replacing that viewer or its draft.
+Reselecting the current file closes Library without changing the selected path or the chat draft.
 
 `MarkdownEditor` and `MarkdownPane` default to `formattingToolbar="selection"`, using Tiptap's
 native bubble menu. Keyboard shortcuts and Markdown input rules remain available. The desktop Aa
