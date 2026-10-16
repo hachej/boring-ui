@@ -13,7 +13,7 @@ import { ConversationFiles } from './conversation-files';
 import type { ConversationsConfig } from './config';
 import { EmptyState } from './empty-state';
 import type { Suggestion } from './empty-state';
-import { ConversationHistory, HistoryPanel } from './history';
+import { ConversationHistory, HistoryPanel, TranscriptHistory } from './history';
 import { RowView } from './message';
 import { MessageQueue } from './queue';
 import { ChatNotices, Notice } from './notice';
@@ -147,12 +147,16 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
   useEffect(() => {
     const viewport = globalThis.visualViewport;
     if (!viewport) return;
-    const measure = () => page.current?.style.setProperty('--composer-keyboard-inset', `${Math.max(0, innerHeight - viewport.height - viewport.offsetTop)}px`);
+    const element = page.current;
+    if (!element) return;
+    const measure = () => element.style.setProperty('--composer-keyboard-inset', `${Math.max(0, element.getBoundingClientRect().bottom - viewport.height - viewport.offsetTop)}px`);
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(measure);
+    observer?.observe(element);
     measure(); viewport.addEventListener('resize', measure); viewport.addEventListener('scroll', measure);
-    return () => { viewport.removeEventListener('resize', measure); viewport.removeEventListener('scroll', measure); };
+    return () => { observer?.disconnect(); viewport.removeEventListener('resize', measure); viewport.removeEventListener('scroll', measure); };
   }, []);
 
-  return <section ref={page} data-boring="pi-chat" data-connection={connectionKind} data-empty={empty && !loading ? emptyLayout : undefined} aria-label={title} className={cn('pi-chat relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background text-foreground max-[641px]:pb-(--composer-keyboard-inset)', empty && emptyLayout === 'centered' && 'min-[641px]:justify-center', className)}>
+  return <section ref={page} data-boring="pi-chat" data-connection={connectionKind} data-empty={empty && !loading ? emptyLayout : undefined} aria-label={title} className={cn('pi-chat relative box-border flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background text-foreground max-[641px]:pb-(--composer-keyboard-inset)', empty && emptyLayout === 'centered' && 'min-[641px]:justify-center', className)}>
     {header && <header className={cn(empty && emptyLayout === 'centered' && 'min-[641px]:absolute min-[641px]:inset-x-0 min-[641px]:top-0', 'flex h-13 shrink-0 items-center gap-2 px-3 sm:gap-3 sm:px-4')}>
       {headerStart}
       {avatar && <span data-testid="chat-avatar" className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full [&>img]:size-full [&>img]:object-cover [&>svg]:size-4">{avatar}</span>}
@@ -184,9 +188,12 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
 
     <div data-testid="conversation-content" className={cn('relative min-h-0 flex-1', empty && emptyLayout === 'centered' && 'min-[641px]:min-h-60 min-[641px]:flex-none')}>
       <div ref={stick.scrollRef} data-testid="transcript-scroll" className="h-full overflow-x-hidden overflow-y-auto overscroll-contain">
-        <div ref={stick.contentRef} role="log" aria-label={labels.messages} aria-live="polite" data-testid="transcript" className="mx-auto flex min-h-full w-full max-w-[720px] flex-col gap-6 px-4 pt-6 pb-8 sm:px-6">
+        <div ref={stick.contentRef} className="flex min-h-full flex-col">
+        {!browsingHistory && <TranscriptHistory history={state.history} developer={developer} replyFooter={replyFooter} connected={!state.disposed && connected} onLoad={() => { stick.stopScroll(); act(controller.loadEarlier); }} onClose={() => { if (!state.disposed) controller.clearHistory(); }} />}
+        <div role="log" aria-label={labels.messages} aria-live="polite" data-testid="transcript" className="mx-auto flex min-h-0 w-full max-w-[720px] flex-1 flex-col gap-6 px-4 pt-6 pb-8 sm:px-6">
           {hidden > 0 && <div className="flex justify-center"><Button size="sm" variant="outline" data-testid="show-earlier" className="text-muted-foreground" onClick={transcript.reveal}>{labels.showEarlier}</Button></div>}
           {visible.map(row => <RowView key={row.key} row={row} context={rowContext} />)}
+        </div>
         </div>
       </div>
       {(empty || loading) && <div className="pointer-events-none absolute inset-0">

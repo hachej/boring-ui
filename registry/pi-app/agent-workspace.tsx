@@ -222,7 +222,7 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   /** Opens `next` and reports whether it did: leaving a file with unsaved changes asks first, and the person may stay. */
   const setOpened = useCallback((next: OpenedView | null): boolean => {
     const current = currentView.current;
-    if (isFile(current) && isFile(next) && current.path === next.path) return true;
+    if (isFile(current) && isFile(next) && current.path === next.path) { setPanelLibrary(false); return true; }
     if (unsaved.current && !globalThis.confirm?.('This file has unsaved or unconfirmed changes. Discard the local draft and leave this file?')) return false;
     noteUnsaved(false);
     setPanelLibrary(false);
@@ -351,7 +351,7 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   const seen = useRef(new Map<string, Set<string>>());
   const closedInTurn = useRef(new Map<string, number>());
   // Kept editing after the unsaved-changes question: the panel stays as it was, and the next artifact may still open it.
-  const close = () => { if (panelLibrary) { setPanelLibrary(false); return; } if (!setOpened(null)) return; if (conversationId !== undefined) closedInTurn.current.set(conversationId, turn); setFullscreen(false); };
+  const close = () => { if (panelLibrary) { setPanelLibrary(false); return true; } if (!setOpened(null)) return false; if (conversationId !== undefined) closedInTurn.current.set(conversationId, turn); setFullscreen(false); return true; };
   useEffect(() => {
     if (!controller || conversationId === undefined) return;
     const keys = versions.map(version => `${artifactKey(version)}:${version.revision}`);

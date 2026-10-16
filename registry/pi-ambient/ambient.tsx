@@ -17,7 +17,7 @@ import { ConversationFiles } from '../pi-chat/conversation-files';
 import type { AttachmentsConfig, ConversationsConfig, EffortConfig, MentionsConfig, ModelConfig, SlashConfig } from '../pi-chat/config';
 import { notifyPermission, requestNotifyPermission } from './browser-notify';
 import type { NotifyPermission } from './browser-notify';
-import { ConversationHistory } from '../pi-chat/history';
+import { ConversationHistory, TranscriptHistory } from '../pi-chat/history';
 import type { CommandMentions } from '../pi-chat/markdown';
 import { RowView } from '../pi-chat/message';
 import type { RowContext } from '../pi-chat/message';
@@ -301,7 +301,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
   }, [inWindow, hostArtifacts, opened, detect]);
   const session = useChatSession({ controller, activeController, mode, actions, renderEntry, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept,
     slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => scrollToBottom.current(), rowExtras, feedback: composerFeedback, onOpenFile, fileChanges, pasteToFile, composerChips });
-  const { state, derived, rows, queued, queueActions, working, waitingForAnswer, error, act, textarea, rowContext, composer, files, empty, loading } = session;
+  const { state, derived, rows, queued, queueActions, working, waitingForAnswer, connected, developer, error, act, textarea, rowContext, composer, files, empty, loading } = session;
   const transcript = useTranscript(rows);
   const versions = useMemo(() => inWindow ? collectArtifacts(state.view, detect).sort((a, b) => (b.ordinal ?? 0) - (a.ordinal ?? 0)) : [], [inWindow, state.view, detect]);
   versionsRef.current = versions;
@@ -459,11 +459,14 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
         {derived.pinned.length > 0 && <aside aria-label={labels.requiredActions} className="shrink-0 space-y-2 px-4 pb-2">{derived.pinned.map(card => <div key={card.key}>{card.content}</div>)}</aside>}
         <div className="relative flex min-h-0 flex-1 flex-col">
           <div ref={stick.scrollRef} data-testid="transcript-scroll" className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
-            <div ref={stick.contentRef} role="log" aria-label={labels.messages} aria-live="polite" data-testid="transcript" className="flex min-h-28 flex-col gap-6 px-4 pt-4 pb-6">
+            <div ref={stick.contentRef}>
+            <TranscriptHistory history={state.history} developer={developer} replyFooter={replyFooter} connected={!state.disposed && connected} onLoad={() => { stick.stopScroll(); act(controller.loadEarlier); }} onClose={() => { if (!state.disposed) controller.clearHistory(); }} />
+            <div role="log" aria-label={labels.messages} aria-live="polite" data-testid="transcript" className="flex min-h-28 flex-col gap-6 px-4 pt-4 pb-6">
               {hidden > 0 && <div className="flex justify-center"><Button size="sm" variant="outline" data-testid="show-earlier" className="text-muted-foreground" onClick={transcript.reveal}>{labels.showEarlier}</Button></div>}
               {visibleRows.map(row => <RowView key={row.key} row={row} context={rowContext} />)}
               {loading && <p role="status" data-testid="loading" className="m-0 flex items-center gap-2 text-sm text-muted-foreground"><Loader2Icon className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />{labels.loading}</p>}
               {empty && !loading && <p data-testid="ambient-empty" className="m-0 max-w-sm py-8 text-sm leading-6 text-muted-foreground">{labels.empty}</p>}
+            </div>
             </div>
           </div>
           {!stick.isAtBottom && <Button variant="outline" size="icon" data-testid="jump-latest" aria-label={labels.jumpToLatest} title={labels.jumpToLatest} onClick={() => { transcript.reset(); void stick.scrollToBottom(); }}

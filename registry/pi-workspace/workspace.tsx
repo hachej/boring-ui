@@ -9,7 +9,7 @@ export interface WorkspacePanelApi {
   readonly fullscreen: boolean;
   /** Absent on a phone, where the panel is already a full-screen sheet. */
   readonly onFullscreenChange: ((next: boolean) => void) | undefined;
-  readonly close: () => void;
+  readonly close: () => unknown;
   readonly sheet: boolean;
   /** Float the chat over the panel (see `floatBelow`). Absent without `floatBelow`, while the chat already floats and in the phone sheet. pi-app's `AgentWorkspace` turns it into the viewers' "Float chat" action (`ViewerWindow.actions`). */
   readonly floatChat: (() => void) | undefined;
@@ -31,7 +31,8 @@ export interface ArtifactWorkspaceProps {
   readonly open: boolean;
   /** The panel content, usually a viewer whose top bar is the shared `ViewerFrame`. Receives what it needs for its close and full screen buttons. */
   readonly panel: ReactNode | ((api: WorkspacePanelApi) => ReactNode);
-  readonly onClose: () => void;
+  /** Return false when a synchronous host guard refuses to close; Back then restores the sheet entry. */
+  readonly onClose: () => unknown;
   /** Full screen is controlled when both are given; otherwise the workspace keeps it. Escape leaves it. */
   readonly fullscreen?: boolean;
   readonly onFullscreenChange?: (next: boolean) => void;
@@ -137,8 +138,9 @@ export function ArtifactWorkspace({ chat, open, panel, onClose, fullscreen: cont
     if (!open || !sheet) return;
     const key = `artifact-${Math.random()}`;
     const history = window.history;
-    history.pushState({ ...history.state, boringArtifact: key }, '');
-    const back = () => { if (history.state?.boringArtifact !== key) closeRef.current(); };
+    const enter = () => history.pushState({ ...history.state, boringArtifact: key }, '');
+    enter();
+    const back = () => { if (history.state?.boringArtifact !== key && closeRef.current() === false) enter(); };
     window.addEventListener('popstate', back);
     return () => { window.removeEventListener('popstate', back); if (history.state?.boringArtifact === key) history.back(); };
   }, [open, sheet]); // The mounted sheet keeps its own Back entry, independent of renders.

@@ -70,7 +70,6 @@
   }
   .boring-viewer .boring-markdown-pin:is(:hover, [aria-pressed="true"]) { background: var(--muted); color: var(--foreground); }
   .boring-viewer .boring-markdown-pin:focus-visible { outline: 2px solid var(--ring); }
-  @media (max-width: 640px) { .boring-viewer .boring-markdown-pin { display: none; } }
   /* Markdown editor: structure */
   .boring-viewer .boring-markdown-editor {
     display: flex;
@@ -493,6 +492,7 @@
   }
 
   @media (max-width: 640px) {
+    .boring-viewer .boring-markdown-pin { display: none; }
     .boring-viewer .boring-markdown-content { padding: 1.25rem 1.25rem 3rem; font-size: 1.0625rem; line-height: 1.65; }
     .boring-viewer .boring-markdown-toolbar { display: none; }
   }

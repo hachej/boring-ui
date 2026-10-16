@@ -339,6 +339,8 @@ try {
     const composer = await browser.evaluate(rect(INPUT));
     const vvBottom = await browser.evaluate(`(window.visualViewport?.offsetTop ?? 0) + (window.visualViewport?.height ?? innerHeight)`);
     assert.ok(composer.bottom <= vvBottom + 1, `composer bottom ${composer.bottom} within the visual viewport ${vvBottom}`);
+    const dockBottom = await browser.evaluate(`${q(INPUT)}.closest('[data-boring=pi-chat]').querySelector('[data-testid=composer-dock]').getBoundingClientRect().bottom`);
+    assert.ok(dockBottom >= vvBottom - 20 && dockBottom <= vvBottom + 1, `drawer compensation is applied once: composer dock ${dockBottom}, keyboard top ${vvBottom}`);
     assert.ok(Number.parseFloat(await browser.evaluate(`getComputedStyle(${q(INPUT)}).fontSize`)) >= 16, 'composer font-size >= 16px');
     await browser.evaluate(`window.__vv.set(844)`);
     await browser.evaluate(`${q(INPUT)}.blur()`);

@@ -264,3 +264,14 @@ export function HistoryPanel({ history, developer, connected, onLoad, onClose, r
     </div>
   </section>;
 }
+
+/** Native archived records remain reachable even when the host hides the chat header or conversation History action. */
+export function TranscriptHistory(props: Parameters<typeof HistoryPanel>[0]) {
+  const { labels } = useChatText();
+  if (props.history.kind === 'disabled') return null;
+  return <div className="relative z-10" data-testid="transcript-history">
+    {props.history.kind === 'idle'
+      ? <div className="flex justify-center"><Button size="sm" variant="quiet" data-testid="transcript-history-load" disabled={!props.connected} onClick={props.onLoad}>{labels.loadEarlier}</Button></div>
+      : <HistoryPanel {...props} />}
+  </div>;
+}

@@ -197,6 +197,21 @@ try {
     assert.equal(await browser.evaluate(`${qa('[data-testid=sessions-toggle]')}.filter(e=>e.getBoundingClientRect().width>0).length`), 1, 'no duplicate toggle after switching');
   });
 
+  await step('Library reselecting the current file closes Library and returns to that file', async () => {
+    const item = q('[data-testid=workspace-library-side] [data-path="picnic-plan.md"] button');
+    await browser.click(q('[data-testid=workspace-library]'));
+    await browser.until('Library file', `!!${item}`, 5000);
+    await browser.click(item);
+    await browser.until('file viewer opened from Library', `${q('[data-testid=file-viewer]')}?.dataset.path === 'picnic-plan.md' && !${q('[data-testid=workspace-library-side]')}`, 10000);
+    await browser.click(q('[data-testid=workspace-library]'));
+    await browser.until('Library reopened', `!!${item}`, 5000);
+    await browser.click(item);
+    await browser.until('same file selection closes Library', `!${q('[data-testid=workspace-library-side]')} && ${q('[data-testid=file-viewer]')}?.dataset.path === 'picnic-plan.md'`, 5000);
+    await browser.click(q('[data-testid=viewer-close]'));
+    await browser.click(q('[data-testid=artifact-card]'));
+    await browser.until('artifact restored for phone flow', `!!${q('[data-testid=artifact-panel]')}`, 5000);
+  });
+
   await step('phone: sessions are a drawer, the artifact a full-screen sheet, no horizontal scroll', async () => {
     await browser.emulate('phone');
     await browser.until('narrow layout', `${q('[data-boring=agent-workspace]')}.dataset.sessions === 'closed' && innerWidth === 390`, 10000);
@@ -298,6 +313,44 @@ try {
     await browser.screenshot('standalone-library-360.png');
     await browser.press('Escape');
     await browser.emulate('desktop');
+  });
+
+  await step('declining phone Back preserves the file draft and restores its history entry', async () => {
+    await browser.emulate('phone');
+    await browser.click(q('[data-testid=sessions-toggle]'));
+    await browser.until('navigation before file edit', `!!${q('[data-testid=workspace-library]')}`, 5000);
+    await browser.click(q('[data-testid=workspace-library]'));
+    const item = q('[data-testid=workspace-library-side] [data-path="picnic-plan.md"] button');
+    await browser.until('editable file in Library', `!!${item}`, 5000);
+    await browser.click(item);
+    await browser.until('editable phone file', `!!${q('[data-testid=file-viewer] [data-testid=viewer-more]')}`, 10000);
+    await browser.click(q('[data-testid=viewer-more]'));
+    await browser.until('source action in overflow', `!!${q('[data-testid=viewer-more-list] [data-testid=viewer-mode-source]')}`, 5000);
+    await browser.click(q('[data-testid=viewer-more-list] [data-testid=viewer-mode-source]'));
+    const source = q('[data-testid=file-viewer] textarea');
+    await browser.until('file source', `!!${source}`, 5000);
+    await browser.type(source, '\nA fictional unsaved note.');
+    await browser.until('dirty file', `${q('[data-testid=file-viewer] [data-boring=markdown-editor]')}?.dataset.dirty === 'true'`, 5000);
+    await browser.evaluate(`new Promise(requestAnimationFrame).then(() => new Promise(requestAnimationFrame))`);
+    const draft = await browser.evaluate(`${source}.value`);
+    await browser.evaluate(`window.__originalConfirm = window.confirm; window.__discard = false; window.__confirmations = 0; window.__backPage = document.body; window.confirm = () => { window.__confirmations++; return window.__discard; }`);
+    const marker = await browser.evaluate('history.state.boringArtifact');
+    assert.ok(marker, 'the phone sheet has a Back entry');
+    const length = await browser.evaluate('history.length');
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      await browser.evaluate('history.back()');
+      await browser.until('Back refusal restores the sheet entry', `window.__confirmations === ${attempt} && history.state?.boringArtifact === ${JSON.stringify(marker)}`, 5000);
+      assert.equal(await browser.evaluate('document.body === window.__backPage'), true);
+      assert.equal(await browser.evaluate(`${source}.value`), draft);
+      assert.equal(await browser.evaluate('history.length'), length, 'refusal replaces, rather than accumulates, the Back entry');
+    }
+    await browser.evaluate('window.__discard = true; history.back()');
+    await browser.until('accepted Back closes the file without leaving the page', `!${q('[data-testid=file-viewer]')} && document.body === window.__backPage`, 5000);
+    assert.equal(await browser.evaluate('window.__confirmations'), 3);
+    await browser.evaluate('window.confirm = window.__originalConfirm');
+    await browser.emulate('desktop');
+    await browser.click(q('[data-testid=artifact-card]'));
+    await browser.until('artifact restored after discard', `!!${q('[data-testid=artifact-panel]')}`, 5000);
   });
 
   // ---- The same app, configured through the blocks' props only.
