@@ -440,6 +440,7 @@
         "react-dom@^19.0.0",
         "marked@^17.0.6",
         "entities@^8.1.0",
+        "@base-ui/react@1.9.0",
         "@earendil-works/pi-durable@~1.2.0",
         "@earendil-works/chord@~1.2.0",
         "@earendil-works/pi-ai@~1.2.0",
@@ -483,6 +484,11 @@
           "path": "registry/pi-chat/composer.tsx",
           "type": "registry:component",
           "target": "components/pi-chat/composer.tsx"
+        },
+        {
+          "path": "registry/pi-chat/conversation-files.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat/conversation-files.tsx"
         },
         {
           "path": "registry/pi-chat/config.ts",

@@ -44,6 +44,15 @@ try {
   const say = async text => { await browser.type(INPUT, text); await browser.press('Enter'); };
   const live = () => browser.until('the chat is live', `!!${INPUT} && !${INPUT}.disabled`, 20000);
 
+  const alignedControls = async () => {
+    const layout = await browser.evaluate(`(() => { const row = ${q('[data-testid=composer-controls]')}; if (!row) return null; const boxes = [...row.querySelectorAll('button')].filter(e => e.checkVisibility()).map(e => { const r = e.getBoundingClientRect(); return { centre: r.top + r.height / 2, height: r.height }; }); const text = ${INPUT}.getBoundingClientRect(); return { boxes, textBottom: text.bottom, controlsTop: row.getBoundingClientRect().top }; })()`);
+    assert.ok(layout, 'reference composer has a separate controls row');
+    assert.ok(layout.boxes.length >= 2);
+    assert.ok(Math.max(...layout.boxes.map(box => box.centre)) - Math.min(...layout.boxes.map(box => box.centre)) <= 1, JSON.stringify(layout));
+    assert.ok(layout.boxes.every(box => box.height === layout.boxes[0].height && [40, 44].includes(box.height)), JSON.stringify(layout));
+    assert.ok(layout.textBottom <= layout.controlsTop + 1, 'text occupies the full-width row above the controls');
+  };
+
   await step('a failed discovery shows an alert, and Retry opens the workspace', async () => {
     await live();
     app.faults.resources = 1;
@@ -80,6 +89,16 @@ try {
     assert.ok(composer.y > 700, 'composer docks after the first message');
   });
 
+  await step('reference composer: empty and one-line controls share a centre; files chip is absent', async () => {
+    await alignedControls();
+    assert.equal(await browser.evaluate(`!!${q('[data-testid=conversation-files]')}`), false);
+    await browser.type(INPUT, 'A fictional unsent line');
+    await alignedControls();
+    assert.equal(await browser.evaluate(`${q('[data-testid=composer-submit]')}.disabled`), false);
+    await browser.evaluate(`${INPUT}.focus(); ${INPUT}.select()`); await browser.press('Backspace');
+    assert.equal(await browser.evaluate(`${q('[data-testid=composer-submit]')}.disabled`), true);
+  });
+
   await step('clicking the conversation title renames the same server-owned conversation', async () => {
     for (const title of ['Amber notebook', 'Reply with exactly: AMBER-HARBOUR']) {
       await browser.click(q('[data-boring=pi-chat] > header h2 button'));
@@ -110,6 +129,14 @@ try {
     assert.ok(sessions.x < 2 && panel.x + panel.w > 1400, `sessions on the left, panel on the right: ${JSON.stringify({ sessions, panel })}`);
     await pause(300);
     await browser.screenshot('workspace-app-desktop.png');
+  });
+
+  await step('the artifacts chip counts the file and opens its desktop list', async () => {
+    await browser.until('conversation file exists', `${q('[data-testid=conversation-files]')}?.textContent.includes('1')`, 5000);
+    await browser.click(q('[data-testid=conversation-files]'));
+    await browser.until('conversation files popover', `${q('[data-testid=conversation-files-list]')}?.innerText.includes('picnic-plan.md')`, 5000);
+    await browser.click(q('[data-testid=conversation-file]'));
+    await browser.until('file opens and list closes', `!!${q('[data-testid=artifact-panel]')} && !${q('[data-testid=conversation-files-list]')}`, 5000);
   });
 
   await step('opening an artifact resizes an existing draft without clipping its wrapped lines', async () => {
@@ -177,6 +204,12 @@ try {
     await sheet('workspace-app-phone-artifact.png');
     await pause(300);
     assert.ok(await browser.evaluate(noOverflow), 'no horizontal scroll on the chat');
+    await alignedControls();
+    await browser.click(q('[data-testid=conversation-files]'));
+    await browser.until('conversation files phone sheet', `!!${q('[data-testid=conversation-files-list]')} && ${q('[data-testid=conversation-files-list]')}.getBoundingClientRect().width <= innerWidth`, 5000);
+    assert.match(await browser.evaluate(`${q('[data-testid=conversation-files-list]')}.innerText`), /picnic-plan.md/);
+    await browser.press('Escape');
+    await browser.until('conversation files sheet closed', `!${q('[data-testid=conversation-files-list]')}`, 5000);
     await browser.screenshot('workspace-app-phone-chat.png');
     await browser.tap(q('[data-testid=sessions-toggle]'));
     await browser.until('the drawer', `${q('[data-testid=conversations]')}?.dataset.drawer === 'true'`, 5000);

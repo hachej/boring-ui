@@ -79,10 +79,10 @@ export function ModelEffortPicker({ model, effort, currentModel, currentEffort, 
       <li role="presentation" className="px-2.5 pt-1.5 pb-1 text-xs font-medium text-muted-foreground">{title}</li>
       {items.map((choice, index) => row(choice, offset + index))}
     </ul></li>;
-  return <div ref={root} className="relative min-w-0 shrink @max-[480px]/composer:max-w-20" onKeyDown={onKeyDown}>
+  return <div ref={root} className="relative min-w-0 max-w-[65%] shrink @max-[480px]/composer:max-w-20" onKeyDown={onKeyDown}>
     <button ref={trigger} type="button" data-testid="composer-model" data-value={modelValue} data-effort={currentEffort ?? ''} disabled={disabled} aria-haspopup="listbox" aria-expanded={open} aria-label={description} title={description}
       onClick={() => setOpen(value => !value)}
-      className="inline-flex h-8 min-w-0 max-w-full cursor-pointer items-center gap-1.5 rounded-md px-2 text-xs font-medium max-sm:h-11 pointer-coarse:h-11 text-foreground transition-colors outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-60 motion-reduce:transition-none max-sm:px-3">
+      className="inline-flex h-10 min-w-0 max-w-full cursor-pointer items-center gap-1.5 rounded-full bg-muted px-3 text-sm font-medium max-sm:h-11 pointer-coarse:h-11 text-foreground transition-colors outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-60 motion-reduce:transition-none max-sm:px-3">
       {busy && <Loader2Icon className="size-3.5 shrink-0 animate-spin motion-reduce:animate-none" aria-hidden="true" />}
       <span data-testid="composer-model-label" className="min-w-0 truncate">{summary}</span>
       <ChevronDownIcon className="size-3.5 shrink-0 opacity-50" aria-hidden="true" />

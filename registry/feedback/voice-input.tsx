@@ -28,7 +28,7 @@ const REFUSAL: Readonly<Record<VoiceRefusal, (labels: ChatLabels) => string>> = 
   failed: labels => labels.voiceStartFailed,
 };
 
-const ROUND = 'inline-flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-muted text-foreground transition-colors outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-45 motion-reduce:transition-none';
+const ROUND = 'inline-flex size-10 max-sm:size-11 pointer-coarse:size-11 shrink-0 cursor-pointer items-center justify-center rounded-(--chat-send-radius) bg-muted text-foreground transition-colors outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-45 motion-reduce:transition-none';
 
 export function VoiceInput({ controller, transcribe }: VoiceInputProps) {
   const { labels } = useChatText();

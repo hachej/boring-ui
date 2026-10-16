@@ -8,7 +8,8 @@ import { Button } from '../button/button';
 import { BlockActions } from '../button/actions';
 import type { BlockAction } from '../button/actions';
 import { Composer } from './composer';
-import type { ComposerFeedback } from './composer';
+import type { ComposerFeedback, ComposerProps } from './composer';
+import { ConversationFiles } from './conversation-files';
 import type { ConversationsConfig } from './config';
 import { EmptyState } from './empty-state';
 import type { Suggestion } from './empty-state';
@@ -84,8 +85,8 @@ export interface PiChatProps extends ChatFeatureProps {
   readonly showHistory?: boolean;
   /** Empty desktop composition. `centered` puts the composer beneath the greeting; `docked` keeps the former layout. Phones always dock it. */
   readonly emptyLayout?: 'centered' | 'docked';
-  /** `stacked` retains the former two-row composer. */
-  readonly composerLayout?: 'pill' | 'stacked';
+  /** Two-row reference composer by default. Explicitly select `pill`, `stacked` or `inline` for the earlier layouts. */
+  readonly composerLayout?: ComposerProps['layout'];
   /** A conversation title, separate from the agent name, with optional click-to-rename. */
   readonly conversationTitle?: string | undefined;
   readonly onRenameTitle?: ((title: string) => void | Promise<void>) | undefined;
@@ -118,7 +119,7 @@ function ConnectionBadge({ kind }: { readonly kind: string }) {
 }
 
 function PiChatSession({ controller, placement = 'docked', mode = 'expert', className, actions, avatar, headerActions, header = true, decisions, controls, tools, headerStart, renderEntry, renderTool, groupTool, commandMentions,
-  onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = false, emptyLayout = 'centered', composerLayout = 'pill', conversationTitle, onRenameTitle, feedback, draftKey, onOpenFile, fileChanges, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: NativeChatController } }) {
+  onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = false, emptyLayout = 'centered', composerLayout = 'card', conversationTitle, onRenameTitle, feedback, draftKey, onOpenFile, fileChanges, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: NativeChatController } }) {
   const { labels, icons } = useChatText();
   useChatDraft(controller, draftKey);
   useChatPlacement(controller, placement);
@@ -132,7 +133,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
   const rowExtras = useMemo(() => canFork ? { onFork: (entryId: string) => { void fork.current?.(entryId).catch(() => {}); } } : undefined, [canFork]);
   const session = useChatSession({ controller, activeController: active, mode, actions, renderEntry, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept,
     slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => scrollToBottom.current(), feedback, rowExtras, onOpenFile, fileChanges, pasteToFile });
-  const { state, derived, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, empty, loading, developer } = session;
+  const { state, derived, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, files, empty, loading, developer } = session;
   const { rows, pinned, retry } = derived;
   const transcript = useTranscript(rows, PAGE, MORE);
   const { stick, hidden } = transcript;
@@ -207,6 +208,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
         </div>
         <div>
           <MessageQueue items={queued} sending={state.outbox} withdraw={actions?.withdraw} actions={queueActions} />
+          <ConversationFiles files={files} />
           <Composer {...composer} layout={composerLayout} placeholder={labels.placeholder === 'Message the agent…' ? `Message ${title}…` : labels.placeholder} barStart={barStart} barNote={barNote} barEnd={tools} />
         </div>
       </div>
