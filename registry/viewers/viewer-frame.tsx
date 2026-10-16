@@ -198,7 +198,7 @@ export function ViewerFrame({ title, subtitle, status, target, revision, control
     ...menuActions(hostActions).map(action => actionMenuItem(action, testId)),
   ] as ViewerMenuItem[]).map(entry => ({ ...entry, testId: entry.testId ?? `${testId}-${entry.id}` }));
 
-  const stacked = host?.headerLayout === 'stacked' || space.tight;
+  const stacked = host?.headerLayout === 'stacked';
   const toolbar = controls && <div data-testid={`${testId}-controls`} className={cn('flex shrink-0 items-center gap-1', stacked && 'flex-wrap border-t border-border px-3 py-2')}>{controls}</div>;
   const titlebar = <>
         <div className={cn('min-w-0 flex-1 basis-0', stacked && 'text-left')}>
