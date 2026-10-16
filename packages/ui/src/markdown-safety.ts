@@ -11,9 +11,10 @@ export function normalizeMarkdownWhitespace(text: string): string {
   const lines = text.split('\n');
   const out: string[] = [];
   let fence: string | undefined;
-  for (const line of lines) {
+  for (let line of lines) {
     const opened = FENCE.exec(line);
     if (opened && (!fence || opened[1] === fence)) fence = fence ? undefined : opened[1];
+    if (!fence && !opened && !/^ {4}|^\t/.test(line) && /^(?:[ \t]*&nbsp;[ \t]*)+$/.test(line)) line = '';
     if (!fence && !opened && line.trim() === '' && out.length > 0 && out[out.length - 1]!.trim() === '') continue;
     out.push(line);
   }

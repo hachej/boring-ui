@@ -60,6 +60,43 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
     return { controller, client, target: selectedTarget, container, root, render, button, click, input, settled, writes: () => writes, saved: async () => new TextDecoder().decode((await client.read({ target: selectedTarget, revision: { kind: 'latest' } })).snapshot.bytes) };
   }
 
+  await t.test('the owner document with a legacy nbsp-only trailing paragraph reopens rich and never writes nbsp again', async t => {
+    const raw = '# Hello\n\nHow are you ?\n\n&nbsp;\n';
+    const f = await fixture(t, raw);
+    assert.equal(f.container.querySelector('section').dataset.mode, 'rich');
+    await f.click('Heading 2'); await f.click('Save'); await f.settled();
+    assert.equal(await f.saved(), '## Hello\n\nHow are you ?\n');
+    await f.render();
+    assert.equal(f.container.querySelector('section').dataset.mode, 'rich');
+  });
+
+  await t.test('editor-produced Markdown is idempotent after one pass and stays rich across a corpus', async t => {
+    const corpus = [
+      '# Heading\n\nA paragraph.\n', 'First paragraph.\n\nSecond paragraph.\n',
+      '- first\n- second\n', '- parent\n  - child\n    - grandchild\n', '1. first\n2. second\n',
+      '- [ ] next\n- [x] done\n', '> A quote\n>\n> Another paragraph.\n',
+      '```ts\nconst fictional = 1;\n\n```\n', '|A|B|\n|-|-|\n|1|2|\n',
+      '[Fictional](https://fictional.invalid/) and **bold**, *italic*, `code`.\n',
+      '\n\nStart.\n', 'First.\n\n&nbsp;\n\nSecond.\n', 'End.\n\n&nbsp;\n\n&nbsp;\n',
+      'A hard break  \nthen more.\n', '# Hello\n\nHow are you ?\n\n&nbsp;\n',
+    ];
+    for (const markdown of corpus) {
+      const f = await fixture(t, markdown);
+      assert.equal(f.container.querySelector('section').dataset.mode, 'rich', markdown);
+      // Native undo restores the parsed document; its update runs the real renderer's serializer.
+      await f.click('Heading 1');
+      const undo = async fixture => act(async () => fixture.container.querySelector('[contenteditable]').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'z', code: 'KeyZ', keyCode: 90, ctrlKey: true, bubbles: true, cancelable: true })));
+      await undo(f);
+      const once = f.controller.getSnapshot().text;
+      assert.doesNotMatch(once, /^\s*&nbsp;\s*$/m, markdown);
+      assert.equal(checkMarkdownRichSafety(once).safe, true, once);
+      const again = await fixture(t, once);
+      assert.equal(again.container.querySelector('section').dataset.mode, 'rich', once);
+      await again.click('Heading 1'); await undo(again);
+      assert.equal(again.controller.getSnapshot().text, once, `stable serialization: ${JSON.stringify(markdown)}`);
+    }
+  });
+
   await t.test('desktop formatting is pinned by default and selection formatting remains an option', async t => {
     const f = await fixture(t, 'original text\n');
     assert.ok(f.container.querySelector('.boring-markdown-toolbar [aria-label="Bold"]'), 'desktop toolbar is visible by default');
