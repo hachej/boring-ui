@@ -143,6 +143,8 @@ export default [
       await browser.until('source', `/<table/.test(${q(`${scope} textarea`)}?.value ?? '')`);
       await shots('fileviewers-html-source');
       await write('docs/tide-times.html', '<h1>Fictional tide times, revised</h1>\n<p>Low tide at the placeholder pier.</p>\n');
+      // Following this saved revision remounts the read-only pane, including its menu trigger.
+      await browser.until('HTML follows the saved revision before another header action', `/revised/.test(${q(`${scope} textarea`)}?.value ?? '')`);
       await t.menu(scope, 'viewer', 'refresh');
       await browser.until('refreshed source', `/revised/.test(${q(`${scope} textarea`)}?.value ?? '')`);
 
