@@ -112,6 +112,19 @@ try {
     await browser.screenshot('workspace-app-desktop.png');
   });
 
+  await step('opening an artifact resizes an existing draft without clipping its wrapped lines', async () => {
+    await browser.press('Escape');
+    await browser.until('wide chat', `!${q('[data-testid=workspace-panel]')}`, 5000);
+    const draft = 'A fictional draft stays visible when the artifact opens beside this conversation.';
+    await browser.type(q('[data-testid=composer-input]'), draft);
+    await browser.click(q('[data-testid=artifact-card]'));
+    await browser.until('draft resized without clipping', `!!${q('[data-testid=workspace-panel]')} && ${q('[data-testid=composer-input]')}.scrollHeight <= ${q('[data-testid=composer-input]')}.clientHeight + 1`, 5000);
+    assert.equal(await browser.evaluate(`${q('[data-testid=composer-input]')}.value`), draft);
+    await browser.screenshot('workspace-app-draft-resize.png');
+    await browser.evaluate(`${q('[data-testid=composer-input]')}.focus(); ${q('[data-testid=composer-input]')}.select()`);
+    await browser.press('Backspace');
+  });
+
   await step('the sessions pane lists both chats by their first message, and search filters them', async () => {
     await browser.until('both chats titled', `!!${row('AMBER-HARBOUR')} && !!${row('picnic plan')}`, 15000);
     await browser.click(q('[data-testid=conversation-search-open]'));

@@ -232,7 +232,7 @@ export function ViewerFrame({ title, subtitle, status, target, revision, headerS
       </header>;
   return <ViewerBarContext.Provider value={space}>
     <section data-boring="viewer-frame" data-testid={`${testId}-frame`} data-tight={space.tight || undefined}
-      className={cn('boring-viewer flex h-full min-h-0 min-w-0 flex-col bg-background text-foreground', className)}>
+      className={cn('boring-viewer isolate flex h-full min-h-0 min-w-0 flex-col bg-background text-foreground', className)}>
       {host?.renderHeader ? host.renderHeader(header) : header}
       <div data-testid={`${testId}-body`} className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
     </section>

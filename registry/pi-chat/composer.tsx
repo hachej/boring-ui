@@ -175,10 +175,22 @@ export function Composer(props: ComposerProps) {
   useLayoutEffect(() => {
     const element = inner.current;
     if (!element) return;
-    element.style.height = 'auto';
-    element.style.height = `${Math.min(element.scrollHeight, MAX_HEIGHT)}px`;
-    element.style.overflowY = element.scrollHeight > MAX_HEIGHT ? 'auto' : 'hidden';
+    const resize = () => {
+      element.style.height = 'auto';
+      element.style.height = `${Math.min(element.scrollHeight, MAX_HEIGHT)}px`;
+      element.style.overflowY = element.scrollHeight > MAX_HEIGHT ? 'auto' : 'hidden';
+    };
+    resize();
     if (pendingCaret.current !== null) { element.setSelectionRange(pendingCaret.current, pendingCaret.current); element.focus(); pendingCaret.current = null; }
+    if (typeof ResizeObserver === 'undefined') return;
+    let width = element.clientWidth;
+    const observer = new ResizeObserver(() => {
+      const next = element.clientWidth;
+      if (next === width) return;
+      width = next; resize();
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
   }, [text]);
 
   const query = slash && items.length ? slashQuery(text, caret) : null;
@@ -280,7 +292,7 @@ export function Composer(props: ComposerProps) {
       className={props.layout === 'inline'
         ? 'block max-h-40 min-h-11 min-w-0 flex-1 resize-none order-first basis-full border-0 bg-transparent px-1.5 py-2.5 text-base leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed'
         : props.layout === 'stacked' ? 'block max-h-52 min-h-11 w-full resize-none border-0 bg-transparent px-4 py-3 text-base leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed'
-        : 'block max-h-52 min-h-11 min-w-0 flex-1 resize-none border-0 bg-transparent px-1 py-2.5 text-base leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed'} />;
+        : 'block max-h-52 min-h-11 min-w-0 flex-1 resize-none overflow-x-hidden placeholder-shown:whitespace-nowrap border-0 bg-transparent px-1 py-2.5 text-base leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed'} />;
   const plus = (canAttach || items.length > 0) && <PlusMenu disabled={disabled} onAttach={canAttach ? () => fileInput.current?.click() : undefined} onCommands={items.length > 0 ? openCommands : undefined} />;
   const fileEl = canAttach && <input ref={fileInput} type="file" multiple accept={props.fileAccept} disabled={disabled} tabIndex={-1} aria-hidden="true" className="sr-only" data-testid="composer-file" data-attach="true"
     onChange={event => { const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ''; props.onPickFiles(files); }} />;
@@ -312,7 +324,7 @@ export function Composer(props: ComposerProps) {
 
   return <form data-testid="composer" onSubmit={event => { event.preventDefault(); if (canSubmit) props.onSend(); }} onDragOver={drag} onDragLeave={drag} onDrop={drop}
     className={cn('relative rounded-(--chat-composer-radius) border border-input/60 bg-card shadow-sm transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20 motion-reduce:transition-none',
-      dragging && 'border-ring ring-[3px] ring-ring/20', disabled && 'opacity-70')}>
+      props.layout !== 'stacked' && '@container/composer', dragging && 'border-ring ring-[3px] ring-ring/20', disabled && 'opacity-70')}>
     {slashOpen && <SlashMenu query={query!} items={items} onSelect={pickSlash} onDismiss={dismiss} />}
     {mentionOpen && mentions && <MentionMenu query={trigger!.query} search={mentions.search} generation={mentions.generation} onSelect={pickMention} onDismiss={dismiss} />}
     {chipRows}

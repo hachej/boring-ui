@@ -69,7 +69,7 @@ export function createToolkit({ browser, pageUrl, step, app, restartHost, base, 
   // An action under a viewer bar's "…" menu: open the menu (unless open), then choose the item. `scope` is a selector prefix, `prefix` the bar's test id prefix.
   const menu = async (scope, prefix, id) => {
     if (!await browser.evaluate(`!!${q(`[data-testid=${prefix}-more-list]`)}`)) await press(q(`${scope} [data-testid=${prefix}-more]`));
-    await browser.until('the overflow menu', `!!${q(`[data-testid=${prefix}-more-list]`)}`, 5000);
+    await browser.until('the overflow menu settles', `(() => { const e = ${q(`[data-testid=${prefix}-more-list]`)}; return e && !e.hasAttribute('data-starting-style') && e.getAnimations().every(animation => animation.playState === 'finished'); })()`, 5000);
     await press(q(`[data-testid=${prefix}-more-list] [data-testid=${prefix}-${id}]`));
     await browser.until('overflow dismissed', `!${q(`[data-testid=${prefix}-more-list]`)}`, 5000);
   };
