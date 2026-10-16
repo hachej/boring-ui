@@ -44,7 +44,7 @@ export interface CustomViewerProps {
   /** A pinned revision, read-only; absent: follow the latest. */
   readonly revision?: string | undefined;
   /** Pass these on to the `ViewerFrame` around it: test ids, the version switcher or back button, Close, the share target. */
-  readonly frame: Pick<ViewerFrameProps, 'testId' | 'titleTestId' | 'controls' | 'onClose' | 'target'>;
+  readonly frame: Pick<ViewerFrameProps, 'testId' | 'titleTestId' | 'headerStart' | 'controls' | 'onClose' | 'target'>;
 }
 /** Host viewers by artifact type or file kind (`canvas`, or any other). They take precedence over the built-in ones. */
 export type CustomViewers = Readonly<Record<string, (props: CustomViewerProps) => ReactNode>>;

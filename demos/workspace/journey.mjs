@@ -40,18 +40,18 @@ try {
   const coherentHeader = async () => {
     await browser.until('the loaded viewer actions', `!!${q('[data-testid=library-document] [data-testid=viewer-more]')}`, 15000);
     const geometry = await browser.evaluate(`(() => {
-      const panel = document.querySelector('[data-testid=workspace-panel]'), bar = panel.querySelector('[data-testid=viewer-bar]'), row = bar.querySelector('[data-testid=viewer-titlebar]'), title = row.querySelector('h2'), controls = bar.querySelector('[data-testid=viewer-controls]');
-      const p = panel.getBoundingClientRect(), b = bar.getBoundingClientRect(), r = row.getBoundingClientRect(), text = title.getBoundingClientRect(), c = controls?.getBoundingClientRect();
+      const panel = document.querySelector('[data-testid=workspace-panel]'), bar = panel.querySelector('[data-testid=viewer-bar]'), row = bar.querySelector('[data-testid=viewer-titlebar]') ?? bar, title = row.querySelector('h2'), controls = bar.querySelector('[data-testid=viewer-controls]'), back = bar.querySelector('[data-testid=file-back]');
+      const p = panel.getBoundingClientRect(), b = bar.getBoundingClientRect(), r = row.getBoundingClientRect(), text = title.getBoundingClientRect(), c = controls?.getBoundingClientRect(), backBox = back?.getBoundingClientRect();
       return { offset: b.top - p.top, rowHeight: r.height, titleOffset: text.left - r.left, align: getComputedStyle(title.parentElement).textAlign,
-        toolbarBelow: !c || c.top >= r.bottom - 1, closeInRow: !!row.querySelector('[data-testid=viewer-close]'), menuInRow: !!row.querySelector('[data-testid=viewer-more]'),
+        controlsInRow: !c || c.top >= r.top && c.bottom <= r.bottom, backRight: backBox ? backBox.right - r.left : null, backBeforeTitle: !back || backBox.right <= text.left, closeInRow: !!row.querySelector('[data-testid=viewer-close]'), menuInRow: !!row.querySelector('[data-testid=viewer-more]'),
         internalBars: panel.querySelectorAll('[data-testid=viewer-bar]').length,
         targets: [...bar.querySelectorAll('button')].map(button => { const a = button.getBoundingClientRect(); return { id: button.dataset.testid, w: a.width, h: a.height, inside: a.left >= p.left && a.right <= p.right }; }) };
     })()`);
     assert.ok(geometry.offset >= 0 && geometry.offset <= 2, JSON.stringify(geometry));
     assert.equal(geometry.rowHeight, 56);
     assert.equal(geometry.align, 'left');
-    assert.ok(geometry.titleOffset >= 8 && geometry.titleOffset <= 16);
-    assert.ok(geometry.toolbarBelow && geometry.closeInRow && geometry.menuInRow, JSON.stringify(geometry));
+    assert.ok(geometry.backRight === null ? geometry.titleOffset >= 8 && geometry.titleOffset <= 16 : geometry.titleOffset >= geometry.backRight && geometry.titleOffset <= geometry.backRight + 12, JSON.stringify(geometry));
+    assert.ok(geometry.controlsInRow && geometry.backBeforeTitle && geometry.closeInRow && geometry.menuInRow, JSON.stringify(geometry));
     assert.equal(geometry.internalBars, 1, 'exactly one header, inside the rounded card');
     assert.ok(geometry.targets.every(target => target.w >= 44 && target.h >= 44 && target.inside), JSON.stringify(geometry));
     if (await browser.evaluate(`${placement} === 'docked'`)) {
@@ -147,6 +147,24 @@ try {
     await headerShots('docked-empty');
   });
 
+  await step('Library opens on the first press across 30 desktop-to-phone breakpoint changes', async () => {
+    for (let attempt = 0; attempt < 30; attempt++) {
+      await browser.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+      await browser.until('desktop navigation hidden', `innerWidth === 1440 && !${q('[data-testid=chat-action-navigation]')}?.checkVisibility()`, 5000);
+      await history();
+      await library();
+      await browser.press('Escape');
+      await browser.until('desktop Library closed', `!${q('[data-testid=library-popover]')}`, 5000);
+      await browser.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+      await browser.until('phone page', `${placement} === 'page' && ${rect('[data-dock=chat]')}.w >= 388`, 10000);
+      await library();
+      await browser.press('Escape');
+      await browser.until('phone Library closed', `!${q('[data-testid=library-popover]')}`, 5000);
+    }
+    await browser.send('Emulation.clearDeviceMetricsOverride');
+    await browser.until('desktop restored', 'innerWidth >= 768', 5000);
+  });
+
   await step('keyboard Library selection and re-selection restore focus to the visible top-bar icon', async () => {
     await library();
     await choosePolicyWithKeyboard();
@@ -175,6 +193,7 @@ try {
     assert.equal(header.chatVisible, false, 'the file replaces the split chat on a phone');
     assert.equal(header.overflow, false);
     assert.equal(await browser.evaluate(`window.__phoneComposer === ${INPUT} && window.__phoneTranscript === ${q('[data-testid=transcript]')}`), true, 'the hidden conversation stays mounted');
+    await coherentHeader();
     await shot('review-phone-page-file.png');
     await browser.click(q('[data-testid=file-back]'));
     await browser.until('Back restores and focuses the same page composer', `${placement} === 'page' && !${q('[data-testid=library-document]')} && ${INPUT}.checkVisibility() && document.activeElement === window.__phoneComposer`, 10000);

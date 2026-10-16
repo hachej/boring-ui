@@ -22,6 +22,8 @@ export interface ImagePaneProps extends MediaSource {
   readonly status?: ViewerStatus;
   readonly target?: unknown;
   readonly revision?: string;
+  /** Leading header content, before the title. */
+  readonly headerStart?: ReactNode;
   readonly controls?: ReactNode;
   /** Re-reads the file; the host passes the new bytes, blob or URL back in. */
   readonly onRefresh?: () => unknown;
@@ -51,7 +53,7 @@ type Zoom = { readonly kind: 'fit' } | { readonly kind: 'scale'; readonly value:
  * A read-only image viewer in the standard frame: fit to view by default, zoom, actual size, drag to pan when zoomed, a checkerboard
  * behind transparency. Every type, SVG included, is shown through an `<img>` from an object URL, never as markup.
  */
-export function ImagePane({ name, mediaType, bytes, blob, url: hostUrl, subtitle, status, target, revision, controls, onRefresh, onShare, onOpenInNewTab, onClose, testId = 'viewer', titleTestId, className }: ImagePaneProps) {
+export function ImagePane({ name, mediaType, bytes, blob, url: hostUrl, subtitle, status, target, revision, headerStart, controls, onRefresh, onShare, onOpenInNewTab, onClose, testId = 'viewer', titleTestId, className }: ImagePaneProps) {
   const source = useMemo<MediaSource>(() => ({ ...(bytes ? { bytes } : {}), ...(blob ? { blob } : {}), ...(hostUrl ? { url: hostUrl } : {}) }), [bytes, blob, hostUrl]);
   const { url, size, blob: made } = useMediaUrl(source, mediaType);
   const supported = mediaType in IMAGE_TYPES;
@@ -100,7 +102,7 @@ export function ImagePane({ name, mediaType, bytes, blob, url: hostUrl, subtitle
   const downloadName = name.split('/').pop() || 'image';
   const download = () => { const data = made; if (data) downloadFile(downloadName, data, mediaType); else if (url) { const link = Object.assign(document.createElement('a'), { href: url, download: downloadName }); document.body.append(link); link.click(); link.remove(); } };
   const percent = `${Math.round(current * 100)}%`;
-  return <ViewerFrame title={name.split('/').pop() || name} subtitle={<>{subtitle}{subtitle && facts.length > 0 && <span aria-hidden="true">·</span>}{facts.join(' · ')}</>} status={status} target={target} revision={revision} testId={testId} {...(titleTestId ? { titleTestId } : {})} className={className}
+  return <ViewerFrame title={name.split('/').pop() || name} subtitle={<>{subtitle}{subtitle && facts.length > 0 && <span aria-hidden="true">·</span>}{facts.join(' · ')}</>} status={status} target={target} revision={revision} headerStart={headerStart} testId={testId} {...(titleTestId ? { titleTestId } : {})} className={className}
     onRefresh={onRefresh} onShare={onShare} onDownload={url ? download : undefined} onOpenInNewTab={onOpenInNewTab ?? (url ? () => { window.open(url, '_blank', 'noopener,noreferrer'); } : undefined)} onClose={onClose}
     menu={[
       { id: 'zoom-fit', label: labels.fitToView, icon: <ScanIcon className="size-4" />, disabled: !natural, onSelect: () => setZoom({ kind: 'fit' }) },

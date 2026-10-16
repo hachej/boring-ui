@@ -32,6 +32,8 @@ export interface ViewerFrameProps {
   /** Opaque identifiers handed to `onShare` so the host can build a link to this exact thing. */
   readonly target?: unknown;
   readonly revision?: string | undefined;
+  /** Leading header content, for example Back before the file title. */
+  readonly headerStart?: ReactNode;
   /** Viewer-specific controls that stay visible: a mode toggle, Save while there are edits, zoom steps, a version switcher when there are several. */
   readonly controls?: ReactNode;
   /** Viewer-specific secondary actions, listed in the "…" menu after the standard ones. */
@@ -134,7 +136,7 @@ function StatusMark({ status, testId }: { readonly status: ViewerStatus; readonl
 }
 
 /** The one top bar of every viewer, always a single row: title and facts, viewer controls, a status dot when something needs attention, Share, full screen, Close and the "…" menu. */
-export function ViewerFrame({ title, subtitle, status, target, revision, controls, menu, actions, labels: ownLabels, icons: ownIcons, onRefresh, onShare, onCopy, onDownload, onOpenInNewTab, onClose, testId = 'viewer', titleTestId, className, children }: ViewerFrameProps) {
+export function ViewerFrame({ title, subtitle, status, target, revision, headerStart, controls, menu, actions, labels: ownLabels, icons: ownIcons, onRefresh, onShare, onCopy, onDownload, onOpenInNewTab, onClose, testId = 'viewer', titleTestId, className, children }: ViewerFrameProps) {
   const bar = useRef<HTMLElement>(null);
   const [space, setSpace] = useState<ViewerBarSpace>({ tight: false });
   const [busy, setBusy] = useState<'refresh' | 'share' | undefined>();
@@ -201,7 +203,8 @@ export function ViewerFrame({ title, subtitle, status, target, revision, control
   const stacked = host?.headerLayout === 'stacked';
   const toolbar = controls && <div data-testid={`${testId}-controls`} className={cn('flex shrink-0 items-center gap-1', stacked && 'flex-wrap border-t border-border px-3 py-2')}>{controls}</div>;
   const titlebar = <>
-        <div className={cn('min-w-0 flex-1 basis-0', stacked && 'text-left')}>
+        {headerStart}
+        <div className="min-w-0 flex-1 basis-0 text-left">
           <h2 data-testid={titleTestId ?? `${testId}-title`} title={title} className="m-0 truncate text-sm leading-5 font-semibold tracking-tight">{title}</h2>
           {(subtitle || reading) && <p data-testid={`${testId}-subtitle`} className="m-0 flex min-w-0 items-center gap-x-1.5 overflow-hidden text-xs leading-4 whitespace-nowrap text-muted-foreground">{subtitle}{subtitle && reading && <span aria-hidden="true">·</span>}{reading && <span data-testid={`${testId}-readonly`}>{labels.readOnly}</span>}</p>}
         </div>
@@ -217,7 +220,7 @@ export function ViewerFrame({ title, subtitle, status, target, revision, control
         </div>
       </>;
   const header = <header ref={bar} data-testid={`${testId}-bar`} data-layout={stacked ? 'stacked' : undefined}
-    className={cn('relative flex shrink-0 border-b border-border', stacked ? 'flex-col' : 'min-h-14 flex-nowrap items-center gap-x-1.5 px-3 py-1.5')}>
+    className={cn('relative flex shrink-0 border-b border-border', stacked ? 'flex-col' : 'min-h-14 flex-nowrap items-center gap-x-1.5 px-3')}>
         {stacked ? <><div data-testid={`${testId}-titlebar`} className="flex min-h-14 min-w-0 items-center gap-x-1.5 px-3 py-1.5">{titlebar}</div>{toolbar}</> : titlebar}
         {notice && <span role="status" aria-live="polite" data-testid={`${testId}-notice`} data-tone={notice.tone} className={cn('absolute top-full right-3 z-40 mt-1 rounded-full border border-border px-2.5 py-1 text-xs font-medium shadow-md', TONES[notice.tone])}>{notice.text}</span>}
         {manual && <ManualCopy testId={testId} link={manual.link} text={manual.text} labels={labels} onClose={() => setManual(undefined)} />}

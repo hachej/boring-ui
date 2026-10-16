@@ -14,7 +14,6 @@ import { VoiceInput } from '../../registry/feedback/voice-input.tsx';
 import { useRevisionAttachments } from '../../registry/pi-app/use-revision-attachments.ts';
 import { useConversations } from '../../registry/pi-app/use-conversations.ts';
 import { FileViewer } from '../../registry/pi-app/file-viewer.tsx';
-import { ViewerWindowProvider } from '../../registry/viewers/viewer-window.ts';
 import { BlockActions } from '../../registry/button/actions.tsx';
 import { PdfPane } from '../../registry/viewers/pdf-pane.tsx';
 import { Button } from '../../registry/button/button.tsx';
@@ -262,7 +261,6 @@ const transcribe = async (audio: Blob, signal: AbortSignal) => (await (await aut
 function Chat({ api, provider, file, openFile, closeFile, setUnsaved, active, conversations, feed }) {
   const { isMobile, setOpenMobile } = useSidebar();
   const base = useRef(620), widened = useRef(false);
-  const viewerWindow = useMemo(() => ({ headerLayout: 'stacked' }), []);
   const chat = useRemoteChat({ conversationId: active, endpoint: id => at(`/api/chat?conversation=${id}`), fetch: authorized, identity, requestContext: () => ({ ...readAgentContext(), tab: TAB }) });
   // The files the person attaches (and a long paste) are saved in the workspace, under uploads/, through the same provider as the Library.
   const attachments = useRevisionAttachments({ revisionProvider: provider });
@@ -281,20 +279,20 @@ function Chat({ api, provider, file, openFile, closeFile, setUnsaved, active, co
   }, [api.placement, file, chat.status]);
   if (chat.status !== 'ready') return <p role="status" data-testid="chat-connecting" className="p-4 text-sm text-muted-foreground">{chat.status === 'offline' ? 'Server unreachable. Retrying…' : 'Connecting…'}</p>;
   const headerActions = [
-    ...(isMobile ? [{ id: 'navigation', label: 'Open navigation', icon: PanelLeftIcon, onSelect: () => setOpenMobile(true) }] : []),
+    { id: 'navigation', label: 'Open navigation', icon: PanelLeftIcon, onSelect: () => setOpenMobile(true) },
     { id: 'page', label: 'Agent as page', icon: MaximizeIcon, onSelect: () => api.setPlacement('page') },
   ];
   const placementActions = api.placement === 'page' ? [
-    ...(isMobile ? headerActions.filter(action => action.id === 'navigation') : []),
+    ...headerActions.filter(action => action.id === 'navigation'),
     { id: 'dock', label: 'Dock beside app', icon: PanelLeftIcon, onSelect: api.dock },
   ] : headerActions;
   const barTools = <ChatTools conversations={conversations} provider={provider} file={file} openFile={openFile} feed={feed} />;
   const tools = voice ? <VoiceInput controller={chat.controller} transcribe={transcribe} /> : undefined;
-  const common = { controller: chat.controller, actions: chat.actions, headerActions, tools, ...(attachments ? { attachments, pasteToFile: {} } : {}), onOpenFile: openFile, fileChanges: true };
-  const viewer = file && provider ? <ViewerWindowProvider value={viewerWindow}><Document path={file} provider={provider} close={closeFile} onBack={replaceChat ? closeFile : undefined} onUnsaved={setUnsaved} /></ViewerWindowProvider> : null;
+  const common = { controller: chat.controller, actions: chat.actions, headerActions, className: '[&_[data-action=navigation]]:md:hidden', tools, ...(attachments ? { attachments, pasteToFile: {} } : {}), onOpenFile: openFile, fileChanges: true };
+  const viewer = file && provider ? <Document path={file} provider={provider} close={closeFile} onBack={replaceChat ? closeFile : undefined} onUnsaved={setUnsaved} /> : null;
   const header = <div data-testid="agent-panel-header" className="pi-chat flex h-14 shrink-0 items-center gap-0.5 px-3 text-foreground [&_button]:min-h-11 [&_button]:min-w-11">
     <h2 className="m-0 min-w-0 flex-1 truncate text-sm font-semibold tracking-tight">AP helper</h2>
-    {barTools}<BlockActions actions={placementActions} testId="chat-action" menuLabel="More actions" />
+    {barTools}<BlockActions actions={placementActions} testId="chat-action" menuLabel="More actions" className="[&_[data-action=navigation]]:md:hidden" />
   </div>;
   const conversation = <div hidden={replaceChat} inert={replaceChat} className={cn('min-h-0 flex-1 flex-col', replaceChat ? 'hidden' : 'flex')}>
     <AmbientChat key={active} {...common} headerTools={api.floating ? barTools : undefined} embedded={!api.floating} variant="surface" defaultState="expanded" labels={{ title: 'AP helper', placeholder: 'Ask about your payables…', empty: 'Review an invoice, check the policy, or ask what needs your approval.' }} onDock={() => { api.dock(); api.setWidth(base.current); }} />

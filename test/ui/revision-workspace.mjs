@@ -44,6 +44,26 @@ test('revision workspace preserves file drafts, docked and floating chat mounts,
     list: async () => ({ entries: ['first.html', 'second.html'].map(path => ({ path, kind: 'file', size: 20 })) }), search: async () => ({ entries: [] }), history: async () => [],
   };
   for (const path of ['first.html', 'second.html']) await binding.publish({ operationId: path, atomicity: 'all-or-nothing', changes: [{ kind: 'create', target: locate(path), expected: { kind: 'absent' }, bytes: new TextEncoder().encode('<p>Original</p>'), mediaType: 'text/html' }] });
+  await t.test('file navigation leads the title and shares one bar with mode, menu and close', async () => {
+    for (const [path, mediaType, text] of [['notes.md', 'text/markdown', '# Fictional notes\n'], ['info.txt', 'text/plain', 'Fictional note'], ['brief.pdf', 'application/pdf', '%PDF-1.4\n']]) {
+      await binding.publish({ operationId: path, atomicity: 'all-or-nothing', changes: [{ kind: 'create', target: locate(path), expected: { kind: 'absent' }, bytes: new TextEncoder().encode(text), mediaType }] });
+    }
+    let backed = 0, closed = 0;
+    for (const path of ['first.html', 'notes.md', 'info.txt', 'brief.pdf']) {
+      await act(async () => root.render(createElement(FileViewer, { key: path, path, locator: locate(path), options: { client: binding, identity }, onBack: () => { backed++; }, backLabel: 'Chat', onClose: () => { closed++; } })));
+      for (let n = 0; n < 100 && !element.querySelector('[data-testid=viewer-more]'); n++) await act(async () => new Promise(resolve => setTimeout(resolve, 10)));
+      const bar = element.querySelector('[data-testid=viewer-bar]');
+      const back = bar.querySelector('[data-testid=file-back]'), title = bar.querySelector('[data-testid=file-title]');
+      assert.ok(back && title, path);
+      assert.ok(back.compareDocumentPosition(title) & window.Node.DOCUMENT_POSITION_FOLLOWING, `${path}: Back precedes the file title`);
+      assert.equal(element.querySelectorAll('[data-testid=viewer-bar]').length, 1, `${path}: one header`);
+      assert.ok(bar.querySelector('[data-testid=viewer-close]'), `${path}: Close shares the header`);
+      const source = bar.querySelector('[data-testid=viewer-mode-source]');
+      if (source) { await act(async () => source.click()); assert.equal(source.getAttribute('aria-pressed'), 'true', `${path}: mode still works`); }
+      await act(async () => { back.click(); bar.querySelector('[data-testid=viewer-close]').click(); });
+    }
+    assert.deepEqual([backed, closed], [4, 4]);
+  });
   await act(async () => root.render(createElement(AgentWorkspace, { controller: undefined, conversationId: undefined, revisionProvider: binding, libraryPlacement: 'center' })));
   const library = () => element.querySelector('[data-testid=workspace-library]');
   assert.ok(library(), 'Library is available without conversations');
