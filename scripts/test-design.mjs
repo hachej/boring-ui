@@ -50,8 +50,9 @@ export async function testDesign({ evidence = process.env.DESIGN_EVIDENCE ?? '.c
         await browser.send('Emulation.setDeviceMetricsOverride', { width, height: width === 390 ? 844 : 950, deviceScaleFactor: 1, mobile: width === 390 });
         await browser.send('Emulation.setTouchEmulationEnabled', { enabled: width === 390, maxTouchPoints: 5 });
         await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: mode }, { name: 'prefers-reduced-motion', value: 'reduce' }] });
+        const previousDocument = await browser.evaluate('performance.timeOrigin');
         await browser.send('Page.navigate', { url: `${app.url}?theme=${themeName}&mode=${mode}` });
-        await browser.until('mounted chat and theme', `!!${input} && !${input}.disabled && document.documentElement.classList.contains('dark') === ${mode === 'dark'} && ${themeName === 'brand' ? "getComputedStyle(document.documentElement).getPropertyValue('--border-width').trim() === '2px'" : 'true'}`, 30000);
+        await browser.until(`${prefix}: new document, mounted chat and theme`, `performance.timeOrigin !== ${previousDocument} && document.readyState === 'complete' && !!${input} && !${input}.disabled && document.documentElement.classList.contains('dark') === ${mode === 'dark'} && ${themeName === 'brand' ? "getComputedStyle(document.documentElement).getPropertyValue('--border-width').trim() === '2px'" : 'true'}`, 30000);
         await inspect(`${prefix}-chat`, params);
         if (!prepared) {
           await browser.type(input, prompt);
@@ -88,8 +89,8 @@ export async function testDesign({ evidence = process.env.DESIGN_EVIDENCE ?? '.c
         }
         // Prove the audit rejects bad values on a REAL block control, independently of REPORT mode.
         const mutant = await browser.evaluate(`(() => { const element = ${input}; const old = element.style.cssText; element.style.cssText += ';border:7px solid red!important;border-radius:37px!important;box-shadow:rgb(255,0,0) 13px 17px 19px 0!important;font-family:serif!important;color:rgb(255,0,0)!important;background:rgb(255,0,0)!important'; const result = (${auditDesign.toString()})(${JSON.stringify(options)}); element.style.cssText = old; return result; })()`);
-        const families = new Set(mutant.groups.flatMap(group => group.violations.map(finding => finding.family)));
-        for (const family of ['border-width', 'radius', 'shadow', 'font', 'text-color', 'background-color']) assert.ok(families.has(family), `audit did not detect ${family} mutation`);
+        const findings = mutant.groups.flatMap(group => group.violations).filter(finding => finding.target === 'textarea[data-testid=composer-input]');
+        for (const [family, actual] of [['border-width', '7px'], ['radius', '37px'], ['shadow', '13px 17px 19px'], ['font', 'serif'], ['text-color', 'rgb(255, 0, 0)'], ['background-color', 'rgb(255, 0, 0)']]) assert.ok(findings.some(finding => finding.family === family && finding.actual.includes(actual)), `${prefix}: audit did not detect ${family} mutation on the actual composer`);
       }
       assert.deepEqual(browser.problems, [], 'no browser console errors');
     } finally { if (browser) await browser.close(); await app.close(); }
