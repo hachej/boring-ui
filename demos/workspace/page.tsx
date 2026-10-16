@@ -219,7 +219,7 @@ class ViewerBoundary extends Component {
 function Document({ path, provider, close, onBack, onUnsaved }) {
   useAgentContext({ name: 'Library document', params: { path } });
   const options = useMemo(() => ({ client: provider, identity: provider.identity, history: provider.history }), [provider]);
-  return <div data-testid="library-document" data-path={path} className="flex min-h-0 min-w-0 flex-1 flex-col [&>*]:min-h-0 [&>*]:flex-1">
+  return <div data-testid="library-document" data-path={path} role="region" aria-label={`File ${path}`} tabIndex={-1} className="flex min-h-0 min-w-0 flex-1 flex-col outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&>*]:min-h-0 [&>*]:flex-1">
     <ViewerBoundary key={path} onClose={close}>
       <FileViewer path={path} locator={provider.locate(path)} options={options} onClose={close} {...(onBack ? { onBack, backLabel: 'Chat' } : {})} onUnsavedChange={onUnsaved} />
     </ViewerBoundary>
