@@ -86,7 +86,7 @@ test('Library defaults to the artifact column; explicit side, center and pane pl
   await act(async () => barButton().click());
   assert.equal(dock().dataset.placement, 'docked');
   assert.equal(q('[data-testid=workspace-panel]').dataset.fullscreen, 'false', 'opening the Library leaves full screen');
-  await act(async () => q('[data-testid=workspace-library-close]').click());
+  await act(async () => q('[data-testid=workspace-library-side] button[aria-label="Close Library"]').click());
   assert.equal(dock().dataset.placement, 'closed');
 
   // Phone: a full-screen sheet; choosing a file closes it and shows the viewer.

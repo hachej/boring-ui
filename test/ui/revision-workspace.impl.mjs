@@ -101,7 +101,7 @@ test('revision workspace preserves file drafts, docked and floating chat mounts,
   const conversations = { items: [{ id: 'one', title: 'Fictional chat' }], activeId: 'one', onSelect: () => { selected++; }, onNew: () => { created++; } };
   const workspace = extra => createElement(AgentWorkspace, { controller: chatController, conversationId: 'one', revisionProvider: binding, libraryPlacement: 'center', ...extra });
   await act(async () => root.render(workspace({ conversations })));
-  await act(async () => element.querySelector('[data-testid=workspace-chat-link]').click());
+  await act(async () => element.querySelector('[data-testid=workspace-library-view] button[aria-label="Close Library"]').click());
   const composer = element.querySelector('[data-testid=workspace-chat-surface] textarea'); assert.ok(composer, element.textContent);
   await act(async () => {
     Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(composer, 'Keep this draft');
@@ -112,7 +112,7 @@ test('revision workspace preserves file drafts, docked and floating chat mounts,
   assert.equal(element.querySelector('[data-testid=workspace-chat-surface]').hidden, true);
   assert.equal(element.querySelector('[data-testid=workspace-chat-surface]').inert, true);
   assert.equal(element.querySelector('[data-testid=workspace-chat-surface] textarea'), composer);
-  await act(async () => [...element.querySelectorAll('button')].find(button => button.textContent === 'Back to chat').click());
+  await act(async () => element.querySelector('[data-testid=workspace-library-view] button[aria-label="Close Library"]').click());
   assert.equal(element.querySelector('[data-testid=workspace-chat-surface] textarea'), composer);
   assert.equal(composer.value, 'Keep this draft'); assert.equal(watches, 1);
   await act(async () => library().click());
@@ -136,7 +136,7 @@ test('revision workspace preserves file drafts, docked and floating chat mounts,
   assert.equal(element.querySelector('[data-testid=workspace-chat]').dataset.floating, undefined, 'Library has center width while floating layout is suppressed');
   assert.equal(element.querySelector('textarea[aria-label="Floating draft"]'), floatingComposer);
   assert.equal(floatingUnmounts, 0);
-  await act(async () => element.querySelector('[data-testid=workspace-chat-link]').click());
+  await act(async () => element.querySelector('[data-testid=workspace-library-view] button[aria-label="Close Library"]').click());
   assert.equal(element.querySelector('textarea[aria-label="Floating draft"]'), floatingComposer);
   assert.equal(floatingComposer.value, 'Local floating draft'); assert.equal(floatingMounts, 1); assert.equal(floatingUnmounts, 0);
 
@@ -213,7 +213,8 @@ test('revision workspace preserves file drafts, docked and floating chat mounts,
   });
   for (let n = 0; n < 50 && !pane.querySelector('[role=treeitem][data-path="Maquettes/first.html"]'); n++) await act(async () => new Promise(r => setTimeout(r, 10)));
   const result = pane.querySelector('[role=treeitem][data-path="Maquettes/first.html"]');
-  assert.match(result.textContent, /^first\.htmlMaquettes/, 'a search result shows its name, then its folder');
+  assert.equal(result.querySelector('.file-tree-name').textContent, 'first.html');
+  assert.match(result.querySelector('[data-file-meta]').textContent, /^HTML · 20 B · Maquettes$/, 'search metadata includes the containing folder');
   await act(async () => {
     Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(input, '');
     input.dispatchEvent(new window.Event('input', { bubbles: true }));

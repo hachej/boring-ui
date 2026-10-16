@@ -103,7 +103,7 @@ test('upload rejects mismatched receipts, retains unknown after missing lookup a
 test('file tree renders in StrictMode, expands by keyboard and reads history without changing the open file', async t => {
   const { Window } = await import('happy-dom');
   const window = new Window({ url: 'https://fictional.invalid/' });
-  const names = ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node', 'Text', 'MutationObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'IS_REACT_ACT_ENVIRONMENT'];
+  const names = ['window', 'document', 'navigator', 'HTMLElement', 'HTMLInputElement', 'Element', 'Node', 'NodeFilter', 'Text', 'CustomEvent', 'MutationObserver', 'ResizeObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'IS_REACT_ACT_ENVIRONMENT'];
   const globals = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
   for (const name of names) {
     const value = name === 'window' ? window : name === 'IS_REACT_ACT_ENVIRONMENT' ? true : window[name];
@@ -123,7 +123,7 @@ test('file tree renders in StrictMode, expands by keyboard and reads history wit
     await act(async () => root.unmount()); await window.happyDOM.close();
     for (const [name, descriptor] of globals) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else delete globalThis[name]; }
   });
-  await act(async () => root.render(createElement(StrictMode, null, createElement(FileTree, { revisionProvider: f.binding, onOpen: path => opened.push(path) }))));
+  await act(async () => root.render(createElement(StrictMode, null, createElement(FileTree, { variant: 'list', revisionProvider: f.binding, onOpen: path => opened.push(path) }))));
   const directory = element.querySelector('[role=treeitem][data-path="docs"]');
   assert.ok(directory); assert.equal(directory.getAttribute('aria-expanded'), 'false');
   await act(async () => directory.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })));
@@ -136,7 +136,12 @@ test('file tree renders in StrictMode, expands by keyboard and reads history wit
   const file = element.querySelector('[role=treeitem][data-path="docs/note.md"]'); assert.ok(file);
   await act(async () => file.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
   assert.deepEqual(opened, ['docs/note.md']);
-  await act(async () => element.querySelector('[aria-label="History of docs/note.md"]').click());
+  assert.match(file.querySelector('[data-file-meta]')?.textContent ?? '', /Markdown · 1 B/);
+  assert.equal(file.querySelector('[aria-label="History of docs/note.md"]'), null, 'history is not an always-visible row button');
+  await act(async () => file.querySelector('[aria-label="Actions for docs/note.md"]').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
+  const historyAction = window.document.querySelector('[role=menuitem][data-action=history]');
+  assert.equal(historyAction?.textContent, 'Version history');
+  await act(async () => historyAction.click());
   const version = element.querySelector('section[aria-label="History of docs/note.md"] button[aria-pressed]'); assert.ok(version);
   await act(async () => version.click());
   for (let attempt = 0; attempt < 100 && !element.querySelector('[data-testid=file-history-preview]'); attempt++) {
@@ -150,7 +155,7 @@ test('file tree renders in StrictMode, expands by keyboard and reads history wit
   assert.deepEqual(opened, ['docs/note.md'], 'history did not retarget an open editor');
   const loading = later();
   f.binding.list = ({ directory }) => directory === 'empty' ? loading.promise : Promise.resolve({ entries: [{ path: 'empty', kind: 'directory', size: 0 }, entry('sibling.md')] });
-  await act(async () => element.querySelector('button').click());
+  await act(async () => element.querySelector('[aria-label="Refresh"]').click());
   const empty = element.querySelector('[role=treeitem][data-path="empty"]'); assert.ok(empty);
   await act(async () => { empty.focus(); empty.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })); });
   await act(async () => empty.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })));
@@ -159,6 +164,31 @@ test('file tree renders in StrictMode, expands by keyboard and reads history wit
   await act(async () => empty.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })));
   assert.equal(window.document.activeElement, empty, 'Right stays on an empty folder');
 
+  let uploaded = false;
+  const publish = f.binding.publish;
+  f.binding.publish = async request => { const result = await publish(request); if (result.kind === 'committed') uploaded = true; return result; };
+  f.binding.list = async ({ directory }) => ({ entries: uploaded ? directory ? [entry('uploads/dropped.md')] : [{ path: 'uploads', kind: 'directory', size: 0 }] : [] });
+  await act(async () => element.querySelector('[aria-label="Refresh"]').click());
+  assert.match(element.querySelector('.file-tree-empty').textContent, /No files yetUpload or ask the agent to create oneUpload/);
+  assert.ok(element.querySelector('.file-tree-empty button'), 'empty state offers the same upload picker');
+  const dropped = new File(['Fictional dropped document'], 'dropped.md', { type: 'text/markdown' });
+  const drag = type => {
+    const event = new window.Event(type, { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'dataTransfer', { value: { types: ['Files'], files: [dropped] } });
+    return event;
+  };
+  const panel = element.querySelector('[data-boring=file-tree]');
+  await act(async () => panel.dispatchEvent(drag('dragenter')));
+  assert.equal(panel.dataset.dropping, 'true');
+  await act(async () => panel.dispatchEvent(drag('drop')));
+  assert.equal(panel.dataset.dropping, undefined);
+  for (let attempt = 0; attempt < 50 && !element.querySelector('[data-path="uploads/dropped.md"]'); attempt++) {
+    await act(async () => new Promise(resolve => setTimeout(resolve, 10)));
+  }
+  assert.ok(element.querySelector('[data-path="uploads/dropped.md"]'), 'drop updates the real tree');
+  const saved = await f.binding.read({ target: f.binding.locate('uploads/dropped.md'), revision: { kind: 'latest' } });
+  assert.equal(new TextDecoder().decode(saved.snapshot.bytes), 'Fictional dropped document');
+  assert.equal(f.publishes(), 3, 'two history seeds and one drop publication');
 });
 
 test('throwing file-tree subscribers cannot strand a publication before dispatch', async t => {

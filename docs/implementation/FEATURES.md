@@ -208,6 +208,15 @@ These additions do not complete global workspace or release qualifications.
 
 ### Portable Library tree
 
+The shared `FileTreeView` list defaults to an inset search, 48px kind/size rows,
+visible-item count, accessible file actions and picker/drop uploads. It uses the
+existing revision provider, not a Pi extension or a second file service. Public
+DOM coverage is in `test/ui/file-tree.mjs`; live invalidation remains covered by
+`test/ui/change-feed.test.mjs`. `node examples/file-tree/journey-library.mjs` drives
+the standalone app and workspace demo in Chromium, including empty/drop publication,
+nested-menu Escape/focus, version history, light/dark and 360px geometry. Screenshots
+are under `.cache/evidence/library/`. Physical devices remain unqualified.
+
 The [UI guide](../../packages/ui/README.md#file-tree-and-filename-mentions) owns
 standalone/detached tree use and the default Library navigation. The renderer
 adapts pinned shadcn `sidebar-11` with packaged scoped CSS. UI public-output tests

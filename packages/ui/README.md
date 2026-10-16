@@ -290,8 +290,16 @@ The renderer adapts the official shadcn `sidebar-11` tree. Its shipped CSS works
 without a SidebarProvider or scanning package sources with Tailwind. Attribution
 and the pinned upstream revision are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
+The default `list` variant has a Library header, visible-item count, inset search,
+48px rows with kind and size, and a file actions menu. The count describes loaded,
+visible items, including folders; it is not a workspace total. The menu offers
+Open, Version history and Download through the same provider. Rename and Delete
+are absent because `RevisionProvider` exposes neither operation. No edit date or
+author is invented or fetched per row. `variant="plain"` keeps the compact tree.
+`title` overrides the list heading; `onClose` adds a host-owned close button.
+
 The tree supports folder expansion, keyboard navigation, filename search,
-pagination, uploads and read-only revision previews. Uploads go to `uploads/`
+pagination, picker or drop uploads and read-only revision previews. Uploads go to `uploads/`
 by default (`uploadDirectory` overrides it). Duplicate names refuse publication.
 Unknown upload results show **Check upload status** and retain the operation ID;
 checking never republishes the bytes. Keep the local file until the result is
@@ -300,10 +308,9 @@ known. Upload state is in memory and is not a durable cross-reload upload queue.
 Both components take `locale` (`en` by default, or `fr`; the words are exported as
 `defaultFileTreeLabels` and `frenchFileTreeLabels`) and `labels` to override any word,
 including the accessible names, or to add another language, `upload={false}` and
-`history={false}` to hide those buttons where a host has no uploads or retained
-history, and `refreshKey`: when its value changes the open folders and the current
+`history={false}` to hide upload controls or the version-history menu item, and `refreshKey`: when its value changes the open folders and the current
 search reload, for example after an agent saves a file. A search result shows its
-name with its folder beside it. `AgentWorkspace` passes the same options to its
+name with its folder in the metadata line. `AgentWorkspace` passes the same options to its
 Library through `fileTree`, with its own `locale`.
 
 For custom layouts, import `createFileTreeController` from

@@ -40,9 +40,9 @@ try {
     for (const path of ['node_modules', 'dist', 'debug.log']) assert.equal(await browser.evaluate(`!!${q(row(path))}`), false);
     await browser.click(q(`${row('docs')} button`));
     await browser.until('notes visible', `!!${q(row('docs/notes.md'))}`);
-    assert.equal(await browser.evaluate(`getComputedStyle(${q('[data-slot=sidebar-menu-button]')}).height`), '32px');
-    assert.equal(await browser.evaluate(`getComputedStyle(${q('[data-slot=sidebar-menu-button] svg')}).width`), '16px');
-    assert.equal(await browser.evaluate(`getComputedStyle(${q('[data-slot=sidebar-menu-sub]')}).borderLeftWidth`), '1px');
+    assert.equal(await browser.evaluate(`getComputedStyle(${q('[data-slot=sidebar-menu-button]')}).height`), '48px');
+    assert.equal(await browser.evaluate(`getComputedStyle(${q('.file-tree-tile svg')}).width`), '16px');
+    assert.equal(await browser.evaluate(`getComputedStyle(${q('[data-slot=sidebar-menu-sub]')}).paddingLeft`), '14px');
     await browser.evaluate(`${q(row('docs/notes.md'))}.focus()`); await browser.press('Enter');
     assert.equal(await browser.evaluate(`${q('output[aria-label="Opened file"]')}.textContent`), 'docs/notes.md');
   });
@@ -79,7 +79,8 @@ try {
     const previous = await provider.read({ target: host.target('docs/notes.md'), revision: { kind: 'latest' } }, host.access('first'));
     assert.equal(previous.kind, 'available');
     assert.equal((await host.publish('first', 'fictional-agent-edit', [{ kind: 'replace', target: previous.snapshot.ref, bytes: new TextEncoder().encode('# Agent changed notes\n'), mediaType: 'text/markdown' }])).kind, 'committed');
-    await browser.click(q('button[aria-label="History of docs/notes.md"]'));
+    await browser.click(q('button[aria-label="Actions for docs/notes.md"]'));
+    await browser.click(q('[role=menuitem][data-action=history]'));
     await browser.until('history revisions', `${q('section[aria-label="History of docs/notes.md"]')}?.querySelectorAll('li button').length===2`);
     await browser.click(`${q('section[aria-label="History of docs/notes.md"]')}.querySelectorAll('li button')[1]`);
     await browser.until('exact old revision', `${q('[data-testid="file-history-preview"]')}?.dataset.revision===${JSON.stringify(previous.snapshot.ref.revision)}`);
@@ -152,7 +153,7 @@ try {
       await tab.until('sheet closed, viewer shown', `${q('[data-dock=library]')}.dataset.placement === 'closed' && ${q('[data-testid="file-viewer"]')}?.dataset.path === 'second.html'`);
       await click('[data-testid=viewer-library]');
       await tab.until('sheet again from the viewer bar', `${q('[data-dock=library]')}.dataset.placement === 'sheet'`);
-      await click('[data-testid=workspace-library-close]');
+      await click('[data-testid=workspace-library-side] button[aria-label="Close Library"]');
       await tab.until('sheet closed by its button', `${q('[data-dock=library]')}.dataset.placement === 'closed'`);
       await shot('library-side-phone-viewer.png');
     } finally { await tab.close(); }
@@ -204,7 +205,7 @@ try {
       await detached.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 });
       await detached.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 });
       await detached.until('detached notes', `!!${q(row('docs/notes.md'))}`);
-      assert.equal(await detached.evaluate(`getComputedStyle(${q('[data-slot=sidebar-menu-button]')}).height`), '32px');
+      assert.equal(await detached.evaluate(`getComputedStyle(${q('[data-slot=sidebar-menu-button]')}).height`), '48px');
       await detached.evaluate(`${q(row('docs/notes.md'))}.focus()`);
       await detached.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
       await detached.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
