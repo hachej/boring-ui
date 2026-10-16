@@ -79,6 +79,29 @@ test('Escape in an embedded conversation does not remember a collapsed floating 
   assert.ok(element.querySelector('[data-testid=transcript]') === transcript);
 });
 
+test('host header controls stay interactive before Dock and do not replace the conversation', async t => {
+  const { element, root, chat, act, createElement: h, AmbientChat } = await harness(t);
+  let opened = 0;
+  const render = (embedded, tools = true) => act(async () => root.render(h(AmbientChat, {
+    controller: chat, defaultState: 'expanded', embedded, onDock() {},
+    headerTools: tools ? h('button', { 'data-testid': 'fixture-history', onClick: () => { opened++; } }, 'History') : undefined,
+  })));
+  await render(false);
+  const header = element.querySelector('[data-testid=ambient-header]');
+  const control = header.querySelector('[data-testid=fixture-history]');
+  assert.ok(control, 'the host control renders in the floating top bar');
+  assert.equal(control.nextElementSibling.dataset.testid, 'ambient-dock');
+  await act(async () => control.click());
+  assert.equal(opened, 1);
+  const composer = element.querySelector('[data-testid=composer-input]');
+  const transcript = element.querySelector('[data-testid=transcript]');
+  await render(true);
+  await render(false, false);
+  assert.equal(element.querySelector('[data-testid=fixture-history]'), null, 'without the option there are no extra header controls');
+  assert.equal(element.querySelector('[data-testid=composer-input]'), composer);
+  assert.equal(element.querySelector('[data-testid=transcript]'), transcript);
+});
+
 test('ambient bar remembers its position in localStorage with storage="local"', async t => {
   const { key, local, session } = await moveOnce(t, { storage: 'local' });
   assert.ok(local, 'the position is written to localStorage');

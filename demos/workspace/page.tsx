@@ -2,8 +2,7 @@
 // The host owns navigation and its fixed cell-based screens. Pi owns execution.
 // @ts-nocheck: an example page, bundled by esbuild and not part of the typechecked sources.
 import { Component, createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeftIcon, MaximizeIcon, PanelLeftIcon, PanelTopIcon } from 'lucide-react';
-import { createPortal } from 'react-dom';
+import { MaximizeIcon, PanelLeftIcon } from 'lucide-react';
 import { createRoot } from 'react-dom/client';
 import { Experience } from '@hachej/boring-ui-kit/experience';
 import { connectRevisionProvider } from '@hachej/boring-files/revision';
@@ -23,8 +22,9 @@ import { cn } from '../../registry/utils/utils.ts';
 import { AgentContextProvider, readAgentContext, useAgentContext } from '../../registry/app-shell/agent-context.ts';
 import { ACTIONS, CELLS, SCREENS, experienceCells } from './cells.mjs';
 import { validWorkspacePath } from './paths.mjs';
-import { FinanceCell, Mark, Status } from './finance';
+import { FinanceCell, Mark, Status, Transactions } from './finance';
 import { WorkspaceNav, SiteHeader } from './navigation';
+import { ChatTools } from './chat-tools';
 import { SCREEN_NAMES } from './screen-names.mjs';
 import { SidebarProvider, SidebarInset, useSidebar } from '../../examples/app-shell/components/ui/sidebar';
 
@@ -83,35 +83,23 @@ function ApProvider({ children, view, go, conversation }) {
 }
 
 // ---- Cell renderers, one per kind. They read their bindings through `resolve` and act through named actions.
-const card = 'rounded-xl border border-border bg-card p-5 text-card-foreground';
-const label = 'text-xs font-medium uppercase tracking-wide text-muted-foreground';
+const card = 'border-y border-border bg-background py-5 text-foreground';
+const label = 'text-xs font-medium text-muted-foreground';
 const Badge = ({ tone = 'muted', children }) => <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${tone === 'warn' ? 'bg-destructive/10 text-destructive' : tone === 'ok' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>{children}</span>;
 
 function ApprovalQueue({ cell }) {
   const { resolve, act } = useAp();
   const rows = resolve(cell.state.rows) ?? [];
-  return <section data-testid="approval-queue" className={`${card} @container`} aria-label="Approval queue">
-    <h2 className="mb-3 text-sm font-semibold">Waiting for your approval <span className="font-normal text-muted-foreground">({rows.length})</span></h2>
-    {rows.length === 0 ? <p className="text-sm text-muted-foreground">Nothing is waiting.</p> : <ul className="divide-y divide-border">
-      {rows.map(row => <li key={row.id}><button type="button" data-testid={`queue-row-${row.id}`} onClick={() => act('open_invoice', { id: row.id })} className="flex w-full items-center gap-3 py-2.5 text-left hover:bg-muted/50">
-        <Mark name={row.supplierName} />
-        <span className="min-w-0 flex-1"><span className="block truncate font-medium">{row.supplierName}</span><span className="text-xs text-muted-foreground">{row.id} · {row.account.slice(5)}</span></span>
-        <span className="hidden @[32rem]:inline"><Status value={row.status} /></span>
-        <span className="hidden shrink-0 text-muted-foreground @[32rem]:inline">due {day(row.due)}</span>
-        <span className="w-24 shrink-0 text-right tabular-nums">{money(row.amount, row.currency)}</span>
-      </button></li>)}
-    </ul>}
-  </section>;
+  return <Transactions rows={rows} act={act} approvals />;
 }
 
 function CashDue({ cell }) {
   const { resolve } = useAp();
   const rows = [...(resolve(cell.state.rows) ?? [])].sort((a, b) => a.due.localeCompare(b.due));
   const total = rows.reduce((sum, row) => sum + row.amount, 0);
-  return <section data-testid="cash-due" className={card} aria-label="Cash due">
-    <h2 className="mb-1 text-sm font-semibold">Cash due</h2>
-    <p className="mb-3 text-2xl font-semibold tabular-nums">{money(total)}</p>
-    <ul className="space-y-1.5 text-sm">{rows.map(row => <li key={row.id} className="flex justify-between gap-3"><span className="text-muted-foreground">{day(row.due)}</span><span className="tabular-nums">{money(row.amount, row.currency)}</span></li>)}</ul>
+  return <section data-testid="cash-due" className={`${card} @container`} aria-label="Cash due">
+    <div className="mb-5 flex items-baseline justify-between gap-4"><h2 className="text-sm font-semibold">Upcoming due dates</h2><p className="text-sm font-semibold tabular-nums">{money(total)} <span className="text-xs font-normal text-muted-foreground">total due</span></p></div>
+    <ul className="grid gap-x-8 gap-y-3 text-sm @[38rem]:grid-cols-3">{rows.map(row => <li key={row.id} className="flex items-center justify-between gap-3 border-b border-border pb-3"><span><span className="block text-xs text-muted-foreground">{row.id}</span><span className="text-sm">{day(row.due)}</span></span><span className="text-sm font-medium tabular-nums">{money(row.amount, row.currency)}</span></li>)}</ul>
   </section>;
 }
 
@@ -125,8 +113,8 @@ function InvoiceSummary({ cell }) {
   const decide = (action, extra = {}) => act(action, { invoice: invoice.id, expected: invoice.revision, ...extra });
   return <section data-testid="invoice-summary" data-invoice={invoice.id} className={`${card} @container`} aria-label={`Invoice ${invoice.id}`}>
     <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-      <div><h2 className="text-lg font-semibold"><button type="button" data-testid="open-supplier" className="underline-offset-4 hover:underline" onClick={() => act('open_supplier', { id: invoice.supplier })}>{invoice.supplierName}</button></h2><p className="text-sm text-muted-foreground">{invoice.id} · {invoice.number} · {invoice.description}</p></div>
-      <Badge tone={invoice.status === 'approved' ? 'ok' : invoice.status === 'on-hold' ? 'warn' : 'muted'}><span data-testid="invoice-status">{invoice.status}</span></Badge>
+      <div className="flex items-center gap-3"><Mark name={invoice.supplierName} /><div><h2 className="text-base font-semibold"><button type="button" data-testid="open-supplier" className="underline-offset-4 hover:underline" onClick={() => act('open_supplier', { id: invoice.supplier })}>{invoice.supplierName}</button></h2><p className="text-sm text-muted-foreground">{invoice.id} · {invoice.number} · {invoice.description}</p></div></div>
+      <div><Status value={invoice.status} /><span data-testid="invoice-status" className="sr-only">{invoice.status}</span></div>
     </div>
     <dl className="grid grid-cols-2 gap-x-6 gap-y-3 @[36rem]:grid-cols-4 [&_dd]:m-0">
       {[['Amount', money(invoice.amount, invoice.currency)], ['Invoice date', day(invoice.date)], ['Due', day(invoice.due)], ['PO', invoice.po]].map(([name, value]) => <div key={name}><dt className={label}>{name}</dt><dd className="font-medium tabular-nums">{value}</dd></div>)}
@@ -165,7 +153,7 @@ function InvoicePdf({ cell }) {
     void authorized(new Request(at(`/api/ap/pdf/${invoice.id}`))).then(response => response.arrayBuffer()).then(buffer => { if (!off) setBytes(new Uint8Array(buffer)); });
     return () => { off = true; };
   }, [invoice?.id]);
-  return <section data-testid="invoice-pdf" className="flex h-80 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-border" aria-label="Invoice document">
+  return <section data-testid="invoice-pdf" className="flex h-[28rem] min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-border" aria-label="Invoice document">
     {bytes ? <PdfPane name={`${invoice.id}.pdf`} bytes={bytes} testId="invoice-pdf-viewer" /> : <p role="status" className="m-auto text-sm text-muted-foreground">Loading document…</p>}
   </section>;
 }
@@ -174,7 +162,7 @@ function PolicyExcerpt({ cell }) {
   const { resolve } = useAp();
   const invoice = resolve(cell.state.invoice);
   if (!invoice) return null;
-  return <section data-testid="policy-excerpt" className={`${card} min-w-0 flex-1 text-sm`} aria-label="Policy">
+  return <section data-testid="policy-excerpt" className="min-w-0 flex-1 rounded-lg border border-border bg-muted/20 p-5 text-sm" aria-label="Policy">
     <h2 className="mb-2 text-sm font-semibold">AP policy, in short</h2>
     <p className="mb-2 text-muted-foreground">{invoice.amount > 1000 ? 'Above 1,000 EUR: one approver, and the invoice number and PO must be new.' : 'Up to 1,000 EUR: one approver.'}</p>
     <p className="text-muted-foreground">Same supplier, PO and amount as an open invoice: held until the first is paid or rejected.</p>
@@ -231,7 +219,7 @@ class ViewerBoundary extends Component {
 function Document({ path, provider, close, onBack, onUnsaved }) {
   useAgentContext({ name: 'Library document', params: { path } });
   const options = useMemo(() => ({ client: provider, identity: provider.identity, history: provider.history }), [provider]);
-  return <div data-testid="library-document" data-path={path} className="flex min-h-0 min-w-0 flex-1 flex-col [&>*]:min-h-0 [&>*]:flex-1">
+  return <div data-testid="library-document" data-path={path} role="region" aria-label={`File ${path}`} tabIndex={-1} className="flex min-h-0 min-w-0 flex-1 flex-col outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&>*]:min-h-0 [&>*]:flex-1">
     <ViewerBoundary key={path} onClose={close}>
       <FileViewer path={path} locator={provider.locate(path)} options={options} onClose={close} {...(onBack ? { onBack, backLabel: 'Chat' } : {})} onUnsavedChange={onUnsaved} />
     </ViewerBoundary>
@@ -256,28 +244,25 @@ function FloatingViewer({ children, header, active }) {
   return <div data-testid={active ? 'floating-viewer' : 'agent-workspace'} role={active ? 'region' : undefined} aria-label={active ? 'File viewer' : undefined} style={active ? style : undefined}
     className={active ? cn('pi-chat fixed z-50 flex flex-col overflow-hidden border border-border bg-muted text-foreground shadow-lg', phone ? 'inset-0 h-dvh rounded-none border-0 p-2' : 'rounded-3xl p-2') : 'flex min-h-0 min-w-0 flex-1 flex-col'}>
     {header}
-    <div className={cn('flex min-h-0 flex-1 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1', active && 'rounded-2xl border border-border bg-background shadow-sm')}>{children}</div>
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1">{children}</div>
   </div>;
 }
 
 /** The app column: its own chrome (title, navigation) and its own screens. No documents here. */
 function Column({ view }) {
   return <div data-testid="right-column" className="flex min-h-0 flex-1 flex-col bg-background">
-    <div className="flex min-h-0 flex-1 flex-col overflow-auto p-4 lg:p-7"><div className="mx-auto mb-6 flex w-full max-w-7xl shrink-0 items-start justify-between gap-4"><div><h1 className="text-2xl font-semibold tracking-tight">{SCREEN_NAMES[view.screen]}</h1><p className="mt-1 text-sm text-muted-foreground">{({ dashboard: 'Your accounts payable, at a glance.', approvals: 'Review this week’s invoices and keep payments moving.', invoices: 'Every invoice, from arrival to approval.', suppliers: 'The people and teams behind your business.', spend: 'Make room for what matters next.', payments: 'Approved invoices, ready for the next payment run.', invoice: 'Review the details before you decide.', supplier: 'Terms, documents and outstanding invoices.' })[view.screen]}</p></div><span data-testid="viewing" className="shrink-0 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground">{`${SCREEN_NAMES[view.screen]}${view.id ? ` ${view.id}` : ''}`}</span></div><Screen view={view} /></div>
+    <div data-testid="app-scroll" className="min-h-0 flex-1 overflow-auto px-4 pb-28 pt-7 sm:px-6 lg:px-8"><div className="mx-auto mb-7 flex w-full max-w-7xl shrink-0 items-start justify-between gap-4"><div><h1 className="text-xl font-semibold tracking-tight">{SCREEN_NAMES[view.screen]}</h1><p className="mt-1.5 max-w-prose text-sm text-muted-foreground">{({ dashboard: 'An overview of your March payables.', approvals: 'Review the invoices that need a decision this week.', invoices: 'Track and review every supplier invoice.', suppliers: 'Supplier details, terms and open balances.', spend: 'Expense accounts and team savings targets.', payments: 'Approved and ready for your next payment run. No payments are sent.', invoice: 'Check the source document and coding before approval.', supplier: 'Terms, documents and outstanding invoices.' })[view.screen]}</p></div><span data-testid="viewing" className="sr-only">{`${SCREEN_NAMES[view.screen]}${view.id ? ` ${view.id}` : ''}`}</span></div><Screen view={view} /></div>
   </div>;
 }
 
-// ---- The agent's workspace. History and Library live in the app-owned navigation.
+// The same chat and file column stay mounted in every Dock placement.
 const PANEL = 560; // the file viewer's width beside the chat
 const transcribe = async (audio: Blob, signal: AbortSignal) => (await (await authorized(new Request(at('/api/transcribe'), { method: 'POST', headers: { 'content-type': audio.type || 'audio/webm' }, body: audio, signal }))).json()).text ?? '';
 
-function Chat({ api, provider, file, openFile, closeFile, setUnsaved, active, conversations }) {
+function Chat({ api, provider, file, openFile, closeFile, setUnsaved, active, conversations, feed }) {
   const { isMobile, setOpenMobile } = useSidebar();
   const base = useRef(620), widened = useRef(false);
-  const [headerTarget, setHeaderTarget] = useState<HTMLElement | null>(null);
-  const [panelWidth, setPanelWidth] = useState(PANEL);
-  const renderHeader = useCallback(header => headerTarget ? createPortal(header, headerTarget) : null, [headerTarget]);
-  const viewerWindow = useMemo(() => ({ renderHeader }), [renderHeader]);
+  const viewerWindow = useMemo(() => ({ headerLayout: 'stacked' }), []);
   const chat = useRemoteChat({ conversationId: active, endpoint: id => at(`/api/chat?conversation=${id}`), fetch: authorized, identity, requestContext: () => ({ ...readAgentContext(), tab: TAB }) });
   // The files the person attaches (and a long paste) are saved in the workspace, under uploads/, through the same provider as the Library.
   const attachments = useRevisionAttachments({ revisionProvider: provider });
@@ -285,15 +270,6 @@ function Chat({ api, provider, file, openFile, closeFile, setUnsaved, active, co
   if (api.placement === 'docked' && !file && !widened.current) base.current = api.width;
   const side = api.placement === 'docked' && Boolean(file);
   const replaceChat = Boolean(file) && (api.floating || isMobile);
-  useLayoutEffect(() => {
-    const panel = document.querySelector('[data-testid=workspace-panel]');
-    if (!side || !panel || typeof ResizeObserver === 'undefined') return;
-    const measure = () => setPanelWidth(panel.getBoundingClientRect().width);
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(panel);
-    return () => observer.disconnect();
-  }, [side, chat.status]);
   useEffect(() => {
     if (side && !widened.current) { widened.current = true; api.setWidth(Math.min(base.current + PANEL, Math.max(base.current, Math.round(window.innerWidth * 0.62)))); }
     else if (!side && widened.current) { widened.current = false; if (!api.floating) api.setWidth(base.current); }
@@ -308,26 +284,24 @@ function Chat({ api, provider, file, openFile, closeFile, setUnsaved, active, co
     ...(isMobile ? [{ id: 'navigation', label: 'Open navigation', icon: PanelLeftIcon, onSelect: () => setOpenMobile(true) }] : []),
     { id: 'page', label: 'Agent as page', icon: MaximizeIcon, onSelect: () => api.setPlacement('page') },
   ];
-  const placementActions = [
-    { id: 'float', label: 'Float agent', icon: PanelTopIcon, onSelect: api.float },
-    ...(api.placement === 'page' ? [{ id: 'dock', label: 'Dock beside app', icon: PanelLeftIcon, onSelect: api.dock }] : headerActions),
-  ];
+  const placementActions = api.placement === 'page' ? [
+    ...(isMobile ? headerActions.filter(action => action.id === 'navigation') : []),
+    { id: 'dock', label: 'Dock beside app', icon: PanelLeftIcon, onSelect: api.dock },
+  ] : headerActions;
+  const barTools = <ChatTools conversations={conversations} provider={provider} file={file} openFile={openFile} feed={feed} />;
   const tools = voice ? <VoiceInput controller={chat.controller} transcribe={transcribe} /> : undefined;
   const common = { controller: chat.controller, actions: chat.actions, headerActions, tools, ...(attachments ? { attachments, pasteToFile: {} } : {}), onOpenFile: openFile, fileChanges: true };
-  const viewer = file && provider ? <ViewerWindowProvider value={viewerWindow}><Document path={file} provider={provider} close={closeFile} onUnsaved={setUnsaved} /></ViewerWindowProvider> : null;
-  const header = <div data-testid="agent-panel-header" className="pi-chat flex h-14 shrink-0 items-center text-foreground [&_button]:min-h-11 [&_button]:min-w-11">
-    {replaceChat
-      ? <Button data-testid="file-back" aria-label="Back to Chat" title="Back to Chat" onClick={closeFile} className="gap-1 px-2 text-sm"><ArrowLeftIcon className="size-4" aria-hidden="true" />Chat</Button>
-      : <div className="flex min-w-0 flex-1 items-center gap-1 px-4"><h2 className="m-0 mr-2 truncate text-sm font-semibold tracking-tight">AP helper</h2><BlockActions actions={placementActions} testId="chat-action" menuLabel="More actions" /></div>}
-    {file && <div ref={setHeaderTarget} data-testid="agent-file-header" title={file} style={replaceChat ? undefined : { width: panelWidth }}
-      className={cn('relative mr-2 min-w-0 [&>header]:h-14 [&>header]:border-0 [&>header]:px-3 [&>header]:py-0', !file.includes('/') && '[&_[data-testid=viewer-subtitle]]:hidden', replaceChat ? 'flex-1' : 'shrink-0')} />}
+  const viewer = file && provider ? <ViewerWindowProvider value={viewerWindow}><Document path={file} provider={provider} close={closeFile} onBack={replaceChat ? closeFile : undefined} onUnsaved={setUnsaved} /></ViewerWindowProvider> : null;
+  const header = <div data-testid="agent-panel-header" className="pi-chat flex h-14 shrink-0 items-center gap-0.5 px-3 text-foreground [&_button]:min-h-11 [&_button]:min-w-11">
+    <h2 className="m-0 min-w-0 flex-1 truncate text-sm font-semibold tracking-tight">AP helper</h2>
+    {barTools}<BlockActions actions={placementActions} testId="chat-action" menuLabel="More actions" />
   </div>;
   const conversation = <div hidden={replaceChat} inert={replaceChat} className={cn('min-h-0 flex-1 flex-col', replaceChat ? 'hidden' : 'flex')}>
-    <AmbientChat key={active} {...common} conversations={conversations} embedded={!api.floating} variant="surface" defaultState="expanded" labels={{ title: 'AP helper' }} onDock={() => { api.dock(); api.setWidth(base.current); }} />
+    <AmbientChat key={active} {...common} headerTools={api.floating ? barTools : undefined} embedded={!api.floating} variant="surface" defaultState="expanded" labels={{ title: 'AP helper' }} onDock={() => { api.dock(); api.setWidth(base.current); }} />
   </div>;
-  return <FloatingViewer active={replaceChat} header={!api.floating || file ? header : null}>
+  return <FloatingViewer active={replaceChat} header={!api.floating && !replaceChat ? header : null}>
     <ArtifactWorkspace chat={conversation} open={Boolean(file)} panel={viewer} onClose={closeFile} sheetBelow={0} minPanel={replaceChat ? 0 : 360} minChat={replaceChat ? 0 : 340} defaultWidth={PANEL} storageKey="workspace-demo.file-panel" panelLabel="File viewer" variant="inset"
-      className={cn('bg-transparent', replaceChat && '[&>[data-testid=workspace-chat]]:hidden [&>[data-testid=workspace-divider]]:hidden [&>[data-testid=workspace-panel]]:!m-0 [&>[data-testid=workspace-panel]]:!w-full [&>[data-testid=workspace-panel]]:flex-1 [&>[data-testid=workspace-panel]]:border-0 [&>[data-testid=workspace-panel]]:rounded-none')} />
+      className={cn('bg-transparent', replaceChat && '[&>[data-testid=workspace-chat]]:hidden [&>[data-testid=workspace-divider]]:hidden [&>[data-testid=workspace-panel]]:!m-0 [&>[data-testid=workspace-panel]]:!w-full [&>[data-testid=workspace-panel]]:flex-1')} />
   </FloatingViewer>;
 }
 
@@ -335,7 +309,6 @@ function WorkspaceLayout(props) {
   const api = useDock('chat');
   props.dock.current = api;
   const { approvalCount } = useAp();
-  const [panel, setPanel] = useState();
   const [theme, setTheme] = useState(() => matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -351,12 +324,12 @@ function WorkspaceLayout(props) {
     return () => stop.abort();
   }, [props.provider]);
   return <>
-    <WorkspaceNav {...props} api={api} count={approvalCount} panel={panel} setPanel={setPanel} conversations={conversations} feed={feed} />
-    <SidebarInset className="min-h-0 overflow-hidden md:peer-data-[variant=inset]:m-2 md:peer-data-[variant=inset]:ml-0">
+    <WorkspaceNav view={props.view} go={props.go} api={api} count={approvalCount} />
+    <SidebarInset className="min-h-0 overflow-hidden">
       <SiteHeader title={api?.placement === 'page' ? 'Agent' : SCREEN_NAMES[props.view.screen]} theme={theme} setTheme={setTheme} />
       <div className="flex min-h-0 min-w-0 flex-1">
         <Dock id="chat" side="left" floatable dragBelow={260} narrowBelow={720} defaultPlacement="page" defaultWidth={620} minWidth={300} className="bg-muted/40" labels={{ region: 'Agent chat', resize: 'Resize chat' }}>
-          {api => <Chat {...props} api={api} conversations={conversations} />}
+          {api => <Chat {...props} api={api} conversations={conversations} feed={feed} />}
         </Dock>
         <DockMain><Column view={props.view} /></DockMain>
       </div>
@@ -381,7 +354,7 @@ function App() {
   return <AgentContextProvider>
     <ApProvider view={view} go={go} conversation={active}>
       <OpenFile.Provider value={openFile}>
-        <SidebarProvider style={{ '--sidebar-width': '15rem', minHeight: 0, height: '100%' }}>
+        <SidebarProvider style={{ '--sidebar-width': '14.5rem', minHeight: 0, height: '100%' }}>
           <DockLayout storageKey="workspace-demo" minMain={600} className="h-full">
             <WorkspaceLayout view={view} go={go} dock={dock} provider={provider} file={file} openFile={openFile} closeFile={closeFile} setUnsaved={unsaved => { dirty.current = unsaved; }} active={active} setActive={setActive} />
           </DockLayout>

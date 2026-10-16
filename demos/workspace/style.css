@@ -1,5 +1,7 @@
 :root {
-  --sidebar: var(--muted);
+  --primary: oklch(0.52 0.19 262);
+  --primary-foreground: oklch(0.99 0.003 262);
+  --sidebar: color-mix(in oklab, var(--muted) 55%, var(--background));
   --sidebar-foreground: var(--foreground);
   --sidebar-border: var(--border);
   --sidebar-accent: var(--background);
@@ -17,5 +19,25 @@
 html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 body { background: var(--sidebar); color: var(--foreground); font: 14px/1.5 ui-sans-serif, system-ui, sans-serif; }
 [data-testid^="screen-"] [data-boring="experience-row"] > [data-boring="experience-cell"] { flex: 1 1 18rem; min-width: 0; }
-progress::-webkit-progress-bar { background: var(--muted); border-radius: 999px; }
-progress::-webkit-progress-value { background: oklch(0.58 0.12 160); border-radius: 999px; }
+.dark { --primary: oklch(0.72 0.14 262); --primary-foreground: oklch(0.18 0.02 262); }
+progress::-webkit-progress-bar { background: var(--muted); border-radius: 2px; }
+progress::-webkit-progress-value { background: var(--primary); border-radius: 2px; }
+progress.over-budget::-webkit-progress-value { background: var(--destructive); }
+[data-testid="library-document"] [data-testid="viewer-bar"] button { min-height: 44px; min-width: 44px; }
+[data-testid="library-document"] [data-testid="viewer-subtitle"] { text-overflow: ellipsis; }
+.ap-ledger { container: ledger / inline-size; }
+@container ledger (width < 54rem) {
+  .ap-ledger :is(th, td):nth-child(2) { display: none; }
+}
+@container ledger (width < 38rem) {
+  .ap-ledger :is(th, td):is(:nth-child(3), :nth-child(4), :nth-child(6)) { display: none; }
+  .ap-ledger .ledger-due { display: inline; }
+  .ap-ledger .ledger-status { display: block; }
+}
+@container ledger (width < 30rem) {
+  .ap-ledger .ledger-mark { display: none; }
+}
+@media (max-width: 639px) {
+  [data-testid="app-scroll"] { padding-bottom: 10rem; }
+  [data-testid="screen-invoice"] [data-boring="experience-row"] { flex-direction: column; }
+}
