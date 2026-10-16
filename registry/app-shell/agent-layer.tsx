@@ -379,7 +379,7 @@ function TalkButton({ text }: { readonly text: AppShellText }) {
   };
   return <button type="button" data-testid="agent-talk" data-state={voice.phase} disabled={busy} aria-label={text.holdToTalk} title={text.holdToTalk}
     onPointerDown={down} onPointerUp={up} onPointerCancel={up} onPointerMove={move} onContextMenu={event => event.preventDefault()}
-    className={cn('inline-flex size-11 shrink-0 touch-none items-center justify-center rounded-lg bg-muted text-foreground outline-none select-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 disabled:opacity-60', recording && 'bg-destructive text-white hover:bg-destructive/90')}>
+    className={cn('inline-flex size-10 max-sm:size-11 pointer-coarse:size-11 shrink-0 touch-none items-center justify-center rounded-(--chat-send-radius) bg-muted text-foreground outline-none select-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 disabled:opacity-60', recording && 'bg-destructive text-white hover:bg-destructive/90')}>
     {busy ? <Loader2Icon className="size-5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <MicIcon className="size-5" aria-hidden="true" />}
   </button>;
 }

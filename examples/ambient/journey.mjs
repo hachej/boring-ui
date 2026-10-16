@@ -62,6 +62,9 @@ try {
   await step('composer parity: the bar has the same controls as a full PiChat (the + menu, / and @ menus, one model-and-effort pill, Send)', async () => {
     for (const testid of FULL_CONTROLS) assert.equal(await browser.evaluate(`!!${control(testid)}`), true, `the ambient composer has ${testid}`);
     assert.match(await browser.evaluate(`${control('composer-model-label')}.textContent`), / · /, 'the pill shows the model and the effort');
+    const buttons = await browser.evaluate(`[...${control('composer-controls')}.querySelectorAll('button')].filter(e => e.checkVisibility()).map(e => { const r = e.getBoundingClientRect(); return { centre: r.top + r.height / 2, height: r.height }; })`);
+    assert.ok(Math.max(...buttons.map(r => r.centre)) - Math.min(...buttons.map(r => r.centre)) <= 1, JSON.stringify(buttons));
+    assert.ok(buttons.every(r => r.height === 40), 'attach, model and Send share the reference control height');
     assert.equal(await browser.evaluate(`!${control('effort-picker')} && !${control('model-picker')}`), true, 'no separate model or effort triggers');
     await browser.type(INPUT, '/');
     await browser.until('the slash menu', `!!${control('slash-menu')}`, 5000);

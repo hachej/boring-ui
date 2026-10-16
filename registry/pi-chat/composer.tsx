@@ -67,6 +67,8 @@ export interface ComposerProps {
   /** Extra controls in the bar (the model and effort pill) and a short note beside them. */
   readonly barStart?: ReactNode;
   readonly barNote?: ReactNode;
+  /** Optional host mode/model chips beside the attach control. */
+  readonly chips?: ReactNode;
   readonly text: string;
   readonly onText: (text: string) => void;
   readonly attachments: readonly ComposerAttachment[];
@@ -296,6 +298,7 @@ export function Composer(props: ComposerProps) {
   const plus = (canAttach || items.length > 0) && <PlusMenu disabled={disabled} onAttach={canAttach ? () => fileInput.current?.click() : undefined} onCommands={items.length > 0 ? openCommands : undefined} />;
   const fileEl = canAttach && <input ref={fileInput} type="file" multiple accept={props.fileAccept} disabled={disabled} tabIndex={-1} aria-hidden="true" className="sr-only" data-testid="composer-file" data-attach="true"
     onChange={event => { const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ''; props.onPickFiles(files); }} />;
+  const chipsControl = props.chips && <div className="flex min-w-0 items-center gap-2 [&>button]:h-10 [&>button]:rounded-full [&>button]:px-3 max-sm:[&>button]:h-11 pointer-coarse:[&>button]:h-11">{props.chips}</div>;
   const send = working
     ? <Button variant="default" size="icon" data-testid="composer-submit" data-state="stop" aria-label={labels.stop} title={labels.stop} disabled={disabled || stopRequested} onClick={props.onStop} className="ml-auto size-10 rounded-(--chat-send-radius) max-sm:size-11 pointer-coarse:size-11 shrink-0">
       {stopRequested ? <Loader2Icon className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <icons.stop className="size-4 fill-current" aria-hidden="true" />}</Button>
@@ -315,6 +318,7 @@ export function Composer(props: ComposerProps) {
       {textareaEl}
       {props.barNote}
       {props.barStart}
+      {chipsControl}
       {props.barEnd}
       {uploading && !(props.uploads?.length) && <Loader2Icon role="status" aria-label={labels.preparingAttachmentsShort} className="size-3.5 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" />}
       {working && hasContent && <Button variant="secondary" size="sm" data-testid="composer-queue" disabled={!canSubmit} onClick={props.onSend} className="h-11 shrink-0 rounded-full px-4"><icons.queue className="size-3.5" aria-hidden="true" />{labels.queue}</Button>}
@@ -336,10 +340,11 @@ export function Composer(props: ComposerProps) {
       {layout === 'pill' && textareaEl}
       {feedback && <AnnotateButton feedback={feedback} disabled={disabled} />}
       {props.barStart}
+      {chipsControl}
       {props.barNote}
       {uploading && !(props.uploads?.length) && <span role="status" className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2Icon className="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />{labels.preparingAttachments}</span>}
       {layout !== 'pill' && <span className="min-w-0 flex-1" />}
-      {props.barEnd && <div data-testid="composer-tools" className="flex shrink-0 items-center gap-2 [&>button]:size-10 [&>button]:rounded-(--chat-send-radius) [&>button]:bg-muted max-sm:[&>button]:size-11 pointer-coarse:[&>button]:size-11">{props.barEnd}</div>}
+      {props.barEnd && <div data-testid="composer-tools" className="flex shrink-0 items-center gap-2 [&>button]:h-10 [&>button]:min-w-10 [&>button]:rounded-(--chat-send-radius) [&>button]:bg-muted max-sm:[&>button]:h-11 max-sm:[&>button]:min-w-11 pointer-coarse:[&>button]:h-11 pointer-coarse:[&>button]:min-w-11">{props.barEnd}</div>}
       {working && hasContent && <Button variant="secondary" size="sm" data-testid="composer-queue" disabled={!canSubmit} onClick={props.onSend} className="h-10 shrink-0 rounded-full px-4 max-sm:h-11 pointer-coarse:h-11">
         <icons.queue className="size-3.5" aria-hidden="true" />{labels.queue}</Button>}
       {send}

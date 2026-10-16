@@ -6,7 +6,7 @@ import type { EntryRecord } from '@earendil-works/pi-durable';
 import type { ImageContent, ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
 import type { ChatAttachment, NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { useStickToBottom } from 'use-stick-to-bottom';
-import type { ComposerFeedback, PendingUpload } from './composer';
+import type { ComposerFeedback, ComposerProps, PendingUpload } from './composer';
 import type { ConversationFile } from './conversation-files';
 import type { AttachmentsConfig, EffortConfig, MentionsConfig, ModelConfig, ModelRef, PastedText, PasteToFile, SlashConfig } from './config';
 import { displayName, looksLikeMarkdown, mentionToken, pieces } from './config';
@@ -43,6 +43,8 @@ export interface ChatFeatureProps {
   readonly onCopy?: (text: string) => Promise<void>;
   readonly onComposerKeyDown?: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   readonly fileAccept?: string;
+  /** Optional pills at the left of the composer's controls row. */
+  readonly composerChips?: ComposerProps['chips'];
   /** `/` menu of host commands and skills. Omit it and `/` is just text. */
   readonly slash?: SlashConfig;
   /** Show successful native write/edit paths as file cards under each reply. Off by default: only hosts with workspace file tools should opt in. */
@@ -91,7 +93,7 @@ export interface ChatSessionOptions extends Readonly<{ [Key in keyof ChatFeature
 
 export function useChatSession(options: ChatSessionOptions) {
   const { controller, activeController: active, mode, actions, renderEntry, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept,
-    slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend, rowExtras, feedback, onOpenFile, fileChanges, pasteToFile } = options;
+    slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend, rowExtras, feedback, onOpenFile, fileChanges, pasteToFile, composerChips } = options;
   const { labels } = useChatText();
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const [error, setError] = useState<string | null>(null);
@@ -342,7 +344,7 @@ export function useChatSession(options: ChatSessionOptions) {
     slash, onSlashError: report, mentions, mentionPaths: picked, onMentionPicked: (path: string) => setPicked(value => value.includes(path) ? value : [...value, path]),
     uploads: pending, onDismissUpload: (id: string) => setPending(items => items.filter(item => item.id !== id)),
     onPasteText: attachments ? pasteText : undefined, pasteToFile,
-    feedback,
+    feedback, chips: composerChips,
   };
 
   return { state, derived, rows, queued, queueActions, working, waitingForAnswer, connected, sendBlocked, error, setError, report, act, current, textarea, rowContext, composer, files, pickers, empty, loading, developer };

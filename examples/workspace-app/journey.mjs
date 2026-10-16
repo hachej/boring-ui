@@ -6,7 +6,7 @@
 // floating chat's bar) renders, is clickable and reaches the host, "Float chat" is one of the panel's actions, and it all holds at phone width.
 // Screenshots go to .cache/evidence/workspace-app/.
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { insecureUrl, launch, pause, q, qa } from '@hachej/boring-testing/browser';
@@ -137,6 +137,18 @@ try {
     await browser.until('conversation files popover', `${q('[data-testid=conversation-files-list]')}?.innerText.includes('picnic-plan.md')`, 5000);
     await browser.click(q('[data-testid=conversation-file]'));
     await browser.until('file opens and list closes', `!!${q('[data-testid=artifact-panel]')} && !${q('[data-testid=conversation-files-list]')}`, 5000);
+  });
+
+  await step('an uploaded file joins the conversation files list beside its generated artifact', async () => {
+    const upload = join(mkdtempSync(join(tmpdir(), 'fictional-composer-upload-')), 'fictional-notes.txt');
+    writeFileSync(upload, 'Fictional notes for the picnic.\n');
+    await browser.attachFiles(q('[data-testid=composer-file]'), [upload]);
+    await browser.until('uploaded file counted', `${q('[data-testid=conversation-files]')}?.textContent.includes('2')`, 10000);
+    await browser.click(q('[data-testid=conversation-files]'));
+    await browser.until('uploaded and generated files listed', `${q('[data-testid=conversation-files-list]')}?.innerText.includes('fictional-notes.txt') && ${q('[data-testid=conversation-files-list]')}.innerText.includes('picnic-plan.md')`, 5000);
+    await browser.press('Escape');
+    await browser.until('files list closed', `!${q('[data-testid=conversation-files-list]')}`, 5000);
+    await browser.evaluate(`${INPUT}.focus(); ${INPUT}.select()`); await browser.press('Backspace');
   });
 
   await step('opening an artifact resizes an existing draft without clipping its wrapped lines', async () => {

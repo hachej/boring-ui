@@ -880,7 +880,7 @@ try {
     const found = await browser.evaluate(`(() => { const form = ${q(IMPROVE + ' [data-testid=composer]')}; const toggles = [...form.querySelectorAll('[data-testid=composer-annotate]')]; const r = toggles[0]?.getBoundingClientRect();
       return { toggles: toggles.length, label: toggles[0]?.textContent, size: r ? [Math.round(r.width), Math.round(r.height)] : null, words: /Retour|Feedback|Montrer dans|question générale|Terminé/i.test(form.innerText),
         gone: ['composer-feedback', 'composer-point', 'feedback-bar', 'feedback-chip', 'feedback-general', 'feedback-count'].filter(id => document.querySelector('[data-testid=' + id + ']')) }; })()`);
-    assert.deepEqual(found, { toggles: 1, label: 'Annoter', size: [44, 44], words: false, gone: [] }, 'exactly one annotate control, 44px, and no Feedback block');
+    assert.deepEqual(found, { toggles: 1, label: 'Annoter', size: [40, 40], words: false, gone: [] }, 'exactly one pointer annotate control, 40px like the other composer controls, and no Feedback block');
     await browser.click(q(IMPROVE + ' [data-testid=composer-annotate]'));
     await browser.until('annotating', `${q(IMPROVE + ' [data-testid=composer-annotate]')}.getAttribute('aria-pressed') === 'true'`);
     assert.equal(await browser.evaluate(`!!${q('[data-testid=feedback-point-bar]')} || !!${q('[data-testid=feedback-bar]')}`), false, 'pins, not point mode, and no bar');

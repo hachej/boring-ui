@@ -441,11 +441,17 @@ like the English ones, and `labels` / `chat.labels` still override any word.
 History buttons and reloads it when `refreshKey` changes.
 `AgentWorkspace` omits the chat header's duplicate History action. Connection badges default off
 in `PiChat`; connection failures still appear inline. `showConnectionStatus={true}` restores the badge.
-`chat.tools` puts host controls such as a microphone at the end of the composer bar.
+`chat.tools` puts configured voice/action controls at the right of the composer controls row.
+`chat.composerChips` adds optional host pills beside the attach button and model picker.
 
 `PiChat` centers the empty greeting and composer on desktop. After a message, the composer docks
 to the bottom. Phones always dock it. `emptyLayout="docked"` retains the former empty layout,
-and `composerLayout="stacked"` retains the two-row composer. `ConversationList` defaults to
+and the default `composerLayout="card"` follows the owner reference: full-width, growing text above
+one centred row of 40px pointer or 44px touch controls. `composerLayout="pill"` explicitly restores
+the previous single-line pill; `stacked` and `inline` remain available. `AmbientChat` uses the same
+default and compatibility prop. Attachments stay inside the card above the text. An `Artifacts · n`
+chip appears above it for observed conversation files and uploads, opening a desktop popover or
+phone drawer through the existing file/artifact callbacks. `ConversationList` defaults to
 search disclosure and overflow row actions; `searchMode="inline"` and `rowActionLayout="inline"`
 retain the former controls.
 

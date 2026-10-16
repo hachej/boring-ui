@@ -118,7 +118,7 @@ function ConnectionBadge({ kind }: { readonly kind: string }) {
   </span>;
 }
 
-function PiChatSession({ controller, placement = 'docked', mode = 'expert', className, actions, avatar, headerActions, header = true, decisions, controls, tools, headerStart, renderEntry, renderTool, groupTool, commandMentions,
+function PiChatSession({ controller, placement = 'docked', mode = 'expert', className, actions, avatar, headerActions, header = true, decisions, controls, tools, composerChips, headerStart, renderEntry, renderTool, groupTool, commandMentions,
   onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = false, emptyLayout = 'centered', composerLayout = 'card', conversationTitle, onRenameTitle, feedback, draftKey, onOpenFile, fileChanges, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: NativeChatController } }) {
   const { labels, icons } = useChatText();
   useChatDraft(controller, draftKey);
@@ -132,7 +132,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
   const canFork = Boolean(conversations?.fork);
   const rowExtras = useMemo(() => canFork ? { onFork: (entryId: string) => { void fork.current?.(entryId).catch(() => {}); } } : undefined, [canFork]);
   const session = useChatSession({ controller, activeController: active, mode, actions, renderEntry, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept,
-    slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => scrollToBottom.current(), feedback, rowExtras, onOpenFile, fileChanges, pasteToFile });
+    slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => scrollToBottom.current(), feedback, rowExtras, onOpenFile, fileChanges, pasteToFile, composerChips });
   const { state, derived, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, files, empty, loading, developer } = session;
   const { rows, pinned, retry } = derived;
   const transcript = useTranscript(rows, PAGE, MORE);
@@ -207,8 +207,8 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
           <ChatNotices state={state} error={error} onReconcile={() => act(controller.reconcile)} onRetry={() => act(controller.retrySameRequest)} />
         </div>
         <div>
-          <MessageQueue items={queued} sending={state.outbox} withdraw={actions?.withdraw} actions={queueActions} />
           <ConversationFiles files={files} />
+          <MessageQueue items={queued} sending={state.outbox} withdraw={actions?.withdraw} actions={queueActions} />
           <Composer {...composer} layout={composerLayout} placeholder={labels.placeholder === 'Message the agent…' ? `Message ${title}…` : labels.placeholder} barStart={barStart} barNote={barNote} barEnd={tools} />
         </div>
       </div>

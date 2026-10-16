@@ -251,7 +251,7 @@ const iconButton = 'inline-flex size-8 shrink-0 cursor-pointer items-center just
 type SessionProps = Omit<AmbientChatProps, 'labels' | 'icons'> & { readonly labels: AmbientLabels; readonly icons: AmbientIcons; readonly activeController: { readonly current: NativeChatController }; readonly windowState: AmbientState; readonly store: NotificationStore; readonly onWindowState: (state: AmbientState) => void };
 
 function AmbientSession({ controller, embedded = false, labels, icons, avatar, headerActions, headerTools, messageActions, variant = 'contrast', mode = 'expert', actions,
-  windowState, onWindowState, store, storageKey = 'boring.ambient.position', storage = 'session', tools, composerLayout = 'card', onOpenFull, onFeedback, notifications, autoDismissMs, maxToasts, systemNotifications = false,
+  windowState, onWindowState, store, storageKey = 'boring.ambient.position', storage = 'session', tools, composerChips, composerLayout = 'card', onOpenFull, onFeedback, notifications, autoDismissMs, maxToasts, systemNotifications = false,
   renderEntry, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept = 'image/*', slash, mentions, attachments, onOpenFile, fileChanges, pasteToFile, model, effort, replyFooter, artifacts: hostArtifacts, artifactPanel, artifactTarget, conversations, onDock, feedback: composerFeedback, className,
   activeController }: SessionProps) {
   const { title } = labels;
@@ -300,7 +300,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inWindow, hostArtifacts, opened, detect]);
   const session = useChatSession({ controller, activeController, mode, actions, renderEntry, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept,
-    slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => scrollToBottom.current(), rowExtras, feedback: composerFeedback, onOpenFile, fileChanges, pasteToFile });
+    slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => scrollToBottom.current(), rowExtras, feedback: composerFeedback, onOpenFile, fileChanges, pasteToFile, composerChips });
   const { state, derived, rows, queued, queueActions, working, waitingForAnswer, error, act, textarea, rowContext, composer, files, empty, loading } = session;
   const transcript = useTranscript(rows);
   const versions = useMemo(() => inWindow ? collectArtifacts(state.view, detect).sort((a, b) => (b.ordinal ?? 0) - (a.ordinal ?? 0)) : [], [inWindow, state.view, detect]);
@@ -478,9 +478,9 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
             <span className="flex-1">{connectionKind === 'error' ? labels.loadFailedShort : labels.disconnectedShort}</span>
             {!state.disposed && <Button size="sm" variant="outline" onClick={() => act(controller.connect)}>{labels.reconnect}</Button>}</Notice>}
         </div>
-        <MessageQueue items={queued} sending={state.outbox} withdraw={actions?.withdraw} actions={queueActions} />
-        <div className="space-y-2 px-3 pt-2 pb-3">
+        <div className="px-3 pt-2 pb-3">
           <ConversationFiles files={files} />
+          <MessageQueue items={queued} sending={state.outbox} withdraw={actions?.withdraw} actions={queueActions} />
           <Composer {...composer} layout={composerLayout} placeholder={working || waitingForAnswer ? label : labels.placeholder} barStart={barStart} barNote={barNote} barEnd={tools} />
         </div>
       </div>
