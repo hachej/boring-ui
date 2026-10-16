@@ -1,9 +1,8 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { MenuIcon } from 'lucide-react';
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer';
-import { Button } from '../button/button';
+import { Button, NavigationMenuIcon } from '../button/button';
 import { useAppText } from './app-labels';
 import { ConversationList } from '../pi-chat/pi-chat';
 import type { ConversationsConfig } from '../pi-chat/pi-chat';
@@ -58,7 +57,7 @@ export function SessionsToggle({ open, drawer, onToggle, navigation = false }: {
   const { labels, icons } = useAppText();
   const label = navigation ? drawer ? open ? labels.closeNavigation : labels.openNavigation : open ? labels.hideNavigation : labels.showNavigation
     : drawer ? open ? labels.closeSessions : labels.openSessions : open ? labels.hideSessions : labels.showSessions;
-  return <Button size="icon-sm" variant="ghost" data-testid="sessions-toggle" aria-label={label} title={label} aria-expanded={open} onClick={onToggle} className="shrink-0 text-muted-foreground">
-    {drawer && !open ? <MenuIcon className="size-4" aria-hidden="true" /> : <icons.sessionsToggle className="size-4" aria-hidden="true" />}
+  return <Button size="icon-sm" variant="ghost" data-testid="sessions-toggle" aria-label={label} title={label} aria-expanded={open} onClick={onToggle} className={cn('shrink-0 text-muted-foreground', drawer && 'size-11')}>
+    {drawer && !open ? <NavigationMenuIcon /> : <icons.sessionsToggle className="size-4" aria-hidden="true" />}
   </Button>;
 }

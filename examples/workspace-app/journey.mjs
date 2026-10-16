@@ -215,6 +215,31 @@ try {
     // The panel open on the desktop is a full-screen sheet now.
     await sheet('workspace-app-phone-artifact.png');
     await pause(300);
+    for (const [width, height] of [[360, 780], [390, 844]]) {
+      await browser.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: true });
+      for (const dark of [false, true]) {
+        await browser.evaluate(`document.documentElement.classList.toggle('dark', ${dark}); ${q('[data-testid=sessions-toggle]')}.blur()`);
+        await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: width / 2, y: 60 });
+        await pause(100);
+        const style = await browser.evaluate(`(() => { const menu = ${q('[data-testid=sessions-toggle]')}, pencil = ${q('[data-testid=workspace-new-chat]')}, title = ${q('[data-boring=pi-chat] > header h2')}; const css = getComputedStyle(menu); const rect = e => { const r = e.getBoundingClientRect(); return { x: r.x, right: r.right, y: r.y + r.height / 2, w: r.width, h: r.height }; }; return { background: css.backgroundColor, border: css.borderTopWidth, shadow: css.boxShadow, focus: menu.matches(':focus-visible'), menu: rect(menu), pencil: rect(pencil), title: rect(title), glyph: rect(menu.querySelector('svg')), pencilGlyph: rect(pencil.querySelector('svg')), stroke: getComputedStyle(menu.querySelector('svg')).strokeWidth, pencilStroke: getComputedStyle(pencil.querySelector('svg')).strokeWidth }; })()`);
+        assert.equal(style.background, 'rgba(0, 0, 0, 0)', 'phone navigation is transparent at rest');
+        assert.equal(style.border, '0px', 'phone navigation has no native button border');
+        assert.equal(style.focus, false);
+        assert.equal(style.menu.w, 44); assert.equal(style.menu.h, 44);
+        assert.equal(style.glyph.w, 20); assert.equal(style.glyph.h, 20);
+        assert.equal(style.pencilGlyph.w, 20); assert.equal(style.pencilStroke, style.stroke);
+        assert.equal(style.stroke, '1.5px');
+        assert.ok(Math.abs(style.menu.y - style.pencil.y) <= 1 && Math.abs(style.menu.y - style.title.y) <= 1, 'phone icons and title share a vertical centre');
+        assert.ok(style.menu.x >= 12 && style.menu.x <= 16 && width - style.pencil.right >= 12 && width - style.pencil.right <= 16, 'equal quiet side padding');
+        await browser.screenshot(`phone-menu-${width}-${dark ? 'dark' : 'light'}.png`);
+        await browser.press('Tab');
+        await browser.evaluate(`${q('[data-testid=sessions-toggle]')}.focus()`);
+        assert.equal(await browser.evaluate(`${q('[data-testid=sessions-toggle]')}.matches(':focus-visible')`), true, 'keyboard focus is visible');
+        assert.notEqual(await browser.evaluate(`getComputedStyle(${q('[data-testid=sessions-toggle]')}).boxShadow`), style.shadow, 'only keyboard focus adds its ring');
+        await browser.evaluate(`${q('[data-testid=sessions-toggle]')}.blur()`);
+      }
+    }
+    await browser.evaluate("document.documentElement.classList.remove('dark')");
     assert.ok(await browser.evaluate(noOverflow), 'no horizontal scroll on the chat');
     await alignedControls();
     await browser.click(q('[data-testid=conversation-files]'));

@@ -430,10 +430,10 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
     followHeader.current = new ResizeObserver(() => { if (toggleRow.current) toggleRow.current.style.height = `${header.clientHeight}px`; });
     followHeader.current.observe(header);
   }, []);
-  const toggleSpace = toggle && <Button ref={headerSlot} size="icon-sm" aria-hidden="true" tabIndex={-1} className="invisible -ml-1" />;
+  const toggleSpace = toggle && <Button ref={headerSlot} size="icon-sm" aria-hidden="true" tabIndex={-1} className="invisible min-[641px]:-ml-1" />;
 
   // ---- The chat in the center: docked PiChat, or the host's floating surface over the same controller (with the toggle in its header).
-  const header = <>{conversations?.onNew && <Button variant="ghost" size="icon-sm" data-testid="workspace-new-chat" aria-label={text.labels.newChat} className="min-[641px]:hidden" onClick={conversations.onNew}><text.icons.newChat className="size-4" aria-hidden="true" /></Button>}{typeof controls === 'function' ? controls({ panelOpen }) : controls ?? chat.controls}</>;
+  const header = <>{conversations?.onNew && <Button variant="ghost" size="icon-sm" data-testid="workspace-new-chat" aria-label={text.labels.newChat} className="size-11 min-[641px]:hidden [&_svg]:size-5 [&_svg]:stroke-[1.5]" onClick={conversations.onNew}><text.icons.newChat className="size-4" aria-hidden="true" /></Button>}{typeof controls === 'function' ? controls({ panelOpen }) : controls ?? chat.controls}</>;
   const conversationTitle = conversations?.items.find(item => item.id === conversationId)?.title;
   const chatProps: PiChatProps | undefined = controller && { ...(mentionsForChat ? { mentions: mentionsForChat } : {}), ...(attachments ? { attachments } : {}), ...(locale ? { locale } : {}), ...chat, controller, artifacts, ...(conversations ? { conversations, historyList: false, showHistory: chat.showHistory ?? false, conversationTitle, onRenameTitle: conversations.rename && conversationId ? (title: string) => conversations.rename!(conversationId, title) : undefined } : {}),
     headerStart: <>{toggle}{chat.headerStart}</>, ...(header === undefined ? {} : { controls: header }) };

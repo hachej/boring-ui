@@ -37,6 +37,23 @@ try {
     }
     await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: process.env.APP_SCHEME ?? 'light' }] });
   };
+  const phoneNavigationShots = async mode => {
+    const selector = `[data-testid=${mode === 'floating' ? 'ambient' : 'chat'}-action-navigation]`;
+    for (const [width, height] of [[360, 780], [390, 844]]) {
+      await browser.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: true });
+      for (const scheme of ['light', 'dark']) {
+        await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] });
+        await browser.until('phone navigation visible', `${q(selector)}?.checkVisibility()`, 5000);
+        await browser.evaluate(`${q(selector)}.blur()`);
+        await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: width / 2, y: 60 });
+        await pause(250);
+        const style = await browser.evaluate(`(() => { const e = ${q(selector)}, r = e.getBoundingClientRect(), css = getComputedStyle(e), icon = e.querySelector('svg'); const title = e.closest('header, [data-testid=agent-panel-header]')?.querySelector('h2, [data-testid=ambient-title]')?.getBoundingClientRect(); return { background: css.backgroundColor, border: css.borderTopWidth, width: r.width, height: r.height, icon: icon.getBoundingClientRect().width, stroke: getComputedStyle(icon).strokeWidth, aligned: !!title && Math.abs(r.top + r.height / 2 - title.top - title.height / 2) <= 1 }; })()`);
+        assert.deepEqual(style, { background: 'rgba(0, 0, 0, 0)', border: '0px', width: 44, height: 44, icon: 20, stroke: '1.5px', aligned: true }, `${mode} ${width} ${scheme}`);
+        await shot(`phone-navigation-${mode}-${width}-${scheme}.png`);
+      }
+    }
+    await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: process.env.APP_SCHEME ?? 'light' }] });
+  };
   const coherentHeader = async () => {
     await browser.until('the loaded viewer actions', `!!${q('[data-testid=library-document] [data-testid=viewer-more]')}`, 15000);
     const geometry = await browser.evaluate(`(() => {
@@ -183,6 +200,7 @@ try {
     await browser.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
     await browser.until('phone page', `${placement} === 'page' && ${rect('[data-dock=chat]')}.w >= 388`, 10000);
     await browser.evaluate(`window.__phoneComposer = ${INPUT}; window.__phoneTranscript = ${q('[data-testid=transcript]')}; void 0;`);
+    await phoneNavigationShots('page');
     await library();
     await choosePolicyWithKeyboard();
     await librarySelectionFocus('library-document');
@@ -540,6 +558,7 @@ try {
     }
     await browser.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
     await browser.until('the floating chat has reflowed to the phone before tapping its Library icon', `${q('[data-boring=ambient-chat]')}?.dataset.phone === 'true' && ${rect('[data-boring=ambient-chat]')}?.w === 390`, 10000);
+    await phoneNavigationShots('floating');
     await library();
     await choosePolicyWithKeyboard('Contracts/fernhill-agreement.pdf');
     await browser.until('the phone file header', `!!${q('[data-testid=floating-viewer] [data-testid=viewer-close]')}`, 15000);

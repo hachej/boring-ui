@@ -5,9 +5,9 @@ const variants = {
   default: 'bg-primary text-primary-foreground hover:bg-primary/90',
   secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/80',
   outline: 'border border-border bg-background hover:bg-muted',
-  ghost: 'hover:bg-muted hover:text-foreground',
+  ghost: 'border-0 bg-transparent shadow-none hover:bg-muted/60 hover:text-foreground active:bg-muted',
   /** A ghost button whose resting text is muted (viewer bars). */
-  quiet: 'text-muted-foreground hover:bg-muted hover:text-foreground',
+  quiet: 'border-0 bg-transparent text-muted-foreground shadow-none hover:bg-muted/60 hover:text-foreground active:bg-muted',
   destructive: 'bg-destructive text-white hover:bg-destructive/90',
 } as const;
 // Targets are at least 32px with a pointer and 44px on a phone or coarse pointer.
@@ -20,6 +20,11 @@ const sizes = {
   bar: 'h-8 gap-1.5 rounded-md px-3 text-xs max-sm:h-11 pointer-coarse:h-11',
   'icon-bar': 'size-8 rounded-md max-sm:size-11 pointer-coarse:size-11',
 } as const;
+
+/** A 20px navigation glyph with the same light stroke as the phone's new-chat pencil. */
+export function NavigationMenuIcon({ className }: { readonly className?: string | undefined }) {
+  return <svg className={cn(className, 'size-5')} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true"><path d="M4 8h16M4 16h10" /></svg>;
+}
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   readonly variant?: keyof typeof variants;
