@@ -164,6 +164,7 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose }: {
   const frame = {
     title: artifact.title, testId: 'artifact', titleTestId: 'artifact-panel-title', controls: versions, onClose, target, ...(revision === undefined ? {} : { revision }), ...(options.share ? { onShare: options.share } : {}),
     subtitle: <>
+      <span title={path}>{path}</span><span aria-hidden="true">·</span>
       <span data-testid="artifact-panel-type">{typeLabel(artifact)}</span>
       <span aria-hidden="true">·</span>
       <span data-testid="artifact-panel-version">{pinned ? (menu.savedAt !== undefined ? labels.savedAt(savedLabel(menu.savedAt, Date.now(), labels.earlierVersion)) : labels.olderVersion) : menu.savedAt ? labels.latestSavedAt(savedLabel(menu.savedAt, Date.now(), labels.earlierVersion)) : labels.latest}</span>

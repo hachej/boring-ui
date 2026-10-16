@@ -1,7 +1,7 @@
 'use client';
 
-import { CheckIcon, HistoryIcon } from 'lucide-react';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { HistoryIcon } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { IconButton } from '../button/button';
 import type { ActionMenuProps, MenuItem } from '../button/actions';
 import { useViewerText } from './viewer-window';
@@ -18,9 +18,11 @@ export function ViewerMenu({ testId = 'viewer-menu', label, icon, items, align =
   return <DropdownMenu><DropdownMenuTrigger render={<IconButton label={label} data-testid={testId} className={className}>{icon}</IconButton>} />
     <DropdownMenuContent aria-label={label} align={align} data-testid={`${testId}-list`} className="w-64 max-w-[calc(100vw-16px)] duration-150 motion-reduce:animate-none">
       {children}
-      {items.map(item => <DropdownMenuItem key={item.id} role={item.checked === undefined ? 'menuitem' : 'menuitemradio'} aria-checked={item.checked} disabled={item.disabled} data-testid={item.testId ?? `${testId}-${item.id}`} data-item={item.id} onClick={item.onSelect} className="min-h-9 gap-2 max-sm:min-h-11">
-        {item.icon ?? (item.checked === undefined ? null : <span className="size-4 shrink-0">{item.checked && <CheckIcon className="size-4" aria-hidden="true" />}</span>)}<span className="min-w-0 flex-1 truncate">{item.label}</span>{item.hint && <span className="text-xs text-muted-foreground">{item.hint}</span>}
-      </DropdownMenuItem>)}
+      <DropdownMenuRadioGroup value={items.find(item => item.checked)?.id ?? ''} onValueChange={id => items.find(item => item.id === id)?.onSelect()}>
+        {items.map(item => item.checked !== undefined
+          ? <DropdownMenuRadioItem key={item.id} value={item.id} disabled={item.disabled} data-testid={item.testId ?? `${testId}-${item.id}`} data-item={item.id} className="min-h-9 gap-2 max-sm:min-h-11"><span className="min-w-0 flex-1 truncate">{item.label}</span>{item.hint && <span className="text-xs text-muted-foreground">{item.hint}</span>}</DropdownMenuRadioItem>
+          : <DropdownMenuItem key={item.id} disabled={item.disabled} data-testid={item.testId ?? `${testId}-${item.id}`} data-item={item.id} onClick={item.onSelect} className="min-h-9 gap-2 max-sm:min-h-11">{item.icon}<span className="min-w-0 flex-1 truncate">{item.label}</span>{item.hint && <span className="text-xs text-muted-foreground">{item.hint}</span>}</DropdownMenuItem>)}
+      </DropdownMenuRadioGroup>
     </DropdownMenuContent>
   </DropdownMenu>;
 }

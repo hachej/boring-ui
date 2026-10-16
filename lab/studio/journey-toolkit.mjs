@@ -71,6 +71,7 @@ export function createToolkit({ browser, pageUrl, step, app, restartHost, base, 
     if (!await browser.evaluate(`!!${q(`[data-testid=${prefix}-more-list]`)}`)) await press(q(`${scope} [data-testid=${prefix}-more]`));
     await browser.until('the overflow menu', `!!${q(`[data-testid=${prefix}-more-list]`)}`, 5000);
     await press(q(`[data-testid=${prefix}-more-list] [data-testid=${prefix}-${id}]`));
+    await browser.until('overflow dismissed', `!${q(`[data-testid=${prefix}-more-list]`)}`, 5000);
   };
   // The panel's top bar offers full screen (Escape leaves it) and Close, on a desktop viewport; a phone shows the sheet with Close.
   const panelControls = async name => {

@@ -80,17 +80,18 @@ try {
     await browser.click(q('[data-testid=chat-action-library]'));
     await browser.until('the Library search is ready before choosing a row', `!!${q('[data-testid=library-popover]')} && document.activeElement?.type === 'search' && !!document.activeElement.closest('[data-testid=library-popover]') && ${q('[data-testid=library-popover]')}.getAnimations({subtree:true}).every(animation => animation.playState !== 'running')`, 10000);
   };
-  const choosePolicyWithKeyboard = async () => {
-    const policy = q('[role=treeitem][data-path="Policies/AP policy.md"]');
+  const choosePolicyWithKeyboard = async (path = 'Policies/AP policy.md') => {
+    const policy = q(`[role=treeitem][data-path="${path}"]`);
+    const folder = q(`[role=treeitem][data-path="${path.slice(0, path.lastIndexOf('/'))}"]`);
     if (!(await browser.evaluate(`!!${policy}`))) {
-      await browser.until('Policies folder', `!!${q('[role=treeitem][data-path="Policies"]')}`, 10000);
-      await browser.evaluate(`${q('[role=treeitem][data-path="Policies"]')}.focus()`);
+      await browser.until('file folder', `!!${folder}`, 10000);
+      await browser.evaluate(`${folder}.focus()`);
       await browser.press('ArrowRight');
       await browser.until('policy listed', `!!${policy}`, 10000);
     }
     await browser.evaluate(`${policy}.focus()`);
     await browser.press('Enter');
-    await browser.until('keyboard Library choice opens the policy and closes the popover', `${q('[data-testid=library-document]')}?.dataset.path === 'Policies/AP policy.md' && !${q('[data-testid=library-popover]')}`, 10000);
+    await browser.until('keyboard Library choice opens the policy and closes the popover', `${q('[data-testid=library-document]')}?.dataset.path === ${JSON.stringify(path)} && !${q('[data-testid=library-popover]')}`, 10000);
   };
   const librarySelectionFocus = async testId => {
     const target = q(`[data-testid="${testId}"]`);
@@ -523,9 +524,7 @@ try {
       // The chat was dragged near the top earlier in the session: the window must still come up whole (its remembered corner is clamped).
       await browser.evaluate(`sessionStorage.setItem('boring.ambient.position', JSON.stringify({ right: 40, bottom: 520 }))`);
       await library();
-      await browser.click(q('[role=treeitem][data-path="Contracts"]'));
-      await browser.until('the contract in the tree', `!!${q('[role=treeitem][data-path="Contracts/fernhill-agreement.pdf"]')}`, 15000);
-      await browser.click(q('[role=treeitem][data-path="Contracts/fernhill-agreement.pdf"]'));
+      await choosePolicyWithKeyboard('Contracts/fernhill-agreement.pdf');
       await browser.until('the PDF replaces the floating chat without unmounting it', `!!${q('[data-testid=floating-viewer] [data-testid=library-document]')} && !${q('[data-boring=ambient-chat]')}.checkVisibility()`, 15000);
       await pause(500);
       await browser.screenshot(`8-floating-pdf-${width}x${height}.png`);
@@ -542,9 +541,7 @@ try {
     await browser.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
     await browser.until('the floating chat has reflowed to the phone before tapping its Library icon', `${q('[data-boring=ambient-chat]')}?.dataset.phone === 'true' && ${rect('[data-boring=ambient-chat]')}?.w === 390`, 10000);
     await library();
-    await browser.click(q('[role=treeitem][data-path="Contracts"]'));
-    await browser.until('the phone contract', `!!${q('[role=treeitem][data-path="Contracts/fernhill-agreement.pdf"]')}`, 15000);
-    await browser.click(q('[role=treeitem][data-path="Contracts/fernhill-agreement.pdf"]'));
+    await choosePolicyWithKeyboard('Contracts/fernhill-agreement.pdf');
     await browser.until('the phone file header', `!!${q('[data-testid=floating-viewer] [data-testid=viewer-close]')}`, 15000);
     await coherentHeader();
     await headerShots('phone-file');

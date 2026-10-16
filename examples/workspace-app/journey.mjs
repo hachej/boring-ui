@@ -80,6 +80,19 @@ try {
     assert.ok(composer.y > 700, 'composer docks after the first message');
   });
 
+  await step('clicking the conversation title renames the same server-owned conversation', async () => {
+    for (const title of ['Amber notebook', 'Reply with exactly: AMBER-HARBOUR']) {
+      await browser.click(q('[data-boring=pi-chat] > header h2 button'));
+      await browser.until('title editor', `!!${q('[data-boring=pi-chat] > header input[name=title]')}`, 5000);
+      await browser.evaluate(`${q('[data-boring=pi-chat] > header input[name=title]')}.select()`);
+      await browser.press('Backspace');
+      await browser.type(q('[data-boring=pi-chat] > header input[name=title]'), title);
+      await browser.press('Enter');
+      await browser.until('title and sidebar agree', `${q('[data-boring=pi-chat] > header h2')}?.textContent === ${JSON.stringify(title)} && ${q('[data-testid=conversation-row][data-active=true]')}.innerText.includes(${JSON.stringify(title)})`, 10000);
+      assert.equal(await browser.evaluate(ACTIVE), first, 'rename does not replace the conversation');
+    }
+  });
+
   let second;
   await step('New in the sessions pane starts an empty chat in the center', async () => {
     await browser.click(q('[data-testid=conversation-new]'));

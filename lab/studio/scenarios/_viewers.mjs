@@ -44,6 +44,7 @@ export function viewerKit(t) {
     await browser.until(`${label} offers Share in overflow`, `!!${q(`[data-testid=${prefix}-more-list] [data-testid=${prefix}-share]`)}`, 10000);
     assert.equal(await browser.evaluate(`${q(`[data-testid=${prefix}-more-list] [data-testid=${prefix}-share]`)}.textContent.trim()`), 'Share');
     await browser.press('Escape');
+    await browser.until('viewer overflow dismissed', `!${q(`[data-testid=${prefix}-more-list]`)}`, 5000);
   };
   // The caret at the very start of the rich document, as a person puts it there: a click on the left edge of its first character.
   // Ready means the editor's own selection agrees, not only the browser's caret: after a focus or a click ProseMirror writes its selection

@@ -28,6 +28,9 @@ export default [
       let scope = VIEWER('docs/picnic-plan.md');
       await standardBar(scope, 'Markdown');
       assert.equal(await browser.evaluate(`${q(`${scope} [data-testid=file-title]`)}.textContent`), 'picnic-plan.md');
+      assert.equal(await browser.evaluate(`${k.qa(`${scope} .boring-markdown-toolbar`)}.length`), 0, 'selection formatting is the default');
+      await browser.click(q(`${scope} [aria-label="Pin formatting toolbar"]`));
+      await browser.until('Aa pins the full toolbar', `!!${q(`${scope} .boring-markdown-toolbar`)}`, 5000);
       const tools = await browser.evaluate(`${k.qa(`${scope} [role=toolbar] button`)}.map(b => ({ label: b.getAttribute('aria-label'), icon: !!b.querySelector('svg'), text: b.textContent.trim() }))`);
       assert.ok(tools.length >= 14, `a formatting toolbar: ${tools.length} buttons`);
       assert.deepEqual(tools.filter(tool => !tool.label || !tool.icon || tool.text), [], 'every toolbar button is an icon with an accessible name');

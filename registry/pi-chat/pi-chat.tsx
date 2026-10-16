@@ -88,7 +88,7 @@ export interface PiChatProps extends ChatFeatureProps {
   readonly composerLayout?: 'pill' | 'stacked';
   /** A conversation title, separate from the agent name, with optional click-to-rename. */
   readonly conversationTitle?: string | undefined;
-  readonly onRenameTitle?: ((title: string) => void) | undefined;
+  readonly onRenameTitle?: ((title: string) => void | Promise<void>) | undefined;
   /** Show the header connection badge. Default false; connection state still controls actions and failures stay visible. */
   readonly showConnectionStatus?: boolean;
   /** The optional annotate toggle and notes chip in the composer (the registry `feedback` item's `useComposerFeedback`). Omit it and nothing changes. */
@@ -141,6 +141,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
   const { barStart, barNote } = session.pickers();
   const connectionKind = state.connection.kind;
   const [renamingTitle, setRenamingTitle] = useState(false);
+  const [titleError, setTitleError] = useState(false);
   const page = useRef<HTMLElement>(null);
   useEffect(() => {
     const viewport = globalThis.visualViewport;
@@ -150,13 +151,13 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
     return () => { viewport.removeEventListener('resize', measure); viewport.removeEventListener('scroll', measure); };
   }, []);
 
-  return <section ref={page} data-boring="pi-chat" data-connection={connectionKind} data-empty={empty && !loading ? emptyLayout : undefined} aria-label={title} className={cn('pi-chat relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background text-foreground max-sm:pb-(--composer-keyboard-inset)', empty && emptyLayout === 'centered' && 'sm:justify-center', className)}>
-    {header && <header className={cn(empty && emptyLayout === 'centered' && 'sm:absolute sm:inset-x-0 sm:top-0', 'flex h-13 shrink-0 items-center gap-2 px-3 sm:gap-3 sm:px-4')}>
+  return <section ref={page} data-boring="pi-chat" data-connection={connectionKind} data-empty={empty && !loading ? emptyLayout : undefined} aria-label={title} className={cn('pi-chat relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background text-foreground max-[641px]:pb-(--composer-keyboard-inset)', empty && emptyLayout === 'centered' && 'min-[641px]:justify-center', className)}>
+    {header && <header className={cn(empty && emptyLayout === 'centered' && 'min-[641px]:absolute min-[641px]:inset-x-0 min-[641px]:top-0', 'flex h-13 shrink-0 items-center gap-2 px-3 sm:gap-3 sm:px-4')}>
       {headerStart}
       {avatar && <span data-testid="chat-avatar" className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full [&>img]:size-full [&>img]:object-cover [&>svg]:size-4">{avatar}</span>}
-      {renamingTitle && onRenameTitle ? <form className="min-w-0 flex-1" onSubmit={event => { event.preventDefault(); const value = new FormData(event.currentTarget).get('title')?.toString().trim(); if (value) onRenameTitle(value); setRenamingTitle(false); }}>
-        <input name="title" aria-label={labels.conversationName} autoFocus defaultValue={conversationTitle ?? title} onBlur={() => setRenamingTitle(false)} onKeyDown={event => { if (event.key === 'Escape') setRenamingTitle(false); }} className="w-full min-w-0 rounded-md bg-muted px-2 py-1 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring" />
-      </form> : <h2 className="m-0 min-w-0 flex-1 truncate font-(family-name:--chat-display) text-sm font-medium tracking-tight max-sm:text-center">{onRenameTitle ? <button type="button" className="max-w-full cursor-pointer truncate rounded-md px-1 py-2 text-left max-sm:text-center outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setRenamingTitle(true)}>{conversationTitle ?? title}</button> : conversationTitle ?? title}</h2>}
+      {renamingTitle && onRenameTitle ? <form className="min-w-0 flex-1" onSubmit={event => { event.preventDefault(); const value = new FormData(event.currentTarget).get('title')?.toString().trim(); if (value) { setTitleError(false); void Promise.resolve().then(() => onRenameTitle(value)).catch(() => setTitleError(true)); } setRenamingTitle(false); }}>
+        <input name="title" aria-label={labels.conversationName} maxLength={200} autoFocus defaultValue={conversationTitle ?? title} onBlur={() => setRenamingTitle(false)} onKeyDown={event => { if (event.key === 'Escape') setRenamingTitle(false); }} className="w-full min-w-0 rounded-md bg-muted px-2 py-1 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+      </form> : <h2 className="m-0 min-w-0 flex-1 truncate font-(family-name:--chat-display) text-sm font-medium tracking-tight max-[641px]:text-center">{onRenameTitle ? <button type="button" className="max-w-full cursor-pointer truncate rounded-md px-1 py-2 text-left max-[641px]:min-h-11 pointer-coarse:min-h-11 max-[641px]:text-center outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setRenamingTitle(true)}>{conversationTitle ?? title}</button> : conversationTitle ?? title}</h2>}
       {showHistory && (conversations && historyList
         ? <Button size="sm" data-testid="history-open" className="text-muted-foreground" aria-haspopup="dialog" aria-expanded={pickingConversation} disabled={state.disposed}
           onClick={() => setPickingConversation(open => !open)}><icons.history className="size-3.5" aria-hidden="true" />{labels.history}</Button>
@@ -167,6 +168,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
       {controls}
     </header>}
 
+    {titleError && <p role="alert" className="m-0 shrink-0 px-4 py-2 text-sm text-destructive">{labels.actionFailed}</p>}
     {decisions && <div data-boring="required-decisions" className="shrink-0 border-b border-border px-4 py-2">{decisions}</div>}
     {pinned.length > 0 && <aside aria-label={labels.requiredActions} className="shrink-0 space-y-2 border-b border-border px-4 py-2">{pinned.map(card => <div key={card.key}>{card.content}</div>)}</aside>}
     {(connectionKind === 'error' || connectionKind === 'closed') && <div className="shrink-0 px-4 pt-2">
@@ -179,7 +181,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
     {browsingHistory && state.history.kind !== 'disabled' && <HistoryPanel history={state.history} developer={developer} replyFooter={replyFooter} connected={!state.disposed && connected}
       onLoad={() => act(controller.loadEarlier)} onClose={() => { setBrowsingHistory(false); if (!state.disposed) controller.clearHistory(); }} />}
 
-    <div data-testid="conversation-content" className={cn('relative min-h-0 flex-1', empty && emptyLayout === 'centered' && 'sm:min-h-60 sm:flex-none')}>
+    <div data-testid="conversation-content" className={cn('relative min-h-0 flex-1', empty && emptyLayout === 'centered' && 'min-[641px]:min-h-60 min-[641px]:flex-none')}>
       <div ref={stick.scrollRef} data-testid="transcript-scroll" className="h-full overflow-x-hidden overflow-y-auto overscroll-contain">
         <div ref={stick.contentRef} role="log" aria-label={labels.messages} aria-live="polite" data-testid="transcript" className="mx-auto flex min-h-full w-full max-w-[720px] flex-col gap-6 px-4 pt-6 pb-8 sm:px-6">
           {hidden > 0 && <div className="flex justify-center"><Button size="sm" variant="outline" data-testid="show-earlier" className="text-muted-foreground" onClick={transcript.reveal}>{labels.showEarlier}</Button></div>}

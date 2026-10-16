@@ -205,23 +205,23 @@ export function ViewerFrame({ title, subtitle, status, target, revision, headerS
   ] as ViewerMenuItem[]).map(entry => ({ ...entry, testId: entry.testId ?? `${testId}-${entry.id}` }));
 
   const stacked = !compactHeader && host?.headerLayout === 'stacked';
-  const toolbar = controls && <div data-testid={`${testId}-controls`} className={cn('flex shrink-0 items-center gap-1', compactHeader && 'max-sm:hidden', stacked && 'flex-wrap border-t border-border px-3 py-2')}>{controls}</div>;
+  const toolbar = controls && <div data-testid={`${testId}-controls`} className={cn('flex shrink-0 items-center gap-1', compactHeader && 'max-[641px]:hidden', stacked && 'flex-wrap border-t border-border px-3 py-2')}>{controls}</div>;
   const titlebar = <>
-        {compactHeader && !headerStart && onClose && <ViewerIconButton label={labels.close} data-testid={`${testId}-close`} onClick={() => run(onClose)}><ArrowLeftIcon className="size-4 sm:hidden" aria-hidden="true" /><icons.close className="hidden size-4 sm:block" aria-hidden="true" /></ViewerIconButton>}
+        {compactHeader && !headerStart && onClose && <ViewerIconButton label={labels.close} data-testid={`${testId}-close`} onClick={() => run(onClose)}><ArrowLeftIcon className="size-4 min-[641px]:hidden" aria-hidden="true" /><icons.close className="hidden size-4 min-[641px]:block" aria-hidden="true" /></ViewerIconButton>}
         {headerStart}
         <div className="group/title relative min-w-0 flex-1 basis-0 text-left">
           <h2 data-testid={titleTestId ?? `${testId}-title`} title={title} className="m-0 truncate text-sm leading-5 font-semibold tracking-tight">{title}</h2>
-          {(subtitle || reading) && <p data-testid={`${testId}-subtitle`} className={cn('m-0 flex min-w-0 items-center gap-x-1.5 text-xs leading-4 whitespace-nowrap text-muted-foreground', compactHeader ? 'pointer-events-none absolute top-full z-30 max-w-full overflow-hidden rounded-md bg-popover px-2 py-1 opacity-0 shadow-sm group-hover/title:opacity-100 max-sm:hidden' : 'overflow-hidden')}>{subtitle}{subtitle && reading && <span aria-hidden="true">·</span>}{reading && <span data-testid={`${testId}-readonly`}>{labels.readOnly}</span>}</p>}
+          {(subtitle || reading) && <p data-testid={`${testId}-subtitle`} className={cn('m-0 flex min-w-0 items-center gap-x-1.5 text-xs leading-4 whitespace-nowrap text-muted-foreground', compactHeader ? 'pointer-events-none absolute top-full z-30 max-w-full overflow-hidden rounded-md bg-popover px-2 py-1 opacity-0 shadow-sm group-hover/title:opacity-100 max-[641px]:hidden' : 'overflow-hidden')}>{subtitle}{subtitle && reading && <span aria-hidden="true">·</span>}{reading && <span data-testid={`${testId}-readonly`}>{labels.readOnly}</span>}</p>}
         </div>
         {!stacked && toolbar}
-        {status && !reading && status.kind !== 'saved' && status.label !== labels.saved && <span className={compactHeader ? 'max-sm:hidden' : undefined}><StatusMark status={status} testId={testId} /></span>}
+        {status && !reading && status.kind !== 'saved' && status.label !== labels.saved && <span className={compactHeader ? 'max-[641px]:hidden' : undefined}><StatusMark status={status} testId={testId} /></span>}
         <div className="flex shrink-0 items-center gap-0.5">
           {headerActions(hostActions).map(action => <ActionButton key={action.id} action={action} testId={testId} size="icon-bar" />)}
           {!compactHeader && onShare && <ViewerIconButton label={labels.share} data-testid={`${testId}-share`} disabled={busy === 'share'} onClick={share}><icons.share className="size-4" aria-hidden="true" /></ViewerIconButton>}
-          {(menuItems.length > 0 || controls) && <ViewerMenu label={labels.moreActions} testId={`${testId}-more`} icon={<icons.more className="size-4" aria-hidden="true" />} items={menuItems}>{compactHeader && controls && <div className="flex flex-wrap items-center gap-2 p-2 sm:hidden">{controls}</div>}</ViewerMenu>}
+          {(menuItems.length > 0 || controls) && <ViewerMenu label={labels.moreActions} testId={`${testId}-more`} icon={<icons.more className="size-4" aria-hidden="true" />} items={menuItems}>{compactHeader && controls && <div className="flex flex-wrap items-center gap-2 p-2 min-[641px]:hidden">{controls}</div>}</ViewerMenu>}
           {!compactHeader && host?.onFullscreenChange && <ViewerIconButton label={host.fullscreen ? labels.exitFullscreen : labels.enterFullscreen} data-testid={`${testId}-fullscreen`} aria-pressed={host.fullscreen === true}
             onClick={() => host.onFullscreenChange!(!host.fullscreen)}>{host.fullscreen ? <icons.exitFullscreen className="size-4" aria-hidden="true" /> : <icons.enterFullscreen className="size-4" aria-hidden="true" />}</ViewerIconButton>}
-          {(!compactHeader || headerStart) && onClose && <ViewerIconButton className={compactHeader ? 'max-sm:hidden' : undefined} label={labels.close} data-testid={`${testId}-close`} onClick={() => run(onClose)}><icons.close className="size-4" aria-hidden="true" /></ViewerIconButton>}
+          {(!compactHeader || headerStart) && onClose && <ViewerIconButton className={compactHeader ? 'max-[641px]:hidden' : undefined} label={labels.close} data-testid={`${testId}-close`} onClick={() => run(onClose)}><icons.close className="size-4" aria-hidden="true" /></ViewerIconButton>}
         </div>
       </>;
   const header = <header ref={bar} data-testid={`${testId}-bar`} data-layout={stacked ? 'stacked' : undefined}
