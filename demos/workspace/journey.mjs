@@ -69,7 +69,7 @@ try {
   const navigation = async () => {
     if (await browser.evaluate(`innerWidth < 768 && !${q('[data-sidebar=sidebar][data-mobile=true]')}`)) {
       await browser.click(`${q('[data-testid=ambient-action-navigation]')}?.checkVisibility() ? ${q('[data-testid=ambient-action-navigation]')} : ${q('[data-sidebar=trigger]')}`);
-      await browser.until('mobile navigation', `!!${q('[data-sidebar=sidebar][data-mobile=true]')}`, 5000);
+      await browser.until('mobile navigation is open and its buttons have stopped moving', `(() => { const nav = ${q('[data-sidebar=sidebar][data-mobile=true]')}; return nav && !nav.hasAttribute('data-starting-style') && nav.getAnimations({ subtree: true }).every(animation => animation.playState !== 'running'); })()`, 5000);
     }
   };
   const history = async () => {
@@ -611,11 +611,13 @@ try {
       await navigation();
       if (screen === 'invoice' || screen === 'supplier') {
         await browser.click(q('[data-testid=nav-approvals]'));
+        await browser.until('the phone navigation has closed and Approvals is visible', `!${q('[data-sidebar=sidebar][data-mobile=true]')} && !!${q('[data-testid=screen-approvals]')} && !${q('[data-boring=dock-main]')}.hidden`, 10000);
         if (await browser.evaluate(`${q('[data-boring=ambient-chat]')}?.dataset.state === 'expanded'`)) await browser.click(q('[data-testid=ambient-minimize]'));
         await browser.click(q('[data-testid=queue-row-INV-2043]'));
+        await browser.until('the phone invoice is ready for its supplier action', `${viewing} === 'Invoice INV-2043' && !!${q('[data-testid=open-supplier]')}`, 10000);
         if (screen === 'supplier') await browser.click(q('[data-testid=open-supplier]'));
       } else await browser.click(q(`[data-testid=nav-${screen}]`));
-      await browser.until('the phone screen', screen === 'agent' ? `${placement} === 'page'` : `!!${q(`[data-testid=screen-${screen}]`)} && !${q('[data-boring=dock-main]')}.hidden`, 10000);
+      await browser.until(`the phone ${screen} screen`,  screen === 'agent' ? `${placement} === 'page'` : `!!${q(`[data-testid=screen-${screen}]`)} && !${q('[data-boring=dock-main]')}.hidden`, 10000);
       if (screen !== 'agent' && await browser.evaluate(`${q('[data-boring=ambient-chat]')}?.dataset.state === 'expanded'`)) await browser.click(q('[data-testid=ambient-minimize]'));
       for (const scheme of ['light', 'dark']) {
         await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] });
