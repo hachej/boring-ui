@@ -102,7 +102,7 @@ function AnnotateButton({ feedback, disabled }: { readonly feedback: ComposerFee
   const { labels } = useChatText();
   return <button type="button" data-testid="composer-annotate" aria-pressed={feedback.active} disabled={disabled}
     title={labels.annotateHint} onClick={() => feedback.annotate()}
-    className={cn(ROUND, feedback.active && 'bg-accent')}>
+    className={cn(ROUND, 'size-11', feedback.active && 'bg-accent')}>
     <MessageSquarePlusIcon className="size-4" aria-hidden="true" /><span className="sr-only">{labels.annotate}</span>
   </button>;
 }

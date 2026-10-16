@@ -30,7 +30,7 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 /** shadcn-style button shared by every item. Always `type="button"` unless a form submit is requested. */
 export function Button({ className, variant = 'ghost', size = 'md', type = 'button', ...props }: ButtonProps) {
   return <button type={type} className={cn(
-    'inline-flex shrink-0 cursor-pointer items-center justify-center rounded-md font-medium whitespace-nowrap transition-colors outline-none',
+    'inline-flex min-h-8 min-w-8 shrink-0 cursor-pointer items-center justify-center rounded-md font-medium max-sm:min-h-11 max-sm:min-w-11 pointer-coarse:min-h-11 pointer-coarse:min-w-11 whitespace-nowrap transition-colors outline-none',
     'focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-1 focus-visible:ring-offset-background',
     'disabled:pointer-events-none disabled:opacity-45 motion-reduce:transition-none',
     variants[variant], sizes[size], className)} {...props} />;

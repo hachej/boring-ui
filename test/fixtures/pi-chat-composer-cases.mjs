@@ -3,6 +3,8 @@
 // renders them again with today's composer and no `feedback` prop and requires byte-identical markup.
 // Regenerated once for the token scale (feat/kit-shadcn-scale): only class tokens changed (sm:text-[0.9375rem] to sm:text-sm, the round
 // controls' rounded-full to the --radius tiers rounded-lg/rounded-md).
+// Regenerated for the impeccable design pass: only class attributes changed (compact pointer tools, 44px touch targets,
+// quieter frame and focus ring). The update verified byte-identical markup after removing class attributes.
 export const composerCases = () => {
   const noop = () => {};
   const base = { text: '', onText: noop, attachments: [], onRemoveAttachment: noop, working: false, sendBlocked: false, disabled: false, stopRequested: false,

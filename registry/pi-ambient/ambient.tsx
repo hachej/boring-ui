@@ -439,7 +439,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
         <button ref={titleButton} type="button" data-testid="ambient-title" onClick={expand} disabled={expanded} aria-label={expanded ? shownTitle : labels.openChat(shownTitle)}
           className="min-w-0 max-w-full cursor-pointer truncate rounded-md px-1 py-1 text-left font-(family-name:--chat-display) text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-default max-sm:py-2.5">{shownTitle}</button>
         {conversations && <button type="button" data-testid="ambient-switch" aria-label={labels.switchConversation} aria-haspopup="dialog" aria-expanded={picking} title={labels.switchConversation} onClick={() => setPicking(open => !open)}
-          className={cn(iconButton, 'size-7 max-sm:size-11')}><icons.switchConversation className="size-3.5" aria-hidden="true" /></button>}
+          className={cn(iconButton, 'size-8 max-sm:size-11 pointer-coarse:size-11')}><icons.switchConversation className="size-3.5" aria-hidden="true" /></button>}
         {expanded ? <span className="flex-1" /> : <button type="button" tabIndex={-1} aria-hidden="true" data-testid="ambient-header-fill" onClick={expand} className="h-full min-w-2 flex-1 cursor-pointer" />}
         {systemNotifications && permission === 'default' && <button type="button" data-testid="ambient-enable-notifications" aria-label={labels.enableNotifications} title={labels.enableNotifications}
           onClick={() => { void requestNotifyPermission().then(setPermission); }} className={iconButton}><icons.notify className="size-4" aria-hidden="true" /></button>}

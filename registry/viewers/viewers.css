@@ -447,7 +447,7 @@
     outline-offset: -2px;
   }
 
-  @media (pointer: coarse) {
+  @media (pointer: coarse), (max-width: 639px) {
     .boring-viewer .boring-markdown-tool {
       width: 2.75rem;
       height: 2.75rem;
