@@ -62,6 +62,9 @@ try {
   await step('composer parity: the bar has the same controls as a full PiChat (the + menu, / and @ menus, one model-and-effort pill, Send)', async () => {
     for (const testid of FULL_CONTROLS) assert.equal(await browser.evaluate(`!!${control(testid)}`), true, `the ambient composer has ${testid}`);
     assert.match(await browser.evaluate(`${control('composer-model-label')}.textContent`), / · /, 'the pill shows the model and the effort');
+    const buttons = await browser.evaluate(`[...${control('composer-controls')}.querySelectorAll('button')].filter(e => e.checkVisibility()).map(e => { const r = e.getBoundingClientRect(); return { centre: r.top + r.height / 2, height: r.height }; })`);
+    assert.ok(Math.max(...buttons.map(r => r.centre)) - Math.min(...buttons.map(r => r.centre)) <= 1, JSON.stringify(buttons));
+    assert.ok(buttons.every(r => r.height === 40), 'attach, model and Send share the reference control height');
     assert.equal(await browser.evaluate(`!${control('effort-picker')} && !${control('model-picker')}`), true, 'no separate model or effort triggers');
     await browser.type(INPUT, '/');
     await browser.until('the slash menu', `!!${control('slash-menu')}`, 5000);
@@ -89,7 +92,7 @@ try {
     await browser.send('Page.navigate', { url: `${base}?view=full` });
     await browser.until('PiChat is live', `!!document.querySelector('[data-testid=composer]') && !document.querySelector('[data-boring=ambient-chat]')`, 30000);
     for (const testid of FULL_CONTROLS) assert.equal(await browser.evaluate(`!!document.querySelector('[data-testid=${testid}]')`), true, `PiChat has ${testid}`);
-    assert.equal(await browser.evaluate(`document.querySelector('[data-testid=composer]').dataset.layout`), undefined, 'PiChat keeps its two-row layout');
+    assert.equal(await browser.evaluate(`document.querySelector('[data-testid=composer]').dataset.layout`), 'card', 'PiChat uses the same two-row reference composer');
     await pause(400);
     await browser.screenshot('ambient-01d-pichat-composer.png');
     await goto('?dismiss=4000');
@@ -193,9 +196,11 @@ try {
     assert.equal(open.hostViewer, false, 'nothing opened in the host app');
     assert.ok(!/in the host viewer/.test(open.host), 'the host was not asked to open it');
     assert.equal(open.pressed, 'true', 'the card shows it is the one on display');
-    assert.equal(await browser.evaluate(`!!document.querySelector('[data-testid=artifact-fullscreen]') && !!document.querySelector('[data-testid=artifact-close]') && !!document.querySelector('[data-testid=workspace-divider]')`), true, 'full screen, close and the divider');
+    assert.equal(await browser.evaluate(`!!document.querySelector('[data-testid=artifact-more]') && !!document.querySelector('[data-testid=artifact-close]') && !!document.querySelector('[data-testid=workspace-divider]')`), true, 'overflow, close and the divider');
     await shot('08-artifact-in-window');
-    await browser.click(`document.querySelector('[data-testid=artifact-fullscreen]')`);
+    await browser.click(`document.querySelector('[data-testid=artifact-more]')`);
+    await browser.until('fullscreen in overflow', `!!document.querySelector('[data-testid=artifact-more-list] [data-testid=artifact-fullscreen]')`, 5000);
+    await browser.click(`document.querySelector('[data-testid=artifact-more-list] [data-testid=artifact-fullscreen]')`);
     await browser.until('full screen', `document.querySelector('[data-testid=workspace-panel]').dataset.fullscreen === 'true'`, 3000);
     await pause(400);
     const full = await browser.evaluate(`(() => { const r = document.querySelector('[data-testid=workspace-panel]').getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height, vw: document.documentElement.clientWidth, vh: document.documentElement.clientHeight }; })()`);

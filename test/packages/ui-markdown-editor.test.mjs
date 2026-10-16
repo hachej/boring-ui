@@ -60,6 +60,52 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
     return { controller, client, target: selectedTarget, container, root, render, button, click, input, settled, writes: () => writes, saved: async () => new TextDecoder().decode((await client.read({ target: selectedTarget, revision: { kind: 'latest' } })).snapshot.bytes) };
   }
 
+  await t.test('selection formatting is the default, formats the native selection, and can be pinned without a write', async t => {
+    let tools;
+    const f = await fixture(t, 'original text\n', { props: { onMountedTools: value => { tools = value; } } });
+    assert.ok(f.container.querySelector('.boring-markdown-toolbar') === null, 'no permanent formatting row by default');
+    assert.equal(document.querySelector('.boring-markdown-bubble'), null, 'no menu before a text selection');
+    const target = tools.getTarget();
+    await act(async () => {
+      const result = await tools.select.invoke(target, { expiresAt: Date.now() + 5000, selection: { kind: 'rich', anchor: 1, head: 9 } });
+      assert.equal(result.kind, 'applied');
+    });
+    const deadline = Date.now() + 2000;
+    while (!document.querySelector('.boring-markdown-bubble')) {
+      assert.ok(Date.now() < deadline, 'the native selection menu must open');
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 10)); });
+    }
+    const bubble = document.querySelector('.boring-markdown-bubble');
+    assert.equal(bubble.getAttribute('role'), 'toolbar');
+    const bold = bubble.querySelector('[aria-label="Bold"]');
+    assert.ok(bold);
+    await act(async () => bold.click());
+    assert.equal(f.controller.getSnapshot().text, '**original** text\n');
+    assert.equal(f.writes(), 0, 'formatting does not publish');
+    await f.click('Pin formatting toolbar');
+    assert.ok(f.container.querySelector('.boring-markdown-toolbar [aria-label="Table"]'), 'pinning restores the complete toolbar');
+    assert.equal(f.button('Pin formatting toolbar').getAttribute('aria-pressed'), 'true');
+    await f.click('Pin formatting toolbar');
+    assert.equal(f.container.querySelector('.boring-markdown-toolbar'), null);
+    await f.click('Markdown source');
+    assert.equal(document.querySelector('.boring-markdown-bubble'), null, 'source mode has no rich menu');
+    assert.equal(f.writes(), 0);
+  });
+
+  await t.test('a phone never mounts the pinned toolbar, even when the host requests it', async t => {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'matchMedia');
+    Object.defineProperty(globalThis, 'matchMedia', { configurable: true, value: query => ({ matches: query === '(max-width: 640px)', addEventListener() {}, removeEventListener() {} }) });
+    try {
+      const f = await fixture(t, 'phone text\n', { props: { formattingToolbar: 'pinned' } });
+      assert.ok(f.container.querySelector('.boring-markdown-toolbar') === null, 'no pinned row on phone');
+      assert.equal([...f.container.querySelectorAll('button')].find(button => button.getAttribute('aria-label') === 'Pin formatting toolbar'), undefined);
+      assert.ok(f.container.querySelector('[contenteditable="true"]'));
+      assert.equal(f.writes(), 0);
+    } finally {
+      if (descriptor) Object.defineProperty(globalThis, 'matchMedia', descriptor); else delete globalThis.matchMedia;
+    }
+  });
+
   await t.test('mount and rich/source switches preserve exact bytes without a publication', async t => {
     const raw = '# title\n\nplain *emphasis* and **strong**\n\n- one\n- two\n';
     const f = await fixture(t, raw);
@@ -118,7 +164,7 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
 
   await t.test('an unpadded aligned table opens rich, survives an edit elsewhere byte for byte, and an edited table is valid aligned GFM', async t => {
     const raw = '# Stock\n\n|Item|Qty|Note|\n|:--|:-:|--:|\n|Tea|2|`a\\|b`|\n|Jam||[shop](https://fictional.invalid/) _soon_|\n\nEnd.\n';
-    const f = await fixture(t, raw);
+    const f = await fixture(t, raw, { props: { formattingToolbar: 'pinned' } });
     assert.equal(f.container.querySelector('section').dataset.mode, 'rich');
     assert.equal(f.container.querySelectorAll('[contenteditable] table tr').length, 3);
     // The caret starts at the beginning of a loaded document, so the title is the line that changes.
@@ -128,7 +174,7 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
     await f.click('Save'); await f.settled();
     assert.equal(await f.saved(), edited);
     // The caret at the start of a document that is a table sits in its first cell: adding a row rewrites that table only.
-    const last = await fixture(t, '|L|C|R|\n|:-|:-:|-:|\n|a|`x`|[l](https://fictional.invalid/)|\n');
+    const last = await fixture(t, '|L|C|R|\n|:-|:-:|-:|\n|a|`x`|[l](https://fictional.invalid/)|\n', { props: { formattingToolbar: 'pinned' } });
     await last.click('Add table row');
     const table = marked.lexer(last.controller.getSnapshot().text).find(token => token.type === 'table');
     assert.ok(table, 'still a GFM table');
@@ -138,7 +184,7 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
 
   await t.test('a rich edit keeps tables, links, images and task lists byte for byte and Save publishes only the edit', async t => {
     const raw = '# Plan\n\nSee [the site](https://fictional.invalid/page "Site") and ![alt text](https://fictional.invalid/pic.png "Pic") here.\n\n- [x] done\n- [ ] todo\n\n| Name | Qty |\n| ---- | --- |\n| Tea  | 2   |\n\n> quoted\n\n---\n\nEnd with ==marked== text.\n';
-    const f = await fixture(t, raw);
+    const f = await fixture(t, raw, { props: { formattingToolbar: 'pinned' } });
     assert.equal(f.container.querySelector('section').dataset.mode, 'rich');
     assert.ok(f.container.querySelector('[contenteditable] table'), 'the table is a real table');
     assert.ok(f.container.querySelector('[contenteditable] a[href="https://fictional.invalid/page"]'));
@@ -156,7 +202,7 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
 
   await t.test('toggling a format twice is a no-op: not dirty, same bytes, nothing published', async t => {
     const raw = '# Plan\n\n- [x] done\n\n| Name | Qty |\n| ---- | --- |\n| Tea  | 2   |\n\nEnd.\n';
-    const f = await fixture(t, raw);
+    const f = await fixture(t, raw, { props: { formattingToolbar: 'pinned' } });
     for (const label of ['Quote', 'Bold']) { await f.click(label); await f.click(label); }
     assert.equal(f.controller.getSnapshot().text, raw);
     assert.equal(f.controller.getSnapshot().dirty, false);
@@ -191,7 +237,7 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
   });
 
   await t.test('formatting controls produce a genuine rich edit without saving implicitly', async t => {
-    const f = await fixture(t);
+    const f = await fixture(t, 'original', { props: { formattingToolbar: 'pinned' } });
     await f.click('Heading 1');
     assert.match(f.controller.getSnapshot().text, /^# original/);
     assert.equal(f.controller.getSnapshot().dirty, true);
@@ -289,7 +335,7 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
   });
 
   await t.test('read-only and disposed controllers disable edit/save controls', async t => {
-    const f = await fixture(t, '[published](https://fictional.invalid/)', { readOnly: true });
+    const f = await fixture(t, '[published](https://fictional.invalid/)', { readOnly: true, props: { formattingToolbar: 'pinned' } });
     assert.equal(f.button('Heading 1').disabled, true);
     assert.equal(f.button('Save').disabled, true);
     assert.equal(f.container.querySelector('[contenteditable]').getAttribute('contenteditable'), 'false');

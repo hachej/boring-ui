@@ -37,18 +37,35 @@ try {
     }
     await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: process.env.APP_SCHEME ?? 'light' }] });
   };
+  const phoneNavigationShots = async mode => {
+    const selector = `[data-testid=${mode === 'floating' ? 'ambient' : 'chat'}-action-navigation]`;
+    for (const [width, height] of [[360, 780], [390, 844]]) {
+      await browser.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: true });
+      for (const scheme of ['light', 'dark']) {
+        await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] });
+        await browser.until('phone navigation visible', `${q(selector)}?.checkVisibility()`, 5000);
+        await browser.evaluate(`${q(selector)}.blur()`);
+        await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: width / 2, y: 60 });
+        await pause(250);
+        const style = await browser.evaluate(`(() => { const e = ${q(selector)}, r = e.getBoundingClientRect(), css = getComputedStyle(e), icon = e.querySelector('svg'); const title = e.closest('header, [data-testid=agent-panel-header]')?.querySelector('h2, [data-testid=ambient-title]')?.getBoundingClientRect(); return { background: css.backgroundColor, border: css.borderTopWidth, width: r.width, height: r.height, icon: icon.getBoundingClientRect().width, stroke: getComputedStyle(icon).strokeWidth, aligned: !!title && Math.abs(r.top + r.height / 2 - title.top - title.height / 2) <= 1 }; })()`);
+        assert.deepEqual(style, { background: 'rgba(0, 0, 0, 0)', border: '0px', width: 44, height: 44, icon: 20, stroke: '1.5px', aligned: true }, `${mode} ${width} ${scheme}`);
+        await shot(`phone-navigation-${mode}-${width}-${scheme}.png`);
+      }
+    }
+    await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: process.env.APP_SCHEME ?? 'light' }] });
+  };
   const coherentHeader = async () => {
     await browser.until('the loaded viewer actions', `!!${q('[data-testid=library-document] [data-testid=viewer-more]')}`, 15000);
     const geometry = await browser.evaluate(`(() => {
-      const panel = document.querySelector('[data-testid=workspace-panel]'), bar = panel.querySelector('[data-testid=viewer-bar]'), row = bar.querySelector('[data-testid=viewer-titlebar]') ?? bar, title = row.querySelector('h2'), controls = bar.querySelector('[data-testid=viewer-controls]'), back = bar.querySelector('[data-testid=file-back]');
+      const panel = document.querySelector('[data-testid=workspace-panel]'), bar = panel.querySelector('[data-testid=viewer-bar]'), row = bar.querySelector('[data-testid=viewer-titlebar]') ?? bar, title = row.querySelector('h2'), controls = [...bar.querySelectorAll('[data-testid=viewer-controls]')].find(element => element.checkVisibility()), back = bar.querySelector('[data-testid=file-back]') ?? (row.firstElementChild?.matches('button') ? row.firstElementChild : null);
       const p = panel.getBoundingClientRect(), b = bar.getBoundingClientRect(), r = row.getBoundingClientRect(), text = title.getBoundingClientRect(), c = controls?.getBoundingClientRect(), backBox = back?.getBoundingClientRect();
       return { offset: b.top - p.top, rowHeight: r.height, titleOffset: text.left - r.left, align: getComputedStyle(title.parentElement).textAlign,
         controlsInRow: !c || c.top >= r.top && c.bottom <= r.bottom, backRight: backBox ? backBox.right - r.left : null, backBeforeTitle: !back || backBox.right <= text.left, closeInRow: !!row.querySelector('[data-testid=viewer-close]'), menuInRow: !!row.querySelector('[data-testid=viewer-more]'),
         internalBars: panel.querySelectorAll('[data-testid=viewer-bar]').length,
-        targets: [...bar.querySelectorAll('button')].map(button => { const a = button.getBoundingClientRect(); return { id: button.dataset.testid, w: a.width, h: a.height, inside: a.left >= p.left && a.right <= p.right }; }) };
+        targets: [...bar.querySelectorAll('button')].filter(button => button.checkVisibility()).map(button => { const a = button.getBoundingClientRect(); return { id: button.dataset.testid, w: a.width, h: a.height, inside: a.left >= p.left && a.right <= p.right }; }) };
     })()`);
     assert.ok(geometry.offset >= 0 && geometry.offset <= 2, JSON.stringify(geometry));
-    assert.equal(geometry.rowHeight, 56);
+    assert.equal(geometry.rowHeight, 52);
     assert.equal(geometry.align, 'left');
     assert.ok(geometry.backRight === null ? geometry.titleOffset >= 8 && geometry.titleOffset <= 16 : geometry.titleOffset >= geometry.backRight && geometry.titleOffset <= geometry.backRight + 12, JSON.stringify(geometry));
     assert.ok(geometry.controlsInRow && geometry.backBeforeTitle && geometry.closeInRow && geometry.menuInRow, JSON.stringify(geometry));
@@ -78,19 +95,20 @@ try {
   };
   const library = async () => {
     await browser.click(q('[data-testid=chat-action-library]'));
-    await browser.until('the Library search is ready before choosing a row', `!!${q('[data-testid=library-popover]')} && document.activeElement?.type === 'search' && !!document.activeElement.closest('[data-testid=library-popover]')`, 10000);
+    await browser.until('the Library search is ready before choosing a row', `!!${q('[data-testid=library-popover]')} && document.activeElement?.type === 'search' && !!document.activeElement.closest('[data-testid=library-popover]') && ${q('[data-testid=library-popover]')}.getAnimations({subtree:true}).every(animation => animation.playState !== 'running')`, 10000);
   };
-  const choosePolicyWithKeyboard = async () => {
-    const policy = q('[role=treeitem][data-path="Policies/AP policy.md"]');
+  const choosePolicyWithKeyboard = async (path = 'Policies/AP policy.md') => {
+    const policy = q(`[role=treeitem][data-path="${path}"]`);
+    const folder = q(`[role=treeitem][data-path="${path.slice(0, path.lastIndexOf('/'))}"]`);
     if (!(await browser.evaluate(`!!${policy}`))) {
-      await browser.until('Policies folder', `!!${q('[role=treeitem][data-path="Policies"]')}`, 10000);
-      await browser.evaluate(`${q('[role=treeitem][data-path="Policies"]')}.focus()`);
+      await browser.until('file folder', `!!${folder}`, 10000);
+      await browser.evaluate(`${folder}.focus()`);
       await browser.press('ArrowRight');
       await browser.until('policy listed', `!!${policy}`, 10000);
     }
     await browser.evaluate(`${policy}.focus()`);
     await browser.press('Enter');
-    await browser.until('keyboard Library choice opens the policy and closes the popover', `${q('[data-testid=library-document]')}?.dataset.path === 'Policies/AP policy.md' && !${q('[data-testid=library-popover]')}`, 10000);
+    await browser.until('keyboard Library choice opens the policy and closes the popover', `${q('[data-testid=library-document]')}?.dataset.path === ${JSON.stringify(path)} && !${q('[data-testid=library-popover]')}`, 10000);
   };
   const librarySelectionFocus = async testId => {
     const target = q(`[data-testid="${testId}"]`);
@@ -127,10 +145,10 @@ try {
     assert.equal(await browser.evaluate(viewing), 'Approvals');
     await pause(300);
     await browser.screenshot('1-start-history.png');
-    // One search field with a compact icon toggle for Archived (no text button); pressing it toggles the filter.
+    // Archived is a labeled chip inside search; pressing it toggles the filter.
     assert.equal(await browser.evaluate(`document.querySelectorAll('[data-testid=conversations] input[type=search]').length`), 1);
     const archived = `${q('[data-testid=conversations-archived]')}`;
-    assert.deepEqual(await browser.evaluate(`({ text: ${archived}.textContent.trim(), label: ${archived}.getAttribute('aria-label'), pressed: ${archived}.getAttribute('aria-pressed') })`), { text: '', label: 'Archived', pressed: 'false' });
+    assert.deepEqual(await browser.evaluate(`({ text: ${archived}.textContent.trim(), label: ${archived}.getAttribute('aria-label'), pressed: ${archived}.getAttribute('aria-pressed') })`), { text: 'Archived', label: 'Archived', pressed: 'false' });
     await browser.click(archived);
     await browser.until('the filter is on', `${archived}.getAttribute('aria-pressed') === 'true'`, 5000);
     await browser.click(archived);
@@ -182,18 +200,19 @@ try {
     await browser.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
     await browser.until('phone page', `${placement} === 'page' && ${rect('[data-dock=chat]')}.w >= 388`, 10000);
     await browser.evaluate(`window.__phoneComposer = ${INPUT}; window.__phoneTranscript = ${q('[data-testid=transcript]')}; void 0;`);
+    await phoneNavigationShots('page');
     await library();
     await choosePolicyWithKeyboard();
     await librarySelectionFocus('library-document');
     await browser.until('phone page file loaded', `!!${q('[data-testid=library-document]')} && !${q('[data-sidebar=sidebar][data-mobile=true]')}`, 15000);
     assert.equal(await browser.evaluate(placement), 'page', 'opening a file does not float the Agent page');
-    const header = await browser.evaluate(`(() => { const buttons = [...document.querySelectorAll('[data-testid=library-document] [data-testid=viewer-bar] button')]; return { back: !!document.querySelector('[data-testid=file-back]'), controls: buttons.map(button => { const r=button.getBoundingClientRect(); return { id:button.dataset.testid, inside:r.left>=0 && r.top>=0 && r.right<=innerWidth && r.bottom<=innerHeight && r.width>0 }; }), chatVisible: ${INPUT}.checkVisibility(), overflow: document.documentElement.scrollWidth > innerWidth }; })()`);
+    await coherentHeader();
+    const header = await browser.evaluate(`(() => { const buttons = [...document.querySelectorAll('[data-testid=library-document] [data-testid=viewer-bar] button')].filter(button => button.checkVisibility()); return { back: !!document.querySelector('[data-testid=file-back]'), controls: buttons.map(button => { const r=button.getBoundingClientRect(); return { id:button.dataset.testid, inside:r.left>=0 && r.top>=0 && r.right<=innerWidth && r.bottom<=innerHeight && r.width>0 }; }), chatVisible: ${INPUT}.checkVisibility(), overflow: document.documentElement.scrollWidth > innerWidth }; })()`);
     assert.equal(header.back, true, 'the phone page file has a Chat back button');
     assert.ok(header.controls.length > 1 && header.controls.every(control => control.inside), JSON.stringify(header));
     assert.equal(header.chatVisible, false, 'the file replaces the split chat on a phone');
     assert.equal(header.overflow, false);
     assert.equal(await browser.evaluate(`window.__phoneComposer === ${INPUT} && window.__phoneTranscript === ${q('[data-testid=transcript]')}`), true, 'the hidden conversation stays mounted');
-    await coherentHeader();
     await shot('review-phone-page-file.png');
     await browser.click(q('[data-testid=file-back]'));
     await browser.until('Back restores and focuses the same page composer', `${placement} === 'page' && !${q('[data-testid=library-document]')} && ${INPUT}.checkVisibility() && document.activeElement === window.__phoneComposer`, 10000);
@@ -523,9 +542,7 @@ try {
       // The chat was dragged near the top earlier in the session: the window must still come up whole (its remembered corner is clamped).
       await browser.evaluate(`sessionStorage.setItem('boring.ambient.position', JSON.stringify({ right: 40, bottom: 520 }))`);
       await library();
-      await browser.click(q('[role=treeitem][data-path="Contracts"]'));
-      await browser.until('the contract in the tree', `!!${q('[role=treeitem][data-path="Contracts/fernhill-agreement.pdf"]')}`, 15000);
-      await browser.click(q('[role=treeitem][data-path="Contracts/fernhill-agreement.pdf"]'));
+      await choosePolicyWithKeyboard('Contracts/fernhill-agreement.pdf');
       await browser.until('the PDF replaces the floating chat without unmounting it', `!!${q('[data-testid=floating-viewer] [data-testid=library-document]')} && !${q('[data-boring=ambient-chat]')}.checkVisibility()`, 15000);
       await pause(500);
       await browser.screenshot(`8-floating-pdf-${width}x${height}.png`);
@@ -541,15 +558,14 @@ try {
     }
     await browser.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
     await browser.until('the floating chat has reflowed to the phone before tapping its Library icon', `${q('[data-boring=ambient-chat]')}?.dataset.phone === 'true' && ${rect('[data-boring=ambient-chat]')}?.w === 390`, 10000);
+    await phoneNavigationShots('floating');
     await library();
-    await browser.click(q('[role=treeitem][data-path="Contracts"]'));
-    await browser.until('the phone contract', `!!${q('[role=treeitem][data-path="Contracts/fernhill-agreement.pdf"]')}`, 15000);
-    await browser.click(q('[role=treeitem][data-path="Contracts/fernhill-agreement.pdf"]'));
+    await choosePolicyWithKeyboard('Contracts/fernhill-agreement.pdf');
     await browser.until('the phone file header', `!!${q('[data-testid=floating-viewer] [data-testid=viewer-close]')}`, 15000);
     await coherentHeader();
     await headerShots('phone-file');
     const phone = await browser.evaluate(inside);
-    assert.deepEqual([phone.back, phone.close, phone.window, phone.pageOverflow, phone.windowOverflow], [true, true, true, false, false], JSON.stringify(phone));
+    assert.deepEqual([phone.back, phone.close, phone.window, phone.pageOverflow, phone.windowOverflow], [true, false, true, false, false], JSON.stringify(phone));
     await browser.click(q('[data-testid=file-back]'));
     await browser.send('Emulation.clearDeviceMetricsOverride');
     await browser.until('desktop header controls are back after the phone', `!!${q('[data-testid=ambient-dock]')} && !${q('[data-boring=ambient-chat]')}?.dataset.phone`, 10000);

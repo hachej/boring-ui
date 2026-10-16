@@ -18,7 +18,8 @@ async function composer(t) {
     await browser.until('empty state', `!!${q('[data-testid=scenario-list]')}`);
     assert.equal(await browser.evaluate(`${SUBMIT}.dataset.state`), 'send');
     assert.equal(await browser.evaluate(`${SUBMIT}.disabled`), true, 'nothing to send yet');
-    assert.equal(await browser.evaluate(`${q('[data-testid=connection]')}.textContent.trim()`), 'Live');
+    assert.equal(await browser.evaluate(`${q('[data-boring=pi-chat]')}.dataset.connection`), 'connected');
+    assert.equal(await browser.evaluate(`!!${q('[data-testid=connection]')}`), false, 'no default Live badge');
     // There is no permanent Queue / Steer toggle in the composer.
     assert.equal(await browser.evaluate(`!${q('[data-testid=when-busy]')}`), true, 'no queue / steer toggle while idle');
   });
@@ -212,14 +213,18 @@ async function composer(t) {
     await browser.until('developer mode restores step disclosures', `${completed}.length >= 4 && [...${completed}].every(card => card.querySelector('[data-slot=trace-collapsible-trigger]'))`);
     for (let index = 0; index < await browser.evaluate(`${completed}.length`); index++) {
       const trigger = `${completed}[${index}].querySelector('[data-slot=trace-collapsible-trigger]')`;
-      if (await browser.evaluate(`${trigger}.getAttribute('aria-expanded') === 'false'`)) await browser.click(trigger);
+      if (await browser.evaluate(`${trigger}.getAttribute('aria-expanded') === 'false'`)) {
+        await browser.evaluate(`${trigger}.focus()`);
+        await browser.press('Enter');
+        await browser.until('tool disclosure expanded', `${trigger}.getAttribute('aria-expanded') === 'true'`, 5000);
+      }
     }
     await browser.until('developer mode shows every successful output', `${qa('[data-testid=tool-card][data-status=completed] [data-testid=tool-details]')}.length >= 4`);
   });
   await step('many tabs on a share link: hidden tabs release their chat stream, so every tab connects when shown (the browser allows ~6 connections per host)', async () => {
     const link = `${t.pageUrl}?variant=${t.variantId()}&conversation=${await t.history.current()}`;
     const watches = () => t.app.watches.open;
-    const connectedNow = `document.querySelector('[data-testid=connection]')?.dataset.state === 'connected'`;
+    const connectedNow = `document.querySelector('[data-boring=pi-chat]')?.dataset.connection === 'connected'`;
     const settle = async (label, expected) => { const deadline = Date.now() + 10000; while (watches() !== expected && Date.now() < deadline) await t.pause(150); assert.equal(watches(), expected, label); };
     await settle('only this tab holds a watch', 1);
     const opened = [];
@@ -234,7 +239,7 @@ async function composer(t) {
         const tab = await browser.openTab(link, { hidden: true });
         opened.push(tab);
         // Only a mounted page can decide to hold a stream: count after each tab has rendered, not while it is still loading.
-        await tab.until('hidden tab mounted', `!!document.querySelector('[data-testid=connection]')`, 30000);
+        await tab.until('hidden tab mounted', `!!document.querySelector('[data-boring=pi-chat]')`, 30000);
       }
       // Opening a tab connects for a moment before it notices it is hidden: wait for the streams to be released, then they must stay released.
       await settle('eight hidden tabs hold no stream besides this one', 1);

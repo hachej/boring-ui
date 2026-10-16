@@ -16,7 +16,7 @@ import { useConversations } from '../../registry/pi-app/use-conversations.ts';
 import { FileViewer } from '../../registry/pi-app/file-viewer.tsx';
 import { BlockActions } from '../../registry/button/actions.tsx';
 import { PdfPane } from '../../registry/viewers/pdf-pane.tsx';
-import { Button } from '../../registry/button/button.tsx';
+import { Button, NavigationMenuIcon } from '../../registry/button/button.tsx';
 import { cn } from '../../registry/utils/utils.ts';
 import { AgentContextProvider, readAgentContext, useAgentContext } from '../../registry/app-shell/agent-context.ts';
 import { ACTIONS, CELLS, SCREENS, experienceCells } from './cells.mjs';
@@ -241,7 +241,7 @@ function FloatingViewer({ children, header, active }) {
   const clamp = (value: number, max: number) => Math.max(MARGIN, Math.min(value, max));
   const style = phone ? undefined : { width, height, right: clamp(stored.right, viewport.w - width - MARGIN), bottom: clamp(stored.bottom, viewport.h - height - MARGIN) };
   return <div data-testid={active ? 'floating-viewer' : 'agent-workspace'} role={active ? 'region' : undefined} aria-label={active ? 'File viewer' : undefined} style={active ? style : undefined}
-    className={active ? cn('pi-chat fixed z-50 flex flex-col overflow-hidden border border-border bg-muted text-foreground shadow-lg', phone ? 'inset-0 h-dvh rounded-none border-0 p-2' : 'rounded-3xl p-2') : 'flex min-h-0 min-w-0 flex-1 flex-col'}>
+    className={active ? cn('pi-chat fixed z-50 flex flex-col overflow-hidden border border-border bg-muted text-foreground shadow-lg', phone ? 'inset-0 h-dvh rounded-none border-0 p-0' : 'rounded-3xl p-2') : 'flex min-h-0 min-w-0 flex-1 flex-col'}>
     {header}
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1">{children}</div>
   </div>;
@@ -279,7 +279,7 @@ function Chat({ api, provider, file, openFile, closeFile, setUnsaved, active, co
   }, [api.placement, file, chat.status]);
   if (chat.status !== 'ready') return <p role="status" data-testid="chat-connecting" className="p-4 text-sm text-muted-foreground">{chat.status === 'offline' ? 'Server unreachable. Retrying…' : 'Connecting…'}</p>;
   const headerActions = [
-    { id: 'navigation', label: 'Open navigation', icon: PanelLeftIcon, onSelect: () => setOpenMobile(true) },
+    { id: 'navigation', label: 'Open navigation', icon: NavigationMenuIcon, onSelect: () => setOpenMobile(true) },
     { id: 'page', label: 'Agent as page', icon: MaximizeIcon, onSelect: () => api.setPlacement('page') },
   ];
   const placementActions = api.placement === 'page' ? [
@@ -298,7 +298,7 @@ function Chat({ api, provider, file, openFile, closeFile, setUnsaved, active, co
     <AmbientChat key={active} {...common} headerTools={api.floating ? barTools : undefined} embedded={!api.floating} variant="surface" defaultState="expanded" labels={{ title: 'AP helper', placeholder: 'Ask about your payables…', empty: 'Review an invoice, check the policy, or ask what needs your approval.' }} onDock={() => { api.dock(); api.setWidth(base.current); }} />
   </div>;
   return <FloatingViewer active={replaceChat} header={!api.floating && !replaceChat ? header : null}>
-    <ArtifactWorkspace chat={conversation} open={Boolean(file)} panel={viewer} onClose={closeFile} sheetBelow={0} minPanel={replaceChat ? 0 : 360} minChat={replaceChat ? 0 : 340} defaultWidth={PANEL} storageKey="workspace-demo.file-panel" panelLabel="File viewer" variant="inset"
+    <ArtifactWorkspace chat={conversation} open={Boolean(file)} panel={viewer} onClose={closeFile} sheetBelow={0} minPanel={replaceChat ? 0 : 360} minChat={replaceChat ? 0 : 360} defaultWidth={PANEL} storageKey="workspace-demo.file-panel" panelLabel="File viewer" variant="inset"
       className={cn('bg-transparent', replaceChat && '[&>[data-testid=workspace-chat]]:hidden [&>[data-testid=workspace-divider]]:hidden [&>[data-testid=workspace-panel]]:!m-0 [&>[data-testid=workspace-panel]]:!w-full [&>[data-testid=workspace-panel]]:flex-1')} />
   </FloatingViewer>;
 }

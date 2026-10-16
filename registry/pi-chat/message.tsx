@@ -105,9 +105,9 @@ function FileCard({ path, open, preview, change }: { readonly path: string; read
     <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-md text-muted-foreground">
       {src ? <img src={src} alt="" className="size-full object-cover" /> : <FileGlyph kind={kind} />}
     </span>
-    <span className="flex min-w-0 flex-col text-left">
+    <span className="flex min-w-0 flex-1 items-center gap-2 text-left">
       <span className="truncate text-sm font-medium text-foreground">{name}</span>
-      <span className="truncate text-xs text-muted-foreground">{change ? labels.fileChange[change] : labels.fileKind[kind]}</span>
+      <span className="shrink-0 text-xs text-muted-foreground">{change ? labels.fileChange[change] : labels.fileKind[kind]}</span>
     </span>
   </>;
   return open
@@ -131,7 +131,7 @@ function FileCards({ paths, open, preview }: { readonly paths: readonly string[]
 function UserText({ text, context }: { readonly text: string; readonly context: RowContext }) {
   const open = context.pieces?.openMention;
   const render = context.pieces?.renderMention;
-  const bubble = 'max-w-[85%] rounded-xl rounded-br-sm bg-muted px-4 py-3 text-sm leading-6 whitespace-pre-wrap text-foreground [overflow-wrap:anywhere]';
+  const bubble = 'max-w-[80%] rounded-(--chat-user-radius) bg-muted px-4 py-3 text-base leading-relaxed whitespace-pre-wrap text-foreground [overflow-wrap:anywhere]';
   if (!context.pieces) return <div data-testid="user-text" className={bubble}>{text}</div>;
   const all = pieces(text, context.pieces);
   const isFile = (piece: Piece) => piece.kind === 'mention' && isUploadPath(piece.value!);

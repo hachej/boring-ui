@@ -67,6 +67,8 @@ export interface ComposerProps {
   /** Extra controls in the bar (the model and effort pill) and a short note beside them. */
   readonly barStart?: ReactNode;
   readonly barNote?: ReactNode;
+  /** Optional host mode/model chips beside the attach control. */
+  readonly chips?: ReactNode;
   readonly text: string;
   readonly onText: (text: string) => void;
   readonly attachments: readonly ComposerAttachment[];
@@ -86,8 +88,8 @@ export interface ComposerProps {
   readonly onKeyDown?: ((event: KeyboardEvent<HTMLTextAreaElement>) => void) | undefined;
   readonly textareaRef: Ref<HTMLTextAreaElement>;
   readonly placeholder?: string;
-  /** Both layouts have the same controls (the + menu, `/` and `@` menus, the model and effort pill, Send/Stop). `inline` puts them in one compact row; `stacked` is the two-row chat composer. */
-  readonly layout?: 'stacked' | 'inline';
+  /** `card` (default): full-width text above a row of round controls. The former `pill`, `stacked` and `inline` layouts are explicit compatibility choices. */
+  readonly layout?: 'card' | 'pill' | 'stacked' | 'inline';
   /** Host controls (for example a voice button) as round buttons between the model pill and the send button. */
   readonly barEnd?: ReactNode;
   /** The optional Feedback button and chip. */
@@ -95,14 +97,14 @@ export interface ComposerProps {
 }
 
 /** Compact bar buttons expand to 44px for touch. */
-const ROUND = 'inline-flex size-8 max-sm:size-11 pointer-coarse:size-11 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-45 motion-reduce:transition-none';
+const ROUND = 'inline-flex size-10 max-sm:size-11 pointer-coarse:size-11 shrink-0 cursor-pointer items-center justify-center rounded-(--chat-send-radius) bg-muted text-muted-foreground transition-colors outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-45 motion-reduce:transition-none';
 
 /** The annotate toggle (a round bar button beside the "+" menu in both layouts). */
 function AnnotateButton({ feedback, disabled }: { readonly feedback: ComposerFeedback; readonly disabled: boolean }) {
   const { labels } = useChatText();
   return <button type="button" data-testid="composer-annotate" aria-pressed={feedback.active} disabled={disabled}
     title={labels.annotateHint} onClick={() => feedback.annotate()}
-    className={cn(ROUND, 'size-11', feedback.active && 'bg-accent')}>
+    className={cn(ROUND, feedback.active && 'bg-accent')}>
     <MessageSquarePlusIcon className="size-4" aria-hidden="true" /><span className="sr-only">{labels.annotate}</span>
   </button>;
 }
@@ -155,7 +157,7 @@ const MAX_HEIGHT = 208;
 
 /** Prompt composer: auto-growing textarea, Enter to send, one primary Send/Stop button. While the agent works a message is queued. */
 export function Composer(props: ComposerProps) {
-  const { text, attachments, working, sendBlocked, disabled, stopRequested, uploading, canAttach } = props;
+  const { text, attachments, working, sendBlocked, disabled, stopRequested, uploading, canAttach, layout = 'card' } = props;
   const { labels, icons } = useChatText();
   const inner = useRef<HTMLTextAreaElement | null>(null);
   const composing = useRef(false);
@@ -175,10 +177,22 @@ export function Composer(props: ComposerProps) {
   useLayoutEffect(() => {
     const element = inner.current;
     if (!element) return;
-    element.style.height = 'auto';
-    element.style.height = `${Math.min(element.scrollHeight, MAX_HEIGHT)}px`;
-    element.style.overflowY = element.scrollHeight > MAX_HEIGHT ? 'auto' : 'hidden';
+    const resize = () => {
+      element.style.height = 'auto';
+      element.style.height = `${Math.min(element.scrollHeight, MAX_HEIGHT)}px`;
+      element.style.overflowY = element.scrollHeight > MAX_HEIGHT ? 'auto' : 'hidden';
+    };
+    resize();
     if (pendingCaret.current !== null) { element.setSelectionRange(pendingCaret.current, pendingCaret.current); element.focus(); pendingCaret.current = null; }
+    if (typeof ResizeObserver === 'undefined') return;
+    let width = element.clientWidth;
+    const observer = new ResizeObserver(() => {
+      const next = element.clientWidth;
+      if (next === width) return;
+      width = next; resize();
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
   }, [text]);
 
   const query = slash && items.length ? slashQuery(text, caret) : null;
@@ -277,19 +291,21 @@ export function Composer(props: ComposerProps) {
       {...(slash || mentions ? { role: 'combobox', 'aria-expanded': menuOpen, 'aria-haspopup': 'listbox', 'aria-autocomplete': 'list' } as const : {})}
       onChange={onChange} onKeyDown={onKeyDown} onPaste={onPaste} onKeyUp={event => trackCaret(event.currentTarget)} onClick={event => trackCaret(event.currentTarget)}
       onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }}
-      className={props.layout === 'inline'
-        ? 'block max-h-40 min-h-11 min-w-0 flex-1 resize-none order-first basis-full border-0 bg-transparent px-1.5 py-2.5 text-base leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed sm:text-sm'
-        : 'block max-h-52 min-h-[3.5rem] w-full resize-none border-0 bg-transparent px-4 pt-3 pb-2 text-base leading-6 sm:text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed'} />;
+      className={layout === 'inline'
+        ? 'block max-h-40 min-h-11 min-w-0 flex-1 resize-none order-first basis-full border-0 bg-transparent px-1.5 py-2.5 text-base leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed'
+        : layout !== 'pill' ? 'block max-h-52 min-h-11 w-full resize-none border-0 bg-transparent px-4 py-3 text-base leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed'
+        : 'block max-h-52 min-h-11 min-w-0 flex-1 resize-none overflow-x-hidden placeholder-shown:whitespace-nowrap border-0 bg-transparent px-1 py-2.5 text-base leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed'} />;
   const plus = (canAttach || items.length > 0) && <PlusMenu disabled={disabled} onAttach={canAttach ? () => fileInput.current?.click() : undefined} onCommands={items.length > 0 ? openCommands : undefined} />;
   const fileEl = canAttach && <input ref={fileInput} type="file" multiple accept={props.fileAccept} disabled={disabled} tabIndex={-1} aria-hidden="true" className="sr-only" data-testid="composer-file" data-attach="true"
     onChange={event => { const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ''; props.onPickFiles(files); }} />;
+  const chipsControl = props.chips && <div className="flex min-w-0 items-center gap-2 [&>button]:h-10 [&>button]:rounded-full [&>button]:px-3 max-sm:[&>button]:h-11 pointer-coarse:[&>button]:h-11">{props.chips}</div>;
   const send = working
-    ? <Button variant="default" size="icon" data-testid="composer-submit" data-state="stop" aria-label={labels.stop} title={labels.stop} disabled={disabled || stopRequested} onClick={props.onStop} className="ml-auto size-8 max-sm:size-11 pointer-coarse:size-11 shrink-0">
+    ? <Button variant="default" size="icon" data-testid="composer-submit" data-state="stop" aria-label={labels.stop} title={labels.stop} disabled={disabled || stopRequested} onClick={props.onStop} className="ml-auto size-10 rounded-(--chat-send-radius) max-sm:size-11 pointer-coarse:size-11 shrink-0">
       {stopRequested ? <Loader2Icon className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <icons.stop className="size-4 fill-current" aria-hidden="true" />}</Button>
-    : <Button variant="default" size="icon" type="submit" data-testid="composer-submit" data-state="send" aria-label={labels.send} title={labels.sendHint} disabled={!canSubmit} className="ml-auto size-8 max-sm:size-11 pointer-coarse:size-11 shrink-0 disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100">
+    : <Button variant="default" size="icon" type="submit" data-testid="composer-submit" data-state="send" aria-label={labels.send} title={labels.sendHint} disabled={!canSubmit} className="ml-auto size-10 rounded-(--chat-send-radius) max-sm:size-11 pointer-coarse:size-11 shrink-0 disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100">
       <icons.send className="size-5" aria-hidden="true" /></Button>;
 
-  if (props.layout === 'inline') return <form data-testid="composer" data-layout="inline" onSubmit={event => { event.preventDefault(); if (canSubmit) props.onSend(); }} onDragOver={drag} onDragLeave={drag} onDrop={drop}
+  if (layout === 'inline') return <form data-testid="composer" data-layout="inline" onSubmit={event => { event.preventDefault(); if (canSubmit) props.onSend(); }} onDragOver={drag} onDragLeave={drag} onDrop={drop}
     className={cn('relative bg-card', dragging && 'rounded-2xl ring-2 ring-ring/40', disabled && 'opacity-70')}>
     {slashOpen && <SlashMenu query={query!} items={items} onSelect={pickSlash} onDismiss={dismiss} />}
     {mentionOpen && mentions && <MentionMenu query={trigger!.query} search={mentions.search} generation={mentions.generation} onSelect={pickMention} onDismiss={dismiss} />}
@@ -302,6 +318,7 @@ export function Composer(props: ComposerProps) {
       {textareaEl}
       {props.barNote}
       {props.barStart}
+      {chipsControl}
       {props.barEnd}
       {uploading && !(props.uploads?.length) && <Loader2Icon role="status" aria-label={labels.preparingAttachmentsShort} className="size-3.5 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" />}
       {working && hasContent && <Button variant="secondary" size="sm" data-testid="composer-queue" disabled={!canSubmit} onClick={props.onSend} className="h-11 shrink-0 rounded-full px-4"><icons.queue className="size-3.5" aria-hidden="true" />{labels.queue}</Button>}
@@ -309,24 +326,26 @@ export function Composer(props: ComposerProps) {
     </div>
   </form>;
 
-  return <form data-testid="composer" onSubmit={event => { event.preventDefault(); if (canSubmit) props.onSend(); }} onDragOver={drag} onDragLeave={drag} onDrop={drop}
-    className={cn('relative rounded-xl border border-input bg-card transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20 motion-reduce:transition-none',
-      dragging && 'border-ring ring-[3px] ring-ring/20', disabled && 'opacity-70')}>
+  return <form data-testid="composer" data-layout={layout} onSubmit={event => { event.preventDefault(); if (canSubmit) props.onSend(); }} onDragOver={drag} onDragLeave={drag} onDrop={drop}
+    className={cn('relative rounded-(--chat-composer-radius) border border-input/60 bg-card shadow-sm transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20 motion-reduce:transition-none',
+      layout === 'pill' && '@container/composer', dragging && 'border-ring ring-[3px] ring-ring/20', disabled && 'opacity-70')}>
     {slashOpen && <SlashMenu query={query!} items={items} onSelect={pickSlash} onDismiss={dismiss} />}
     {mentionOpen && mentions && <MentionMenu query={trigger!.query} search={mentions.search} generation={mentions.generation} onSelect={pickMention} onDismiss={dismiss} />}
     {chipRows}
     {attachmentRow}
-    {textareaEl}
-    <div className="flex flex-nowrap items-center gap-x-2 px-3 pt-1 pb-2">
+    {layout !== 'pill' && textareaEl}
+    <div data-testid="composer-controls" className={cn('flex flex-nowrap items-center gap-2 px-3 pb-3', layout === 'pill' && 'py-2')}>
       {fileEl}
       {plus}
+      {layout === 'pill' && textareaEl}
       {feedback && <AnnotateButton feedback={feedback} disabled={disabled} />}
       {props.barStart}
+      {chipsControl}
       {props.barNote}
       {uploading && !(props.uploads?.length) && <span role="status" className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2Icon className="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />{labels.preparingAttachments}</span>}
-      <span className="flex-1" />
-      {props.barEnd}
-      {working && hasContent && <Button variant="secondary" size="sm" data-testid="composer-queue" disabled={!canSubmit} onClick={props.onSend} className="h-11 shrink-0 rounded-full px-4">
+      {layout !== 'pill' && <span className="min-w-0 flex-1" />}
+      {props.barEnd && <div data-testid="composer-tools" className="flex shrink-0 items-center gap-2 [&>button]:h-10 [&>button]:min-w-10 [&>button]:rounded-(--chat-send-radius) [&>button]:bg-muted max-sm:[&>button]:h-11 max-sm:[&>button]:min-w-11 pointer-coarse:[&>button]:h-11 pointer-coarse:[&>button]:min-w-11">{props.barEnd}</div>}
+      {working && hasContent && <Button variant="secondary" size="sm" data-testid="composer-queue" disabled={!canSubmit} onClick={props.onSend} className="h-10 shrink-0 rounded-full px-4 max-sm:h-11 pointer-coarse:h-11">
         <icons.queue className="size-3.5" aria-hidden="true" />{labels.queue}</Button>}
       {send}
     </div>

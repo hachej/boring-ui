@@ -36,7 +36,7 @@ try {
     await mouse('mouseReleased', to.x, to.y);
   };
   const focusDivider = id => browser.evaluate(`${q(DIVIDER(id))}.focus()`);
-  const live = () => browser.until('the chat is live', `${q('[data-testid=connection]')}?.dataset.state === 'connected' && !!${INPUT}`, 20000);
+  const live = () => browser.until('the chat is live', `${q('[data-boring=pi-chat]')}?.dataset.connection === 'connected' && !!${INPUT}`, 20000);
 
   await step('initial layout: the chat on the left at its default width, the app on the right, files closed', async () => {
     await live();

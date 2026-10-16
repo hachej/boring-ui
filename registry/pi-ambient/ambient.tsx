@@ -12,11 +12,12 @@ import type { BlockAction, BlockIcon } from '../button/actions';
 import { useChatPlacement } from '../pi-chat/use-remote-chat';
 import { CopyButton } from '../pi-chat/code-block';
 import { Composer } from '../pi-chat/composer';
-import type { ComposerFeedback } from '../pi-chat/composer';
+import type { ComposerFeedback, ComposerProps } from '../pi-chat/composer';
+import { ConversationFiles } from '../pi-chat/conversation-files';
 import type { AttachmentsConfig, ConversationsConfig, EffortConfig, MentionsConfig, ModelConfig, SlashConfig } from '../pi-chat/config';
 import { notifyPermission, requestNotifyPermission } from './browser-notify';
 import type { NotifyPermission } from './browser-notify';
-import { ConversationHistory } from '../pi-chat/history';
+import { ConversationHistory, TranscriptHistory } from '../pi-chat/history';
 import type { CommandMentions } from '../pi-chat/markdown';
 import { RowView } from '../pi-chat/message';
 import type { RowContext } from '../pi-chat/message';
@@ -128,6 +129,8 @@ export interface AmbientChatProps extends ChatFeatureProps {
   readonly storage?: 'session' | 'local';
   /** Host controls in the composer row, between the effort picker and Send (for example a voice button the host guards itself). Absent: nothing is shown. */
   readonly tools?: ReactNode;
+  /** Two-row reference composer by default; older layouts require an explicit choice. */
+  readonly composerLayout?: ComposerProps['layout'];
   /** Hand the conversation to a full `PiChat` or `ArtifactWorkspace`. Adds an "Open in full chat" action to replies. */
   readonly onOpenFull?: (conversationId: string) => void;
   /** Adds thumbs up and down to replies. `value` is `null` when the person takes the rating back. */
@@ -243,12 +246,12 @@ export function AmbientChat(props: AmbientChatProps) {
     onWindowState={next => { if (props.state === undefined) setLocal(next); props.onStateChange?.(next); }} /></ChatTextProvider>;
 }
 
-const iconButton = 'inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 max-sm:size-11 pointer-coarse:size-11 motion-reduce:transition-none';
+const iconButton = 'inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg border-0 bg-transparent text-muted-foreground shadow-none outline-none transition-colors hover:bg-muted/60 hover:text-foreground active:bg-muted focus-visible:ring-2 focus-visible:ring-ring/60 max-sm:size-11 pointer-coarse:size-11 motion-reduce:transition-none';
 
 type SessionProps = Omit<AmbientChatProps, 'labels' | 'icons'> & { readonly labels: AmbientLabels; readonly icons: AmbientIcons; readonly activeController: { readonly current: NativeChatController }; readonly windowState: AmbientState; readonly store: NotificationStore; readonly onWindowState: (state: AmbientState) => void };
 
 function AmbientSession({ controller, embedded = false, labels, icons, avatar, headerActions, headerTools, messageActions, variant = 'contrast', mode = 'expert', actions,
-  windowState, onWindowState, store, storageKey = 'boring.ambient.position', storage = 'session', tools, onOpenFull, onFeedback, notifications, autoDismissMs, maxToasts, systemNotifications = false,
+  windowState, onWindowState, store, storageKey = 'boring.ambient.position', storage = 'session', tools, composerChips, composerLayout = 'card', onOpenFull, onFeedback, notifications, autoDismissMs, maxToasts, systemNotifications = false,
   renderEntry, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept = 'image/*', slash, mentions, attachments, onOpenFile, fileChanges, pasteToFile, model, effort, replyFooter, artifacts: hostArtifacts, artifactPanel, artifactTarget, conversations, onDock, feedback: composerFeedback, className,
   activeController }: SessionProps) {
   const { title } = labels;
@@ -297,8 +300,9 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inWindow, hostArtifacts, opened, detect]);
   const session = useChatSession({ controller, activeController, mode, actions, renderEntry, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept,
-    slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => scrollToBottom.current(), rowExtras, feedback: composerFeedback, onOpenFile, fileChanges, pasteToFile });
-  const { state, derived, rows, queued, queueActions, working, waitingForAnswer, error, act, textarea, rowContext, composer, empty, loading } = session;
+    slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => scrollToBottom.current(), rowExtras, feedback: composerFeedback, onOpenFile, fileChanges, pasteToFile, composerChips });
+  const { state, derived, rows, queued, queueActions, working, waitingForAnswer, connected, developer, error, act, textarea, rowContext, composer, files, loading } = session;
+  const empty = session.empty && (state.history.kind === 'disabled' || state.history.kind === 'idle');
   const transcript = useTranscript(rows);
   const versions = useMemo(() => inWindow ? collectArtifacts(state.view, detect).sort((a, b) => (b.ordinal ?? 0) - (a.ordinal ?? 0)) : [], [inWindow, state.view, detect]);
   versionsRef.current = versions;
@@ -429,7 +433,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
 
   const visibleRows = transcript.visible(rows);
   const conversation = <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <header hidden={embedded} data-testid="ambient-header" className={cn(embedded && '!hidden','flex h-12 shrink-0 items-center gap-0.5 px-2 max-sm:h-14', !expanded && 'border-b border-border')}>
+      <header hidden={embedded} data-testid="ambient-header" className={cn(embedded && '!hidden','flex h-12 shrink-0 items-center gap-0.5 px-2 max-sm:h-14 max-sm:px-3', !expanded && 'border-b border-border')}>
         <button type="button" data-testid="ambient-minimize" aria-label={labels.minimize} title={labels.minimize} onClick={() => { setPicking(false); setWindowState(expanded ? 'bar' : 'minimized'); }} className={iconButton}><icons.minimize className="size-4" aria-hidden="true" /></button>
         <span data-testid="ambient-status" data-status={status ?? 'idle'} role="img" aria-label={status === 'working' ? labels.statusWorking : status === 'input' ? labels.needsInput : status === 'done' ? labels.finished : status === 'error' ? labels.failedRun : undefined}
           aria-hidden={status ? undefined : 'true'} className={cn('flex shrink-0 items-center justify-center', status ? 'mx-1.5 w-5' : 'w-1.5')}>
@@ -437,7 +441,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
         </span>
         {avatar && <span data-testid="ambient-avatar" className="flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-full [&>img]:size-full [&>img]:object-cover [&>svg]:size-4">{avatar}</span>}
         <button ref={titleButton} type="button" data-testid="ambient-title" onClick={expand} disabled={expanded} aria-label={expanded ? shownTitle : labels.openChat(shownTitle)}
-          className="min-w-0 max-w-full cursor-pointer truncate rounded-md px-1 py-1 text-left font-(family-name:--chat-display) text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-default max-sm:py-2.5">{shownTitle}</button>
+          className="min-h-8 min-w-0 max-w-full cursor-pointer truncate rounded-md border-0 bg-transparent px-1 py-1 text-left max-sm:min-h-11 pointer-coarse:min-h-11 font-(family-name:--chat-display) text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-default max-sm:py-2.5">{shownTitle}</button>
         {conversations && <button type="button" data-testid="ambient-switch" aria-label={labels.switchConversation} aria-haspopup="dialog" aria-expanded={picking} title={labels.switchConversation} onClick={() => setPicking(open => !open)}
           className={cn(iconButton, 'size-8 max-sm:size-11 pointer-coarse:size-11')}><icons.switchConversation className="size-3.5" aria-hidden="true" /></button>}
         {expanded ? <span className="flex-1" /> : <button type="button" tabIndex={-1} aria-hidden="true" data-testid="ambient-header-fill" onClick={expand} className="h-full min-w-2 flex-1 cursor-pointer" />}
@@ -456,11 +460,14 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
         {derived.pinned.length > 0 && <aside aria-label={labels.requiredActions} className="shrink-0 space-y-2 px-4 pb-2">{derived.pinned.map(card => <div key={card.key}>{card.content}</div>)}</aside>}
         <div className="relative flex min-h-0 flex-1 flex-col">
           <div ref={stick.scrollRef} data-testid="transcript-scroll" className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
-            <div ref={stick.contentRef} role="log" aria-label={labels.messages} aria-live="polite" data-testid="transcript" className="flex min-h-28 flex-col gap-6 px-4 pt-4 pb-6">
-              {hidden > 0 && <div className="flex justify-center"><Button size="sm" variant="outline" data-testid="show-earlier" className="text-muted-foreground" onClick={transcript.reveal}>{labels.showEarlier}</Button></div>}
-              {visibleRows.map(row => <RowView key={row.key} row={row} context={rowContext} />)}
-              {loading && <p role="status" data-testid="loading" className="m-0 flex items-center gap-2 text-sm text-muted-foreground"><Loader2Icon className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />{labels.loading}</p>}
-              {empty && !loading && <p data-testid="ambient-empty" className="m-0 max-w-sm py-8 text-sm leading-6 text-muted-foreground">{labels.empty}</p>}
+            <div ref={stick.contentRef}>
+              <TranscriptHistory history={state.history} developer={developer} replyFooter={replyFooter} connected={!state.disposed && connected} onLoad={() => { stick.stopScroll(); act(controller.loadEarlier); }} onClose={() => { if (!state.disposed) controller.clearHistory(); }} />
+              <div role="log" aria-label={labels.messages} aria-live="polite" data-testid="transcript" className="flex min-h-28 flex-col gap-6 px-4 pt-4 pb-6">
+                {hidden > 0 && <div className="flex justify-center"><Button size="sm" variant="outline" data-testid="show-earlier" className="text-muted-foreground" onClick={transcript.reveal}>{labels.showEarlier}</Button></div>}
+                {visibleRows.map(row => <RowView key={row.key} row={row} context={rowContext} />)}
+                {loading && <p role="status" data-testid="loading" className="m-0 flex items-center gap-2 text-sm text-muted-foreground"><Loader2Icon className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />{labels.loading}</p>}
+                {empty && !loading && <p data-testid="ambient-empty" className="m-0 max-w-sm py-8 text-sm leading-6 text-muted-foreground">{labels.empty}</p>}
+              </div>
             </div>
           </div>
           {!stick.isAtBottom && <Button variant="outline" size="icon" data-testid="jump-latest" aria-label={labels.jumpToLatest} title={labels.jumpToLatest} onClick={() => { transcript.reset(); void stick.scrollToBottom(); }}
@@ -475,8 +482,11 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
             <span className="flex-1">{connectionKind === 'error' ? labels.loadFailedShort : labels.disconnectedShort}</span>
             {!state.disposed && <Button size="sm" variant="outline" onClick={() => act(controller.connect)}>{labels.reconnect}</Button>}</Notice>}
         </div>
-        <MessageQueue items={queued} sending={state.outbox} withdraw={actions?.withdraw} actions={queueActions} />
-        <Composer {...composer} layout="inline" placeholder={working || waitingForAnswer ? label : labels.placeholder} barStart={barStart} barNote={barNote} barEnd={tools} />
+        <div className="px-3 pt-2 pb-3">
+          <ConversationFiles files={files} />
+          <MessageQueue items={queued} sending={state.outbox} withdraw={actions?.withdraw} actions={queueActions} />
+          <Composer {...composer} layout={composerLayout} placeholder={working || waitingForAnswer ? label : labels.placeholder} barStart={barStart} barNote={barNote} barEnd={tools} />
+        </div>
       </div>
       </section>;
   return <div ref={root} data-boring={embedded ? 'pi-chat' : 'ambient-chat'} data-state={windowState} data-variant={variant} data-phone={phone ? 'true' : undefined} role="region" aria-label={labels.region(shownTitle)}

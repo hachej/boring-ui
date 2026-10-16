@@ -31,7 +31,7 @@ const SUBMIT = `document.querySelector('[data-testid=composer-submit]')`;
 const idle = `${SUBMIT}?.dataset.state === 'send'`;
 const logText = `(document.querySelector('[data-testid=transcript]')?.innerText ?? '')`;
 const tab = name => `document.querySelector('[data-tab="${name}"]')`;
-const connected = `document.querySelector('[data-testid=connection]')?.dataset.state === 'connected'`;
+const connected = `document.querySelector('[data-boring=pi-chat]')?.dataset.connection === 'connected'`;
 
 let browser;
 try {

@@ -133,7 +133,11 @@ export default [
       await browser.click(`[...document.querySelectorAll('.studio-panel li button')].find(b => b.textContent === 'board.tldraw')`);
       const scope = '[data-testid=canvas-viewer]';
       await browser.until('canvas in the frame', `${q(`${scope} [data-testid=viewer-bar]`)} !== null && Number(${q(`${scope} [data-testid=document]`)}?.dataset.shapes) === 1`, 30000);
-      for (const id of ['more', 'share']) assert.equal(await browser.evaluate(`!!${q(`${scope} [data-testid=viewer-${id}]`)}`), true, `Canvas has ${id} (Reload is in the menu)`);
+      assert.equal(await browser.evaluate(`!!${q(`${scope} [data-testid=viewer-more]`)}`), true, 'Canvas has an overflow trigger');
+      await browser.click(q(`${scope} [data-testid=viewer-more]`));
+      await browser.until('Canvas Share and Reload are in the native menu', `!!${q('[data-testid=viewer-more-list] [data-testid=viewer-share]')} && !!${q('[data-testid=viewer-more-list] [data-testid=viewer-refresh]')}`, 5000);
+      await browser.press('Escape');
+      await browser.until('Canvas overflow dismissed', `!${q('[data-testid=viewer-more-list]')}`, 5000);
       assert.equal(await browser.evaluate(`!${q(`${scope} [data-testid=viewer-status]`)}`), true, 'a clean canvas shows no status');
       await browser.until('shape drawn', `document.querySelectorAll('[data-testid=workspace-panel] .tl-shape').length >= 1`);
       await t.shots('fileviewers-canvas');

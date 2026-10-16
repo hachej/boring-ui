@@ -20,6 +20,8 @@ export const defaultChatLabels = {
   /** The chat's name: the header title, the region's name and the empty state's title. */
   title: 'Conversation',
   history: 'History',
+  artifacts: 'Artifacts',
+  search: 'Search',
   live: 'Live',
   connecting: 'Connecting…',
   reconnecting: 'Reconnecting…',

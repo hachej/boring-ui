@@ -25,7 +25,7 @@ const noOverflow = `document.documentElement.scrollWidth <= innerWidth && docume
 const LIST = '[data-testid=list-pane]', DETAIL = '[data-testid=detail-pane]', LAYER = '[data-testid=agent-layer]';
 const view = `${q('[data-testid=list-detail]')}?.dataset.view`;
 const historyLength = `history.length`;
-const CHAT_LIVE = `${q('[data-testid=connection]')}?.dataset.state === 'connected' && !!${q('[data-testid=composer-input]')}`;
+const CHAT_LIVE = `!!${q('[data-testid=composer-input]')} && !${q('[data-testid=composer-input]')}.disabled`;
 
 const app = await startAppShell({ directory: mkdtempSync(join(tmpdir(), 'boring-app-shell-ws-')) });
 let browser;

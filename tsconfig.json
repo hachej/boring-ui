@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "paths": { "@/components/ui/*": ["./examples/app-shell/components/ui/*"] }
+    "paths": { "@/components/ui/*": ["./examples/app-shell/components/ui/*"], "@/lib/utils": ["./examples/app-shell/lib/utils.ts"] }
   },
   "files": [],
   "references": [

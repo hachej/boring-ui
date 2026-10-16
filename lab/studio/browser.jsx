@@ -168,7 +168,7 @@ function App() {
       <AgentWorkspace controller={controller} conversationId={active} conversations={conversations} resources={resources} detect={detect} viewers={viewers} interactive={INTERACTIVE_HTML} share={shareStudioLink}
         opened={opened} onOpenedChange={setOpened} panels={panels} fileBack={{ label: 'Files', onBack: () => setOpened({ kind: 'workspace', tab: 'files' }) }}
         storageKey="studio" sheetBelow={901} drawerBelow={901} floatBelow={320}
-        chat={{ labels: CHAT_LABELS, mode, actions: chat.actions, ...composer, emptyState: scenarioRun.emptyState, decisions: scenarioRun.decisions }}
+        chat={{ labels: CHAT_LABELS, showHistory: true, mode, actions: chat.actions, ...composer, emptyState: scenarioRun.emptyState, decisions: scenarioRun.decisions }}
         connecting={<p className="studio-loading" role="status">{chat.status === 'offline' ? 'Server unreachable. Retrying…' : 'Connecting…'}</p>}
         floatingChat={floating}
         controls={({ panelOpen }) => panelOpen ? undefined : <button type="button" className="studio-panel-toggle" data-testid="studio-panel-open" onClick={() => setOpened({ kind: 'workspace', tab: 'files' })}><PanelRightOpenIcon size={16} aria-hidden="true" />Workspace</button>}

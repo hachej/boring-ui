@@ -114,14 +114,13 @@ export default [
       assert.equal(await browser.evaluate(`!${q('[data-testid=workspace-divider]')} && !${q('[data-testid=artifact-fullscreen]')} && !!${q('[data-testid=artifact-close]')}`), true);
       await shots('mobile-artifact');
       await p.check('artifact panel', 'document.querySelector("[data-testid=viewer-panel]")');
-      for (const id of ['artifact-share', 'artifact-more', 'artifact-close']) assert.ok(await p.inViewport(`[data-testid=${id}]`), `${id} is reachable`);
+      for (const id of ['artifact-more', 'artifact-close']) assert.ok(await p.inViewport(`[data-testid=${id}]`), `${id} is reachable`);
       // On a phone the less used actions (Reload, Copy, Download) sit in the overflow menu of the standard bar.
       await browser.tap(q('[data-testid=artifact-more]'));
       await browser.until('overflow menu', `!!${q('[data-testid=artifact-more-list]')}`);
-      for (const id of ['artifact-refresh', 'artifact-download']) assert.ok(await p.inViewport(`[data-testid=${id}]`), `${id} is reachable in the overflow menu`);
+      for (const id of ['artifact-share', 'artifact-refresh', 'artifact-copy', 'artifact-download']) assert.ok(await p.inViewport(`[data-testid=${id}]`), `${id} is reachable in the overflow menu`);
       await browser.press('Escape');
       await browser.until('overflow menu closed', `!${q('[data-testid=artifact-more-list]')}`);
-      assert.ok(await browser.evaluate(`!!${q('[aria-label=Copy], [data-testid=copy]')}`) && await p.inViewport('[data-testid=copy]'), 'copy is reachable');
       await browser.tap(q('[data-testid=artifact-close]'));
       await browser.until('closed', `!${q('[data-testid=artifact-panel]')}`);
       await pause(300);
@@ -160,8 +159,8 @@ export default [
       await browser.tap(q('[data-testid=sessions-toggle]'));
       await browser.until('sessions drawer', `${q('[data-testid=conversations]')}?.dataset.drawer === 'true'`, 5000);
       await pause(300);
-      const drawer = await browser.evaluate(`(() => { const r = ${q('[data-testid=conversations]')}.getBoundingClientRect(); return { x: r.x, w: r.width, h: r.height }; })()`);
-      assert.ok(drawer.x === 0 && drawer.w > 300 && drawer.w <= 390 && drawer.h === 844, `a full-height drawer inside the screen: ${JSON.stringify(drawer)}`);
+      const drawer = await browser.evaluate(`(() => { const r = ${q('[data-testid=conversations]')}.closest('[data-slot=drawer-popup]').getBoundingClientRect(); return { x: r.x, w: r.width, h: r.height }; })()`);
+      assert.ok(drawer.x === 0 && drawer.w === 260 && drawer.w <= 390 && drawer.h === 844, `a full-height drawer inside the screen: ${JSON.stringify(drawer)}`);
       await p.noOverflow('history');
       await shots('mobile-history');
       await p.check('history', 'document.querySelector("[data-testid=conversations]")');
@@ -223,7 +222,7 @@ export default [
       }
       await browser.tap(q(`${VIEWER('media/moon-brief.pdf')} [data-testid=viewer-more]`));
       await browser.until('overflow menu', `!!${q('[data-testid=viewer-more-list]')}`);
-      assert.deepEqual(await browser.evaluate(`${k.qa('[data-testid=viewer-more-list] [role=menuitem]')}.map(b => b.textContent)`), ['Reload', 'Download', 'Open in new tab']);
+      assert.deepEqual(await browser.evaluate(`${k.qa('[data-testid=viewer-more-list] [role=menuitem]')}.map(b => b.textContent)`), ['Share', 'Reload', 'Download', 'Open in new tab']);
       await shots('fileviewers-phone-menu');
       await browser.press('Escape');
     },

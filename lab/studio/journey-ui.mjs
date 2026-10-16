@@ -6,9 +6,11 @@ export function conversations(t) {
   const { browser, logText } = t;
   /** Shows the list: docked it is already there (shown again if the person hid it); on a narrow screen the toggle opens the drawer. */
   const open = async () => {
-    if (await browser.evaluate(`!!${q('[data-testid=conversations]')}`)) return;
-    await browser.click(q('[data-testid=sessions-toggle]'));
-    await browser.until('the sessions list is shown', `!!${q('[data-testid=conversations]')}`, 5000);
+    if (!await browser.evaluate(`!!${q('[data-testid=conversations]')}`)) {
+      await browser.click(q('[data-testid=sessions-toggle]'));
+      await browser.until('the sessions list is shown', `!!${q('[data-testid=conversations]')}`, 5000);
+    }
+    if (!await browser.evaluate(`!!${q('[data-testid=conversation-search]')}`)) await browser.click(q('[data-testid=conversation-search-open]'));
   };
   /** Closes the drawer (Escape); a docked pane stays. */
   const close = async () => {
@@ -35,13 +37,13 @@ export function conversations(t) {
       const before = await browser.evaluate(`${q('[data-testid=studio-main]')}.dataset.conversation`);
       await open();
       await browser.click(q('[data-testid=conversation-new]'));
-      await browser.until('a new, empty conversation', `${q('[data-testid=studio-main]')}.dataset.conversation !== ${JSON.stringify(before)} && ${logText}.trim() === '' && ${q('[data-testid=connection]')}?.dataset.state === 'connected'`, 20000);
+      await browser.until('a new, empty conversation', `${q('[data-testid=studio-main]')}.dataset.conversation !== ${JSON.stringify(before)} && ${logText}.trim() === '' && ${q('[data-boring=pi-chat]')}?.dataset.connection === 'connected'`, 20000);
     },
     /** Switch to an existing conversation by id through the sessions list. */
     select: async id => {
       await open();
       await browser.click(`${qa('[data-testid=conversation-row]')}.find(row => row.dataset.conversationId === ${JSON.stringify(String(id))})`);
-      await browser.until('the conversation is open', `${q('[data-testid=studio-main]')}.dataset.conversation === ${JSON.stringify(String(id))} && ${q('[data-testid=connection]')}?.dataset.state === 'connected'`, 20000);
+      await browser.until('the conversation is open', `${q('[data-testid=studio-main]')}.dataset.conversation === ${JSON.stringify(String(id))} && ${q('[data-boring=pi-chat]')}?.dataset.connection === 'connected'`, 20000);
     },
   };
 }

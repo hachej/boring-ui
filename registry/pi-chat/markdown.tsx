@@ -171,7 +171,7 @@ export const Markdown = memo(function Markdown({ text: source, commandMentions, 
     if (mentions) return children(tokens, context);
     return tokens.map((token, index) => <Block key={index} token={token} context={context} />);
   }, [tokens, source, mentions, context]);
-  return <div data-testid="message-text" data-streaming={streaming ? 'true' : undefined} className="min-w-0 text-sm leading-relaxed [overflow-wrap:anywhere]">
+  return <div data-testid="message-text" data-streaming={streaming ? 'true' : undefined} className="min-w-0 text-base leading-(--chat-leading) [overflow-wrap:anywhere]">
     {body}
   </div>;
 });

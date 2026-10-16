@@ -128,9 +128,18 @@ export async function launch(url: string, { chromium = process.env.CHROMIUM, evi
     await tabSend('Page.navigate', { url });
     return { ...inspect(tabSend), send: tabSend, setVisible: visible => inspect(tabSend).evaluate(`window.__setVisibility(${visible ? "'visible'" : "'hidden'"})`), close: () => sendTo(undefined, 'Target.closeTarget', { targetId: created.targetId }) };
   };
-  // The centre of an element once it exists, has a size and (for `enabled`) is not disabled; `scroll` brings it into view first.
+  // Measure across two painted frames: a breakpoint can move or replace a control after the viewport itself has changed.
   const centre = (what: string, selector: string, { enabled = false, scroll = false } = {}): Promise<{ x: number; y: number }> =>
-    until(`${what} ${selector}`, `(() => { const e = ${selector}; if (!e${enabled ? ' || e.disabled' : ''}) return null;${scroll ? " e.scrollIntoView({ block: 'center' });" : ''} const r = e.getBoundingClientRect(); return r.width ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null; })()`);
+    until(`${what} ${selector}`, `(async () => {
+      const e = (${selector}); if (!e${enabled ? ' || e.disabled' : ''}) return null;
+      ${scroll ? "e.scrollIntoView({ block: 'center', behavior: 'instant' });" : ''}
+      const before = e.getBoundingClientRect();
+      await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame);
+      const current = (${selector}); if (!current${enabled ? ' || current.disabled' : ''} || (e instanceof Element && current !== e)) return null;
+      const r = current.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 && ['x', 'y', 'width', 'height'].every(key => Math.abs(r[key] - before[key]) < 0.5)
+        ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null;
+    })()`);
   // Real pointer and keyboard input through the browser, not synthetic DOM events.
   const click = async (selector: string) => {
     const box = await centre('clickable', selector, { enabled: true, scroll: true });

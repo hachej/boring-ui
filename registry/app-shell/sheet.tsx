@@ -4,7 +4,7 @@
 // (opening one closes any other) and Back closes it (the Back manager's `sheet` layer). The agent layer is not an AppSheet.
 import { useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
-import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer';
+import { Drawer, DrawerContent, DrawerTitle } from '../drawer/drawer';
 import { useBackLayer } from './back';
 
 interface Open { readonly close: () => void }

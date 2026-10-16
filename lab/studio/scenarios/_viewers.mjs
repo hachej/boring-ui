@@ -38,9 +38,13 @@ export function viewerKit(t) {
   // The standard actions every viewer shows, whatever else it adds.
   const standardBar = async (scope, label, prefix = 'viewer') => {
     // The bar renders its controls as the viewer loads: wait for each instead of asserting at once (the blocking layer allows no retry).
-    for (const id of ['more', 'share']) await browser.until(`${label} has ${id}`, `!!${q(`${scope} [data-testid=${prefix}-${id}]`)}`, 10000);
+    await browser.until(`${label} has overflow`, `!!${q(`${scope} [data-testid=${prefix}-more]`)}`, 10000);
     assert.equal(await browser.evaluate(`${q(`${scope} [data-testid=${prefix}-more]`)}.getAttribute('aria-label')`), 'More actions');
-    assert.equal(await browser.evaluate(`${q(`${scope} [data-testid=${prefix}-share]`)}.getAttribute('aria-label')`), 'Share');
+    await browser.click(q(`${scope} [data-testid=${prefix}-more]`));
+    await browser.until(`${label} offers Share in overflow`, `!!${q(`[data-testid=${prefix}-more-list] [data-testid=${prefix}-share]`)}`, 10000);
+    assert.equal(await browser.evaluate(`${q(`[data-testid=${prefix}-more-list] [data-testid=${prefix}-share]`)}.textContent.trim()`), 'Share');
+    await browser.press('Escape');
+    await browser.until('viewer overflow dismissed', `!${q(`[data-testid=${prefix}-more-list]`)}`, 5000);
   };
   // The caret at the very start of the rich document, as a person puts it there: a click on the left edge of its first character.
   // Ready means the editor's own selection agrees, not only the browser's caret: after a focus or a click ProseMirror writes its selection
@@ -48,6 +52,7 @@ export function viewerKit(t) {
   // caret moved, putting it back at the end. Every Markdown file these scenarios edit starts with a level-1 title, so the toolbar's
   // Heading 1 state (computed from the editor's selection) is that signal.
   const caretAtStart = async scope => {
+    if (!await browser.evaluate(`!!${q(`${scope} [aria-label="Heading 1"]`)}`)) await browser.click(q(`${scope} [aria-label="Pin formatting toolbar"]`));
     const point = await browser.evaluate(`(() => { const box = ${q(`${scope} [role=textbox]`)}; box.firstElementChild.scrollIntoView({ block: 'nearest' });
       const text = document.createTreeWalker(box, NodeFilter.SHOW_TEXT, { acceptNode: node => node.textContent.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP }).nextNode();
       const range = document.createRange(); range.setStart(text, 0); range.setEnd(text, 1); const r = range.getBoundingClientRect();

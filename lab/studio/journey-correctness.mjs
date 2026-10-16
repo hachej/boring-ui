@@ -69,7 +69,7 @@ try {
     assert.equal(seeded.kind, 'committed');
     browser = await launch(app.url, { evidence });
     await openDocument();
-    await browser.until('chat connected and document loaded', `${q('[data-testid=connection]')}?.dataset.state === 'connected' && !!${source}`);
+    await browser.until('chat connected and document loaded', `${q('[data-boring=pi-chat]')}?.dataset.connection === 'connected' && !!${source}`);
   });
   await step('answer repeated-ID question cards, refuse unauthenticated answer, then retry', async () => {
     await browser.type(q('[data-testid=composer-input]'), 'Plan a fictional picnic.');
@@ -136,7 +136,7 @@ try {
   await step('reload reconnects to the same native transcript and saved document', async () => {
     await browser.reload();
     await openDocument();
-    await browser.until('reconnected', `${q('[data-testid=connection]')}?.dataset.state === 'connected' && ${source}?.value === '# External fictional revision\\n'`);
+    await browser.until('reconnected', `${q('[data-boring=pi-chat]')}?.dataset.connection === 'connected' && ${source}?.value === '# External fictional revision\\n'`);
     assert.deepEqual(await browser.evaluate(`[...document.querySelectorAll('[data-testid=question-answer]')].map(element => element.textContent)`), ['park', 'red']);
     assert.equal(transcripts.length, 3, 'reload does not run the model again');
     assert.deepEqual(browser.problems.filter(problem => problem.startsWith('exception:')), []);
@@ -145,7 +145,7 @@ try {
   await step('behind an idle-closing proxy the chat stays live on heartbeats, reconnects by itself after a drop and duplicates nothing', async () => {
     assert.ok(heartbeatMs * 2 <= proxyIdleMs, 'the heartbeat must be at most half the proxy idle timeout');
     proxy = await startIdleProxy({ target: app.url, idleMs: proxyIdleMs });
-    const connection = `${q('[data-testid=connection]')}?.dataset.state`;
+    const connection = `${q('[data-boring=pi-chat]')}?.dataset.connection`;
     const transcript = `(${q('[data-testid=transcript]')}?.innerText ?? '')`;
     await browser.evaluate(`location.href = ${JSON.stringify(proxy.url)}`);
     await browser.until('connected through the proxy', `location.port === '${proxy.port}' && ${connection} === 'connected'`);
@@ -157,7 +157,7 @@ try {
     report.proxy = { idleMs: proxyIdleMs, heartbeatMs, idleWindowMs: 3 * proxyIdleMs + 1500 };
     // The proxy drops every connection: the client notices and reopens the watch without a reload or a remount.
     await browser.evaluate(`window.__states = []; new MutationObserver(() => { const state = ${connection}; if (state && window.__states.at(-1) !== state) window.__states.push(state); })
-      .observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-state'] })`);
+      .observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-connection'] })`);
     const replies = await browser.evaluate(`${transcript}.split('Fictional plan complete.').length - 1`);
     proxy.cut();
     await browser.until('reopened after the drop', `${connection} === 'connected' && window.__states.includes('reconnecting')`);

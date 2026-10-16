@@ -24,7 +24,7 @@ export default [
       await browser.until('the panel opened by itself with the rendered document', `!!${q(kit.PANEL)} && ${kit.editorText}.length > 200`, 20000);
       assert.equal(await browser.evaluate(`${q(kit.PANEL)}.dataset.follow`), 'true', 'the newest card opens the latest');
       assert.equal(await browser.evaluate(`${q('[data-testid=studio-main]')}.getBoundingClientRect().height - ${q(kit.SIDE)}.getBoundingClientRect().height < 4`), true, 'the panel takes the full height');
-      assert.equal(await browser.evaluate(`${q(`${kit.CARDS}[data-open=true] [data-testid=artifact-hint]`)}?.textContent`), 'Viewing', 'the card shows that it is the open artifact');
+      assert.equal(await browser.evaluate(`${q(`${kit.CARDS}[data-open=true] [data-testid=artifact-hint]`)}?.textContent`), 'Open', 'the open card keeps its quiet action label');
       assert.ok((await kit.rect('[data-testid=workspace-chat]')).w >= 330, 'the chat narrowed but stays usable');
       // Rendered headings, not source: unless the model wrote Markdown the rich editor could not keep exactly, which stays in source with a notice.
       assert.equal(await browser.evaluate(`!!${q(`${kit.PANEL} [role=textbox] h1, ${kit.PANEL} [role=textbox] h2`)} || !!${q(`${kit.PANEL} [data-testid=markdown-source-only]`)}`), true, 'rendered headings, or source with the notice');
@@ -128,8 +128,9 @@ document.getElementById('chart').append(svg);
       await browser.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: x - 100, y, button: 'left', buttons: 0, clickCount: 1 });
       await pause(200);
       const dragged = await width();
-      assert.ok(dragged >= start + 80 || dragged >= (await rect('[data-testid=studio-main]')).w - 345, `dragging left widened the panel: ${start} -> ${dragged}`);
-      // Keyboard: arrows move by 24px, Shift by 96px, Home and End jump to the limits (the chat keeps at least 340px, the panel at least 360px).
+      const limit = await browser.evaluate(`Number(${q(divider)}.getAttribute('aria-valuemax'))`);
+      near(dragged, Math.min(start + 100, limit), 'dragging left widens the panel up to its declared maximum');
+      // Keyboard: arrows move by 24px, Shift by 96px, Home and End jump to the limits (the chat and panel each keep at least 360px).
       await browser.evaluate(`${q(divider)}.focus()`);
       const before = await width();
       await browser.press('ArrowRight');
@@ -139,7 +140,7 @@ document.getElementById('chart').append(svg);
       await browser.press('End'); await pause(100);
       near(await width(), 360, 'End: minimum width');
       await browser.press('Home'); await pause(100);
-      assert.ok((await rect('[data-testid=workspace-chat]')).w >= 339, 'Home: maximum width leaves the chat 340px');
+      assert.ok((await rect('[data-testid=workspace-chat]')).w >= 359, 'Home: maximum width leaves the chat 360px');
       assert.equal(await browser.evaluate(`${q(divider)}.getAttribute('role')`), 'separator');
       // Choose a width, reload: the panel comes back at the same width (kept for the session).
       for (let i = 0; i < 4; i++) await browser.press('ArrowRight');
@@ -149,23 +150,26 @@ document.getElementById('chart').append(svg);
       await pause(500);
       near(await width(), chosen, 'the width is remembered for the session');
       await browser.evaluate(`${q(divider)}.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`); await pause(200);
-      near(await width(), 640, 'double click restores the default width (the limits permitting)');
+      near(await width(), await browser.evaluate(`${q('[data-boring=artifact-workspace]')}.getBoundingClientRect().width - 420`), 'double click restores the default 420px chat measure');
       // Full screen: the panel takes the whole window, the chat is hidden and inert; the person's document is the same one.
       const revision = await browser.evaluate(`${q('[data-testid=document]')}.dataset.revision`);
-      await browser.click(q('[data-testid=artifact-fullscreen]'));
+      await t.menu(PANEL, 'artifact', 'fullscreen');
       await browser.until('full screen', `${q(SIDE)}.dataset.fullscreen === 'true'`, 3000);
       await pause(300);
       const full = await rect(SIDE);
       assert.deepEqual([full.w, full.h], await browser.evaluate(`[innerWidth, innerHeight]`), 'the panel covers the whole window');
       assert.equal(await browser.evaluate(`${q('[data-testid=workspace-chat]')}.hasAttribute('inert')`), true, 'the chat is hidden from input');
-      assert.equal(await browser.evaluate(`${q('[data-testid=artifact-fullscreen]')}.getAttribute('aria-label')`), 'Exit full screen');
+      await browser.click(q('[data-testid=artifact-more]'));
+      await browser.until('exit fullscreen in overflow', `!!${q('[data-testid=artifact-fullscreen]')}`, 5000);
+      assert.equal(await browser.evaluate(`${q('[data-testid=artifact-fullscreen]')}.textContent.trim()`), 'Exit full screen');
+      await browser.press('Escape');
       assert.equal(await browser.evaluate(`${q('[data-testid=document]')}.dataset.revision`), revision, 'the same document is shown');
       await shots('artifacts-fullscreen');
       await browser.press('Escape');
       await browser.until('Escape leaves full screen', `${q(SIDE)}.dataset.fullscreen === 'false'`, 3000);
-      await browser.click(q('[data-testid=artifact-fullscreen]'));
+      await t.menu(PANEL, 'artifact', 'fullscreen');
       await browser.until('full screen again', `${q(SIDE)}.dataset.fullscreen === 'true'`, 3000);
-      await browser.click(q('[data-testid=artifact-fullscreen]'));
+      await t.menu(PANEL, 'artifact', 'fullscreen');
       await browser.until('the exit button leaves full screen', `${q(SIDE)}.dataset.fullscreen === 'false' && !${q('[data-testid=workspace-chat]')}.hasAttribute('inert')`, 3000);
       // Close, then open again from the card: the panel slides back in.
       await browser.click(q('[data-testid=artifact-close]'));
@@ -174,7 +178,7 @@ document.getElementById('chart').append(svg);
       assert.equal(await browser.evaluate(`!${q(`${CARDS}[data-open=true]`)}`), true, 'no card claims to be open');
       await openCard(report.id, 2, `!!${q(PANEL)} && ${editorText}.length > 100`, 'reopened from the card');
       await pause(400);
-      assert.equal(await browser.evaluate(`${q(`${CARDS}[data-open=true] [data-testid=artifact-hint]`)}?.textContent`), 'Viewing');
+      assert.equal(await browser.evaluate(`${q(`${CARDS}[data-open=true] [data-testid=artifact-hint]`)}?.textContent`), 'Open');
 
       // ---- Versions: the switcher lists both and old cards pin their version.
       assert.equal((await kit.cards()).filter(c => c.id === report.id).length, 2, 'one card per message for the same artifact');
@@ -182,16 +186,16 @@ document.getElementById('chart').append(svg);
       await browser.until('latest shows the revision', `/Safety notes/i.test(${editorText}) && ${q(PANEL)}.dataset.follow === 'true'`);
       // The history menu: an icon button with a tooltip, newest first, the latest marked and the one on display checked.
       const bar = `${PANEL} [data-testid=artifact-bar]`;
-      const items = () => browser.evaluate(`${qa(`${PANEL} [data-testid=artifact-versions-item]`)}.map(i => [i.children[1].textContent, i.children[2]?.textContent ?? '', i.getAttribute('aria-checked')])`);
+      const items = () => browser.evaluate(`${qa('[data-testid=artifact-versions-item]')}.map(i => [i.children[1].textContent, i.children[2]?.textContent ?? '', i.getAttribute('aria-checked')])`);
       const trigger = `${PANEL} [data-testid=artifact-versions]`;
       assert.deepEqual(await browser.evaluate(`({ label: ${q(trigger)}.getAttribute('aria-label'), title: ${q(trigger)}.title, text: ${q(trigger)}.textContent.trim(), popup: ${q(trigger)}.getAttribute('aria-haspopup') })`), { label: 'Version history', title: 'Version history', text: '', popup: 'menu' });
       await browser.click(q(trigger));
-      await browser.until('history menu', `!!${q(`${PANEL} [role=menu]`)}`, 3000);
+      await browser.until('history menu', `!!${q('[data-testid=artifact-versions-list]')}`, 3000);
       // Versions are named by when they were saved (a clock time), never by a number; the newest carries the "Latest" marker.
       const shape = list => list.map(([label, marker, checked]) => [TIME.test(label) && !/^Version/.test(label), marker, checked]);
       assert.deepEqual(shape(await items()), [[true, 'Latest', 'true'], [true, '', 'false']]);
       await browser.press('Escape');
-      await browser.until('Escape closes the history menu', `!${q(`${PANEL} [role=menu]`)} && document.activeElement === ${q(trigger)}`, 3000);
+      await browser.until('Escape closes the history menu', `!${q('[data-testid=artifact-versions-list]')} && document.activeElement === ${q(trigger)}`, 3000);
       // The whole bar is one row at the panel's width.
       const row = await browser.evaluate(`(() => { const b = ${q(bar)}.getBoundingClientRect(); const mids = ${qa(`${bar} button`)}.filter(x => x.checkVisibility()).map(x => { const r = x.getBoundingClientRect(); return r.top + r.height / 2; });
         return { bar: Math.round(b.height), spread: Math.round(Math.max(...mids) - Math.min(...mids)), buttons: mids.length }; })()`);
@@ -204,13 +208,16 @@ document.getElementById('chart').append(svg);
       assert.equal(await browser.evaluate(`${q(`${PANEL} [role=textbox]`)}.getAttribute('contenteditable')`), 'false');
       await shots('artifacts-pinned');
       await browser.click(q(trigger));
-      await browser.until('history menu on a pinned version', `!!${q(`${PANEL} [role=menu]`)}`, 3000);
+      await browser.until('history menu on a pinned version', `!!${q('[data-testid=artifact-versions-list]')}`, 3000);
       assert.deepEqual(shape(await items()), [[true, 'Latest', 'false'], [true, '', 'true']]);
-      await browser.press('ArrowDown'); await browser.press('Enter');
+      await browser.until('version menu owns focus', `${q('[data-testid=artifact-versions-list]')}?.contains(document.activeElement)`, 5000);
+      await browser.press('Home');
+      await browser.until('latest version focused', `document.activeElement === ${qa('[data-testid=artifact-versions-item]')}[0]`, 5000);
+      await browser.press('Enter');
       await browser.until('keyboard: the first item (latest) was chosen', `${q(PANEL)}.dataset.follow === 'true' && /Safety notes/i.test(${editorText})`, 10000);
       await browser.click(q(trigger));
-      await browser.until('history menu again', `!!${q(`${PANEL} [role=menu]`)}`, 3000);
-      await browser.click(`${qa(`${PANEL} [data-testid=artifact-versions-item]`)}.at(-1)`);
+      await browser.until('history menu again', `!!${q('[data-testid=artifact-versions-list]')}`, 3000);
+      await browser.click(`${qa('[data-testid=artifact-versions-item]')}.at(-1)`);
       await browser.until('choosing the oldest version pins it', `${q(PANEL)}.dataset.follow === 'false' && ${q(PANEL)}.dataset.artifactPosition === '1' && !/Safety notes/i.test(${editorText})`, 10000);
       await browser.click(cardWhere(report.id, 2));
       await browser.until('latest again', `${q(PANEL)}.dataset.follow === 'true' && /Safety notes/i.test(${editorText})`);

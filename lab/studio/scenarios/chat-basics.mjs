@@ -215,6 +215,7 @@ export default [
       // Rename the first one from the list.
       await history.open();
       await browser.until('both chats are listed', `!!${row(first)} && !!${row(second)}`, 10000);
+      await browser.click(rowAction(first, 'conversation-action-more'));
       await browser.click(rowAction(first, 'conversation-rename'));
       await browser.until('the name field', `!!${q('[data-testid=conversation-rename-input]')}`, 5000);
       await browser.evaluate(`(() => { const e = ${q('[data-testid=conversation-rename-input]')}; e.focus(); e.select(); })()`);
@@ -231,6 +232,7 @@ export default [
       await history.close();
       await history.select(first);
       await history.open();
+      await browser.click(rowAction(first, 'conversation-action-more'));
       await browser.click(rowAction(first, 'conversation-archive'));
       await browser.until('the archived chat leaves the list', `!${row(first)} && !!${row(second)}`, 10000);
       await browser.click(q('[data-testid=conversations-archived]'));
@@ -240,12 +242,13 @@ export default [
       // Fork from the first reply of the open (archived) chat: a new chat with the history up to that reply.
       await browser.until('the first chat is shown', `/QUARTZFOUNTAIN/.test(${logText}) && ${idle}`, 15000);
       await browser.click(`${qa('[data-testid=fork-reply]')}[0]`);
-      await browser.until('the fork is open', `${q('[data-testid=studio-main]')}.dataset.conversation !== ${JSON.stringify(first)} && ${q('[data-testid=connection]')}?.dataset.state === 'connected' && /LANTERN-FIRST/.test(${logText})`, 20000);
+      await browser.until('the fork is open', `${q('[data-testid=studio-main]')}.dataset.conversation !== ${JSON.stringify(first)} && ${q('[data-boring=pi-chat]')}?.dataset.connection === 'connected' && /LANTERN-FIRST/.test(${logText})`, 20000);
       assert.doesNotMatch(await browser.evaluate(logText), /QUARTZFOUNTAIN/, 'the fork stops at the chosen reply');
       const fork = await history.current();
       await history.open();
       await browser.until('the fork is listed with a derived title', `${row(fork)}?.innerText.includes('Amber plans (fork)')`, 10000);
       // Delete removes it from the list and the chat moves to another conversation.
+      await browser.click(rowAction(fork, 'conversation-action-more'));
       await browser.click(rowAction(fork, 'conversation-delete'));
       await browser.click(rowAction(fork, 'conversation-delete-confirm'));
       await browser.until('the fork is gone', `!${row(fork)}`, 10000);

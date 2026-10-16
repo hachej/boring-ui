@@ -26,7 +26,7 @@ Voice is available only when the server has a transcription provider. A private 
 - One `ArtifactWorkspace` contains one `AmbientChat`, embedded for page and docked layouts. The renderer and the current file stay mounted across placement changes.
 - Every app screen is a fixed Experience over registered cells with schemas, state bindings, named actions and metadata in `cells.mjs`. `finance.tsx` renders flat metrics, searchable invoice and approval tables, the supplier directory and budget progress. No table dependency is needed.
 - `AmbientChat.headerTools` supplies the floating top-bar popovers. The embedded header uses the same `ChatTools` component.
-- `ViewerWindowProvider` with `headerLayout: 'stacked'` keeps the compact file title, path, menu and Close inside the inset card, with editor controls directly below. The header no longer portals above the card. Other consumers retain the default inline header.
+- The shared compact viewer header keeps Back, the file title, editing controls, and overflow in one row inside the inset card. Metadata appears on hover. Phone editing controls move into overflow; the file covers the chat without replacing its mount. Library and History use bottom drawers on phones.
 - The invoice buttons and the agent's `decide_invoice` tool call the same conditional backend operation in `ap.mjs`. Stale reviewed revisions are refused; repeating an accepted decision returns its receipt.
 - This is host presentation and fictional app policy, not a new Pi execution mechanism. Pi retains the native Harness and tools.
 

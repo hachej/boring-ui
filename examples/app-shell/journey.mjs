@@ -339,6 +339,8 @@ try {
     const composer = await browser.evaluate(rect(INPUT));
     const vvBottom = await browser.evaluate(`(window.visualViewport?.offsetTop ?? 0) + (window.visualViewport?.height ?? innerHeight)`);
     assert.ok(composer.bottom <= vvBottom + 1, `composer bottom ${composer.bottom} within the visual viewport ${vvBottom}`);
+    const dockBottom = await browser.evaluate(`${q(INPUT)}.closest('[data-boring=pi-chat]').querySelector('[data-testid=composer-dock]').getBoundingClientRect().bottom`);
+    assert.ok(dockBottom >= vvBottom - 20 && dockBottom <= vvBottom + 1, `drawer compensation is applied once: composer dock ${dockBottom}, keyboard top ${vvBottom}`);
     assert.ok(Number.parseFloat(await browser.evaluate(`getComputedStyle(${q(INPUT)}).fontSize`)) >= 16, 'composer font-size >= 16px');
     await browser.evaluate(`window.__vv.set(844)`);
     await browser.evaluate(`${q(INPUT)}.blur()`);
@@ -880,7 +882,7 @@ try {
     const found = await browser.evaluate(`(() => { const form = ${q(IMPROVE + ' [data-testid=composer]')}; const toggles = [...form.querySelectorAll('[data-testid=composer-annotate]')]; const r = toggles[0]?.getBoundingClientRect();
       return { toggles: toggles.length, label: toggles[0]?.textContent, size: r ? [Math.round(r.width), Math.round(r.height)] : null, words: /Retour|Feedback|Montrer dans|question générale|Terminé/i.test(form.innerText),
         gone: ['composer-feedback', 'composer-point', 'feedback-bar', 'feedback-chip', 'feedback-general', 'feedback-count'].filter(id => document.querySelector('[data-testid=' + id + ']')) }; })()`);
-    assert.deepEqual(found, { toggles: 1, label: 'Annoter', size: [44, 44], words: false, gone: [] }, 'exactly one annotate control, 44px, and no Feedback block');
+    assert.deepEqual(found, { toggles: 1, label: 'Annoter', size: [40, 40], words: false, gone: [] }, 'exactly one pointer annotate control, 40px like the other composer controls, and no Feedback block');
     await browser.click(q(IMPROVE + ' [data-testid=composer-annotate]'));
     await browser.until('annotating', `${q(IMPROVE + ' [data-testid=composer-annotate]')}.getAttribute('aria-pressed') === 'true'`);
     assert.equal(await browser.evaluate(`!!${q('[data-testid=feedback-point-bar]')} || !!${q('[data-testid=feedback-bar]')}`), false, 'pins, not point mode, and no bar');

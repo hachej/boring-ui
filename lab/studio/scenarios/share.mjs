@@ -8,9 +8,9 @@ import { viewerKit } from './_viewers.mjs';
 import { NOTES_PROMPT, REPORT_TURNS, REVISE_TURNS, SAVE_NOTES_TURNS } from './_script.mjs';
 
 /** Clicks a Share button and returns what the browser really copied (an insecure page: the execCommand fallback). */
-async function copyLink(t, shareButton) {
+async function copyLink(t, scope) {
   await t.browser.evaluate(`(() => { window.__copied = undefined; if (!window.__copyWatch) { window.__copyWatch = true; document.addEventListener('copy', () => { const a = document.activeElement; window.__copied = String(getSelection()) || (a && 'value' in a ? a.value.slice(a.selectionStart, a.selectionEnd) : ''); }, true); } return true; })()`);
-  await t.browser.click(shareButton);
+  await t.menu(scope, 'artifact', 'share');
   await t.browser.until('link copied', `typeof window.__copied === 'string'`);
   return t.browser.evaluate(`window.__copied`);
 }
@@ -33,7 +33,7 @@ export default [
       const conversation = await browser.evaluate(`${q('[data-testid=studio-main]')}.dataset.conversation`);
       for (const [version, follow, marker] of [[1, 'false', /^(?!.*Safety notes)/is], [2, 'true', /Safety notes/]]) {
         await openCard(report.id, version, `${q(PANEL)}?.dataset.follow === ${JSON.stringify(follow)} && ${editorText}.length > 100`, `version ${version}`);
-        const link = await copyLink(t, q('[data-testid=artifact-share]'));
+        const link = await copyLink(t, '[data-testid=artifact-panel]');
         const url = new URL(link);
         assert.equal(url.origin, new URL(t.pageUrl).origin, 'the link uses the origin the person is on');
         assert.deepEqual([url.searchParams.get('variant'), url.searchParams.get('conversation'), url.searchParams.get('artifact'), url.searchParams.get('version')], [t.variantId(), conversation, report.id, follow === 'true' ? 'latest' : report.revision]);
@@ -57,8 +57,8 @@ export default [
     async verify(t) {
       const { browser, q } = t;
       const conversation = await browser.evaluate(`${q('[data-testid=studio-main]')}.dataset.conversation`);
-      await browser.until('the shared document with Share', `!!${q('[data-testid=workspace-panel] [data-testid=document]')} && !!${q('[data-testid=workspace-panel] [data-testid=artifact-share]')}`, 30000);
-      const link = await copyLink(t, q('[data-testid=workspace-panel] [data-testid=artifact-share]'));
+      await browser.until('the shared document with Share', `!!${q('[data-testid=workspace-panel] [data-testid=document]')} && !!${q('[data-testid=workspace-panel] [data-testid=artifact-more]')}`, 30000);
+      const link = await copyLink(t, '[data-testid=workspace-panel]');
       assert.equal(new URL(link).origin, new URL(t.pageUrl).origin, 'the link uses the origin the person is on');
       assert.equal(new URL(link).searchParams.get('conversation'), conversation, 'the link names the conversation');
       await inFreshBrowser(t, link, async fresh => {
@@ -97,7 +97,7 @@ export default [
       await browser.evaluate(`(() => { window.__notices = []; new MutationObserver(() => { for (const node of document.querySelectorAll('[data-testid=viewer-notice]')) if (!window.__notices.includes(node.textContent)) window.__notices.push(node.textContent); }).observe(document.body, { subtree: true, childList: true, characterData: true }); })()`);
       // A viewer may re-render while it loads, so a click that landed on a replaced button is repeated (as the artifact cards do).
       for (let attempt = 1; ; attempt++) {
-        await browser.click(q(`${scope} [data-testid=viewer-share]`));
+        await t.menu(scope, 'viewer', 'share');
         try { await browser.until('link copied', `typeof window.__copied === 'string'`, 5000); break; } catch (error) { if (attempt === 3) throw error; }
       }
       const link = await browser.evaluate(`window.__copied`);
@@ -115,14 +115,14 @@ export default [
       // The same for a Markdown file; Copy puts its text on the clipboard.
       await openFile('docs/picnic-plan.md', 'markdown');
       await watchCopies();
-      await browser.click(q(`${VIEWER('docs/picnic-plan.md')} [data-testid=viewer-share]`));
+      await t.menu(VIEWER('docs/picnic-plan.md'), 'viewer', 'share');
       await browser.until('markdown link', `typeof window.__copied === 'string'`);
       const markdownLink = await browser.evaluate(`window.__copied`);
       await t.menu(VIEWER('docs/picnic-plan.md'), 'viewer', 'copy');
       await browser.until('document text copied', `String(window.__copied).includes('Moon picnic plan')`);
       // When the browser refuses even the execCommand copy, the link is shown selected for a manual copy: never a bare "Could not share".
       await browser.evaluate(`(() => { document.execCommand = () => false; return true; })()`);
-      await browser.click(q(`${VIEWER('docs/picnic-plan.md')} [data-testid=viewer-share]`));
+      await t.menu(VIEWER('docs/picnic-plan.md'), 'viewer', 'share');
       await browser.until('manual copy popover', `!!${q(`${VIEWER('docs/picnic-plan.md')} [data-testid=viewer-manual-copy-text]`)}`);
       assert.equal(await browser.evaluate(`(() => { const f = ${q(`${VIEWER('docs/picnic-plan.md')} [data-testid=viewer-manual-copy-text]`)}; return f.value.slice(f.selectionStart, f.selectionEnd); })()`), markdownLink, 'the link is shown selected');
       assert.doesNotMatch(await browser.evaluate(`${q(`${VIEWER('docs/picnic-plan.md')} [data-testid=viewer-bar]`)}.innerText`), /Could not share/);

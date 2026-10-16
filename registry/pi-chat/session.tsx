@@ -6,9 +6,10 @@ import type { EntryRecord } from '@earendil-works/pi-durable';
 import type { ImageContent, ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
 import type { ChatAttachment, NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { useStickToBottom } from 'use-stick-to-bottom';
-import type { ComposerFeedback, PendingUpload } from './composer';
+import type { ComposerFeedback, ComposerProps, PendingUpload } from './composer';
+import type { ConversationFile } from './conversation-files';
 import type { AttachmentsConfig, EffortConfig, MentionsConfig, ModelConfig, ModelRef, PastedText, PasteToFile, SlashConfig } from './config';
-import { looksLikeMarkdown, mentionToken } from './config';
+import { displayName, looksLikeMarkdown, mentionToken, pieces } from './config';
 import { ModelEffortPicker } from './pickers';
 import type { CommandMentions } from './markdown';
 import type { RowContext } from './message';
@@ -42,6 +43,8 @@ export interface ChatFeatureProps {
   readonly onCopy?: (text: string) => Promise<void>;
   readonly onComposerKeyDown?: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   readonly fileAccept?: string;
+  /** Optional pills at the left of the composer's controls row. */
+  readonly composerChips?: ComposerProps['chips'];
   /** `/` menu of host commands and skills. Omit it and `/` is just text. */
   readonly slash?: SlashConfig;
   /** Show successful native write/edit paths as file cards under each reply. Off by default: only hosts with workspace file tools should opt in. */
@@ -90,7 +93,7 @@ export interface ChatSessionOptions extends Readonly<{ [Key in keyof ChatFeature
 
 export function useChatSession(options: ChatSessionOptions) {
   const { controller, activeController: active, mode, actions, renderEntry, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept,
-    slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend, rowExtras, feedback, onOpenFile, fileChanges, pasteToFile } = options;
+    slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend, rowExtras, feedback, onOpenFile, fileChanges, pasteToFile, composerChips } = options;
   const { labels } = useChatText();
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const [error, setError] = useState<string | null>(null);
@@ -117,6 +120,38 @@ export function useChatSession(options: ChatSessionOptions) {
   const derived = useMemo(() => derive(state.view, { mode, renderEntry, renderTool, groupTool, artifacts: artifactDetect }), [state.view, mode, renderEntry, renderTool, groupTool, artifactDetect]);
   const queued = useMemo(() => queuedMessages(state.view), [state.view]);
   const { rows, run } = derived;
+  const files = useMemo(() => {
+    const found = new Map<string, ConversationFile>();
+    const open = onOpenFile ?? mentions?.open;
+    const add = (path: string) => {
+      const normalized = path.replace(/^\.\//, '');
+      const id = `file:${normalized}`;
+      if (!found.has(id)) found.set(id, { id, name: displayName(normalized), open: open ? () => open(normalized) : undefined });
+    };
+    for (const path of picked) add(path);
+    for (const item of state.draft.attachments) found.set(`draft:${item.id}`, { id: `draft:${item.id}`, name: item.name, open: onOpenImage ? () => onOpenImage(item.content) : undefined });
+    for (const row of rows) {
+      if (row.type === 'user') {
+        const content = typeof row.message.content === 'string' ? [{ type: 'text' as const, text: row.message.content }] : row.message.content;
+        for (const [index, part] of content.entries()) {
+          if (part.type === 'text' && !isFileBlock(part.text)) for (const piece of pieces(part.text, { mentions: true, skills: [] })) { if (piece.kind === 'mention' && piece.value) add(piece.value); }
+          if (part.type === 'image') { const id = `image:${row.key}:${index}`; found.set(id, { id, name: labels.imageAttachment, open: onOpenImage ? () => onOpenImage(part) : undefined }); }
+        }
+      }
+      if (row.type !== 'assistant') continue;
+      for (const part of row.parts) {
+        if (part.kind === 'artifact' && part.artifact) {
+          const artifact = part.artifact, id = `file:${artifact.target.resource.path.replace(/^\.\//, '')}`;
+          found.set(id, { id, name: displayName(artifact.target.resource.path), open: artifacts ? () => artifacts.open(artifact) : undefined });
+        }
+        if (part.kind === 'tool' && part.entry.result && !part.entry.result.isError && ['read', 'write', 'edit'].includes(part.entry.call.name)) {
+          const path = part.entry.call.arguments['path'];
+          if (typeof path === 'string') add(path);
+        }
+      }
+    }
+    return [...found.values()];
+  }, [rows, picked, state.draft.attachments, artifacts, onOpenFile, mentions?.open, onOpenImage, labels.imageAttachment]);
 
   const report = (cause: unknown) => { if (current()) setError(cause instanceof Error ? cause.message : labels.actionFailedShort); };
   const act = (action: () => Promise<unknown>) => {
@@ -309,10 +344,10 @@ export function useChatSession(options: ChatSessionOptions) {
     slash, onSlashError: report, mentions, mentionPaths: picked, onMentionPicked: (path: string) => setPicked(value => value.includes(path) ? value : [...value, path]),
     uploads: pending, onDismissUpload: (id: string) => setPending(items => items.filter(item => item.id !== id)),
     onPasteText: attachments ? pasteText : undefined, pasteToFile,
-    feedback,
+    feedback, chips: composerChips,
   };
 
-  return { state, derived, rows, queued, queueActions, working, waitingForAnswer, connected, sendBlocked, error, setError, report, act, current, textarea, rowContext, composer, pickers, empty, loading, developer };
+  return { state, derived, rows, queued, queueActions, working, waitingForAnswer, connected, sendBlocked, error, setError, report, act, current, textarea, rowContext, composer, files, pickers, empty, loading, developer };
 }
 
 export type ChatSession = ReturnType<typeof useChatSession>;

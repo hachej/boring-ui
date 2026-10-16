@@ -104,6 +104,7 @@
       "description": "The one shadcn-style button of the Tailwind items (chat and viewer bar sizes, touch targets of 40-44px), IconButton, and the host actions every block takes (BlockAction, BlockActions, the shared ActionMenu), installed in components/button/ so it never overwrites the host's own button.",
       "dependencies": [
         "react@^19.0.0",
+        "react-dom@^19.0.0",
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
@@ -440,6 +441,7 @@
         "react-dom@^19.0.0",
         "marked@^17.0.6",
         "entities@^8.1.0",
+        "@base-ui/react@1.9.0",
         "@earendil-works/pi-durable@~1.2.0",
         "@earendil-works/chord@~1.2.0",
         "@earendil-works/pi-ai@~1.2.0",
@@ -450,7 +452,8 @@
       "registryDependencies": [
         "@boring-ui/utils",
         "@boring-ui/button",
-        "trace"
+        "trace",
+        "@boring-ui/drawer"
       ],
       "files": [
         {
@@ -482,6 +485,11 @@
           "path": "registry/pi-chat/composer.tsx",
           "type": "registry:component",
           "target": "components/pi-chat/composer.tsx"
+        },
+        {
+          "path": "registry/pi-chat/conversation-files.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat/conversation-files.tsx"
         },
         {
           "path": "registry/pi-chat/config.ts",
@@ -622,7 +630,12 @@
             "--chat-warning": "var(--warning, var(--muted-foreground))",
             "--chat-warning-soft": "var(--warning-soft, color-mix(in oklab, var(--chat-warning) 15%, var(--background)))",
             "--chat-warning-soft-foreground": "var(--warning-soft-foreground, color-mix(in oklab, var(--chat-warning) 75%, var(--foreground)))",
-            "--chat-display": "var(--font-display, var(--font-sans))"
+            "--chat-display": "var(--font-display, var(--font-sans))",
+            "--chat-composer-radius": "26px",
+            "--chat-user-radius": "18px",
+            "--chat-send-radius": "9999px",
+            "--chat-leading": "1.6",
+            "--chat-sheet-duration": "200ms"
           },
           ".pi-chat:is(.dark, .dark *)": {
             "--chat-warning-soft": "var(--warning-soft, color-mix(in oklab, var(--chat-warning) 26%, var(--background)))",
@@ -780,7 +793,8 @@
         "@boring-ui/pi-workspace",
         "@boring-ui/viewers",
         "@boring-ui/utils",
-        "@boring-ui/button"
+        "@boring-ui/button",
+        "@boring-ui/drawer"
       ],
       "files": [
         {
@@ -854,7 +868,7 @@
       "name": "app-shell",
       "type": "registry:block",
       "title": "App shell: layouts, list/detail and agent layer",
-      "description": "AppShell with three layouts. B \"workspace\" puts a ListDetail on a screen (phone: the list, then the detail as a stack step with Back; wide: a 20rem list and the detail side by side, sidebar as an icon rail). C \"chat\" wraps the app's own AgentWorkspace (untouched, passed as the nav item's render; install the pi-app item yourself) in the same sidebar, account menu and header; it takes no shell agent. A \"screen\": one screen at a time, every screen kept mounted. On a phone bottom tabs (at most four; more give three plus a « Plus » sheet) and an avatar button that opens the account sheet; on a wide screen the shadcn sidebar (icon rail, NavUser). One header per screen through useScreenHeader (title, subtitle, back, up to two actions, the rest behind « … »). The account menu holds « Améliorer l'app » (the improve agent), the app's own entries and sign out. AppSheet is the one bottom sheet (one open at a time, Back closes it). It mounts the AgentLayer: one agent's PiChat above the app (phone: a drawer with peek, half and full snap points; wide: a right panel), the improve agent in the same layer, optional push-to-talk and point mode. Also useAgentContext and readAgentContext (the screen on show travels as `context` with each submit) and useBackLayer, the one Back manager. Built on the shadcn drawer, sidebar, avatar and dropdown-menu of the host's own style (Base UI variants).",
+      "description": "AppShell with three layouts. B \"workspace\" puts a ListDetail on a screen (phone: the list, then the detail as a stack step with Back; wide: a 20rem list and the detail side by side, sidebar as an icon rail). C \"chat\" wraps the app's own AgentWorkspace (untouched, passed as the nav item's render; install the pi-app item yourself) in the same sidebar, account menu and header; it takes no shell agent. A \"screen\": one screen at a time, every screen kept mounted. On a phone bottom tabs (at most four; more give three plus a « Plus » sheet) and an avatar button that opens the account sheet; on a wide screen the shadcn sidebar (icon rail, NavUser). One header per screen through useScreenHeader (title, subtitle, back, up to two actions, the rest behind « … »). The account menu holds « Améliorer l'app » (the improve agent), the app's own entries and sign out. AppSheet is the one bottom sheet (one open at a time, Back closes it). It mounts the AgentLayer: one agent's PiChat above the app (phone: a drawer with peek, half and full snap points; wide: a right panel), the improve agent in the same layer, optional push-to-talk and point mode. Also useAgentContext and readAgentContext (the screen on show travels as `context` with each submit) and useBackLayer, the one Back manager. Built on explicitly pinned Base UI drawer and dropdown-menu recipes, plus the sidebar and avatar of the host's own shadcn style.",
       "dependencies": [
         "@hachej/boring-feedback@^0.3.2",
         "@hachej/boring-ui-kit@^0.3.2",
@@ -869,10 +883,10 @@
         "@boring-ui/feedback",
         "@boring-ui/utils",
         "@boring-ui/button",
-        "drawer",
+        "@boring-ui/drawer",
         "sidebar",
         "avatar",
-        "dropdown-menu"
+        "@boring-ui/dropdown-menu"
       ],
       "css": {
         "@layer base": {
@@ -1084,6 +1098,61 @@
           }
         },
         "@layer components": {
+          ".boring-viewer.boring-markdown-bubble": {
+            "display": "flex",
+            "align-items": "center",
+            "gap": "0.125rem",
+            "max-width": "calc(100vw - 24px)",
+            "padding": "0.25rem",
+            "border": "1px solid var(--border)",
+            "border-radius": "0.75rem",
+            "background": "var(--popover)",
+            "color": "var(--popover-foreground)",
+            "box-shadow": "0 3px 16px rgb(0 0 0 / 0.08)",
+            "z-index": "60"
+          },
+          ".boring-viewer.boring-markdown-bubble .boring-markdown-tool": {
+            "display": "inline-flex",
+            "align-items": "center",
+            "justify-content": "center",
+            "width": "2.25rem",
+            "height": "2.25rem",
+            "border": "0",
+            "border-radius": "0.375rem",
+            "background": "transparent",
+            "color": "inherit",
+            "cursor": "pointer"
+          },
+          ".boring-viewer.boring-markdown-bubble .boring-markdown-tool:is(:hover, [aria-pressed=\"true\"])": {
+            "background": "var(--muted)"
+          },
+          ".boring-viewer.boring-markdown-bubble .boring-markdown-tool:focus-visible": {
+            "outline": "2px solid var(--ring)"
+          },
+          "@media (max-width: 640px), (pointer: coarse)": {
+            ".boring-viewer.boring-markdown-bubble .boring-markdown-tool": {
+              "width": "2.75rem",
+              "height": "2.75rem"
+            }
+          },
+          ".boring-viewer .boring-markdown-pin": {
+            "display": "inline-flex",
+            "align-items": "center",
+            "justify-content": "center",
+            "width": "2rem",
+            "height": "2rem",
+            "border-radius": "0.375rem",
+            "cursor": "pointer",
+            "color": "var(--muted-foreground)",
+            "font-size": "0.875rem"
+          },
+          ".boring-viewer .boring-markdown-pin:is(:hover, [aria-pressed=\"true\"])": {
+            "background": "var(--muted)",
+            "color": "var(--foreground)"
+          },
+          ".boring-viewer .boring-markdown-pin:focus-visible": {
+            "outline": "2px solid var(--ring)"
+          },
           ".boring-viewer .boring-markdown-editor": {
             "display": "flex",
             "flex-direction": "column",
@@ -1308,14 +1377,14 @@
             "background": "color-mix(in oklab, var(--primary) 24%, transparent)"
           },
           ".boring-viewer .boring-markdown-content": {
-            "max-width": "72ch",
+            "max-width": "68ch",
             "min-height": "100%",
             "margin": "0 auto",
             "padding": "1.5rem 1.5rem 3rem",
             "outline": "none",
             "color": "var(--foreground)",
-            "font-size": "0.9375rem",
-            "line-height": "1.7",
+            "font-size": "1rem",
+            "line-height": "1.6",
             "letter-spacing": "-0.005em",
             "overflow-wrap": "anywhere"
           },
@@ -1586,6 +1655,19 @@
           ".boring-viewer .boring-viewer-stage:focus-visible": {
             "outline": "2px solid color-mix(in oklab, var(--ring) 60%, transparent)",
             "outline-offset": "-2px"
+          },
+          "@media (max-width: 640px)": {
+            ".boring-viewer .boring-markdown-pin": {
+              "display": "none"
+            },
+            ".boring-viewer .boring-markdown-content": {
+              "padding": "1.25rem 1.25rem 3rem",
+              "font-size": "1.0625rem",
+              "line-height": "1.65"
+            },
+            ".boring-viewer .boring-markdown-toolbar": {
+              "display": "none"
+            }
           },
           "@media (pointer: coarse), (max-width: 639px)": {
             ".boring-viewer .boring-markdown-tool": {
@@ -2552,7 +2634,7 @@
         "@boring-ui/app-shell",
         "@boring-ui/file-tree",
         "@boring-ui/viewers",
-        "drawer"
+        "@boring-ui/drawer"
       ],
       "files": [
         {
@@ -2579,6 +2661,46 @@
           "path": "registry/documents/documents-labels.ts",
           "type": "registry:lib",
           "target": "components/documents/documents-labels.ts"
+        }
+      ]
+    },
+    {
+      "name": "drawer",
+      "type": "registry:component",
+      "title": "Drawer",
+      "description": "Pinned Base UI drawer presentation, independent of the consumer’s shadcn style. Native snap points, swipe handles and focus management.",
+      "dependencies": [
+        "@base-ui/react@1.9.0",
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "@boring-ui/utils"
+      ],
+      "files": [
+        {
+          "path": "registry/drawer/drawer.tsx",
+          "type": "registry:component",
+          "target": "components/drawer/drawer.tsx"
+        }
+      ]
+    },
+    {
+      "name": "dropdown-menu",
+      "type": "registry:component",
+      "title": "Dropdown Menu",
+      "description": "Pinned Base UI dropdown presentation for app-shell, independent of the consumer’s shadcn style.",
+      "dependencies": [
+        "@base-ui/react@1.9.0",
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "@boring-ui/utils"
+      ],
+      "files": [
+        {
+          "path": "registry/dropdown-menu/dropdown-menu.tsx",
+          "type": "registry:component",
+          "target": "components/dropdown-menu/dropdown-menu.tsx"
         }
       ]
     }

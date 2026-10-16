@@ -133,7 +133,11 @@ test('installed registry Markdown wrapper with real React/Tiptap/SQLite (DOM, no
   });
 
   await t.test('read-only controller keeps formatting, text input and publication disabled', async t => {
-    const f = await fixture(t, 'readonly fiction', { readOnly: true });
+    const quiet = await fixture(t, 'readonly fiction', { readOnly: true });
+    assert.equal(quiet.container.querySelector('.boring-markdown-toolbar'), null, 'read-only selection mode has no formatting row');
+    assert.equal(document.querySelector('.boring-markdown-bubble'), null, 'a read-only document offers no formatting bubble');
+    assert.equal(quiet.button('Save').disabled, true);
+    const f = await fixture(t, 'readonly fiction', { readOnly: true, props: { formattingToolbar: 'pinned' } });
     assert.equal(f.button('Heading 1').disabled, true); assert.equal(f.button('Save').disabled, true);
     assert.equal(f.container.querySelector('[contenteditable]').getAttribute('contenteditable'), 'false');
     await f.click('Markdown source'); assert.equal(f.container.querySelector('textarea').readOnly, true);

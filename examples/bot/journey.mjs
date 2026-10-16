@@ -87,7 +87,7 @@ const sinceRecall = `${logText}.split('Quick check').at(-1)`;
 let browser;
 try {
   browser = await launch(app.url, { evidence });
-  const ready = `document.querySelector('[data-testid=connection]')?.dataset.state === 'connected'`;
+  const ready = `document.querySelector('[data-boring=pi-chat]')?.dataset.connection === 'connected'`;
   await browser.until('chat connected', ready);
   /** Type one message and wait until the run has finished and the log has grown. */
   const say = async (text, timeout = live ? 180000 : 20000) => {

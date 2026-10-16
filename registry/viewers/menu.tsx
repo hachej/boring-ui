@@ -14,7 +14,7 @@ export type ViewerMenuProps = Omit<ActionMenuProps, 'size'>;
  * (focus returns to the trigger), Tab and an outside press close it. Used for the viewer's overflow actions and the version history.
  */
 export function ViewerMenu({ testId = 'viewer-menu', ...props }: ViewerMenuProps) {
-  return <ActionMenu testId={testId} {...props} />;
+  return <ActionMenu {...props} testId={testId} portal />;
 }
 
 /** One saved version in a history menu. */

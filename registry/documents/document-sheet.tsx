@@ -5,7 +5,7 @@
 // first. The file is the same viewer the Library opens (editable where the viewer edits). Closing a file with unsaved edits asks first.
 // `onShowAll` adds « Toutes les fiches »: the sheet closes, then the host's navigation runs after the sheet's Back entry is gone.
 import { useCallback, useEffect, useRef } from 'react';
-import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer';
+import { Drawer, DrawerContent, DrawerTitle } from '../drawer/drawer';
 import { afterBack } from '../app-shell/back';
 import { useShellLayer } from '../app-shell/shell-layer';
 import { useExclusiveSheet } from '../app-shell/sheet';

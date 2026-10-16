@@ -7,7 +7,7 @@ import { MentionMenu } from '../../registry/pi-chat/mention-menu';
 
 window.fileTreeFixture = { ready: false, dropNextPublish: false, holdNextList: false, publishCalls: 0, releaseList: undefined };
 function App() {
-  // `?side=1` opens the integrated workspace with the default side Library; the main journey page keeps the center Library.
+  // `?side=1` opens the integrated workspace with the explicit legacy side Library; the main journey page keeps the center Library.
   const side = new URLSearchParams(location.search).has('side');
   const [integrated, setIntegrated] = useState(side);
   const [scope, setScope] = useState('first');
@@ -50,7 +50,7 @@ function App() {
     <output aria-label="Selected workspace">{scope}</output>
     {failure && <p role="alert">{failure}</p>}
     <button type="button" onClick={() => setIntegrated(true)}>Open integrated workspace</button>
-    {provider && integrated && <div style={{ height: 700 }}><AgentWorkspace controller={undefined} conversationId={undefined} revisionProvider={provider} {...(side ? {} : { libraryPlacement: 'center' })} /></div>}
+    {provider && integrated && <div style={{ height: 700 }}><AgentWorkspace controller={undefined} conversationId={undefined} revisionProvider={provider} libraryPlacement={side ? 'side' : 'center'} /></div>}
     {provider && !integrated && <>
       <FileTree revisionProvider={provider} onOpen={setOpened} selectedPath={opened} />
       <output aria-label="Opened file">{opened}</output>
