@@ -4,6 +4,7 @@ This is an index, not a second definition. Project-wide Pi/composition boundarie
 
 | ID | Owner | Current evidence |
 | --- | --- | --- |
+| BORING-UI-1 | [Root INVARIANTS.md](../INVARIANTS.md#boring-ui-1--shadcn-first-blocks-carry-no-visual-value) | Static design checker and mutation tests; stock/brand Chromium audit through `test:design`. Groups 1–7 start in REPORT, not qualified. |
 | BORING-PI-1 | Root INVARIANTS.md | Static namespace/class/import mutants; native authority, dynamic graphs and honest cancellation proof deferred. |
 | BORING-PI-2 | Root INVARIANTS.md | Static construction mutants; borrowed/owned Harness/workspace/observer lifecycle and composition-local cleanup deferred. |
 | BORING-PI-3 | Root INVARIANTS.md | Static replacement mutants; optional installation, locality and deliberate native-override parity deferred. |

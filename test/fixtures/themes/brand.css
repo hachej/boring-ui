@@ -1,0 +1,65 @@
+/* Fictional Cedar Works brand. Core roles only change here; dependent roles follow.
+   This is test data, never a registry dependency or a component stylesheet. */
+:root {
+  --background: #eaf0e5;
+  --foreground: #152419;
+  --primary: #164f38;
+  --primary-foreground: #ffffff;
+  --accent: #d5e2cd;
+  --muted: #dfe8d8;
+  --muted-foreground: #435341;
+  --border: #344e39;
+  --ring: var(--primary);
+  --destructive: #a82232;
+  --radius: 0.25rem;
+  --border-width: 2px;
+  --font-display: "Arial Narrow", "Liberation Sans Narrow", "DejaVu Sans Condensed", sans-serif;
+  --font-sans: var(--font-display);
+  --font-mono: "DejaVu Sans Mono", ui-monospace, monospace;
+  --shadow-xs: 2px 2px 0 0 var(--border);
+  --shadow-sm: 3px 3px 0 0 var(--border);
+  --shadow-md: 4px 4px 0 0 var(--border);
+  --shadow-lg: 6px 6px 0 0 var(--border);
+  --shadow-xl: 8px 8px 0 0 var(--border);
+  --shadow-2xl: 10px 10px 0 0 var(--border);
+}
+.dark {
+  --background: #101e1b;
+  --foreground: #edf3e7;
+  --primary: #9de0b6;
+  --primary-foreground: #10291e;
+  --accent: #243e32;
+  --muted: #20352b;
+  --muted-foreground: #b6cbb5;
+  --border: #a4c49e;
+  --destructive: #ff939c;
+}
+/* Derived roles are aliases, not separately chosen brand values. */
+:root, .dark {
+  --card: var(--background);
+  --card-foreground: var(--foreground);
+  --popover: var(--background);
+  --popover-foreground: var(--foreground);
+  --secondary: var(--muted);
+  --secondary-foreground: var(--foreground);
+  --accent-foreground: var(--foreground);
+  --input: var(--border);
+  --sidebar: var(--background);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+  --shell: var(--muted);
+  --overlay: color-mix(in srgb, var(--foreground) 50%, transparent);
+  --font-heading: var(--font-display);
+  --radius-sm: calc(var(--radius) * 0.5);
+  --radius-md: calc(var(--radius) * 0.75);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.25);
+  --radius-2xl: calc(var(--radius) * 1.5);
+  --radius-3xl: calc(var(--radius) * 2);
+  --radius-4xl: calc(var(--radius) * 3);
+}

@@ -313,6 +313,16 @@ Markdown output stays inert: raw HTML is text, images are alt text and only plai
 
 ## Theme and Tailwind
 
+The target contract is [BORING-UI-1](../INVARIANTS.md#boring-ui-1--shadcn-first-blocks-carry-no-visual-value). The staged migration below does not claim existing custom components or dual-style support already meet it.
+
+### Design verification
+
+Run `npm run check` for the static inventory, `node scripts/check-design.mjs --details` for file/line findings, and `npm run test:design` for the real Chromium theme audit. Set `CHROMIUM` to a Chromium binary; build packages first. `npm run verify` includes both checks. CI runs the browser audit with the scripted journeys too.
+
+`scripts/design-groups.json` owns group folders, browser selectors and REPORT/FAIL modes. Later groups flip their entry to FAIL after replacement and browser coverage; missing coverage fails a migrated group. Exception reasons and exact static allowances live only in [design-allowlist.json](../scripts/design-allowlist.json). The browser reports computed values separately from static counts; REPORT debt is never a pass claim.
+
+The standalone `examples/workspace-app` and `demos/workspace` accept `?theme=brand&mode=dark` for the fictional [brand fixture](../test/fixtures/themes/brand.css). Omit `theme` for the registry's stock tokens and use `mode=light` or `mode=dark`. The audit visits both apps, themes, modes and widths 1440/390, checks main token role pairs for WCAG AA, and writes screenshots and per-element JSON to `.cache/evidence/shadcn-first/group-0/`. Component violations remain REPORT until that group migrates. The fixtures install no component overrides.
+
 The `theme` item (`registry:theme`) is the one source of the shadcn tokens: `cssVars.light`, `cssVars.dark` and the Tailwind v4 bindings in `cssVars.theme`. Items that depend on it are listed under [Blocks](#blocks-what-to-install). `pi-chat`, `button`, `dock`, `feedback` and `app-shell` do not ship global tokens, so `shadcn add` of those leaves the host's CSS alone: a host without the shadcn tokens adds the theme explicitly (`... add <registry>/theme.json`), which merges the tokens into the app's CSS file (light on `:root`, dark on `.dark`, bindings in `@theme inline`) and keeps any token the host already defines; the host's theme wins. The examples compile the same values: `themeCss()` in `lab/studio/tailwind.mjs` renders the item (dark on `.dark` and under `prefers-color-scheme`), and `scripts/check-registry-blocks.mjs` plus `test/contracts/registry-source.test.mjs` keep the item complete.
 
 A consumer needs only Tailwind v4's standard build, nothing from this repository:

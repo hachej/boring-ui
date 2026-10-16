@@ -307,7 +307,10 @@ function WorkspaceLayout(props) {
   const api = useDock('chat');
   props.dock.current = api;
   const { approvalCount } = useAp();
-  const [theme, setTheme] = useState(() => matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  const [theme, setTheme] = useState(() => {
+    const mode = new URLSearchParams(location.search).get('mode');
+    return mode === 'light' || mode === 'dark' ? mode : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  });
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
     const media = matchMedia('(prefers-color-scheme: dark)'), update = () => setTheme(media.matches ? 'dark' : 'light');

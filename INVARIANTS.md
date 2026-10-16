@@ -2,6 +2,16 @@
 
 These cross-package laws have one definition here. [docs/LAWS.md](docs/LAWS.md) indexes them; [VERIFY.json](VERIFY.json) records structural checks and separately deferred runtime proofs. A passing source check is not a runtime proof. Existing feature laws remain with their owners. Composition and the three reference applications are explained in [PI-COMPLEMENT.md](docs/architecture/PI-COMPLEMENT.md); they add no second engine or law registry.
 
+## BORING-UI-1 — shadcn first; blocks carry no visual value
+
+Registry blocks compose the host's real shadcn components through `@/components/ui/*`, declared in `registryDependencies` and `SHADCN_BUILTINS`. Only the Base UI `base-nova` style is supported. Blocks never ship a primitive shadcn provides and never restyle a shadcn component. Classes added to those components arrange layout only.
+
+Blocks carry no visual value of their own: colour, font, shadow, radius, border width or motion. They read shadcn tokens and the documented kit tokens `--shell` and `--overlay`. An app restyles every block by setting its core theme tokens, never the derived tokens, following boring-stack's `boring-design-system` skill. Presentation is a host concern, not a Pi execution extension.
+
+The exception reasons have one owner, [scripts/design-allowlist.json](scripts/design-allowlist.json): Markdown document content, the browser-rendered PDF document and layout metrics including gaps, widths and 44px touch targets. None exempts editor or viewer controls. Its `allow` entries name exact files, rules and patterns; the optional registry theme alone may define default visual values.
+
+[Design verification](registry/README.md#design-verification) records the migration boundary. Unmigrated groups report violations; a migrated group fails both static and browser checks. REPORT is not conformance and does not discharge the remaining groups.
+
 ## BORING-PI-1 — Pi is the execution authority
 
 Boring's Pi integration uses native conversations, submissions, turns, tools, scheduling, ownership, steering, cancellation, compaction, recovery and recorded model usage. It adds no alternative harness, agent loop, scheduler, replay engine or independently writable copy of that state. Native handles remain available; a Boring wrapper is not the exclusive route to Pi capabilities. Extension task/document kinds never occupy Pi's reserved `pi.*` namespace.

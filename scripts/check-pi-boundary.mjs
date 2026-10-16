@@ -360,7 +360,7 @@ export function loadBoundary(root) {
   const policy = readJson(resolve(root, 'ARCHITECTURE.json'));
   const registry = readJson(resolve(root, 'VERIFY.json'));
   if (registry.owner !== 'INVARIANTS.md') throw new Error('root registry must name INVARIANTS.md');
-  const laws = [...readFileSync(resolve(root, registry.owner), 'utf8').matchAll(/^## (BORING-PI-\d+) — /gm)].map((m) => m[1]);
+  const laws = [...readFileSync(resolve(root, registry.owner), 'utf8').matchAll(/^## (BORING-(?:PI|UI)-\d+) — /gm)].map((m) => m[1]);
   const index = readFileSync(resolve(root, 'docs/LAWS.md'), 'utf8');
   const errors = [];
   errors.push(...checkFeatures(root, registry, index));
@@ -379,7 +379,7 @@ export function loadBoundary(root) {
       laws.push(match[1]); lawPackage.set(match[1], entry.package);
     }
   }
-  const lawHeading = new RegExp(`^## ((?:BORING-PI${[...owners.values()].map((o) => `|${o.prefix}`).join('')})-\\d+) — `, 'gm');
+  const lawHeading = new RegExp(`^## ((?:BORING-PI|BORING-UI${[...owners.values()].map((o) => `|${o.prefix}`).join('')})-\\d+) — `, 'gm');
   const packages = new Set();
   let sources = 0;
   let contracts = 0;
@@ -392,9 +392,16 @@ export function loadBoundary(root) {
     else if (lawPackage.has(id) && !rule.appliesTo.includes(lawPackage.get(id))) errors.push(`package law does not apply to its owner: ${id}`);
     if (!rule?.verifiers?.length) { errors.push(`missing evidence: ${id}`); continue; }
     const runtime = rule.verifiers.filter((v) => v.scope === 'runtime');
-    if (runtime.length !== 1 || JSON.stringify(runtime[0].command) !== JSON.stringify(['node', '--test', policy.runtimeProofs[id]])) errors.push(`missing/changed required runtime proof slot: ${id}`);
+    const proof = policy.runtimeProofs[id];
+    const required = Array.isArray(proof) ? proof : ['node', '--test', proof];
+    if (runtime.length !== 1 || JSON.stringify(runtime[0].command) !== JSON.stringify(required)) errors.push(`missing/changed required runtime proof slot: ${id}`);
     for (const verifier of rule.verifiers) {
       if (!['structural', 'runtime'].includes(verifier.scope)) errors.push(`invalid evidence scope: ${id}`);
+      if (verifier.kind === 'journey') {
+        const scripts = readJson(resolve(root, 'package.json')).scripts;
+        if (verifier.scope !== 'runtime' || verifier.command?.length !== 3 || verifier.command[0] !== 'npm' || verifier.command[1] !== 'run' || !Object.hasOwn(scripts, verifier.command[2]) || !verifier.claim) errors.push(`invalid journey command: ${id}`);
+        continue;
+      }
       if (!['command', 'pending'].includes(verifier.kind) || !Array.isArray(verifier.command) || verifier.command.length < 3 || verifier.command[0] !== 'node' || verifier.command[1] !== '--test' || verifier.command.slice(2).some((p) => !/^test\/(?:[\w-]+\/)*[\w.-]+\.test\.mjs$/.test(p))) { errors.push(`invalid test command: ${id}`); continue; }
       if (verifier.kind === 'pending' && !verifier.reason) errors.push(`unexplained deferral: ${id}`);
       if (verifier.kind === 'command') for (const path of verifier.command.slice(2)) {

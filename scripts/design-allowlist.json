@@ -1,0 +1,11 @@
+{
+  "exceptions": [
+    { "id": "editor-document", "reason": "Markdown document typography, syntax and proposal diff presentation are content, not shadcn controls. Editor toolbars and menus are not exempt." },
+    { "id": "pdf-document", "reason": "The browser PDF renderer owns the embedded document's appearance. The pane's toolbar and frame are not exempt." },
+    { "id": "layout", "reason": "Layout metrics such as gaps, widths, grid tracks and 44px touch targets arrange content and remain permitted. They cannot set colour, font, shadow, radius, border width or motion." },
+    { "id": "theme-definition", "reason": "The optional registry theme defines defaults; the fictional browser fixture defines a host theme. Only these theme definitions may contain visual literals." }
+  ],
+  "allow": [
+    { "file": "registry.json#theme", "rules": ["color", "radius", "font", "shadow", "border-width", "motion"], "pattern": ".*", "exception": "theme-definition" }
+  ]
+}

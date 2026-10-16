@@ -19,7 +19,7 @@ function fixture(t, complete = false) {
   const body = 'import test from "node:test"; import assert from "node:assert/strict"; test("runner fixture", () => assert.equal(2+2, 4));';
   if (complete) {
     const registry = JSON.parse(readFileSync(join(directory, 'VERIFY.json')));
-    for (const rule of Object.values(registry.invariants)) for (const verifier of rule.verifiers) if (verifier.scope === 'runtime') {
+    for (const rule of Object.values(registry.invariants)) for (const verifier of rule.verifiers) if (verifier.scope === 'runtime' && verifier.kind !== 'journey') {
       verifier.kind = 'command'; delete verifier.reason; verifier.claim = 'Synthetic runner fixture, not Boring conformance';
       write(verifier.command[2], body);
     }
