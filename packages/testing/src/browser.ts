@@ -135,8 +135,8 @@ export async function launch(url: string, { chromium = process.env.CHROMIUM, evi
       ${scroll ? "e.scrollIntoView({ block: 'center', behavior: 'instant' });" : ''}
       const before = e.getBoundingClientRect();
       await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame);
-      if ((${selector}) !== e || !e.isConnected) return null;
-      const r = e.getBoundingClientRect();
+      const current = (${selector}); if (!current${enabled ? ' || current.disabled' : ''}) return null;
+      const r = current.getBoundingClientRect();
       return r.width > 0 && r.height > 0 && ['x', 'y', 'width', 'height'].every(key => Math.abs(r[key] - before[key]) < 0.5)
         ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null;
     })()`);
