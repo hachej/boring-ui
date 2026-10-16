@@ -59,7 +59,7 @@ try {
     // A full restart of the studio on the same data directory: the browser notices it lost the server, the new process resumes the sessions.
     restartHost: async () => {
       await app.close();
-      await browser.until('the browser notices it lost the server', `${q('[data-testid=connection]')}?.dataset.state !== 'connected'`, 15000);
+      await browser.until('the browser notices it lost the server', `${q('[data-boring=pi-chat]')}?.dataset.connection !== 'connected'`, 15000);
       app = await startStudio({ directory, port, token });
     } });
   t.variantId = () => shown;

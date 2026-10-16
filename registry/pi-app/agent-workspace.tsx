@@ -91,7 +91,8 @@ export interface WorkspaceResources {
 
 interface AgentWorkspaceBaseProps {
   /**
-   * Where the Library of a `revisionProvider` opens. `side` (default): a column to the right of the viewer (a `Dock`, resizable), opened
+   * Where the Library of a `revisionProvider` opens. `panel` (default): the artifact column, or a bottom drawer on phones.
+   * `side`: a column to the right of the viewer (a `Dock`, resizable), opened
    * from the Library button in the viewer's top bar or in the left pane, alone at the right edge when no file is open; on a phone a
    * full-screen sheet that choosing a file closes. `center`: Chat and Library links in the left pane, the Library replacing
    * the chat in the center (the chat stays mounted). `pane`: the Library is a tab beside the conversations in the left pane, or the
@@ -409,7 +410,7 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   const toggleSide = useCallback(() => setSideOpen(!sideOpen), [setSideOpen, sideOpen]);
   // The Library tree, one view for the side column, the center and the pane; `onOpen` is what choosing a file does there.
   const libraryTree = (onOpen: (path: string) => void) => fileTree
-    ? <FileTreeView variant="list" refresh={false} className="[&_input[type=search]]:pl-9! [&_input[type=search]]:min-h-11 [&_button]:min-h-11" key={JSON.stringify([revisionProvider?.workspace, revisionProvider?.identity])} {...(locale ? { locale } : {})} {...viewOptions} controller={fileTree} historyKey={feed.seq} onOpen={onOpen} {...(isFile(opened) ? { selectedPath: opened.path } : {})} />
+    ? <FileTreeView variant={libraryPlacement === 'panel' ? 'list' : 'plain'} refresh={libraryPlacement !== 'panel'} className={libraryPlacement === 'panel' ? '[&_input[type=search]]:pl-9! [&_input[type=search]]:min-h-11 [&_button]:min-h-11' : undefined} key={JSON.stringify([revisionProvider?.workspace, revisionProvider?.identity])} {...(locale ? { locale } : {})} {...viewOptions} controller={fileTree} historyKey={feed.seq} onOpen={onOpen} {...(isFile(opened) ? { selectedPath: opened.path } : {})} />
     : <p role="status" className="m-0 p-3 text-sm text-muted-foreground">{treeOptions?.labels?.loading ?? text.labels.loading}</p>;
   const hasNavigation = sessions !== false && Boolean(conversations || revisionProvider);
   const docked = hasNavigation && width > 0 && !narrow && !collapsed;
@@ -434,7 +435,7 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   // ---- The chat in the center: docked PiChat, or the host's floating surface over the same controller (with the toggle in its header).
   const header = <>{conversations?.onNew && <Button variant="ghost" size="icon-sm" data-testid="workspace-new-chat" aria-label={text.labels.newChat} className="sm:hidden" onClick={conversations.onNew}><text.icons.newChat className="size-4" aria-hidden="true" /></Button>}{typeof controls === 'function' ? controls({ panelOpen }) : controls ?? chat.controls}</>;
   const conversationTitle = conversations?.items.find(item => item.id === conversationId)?.title;
-  const chatProps: PiChatProps | undefined = controller && { ...(mentionsForChat ? { mentions: mentionsForChat } : {}), ...(attachments ? { attachments } : {}), ...(locale ? { locale } : {}), ...chat, controller, artifacts, ...(conversations ? { conversations, historyList: false, showHistory: false, conversationTitle, onRenameTitle: conversations.rename && conversationId ? (title: string) => { void conversations.rename!(conversationId, title); } : undefined } : {}),
+  const chatProps: PiChatProps | undefined = controller && { ...(mentionsForChat ? { mentions: mentionsForChat } : {}), ...(attachments ? { attachments } : {}), ...(locale ? { locale } : {}), ...chat, controller, artifacts, ...(conversations ? { conversations, historyList: false, showHistory: chat.showHistory ?? false, conversationTitle, onRenameTitle: conversations.rename && conversationId ? (title: string) => { void conversations.rename!(conversationId, title); } : undefined } : {}),
     headerStart: <>{toggle}{chat.headerStart}</>, ...(header === undefined ? {} : { controls: header }) };
   const docked_chat = <div data-testid="workspace-center" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
     {attachmentFailure?.tree === fileTree && attachmentFailure?.reasons.map((reason, index) => <p key={index} role="alert" className="m-0 px-4 py-2 text-sm">{reason}</p>)}
@@ -456,7 +457,7 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
     ...(floatChat ? [{ id: 'float-chat', label: text.labels.floatChat, icon: text.icons.floatChat, placement: 'menu' as const, onSelect: floatChat }] : []),
     ...(shown ? typeof panelActions === 'function' ? panelActions(shown) : panelActions ?? [] : []),
   ];
-  const sessionProps: ComponentProps<typeof SessionsPane> = { conversations, drawer: narrow, onClose: () => setDrawer(false), onChat: () => setCenterMode('chat'), onCollapse: () => { writeFlag(`${storageKey}.sessions-hidden`, true); setCollapsed(true); }, title: labels?.sessionsTitle ?? chat.labels?.title,
+  const sessionProps: ComponentProps<typeof SessionsPane> = { conversations, drawer: narrow, onClose: () => setDrawer(false), onChat: () => setCenterMode('chat'), onCollapse: () => { writeFlag(`${storageKey}.sessions-hidden`, true); setCollapsed(true); }, title: labels?.sessionsTitle,
     agents, view: paneView, onViewChange: changePaneView,
     ...(librarySide ? { library: { selected: sideOpen, onSelect: toggleSide, side: true } } : revisionProvider && !libraryInPane ? { library: { selected: libraryOpen || panelLibrary, onSelect: openLibrary } } : {}),
     ...(libraryInPane ? { libraryContent: (onPicked: () => void) => libraryTree(path => { openFile(path); onPicked(); }) } : {}),

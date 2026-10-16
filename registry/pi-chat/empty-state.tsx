@@ -17,7 +17,7 @@ export function EmptyState({ title, description, avatar, suggestions, onSelect, 
     {children}
     {suggestions && suggestions.length > 0 && <ul className="m-0 flex w-full max-w-lg list-none flex-wrap justify-center gap-2 p-0">
       {suggestions.map(item => <li key={item.label}><button type="button" onClick={() => onSelect?.(item.text)} data-testid="suggestion"
-        className="flex cursor-pointer flex-col gap-1 rounded-full bg-muted/60 px-4 py-2.5 text-center transition-colors outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring/60">
+        className="flex min-h-11 cursor-pointer flex-col gap-1 rounded-full bg-muted/60 px-4 py-2.5 text-center transition-colors outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring/60">
         <span className="text-sm font-medium">{item.label}</span>{item.hint && <span className="text-xs text-muted-foreground">{item.hint}</span>}</button></li>)}
     </ul>}
   </div>;

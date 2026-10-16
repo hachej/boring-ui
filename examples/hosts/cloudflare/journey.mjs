@@ -47,7 +47,7 @@ try {
     await browser.until('the wrong token is rejected', `!!${q('[data-testid=token-error]')}`);
     await browser.type(q('[data-testid=token-input]'), token);
     await browser.click(q('[data-testid=token-submit]'));
-    await browser.until('the chat is live', `${q('[data-testid=connection]')}?.dataset.state === 'connected' && !!${q('[data-testid=composer-input]')}`, 60000);
+    await browser.until('the chat is live', `${q('[data-boring=pi-chat]')}?.dataset.connection === 'connected' && !!${q('[data-testid=composer-input]')}`, 60000);
     assert.equal(await browser.evaluate('location.href'), `${base}/`);
     assert.equal(await browser.evaluate('location.search + location.hash'), '');
   });
@@ -68,7 +68,7 @@ try {
     };
   })();`;
   await browser.send('Page.addScriptToEvaluateOnNewDocument', { source: PAGE_FAULTS });
-  const liveChat = `${q('[data-testid=connection]')}?.dataset.state === 'connected' && !!${q('[data-testid=composer-input]')}`;
+  const liveChat = `${q('[data-boring=pi-chat]')}?.dataset.connection === 'connected' && !!${q('[data-testid=composer-input]')}`;
 
   await step('a failed discovery shows an alert, and Retry opens the workspace', async () => {
     await setFaults({ refuseDiscovery: 1 });

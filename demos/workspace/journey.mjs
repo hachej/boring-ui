@@ -40,15 +40,15 @@ try {
   const coherentHeader = async () => {
     await browser.until('the loaded viewer actions', `!!${q('[data-testid=library-document] [data-testid=viewer-more]')}`, 15000);
     const geometry = await browser.evaluate(`(() => {
-      const panel = document.querySelector('[data-testid=workspace-panel]'), bar = panel.querySelector('[data-testid=viewer-bar]'), row = bar.querySelector('[data-testid=viewer-titlebar]') ?? bar, title = row.querySelector('h2'), controls = bar.querySelector('[data-testid=viewer-controls]'), back = bar.querySelector('[data-testid=file-back]');
+      const panel = document.querySelector('[data-testid=workspace-panel]'), bar = panel.querySelector('[data-testid=viewer-bar]'), row = bar.querySelector('[data-testid=viewer-titlebar]') ?? bar, title = row.querySelector('h2'), controls = [...bar.querySelectorAll('[data-testid=viewer-controls]')].find(element => element.checkVisibility()), back = bar.querySelector('[data-testid=file-back]') ?? (row.firstElementChild?.matches('button') ? row.firstElementChild : null);
       const p = panel.getBoundingClientRect(), b = bar.getBoundingClientRect(), r = row.getBoundingClientRect(), text = title.getBoundingClientRect(), c = controls?.getBoundingClientRect(), backBox = back?.getBoundingClientRect();
       return { offset: b.top - p.top, rowHeight: r.height, titleOffset: text.left - r.left, align: getComputedStyle(title.parentElement).textAlign,
         controlsInRow: !c || c.top >= r.top && c.bottom <= r.bottom, backRight: backBox ? backBox.right - r.left : null, backBeforeTitle: !back || backBox.right <= text.left, closeInRow: !!row.querySelector('[data-testid=viewer-close]'), menuInRow: !!row.querySelector('[data-testid=viewer-more]'),
         internalBars: panel.querySelectorAll('[data-testid=viewer-bar]').length,
-        targets: [...bar.querySelectorAll('button')].map(button => { const a = button.getBoundingClientRect(); return { id: button.dataset.testid, w: a.width, h: a.height, inside: a.left >= p.left && a.right <= p.right }; }) };
+        targets: [...bar.querySelectorAll('button')].filter(button => button.checkVisibility()).map(button => { const a = button.getBoundingClientRect(); return { id: button.dataset.testid, w: a.width, h: a.height, inside: a.left >= p.left && a.right <= p.right }; }) };
     })()`);
     assert.ok(geometry.offset >= 0 && geometry.offset <= 2, JSON.stringify(geometry));
-    assert.equal(geometry.rowHeight, 56);
+    assert.equal(geometry.rowHeight, 52);
     assert.equal(geometry.align, 'left');
     assert.ok(geometry.backRight === null ? geometry.titleOffset >= 8 && geometry.titleOffset <= 16 : geometry.titleOffset >= geometry.backRight && geometry.titleOffset <= geometry.backRight + 12, JSON.stringify(geometry));
     assert.ok(geometry.controlsInRow && geometry.backBeforeTitle && geometry.closeInRow && geometry.menuInRow, JSON.stringify(geometry));
@@ -78,7 +78,7 @@ try {
   };
   const library = async () => {
     await browser.click(q('[data-testid=chat-action-library]'));
-    await browser.until('the Library search is ready before choosing a row', `!!${q('[data-testid=library-popover]')} && document.activeElement?.type === 'search' && !!document.activeElement.closest('[data-testid=library-popover]')`, 10000);
+    await browser.until('the Library search is ready before choosing a row', `!!${q('[data-testid=library-popover]')} && document.activeElement?.type === 'search' && !!document.activeElement.closest('[data-testid=library-popover]') && ${q('[data-testid=library-popover]')}.getAnimations({subtree:true}).every(animation => animation.playState !== 'running')`, 10000);
   };
   const choosePolicyWithKeyboard = async () => {
     const policy = q('[role=treeitem][data-path="Policies/AP policy.md"]');
@@ -127,10 +127,10 @@ try {
     assert.equal(await browser.evaluate(viewing), 'Approvals');
     await pause(300);
     await browser.screenshot('1-start-history.png');
-    // One search field with a compact icon toggle for Archived (no text button); pressing it toggles the filter.
+    // Archived is a labeled chip inside search; pressing it toggles the filter.
     assert.equal(await browser.evaluate(`document.querySelectorAll('[data-testid=conversations] input[type=search]').length`), 1);
     const archived = `${q('[data-testid=conversations-archived]')}`;
-    assert.deepEqual(await browser.evaluate(`({ text: ${archived}.textContent.trim(), label: ${archived}.getAttribute('aria-label'), pressed: ${archived}.getAttribute('aria-pressed') })`), { text: '', label: 'Archived', pressed: 'false' });
+    assert.deepEqual(await browser.evaluate(`({ text: ${archived}.textContent.trim(), label: ${archived}.getAttribute('aria-label'), pressed: ${archived}.getAttribute('aria-pressed') })`), { text: 'Archived', label: 'Archived', pressed: 'false' });
     await browser.click(archived);
     await browser.until('the filter is on', `${archived}.getAttribute('aria-pressed') === 'true'`, 5000);
     await browser.click(archived);
@@ -187,7 +187,7 @@ try {
     await librarySelectionFocus('library-document');
     await browser.until('phone page file loaded', `!!${q('[data-testid=library-document]')} && !${q('[data-sidebar=sidebar][data-mobile=true]')}`, 15000);
     assert.equal(await browser.evaluate(placement), 'page', 'opening a file does not float the Agent page');
-    const header = await browser.evaluate(`(() => { const buttons = [...document.querySelectorAll('[data-testid=library-document] [data-testid=viewer-bar] button')]; return { back: !!document.querySelector('[data-testid=file-back]'), controls: buttons.map(button => { const r=button.getBoundingClientRect(); return { id:button.dataset.testid, inside:r.left>=0 && r.top>=0 && r.right<=innerWidth && r.bottom<=innerHeight && r.width>0 }; }), chatVisible: ${INPUT}.checkVisibility(), overflow: document.documentElement.scrollWidth > innerWidth }; })()`);
+    const header = await browser.evaluate(`(() => { const buttons = [...document.querySelectorAll('[data-testid=library-document] [data-testid=viewer-bar] button')].filter(button => button.checkVisibility()); return { back: !!document.querySelector('[data-testid=file-back]'), controls: buttons.map(button => { const r=button.getBoundingClientRect(); return { id:button.dataset.testid, inside:r.left>=0 && r.top>=0 && r.right<=innerWidth && r.bottom<=innerHeight && r.width>0 }; }), chatVisible: ${INPUT}.checkVisibility(), overflow: document.documentElement.scrollWidth > innerWidth }; })()`);
     assert.equal(header.back, true, 'the phone page file has a Chat back button');
     assert.ok(header.controls.length > 1 && header.controls.every(control => control.inside), JSON.stringify(header));
     assert.equal(header.chatVisible, false, 'the file replaces the split chat on a phone');
@@ -549,7 +549,7 @@ try {
     await coherentHeader();
     await headerShots('phone-file');
     const phone = await browser.evaluate(inside);
-    assert.deepEqual([phone.back, phone.close, phone.window, phone.pageOverflow, phone.windowOverflow], [true, true, true, false, false], JSON.stringify(phone));
+    assert.deepEqual([phone.back, phone.close, phone.window, phone.pageOverflow, phone.windowOverflow], [true, false, true, false, false], JSON.stringify(phone));
     await browser.click(q('[data-testid=file-back]'));
     await browser.send('Emulation.clearDeviceMetricsOverride');
     await browser.until('desktop header controls are back after the phone', `!!${q('[data-testid=ambient-dock]')} && !${q('[data-boring=ambient-chat]')}?.dataset.phone`, 10000);

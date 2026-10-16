@@ -1,6 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
+import { MenuIcon } from 'lucide-react';
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer';
 import { Button } from '../button/button';
 import { useAppText } from './app-labels';
@@ -41,7 +42,7 @@ export function SessionsPane({ conversations, title: givenTitle, drawer, onClose
       {(drawer ? onClose : onCollapse) && <SessionsToggle open drawer={drawer} navigation={Boolean(library || libraryContent)} onToggle={(drawer ? onClose : onCollapse)!} />}
     </header>
     {conversations?.onNew && <Button variant="ghost" data-testid="conversation-new" className="mx-2 mb-1 justify-start font-medium" onClick={() => { conversations.onNew?.(); picked(); }}><icons.newChat className="size-4" aria-hidden="true" />{labels.newChat}</Button>}
-    {tabs && <div role="tablist" aria-label={title} className="mx-2 flex gap-1">{(['conversations', 'library'] as const).map(tab => <Button key={tab} role="tab" variant="ghost" aria-selected={shown === tab} data-testid={`sessions-tab-${tab}`} onClick={() => onViewChange?.(tab)}>{tab === 'library' ? labels.library : labels.chat}</Button>)}</div>}
+    {tabs && <div role="tablist" aria-label={title} className="mx-2 flex gap-1">{(['conversations', 'library'] as const).map(tab => <Button key={tab} role="tab" variant="ghost" aria-selected={shown === tab} data-testid={`sessions-tab-${tab}`} onClick={() => onViewChange?.(tab)}>{tab === 'library' ? labels.library : title}</Button>)}</div>}
     {shown === 'library' && libraryContent ? <div data-testid="sessions-library" className="flex min-h-0 flex-1 flex-col overflow-auto">{libraryContent(() => { if (drawer) onClose?.(); })}</div>
       : conversations ? <ConversationList conversations={conversations} onPicked={picked} navigation={navigation} /> : navigation}
   </aside>;
@@ -58,6 +59,6 @@ export function SessionsToggle({ open, drawer, onToggle, navigation = false }: {
   const label = navigation ? drawer ? open ? labels.closeNavigation : labels.openNavigation : open ? labels.hideNavigation : labels.showNavigation
     : drawer ? open ? labels.closeSessions : labels.openSessions : open ? labels.hideSessions : labels.showSessions;
   return <Button size="icon-sm" variant="ghost" data-testid="sessions-toggle" aria-label={label} title={label} aria-expanded={open} onClick={onToggle} className="shrink-0 text-muted-foreground">
-    <icons.sessionsToggle className="size-4" aria-hidden="true" />
+    {drawer && !open ? <MenuIcon className="size-4" aria-hidden="true" /> : <icons.sessionsToggle className="size-4" aria-hidden="true" />}
   </Button>;
 }

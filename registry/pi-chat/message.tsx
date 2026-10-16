@@ -131,7 +131,7 @@ function FileCards({ paths, open, preview }: { readonly paths: readonly string[]
 function UserText({ text, context }: { readonly text: string; readonly context: RowContext }) {
   const open = context.pieces?.openMention;
   const render = context.pieces?.renderMention;
-  const bubble = 'max-w-[80%] rounded-[18px] bg-muted px-4 py-3 text-base leading-relaxed whitespace-pre-wrap text-foreground [overflow-wrap:anywhere]';
+  const bubble = 'max-w-[80%] rounded-(--chat-user-radius) bg-muted px-4 py-3 text-base leading-relaxed whitespace-pre-wrap text-foreground [overflow-wrap:anywhere]';
   if (!context.pieces) return <div data-testid="user-text" className={bubble}>{text}</div>;
   const all = pieces(text, context.pieces);
   const isFile = (piece: Piece) => piece.kind === 'mention' && isUploadPath(piece.value!);

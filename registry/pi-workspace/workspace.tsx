@@ -126,7 +126,12 @@ export function ArtifactWorkspace({ chat, open, panel, onClose, fullscreen: cont
       event.preventDefault(); closeRef.current();
     };
     document.addEventListener('keydown', escape);
-    return () => { document.removeEventListener('keydown', escape); const target = opener.current; if (target?.isConnected) target.focus({ preventScroll: true }); };
+    return () => {
+      document.removeEventListener('keydown', escape);
+      const previous = opener.current;
+      const target = previous?.isConnected && previous !== document.body ? previous : root.current?.querySelector<HTMLElement>('[data-testid=composer-input]');
+      target?.focus({ preventScroll: true });
+    };
   }, [open]);
   useEffect(() => {
     if (!open || !sheet) return;

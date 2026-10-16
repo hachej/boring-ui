@@ -261,7 +261,7 @@ function MarkdownEditorSession({ controller, title = 'Document', initialMode = '
         {tool('Delete table', 'Trash', false, () => chain().deleteTable().run())}</>}
     </div>}
     {mode === 'rich' && editor && !showPinned && !unavailable && <BubbleMenu editor={editor} updateDelay={0} options={BUBBLE_OPTIONS} appendTo={bubbleContainer}
-      role="toolbar" aria-label="Text formatting" className="boring-markdown-bubble">
+      role="toolbar" aria-label="Text formatting" className="boring-viewer boring-markdown-bubble">
       {tool('Bold', 'Bold', marks?.bold, () => chain().toggleBold().run())}
       {tool('Italic', 'Italic', marks?.italic, () => chain().toggleItalic().run())}
       {tool('Highlight', 'Highlight', marks?.highlight, () => chain().toggleHighlight().run())}

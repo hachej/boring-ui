@@ -623,7 +623,12 @@
             "--chat-warning": "var(--warning, var(--muted-foreground))",
             "--chat-warning-soft": "var(--warning-soft, color-mix(in oklab, var(--chat-warning) 15%, var(--background)))",
             "--chat-warning-soft-foreground": "var(--warning-soft-foreground, color-mix(in oklab, var(--chat-warning) 75%, var(--foreground)))",
-            "--chat-display": "var(--font-display, var(--font-sans))"
+            "--chat-display": "var(--font-display, var(--font-sans))",
+            "--chat-composer-radius": "26px",
+            "--chat-user-radius": "18px",
+            "--chat-send-radius": "9999px",
+            "--chat-leading": "1.6",
+            "--chat-sheet-duration": "200ms"
           },
           ".pi-chat:is(.dark, .dark *)": {
             "--chat-warning-soft": "var(--warning-soft, color-mix(in oklab, var(--chat-warning) 26%, var(--background)))",
@@ -1087,7 +1092,7 @@
           }
         },
         "@layer components": {
-          ".boring-markdown-bubble": {
+          ".boring-viewer.boring-markdown-bubble": {
             "display": "flex",
             "align-items": "center",
             "gap": "0.125rem",
@@ -1100,7 +1105,7 @@
             "box-shadow": "0 3px 16px rgb(0 0 0 / 0.08)",
             "z-index": "60"
           },
-          ".boring-markdown-bubble .boring-markdown-tool": {
+          ".boring-viewer.boring-markdown-bubble .boring-markdown-tool": {
             "display": "inline-flex",
             "align-items": "center",
             "justify-content": "center",
@@ -1112,14 +1117,14 @@
             "color": "inherit",
             "cursor": "pointer"
           },
-          ".boring-markdown-bubble .boring-markdown-tool:is(:hover, [aria-pressed=\"true\"])": {
+          ".boring-viewer.boring-markdown-bubble .boring-markdown-tool:is(:hover, [aria-pressed=\"true\"])": {
             "background": "var(--muted)"
           },
-          ".boring-markdown-bubble .boring-markdown-tool:focus-visible": {
+          ".boring-viewer.boring-markdown-bubble .boring-markdown-tool:focus-visible": {
             "outline": "2px solid var(--ring)"
           },
           "@media (max-width: 640px), (pointer: coarse)": {
-            ".boring-markdown-bubble .boring-markdown-tool": {
+            ".boring-viewer.boring-markdown-bubble .boring-markdown-tool": {
               "width": "2.75rem",
               "height": "2.75rem"
             }

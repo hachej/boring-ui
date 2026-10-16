@@ -95,7 +95,7 @@ export interface ComposerProps {
 }
 
 /** Compact bar buttons expand to 44px for touch. */
-const ROUND = 'inline-flex size-8 max-sm:size-11 pointer-coarse:size-11 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-45 motion-reduce:transition-none';
+const ROUND = 'inline-flex size-8 max-sm:size-11 pointer-coarse:size-11 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-45 motion-reduce:transition-none';
 
 /** The annotate toggle (a round bar button beside the "+" menu in both layouts). */
 function AnnotateButton({ feedback, disabled }: { readonly feedback: ComposerFeedback; readonly disabled: boolean }) {
@@ -285,9 +285,9 @@ export function Composer(props: ComposerProps) {
   const fileEl = canAttach && <input ref={fileInput} type="file" multiple accept={props.fileAccept} disabled={disabled} tabIndex={-1} aria-hidden="true" className="sr-only" data-testid="composer-file" data-attach="true"
     onChange={event => { const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ''; props.onPickFiles(files); }} />;
   const send = working
-    ? <Button variant="default" size="icon" data-testid="composer-submit" data-state="stop" aria-label={labels.stop} title={labels.stop} disabled={disabled || stopRequested} onClick={props.onStop} className="ml-auto size-9 rounded-full max-sm:size-11 pointer-coarse:size-11 shrink-0">
+    ? <Button variant="default" size="icon" data-testid="composer-submit" data-state="stop" aria-label={labels.stop} title={labels.stop} disabled={disabled || stopRequested} onClick={props.onStop} className="ml-auto size-9 rounded-(--chat-send-radius) max-sm:size-11 pointer-coarse:size-11 shrink-0">
       {stopRequested ? <Loader2Icon className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <icons.stop className="size-4 fill-current" aria-hidden="true" />}</Button>
-    : <Button variant="default" size="icon" type="submit" data-testid="composer-submit" data-state="send" aria-label={labels.send} title={labels.sendHint} disabled={!canSubmit} className="ml-auto size-9 rounded-full max-sm:size-11 pointer-coarse:size-11 shrink-0 disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100">
+    : <Button variant="default" size="icon" type="submit" data-testid="composer-submit" data-state="send" aria-label={labels.send} title={labels.sendHint} disabled={!canSubmit} className="ml-auto size-9 rounded-(--chat-send-radius) max-sm:size-11 pointer-coarse:size-11 shrink-0 disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100">
       <icons.send className="size-5" aria-hidden="true" /></Button>;
 
   if (props.layout === 'inline') return <form data-testid="composer" data-layout="inline" onSubmit={event => { event.preventDefault(); if (canSubmit) props.onSend(); }} onDragOver={drag} onDragLeave={drag} onDrop={drop}
@@ -311,7 +311,7 @@ export function Composer(props: ComposerProps) {
   </form>;
 
   return <form data-testid="composer" onSubmit={event => { event.preventDefault(); if (canSubmit) props.onSend(); }} onDragOver={drag} onDragLeave={drag} onDrop={drop}
-    className={cn('relative rounded-[26px] border border-input/60 bg-card shadow-[0_2px_12px_rgb(0_0_0/0.04)] transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20 motion-reduce:transition-none',
+    className={cn('relative rounded-(--chat-composer-radius) border border-input/60 bg-card shadow-sm transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20 motion-reduce:transition-none',
       dragging && 'border-ring ring-[3px] ring-ring/20', disabled && 'opacity-70')}>
     {slashOpen && <SlashMenu query={query!} items={items} onSelect={pickSlash} onDismiss={dismiss} />}
     {mentionOpen && mentions && <MentionMenu query={trigger!.query} search={mentions.search} generation={mentions.generation} onSelect={pickMention} onDismiss={dismiss} />}

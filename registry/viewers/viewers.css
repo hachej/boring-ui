@@ -27,7 +27,7 @@
 
 @layer components {
   /* Tiptap portals selection tools to the body; this unique class keeps the rule scoped without an ancestor. */
-  .boring-markdown-bubble {
+  .boring-viewer.boring-markdown-bubble {
     display: flex;
     align-items: center;
     gap: 0.125rem;
@@ -40,7 +40,7 @@
     box-shadow: 0 3px 16px rgb(0 0 0 / 0.08);
     z-index: 60;
   }
-  .boring-markdown-bubble .boring-markdown-tool {
+  .boring-viewer.boring-markdown-bubble .boring-markdown-tool {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -52,10 +52,10 @@
     color: inherit;
     cursor: pointer;
   }
-  .boring-markdown-bubble .boring-markdown-tool:is(:hover, [aria-pressed="true"]) { background: var(--muted); }
-  .boring-markdown-bubble .boring-markdown-tool:focus-visible { outline: 2px solid var(--ring); }
+  .boring-viewer.boring-markdown-bubble .boring-markdown-tool:is(:hover, [aria-pressed="true"]) { background: var(--muted); }
+  .boring-viewer.boring-markdown-bubble .boring-markdown-tool:focus-visible { outline: 2px solid var(--ring); }
   @media (max-width: 640px), (pointer: coarse) {
-    .boring-markdown-bubble .boring-markdown-tool { width: 2.75rem; height: 2.75rem; }
+    .boring-viewer.boring-markdown-bubble .boring-markdown-tool { width: 2.75rem; height: 2.75rem; }
   }
   .boring-viewer .boring-markdown-pin {
     display: inline-flex;

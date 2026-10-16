@@ -24,7 +24,7 @@ export function createToolkit({ browser, pageUrl, step, app, restartHost, base, 
   const idle = `${SUBMIT}?.dataset.state === 'send'`;
   // A button is found by its visible text or, for icon buttons such as the composer's Send/Stop, by its aria-label.
   const button = label => `[...document.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(label)} || b.getAttribute('aria-label') === ${JSON.stringify(label)})`;
-  const connected = `${q('[data-testid=connection]')}?.dataset.state === 'connected'`;
+  const connected = `${q('[data-boring=pi-chat]')}?.dataset.connection === 'connected'`;
   const WORKSPACE = q('[data-testid=workspace-panel]');
   const SOURCE = q('[data-testid=workspace-panel] textarea');
   const history = conversations({ browser, logText });

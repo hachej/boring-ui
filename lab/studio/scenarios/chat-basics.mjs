@@ -240,7 +240,7 @@ export default [
       // Fork from the first reply of the open (archived) chat: a new chat with the history up to that reply.
       await browser.until('the first chat is shown', `/QUARTZFOUNTAIN/.test(${logText}) && ${idle}`, 15000);
       await browser.click(`${qa('[data-testid=fork-reply]')}[0]`);
-      await browser.until('the fork is open', `${q('[data-testid=studio-main]')}.dataset.conversation !== ${JSON.stringify(first)} && ${q('[data-testid=connection]')}?.dataset.state === 'connected' && /LANTERN-FIRST/.test(${logText})`, 20000);
+      await browser.until('the fork is open', `${q('[data-testid=studio-main]')}.dataset.conversation !== ${JSON.stringify(first)} && ${q('[data-boring=pi-chat]')}?.dataset.connection === 'connected' && /LANTERN-FIRST/.test(${logText})`, 20000);
       assert.doesNotMatch(await browser.evaluate(logText), /QUARTZFOUNTAIN/, 'the fork stops at the chosen reply');
       const fork = await history.current();
       await history.open();

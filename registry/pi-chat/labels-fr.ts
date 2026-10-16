@@ -9,6 +9,7 @@ const EFFORT_DETAILS: Readonly<Record<string, string>> = { off: 'Sans réflexion
 export const frenchChatLabels: ChatLabels = {
   title: 'Conversation',
   history: 'Historique',
+  search: 'Rechercher',
   live: 'En direct',
   connecting: 'Connexion…',
   reconnecting: 'Reconnexion…',

@@ -170,6 +170,40 @@ try {
     await browser.emulate('desktop');
   });
 
+  await step('360px: artifact has only back, title and menu; Escape and Back restore chat focus; Library is a bottom sheet', async () => {
+    await browser.emulate('phone');
+    await browser.send('Emulation.setDeviceMetricsOverride', { width: 360, height: 780, deviceScaleFactor: 1, mobile: true });
+    await browser.tap(q('[data-testid=artifact-card]'));
+    await browser.until('artifact sheet at 360', `${q('[data-testid=workspace-panel]')}?.dataset.sheet === 'true'`, 5000);
+    assert.equal(await browser.evaluate(`${qa('[data-testid=artifact-bar] button')}.filter(e=>e.checkVisibility()).length`), 2, 'only Back and overflow beside title');
+    assert.ok(await browser.evaluate(noOverflow));
+    await browser.tap(q('[data-testid=artifact-more]'));
+    await browser.until('phone artifact menu', `!!${q('[data-testid=artifact-more-list]')}`, 5000);
+    await browser.tap(q('[data-testid=artifact-more-list] [data-testid=artifact-mode-source]'));
+    await browser.until('source editing available from overflow', `${q('[data-boring=markdown-editor]')}?.dataset.mode === 'source'`, 5000);
+    await browser.press('Escape');
+    assert.ok(await browser.evaluate(`!!${q('[data-testid=artifact-panel]')}`), 'Escape first closes the menu, not the file');
+    await browser.press('Escape');
+    await browser.until('Escape returns to chat', `!${q('[data-testid=artifact-panel]')}`, 5000);
+    assert.ok(await browser.evaluate(`document.activeElement?.matches('[data-testid=artifact-card], [data-testid=composer-input]')`), 'focus restored');
+    const scroll = await browser.evaluate(`${q('[data-testid=transcript-scroll]')}.scrollTop`);
+    await browser.tap(q('[data-testid=artifact-card]'));
+    await browser.until('reopened', `!!${q('[data-testid=artifact-panel]')}`, 5000);
+    await browser.evaluate('history.back()');
+    await browser.until('Back closes only the artifact', `!${q('[data-testid=artifact-panel]')}`, 5000);
+    assert.equal(await browser.evaluate(`${q('[data-testid=transcript-scroll]')}.scrollTop`), scroll, 'chat scroll is unchanged');
+    await browser.tap(q('[data-testid=sessions-toggle]'));
+    await browser.until('phone navigation', `!!${q('[data-testid=conversations]')}`, 5000);
+    await browser.tap(q('[data-testid=workspace-library]'));
+    await browser.until('Library bottom sheet', `!!${q('[data-slot=drawer-popup] [data-testid=workspace-library-side]')}`, 5000);
+    const sheet = await browser.evaluate(rect('[data-slot=drawer-popup]'));
+    assert.ok(sheet.y > 0 && sheet.y + sheet.h <= 781 && sheet.w <= 360, 'native bottom-sheet geometry');
+    assert.ok(await browser.evaluate(noOverflow));
+    await browser.screenshot('standalone-library-360.png');
+    await browser.press('Escape');
+    await browser.emulate('desktop');
+  });
+
   // ---- The same app, configured through the blocks' props only.
   await step('configured: custom labels and one custom icon replace the defaults', async () => {
     await browser.evaluate(`location.search = '?configured'`);

@@ -422,12 +422,12 @@ for publication, navigation and lifecycle behavior. `npm run file-tree:journey`
 drives the fictional SQLite-backed browser fixture; `npm run
 test:app-registry-consumer` installs the recipes in an isolated consumer.
 
-With a `revisionProvider`, `pi-app` shows the Library as a resizable column to the right of the
-viewer (`libraryPlacement="side"`, the default). The Library button in the viewer's top bar and in
-the left pane toggles it; with no file open it opens alone at the right edge, and choosing a file opens
-the viewer to its left. On a phone it is a full-screen sheet that choosing a file closes. Unsaved-change
-protection and the mounted chat are unchanged. `libraryPlacement="center"` keeps the older layout: Chat
-and Library links in the left pane, the Library replacing the chat in the center.
+With a `revisionProvider`, `pi-app` opens Library in the artifact column by default
+(`libraryPlacement="panel"`). On a phone, Library opens in the installed shadcn bottom drawer.
+Choosing a file closes Library and opens its viewer. Opening Library asks before discarding an unsaved file.
+The chat stays mounted. `libraryPlacement="side"` retains the separate resizable column to the
+right of the viewer, with its viewer-header toggle. `libraryPlacement="center"` retains the
+center Library view and its Back to chat action.
 `libraryPlacement="pane"` shows the Library in the left pane instead: a tab beside
 the conversations, or the whole pane on a single-session page without
 `conversations` (a bot with one conversation). `agents={{ items, activeId, onSelect }}`
@@ -439,9 +439,26 @@ words are exported (`frenchChatLabels`, `frenchAppLabels`, `frenchFileTreeLabels
 like the English ones, and `labels` / `chat.labels` still override any word.
 `fileTree={{ upload: false, history: false, refreshKey }}` hides the Library's Upload and
 History buttons and reloads it when `refreshKey` changes.
-`chat={{ showHistory: false, showConnectionStatus: false }}` hides the chat header's
-History button and connection badge (defaults keep both), and `chat.tools` puts host
-controls such as a microphone at the end of the composer bar.
+`AgentWorkspace` omits the chat header's duplicate History action. Connection badges default off
+in `PiChat`; connection failures still appear inline. `showConnectionStatus={true}` restores the badge.
+`chat.tools` puts host controls such as a microphone at the end of the composer bar.
+
+`PiChat` centers the empty greeting and composer on desktop. After a message, the composer docks
+to the bottom. Phones always dock it. `emptyLayout="docked"` retains the former empty layout,
+and `composerLayout="stacked"` retains the two-row composer. `ConversationList` defaults to
+search disclosure and overflow row actions; `searchMode="inline"` and `rowActionLayout="inline"`
+retain the former controls.
+
+Viewer headers default to one quiet row. `ViewerFrame compactHeader={false}` retains the former
+visible Share and fullscreen actions and supports `ViewerWindow.headerLayout="stacked"`.
+Compact headers show metadata on hover. On phones, Back, the title, and overflow remain visible;
+editing controls and revision history move into overflow. Escape and browser Back close the phone
+artifact without replacing the mounted conversation.
+
+`MarkdownEditor` and `MarkdownPane` default to `formattingToolbar="selection"`, using Tiptap's
+native bubble menu. Keyboard shortcuts and Markdown input rules remain available. The desktop Aa
+control pins the full toolbar; `formattingToolbar="pinned"` starts pinned. Phones always use selection
+formatting. `MarkdownEditor showOutline` controls heading navigation; by default it follows `header`.
 `onUnsavedChange` reports an open file's unsaved changes, so a host can ask before
 it switches workspace or identity. Chat attachments are saved as
 `uploads/<name>-<8 hex>.<ext>`, so a second pasted `image.png` never collides.

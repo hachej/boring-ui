@@ -61,7 +61,7 @@ function App() {
         { label: 'Draft a plan', text: 'Write a picnic plan and present it.' },
         { label: 'Write a short reply', text: 'Reply with exactly: AMBER-HARBOUR' },
       ], ...config.chat, ...(chat.status === 'ready' ? { actions: chat.actions } : {}) }}
-      {...(config.labels ? { labels: config.labels, panelActions: config.panelActions } : {})} {...floating}
+      labels={{ sessionsTitle: 'Writer', ...config.labels }} panelActions={config.panelActions} {...floating}
       connecting={<p role="status" className="p-4 text-sm text-muted-foreground">{chat.status === 'offline' ? 'Server unreachable. Retrying…' : 'Connecting…'}</p>} />
       : discovery.failed
         ? <p role="alert" className="p-4 text-sm text-muted-foreground">The workspace could not be reached. <button type="button" className="underline" onClick={() => setDiscovery(current => ({ attempt: current.attempt + 1, failed: false }))}>Retry</button></p>

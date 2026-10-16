@@ -74,6 +74,11 @@ test('template extras are optional: the kit derives them from shadcn roles and t
     '--chat-warning-soft': 'var(--warning-soft, color-mix(in oklab, var(--chat-warning) 15%, var(--background)))',
     '--chat-warning-soft-foreground': 'var(--warning-soft-foreground, color-mix(in oklab, var(--chat-warning) 75%, var(--foreground)))',
     '--chat-display': 'var(--font-display, var(--font-sans))',
+    '--chat-composer-radius': '26px',
+    '--chat-user-radius': '18px',
+    '--chat-send-radius': '9999px',
+    '--chat-leading': '1.6',
+    '--chat-sheet-duration': '200ms',
   });
   assert.deepEqual(dark, {
     '--chat-warning-soft': 'var(--warning-soft, color-mix(in oklab, var(--chat-warning) 26%, var(--background)))',

@@ -65,7 +65,7 @@ test('revision workspace preserves file drafts, docked and floating chat mounts,
     assert.deepEqual([backed, closed], [4, 4]);
   });
   await act(async () => root.render(createElement(AgentWorkspace, { controller: undefined, conversationId: undefined, revisionProvider: binding, libraryPlacement: 'center' })));
-  const library = () => element.querySelector('[data-testid=workspace-library]');
+  const library = () => window.document.querySelector('[data-testid=workspace-library]');
   assert.ok(library(), 'Library is available without conversations');
   await act(async () => library().click());
   assert.equal(element.querySelector('[data-testid=workspace-library-view]').parentElement.hidden, false);

@@ -145,12 +145,12 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
   useEffect(() => {
     const viewport = globalThis.visualViewport;
     if (!viewport) return;
-    const measure = () => page.current?.style.setProperty('--chat-keyboard-inset', `${Math.max(0, innerHeight - viewport.height - viewport.offsetTop)}px`);
+    const measure = () => page.current?.style.setProperty('--composer-keyboard-inset', `${Math.max(0, innerHeight - viewport.height - viewport.offsetTop)}px`);
     measure(); viewport.addEventListener('resize', measure); viewport.addEventListener('scroll', measure);
     return () => { viewport.removeEventListener('resize', measure); viewport.removeEventListener('scroll', measure); };
   }, []);
 
-  return <section ref={page} data-boring="pi-chat" data-empty={empty && !loading ? emptyLayout : undefined} aria-label={title} className={cn('pi-chat relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background text-foreground max-sm:pb-(--chat-keyboard-inset)', empty && emptyLayout === 'centered' && 'sm:justify-center', className)}>
+  return <section ref={page} data-boring="pi-chat" data-connection={connectionKind} data-empty={empty && !loading ? emptyLayout : undefined} aria-label={title} className={cn('pi-chat relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background text-foreground max-sm:pb-(--composer-keyboard-inset)', empty && emptyLayout === 'centered' && 'sm:justify-center', className)}>
     {header && <header className={cn(empty && emptyLayout === 'centered' && 'sm:absolute sm:inset-x-0 sm:top-0', 'flex h-13 shrink-0 items-center gap-2 px-3 sm:gap-3 sm:px-4')}>
       {headerStart}
       {avatar && <span data-testid="chat-avatar" className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full [&>img]:size-full [&>img]:object-cover [&>svg]:size-4">{avatar}</span>}
