@@ -282,12 +282,12 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
     assert.equal(f.writes(), 0);
   });
 
-  await t.test('a phone never mounts the pinned toolbar, even when the host requests it', async t => {
+  await t.test('a narrow phone shows the top formatting row with nothing to pin', async t => {
     const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'matchMedia');
-    Object.defineProperty(globalThis, 'matchMedia', { configurable: true, value: query => ({ matches: query === '(max-width: 640px)', addEventListener() {}, removeEventListener() {} }) });
+    Object.defineProperty(globalThis, 'matchMedia', { configurable: true, value: query => ({ matches: query.includes('(max-width: 640px)'), addEventListener() {}, removeEventListener() {} }) });
     try {
       const f = await fixture(t, 'phone text\n', { props: { formattingToolbar: 'pinned' } });
-      assert.ok(f.container.querySelector('.boring-markdown-toolbar') === null, 'no pinned row on phone');
+      assert.ok(f.container.querySelector('.boring-markdown-toolbar[role="toolbar"]'), 'the same top row as desktop on a narrow phone');
       assert.equal([...f.container.querySelectorAll('button')].find(button => button.getAttribute('aria-label') === 'Pin formatting toolbar'), undefined);
       assert.ok(f.container.querySelector('[contenteditable="true"]'));
       assert.equal(f.writes(), 0);
