@@ -8,6 +8,7 @@ import type { MarkdownEditorProps, MarkdownImageResolver, MarkdownMountedTools, 
 import type { MarkdownController } from '@hachej/boring-ui-kit/markdown';
 import { Button } from '@/components/ui/button';
 import { Toggle } from '@/components/ui/toggle';
+import { editorControls } from '../button/editor-controls';
 import { downloadFile, fileNameFor } from './download';
 import { copyText } from '../utils/utils';
 import { ViewerFrame, ViewerToggle } from './viewer-frame';
@@ -110,7 +111,7 @@ export function MarkdownPane({ controller, title: givenTitle, labels: ownLabels,
       {autosave === false && !state.readOnly && state.dirty && <Button variant="default" size="icon-sm" aria-label={labels.save} title={labels.save} data-testid={`${testId}-save`} disabled={unavailable || pending || unconfirmed} onClick={save}><SaveIcon data-icon="inline-start" aria-hidden="true" /></Button>}
       {controls}
     </>}>
-    <MarkdownEditor controller={controller} title={title} header={false} autosave={autosave} onAutosaveChange={registerAutosave} onSaveResult={report} formattingToolbar={toolbar} mode={mode} onModeChange={setRequested} onRichSafety={setSafety}
+    <MarkdownEditor components={editorControls} controller={controller} title={title} header={false} autosave={autosave} onAutosaveChange={registerAutosave} onSaveResult={report} formattingToolbar={toolbar} mode={mode} onModeChange={setRequested} onRichSafety={setSafety}
       {...(placeholder === undefined ? {} : { placeholder })} {...(resolveImage ? { resolveImage } : {})} {...(onMountedTools ? { onMountedTools } : {})} className="boring-markdown-editor" />
   </ViewerFrame>;
 }

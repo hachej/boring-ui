@@ -121,7 +121,7 @@ export function ImagePane({ name, mediaType, bytes, blob, url: hostUrl, subtitle
           <img ref={image} src={url} alt={name} data-testid={`${testId}-image`} draggable={false} decoding="async" referrerPolicy="no-referrer"
             onLoad={event => { setNatural({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight }); measure(); }} onError={() => setFailed(true)}
             style={natural ? { width: natural.width * current, height: natural.height * current, maxWidth: 'none' } : undefined}
-            className="boring-viewer-checker block shrink-0 select-none rounded-sm shadow-sm outline outline-1 outline-border" />
+            className="boring-viewer-checker block shrink-0 select-none  outline outline-1 outline-border" />
         </div> : <p role="status" className="m-auto p-6 text-sm text-muted-foreground">{labels.loading}</p>}
     </div>
   </ViewerFrame>;

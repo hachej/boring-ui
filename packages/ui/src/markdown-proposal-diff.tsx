@@ -110,7 +110,8 @@ function DiffRow({ line }: { readonly line: DiffLine }) {
   </div>;
 }
 
-export function MarkdownProposalDiff({ proposal }: { readonly proposal: MarkdownProposal }) {
+export function MarkdownProposalDiff({ components, proposal }: { readonly components?: import('./viewer-components.js').ViewerComponents | undefined; readonly proposal: MarkdownProposal }) {
+  const Control = components?.button ?? 'button';
   const diff = useMemo(() => review(proposal.before, proposal.after), [proposal.before, proposal.after]);
   const shown = useMemo(() => entries(diff.lines), [diff]);
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(() => new Set());
@@ -118,12 +119,12 @@ export function MarkdownProposalDiff({ proposal }: { readonly proposal: Markdown
     {diff.fallback && <p role="status" data-diff-fallback="">Detailed line alignment unavailable; showing changed block.</p>}
     {proposal.before === proposal.after && <p>No text changes</p>}
     <div style={{ overflowX: 'auto', whiteSpace: 'pre-wrap' }}>{shown.map((entry, index) => entry.kind === 'fold' ? <div key={`fold-${entry.index}`}>
-      <button type="button" data-diff-fold="" aria-expanded={expanded.has(entry.index)} onClick={() => setExpanded(current => {
+      <Control type="button" data-diff-fold="" aria-expanded={expanded.has(entry.index)} onClick={() => setExpanded(current => {
         const next = new Set(current);
         if (next.has(entry.index)) next.delete(entry.index);
         else next.add(entry.index);
         return next;
-      })}>{expanded.has(entry.index) ? 'Hide' : 'Show'} {entry.lines.length} unchanged lines</button>
+      })}>{expanded.has(entry.index) ? 'Hide' : 'Show'} {entry.lines.length} unchanged lines</Control>
       {expanded.has(entry.index) && entry.lines.map((line, lineIndex) => <DiffRow key={lineIndex} line={line} />)}
     </div> : <DiffRow key={`line-${index}`} line={entry} />)}</div>
   </div>;

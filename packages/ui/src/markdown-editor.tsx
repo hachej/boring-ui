@@ -1,6 +1,8 @@
 'use client';
 
 import { TextDraftControls } from './text-draft-controls.js';
+import type { ViewerComponents } from './viewer-components.js';
+export type { ViewerComponents } from './viewer-components.js';
 import { useMarkdownAutosave } from './markdown-autosave.js';
 import type { MarkdownAutosave, MarkdownFlush } from './markdown-autosave.js';
 import type { SaveResult } from './resources.js';
@@ -22,6 +24,8 @@ export type { MarkdownImageResolver } from './markdown-extensions.js';
 export type { MarkdownMountedTools, MarkdownMountedSubject, MarkdownMountedSelection, MarkdownMountedInspection } from './markdown-mounted.js';
 
 export interface MarkdownEditorProps {
+  /** Installed recipes supply the host's shadcn controls. Omit only for unstyled native HTML rendering. */
+  readonly components?: ViewerComponents;
   readonly controller: MarkdownController;
   readonly title?: string;
   readonly initialMode?: 'rich' | 'source';
@@ -68,7 +72,10 @@ const subscribePhone = (notify: () => void) => {
 const BUBBLE_OPTIONS = { strategy: 'fixed', placement: 'top', offset: 8, shift: { padding: 12 }, flip: true } as const;
 const bubbleContainer = () => document.body;
 
-function MarkdownEditorSession({ controller, title = 'Document', initialMode = 'rich', placeholder = 'Start writing', className, onMountedTools, header = true, showOutline = header, mode: controlledMode, onModeChange, onRichSafety, resolveImage, formattingToolbar = 'pinned', autosave = true, onAutosaveChange, onSaveResult, activeController: active }: MarkdownEditorProps & { readonly activeController: { readonly current: MarkdownController } }) {
+function MarkdownEditorSession({ components, controller, title = 'Document', initialMode = 'rich', placeholder = 'Start writing', className, onMountedTools, header = true, showOutline = header, mode: controlledMode, onModeChange, onRichSafety, resolveImage, formattingToolbar = 'pinned', autosave = true, onAutosaveChange, onSaveResult, activeController: active }: MarkdownEditorProps & { readonly activeController: { readonly current: MarkdownController } }) {
+  const Control = components?.button ?? 'button';
+  const Source = components?.textarea ?? 'textarea';
+  const LinkInput = components?.input ?? 'input';
   const phone = useSyncExternalStore(subscribePhone, phoneSnapshot, desktopSnapshot);
   const [pinned, setPinned] = useState(formattingToolbar === 'pinned');
   useEffect(() => { setPinned(formattingToolbar === 'pinned'); }, [formattingToolbar]);
@@ -221,8 +228,8 @@ function MarkdownEditorSession({ controller, title = 'Document', initialMode = '
   const [linkDraft, setLinkDraft] = useState<string | null>(null);
   const command = (operation: () => unknown) => { interaction.current = true; try { operation(); } finally { interaction.current = false; } };
   const tool = (label: string, icon: MarkdownIconName, pressed: boolean | undefined, operation: () => unknown, extra: { disabled?: boolean } = {}) => (
-    <button type="button" className="boring-markdown-tool" aria-label={label} title={label} aria-pressed={pressed === true} data-active={pressed === true || undefined}
-      disabled={richOnly || extra.disabled} onClick={() => command(operation)}><MarkdownIcon name={icon} /></button>
+    <Control type="button" className="boring-markdown-tool" aria-label={label} title={label} aria-pressed={pressed === true} data-active={pressed === true || undefined}
+      disabled={richOnly || extra.disabled} onClick={() => command(operation)}><MarkdownIcon name={icon} /></Control>
   );
   const separator = <span role="separator" aria-orientation="vertical" className="boring-markdown-separator" />;
   const chain = () => editor!.chain().focus();
@@ -243,11 +250,11 @@ function MarkdownEditorSession({ controller, title = 'Document', initialMode = '
       <strong>{title}</strong>
       {state.readOnly && <span>Read only</span>}
       <span role="status">{state.lifecycle === 'disposed' ? 'Closed' : pending ? 'Saving…' : uncertain ? 'Save unconfirmed' : conflict ? 'Changed elsewhere' : state.dirty ? 'Unsaved changes' : 'Saved'}</span>
-      {mode === 'rich' && !phone && !unavailable && <button type="button" className="boring-markdown-pin" aria-label="Pin formatting toolbar" title="Pin formatting toolbar" aria-pressed={pinned} onClick={() => setPinned(value => !value)}>Aa</button>}
-      <button type="button" aria-pressed={mode === 'source'} disabled={!richOffered} onClick={switchMode}>Markdown source</button>
-      {!saving.enabled && <button type="button" disabled={unavailable || !state.dirty || pending || uncertain} onClick={save}>Save</button>}
+      {mode === 'rich' && !phone && !unavailable && <Control type="button" className="boring-markdown-pin" aria-label="Pin formatting toolbar" title="Pin formatting toolbar" aria-pressed={pinned} onClick={() => setPinned(value => !value)}>Aa</Control>}
+      <Control type="button" aria-pressed={mode === 'source'} disabled={!richOffered} onClick={switchMode}>Markdown source</Control>
+      {!saving.enabled && <Control type="button" disabled={unavailable || !state.dirty || pending || uncertain} onClick={save}>Save</Control>}
     </header>}
-    <TextDraftControls recovery={state.recovery} actions={controller.actions} readOnly={state.readOnly} blocked={state.lifecycle !== 'active' || state.save.kind === 'pending' || (state.save.kind === 'settled' && state.save.result.kind === 'unknown')} />
+    <TextDraftControls components={components} recovery={state.recovery} actions={controller.actions} readOnly={state.readOnly} blocked={state.lifecycle !== 'active' || state.save.kind === 'pending' || (state.save.kind === 'settled' && state.save.result.kind === 'unknown')} />
     {mode === 'rich' && showPinned && <div role="toolbar" aria-label="Text formatting" className="boring-markdown-toolbar">
       {tool('Bold', 'Bold', marks?.bold, () => chain().toggleBold().run())}
       {tool('Italic', 'Italic', marks?.italic, () => chain().toggleItalic().run())}
@@ -282,15 +289,15 @@ function MarkdownEditorSession({ controller, title = 'Document', initialMode = '
       {tool('Link', 'Link', marks?.link || linkDraft !== null, openLink)}
     </BubbleMenu>}
     {mode === 'rich' && linkDraft !== null && <form className="boring-markdown-link" aria-label="Link address" onSubmit={event => { event.preventDefault(); applyLink(); }}>
-      <input type="text" inputMode="url" autoFocus aria-label="Link address" placeholder="https://" value={linkDraft} onChange={event => setLinkDraft(event.currentTarget.value)}
+      <LinkInput type="text" inputMode="url" autoFocus aria-label="Link address" placeholder="https://" value={linkDraft} onChange={event => setLinkDraft(event.currentTarget.value)}
         onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); setLinkDraft(null); editor?.commands.focus(); } }} />
-      <button type="submit">{linkDraft.trim() === '' && marks?.link ? 'Remove link' : 'Apply link'}</button>
-      <button type="button" onClick={() => { setLinkDraft(null); editor?.commands.focus(); }}>Cancel</button>
+      <Control type="submit">{linkDraft.trim() === '' && marks?.link ? 'Remove link' : 'Apply link'}</Control>
+      <Control type="button" onClick={() => { setLinkDraft(null); editor?.commands.focus(); }}>Cancel</Control>
     </form>}
     {!richOffered && <p role="note" className="boring-markdown-notice" data-testid="markdown-source-only">{describeUnsafe(safety)}</p>}
     {showOutline && mode === 'rich' && outline && outline.headings.length > 0 && <nav aria-label="Document outline">
       <ol>{outline.headings.map((heading, index) => <li key={heading.position} data-heading-level={heading.level}>
-        <button type="button" aria-label={`Go to heading: ${heading.text || 'Untitled heading'}`} disabled={state.lifecycle !== 'active'} onClick={() => {
+        <Control type="button" aria-label={`Go to heading: ${heading.text || 'Untitled heading'}`} disabled={state.lifecycle !== 'active'} onClick={() => {
           if (!editor || editor.isDestroyed || active.current !== controller || controller.getSnapshot().lifecycle !== 'active'
             || controller.getSnapshot().bufferVersion !== state.bufferVersion || editor.state.doc !== outline.document) return;
           const node = editor.state.doc.nodeAt(heading.position);
@@ -299,29 +306,29 @@ function MarkdownEditorSession({ controller, title = 'Document', initialMode = '
           if (target) void mounted?.tools.revealHeading.invoke(target, { index, expiresAt: Date.now() + 5000 }).then(result => {
             if (active.current === controller && result.kind !== 'applied' && result.kind !== 'proposed') setError(result.reason);
           }).catch(() => { if (active.current === controller) setError('The heading could not be selected'); });
-        }}>{heading.text || 'Untitled heading'}</button>
+        }}>{heading.text || 'Untitled heading'}</Control>
       </li>)}</ol>
     </nav>}
     {uncertain && <div role="alert" className="boring-markdown-alert">Save acknowledgement was lost. Keep editing while its outcome is checked.
-      <button type="button" onClick={() => run(controller.actions.reconcile)}>Check save outcome</button>
-      <button type="button" onClick={() => run(controller.actions.abandon)}>Stop checking and refresh, keeping my draft</button>
+      <Control type="button" onClick={() => run(controller.actions.reconcile)}>Check save outcome</Control>
+      <Control type="button" onClick={() => run(controller.actions.abandon)}>Stop checking and refresh, keeping my draft</Control>
     </div>}
     {conflict && <div role="alert" className="boring-markdown-alert">The saved document changed. Your local text has been kept.
-      <button type="button" disabled={pending || uncertain} onClick={() => run(controller.actions.refresh)}>Check saved version</button>
-      <button type="button" disabled={pending || uncertain} onClick={() => run(controller.actions.discardToRemote)}>Discard local changes and reload</button>
+      <Control type="button" disabled={pending || uncertain} onClick={() => run(controller.actions.refresh)}>Check saved version</Control>
+      <Control type="button" disabled={pending || uncertain} onClick={() => run(controller.actions.discardToRemote)}>Discard local changes and reload</Control>
     </div>}
     {(outcome?.kind === 'denied' || outcome?.kind === 'unavailable' || outcome?.kind === 'file_too_large') && <p role="alert" className="boring-markdown-alert">{outcome.reason}</p>}
     {error && <p role="alert" className="boring-markdown-alert">{error}</p>}
     {state.proposals.map(proposal => <article key={proposal.id} data-boring="proposal" className="boring-markdown-proposal">
       <h3>{proposal.summary || 'Proposed edit'}</h3>
-      <details><summary>Review text changes</summary><MarkdownProposalDiff proposal={proposal} />
+      <details><summary>Review text changes</summary><MarkdownProposalDiff components={components} proposal={proposal} />
         <details><summary>Exact before and after</summary><h4>Before</h4><pre>{proposal.before}</pre><h4>After</h4><pre>{proposal.after}</pre></details>
       </details>
-      <button type="button" disabled={unavailable || pending || uncertain || proposal.adopted} onClick={() => run(() => controller.actions.accept(proposal.id))}>{proposal.adopted ? 'Adopted' : 'Accept and save'}</button>
-      <button type="button" onClick={() => controller.actions.reject(proposal.id)}>Dismiss proposal</button>
+      <Control type="button" disabled={unavailable || pending || uncertain || proposal.adopted} onClick={() => run(() => controller.actions.accept(proposal.id))}>{proposal.adopted ? 'Adopted' : 'Accept and save'}</Control>
+      <Control type="button" onClick={() => controller.actions.reject(proposal.id)}>Dismiss proposal</Control>
     </article>)}
     {mode === 'source'
-      ? <textarea ref={sourceInput} className="boring-markdown-source" aria-label={`${title} Markdown source`} value={state.text} readOnly={unavailable} spellCheck={false} onChange={event => controller.actions.edit(event.currentTarget.value)} />
+      ? <Source ref={sourceInput} className="boring-markdown-source" aria-label={`${title} Markdown source`} value={state.text} readOnly={unavailable} spellCheck={false} onChange={event => controller.actions.edit(event.currentTarget.value)} />
       : <div className="boring-markdown-surface" onKeyDownCapture={markInteraction} onBeforeInputCapture={markInteraction} onInputCapture={markInteraction} onPasteCapture={markInteraction} onDropCapture={markInteraction}
         onChangeCapture={markInteraction}
         onClickCapture={event => { markInteraction(); if (event.target instanceof Element && event.target.closest('a')) event.preventDefault(); }}
