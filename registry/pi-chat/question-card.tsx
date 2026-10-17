@@ -4,8 +4,10 @@ import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
 import { CheckIcon, MessageCircleQuestionIcon, SendIcon } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { cn } from '../utils/utils';
+import { Input } from '@/components/ui/input';
+import { Item, ItemContent, ItemDescription, ItemFooter, ItemMedia, ItemTitle } from '@/components/ui/item';
 import { useChatText } from './labels';
 
 /** What the host answers when asked to resolve a pending question. */
@@ -72,36 +74,32 @@ export function QuestionCard({ call, result, answer, questionId, live = false }:
   const onSubmit = (event: FormEvent) => { event.preventDefault(); void submit(text); };
   const busy = sending !== undefined || live;
 
-  return <section data-testid="question-card" data-state={state} data-call-id={call.id} aria-label={labels.question}
-    className={cn('my-2 rounded-lg border bg-card p-4 text-card-foreground', open ? 'border-ring/50' : 'border-border')}>
-    <div className="flex items-start gap-3">
-      <span className={cn('mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg', open ? 'bg-accent text-accent-foreground' : 'bg-muted text-muted-foreground')}>
-        {state === 'answered' || state === 'sent' ? <CheckIcon className="size-4" aria-hidden="true" /> : <MessageCircleQuestionIcon className="size-4" aria-hidden="true" />}
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="m-0 text-xs font-medium text-muted-foreground">{open ? labels.questionForYou : state === 'failed' ? labels.notAnswered : labels.answered}</p>
-        <p data-testid="question-text" className="mt-1 mb-0 text-sm leading-6 font-medium [overflow-wrap:anywhere]">{question.question || labels.askedQuestion}</p>
+  const unavailable = !answer || !questionId || busy;
 
-        {open && <>
-          {question.options.length > 0 && <div role="group" aria-label={labels.answerOptions} className="mt-3 flex flex-wrap gap-2">
-            {question.options.map(option => <Button key={option} variant="outline" data-testid="question-option" data-option={option} disabled={!answer || !questionId || busy}
-              onClick={() => { void submit(option); }} className="h-auto max-w-full whitespace-normal">{option}</Button>)}
-          </div>}
-          {question.allowFreeText && <form onSubmit={onSubmit} className="mt-3 flex gap-2">
-            <input data-testid="question-input" value={text} maxLength={2000} disabled={!answer || !questionId || busy} placeholder={question.options.length ? labels.ownAnswer : labels.typeAnswer}
-              aria-label={labels.yourAnswerInput} onChange={event => setText(event.currentTarget.value)}
-              className="h-11 min-w-0 flex-1 rounded-lg border border-input bg-background px-3 text-base outline-none sm:h-9 sm:text-sm pointer-coarse:h-11 placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/60 disabled:opacity-50" />
-            <Button type="submit" variant="default" data-testid="question-submit" disabled={!answer || !questionId || busy || !text.trim()}><SendIcon data-icon="inline-start" aria-hidden="true" />{labels.answer}</Button>
-          </form>}
-          {live && <p className="mt-3 mb-0 text-xs text-muted-foreground">{labels.stillWritingQuestion}</p>}
-          {!answer && !live && <p className="mt-3 mb-0 text-xs text-muted-foreground">{labels.answeringUnavailable}</p>}
-        </>}
-
-        {(state === 'answered' || state === 'sent') && current !== undefined && <p className="mt-2 mb-0 text-sm text-muted-foreground">{labels.yourAnswer} <span data-testid="question-answer" className="rounded-md bg-muted px-1.5 py-0.5 font-medium text-foreground [overflow-wrap:anywhere]">{current}</span>
-          {state === 'sent' && <span className="ms-2 text-xs">{labels.waitingForAgent}</span>}</p>}
-        {state === 'failed' && settled && 'failure' in settled && <p role="alert" className="mt-2 mb-0 text-sm text-destructive">{settled.failure}</p>}
-        {refusal && open && <p role="alert" data-testid="question-refusal" className="mt-3 mb-0 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{refusal}</p>}
-      </div>
-    </div>
-  </section>;
+  return <Item variant="outline" size="sm" render={<section />} data-testid="question-card" data-state={state} data-call-id={call.id} aria-label={labels.question} className="my-2">
+    <ItemMedia variant="icon">
+      {state === 'answered' || state === 'sent' ? <CheckIcon aria-hidden="true" /> : <MessageCircleQuestionIcon aria-hidden="true" />}
+    </ItemMedia>
+    <ItemContent>
+      <ItemDescription className="line-clamp-none"><Badge variant={open ? 'outline' : 'secondary'}>{open ? labels.questionForYou : state === 'failed' ? labels.notAnswered : labels.answered}</Badge></ItemDescription>
+      <ItemTitle data-testid="question-text" className="line-clamp-none [overflow-wrap:anywhere]">{question.question || labels.askedQuestion}</ItemTitle>
+      {(state === 'answered' || state === 'sent') && current !== undefined && <ItemDescription className="line-clamp-none">{labels.yourAnswer} <span data-testid="question-answer" className="font-medium text-foreground [overflow-wrap:anywhere]">{current}</span>
+        {state === 'sent' && <span className="ms-2 text-xs">{labels.waitingForAgent}</span>}</ItemDescription>}
+      {state === 'failed' && settled && 'failure' in settled && <p role="alert" className="m-0 text-sm text-destructive">{settled.failure}</p>}
+    </ItemContent>
+    {open && <ItemFooter className="flex-col items-stretch">
+      {question.options.length > 0 && <div role="group" aria-label={labels.answerOptions} className="flex flex-wrap gap-2">
+        {question.options.map(option => <Button key={option} variant="outline" data-testid="question-option" data-option={option} disabled={unavailable}
+          onClick={() => { void submit(option); }} className="h-auto max-w-full whitespace-normal">{option}</Button>)}
+      </div>}
+      {question.allowFreeText && <form onSubmit={onSubmit} className="flex gap-2">
+        <Input data-testid="question-input" value={text} maxLength={2000} disabled={unavailable} placeholder={question.options.length ? labels.ownAnswer : labels.typeAnswer}
+          aria-label={labels.yourAnswerInput} onChange={event => setText(event.currentTarget.value)} className="min-w-0 flex-1" />
+        <Button type="submit" variant="default" data-testid="question-submit" disabled={unavailable || !text.trim()}><SendIcon data-icon="inline-start" aria-hidden="true" />{labels.answer}</Button>
+      </form>}
+      {live && <ItemDescription>{labels.stillWritingQuestion}</ItemDescription>}
+      {!answer && !live && <ItemDescription>{labels.answeringUnavailable}</ItemDescription>}
+      {refusal && <p role="alert" data-testid="question-refusal" className="m-0 text-sm text-destructive">{refusal}</p>}
+    </ItemFooter>}
+  </Item>;
 }

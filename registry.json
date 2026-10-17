@@ -482,7 +482,13 @@
         "trace",
         "@boring-ui/drawer",
         "button",
-        "toggle"
+        "toggle",
+        "badge",
+        "item",
+        "input",
+        "popover",
+        "code-block",
+        "drawer"
       ],
       "files": [
         {
@@ -2451,7 +2457,9 @@
         "@boring-ui/pi-chat",
         "@boring-ui/utils",
         "button",
-        "toggle"
+        "toggle",
+        "badge",
+        "item"
       ]
     },
     {

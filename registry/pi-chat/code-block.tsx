@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { CheckIcon, CopyIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { CodeBlock as Block, CodeBlockActions, CodeBlockContent, CodeBlockHeader, CodeBlockTitle } from '@/components/ui/code-block';
 import { copyText } from '../utils/utils';
 import { useChatText } from './labels';
 
@@ -25,11 +26,11 @@ export function CopyButton({ text, label: given, onCopy, className, iconOnly = f
 export function CodeBlock({ code, language, onCopy }: { readonly code: string; readonly language?: string; readonly onCopy?: (text: string) => Promise<void> }) {
   const { labels } = useChatText();
   const label = language?.trim().split(/\s+/)[0]?.slice(0, 24);
-  return <div data-testid="code-block" className="my-3 overflow-hidden rounded-lg border border-border bg-muted/40 text-foreground">
-    <div className="flex min-h-8 items-center justify-between border-b border-border bg-muted/60 pr-1 pl-3">
-      <span data-testid="code-language" className="font-mono text-xs tracking-wide text-muted-foreground lowercase">{label || 'text'}</span>
-      <CopyButton text={code} label={labels.copyCode} {...(onCopy ? { onCopy } : {})} />
-    </div>
-    <pre className="m-0 overflow-x-auto p-3 font-mono text-xs leading-5"><code>{code}</code></pre>
-  </div>;
+  return <Block data-testid="code-block" className="my-3">
+    <CodeBlockHeader>
+      <CodeBlockTitle data-testid="code-language" className="lowercase">{label || 'text'}</CodeBlockTitle>
+      <CodeBlockActions><CopyButton text={code} label={labels.copyCode} {...(onCopy ? { onCopy } : {})} /></CodeBlockActions>
+    </CodeBlockHeader>
+    <CodeBlockContent>{code}</CodeBlockContent>
+  </Block>;
 }
