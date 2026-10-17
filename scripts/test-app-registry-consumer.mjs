@@ -47,7 +47,7 @@ async function testStyle(style) {
     const union = { dependencies: pins };
     const archiveByName = packBoringDependencies(root, union, join(directory, 'packs'), run);
     const dependencies = consumerDependencies(root, union, ['typescript', '@types/react', '@types/react-dom', 'esbuild', 'shadcn', 'tailwindcss', 'happy-dom']);
-    // The consumer's real Base UI sidebar, Trace and dropdown built-ins import class-variance-authority and cn.
+    // The consumer's real Base UI Button, sidebar, Trace and dropdown built-ins import class-variance-authority and cn.
     const lockedVersion = name => { const entry = JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8')).packages[`node_modules/${name}`]; assert.ok(entry?.version, `${name} is locked`); return entry.version; };
     for (const name of ['class-variance-authority', 'cn']) dependencies[name] = lockedVersion(name);
     writeLockedManifest(root, directory, 'isolated-app-consumer', dependencies);
@@ -124,9 +124,9 @@ async function testStyle(style) {
       assert.ok(inputs.some(path => path.endsWith(`src/components/${file}`)), `the bundle uses the CLI-installed ${file}`);
     assert.deepEqual(inputs.filter(path => /@hachej\/boring-agent|pi-durable\/dist\/(storage|env)|sqlite|node:|tldraw/.test(path)), [], 'browser bundle holds no agent, storage, Node or canvas code');
     // Keep the DOM setup outside the component bundle: public Base UI modules must initialize in that DOM realm.
-    writeFileSync(join(directory, 'presentation-components.tsx'), "export { ViewerMenu, ViewerVersions } from './src/components/viewers/menu';\nexport { ConversationFiles } from './src/components/pi-chat/conversation-files';\n");
+    writeFileSync(join(directory, 'presentation-components.tsx'), "export { ViewerMenu, ViewerVersions } from './src/components/viewers/menu';\nexport { ConversationFiles } from './src/components/pi-chat/conversation-files';\nexport { FileTree } from './src/components/file-tree/file-tree';\n");
     writeFileSync(join(directory, 'dist/presentation.mjs'), readFileSync(join(root, 'test/fixtures/app-registry-presentation.mjs'), 'utf8'));
-    run(process.execPath, ['node_modules/esbuild/bin/esbuild', 'presentation-components.tsx', '--bundle', '--platform=node', '--format=esm', '--packages=external', '--jsx=automatic', '--outfile=dist/presentation-components.mjs', '--alias:@=./src'], isolated);
+    run(process.execPath, ['node_modules/esbuild/bin/esbuild', 'presentation-components.tsx', '--bundle', '--platform=node', '--format=esm', '--packages=external', '--jsx=automatic', '--outfile=dist/presentation-components.mjs', '--alias:@=./src', '--alias:@hachej/boring-ui-kit/file-tree.css=./node_modules/@hachej/boring-ui-kit/styles/file-tree.css'], isolated);
     run(process.execPath, ['dist/presentation.mjs'], isolated);
     console.log(`PASS (${style}): real pinned shadcn installation of pi-app over HTTP with its ${closure.size - 1} registry dependencies, strict declarations, browser bundle and installed menu/drawer DOM behavior; not browser geometry or gesture evidence`);
     completed = true;

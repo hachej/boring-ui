@@ -30,9 +30,9 @@ Item and file types follow the shadcn schema: the multi-file chat items are `reg
 | `pi-app` | `... add <registry>/pi-app.json` (also installs `pi-chat`, `pi-workspace` and `viewers`) | the page is a whole agent app: sessions, chat and artifact viewers in one `AgentWorkspace` (see [below](#whole-agent-app-pi-app-agentworkspace)) |
 | `app-shell` | `... add <registry>/app-shell.json` (also installs `pi-chat`, `feedback` and pinned `drawer` and `dropdown-menu` recipes plus the shadcn `sidebar` and `avatar` of your own style; add `<registry>/theme.json` too when the host has no shadcn tokens) | one agent above any app: a bottom drawer with peek, half and full on a phone, a right panel on a wide screen (see [below](#agent-layer-app-shell)) |
 
-Registry blocks support the shadcn **Base UI style only**. `base-nova` is the tested style; Radix styles are not supported. Shared viewer and chat menus use the consumer's real `@/components/ui/dropdown-menu`, declared as the bare `dropdown-menu` registry dependency of `button`. `ActionMenu` only maps actions and metadata to that component; it owns no menu positioning, focus loop or visual primitive. The consumer's shadcn component supplies the appearance and interaction. `npm run test:app-registry-consumer` installs and strictly checks Base UI, including portalled viewer/version menus and the phone files drawer. The older owned drawer and app-shell dropdown recipes remain until the separate all-block migration.
+Registry blocks support the shadcn **Base UI style only**. `base-nova` is the tested style; Radix styles are not supported. Viewer, Library and shared chat menus use the consumer's real `@/components/ui/dropdown-menu`, declared as the bare `dropdown-menu` registry dependency. `ActionMenu` only maps actions and metadata to that component; it owns no menu positioning, focus loop or visual primitive. Library also uses the consumer's real Button. The consumer's shadcn components supply appearance and interaction. `npm run test:app-registry-consumer` installs and strictly checks Base UI, including Library controls, portalled viewer/version menus and the phone files drawer. The older owned drawer and app-shell dropdown recipes remain until the separate all-block migration.
 
-Tokens: `pi-ambient`, `pi-workspace`, `pi-app`, `viewers`, `provider-setup` and `file-tree` depend on `theme` (directly or through a block), so `shadcn add` merges the tokens into the app's CSS file. `pi-chat`, `button`, `dock`, `feedback` and `app-shell` do not: they use the host's shadcn tokens (`background`, `foreground`, `muted`, `primary`, `border`, `ring`, `destructive` and the rest) and their own layout, and they install no global tokens. A host that has those tokens changes nothing. A host without them must also install `theme.json` (`npx shadcn@4.21.4 add <registry>/theme.json <registry>/<block>.json`), or those items render with semantic colours and focus styling missing (dock's resize indicator loses its colour). The blocks import `cn` from `utils` and, when they render buttons, `Button` from `button`; the CLI installs each once. File counts, taken from the items in `registry.json` (each item's files plus those of its registry dependencies; not a fresh CLI install): `pi-chat` 33 (its 29, `button` 2, `utils` 1, `drawer` 1), `pi-workspace` 36 (its two plus `dock`'s one), `pi-ambient` 39 (its three plus `pi-workspace`), `viewers` 15 (its 12, `button`, `utils`); each theme-carrying install also merges the theme tokens into the CSS file, keeping tokens the host already defines.
+Tokens: `pi-ambient`, `pi-workspace`, `pi-app`, `viewers`, `provider-setup` and `file-tree` depend on `theme` (directly or through a block), so `shadcn add` merges the tokens into the app's CSS file. `pi-chat`, `button`, `dock`, `feedback` and `app-shell` do not: they use the host's shadcn tokens (`background`, `foreground`, `muted`, `primary`, `border`, `ring`, `destructive` and the rest) and their own layout, and they install no global tokens. A host that has those tokens changes nothing. A host without them must also install `theme.json` (`npx shadcn@4.21.4 add <registry>/theme.json <registry>/<block>.json`), or those items render with semantic colours and focus styling missing (dock's resize indicator loses its colour). The blocks import `cn` from `utils` and, when they render buttons, `Button` from `button`; the CLI installs each once. File counts, taken from the items in `registry.json` (each item's files plus those of its registry dependencies; not a fresh CLI install): `pi-chat` 33 (its 29, `button` 2, `utils` 1, `drawer` 1), `pi-workspace` 36 (its two plus `dock`'s one), `pi-ambient` 39 (its three plus `pi-workspace`), `viewers` 16 (its 12, `button`, `utils`, `version-history`); each theme-carrying install also merges the theme tokens into the CSS file, keeping tokens the host already defines.
 
 `<registry>` is wherever `public/r/` is served. Items name their registry dependencies as absolute URLs of their own release (`<registry>/pi-chat.json`, `<registry>/pi-workspace.json`), so no `registries` line is needed in `components.json`. `pi-ambient` needs `pi-workspace` because the ambient window opens artifacts in the same panel layout; `pi-workspace` never needs `pi-ambient` (the host chooses to render `AmbientChat` when the chat floats). Examples: [`lab/studio`](../lab/studio/README.md) assembles every block; [`examples/ambient`](../examples/ambient/README.md) uses `pi-chat` and `pi-ambient` only.
 
@@ -415,7 +415,11 @@ Run `npm run test:task-list-registry-consumer` after building the packages. It u
 ## File tree
 
 Install `file-tree.json` for portable `FileTree` and `FileTreeView` wrappers.
-The renderer adapts shadcn `sidebar-11`; the recipe imports its scoped stylesheet.
+The renderer adapts the structure of shadcn `sidebar-11`; the recipe imports its scoped stylesheet.
+Buttons come from the consumer's `@/components/ui/button`; actions use the existing
+pinned Base UI dropdown recipe. Their look is not overridden by Library CSS.
+The package renderer takes an explicit `components` binding; these installed wrappers
+supply it, so installed consumers need no extra props.
 It can mount in a detached window without the workspace layout. Pass the concrete
 `revisionProvider` from the [files guide](../packages/files/README.md#frontend-revision-provider).
 The `pi-app` recipe accepts the same binding and supplies the tree, `@` filename
@@ -429,7 +433,7 @@ With a `revisionProvider`, `pi-app` opens Library in the artifact column by defa
 Choosing a file closes Library and opens its viewer. Opening Library asks before discarding an unsaved file.
 The chat stays mounted. `libraryPlacement="side"` retains the separate resizable column to the
 right of the viewer, with its viewer-header toggle. `libraryPlacement="center"` retains the
-center Library view and its Back to chat action.
+center Library view; its close button returns to chat.
 `libraryPlacement="pane"` shows the Library in the left pane instead: a tab beside
 the conversations, or the whole pane on a single-session page without
 `conversations` (a bot with one conversation). `agents={{ items, activeId, onSelect }}`
@@ -440,7 +444,17 @@ the panes, the viewers and the Library to French; English stays the default. The
 words are exported (`frenchChatLabels`, `frenchAppLabels`, `frenchFileTreeLabels`) and typed
 like the English ones, and `labels` / `chat.labels` still override any word.
 `fileTree={{ upload: false, history: false, refreshKey }}` hides the Library's Upload and
-History buttons and reloads it when `refreshKey` changes.
+version-history menu item and reloads it when `refreshKey` changes.
+The shared tree defaults to `variant="list"`: one title/count/upload/close row,
+inset search, 48px rows with kind and size, and Open, Version history and Download
+in a keyboard-accessible ⋯ menu. Picker and drop uploads use the existing provider.
+`variant="plain"` keeps the compact tree. These defaults apply to every Library
+placement, the file-tree recipe, Documents and the demo's popover and phone sheet.
+The count is visible loaded items, not a workspace total. The catalog supplies no
+edit date or author, so file rows show neither. The Library history panel and viewer
+version menu share relative-time, You/Agent and Current rows through `version-history`.
+Run `node examples/file-tree/journey-library.mjs` with `CHROMIUM` set for both
+consumers' light/dark and 360px browser checks.
 `AgentWorkspace` omits the chat header's duplicate History action. An IntersectionObserver sentinel loads
 older native records near the top of the same transcript in standalone, docked, embedded, page and floating
 chats. Older messages use the normal bubbles, Markdown, Trace and file cards, not a separate read-only

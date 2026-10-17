@@ -12,11 +12,11 @@ import type { FileEntry, RevisionProvider } from '@hachej/boring-files/revision'
 import { createFileTreeController } from '@hachej/boring-ui-kit/file-tree';
 import { randomUUID } from '@hachej/boring-files/platform';
 import type { FileTreeController } from '@hachej/boring-ui-kit/file-tree';
-import { FileTreeView } from '@hachej/boring-ui-kit/file-tree-view';
+import { FileTreeView } from '../file-tree/file-tree';
 import { frenchAppLabels } from './app-labels-fr';
 import { chatTextFor } from '../pi-chat/locale';
 import type { ChatLocale } from '../pi-chat/locale';
-import type { FileTreeViewProps } from '@hachej/boring-ui-kit/file-tree-view';
+import type { FileTreeViewProps } from '../file-tree/file-tree';
 import type { ResourceIdentity } from '@hachej/boring-files/remote';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { PiChat, artifactKey } from '../pi-chat/pi-chat';
@@ -48,7 +48,7 @@ export type { CustomViewerProps, CustomViewers, SavedRevision, ViewerOptions } f
 export { FileViewer } from './file-viewer';
 export { SessionsPane, SessionsToggle } from './sessions';
 export { ConversationList, ConversationHistory } from '../pi-chat/history';
-export { FileTree } from '@hachej/boring-ui-kit/file-tree-view';
+export { FileTree } from '../file-tree/file-tree';
 export type { SessionsView, WorkspaceAgent, WorkspaceAgents } from './sessions';
 export { useConversations } from './use-conversations';
 export { useRemoteChat } from '../pi-chat/use-remote-chat';
@@ -422,8 +422,8 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   useEffect(() => { if (!narrow) setDrawer(false); }, [narrow]);
   const toggleSide = useCallback(() => setSideOpen(!sideOpen), [setSideOpen, sideOpen]);
   // The Library tree, one view for the side column, the center and the pane; `onOpen` is what choosing a file does there.
-  const libraryTree = (onOpen: (path: string) => void) => fileTree
-    ? <FileTreeView variant={libraryPlacement === 'panel' ? 'list' : 'plain'} refresh={libraryPlacement !== 'panel'} className={libraryPlacement === 'panel' ? '[&_input[type=search]]:pl-9! [&_input[type=search]]:min-h-11 [&_button]:min-h-11' : undefined} key={JSON.stringify([revisionProvider?.workspace, revisionProvider?.identity])} {...(locale ? { locale } : {})} {...viewOptions} controller={fileTree} historyKey={feed.seq} onOpen={onOpen} {...(isFile(opened) ? { selectedPath: opened.path } : {})} />
+  const libraryTree = (onOpen: (path: string) => void, onClose?: () => void) => fileTree
+    ? <FileTreeView variant="list" refresh={libraryPlacement !== 'panel'} title={text.labels.library} {...(onClose ? { onClose } : {})} key={JSON.stringify([revisionProvider?.workspace, revisionProvider?.identity])} {...(locale ? { locale } : {})} {...viewOptions} controller={fileTree} historyKey={feed.seq} onOpen={onOpen} {...(isFile(opened) ? { selectedPath: opened.path } : {})} />
     : <p role="status" className="m-0 p-3 text-sm text-muted-foreground">{treeOptions?.labels?.loading ?? text.labels.loading}</p>;
   const hasNavigation = sessions !== false && Boolean(conversations || revisionProvider);
   const docked = hasNavigation && width > 0 && !narrow && !collapsed;
@@ -485,13 +485,11 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
         floatingChat={floatingChat && chatProps ? floatingChat(chatProps, layout.dock) : undefined}
         // With the Library in the pane, the center holds only the chat (no second, hidden toggle or tree).
         library={libraryInPane || librarySide || libraryPlacement === 'panel' ? null : <section data-testid="workspace-library-view" aria-label={text.labels.library} className="flex min-h-0 flex-1 flex-col">
-          <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">{toggle}<h2 className="m-0 flex-1 text-sm font-semibold">{text.labels.library}</h2>
-            <Button variant="ghost" size="sm" data-testid="workspace-chat-link" onClick={() => setCenterMode('chat')}>{text.labels.backToChat}</Button></header>
-          <div className="min-h-0 flex-1 overflow-auto">{libraryTree(openFile)}</div>
+          <div className="min-h-0 flex-1 overflow-auto">{libraryTree(openFile, () => setCenterMode('chat'))}</div>
         </section>} />}
       panel={win => <ViewerWindowProvider value={{ fullscreen: win.fullscreen, onFullscreenChange: win.onFullscreenChange, actions: actionsFor(win.floatChat), labels: text.labels, icons: text.icons }}>
         <div data-testid="viewer-panel" data-kind={kind} className="flex min-h-0 flex-1 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1">
-          {panelLibrary ? <section data-testid="workspace-library-side" aria-label={text.labels.library} className="flex min-h-0 flex-1 flex-col"><header className="flex h-13 items-center gap-2 px-3"><Button size="icon-sm" variant="ghost" aria-label={text.labels.close} onClick={() => setPanelLibrary(false)}><text.icons.closeSessions className="size-4" aria-hidden="true" /></Button><h2 className="m-0 text-sm font-medium">{text.labels.library}</h2></header><div className="min-h-0 flex-1 overflow-auto">{libraryTree(openFile)}</div></section> : active
+          {panelLibrary ? <section data-testid="workspace-library-side" aria-label={text.labels.library} className="flex min-h-0 flex-1 flex-col"><div className="min-h-0 flex-1 overflow-auto">{libraryTree(openFile, () => setPanelLibrary(false))}</div></section> : active
             ? <ArtifactPanel key={artifactKey(active.descriptor)} active={active} versions={newestOf(artifactKey(active.descriptor))} options={options} onClose={win.close}
                 onSelect={value => {
                   const known = newestOf(artifactKey(active.descriptor));
@@ -504,13 +502,11 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
       labels={{ region: text.labels.library, resize: text.labels.resizePanel }} className="border-l border-border">
       {api => <section data-testid="workspace-library-side" aria-label={text.labels.library} className="flex min-h-0 flex-1 flex-col">
         <WidthProbe width={api.width} onWidth={setLibraryWidth} />
-        <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2"><h2 className="m-0 min-w-0 flex-1 truncate text-sm font-semibold">{text.labels.library}</h2>
-          <Button size="icon-sm" variant="ghost" aria-label={text.labels.close} title={text.labels.close} data-testid="workspace-library-close" onClick={() => setSideOpen(false)}><text.icons.closeSessions className="size-4" aria-hidden="true" /></Button></header>
-        <div className="min-h-0 flex-1 overflow-auto">{libraryTree(path => { void setOpened({ kind: 'file', path }).then(opened => { if (opened && narrow) setSideOpen(false); }); })}</div>
+        <div className="min-h-0 flex-1 overflow-auto">{libraryTree(path => { void setOpened({ kind: 'file', path }).then(opened => { if (opened && narrow) setSideOpen(false); }); }, () => setSideOpen(false))}</div>
       </section>}
     </Dock>}
     </DockLayout>
-    {panelLibrary && narrow && <Drawer open showSwipeHandle onOpenChange={next => { if (!next) setPanelLibrary(false); }}><DrawerContent aria-label={text.labels.library} className="pi-chat h-[80dvh] pb-[env(safe-area-inset-bottom)] duration-200 motion-reduce:transition-none"><DrawerTitle className="px-5 py-3">{text.labels.library}</DrawerTitle><div data-testid="workspace-library-side" className="min-h-0 flex-1 overflow-auto">{libraryTree(openFile)}</div></DrawerContent></Drawer>}
+    {panelLibrary && narrow && <Drawer open showSwipeHandle onOpenChange={next => { if (!next) setPanelLibrary(false); }}><DrawerContent aria-label={text.labels.library} className="pi-chat h-[80dvh] pb-[env(safe-area-inset-bottom)] duration-200 motion-reduce:transition-none"><DrawerTitle className="sr-only">{text.labels.library}</DrawerTitle><div data-testid="workspace-library-side" className="min-h-0 flex-1 overflow-auto">{libraryTree(openFile, () => setPanelLibrary(false))}</div></DrawerContent></Drawer>}
   </div></ChatTextProvider></AppTextProvider>;
 }
 

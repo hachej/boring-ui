@@ -210,6 +210,17 @@ These additions do not complete global workspace or release qualifications.
 
 ### Portable Library tree
 
+The shared `FileTreeView` list defaults to an inset search, 48px kind/size rows,
+visible-item count, accessible file actions and picker/drop uploads. It uses the
+existing revision provider, not a Pi extension or a second file service. Public
+DOM coverage is in `test/ui/file-tree.mjs`; live invalidation remains covered by
+`test/ui/change-feed.test.mjs`. `node examples/file-tree/journey-library.mjs` drives
+the standalone app and workspace demo in Chromium, including empty/drop publication,
+exact downloaded bytes, nested-menu Escape/focus, version history, light/dark and
+360px geometry. `npm run file-tree:journey` includes that journey in the blocking
+browser CI job, which uploads its screenshots with the file-tree evidence. Screenshots
+are under `.cache/evidence/library/`. Physical devices remain unqualified.
+
 The [UI guide](../../packages/ui/README.md#file-tree-and-filename-mentions) owns
 standalone/detached tree use and the default Library navigation. The renderer
 adapts pinned shadcn `sidebar-11` with packaged scoped CSS. UI public-output tests
@@ -237,4 +248,4 @@ The shared blocks now default to a 260px navigation pane, search disclosure, con
 
 `workspace-app:journey` checks control alignment in the empty and one-line composer, the conversation-file popover and phone sheet, one sidebar toggle, title renaming, no default connection badge, disabled empty Send, composer placement before and after a message, width changes without clipping an existing draft, phone header geometry, source editing from overflow, retained scroll, focus restoration, Escape, and browser Back at 360px. `test/packages/ui-markdown-editor.test.mjs` drives the public editor's selection and pinned modes, including phone behavior. Viewer, Library, and acknowledgement DOM tests run in separate processes because Base UI retains document-scoped event state. Screenshots are under `.cache/evidence/chat-ux/`. The specified headless shell has no native PDF plug-in, so PDF evidence shows its download fallback. Physical soft keyboards and real-device swipe behavior remain unqualified. Retry/regeneration remains a host-provided message action; opening a new tab remains capability-gated rather than inventing a host route. The canvas journeys exercise content stacking beneath the portalled viewer menus.
 
-The isolated app consumer checks strict types and installed menu/version/drawer behavior in shadcn Base UI `base-nova` only. Viewer and shared chat menus use the consumer's real dropdown-menu built-in. Radix styles are unsupported. `test/ui/chat-earlier-records.test.mjs` drives native persisted-record loading in headerless PiChat, default AgentWorkspace, floating AmbientChat and embedded AmbientChat without restoring records to model context. The workspace-app journey covers same-file Library reselect and repeated declined browser Back with a retained dirty draft; the app-shell journey checks that keyboard compensation is applied once.
+The isolated app consumer checks strict types and installed menu/version/drawer behavior in shadcn Base UI `base-nova` only. Viewer, Library and shared chat menus use the consumer's real dropdown-menu built-in; Library buttons use its real Button. Viewer menus and Library panels share version-history rows showing time, provenance and Current. Package renderer callers supply an explicit presentation binding; installed wrappers do so automatically. Radix styles are unsupported. `test/ui/chat-earlier-records.test.mjs` drives native persisted-record loading in headerless PiChat, default AgentWorkspace, floating AmbientChat and embedded AmbientChat without restoring records to model context. The workspace-app journey covers same-file Library reselect and repeated declined browser Back with a retained dirty draft; the app-shell journey checks that keyboard compensation is applied once.
