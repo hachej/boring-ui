@@ -22,7 +22,7 @@ const viewing = `${q('[data-testid=viewing]')}?.textContent`;
 const app = await startWorkspaceDemo({ directory: mkdtempSync(join(tmpdir(), 'boring-workspace-demo-')) });
 const { connectRevisionProvider } = await import('@hachej/boring-files/revision');
 const reader = await connectRevisionProvider({ endpoint: new URL('/api/resources', app.url), fetch: request => { const headers = new Headers(request.headers); headers.set('authorization', `Bearer ${app.token}`); return fetch(new Request(request, { headers })); } });
-let browser;
+let browser, policyDraft, createdDraft;
 try {
   browser = await launch(insecureUrl(app.url), { evidence });
   if (process.env.APP_SCHEME) await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: process.env.APP_SCHEME }] });
@@ -327,19 +327,19 @@ try {
     const tools = await browser.evaluate(`[...document.querySelectorAll('[data-testid=tool-name]')].map(item => item.textContent.trim()).join(' ')`);
     assert.ok(/read/.test(tools) && /get_invoice/.test(tools), `the agent read the document and the invoice: ${tools}`);
     await browser.screenshot('4-policy.png');
-    // The document is editable: leaving it with an unsaved edit asks first, and declining keeps the document and the edit.
     await browser.click(q('[data-testid=library-document] [data-testid$=-mode-source]'));
-    await browser.type(q('[data-testid=library-document] textarea.boring-markdown-source'), ' Draft edit.');
-    await browser.until('the edit is unsaved', `/Unsaved/.test(${q('[data-testid=library-document] [data-testid=viewer-bar]')}.innerText)`, 10000);
-    await browser.evaluate(`window.__asked = 0; window.confirm = () => { window.__asked++; return false; }`);
-    await browser.click(q('[data-testid=library-document] [data-testid=viewer-close]'));
-    await pause(300);
-    assert.equal(await browser.evaluate('window.__asked'), 1, 'leaving asked once');
-    assert.equal(await browser.evaluate(`${q('[data-testid=library-document]')}?.dataset.path`), 'Policies/AP policy.md', 'declining stays on the document');
-    assert.ok((await browser.evaluate(`${q('[data-testid=library-document] textarea.boring-markdown-source')}.value`)).includes('Draft edit.'), 'the edit is still there');
-    await browser.evaluate(`window.confirm = () => true`);
+    await browser.type(q('[data-testid=library-document] textarea.boring-markdown-source'), '\n\nFictional autosaved policy note.\n');
+    policyDraft = await browser.evaluate(`${q('[data-testid=library-document] textarea.boring-markdown-source')}.value`);
+    await browser.until('the policy autosaved', `${q('[data-testid=library-document] [data-testid=viewer-status]')}?.textContent === 'Saved'`, 10000);
+    assert.equal(new TextDecoder().decode((await reader.read({ target: reader.locate('Policies/AP policy.md'), revision: { kind: 'latest' } })).snapshot.bytes), policyDraft);
+    assert.equal(await browser.evaluate(`!!${q('[data-testid=library-document] [data-testid=viewer-save]')}`), false);
+    await browser.type(q('[data-testid=library-document] textarea.boring-markdown-source'), 'Flushed before closing.\n');
+    policyDraft = await browser.evaluate(`${q('[data-testid=library-document] textarea.boring-markdown-source')}.value`);
+    await browser.evaluate(`window.__asked = 0; window.__confirm = window.confirm; window.confirm = () => { window.__asked++; return false; }`);
     await browser.click(q('[data-testid=library-document] [data-testid=viewer-close]'));
     await browser.until('the viewer closed, the agent area is narrow again', `!${q('[data-testid=library-document]')} && ${rect('[data-dock=chat]')}.w < 800`, 5000);
+    assert.equal(await browser.evaluate('window.__asked'), 0, 'a successful close flush needs no discard prompt');
+    await browser.evaluate('window.confirm = window.__confirm');
     await browser.click(q('[data-testid=nav-approvals]'));
     await browser.until('Approvals', `${viewing} === 'Approvals'`, 5000);
   });
@@ -405,6 +405,11 @@ try {
     const versions = await reader.history('tt.md');
     assert.ok(versions.length >= 1 && versions.every(version => version.source === 'agent'), `history entries are the agent's: ${JSON.stringify(versions)}`);
     assert.equal((await app.ap.read('INV-2043')).status, 'pending', 'a file write is not an invoice decision');
+    await browser.click(q('[data-testid=library-document] [data-testid=viewer-mode-source]'));
+    await browser.type(q('[data-testid=library-document] textarea'), '\n\nFictional human review.\n');
+    createdDraft = await browser.evaluate(`${q('[data-testid=library-document] textarea')}.value`);
+    await browser.until('the created file autosaved', `${q('[data-testid=library-document] [data-testid=viewer-status]')}?.textContent === 'Saved'`, 10000);
+    assert.equal(new TextDecoder().decode((await reader.read({ target: reader.locate('tt.md'), revision: { kind: 'latest' } })).snapshot.bytes), createdDraft);
     const card = q('[data-testid=reply-files] [data-testid=message-mention][data-path="tt.md"]');
     await browser.until('a Created file card outside the collapsed activity', `${card}?.innerText.includes('Created')`, 10000);
     assert.equal(await browser.evaluate(`document.querySelectorAll('[data-testid=reply-files] [data-path="tt.md"]').length`), 1);
@@ -446,7 +451,7 @@ try {
     stop.abort();
   });
 
-  await step('d3 docked, a PDF opens as an inset card inside the agent panel (a column of the chat, no hard divider) and closing gives the width back', async () => {
+  await step('d3 docked, a PDF opens as an inset card with a visible resize seam and closing gives the width back', async () => {
     const before = (await browser.evaluate(rect('[data-dock=chat]'))).w;
     await library();
     await browser.click(q('[role=treeitem][data-path="Contracts"]'));
@@ -457,7 +462,7 @@ try {
     const card = await browser.evaluate(`(() => { const panel = document.querySelector('[data-testid=workspace-panel]'), dock = document.querySelector('[data-dock=chat]').getBoundingClientRect(), chat = document.querySelector('[data-boring=pi-chat]').getBoundingClientRect(), r = panel.getBoundingClientRect(), style = getComputedStyle(panel);
       return { top: r.top - dock.top, bottom: dock.bottom - r.bottom, right: dock.right - r.right, gap: r.left - chat.right, radius: parseFloat(style.borderTopLeftRadius), borderLeft: parseFloat(style.borderLeftWidth), divider: getComputedStyle(document.querySelector('[data-testid=workspace-divider] span')).backgroundColor }; })()`);
     assert.ok(card.top >= 4 && card.bottom >= 4 && card.right >= 4 && card.radius >= 8, `an inset rounded card inside the panel: ${JSON.stringify(card)}`);
-    assert.ok(/rgba\(0, 0, 0, 0\)|transparent/.test(card.divider), `no visible divider between the chat and the card: ${card.divider}`);
+    assert.doesNotMatch(card.divider, /rgba\(0, 0, 0, 0\)|transparent/, `a visible divider separates chat and card: ${card.divider}`);
     await coherentHeader();
     await shot('9-docked-pdf.png');
     await browser.evaluate(`window.__openDocument = ${q('[data-testid=library-document]')}; window.__fileComposer = ${INPUT}; void 0;`);
@@ -661,6 +666,24 @@ try {
         if (['dashboard', 'approvals', 'invoices', 'payments', 'suppliers'].includes(screen)) assert.equal(await browser.evaluate(`[...document.querySelectorAll('[data-testid=screen-${screen}] table')].some(table => table.scrollWidth > table.parentElement.clientWidth)`), false, `${screen} table fits the phone width`);
         await shot(`${screen}-${scheme}-390x844.png`);
       }
+    }
+  });
+  await step('autosaved policy and created file survive reload with desktop and phone Markdown defaults', async () => {
+    await browser.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+    await browser.reload();
+    await browser.until('the reloaded chat is live', `!!${INPUT} && !${INPUT}.disabled`, 20000);
+    for (const [path, persisted] of [['Policies/AP policy.md', policyDraft], ['tt.md', createdDraft]]) {
+      await library(); await choosePolicyWithKeyboard(path);
+      await browser.until('reloaded markdown source is available', `!!${q('[data-testid=library-document] [data-testid=viewer-mode-source]')}`, 15000);
+      assert.equal(await browser.evaluate(`!!${q('[data-testid=library-document] .boring-markdown-toolbar')}`), true, 'desktop toolbar starts pinned');
+      await browser.click(q('[data-testid=library-document] [data-testid=viewer-mode-source]'));
+      await browser.until('the persisted text after reload', `${q('[data-testid=library-document] textarea')}?.value === ${JSON.stringify(persisted)}`, 10000);
+      await browser.click(q('[data-testid=library-document] [data-testid=viewer-mode-rich]'));
+      if (path === 'tt.md') {
+        for (const scheme of ['light', 'dark']) { await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }); await pause(200); await shot(`markdown-demo-desktop-${scheme}.png`); }
+      }
+      await browser.click(q('[data-testid=library-document] [data-testid=viewer-close]'));
+      await browser.until('reloaded document closed', `!${q('[data-testid=library-document]')}`, 5000);
     }
   });
   assert.deepEqual(browser.problems, [], 'no page errors');

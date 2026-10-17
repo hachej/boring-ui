@@ -252,7 +252,7 @@ export function createNativeChatController(options: NativeChatOptions) {
           }
           const cursor = page.next === undefined ? undefined : structuredClone(page.next);
           historyScan = { maxEntryId: scan.maxEntryId, ...(cursor === undefined ? {} : { cursor }), ...(previousId === undefined ? {} : { lastId: previousId }) };
-          publish({ history: { kind: 'ready', entries: Object.freeze([...page.items].reverse()), hasMore: cursor !== undefined } });
+          publish({ history: { kind: 'ready', entries: Object.freeze([...page.items].reverse().concat(entries)), hasMore: cursor !== undefined } });
         } catch (error) {
           if (current()) publish({ history: { kind: 'error', entries, hasMore: true, error } });
         } finally { if (historyGeneration === generation) historyPending = undefined; }

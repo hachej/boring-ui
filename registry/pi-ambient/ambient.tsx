@@ -276,7 +276,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
 
   // Replies get copy, optional feedback and the time; the host may hand the conversation to its full chat.
   const conversationRef = useRef('');
-  const replyActions = useMemo<NonNullable<RowContext['replyActions']>>(() => (reply, host) => <div data-testid="reply-actions" className="mt-2 -ml-2 flex items-center gap-0.5 text-muted-foreground">
+  const replyActions = useMemo<NonNullable<RowContext['replyActions']>>(() => (reply, host) => <div data-testid="reply-actions" className="mt-2 -ml-2 flex items-center gap-0.5 text-muted-foreground opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 max-sm:opacity-100 pointer-coarse:opacity-100 motion-reduce:transition-none">
     <CopyButton text={reply.text} label={labels.copyResponse} iconOnly {...(onCopy ? { onCopy } : {})} className="size-8 p-0 text-muted-foreground max-sm:size-11" />
     {onFeedback && <>
       {(['up', 'down'] as const).map(value => <button key={value} type="button" data-testid={`feedback-${value}`} aria-pressed={feedback[reply.key] === value} aria-label={value === 'up' ? labels.goodResponse : labels.badResponse}
@@ -301,15 +301,15 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
   }, [inWindow, hostArtifacts, opened, detect]);
   const session = useChatSession({ controller, activeController, mode, actions, renderEntry, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept,
     slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => scrollToBottom.current(), rowExtras, feedback: composerFeedback, onOpenFile, fileChanges, pasteToFile, composerChips });
-  const { state, derived, rows, queued, queueActions, working, waitingForAnswer, connected, developer, error, act, textarea, rowContext, composer, files, loading } = session;
-  const empty = session.empty && (state.history.kind === 'disabled' || state.history.kind === 'idle');
-  const transcript = useTranscript(rows);
+  const { state, derived, rows, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, files, loading } = session;
+  const empty = session.empty;
+  const transcript = useTranscript(rows, 60, 40, { state: state.history, connected: !state.disposed && connected, load: controller.loadEarlier });
   const versions = useMemo(() => inWindow ? collectArtifacts(state.view, detect).sort((a, b) => (b.ordinal ?? 0) - (a.ordinal ?? 0)) : [], [inWindow, state.view, detect]);
   versionsRef.current = versions;
   const known = opened ? versions.filter(version => artifactKey(version) === artifactKey(opened.descriptor)) : [];
   const shownArtifact = opened ? (opened.follow ? known[0] ?? opened.descriptor : opened.descriptor) : undefined;
   const { stick, hidden } = transcript;
-  scrollToBottom.current = () => { void stick.scrollToBottom('instant'); };
+  scrollToBottom.current = () => { transcript.reset(); void stick.scrollToBottom('instant'); };
   const { barStart, barNote } = session.pickers();
 
   const conversationId = String(conversations?.activeId ?? state.conversationId);
@@ -459,11 +459,10 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
           {!state.disposed && <Button size="sm" variant="outline" onClick={() => act(controller.connect)}><icons.reconnect className="size-3.5" aria-hidden="true" />{labels.reconnect}</Button>}</Notice></div>}
         {derived.pinned.length > 0 && <aside aria-label={labels.requiredActions} className="shrink-0 space-y-2 px-4 pb-2">{derived.pinned.map(card => <div key={card.key}>{card.content}</div>)}</aside>}
         <div className="relative flex min-h-0 flex-1 flex-col">
-          <div ref={stick.scrollRef} data-testid="transcript-scroll" className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
+          <div ref={stick.scrollRef} data-testid="transcript-scroll" className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain [overflow-anchor:none]">
             <div ref={stick.contentRef}>
-              <TranscriptHistory history={state.history} developer={developer} replyFooter={replyFooter} connected={!state.disposed && connected} onLoad={() => { stick.stopScroll(); act(controller.loadEarlier); }} onClose={() => { if (!state.disposed) controller.clearHistory(); }} />
               <div role="log" aria-label={labels.messages} aria-live="polite" data-testid="transcript" className="flex min-h-28 flex-col gap-6 px-4 pt-4 pb-6">
-                {hidden > 0 && <div className="flex justify-center"><Button size="sm" variant="outline" data-testid="show-earlier" className="text-muted-foreground" onClick={transcript.reveal}>{labels.showEarlier}</Button></div>}
+                {!empty && <TranscriptHistory history={state.history} connected={!state.disposed && connected} onLoad={transcript.reveal} sentinelRef={transcript.sentinelRef} hidden={hidden} loaded={transcript.loaded} />}
                 {visibleRows.map(row => <RowView key={row.key} row={row} context={rowContext} />)}
                 {loading && <p role="status" data-testid="loading" className="m-0 flex items-center gap-2 text-sm text-muted-foreground"><Loader2Icon className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />{labels.loading}</p>}
                 {empty && !loading && <p data-testid="ambient-empty" className="m-0 max-w-sm py-8 text-sm leading-6 text-muted-foreground">{labels.empty}</p>}

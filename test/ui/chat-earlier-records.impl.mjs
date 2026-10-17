@@ -46,14 +46,30 @@ test('transcript history loads real persisted native records without restoring t
     await act(async () => root.render(render()));
     const load = element.querySelector('[data-testid=transcript-history-load]');
     assert.ok(load && !load.disabled, `${label}: persisted records have a transcript-top control`);
+    assert.ok(load.classList.contains('sr-only'), 'the accessible loading control is not a visible toolbar');
     assert.equal(element.querySelector('[data-testid=history-open]'), null, `${label}: no duplicate header History is needed`);
     await act(async () => load.click());
     for (let attempt = 0; attempt < 100 && !element.textContent.includes('Archived fictional notebook'); attempt++) await act(async () => new Promise(resolve => setTimeout(resolve, 5)));
-    assert.match(element.querySelector('[data-testid=transcript-history]').textContent, /Archived fictional notebook/);
+    assert.match(element.querySelector('[data-testid=transcript]').textContent, /Archived fictional notebook/);
+    assert.equal(element.querySelector('[data-testid=history]'), null, 'there is no separate earlier-messages panel');
+    assert.ok(element.querySelector('[data-testid=transcript] [data-role=user] [data-testid=user-text]'), 'older messages use the normal user bubble');
     assert.deepEqual(controller.getSnapshot().view.entries.map(entry => entry.id), activeIds, 'reading history never changes active model context');
     assert.equal(controller.getSnapshot().history.kind, 'ready');
     assert.equal(element.querySelector('[data-empty=centered], [data-testid=ambient-empty]'), null, 'the empty greeting does not cover archived records');
     await act(async () => root.render(null));
     assert.equal(controller.getSnapshot().disposed, false, 'presentation borrows the native controller');
+  });
+  await t.test('a partial active-row batch announces only the messages actually revealed', async () => {
+    controller.clearHistory();
+    await act(async () => {
+      for (let index = 0; index < 75; index++) await conversation.submit({ type: 'write', entry: { kind: 'fictional.active', model: [{ role: 'user', content: `Fictional current message ${index}`, timestamp: 0 }] } }, context);
+      root.render(createElement(PiChat, { controller, header: false }));
+    });
+    const count = () => element.querySelectorAll('[data-testid=transcript] [data-row-id]').length;
+    const before = count();
+    await act(async () => element.querySelector('[data-testid=transcript-history-load]').click());
+    const revealed = count() - before;
+    assert.ok(revealed > 0 && revealed < 40, 'the last local page is smaller than the normal batch');
+    assert.equal(element.querySelector('[data-testid=transcript-history] [role=status]').textContent, `${revealed} earlier messages loaded`);
   });
 });

@@ -141,8 +141,12 @@ test('file tree renders in StrictMode, expands by keyboard and reads history wit
   const f = fixture(t, { list: async ({ directory }) => ({ entries: directory ? [entry('docs/note.md')] : [{ path: 'docs', kind: 'directory', size: 0 }] }) });
   const seed = await f.controller.upload({ path: 'docs/note.md', bytes: new TextEncoder().encode('Original fictional version'), mediaType: 'text/markdown' });
   const ref = seed.state.result.receipt.changes[0].after;
-  await f.controller.upload({ path: 'docs/note.md', bytes: new TextEncoder().encode('New fictional version'), replace: ref, mediaType: 'text/markdown' });
-  f.binding.history = async () => [{ revision: ref.revision, savedAt: 1 }];
+  const latest = await f.controller.upload({ path: 'docs/note.md', bytes: new TextEncoder().encode('New fictional version'), replace: ref, mediaType: 'text/markdown' });
+  const latestRef = latest.state.result.receipt.changes[0].after;
+  f.binding.history = async () => [
+    { revision: latestRef.revision, savedAt: Date.now() - 120000, source: 'publish' },
+    { revision: ref.revision, savedAt: Date.now() - 300000, source: 'agent' },
+  ];
   const element = window.document.createElement('div'); window.document.body.append(element); const root = createRoot(element);
   t.after(async () => {
     await act(async () => root.unmount()); await window.happyDOM.close();
@@ -173,8 +177,18 @@ test('file tree renders in StrictMode, expands by keyboard and reads history wit
   const historyAction = window.document.querySelector('[role=menuitem][data-action=history]');
   assert.equal(historyAction?.textContent, 'Version history');
   await act(async () => historyAction.click());
-  const version = element.querySelector('section[aria-label="History of docs/note.md"] button[aria-pressed]'); assert.ok(version);
-  await act(async () => version.click());
+  const historyPanel = element.querySelector('section[aria-label="History of docs/note.md"]'); assert.ok(historyPanel);
+  assert.match(historyPanel.textContent, /2 min ago/);
+  assert.match(historyPanel.textContent, /You/);
+  assert.match(historyPanel.textContent, /5 min ago/);
+  assert.match(historyPanel.textContent, /Agent/);
+  assert.doesNotMatch(historyPanel.textContent, new RegExp(`${ref.revision.slice(0, 8)}|${latestRef.revision.slice(0, 8)}`), 'revision hashes stay out of human version rows');
+  const versions = historyPanel.querySelectorAll('button[aria-pressed]');
+  assert.equal(versions.length, 2);
+  assert.match(versions[0].textContent, /Current/);
+  await act(async () => versions[1].click());
+  assert.match(versions[1].textContent, /Current/, 'Current follows the displayed read-only revision, like the viewer version menu');
+  assert.doesNotMatch(versions[0].textContent, /Current/);
   for (let attempt = 0; attempt < 100 && !element.querySelector('[data-testid=file-history-preview]'); attempt++) {
     await act(async () => new Promise(resolve => setTimeout(resolve, 10)));
   }

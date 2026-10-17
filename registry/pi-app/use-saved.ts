@@ -19,21 +19,29 @@ export type SavedState<C extends SavedController> =
  * edits) or one exact revision read once. `create` may return a viewer controller for each saved snapshot; it is disposed when
  * a newer revision replaces it and on unmount.
  */
-export function useSaved<C extends SavedController = SavedController>({ client, target, revision, create }: {
+export function useSaved<C extends SavedController = SavedController>({ client, target, revision, create, beforeDispose }: {
   readonly client: ResourceClient;
   readonly target: ResourceLocator;
   readonly revision?: string | undefined;
   readonly create?: ((snapshot: ResourceSnapshot) => C) | undefined;
+  /** Owner teardown may wait for an editor's final conditional flush. Unsubscribe remains synchronous. */
+  readonly beforeDispose?: ((controller: C) => Promise<unknown> | undefined) | undefined;
 }): SavedState<C> {
   const key = JSON.stringify([target.resource.providerId, target.resource.path, target.view.kind, target.view.kind === 'working' ? target.view.viewId : null, revision]);
-  const binding = useMemo(() => ({ client, key, create }), [client, key]); // eslint-disable-line react-hooks/exhaustive-deps
-  useLayoutEffect(() => { binding.create = create; }, [binding, create]);
+  const binding = useMemo(() => ({ client, key, create, beforeDispose }), [client, key]); // eslint-disable-line react-hooks/exhaustive-deps
+  useLayoutEffect(() => { binding.create = create; binding.beforeDispose = beforeDispose; }, [binding, create, beforeDispose]);
   const [stored, setStored] = useState<{ readonly binding: typeof binding; readonly state: SavedState<C> }>();
   useEffect(() => {
     let cancelled = false, reading = false;
     let state: SavedState<C> = { kind: 'loading' };
     const update = (next: SavedState<C>) => { state = next; setStored({ binding, state }); };
     update(state);
+    const release = (controller: C | undefined) => {
+      if (!controller) return;
+      const flushing = binding.beforeDispose?.(controller);
+      if (flushing) void flushing.finally(() => controller.dispose()).catch(() => {});
+      else controller.dispose();
+    };
     const follow = async () => {
       if (cancelled || reading) return;
       const now = state;
@@ -50,7 +58,7 @@ export function useSaved<C extends SavedController = SavedController>({ client, 
       if (now.kind === 'open') {
         if (now.snapshot.ref.revision === read.snapshot.ref.revision) return;
         if (local?.base?.kind === 'revision' && (local.base.target as { readonly revision?: string } | undefined)?.revision === read.snapshot.ref.revision) return;
-        now.controller?.dispose();
+        release(now.controller);
       }
       const text = readText(read.snapshot.bytes);
       if (text === undefined) { update({ kind: 'invalid' }); return; }
@@ -60,7 +68,7 @@ export function useSaved<C extends SavedController = SavedController>({ client, 
     };
     void follow();
     const timer = revision ? undefined : setInterval(() => { void follow(); }, POLL_MS);
-    return () => { cancelled = true; clearInterval(timer); state.controller?.dispose(); };
+    return () => { cancelled = true; clearInterval(timer); release(state.controller); };
   }, [binding]); // eslint-disable-line react-hooks/exhaustive-deps
   return stored?.binding === binding ? stored.state : { kind: 'loading' };
 }

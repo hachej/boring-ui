@@ -36,7 +36,13 @@ import { MarkdownEditor } from '@hachej/boring-ui-kit/markdown-editor';
 
 Install the pinned React, React DOM, Marked and Tiptap peers listed in this package's manifest when selecting this entry. They remain optional for headless consumers. The renderer borrows its controller; unmounting does not dispose it or close its resource client. The host owns selection, identity and teardown.
 
-Formatting defaults to a native Tiptap selection bubble. `formattingToolbar="pinned"` retains the full desktop toolbar; the Aa header control also pins it. Phones always use the selection bubble. Keyboard shortcuts and Markdown input rules remain available. Rich formatting and Markdown source controls share controller state. Mounting, switching modes and projecting remote text never serialize the original buffer. Genuine rich edits use Tiptap's Markdown serialization and may normalize supported formatting. Save and Ctrl/Cmd+S capture the exact controller selection. Proposal review shows added/removed lines with two lines of context and expandable unchanged runs. It preserves exact line endings and marks a missing final newline. An inner details panel retains exact before/after text. Accept and save delegates to the controller; reviewing or expanding context never publishes. Conflict and unknown outcomes expose explicit discard or reconciliation controls.
+Formatting defaults to the pinned desktop toolbar. The Aa header control toggles it; `formattingToolbar="selection"` selects the native Tiptap selection bubble instead. Phones always use the selection bubble. Keyboard shortcuts and Markdown input rules remain available. Rich formatting and Markdown source controls share controller state. Mounting, switching modes and projecting remote text never serialize the original buffer. Genuine rich edits use Tiptap's Markdown serialization and may normalize supported formatting.
+
+Autosave is enabled by default after 1200ms of idle editing and flushes on blur and page hide through the existing conditional `controller.flush`. Untouched new buffers are not automatically published. `autosave={false}` restores explicit Save; `autosave={{ delayMs: 500 }}` changes the idle delay. Ctrl/Cmd+S always saves the exact selected buffer explicitly. Refused, conflicting and unconfirmed saves retain the draft and pause automatic retries until resolved.
+
+Use `onAutosaveChange` to register the mounted flush barrier. Await that flush before closing, unmounting or disposing the controller. If it returns false, keep the editor mounted with its refusal/conflict UI unless a real host navigation guard obtains deliberate discard consent. Internal flush registration is not a discard guard. Unmount cleanup and browser page hide are best effort, not substitutes for awaiting the owner teardown barrier. See the [registry recipes](../../registry/README.md) for `MarkdownPane`, viewer-window policy and navigation integration.
+
+Proposal review shows added/removed lines with two lines of context and expandable unchanged runs. It preserves exact line endings and marks a missing final newline. An inner details panel retains exact before/after text. Accept and save delegates to the controller; reviewing or expanding context never publishes. Conflict and unknown outcomes expose explicit discard or reconciliation controls.
 
 Detailed alignment uses a matrix of at most 250,000 cells after trimming equal prefix/suffix lines. Larger comparisons show all removed/added middle lines with an explicit notice. This bounds the comparison matrix, not total document size, string-comparison cost or rendered rows.
 
@@ -78,7 +84,7 @@ A submit the host refused before admission (status 402 `submission-refused`, for
 
 ### Native conversation history
 
-`loadEarlier()` reads one native page through `Conversation.entries`. `snapshot.history` distinguishes disabled, idle, loading, ready and error states. Each page contains at most 40 native entries in display order. The controller retains one page and an opaque native continuation cursor. The first request captures the greatest observed active entry ID as an inclusive upper bound; later writes do not move that bound. Parent-owned fork entries remain valid native history.
+`loadEarlier()` reads one native page through `Conversation.entries`. `snapshot.history` distinguishes disabled, idle, loading, ready and error states. Each request contains at most 40 native entries. The controller accumulates pages in display order for the person's current browsing session and retains an opaque native continuation cursor. It clears that cache on history invalidation or `clearHistory()`; loading never restores records to model context. The first request captures the greatest observed active entry ID as an inclusive upper bound; later writes do not move that bound. Parent-owned fork entries remain valid native history.
 
 A failed read retains the previous page and continuation for retry. `clearHistory()`, head or non-append active-range changes, reconnect, watch closure and disposal invalidate pending responses. Clearing a page does not cancel native work or promise remote read termination. The controller preserves the exact host Context. Page-count limits do not bound message bytes or native storage allocation.
 
@@ -290,11 +296,14 @@ The renderer adapts the official shadcn `sidebar-11` tree. Its shipped CSS works
 without a SidebarProvider or scanning package sources with Tailwind. Attribution
 and the pinned upstream revision are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-The recipe supplies the consumer's actual shadcn Button and the pinned Base UI
-dropdown-menu. Direct callers of `@hachej/boring-ui-kit/file-tree-view` now pass a
-required `components` binding with `Button` and `Actions`; `FileTreeComponents`,
-`FileTreeButtonProps` and `FileTreeActionsProps` describe it. There is no package-owned
-primitive fallback. The installed wrappers supply this binding automatically.
+The recipe supplies the consumer's actual shadcn Button and dropdown-menu, plus
+shared version-history rows. Direct callers of `@hachej/boring-ui-kit/file-tree-view`
+pass a required `components` binding with `Button`, `Actions` and `Versions`;
+`FileTreeComponents`, `FileTreeButtonProps`, `FileTreeActionsProps` and
+`FileTreeVersionsProps` describe it. There is no package-owned control fallback.
+The installed wrappers supply this binding automatically. Library history and viewer
+menus share relative time, provenance and Current presentation. Selecting a retained
+version still reads an exact, read-only preview without retargeting an editor.
 
 The default `list` variant has a Library header, visible-item count, inset search,
 48px rows with kind and size, and a file actions menu. The count describes loaded,

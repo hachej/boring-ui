@@ -4,12 +4,13 @@
 // the artifact's type. It follows the latest saved revision while nothing is unsaved ("Latest") or pins one older version, read-only. It
 // lists the versions the host's workspace provider retains for the file (`history`) and reads through the host's resource client. It never
 // executes artifact content (HTML runs only in the viewers' sandboxed preview when the host passes `interactive`).
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { CodeXmlIcon, EyeIcon } from 'lucide-react';
 import { randomUUID } from '@hachej/boring-files/platform';
 import type { ResourceClient, ResourceSnapshot } from '@hachej/boring-files';
 import type { ResourceIdentity } from '@hachej/boring-files/remote';
+import type { SavedRevision as FileRevision } from '@hachej/boring-files/revision';
 import { createMarkdownController } from '@hachej/boring-ui-kit/markdown';
 import type { MarkdownController } from '@hachej/boring-ui-kit/markdown';
 import { createHtmlController } from '@hachej/boring-ui-kit/html';
@@ -24,6 +25,7 @@ import { MarkdownPane } from '../viewers/markdown-pane';
 import { ViewerFrame, ViewerToggle } from '../viewers/viewer-frame';
 import type { ViewerFrameProps, ViewerShare } from '../viewers/viewer-frame';
 import { ViewerVersions } from '../viewers/menu';
+import type { ViewerVersion } from '../viewers/menu';
 import type { InteractiveHtml } from '../viewers/interactive-html';
 import { downloadFile } from '../viewers/download';
 import { copyText } from '../utils/utils';
@@ -35,7 +37,7 @@ const POLL_MS = 1500;
 const EXTENSION = /\.([A-Za-z0-9]{1,8})$/;
 
 /** One retained revision of a file with its save time (`files.saves(path)` of `@hachej/boring-files/workspace`). */
-export interface SavedRevision { readonly revision: string; readonly savedAt: number }
+export type SavedRevision = FileRevision;
 
 /** What a host viewer for an artifact type or file kind the block does not render itself (for example a tldraw canvas) receives. */
 export interface CustomViewerProps {
@@ -58,6 +60,8 @@ export interface ViewerOptions {
   /** The host's opt-in to running HTML pages in the sandboxed preview. */
   readonly interactive?: InteractiveHtml | undefined;
   readonly share?: ViewerShare | undefined;
+  readonly onUnsavedChange?: ((unsaved: boolean) => void) | undefined;
+  readonly onBeforeLeaveChange?: ((flush: (() => Promise<boolean>) | null) => void) | undefined;
   /** Told each revision a built-in viewer has mounted and shows (after it loads, never before): the page's acknowledgement of `present`. */
   readonly onShown?: ((shown: { readonly path: string; readonly revision: string; readonly hidden?: true }) => void) | undefined;
 }
@@ -99,7 +103,7 @@ function useHistory(history: ViewerOptions['history'], path: string): readonly S
 }
 
 interface VersionMenu {
-  readonly items: readonly { readonly id: string; readonly label: string; readonly latest: boolean }[];
+  readonly items: readonly ViewerVersion[];
   readonly current: string;
   /** Position counted from the oldest retained revision: only a test hook. */
   readonly number: number | undefined;
@@ -110,7 +114,7 @@ interface VersionMenu {
 function versionMenu(artifact: ArtifactDescriptor, follow: boolean, revisions: readonly SavedRevision[], earlier: string): VersionMenu {
   const at = follow ? 0 : revisions.findIndex(save => save.revision === artifact.revision);
   const shown = at < 0 ? undefined : revisions[at];
-  return { items: revisions.map((save, index) => ({ id: index === 0 ? 'latest' : save.revision, label: savedLabel(save.savedAt, Date.now(), earlier), latest: index === 0 })),
+  return { items: revisions.map((save, index) => ({ id: index === 0 ? 'latest' : save.revision, label: savedLabel(save.savedAt, Date.now(), earlier), savedAt: save.savedAt, ...(save.source ? { source: save.source } : {}), latest: index === 0 })),
     current: follow ? 'latest' : artifact.revision, number: shown ? revisions.length - at : undefined, savedAt: shown?.savedAt };
 }
 
@@ -150,15 +154,29 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose }: {
     if (type === 'html') return (snapshot: ResourceSnapshot): DocumentController => createHtmlController({ ...base(snapshot), readOnly: true });
     return undefined;
   }, [type, pinned, client, identity, custom]);
-  const saved = useSaved<DocumentController>({ client, target: artifact.target, revision: pinned ? artifact.revision : undefined, create });
+  const autosave = useRef<{ controller: DocumentController; flush: () => Promise<boolean> } | null>(null);
+  const saved = useSaved<DocumentController>({ client, target: artifact.target, revision: pinned ? artifact.revision : undefined, create,
+    beforeDispose: controller => autosave.current?.controller === controller ? autosave.current.flush() : undefined });
   const controller = saved.controller;
+  const registerAutosave = useCallback((flush: (() => Promise<boolean>) | null) => {
+    autosave.current = flush && controller ? { controller, flush } : null;
+  }, [controller]);
+  useLayoutEffect(() => {
+    if (!controller) return;
+    const notify = () => {
+      const state = controller.getSnapshot();
+      options.onUnsavedChange?.(state.dirty || state.save.kind === 'pending' || state.save.kind === 'settled' && state.save.result.kind === 'unknown');
+    };
+    notify(); const stop = controller.subscribe(notify);
+    return () => { stop(); options.onUnsavedChange?.(false); };
+  }, [controller, options.onUnsavedChange]);
   // The text to copy and download is the buffer when a viewer holds one, so the person's unsaved edits are included.
   const text = useSyncExternalStore(controller ? controller.subscribe : NOOP, () => controller ? controller.getSnapshot().text : saved.text, () => saved.text);
   const extension = EXTENSION.exec(path)?.[1] ?? 'txt';
   const revision = saved.kind === 'open' ? saved.snapshot.ref.revision : pinned ? artifact.revision : undefined;
   // A host viewer and the canvas (which shows only a "no viewer" note) never report a mount: a presented file in them stays unconfirmed.
   useReportShown(options.onShown, path, !custom && type !== 'canvas' && saved.kind === 'open' ? saved.snapshot.ref.revision : undefined);
-  // The history menu: newest first, the newest marked "Latest" (choosing it follows the latest), the one on display checked.
+  // Choosing newest follows live saves; Current marks the displayed revision.
   const versions = menu.items.length > 1 ? <ViewerVersions testId="artifact-versions" current={menu.current} onSelect={onSelect} versions={menu.items} /> : undefined;
   const target = { artifact: artifactKey(artifact), version: pinned ? artifact.revision : 'latest' };
   const frame = {
@@ -180,8 +198,11 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose }: {
     const { onShare: _, ...waiting } = frame;
     return body(<ViewerFrame {...waiting}><p className="m-0 p-4 text-sm text-muted-foreground" role="status">{saved.kind === 'loading' ? labels.loading : saved.kind === 'invalid' ? labels.artifactNotText : labels.versionUnavailable}</p></ViewerFrame>);
   }
-  const document = (children: ReactNode) => <div data-testid="document" data-revision={saved.snapshot.ref.revision} className="h-full min-h-0">{children}</div>;
-  if (type === 'markdown' && controller) return body(document(<MarkdownPane controller={controller as MarkdownController} initialMode="rich" {...frame} />));
+  const document = (children: ReactNode) => <div data-testid="document" data-revision={saved.snapshot.ref.revision} className="flex h-full min-h-0 flex-col">
+    {pinned && <p role="note" data-testid="version-view-only" className="m-0 shrink-0 border-b border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">{labels.versionViewOnly}</p>}
+    <div className="min-h-0 flex-1">{children}</div>
+  </div>;
+  if (type === 'markdown' && controller) return body(document(<MarkdownPane controller={controller as MarkdownController} initialMode="rich" onAutosaveChange={registerAutosave} onBeforeLeaveChange={options.onBeforeLeaveChange} {...frame} />));
   if (type === 'html' && controller) return body(document(<HtmlPane controller={controller as HtmlController} {...(options.interactive ? { interactive: options.interactive } : {})} {...frame} />));
   const actions = { onCopy: () => copyText(text ?? ''), onDownload: () => downloadFile(filename, text ?? '', `${artifact.mediaType};charset=utf-8`) };
   if (type === 'svg') return body(<SvgView text={saved.text} title={artifact.title} frame={{ ...frame, ...actions }} />);

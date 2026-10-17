@@ -108,7 +108,8 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "@boring-ui/utils"
+        "@boring-ui/utils",
+        "dropdown-menu"
       ],
       "files": [
         {
@@ -180,8 +181,18 @@
         },
         ".boring-markdown-recipe[data-boring=\"markdown-editor\"] [role=\"toolbar\"]": {
           "display": "flex",
-          "flex-wrap": "wrap",
+          "flex-wrap": "nowrap",
           "gap": "0.375rem"
+        },
+        ".boring-markdown-recipe[data-boring=\"markdown-editor\"] .boring-markdown-toolbar": {
+          "min-width": "0",
+          "overflow-x": "auto",
+          "scrollbar-width": "none",
+          "padding-right": "1.5rem",
+          "mask-image": "linear-gradient(to right, #000 calc(100% - 2rem), transparent)"
+        },
+        ".boring-markdown-recipe[data-boring=\"markdown-editor\"] .boring-markdown-toolbar > *": {
+          "flex-shrink": "0"
         },
         ".boring-markdown-recipe[data-boring=\"markdown-editor\"] button": {
           "appearance": "none",
@@ -1011,7 +1022,8 @@
       "registryDependencies": [
         "@boring-ui/theme",
         "@boring-ui/utils",
-        "@boring-ui/button"
+        "@boring-ui/button",
+        "@boring-ui/version-history"
       ],
       "files": [
         {
@@ -2591,10 +2603,32 @@
       "docs": "The installed task-list schema/controller are trusted consumer code; publication and draft recovery come from @hachej/boring-ui-kit/text-buffer. Construct a feature with a host-authenticated ResourceClient and exact source, then pass its concrete controller to TaskListViewer. Install native tools separately on the server. No host credentials or native kernel are copied into this item. Local tarball qualification only; no hosted release endpoint is advertised."
     },
     {
+      "name": "version-history",
+      "type": "registry:component",
+      "title": "Version history rows",
+      "description": "Shared view-only version rows and menu metadata with relative time, provenance and Current. No file reads, publication or restoration.",
+      "dependencies": [
+        "@hachej/boring-files@^0.3.2",
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "@boring-ui/theme",
+        "@boring-ui/button",
+        "button"
+      ],
+      "files": [
+        {
+          "path": "registry/version-history/version-history.tsx",
+          "type": "registry:component",
+          "target": "components/version-history/version-history.tsx"
+        }
+      ]
+    },
+    {
       "name": "file-tree",
       "type": "registry:component",
       "title": "File tree",
-      "description": "Browse, search, upload and inspect retained versions through one revisionProvider binding. Uses the consumer's shadcn Button and the pinned Base UI dropdown-menu; Base UI style only.",
+      "description": "Browse, search, upload and inspect retained versions through one revisionProvider binding. Uses the consumer's shadcn Button and dropdown-menu with shared version-history rows; Base UI style only.",
       "dependencies": [
         "@hachej/boring-ui-kit@^0.3.2",
         "@hachej/boring-files@^0.3.2",
@@ -2603,9 +2637,10 @@
       ],
       "registryDependencies": [
         "@boring-ui/theme",
-        "@boring-ui/dropdown-menu",
         "@boring-ui/utils",
-        "button"
+        "@boring-ui/version-history",
+        "button",
+        "dropdown-menu"
       ],
       "files": [
         {

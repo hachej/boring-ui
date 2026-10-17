@@ -138,10 +138,18 @@ export type FileTreeButtonProps = ComponentProps<'button'> & {
   readonly variant?: 'secondary' | 'ghost';
   readonly size?: 'default' | 'sm' | 'icon';
 };
-/** Host presentation. The registry supplies real shadcn Base UI components; the package has no primitive fallback. */
+export interface FileTreeVersionsProps {
+  readonly versions: readonly SavedRevision[];
+  readonly current: string;
+  readonly onSelect: (revision: string) => void;
+  readonly locale: FileTreeLocale;
+  readonly earlierVersion: string;
+}
+/** Host presentation. The registry supplies real shadcn Base UI controls and shared version rows; no primitive fallback. */
 export interface FileTreeComponents {
   readonly Button: (props: FileTreeButtonProps) => ReactNode;
   readonly Actions: (props: FileTreeActionsProps) => ReactNode;
+  readonly Versions: (props: FileTreeVersionsProps) => ReactNode;
 }
 
 export interface FileTreeProps {
@@ -366,7 +374,7 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
     <ul aria-label={labels.uploads} aria-live="polite" aria-relevant="additions text" className="file-tree-announcements">{state.uploads.map(upload => <li key={upload.operationId} data-operation={upload.operationId}>
       {upload.path}: {upload.state.kind === 'pending' ? labels.uploading : upload.state.result.kind === 'committed' ? labels.saved : upload.state.result.kind === 'partial' ? labels.unconfirmed : upload.state.result.reason}
     </li>)}{[...localFailures].map(([path, failure]) => <li key={path}>{path}: {failure.reason}</li>)}</ul>
-    {history && historyPath !== undefined && <FileHistory Button={Button} key={historyPath} controller={controller} path={historyPath} labels={labels} reload={historyKey} onClose={() => setHistoryPath(undefined)} />}
+    {history && historyPath !== undefined && <FileHistory components={components} locale={locale} key={historyPath} controller={controller} path={historyPath} labels={labels} reload={historyKey} onClose={() => setHistoryPath(undefined)} />}
   </section>;
 }
 
@@ -403,7 +411,7 @@ function FileActions({ Actions, controller, entry, labels, onOpen, onHistory, on
   return <Actions label={labels.actionsOf(entry.path)} icon={<MoreHorizontal aria-hidden="true" />} items={items} />;
 }
 
-function FileHistory({ Button, controller, path, labels, reload, onClose }: { readonly Button: FileTreeComponents['Button']; readonly controller: FileTreeController; readonly path: string; readonly labels: FileTreeLabels; readonly reload?: unknown; readonly onClose: () => void }) {
+function FileHistory({ components: { Button, Versions }, locale, controller, path, labels, reload, onClose }: { readonly components: FileTreeComponents; readonly locale: FileTreeLocale; readonly controller: FileTreeController; readonly path: string; readonly labels: FileTreeLabels; readonly reload?: unknown; readonly onClose: () => void }) {
   const [versions, setVersions] = useState<readonly SavedRevision[]>();
   const [failure, setFailure] = useState('');
   const [selected, setSelected] = useState<string>();
@@ -434,9 +442,7 @@ function FileHistory({ Button, controller, path, labels, reload, onClose }: { re
     {failure && <p role="alert">{failure}</p>}
     {!versions && !failure && <p role="status">{labels.loadingHistory}</p>}
     {versions?.length === 0 && <p>{labels.noHistory}</p>}
-    <ul className="m-0 list-none p-0">{versions?.map(version => <li key={version.revision}><Button type="button" variant="ghost" aria-pressed={selected === version.revision} onClick={() => setSelected(version.revision)}>
-      {version.savedAt ? new Date(version.savedAt).toLocaleString() : labels.earlierVersion} · {version.revision.slice(0, 8)}
-    </Button></li>)}</ul>
+    {versions && <Versions versions={versions} current={selected ?? versions[0]?.revision ?? ''} onSelect={setSelected} locale={locale} earlierVersion={labels.earlierVersion} />}
     {preview && <div data-testid="file-history-preview" data-revision={preview.ref.revision}><p>{labels.readOnlyRevision(preview.bytes.byteLength)}</p>{text === undefined ? <p>{labels.binaryFile(preview.mediaType)}</p> : <pre className="max-h-80 overflow-auto whitespace-pre-wrap">{text}</pre>}</div>}
   </section>;
 }

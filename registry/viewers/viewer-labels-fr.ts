@@ -1,5 +1,6 @@
 /* The viewers' words in French, the `locale="fr"` base of `AgentWorkspace`'s viewers. Typed as `ViewerLabels`, so a key added in English must be added here too. */
 import type { ViewerLabels } from './viewer-window';
+import { frenchVersionHistoryLabels } from '../version-history/version-history';
 
 export const frenchViewerLabels: ViewerLabels = {
   share: 'Partager',
@@ -21,7 +22,8 @@ export const frenchViewerLabels: ViewerLabels = {
   actionFailed: 'L’action a échoué',
   manualCopy: link => `Ce navigateur a bloqué la copie automatique. Copiez ${link ? 'le lien' : 'le texte'} ci-dessous.`,
   done: 'Terminé',
-  versionHistory: 'Historique des versions',
+  ...frenchVersionHistoryLabels,
+  versionViewOnly: 'Ancienne version en lecture seule. La restauration n’est pas disponible dans cette vue.',
   latest: 'Dernière version',
   loading: 'Chargement…',
   saved: 'Enregistré',

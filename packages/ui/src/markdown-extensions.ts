@@ -5,6 +5,7 @@ import { TaskItem, TaskList } from '@tiptap/extension-list';
 import { Table, TableCell, TableHeader, TableRow } from '@tiptap/extension-table';
 import Image from '@tiptap/extension-image';
 import Highlight from '@tiptap/extension-highlight';
+import { Node as TiptapNode } from '@tiptap/core';
 import type { Editor, Extensions, JSONContent } from '@tiptap/core';
 import { createMarkdownParser } from './markdown-parser.js';
 
@@ -25,6 +26,14 @@ const PlainTextMarkdown = Markdown.extend({
       // Code is returned untouched by the original; for other text, replace its entity encoding by the plain characters.
       return encoded === text ? text : manager.escapeMarkdownSyntax(text);
     };
+  },
+});
+
+const RichStarterKit = StarterKit.extend({
+  addExtensions() {
+    return (this.parent?.() ?? []).map(extension => extension instanceof TiptapNode && extension.name === 'paragraph'
+      ? extension.extend({ renderMarkdown: (node, helpers) => helpers.renderChildren(node.content ?? []) })
+      : extension);
   },
 });
 
@@ -96,7 +105,7 @@ export function createMarkdownExtensions({ placeholder, images }: MarkdownExtens
     onBeforeCreate() { (this.parent as (() => void) | undefined)?.(); schema = this.editor.schema; },
   });
   return [
-    StarterKit.configure({ link: { openOnClick: false, autolink: false, linkOnPaste: false }, underline: false }),
+    RichStarterKit.configure({ link: { openOnClick: false, autolink: false, linkOnPaste: false }, underline: false }),
     TaskList, TaskItem.configure({ nested: true }),
     SourceTable.configure({ resizable: false }), TableRow, TableHeader, TableCell,
     InertImage.configure({ inline: false, allowBase64: true }),

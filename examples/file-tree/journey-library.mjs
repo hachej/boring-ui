@@ -141,6 +141,18 @@ for (const [name, start, trigger] of [
         await browser.until('menu reopened', `!!${q('[role=menuitem][data-action=history]')}`);
         await browser.click(q('[role=menuitem][data-action=history]'));
         await browser.until('retained version history', `${q(`section[aria-label=${JSON.stringify(`History of ${file}`)}]`)}?.querySelectorAll('li button').length > 0`);
+        const historyRows = await browser.evaluate(`(() => { const rows=[...document.querySelectorAll('[data-testid=file-history-versions-item]')]; return rows.map(row=>({ text:row.innerText, slot:row.dataset.slot, pressed:row.getAttribute('aria-pressed'), author:row.querySelector('[data-testid=file-history-versions-description]')?.textContent, hash:row.dataset.item?.slice(0,8) })); })()`);
+        assert.ok(historyRows.length > 0);
+        assert.equal(historyRows.filter(row => row.pressed === 'true' && row.text.includes('Current')).length, 1);
+        for (const row of historyRows) {
+          assert.equal(row.slot, 'button', 'shared history rows use the consumer shadcn Button');
+          assert.match(row.author, /^(You|Agent|External change|Saved version)$/);
+          assert.equal(row.text.includes(row.hash), false, 'revision hashes are not human version labels');
+        }
+        await browser.click(`[...document.querySelectorAll('[data-testid=file-history-versions-item]')].at(-1)`);
+        await browser.until('exact read-only history preview', `!!${q('[data-testid=file-history-preview]')}`);
+        assert.equal(await browser.evaluate(`document.querySelector('[data-testid=file-history-preview] textarea, [data-testid=file-history-preview] [contenteditable=true]') === null`), true);
+        assert.equal(await browser.evaluate(`[...document.querySelectorAll('[data-testid=file-history-versions-item]')].at(-1).getAttribute('aria-pressed')`), 'true');
         await browser.screenshot(`${name}-${phone ? 'phone' : 'desktop'}-history-${dark ? 'dark' : 'light'}.png`);
         await browser.evaluate(`[...document.querySelectorAll('button')].find(b=>b.textContent==='Close history')?.click()`);
         await browser.press('Escape');

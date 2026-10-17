@@ -236,8 +236,8 @@ export function Dock({ id, side, children, defaultWidth = 400, minWidth = 280, f
     onPointerDown={event => { event.preventDefault(); event.currentTarget.focus(); event.currentTarget.setPointerCapture?.(event.pointerId); setDragging(true); }} onPointerMove={drag}
     onDragStart={event => event.preventDefault()}
     onPointerUp={release} onPointerCancel={() => { setDragging(false); setHint(false); }} onKeyDown={keys} onDoubleClick={() => resize(defaultWidth)}
-    className="group relative z-10 -mx-1 w-2 shrink-0 cursor-col-resize touch-none select-none outline-none">
-    <span aria-hidden="true" className={cn('absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border transition-[width,background-color] group-hover:w-0.5 group-hover:bg-ring/70 group-focus-visible:w-0.5 group-focus-visible:bg-ring motion-reduce:transition-none', dragging && 'w-0.5 bg-ring')} />
+    className="group relative z-10 -mx-1.5 w-3 shrink-0 cursor-col-resize touch-none select-none outline-none">
+    <span aria-hidden="true" className={cn('absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border/65 transition-[width,background-color] group-hover:w-0.5 group-hover:bg-ring group-focus-visible:w-0.5 group-focus-visible:bg-ring motion-reduce:transition-none', dragging && 'w-0.5 bg-ring')} />
   </div>;
   const hidden = placement === 'closed';
   const panel = <section ref={section} data-boring="dock" data-dock={id} data-side={side} data-placement={placement} aria-label={labels?.region}

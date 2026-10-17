@@ -183,11 +183,11 @@ export default [
       await history.create();
       assert.equal(await history.count(), before + 1);
       await history.select(current);
-      // The earlier records of the open conversation: the chat header's History (the list itself is the sessions pane).
-      await browser.click(q('[data-testid=history-open]'));
-      await browser.until('the read-only earlier records panel', `!!${q('[data-testid=history]')}`, 10000);
-      await browser.click(q('[aria-label="Return to active conversation"]'));
-      await browser.until('back to the transcript', `!${q('[data-testid=history]')}`, 5000);
+      // Earlier records load inline; the sessions pane remains the conversation picker.
+      await browser.evaluate(`${q('[data-testid=transcript-scroll]')}.scrollTop = 0`);
+      await browser.until('earlier records reached the beginning inline', `${q('[data-testid=transcript-history]')}?.innerText.includes('Start of conversation') && ${q('[data-testid=transcript-history-load]')}?.disabled`, 10000);
+      assert.equal(await browser.evaluate(`!!${q('[data-testid=history]')}`), false, 'no separate history panel');
+      assert.equal(await browser.evaluate(`/ENTER-OK/.test(${logText}) && !!${q('[data-testid=transcript] article[data-role=assistant]')}`), true, 'the ordinary transcript remains visible');
     },
   },
   {
@@ -197,6 +197,7 @@ export default [
       const { browser, logText, q, qa, idle, say, history, pause } = t;
       const row = id => `${qa('[data-testid=conversation-row]')}.find(row => row.dataset.conversationId === ${JSON.stringify(String(id))})`;
       const rowAction = (id, action) => `${row(id)}?.parentElement.querySelector('[data-testid=${action}]')`;
+      const menuAction = action => q(`[data-testid=conversation-action-more-list] [data-testid=${action}]`);
       const ids = () => browser.evaluate(`${qa('[data-testid=conversation-row]')}.map(row => row.dataset.conversationId)`);
       const search = async text => {
         await browser.evaluate(`(() => { const e = ${q('[data-testid=conversation-search]')}; e.focus(); e.select(); })()`);
@@ -216,7 +217,7 @@ export default [
       await history.open();
       await browser.until('both chats are listed', `!!${row(first)} && !!${row(second)}`, 10000);
       await browser.click(rowAction(first, 'conversation-action-more'));
-      await browser.click(rowAction(first, 'conversation-rename'));
+      await browser.click(menuAction('conversation-rename'));
       await browser.until('the name field', `!!${q('[data-testid=conversation-rename-input]')}`, 5000);
       await browser.evaluate(`(() => { const e = ${q('[data-testid=conversation-rename-input]')}; e.focus(); e.select(); })()`);
       await browser.press('Backspace');
@@ -233,7 +234,7 @@ export default [
       await history.select(first);
       await history.open();
       await browser.click(rowAction(first, 'conversation-action-more'));
-      await browser.click(rowAction(first, 'conversation-archive'));
+      await browser.click(menuAction('conversation-archive'));
       await browser.until('the archived chat leaves the list', `!${row(first)} && !!${row(second)}`, 10000);
       await browser.click(q('[data-testid=conversations-archived]'));
       await browser.until('it is under Archived', `!!${row(first)}`, 10000);
@@ -249,7 +250,7 @@ export default [
       await browser.until('the fork is listed with a derived title', `${row(fork)}?.innerText.includes('Amber plans (fork)')`, 10000);
       // Delete removes it from the list and the chat moves to another conversation.
       await browser.click(rowAction(fork, 'conversation-action-more'));
-      await browser.click(rowAction(fork, 'conversation-delete'));
+      await browser.click(menuAction('conversation-delete'));
       await browser.click(rowAction(fork, 'conversation-delete-confirm'));
       await browser.until('the fork is gone', `!${row(fork)}`, 10000);
       await history.close();

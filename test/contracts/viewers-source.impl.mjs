@@ -32,6 +32,7 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
   const imagePane = await load('image-pane.tsx');
   const pdfPane = await load('pdf-pane.tsx');
   const markdownPane = await load('markdown-pane.tsx');
+  const menus = await load('menu.tsx');
   const htmlPane = await load('html-pane.tsx');
   const { createMarkdownController } = await import('@hachej/boring-ui-kit/markdown');
   const { createHtmlController } = await import('@hachej/boring-ui-kit/html');
@@ -238,15 +239,52 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     return { controller, client, read, publish, target };
   }
 
+  await t.test('version menus show relative time, provenance, day groups and a quiet Current marker', async t => {
+    let selected;
+    const now = Date.now();
+    const view = await mount(t, h(menus.ViewerVersions, { current: 'new', onSelect: id => { selected = id; }, versions: [
+      { id: 'new', label: 'unused time', savedAt: now - 120000, source: 'agent' },
+      { id: 'old', label: 'unused time', savedAt: now - 86400000, source: 'publish', changeSummary: '+2 lines' },
+    ] }));
+    await view.click('[data-testid=viewer-versions]');
+    const rows = [...document.querySelectorAll('[data-testid=viewer-versions-item]')];
+    assert.equal(rows.length, 2);
+    assert.match(rows[0].textContent, /2 min ago/);
+    assert.equal(rows[0].querySelector('[data-testid=viewer-versions-description]').textContent, 'Agent');
+    assert.match(rows[0].textContent, /Current/);
+    assert.equal(rows[0].getAttribute('aria-checked'), 'true');
+    assert.match(rows[1].querySelector('[data-testid=viewer-versions-description]').textContent, /You · \+2 lines/);
+    assert.match(document.querySelector('[data-testid=viewer-versions-list]').textContent, /Today.*Yesterday/s);
+    await act(async () => rows[1].click()); assert.equal(selected, 'old');
+  });
+
+  await t.test('standalone Markdown close awaits autosave and refuses to close over a failed save', async t => {
+    const d = await documents(t, 'text/markdown', 'original');
+    let closed = 0;
+    const view = await mount(t, h(markdownPane.MarkdownPane, { controller: d.controller, initialMode: 'source', onClose: () => { assert.equal(d.controller.getSnapshot().dirty, false); closed++; } }));
+    assert.equal(view.q('[data-testid="viewer-save"]'), null, 'autosave is the pane default');
+    const input = async text => act(async () => { const area = view.q('textarea'); Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(area, text); area.dispatchEvent(new window.Event('input', { bubbles: true })); });
+    await input('flushed before standalone close');
+    await view.click('[data-testid="viewer-close"]'); await settle();
+    assert.equal(closed, 1);
+    assert.equal(new TextDecoder().decode((await d.read()).snapshot.bytes), 'flushed before standalone close');
+    d.client.publish = async () => ({ kind: 'unavailable', reason: 'Fictional offline provider' });
+    await input('keep this failed draft');
+    await view.click('[data-testid="viewer-close"]'); await settle();
+    assert.equal(closed, 1, 'a bare pane never drops a draft when its save fails');
+    assert.equal(view.q('textarea').value, 'keep this failed draft');
+    assert.match(view.q('[data-testid="viewer-status"]').textContent, /Not saved/);
+  });
+
   await t.test('the Markdown pane puts mode, Save and status in the bar; Refresh never drops unsaved edits; unsafe documents stay in source', async t => {
     const d = await documents(t, 'text/markdown', '# Plan\n\n- [x] done\n');
-    const view = await mount(t, h(markdownPane.MarkdownPane, { controller: d.controller, title: 'Plan', subtitle: 'Markdown', onShare() {} }));
+    const view = await mount(t, h(markdownPane.MarkdownPane, { controller: d.controller, title: 'Plan', subtitle: 'Markdown', autosave: false, onShare() {} }));
     assert.equal(view.q('section[data-boring="markdown-editor"] > header') === null, true, 'the editor has no header of its own');
-    assert.equal(view.q('[data-testid="viewer-status"]') === null, true, 'a clean document shows no status');
+    assert.equal(view.q('[data-testid="viewer-status"]').textContent, 'Saved', 'a clean document quietly confirms persistence');
     assert.equal(view.q('[data-testid="viewer-save"]') === null, true, 'Save waits for an edit');
-    assert.equal(view.q('.boring-markdown-toolbar'), null, 'no permanent formatting row by default');
+    assert.ok(view.q('.boring-markdown-toolbar button[aria-label="Bold"] svg'), 'formatting is pinned by default');
     await view.click('[aria-label="Pin formatting toolbar"]');
-    assert.ok(view.q('.boring-markdown-toolbar button[aria-label="Bold"] svg'), 'Aa pins the full formatting controls');
+    assert.equal(view.q('.boring-markdown-toolbar'), null, 'Aa switches to selection formatting');
     await view.click('[data-testid="viewer-mode-source"]');
     const area = view.q('textarea');
     await act(async () => { Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(area, '# Plan\n\n- [x] done\n- [ ] local edit\n'); area.dispatchEvent(new window.Event('input', { bubbles: true })); });
@@ -258,6 +296,7 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     assert.equal(view.q('[data-testid="viewer-status"]').textContent, 'Changed elsewhere');
     assert.match(view.container.textContent, /Your local text has been kept/);
     await view.click('[data-testid="viewer-save"]'); await saved(d.controller);
+    assert.equal(view.q('[data-testid="viewer-status"]').textContent, 'Changed elsewhere', 'a refused stale write retains the existing conflict status');
     // Unsupported constructs: rich is unavailable.
     const raw = await documents(t, 'text/markdown', '---\ntitle: x\n---\n\n<div>raw</div>\n');
     const unsafe = await mount(t, h(markdownPane.MarkdownPane, { controller: raw.controller, title: 'Raw' }));

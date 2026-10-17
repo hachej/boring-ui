@@ -21,7 +21,7 @@ function Receipt({ app }) {
 function HeaderCell() { return <h1>Fictional morning</h1>; }
 function ReplyCell() {
   const { session } = useMorning();
-  return <div data-fixed-reply><MarkdownEditor controller={session.reply} initialMode="source" title="Saved reply draft" /></div>;
+  return <div data-fixed-reply><MarkdownEditor autosave={false} controller={session.reply} initialMode="source" title="Saved reply draft" /></div>;
 }
 function EmailCell() {
   const { apps, session, act, expanded, setExpanded, blocked } = useMorning(), email = apps.email;

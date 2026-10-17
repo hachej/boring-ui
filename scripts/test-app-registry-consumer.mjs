@@ -24,8 +24,8 @@ visit('app-shell');
 visit('file-tree');
 // The documents screen: its Library, revisions and sheet, installed and checked strictly with the rest of the closure.
 visit('documents');
-const styles = process.env.BORING_CONSUMER_STYLE ? [process.env.BORING_CONSUMER_STYLE] : ['base-nova'];
-assert.ok(styles.every(style => style === 'base-nova'), 'Blocks support the consumer shadcn Base UI style only');
+const styles = [process.env.BORING_CONSUMER_STYLE ?? 'base-nova'];
+assert.ok(styles.every(style => style === 'base-nova'), 'Registry blocks require the shadcn Base UI style');
 const cache = process.env.npm_config_cache;
 assert.ok(cache, 'Set npm_config_cache to a writable npm cache (npm run sets it)');
 
@@ -47,8 +47,7 @@ async function testStyle(style) {
     const union = { dependencies: pins };
     const archiveByName = packBoringDependencies(root, union, join(directory, 'packs'), run);
     const dependencies = consumerDependencies(root, union, ['typescript', '@types/react', '@types/react-dom', 'esbuild', 'shadcn', 'tailwindcss', 'happy-dom']);
-    // The consumer's real shadcn Button/sidebar/Trace import class-variance-authority and cn.
-    // Drawers and dropdowns remain explicitly pinned Base UI recipes.
+    // The consumer's real Base UI Button, sidebar, Trace and dropdown built-ins import class-variance-authority and cn.
     const lockedVersion = name => { const entry = JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8')).packages[`node_modules/${name}`]; assert.ok(entry?.version, `${name} is locked`); return entry.version; };
     for (const name of ['class-variance-authority', 'cn']) dependencies[name] = lockedVersion(name);
     writeLockedManifest(root, directory, 'isolated-app-consumer', dependencies);

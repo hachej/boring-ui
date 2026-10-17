@@ -32,13 +32,13 @@ export type Part =
   | { readonly kind: 'artifact'; readonly key: string; readonly call: ToolCall; readonly state: 'presenting' | 'ready'; readonly artifact: ArtifactDescriptor | undefined; readonly title: string | undefined; /** Set when the host's `detect` found the descriptor: the call stays a step of the activity block too. */ readonly entry?: ToolEntry }
   | { readonly kind: 'tool'; readonly key: string; readonly entry: ToolEntry };
 
-export type Row =
+export type Row = (
   | { readonly key: string; readonly type: 'user'; readonly message: UserMessage }
   | { readonly key: string; readonly type: 'assistant'; readonly parts: readonly Part[]; readonly streaming: boolean; /** The turn is still running (the last row while a run is active). */ readonly active?: boolean; readonly stopReason?: AssistantMessage['stopReason']; readonly errorMessage?: string; readonly text: string; /** When the reply was written (the last round of a merged turn), in ms. Absent while it streams. */ readonly timestamp?: number; /** The model that wrote the last round of the reply. */ readonly model?: { readonly provider: string; readonly modelId: string }; /** How long the last round took to answer, in ms (Pi's `durationMs`). */ readonly durationMs?: number; /** The native entry of its last committed round: where a fork of the conversation after this reply starts. */ readonly entryId?: string }
   | { readonly key: string; readonly type: 'orphan-result'; readonly message: ToolResultMessage }
   | { readonly key: string; readonly type: 'system'; readonly text: string }
   | { readonly key: string; readonly type: 'event'; readonly label: string }
-  | { readonly key: string; readonly type: 'card'; readonly card: ChatCard };
+  | { readonly key: string; readonly type: 'card'; readonly card: ChatCard }) & { readonly historical?: boolean };
 
 export function object(value: JsonValue | undefined): JsonObject | undefined {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value : undefined;

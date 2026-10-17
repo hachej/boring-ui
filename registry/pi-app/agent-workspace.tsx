@@ -219,16 +219,29 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   const currentView = useRef(opened); currentView.current = opened;
   const unsavedChange = useRef(onUnsavedChange); unsavedChange.current = onUnsavedChange;
   const noteUnsaved = useCallback((value: boolean) => { if (unsaved.current !== value) { unsaved.current = value; unsavedChange.current?.(value); } }, []);
-  /** Opens `next` and reports whether it did: leaving a file with unsaved changes asks first, and the person may stay. */
-  const setOpened = useCallback((next: OpenedView | null): boolean => {
+  const beforeLeave = useRef<(() => Promise<boolean>) | null>(null);
+  const registerBeforeLeave = useCallback((flush: (() => Promise<boolean>) | null) => { beforeLeave.current = flush; }, []);
+  const leaving = useRef(false);
+  const guard = useCallback(async () => {
+    if (leaving.current) return false;
+    if (!unsaved.current) return true;
+    const current = currentView.current;
+    leaving.current = true;
+    try {
+      const saved = await beforeLeave.current?.();
+      if (currentView.current !== current) return false;
+      return saved === true || !unsaved.current || Boolean(globalThis.confirm?.('This file has unsaved or unconfirmed changes. Discard the local draft and leave this file?'));
+    } finally { leaving.current = false; }
+  }, []);
+  const setOpened = useCallback(async (next: OpenedView | null): Promise<boolean> => {
     const current = currentView.current;
     if (isFile(current) && isFile(next) && current.path === next.path) { setPanelLibrary(false); return true; }
-    if (unsaved.current && !globalThis.confirm?.('This file has unsaved or unconfirmed changes. Discard the local draft and leave this file?')) return false;
+    if (!await guard()) return false;
     noteUnsaved(false);
     setPanelLibrary(false);
     if (!isControlled) setOwn(next); change.current?.(next);
     return true;
-  }, [isControlled, noteUnsaved]);
+  }, [guard, isControlled, noteUnsaved]);
   const [fullscreen, setFullscreen] = useState(false);
   const [centerMode, setCenterMode] = useState<'chat' | 'library'>('chat');
   const libraryInPane = Boolean(revisionProvider) && libraryPlacement === 'pane';
@@ -239,13 +252,13 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   // Opening the column leaves a full-screen viewer, whose overlay would otherwise cover it.
   const setSideOpen = useCallback((next: boolean) => { setSideOpenState(next); if (next) setFullscreen(false); }, []);
   const libraryOpen = Boolean(revisionProvider) && libraryPlacement === 'center' && centerMode === 'library';
-  const openLibrary = useCallback(() => {
+  const openLibrary = useCallback(async () => {
     if (libraryPlacement === 'panel') {
-      if (unsaved.current && !globalThis.confirm?.('This file has unsaved or unconfirmed changes. Discard the local draft and open Library?')) return;
+      if (!await guard()) return;
       noteUnsaved(false); setPanelLibrary(value => !value);
     } else setCenterMode('library');
     setFullscreen(false);
-  }, [libraryPlacement, noteUnsaved]);
+  }, [guard, libraryPlacement, noteUnsaved]);
   const text = useMemo(() => ({ labels: withDefaults(locale === 'fr' ? frenchAppLabels : defaultAppLabels, labels), icons: withDefaults(defaultAppIcons, icons) }), [labels, icons, locale]);
   // The sessions pane shows the chat's conversation list, so it reads the chat's labels too.
   const chatText = useMergedText(chat.labels, chat.icons, chatTextFor(locale));
@@ -275,7 +288,7 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   const onShown = useCallback((view: { readonly path: string; readonly revision: string; readonly hidden?: true }) => {
     if (view.hidden) presentAcks.current?.hidden(view); else presentAcks.current?.shown(view);
   }, []);
-  const options: ViewerOptions = useMemo(() => ({ client, identity, history, viewers, interactive, share, onShown }), [client, identityKey, history, viewers, interactive, share, onShown]); // eslint-disable-line react-hooks/exhaustive-deps
+  const options: ViewerOptions = useMemo(() => ({ client, identity, history, viewers, interactive, share, onShown, onUnsavedChange: noteUnsaved, onBeforeLeaveChange: registerBeforeLeave }), [client, identityKey, history, viewers, interactive, share, onShown, noteUnsaved, registerBeforeLeave]); // eslint-disable-line react-hooks/exhaustive-deps
   const locate = revisionProvider?.locate ?? resources?.locate ?? defaultLocate;
   const [fileBinding, setFileBinding] = useState<{ readonly provider: RevisionProvider; readonly tree: FileTreeController }>();
   useEffect(() => {
@@ -351,7 +364,7 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   const seen = useRef(new Map<string, Set<string>>());
   const closedInTurn = useRef(new Map<string, number>());
   // Kept editing after the unsaved-changes question: the panel stays as it was, and the next artifact may still open it.
-  const close = () => { if (panelLibrary) { setPanelLibrary(false); return true; } if (!setOpened(null)) return false; if (conversationId !== undefined) closedInTurn.current.set(conversationId, turn); setFullscreen(false); return true; };
+  const close = async () => { if (panelLibrary) { setPanelLibrary(false); return true; } if (!await setOpened(null)) return false; if (conversationId !== undefined) closedInTurn.current.set(conversationId, turn); setFullscreen(false); return true; };
   useEffect(() => {
     if (!controller || conversationId === undefined) return;
     const keys = versions.map(version => `${artifactKey(version)}:${version.revision}`);
@@ -365,7 +378,7 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   }, [versions, controller, conversationId, turn]); // eslint-disable-line react-hooks/exhaustive-deps
   // A `present` call waiting for the page: decided by `createPresentAcks` (refused when the person closed the panel this turn, has unsaved
   // edits or is on a phone; otherwise its file is opened unless `autoOpen` is off, and the acknowledgement follows the mount).
-  openForPresent.current = path => setOpened({ kind: 'file', path });
+  openForPresent.current = path => { if (unsaved.current) return false; void setOpened({ kind: 'file', path }); return true; };
   const liveView = useSyncExternalStore(controller ? controller.subscribe : subscribeNothing, () => controller?.getSnapshot().view, () => undefined);
   const presentCalls = useMemo(() => pendingPresents(liveView), [liveView]);
   useEffect(() => {
@@ -482,14 +495,14 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
                   const known = newestOf(artifactKey(active.descriptor));
                   setOpened({ kind: 'artifact', conversation: active.conversation, follow: value === 'latest', descriptor: value === 'latest' ? (known[0] ?? active.descriptor) : { ...active.descriptor, revision: value } });
                 }} />
-            : file ? <FileViewer key={JSON.stringify([revisionProvider?.workspace, identity, file.path])} onUnsavedChange={noteUnsaved} path={file.path} locator={locate(file.path)} options={options} onClose={win.close} {...(fileBack ? { onBack: fileBack.onBack, backLabel: fileBack.label } : {})} />
+            : file ? <FileViewer key={JSON.stringify([revisionProvider?.workspace, identity, file.path])} onBeforeLeaveChange={registerBeforeLeave} onUnsavedChange={noteUnsaved} path={file.path} locator={locate(file.path)} options={options} onClose={win.close} {...(fileBack ? { onBack: fileBack.onBack, backLabel: fileBack.label } : {})} />
             : host ? panels![host.kind]!(host, win) : null}
         </div></ViewerWindowProvider>} /></DockMain>
     {librarySide && <Dock id="library" side="right" open={sideOpen} onOpenChange={setSideOpen} defaultWidth={LIBRARY_WIDTH} minWidth={240} narrowBelow={Math.max(drawerBelow, (docked ? SESSIONS_WIDTH : 0) + (panelOpen ? VIEWER_MIN + CHAT_MIN : CHAT_MIN) + libraryWidth)} narrow="sheet"
       labels={{ region: text.labels.library, resize: text.labels.resizePanel }} className="border-l border-border">
       {api => <section data-testid="workspace-library-side" aria-label={text.labels.library} className="flex min-h-0 flex-1 flex-col">
         <WidthProbe width={api.width} onWidth={setLibraryWidth} />
-        <div className="min-h-0 flex-1 overflow-auto">{libraryTree(path => { if (setOpened({ kind: 'file', path }) && narrow) setSideOpen(false); }, () => setSideOpen(false))}</div>
+        <div className="min-h-0 flex-1 overflow-auto">{libraryTree(path => { void setOpened({ kind: 'file', path }).then(opened => { if (opened && narrow) setSideOpen(false); }); }, () => setSideOpen(false))}</div>
       </section>}
     </Dock>}
     </DockLayout>

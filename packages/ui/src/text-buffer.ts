@@ -219,7 +219,8 @@ export function createTextBuffer(options: TextBufferOptions) {
       return read;
     }
     if (sameBase(remote, state.base) && !discard) {
-      if (state.remote !== null) update({ ...state, remote: null });
+      const resolved = state.save.kind === 'settled' && state.save.result.kind !== 'saved';
+      if (state.remote !== null || resolved) update({ ...state, remote: null, save: resolved ? { kind: 'idle' } : state.save });
       return read;
     }
     if (state.dirty && (!discard || state.bufferVersion !== previousVersion)) {
