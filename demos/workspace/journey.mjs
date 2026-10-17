@@ -229,7 +229,8 @@ try {
   await step('Library opens on the first press across 30 desktop-to-phone breakpoint changes', async () => {
     for (let attempt = 0; attempt < 30; attempt++) {
       await browser.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
-      await browser.until('desktop navigation hidden', `innerWidth === 1440 && !${q('[data-testid=chat-action-navigation]')}?.checkVisibility()`, 5000);
+      // Wait for the wide layout to render: History is then the column toggle, and the remembered column may already be open.
+      await browser.until('desktop navigation hidden and History is the column toggle', `innerWidth === 1440 && !${q('[data-testid=chat-action-navigation]')}?.checkVisibility() && ${historyToggle}?.getAttribute('aria-controls') === 'agent-history-column'`, 5000);
       await history();
       await library();
       await browser.press('Escape');
