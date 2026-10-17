@@ -234,6 +234,11 @@
       },
       ".pi-chat :where([data-slot=\"empty\"])": {
         "border-width": "0"
+      },
+      ".pi-chat :where([data-slot=\"sidebar-menu\"], [data-slot=\"sidebar-menu-sub\"])": {
+        "margin": "0",
+        "padding": "0",
+        "list-style": "none"
       }
     },
     "@layer utilities": {
