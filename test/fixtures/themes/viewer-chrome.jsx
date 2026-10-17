@@ -37,7 +37,7 @@ export function ViewerChromeControls({ surface, fetch: authorized }) {
   return <main data-testid="viewer-chrome-fixture" data-surface={surface} className="boring-viewer flex h-full min-h-0 flex-col">
     {['markdown', 'source', 'selection', 'proposal'].includes(surface) && <MarkdownPane {...common} controller={controllers.markdown} title="Cedar Works.md" initialMode={surface === 'source' ? 'source' : 'rich'} formattingToolbar={surface === 'selection' ? 'selection' : 'pinned'} autosave={false} />}
     {['html', 'html-source'].includes(surface) && <HtmlPane {...common} controller={controllers.html} title="Cedar Works.html" initialMode={surface === 'html-source' ? 'source' : 'preview'} />}
-    {surface === 'standalone-markdown' && <MarkdownEditor controller={controllers.markdown} title="Cedar Works.md" autosave={false} className="boring-markdown-editor" />}
+    {surface === 'standalone-markdown' && <MarkdownEditor controller={controllers.markdown} title="Cedar Works.md" autosave={false} />}
     {surface === 'standalone-html' && <HtmlViewer controller={controllers.html} title="Cedar Works.html" />}
     {surface === 'image' && <ImagePane {...common} name="Cedar Works.svg" mediaType="image/svg+xml" bytes={image} />}
     {surface === 'pdf' && <PdfPane {...common} name="Cedar Works.pdf" bytes={pdf} inline={false} />}
