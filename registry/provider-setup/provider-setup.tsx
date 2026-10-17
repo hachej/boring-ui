@@ -99,7 +99,7 @@ export function ProviderSetup({ providers, value, onSave, onLogin, loginState = 
     <PopoverTrigger render={<Button variant="ghost" data-testid="provider-setup-trigger" data-boring="provider-setup" className={cn(trigger ? 'contents' : 'max-w-56', className)} />}>
       {trigger ?? <><SettingsIcon data-icon="inline-start" aria-hidden="true" /><span className="truncate">{current ? `${current.name} · ${value.modelId}` : label}</span><ChevronDownIcon data-icon="inline-end" aria-hidden="true" /></>}
     </PopoverTrigger>
-    <PopoverContent side={side} align={align} aria-label="Model access" data-testid="provider-setup-panel" className="w-[min(24rem,calc(100vw-2rem))]">
+    <PopoverContent side={side} align={align} aria-label="Model access" data-testid="provider-setup-panel" className="pi-chat w-[min(24rem,calc(100vw-2rem))]">
       <form onSubmit={save} className="flex flex-col gap-3">
         <Label className="flex-col items-stretch">Provider
           <NativeSelect data-testid="provider-select" value={chosen.id} className="w-full"

@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { Popover } from '@base-ui/react/popover';
 import { FolderOpenIcon, HistoryIcon, PlusIcon, XIcon } from 'lucide-react';
 import { FileTree } from '../../registry/file-tree/file-tree';
 import { ConversationList } from '../../registry/pi-chat/history';
 import { Button } from '@/components/ui/button';
+import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from '@/components/ui/popover';
 import { Drawer, DrawerContent, DrawerTitle } from '../../examples/app-shell/components/ui/drawer';
 
 export function ChatTools({ conversations, provider, file, openFile, feed }) {
@@ -38,24 +38,20 @@ export function ChatTools({ conversations, provider, file, openFile, feed }) {
     <Drawer open={panel !== null} showSwipeHandle onOpenChange={next => { if (!next) setPanel(null); }}><DrawerContent ref={popup} data-testid={panel === 'history' ? 'conversations' : 'library-popover'} className="pi-chat h-[80dvh] pb-[env(safe-area-inset-bottom)] duration-200 motion-reduce:transition-none"><DrawerTitle className={panel === 'library' ? 'sr-only' : 'px-5 py-3'}>{panel === 'history' ? 'Conversations' : 'Library'}</DrawerTitle>{panel && body(panel)}</DrawerContent></Drawer>
   </div>;
   return <div className="flex shrink-0 items-center gap-0.5" data-testid="chat-tools">
-    {([['history', 'History', HistoryIcon], ['library', 'Library', FolderOpenIcon]] as const).map(([id, title, Icon]) => <Popover.Root key={id} open={panel === id} onOpenChange={open => { if (open) picked.current = false; setPanel(current => open ? id : current === id ? null : current); }}>
-      <Popover.Trigger ref={id === 'library' ? libraryTrigger : undefined} render={<Button size="icon" variant="ghost" />} data-testid={`chat-action-${id}`} aria-label={title} title={title} className="size-11 text-muted-foreground"><Icon className="size-4" aria-hidden="true" /></Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Positioner side="bottom" align="end" sideOffset={8} collisionPadding={8} className="z-[70]">
-          <Popover.Popup ref={panel === id ? popup : undefined} data-testid={id === 'history' ? 'conversations' : 'library-popover'}
-            initialFocus={type => type === 'touch' ? false : popup.current?.querySelector('input[type=search]') ?? true}
-            finalFocus={() => picked.current || panel !== null && panel !== id ? false : true}
-            onKeyDown={event => { if (event.key === 'Escape') event.stopPropagation(); }}
-            className="pi-chat flex max-h-[min(32rem,var(--available-height))] w-[min(24rem,calc(100vw-1rem))] flex-col overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-lg outline-none">
-            {id === 'library' ? <Popover.Title className="sr-only">Library</Popover.Title> : <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3">
-              <Popover.Title className="min-w-0 flex-1 text-sm font-semibold">{id === 'history' ? 'Conversations' : 'Library'}</Popover.Title>
-              {id === 'history' && conversations?.onNew && <Button size="sm" variant="outline" data-testid="conversation-new" onClick={() => { conversations.onNew(); setPanel(null); }}><PlusIcon data-icon="inline-start" aria-hidden="true" />New</Button>}
-              <Popover.Close render={<Button size="icon" variant="ghost" />} aria-label={`Close ${title}`} className="size-11"><XIcon className="size-4" aria-hidden="true" /></Popover.Close>
-            </header>}
-            {body(id)}
-          </Popover.Popup>
-        </Popover.Positioner>
-      </Popover.Portal>
-    </Popover.Root>)}
+    {([['history', 'History', HistoryIcon], ['library', 'Library', FolderOpenIcon]] as const).map(([id, title, Icon]) => <Popover key={id} open={panel === id} onOpenChange={open => { if (open) picked.current = false; setPanel(current => open ? id : current === id ? null : current); }}>
+      <PopoverTrigger ref={id === 'library' ? libraryTrigger : undefined} render={<Button size="icon" variant="ghost" />} data-testid={`chat-action-${id}`} aria-label={title} title={title} className="size-11 text-muted-foreground"><Icon className="size-4" aria-hidden="true" /></PopoverTrigger>
+      <PopoverContent ref={panel === id ? popup : undefined} side="bottom" align="end" sideOffset={8} data-testid={id === 'history' ? 'conversations' : 'library-popover'}
+        initialFocus={type => type === 'touch' ? false : popup.current?.querySelector('input[type=search]') ?? true}
+        finalFocus={() => picked.current || panel !== null && panel !== id ? false : true}
+        onKeyDown={event => { if (event.key === 'Escape') event.stopPropagation(); }}
+        className="pi-chat max-h-[min(32rem,var(--available-height))] w-[min(24rem,calc(100vw-1rem))] gap-0 overflow-hidden p-0">
+        {id === 'library' ? <PopoverTitle className="sr-only">Library</PopoverTitle> : <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3">
+          <PopoverTitle className="min-w-0 flex-1">{id === 'history' ? 'Conversations' : 'Library'}</PopoverTitle>
+          {id === 'history' && conversations?.onNew && <Button size="sm" variant="outline" data-testid="conversation-new" onClick={() => { conversations.onNew(); setPanel(null); }}><PlusIcon data-icon="inline-start" aria-hidden="true" />New</Button>}
+          <Button size="icon" variant="ghost" aria-label={`Close ${title}`} className="size-11" onClick={() => setPanel(null)}><XIcon className="size-4" aria-hidden="true" /></Button>
+        </header>}
+        {body(id)}
+      </PopoverContent>
+    </Popover>)}
   </div>;
 }

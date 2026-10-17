@@ -78,8 +78,8 @@ export function auditDesign({ groups, palette, radiusBindings }) {
       const expected = host ? [host[`border${corner}Radius`]] : radii;
       check('radius', style[`border${corner}Radius`], expected, expected.includes(style[`border${corner}Radius`]));
     }
-    // Native focus rings are focus indicators, not elevation shadows.
-    const shadow = normalizeShadow(style.boxShadow).split(/,(?![^(]*\))/).filter(part => !(nativeControl && element.matches(':focus-visible') && /0px 0px 0px [1-9]/.test(part))).join(', ').trim();
+    // Native focus rings are focus indicators, not elevation shadows; a shadcn popup's `ring-1` is its stock hairline edge (zero offset and blur), also not elevation.
+    const shadow = normalizeShadow(style.boxShadow).split(/,(?![^(]*\))/).map(part => part.trim()).filter(part => !((nativeControl && element.matches(':focus-visible') || element.hasAttribute('data-slot')) && /0px 0px 0px [1-9]/.test(part))).join(', ').trim();
     referenceRoot?.remove();
     if (shadow) check('shadow', shadow, shadows, shadows.includes(shadow));
     const text = [...element.childNodes].some(node => node.nodeType === Node.TEXT_NODE && node.textContent.trim());
