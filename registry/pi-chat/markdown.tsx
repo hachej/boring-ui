@@ -7,6 +7,9 @@ import { decodeHTML } from 'entities';
 import { CodeBlock } from './code-block';
 import { useChatText } from './labels';
 import type { ChatLabels } from './labels';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 /*
  * Safe Markdown for model output. Tokens are mapped to React elements one by one: raw HTML is shown as text, images are
@@ -70,8 +73,8 @@ function mentionText(value: string, mentions: CommandMentions | undefined, befor
     const selected = { name: command.name, behavior: command.behavior };
     const at = offset - start;
     if (at > cursor) pieces.push(value.slice(cursor, at));
-    pieces.push(<button key={at} type="button" data-testid="command-mention" aria-label={labels.runCommand(selected.name, selected.behavior === 'execute')}
-      className="cursor-pointer rounded bg-muted px-1 font-mono text-[0.92em] text-foreground hover:bg-accent" onClick={() => mentions.onActivate(selected)}>/{selected.name}</button>);
+    pieces.push(<Button key={at} variant="secondary" size="sm" data-testid="command-mention" aria-label={labels.runCommand(selected.name, selected.behavior === 'execute')}
+      onClick={() => mentions.onActivate(selected)}>/{selected.name}</Button>);
     cursor = limit - start;
   }
   if (!pieces.length) return value;
@@ -98,7 +101,7 @@ function cells(value: unknown, header: boolean, context: Context): ReactNode {
     if (!isRecord(cell)) return null;
     const alignment = cell['align'];
     const textAlign = alignment === 'left' || alignment === 'center' || alignment === 'right' ? alignment : undefined;
-    return createElement(header ? 'th' : 'td', { key: index, style: { textAlign }, className: header ? 'px-3 py-1.5 font-semibold' : 'px-3 py-1.5', ...(header ? { scope: 'col' } : {}) },
+    return createElement(header ? TableHead : TableCell, { key: index, style: { textAlign }, ...(header ? { scope: 'col' } : {}) },
       children(cell['tokens'], context, '', '', true));
   });
 }
@@ -126,12 +129,12 @@ function renderToken(value: unknown, context: Context, before = '', after = ''):
     case 'strong': return <strong className="font-semibold text-foreground">{children(value['tokens'], context, before, after, true)}</strong>;
     case 'em': return <em>{children(value['tokens'], context, before, after, true)}</em>;
     case 'del': return <del className="text-muted-foreground">{children(value['tokens'], context, before, after, true)}</del>;
-    case 'blockquote': return <blockquote className="my-3 rounded-lg border border-border bg-muted/40 px-4 py-2 text-muted-foreground [&_p]:my-1">{children(value['tokens'], context)}</blockquote>;
+    case 'blockquote': return <blockquote className="my-3 px-4 py-2 text-muted-foreground [&_p]:my-1">{children(value['tokens'], context)}</blockquote>;
     case 'br': return <br />;
     case 'hr': return <hr className="my-5 border-border" />;
-    case 'codespan': return <code className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[0.85em] whitespace-pre-wrap">{content}</code>;
+    case 'codespan': return <code className="bg-muted px-1.5 py-0.5 font-mono text-sm whitespace-pre-wrap">{content}</code>;
     case 'code': return <CodeBlock code={content} {...(typeof value['lang'] === 'string' && value['lang'] ? { language: value['lang'] } : {})} {...(context.onCopy ? { onCopy: context.onCopy } : {})} />;
-    case 'html': return value['block'] === true ? <pre className="my-3 overflow-x-auto rounded-lg bg-muted/50 p-3 font-mono text-xs whitespace-pre-wrap">{raw}</pre> : literal(raw);
+    case 'html': return value['block'] === true ? <pre className="my-3 overflow-x-auto font-mono text-xs whitespace-pre-wrap">{raw}</pre> : literal(raw);
     case 'image': return literal(decodeHTML(content) || raw);
     case 'link': {
       const href = linkTarget(value['href']), title = typeof value['title'] === 'string' ? decodeHTML(value['title']) : undefined;
@@ -145,10 +148,10 @@ function renderToken(value: unknown, context: Context, before = '', after = ''):
         : <ul className="my-3 list-disc ps-6 marker:text-muted-foreground">{children(value['items'], context)}</ul>;
     }
     case 'list_item': return <li className="ps-1 [&+li]:mt-1 [&>p]:my-1 [&>ol]:my-1 [&>ul]:my-1">{children(value['tokens'], context, '', '', true)}</li>;
-    case 'checkbox': return <input type="checkbox" checked={value['checked'] === true} disabled readOnly aria-label={context.labels.taskStatus} className="me-1.5 align-middle accent-foreground" />;
-    case 'table': return <div className="my-3 overflow-x-auto rounded-lg border border-border"><table className="w-full border-collapse text-left tabular-nums">
-      <thead className="bg-muted/50">{<tr>{cells(value['header'], true, context)}</tr>}</thead>
-      <tbody className="[&_tr]:border-t [&_tr]:border-border">{Array.isArray(value['rows']) ? value['rows'].map((row: unknown, index) => <tr key={index}>{cells(row, false, context)}</tr>) : null}</tbody></table></div>;
+    case 'checkbox': return <Checkbox checked={value['checked'] === true} disabled aria-label={context.labels.taskStatus} />;
+    case 'table': return <Table>
+      <TableHeader><TableRow>{cells(value['header'], true, context)}</TableRow></TableHeader>
+      <TableBody>{Array.isArray(value['rows']) ? value['rows'].map((row: unknown, index) => <TableRow key={index}>{cells(row, false, context)}</TableRow>) : null}</TableBody></Table>;
     default: return literal(raw);
   }
 }
@@ -171,7 +174,7 @@ export const Markdown = memo(function Markdown({ text: source, commandMentions, 
     if (mentions) return children(tokens, context);
     return tokens.map((token, index) => <Block key={index} token={token} context={context} />);
   }, [tokens, source, mentions, context]);
-  return <div data-testid="message-text" data-streaming={streaming ? 'true' : undefined} className="min-w-0 text-base leading-(--chat-leading) [overflow-wrap:anywhere]">
+  return <div data-testid="message-text" data-streaming={streaming ? 'true' : undefined} className="min-w-0 [overflow-wrap:anywhere]">
     {body}
   </div>;
 });

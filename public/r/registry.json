@@ -480,6 +480,17 @@
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/utils.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/button.json",
         "trace",
+        "message",
+        "bubble",
+        "attachment",
+        "badge",
+        "alert",
+        "collapsible",
+        "checkbox",
+        "table",
+        "card",
+        "spinner",
+        "dropdown-menu",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/drawer.json",
         "button",
         "toggle"
@@ -669,59 +680,12 @@
             "--chat-warning-soft-foreground": "var(--warning-soft-foreground, color-mix(in oklab, var(--chat-warning) 75%, var(--foreground)))",
             "--chat-display": "var(--font-display, var(--font-sans))",
             "--chat-composer-radius": "26px",
-            "--chat-user-radius": "18px",
             "--chat-send-radius": "9999px",
-            "--chat-leading": "1.6",
             "--chat-sheet-duration": "200ms"
           },
           ".pi-chat:is(.dark, .dark *)": {
             "--chat-warning-soft": "var(--warning-soft, color-mix(in oklab, var(--chat-warning) 26%, var(--background)))",
             "--chat-warning-soft-foreground": "var(--warning-soft-foreground, color-mix(in oklab, var(--chat-warning) 55%, var(--foreground)))"
-          },
-          ".pi-chat-shimmer, .pi-chat [data-slot=trace-line][data-status=running] > [data-slot=trace-title]": {
-            "background-image": "linear-gradient(100deg, var(--muted-foreground) 35%, var(--foreground) 50%, var(--muted-foreground) 65%)",
-            "background-size": "250% 100%",
-            "background-clip": "text",
-            "-webkit-background-clip": "text",
-            "color": "transparent",
-            "animation": "pi-chat-shimmer 2.2s linear infinite"
-          },
-          "@media (prefers-reduced-motion: reduce)": {
-            ".pi-chat [data-slot=trace-line][data-status=running] > [data-slot=trace-title]": {
-              "animation": "none",
-              "background-image": "none",
-              "color": "inherit"
-            }
-          },
-          ".pi-chat [data-testid=\"message-text\"][data-streaming=\"true\"] > :last-child:not([data-testid=\"code-block\"])::after": {
-            "content": "\"\"",
-            "display": "inline-block",
-            "width": "0.45em",
-            "height": "1.05em",
-            "margin-inline-start": "0.2em",
-            "vertical-align": "-0.15em",
-            "border-radius": "2px",
-            "background": "color-mix(in oklab, var(--foreground) 60%, transparent)",
-            "animation": "pi-chat-caret 1s steps(2, jump-none) infinite"
-          }
-        },
-        "@keyframes pi-chat-shimmer": {
-          "from": {
-            "background-position": "100% 0"
-          },
-          "to": {
-            "background-position": "0 0"
-          }
-        },
-        "@keyframes pi-chat-caret": {
-          "0%": {
-            "opacity": "1"
-          },
-          "50%": {
-            "opacity": "0.15"
-          },
-          "100%": {
-            "opacity": "1"
           }
         }
       }

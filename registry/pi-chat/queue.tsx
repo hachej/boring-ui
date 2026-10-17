@@ -1,8 +1,12 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import type { ChatDraft } from '@hachej/boring-ui-kit/native-chat';
-import { CornerDownRightIcon, EllipsisIcon, ListEndIcon, LoaderIcon, PencilIcon, RouteIcon, Trash2Icon } from 'lucide-react';
+import { CornerDownRightIcon, EllipsisIcon, ListEndIcon, PencilIcon, RouteIcon, Trash2Icon } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Card, CardContent } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Spinner } from '@/components/ui/spinner';
 import { TraceIcon, TraceLine, TraceTitle } from '@/components/ui/trace';
 import { Button } from '@/components/ui/button';
 import { isFileBlock, type QueuedMessage } from './rows';
@@ -30,25 +34,16 @@ export interface QueueActions {
 }
 
 /** The "…" button of one queued message: a small menu of the secondary actions (Edit). */
-function MoreMenu({ disabled, onEdit }: { readonly disabled: boolean; readonly onEdit: () => void }) {
+function QueueEditAction({ disabled, onEdit }: { readonly disabled: boolean; readonly onEdit: () => void }) {
   const { labels } = useChatText();
-  const [open, setOpen] = useState(false);
-  const root = useRef<HTMLDivElement>(null), trigger = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const outside = (event: MouseEvent) => { if (root.current && !root.current.contains(event.target as Node)) setOpen(false); };
-    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.stopPropagation(); setOpen(false); trigger.current?.focus(); } };
-    document.addEventListener('mousedown', outside); document.addEventListener('keydown', escape, true);
-    return () => { document.removeEventListener('mousedown', outside); document.removeEventListener('keydown', escape, true); };
-  }, [open]);
-  return <div ref={root} className="relative shrink-0">
-    <Button ref={trigger} variant="ghost" size="icon" data-testid="queue-more" aria-label={labels.moreActions} title={labels.more} aria-haspopup="menu" aria-expanded={open} disabled={disabled} onClick={() => setOpen(value => !value)}>
-      <EllipsisIcon data-icon="inline-start" aria-hidden="true" /></Button>
-    {open && <div role="menu" data-testid="queue-menu" className="absolute right-0 bottom-full z-30 mb-1 w-40 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-lg">
-      <button type="button" role="menuitem" data-testid="queue-edit" autoFocus onClick={() => { setOpen(false); onEdit(); }}
-        className="flex min-h-9 w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm text-foreground outline-none hover:bg-accent focus-visible:bg-accent max-sm:min-h-10"><PencilIcon className="size-3.5 text-muted-foreground" aria-hidden="true" />{labels.edit}</button>
-    </div>}
-  </div>;
+  return <DropdownMenu>
+    <DropdownMenuTrigger render={<Button variant="ghost" size="icon" />} data-testid="queue-more" aria-label={labels.moreActions} title={labels.more} disabled={disabled}>
+      <EllipsisIcon data-icon="inline-start" aria-hidden="true" />
+    </DropdownMenuTrigger>
+    <DropdownMenuContent side="top" align="end" data-testid="queue-menu">
+      <DropdownMenuItem data-testid="queue-edit" onClick={onEdit}><PencilIcon aria-hidden="true" />{labels.edit}</DropdownMenuItem>
+    </DropdownMenuContent>
+  </DropdownMenu>;
 }
 
 /**
@@ -78,12 +73,12 @@ export function MessageQueue({ items, sending = [], withdraw, actions }: {
     const outcome = await withdraw!(item.id);
     if (outcome === 'already_placed' || outcome === 'settled') throw new Error(labels.tooLateToRemove);
   });
-  return <section data-testid="queue" aria-label={labels.queuedMessages} className="relative mx-3 -mb-3 rounded-t-2xl border border-b-0 border-border bg-muted pb-3 text-foreground">
-    <ul className="m-0 list-none p-0">
-      {items.map((item, index) => {
+  return <section data-testid="queue" aria-label={labels.queuedMessages}>
+    <Card><CardContent><ul className="m-0 flex list-none flex-col gap-2 p-0">
+      {items.map(item => {
         const working = busy.has(String(item.id));
         const steering = item.mode === 'steer';
-        return <li key={String(item.id)} data-testid="queue-item" data-mode={item.mode} className={`flex min-h-10 items-center gap-1.5 pr-1.5 pl-3 ${index > 0 ? 'border-t border-border/70' : ''}`}>
+        return <li key={String(item.id)} data-testid="queue-item" data-mode={item.mode} className="flex min-h-10 items-center gap-1.5">
           <TraceLine status="pending" className="flex-1">
             <TraceIcon>{steering ? <RouteIcon /> : <ListEndIcon />}</TraceIcon>
             <TraceTitle><span className="sr-only">{steering ? labels.steering : labels.queued}: </span><span data-testid="queue-text">{queuedText(item, labels.images)}</span></TraceTitle>
@@ -93,17 +88,17 @@ export function MessageQueue({ items, sending = [], withdraw, actions }: {
           {steering && <span className="shrink-0 px-1 text-xs text-muted-foreground">{labels.steering}</span>}
           <Button variant="ghost" size="icon" data-testid="queue-cancel" aria-label={labels.removeQueued} title={labels.removeHint} disabled={!withdraw || working} onClick={() => { void remove(item); }}>
             <Trash2Icon data-icon="inline-start" aria-hidden="true" /></Button>
-          {actions?.edit && <MoreMenu disabled={working} onEdit={() => { void run(item, () => actions.edit!(item)); }} />}
+          {actions?.edit && <QueueEditAction disabled={working} onEdit={() => { void run(item, () => actions.edit!(item)); }} />}
         </li>;
       })}
-      {sending.map((draft, index) => <li key={`sending-${index}`} data-testid="queue-sending" className={`flex min-h-10 items-center gap-1.5 pr-1.5 pl-3 ${items.length + index > 0 ? 'border-t border-border/70' : ''}`}>
+      {sending.map((draft, index) => <li key={`sending-${index}`} data-testid="queue-sending" className="flex min-h-10 items-center gap-1.5">
         <TraceLine status="running" className="flex-1">
-          <TraceIcon><LoaderIcon className="animate-spin motion-reduce:animate-none" /></TraceIcon>
+          <TraceIcon><Spinner aria-hidden="true" /></TraceIcon>
           <TraceTitle data-testid="queue-text">{draft.text}{draft.attachments.length ? `${draft.text ? '\n' : ''}${labels.images(draft.attachments.length)}` : ''}</TraceTitle>
         </TraceLine>
         <span className="shrink-0 px-1 text-xs text-muted-foreground">{labels.sending}</span>
       </li>)}
-    </ul>
-    {failed && <p role="alert" data-testid="queue-error" className="m-0 border-t border-border/70 px-3 py-2 text-xs text-destructive">{failed}</p>}
+    </ul></CardContent></Card>
+    {failed && <Alert variant="destructive" data-testid="queue-error"><AlertDescription>{failed}</AlertDescription></Alert>}
   </section>;
 }

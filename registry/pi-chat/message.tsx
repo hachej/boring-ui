@@ -26,7 +26,12 @@ import { BlockActions } from '../button/actions';
 import type { BlockAction } from '../button/actions';
 import { useChatText } from './labels';
 import type { ReplyRef } from './config';
-import { cn } from '../utils/utils';
+import { Message, MessageContent, MessageFooter } from '@/components/ui/message';
+import { Bubble, BubbleContent } from '@/components/ui/bubble';
+import { Attachment, AttachmentContent, AttachmentDescription, AttachmentMedia, AttachmentTitle, AttachmentTrigger } from '@/components/ui/attachment';
+import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
 export interface RowContext {
   readonly developer: boolean;
@@ -57,32 +62,30 @@ const replyRef = (row: Extract<Row, { type: 'assistant' }>): ReplyRef => ({ key:
 function Image({ image, onOpenImage }: { readonly image: ImageContent; readonly onOpenImage: RowContext['onOpenImage'] }) {
   const { labels } = useChatText();
   const src = thumbnail(image.mimeType, image.data);
-  return <button type="button" data-testid="message-image" disabled={!onOpenImage} aria-label={labels.openImage} onClick={() => onOpenImage?.(image)}
-    className="block cursor-pointer overflow-hidden rounded-xl border border-border outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-default">
-    {src ? <img src={src} alt={labels.imageAttachment} className="max-h-48 max-w-full object-cover" /> : <span className="block px-3 py-2 text-xs text-muted-foreground">{labels.imageAttachment}</span>}
-  </button>;
+  return <Attachment orientation="vertical">
+    <AttachmentMedia variant={src ? 'image' : 'icon'}>{src ? <img src={src} alt={labels.imageAttachment} /> : <ImageIcon aria-hidden="true" />}</AttachmentMedia>
+    <AttachmentContent><AttachmentTitle>{labels.imageAttachment}</AttachmentTitle></AttachmentContent>
+    <AttachmentTrigger data-testid="message-image" disabled={!onOpenImage} aria-label={labels.openImage} onClick={() => onOpenImage?.(image)} />
+  </Attachment>;
 }
-
-const MENTION_CLASS = 'rounded-md bg-background px-1.5 py-0.5 font-mono text-sm font-medium text-foreground ring-1 ring-border';
 
 /** A `@path` mention in a sent message: the host's own look when its `render` returns one, else the default chip (a button when it can be opened). */
 function UserMention({ path, text, open, render }: { readonly path: string; readonly text: string; readonly open: ((path: string) => void) | undefined; readonly render: ((path: string) => ReactNode | undefined) | undefined }) {
   const custom = render?.(path);
   if (custom !== undefined) return <>{custom}</>;
   return open
-    ? <button type="button" data-testid="message-mention" data-path={path} aria-label={`Open ${path}`} onClick={() => open(path)} className={cn(MENTION_CLASS, 'cursor-pointer outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 pointer-coarse:inline-flex pointer-coarse:min-h-11 pointer-coarse:items-center')}>{text}</button>
-    : <span data-testid="message-mention" data-path={path} className={MENTION_CLASS}>{text}</span>;
+    ? <Button variant="secondary" size="sm" data-testid="message-mention" data-path={path} aria-label={`Open ${path}`} onClick={() => open(path)}>{text}</Button>
+    : <Badge variant="secondary" data-testid="message-mention" data-path={path}>{text}</Badge>;
 }
 
 /** The icon a file card shows for its kind. */
 function FileGlyph({ kind }: { readonly kind: FileKind }) {
-  const className = 'size-5 text-muted-foreground';
   switch (kind) {
-    case 'image': return <ImageIcon className={className} aria-hidden="true" />;
-    case 'sheet': return <FileSpreadsheetIcon className={className} aria-hidden="true" />;
-    case 'slides': return <PresentationIcon className={className} aria-hidden="true" />;
-    case 'document': return <FileTextIcon className={className} aria-hidden="true" />;
-    default: return <FileIcon className={className} aria-hidden="true" />;
+    case 'image': return <ImageIcon aria-hidden="true" />;
+    case 'sheet': return <FileSpreadsheetIcon aria-hidden="true" />;
+    case 'slides': return <PresentationIcon aria-hidden="true" />;
+    case 'document': return <FileTextIcon aria-hidden="true" />;
+    default: return <FileIcon aria-hidden="true" />;
   }
 }
 
@@ -101,20 +104,14 @@ function FileCard({ path, open, preview, change }: { readonly path: string; read
       () => { if (!abort.signal.aborted) setSrc(undefined); });
     return () => abort.abort();
   }, [kind, path, preview]);
-  const body = <>
-    <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-md text-muted-foreground">
-      {src ? <img src={src} alt="" className="size-full object-cover" /> : <FileGlyph kind={kind} />}
-    </span>
-    <span className="flex min-w-0 flex-1 items-center gap-2 text-left">
-      <span className="truncate text-sm font-medium text-foreground">{name}</span>
-      <span className="shrink-0 text-xs text-muted-foreground">{change ? labels.fileChange[change] : labels.fileKind[kind]}</span>
-    </span>
-  </>;
-  return open
-    // The card keeps the `message-mention` test id of the chip it replaces, so a journey that clicks a sent mention still finds it.
-    ? <button type="button" data-testid="message-mention" data-path={path} aria-label={labels.openFile(name)} onClick={() => open(path)}
-      className="flex min-h-11 max-w-[16rem] cursor-pointer items-center gap-3 rounded-lg border border-border bg-card px-3 py-2 outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60">{body}</button>
-    : <div data-testid="message-mention" data-path={path} className="flex min-h-11 max-w-[16rem] items-center gap-3 rounded-lg border border-border bg-card px-3 py-2">{body}</div>;
+  return <Attachment className="max-w-64" {...(!open ? { 'data-testid': 'message-mention', 'data-path': path } : {})}>
+    <AttachmentMedia variant={src ? 'image' : 'icon'}>{src ? <img src={src} alt="" /> : <FileGlyph kind={kind} />}</AttachmentMedia>
+    <AttachmentContent>
+      <AttachmentTitle>{name}</AttachmentTitle>
+      <AttachmentDescription>{change ? labels.fileChange[change] : labels.fileKind[kind]}</AttachmentDescription>
+    </AttachmentContent>
+    {open && <AttachmentTrigger data-testid="message-mention" data-path={path} aria-label={labels.openFile(name)} onClick={() => open(path)} />}
+  </Attachment>;
 }
 
 /** The file cards of a message, above its text bubble. */
@@ -131,8 +128,7 @@ function FileCards({ paths, open, preview }: { readonly paths: readonly string[]
 function UserText({ text, context }: { readonly text: string; readonly context: RowContext }) {
   const open = context.pieces?.openMention;
   const render = context.pieces?.renderMention;
-  const bubble = 'max-w-[80%] rounded-(--chat-user-radius) bg-muted px-4 py-3 text-base leading-relaxed whitespace-pre-wrap text-foreground [overflow-wrap:anywhere]';
-  if (!context.pieces) return <div data-testid="user-text" className={bubble}>{text}</div>;
+  if (!context.pieces) return <Bubble variant="muted" align="end"><BubbleContent data-testid="user-text"><span className="whitespace-pre-wrap">{text}</span></BubbleContent></Bubble>;
   const all = pieces(text, context.pieces);
   const isFile = (piece: Piece) => piece.kind === 'mention' && isUploadPath(piece.value!);
   const files = all.filter(isFile).map(piece => piece.value!);
@@ -140,24 +136,25 @@ function UserText({ text, context }: { readonly text: string; readonly context: 
   const empty = shown.every(piece => piece.kind === undefined && piece.text === '');
   return <>
     {files.length > 0 && <FileCards paths={files} open={context.openFile ?? open} preview={context.pieces.preview} />}
-    {!(files.length > 0 && empty) && <div data-testid="user-text" className={bubble}>{shown.map((piece, at) => piece.kind === 'mention'
+    {!(files.length > 0 && empty) && <Bubble variant="muted" align="end"><BubbleContent data-testid="user-text"><span className="whitespace-pre-wrap">{shown.map((piece, at) => piece.kind === 'mention'
       ? <UserMention key={at} path={piece.value!} text={piece.text} open={open} render={render} />
-      : piece.kind === 'skill' ? <span key={at} data-testid="message-skill" data-skill={piece.value} className="rounded-md bg-primary/10 px-1.5 py-0.5 font-medium text-foreground">{piece.text}</span>
-      : piece.text)}</div>}
+      : piece.kind === 'skill' ? <Badge key={at} variant="secondary" data-testid="message-skill" data-skill={piece.value}>{piece.text}</Badge>
+      : piece.text)}</span></BubbleContent></Bubble>}
   </>;
 }
 
 function UserBubble({ message, context }: { readonly message: UserMessage; readonly context: RowContext }) {
   const parts = typeof message.content === 'string' ? [{ type: 'text' as const, text: message.content }] : message.content;
-  return <div className="flex flex-col items-end gap-2">
+  return <Message align="end"><MessageContent>
     {parts.map((part, index) => part.type === 'text' ? (isFileBlock(part.text) ? null : <UserText key={index} text={part.text} context={context} />)
       : <Image key={index} image={part} onOpenImage={context.onOpenImage} />)}
-  </div>;
+  </MessageContent></Message>;
 }
 
 function Notice({ tone, icon, children, testid }: { readonly tone: 'error' | 'muted'; readonly icon: ReactNode; readonly children: ReactNode; readonly testid: string }) {
-  return <p role={tone === 'error' ? 'alert' : 'status'} data-testid={testid}
-    className={cn('my-2 mb-0 flex items-start gap-2 rounded-lg px-3 py-2 text-sm', tone === 'error' ? 'bg-destructive/10 text-destructive' : 'bg-muted/60 text-muted-foreground')}>{icon}<span className="min-w-0 [overflow-wrap:anywhere]">{children}</span></p>;
+  return <Alert variant={tone === 'error' ? 'destructive' : 'default'} role={tone === 'error' ? 'alert' : 'status'} data-testid={testid}>
+    {icon}<AlertDescription>{children}</AlertDescription>
+  </Alert>;
 }
 
 function resultText(message: ToolResultMessage): string { return message.content.map(part => part.type === 'text' ? part.text : '').join('\n'); }
@@ -169,8 +166,10 @@ export function RowView({ row, context: liveContext }: { readonly row: Row; read
     case 'user': return <article data-row-id={row.key} data-role="user" aria-live={row.historical ? 'off' : undefined}><UserBubble message={row.message} context={context} /></article>;
     case 'card': return <article data-row-id={row.key} data-role="event">{row.card.content}</article>;
     case 'event': return <article data-row-id={row.key} data-role="event" className="text-center text-xs text-muted-foreground">{labels.event(row.label)}</article>;
-    case 'system': return <article data-row-id={row.key} data-role="system"><details className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground"><summary className="cursor-pointer max-sm:py-3 pointer-coarse:py-3">{labels.systemContext}</summary>
-      <pre className="mt-2 mb-0 whitespace-pre-wrap">{row.text}</pre></details></article>;
+    case 'system': return <article data-row-id={row.key} data-role="system"><Collapsible>
+      <CollapsibleTrigger render={<Button variant="ghost" />}>{labels.systemContext}</CollapsibleTrigger>
+      <CollapsibleContent><pre className="whitespace-pre-wrap">{row.text}</pre></CollapsibleContent>
+    </Collapsible></article>;
     case 'orphan-result': return <article data-row-id={row.key} data-role="toolResult"><Notice tone="error" testid="tool-error" icon={<AlertCircleIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />}>
       <strong className="font-semibold">{labels.toolFailed(row.message.toolName)}</strong><span className="mt-1 block font-mono text-xs whitespace-pre-wrap">{resultText(row.message)}</span></Notice></article>;
     case 'assistant': {
@@ -191,7 +190,8 @@ export function RowView({ row, context: liveContext }: { readonly row: Row; read
         ? <BlockActions iconOnly actions={context.messageActions(replyRef(row))} testId="reply-action" menuLabel={labels.moreActions} />
         : null;
       return <article data-row-id={row.key} data-role="assistant" aria-live={row.historical ? 'off' : undefined} data-streaming={row.streaming ? 'true' : undefined} className="group/message">
-        <div className="space-y-3">
+        <Message><MessageContent>
+        <div className="flex flex-col gap-3">
           {chunks.map((chunk, at) => {
             if (chunk.kind === 'activity') {
               const failed = chunk.steps.some(step => step.kind === 'tool' && step.entry.status === 'failed');
@@ -200,8 +200,8 @@ export function RowView({ row, context: liveContext }: { readonly row: Row; read
               return <ActivityBlock key={chunk.key} steps={chunk.steps} state={state} streaming={row.streaming} developer={context.developer} {...(context.onOpenImage ? { onOpenImage: context.onOpenImage } : {})} />;
             }
             const part = chunk.part;
-            if (part.kind === 'text') return <Markdown key={part.key} text={part.text} streaming={row.streaming && part === lastText && row.parts[row.parts.length - 1] === part}
-              {...(settled && context.commandMentions ? { commandMentions: context.commandMentions } : {})} {...(context.onCopy ? { onCopy: context.onCopy } : {})} />;
+            if (part.kind === 'text') return <Bubble key={part.key} variant="ghost"><BubbleContent><Markdown text={part.text} streaming={row.streaming && part === lastText && row.parts[row.parts.length - 1] === part}
+              {...(settled && context.commandMentions ? { commandMentions: context.commandMentions } : {})} {...(context.onCopy ? { onCopy: context.onCopy } : {})} /></BubbleContent></Bubble>;
             if (part.kind === 'thinking') return null; // reasoning is a step of an activity block
             if (part.kind === 'approval') return <ApprovalCard key={part.key} call={part.call} result={part.result} questionId={part.questionId} answer={context.answer} summary={part.summary} decision={part.decision} live={part.live} />;
             if (part.kind === 'question') return <QuestionCard key={part.key} call={part.call} result={part.result} questionId={part.questionId} answer={context.answer} live={part.live} />;
@@ -223,7 +223,8 @@ export function RowView({ row, context: liveContext }: { readonly row: Row; read
           {context.onFork && row.entryId && <Button size="icon-sm" variant="ghost" aria-label={labels.fork} title={labels.forkHint} data-testid="fork-reply"
             onClick={() => context.onFork!(row.entryId!)}><icons.fork data-icon="inline-start" aria-hidden="true" /></Button>}
           {host}</div>}
-        {settled && !row.active && row.text && context.replyFooter?.(replyRef(row))}
+        {settled && !row.active && row.text && context.replyFooter && <MessageFooter>{context.replyFooter(replyRef(row))}</MessageFooter>}
+        </MessageContent></Message>
       </article>;
     }
   }
