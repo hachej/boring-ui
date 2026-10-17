@@ -660,6 +660,9 @@
           },
           ".pi-chat [hidden]": {
             "display": "none"
+          },
+          ".pi-chat :where([data-slot=\"empty\"])": {
+            "border-width": "0"
           }
         },
         "@layer utilities": {
