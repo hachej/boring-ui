@@ -37,7 +37,7 @@ export interface ImagePaneProps extends MediaSource {
 }
 
 /** Zoom steps and the level; on a narrow bar only the steps stay (the stage also zooms with + - 0). Fit and Actual size are in the "…" menu. */
-function ZoomControls({ testId, percent, ready, onStep, onFit }: { readonly testId: string; readonly percent: string; readonly ready: boolean; readonly onStep: (direction: 1 | -1) => void; readonly onFit: () => void }) {
+export function ZoomControls({ testId, percent, ready, onStep, onFit }: { readonly testId: string; readonly percent: string; readonly ready: boolean; readonly onStep: (direction: 1 | -1) => void; readonly onFit: () => void }) {
   const { tight } = useViewerBar();
   const { labels } = useViewerText();
   return <div role="group" aria-label={labels.zoom} className="flex items-center gap-0.5">

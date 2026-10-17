@@ -56,6 +56,8 @@ export const frenchViewerLabels: ViewerLabels = {
   imageUnsupported: mediaType => `Ce type d’image (${mediaType || 'inconnu'}) ne peut pas être affiché ici. Vous pouvez toujours le télécharger.`,
   imageStage: name => `Image ${name}`,
   pdfUnsupported: 'Ce navigateur ne peut pas afficher les PDF directement.',
+  pdfDocument: name => `Pages de ${name}`,
+  pdfPage: (current, count) => `${current} / ${count}`,
   pdfHint: (name, canOpen) => `Téléchargez ${name} pour le lire dans une application PDF${canOpen ? ', ou ouvrez-le dans un nouvel onglet' : ''}.`,
   notSaved: reason => `Non enregistré : ${reason}`,
   saveFailedReason: 'l’enregistrement a échoué',

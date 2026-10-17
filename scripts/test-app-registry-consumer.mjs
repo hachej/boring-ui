@@ -12,6 +12,9 @@ import { runCaptured } from './run-captured.mjs';
 import { assertConsumerTypeFiles, prepareConsumerIsolation, npmInstallFlags } from './consumer-isolation.mjs';
 import { consumerDependencies, packBoringDependencies, registryItemName, serveRegistry, writeLockedManifest } from './consumer-install.mjs';
 import { SHADCN_BUILTINS } from './check-registry-blocks.mjs';
+import { createServer } from 'node:http';
+import { launch, q } from '@hachej/boring-testing/browser';
+import { fictionalPdf } from '../test/fixtures/fictional-pdf.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const read = name => JSON.parse(readFileSync(join(root, 'public/r', `${name}.json`), 'utf8'));
@@ -62,7 +65,7 @@ async function testStyle(style) {
       iconLibrary: 'lucide', aliases: { components: '@/components', utils: '@/lib/utils', ui: '@/components/ui', lib: '@/lib', hooks: '@/hooks' } }));
     writeFileSync(join(directory, 'src/index.css'), '@import "tailwindcss";\n');
     writeFileSync(join(directory, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'ESNext', moduleResolution: 'Bundler', jsx: 'react-jsx', strict: true, noUnusedLocals: true, noUnusedParameters: true, verbatimModuleSyntax: true, erasableSyntaxOnly: true, noUncheckedIndexedAccess: true, skipLibCheck: false,
-      noEmit: true, types: [], lib: ['ES2023', 'DOM', 'DOM.Iterable'], baseUrl: '.', paths: { '@/*': ['./src/*'] } }, include: ['src/components/pi-app/**/*.tsx', 'src/components/pi-app/**/*.ts', 'src/components/app-shell/**/*.tsx', 'src/components/app-shell/**/*.ts', 'src/components/documents/**/*.tsx', 'src/components/documents/**/*.ts', 'src/page.tsx'] }));
+      noEmit: true, types: [], lib: ['ES2023', 'DOM', 'DOM.Iterable'], baseUrl: '.', paths: { '@/*': ['./src/*'] } }, include: ['src/components/pi-app/**/*.tsx', 'src/components/pi-app/**/*.ts', 'src/components/app-shell/**/*.tsx', 'src/components/app-shell/**/*.ts', 'src/components/documents/**/*.tsx', 'src/components/documents/**/*.ts', 'src/page.tsx', 'src/pdf-check.tsx'] }));
     const installer = { ...process.env, npm_config_cache: cache, npm_config_offline: 'true', npm_config_ignore_scripts: 'true', npm_config_audit: 'false', npm_config_fund: 'false' };
     delete installer.NODE_OPTIONS;
     run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', `${registry}/pi-app.json`, `${registry}/file-tree.json`, `${registry}/app-shell.json`, `${registry}/documents.json`, `${registry}/theme.json`, '--cwd', directory, '--yes'], installer);
@@ -124,6 +127,13 @@ async function testStyle(style) {
     // host-owned, not ours: drop the import as the consumer's linter autofix would, and keep the strictness for every block file.
     const scrollArea = join(directory, 'src/components/ui/scroll-area.tsx');
     if (existsSync(scrollArea) && !/\bReact\./.test(readFileSync(scrollArea, 'utf8'))) writeFileSync(scrollArea, readFileSync(scrollArea, 'utf8').replace(/^import \* as React from ["']react["']\n/m, ''));
+    // The installed PDF viewer as a phone sees it (no browser viewer): pdf.js and its worker come from the consumer's own install.
+    const pdfBase64 = Buffer.from(fictionalPdf([['Cedar Works', 'A fictional picnic plan.'], ['Page two', 'Pack some sandwiches.']])).toString('base64');
+    writeFileSync(join(directory, 'src/pdf-check.tsx'), `import { createRoot } from 'react-dom/client';
+  import { PdfPane } from './components/viewers/pdf-pane';
+  const bytes = Uint8Array.from(atob('${pdfBase64}'), character => character.charCodeAt(0));
+  createRoot(document.getElementById('root')!).render(<div className="boring-viewer" style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}><PdfPane name="Cedar Works.pdf" bytes={bytes} inline={false} /></div>);
+  `);
     assertConsumerTypeFiles(run(process.execPath, ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.json', '--listFiles'], isolated), directory);
     run(process.execPath, ['node_modules/esbuild/bin/esbuild', 'src/page.tsx', '--bundle', '--platform=browser', '--format=esm', '--jsx=automatic', '--outfile=dist/page.js', '--metafile=dist/meta.json',
       '--define:process.env.NODE_ENV="production"', '--alias:@=./src'], isolated);
@@ -134,18 +144,53 @@ async function testStyle(style) {
     for (const file of ['file-tree/file-tree.tsx', 'pi-app/agent-workspace.tsx', 'pi-app/artifact-panel.tsx', 'pi-app/file-viewer.tsx', 'pi-app/sessions.tsx', 'pi-chat/pi-chat.tsx', 'pi-workspace/workspace.tsx', 'viewers/viewer-frame.tsx', 'documents/documents.tsx', 'documents/document-sheet.tsx'])
       assert.ok(inputs.some(path => path.endsWith(`src/components/${file}`)), `the bundle uses the CLI-installed ${file}`);
     assert.deepEqual(inputs.filter(path => /@hachej\/boring-agent|pi-durable\/dist\/(storage|env)|sqlite|node:|tldraw/.test(path)), [], 'browser bundle holds no agent, storage, Node or canvas code');
+    run(process.execPath, ['node_modules/esbuild/bin/esbuild', 'src/pdf-check.tsx', '--bundle', '--platform=browser', '--format=esm', '--jsx=automatic', '--outfile=dist/pdf-check.js',
+      '--define:process.env.NODE_ENV="production"', '--alias:@=./src'], isolated);
+    await assertInstalledPdfWorker(directory);
     // Keep the DOM setup outside the component bundle: public Base UI modules must initialize in that DOM realm.
     writeFileSync(join(directory, 'presentation-components.tsx'), "export { ViewerActions, ViewerVersions } from './src/components/viewers/menu';\nexport { ConversationFiles } from './src/components/pi-chat/conversation-files';\nexport { FileTree } from './src/components/file-tree/file-tree';\nexport { HistoryColumnToggle, useHistoryColumn } from './src/components/pi-app/history-column';\n");
     writeFileSync(join(directory, 'dist/presentation.mjs'), readFileSync(join(root, 'test/fixtures/app-registry-presentation.mjs'), 'utf8'));
     run(process.execPath, ['node_modules/esbuild/bin/esbuild', 'presentation-components.tsx', '--bundle', '--platform=node', '--format=esm', '--packages=external', '--jsx=automatic', '--outfile=dist/presentation-components.mjs', '--alias:@=./src', '--alias:@hachej/boring-ui-kit/file-tree.css=./node_modules/@hachej/boring-ui-kit/styles/file-tree.css'], isolated);
     run(process.execPath, ['dist/presentation.mjs'], isolated);
-    console.log(`PASS (${style}): real pinned shadcn installation of pi-app over HTTP with its ${closure.size - 1} registry dependencies, strict declarations, browser bundle and installed menu/drawer DOM behavior; not browser geometry or gesture evidence`);
+    console.log(`PASS (${style}): real pinned shadcn installation of pi-app over HTTP with its ${closure.size - 1} registry dependencies, strict declarations, browser bundle, installed menu/drawer DOM behavior and the installed PDF viewer drawing pages through its pdf.js worker in Chromium; not browser geometry or gesture evidence`);
     completed = true;
   } finally {
     server?.kill();
     if (completed) rmSync(directory, { recursive: true, force: true });
     else console.error('Retained failing disposable app consumer at ' + directory);
   }
+}
+
+/**
+ * Serves the consumer's page bundle and, at the URL its `new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url)` resolves to,
+ * the worker from the consumer's own node_modules (what a host whose bundler leaves that URL as is does; Vite and webpack emit it).
+ * Chromium then draws both pages through that worker, proving the installed block, its pinned pdf.js and the worker fit together.
+ */
+async function assertInstalledPdfWorker(directory) {
+  const worker = readFileSync(join(directory, 'node_modules/pdfjs-dist/build/pdf.worker.min.mjs'));
+  assert.equal(JSON.parse(readFileSync(join(directory, 'node_modules/pdfjs-dist/package.json'), 'utf8')).version, JSON.parse(readFileSync(join(root, 'ARCHITECTURE.json'), 'utf8')).rootDevDependencies['pdfjs-dist']);
+  const routes = { '/': ['text/html', '<!doctype html><meta name="viewport" content="width=device-width"><div id="root"></div><script type="module" src="/pdf-check.js"></script>'],
+    '/pdf-check.js': ['text/javascript', readFileSync(join(directory, 'dist/pdf-check.js'))], '/pdfjs-dist/build/pdf.worker.min.mjs': ['text/javascript', worker] };
+  let workerLoads = 0;
+  const server = createServer((request, response) => {
+    const route = routes[new URL(request.url, 'http://x').pathname];
+    if (request.url === '/pdfjs-dist/build/pdf.worker.min.mjs') workerLoads++;
+    if (route) response.writeHead(200, { 'content-type': route[0] }).end(route[1]); else response.writeHead(404).end();
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  let browser;
+  try {
+    browser = await launch('about:blank', { evidence: directory });
+    await browser.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 1800, deviceScaleFactor: 2, mobile: true });
+    await browser.send('Page.navigate', { url: `http://127.0.0.1:${server.address().port}/` });
+    const pages = `Array.from(document.querySelectorAll('[data-testid=viewer-pdf-page]'))`;
+    await browser.until('the installed viewer draws both pages', `${pages}.length === 2 && ${pages}.every(page => page.dataset.rendered)`, 30000);
+    const sizes = await browser.evaluate(`${pages}.map(page => [page.querySelector('canvas').width, page.querySelector('canvas').height])`);
+    assert.ok(sizes.every(([width, height]) => width > 0 && height > width), JSON.stringify(sizes));
+    assert.equal(await browser.evaluate(`${q('[data-testid=viewer-pdf-page-indicator]')}.textContent`), '1 / 2');
+    assert.equal(workerLoads, 1, 'pdf.js ran in its own worker from the consumer install');
+    assert.deepEqual(browser.problems, [], 'no browser console errors');
+  } finally { await browser?.close(); server.close(); }
 }
 
 for (const style of styles) await testStyle(style);

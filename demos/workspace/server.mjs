@@ -181,7 +181,9 @@ export async function startWorkspaceDemo({ directory = mkdtempSync(join(tmpdir()
   const page = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>${COMPANY} - Accounts payable (fictional)</title>
 <link rel="stylesheet" href="/app.css">${themePreviewHead}</head><body><div id="root"></div><script>window.__APP__=${JSON.stringify({ token, conversation: String(current.id), identity: { runtimeId: 'app', ...person }, voice: Boolean(voice) })}</script>
 <script type="module" src="/app.js"></script></body></html>`;
-  const statics = { ...themePreviewStatics, '/': ['text/html; charset=utf-8', page], '/app.js': ['text/javascript; charset=utf-8', bundle.outputFiles.find(file => file.path.endsWith('.js')).text], '/app.css': ['text/css; charset=utf-8', css] };
+  const statics = { ...themePreviewStatics, '/': ['text/html; charset=utf-8', page], '/app.js': ['text/javascript; charset=utf-8', bundle.outputFiles.find(file => file.path.endsWith('.js')).text], '/app.css': ['text/css; charset=utf-8', css],
+    // pdf.js's worker at the URL the bundle resolves (esbuild leaves `new URL(<package path>, import.meta.url)` as is), for browsers without a PDF viewer.
+    '/pdfjs-dist/build/pdf.worker.min.mjs': ['text/javascript; charset=utf-8', readFileSync(fileURLToPath(import.meta.resolve('pdfjs-dist/build/pdf.worker.min.mjs')))] };
 
   const server = createServer(async (incoming, outgoing) => {
     const url = new URL(incoming.url, `http://${incoming.headers.host}`);

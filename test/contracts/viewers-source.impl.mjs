@@ -209,7 +209,7 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     assert.ok(unsupported.q('[data-testid="viewer-download"]'), 'a type that cannot be shown can still be downloaded');
   });
 
-  await t.test('the PDF viewer uses the browser viewer over an object URL and falls back to Download where there is none', async t => {
+  await t.test('the PDF viewer uses the browser viewer over an object URL; without one, pdf.js draws it, and Download remains when that fails too', async t => {
     const pdf = new TextEncoder().encode('%PDF-1.4\n%%EOF\n');
     const inline = await mount(t, h(pdfPane.PdfPane, { name: 'report.pdf', bytes: pdf, inline: true }));
     assert.ok(inline.q('iframe[data-testid="viewer-frame-pdf"]').getAttribute('src').startsWith('blob:'));
@@ -217,6 +217,9 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     assert.equal(inline.q('iframe').hasAttribute('sandbox'), false, 'the browser PDF viewer does not run inside a sandboxed frame');
     const fallback = await mount(t, h(pdfPane.PdfPane, { name: 'report.pdf', bytes: pdf, inline: false, onRefresh() {} }));
     assert.equal(fallback.q('iframe') === null, true);
+    // No browser viewer: pdf.js is tried first. This DOM has no Worker, so the worker cannot start and the pane falls back to Download.
+    for (let tries = 0; tries < 200 && !fallback.q('[data-testid="viewer-pdf-fallback"]'); tries++) await settle();
+    assert.equal(fallback.q('[data-testid="viewer-stage"]').dataset.pdf, 'fallback');
     assert.match(fallback.q('[data-testid="viewer-pdf-fallback"]').textContent, /cannot show PDFs inline/);
     assert.ok(fallback.q('[data-testid="viewer-pdf-download"]'));
     assert.ok(fallback.q('[data-testid="viewer-more"]'));
