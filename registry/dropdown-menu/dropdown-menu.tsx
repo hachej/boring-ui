@@ -38,16 +38,15 @@ function DropdownMenuContent({
   alignOffset = 0,
   side = "bottom",
   sideOffset = 4,
-  portalContainer,
   className,
   ...props
 }: MenuPrimitive.Popup.Props &
   Pick<
     MenuPrimitive.Positioner.Props,
     "align" | "alignOffset" | "side" | "sideOffset"
-  > & { portalContainer?: HTMLElement | null }) {
+  >) {
   return (
-    <MenuPrimitive.Portal {...(portalContainer ? { container: portalContainer } : {})}>
+    <MenuPrimitive.Portal>
       <MenuPrimitive.Positioner
         className="isolate z-50 outline-none"
         align={align}

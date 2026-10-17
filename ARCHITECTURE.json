@@ -193,7 +193,6 @@
         "@json-render/react/schema",
         "@earendil-works/chord/delta",
         "@tldraw/tlschema",
-        "radix-ui",
         "lucide-react",
         "@base-ui/react",
         "@base-ui/react/collapsible"

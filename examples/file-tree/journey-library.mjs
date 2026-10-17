@@ -88,7 +88,8 @@ for (const [name, start, trigger] of [
         const geometry = await browser.evaluate(`(() => {
           const panel=${q(tree)}, input=panel.querySelector('input[type=search]'), p=panel.getBoundingClientRect(), s=input.getBoundingClientRect();
           const folderName=${q(`[role=treeitem][data-path="${folder}"] > div .file-tree-name`)}, fileName=${q(`[role=treeitem][data-path=${JSON.stringify(file)}] > div .file-tree-name`)};
-          return { left:s.left-p.left, right:p.right-s.right, indent:fileName.getBoundingClientRect().left-folderName.getBoundingClientRect().left,
+          const measure = name => { const button=name.closest('button'), style=getComputedStyle(button); return { slot:button.dataset.slot, x:button.getBoundingClientRect().x, padding:style.paddingLeft, gap:style.gap, children:[...button.children].map(node=>({name:node.className?.baseVal ?? node.className, x:node.getBoundingClientRect().x, w:node.getBoundingClientRect().width})) }; };
+          return { left:s.left-p.left, right:p.right-s.right, indent:fileName.getBoundingClientRect().left-folderName.getBoundingClientRect().left, folderButton:measure(folderName), fileButton:measure(fileName),
             rows:[...panel.querySelectorAll('[data-slot=sidebar-menu-button]')].map(row=>row.getBoundingClientRect().height),
             allMeta:[...panel.querySelectorAll('[data-file-meta]')].every(meta=>meta.textContent.trim().length>0),
             folderMeta:[...panel.querySelectorAll('[role=treeitem][aria-expanded] > div [data-file-meta]')].map(meta=>meta.textContent),
@@ -100,6 +101,7 @@ for (const [name, start, trigger] of [
         assert.ok(geometry.left >= 16 && geometry.right >= 16, `inset search: ${JSON.stringify(geometry)}`);
         assert.ok(geometry.rows.every(height => height >= 44 && height <= 48), JSON.stringify(geometry));
         assert.ok(geometry.indent >= 12 && geometry.indent <= 16, `nested files indent to the right of their folder: ${JSON.stringify(geometry)}`);
+        assert.equal(geometry.folderButton.children[0].w, 16, 'the consumer shadcn Button sizes its icon through its quoted nested selector');
         assert.equal(geometry.allMeta, true);
         assert.deepEqual(geometry.folderMeta, [name === 'standalone' ? '3 items' : '1 item'], 'only complete provider child listings supply folder counts');
         assert.ok(geometry.targets.length >= 3, 'the real shadcn upload, close and file-actions controls are present');

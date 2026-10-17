@@ -133,7 +133,6 @@ export interface FileTreeActionsProps {
   readonly label: string;
   readonly icon: ReactNode;
   readonly items: readonly FileTreeAction[];
-  readonly container: HTMLElement | null;
 }
 export type FileTreeButtonProps = ComponentProps<'button'> & {
   readonly variant?: 'secondary' | 'ghost';
@@ -212,7 +211,6 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
     else for (const directory of ['', ...expanded]) void controller.refresh(directory);
   }, [controller, refreshKey]);
   const tree = useRef<HTMLUListElement>(null);
-  const [panel, setPanel] = useState<HTMLElement | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const dragDepth = useRef(0);
   const [dropping, setDropping] = useState(false);
@@ -326,7 +324,7 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
         {folder ? <Collapsible.Trigger render={button} /> : button}
         {status?.kind === 'pending' && <LoaderCircle data-upload-spinner aria-hidden="true" />}
         {status?.kind === 'failed' && <Button type="button" variant="ghost" data-upload-retry aria-label={status.retryLabel} onClick={status.retry}>{status.retryLabel}</Button>}
-        {!folder && !temporary && !status && <FileActions Actions={Actions} controller={controller} entry={entry} labels={labels} container={panel}
+        {!folder && !temporary && !status && <FileActions Actions={Actions} controller={controller} entry={entry} labels={labels}
           onOpen={onOpen ? () => onOpen(entry.path) : undefined} onHistory={history ? () => setHistoryPath(entry.path) : undefined} onError={setUploadError} />}
       </div>
       {status?.kind === 'failed' && <span data-upload-error>{status.reason}</span>}
@@ -338,7 +336,7 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
 
   const visibleListing = state.query ? state.search : state.directories.get('');
   const paginated = visibleListing?.kind === 'ready' && visibleListing.cursor !== undefined;
-  return <section ref={setPanel} data-boring="file-tree" data-variant={variant} data-dropping={dropping || undefined} className={className} aria-label={labels.region}
+  return <section data-boring="file-tree" data-variant={variant} data-dropping={dropping || undefined} className={className} aria-label={labels.region}
     onDragEnter={event => { if (upload && event.dataTransfer.types.includes('Files')) { event.preventDefault(); dragDepth.current++; setDropping(true); } }}
     onDragOver={event => { if (upload && event.dataTransfer.types.includes('Files')) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; } }}
     onDragLeave={event => { if (upload && event.dataTransfer.types.includes('Files')) { dragDepth.current = Math.max(0, dragDepth.current - 1); if (!dragDepth.current) setDropping(false); } }}
@@ -372,12 +370,11 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
   </section>;
 }
 
-function FileActions({ Actions, controller, entry, labels, container, onOpen, onHistory, onError }: {
+function FileActions({ Actions, controller, entry, labels, onOpen, onHistory, onError }: {
   readonly Actions: FileTreeComponents['Actions'];
   readonly controller: FileTreeController;
   readonly entry: FileEntry;
   readonly labels: FileTreeLabels;
-  readonly container: HTMLElement | null;
   readonly onOpen: (() => void) | undefined;
   readonly onHistory: (() => void) | undefined;
   readonly onError: (reason: string) => void;
@@ -403,7 +400,7 @@ function FileActions({ Actions, controller, entry, labels, container, onOpen, on
   if (onOpen) items.push({ id: 'open', label: labels.open, icon: <FolderOpen aria-hidden="true" />, onSelect: onOpen });
   if (onHistory) items.push({ id: 'history', label: labels.history, icon: <History aria-hidden="true" />, onSelect: onHistory });
   items.push({ id: 'download', label: labels.download, icon: <Download aria-hidden="true" />, onSelect: () => { void download(); } });
-  return <Actions container={container} label={labels.actionsOf(entry.path)} icon={<MoreHorizontal aria-hidden="true" />} items={items} />;
+  return <Actions label={labels.actionsOf(entry.path)} icon={<MoreHorizontal aria-hidden="true" />} items={items} />;
 }
 
 function FileHistory({ Button, controller, path, labels, reload, onClose }: { readonly Button: FileTreeComponents['Button']; readonly controller: FileTreeController; readonly path: string; readonly labels: FileTreeLabels; readonly reload?: unknown; readonly onClose: () => void }) {

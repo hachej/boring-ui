@@ -784,8 +784,7 @@
         "@hachej/boring-files@^0.3.2",
         "react@^19.0.0",
         "react-dom@^19.0.0",
-        "lucide-react@^1.51.0",
-        "radix-ui@^1.8.0"
+        "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
         "@boring-ui/theme",
@@ -2600,7 +2599,6 @@
         "@hachej/boring-ui-kit@^0.3.2",
         "@hachej/boring-files@^0.3.2",
         "react@^19.0.0",
-        "radix-ui@^1.8.0",
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [

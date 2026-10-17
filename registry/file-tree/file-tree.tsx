@@ -3,6 +3,7 @@
 import '@hachej/boring-ui-kit/file-tree.css';
 import { FileTree as PackageFileTree, FileTreeView as PackageFileTreeView } from '@hachej/boring-ui-kit/file-tree-view';
 import type { FileTreeComponents, FileTreeActionsProps, FileTreeButtonProps, FileTreeProps as PackageFileTreeProps, FileTreeViewProps as PackageFileTreeViewProps } from '@hachej/boring-ui-kit/file-tree-view';
+import { useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../dropdown-menu/dropdown-menu';
 import { cn } from '../utils/utils';
@@ -12,10 +13,11 @@ function LibraryButton({ className, ...props }: FileTreeButtonProps) {
   return <Button {...props} className={cn('max-sm:min-h-11 max-sm:min-w-11 pointer-coarse:min-h-11 pointer-coarse:min-w-11', className)} />;
 }
 
-function FileActionMenu({ label, icon, items, container }: FileTreeActionsProps) {
-  return <DropdownMenu modal={false}>
-    <DropdownMenuTrigger render={<LibraryButton type="button" variant="ghost" size="icon" />} data-file-more aria-label={label}>{icon}</DropdownMenuTrigger>
-    <DropdownMenuContent data-boring="file-actions" align="end" portalContainer={container}>
+function FileActionMenu({ label, icon, items }: FileTreeActionsProps) {
+  const trigger = useRef<HTMLButtonElement>(null);
+  return <DropdownMenu>
+    <DropdownMenuTrigger ref={trigger} render={<LibraryButton type="button" variant="ghost" size="icon" />} data-file-more aria-label={label}>{icon}</DropdownMenuTrigger>
+    <DropdownMenuContent data-boring="file-actions" align="end" finalFocus={trigger}>
       {items.map(item => <DropdownMenuItem key={item.id} data-action={item.id} onClick={item.onSelect} className="max-sm:min-h-11 pointer-coarse:min-h-11">{item.icon}{item.label}</DropdownMenuItem>)}
     </DropdownMenuContent>
   </DropdownMenu>;

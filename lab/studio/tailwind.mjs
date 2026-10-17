@@ -27,7 +27,7 @@ export function registryCss(item) {
 }
 
 /** Every item written in Tailwind: their source is scanned for classes and their `css` is compiled in. */
-const TAILWIND_ITEMS = ['button', 'utils', 'pi-chat', 'pi-ambient', 'pi-workspace', 'pi-app', 'viewers', 'app-shell'];
+const TAILWIND_ITEMS = ['button', 'utils', 'dropdown-menu', 'file-tree', 'pi-chat', 'pi-ambient', 'pi-workspace', 'pi-app', 'viewers', 'app-shell'];
 
 /**
  * The registry `theme` item as CSS: light tokens on `:root`, dark tokens on `.dark` (as the CLI writes them in a consumer app; the
@@ -43,7 +43,15 @@ export function themeCss() {
 /** Candidates are any run of non-space, non-quote characters: Tailwind ignores those that are not utilities. */
 function candidates(paths) {
   const found = new Set();
-  for (const path of paths) for (const token of readFileSync(path, 'utf8').split(/[\s"'`]+/)) if (token) found.add(token);
+  for (const path of paths) {
+    const source = readFileSync(path, 'utf8');
+    for (const token of source.split(/[\s"'`]+/)) if (token) found.add(token);
+    // Stock shadcn selectors contain quotes, e.g. [&_svg:not([class*='size-'])]:size-4.
+    // Read whole string literals too instead of splitting those selectors at their inner quotes.
+    for (const match of source.matchAll(/"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)'|`((?:\\.|[^`\\])*)`/g)) {
+      for (const token of (match[1] ?? match[2] ?? match[3] ?? '').split(/\s+/)) if (token) found.add(token);
+    }
+  }
   return [...found];
 }
 
