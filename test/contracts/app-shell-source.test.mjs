@@ -376,7 +376,7 @@ test('useAgentContext: a screen that is not on show does not register its contex
 
 test('useExclusiveSheet: opening a sheet closes every other open sheet', async t => {
   const window = dom(t);
-  const { useExclusiveSheet } = await bundle('sheet.tsx');
+  const { useExclusiveSheet } = await bundle('use-exclusive-sheet.ts');
   const { createElement: h, act, useState } = await import('react');
   const { createRoot } = await import('react-dom/client');
   const log = [];
