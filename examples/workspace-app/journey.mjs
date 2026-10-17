@@ -43,7 +43,8 @@ const { connectRevisionProvider } = await import('@hachej/boring-files/revision'
 const reader = await connectRevisionProvider({ endpoint: new URL('/api/resources', app.url), fetch: request => { const headers = new Headers(request.headers); headers.set('authorization', `Bearer ${app.token}`); return fetch(new Request(request, { headers })); } });
 let browser;
 try {
-  browser = await launch(insecureUrl(app.url), { evidence });
+  browser = await launch(insecureUrl(app.url), { evidence, args: ['--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4'] });
+  assert.equal(await browser.evaluate(`matchMedia('(hover: hover) and (pointer: fine)').matches`), true, 'desktop exercises native fine-pointer hover; touch emulation replaces this on phones');
   const say = async text => { await browser.type(INPUT, text); await browser.press('Enter'); };
   const live = () => browser.until('the chat is live', `!!${INPUT} && !${INPUT}.disabled`, 20000);
 
@@ -76,7 +77,7 @@ try {
     assert.equal(await browser.evaluate(`!!${q('[data-testid=connection]')}`), false, 'no default Live badge');
     assert.equal(await browser.evaluate(`${q('[data-testid=composer-submit]')}.disabled`), true, 'empty send is disabled');
     const composer = await browser.evaluate(rect('[data-testid=composer]'));
-    assert.ok(composer.y > 250 && composer.y < 650, 'empty desktop composer is centered');
+    assert.ok(composer.y > 250 && composer.y < 650, `empty desktop composer is centered: ${JSON.stringify({ composer, state: await browser.evaluate(`({ empty: ${q('[data-boring=pi-chat]')}.dataset.empty, height: ${q('[data-boring=pi-chat]')}.getBoundingClientRect().height, content: ${q('[data-testid=conversation-content]')}.className })`) })}`);
     await browser.screenshot('standalone-empty-desktop.png');
   });
 
@@ -184,13 +185,20 @@ try {
       const versions = await browser.evaluate(`${q('[data-testid=artifact-versions-list]')}.innerText`);
       assert.match(versions, /Just now|\d+ min ago/); assert.match(versions, /Agent/); assert.match(versions, /You/); assert.match(versions, /Current/);
       assert.ok(await browser.evaluate(`${q('[data-testid=artifact-versions-list]')}.querySelectorAll('[data-testid=artifact-versions-description]').length >= 2`));
+      const current = await browser.evaluate(`(() => { const row = ${q('[data-testid=artifact-versions-list] [aria-checked=true]')}; return { text: row.querySelector('[data-testid=artifact-versions-hint]').getBoundingClientRect().right, check: row.querySelector('[data-slot=dropdown-menu-radio-item-indicator]').getBoundingClientRect().left, padding: getComputedStyle(row).paddingRight, classes: row.className }; })()`);
+      assert.equal(await browser.evaluate(`getComputedStyle(${q('[data-testid=artifact-versions-list] [aria-checked=true] [data-slot=dropdown-menu-radio-item-indicator] svg')}).width`), '16px', 'the demo preserves the consumer shadcn arbitrary-selector utilities');
+      assert.ok(current.check - current.text >= 4, `Current and its check never overlap: ${JSON.stringify(current)}`);
+      assert.equal(await browser.evaluate(`!!${q('[data-testid=transcript-history] [role=alert]')}`), false, 'automatic history loading has no race failure');
       await browser.screenshot(`menu-versions-${scheme}.png`); await browser.press('Escape');
+      await browser.until('version menu dismissed', `!${q('[data-testid=artifact-versions-list]')}`, 5000);
     }
     await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] });
-    const reply = q('[data-testid=transcript] [data-role=assistant]');
-    await browser.hover(reply);
+    const reply = `Array.from(document.querySelectorAll('[data-testid=transcript] [data-role=assistant]')).at(-1)`;
+    await browser.evaluate(`${reply}.querySelector('[aria-label="Copy response"]').scrollIntoView({ block: 'center', behavior: 'instant' })`);
+    await browser.hover(`${reply}.querySelector('[aria-label="Copy response"]')`);
     const action = await browser.evaluate(`(() => { const button = ${reply}.querySelector('[aria-label="Copy response"]'), rect = button.getBoundingClientRect(); return { width: rect.width, height: rect.height, title: button.title, hiddenLabel: getComputedStyle(button.querySelector('span')).position }; })()`);
     assert.deepEqual(action, { width: 32, height: 32, title: 'Copy response', hiddenLabel: 'absolute' });
+    await browser.until('reply actions visible on pointer hover', `getComputedStyle(${reply}.querySelector('[aria-label="Copy response"]').parentElement).opacity === '1'`, 5000);
     await browser.screenshot('reply-actions-desktop.png');
   });
 
@@ -416,7 +424,9 @@ try {
     await browser.click(q('[data-testid=sessions-toggle]')); await browser.click(q('[data-testid=workspace-library]'));
     await browser.until('persisted file listed', `!!${item}`, 5000); await browser.click(item);
     await browser.until('persisted file opens after reload', `!!${q('[data-testid=file-viewer] [data-testid=viewer-more]')}`, 10000);
-    await browser.click(q('[data-testid=viewer-more]')); await browser.click(q('[data-testid=viewer-more-list] [data-testid=viewer-mode-source]'));
+    await browser.tap(q('[data-testid=file-viewer] [data-testid=viewer-more]'));
+    await browser.until('reloaded phone menu opens', `!!${q('[data-testid=viewer-more-list] [data-testid=viewer-mode-source]')}`, 5000);
+    await browser.tap(q('[data-testid=viewer-more-list] [data-testid=viewer-mode-source]'));
     await browser.until('persisted source after reload', `!!${source} && ${source}.value === ${JSON.stringify(persisted)}`, 10000);
     // A real concurrent workspace write makes the next conditional flush refuse.
     await browser.type(source, '\nA fictional unsaved note.');

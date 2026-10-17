@@ -184,7 +184,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
       <div ref={stick.scrollRef} data-testid="transcript-scroll" className="h-full overflow-x-hidden overflow-y-auto overscroll-contain [overflow-anchor:none]">
         <div ref={stick.contentRef} className="flex min-h-full flex-col">
           <div role="log" aria-label={labels.messages} aria-live="polite" data-testid="transcript" className="mx-auto flex min-h-0 w-full max-w-[720px] flex-1 flex-col gap-6 px-4 pt-6 pb-8 sm:px-6">
-            <TranscriptHistory history={state.history} connected={!state.disposed && connected} onLoad={transcript.reveal} sentinelRef={transcript.sentinelRef} hidden={hidden} loaded={transcript.loaded} />
+            {!empty && <TranscriptHistory history={state.history} connected={!state.disposed && connected} onLoad={transcript.reveal} sentinelRef={transcript.sentinelRef} hidden={hidden} loaded={transcript.loaded} />}
             {visible.map(row => <RowView key={row.key} row={row} context={rowContext} />)}
           </div>
         </div>
