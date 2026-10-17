@@ -19,7 +19,7 @@ import { useIsCompact } from './compact';
 import { HeaderProvider, ScreenHeader } from './header';
 import { AppSidebar, TabBar } from './nav';
 import type { NavItem } from './nav';
-import { AppSheet } from './sheet';
+import { AppSheet } from './app-sheet';
 import { appShellText } from './text';
 import type { AppShellLocale, AppShellText } from './text';
 

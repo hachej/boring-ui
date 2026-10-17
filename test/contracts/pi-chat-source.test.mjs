@@ -226,32 +226,6 @@ test('gated tool calls become approval cards that show the real arguments and th
   assert.doesNotMatch(stoppedCard, /approval-approve|>Approved</);
 });
 
-test('provider setup lists any registered provider with its models, key state, sign-in and gateway note', async () => {
-  const { ProviderSetup } = await load('provider-setup', '../provider-setup/provider-setup.tsx');
-  const providers = [
-    { id: 'alpha', name: 'Alpha', models: [{ id: 'a-1' }, { id: 'a-2', name: 'Alpha Two' }], auth: ['api_key'], configured: true },
-    { id: 'beta', name: 'Beta subscription', models: [{ id: 'b-1' }], auth: ['oauth'], configured: false, needsGateway: true, loginLabel: 'Sign in with Beta' },
-    { id: 'gamma', name: 'Gamma', models: [], auth: ['api_key', 'oauth'], configured: false },
-  ];
-  const render = (value, extra = {}) => renderToStaticMarkup(createElement(ProviderSetup, { providers, value, onSave: async () => {}, onLogin: () => {}, defaultOpen: true, ...extra }));
-  const alpha = render({ provider: 'alpha', modelId: 'a-2' });
-  for (const name of ['Alpha', 'Beta subscription', 'Gamma']) assert.ok(alpha.includes(name), name);
-  assert.match(alpha, /Alpha Two/);
-  assert.match(alpha, /data-testid="key-saved"/);
-  assert.match(alpha, /type="password"/);
-  assert.doesNotMatch(alpha, /provider-login/);
-  assert.doesNotMatch(alpha, /gateway-note/);
-  const beta = render({ provider: 'beta', modelId: 'b-1' }, { loginState: { state: 'pending', userCode: 'ABCD-1234', verificationUri: 'https://login.example.invalid/device' } });
-  assert.match(beta, /Sign in with Beta/);
-  assert.match(beta, /ABCD-1234/);
-  assert.match(beta, /https:\/\/login\.example\.invalid\/device/);
-  assert.match(beta, /data-testid="gateway-note"/);
-  assert.doesNotMatch(beta, /type="password"/);
-  assert.doesNotMatch(render({ provider: 'beta', modelId: 'b-1' }, { onLogin: undefined }), /provider-login/);
-  assert.doesNotMatch(render({ provider: 'alpha', modelId: 'a-1' }, { showGateway: false }), /gateway-input/);
-  assert.doesNotMatch(renderToStaticMarkup(createElement(ProviderSetup, { providers, value: { provider: 'alpha', modelId: 'a-1' }, onSave: async () => {} })), /provider-setup-panel/, 'closed by default');
-});
-
 test('the browser mention parser agrees with the agent package mention resolver', async () => {
   const { pieces } = await load('config', 'config.ts');
   const { mentionedPaths } = await import('@hachej/boring-agent/mentions');

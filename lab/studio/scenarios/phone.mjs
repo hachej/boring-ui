@@ -160,7 +160,7 @@ export default [
       await browser.until('sessions drawer', `${q('[data-testid=conversations]')}?.dataset.drawer === 'true'`, 5000);
       await pause(300);
       const drawer = await browser.evaluate(`(() => { const r = ${q('[data-testid=conversations]')}.closest('[data-slot=drawer-popup]').getBoundingClientRect(); return { x: r.x, w: r.width, h: r.height }; })()`);
-      assert.ok(drawer.x === 0 && drawer.w === 260 && drawer.w <= 390 && drawer.h === 844, `a full-height drawer inside the screen: ${JSON.stringify(drawer)}`);
+      assert.ok(drawer.x === 0 && drawer.w >= 240 && drawer.w <= 390 && drawer.h === 844, `a full-height drawer inside the screen (the stock left drawer is 75% of the screen): ${JSON.stringify(drawer)}`);
       await p.noOverflow('history');
       await shots('mobile-history');
       await p.check('history', 'document.querySelector("[data-testid=conversations]")');

@@ -22,7 +22,7 @@ test('every file of registry/app-shell is listed in the item and equals the comm
   assert.deepEqual(item.files.map(entry => entry.path.replace(`${folder}/`, '')).sort(), files.sort());
   const built = JSON.parse(readFileSync(`${root}public/r/app-shell.json`, 'utf8'));
   for (const entry of item.files) assert.equal(built.files.find(file => file.path === entry.path)?.content, readFileSync(`${root}${entry.path}`, 'utf8'), `${entry.path}: run npm run registry:build`);
-  assert.deepEqual(['sidebar', 'avatar', '@boring-ui/drawer', '@boring-ui/dropdown-menu'].filter(name => !item.registryDependencies.includes(name)), [], 'style-resolved built-ins and pinned native primitives are declared explicitly');
+  assert.deepEqual(['sidebar', 'avatar', 'drawer', 'dropdown-menu'].filter(name => !item.registryDependencies.includes(name)), [], 'style-resolved built-ins are declared explicitly');
 });
 
 test('the item compiles strictly against the pinned shadcn fixtures', () => {
@@ -64,7 +64,7 @@ test('the item imports only React, its declared packages and the declared shadcn
   for (const name of files) {
     for (const [, imported] of source(name).matchAll(/\bfrom\s+['"]([^'"]+)['"]/g)) {
       if (imported.startsWith('./')) { assert.ok(files.some(file => file.replace(/\.tsx?$/, '') === imported.slice(2)), `${name} imports missing ${imported}`); continue; }
-      if (/^\.\.\/(?:pi-chat|feedback|utils|dock|drawer|dropdown-menu)\//.test(imported)) continue;
+      if (/^\.\.\/(?:pi-chat|feedback|utils|dock)\//.test(imported)) continue;
       const ui = /^@\/components\/ui\/([\w-]+)$/.exec(imported);
       if (ui) { assert.ok(SHADCN_BUILTINS.includes(ui[1]) && item.registryDependencies.includes(ui[1]), `${name}: ${imported} is not a declared shadcn built-in`); continue; }
       if (imported === '@/hooks/use-mobile') { assert.ok(item.registryDependencies.includes('sidebar'), 'use-mobile comes with the sidebar'); continue; }
@@ -376,7 +376,7 @@ test('useAgentContext: a screen that is not on show does not register its contex
 
 test('useExclusiveSheet: opening a sheet closes every other open sheet', async t => {
   const window = dom(t);
-  const { useExclusiveSheet } = await bundle('sheet.tsx');
+  const { useExclusiveSheet } = await bundle('use-exclusive-sheet.ts');
   const { createElement: h, act, useState } = await import('react');
   const { createRoot } = await import('react-dom/client');
   const log = [];

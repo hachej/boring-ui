@@ -17,7 +17,7 @@ for (const name of readdirSync(join(root, 'packages'))) {
         assert.equal(subpath, './file-tree.css');
         assert.equal(manifest.name, '@hachej/boring-ui-kit');
         assert.ok(existsSync(join(dir, entry)), entry);
-        assert.match(readFileSync(join(dir, entry), 'utf8'), /sidebar-menu-button/);
+        assert.match(readFileSync(join(dir, entry), 'utf8'), /file-tree-row-button/);
         assert.ok(manifest.sideEffects.includes('**/*.css'));
         continue;
       }
