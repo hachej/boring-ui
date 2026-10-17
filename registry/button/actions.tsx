@@ -60,7 +60,7 @@ export function useMenuPortal() {
 }
 
 /** Maps host menu items to the consumer's shadcn dropdown items inside a `DropdownMenu`; the primitives own focus, positioning and dismissal. */
-export function ActionMenuContent({ label, testId, items, container, align = 'end' }: { readonly label: string; readonly testId: string; readonly items: readonly MenuItem[]; readonly container?: RefObject<HTMLElement | null>; readonly align?: 'start' | 'end' }) {
+export function ActionMenuContent({ label, testId, items, container, align = 'end', children }: { readonly label: string; readonly testId: string; readonly items: readonly MenuItem[]; readonly container?: RefObject<HTMLElement | null>; readonly align?: 'start' | 'end'; readonly children?: ReactNode }) {
   const groups: MenuItem[][] = [];
   for (const item of items) {
     const last = groups[groups.length - 1];
@@ -82,6 +82,7 @@ export function ActionMenuContent({ label, testId, items, container, align = 'en
   </Fragment>);
   return <DropdownMenuPortal {...(container ? { container } : {})}>
     <DropdownMenuContent align={align} aria-label={label} data-testid={`${testId}-list`} className="w-64 max-w-[calc(100vw-1rem)]">
+      {children}
       {items.some(item => item.checked !== undefined) ? <DropdownMenuRadioGroup value={items.find(item => item.checked)?.id ?? ''}>{rows}</DropdownMenuRadioGroup> : rows}
     </DropdownMenuContent>
   </DropdownMenuPortal>;

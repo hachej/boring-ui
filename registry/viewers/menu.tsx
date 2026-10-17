@@ -19,16 +19,17 @@ export interface ViewerMenuProps {
   readonly testId?: string;
   readonly align?: 'start' | 'end';
   readonly className?: string;
+  readonly children?: ReactNode;
   readonly onOpenChange?: (open: boolean) => void;
 }
 export type ViewerVersion = VersionHistoryEntry;
 
 /** The consumer's shadcn Base UI dropdown supplies positioning, dismissal and keyboard navigation. */
-export function ViewerMenu({ label, icon, items, testId = 'viewer-menu', align = 'end', className, onOpenChange }: ViewerMenuProps) {
+export function ViewerMenu({ label, icon, items, testId = 'viewer-menu', align = 'end', className, children, onOpenChange }: ViewerMenuProps) {
   const portal = useMenuPortal();
   return <DropdownMenu onOpenChange={open => onOpenChange?.(open)}>
     <DropdownMenuTrigger render={<Button ref={portal.ref} variant="ghost" size="icon-sm" aria-label={label} title={label} data-testid={testId} className={className}>{icon}</Button>} />
-    <ActionMenuContent label={label} testId={testId} items={items} align={align} container={portal.container} />
+    <ActionMenuContent label={label} testId={testId} items={items} align={align} container={portal.container}>{children}</ActionMenuContent>
   </DropdownMenu>;
 }
 
