@@ -73,7 +73,7 @@ export function MessageQueue({ items, sending = [], withdraw, actions }: {
     const outcome = await withdraw!(item.id);
     if (outcome === 'already_placed' || outcome === 'settled') throw new Error(labels.tooLateToRemove);
   });
-  return <section data-testid="queue" aria-label={labels.queuedMessages}>
+  return <section data-testid="queue" aria-label={labels.queuedMessages} className="relative mx-3 -mb-3 pb-3">
     <Card><CardContent><ul className="m-0 flex list-none flex-col gap-2 p-0">
       {items.map(item => {
         const working = busy.has(String(item.id));
