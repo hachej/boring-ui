@@ -128,14 +128,14 @@ test('registry dependency pins and scoped styles preserve the declared source di
     assert.equal(item.cssVars, undefined, 'No registry theme replacement');
     if (item.name in TAILWIND) {
       const { scope, keyframes, folder } = TAILWIND[item.name];
-      // Layered base/component rules scoped to the item's root class, plus prefixed keyframes. Never a root, html or body rule.
+      // Standard Tailwind layers stay scoped to the item's root class, plus prefixed keyframes. Never a root, html or body rule.
       const scoped = (rules, where) => { for (const [key, value] of Object.entries(rules)) {
         if (typeof value === 'object' && /^@(media|container|supports)\b/.test(key)) { scoped(value, where + ' ' + key); continue; }
         for (const part of key.split(/,(?![^(]*\))/)) assert.ok(part.trim().startsWith(scope), where + ': ' + key);
       } };
       for (const [at, rules] of Object.entries(item.css ?? {})) {
         if (at.startsWith('@keyframes ')) { assert.match(at, keyframes); continue; }
-        assert.match(at, /^@layer (base|components)$/);
+        assert.match(at, /^@layer (base|components|utilities)$/);
         scoped(rules, at);
       }
       if (item.name === 'viewers') assert.deepEqual(item.css, viewersCss(), 'registry.json css differs from registry/viewers/viewers.css: run node registry/viewers/build-css.mjs');

@@ -897,11 +897,12 @@ try {
     const pin = await browser.evaluate(`(() => { const f = ${q('[data-testid=feedback-bubble-input]')}.getBoundingClientRect(), m = ${q('[data-testid=feedback-bubble-mic]')}?.getBoundingClientRect(), b = ${q('[data-testid=feedback-bubble]')}.getBoundingClientRect();
       return { mic: m ? [Math.round(m.width), Math.round(m.height)] : null, inside: !!m && m.left >= f.left && m.right <= f.right && m.bottom <= f.bottom + 1, hint: ${q('[data-testid=feedback-bubble-hint]')}?.textContent, general: !!${q('[data-testid=feedback-bubble-general]')},
         inViewport: b.left >= 0 && b.top >= 0 && b.right <= innerWidth && b.bottom <= innerHeight, buttons: [...${q('[data-testid=feedback-bubble]')}.querySelectorAll('button')].map(x => Math.round(x.getBoundingClientRect().height)) }; })()`);
-    assert.ok(pin.mic && pin.mic[0] >= 44 && pin.mic[1] >= 44 && pin.inside, `a 44px mic inside the field: ${JSON.stringify(pin)}`);
+    assert.deepEqual(pin.mic, [34, 32], 'stock pointer Toggle geometry');
+    assert.ok(pin.inside, `the native mic stays inside the field: ${JSON.stringify(pin)}`);
     assert.equal(pin.hint, 'Maintenez ⌥ pour utiliser l’app');
     assert.equal(pin.general, false);
     assert.equal(pin.inViewport, true, 'the pin is inside the viewport');
-    assert.ok(pin.buttons.every(height => height >= 44), `44px targets in the pin: ${pin.buttons}`);
+    assert.ok(pin.buttons.every(height => height === 32), `stock pointer controls in the pin: ${pin.buttons}`);
     await browser.type(q('[data-testid=feedback-bubble-input]'), 'Montrer les pas de la semaine.');
     await browser.screenshot('desktop-annotate-pin.png');
     await browser.press('Enter');
