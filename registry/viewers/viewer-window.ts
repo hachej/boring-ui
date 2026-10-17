@@ -68,6 +68,9 @@ export const defaultViewerLabels = {
   imageUnsupported: (mediaType: string) => `This image type (${mediaType || 'unknown'}) cannot be shown here. You can still download it.`,
   imageStage: (name: string) => `${name} image`,
   pdfUnsupported: 'This browser cannot show PDFs inline.',
+  pdfDocument: (name: string) => `${name} pages`,
+  /** The page indicator of the drawn pages, for example `3 / 12`. */
+  pdfPage: (current: number, count: number) => `${current} / ${count}`,
   pdfHint: (name: string, canOpen: boolean) => `Download ${name} to read it in a PDF app${canOpen ? ', or open it in a new tab' : ''}.`,
   notSaved: (reason: string) => `Not saved: ${reason}`,
   saveFailedReason: 'the save failed',

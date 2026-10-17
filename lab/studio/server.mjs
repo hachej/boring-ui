@@ -504,7 +504,9 @@ export async function startStudio({ directory, port = 0, provider = process.env.
 <link rel="stylesheet" href="/styles.css"></head><body><div id="root"></div>
 <script>window.__STUDIO__=${JSON.stringify({ token, identity: { runtimeId: 'studio', ...human } })}</script>
 <script type="module" src="/app.js"></script></body></html>`;
-  const statics = { '/': ['text/html; charset=utf-8', page], '/app.js': ['text/javascript; charset=utf-8', script], '/styles.css': ['text/css; charset=utf-8', styles] };
+  const statics = { '/': ['text/html; charset=utf-8', page], '/app.js': ['text/javascript; charset=utf-8', script], '/styles.css': ['text/css; charset=utf-8', styles],
+    // pdf.js's worker at the URL the bundle resolves (esbuild leaves `new URL(<package path>, import.meta.url)` as is), for browsers without a PDF viewer.
+    '/pdfjs-dist/build/pdf.worker.min.mjs': ['text/javascript; charset=utf-8', readFileSync(fileURLToPath(import.meta.resolve('pdfjs-dist/build/pdf.worker.min.mjs')))] };
 
   const watches = { open: 0, peak: 0, total: 0 };
   /** The chat transport behind the submit test hook (@hachej/boring-testing/network): a delayed confirmation, or a 402 `submission-refused` that never reaches the conversation. */
