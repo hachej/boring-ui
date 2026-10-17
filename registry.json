@@ -483,7 +483,14 @@
         "drawer",
         "button",
         "toggle",
-        "dropdown-menu"
+        "dropdown-menu",
+        "empty",
+        "input",
+        "input-group",
+        "popover",
+        "scroll-area",
+        "separator",
+        "sidebar"
       ],
       "files": [
         {
@@ -652,6 +659,14 @@
           },
           ".pi-chat [hidden]": {
             "display": "none"
+          },
+          ".pi-chat :where([data-slot=\"empty\"])": {
+            "border-width": "0"
+          },
+          ".pi-chat :where([data-slot=\"sidebar-menu\"], [data-slot=\"sidebar-menu-sub\"])": {
+            "margin": "0",
+            "padding": "0",
+            "list-style": "none"
           }
         },
         "@layer utilities": {
@@ -835,7 +850,9 @@
         "@boring-ui/button",
         "drawer",
         "button",
-        "@boring-ui/file-tree"
+        "@boring-ui/file-tree",
+        "dropdown-menu",
+        "scroll-area"
       ],
       "files": [
         {
@@ -1715,6 +1732,27 @@
             },
             ".boring-viewer .boring-markdown-toolbar": {
               "display": "none"
+            },
+            ".boring-viewer.boring-markdown-dock": {
+              "display": "flex",
+              "align-items": "center",
+              "gap": "0.125rem",
+              "overflow-x": "auto",
+              "scrollbar-width": "none",
+              "position": "fixed",
+              "inset-inline": "0",
+              "z-index": "50",
+              "padding": "0.25rem 1.5rem 0.25rem 0.5rem",
+              "padding-bottom": "calc(0.25rem + env(safe-area-inset-bottom, 0px))",
+              "border-top": "1px solid var(--border)",
+              "background": "var(--background)",
+              "mask-image": "linear-gradient(to right, black calc(100% - 2rem), transparent)"
+            },
+            ".boring-viewer.boring-markdown-dock[data-keyboard]": {
+              "padding-bottom": "0.25rem"
+            },
+            ".boring-viewer [data-boring=\"markdown-editor\"][data-dock] .boring-markdown-content": {
+              "padding-bottom": "6rem"
             }
           },
           "@media (pointer: coarse), (max-width: 639px)": {
@@ -2593,7 +2631,12 @@
         "@boring-ui/utils",
         "@boring-ui/version-history",
         "button",
-        "dropdown-menu"
+        "dropdown-menu",
+        "collapsible",
+        "empty",
+        "input",
+        "separator",
+        "sidebar"
       ],
       "files": [
         {
@@ -2625,7 +2668,9 @@
         "@boring-ui/file-tree",
         "@boring-ui/viewers",
         "drawer",
-        "button"
+        "button",
+        "scroll-area",
+        "separator"
       ],
       "files": [
         {
