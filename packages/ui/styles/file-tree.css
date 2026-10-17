@@ -27,7 +27,7 @@
 [data-boring="file-tree"] input:focus-visible { outline: 2px solid var(--sidebar-ring, var(--ring, #71717a)); outline-offset: 2px; }
 [data-boring="file-tree"] .file-tree-toolbar { display: flex; align-items: center; gap: .5rem; padding: .5rem; }
 [data-boring="file-tree"] .file-tree-search { display: flex; flex: 1; min-width: 0; position: relative; }
-[data-boring="file-tree"] .file-tree-copy { display: flex; align-items: center; gap: .5rem; min-width: 0; flex: 1; }
+[data-boring="file-tree"] .file-tree-copy { display: flex; align-items: center; gap: .5rem; min-width: 0; flex: 1; text-align: start; }
 [data-boring="file-tree"][data-variant="list"] .file-tree-copy { flex-direction: column; align-items: stretch; gap: 0; }
 [data-boring="file-tree"] .file-tree-parent { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 [data-boring="file-tree"] .file-tree-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

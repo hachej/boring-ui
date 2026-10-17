@@ -17,7 +17,7 @@ function FileActionMenu({ label, icon, items }: FileTreeActionsProps) {
   const trigger = useRef<HTMLButtonElement>(null);
   return <DropdownMenu>
     <DropdownMenuTrigger ref={trigger} render={<LibraryButton type="button" variant="ghost" size="icon" />} data-file-more aria-label={label}>{icon}</DropdownMenuTrigger>
-    <DropdownMenuContent data-boring="file-actions" align="end" finalFocus={trigger}>
+    <DropdownMenuContent data-boring="file-actions" align="end" finalFocus={trigger} className="w-max max-w-(--available-width)">
       {items.map(item => <DropdownMenuItem key={item.id} data-action={item.id} onClick={item.onSelect} className="max-sm:min-h-11 pointer-coarse:min-h-11">{item.icon}{item.label}</DropdownMenuItem>)}
     </DropdownMenuContent>
   </DropdownMenu>;

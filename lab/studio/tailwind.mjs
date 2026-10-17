@@ -1,7 +1,7 @@
 // Tailwind v4 for the studio and every example, compiled once at startup with the library API (no CLI, no PostCSS, no config file).
 // Utilities are generated for every class-like token found in the Tailwind registry items' source and the studio itself.
-// Only the theme and utilities layers are loaded: Tailwind's preflight would restyle the viewer panels, so the
-// chat item brings its own scoped base rules (see its `css` in registry.json).
+// Global preflight would restyle viewer panels, so chat brings scoped base rules (see registry.json).
+// Library's real shadcn controls use upstream preflight scoped to their roots, as a normal consumer's Tailwind setup does.
 // The tokens are the `theme` item of registry.json (the one source: the CLI installs the same values into a consumer's CSS).
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -61,6 +61,11 @@ export async function buildTailwind({ extraDirectories = [], extraCss = '' } = {
   const input = `@layer theme, base, components, utilities;
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities);
+@layer base {
+  [data-boring="file-tree"], [data-boring="file-actions"] {
+    @import "tailwindcss/preflight.css";
+  }
+}
 ${themeCss()}
 ${items.map(registryCss).join('\n')}
 ${extraCss}`;
