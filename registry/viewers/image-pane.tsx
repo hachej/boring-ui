@@ -3,12 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent, ReactNode } from 'react';
 import { MaximizeIcon, ScanIcon, ZoomInIcon, ZoomOutIcon } from 'lucide-react';
-import { Button } from '../button/button';
+import { Button } from '@/components/ui/button';
 import { downloadFile } from './download';
 import { formatBytes, useMediaUrl } from './media';
 import type { MediaSource } from './media';
 import { cn } from '../utils/utils';
-import { useViewerBar, ViewerFrame, ViewerIconButton } from './viewer-frame';
+import { useViewerBar, ViewerFrame } from './viewer-frame';
 import type { ViewerShare, ViewerStatus } from './viewer-frame';
 import { useViewerText } from './viewer-window';
 
@@ -41,9 +41,9 @@ function ZoomControls({ testId, percent, ready, onStep, onFit }: { readonly test
   const { tight } = useViewerBar();
   const { labels } = useViewerText();
   return <div role="group" aria-label={labels.zoom} className="flex items-center gap-0.5">
-    <ViewerIconButton label={labels.zoomOut} data-testid={`${testId}-zoom-out`} disabled={!ready} onClick={() => onStep(-1)}><ZoomOutIcon className="size-4" aria-hidden="true" /></ViewerIconButton>
-    {!tight && <Button variant="quiet" size="bar" data-testid={`${testId}-zoom-level`} aria-label={labels.zoomLevel(percent)} title={labels.fitToView} disabled={!ready} className="min-w-10 px-1 tabular-nums" onClick={onFit}>{percent}</Button>}
-    <ViewerIconButton label={labels.zoomIn} data-testid={`${testId}-zoom-in`} disabled={!ready} onClick={() => onStep(1)}><ZoomInIcon className="size-4" aria-hidden="true" /></ViewerIconButton>
+    <Button variant="ghost" size="icon-sm" aria-label={labels.zoomOut} title={labels.zoomOut} data-testid={`${testId}-zoom-out`} disabled={!ready} onClick={() => onStep(-1)}><ZoomOutIcon data-icon="inline-start" aria-hidden="true" /></Button>
+    {!tight && <Button variant="ghost" size="sm" data-testid={`${testId}-zoom-level`} aria-label={labels.zoomLevel(percent)} title={labels.fitToView} disabled={!ready} className="min-w-10" onClick={onFit}>{percent}</Button>}
+    <Button variant="ghost" size="icon-sm" aria-label={labels.zoomIn} title={labels.zoomIn} data-testid={`${testId}-zoom-in`} disabled={!ready} onClick={() => onStep(1)}><ZoomInIcon data-icon="inline-start" aria-hidden="true" /></Button>
   </div>;
 }
 

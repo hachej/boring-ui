@@ -6,7 +6,8 @@ import { CodeXmlIcon, PencilLineIcon, SaveIcon } from 'lucide-react';
 import { MarkdownEditor } from '@hachej/boring-ui-kit/markdown-editor';
 import type { MarkdownEditorProps, MarkdownImageResolver, MarkdownMountedTools, MarkdownRichSafety } from '@hachej/boring-ui-kit/markdown-editor';
 import type { MarkdownController } from '@hachej/boring-ui-kit/markdown';
-import { IconButton } from '../button/button';
+import { Button } from '@/components/ui/button';
+import { Toggle } from '@/components/ui/toggle';
 import { downloadFile, fileNameFor } from './download';
 import { copyText } from '../utils/utils';
 import { ViewerFrame, ViewerToggle } from './viewer-frame';
@@ -98,12 +99,12 @@ export function MarkdownPane({ controller, title: givenTitle, labels: ownLabels,
     onRefresh={onRefresh ?? (() => controller.actions.refresh())} onShare={onShare} onCopy={() => copyText(controller.getSnapshot().text)}
     onDownload={() => downloadFile(filename, controller.getSnapshot().text, 'text/markdown;charset=utf-8')} onOpenInNewTab={onOpenInNewTab} onClose={close}
     controls={<>
-      {mode === 'rich' && <button type="button" className="boring-markdown-pin max-[640px]:hidden" aria-label="Pin formatting toolbar" title="Pin formatting toolbar" aria-pressed={toolbar === 'pinned'}
-        onClick={() => setToolbar(value => value === 'pinned' ? 'selection' : 'pinned')}>Aa</button>}
+      {mode === 'rich' && <Toggle size="sm" className="max-[640px]:hidden" aria-label="Pin formatting toolbar" title="Pin formatting toolbar" pressed={toolbar === 'pinned'}
+        onPressedChange={pressed => setToolbar(pressed ? 'pinned' : 'selection')}>Aa</Toggle>}
       <ViewerToggle label={labels.editorMode} value={mode} onChange={setRequested} options={[
         { id: 'rich', label: labels.richText, text: labels.rich, icon: <PencilLineIcon className="size-4" aria-hidden="true" />, disabled: !safety.safe, testId: `${testId}-mode-rich` },
         { id: 'source', label: labels.markdownSource, text: labels.source, icon: <CodeXmlIcon className="size-4" aria-hidden="true" />, testId: `${testId}-mode-source` }]} />
-      {autosave === false && !state.readOnly && state.dirty && <IconButton label={labels.save} variant="default" data-testid={`${testId}-save`} disabled={unavailable || pending || unconfirmed} onClick={save}><SaveIcon className="size-4" aria-hidden="true" /></IconButton>}
+      {autosave === false && !state.readOnly && state.dirty && <Button variant="default" size="icon-sm" aria-label={labels.save} title={labels.save} data-testid={`${testId}-save`} disabled={unavailable || pending || unconfirmed} onClick={save}><SaveIcon data-icon="inline-start" aria-hidden="true" /></Button>}
       {controls}
     </>}>
     <MarkdownEditor controller={controller} title={title} header={false} autosave={autosave} onAutosaveChange={registerAutosave} onSaveResult={report} formattingToolbar={toolbar} mode={mode} onModeChange={setRequested} onRichSafety={setSafety}

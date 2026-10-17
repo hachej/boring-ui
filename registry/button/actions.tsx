@@ -1,10 +1,11 @@
 'use client';
 
 import { Fragment, useRef } from 'react';
-import type { ComponentType, ReactNode } from 'react';
+import type { ComponentProps, ComponentType, ReactNode } from 'react';
 import { EllipsisIcon } from 'lucide-react';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuPortal, DropdownMenuContent, DropdownMenuGroup, DropdownMenuLabel, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuShortcut } from '@/components/ui/dropdown-menu';
-import { Button, IconButton } from './button';
+import { Button } from '@/components/ui/button';
+import { Toggle } from '@/components/ui/toggle';
 import { cn } from '../utils/utils';
 
 export type BlockIcon = ComponentType<{ readonly className?: string | undefined; readonly 'aria-hidden'?: boolean | 'true' | 'false' | undefined }>;
@@ -37,20 +38,22 @@ export interface MenuItem {
   readonly onSelect: () => void;
 }
 
+type ActionIconSize = Extract<ComponentProps<typeof Button>['size'], 'icon' | 'icon-sm'>;
+
 export interface ActionMenuProps {
   readonly label: string;
   readonly icon: ReactNode;
   readonly items: readonly MenuItem[];
   readonly testId?: string;
   readonly align?: 'start' | 'end';
-  readonly size?: 'icon-bar' | 'icon-sm';
+  readonly size?: ActionIconSize;
   readonly className?: string;
   readonly children?: ReactNode;
   readonly onOpenChange?: (open: boolean) => void;
 }
 
 /** Only maps host actions to the consumer's shadcn Base UI menu. The primitive owns focus, positioning and dismissal. */
-export function ActionMenu({ label, icon, items, testId = 'menu', align = 'end', size = 'icon-bar', className, children, onOpenChange }: ActionMenuProps) {
+export function ActionMenu({ label, icon, items, testId = 'menu', align = 'end', size = 'icon-sm', className, children, onOpenChange }: ActionMenuProps) {
   const portal = useRef<HTMLElement | null>(null);
   const groups: MenuItem[][] = [];
   for (const item of items) {
@@ -78,7 +81,7 @@ export function ActionMenu({ label, icon, items, testId = 'menu', align = 'end',
     </DropdownMenuGroup>
   </Fragment>);
   return <DropdownMenu onOpenChange={open => onOpenChange?.(open)}>
-    <DropdownMenuTrigger render={<IconButton ref={node => { portal.current = node?.ownerDocument.body ?? null; }} label={label} size={size} data-testid={testId} className={className}>{icon}</IconButton>} />
+    <DropdownMenuTrigger render={<Button ref={node => { portal.current = node?.ownerDocument.body ?? null; }} variant="ghost" aria-label={label} title={label} size={size} data-testid={testId} className={className}>{icon}</Button>} />
     <DropdownMenuPortal container={portal}>
       <DropdownMenuContent align={align} aria-label={label} data-testid={`${testId}-list`} className="w-64 max-w-[calc(100vw-1rem)]">
         {children}
@@ -90,25 +93,25 @@ export function ActionMenu({ label, icon, items, testId = 'menu', align = 'end',
 
 export function actionMenuItem(action: BlockAction, testId: string): MenuItem {
   const Icon = action.icon;
-  return { id: action.id, label: action.label, ...(Icon ? { icon: <Icon className="size-4" aria-hidden="true" /> } : {}), ...(action.disabled ? { disabled: true } : {}), ...(action.destructive ? { destructive: true } : {}), testId: `${testId}-${action.id}`, onSelect: action.onSelect };
+  return { id: action.id, label: action.label, ...(Icon ? { icon: <Icon data-icon="inline-start" aria-hidden="true" /> } : {}), ...(action.disabled ? { disabled: true } : {}), ...(action.destructive ? { destructive: true } : {}), testId: `${testId}-${action.id}`, onSelect: action.onSelect };
 }
 
 export const headerActions = (actions: readonly BlockAction[] | undefined): readonly BlockAction[] => (actions ?? []).filter(action => action.placement !== 'menu');
 export const menuActions = (actions: readonly BlockAction[] | undefined): readonly BlockAction[] => (actions ?? []).filter(action => action.placement === 'menu');
 
-export function ActionButton({ action, testId, size = 'icon-sm', className, iconOnly = false }: { readonly action: BlockAction; readonly testId: string; readonly size?: 'icon-sm' | 'icon-bar'; readonly className?: string; readonly iconOnly?: boolean }) {
+export function ActionButton({ action, testId, size = 'icon-sm', className, iconOnly = false }: { readonly action: BlockAction; readonly testId: string; readonly size?: ActionIconSize; readonly className?: string; readonly iconOnly?: boolean }) {
   const Icon = action.icon ?? (iconOnly ? EllipsisIcon : undefined);
-  if (Icon) return <IconButton label={action.label} size={size} data-testid={`${testId}-${action.id}`} data-action={action.id} disabled={action.disabled} {...(action.pressed === undefined ? {} : { 'aria-pressed': action.pressed })} onClick={action.onSelect} className={className}>
-    <Icon className="size-4" aria-hidden="true" /></IconButton>;
-  return <Button size="sm" variant="ghost" data-testid={`${testId}-${action.id}`} data-action={action.id} disabled={action.disabled} {...(action.pressed === undefined ? {} : { 'aria-pressed': action.pressed })} onClick={action.onSelect} title={action.label}
-    className={cn('max-w-40 min-w-0 text-muted-foreground', className)}><span className="truncate">{action.label}</span></Button>;
+  const content = Icon ? <Icon data-icon="inline-start" aria-hidden="true" /> : <span className="truncate">{action.label}</span>;
+  const layout = cn(!Icon && 'max-w-40 min-w-0', className);
+  if (action.pressed !== undefined) return <Toggle size={size === 'icon' ? 'default' : 'sm'} aria-label={action.label} title={action.label} data-testid={`${testId}-${action.id}`} data-action={action.id} disabled={action.disabled} pressed={action.pressed} onPressedChange={() => action.onSelect()} className={layout}>{content}</Toggle>;
+  return <Button size={Icon ? size : 'sm'} variant="ghost" aria-label={action.label} title={action.label} data-testid={`${testId}-${action.id}`} data-action={action.id} disabled={action.disabled} onClick={action.onSelect} className={layout}>{content}</Button>;
 }
 
 export function BlockActions({ actions, testId, menuLabel, size = 'icon-sm', className, iconOnly = false }: {
   readonly actions: readonly BlockAction[] | undefined;
   readonly testId: string;
   readonly menuLabel: string;
-  readonly size?: 'icon-sm' | 'icon-bar';
+  readonly size?: ActionIconSize;
   readonly className?: string;
   readonly iconOnly?: boolean;
 }) {
@@ -116,7 +119,7 @@ export function BlockActions({ actions, testId, menuLabel, size = 'icon-sm', cla
   if (!buttons.length && !menu.length) return null;
   return <div data-boring="block-actions" data-actions={testId} className={cn('flex shrink-0 items-center gap-0.5', className)}>
     {buttons.map(action => <ActionButton key={action.id} action={action} testId={testId} size={size} iconOnly={iconOnly} />)}
-    {menu.length > 0 && <ActionMenu label={menuLabel} size={size} testId={`${testId}-more`} icon={<EllipsisIcon className="size-4" aria-hidden="true" />}
+    {menu.length > 0 && <ActionMenu label={menuLabel} size={size} testId={`${testId}-more`} icon={<EllipsisIcon data-icon="inline-start" aria-hidden="true" />}
       items={menu.map(action => actionMenuItem(action, testId))} />}
   </div>;
 }

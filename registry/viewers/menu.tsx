@@ -54,7 +54,7 @@ export function ViewerVersions({ versions, current, onSelect, testId = 'viewer-v
 }) {
   const { labels } = useViewerText();
   const [now, setNow] = useState(Date.now);
-  return <ViewerMenu label={label ?? labels.versionHistory} testId={testId} align="end" icon={<HistoryIcon className="size-4" aria-hidden="true" />} onOpenChange={open => { if (open) setNow(Date.now()); }}
+  return <ViewerMenu label={label ?? labels.versionHistory} testId={testId} align="end" icon={<HistoryIcon data-icon="inline-start" aria-hidden="true" />} onOpenChange={open => { if (open) setNow(Date.now()); }}
     items={versions.map(version => {
       const author = version.source === 'publish' ? labels.versionYou : version.source === 'agent' ? labels.versionAgent : version.source === 'observed' ? labels.versionObserved : labels.versionUnknownAuthor;
       return { id: version.id, label: version.savedAt ? relativeTime(version.savedAt, now, labels) : version.label,
