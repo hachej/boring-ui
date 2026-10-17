@@ -29,7 +29,8 @@ const read = async (provider = files, selected = target) => { const result = awa
 const doc = async () => JSON.parse(new TextDecoder().decode((await read()).bytes));
 const run = body => browser.evaluate(`(async () => { const j = window.taskList; ${body} })()`);
 const button = label => `[...document.querySelector('[data-boring="task-list-viewer"]').querySelectorAll('button')].find(button => button.textContent === ${JSON.stringify(label)})`;
-const check = () => browser.click('document.querySelector("[data-boring=task-list-viewer] [role=checkbox]")');
+// A real click on the row's label text: it activates the host Checkbox (this fixture page loads no Tailwind, so the box itself has no size).
+const check = () => browser.click('document.querySelector("[data-boring=task-list-viewer] li label")');
 const settled = kind => browser.until(`task save ${kind}`, `window.taskList.state().save.kind === 'settled' && window.taskList.state().save.result.kind === ${JSON.stringify(kind)}`);
 const step = async (name, action) => { const item = { name, status: 'running' }; report.steps.push(item); try { await action(); item.status = 'passed'; } catch (error) { item.status = 'failed'; item.error = String(error); throw error; } };
 const native = async args => { const id = await admitDocumentTool(conversation, args, 'edit_task_list'); const outcome = await toolResultText(harness, conversation, id); const result = JSON.parse(outcome.text); report.native.push({ id, result }); return result; };
