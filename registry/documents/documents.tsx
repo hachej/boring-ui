@@ -6,6 +6,7 @@
 // unsaved edits survive; leaving the file with unsaved edits asks first. Every read goes through the one `revisionProvider` the host binds.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
 import { createFileTreeController } from '@hachej/boring-ui-kit/file-tree';
 import type { FileTreeController } from '@hachej/boring-ui-kit/file-tree';
 import { FileTreeView } from '../file-tree/file-tree';
@@ -123,10 +124,13 @@ function OlderVersion({ provider, path, revision, options, labels, onBack, onClo
   const type = kind === 'markdown' ? 'markdown' : kind === 'html' ? 'html' : kind === 'text' ? 'code' : undefined;
   const artifact: ArtifactDescriptor | undefined = type === undefined ? undefined
     : { schema: 'boring.artifact', version: 1, title: nameOf(path), type, mediaType: mediaTypeOf(path), target: provider.locate(path), revision };
-  const bar = <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
-    <span role="status" className="min-w-0 flex-1 truncate text-sm font-medium">{labels.readOnlyRevision}</span>
-    <Button variant="ghost" data-testid="back-to-editing" onClick={onBack}>{labels.backToEditing}</Button>
-  </div>;
+  const bar = <>
+    <div className="flex shrink-0 items-center gap-2 px-3 py-2">
+      <span role="status" className="min-w-0 flex-1 truncate text-sm font-medium">{labels.readOnlyRevision}</span>
+      <Button variant="ghost" data-testid="back-to-editing" onClick={onBack}>{labels.backToEditing}</Button>
+    </div>
+    <Separator />
+  </>;
   let body;
   if (artifact) body = <ArtifactPanel active={{ descriptor: artifact, follow: false }} versions={[]} options={{ ...options, client: pinned }} onSelect={onBack} onClose={onClose} />;
   else if (kind === 'image' || kind === 'pdf') body = <BinaryRevision provider={provider} path={path} revision={revision} kind={kind} labels={labels} onClose={onClose} />;
@@ -159,7 +163,9 @@ function DocumentDetail({ provider, path, version, options, labels, locale, olde
       </div>
       {older !== undefined && <OlderVersion provider={provider} path={path} revision={older} options={options} labels={labels} onBack={onBack} onClose={onClose} />}
     </div>
-    <aside className="flex max-h-[40%] min-h-0 shrink-0 flex-col overflow-y-auto border-t border-border md:max-h-none md:w-72 md:border-t-0 md:border-l">
+    <Separator className="md:hidden" />
+    <Separator orientation="vertical" className="max-md:hidden" />
+    <aside className="flex max-h-[40%] min-h-0 shrink-0 flex-col overflow-hidden md:max-h-none md:w-72">
       <Revisions provider={provider} path={path} version={version} selected={older} locale={locale} labels={labels} onOpen={onOpenRevision} />
     </aside>
   </div>;

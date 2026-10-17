@@ -6,7 +6,7 @@
 // `onShowAll` adds « Toutes les fiches »: the sheet closes, then the host's navigation runs after the sheet's Back entry is gone.
 import { useCallback, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { Drawer, DrawerContent, DrawerTitle } from '../drawer/drawer';
+import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer';
 import { afterBack } from '../app-shell/back';
 import { useShellLayer } from '../app-shell/shell-layer';
 import { useExclusiveSheet } from '../app-shell/sheet';
@@ -57,13 +57,13 @@ export function DocumentSheet({ provider, path, onClose, onShowAll, locale, labe
   const title = path === undefined ? labels.sheetTitle : path.split('/').pop() || path;
   return <DocumentsWords locale={locale}>
     <Drawer open={isOpen} onOpenChange={next => { if (!next) requestClose(); }} showSwipeHandle swipeDirection="down">
-      <DrawerContent data-testid="document-sheet" className={cn('app-shell h-[92dvh] max-h-[92dvh] pb-[env(safe-area-inset-bottom)]', className)}>
+      <DrawerContent data-testid="document-sheet" className={cn('app-shell max-h-[92dvh] min-h-[92dvh]', className)}>
         {/* The title is for assistive technology: the viewer's own bar shows the file name. */}
         <DrawerTitle className="sr-only">{title}</DrawerTitle>
         {onShowAll && <div className="flex shrink-0 justify-end px-3 pt-1 pb-2">
           <Button variant="ghost" data-testid="document-sheet-all" onClick={() => { if (!mayLeave()) return; close(); afterBack(onShowAll); }}>{labels.allDocuments}</Button>
         </div>}
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden pb-[env(safe-area-inset-bottom)]">
           {path !== undefined && <FileViewer key={path} path={path} locator={provider.locate(path)} onUnsavedChange={report}
             options={{ client: provider, identity: provider.identity, ...(viewers ? { viewers } : {}), ...(share ? { share } : {}) }} onClose={requestClose} />}
         </div>

@@ -482,7 +482,16 @@
         "trace",
         "@boring-ui/drawer",
         "button",
-        "toggle"
+        "toggle",
+        "drawer",
+        "dropdown-menu",
+        "empty",
+        "input",
+        "input-group",
+        "popover",
+        "scroll-area",
+        "separator",
+        "sidebar"
       ],
       "files": [
         {
@@ -834,7 +843,10 @@
         "@boring-ui/button",
         "@boring-ui/drawer",
         "button",
-        "@boring-ui/file-tree"
+        "@boring-ui/file-tree",
+        "drawer",
+        "dropdown-menu",
+        "scroll-area"
       ],
       "files": [
         {
@@ -2583,7 +2595,12 @@
         "@boring-ui/utils",
         "@boring-ui/version-history",
         "button",
-        "dropdown-menu"
+        "dropdown-menu",
+        "collapsible",
+        "empty",
+        "input",
+        "separator",
+        "sidebar"
       ],
       "files": [
         {
@@ -2615,7 +2632,10 @@
         "@boring-ui/file-tree",
         "@boring-ui/viewers",
         "@boring-ui/drawer",
-        "button"
+        "button",
+        "drawer",
+        "scroll-area",
+        "separator"
       ],
       "files": [
         {

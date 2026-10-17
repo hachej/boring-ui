@@ -5,6 +5,11 @@ import { FileTree as PackageFileTree, FileTreeView as PackageFileTreeView } from
 import type { FileTreeComponents, FileTreeActionsProps, FileTreeButtonProps, FileTreeVersionsProps, FileTreeProps as PackageFileTreeProps, FileTreeViewProps as PackageFileTreeViewProps } from '@hachej/boring-ui-kit/file-tree-view';
 import { useRef } from 'react';
 import { Button } from '@/components/ui/button';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
+import { Input } from '@/components/ui/input';
+import { Separator } from '@/components/ui/separator';
+import { SidebarMenu, SidebarMenuItem, SidebarMenuSub } from '@/components/ui/sidebar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { VersionHistoryRows, frenchVersionHistoryLabels } from '../version-history/version-history';
 import { cn } from '../utils/utils';
@@ -14,7 +19,7 @@ function LibraryButton({ className, ...props }: FileTreeButtonProps) {
   return <Button {...props} className={cn('max-sm:min-h-11 max-sm:min-w-11 pointer-coarse:min-h-11 pointer-coarse:min-w-11', className)} />;
 }
 
-function FileActionMenu({ label, icon, items }: FileTreeActionsProps) {
+function FileActions({ label, icon, items }: FileTreeActionsProps) {
   const trigger = useRef<HTMLButtonElement>(null);
   const portal = useRef<HTMLElement | null>(null);
   return <DropdownMenu>
@@ -32,7 +37,22 @@ function FileVersions({ versions, current, onSelect, locale, earlierVersion }: F
     current={current} onSelect={onSelect} testId="file-history-versions" {...(locale === 'fr' ? { labels: frenchVersionHistoryLabels } : {})} />;
 }
 
-export const fileTreeComponents = { Button: LibraryButton, Actions: FileActionMenu, Versions: FileVersions } satisfies FileTreeComponents;
+function FileTreeEmpty({ icon, title, description, className, children }: Parameters<FileTreeComponents['Empty']>[0]) {
+  return <Empty className={className}>
+    <EmptyHeader>
+      {icon && <EmptyMedia variant="icon">{icon}</EmptyMedia>}
+      <EmptyTitle>{title}</EmptyTitle>
+      {description && <EmptyDescription>{description}</EmptyDescription>}
+    </EmptyHeader>
+    {children && <EmptyContent>{children}</EmptyContent>}
+  </Empty>;
+}
+
+export const fileTreeComponents = {
+  Button: LibraryButton, Actions: FileActions, Versions: FileVersions,
+  Menu: SidebarMenu, MenuItem: SidebarMenuItem, MenuSub: SidebarMenuSub, Input, Separator: () => <Separator />,
+  Collapsible, CollapsibleTrigger, CollapsibleContent, Empty: FileTreeEmpty,
+} satisfies FileTreeComponents;
 export type FileTreeProps = Omit<PackageFileTreeProps, 'components'>;
 export type FileTreeViewProps = Omit<PackageFileTreeViewProps, 'components'>;
 

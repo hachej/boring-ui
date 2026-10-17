@@ -38,7 +38,7 @@
     {
       "id": "4",
       "name": "lists",
-      "mode": "REPORT",
+      "mode": "FAIL",
       "folders": [
         "registry/pi-chat/history.tsx",
         "registry/pi-chat/empty-state.tsx",
