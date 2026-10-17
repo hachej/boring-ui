@@ -12,6 +12,7 @@ import type { CanvasController } from './canvas.js';
 import { createMountedCanvasTools } from './canvas-mounted.js';
 import type { CanvasMountedTools } from './canvas-mounted.js';
 import { CanvasProposals } from './canvas-proposals.js';
+import type { ViewerComponents } from './viewer-components.js';
 
 export type CanvasFontUrls = Readonly<Record<`${keyof TLDefaultFonts}${'' | '_italic' | '_bold' | '_italic_bold'}`, string>>;
 export type CanvasAssetUrls = Omit<TLUiAssetUrls, 'fonts' | 'embedIcons'> & {
@@ -27,6 +28,8 @@ export interface CanvasEditorProps {
   readonly licenseKey?: string;
   readonly onMount?: TLOnMountHandler;
   readonly onMountedTools?: (tools: CanvasMountedTools | null) => void;
+  /** Host presentation for the canvas controls; without it the package renders unstyled native buttons. */
+  readonly components?: ViewerComponents;
 }
 
 const fontKeys: readonly (keyof CanvasFontUrls)[] = [
@@ -46,7 +49,8 @@ function assetSignature(assets: CanvasAssetUrls): string {
   return JSON.stringify(requirements);
 }
 
-export default function NativeCanvas({ controller, assetUrls, title = 'Canvas', className, height = 480, licenseKey, onMount, onMountedTools }: CanvasEditorProps) {
+export default function NativeCanvas({ controller, assetUrls, title = 'Canvas', className, height = 480, licenseKey, onMount, onMountedTools, components }: CanvasEditorProps) {
+  const Control = components?.button ?? 'button';
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -90,26 +94,26 @@ export default function NativeCanvas({ controller, assetUrls, title = 'Canvas', 
     }}>
     <header><strong>{title}</strong>{state.readOnly && <span>Read only</span>}
       <span role="status">{state.lifecycle === 'disposed' ? 'Closed' : pending ? 'Saving' : uncertain ? 'Save unconfirmed' : conflict ? 'Changed elsewhere' : state.dirty ? 'Unsaved changes' : 'Saved'}</span>
-      <button type="button" disabled={unavailable || !state.dirty || pending || uncertain || busy || state.problem !== null} onClick={() => void save()}>Save</button>
-      <button type="button" disabled={state.lifecycle === 'disposed' || pending || uncertain || busy} onClick={() => void run(controller.actions.refresh)}>Check saved version</button>
+      <Control type="button" disabled={unavailable || !state.dirty || pending || uncertain || busy || state.problem !== null} onClick={() => void save()}>Save</Control>
+      <Control type="button" disabled={state.lifecycle === 'disposed' || pending || uncertain || busy} onClick={() => void run(controller.actions.refresh)}>Check saved version</Control>
     </header>
     {uncertain && <div role="alert">Save acknowledgement was lost. Your current canvas is retained.
-      <button type="button" disabled={busy} onClick={() => void run(controller.actions.reconcile)}>Check save outcome</button>
-      <button type="button" disabled={busy || state.lifecycle === 'disposed'} onClick={() => void run(controller.actions.abandon)}>Keep draft and refresh</button>
+      <Control type="button" disabled={busy} onClick={() => void run(controller.actions.reconcile)}>Check save outcome</Control>
+      <Control type="button" disabled={busy || state.lifecycle === 'disposed'} onClick={() => void run(controller.actions.abandon)}>Keep draft and refresh</Control>
     </div>}
     {conflict && <div role="alert">The saved canvas changed. Your local edits have been kept.
-      <button type="button" disabled={pending || uncertain || busy} onClick={() => void run(controller.actions.discardToRemote)}>Discard local changes and reload</button>
+      <Control type="button" disabled={pending || uncertain || busy} onClick={() => void run(controller.actions.discardToRemote)}>Discard local changes and reload</Control>
     </div>}
     {state.problem && <p role="alert">{state.problem}</p>}
     {(outcome?.kind === 'denied' || outcome?.kind === 'unavailable' || outcome?.kind === 'file_too_large') && <p role="alert">{outcome.reason}</p>}
     {error && <p role="alert">{error}</p>}
-    <CanvasProposals controller={controller} state={state} editor={nativeEditor} busy={busy} run={run} />
+    <CanvasProposals components={components} controller={controller} state={state} editor={nativeEditor} busy={busy} run={run} />
     {state.lifecycle === 'active' && <div data-boring="canvas-stage" style={{ position: 'relative', height }}
       onClickCapture={event => { if (event.target instanceof Element && event.target.closest('a')) event.preventDefault(); }}
       onAuxClickCapture={event => { if (event.target instanceof Element && event.target.closest('a')) event.preventDefault(); }}>
       <Tldraw store={controller.store} hideUi locale="en"
         autoFocus={false} assetUrls={assets} {...(licenseKey === undefined ? {} : { licenseKey })} onMount={attach}>
-        <CanvasTools controller={controller} />
+        <CanvasTools components={components} controller={controller} />
         <MountedCommands controller={controller} revokeTools={revokeTools} {...(onMountedTools ? { onMountedTools } : {})} />
       </Tldraw>
     </div>}
@@ -122,7 +126,8 @@ const choices: readonly (readonly [string, string])[] = [
   ['select', 'Select'], ['hand', 'Hand'], ['draw', 'Draw'], ['geo', 'Rectangle'], ['text', 'Text'],
   ['arrow', 'Arrow'], ['line', 'Line'], ['note', 'Note'], ['frame', 'Frame'], ['highlight', 'Highlight'], ['eraser', 'Erase'],
 ];
-function CanvasTools({ controller }: Pick<CanvasEditorProps, 'controller'>) {
+function CanvasTools({ controller, components }: Pick<CanvasEditorProps, 'controller'> & { readonly components?: ViewerComponents | undefined }) {
+  const Control = components?.button ?? 'button';
   const editor = useEditor();
   const state = useValue('canvas controls', () => ({ tool: editor.getCurrentToolId(), readOnly: controller.getSnapshot().readOnly || editor.getIsReadonly(), undo: editor.getCanUndo(), redo: editor.getCanRedo() }), [editor]);
   const act = (action: () => void, changesDocument = true) => {
@@ -130,11 +135,11 @@ function CanvasTools({ controller }: Pick<CanvasEditorProps, 'controller'>) {
       && (!changesDocument || (!controller.getSnapshot().readOnly && !editor.getIsReadonly()))) action();
   };
   return <div role="toolbar" aria-label="Canvas tools" style={{ position: 'absolute', top: 8, left: 8, zIndex: 300, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-    {choices.map(([id, label]) => <button key={id} type="button" aria-pressed={state.tool === id} disabled={state.readOnly && id !== 'hand' && id !== 'select'}
-      onClick={() => act(() => { if (id === 'geo') editor.setStyleForNextShapes(GeoShapeGeoStyle, 'rectangle'); editor.setCurrentTool(id); }, id !== 'hand' && id !== 'select')}>{label}</button>)}
-    <button type="button" disabled={state.readOnly || !state.undo} onClick={() => act(() => { editor.undo(); })}>Undo</button>
-    <button type="button" disabled={state.readOnly || !state.redo} onClick={() => act(() => { editor.redo(); })}>Redo</button>
-    <button type="button" onClick={() => act(() => { editor.zoomToFit(); }, false)}>Fit canvas</button>
+    {choices.map(([id, label]) => <Control key={id} type="button" aria-pressed={state.tool === id} disabled={state.readOnly && id !== 'hand' && id !== 'select'}
+      onClick={() => act(() => { if (id === 'geo') editor.setStyleForNextShapes(GeoShapeGeoStyle, 'rectangle'); editor.setCurrentTool(id); }, id !== 'hand' && id !== 'select')}>{label}</Control>)}
+    <Control type="button" disabled={state.readOnly || !state.undo} onClick={() => act(() => { editor.undo(); })}>Undo</Control>
+    <Control type="button" disabled={state.readOnly || !state.redo} onClick={() => act(() => { editor.redo(); })}>Redo</Control>
+    <Control type="button" onClick={() => act(() => { editor.zoomToFit(); }, false)}>Fit canvas</Control>
   </div>;
 }
 
