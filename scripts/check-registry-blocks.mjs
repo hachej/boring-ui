@@ -24,7 +24,7 @@ const source = /\.(?:tsx?|jsx?|mjs)$/;
 const namespace = '@boring-ui/';
 const local = (dependency) => dependency.startsWith(namespace) ? dependency.slice(namespace.length) : dependency;
 /** The shadcn built-in components a registry item may depend on by bare name. Fixed: a new one is a decision, not a convenience. */
-export const SHADCN_BUILTINS = Object.freeze(['button', 'toggle', 'switch', 'drawer', 'sidebar', 'avatar', 'dropdown-menu', 'separator', 'tooltip', 'trace']);
+export const SHADCN_BUILTINS = Object.freeze(['button', 'toggle', 'switch', 'drawer', 'sidebar', 'avatar', 'dropdown-menu', 'separator', 'tooltip', 'popover', 'native-select', 'label', 'input', 'trace']);
 const importPattern = /\b(?:from|import)\s*\(?\s*['"]([^'"]+)['"]/g;
 
 /** Cycles among the source files under `folders`, following relative imports (`./x`, `./x.js` for `x.ts`, `./x` for `x.tsx`). */

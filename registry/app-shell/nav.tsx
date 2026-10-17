@@ -12,7 +12,7 @@ import { NavUser } from './account';
 import { useAgentLayer } from './agent-layer';
 import type { AgentSpec } from './agent-layer';
 import type { AccountSpec } from './account';
-import { AppSheet, SHEET_ROW } from './sheet';
+import { AppSheet, SHEET_ROW } from './app-sheet';
 import type { AppShellText } from './text';
 
 export interface NavItem {

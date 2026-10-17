@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { Drawer, DrawerContent, DrawerTitle } from '../drawer/drawer';
+import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer';
 import { Button } from '@/components/ui/button';
 import { MenuIcon } from 'lucide-react';
 import { useAppText } from './app-labels';

@@ -1,7 +1,7 @@
 'use client';
 
-import { Fragment, useRef } from 'react';
-import type { ComponentProps, ComponentType, ReactNode } from 'react';
+import { Fragment, useCallback, useRef } from 'react';
+import type { ComponentProps, ComponentType, ReactNode, RefObject } from 'react';
 import { EllipsisIcon } from 'lucide-react';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuPortal, DropdownMenuContent, DropdownMenuGroup, DropdownMenuLabel, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuShortcut } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
@@ -40,18 +40,6 @@ export interface MenuItem {
 
 type ActionIconSize = Extract<ComponentProps<typeof Button>['size'], 'icon' | 'icon-sm'>;
 
-export interface ActionMenuProps {
-  readonly label: string;
-  readonly icon: ReactNode;
-  readonly items: readonly MenuItem[];
-  readonly testId?: string;
-  readonly align?: 'start' | 'end';
-  readonly size?: ActionIconSize;
-  readonly className?: string;
-  readonly children?: ReactNode;
-  readonly onOpenChange?: (open: boolean) => void;
-}
-
 export function ActionMenuItemContent({ item, testId }: { readonly item: MenuItem; readonly testId: string }) {
   return <>
     {item.icon && <span className="text-muted-foreground">{item.icon}</span>}
@@ -61,38 +49,42 @@ export function ActionMenuItemContent({ item, testId }: { readonly item: MenuIte
   </>;
 }
 
-/** Only maps host actions to the consumer's shadcn Base UI menu. The primitive owns focus, positioning and dismissal. */
-export function ActionMenu({ label, icon, items, testId = 'menu', align = 'end', size = 'icon-sm', className, children, onOpenChange }: ActionMenuProps) {
-  const portal = useRef<HTMLElement | null>(null);
+/**
+ * Portal target and trigger ref for a menu that must open in its trigger's own document (a viewer in a pop-out window).
+ * Put `ref` on the trigger button and `container` on `ActionMenuContent`.
+ */
+export function useMenuPortal() {
+  const container = useRef<HTMLElement | null>(null);
+  const ref = useCallback((node: HTMLElement | null) => { container.current = node?.ownerDocument.body ?? null; }, []);
+  return { container, ref };
+}
+
+/** Maps host menu items to the consumer's shadcn dropdown items inside a `DropdownMenu`; the primitives own focus, positioning and dismissal. */
+export function ActionMenuContent({ label, testId, items, container, align = 'end' }: { readonly label: string; readonly testId: string; readonly items: readonly MenuItem[]; readonly container?: RefObject<HTMLElement | null>; readonly align?: 'start' | 'end' }) {
   const groups: MenuItem[][] = [];
   for (const item of items) {
     const last = groups[groups.length - 1];
     if (!last || item.separatorBefore || last[0]?.group !== item.group) groups.push([item]);
     else last.push(item);
   }
-  const choices = items.some(item => item.checked !== undefined);
   const rows = groups.map((group, index) => <Fragment key={group[0]!.id}>
     {index > 0 && <DropdownMenuSeparator />}
     <DropdownMenuGroup>
       {group[0]?.group && <DropdownMenuLabel>{group[0].group}</DropdownMenuLabel>}
       {group.map(item => {
-        const content = <ActionMenuItemContent item={item} testId={testId} />;
         const common = { disabled: item.disabled, 'data-testid': item.testId ?? `${testId}-${item.id}`, 'data-item': item.id, onClick: item.onSelect, className: 'min-h-8 max-sm:min-h-10 pointer-coarse:min-h-10' };
+        const content = <ActionMenuItemContent item={item} testId={testId} />;
         return item.checked !== undefined
           ? <DropdownMenuRadioItem key={item.id} value={item.id} {...common}>{content}</DropdownMenuRadioItem>
           : <DropdownMenuItem key={item.id} variant={item.destructive ? 'destructive' : 'default'} {...common}>{content}</DropdownMenuItem>;
       })}
     </DropdownMenuGroup>
   </Fragment>);
-  return <DropdownMenu onOpenChange={open => onOpenChange?.(open)}>
-    <DropdownMenuTrigger render={<Button ref={node => { portal.current = node?.ownerDocument.body ?? null; }} variant="ghost" aria-label={label} title={label} size={size} data-testid={testId} className={className}>{icon}</Button>} />
-    <DropdownMenuPortal container={portal}>
-      <DropdownMenuContent align={align} aria-label={label} data-testid={`${testId}-list`} className="w-64 max-w-[calc(100vw-1rem)]">
-        {children}
-        {choices ? <DropdownMenuRadioGroup value={items.find(item => item.checked)?.id ?? ''}>{rows}</DropdownMenuRadioGroup> : rows}
-      </DropdownMenuContent>
-    </DropdownMenuPortal>
-  </DropdownMenu>;
+  return <DropdownMenuPortal {...(container ? { container } : {})}>
+    <DropdownMenuContent align={align} aria-label={label} data-testid={`${testId}-list`} className="w-64 max-w-[calc(100vw-1rem)]">
+      {items.some(item => item.checked !== undefined) ? <DropdownMenuRadioGroup value={items.find(item => item.checked)?.id ?? ''}>{rows}</DropdownMenuRadioGroup> : rows}
+    </DropdownMenuContent>
+  </DropdownMenuPortal>;
 }
 
 export function actionMenuItem(action: BlockAction, testId: string): MenuItem {
@@ -119,11 +111,15 @@ export function BlockActions({ actions, testId, menuLabel, size = 'icon-sm', cla
   readonly className?: string;
   readonly iconOnly?: boolean;
 }) {
+  const portal = useMenuPortal();
   const buttons = headerActions(actions), menu = menuActions(actions);
   if (!buttons.length && !menu.length) return null;
+  const moreId = `${testId}-more`;
   return <div data-boring="block-actions" data-actions={testId} className={cn('flex shrink-0 items-center gap-0.5', className)}>
     {buttons.map(action => <ActionButton key={action.id} action={action} testId={testId} size={size} iconOnly={iconOnly} />)}
-    {menu.length > 0 && <ActionMenu label={menuLabel} size={size} testId={`${testId}-more`} icon={<EllipsisIcon data-icon="inline-start" aria-hidden="true" />}
-      items={menu.map(action => actionMenuItem(action, testId))} />}
+    {menu.length > 0 && <DropdownMenu>
+      <DropdownMenuTrigger render={<Button ref={portal.ref} variant="ghost" aria-label={menuLabel} title={menuLabel} size={size} data-testid={moreId}><EllipsisIcon data-icon="inline-start" aria-hidden="true" /></Button>} />
+      <ActionMenuContent label={menuLabel} testId={moreId} container={portal.container} items={menu.map(action => actionMenuItem(action, testId))} />
+    </DropdownMenu>}
   </div>;
 }

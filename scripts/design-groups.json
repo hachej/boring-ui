@@ -13,12 +13,12 @@
     {
       "id": "2",
       "name": "overlays",
-      "mode": "REPORT",
+      "mode": "FAIL",
       "folders": [
         "registry/button/actions.tsx",
         "registry/drawer/",
         "registry/dropdown-menu/",
-        "registry/app-shell/sheet.tsx",
+        "registry/app-shell/app-sheet.tsx",
         "registry/provider-setup/"
       ],
       "selector": "[role=dialog], [role=menu], [role=menuitem], [role=tooltip], [data-slot=popover-content], [data-slot=sheet-content], [data-slot=drawer-content]"
@@ -89,10 +89,6 @@
     }
   ],
   "primitives": [
-    {
-      "file": "registry/button/actions.tsx",
-      "replacement": "@/components/ui/dropdown-menu"
-    },
     {
       "file": "registry/drawer/drawer.tsx",
       "replacement": "@/components/ui/drawer"
