@@ -66,6 +66,8 @@ export async function testDesign({ evidence = process.env.DESIGN_EVIDENCE } = {}
         const prefix = `${name}-${themeName}-${mode}-${width}`;
         await visit(params, `${app.url}?theme=${themeName}&mode=${mode}`, `!!${input} && !${input}.disabled`);
         await inspect(`${prefix}-chat`, params);
+        const scrollbar = await browser.evaluate(`(() => { const style = getComputedStyle(${q('[data-testid=transcript-scroll]')}); return { width: style.scrollbarWidth, color: style.scrollbarColor }; })()`);
+        assert.ok(scrollbar.width === 'thin' && scrollbar.color !== 'auto', `${prefix}: the transcript must use the themed thin scrollbar, not the native one with arrows, got ${JSON.stringify(scrollbar)}`);
         if (!prepared) {
           await browser.type(input, prompt);
           await browser.click(q('[data-testid=composer-submit]'));
