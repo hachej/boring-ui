@@ -6,4 +6,6 @@ export interface ViewerComponents {
   readonly input: ComponentType<ComponentPropsWithRef<'input'>>;
   readonly textarea: ComponentType<ComponentPropsWithRef<'textarea'>>;
   readonly bubble?: ComponentType<PropsWithChildren>;
+  /** The host's separator: vertical between toolbar groups, horizontal above the phone formatting bar. */
+  readonly separator?: ComponentType<{ readonly orientation?: 'horizontal' | 'vertical'; readonly className?: string }>;
 }

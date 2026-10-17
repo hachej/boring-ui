@@ -133,7 +133,8 @@
         "toggle",
         "input",
         "textarea",
-        "card"
+        "card",
+        "separator"
       ],
       "files": [
         {
@@ -406,7 +407,10 @@
         "popover",
         "scroll-area",
         "separator",
-        "sidebar"
+        "sidebar",
+        "alert",
+        "avatar",
+        "badge"
       ],
       "files": [
         {
@@ -611,18 +615,11 @@
             "--chat-warning-soft-foreground": "var(--warning-soft-foreground, color-mix(in oklab, var(--chat-warning) 55%, var(--foreground)))"
           },
           ".pi-chat-shimmer, .pi-chat [data-slot=trace-line][data-status=running] > [data-slot=trace-title]": {
-            "background-image": "linear-gradient(100deg, var(--muted-foreground) 35%, var(--foreground) 50%, var(--muted-foreground) 65%)",
-            "background-size": "250% 100%",
-            "background-clip": "text",
-            "-webkit-background-clip": "text",
-            "color": "transparent",
-            "animation": "pi-chat-shimmer 2.2s linear infinite"
+            "animation": "var(--animate-pulse)"
           },
           "@media (prefers-reduced-motion: reduce)": {
             ".pi-chat [data-slot=trace-line][data-status=running] > [data-slot=trace-title]": {
-              "animation": "none",
-              "background-image": "none",
-              "color": "inherit"
+              "animation": "none"
             }
           },
           ".pi-chat [data-testid=\"message-text\"][data-streaming=\"true\"] > :last-child:not([data-testid=\"code-block\"])::after": {
@@ -632,28 +629,8 @@
             "height": "1.05em",
             "margin-inline-start": "0.2em",
             "vertical-align": "-0.15em",
-            "border-radius": "2px",
             "background": "color-mix(in oklab, var(--foreground) 60%, transparent)",
-            "animation": "pi-chat-caret 1s steps(2, jump-none) infinite"
-          }
-        },
-        "@keyframes pi-chat-shimmer": {
-          "from": {
-            "background-position": "100% 0"
-          },
-          "to": {
-            "background-position": "0 0"
-          }
-        },
-        "@keyframes pi-chat-caret": {
-          "0%": {
-            "opacity": "1"
-          },
-          "50%": {
-            "opacity": "0.15"
-          },
-          "100%": {
-            "opacity": "1"
+            "animation": "var(--animate-pulse)"
           }
         }
       }
@@ -678,7 +655,11 @@
         "@boring-ui/utils",
         "@boring-ui/button",
         "button",
-        "toggle"
+        "toggle",
+        "avatar",
+        "badge",
+        "card",
+        "separator"
       ],
       "files": [
         {
@@ -707,7 +688,8 @@
         "react@^19.0.0"
       ],
       "registryDependencies": [
-        "@boring-ui/utils"
+        "@boring-ui/utils",
+        "badge"
       ],
       "files": [
         {
@@ -730,7 +712,9 @@
         "@boring-ui/theme",
         "@boring-ui/pi-chat",
         "@boring-ui/utils",
-        "@boring-ui/dock"
+        "@boring-ui/dock",
+        "badge",
+        "card"
       ],
       "files": [
         {
@@ -768,7 +752,8 @@
         "button",
         "@boring-ui/file-tree",
         "dropdown-menu",
-        "scroll-area"
+        "scroll-area",
+        "separator"
       ],
       "files": [
         {
@@ -862,7 +847,10 @@
         "avatar",
         "dropdown-menu",
         "button",
-        "switch"
+        "switch",
+        "badge",
+        "card",
+        "separator"
       ],
       "css": {
         "@layer base": {
@@ -1115,7 +1103,11 @@
           },
           ".boring-viewer .boring-markdown-separator": {
             "flex": "none",
-            "width": "0.5rem"
+            "margin-inline": "0.25rem"
+          },
+          ".boring-viewer span.boring-markdown-separator": {
+            "width": "0.5rem",
+            "margin": "0"
           },
           ".boring-viewer .boring-markdown-icon": {
             "display": "block"
@@ -1394,12 +1386,16 @@
               "z-index": "50",
               "padding": "0.25rem 1.5rem 0.25rem 0.5rem",
               "padding-bottom": "calc(0.25rem + env(safe-area-inset-bottom, 0px))",
-              "border-top": "1px solid var(--border)",
               "background": "var(--background)",
               "mask-image": "linear-gradient(to right, black calc(100% - 2rem), transparent)"
             },
             ".boring-viewer.boring-markdown-dock[data-keyboard]": {
               "padding-bottom": "0.25rem"
+            },
+            ".boring-viewer.boring-markdown-dock > .boring-markdown-dock-rule": {
+              "position": "absolute",
+              "inset-inline": "0",
+              "top": "0"
             },
             ".boring-viewer [data-boring=\"markdown-editor\"][data-dock] .boring-markdown-content": {
               "padding-bottom": "6rem"

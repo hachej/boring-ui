@@ -12,7 +12,7 @@ import type { VersionHistoryEntry } from '../version-history/version-history';
 import { useViewerText } from './viewer-window';
 
 export type ViewerMenuItem = MenuItem;
-export interface ViewerMenuProps {
+export interface ViewerActionsProps {
   readonly label: string;
   readonly icon: ReactNode;
   readonly items: readonly MenuItem[];
@@ -25,7 +25,7 @@ export interface ViewerMenuProps {
 export type ViewerVersion = VersionHistoryEntry;
 
 /** The consumer's shadcn Base UI dropdown supplies positioning, dismissal and keyboard navigation. */
-export function ViewerMenu({ label, icon, items, testId = 'viewer-menu', align = 'end', className, children, onOpenChange }: ViewerMenuProps) {
+export function ViewerActions({ label, icon, items, testId = 'viewer-menu', align = 'end', className, children, onOpenChange }: ViewerActionsProps) {
   const portal = useMenuPortal();
   return <DropdownMenu onOpenChange={open => onOpenChange?.(open)}>
     <DropdownMenuTrigger render={<Button ref={portal.ref} variant="ghost" size="icon-sm" aria-label={label} title={label} data-testid={testId} className={className}>{icon}</Button>} />
@@ -43,6 +43,6 @@ export function ViewerVersions({ versions, current, onSelect, testId = 'viewer-v
 }) {
   const { labels } = useViewerText();
   const [now, setNow] = useState(Date.now);
-  return <ViewerMenu label={label ?? labels.versionHistory} testId={testId} align="end" icon={<HistoryIcon data-icon="inline-start" aria-hidden="true" />} onOpenChange={open => { if (open) setNow(Date.now()); }}
+  return <ViewerActions label={label ?? labels.versionHistory} testId={testId} align="end" icon={<HistoryIcon data-icon="inline-start" aria-hidden="true" />} onOpenChange={open => { if (open) setNow(Date.now()); }}
     items={versionHistoryItems({ versions, current, onSelect, labels, now, testId })} />;
 }

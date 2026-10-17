@@ -265,7 +265,8 @@ function MarkdownEditorSession({ components, controller, title = 'Document', ini
     <Control type="button" className="boring-markdown-tool" aria-label={label} title={label} aria-pressed={pressed === true} data-active={pressed === true || undefined}
       disabled={richOnly || extra.disabled} onClick={() => command(operation)}><MarkdownIcon name={icon} /></Control>
   );
-  const separator = <span role="separator" aria-orientation="vertical" className="boring-markdown-separator" />;
+  const Rule = components?.separator;
+  const separator = Rule ? <Rule orientation="vertical" className="boring-markdown-separator" /> : <span role="separator" aria-orientation="vertical" className="boring-markdown-separator" />;
   const chain = () => editor!.chain().focus();
   const openLink = () => setLinkDraft(marks?.href ?? '');
   const applyLink = () => {
@@ -317,7 +318,7 @@ function MarkdownEditorSession({ components, controller, title = 'Document', ini
     <TextDraftControls components={components} recovery={state.recovery} actions={controller.actions} readOnly={state.readOnly} blocked={state.lifecycle !== 'active' || state.save.kind === 'pending' || (state.save.kind === 'settled' && state.save.result.kind === 'unknown')} />
     {mode === 'rich' && showPinned && <div role="toolbar" aria-label="Text formatting" className="boring-markdown-toolbar">{formatTools}</div>}
     {mode === 'rich' && dockVisible && createPortal(<div role="toolbar" aria-label="Text formatting" className="boring-viewer boring-markdown-dock" data-testid="markdown-dock" data-keyboard={keyboardInset > 0 || undefined}
-      style={{ bottom: keyboardInset }} onPointerDown={event => event.preventDefault()}>{formatTools}</div>, document.body)}
+      style={{ bottom: keyboardInset }} onPointerDown={event => event.preventDefault()}>{Rule && <Rule className="boring-markdown-dock-rule" />}{formatTools}</div>, document.body)}
     {mode === 'rich' && editor && !showPinned && !unavailable && <BubbleMenu editor={editor} updateDelay={0} options={BUBBLE_OPTIONS} appendTo={bubbleContainer}
       role="toolbar" aria-label="Text formatting" className="boring-viewer boring-markdown-bubble">
       <Bubble>

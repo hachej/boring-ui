@@ -29,6 +29,7 @@ import type { ViewerVersion } from '../viewers/menu';
 import type { InteractiveHtml } from '../viewers/interactive-html';
 import { downloadFile } from '../viewers/download';
 import { copyText } from '../utils/utils';
+import { Separator } from '@/components/ui/separator';
 import { savedLabel, useSaved } from './use-saved';
 import { useAppText } from './app-labels';
 
@@ -111,7 +112,7 @@ interface VersionMenu {
 }
 
 /** The version menu, newest first: each retained revision is named by when it was saved, and the newest is "Latest". The pin is the revision. */
-function versionMenu(artifact: ArtifactDescriptor, follow: boolean, revisions: readonly SavedRevision[], earlier: string): VersionMenu {
+function versionChoices(artifact: ArtifactDescriptor, follow: boolean, revisions: readonly SavedRevision[], earlier: string): VersionMenu {
   const at = follow ? 0 : revisions.findIndex(save => save.revision === artifact.revision);
   const shown = at < 0 ? undefined : revisions[at];
   return { items: revisions.map((save, index) => ({ id: index === 0 ? 'latest' : save.revision, label: savedLabel(save.savedAt, Date.now(), earlier), savedAt: save.savedAt, ...(save.source ? { source: save.source } : {}), latest: index === 0 })),
@@ -130,7 +131,7 @@ function SvgView({ text, title, frame }: { readonly text: string; readonly title
       { id: 'source', label: labels.source, text: labels.source, icon: <CodeXmlIcon className="size-4" aria-hidden="true" />, testId: 'artifact-mode' }]} />
     {frame.controls}</>}>
     {mode === 'preview'
-      ? <div className="boring-viewer-checker flex min-h-0 flex-1 items-center justify-center overflow-auto bg-white p-6"><img data-testid="artifact-svg" src={url} alt={title} className="max-h-full max-w-full" /></div>
+      ? <div className="boring-viewer-checker flex min-h-0 flex-1 items-center justify-center overflow-auto p-6"><img data-testid="artifact-svg" src={url} alt={title} className="max-h-full max-w-full" /></div>
       : <div className="min-h-0 flex-1 overflow-auto p-3"><CodeBlock code={text} language="svg" /></div>}
   </ViewerFrame>;
 }
@@ -199,7 +200,7 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose }: {
     return body(<ViewerFrame {...waiting}><p className="m-0 p-4 text-sm text-muted-foreground" role="status">{saved.kind === 'loading' ? labels.loading : saved.kind === 'invalid' ? labels.artifactNotText : labels.versionUnavailable}</p></ViewerFrame>);
   }
   const document = (children: ReactNode) => <div data-testid="document" data-revision={saved.snapshot.ref.revision} className="flex h-full min-h-0 flex-col">
-    {pinned && <p role="note" data-testid="version-view-only" className="m-0 shrink-0 border-b border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">{labels.versionViewOnly}</p>}
+    {pinned && <><p role="note" data-testid="version-view-only" className="m-0 shrink-0 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">{labels.versionViewOnly}</p><Separator /></>}
     <div className="min-h-0 flex-1">{children}</div>
   </div>;
   if (type === 'markdown' && controller) return body(document(<MarkdownPane controller={controller as MarkdownController} initialMode="rich" onAutosaveChange={registerAutosave} onBeforeLeaveChange={options.onBeforeLeaveChange} {...frame} />));
@@ -227,7 +228,7 @@ export function ArtifactPanel({ active, versions, options, onSelect, onClose }: 
   const path = artifact.target.resource.path;
   const revisions = useHistory(options.history, path);
   const { labels } = useAppText();
-  const menu = versionMenu(artifact, follow, revisions, labels.earlierVersion);
+  const menu = versionChoices(artifact, follow, revisions, labels.earlierVersion);
   return <div data-testid="artifact-panel" data-artifact-id={artifactKey(artifact)} data-artifact-type={artifact.type} data-follow={follow ? 'true' : 'false'} data-artifact-position={menu.number} data-artifact-revision={follow ? undefined : artifact.revision}
     className="pi-chat flex h-full min-h-0 flex-col">
     <Version key={`${path}@${follow ? 'latest' : artifact.revision}`} artifact={artifact} pinned={!follow} menu={menu} options={options} onSelect={onSelect} onClose={onClose} />

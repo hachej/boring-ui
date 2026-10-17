@@ -6,6 +6,7 @@ import { Toggle } from '@/components/ui/toggle';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent } from '@/components/ui/card';
+import { Separator } from '@/components/ui/separator';
 
 function EditorAction({ 'aria-pressed': pressed, value, ...props }: ComponentPropsWithRef<'button'>) {
   return pressed === undefined
@@ -18,4 +19,4 @@ function EditorBubble({ children }: PropsWithChildren) {
 }
 
 /** Maps native editor action/input props to the consumer's unchanged shadcn controls. */
-export const editorControls = { button: EditorAction, input: Input, textarea: Textarea, bubble: EditorBubble };
+export const editorControls = { button: EditorAction, input: Input, textarea: Textarea, bubble: EditorBubble, separator: Separator };

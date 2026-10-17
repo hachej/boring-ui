@@ -30,7 +30,7 @@ try {
   await browser.until('expanded running Trace', `${trigger}.getAttribute('aria-expanded') === 'true' && !!${activity}.querySelector('[data-testid=tool-card]')`, 5000);
   assert.equal(await browser.evaluate(`${trigger}.getAttribute('aria-controls') !== null`), true);
   const title = `${activity}.querySelector('[data-slot=trace-line][data-status=running] > [data-slot=trace-title]')`;
-  assert.equal(await browser.evaluate(`getComputedStyle(${title}).animationName`), 'pi-chat-shimmer');
+  assert.equal(await browser.evaluate(`getComputedStyle(${title}).animationName`), 'pulse');
   await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
   assert.equal(await browser.evaluate(`getComputedStyle(${title}).animationName`), 'none');
   await browser.send('Emulation.setEmulatedMedia', { features: [] });

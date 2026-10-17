@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { KeyboardEvent, PointerEvent, ReactNode } from 'react';
+import { Badge } from '@/components/ui/badge';
+import { Card } from '@/components/ui/card';
 import { cn } from '../utils/utils';
 
 /** What the open panel can do to its workspace. Pass `onFullscreenChange` on to the viewer's top bar; it is absent in the phone sheet. */
@@ -172,13 +174,16 @@ export function ArtifactWorkspace({ chat, open, panel, onClose, fullscreen: cont
 
   const api: WorkspacePanelApi = { fullscreen, onFullscreenChange: sheet ? undefined : setFullscreen, close: onClose, sheet, floatChat: floatBelow !== undefined && !sheet && !floating ? () => setFloating(true) : undefined };
   const covering = open && (sheet || fullscreen);
+  // The inset panel is the host's Card; every other placement is a plain region of the page.
+  const inset = variant === 'inset' && !sheet && !fullscreen && !floating;
+  const Panel = inset ? Card : 'aside';
   return <div ref={root} data-boring="artifact-workspace" data-open={open ? 'true' : 'false'} data-fullscreen={fullscreen ? 'true' : 'false'} data-sheet={sheet && open ? 'true' : 'false'}
     className={cn('relative flex h-full min-h-0 min-w-0 flex-1', className)}>
     <div data-testid="workspace-chat" data-floating={floating ? 'true' : undefined} {...(covering ? { inert: true, 'aria-hidden': true } : {})}
       className={cn('relative flex min-h-0 min-w-0 flex-col', floating ? 'w-0 flex-none' : 'flex-1', covering && 'invisible')}>
       {typeof chat === 'function' ? chat({ floating, dock: () => setFloating(false) }) : chat}
-      {floatHint && <div role="status" data-testid="workspace-float-hint" className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-background/75 p-4 backdrop-blur-[2px]">
-        <span className="rounded-full border border-border bg-popover px-4 py-2 text-sm font-medium text-popover-foreground shadow-lg">{labels?.floatHint ?? 'Release to float the chat'}</span>
+      {floatHint && <div role="status" data-testid="workspace-float-hint" className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-background/75 p-4">
+        <Badge variant="secondary">{labels?.floatHint ?? 'Release to float the chat'}</Badge>
       </div>}
     </div>
     {open && <>
@@ -190,13 +195,13 @@ export function ArtifactWorkspace({ chat, open, panel, onClose, fullscreen: cont
         className="group relative z-10 -mx-1.5 w-3 shrink-0 cursor-col-resize touch-none select-none outline-none">
         <span aria-hidden="true" className={cn('absolute inset-y-0 left-1/2 w-px -translate-x-1/2', 'bg-border/65', 'transition-colors group-hover:w-0.5 group-hover:bg-ring group-focus-visible:w-0.5 group-focus-visible:bg-ring motion-reduce:transition-none', dragging && 'w-0.5 bg-ring')} />
       </div>}
-      <aside onTouchStart={event => { const point = event.touches[0]; swipe.current = sheet && point && point.clientX < 32 ? { x: point.clientX, y: point.clientY } : null; }} onTouchEnd={event => { const point = event.changedTouches[0], start = swipe.current; swipe.current = null; if (point && start && point.clientX - start.x > 80 && Math.abs(point.clientY - start.y) < 60) onClose(); }} data-testid="workspace-panel" aria-label={panelLabel} data-state={entered ? 'open' : 'entering'} data-floating={floating ? 'true' : undefined} data-fullscreen={fullscreen ? 'true' : 'false'} data-sheet={sheet ? 'true' : 'false'}
+      <Panel role="complementary" onTouchStart={event => { const point = event.touches[0]; swipe.current = sheet && point && point.clientX < 32 ? { x: point.clientX, y: point.clientY } : null; }} onTouchEnd={event => { const point = event.changedTouches[0], start = swipe.current; swipe.current = null; if (point && start && point.clientX - start.x > 80 && Math.abs(point.clientY - start.y) < 60) onClose(); }} data-testid="workspace-panel" aria-label={panelLabel} data-state={entered ? 'open' : 'entering'} data-floating={floating ? 'true' : undefined} data-fullscreen={fullscreen ? 'true' : 'false'} data-sheet={sheet ? 'true' : 'false'}
         style={sheet || fullscreen || floating ? undefined : { width, minWidth: minPanel }}
-        className={cn('flex min-h-0 min-w-0 flex-col overflow-hidden bg-background text-foreground transition-opacity motion-reduce:transition-none',
-          sheet || fullscreen ? 'fixed inset-0 z-50' : floating ? 'flex-1' : variant === 'inset' ? 'my-3 me-3 ms-0 shrink-0 rounded-lg border border-border' : 'shrink-0',
+        className={cn('flex min-h-0 min-w-0 flex-col overflow-hidden transition-opacity motion-reduce:transition-none', !inset && 'bg-background text-foreground',
+          sheet || fullscreen ? 'fixed inset-0 z-50' : floating ? 'flex-1' : inset ? 'my-3 me-3 ms-0 shrink-0 gap-0' : 'shrink-0',
           entered ? 'opacity-100' : 'opacity-0', dragging && 'pointer-events-none select-none')}>
         {typeof panel === 'function' ? panel(api) : panel}
-      </aside>
+      </Panel>
     </>}
   </div>;
 }

@@ -31,9 +31,8 @@
 [data-boring="file-tree"] .file-tree-history { padding: .5rem; }
 [data-boring="file-tree"] pre { max-height: 20rem; overflow: auto; white-space: pre-wrap; }
 [data-boring="file-tree"] .file-tree-announcements { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
-[data-boring="file-tree"] [data-upload-spinner] { flex-shrink: 0; width: 1rem; height: 1rem; margin: .5rem; color: var(--muted-foreground); animation: boring-file-upload-spin 1s linear infinite; }
+[data-boring="file-tree"] [data-upload-spinner] { flex-shrink: 0; width: 1rem; height: 1rem; margin: .5rem; color: var(--muted-foreground); }
 [data-boring="file-tree"] [data-upload-error] { display: block; padding: 0 .5rem .5rem; color: var(--destructive); white-space: normal; overflow-wrap: anywhere; }
-@keyframes boring-file-upload-spin { to { transform: rotate(360deg); } }
 [data-boring="file-tree"] > p[role="alert"], [data-boring="file-tree"] > ul[aria-label] { overflow-wrap: anywhere; }
 [data-boring="file-tree"] .file-tree-drop { position: absolute; inset: .25rem; z-index: 5; display: flex; flex-direction: column; pointer-events: none; }
 [data-boring="file-tree"] .file-tree-drop > [data-slot="empty"] { flex: 1; background: var(--background); }
@@ -42,8 +41,5 @@
   [data-boring="file-tree"] .file-tree-item > div:hover [data-file-more],
   [data-boring="file-tree"] .file-tree-item:focus-within > div [data-file-more],
   [data-boring="file-tree"] [data-file-more][aria-expanded="true"] { opacity: 1; }
-}
-@media (prefers-reduced-motion: reduce) {
-  [data-boring="file-tree"] [data-upload-spinner] { animation: none; }
 }
 [data-boring="file-tree"] .file-tree-empty { min-height: 14rem; }

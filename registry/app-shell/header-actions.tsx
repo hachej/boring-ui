@@ -54,8 +54,8 @@ export function HeaderActions({ actions, compact, text, prefix, run }: { readonl
         <Button variant="ghost" size="icon" data-testid={`${prefix}-more`} aria-label={text.actions} title={text.actions} onClick={() => setSheetOpen(true)}><EllipsisIcon data-icon="inline-start" aria-hidden="true" /></Button>
         <AppSheet open={sheetOpen} onOpenChange={setSheetOpen} title={text.actions}>
           {extra.map(action => action.href === undefined
-            ? <button key={action.id} type="button" data-testid={`${prefix}-action-${action.id}`} className={SHEET_ROW} onClick={() => { setSheetOpen(false); afterBack(() => run(action.id)); }}><action.icon className="size-4" />{action.label}</button>
-            : <a key={action.id} href={action.href} target={action.target} rel={action.rel} data-testid={`${prefix}-action-${action.id}`} className={SHEET_ROW} onClick={event => sheetLink(event, action)}><action.icon className="size-4" />{action.label}</a>)}
+            ? <Button key={action.id} variant="ghost" size="lg" data-testid={`${prefix}-action-${action.id}`} className={SHEET_ROW} onClick={() => { setSheetOpen(false); afterBack(() => run(action.id)); }}><action.icon data-icon="inline-start" />{action.label}</Button>
+            : <Button key={action.id} variant="ghost" size="lg" nativeButton={false} render={<a href={action.href} target={action.target} rel={action.rel} />} data-testid={`${prefix}-action-${action.id}`} className={SHEET_ROW} onClick={event => sheetLink(event, action)}><action.icon data-icon="inline-start" />{action.label}</Button>)}
         </AppSheet>
       </>
       : <DropdownMenu>

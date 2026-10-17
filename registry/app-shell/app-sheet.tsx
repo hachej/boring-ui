@@ -15,10 +15,10 @@ export function AppSheet({ open, onOpenChange, title, children }: { readonly ope
   return <Drawer open={open} onOpenChange={next => { if (!next) close(); }} showSwipeHandle swipeDirection="down">
     <DrawerContent data-testid="app-sheet" className="app-shell max-h-[85dvh]">
       <DrawerHeader><DrawerTitle>{title}</DrawerTitle></DrawerHeader>
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pt-2 pb-[env(safe-area-inset-bottom)]">{children}</div>
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-2 pt-2 pb-[env(safe-area-inset-bottom)]">{children}</div>
     </DrawerContent>
   </Drawer>;
 }
 
-/** A full-width row of a sheet: at least 48px tall (44px is the touch minimum). */
-export const SHEET_ROW = 'flex min-h-12 w-full items-center gap-3 px-4 text-left text-sm outline-none hover:bg-accent focus-visible:bg-accent';
+/** Layout for a full-width sheet row on the host's ghost `Button`: at least 48px tall (44px is the touch minimum). */
+export const SHEET_ROW = 'min-h-12 w-full justify-start gap-3';

@@ -20,7 +20,8 @@ export function auditDesign({ groups, palette, radiusBindings }) {
   // Compare painted channels: translucent native variants quantize during canvas
   // premultiplication, so unpremultiplied RGB can differ by several integers.
   const equalColor = (left, right) => left.slice(0, 3).every((channel, index) => Math.abs(channel - right[index]) * right[3] / 255 <= 1);
-  const normalizeShadow = value => value === 'none' ? '' : value.split(/,(?![^(]*\))/).map(part => part.trim()).filter(part => !/^rgba\([^)]*,\s*0\)/.test(part)).join(', ');
+  // Transparent and zero-geometry shadows paint nothing (a stock `ring-0`), so they are not elevation values.
+  const normalizeShadow = value => value === 'none' ? '' : value.split(/,(?![^(]*\))/).map(part => part.trim()).filter(part => !/^rgba\([^)]*,\s*0\)/.test(part) && !/(?:^|\s)0px 0px 0px 0px(?:\s|$)/.test(part)).join(', ');
   const shadows = ['xs', 'sm', 'md', 'lg', 'xl', '2xl'].filter(size => root.getPropertyValue(`--shadow-${size}`).trim()).map(size => normalizeShadow(resolve('box-shadow', `var(--shadow-${size})`)));
   const radii = ['0px', resolve('border-radius', 'var(--radius)')];
   for (const name of new Set([...Object.keys(radiusBindings), ...['sm', 'md', 'lg', 'xl', '2xl', '3xl', '4xl'].map(size => `radius-${size}`)])) {
@@ -61,7 +62,8 @@ export function auditDesign({ groups, palette, radiusBindings }) {
     // Resolve native geometry outside the block's ancestor selectors. The consumer's
     // unchanged component owns geometry such as a Switch's circular track; blocks
     // may not override it, even with a different otherwise-valid radius token.
-    const reference = nativeControl ? element.cloneNode(true) : null;
+    // Every stock shadcn part (`data-slot`) owns its own geometry; compare it with the same part outside the block.
+    const reference = nativeControl || element.hasAttribute('data-slot') ? element.cloneNode(true) : null;
     const referenceRoot = reference ? document.createElement('div') : null;
     if (referenceRoot) {
       // The examples scope standard preflight to .pi-chat rather than reset the

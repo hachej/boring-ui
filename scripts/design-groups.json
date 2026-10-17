@@ -83,7 +83,8 @@
       "mode": "REPORT",
       "folders": [
         "registry/",
-        "packages/ui/src/"
+        "packages/ui/src/",
+        "packages/ui/styles/"
       ],
       "selector": "[data-boring], [data-slot], .boring-viewer, .app-shell"
     }
