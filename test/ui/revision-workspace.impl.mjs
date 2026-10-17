@@ -196,7 +196,9 @@ test('revision workspace preserves file drafts, docked and floating chat mounts,
   assert.equal(element.querySelectorAll('[data-testid=sessions-toggle]').length, 1, 'the center holds no second toggle with the Library in the pane');
   assert.equal(element.querySelector('[data-testid=workspace-library-view]'), null);
   const select = element.querySelector('[data-testid=agent-select]'); assert.ok(select, 'two agents show a switcher');
-  await act(async () => { select.value = 'dev'; select.dispatchEvent(new window.Event('change', { bubbles: true })); });
+  await act(async () => select.click());
+  for (let n = 0; n < 50 && !document.querySelector('[data-testid=agent-option-dev]'); n++) await act(async () => new Promise(r => setTimeout(r, 10)));
+  await act(async () => document.querySelector('[data-testid=agent-option-dev]').click());
   assert.deepEqual(chosen, ['dev']);
   assert.equal(element.querySelector('[data-testid=sessions-tab-conversations]').getAttribute('aria-selected'), 'true');
   await act(async () => element.querySelector('[data-testid=sessions-tab-library]').click());

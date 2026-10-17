@@ -4,8 +4,9 @@
 // who wrote it (`source`). Every row opens that exact revision read-only; going back to editing is a separate control in the documents
 // screen. The operation id is not shown: the public history carries none (a follow-up for the files seam).
 import { useEffect, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import type { RevisionProvider, SavedRevision } from '@hachej/boring-files/revision';
-import { cn } from '../utils/utils';
 import type { DocumentsLabels } from './documents-labels';
 
 interface Loaded { readonly provider: RevisionProvider; readonly path: string; readonly saves: readonly SavedRevision[] }
@@ -48,22 +49,21 @@ export function Revisions({ provider, path, version, selected, locale, labels, o
     <h2 className="m-0 px-3 py-2 text-sm font-semibold">{labels.revisions}</h2>
     {saves === undefined ? <p role="status" className="m-0 px-3 pb-3 text-sm text-muted-foreground">{labels.revisionsLoading}</p>
       : saves.length === 0 ? <p role="status" className="m-0 px-3 pb-3 text-sm text-muted-foreground">{labels.noRevisions}</p>
-      : <ol className="m-0 min-h-0 list-none overflow-y-auto p-1">
+      : <ScrollArea className="min-h-0 flex-1"><ol className="m-0 list-none p-1">
         {saves.map((save, index) => {
           const current = index === 0;
           const on = selected === save.revision;
           const when = whenSaved(save.savedAt, locale, labels.unknownTime);
           const who = save.source ? labels.savedBy[save.source] : labels.savedBy.observed;
           return <li key={save.revision}>
-            <button type="button" data-testid="revision-item" data-revision={save.revision} data-current={current ? 'true' : undefined}
+            <Button type="button" variant={on ? 'secondary' : 'ghost'} data-testid="revision-item" data-revision={save.revision} data-current={current ? 'true' : undefined}
               aria-current={on ? 'true' : undefined} aria-label={labels.openRevision(when)} onClick={() => onOpen(save.revision)}
-              className={cn('flex min-h-11 w-full flex-col items-start gap-0.5 rounded-md px-2 py-1.5 text-left text-sm outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60',
-                on && 'bg-accent')}>
+              className="h-auto min-h-11 w-full flex-col items-start justify-start gap-0.5 whitespace-normal text-left">
               <span className="font-medium">{current ? labels.latest : when}</span>
               <span className="text-xs text-muted-foreground">{current ? `${when}, ${who}` : who}</span>
-            </button>
+            </Button>
           </li>;
         })}
-      </ol>}
+      </ol></ScrollArea>}
   </section>;
 }

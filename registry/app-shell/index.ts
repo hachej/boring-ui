@@ -5,7 +5,7 @@ export { AccountMenu, NavUser } from './account';
 export type { AccountSpec } from './account';
 export { ListDetail, listDetailView } from './list-detail';
 export type { ListDetailProps } from './list-detail';
-export { AppSheet } from './sheet';
+export { AppSheet } from './app-sheet';
 export { useShellLayer } from './shell-layer';
 export type { ShellLayer } from './shell-layer';
 export { AppSidebar, TabBar } from './nav';

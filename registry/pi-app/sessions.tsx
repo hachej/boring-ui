@@ -1,9 +1,11 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { Drawer, DrawerContent, DrawerTitle } from '../drawer/drawer';
 import { Button } from '@/components/ui/button';
-import { MenuIcon } from 'lucide-react';
+import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { ChevronsUpDownIcon, MenuIcon } from 'lucide-react';
 import { useAppText } from './app-labels';
 import { ConversationList } from '../pi-chat/pi-chat';
 import type { ConversationsConfig } from '../pi-chat/pi-chat';
@@ -34,21 +36,28 @@ export function SessionsPane({ conversations, title: givenTitle, drawer, onClose
   const shown = !conversations && libraryContent ? 'library' : tabs ? view : 'conversations';
   const navigation = library && <Button variant="ghost" data-testid="workspace-library" aria-pressed={library.selected} className="mx-2 justify-start" onClick={() => { library.onSelect(); if (drawer) onClose?.(); }}><icons.library aria-hidden="true" />{labels.library}</Button>;
   const pane = <aside data-testid="conversations" data-drawer={drawer ? 'true' : 'false'} aria-label={title}
-    className={cn('pi-chat flex min-h-0 flex-1 flex-col bg-muted/30 text-foreground', !drawer && 'w-[260px] shrink-0 flex-none')}>
+    className={cn('pi-chat flex min-h-0 flex-1 flex-col bg-muted/30 text-foreground', drawer ? 'pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]' : 'w-[260px] shrink-0 flex-none')}>
     <header className="flex h-13 shrink-0 items-center gap-2 px-4">
-      {agents && agents.items.length > 1 ? <select aria-label={labels.agent} data-testid="agent-select" value={agents.activeId} onChange={event => agents.onSelect(event.target.value)} className="h-9 min-w-0 flex-1 truncate rounded-md bg-transparent text-sm font-medium">
-        {agents.items.map(agent => <option key={agent.id} value={agent.id} title={agent.description}>{agent.label}</option>)}
-      </select> : <h2 className="m-0 min-w-0 flex-1 truncate text-sm font-semibold tracking-tight">{agents?.items[0]?.label ?? title}</h2>}
+      {agents && agents.items.length > 1 ? <DropdownMenu>
+        <DropdownMenuTrigger render={<Button variant="ghost" aria-label={labels.agent} data-testid="agent-select" className="min-w-0 flex-1 justify-between" />}>
+          <span className="truncate">{(agents.items.find(agent => agent.id === agents.activeId) ?? agents.items[0])?.label}</span><ChevronsUpDownIcon data-icon="inline-end" aria-hidden="true" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" aria-label={labels.agent}>
+          <DropdownMenuRadioGroup value={agents.activeId} onValueChange={agents.onSelect}>
+            {agents.items.map(agent => <DropdownMenuRadioItem key={agent.id} value={agent.id} title={agent.description} data-testid={`agent-option-${agent.id}`}>{agent.label}</DropdownMenuRadioItem>)}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuContent>
+      </DropdownMenu> : <h2 className="m-0 min-w-0 flex-1 truncate text-sm font-semibold tracking-tight">{agents?.items[0]?.label ?? title}</h2>}
       {(drawer ? onClose : onCollapse) && <SessionsToggle open drawer={drawer} navigation={Boolean(library || libraryContent)} onToggle={(drawer ? onClose : onCollapse)!} />}
     </header>
     {conversations?.onNew && <Button variant="ghost" data-testid="conversation-new" className="mx-2 mb-1 justify-start" onClick={() => { conversations.onNew?.(); picked(); }}><icons.newChat data-icon="inline-start" aria-hidden="true" />{labels.newChat}</Button>}
     {tabs && <div role="tablist" aria-label={title} className="mx-2 flex gap-1">{(['conversations', 'library'] as const).map(tab => <Button key={tab} role="tab" variant="ghost" aria-selected={shown === tab} data-testid={`sessions-tab-${tab}`} onClick={() => onViewChange?.(tab)}>{tab === 'library' ? labels.library : title}</Button>)}</div>}
-    {shown === 'library' && libraryContent ? <div data-testid="sessions-library" className="flex min-h-0 flex-1 flex-col overflow-auto">{libraryContent(() => { if (drawer) onClose?.(); })}</div>
+    {shown === 'library' && libraryContent ? <ScrollArea data-testid="sessions-library" className="min-h-0 flex-1">{libraryContent(() => { if (drawer) onClose?.(); })}</ScrollArea>
       : conversations ? <ConversationList conversations={conversations} onPicked={picked} navigation={navigation} /> : navigation}
   </aside>;
   if (!drawer) return pane;
   return <Drawer open onOpenChange={next => { if (!next) onClose?.(); }} swipeDirection="left">
-    <DrawerContent aria-label={title} className="left-0 h-dvh! max-h-dvh! w-[min(260px,85vw)]! flex-col! rounded-none! pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] duration-200 motion-reduce:transition-none">
+    <DrawerContent aria-label={title}>
       <DrawerTitle className="sr-only">{title}</DrawerTitle>{pane}
     </DrawerContent>
   </Drawer>;

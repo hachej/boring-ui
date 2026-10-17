@@ -1,5 +1,4 @@
-// Pinned shadcn fixture: `shadcn@4.21.4 add popover` (style base-nova, icons lucide), generated 2026-10-17
-// from https://ui.shadcn.com/r/styles/base-nova/. Used only to type-check and run the registry blocks; consumers install their own.
+// Pinned shadcn@4.21.4 Base UI fixture (style base-nova), fetched 2026-10-17 from https://ui.shadcn.com/r/styles/base-nova/popover.json. MIT, Copyright (c) 2023 shadcn.
 "use client"
 
 import * as React from "react"

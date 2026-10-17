@@ -42,7 +42,7 @@ export type { ChatIcons, ChatLabels } from './labels';
 export { frenchChatLabels } from './labels-fr';
 export { chatTextFor } from './locale';
 export type { ChatLocale } from './locale';
-export { ActionMenu, BlockActions } from '../button/actions';
+export { BlockActions } from '../button/actions';
 export { useChatDraft } from './use-chat-draft';
 export type { BlockAction, BlockIcon } from '../button/actions';
 export type { AttachmentsConfig, ConversationItem, ConversationsConfig, EffortConfig, FileKind, MentionResult, MentionsConfig, ModelConfig, ModelRef, PasteToFile, PreviewRead, ReplyRef, SlashApi, SlashCommand, SlashConfig, SlashSkill, UploadResult } from './config';

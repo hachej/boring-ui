@@ -45,7 +45,7 @@ export function auditDesign({ groups, palette, radiusBindings }) {
       if (element.matches('[role^=menuitem], [data-slot^=dropdown-menu-]') || element.closest('.app-shell [role=dialog]')) legacy = '2';
       else if (element.closest('[data-boring=file-tree], [data-testid=conversation-row], .boring-feedback-candidates, .boring-feedback-list') || element.matches('[data-testid=revision-item]')) legacy = '4';
       else if (element.matches('[data-testid=artifact-card], [data-testid=message-file]') || element.closest('[data-testid=question-card], [data-testid=approval-card]')) legacy = '6';
-      else if (element.closest('.boring-markdown-toolbar, .boring-markdown-bubble, .boring-html-toolbar') || element.hasAttribute('data-mode') || element.matches('[role=tab]')) legacy = '7';
+      else if (element.closest('.boring-markdown-toolbar, .boring-markdown-bubble, .boring-markdown-dock, .boring-html-toolbar') || element.hasAttribute('data-mode') || element.matches('[role=tab]')) legacy = '7';
       else if (element.matches('[data-testid=message-mention], [data-testid=feedback-fallback]') || element.closest('[data-testid=message-files]')) legacy = '5';
     }
     let index = legacy ? groups.findIndex(group => group.id === legacy) : -1;
@@ -78,8 +78,8 @@ export function auditDesign({ groups, palette, radiusBindings }) {
       const expected = host ? [host[`border${corner}Radius`]] : radii;
       check('radius', style[`border${corner}Radius`], expected, expected.includes(style[`border${corner}Radius`]));
     }
-    // Native focus rings are focus indicators, not elevation shadows.
-    const shadow = normalizeShadow(style.boxShadow).split(/,(?![^(]*\))/).filter(part => !(nativeControl && element.matches(':focus-visible') && /0px 0px 0px [1-9]/.test(part))).join(', ').trim();
+    // Native focus rings are focus indicators, not elevation shadows; a shadcn popup's `ring-1` is its stock hairline edge (zero offset and blur), also not elevation.
+    const shadow = normalizeShadow(style.boxShadow).split(/,(?![^(]*\))/).map(part => part.trim()).filter(part => !((nativeControl && element.matches(':focus-visible') || element.hasAttribute('data-slot')) && /0px 0px 0px [1-9]/.test(part))).join(', ').trim();
     referenceRoot?.remove();
     if (shadow) check('shadow', shadow, shadows, shadows.includes(shadow));
     const text = [...element.childNodes].some(node => node.nodeType === Node.TEXT_NODE && node.textContent.trim());
