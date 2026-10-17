@@ -1,20 +1,35 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { FileTextIcon, FolderIcon } from 'lucide-react';
+import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@/components/ui/item';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { usePickerKeyboard } from './picker-keyboard';
 import type { MentionResult, MentionsConfig } from './config';
-import { cn } from '../utils/utils';
 import { useChatText } from './labels';
+
+/**
+ * The host's shadcn Popover above the composer, anchored to the nearest positioned ancestor's top edge and as wide as it.
+ * Focus stays in the message box (the picker keyboard drives the rows); outside presses dismiss it.
+ */
+export function ComposerSuggestions({ testId, onDismiss, children }: { readonly testId: string; readonly onDismiss: () => void; readonly children: ReactNode }) {
+  return <Popover open modal={false} onOpenChange={open => { if (!open) onDismiss(); }}>
+    <PopoverTrigger nativeButton={false} render={<span aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0" />} />
+    <PopoverContent data-testid={testId} side="top" align="start" initialFocus={false} finalFocus={false} className="pi-chat w-(--anchor-width) max-w-[calc(100vw-1rem)]">
+      {children}
+    </PopoverContent>
+  </Popover>;
+}
 
 function highlight(text: string, query: string) {
   const at = query ? text.toLowerCase().indexOf(query.toLowerCase()) : -1;
   if (at < 0) return <>{text}</>;
-  return <>{text.slice(0, at)}<mark className="bg-transparent font-semibold text-foreground underline decoration-ring/60 underline-offset-2">{text.slice(at, at + query.length)}</mark>{text.slice(at + query.length)}</>;
+  return <>{text.slice(0, at)}<mark className="bg-transparent text-foreground underline underline-offset-2">{text.slice(at, at + query.length)}</mark>{text.slice(at + query.length)}</>;
 }
 
 /** The `@` file picker, ported from v2's `MentionPicker`: debounced search, one highlighted row, name over path. */
-export function MentionMenu({ query, search, generation, onSelect, onDismiss }: {
+export function MentionPicker({ query, search, generation, onSelect, onDismiss }: {
   readonly query: string;
   readonly generation?: MentionsConfig['generation'];
   readonly search: MentionsConfig['search'];
@@ -28,7 +43,7 @@ export function MentionMenu({ query, search, generation, onSelect, onDismiss }: 
   const results = shown?.results ?? [];
   const failure = shown?.failure ?? null;
   const [active, setActive] = useState(0);
-  const list = useRef<HTMLUListElement>(null), container = useRef<HTMLDivElement>(null);
+  const list = useRef<HTMLUListElement>(null);
   const searcher = useRef(search); searcher.current = search;
   useEffect(() => {
     setActive(0);
@@ -39,28 +54,23 @@ export function MentionMenu({ query, search, generation, onSelect, onDismiss }: 
     }, 120);
     return () => { clearTimeout(timer); abort.abort(); };
   }, [query, search, generation]);
-  useEffect(() => {
-    const outside = (event: MouseEvent) => { if (container.current && !container.current.contains(event.target as Node)) onDismiss(); };
-    document.addEventListener('mousedown', outside);
-    return () => document.removeEventListener('mousedown', outside);
-  }, [onDismiss]);
   usePickerKeyboard({ count: results.length, activeIdx: active, setActiveIdx: setActive, listRef: list, onSelect: index => { const item = results[index]; if (item) onSelect(item.path); }, onDismiss });
 
   if (results.length === 0 && !failure) return null;
-  return <div ref={container} data-testid="mention-menu" className="absolute inset-x-0 bottom-full z-20 mb-2 overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-lg">
-    {failure ? <div role="alert" data-testid="mention-error" className="px-3 py-2 text-xs text-destructive">{failure}</div>
-      : <ul ref={list} role="listbox" aria-label={labels.workspaceFiles} className="m-0 max-h-[min(14rem,40dvh)] list-none overflow-y-auto p-0 py-1">
+  return <ComposerSuggestions testId="mention-menu" onDismiss={onDismiss}>
+    {failure ? <div role="alert" data-testid="mention-error" className="text-xs text-destructive">{failure}</div>
+      : <ul ref={list} role="listbox" aria-label={labels.workspaceFiles} className="m-0 flex max-h-[min(14rem,40dvh)] list-none flex-col overflow-y-auto p-0">
         {results.map((item, index) => {
           const name = item.path.split('/').pop() ?? item.path;
           const Icon = item.kind === 'directory' ? FolderIcon : FileTextIcon;
-          return <li key={item.path} role="option" aria-selected={index === active} data-testid="mention-item" data-path={item.path} title={item.path}
+          return <Item key={item.path} render={<li />} size="xs" variant={index === active ? 'muted' : 'default'} role="option" aria-selected={index === active} data-testid="mention-item" data-path={item.path} title={item.path}
             onMouseEnter={() => setActive(index)} onMouseDown={event => { event.preventDefault(); onSelect(item.path); }}
-            className={cn('flex cursor-pointer items-center gap-2.5 px-3 py-1.5 text-xs max-sm:min-h-11 pointer-coarse:min-h-11', index === active ? 'bg-accent text-foreground' : 'text-muted-foreground')}>
-            <Icon className="size-3.5 shrink-0 opacity-70" aria-hidden="true" />
-            <span className="flex min-w-0 flex-col gap-0.5"><span className="truncate font-medium text-foreground">{highlight(name, query)}</span>
-              <span className="truncate text-xs opacity-70">{item.path}</span></span>
-          </li>;
+            className="cursor-pointer flex-nowrap max-sm:min-h-11 pointer-coarse:min-h-11">
+            <ItemMedia variant="icon"><Icon aria-hidden="true" /></ItemMedia>
+            <ItemContent className="min-w-0"><ItemTitle>{highlight(name, query)}</ItemTitle>
+              <ItemDescription className="truncate">{item.path}</ItemDescription></ItemContent>
+          </Item>;
         })}
       </ul>}
-  </div>;
+  </ComposerSuggestions>;
 }
