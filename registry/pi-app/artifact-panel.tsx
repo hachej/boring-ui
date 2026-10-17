@@ -177,7 +177,7 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose }: {
   const revision = saved.kind === 'open' ? saved.snapshot.ref.revision : pinned ? artifact.revision : undefined;
   // A host viewer and the canvas (which shows only a "no viewer" note) never report a mount: a presented file in them stays unconfirmed.
   useReportShown(options.onShown, path, !custom && type !== 'canvas' && saved.kind === 'open' ? saved.snapshot.ref.revision : undefined);
-  // The history menu: newest first, the newest marked "Latest" (choosing it follows the latest), the one on display checked.
+  // Choosing newest follows live saves; Current marks the displayed revision.
   const versions = menu.items.length > 1 ? <ViewerVersions testId="artifact-versions" current={menu.current} onSelect={onSelect} versions={menu.items} /> : undefined;
   const target = { artifact: artifactKey(artifact), version: pinned ? artifact.revision : 'latest' };
   const frame = {

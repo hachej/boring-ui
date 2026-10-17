@@ -59,4 +59,17 @@ test('transcript history loads real persisted native records without restoring t
     await act(async () => root.render(null));
     assert.equal(controller.getSnapshot().disposed, false, 'presentation borrows the native controller');
   });
+  await t.test('a partial active-row batch announces only the messages actually revealed', async () => {
+    controller.clearHistory();
+    await act(async () => {
+      for (let index = 0; index < 75; index++) await conversation.submit({ type: 'write', entry: { kind: 'fictional.active', model: [{ role: 'user', content: `Fictional current message ${index}`, timestamp: 0 }] } }, context);
+      root.render(createElement(PiChat, { controller, header: false }));
+    });
+    const count = () => element.querySelectorAll('[data-testid=transcript] [data-row-id]').length;
+    const before = count();
+    await act(async () => element.querySelector('[data-testid=transcript-history-load]').click());
+    const revealed = count() - before;
+    assert.ok(revealed > 0 && revealed < 40, 'the last local page is smaller than the normal batch');
+    assert.equal(element.querySelector('[data-testid=transcript-history] [role=status]').textContent, `${revealed} earlier messages loaded`);
+  });
 });

@@ -197,6 +197,7 @@ export default [
       const { browser, logText, q, qa, idle, say, history, pause } = t;
       const row = id => `${qa('[data-testid=conversation-row]')}.find(row => row.dataset.conversationId === ${JSON.stringify(String(id))})`;
       const rowAction = (id, action) => `${row(id)}?.parentElement.querySelector('[data-testid=${action}]')`;
+      const menuAction = action => q(`[data-testid=conversation-action-more-list] [data-testid=${action}]`);
       const ids = () => browser.evaluate(`${qa('[data-testid=conversation-row]')}.map(row => row.dataset.conversationId)`);
       const search = async text => {
         await browser.evaluate(`(() => { const e = ${q('[data-testid=conversation-search]')}; e.focus(); e.select(); })()`);
@@ -216,7 +217,7 @@ export default [
       await history.open();
       await browser.until('both chats are listed', `!!${row(first)} && !!${row(second)}`, 10000);
       await browser.click(rowAction(first, 'conversation-action-more'));
-      await browser.click(rowAction(first, 'conversation-rename'));
+      await browser.click(menuAction('conversation-rename'));
       await browser.until('the name field', `!!${q('[data-testid=conversation-rename-input]')}`, 5000);
       await browser.evaluate(`(() => { const e = ${q('[data-testid=conversation-rename-input]')}; e.focus(); e.select(); })()`);
       await browser.press('Backspace');
@@ -233,7 +234,7 @@ export default [
       await history.select(first);
       await history.open();
       await browser.click(rowAction(first, 'conversation-action-more'));
-      await browser.click(rowAction(first, 'conversation-archive'));
+      await browser.click(menuAction('conversation-archive'));
       await browser.until('the archived chat leaves the list', `!${row(first)} && !!${row(second)}`, 10000);
       await browser.click(q('[data-testid=conversations-archived]'));
       await browser.until('it is under Archived', `!!${row(first)}`, 10000);
@@ -249,7 +250,7 @@ export default [
       await browser.until('the fork is listed with a derived title', `${row(fork)}?.innerText.includes('Amber plans (fork)')`, 10000);
       // Delete removes it from the list and the chat moves to another conversation.
       await browser.click(rowAction(fork, 'conversation-action-more'));
-      await browser.click(rowAction(fork, 'conversation-delete'));
+      await browser.click(menuAction('conversation-delete'));
       await browser.click(rowAction(fork, 'conversation-delete-confirm'));
       await browser.until('the fork is gone', `!${row(fork)}`, 10000);
       await history.close();

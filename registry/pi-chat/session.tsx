@@ -426,7 +426,7 @@ export function useTranscript(rows: readonly Row[], page = 60, more = 40, histor
     const first = [...scroller.querySelectorAll<HTMLElement>('[data-row-id]')].find(row => row.dataset['rowId'] === saved.key);
     scroller.scrollTop = first ? scroller.scrollTop + first.getBoundingClientRect().top - saved.y : saved.top + scroller.scrollHeight - saved.height;
     anchor.current = undefined;
-    setLoaded(count => count + (added || Math.max(0, limit - saved.limit)));
+    setLoaded(count => count + Math.max(0, Math.min(rows.length, limit) - Math.min(saved.length, saved.limit)));
   }, [rows, limit, scroller, history?.state]);
   useEffect(() => {
     if (!scroller || !sentinel || typeof IntersectionObserver === 'undefined' || history?.state.kind === 'loading' || history?.state.kind === 'error') return;
