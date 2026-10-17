@@ -42,7 +42,7 @@ try {
     await browser.until('notes visible', `!!${q(row('docs/notes.md'))}`);
     assert.equal(await browser.evaluate(`getComputedStyle(${q('.file-tree-row-button')}).height`), '48px');
     assert.equal(await browser.evaluate(`getComputedStyle(${q('.file-tree-row-button svg')}).width`), '16px');
-    assert.equal(await browser.evaluate(`getComputedStyle(${q('[data-slot=sidebar-menu-sub]')}).paddingLeft`), '10px');
+    assert.equal(await browser.evaluate(`getComputedStyle(${q('[role=treeitem] [role=group]')}).paddingLeft`), '10px');
     await browser.evaluate(`${q(row('docs/notes.md'))}.focus()`); await browser.press('Enter');
     assert.equal(await browser.evaluate(`${q('output[aria-label="Opened file"]')}.textContent`), 'docs/notes.md');
   });
