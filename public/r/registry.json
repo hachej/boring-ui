@@ -978,7 +978,8 @@
         "@tiptap/extension-highlight@^3.31.4",
         "@tiptap/extension-bubble-menu@^3.31.4",
         "@tiptap/extension-floating-menu@^3.31.4",
-        "lucide-react@^1.51.0"
+        "lucide-react@^1.51.0",
+        "pdfjs-dist@6.3.289"
       ],
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/theme.json",
@@ -1033,6 +1034,11 @@
           "path": "registry/viewers/pdf-pane.tsx",
           "type": "registry:component",
           "target": "components/viewers/pdf-pane.tsx"
+        },
+        {
+          "path": "registry/viewers/pdf-pages.tsx",
+          "type": "registry:component",
+          "target": "components/viewers/pdf-pages.tsx"
         },
         {
           "path": "registry/viewers/share.ts",

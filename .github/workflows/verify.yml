@@ -57,6 +57,9 @@ jobs:
     name: Isolated package consumers
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      CHROMIUM: ${{ github.workspace }}/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -76,6 +79,10 @@ jobs:
             npm run "test:$name-consumer"
             echo "::endgroup::"
           done
+      - name: Install Chromium for the installed PDF viewer check
+        run: npx --yes playwright@1.63.0 install --with-deps chromium-headless-shell
+      - name: Allow the Chromium sandbox
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Install workspace and portable tree registry recipes
         run: |
           npm run registry:build

@@ -31,8 +31,8 @@ async function openPdf(url: string, signal: AbortSignal): Promise<{ readonly doc
   try {
     const [pdfjs, port] = await Promise.all([import('pdfjs-dist'), started]);
     if (signal.aborted) throw signal.reason;
-    worker = new pdfjs.PDFWorker({ port });
-    const loading = pdfjs.getDocument({ url, worker, isEvalSupported: false, verbosity: 0 });
+    worker = pdfjs.PDFWorker.create({ port });
+    const loading = pdfjs.getDocument({ url, worker, verbosity: 0 });
     task = loading;
     const document = await loading.promise;
     if (signal.aborted) throw signal.reason;
