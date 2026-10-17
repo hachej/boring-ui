@@ -3,13 +3,15 @@
 import { useState } from 'react';
 import { ArrowUpRightIcon, SearchIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '../../examples/app-shell/components/ui/input';
 import { cn } from '../../registry/utils/utils';
 
 export const money = (amount: number, currency = 'EUR') => new Intl.NumberFormat('en-GB', { style: 'currency', currency }).format(amount);
 export const initials = (name: string) => name.split(' ').slice(0, 2).map(word => word[0]).join('');
-export function Mark({ name }: { name: string }) { return <span aria-hidden="true" className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-muted/50 text-xs font-medium text-muted-foreground">{initials(name)}</span>; }
-export function Status({ value }: { value: string }) { return <span className={cn('inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-medium', value === 'approved' ? 'border-border bg-accent text-accent-foreground' : value === 'on-hold' ? 'border-destructive/20 bg-destructive/5 text-destructive' : 'border-border bg-muted/30 text-muted-foreground')}><span aria-hidden="true" className="size-1.5 rounded-full bg-current" />{value === 'on-hold' ? 'On hold' : value === 'approved' ? 'Approved' : 'Pending'}</span>; }
+export function Mark({ name }: { name: string }) { return <Avatar aria-hidden="true"><AvatarFallback>{initials(name)}</AvatarFallback></Avatar>; }
+export function Status({ value }: { value: string }) { return <Badge variant={value === 'approved' ? 'secondary' : value === 'on-hold' ? 'destructive' : 'outline'}>{value === 'on-hold' ? 'On hold' : value === 'approved' ? 'Approved' : 'Pending'}</Badge>; }
 
 export type Invoice = { id: string; supplier: string; supplierName: string; account: string; status: string; amount: number; currency: string; due: string; description: string };
 type Supplier = { id: string; name: string; country: string; terms: string; flag?: string };

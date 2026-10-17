@@ -3,6 +3,7 @@
 // and missing, stale or unsupported results are said as they are. Nothing uncertain is revealed without that choice.
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { XIcon } from 'lucide-react';
 import type { FeedbackReport as Report } from '@hachej/boring-feedback/format';
 import type { PickerOverlay, PrivacyPolicy } from '@hachej/boring-feedback/page';
@@ -42,7 +43,7 @@ export function FeedbackReport({ report, page, onClose }: FeedbackReportProps) {
   };
   const choose = (outcome: Extract<ShowOutcome, { kind: 'choose' }>, number: number, index: number): void => setShown({ anchor: index, outcome: outcome.choose(number) });
 
-  return <article data-boring="feedback" data-feedback-ignore="" className="boring-feedback-report" data-testid="feedback-report" data-id={view.id}>
+  return <Card size="sm" role="article" data-boring="feedback" data-feedback-ignore="" className="boring-feedback-report" data-testid="feedback-report" data-id={view.id}>
     <header className="boring-feedback-sheet-header">
       <h2>{view.title}</h2>
       {onClose && <Button variant="ghost" size="icon" aria-label="Close" title="Close" onClick={onClose}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>}
@@ -66,8 +67,8 @@ export function FeedbackReport({ report, page, onClose }: FeedbackReportProps) {
             {outcomeText(current)}
             {current.kind === 'choose' && <ol className="boring-feedback-candidates">
               {current.candidates.map(candidate => <li key={candidate.number}>
-                <button type="button" className="boring-feedback-button" data-testid="feedback-candidate" data-number={candidate.number}
-                  onClick={() => choose(current, candidate.number, anchor.index)}>{candidate.number} · {candidate.label}</button>
+                <Button variant="outline" data-testid="feedback-candidate" data-number={candidate.number}
+                  onClick={() => choose(current, candidate.number, anchor.index)}>{candidate.number} · {candidate.label}</Button>
               </li>)}
             </ol>}
           </div>}
@@ -77,5 +78,5 @@ export function FeedbackReport({ report, page, onClose }: FeedbackReportProps) {
     {view.widened.length > 0 && <p className="boring-feedback-meta" data-testid="feedback-widened">Privacy policy widened by the app: {view.widened.join(', ')}</p>}
     {view.resolutions.length > 0 && <section className="boring-feedback-resolutions"><h3>Resolution</h3>
       {view.resolutions.map((entry, index) => <p key={index}><strong>{entry.by}</strong> · {entry.note}</p>)}</section>}
-  </article>;
+  </Card>;
 }

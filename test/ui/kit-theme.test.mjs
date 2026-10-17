@@ -10,7 +10,7 @@ const root = new URL('../../', import.meta.url);
 const theme = JSON.parse(readFileSync(new URL('registry.json', root), 'utf8')).items.find(item => item.name === 'theme').cssVars;
 const block = vars => Object.entries(vars).map(([name, value]) => `--${name}: ${value};`).join(' ');
 // The host stylesheet: the theme item as `shadcn add` merges it, and the inline binding Tailwind compiles `bg-background` to.
-const HOST_CSS = `:root { ${block(theme.light)} } .dark { ${block(theme.dark)} } .bg-background { --resolved-background: var(--background); }`;
+const HOST_CSS = `:root { ${block(theme.light)} } .dark { ${block(theme.dark)} } .bg-background { --resolved-background: var(--background); } .bg-card { --resolved-background: var(--card); }`;
 
 async function harness(t) {
   const window = new Window({ url: 'https://fictional.invalid/', settings: { disableIframePageLoading: true } });
@@ -84,10 +84,12 @@ test('the ambient contrast window is a .dark subtree of the host tokens; surface
     const ambient = element.querySelector('[data-boring="ambient-chat"]');
     assert.ok(ambient, `${variant} renders`);
     assert.equal(ambient.classList.contains('dark'), variant === 'contrast', `${variant} root ${variant === 'contrast' ? 'carries' : 'does not carry'} .dark`);
-    const surface = ambient.querySelector('.bg-background');
-    assert.ok(surface, `${variant} has a bg-background surface`);
-    return resolved(window, surface, '--resolved-background');
+    // The floating window's surface is the host Card drawn behind it.
+    const surface = ambient.querySelector('[data-slot=card], .bg-background');
+    assert.ok(surface, `${variant} has a host surface`);
+    return [surface.dataset.slot === 'card' ? 'card' : 'background', resolved(window, surface, '--resolved-background')];
   };
-  assert.equal(await background('contrast'), theme.dark.background, 'contrast shows the host dark background on a light page');
-  assert.equal(await background('surface'), theme.light.background, 'surface shows the host light background');
+  const [darkRole, dark] = await background('contrast'), [lightRole, light] = await background('surface');
+  assert.equal(dark, theme.dark[darkRole], 'contrast shows the host dark surface on a light page');
+  assert.equal(light, theme.light[lightRole], 'surface shows the host light surface');
 });

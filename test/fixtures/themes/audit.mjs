@@ -20,8 +20,8 @@ export function auditDesign({ groups, palette, radiusBindings }) {
   // Compare painted channels: translucent native variants quantize during canvas
   // premultiplication, so unpremultiplied RGB can differ by several integers.
   const equalColor = (left, right) => left.slice(0, 3).every((channel, index) => Math.abs(channel - right[index]) * right[3] / 255 <= 1);
-  // Transparent layers and zero-geometry layers (a stock `ring-0`: no offset, blur or spread) paint nothing.
-  const normalizeShadow = value => value === 'none' ? '' : value.split(/,(?![^(]*\))/).map(part => part.trim()).filter(part => !/^rgba\([^)]*,\s*0\)/.test(part) && !/(?:^|\s)0px 0px 0px 0px$/.test(part)).join(', ');
+  // Transparent and zero-geometry shadows paint nothing (a stock `ring-0`), so they are not elevation values.
+  const normalizeShadow = value => value === 'none' ? '' : value.split(/,(?![^(]*\))/).map(part => part.trim()).filter(part => !/^rgba\([^)]*,\s*0\)/.test(part) && !/(?:^|\s)0px 0px 0px 0px(?:\s|$)/.test(part)).join(', ');
   const shadows = ['xs', 'sm', 'md', 'lg', 'xl', '2xl'].filter(size => root.getPropertyValue(`--shadow-${size}`).trim()).map(size => normalizeShadow(resolve('box-shadow', `var(--shadow-${size})`)));
   const radii = ['0px', resolve('border-radius', 'var(--radius)')];
   for (const name of new Set([...Object.keys(radiusBindings), ...['sm', 'md', 'lg', 'xl', '2xl', '3xl', '4xl'].map(size => `radius-${size}`)])) {
@@ -62,7 +62,10 @@ export function auditDesign({ groups, palette, radiusBindings }) {
     // Resolve native geometry outside the block's ancestor selectors. The consumer's
     // unchanged component owns geometry such as a Switch's circular track; blocks
     // may not override it, even with a different otherwise-valid radius token.
-    const reference = nativeControl ? element.cloneNode(true) : null;
+    // A stock shadcn part (`data-slot`) may also keep the geometry its own classes give it outside the block (a
+    // rounded-full avatar or switch thumb); parts whose classes read their ancestors still match the theme tokens.
+    const part = !nativeControl && element.hasAttribute('data-slot');
+    const reference = nativeControl || part ? element.cloneNode(true) : null;
     const referenceRoot = reference ? document.createElement('div') : null;
     if (referenceRoot) {
       // The examples scope standard preflight to .pi-chat rather than reset the
@@ -72,11 +75,11 @@ export function auditDesign({ groups, palette, radiusBindings }) {
     }
     const host = reference ? getComputedStyle(reference) : null;
     for (const edge of ['Top', 'Right', 'Bottom', 'Left']) if (host || parseFloat(style[`border${edge}Width`]) > 0) {
-      const expected = host ? host[`border${edge}Width`] : borderWidth;
-      check('border-width', style[`border${edge}Width`], expected, style[`border${edge}Width`] === expected);
+      const expected = part ? [borderWidth, host[`border${edge}Width`]] : [host ? host[`border${edge}Width`] : borderWidth];
+      check('border-width', style[`border${edge}Width`], expected, expected.includes(style[`border${edge}Width`]));
     }
     for (const corner of ['TopLeft', 'TopRight', 'BottomLeft', 'BottomRight']) {
-      const expected = host ? [host[`border${corner}Radius`]] : radii;
+      const expected = part ? [...radii, host[`border${corner}Radius`]] : host ? [host[`border${corner}Radius`]] : radii;
       check('radius', style[`border${corner}Radius`], expected, expected.includes(style[`border${corner}Radius`]));
     }
     // Native focus rings are focus indicators, not elevation shadows; a shadcn popup's `ring-1` is its stock hairline edge (zero offset and blur), also not elevation.

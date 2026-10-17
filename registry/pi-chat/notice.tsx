@@ -3,12 +3,12 @@
 import type { ReactNode } from 'react';
 import type { NativeChatSnapshot } from '@hachej/boring-ui-kit/native-chat';
 import { Button } from '@/components/ui/button';
+import { Alert } from '@/components/ui/alert';
 import { useChatText } from './labels';
-import { cn } from '../utils/utils';
 
 export function Notice({ tone = 'error', children, testid }: { readonly tone?: 'error' | 'info'; readonly children: ReactNode; readonly testid?: string }) {
-  return <div role={tone === 'error' ? 'alert' : 'status'} {...(testid ? { 'data-testid': testid } : {})}
-    className={cn('flex flex-wrap items-center gap-2 rounded-lg px-3 py-2 text-sm', tone === 'error' ? 'bg-destructive/10 text-destructive' : 'bg-muted/60 text-muted-foreground')}>{children}</div>;
+  return <Alert variant={tone === 'error' ? 'destructive' : 'default'} role={tone === 'error' ? 'alert' : 'status'} {...(testid ? { 'data-testid': testid } : {})}
+    className="flex flex-wrap items-center gap-2">{children}</Alert>;
 }
 
 /** What went wrong with sending or stopping, and the recovery for an unknown submission. Shared by every chat surface. */

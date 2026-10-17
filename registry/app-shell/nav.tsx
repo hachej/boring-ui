@@ -6,7 +6,9 @@ import { useEffect, useRef, useState } from 'react';
 import type { ComponentType, KeyboardEvent, ReactNode } from 'react';
 import { EllipsisIcon, SparklesIcon } from 'lucide-react';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarRail, SidebarSeparator } from '@/components/ui/sidebar';
-import { cn } from '../utils/utils';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
 import { afterBack } from './back';
 import { NavUser } from './account';
 import { useAgentLayer } from './agent-layer';
@@ -31,7 +33,8 @@ export function splitNav<T>(items: readonly T[]): { readonly tabs: readonly T[];
   return items.length <= MAX_TABS ? { tabs: items, overflow: [] } : { tabs: items.slice(0, MAX_TABS - 1), overflow: items.slice(MAX_TABS - 1) };
 }
 
-const Dot = ({ className }: { readonly className?: string }) => <span aria-hidden="true" data-testid="nav-badge" className={cn('size-2 rounded-full bg-primary', className)} />;
+/** The host's Badge marks a screen with news. Its classes only place it. */
+const Dot = ({ className }: { readonly className?: string }) => <Badge aria-hidden="true" data-testid="nav-badge" className={className} />;
 
 /** Publishes the bar's measured height as `--app-shell-tabbar` on the document root (the drawer is portaled, so the shell root is too high up to reach it). */
 function useTabbarHeight(bar: { readonly current: HTMLElement | null }, shown: boolean): void {
@@ -47,7 +50,8 @@ function useTabbarHeight(bar: { readonly current: HTMLElement | null }, shown: b
   }, [bar, shown]);
 }
 
-const TAB = 'relative flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 px-1 text-xs outline-none focus-visible:bg-accent pointer-coarse:min-h-14';
+/** Layout for a tab on the host's Button: icon over label, filling its share of the bar. */
+const TAB = 'relative h-auto min-w-0 flex-1 flex-col gap-0.5';
 
 /** The tab bar's arrow keys: Left and Right move the focus between the tabs (wrapping). */
 const arrows = (event: KeyboardEvent<HTMLElement>) => {
@@ -68,24 +72,25 @@ export function TabBar({ items, activeId, onChange, text }: { readonly items: re
   if (!shown) return null;
   const { tabs, overflow } = splitNav(items);
   const inOverflow = overflow.find(item => item.id === activeId);
-  const tab = (item: NavItem) => <button key={item.id} type="button" role="tab" data-testid={`tab-${item.id}`} aria-selected={item.id === activeId} tabIndex={item.id === activeId ? 0 : -1}
-    onClick={() => onChange(item.id)} className={cn(TAB, item.id === activeId ? 'text-primary' : 'text-muted-foreground')}>
-    <item.icon className="size-5" />{item.label}{item.badge && <Dot className="absolute top-2 left-1/2 ml-2" />}
-  </button>;
+  const tab = (item: NavItem) => <Button key={item.id} variant={item.id === activeId ? 'secondary' : 'ghost'} role="tab" data-testid={`tab-${item.id}`} aria-selected={item.id === activeId} tabIndex={item.id === activeId ? 0 : -1}
+    onClick={() => onChange(item.id)} className={TAB}>
+    <item.icon />{item.label}{item.badge && <Dot className="absolute top-1 left-1/2 ml-2" />}
+  </Button>;
   const Plus = overflow.length ? (inOverflow?.icon ?? EllipsisIcon) : undefined;
   return <nav ref={bar} role="tablist" aria-label={text.tabs} data-testid="tabbar" data-feedback-ignore="" onKeyDown={arrows}
-    className="relative z-(--app-shell-z-tabs) box-border flex shrink-0 border-t border-border bg-background pb-[env(safe-area-inset-bottom)]">
+    className="relative z-(--app-shell-z-tabs) box-border flex min-h-[calc(3.5rem+env(safe-area-inset-bottom))] shrink-0 bg-background pb-[env(safe-area-inset-bottom)]">
+    <Separator className="absolute inset-x-0 top-0" />
     {tabs.map(tab)}
     {Plus && <>
-      <button type="button" role="tab" data-testid="tab-plus" aria-selected={Boolean(inOverflow)} aria-haspopup="dialog" tabIndex={inOverflow ? 0 : -1} onClick={() => setPlusOpen(true)}
-        className={cn(TAB, inOverflow ? 'text-primary' : 'text-muted-foreground')}>
-        <Plus className="size-5" />{inOverflow?.label ?? text.more}{!inOverflow && overflow.some(item => item.badge) && <Dot className="absolute top-2 left-1/2 ml-2" />}
-      </button>
+      <Button variant={inOverflow ? 'secondary' : 'ghost'} role="tab" data-testid="tab-plus" aria-selected={Boolean(inOverflow)} aria-haspopup="dialog" tabIndex={inOverflow ? 0 : -1} onClick={() => setPlusOpen(true)}
+        className={TAB}>
+        <Plus />{inOverflow?.label ?? text.more}{!inOverflow && overflow.some(item => item.badge) && <Dot className="absolute top-1 left-1/2 ml-2" />}
+      </Button>
       <AppSheet open={plusOpen} onOpenChange={setPlusOpen} title={text.more}>
-        {overflow.map(item => <button key={item.id} type="button" data-testid={`plus-${item.id}`} aria-current={item.id === activeId} className={cn(SHEET_ROW, item.id === activeId && 'text-primary')}
+        {overflow.map(item => <Button key={item.id} variant={item.id === activeId ? 'secondary' : 'ghost'} size="lg" data-testid={`plus-${item.id}`} aria-current={item.id === activeId} className={SHEET_ROW}
           onClick={() => { setPlusOpen(false); afterBack(() => onChange(item.id)); }}>
-          <item.icon className="size-5" />{item.label}{item.badge && <Dot className="ml-auto" />}
-        </button>)}
+          <item.icon data-icon="inline-start" />{item.label}{item.badge && <Dot className="ml-auto" />}
+        </Button>)}
       </AppSheet>
     </>}
   </nav>;

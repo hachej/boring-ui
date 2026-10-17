@@ -10,7 +10,7 @@ for (const name of ['window', 'document', 'navigator', 'HTMLElement', 'Element',
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const { createElement: h, act } = await import('react');
 const { createRoot } = await import('react-dom/client');
-const { ViewerMenu, ViewerVersions, ConversationFiles, FileTree } = await import('./presentation-components.mjs');
+const { ViewerActions, ViewerVersions, ConversationFiles, FileTree } = await import('./presentation-components.mjs');
 const container = document.createElement('div'); document.body.append(container);
 const root = createRoot(container);
 const find = id => { const node = document.querySelector(`[data-testid="${id}"]`); assert.ok(node, id); return node; };
@@ -19,7 +19,7 @@ const key = (node, key) => act(async () => node.dispatchEvent(new window.Keyboar
 const render = element => act(async () => root.render(element));
 try {
   let selected;
-  await render(h(ViewerMenu, { label: 'Document actions', icon: '…', items: [
+  await render(h(ViewerActions, { label: 'Document actions', icon: '…', items: [
     { id: 'blocked', label: 'Unavailable', disabled: true, onSelect() { throw new Error('disabled action'); } },
     { id: 'current', label: 'Current', checked: true, onSelect: () => { selected = 'current'; } },
     { id: 'older', label: 'Older', checked: false, onSelect: () => { selected = 'older'; } },
@@ -67,7 +67,7 @@ try {
 
   // Phone viewer controls can contain the version menu inside the overflow menu.
   selected = undefined;
-  await render(h(ViewerMenu, { label: 'Phone actions', icon: '…', items: [] }, h(ViewerVersions, {
+  await render(h(ViewerActions, { label: 'Phone actions', icon: '…', items: [] }, h(ViewerVersions, {
     versions: [{ id: 'v2', label: 'Second' }, { id: 'v1', label: 'First' }], current: 'v1', onSelect: id => { selected = id; },
   })));
   await click('viewer-menu'); await click('viewer-versions');
@@ -126,7 +126,7 @@ try {
   const detachedContainer = detached.document.createElement('div'); detached.document.body.append(detachedContainer);
   const detachedRoot = createRoot(detachedContainer);
   try {
-    await act(async () => detachedRoot.render(h(ViewerMenu, { label: 'Detached document actions', icon: '…', testId: 'detached-menu', items: [{ id: 'copy', label: 'Copy', onSelect: () => { selected = 'detached-copy'; } }] })));
+    await act(async () => detachedRoot.render(h(ViewerActions, { label: 'Detached document actions', icon: '…', testId: 'detached-menu', items: [{ id: 'copy', label: 'Copy', onSelect: () => { selected = 'detached-copy'; } }] })));
     await act(async () => detached.document.querySelector('[data-testid=detached-menu]').click());
     assert.equal(!!detached.document.querySelector('[data-testid=detached-menu-list]'), true, 'the consumer portal stays in the trigger owner document');
     assert.equal(!!document.querySelector('[data-testid=detached-menu-list]'), false, 'a detached viewer never places its actions in the opener');

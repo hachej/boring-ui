@@ -554,5 +554,5 @@ test('the expanded ambient window shows the host reply footer under a settled re
   const html = renderToStaticMarkup(createElement(AmbientChat, { controller, state: 'expanded', replyFooter: reply => { seen.push(reply); return createElement('small', { 'data-testid': 'footer' }, `${reply.model.modelId} ${reply.durationMs}`); } }));
   assert.match(html, /data-testid="footer">amb 77</);
   assert.equal(seen[0].text, 'all done');
-  assert.ok(!renderToStaticMarkup(createElement(AmbientChat, { controller, state: 'expanded' })).includes('footer'));
+  assert.ok(!renderToStaticMarkup(createElement(AmbientChat, { controller, state: 'expanded' })).includes('data-testid="footer"'));
 });

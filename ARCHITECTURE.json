@@ -53,7 +53,6 @@
     "buffer": "6.0.3",
     "@tldraw/tlschema": "5.5.2",
     "ignore": "5.3.2",
-    "radix-ui": "1.8.0",
     "@base-ui/react": "1.9.0",
     "class-variance-authority": "0.7.1"
   },
@@ -546,6 +545,7 @@
       "dropdown-menu": "@base-ui/react/menu@1.9.0; explicit app-shell dependency, not a style-selected built-in"
     },
     "actionMenus": "thin host presentation adapters over the consumer's real shadcn Base UI dropdown-menu built-in; no home-made menu primitive or Pi lifecycle",
+    "editorControls": "Markdown and HTML package renderers accept host component bindings; installed recipes supply consumer shadcn Button, Toggle, Input, Textarea and selection-bubble Card through the button item. No execution or resource authority.",
     "fileTreeControls": "required host presentation binding; registry supplies the consumer shadcn Button, dropdown-menu and shared version-history rows, never a package-owned control skin",
     "versionHistory": "shared registry version-history presentation owns relative time, provenance and Current rows for viewer menus and Library panels; no publication or execution authority",
     "chatActivity": "shadcn built-in trace, resolved by the consumer style; host presentation over native Pi views, no execution state",

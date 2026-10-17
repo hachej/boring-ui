@@ -6,6 +6,7 @@ import { CodeXmlIcon, EyeIcon, RotateCcwIcon, SaveIcon, SearchCheckIcon } from '
 import { HtmlViewer } from '@hachej/boring-ui-kit/html-viewer';
 import type { HtmlController } from '@hachej/boring-ui-kit/html';
 import { Button } from '@/components/ui/button';
+import { editorControls } from '../button/editor-controls';
 import { downloadFile, fileNameFor } from './download';
 import { copyText } from '../utils/utils';
 import { InteractiveFrame } from './interactive-html';
@@ -79,17 +80,17 @@ export function HtmlPane({ controller, labels: ownLabels, title = 'HTML document
     onDownload={() => downloadFile(filename, controller.getSnapshot().text, 'text/html;charset=utf-8')} onOpenInNewTab={onOpenInNewTab} onClose={onClose}
     controls={<>
       <ViewerToggle label={labels.view} value={mode} onChange={setMode} options={[
-        { id: 'preview', label: labels.htmlPreview, text: labels.preview, icon: <EyeIcon className="size-4" aria-hidden="true" />, testId: `${testId}-mode-preview` },
-        { id: 'source', label: labels.htmlSource, text: labels.source, icon: <CodeXmlIcon className="size-4" aria-hidden="true" />, testId: `${testId}-mode-source` }]} />
+        { id: 'preview', label: labels.htmlPreview, text: labels.preview, icon: <EyeIcon data-icon="inline-start" aria-hidden="true" />, testId: `${testId}-mode-preview` },
+        { id: 'source', label: labels.htmlSource, text: labels.source, icon: <CodeXmlIcon data-icon="inline-start" aria-hidden="true" />, testId: `${testId}-mode-source` }]} />
       {!state.readOnly && state.dirty && <Button variant="default" size="icon-sm" aria-label={labels.save} title={labels.save} data-testid={`${testId}-save`} disabled={disposed || pending || unconfirmed} onClick={() => perform(() => controller.flush(controller.actions.selection()))}><SaveIcon data-icon="inline-start" aria-hidden="true" /></Button>}
       {unconfirmed && <Button variant="ghost" size="icon-sm" aria-label={labels.checkSave} title={labels.checkSave} onClick={() => perform(controller.actions.reconcile)}><SearchCheckIcon data-icon="inline-start" aria-hidden="true" /></Button>}
       {unconfirmed && <Button variant="ghost" size="icon-sm" aria-label={labels.abandon} title={labels.abandon} onClick={() => perform(controller.actions.abandon)}><RotateCcwIcon data-icon="inline-start" aria-hidden="true" /></Button>}
       {state.remote !== null && <Button variant="ghost" size="icon-sm" aria-label={labels.discardLocal} title={labels.discardLocal} disabled={pending || unconfirmed} onClick={() => perform(controller.actions.discardToRemote)}><RotateCcwIcon data-icon="inline-start" aria-hidden="true" /></Button>}
       {controls}
     </>}>
-    {error && <p role="alert" className="m-0 border-b border-border bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>}
+    {error && <p role="alert" className="m-0 px-3 py-2">{error}</p>}
     {interactive && mode === 'preview'
       ? <InteractiveFrame text={state.text} sources={interactive.scriptSources} reload={reload} title={`${title} (running)`} testId={testId} />
-      : <HtmlViewer controller={controller} title={title} header={false} mode={mode === 'source' ? 'source' : 'preview'} onModeChange={next => setMode(next)} className="boring-html-pane" />}
+      : <HtmlViewer components={editorControls} controller={controller} title={title} header={false} mode={mode === 'source' ? 'source' : 'preview'} onModeChange={next => setMode(next)} className="boring-html-pane" />}
   </ViewerFrame>;
 }

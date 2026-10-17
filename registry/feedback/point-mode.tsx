@@ -9,6 +9,7 @@
 // panel may unmount while it is hidden.
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { Toggle } from '@/components/ui/toggle';
 import { isPointing, type FeedbackSession, type FeedbackSessionSnapshot } from '@hachej/boring-feedback/ui';
 import { useExternal } from './use-external';
@@ -42,11 +43,10 @@ export function PointBar({ session, bottomOffset = '0px', labels, className }: P
   if (!isPointing(state) || typeof document === 'undefined') return null;
   const processing = state.phase === 'processing';
   const hint = state.problem ?? (state.using ? words.pointUsing : words.pointHint);
-  return createPortal(<div data-boring="feedback" data-feedback-ignore="" data-feedback-point-bar="" role="toolbar" aria-label={words.pointBar} data-testid="feedback-point-bar"
+  return createPortal(<Card size="sm" data-boring="feedback" data-feedback-ignore="" data-feedback-point-bar="" role="toolbar" aria-label={words.pointBar} data-testid="feedback-point-bar"
     data-using={state.using ? 'true' : 'false'} className={['boring-feedback-pointbar', className].filter(Boolean).join(' ')}
     style={{ bottom: `calc(${bottomOffset} + env(safe-area-inset-bottom, 0px) + 8px)` }}>
     <span className="boring-feedback-point-line">
-      <span className="boring-feedback-dot" aria-hidden="true" />
       <span className="boring-feedback-point-hint" role="status" aria-live="polite" data-testid="feedback-point-hint">{hint}</span>
       <span className="boring-feedback-point-count" data-testid="feedback-point-count">{words.pointCount(state.notes.length)}</span>
     </span>
@@ -58,5 +58,5 @@ export function PointBar({ session, bottomOffset = '0px', labels, className }: P
       <Button variant="default" data-testid="feedback-point-done" disabled={processing}
         onClick={() => { void session.done(); }}>{words.pointDone}</Button>
     </span>
-  </div>, document.body);
+  </Card>, document.body);
 }

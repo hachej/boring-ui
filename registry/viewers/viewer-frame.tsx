@@ -1,13 +1,17 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ArrowLeftIcon, CheckIcon, CopyIcon, DownloadIcon, ExternalLinkIcon, RefreshCwIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Toggle } from '@/components/ui/toggle';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
 import { ActionButton, actionMenuItem, headerActions, menuActions } from '../button/actions';
 import type { BlockAction } from '../button/actions';
-import { ViewerMenu } from './menu';
+import { ViewerActions } from './menu';
 import type { ViewerMenuItem } from './menu';
 import { useViewerText, useViewerWindow } from './viewer-window';
 import type { ViewerIcons, ViewerLabels } from './viewer-window';
@@ -66,18 +70,6 @@ export interface ViewerFrameProps {
 }
 
 
-const TONES: Record<ViewerTone, string> = {
-  neutral: 'bg-muted text-muted-foreground',
-  success: 'bg-accent text-accent-foreground',
-  warning: 'bg-muted text-foreground',
-  danger: 'bg-destructive/12 text-destructive',
-};
-const DOTS: Record<ViewerTone, string> = {
-  neutral: 'bg-muted-foreground',
-  success: 'bg-primary',
-  warning: 'bg-foreground',
-  danger: 'bg-destructive',
-};
 /** Narrow panes drop optional controls. */
 const TIGHT_WIDTH = { touch: 440, pointer: 340 };
 const touchScreen = () => typeof matchMedia === 'function' && matchMedia('(max-width: 639px), (pointer: coarse)').matches;
@@ -92,22 +84,14 @@ const NOTICE_MS = 2600;
 export interface ViewerToggleOption<T extends string> { readonly id: T; readonly label: string; readonly text: string; readonly icon?: ReactNode; readonly disabled?: boolean; readonly testId?: string }
 
 export function ViewerToggle<T extends string>({ label, value, options, onChange }: { readonly label: string; readonly value: T; readonly options: readonly ViewerToggleOption<T>[]; readonly onChange: (id: T) => void }) {
-  const move = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
-    if (!step) return;
-    const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')];
-    const at = buttons.indexOf(document.activeElement as HTMLButtonElement);
-    if (at < 0) return;
-    event.preventDefault();
-    buttons[(at + step + buttons.length) % buttons.length]?.focus();
-  };
-  return <div role="group" aria-label={label} onKeyDown={move} className="inline-flex shrink-0 rounded-md bg-muted p-0.5">
-    {options.map(option => <button key={option.id} type="button" aria-label={option.label} title={option.label} aria-pressed={value === option.id} disabled={option.disabled}
-      data-testid={option.testId} data-mode={option.id} onClick={() => onChange(option.id)}
-      className={cn('inline-flex size-8 cursor-pointer items-center justify-center rounded-sm outline-none max-sm:size-11 pointer-coarse:size-11 focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-45',
-        value === option.id ? 'bg-background text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground')}>
-      {option.icon ?? option.text}</button>)}
-  </div>;
+  return <ToggleGroup aria-label={label} size="sm" value={[value]} onValueChange={values => {
+    const selected = options.find(option => option.id === values[0] && !option.disabled);
+    if (selected && selected.id !== value) onChange(selected.id);
+  }}>
+    {options.map(option => <ToggleGroupItem key={option.id} value={option.id} aria-label={option.label} title={option.label} disabled={option.disabled}
+      data-testid={option.testId} data-mode={option.id}>
+      {option.icon ?? option.text}</ToggleGroupItem>)}
+  </ToggleGroup>;
 }
 
 /** The copy helper throws this when the browser allowed no automatic copy at all; the person copies by hand instead. */
@@ -116,26 +100,18 @@ const needsManualCopy = (error: unknown): error is ManualCopyError => (error as 
 /** Last resort for Copy and Share: the text, already selected, so Ctrl/Cmd+C or the long-press menu finishes the job. */
 function ManualCopy({ testId, link, text, onClose, labels }: { readonly testId: string; readonly link: boolean; readonly text: string; readonly onClose: () => void; readonly labels: ViewerLabels }) {
   const field = useRef<HTMLTextAreaElement>(null);
-  const labelId = useId();
-  useEffect(() => { const element = field.current; if (element) { element.focus(); element.select(); } }, [text]);
-  return <div role="dialog" aria-labelledby={labelId} data-testid={`${testId}-manual-copy`}
-    onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); onClose(); } }}
-    className="absolute top-full right-3 left-3 z-50 mt-1 grid gap-2 rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-lg sm:left-auto sm:w-96">
-    <p id={labelId} className="m-0 text-xs font-medium">{labels.manualCopy(link)}</p>
-    <textarea ref={field} readOnly rows={Math.min(6, Math.max(2, Math.ceil(text.length / 48)))} value={text} data-testid={`${testId}-manual-copy-text`} onFocus={event => event.currentTarget.select()}
-      className="w-full resize-none rounded-md border border-border bg-background p-2 font-mono text-xs break-all outline-none focus-visible:ring-2 focus-visible:ring-ring/60" />
-    <div className="flex justify-end"><Button variant="ghost" size="sm" data-testid={`${testId}-manual-copy-close`} onClick={onClose}>{labels.done}</Button></div>
-  </div>;
+  return <Dialog open onOpenChange={open => { if (!open) onClose(); }}>
+    <DialogContent showCloseButton={false} className="boring-viewer" data-testid={`${testId}-manual-copy`} initialFocus={field}>
+      <DialogHeader><DialogTitle>{labels.manualCopy(link)}</DialogTitle></DialogHeader>
+      <Textarea ref={field} readOnly rows={Math.min(6, Math.max(2, Math.ceil(text.length / 48)))} value={text} data-testid={`${testId}-manual-copy-text`} onFocus={event => event.currentTarget.select()} />
+      <div className="flex justify-end"><Button variant="ghost" size="sm" data-testid={`${testId}-manual-copy-close`} onClick={onClose}>{labels.done}</Button></div>
+    </DialogContent>
+  </Dialog>;
 }
 
-/** The status as a small dot with the words in a tooltip and for screen readers. The frame shows it only when the state is not plain "Saved". */
+/** Status uses the consumer's Badge; the frame decides whether a saved acknowledgement is shown. */
 function StatusMark({ status, testId }: { readonly status: ViewerStatus; readonly testId: string }) {
-  const tone = status.tone ?? 'neutral';
-  if (status.kind === 'saved') return <span role="status" data-testid={`${testId}-status`} className="shrink-0 text-xs text-muted-foreground">{status.label}</span>;
-  return <span role="status" data-testid={`${testId}-status`} data-tone={tone} title={status.label} className="inline-flex size-6 shrink-0 cursor-default items-center justify-center rounded-full">
-    <span aria-hidden="true" className={cn('size-2 rounded-full', DOTS[tone], tone === 'warning' && status.label !== 'Unsaved' && 'animate-pulse motion-reduce:animate-none')} />
-    <span className="sr-only">{status.label}</span>
-  </span>;
+  return <Badge role="status" title={status.label} data-testid={`${testId}-status`} data-tone={status.tone ?? 'neutral'} variant={status.tone === 'danger' ? 'destructive' : 'secondary'}>{status.label}</Badge>;
 }
 
 /** The one top bar of every viewer, always a single row: title and facts, viewer controls, a status dot when something needs attention, Share, full screen, Close and the "…" menu. */
@@ -206,29 +182,29 @@ export function ViewerFrame({ title, subtitle, status, showSavedStatus = false, 
   ] as ViewerMenuItem[]).map(entry => ({ ...entry, testId: entry.testId ?? `${testId}-${entry.id}` }));
 
   const stacked = !compactHeader && host?.headerLayout === 'stacked';
-  const toolbar = controls && <div data-testid={`${testId}-controls`} className={cn('flex shrink-0 items-center gap-1', compactHeader && 'max-[641px]:hidden', stacked && 'flex-wrap border-t border-border px-3 py-2')}>{controls}</div>;
+  const toolbar = controls && <div data-testid={`${testId}-controls`} className={cn('flex shrink-0 items-center gap-1', compactHeader && 'max-[641px]:hidden', stacked && 'flex-wrap px-3 py-2')}>{controls}</div>;
   const titlebar = <>
         {compactHeader && !headerStart && onClose && <Button variant="ghost" size="icon-sm" aria-label={labels.close} title={labels.close} data-testid={`${testId}-close`} onClick={() => run(onClose)}><ArrowLeftIcon data-icon="inline-start" className="min-[641px]:hidden" aria-hidden="true" /><icons.close data-icon="inline-start" className="hidden min-[641px]:block" aria-hidden="true" /></Button>}
         {headerStart}
         <div className="group/title relative min-w-0 flex-1 basis-0 text-left">
           <h2 data-testid={titleTestId ?? `${testId}-title`} title={title} className="m-0 truncate text-sm leading-5 font-semibold tracking-tight">{title}</h2>
-          {(subtitle || reading) && <p data-testid={`${testId}-subtitle`} className={cn('m-0 flex min-w-0 items-center gap-x-1.5 text-xs leading-4 whitespace-nowrap text-muted-foreground', compactHeader ? 'pointer-events-none absolute top-full z-30 max-w-full overflow-hidden rounded-md bg-popover px-2 py-1 opacity-0 shadow-sm group-hover/title:opacity-100 max-[641px]:hidden' : 'overflow-hidden')}>{subtitle}{subtitle && reading && <span aria-hidden="true">·</span>}{reading && <span data-testid={`${testId}-readonly`}>{labels.readOnly}</span>}</p>}
+          {(subtitle || reading) && <p data-testid={`${testId}-subtitle`} className={cn('m-0 flex min-w-0 items-center gap-x-1.5 text-xs leading-4 whitespace-nowrap text-muted-foreground', compactHeader ? 'hidden group-hover/title:flex max-[641px]:hidden' : 'overflow-hidden')}>{subtitle}{subtitle && reading && <span aria-hidden="true">·</span>}{reading && <span data-testid={`${testId}-readonly`}>{labels.readOnly}</span>}</p>}
         </div>
         {!stacked && toolbar}
         {status && !reading && (showSavedStatus || status.kind !== 'saved' && status.label !== labels.saved) && <StatusMark status={status} testId={testId} />}
         <div className="flex shrink-0 items-center gap-0.5">
           {headerActions(hostActions).map(action => <ActionButton key={action.id} action={action} testId={testId} size="icon-sm" />)}
           {!compactHeader && onShare && <Button variant="ghost" size="icon-sm" aria-label={labels.share} title={labels.share} data-testid={`${testId}-share`} disabled={busy === 'share'} onClick={share}><icons.share data-icon="inline-start" aria-hidden="true" /></Button>}
-          {(menuItems.length > 0 || controls) && <ViewerMenu label={labels.moreActions} testId={`${testId}-more`} icon={<icons.more data-icon="inline-start" aria-hidden="true" />} items={menuItems}>{compactHeader && controls && <div className="flex flex-wrap items-center gap-2 p-2 min-[641px]:hidden">{controls}</div>}</ViewerMenu>}
+          {(menuItems.length > 0 || controls) && <ViewerActions label={labels.moreActions} testId={`${testId}-more`} icon={<icons.more data-icon="inline-start" aria-hidden="true" />} items={menuItems}>{compactHeader && controls && <div className="boring-viewer flex flex-wrap items-center gap-2 p-2 min-[641px]:hidden">{controls}</div>}</ViewerActions>}
           {!compactHeader && host?.onFullscreenChange && <Toggle size="sm" aria-label={host.fullscreen ? labels.exitFullscreen : labels.enterFullscreen} title={host.fullscreen ? labels.exitFullscreen : labels.enterFullscreen} data-testid={`${testId}-fullscreen`} pressed={host.fullscreen === true}
             onPressedChange={pressed => host.onFullscreenChange!(pressed)}>{host.fullscreen ? <icons.exitFullscreen data-icon="inline-start" aria-hidden="true" /> : <icons.enterFullscreen data-icon="inline-start" aria-hidden="true" />}</Toggle>}
           {(!compactHeader || headerStart) && onClose && <Button variant="ghost" size="icon-sm" className={compactHeader ? 'max-[641px]:hidden' : undefined} aria-label={labels.close} title={labels.close} data-testid={`${testId}-close`} onClick={() => run(onClose)}><icons.close data-icon="inline-start" aria-hidden="true" /></Button>}
         </div>
       </>;
   const header = <header ref={bar} data-testid={`${testId}-bar`} data-layout={stacked ? 'stacked' : undefined}
-    className={cn('relative flex shrink-0 border-b border-border', stacked ? 'flex-col' : 'h-13 flex-nowrap items-center gap-x-1.5 px-2 sm:px-3')}>
+    className={cn('relative flex shrink-0', stacked ? 'flex-col' : 'h-13 flex-nowrap items-center gap-x-1.5 px-2 sm:px-3')}>
         {stacked ? <><div data-testid={`${testId}-titlebar`} className="flex min-h-14 min-w-0 items-center gap-x-1.5 px-3 py-1.5">{titlebar}</div>{toolbar}</> : titlebar}
-        {notice && <span role="status" aria-live="polite" data-testid={`${testId}-notice`} data-tone={notice.tone} className={cn('absolute top-full right-3 z-40 mt-1 rounded-full border border-border px-2.5 py-1 text-xs font-medium shadow-md', TONES[notice.tone])}>{notice.text}</span>}
+        {notice && <Badge role="status" aria-live="polite" data-testid={`${testId}-notice`} data-tone={notice.tone} variant={notice.tone === 'danger' ? 'destructive' : 'secondary'}>{notice.text}</Badge>}
         {manual && <ManualCopy testId={testId} link={manual.link} text={manual.text} labels={labels} onClose={() => setManual(undefined)} />}
       </header>;
   return <ViewerBarContext.Provider value={space}>

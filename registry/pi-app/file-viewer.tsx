@@ -132,7 +132,7 @@ function FileBytes({ path, kind, locator, options, onClose, back }: Common) {
     onRefresh={load} {...(text === undefined ? {} : { onCopy: () => copyText(text), onDownload: () => downloadFile(nameOf(path), text, 'text/plain;charset=utf-8') })}>
     {text === undefined
       ? <p role="status" className="m-0 p-4 text-sm text-muted-foreground">{labels.binaryFile(formatBytes(size))}</p>
-      : <div className="min-h-0 flex-1 overflow-auto p-3"><pre data-testid="file-preview" className="m-0 rounded-lg bg-muted p-3 font-mono text-[13px] leading-relaxed break-words whitespace-pre-wrap">{text}</pre></div>}
+      : <div className="min-h-0 flex-1 overflow-auto p-3"><pre data-testid="file-preview" className="m-0 font-mono text-sm leading-relaxed break-words whitespace-pre-wrap">{text}</pre></div>}
   </ViewerFrame>;
 }
 

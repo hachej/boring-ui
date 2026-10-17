@@ -9,6 +9,10 @@ import { BellIcon, ChevronDownIcon, CircleAlertIcon, CircleCheckIcon, ExternalLi
 import { Button } from '@/components/ui/button';
 import { MessageScroller, MessageScrollerProvider, MessageScrollerViewport, MessageScrollerContent, MessageScrollerItem, MessageScrollerButton } from '@/components/ui/message-scroller';
 import { Toggle } from '@/components/ui/toggle';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
+import { Card } from '@/components/ui/card';
+import { Separator } from '@/components/ui/separator';
 import { BlockActions } from '../button/actions';
 import type { BlockAction, BlockIcon } from '../button/actions';
 import { useChatPlacement } from '../pi-chat/use-remote-chat';
@@ -408,7 +412,10 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
   const status = waitingForAnswer ? 'input' : working ? 'working' : outcome;
   const label = waitingForAnswer ? labels.waitingForAnswer : labels.working(seconds);
   const panelOpen = expanded && shownArtifact !== undefined && artifactPanel !== undefined;
-  const surface = embedded ? 'relative flex min-h-0 flex-1 flex-col overflow-clip bg-transparent text-foreground' : cn('relative flex flex-col border border-border bg-background text-foreground shadow-lg', phone && expanded ? 'h-dvh rounded-none border-0 pt-[env(safe-area-inset-top)]' : 'rounded-3xl',
+  // The floating window is drawn by the host's Card behind it (a sibling layer, so switching placement never remounts the chat);
+  // embedded and full-screen phone windows are plain page regions.
+  const card = !embedded && !(phone && expanded);
+  const surface = embedded ? 'relative flex min-h-0 flex-1 flex-col overflow-clip bg-transparent text-foreground' : cn('relative flex flex-col', card ? 'isolate' : 'h-dvh bg-background pt-[env(safe-area-inset-top)] text-foreground',
     !phone && expanded && (panelOpen ? 'h-full overflow-hidden' : 'max-h-[70dvh]'));
   // With an artifact open the window widens (most of the viewport, at most 72rem) and takes a fixed height so the panel fills it.
   const rootClass = embedded ? cn('pi-chat relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden', className) : cn('pi-chat pi-ambient fixed z-50', variant === 'contrast' && 'dark scheme-dark', phone ? (expanded ? 'inset-0' : 'inset-x-2 bottom-[max(0.5rem,env(safe-area-inset-bottom))]')
@@ -419,29 +426,29 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
     {notifications !== false && <AgentNotifications store={store} variant={variant} placement="inline" systemNotifications={systemNotifications} onActivate={onActivate} labels={labels}
       {...(autoDismissMs !== undefined ? { autoDismissMs } : {})} {...(maxToasts !== undefined ? { max: maxToasts } : {})} className="absolute right-0 bottom-full mb-3 w-[min(26rem,calc(100vw-1rem))]" />}
     <div data-testid="ambient-pill-box" onPointerDown={event => beginDrag(event, 4)} onKeyDown={onGripKey} onClickCapture={event => { if (dragged.current) { dragged.current = false; event.stopPropagation(); event.preventDefault(); } }}
-      className={cn('relative flex h-11 max-w-[min(20rem,calc(100vw-1rem))] items-center rounded-full border border-border bg-background text-foreground shadow-lg transition-colors hover:bg-popover motion-reduce:transition-none', !phone && 'cursor-grab touch-none select-none active:cursor-grabbing')}>
+      className={cn('relative flex max-w-[min(20rem,calc(100vw-1rem))] items-center gap-0.5', !phone && 'cursor-grab touch-none select-none active:cursor-grabbing')}>
       {!phone && grip('ml-1.5')}
-      <Button ref={pill} variant="ghost" data-testid="ambient-pill" onClick={() => setWindowState('bar')} aria-label={labels.openAgent(shownTitle, unread)}
+      <Button ref={pill} variant="outline" size="lg" data-testid="ambient-pill" onClick={() => setWindowState('bar')} aria-label={labels.openAgent(shownTitle, unread)}
         className="relative min-w-0 gap-2.5">
         {status === 'working' ? <Loader2Icon data-icon="inline-start" className="animate-spin motion-reduce:animate-none" aria-hidden="true" />
           : status === 'input' ? <MessageCircleQuestionIcon data-icon="inline-start" aria-hidden="true" />
           : status === 'done' ? <CircleCheckIcon data-icon="inline-start" aria-hidden="true" />
           : status === 'error' ? <CircleAlertIcon data-icon="inline-start" aria-hidden="true" /> : null}
         <span className="min-w-0 truncate">{shownTitle}</span>
-        {unread && <span data-testid="ambient-unread" aria-hidden="true" className="absolute top-1.5 right-2 size-2.5 rounded-full border-2 border-background bg-primary" />}
+        {unread && <Badge data-testid="ambient-unread" aria-hidden="true" className="absolute -top-1.5 -right-1.5" />}
       </Button>
     </div>
   </div>;
 
   const visibleRows = transcript.visible(rows);
   const conversation = <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <header hidden={embedded} data-testid="ambient-header" className={cn(embedded && '!hidden','flex h-12 shrink-0 items-center gap-0.5 px-2 max-sm:h-14 max-sm:px-3', !expanded && 'border-b border-border')}>
+      <header hidden={embedded} data-testid="ambient-header" className={cn(embedded && '!hidden','flex h-12 shrink-0 items-center gap-0.5 px-2 max-sm:h-14 max-sm:px-3')}>
         <Button variant="ghost" size="icon" data-testid="ambient-minimize" aria-label={labels.minimize} title={labels.minimize} onClick={() => { setPicking(false); setWindowState(expanded ? 'bar' : 'minimized'); }}><icons.minimize data-icon="inline-start" aria-hidden="true" /></Button>
         <span data-testid="ambient-status" data-status={status ?? 'idle'} role="img" aria-label={status === 'working' ? labels.statusWorking : status === 'input' ? labels.needsInput : status === 'done' ? labels.finished : status === 'error' ? labels.failedRun : undefined}
           aria-hidden={status ? undefined : 'true'} className={cn('flex shrink-0 items-center justify-center', status ? 'mx-1.5 w-5' : 'w-1.5')}>
           {status === 'working' ? <Loader2Icon className="size-4 animate-spin text-muted-foreground motion-reduce:animate-none" aria-hidden="true" /> : status ? <KindIcon kind={status === 'input' ? 'input' : status} className="size-[1.125rem]" /> : null}
         </span>
-        {avatar && <span data-testid="ambient-avatar" className="flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-full [&>img]:size-full [&>img]:object-cover [&>svg]:size-4">{avatar}</span>}
+        {avatar && <Avatar size="sm" data-testid="ambient-avatar" className="overflow-hidden"><AvatarFallback className="*:max-h-full *:max-w-full">{avatar}</AvatarFallback></Avatar>}
         <Button ref={titleButton} variant="ghost" data-testid="ambient-title" onClick={expand} disabled={expanded} aria-label={expanded ? shownTitle : labels.openChat(shownTitle)}
           className="min-w-0 max-w-full shrink"><span className="truncate">{shownTitle}</span></Button>
         {conversations && <Button variant="ghost" size="icon" data-testid="ambient-switch" aria-label={labels.switchConversation} aria-haspopup="dialog" aria-expanded={picking} title={labels.switchConversation} onClick={() => setPicking(open => !open)}>
@@ -477,7 +484,8 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
         </div>
       </div>}
 
-      <div className={cn('shrink-0', expanded && 'border-t border-border', phone && 'pb-[env(safe-area-inset-bottom)]')}>
+      {(expanded || !embedded) && <Separator />}
+      <div className={cn('shrink-0', phone && 'pb-[env(safe-area-inset-bottom)]')}>
         <div className="space-y-2 px-3 empty:hidden [&:has(*)]:pt-2">
           <ChatNotices state={state} error={error} onReconcile={() => act(controller.reconcile)} onRetry={() => act(controller.retrySameRequest)} />
           {!expanded && (connectionKind === 'error' || connectionKind === 'closed') && <Notice tone="info" testid="connection-notice">
@@ -497,6 +505,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
       {...(autoDismissMs !== undefined ? { autoDismissMs } : {})} {...(maxToasts !== undefined ? { max: maxToasts } : {})} className="absolute right-0 bottom-full mb-3 w-full" />}
     {picking && conversations && <ConversationHistory conversations={conversations} placement={expanded ? 'below' : 'above'} onClose={() => setPicking(false)} />}
     <div data-testid="ambient-surface" className={surface}>
+      {card && <Card aria-hidden="true" data-boring="chrome" className="pointer-events-none absolute inset-0 -z-10" />}
       {artifactPanel ? <ArtifactWorkspace open={panelOpen} onClose={() => { setOpened(null); setFullscreen(false); }} fullscreen={fullscreen} onFullscreenChange={setFullscreen} storageKey="boring.ambient.panel-width" panelLabel={labels.artifactPanel}
         defaultWidth={600} minPanel={320} minChat={300} sheetBelow={720}
         panel={api => shownArtifact ? artifactPanel(shownArtifact, { ...api, versions: known, follow: opened?.follow ?? true,

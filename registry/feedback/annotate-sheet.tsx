@@ -3,6 +3,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { protectionNotice, type Annotation, type CopyState, type FeedbackProtection, type SaveState } from '@hachej/boring-feedback/ui';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Textarea } from '@/components/ui/textarea';
 import { XIcon } from 'lucide-react';
 import { useExternal } from './use-external';
 import { withLabels, type FeedbackLabels } from './feedback-labels';
@@ -105,7 +107,7 @@ export function AnnotateSheet({ annotation, onClose, near, protection, title, la
   const copyText = state.copy.kind === 'copied' || state.copy.kind === 'manual' ? state.copy.text : undefined;
   const saved = state.save.kind === 'saved';
 
-  return <section data-boring="feedback" data-feedback-ignore="" role="dialog" aria-label={heading} data-testid="feedback-sheet" data-selected={state.selected ? 'true' : 'false'}
+  return <Card data-boring="feedback" data-feedback-ignore="" role="dialog" aria-label={heading} data-testid="feedback-sheet" data-selected={state.selected ? 'true' : 'false'}
     className="boring-feedback-sheet" data-docked={place ? undefined : 'bottom'} style={place} onKeyDown={onKeyDown}>
     <header className="boring-feedback-sheet-header">
       <h2>{heading}</h2>
@@ -119,7 +121,7 @@ export function AnnotateSheet({ annotation, onClose, near, protection, title, la
     </p>}
     <label className="boring-feedback-field">
       <span>{state.selected ? words.changeField : words.generalField}</span>
-      <textarea ref={note} data-testid="feedback-note" rows={4} value={state.said} readOnly={saved} onChange={event => annotation.setSaid(event.target.value)} />
+      <Textarea ref={note} data-testid="feedback-note" rows={4} value={state.said} readOnly={saved} onChange={event => annotation.setSaid(event.target.value)} />
     </label>
     <div className="boring-feedback-actions">
       {state.selected && state.save.kind !== 'saved' && <Button variant="ghost" data-testid="feedback-cancel-selection" disabled={state.save.kind === 'saving'}
@@ -131,10 +133,10 @@ export function AnnotateSheet({ annotation, onClose, near, protection, title, la
     <p role="status" aria-live="polite" className="boring-feedback-status" data-testid="feedback-status" data-copy={state.copy.kind} data-save={state.save.kind}>
       {[copyMessage(state.copy), saveMessage(state.save), cancelled && !state.selected ? words.selectionCancelled : ''].filter(Boolean).join(' ')}
     </p>
-    {state.copy.kind === 'manual' && copyText !== undefined && <textarea readOnly className="boring-feedback-manual" data-testid="feedback-manual-copy" value={copyText}
+    {state.copy.kind === 'manual' && copyText !== undefined && <Textarea readOnly className="boring-feedback-manual" data-testid="feedback-manual-copy" value={copyText}
       onFocus={event => event.currentTarget.select()} rows={6} />}
     {state.copy.kind === 'copied' && copyText !== undefined && <details className="boring-feedback-copied"><summary>Copied report</summary>
       <pre data-testid="feedback-copy-text">{copyText}</pre></details>}
     {notice && <p className="boring-feedback-notice" data-testid="feedback-protection">{notice}</p>}
-  </section>;
+  </Card>;
 }

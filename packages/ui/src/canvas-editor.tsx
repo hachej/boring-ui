@@ -16,7 +16,7 @@ export function CanvasEditor(props: CanvasEditorProps) {
   const [mount, setMount] = useState({ controller: props.controller, sequence: 0 });
   if (mount.controller !== props.controller) setMount({ controller: props.controller, sequence: mount.sequence + 1 });
   return <>
-    <TextDraftControls key={mount.sequence} recovery={state.recovery} actions={props.controller.actions} readOnly={state.readOnly} blocked={state.lifecycle !== 'active' || state.save.kind === 'pending' || (state.save.kind === 'settled' && state.save.result.kind === 'unknown')} />
+    <TextDraftControls key={mount.sequence} components={props.components} recovery={state.recovery} actions={props.controller.actions} readOnly={state.readOnly} blocked={state.lifecycle !== 'active' || state.save.kind === 'pending' || (state.save.kind === 'settled' && state.save.result.kind === 'unknown')} />
     <Suspense fallback={<p role="status">Loading canvas</p>}>
     <NativeCanvas key={mount.sequence} {...props} />
   </Suspense>
