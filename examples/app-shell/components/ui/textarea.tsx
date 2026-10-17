@@ -1,7 +1,6 @@
-// shadcn@4.21.4 base-nova fixture from https://ui.shadcn.com/r/styles/base-nova/textarea.json
-// Registry SHA-256: 8f01f6bc4ee556263bae7644e8b527022fa77ff203f33a258bb47142ef7d9c81. Host-owned test/example source only.
+// Pinned shadcn@4.21.4 Base UI fixture (style base-nova), fetched 2026-10-17 from https://ui.shadcn.com/r/styles/base-nova/textarea.json. MIT, Copyright (c) 2023 shadcn.
 import * as React from "react"
-import { cn } from "cn"
+import { cn } from "@/lib/utils"
 
 function Textarea({ className, ...props }: React.ComponentProps<"textarea">) {
   return (

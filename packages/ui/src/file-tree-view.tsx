@@ -1,8 +1,7 @@
 'use client';
 
-import { Collapsible } from '@base-ui/react/collapsible';
+import type { Collapsible } from '@base-ui/react/collapsible';
 import { ChevronRight, Download, File, FileCode, FileImage, FileSpreadsheet, FileText, Folder, FolderOpen, History, LoaderCircle, MoreHorizontal, Search, Upload, X } from 'lucide-react';
-import { SidebarMenu, SidebarMenuItem, SidebarMenuSub } from './file-tree-shadcn.js';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ComponentProps, KeyboardEvent, ReactNode } from 'react';
 import type { ResourceSnapshot } from '@hachej/boring-files';
@@ -110,12 +109,12 @@ const LOCALES: Readonly<Record<FileTreeLocale, FileTreeLabels>> = { en: defaultF
 
 function fileKind(path: string, labels: FileTreeLabels) {
   const extension = path.includes('.') ? path.slice(path.lastIndexOf('.') + 1).toLowerCase() : '';
-  if (['md', 'markdown'].includes(extension)) return { icon: FileText, label: 'Markdown', tone: 'document' };
-  if (extension === 'pdf') return { icon: FileText, label: 'PDF', tone: 'pdf' };
-  if (['csv', 'xls', 'xlsx', 'tsv'].includes(extension)) return { icon: FileSpreadsheet, label: extension.toUpperCase(), tone: 'table' };
-  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(extension)) return { icon: FileImage, label: labels.image, tone: 'image' };
-  if (['json', 'js', 'mjs', 'ts', 'tsx', 'html', 'css', 'xml', 'yml', 'yaml'].includes(extension)) return { icon: FileCode, label: extension.toUpperCase(), tone: 'code' };
-  return { icon: extension ? FileText : File, label: extension === 'txt' ? labels.document : extension.toUpperCase() || labels.file, tone: 'document' };
+  if (['md', 'markdown'].includes(extension)) return { icon: FileText, label: 'Markdown' };
+  if (extension === 'pdf') return { icon: FileText, label: 'PDF' };
+  if (['csv', 'xls', 'xlsx', 'tsv'].includes(extension)) return { icon: FileSpreadsheet, label: extension.toUpperCase() };
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(extension)) return { icon: FileImage, label: labels.image };
+  if (['json', 'js', 'mjs', 'ts', 'tsx', 'html', 'css', 'xml', 'yml', 'yaml'].includes(extension)) return { icon: FileCode, label: extension.toUpperCase() };
+  return { icon: extension ? FileText : File, label: extension === 'txt' ? labels.document : extension.toUpperCase() || labels.file };
 }
 
 function fileSize(bytes: number, locale: FileTreeLocale): string {
@@ -150,6 +149,20 @@ export interface FileTreeComponents {
   readonly Button: (props: FileTreeButtonProps) => ReactNode;
   readonly Actions: (props: FileTreeActionsProps) => ReactNode;
   readonly Versions: (props: FileTreeVersionsProps) => ReactNode;
+  /** The host's shadcn sidebar menu (`SidebarMenu`, `SidebarMenuItem`, `SidebarMenuSub`). */
+  readonly Menu: (props: ComponentProps<'ul'>) => ReactNode;
+  readonly MenuItem: (props: ComponentProps<'li'>) => ReactNode;
+  readonly MenuSub: (props: ComponentProps<'ul'>) => ReactNode;
+  /** The host's shadcn `Input`. */
+  readonly Input: (props: ComponentProps<'input'>) => ReactNode;
+  /** The host's shadcn `Separator`. */
+  readonly Separator: () => ReactNode;
+  /** The host's shadcn `Collapsible`, `CollapsibleTrigger` and `CollapsibleContent`. */
+  readonly Collapsible: (props: Collapsible.Root.Props) => ReactNode;
+  readonly CollapsibleTrigger: (props: Collapsible.Trigger.Props) => ReactNode;
+  readonly CollapsibleContent: (props: Collapsible.Panel.Props) => ReactNode;
+  /** The host's shadcn `Empty`, composed from an icon, a title, an optional description and optional actions. */
+  readonly Empty: (props: { readonly icon?: ReactNode; readonly title: ReactNode; readonly description?: ReactNode; readonly className?: string; readonly children?: ReactNode }) => ReactNode;
 }
 
 export interface FileTreeProps {
@@ -206,7 +219,7 @@ type UploadRow = { readonly kind: 'pending'; readonly size: number }
 
 /** Renders a borrowed controller, for a workspace whose chat and tree share upload state. */
 export function FileTreeView({ components, controller, onOpen, selectedPath, className, uploadDirectory = 'uploads', locale = 'en', labels: given, upload = true, history = true, refresh = true, variant = 'list', title, onClose, refreshKey, historyKey }: FileTreeViewProps) {
-  const { Button, Actions } = components;
+  const { Button, Actions, Menu: SidebarMenu, MenuItem: SidebarMenuItem, MenuSub: SidebarMenuSub, Input, Collapsible: CollapsibleRoot, CollapsibleTrigger, CollapsibleContent, Empty } = components;
   const list = variant === 'list';
   const labels: FileTreeLabels = { ...LOCALES[locale], ...given };
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
@@ -291,10 +304,10 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
     if (!listing || listing.kind === 'loading') return <li role="none"><span role="status">{labels.loading}</span></li>;
     if (listing.kind === 'error') return <li role="none"><span role="alert">{listing.reason}</span> <Button type="button" variant="ghost" onClick={() => { void (search ? controller.search(state.query) : controller.refresh(directory)); }}>{labels.retry}</Button></li>;
     return <>
-      {listing.entries.length === 0 && (directory || temporaryEntries.length === 0) && <li role="none" className={list && !directory ? 'file-tree-empty' : 'file-tree-status'}>
-        {list && !directory && <FolderOpen aria-hidden="true" />}
-        <span>{search ? labels.noMatches : labels.empty}</span>
-        {list && !directory && !search && <><p>{labels.emptyHint}</p>{upload && uploadButton}</>}
+      {listing.entries.length === 0 && (directory || temporaryEntries.length === 0) && <li role="none" className={list && !directory ? undefined : 'file-tree-status'}>
+        {list && !directory
+          ? <Empty className="file-tree-empty" icon={<FolderOpen aria-hidden="true" />} title={search ? labels.noMatches : labels.empty} description={search ? undefined : labels.emptyHint}>{!search && upload && uploadButton}</Empty>
+          : <span>{search ? labels.noMatches : labels.empty}</span>}
       </li>}
       {listing.cursor !== undefined && <li role="none"><Button type="button" variant="ghost" onClick={() => { void (search ? controller.moreSearch() : controller.more(directory)); }}>{labels.loadMore}</Button></li>}
     </>;
@@ -311,15 +324,15 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
     const parent = (state.query || temporary) && entry.path.includes('/') ? entry.path.slice(0, entry.path.lastIndexOf('/')) : '';
     const children = folder ? state.directories.get(entry.path) : undefined;
     const childCount = children?.kind === 'ready' && children.cursor === undefined ? labels.childCount(children.entries.length) : undefined;
-    const kind = folder ? { icon: Folder, label: labels.folder, tone: 'folder' } : fileKind(entry.path, labels);
+    const kind = folder ? { icon: Folder, label: labels.folder } : fileKind(entry.path, labels);
     const Icon = kind.icon;
-    const button = <Button type="button" variant={selectedPath === entry.path ? 'secondary' : 'ghost'} data-slot="sidebar-menu-button" data-active={selectedPath === entry.path} tabIndex={-1} title={entry.path} disabled={temporary}
+    const button = <Button type="button" variant={selectedPath === entry.path ? 'secondary' : 'ghost'} data-active={selectedPath === entry.path} tabIndex={-1} title={entry.path} disabled={temporary}
       className="file-tree-row-button"
       onClick={() => { focus(entry.path); if (!folder) onOpen?.(entry.path); }}>
       {folder ? <ChevronRight aria-hidden="true" /> : list && <span className="file-tree-chevron-space" aria-hidden="true" />}
-      {list ? <span className="file-tree-tile" data-kind={kind.tone}><Icon aria-hidden="true" /></span> : <Icon aria-hidden="true" />}
+      <Icon aria-hidden="true" />
       <span className="file-tree-copy"><span className="file-tree-name">{name}</span>
-        {list ? folder ? childCount !== undefined && <span data-file-meta>{childCount}</span> : <span data-file-meta>{kind.label} · {fileSize(entry.size, locale)}{parent && ` · ${parent}`}</span> : parent && <span className="file-tree-parent text-xs text-muted-foreground">{parent}</span>}
+        {list ? folder ? childCount !== undefined && <span data-file-meta>{childCount}</span> : <span data-file-meta>{kind.label} · {fileSize(entry.size, locale)}{parent && ` · ${parent}`}</span> : parent && <span className="file-tree-parent" data-file-meta>{parent}</span>}
       </span>
     </Button>;
     const item = <SidebarMenuItem key={entry.path} role="treeitem" data-path={entry.path} data-upload-state={status?.kind} aria-busy={status?.kind === 'pending' || undefined}
@@ -327,18 +340,18 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
       tabIndex={focusPath === entry.path ? 0 : -1}
       onFocus={event => { if (event.target === event.currentTarget) setFocused(entry.path); }}
       onKeyDown={event => { if (event.target === event.currentTarget) keyboard(event, entry); }}
-      className="group/collapsible rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      className="file-tree-item">
       <div className="flex items-center gap-1">
-        {folder ? <Collapsible.Trigger render={button} /> : button}
+        {folder ? <CollapsibleTrigger render={button} /> : button}
         {status?.kind === 'pending' && <LoaderCircle data-upload-spinner aria-hidden="true" />}
         {status?.kind === 'failed' && <Button type="button" variant="ghost" data-upload-retry aria-label={status.retryLabel} onClick={status.retry}>{status.retryLabel}</Button>}
         {!folder && !temporary && !status && <FileActions Actions={Actions} controller={controller} entry={entry} labels={labels}
           onOpen={onOpen ? () => onOpen(entry.path) : undefined} onHistory={history ? () => setHistoryPath(entry.path) : undefined} onError={setUploadError} />}
       </div>
       {status?.kind === 'failed' && <span data-upload-error>{status.reason}</span>}
-      {folder && !state.query && <Collapsible.Panel render={<SidebarMenuSub role="group" />}>{renderEntries(entry.path, level + 1)}</Collapsible.Panel>}
+      {folder && !state.query && <CollapsibleContent render={<SidebarMenuSub role="group" />}>{renderEntries(entry.path, level + 1)}</CollapsibleContent>}
     </SidebarMenuItem>;
-    return folder ? <Collapsible.Root key={entry.path} render={item} open={state.expanded.has(entry.path)}
+    return folder ? <CollapsibleRoot key={entry.path} render={item} open={state.expanded.has(entry.path)}
       onOpenChange={() => { void controller.toggle(entry.path); }} /> : item;
   };
 
@@ -356,18 +369,18 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
     </header>}
     <div className="file-tree-toolbar">
       <div className="file-tree-search">{list && <Search aria-hidden="true" />}
-        <input type="search" aria-label={labels.search} placeholder={labels.searchPlaceholder} value={state.query}
+        <Input type="search" aria-label={labels.search} placeholder={labels.searchPlaceholder} value={state.query}
           onChange={event => { void controller.search(event.currentTarget.value); }} />
       </div>
       {refresh && <Button type="button" variant="ghost" aria-label={labels.refresh} onClick={() => { void (state.query ? controller.search(state.query) : controller.refresh()); }}>{labels.refresh}</Button>}
       {!list && upload && uploadButton}
     </div>
-    {upload && <input ref={fileInput} aria-label={labels.uploadFiles} type="file" multiple onChange={event => {
+    {upload && <Input ref={fileInput} aria-label={labels.uploadFiles} type="file" multiple onChange={event => {
       const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ''; void uploadFiles(files);
     }} />}
-    {dropping && <div className="file-tree-drop" role="status"><Upload aria-hidden="true" />{labels.dropFiles}</div>}
+    {dropping && <div className="file-tree-drop" role="status"><Empty icon={<Upload aria-hidden="true" />} title={labels.dropFiles} /></div>}
     {uploadError && <p role="alert">{uploadError}</p>}
-    <SidebarMenu ref={tree} role="tree" aria-label={labels.tree} className={list ? 'm-0 list-none p-3' : 'm-0 list-none p-2'}>
+    <SidebarMenu ref={tree} role="tree" aria-label={labels.tree} className="file-tree-menu">
       {state.query ? <>{state.search.entries.map(entry => renderEntry(entry, 1))}{listingStatus(state.search, '', true)}</> : renderEntries('', 1)}
       {temporaryEntries.map(entry => renderEntry(entry, 1))}
     </SidebarMenu>
@@ -411,7 +424,7 @@ function FileActions({ Actions, controller, entry, labels, onOpen, onHistory, on
   return <Actions label={labels.actionsOf(entry.path)} icon={<MoreHorizontal aria-hidden="true" />} items={items} />;
 }
 
-function FileHistory({ components: { Button, Versions }, locale, controller, path, labels, reload, onClose }: { readonly components: FileTreeComponents; readonly locale: FileTreeLocale; readonly controller: FileTreeController; readonly path: string; readonly labels: FileTreeLabels; readonly reload?: unknown; readonly onClose: () => void }) {
+function FileHistory({ components: { Button, Versions, Separator }, locale, controller, path, labels, reload, onClose }: { readonly components: FileTreeComponents; readonly locale: FileTreeLocale; readonly controller: FileTreeController; readonly path: string; readonly labels: FileTreeLabels; readonly reload?: unknown; readonly onClose: () => void }) {
   const [versions, setVersions] = useState<readonly SavedRevision[]>();
   const [failure, setFailure] = useState('');
   const [selected, setSelected] = useState<string>();
@@ -437,12 +450,12 @@ function FileHistory({ components: { Button, Versions }, locale, controller, pat
   }, [controller, path, selected]);
   let text: string | undefined;
   if (preview) { try { text = new TextDecoder('utf-8', { fatal: true }).decode(preview.bytes); } catch { /* Binary history remains a byte-qualified read-only preview. */ } }
-  return <section aria-label={labels.historyOf(path)} className="border-t border-border p-2 text-sm">
+  return <><Separator /><section aria-label={labels.historyOf(path)} className="file-tree-history">
     <div className="flex items-center justify-between gap-2"><h3 className="font-medium">{labels.historyOf(path)}</h3><Button type="button" variant="ghost" onClick={onClose}>{labels.closeHistory}</Button></div>
     {failure && <p role="alert">{failure}</p>}
     {!versions && !failure && <p role="status">{labels.loadingHistory}</p>}
     {versions?.length === 0 && <p>{labels.noHistory}</p>}
     {versions && <Versions versions={versions} current={selected ?? versions[0]?.revision ?? ''} onSelect={setSelected} locale={locale} earlierVersion={labels.earlierVersion} />}
     {preview && <div data-testid="file-history-preview" data-revision={preview.ref.revision}><p>{labels.readOnlyRevision(preview.bytes.byteLength)}</p>{text === undefined ? <p>{labels.binaryFile(preview.mediaType)}</p> : <pre className="max-h-80 overflow-auto whitespace-pre-wrap">{text}</pre>}</div>}
-  </section>;
+  </section></>;
 }

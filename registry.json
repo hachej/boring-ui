@@ -396,9 +396,17 @@
         "@boring-ui/utils",
         "@boring-ui/button",
         "trace",
-        "@boring-ui/drawer",
+        "drawer",
         "button",
-        "toggle"
+        "toggle",
+        "dropdown-menu",
+        "empty",
+        "input",
+        "input-group",
+        "popover",
+        "scroll-area",
+        "separator",
+        "sidebar"
       ],
       "files": [
         {
@@ -567,6 +575,14 @@
           },
           ".pi-chat [hidden]": {
             "display": "none"
+          },
+          ".pi-chat :where([data-slot=\"empty\"])": {
+            "border-width": "0"
+          },
+          ".pi-chat :where([data-slot=\"sidebar-menu\"], [data-slot=\"sidebar-menu-sub\"])": {
+            "margin": "0",
+            "padding": "0",
+            "list-style": "none"
           }
         },
         "@layer utilities": {
@@ -748,9 +764,11 @@
         "@boring-ui/viewers",
         "@boring-ui/utils",
         "@boring-ui/button",
-        "@boring-ui/drawer",
+        "drawer",
         "button",
-        "@boring-ui/file-tree"
+        "@boring-ui/file-tree",
+        "dropdown-menu",
+        "scroll-area"
       ],
       "files": [
         {
@@ -839,13 +857,12 @@
         "@boring-ui/feedback",
         "@boring-ui/utils",
         "@boring-ui/button",
-        "@boring-ui/drawer",
+        "drawer",
         "sidebar",
         "avatar",
-        "@boring-ui/dropdown-menu",
+        "dropdown-menu",
         "button",
-        "switch",
-        "dropdown-menu"
+        "switch"
       ],
       "css": {
         "@layer base": {
@@ -934,9 +951,14 @@
           "target": "components/app-shell/account.tsx"
         },
         {
-          "path": "registry/app-shell/sheet.tsx",
+          "path": "registry/app-shell/app-sheet.tsx",
           "type": "registry:component",
-          "target": "components/app-shell/sheet.tsx"
+          "target": "components/app-shell/app-sheet.tsx"
+        },
+        {
+          "path": "registry/app-shell/use-exclusive-sheet.ts",
+          "type": "registry:hook",
+          "target": "components/app-shell/use-exclusive-sheet.ts"
         },
         {
           "path": "registry/app-shell/compact.ts",
@@ -985,7 +1007,8 @@
         "toggle-group",
         "dialog",
         "textarea",
-        "badge"
+        "badge",
+        "dropdown-menu"
       ],
       "files": [
         {
@@ -1359,6 +1382,27 @@
             },
             ".boring-viewer .boring-markdown-toolbar": {
               "display": "none"
+            },
+            ".boring-viewer.boring-markdown-dock": {
+              "display": "flex",
+              "align-items": "center",
+              "gap": "0.125rem",
+              "overflow-x": "auto",
+              "scrollbar-width": "none",
+              "position": "fixed",
+              "inset-inline": "0",
+              "z-index": "50",
+              "padding": "0.25rem 1.5rem 0.25rem 0.5rem",
+              "padding-bottom": "calc(0.25rem + env(safe-area-inset-bottom, 0px))",
+              "border-top": "1px solid var(--border)",
+              "background": "var(--background)",
+              "mask-image": "linear-gradient(to right, black calc(100% - 2rem), transparent)"
+            },
+            ".boring-viewer.boring-markdown-dock[data-keyboard]": {
+              "padding-bottom": "0.25rem"
+            },
+            ".boring-viewer [data-boring=\"markdown-editor\"][data-dock] .boring-markdown-content": {
+              "padding-bottom": "6rem"
             }
           }
         }
@@ -1368,7 +1412,7 @@
       "name": "provider-setup",
       "type": "registry:component",
       "title": "Provider setup",
-      "description": "A Tailwind popover for configuring model access: pick any registered Pi provider and model, save an API key (masked, shows \"saved\"), run a device-code subscription sign-in (code, link and status), set an optional gateway and see when a provider needs one. Transport-agnostic: props in, callbacks out, no fetch. Owned, editable source; fits the pi-chat controls slot.",
+      "description": "A shadcn popover for configuring model access: pick any registered Pi provider and model, save an API key (masked, shows \"saved\"), run a device-code subscription sign-in (code, link and status), set an optional gateway and see when a provider needs one. Transport-agnostic: props in, callbacks out, no fetch. Owned, editable source; fits the pi-chat controls slot.",
       "dependencies": [
         "react@^19.0.0",
         "react-dom@^19.0.0",
@@ -1377,7 +1421,11 @@
       "registryDependencies": [
         "@boring-ui/theme",
         "@boring-ui/utils",
-        "button"
+        "button",
+        "input",
+        "label",
+        "native-select",
+        "popover"
       ],
       "files": [
         {
@@ -2217,7 +2265,12 @@
         "@boring-ui/utils",
         "@boring-ui/version-history",
         "button",
-        "dropdown-menu"
+        "dropdown-menu",
+        "collapsible",
+        "empty",
+        "input",
+        "separator",
+        "sidebar"
       ],
       "files": [
         {
@@ -2248,8 +2301,10 @@
         "@boring-ui/app-shell",
         "@boring-ui/file-tree",
         "@boring-ui/viewers",
-        "@boring-ui/drawer",
-        "button"
+        "drawer",
+        "button",
+        "scroll-area",
+        "separator"
       ],
       "files": [
         {
@@ -2276,46 +2331,6 @@
           "path": "registry/documents/documents-labels.ts",
           "type": "registry:lib",
           "target": "components/documents/documents-labels.ts"
-        }
-      ]
-    },
-    {
-      "name": "drawer",
-      "type": "registry:component",
-      "title": "Drawer",
-      "description": "Pinned Base UI drawer presentation, independent of the consumer’s shadcn style. Native snap points, swipe handles and focus management.",
-      "dependencies": [
-        "@base-ui/react@1.9.0",
-        "react@^19.0.0"
-      ],
-      "registryDependencies": [
-        "@boring-ui/utils"
-      ],
-      "files": [
-        {
-          "path": "registry/drawer/drawer.tsx",
-          "type": "registry:component",
-          "target": "components/drawer/drawer.tsx"
-        }
-      ]
-    },
-    {
-      "name": "dropdown-menu",
-      "type": "registry:component",
-      "title": "Dropdown Menu",
-      "description": "Pinned Base UI dropdown presentation for app-shell, independent of the consumer’s shadcn style.",
-      "dependencies": [
-        "@base-ui/react@1.9.0",
-        "react@^19.0.0"
-      ],
-      "registryDependencies": [
-        "@boring-ui/utils"
-      ],
-      "files": [
-        {
-          "path": "registry/dropdown-menu/dropdown-menu.tsx",
-          "type": "registry:component",
-          "target": "components/dropdown-menu/dropdown-menu.tsx"
         }
       ]
     }

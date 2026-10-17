@@ -400,6 +400,37 @@ try {
     await browser.emulate('desktop');
   });
 
+  await step('phone: the formatting bar docks inside the viewport while editing and hides when focus leaves', async () => {
+    await browser.emulate('phone');
+    await browser.click(q('[data-testid=sessions-toggle]'));
+    await browser.until('navigation before rich edit', `!!${q('[data-testid=workspace-library]')}`, 5000);
+    await browser.click(q('[data-testid=workspace-library]'));
+    const item = q('[data-testid=workspace-library-side] [data-path="picnic-plan.md"] button');
+    await browser.until('file in Library', `!!${item}`, 5000);
+    await browser.click(item);
+    const surface = q('[data-testid=file-viewer] .boring-markdown-content');
+    await browser.until('rich phone surface', `!!${surface}`, 10000);
+    const dock = q('[data-testid=markdown-dock]');
+    assert.equal(await browser.evaluate(`!!${dock}`), false, 'reading shows no formatting bar');
+    await browser.screenshot('mobile-toolbar-phone-reading.png');
+    await browser.tap(surface);
+    await browser.until('formatting bar while editing', `!!${dock}`, 5000);
+    const geometry = await browser.evaluate(`(() => { const box = ${dock}.getBoundingClientRect(); const tool = ${dock}.querySelector('[aria-label=Bold]').getBoundingClientRect(); const viewport = window.visualViewport; const cs = getComputedStyle(${dock}); return { pos: cs.position, bot: cs.bottom, cls: ${dock}.className, bottom: box.bottom, top: box.top, left: box.left, right: box.right, tool: Math.min(tool.width, tool.height), height: viewport.height + viewport.offsetTop, width: innerWidth }; })()`);
+    assert.ok(geometry.top >= 0 && geometry.bottom <= geometry.height + 1 && geometry.left >= 0 && geometry.right <= geometry.width + 1, 'the bar is inside the visible viewport ' + JSON.stringify(geometry));
+    assert.ok(geometry.tool >= 44, 'tools are 44px touch targets');
+    assert.equal(await browser.evaluate(`${dock}.scrollWidth > ${dock}.clientWidth`), true, 'the row scrolls horizontally');
+    for (const scheme of ['light', 'dark']) {
+      await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }); await pause(200);
+      await browser.screenshot(`mobile-toolbar-phone-editing-${scheme}.png`);
+    }
+    await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] });
+    await browser.evaluate(`document.activeElement.blur()`);
+    await browser.until('formatting bar hides when focus leaves', `!${dock}`, 5000);
+    await browser.click(q('[data-testid=file-viewer] [data-testid=viewer-close]'));
+    await browser.until('file viewer closed', `!${q('[data-testid=file-viewer]')}`, 5000);
+    await browser.emulate('desktop');
+  });
+
   await step('phone autosave survives reload; failed flush still guards Back and preserves its draft', async () => {
     await browser.emulate('phone');
     await browser.click(q('[data-testid=sessions-toggle]'));

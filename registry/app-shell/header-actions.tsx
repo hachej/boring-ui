@@ -6,9 +6,9 @@ import { useState } from 'react';
 import type { ComponentType, MouseEvent } from 'react';
 import { EllipsisIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../dropdown-menu/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { afterBack } from './back';
-import { AppSheet, SHEET_ROW } from './sheet';
+import { AppSheet, SHEET_ROW } from './app-sheet';
 import type { AppShellText } from './text';
 
 interface Icon { className?: string }

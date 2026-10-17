@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Popover } from '@base-ui/react/popover';
 import { FileTextIcon, ShapesIcon } from 'lucide-react';
-import { Drawer, DrawerContent, DrawerTitle, DrawerTrigger } from '../drawer/drawer';
+import { Drawer, DrawerContent, DrawerTitle, DrawerTrigger } from '@/components/ui/drawer';
 import { Button } from '@/components/ui/button';
 import { useChatText } from './labels';
 
