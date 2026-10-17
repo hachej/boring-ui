@@ -47,8 +47,8 @@ try {
         await browser.evaluate(`${q(selector)}.blur()`);
         await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: width / 2, y: 60 });
         await pause(250);
-        const style = await browser.evaluate(`(() => { const e = ${q(selector)}, r = e.getBoundingClientRect(), css = getComputedStyle(e), icon = e.querySelector('svg'); const title = e.closest('header, [data-testid=agent-panel-header]')?.querySelector('h2, [data-testid=ambient-title]')?.getBoundingClientRect(); return { background: css.backgroundColor, border: css.borderTopWidth, width: r.width, height: r.height, icon: icon.getBoundingClientRect().width, stroke: getComputedStyle(icon).strokeWidth, aligned: !!title && Math.abs(r.top + r.height / 2 - title.top - title.height / 2) <= 1 }; })()`);
-        assert.deepEqual(style, { background: 'rgba(0, 0, 0, 0)', border: '0px', width: 44, height: 44, icon: 20, stroke: '1.5px', aligned: true }, `${mode} ${width} ${scheme}`);
+        const style = await browser.evaluate(`(() => { const e = ${q(selector)}, r = e.getBoundingClientRect(), css = getComputedStyle(e), icon = e.querySelector('svg'); const title = e.closest('header, [data-testid=agent-panel-header]')?.querySelector('h2, [data-testid=ambient-title]')?.getBoundingClientRect(); return { slot: e.dataset.slot, background: css.backgroundColor, border: css.borderTopWidth, borderColor: css.borderTopColor, width: r.width, height: r.height, icon: icon.getBoundingClientRect().width, stroke: getComputedStyle(icon).strokeWidth, aligned: !!title && Math.abs(r.top + r.height / 2 - title.top - title.height / 2) <= 1 }; })()`);
+        assert.deepEqual(style, { slot: 'button', background: 'rgba(0, 0, 0, 0)', border: '1px', borderColor: 'rgba(0, 0, 0, 0)', width: 44, height: 44, icon: 16, stroke: '2px', aligned: true }, `${mode} ${width} ${scheme}`);
         await shot(`phone-navigation-${mode}-${width}-${scheme}.png`);
       }
     }

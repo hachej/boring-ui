@@ -53,7 +53,8 @@ try {
     assert.ok(layout, 'reference composer has a separate controls row');
     assert.ok(layout.boxes.length >= 2);
     assert.ok(Math.max(...layout.boxes.map(box => box.centre)) - Math.min(...layout.boxes.map(box => box.centre)) <= 1, JSON.stringify(layout));
-    assert.ok(layout.boxes.every(box => box.height === layout.boxes[0].height && [40, 44].includes(box.height)), JSON.stringify(layout));
+    const expectedHeight = await browser.evaluate("matchMedia('(max-width: 640px), (pointer: coarse)').matches ? 44 : 32");
+    assert.ok(layout.boxes.every(box => box.height === expectedHeight), JSON.stringify(layout));
     assert.ok(layout.textBottom <= layout.controlsTop + 1, 'text occupies the full-width row above the controls');
   };
 
@@ -197,7 +198,7 @@ try {
     await browser.evaluate(`${reply}.querySelector('[aria-label="Copy response"]').scrollIntoView({ block: 'center', behavior: 'instant' })`);
     await browser.hover(`${reply}.querySelector('[aria-label="Copy response"]')`);
     const action = await browser.evaluate(`(() => { const button = ${reply}.querySelector('[aria-label="Copy response"]'), rect = button.getBoundingClientRect(); return { width: rect.width, height: rect.height, title: button.title, hiddenLabel: getComputedStyle(button.querySelector('span')).position }; })()`);
-    assert.deepEqual(action, { width: 32, height: 32, title: 'Copy response', hiddenLabel: 'absolute' });
+    assert.deepEqual(action, { width: 28, height: 28, title: 'Copy response', hiddenLabel: 'absolute' });
     await browser.until('reply actions visible on pointer hover', `getComputedStyle(${reply}.querySelector('[aria-label="Copy response"]').parentElement).opacity === '1'`, 5000);
     await browser.screenshot('reply-actions-desktop.png');
   });
@@ -317,21 +318,23 @@ try {
         await browser.evaluate(`document.documentElement.classList.toggle('dark', ${dark}); ${q('[data-testid=sessions-toggle]')}.blur()`);
         await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: width / 2, y: 60 });
         await pause(100);
-        const style = await browser.evaluate(`(() => { const menu = ${q('[data-testid=sessions-toggle]')}, pencil = ${q('[data-testid=workspace-new-chat]')}, title = ${q('[data-boring=pi-chat] > header h2')}; const css = getComputedStyle(menu); const rect = e => { const r = e.getBoundingClientRect(); return { x: r.x, right: r.right, y: r.y + r.height / 2, w: r.width, h: r.height }; }; return { background: css.backgroundColor, border: css.borderTopWidth, shadow: css.boxShadow, focus: menu.matches(':focus-visible'), menu: rect(menu), pencil: rect(pencil), title: rect(title), glyph: rect(menu.querySelector('svg')), pencilGlyph: rect(pencil.querySelector('svg')), stroke: getComputedStyle(menu.querySelector('svg')).strokeWidth, pencilStroke: getComputedStyle(pencil.querySelector('svg')).strokeWidth }; })()`);
+        const style = await browser.evaluate(`(() => { const menu = ${q('[data-testid=sessions-toggle]')}, pencil = ${q('[data-testid=workspace-new-chat]')}, title = ${q('[data-boring=pi-chat] > header h2')}; const css = getComputedStyle(menu); const rect = e => { const r = e.getBoundingClientRect(); return { x: r.x, right: r.right, y: r.y + r.height / 2, w: r.width, h: r.height }; }; return { slot: menu.dataset.slot, background: css.backgroundColor, border: css.borderTopWidth, borderColor: css.borderTopColor, shadow: css.boxShadow, focus: menu.matches(':focus-visible'), menu: rect(menu), pencil: rect(pencil), title: rect(title), glyph: rect(menu.querySelector('svg')), pencilGlyph: rect(pencil.querySelector('svg')), stroke: getComputedStyle(menu.querySelector('svg')).strokeWidth, pencilStroke: getComputedStyle(pencil.querySelector('svg')).strokeWidth }; })()`);
         assert.equal(style.background, 'rgba(0, 0, 0, 0)', 'phone navigation is transparent at rest');
-        assert.equal(style.border, '0px', 'phone navigation has no native button border');
+        assert.equal(style.slot, 'button', 'phone navigation uses the consumer Button');
+        assert.equal(style.border, '1px', 'stock native Button border width');
+        assert.equal(style.borderColor, 'rgba(0, 0, 0, 0)', 'the native ghost border is transparent');
         assert.equal(style.focus, false);
         assert.equal(style.menu.w, 44); assert.equal(style.menu.h, 44);
-        assert.equal(style.glyph.w, 20); assert.equal(style.glyph.h, 20);
-        assert.equal(style.pencilGlyph.w, 20); assert.equal(style.pencilStroke, style.stroke);
-        assert.equal(style.stroke, '1.5px');
+        assert.equal(style.glyph.w, 16); assert.equal(style.glyph.h, 16);
+        assert.equal(style.pencilGlyph.w, 16); assert.equal(style.pencilStroke, style.stroke);
+        assert.equal(style.stroke, '2px', 'stock Lucide icons, no custom navigation glyph');
         assert.ok(Math.abs(style.menu.y - style.pencil.y) <= 1 && Math.abs(style.menu.y - style.title.y) <= 1, 'phone icons and title share a vertical centre');
         assert.ok(style.menu.x >= 12 && style.menu.x <= 16 && width - style.pencil.right >= 12 && width - style.pencil.right <= 16, 'equal quiet side padding');
         await browser.screenshot(`phone-menu-${width}-${dark ? 'dark' : 'light'}.png`);
         await browser.press('Tab');
         await browser.evaluate(`${q('[data-testid=sessions-toggle]')}.focus()`);
         assert.equal(await browser.evaluate(`${q('[data-testid=sessions-toggle]')}.matches(':focus-visible')`), true, 'keyboard focus is visible');
-        assert.notEqual(await browser.evaluate(`getComputedStyle(${q('[data-testid=sessions-toggle]')}).boxShadow`), style.shadow, 'only keyboard focus adds its ring');
+        await browser.until('native keyboard focus ring has transitioned in', `getComputedStyle(${q('[data-testid=sessions-toggle]')}).boxShadow !== ${JSON.stringify(style.shadow)}`, 5000);
         await browser.evaluate(`${q('[data-testid=sessions-toggle]')}.blur()`);
       }
     }

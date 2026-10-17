@@ -286,8 +286,8 @@ try {
     assert.equal(await browser.evaluate(taps), before, 'the tab bar behind a modal layer does not receive the tap');
     await browser.screenshot('phone-half.png');
     await controls('half');
-    // Round c: the layer's own buttons are not browser-grey (the scoped reset stands in for Tailwind's preflight), and the microphone is in the composer row.
-    assert.deepEqual(await browser.evaluate(`(() => { const s = getComputedStyle(${q('[data-testid=agent-layer-close]')}); return [s.appearance, s.borderTopWidth, s.backgroundColor]; })()`), ['none', '0px', 'rgba(0, 0, 0, 0)']);
+    // Native ghost Button keeps its transparent border, not the browser's grey control chrome.
+    assert.deepEqual(await browser.evaluate(`(() => { const button = ${q('[data-testid=agent-layer-close]')}, s = getComputedStyle(button); return [button.dataset.slot, s.appearance, s.borderTopWidth, s.borderTopColor, s.backgroundColor]; })()`), ['button', 'none', '1px', 'rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0)']);
     const mic = await browser.evaluate(rect('[data-testid=agent-talk]')), composer = await browser.evaluate(rect('[data-testid=composer]'));
     assert.ok(mic.y >= composer.y && mic.bottom <= composer.bottom, 'the microphone is in the composer row, not over the messages');
   });
