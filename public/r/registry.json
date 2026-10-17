@@ -225,28 +225,28 @@
           "max-width": "75ch",
           "width": "100%",
           "margin-inline": "auto",
-          "line-height": "1.7",
+          "line-height": "var(--leading-relaxed)",
           "overflow-wrap": "anywhere"
         },
         ".boring-markdown-recipe[data-boring=\"markdown-editor\"] .boring-markdown-content p": {
           "margin": "0.75rem 0"
         },
         ".boring-markdown-recipe[data-boring=\"markdown-editor\"] .boring-markdown-content h1": {
-          "font-size": "1.875rem",
-          "line-height": "1.2",
+          "font-size": "var(--text-3xl)",
+          "line-height": "var(--leading-tight)",
           "margin": "1.25rem 0 0.75rem",
-          "font-weight": "700"
+          "font-weight": "var(--font-weight-semibold)"
         },
         ".boring-markdown-recipe[data-boring=\"markdown-editor\"] .boring-markdown-content h2": {
-          "font-size": "1.5rem",
-          "line-height": "1.3",
+          "font-size": "var(--text-2xl)",
+          "line-height": "var(--leading-tight)",
           "margin": "1.25rem 0 0.75rem",
-          "font-weight": "650"
+          "font-weight": "var(--font-weight-semibold)"
         },
         ".boring-markdown-recipe[data-boring=\"markdown-editor\"] .boring-markdown-content h3": {
-          "font-size": "1.25rem",
+          "font-size": "var(--text-xl)",
           "margin": "1rem 0 0.5rem",
-          "font-weight": "600"
+          "font-weight": "var(--font-weight-semibold)"
         },
         ".boring-markdown-recipe[data-boring=\"markdown-editor\"] .boring-markdown-content ul": {
           "list-style": "disc",
@@ -280,7 +280,7 @@
         },
         ".boring-markdown-recipe[data-boring=\"markdown-editor\"] .boring-markdown-content code": {
           "font-family": "var(--font-mono)",
-          "font-size": "0.9em"
+          "font-size": "var(--text-sm)"
         },
         ".boring-markdown-recipe[data-boring=\"markdown-editor\"] > textarea": {
           "width": "100%",
@@ -297,7 +297,7 @@
           "cursor": "pointer"
         },
         ".boring-markdown-recipe[data-boring=\"markdown-editor\"] .boring-markdown-content:focus-visible": {
-          "outline": "2px solid var(--ring)",
+          "outline": "var(--default-border-width) solid var(--ring)",
           "outline-offset": "2px"
         },
         ".boring-markdown-recipe[data-boring=\"markdown-editor\"] [data-boring=\"proposal-diff\"]": {

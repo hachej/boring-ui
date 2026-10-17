@@ -1,4 +1,5 @@
-import { workspaceDirectory, registryPin } from './consumer-install.mjs';
+import { workspaceDirectory, registryPin, registryItemName, serveRegistry } from './consumer-install.mjs';
+import { SHADCN_BUILTINS } from './check-registry-blocks.mjs';
 import semver from 'semver';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
@@ -15,7 +16,16 @@ const html = process.argv[2] === '--html';
 const taskList = process.argv[2] === '--task-list';
 const recipe = taskList ? { name: 'task-list-viewer', exportName: 'TaskListViewer', className: 'boring-task-list-recipe', hostClass: 'host-installed-task-list', radius: '--boring-task-list-radius', fixture: 'registry-task-list.mjs' } : html ? { name: 'html-viewer', exportName: 'HtmlViewer', className: 'boring-html-recipe', hostClass: 'host-installed-html', radius: '--boring-html-radius', fixture: 'registry-html.mjs' }
   : { name: 'markdown-editor', exportName: 'MarkdownEditor', className: 'boring-markdown-recipe', hostClass: 'host-installed-editor', radius: '--boring-editor-radius', fixture: 'registry-markdown.mjs' };
-const item = JSON.parse(readFileSync(join(root, 'public/r', recipe.name + '.json'), 'utf8'));
+const closure = new Map();
+const visit = name => {
+  if (closure.has(name)) return;
+  const item = JSON.parse(readFileSync(join(root, 'public/r', name + '.json'), 'utf8'));
+  closure.set(name, item);
+  for (const dependency of item.registryDependencies ?? []) if (!SHADCN_BUILTINS.includes(dependency)) visit(registryItemName(root, dependency));
+};
+visit(recipe.name);
+const item = closure.get(recipe.name);
+const pins = [...new Set([...closure.values()].flatMap(item => item.dependencies ?? []))];
 const excludedPackages = ['@hachej/boring-agent', 'tldraw', '@tldraw/editor', ...((html || taskList) ? ['@tiptap/core', 'marked', '@hachej/boring-execution'] : [])];
 const temporary = mkdtempSync(join(tmpdir(), 'boring-registry-consumer-'));
 // The pinned native SDK probes ten ancestor node_modules paths even when local types exist.
@@ -29,12 +39,12 @@ function run(command, args, env) {
   assert.equal(result.status, 0, `${command} failed: ${result.error?.message ?? result.signal ?? result.status}`);
   return result.stdout;
 }
-let completed = false;
+let completed = false, server, registry;
 try {
   const isolated = prepareConsumerIsolation(directory);
   mkdirSync(join(directory, 'packs'));
   const archives = [], archiveByName = new Map();
-  for (const pin of item.dependencies.filter(pin => pin.startsWith('@hachej/boring-'))) {
+  for (const pin of pins.filter(pin => pin.startsWith('@hachej/boring-'))) {
     const name = pin.slice(0, pin.lastIndexOf('@'));
     const packed = JSON.parse(run('npm', ['pack', workspaceDirectory(root, name), '--json', '--ignore-scripts', '--pack-destination', join(directory, 'packs')]))[0];
     const path = join(directory, 'packs', packed.filename);
@@ -42,7 +52,7 @@ try {
   }
   const rootManifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
   const sourceLock = JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8'));
-  const dependencies = Object.fromEntries(item.dependencies.filter(pin => !pin.startsWith('@hachej/boring-')).map(pin => {
+  const dependencies = Object.fromEntries(pins.filter(pin => !pin.startsWith('@hachej/boring-')).map(pin => {
     const split = pin.lastIndexOf('@'); return [pin.slice(0, split), pin.slice(split + 1)];
   }));
   for (const name of ['typescript', '@types/react', '@types/react-dom', 'happy-dom', 'esbuild', 'shadcn', 'tailwindcss', '@base-ui/react', 'class-variance-authority', 'cn', ...(taskList ? ['clsx', 'tailwind-merge', 'lucide-react'] : [])]) dependencies[name] = rootManifest.devDependencies[name];
@@ -105,13 +115,14 @@ try {
   const unchanged = structuredClone(localItem); unchanged.dependencies = item.dependencies;
   assert.deepEqual(unchanged, item);
   writeFileSync(join(directory, recipe.name + '.json'), JSON.stringify(localItem));
+  ({ url: registry, server } = await serveRegistry(root, directory, closure, archiveByName, join(directory, 'packs'), cache, run));
   for (const path of ['src', 'test/fixtures', 'dist']) mkdirSync(join(directory, path), { recursive: true });
   writeFileSync(join(directory, 'components.json'), JSON.stringify({ $schema: 'https://ui.shadcn.com/schema.json', style: 'base-nova', rsc: false, tsx: true, tailwind: { config: '', css: 'src/index.css', baseColor: '', cssVariables: true, prefix: '' }, iconLibrary: 'lucide', aliases: { components: '@/components', utils: '@/lib/utils', ui: '@/components/ui', lib: '@/lib', hooks: '@/hooks' } }));
   writeFileSync(join(directory, 'src/index.css'), '');
   writeFileSync(join(directory, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'ESNext', moduleResolution: 'Bundler', jsx: 'react-jsx', strict: true, exactOptionalPropertyTypes: true, skipLibCheck: false, noEmit: true, types: [], lib: ['ES2023', 'DOM'], baseUrl: '.', paths: { '@/*': ['./src/*'] } }, include: ['src/**/*.tsx', 'src/**/*.ts', 'consumer.ts'] }));
   const installer = { ...process.env, npm_config_cache: cache, npm_config_offline: 'true', npm_config_ignore_scripts: 'true', npm_config_audit: 'false', npm_config_fund: 'false' };
   delete installer.NODE_OPTIONS;
-  run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', join(directory, recipe.name + '.json'), '--cwd', directory, '--yes'], installer);
+  run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', `${registry}/${recipe.name}.json`, '--cwd', directory, '--yes'], installer);
   for (const [name, range] of Object.entries(dependencies)) {
     const entry = sourceLock.packages['node_modules/' + name];
     assert.ok(entry && semver.satisfies(entry.version, range), `${name}@${range}`);
@@ -168,7 +179,7 @@ controller.flush(controller.actions.selection());
     if (taskList) {
       writeFileSync(join(directory, 'task-list-entry.ts'), "export { TaskListViewer } from './src/components/task-list-viewer/task-list-viewer';\nexport * from './src/components/task-list-viewer/task-list-controller';\nexport * from './src/components/task-list-viewer/task-list-document';\n");
       run(process.execPath, ['node_modules/esbuild/bin/esbuild', 'task-list-entry.ts', '--bundle', '--packages=external', '--platform=node', '--format=esm', '--jsx=automatic', '--outfile=dist/task-list-viewer.js'], isolated);
-    } else run(process.execPath, ['node_modules/esbuild/bin/esbuild', component, '--format=esm', '--jsx=automatic', '--outfile=dist/' + recipe.name + '.js'], isolated);
+    } else run(process.execPath, ['node_modules/esbuild/bin/esbuild', component, '--bundle', '--packages=external', '--platform=node', '--format=esm', '--jsx=automatic', '--alias:@=./src', '--outfile=dist/' + recipe.name + '.js'], isolated);
   };
   copyFileSync(join(root, 'test/fixtures', recipe.fixture), join(directory, 'test/fixtures', recipe.fixture));
   // The tests' host: one SQLite workspace per scope over the installed @hachej/boring-files (public entry points only).
@@ -191,8 +202,8 @@ controller.flush(controller.actions.selection());
   run(process.execPath, ['--test', '--experimental-test-isolation=none', 'test/fixtures/' + recipe.fixture, ...(!html && !taskList ? ['test/fixtures/registry-markdown-mounted-dom.mjs', 'test/fixtures/registry-markdown-proposals-dom.mjs'] : [])], isolated);
   const copied = readFileSync(join(directory, component), 'utf8');
   assert.ok(copied.includes(recipe.className));
-  writeFileSync(join(directory, component), copied.replace(recipe.className, recipe.className + ' ' + recipe.hostClass));
-  writeFileSync(join(directory, 'src/index.css'), readFileSync(join(directory, 'src/index.css'), 'utf8') + `\n.${recipe.hostClass} { ${recipe.radius}: 1.25rem; }\n`);
+  if (taskList) writeFileSync(join(directory, component), copied.replace(recipe.className, recipe.className + ' ' + recipe.hostClass));
+  writeFileSync(join(directory, 'src/index.css'), readFileSync(join(directory, 'src/index.css'), 'utf8') + (taskList ? `\n.${recipe.hostClass} { ${recipe.radius}: 1.25rem; }\n` : '\n:root { --radius: 1.25rem; }\n'));
   compile();
   run(process.execPath, ['--test', '--experimental-test-isolation=none', 'test/fixtures/' + recipe.fixture, ...(!html && !taskList ? ['test/fixtures/registry-markdown-mounted-dom.mjs', 'test/fixtures/registry-markdown-proposals-dom.mjs'] : [])], { ...isolated, BORING_REGISTRY_RESTYLED: 'true' });
   const controllerExport = taskList ? 'createTaskListController' : html ? 'createHtmlController' : 'createMarkdownController';
@@ -226,9 +237,10 @@ controller.flush(controller.actions.selection());
     }
     run(process.execPath, ['--test', '--experimental-test-isolation=none', 'test/compatibility/task-list.test.mjs'], isolated);
   }
-  console.log('PASS: real pinned shadcn local installation of ' + recipe.name + ', strict declarations, copied-source restyle and real controller operations; DOM and bundle evidence only');
+  console.log('PASS: real pinned shadcn local installation of ' + recipe.name + ', strict declarations, host theme tokens and real controller operations; DOM and bundle evidence only');
   completed = true;
 } finally {
+  server?.kill();
   if (completed) rmSync(temporary, { recursive: true, force: true });
   else console.error('Retained failing disposable registry consumer at ' + directory);
 }

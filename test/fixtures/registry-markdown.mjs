@@ -73,11 +73,9 @@ test('installed registry Markdown wrapper with real React/Tiptap/SQLite (DOM, no
     const f = await fixture(t, source, { props: { initialMode: 'source', className: 'host-custom' } });
     const root = f.container.querySelector('[data-boring="markdown-editor"]');
     assert.ok(root.classList.contains('boring-markdown-recipe')); assert.ok(root.classList.contains('host-custom'));
-    if (process.env.BORING_REGISTRY_RESTYLED === 'true') {
-      assert.ok(root.classList.contains('host-installed-editor'));
-      assert.equal(window.getComputedStyle(root).getPropertyValue('--boring-editor-radius').trim(), '1.25rem');
-      assert.equal(window.getComputedStyle(root).borderRadius, '20px');
-    }
+    assert.equal(root.classList.contains('host-installed-editor'), false, 'core tokens change without rewriting the wrapper');
+    if (process.env.BORING_REGISTRY_RESTYLED === 'true') assert.equal(window.getComputedStyle(document.documentElement).getPropertyValue('--radius').trim(), '1.25rem');
+    assert.equal(f.container.querySelector('textarea').dataset.slot, 'textarea');
     assert.equal(f.container.querySelector('textarea').value, source);
     assert.match(f.container.textContent, /Fictional registry notes/);
     await f.click('Markdown source'); assert.ok(f.container.querySelector('[contenteditable="true"]'));
@@ -164,29 +162,25 @@ test('installed registry Markdown wrapper with real React/Tiptap/SQLite (DOM, no
     assert.equal(result.kind, 'saved'); assert.equal(await f.saved(), 'after unmount'); assert.equal(f.writes(), 1);
   });
 
-  await t.test('installed stylesheet accepts host tokens and a caller class without styling unrelated buttons', async t => {
+  await t.test('installed controls use the host shadcn components without styling unrelated buttons', async t => {
     const f = await fixture(t, 'styled fiction', { props: { className: 'fictional-host-theme' } });
     const root = f.container.querySelector('[data-boring="markdown-editor"]');
     const override = document.createElement('style');
-    override.textContent = '.fictional-host-theme { --background: rgb(12, 34, 56); --foreground: rgb(230, 231, 232); --border: rgb(71, 72, 73); --ring: rgb(91, 92, 93); --boring-editor-diff-add-background: rgb(22, 52, 32); --boring-editor-diff-add-foreground: rgb(210, 250, 220); --boring-editor-diff-remove-background: rgb(62, 22, 32); --boring-editor-diff-remove-foreground: rgb(255, 210, 220); } .fictional-host-theme.boring-markdown-recipe[data-boring="markdown-editor"] { border-radius: 19px; }';
+    override.textContent = ':root { --background: rgb(12, 34, 56); --foreground: rgb(230, 231, 232); --border: rgb(71, 72, 73); --ring: rgb(91, 92, 93); }';
     document.head.append(override); t.after(() => override.remove());
     const outside = document.createElement('button'); outside.textContent = 'Unrelated host button'; document.body.append(outside); t.after(() => outside.remove());
-    const styled = window.getComputedStyle(root);
-    assert.equal(styled.backgroundColor, 'rgb(12, 34, 56)');
-    assert.equal(styled.borderTopColor, 'rgb(71, 72, 73)');
-    assert.equal(styled.borderRadius, '19px');
-    const inside = window.getComputedStyle(f.button('Save')), unrelated = window.getComputedStyle(outside);
-    assert.notEqual(inside.borderTopStyle, unrelated.borderTopStyle);
+    assert.equal(root.style.cssText, '', 'the wrapper carries no inline visual values');
+    assert.equal(f.button('Save').dataset.slot, 'button');
+    assert.equal(f.button('Bold').dataset.slot, 'toggle');
+    for (const control of f.container.querySelectorAll('button, input, textarea')) assert.ok(['button', 'toggle', 'input', 'textarea'].includes(control.dataset.slot), 'all controls are consumer shadcn components');
     assert.deepEqual(buttonStyle(outside), unrelatedBaseline);
     assert.equal(outside.className, '');
     await act(async () => f.controller.actions.propose(f.controller.actions.selection(), [{ find: 'styled fiction', replace: 'reviewed fiction' }], 'Styled review'));
     const added = f.container.querySelector('[data-diff="add"]');
     const removed = f.container.querySelector('[data-diff="remove"]');
     assert.ok(added); assert.ok(removed);
-    assert.equal(window.getComputedStyle(added).backgroundColor, 'rgb(22, 52, 32)');
-    assert.equal(window.getComputedStyle(added).color, 'rgb(210, 250, 220)');
-    assert.equal(window.getComputedStyle(removed).backgroundColor, 'rgb(62, 22, 32)');
-    assert.equal(window.getComputedStyle(removed).color, 'rgb(255, 210, 220)');
+    assert.equal(added.querySelector('[data-diff-text]').textContent, 'reviewed fiction');
+    assert.equal(removed.querySelector('[data-diff-text]').textContent, 'styled fiction');
     assert.equal(f.writes(), 0);
     assert.deepEqual(buttonStyle(outside), unrelatedBaseline);
   });

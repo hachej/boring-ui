@@ -79,6 +79,12 @@ The `theme.json` item (the shadcn tokens) is needed only when the host does not 
 
 In either case the version in the URL must equal the installed `@hachej/boring-ui-kit` version. To upgrade, install the new npm version and re-add the components. `https://unpkg.com/@hachej/boring-ui-kit@<version>/r/<item>.json` also works. See the [registry guide](registry/README.md) for the available items.
 
+## Theming
+
+Registry blocks support only shadcn Base UI `base-nova`. They compose your application's `@/components/ui/*` components without a separate control skin. Rebrand through your core theme tokens, following boring-stack's `boring-design-system` skill. Do not edit derived tokens or add per-block CSS overrides. `--shell` and `--overlay` are the documented kit-specific tokens.
+
+The migration is staged. REPORT groups are remaining design debt, not conformance. See the [theming contract and design verification](registry/README.md#styling) for the boundary and evidence commands.
+
 ## Release status
 
 The repository contains working implementations and tests for document publication and recovery, chat, editors, canvas, background tasks, remote adapters and installed component recipes. Passing an individual test does not qualify every provider or deployment.

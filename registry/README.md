@@ -80,7 +80,7 @@ Pass `actions.answer` to `PiChat`. A call to a tool wrapped with `requireApprova
 ## Changes
 
 **2026-10-14: file cards and paste-to-file in `pi-chat`.** A sent `@uploads/<path>` mention is now a card above the message bubble: its icon or image thumbnail, its name without the upload suffix, and its type (Document, Image, PDF, Spreadsheet, Presentation, File; French: Tableur, Présentation, Fichier). The mention leaves the bubble's text, and the message content keeps it. `PiChat` takes `onOpenFile(path)` (the card is a button only with it), and `mentions.preview(path, signal)` returns an image's bytes for its thumbnail (pi-app reads them through the revision provider). Paste-to-file: a paste over `pasteToFile` (2000 characters or 40 lines by default; `{ minChars, minLines }`) becomes a pending upload named « Texte collé » or « Pasted text » with a timestamp (`.md` when it looks like markdown, else `.txt`), only when `attachments` is given. Its restore button (also on a failed upload) puts the text back in the composer, and Ctrl+Z does so while the text is unchanged since the paste. No change without `attachments`. No new message format; nothing changes for a message without an `uploads/` mention.
-**Breaking: group 1 controls use the consumer's shadcn components.** `button/button.tsx`, its `Button`/`IconButton` exports and `ViewerIconButton` are removed. Import `Button` from `@/components/ui/button`; use its native variants and sizes (`quiet` → `ghost`, `bar` → `sm`, `icon-bar` → `icon-sm`). Icon actions retain accessible labels. Pressed actions use `Toggle`, and the compact account theme uses `Switch`. Menu rows, selectable lists/cards and `ViewerToggle` remain in their later groups.
+**Breaking: group 1 controls use the consumer's shadcn components.** `button/button.tsx`, its `Button`/`IconButton` exports and `ViewerIconButton` are removed. Import `Button` from `@/components/ui/button`; use its native variants and sizes (`quiet` → `ghost`, `bar` → `sm`, `icon-bar` → `icon-sm`). Icon actions retain accessible labels. Pressed actions use `Toggle`, and the compact account theme uses `Switch`. Menu rows and selectable lists/cards remain in their later groups. `ViewerToggle` now maps the existing option props to the host's native ToggleGroup.
 
 **Breaking (2026-10-14): `pi-chat`, `button`, `dock`, `feedback` and `app-shell` no longer install the theme.** Before, `shadcn add` of any of them merged the shadcn tokens and radius steps into the host's CSS. Now they ship no global tokens, so a shell or a standalone block cannot clobber a host's theme. A registry consumer that relied on the automatic tokens (a host with none of its own) must add `<registry>/theme.json` to the same `shadcn add`; a host that already defines the tokens changes nothing.
 
@@ -247,19 +247,19 @@ The contract is [BORING-UI-1](../INVARIANTS.md#boring-ui-1--shadcn-first-blocks-
 
 Restyle an application through its core theme tokens, following boring-stack's `boring-design-system` skill. Keep derived tokens in the template's derived theme file. Do not override a block's CSS, set `--boring-editor-*` or `--boring-html-*`, or edit copied shadcn components to rebrand a block. `--shell` and `--overlay` are the documented kit-specific tokens. The optional `theme` item supplies defaults only for hosts without a theme.
 
-`MarkdownEditor` and `HtmlViewer` accept `components` bindings for the host's Button, Toggle, Input and Textarea. Their installed recipes and the viewer panes supply these bindings through `button/editor-controls.tsx`. Direct package rendering without bindings retains unstyled native HTML for compatibility. That fallback is not an installed-block design qualification. Controller ownership, save acknowledgements and model input are unchanged.
+`MarkdownEditor` and `HtmlViewer` accept `components` bindings for the host's Button, Toggle, Input, Textarea and selection-bubble Card. Their installed recipes and the viewer panes supply these bindings through `button/editor-controls.tsx`. Direct package rendering without bindings retains unstyled native HTML for compatibility. That fallback is not an installed-block design qualification. Controller ownership, save acknowledgements and model input are unchanged.
 
 ## Controlled local qualification
 
 ```sh
 npm run build
 npm_config_cache=/absolute/path/to/writable/npm-cache npm run test:registry-consumer
-TMPDIR=/tmp npm_config_cache=/absolute/path/to/writable/npm-cache npm run test:html-registry-consumer
+TMPDIR=/var/tmp npm_config_cache=/absolute/path/to/writable/npm-cache npm run test:html-registry-consumer
 ```
 
 The cache must contain the pinned dependency archives from `package-lock.json`. The recipe uses disposable package installations and the actual shadcn CLI. Its ignored local fixture replaces direct dependency locators with cached tarball paths. It checks original registry archive integrity, embedded package names and versions, and installed versions. Boring archives come from the current public package output and only the item's declared Boring dependencies are packed. Markdown declares its files peer explicitly. Only fixture dependency strings change; committed source pins and generated item contents remain intact.
 
-The fixture selects an empty base color in `components.json` so the host owns its theme and the CLI does not download a color preset. It drives the copied Markdown wrapper through real React, Tiptap and SQLite operations. Chat uses a real native Harness, a fictional streaming provider and native ToolTask execution. Each recipe edits the installed class and style and repeats the checks. Strict declarations and a browser bundle check physical dependency isolation.
+The fixture selects an empty base color in `components.json` so the host owns its theme and the CLI does not download a color preset. It drives the copied Markdown wrapper through real React, Tiptap and SQLite operations. Chat uses a real native Harness, a fictional streaming provider and native ToolTask execution. The Markdown and HTML recipes repeat these checks after changing the core radius token, without editing copied components. Their browser fixture covers stock and brand themes in both modes at desktop and phone widths. Strict declarations and a browser bundle check physical dependency isolation.
 
 DOM checks do not qualify browser geometry, keyboard behavior or accessibility. This local tarball installation does not qualify hosted registry discovery or npm metadata resolution. Run the chat consumer outside any ancestor application node_modules. Some upstream public declarations probe ancestor paths explicitly; the strict physical isolation guard rejects them. Canvas and agent installation recipes remain separate roadmap work; the consumer task-list recipe is described below. A20 and A46 remain partial.
 
@@ -267,7 +267,7 @@ DOM checks do not qualify browser geometry, keyboard behavior or accessibility. 
 
 Pass a host-created `HtmlController` to the copied `HtmlViewer`. Source edits and exact saves use the resource client. The preview reconstructs passive formatting with no source attributes or external resources. Source viewing and saving remain available when parsing, Trusted Types or size limits refuse the preview. See the [UI guide](../packages/ui/README.md#optional-html-source-and-preview) for the exact contract.
 
-The HTML installation fixture repeats public controller/renderer behavior through the copied wrapper, checks scoped host colors and restyling, and builds the controller and wrapper together. Its DOM environment does not qualify native template inertness, iframe isolation, CSP, Trusted Types or network behavior. Actual browser qualification remains required.
+The HTML installation fixture repeats public controller/renderer behavior through the copied wrapper, checks native control bindings and core theme tokens, and builds the controller and wrapper together. Its DOM environment does not qualify native template inertness, iframe isolation, CSP, Trusted Types or network behavior. Actual browser qualification remains required.
 
 ## Pi chat (Tailwind)
 
@@ -336,9 +336,9 @@ A consumer needs only Tailwind v4's standard build, nothing from this repository
 1. Tailwind v4 through its Vite plugin (`@tailwindcss/vite`, already set up by `shadcn init -t vite`) or its CLI (`npx @tailwindcss/cli -i src/index.css -o dist/app.css`).
 2. `src/index.css` starts with `@import "tailwindcss";` and holds the tokens the CLI merged in.
 3. Sources: Tailwind's automatic detection scans the project, which includes the installed `src/components/` folders. When the components live outside the scanned base (a monorepo package, a folder in `.gitignore`), add `@source "../path/to/components";` after the import.
-4. Dark mode is the `.dark` class (`@custom-variant dark (&:is(.dark *))`, added by the CLI). The items declare no palette of their own: `pi-chat`, `pi-ambient` and `feedback` read only the host's shadcn tokens (`background`, `foreground`, `muted`, `primary`, `popover`, `card`, `border`, `input`, `ring`, `destructive`, `accent` and their foregrounds), so a `.dark` ancestor switches them. Every other visual value comes from the app's shadcn roles and Tailwind's token-backed utilities: the type scale, weights, leading and tracking, the `--radius` tiers (`rounded-full` only on pills, status dots and avatars), `shadow-*`, `font-sans`/`font-mono`, and the default border width and transition. An app that sets only its shadcn roles gets a matching chat with nothing else to set. The template extras of hachej/boring-app (`--success`, `--warning` and their soft variants, `--font-display`, `--border-width`) are optional: the `pi-chat` css derives `--chat-success`, `--chat-warning`, `--chat-warning-soft(-foreground)` and `--chat-display` from them: a missing `--success`/`--warning`/`--font-display` falls back to a shadcn role (`primary`, `muted-foreground`, `font-sans`), and a missing soft variant mirrors the template's derivation (`web/src/theme.derived.css`: the status mixed in oklab into the canvas at 15%, 26% in dark, and into the ink at 75%, 55% in dark). `feedback.css` reads them with fallbacks too. `test/contracts/kit-scale-source.test.mjs` keeps arbitrary sizes, palette or hex colours, fallback-less extras and stray `rounded-full` out. To follow the system setting as well, also put the dark tokens under `@media (prefers-color-scheme: dark) { :root { ... } }` and keep them on `.dark`, as the studio does.
+4. Dark mode uses the CLI's `.dark` class variant. Set light and dark core tokens in the app's theme, not in a block stylesheet. The consumer's shadcn components own colours, type, shape, borders, shadows and motion. Blocks add layout only; they must not override those components. The app's derived theme maps core roles to component tokens. Remaining custom skins are migration debt reported by `check-design`, not another supported theming API.
 
-`lab/studio/tailwind.mjs` is this repository's library-API build for the examples (no CLI, no PostCSS, only the theme and utilities layers because preflight would restyle the viewer panels); it is not part of an installation.
+`lab/studio/tailwind.mjs` builds the examples with Tailwind's library API. It includes upstream preflight around Library and viewer fixtures, matching a consumer's standard Tailwind baseline. It is not part of an installation.
 
 ## Ambient agent (`pi-ambient`: `AmbientChat`, `AgentNotifications`)
 
@@ -505,7 +505,7 @@ to refuse a synchronous close; declining the file's discard prompt restores the 
 Reselecting the current file closes Library without changing the selected path or the chat draft.
 
 `MarkdownEditor` and `MarkdownPane` now default to `formattingToolbar="pinned"` on desktop.
-The toolbar stays on one row, with scrolling and a fade at the overflow edge. The header's Aa
+The toolbar stays on one row and scrolls when its controls do not fit. The header's Aa
 control switches to selection formatting; `formattingToolbar="selection"` starts with Tiptap's native
 bubble menu instead. Phones always use selection formatting, with no pinned row. Keyboard shortcuts
 and Markdown input rules remain available.
