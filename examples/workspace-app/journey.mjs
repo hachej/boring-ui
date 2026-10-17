@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { insecureUrl, launch, pause, q, qa } from '@hachej/boring-testing/browser';
 
 process.env.STUDIO_MODEL = 'scripted';
@@ -159,6 +160,38 @@ try {
       await browser.screenshot(`markdown-desktop-${scheme}.png`);
     }
     await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] });
+  });
+
+  await step('Base UI viewer menus are flat, grouped and show version time with provenance', async () => {
+    const checkFlat = async testId => {
+      const styles = await browser.evaluate(`[...${q(`[data-testid=${testId}-list]`)}.querySelectorAll('[role^=menuitem]')].map(item => { const css = getComputedStyle(item); return { border: css.borderTopWidth, height: item.getBoundingClientRect().height }; })`);
+      assert.ok(styles.length > 0);
+      assert.ok(styles.every(style => style.border === '0px' && style.height >= 32), JSON.stringify(styles));
+    };
+    for (const scheme of ['light', 'dark']) {
+      await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] });
+      await browser.click(q('[data-testid=artifact-more]'));
+      await browser.until('native overflow menu', `!!${q('[data-testid=artifact-more-list]')}`, 5000);
+      await checkFlat('artifact-more');
+      assert.ok(await browser.evaluate(`${q('[data-testid=artifact-more-list]')}.querySelectorAll('[role=separator]').length > 0`));
+      await browser.screenshot(`menu-overflow-${scheme}.png`);
+      await browser.press('Tab');
+      await browser.until('native Tab dismisses overflow', `!${q('[data-testid=artifact-more-list]')}`, 5000);
+      await browser.until('version history after the human save', `!!${q('[data-testid=artifact-versions]')}`, 10000);
+      await browser.click(q('[data-testid=artifact-versions]'));
+      await browser.until('native versions menu', `!!${q('[data-testid=artifact-versions-list]')}`, 5000);
+      await checkFlat('artifact-versions');
+      const versions = await browser.evaluate(`${q('[data-testid=artifact-versions-list]')}.innerText`);
+      assert.match(versions, /Just now|\d+ min ago/); assert.match(versions, /Agent/); assert.match(versions, /You/); assert.match(versions, /Current/);
+      assert.ok(await browser.evaluate(`${q('[data-testid=artifact-versions-list]')}.querySelectorAll('[data-testid=artifact-versions-description]').length >= 2`));
+      await browser.screenshot(`menu-versions-${scheme}.png`); await browser.press('Escape');
+    }
+    await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] });
+    const reply = q('[data-testid=transcript] [data-role=assistant]');
+    await browser.hover(reply);
+    const action = await browser.evaluate(`(() => { const button = ${reply}.querySelector('[aria-label="Copy response"]'), rect = button.getBoundingClientRect(); return { width: rect.width, height: rect.height, title: button.title, hiddenLabel: getComputedStyle(button.querySelector('span')).position }; })()`);
+    assert.deepEqual(action, { width: 32, height: 32, title: 'Copy response', hiddenLabel: 'absolute' });
+    await browser.screenshot('reply-actions-desktop.png');
   });
 
   await step('the artifacts chip counts the file and opens its desktop list', async () => {
@@ -479,6 +512,38 @@ try {
     await browser.screenshot('workspace-app-configured-phone.png');
     await browser.tap(q('[data-testid=chat-action-export]'));
     await browser.until('the host got export again', `${logged('export')} === 2`, 5000);
+    await browser.emulate('desktop');
+  });
+
+  await step('older records scroll into the same transcript without moving the first visible message', async () => {
+    const conversation = await app.conversations.open(app.owner, Number(await browser.evaluate(ACTIVE)));
+    const write = async (prefix, index) => conversation.submit({ type: 'write', entry: { kind: 'fictional.history', model: [
+      { role: 'user', content: `${prefix} question ${index}.`, timestamp: Date.now() },
+      { role: 'assistant', content: [{ type: 'text', text: `${prefix} answer ${index}.` }], api: 'openai-responses', provider: 'openai', model: 'gpt-5-mini', stopReason: 'stop', timestamp: Date.now(), usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } },
+    ] } }, context);
+    for (let index = 0; index < 105; index++) await write('Archived fictional', index);
+    await conversation.reset('Fictional history boundary', context);
+    for (let index = 0; index < 12; index++) await write('Current fictional', index);
+    await browser.reload(); await live();
+    await browser.until('current transcript at the bottom', `${q('[data-testid=transcript]')}?.innerText.includes('Current fictional answer 11.') && ${q('[data-testid=transcript-scroll]')}.scrollTop > 100`, 10000);
+    const anchor = await browser.evaluate(`(() => { const scroll = ${q('[data-testid=transcript-scroll]')}; scroll.scrollTop = 120; scroll.dispatchEvent(new Event('scroll')); const row = [...scroll.querySelectorAll('[data-row-id]')].find(row => row.getBoundingClientRect().bottom > scroll.getBoundingClientRect().top + 1); return { key: row.dataset.rowId, y: row.getBoundingClientRect().top }; })()`);
+    await browser.until('sentinel prepends older records inline', `!!${q('[data-testid=transcript] [data-row-id^="history:"]')}`, 10000);
+    await browser.evaluate('new Promise(requestAnimationFrame).then(() => new Promise(requestAnimationFrame))');
+    const y = await browser.evaluate(`${q(`[data-row-id="${anchor.key}"]`)}.getBoundingClientRect().top`);
+    assert.ok(Math.abs(y - anchor.y) <= 2, `first visible row stays anchored: ${anchor.y} -> ${y}`);
+    assert.equal(await browser.evaluate(`!!${q('[data-testid=history]')}`), false, 'no separate read-only history panel');
+    assert.equal(await browser.evaluate(`${q('[data-testid=transcript-history-load]')}.getAttribute('tabindex')`), null, 'the hidden fallback remains in keyboard order');
+    const before = await browser.evaluate(`document.querySelectorAll('[data-row-id^="history:"]').length`);
+    await browser.evaluate(`${q('[data-testid=transcript-history-load]')}.focus()`); await browser.press('Enter');
+    await browser.until('keyboard loads another page inline', `document.querySelectorAll('[data-row-id^="history:"]').length > ${before}`, 10000);
+    assert.ok(await browser.evaluate(`${q('[data-testid=transcript-history] [role=status]')}.textContent.includes('earlier messages loaded')`));
+    for (const device of ['desktop', 'phone']) {
+      await browser.emulate(device);
+      await browser.evaluate(`${q('[data-testid=transcript-scroll]')}.scrollTop = 0`);
+      await pause(500);
+      await browser.screenshot(`inline-history-${device}.png`);
+      assert.equal(await browser.evaluate(`!!${q('[data-testid=history]')}`), false);
+    }
     await browser.emulate('desktop');
   });
 

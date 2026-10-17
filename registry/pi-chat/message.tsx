@@ -162,10 +162,11 @@ function Notice({ tone, icon, children, testid }: { readonly tone: 'error' | 'mu
 
 function resultText(message: ToolResultMessage): string { return message.content.map(part => part.type === 'text' ? part.text : '').join('\n'); }
 
-export function RowView({ row, context }: { readonly row: Row; readonly context: RowContext }) {
+export function RowView({ row, context: liveContext }: { readonly row: Row; readonly context: RowContext }) {
+  const context: RowContext = row.historical ? { ...liveContext, answer: undefined, onFork: undefined, messageActions: undefined, replyActions: undefined, commandMentions: undefined } : liveContext;
   const { labels, icons } = useChatText();
   switch (row.type) {
-    case 'user': return <article data-row-id={row.key} data-role="user"><UserBubble message={row.message} context={context} /></article>;
+    case 'user': return <article data-row-id={row.key} data-role="user" aria-live={row.historical ? 'off' : undefined}><UserBubble message={row.message} context={context} /></article>;
     case 'card': return <article data-row-id={row.key} data-role="event">{row.card.content}</article>;
     case 'event': return <article data-row-id={row.key} data-role="event" className="text-center text-xs text-muted-foreground">{labels.event(row.label)}</article>;
     case 'system': return <article data-row-id={row.key} data-role="system"><details className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground"><summary className="cursor-pointer max-sm:py-3 pointer-coarse:py-3">{labels.systemContext}</summary>
@@ -189,7 +190,7 @@ export function RowView({ row, context }: { readonly row: Row; readonly context:
       const host = settled && row.text && context.messageActions
         ? <BlockActions iconOnly actions={context.messageActions(replyRef(row))} testId="reply-action" menuLabel={labels.moreActions} className="text-muted-foreground" />
         : null;
-      return <article data-row-id={row.key} data-role="assistant" data-streaming={row.streaming ? 'true' : undefined} className="group/message">
+      return <article data-row-id={row.key} data-role="assistant" aria-live={row.historical ? 'off' : undefined} data-streaming={row.streaming ? 'true' : undefined} className="group/message">
         <div className="space-y-3">
           {chunks.map((chunk, at) => {
             if (chunk.kind === 'activity') {

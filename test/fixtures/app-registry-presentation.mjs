@@ -37,17 +37,20 @@ try {
   await key(document.activeElement, 'End');
   assert.equal(document.activeElement === find('viewer-menu-copy'), true);
   await key(document.activeElement, 'Home');
-  assert.equal(document.activeElement === find('viewer-menu-current'), true, 'Home skips disabled rows');
+  assert.equal(document.activeElement === find('viewer-menu-blocked'), true, 'Base UI keeps disabled rows discoverable with Home');
+  await key(document.activeElement, 'Enter');
+  assert.equal(selected, undefined, 'a disabled row never invokes its action');
+  await key(document.activeElement, 'ArrowDown');
+  assert.equal(document.activeElement === find('viewer-menu-current'), true);
   await key(document.activeElement, 'Escape');
-  assert.equal(document.querySelector('[data-testid="viewer-menu-list"]'), null);
+  assert.equal(document.querySelector('[data-testid="viewer-menu-list"]') === null, true, 'Escape dismisses the native menu');
   assert.equal(document.activeElement === find('viewer-menu'), true);
   await click('viewer-menu'); await click('viewer-menu-copy');
   assert.equal(selected, 'copy');
-  await click('viewer-menu'); await key(document.activeElement, 'Tab');
-  assert.equal(document.querySelector('[data-testid="viewer-menu-list"]'), null, 'Tab dismisses the menu');
+  // Tab's browser-default focus traversal is driven in the workspace-app browser journey.
   await click('viewer-menu');
-  await act(async () => document.body.dispatchEvent(new window.Event('pointerdown', { bubbles: true })));
-  assert.equal(document.querySelector('[data-testid="viewer-menu-list"]'), null, 'outside press dismisses the menu');
+  await act(async () => { document.body.dispatchEvent(new window.PointerEvent('pointerdown', { bubbles: true, button: 0, pointerType: 'mouse' })); await new Promise(resolve => setTimeout(resolve, 20)); });
+  assert.equal(document.querySelector('[data-testid="viewer-menu-list"]') === null, true, 'outside press dismisses the menu');
 
   await render(h(ViewerVersions, { versions: [{ id: 'v2', label: 'Second', latest: true }, { id: 'v1', label: 'First' }], current: 'v1', onSelect: id => { selected = id; } }));
   await click('viewer-versions');
@@ -68,7 +71,7 @@ try {
   const nested = document.querySelector('[data-testid="viewer-versions-list"] [data-item="v2"]');
   assert.equal(document.activeElement === nested, true, 'nested menu alone owns its arrow-key focus');
   await act(async () => {
-    nested.dispatchEvent(new window.Event('pointerdown', { bubbles: true }));
+    nested.dispatchEvent(new window.PointerEvent('pointerdown', { bubbles: true, button: 0, pointerType: 'mouse' }));
     nested.click();
   });
   assert.equal(selected, 'v2', 'a portalled child choice survives the parent outside-press handler');

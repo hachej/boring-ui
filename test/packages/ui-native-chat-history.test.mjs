@@ -72,7 +72,7 @@ test('an empty active conversation returns an exhausted empty history without a 
   assert.equal(scans, 0);
 });
 
-test('one native page stays bounded and its opaque cursor and inclusive head bound survive new writes', { timeout: 20000 }, async t => {
+test('native requests stay bounded while earlier pages accumulate in order under the original head bound', { timeout: 20000 }, async t => {
   const f = await fixture(t);
   for (let index = 0; index < 90; index++) await write(f.conversation, `Fictional entry ${index}`);
   const requests = [], history = { id: f.conversation.id, entries: (...args) => {
@@ -94,19 +94,23 @@ test('one native page stays bounded and its opaque cursor and inclusive head bou
   await observe(controller, state => state.view?.entries.some(entry => entry.model?.some(message => message.content === 'Fictional late append')));
   await controller.loadEarlier();
   const second = controller.getSnapshot().history;
-  assert.equal(second.entries.length, 40);
+  assert.equal(second.entries.length, 80);
+  assert.equal(new Set(ids(second.entries)).size, 80);
   assert.equal(second.hasMore, true);
   assert.equal(requests[1][0].maxEntryId, requests[0][0].maxEntryId);
   assert.deepEqual(requests[1][2], (await f.conversation.entries(requests[0][0], 40, undefined, context)).next);
   assert.ok(!labels(second.entries).includes('Fictional late append'));
-  assert.ok(Math.max(...ids(second.entries)) < Math.min(...ids(first.entries)));
+  assert.deepEqual(ids(second.entries.slice(-40)), ids(first.entries), 'loading an earlier page retains the already displayed records');
+  assert.ok(Math.max(...ids(second.entries.slice(0, 40))) < Math.min(...ids(first.entries)));
   await controller.loadEarlier();
   const third = controller.getSnapshot().history;
   assert.equal(third.kind, 'ready');
-  assert.ok(third.entries.length > 0 && third.entries.length <= 40);
+  assert.equal(third.entries.length, 90);
+  assert.equal(new Set(ids(third.entries)).size, 90);
   assert.equal(third.hasMore, false);
   assert.equal(requests[2][0].maxEntryId, requests[0][0].maxEntryId);
-  assert.ok(Math.max(...ids(third.entries)) < Math.min(...ids(second.entries)));
+  assert.deepEqual(ids(third.entries.slice(-80)), ids(second.entries));
+  assert.ok(Math.max(...ids(third.entries.slice(0, 10))) < Math.min(...ids(second.entries)));
   assert.ok(labels(controller.getSnapshot().view.entries).includes('Fictional late append'));
 });
 
@@ -131,7 +135,8 @@ test('native paging failure retains the last page and retries the identical boun
   await controller.loadEarlier();
   const retried = controller.getSnapshot().history;
   assert.equal(retried.kind, 'ready');
-  assert.equal(retried.entries.length, 10);
+  assert.equal(retried.entries.length, 50);
+  assert.deepEqual(ids(retried.entries.slice(-40)), ids(first.entries));
   assert.deepEqual(requests[2][0], requests[1][0]);
   assert.deepEqual(requests[2][2], requests[1][2]);
   assert.equal(requests[2][3], context);

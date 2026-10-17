@@ -542,14 +542,19 @@ test('an empty final round still names the model, time and duration of the round
   assert.equal(rows[1].text, 'checking');
 });
 
-test('earlier records show the reply footer without actions, and the ambient window forwards it', async () => {
-  const { HistoryPanel } = await load('history', 'history.tsx');
-  const history = { kind: 'ready', hasMore: false, entries: entries([user('go')], [assistant([{ type: 'text', text: 'old answer' }], { model: 'old', timestamp: 5, durationMs: 42 })]) };
+test('earlier records use normal message components and footer without reviving host actions', async () => {
+  const { RowView } = await load('message', 'message.tsx');
+  const { derive } = await load('rows', 'rows.ts');
+  const view = { entries: entries([user('go')], [assistant([{ type: 'text', text: 'old answer' }], { model: 'old', timestamp: 5, durationMs: 42 })]), docs: {} };
+  const rows = derive(view, options('expert')).rows.map(row => ({ ...row, historical: true }));
   const seen = [];
-  const html = renderToStaticMarkup(createElement(HistoryPanel, { history, developer: false, connected: true, onLoad() {}, onClose() {}, replyFooter: footerContext(seen).replyFooter }));
+  const context = { ...footerContext(seen), messageActions() { throw new Error('Archived messages must not register current host actions'); }, onFork() { throw new Error('Archived fork action'); } };
+  const html = renderToStaticMarkup(createElement('div', null, rows.map(row => createElement(RowView, { key: row.key, row, context }))));
+  assert.match(html, /data-testid="user-text"/);
   assert.match(html, /data-testid="footer">old 42</);
   assert.equal(seen.length, 1); assert.equal(seen[0].text, 'old answer'); assert.equal(seen[0].timestamp, 5);
-  assert.ok(!renderToStaticMarkup(createElement(HistoryPanel, { history, developer: false, connected: true, onLoad() {}, onClose() {} })).includes('footer'));
+  assert.doesNotMatch(html, /fork-reply|reply-action/);
+  assert.ok(!renderToStaticMarkup(createElement(RowView, { row: rows[1], context: { ...context, replyFooter: undefined } })).includes('footer'));
 });
 
 

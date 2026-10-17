@@ -78,7 +78,7 @@ A submit the host refused before admission (status 402 `submission-refused`, for
 
 ### Native conversation history
 
-`loadEarlier()` reads one native page through `Conversation.entries`. `snapshot.history` distinguishes disabled, idle, loading, ready and error states. Each page contains at most 40 native entries in display order. The controller retains one page and an opaque native continuation cursor. The first request captures the greatest observed active entry ID as an inclusive upper bound; later writes do not move that bound. Parent-owned fork entries remain valid native history.
+`loadEarlier()` reads one native page through `Conversation.entries`. `snapshot.history` distinguishes disabled, idle, loading, ready and error states. Each request contains at most 40 native entries. The controller accumulates pages in display order for the person's current browsing session and retains an opaque native continuation cursor. It clears that cache on history invalidation or `clearHistory()`; loading never restores records to model context. The first request captures the greatest observed active entry ID as an inclusive upper bound; later writes do not move that bound. Parent-owned fork entries remain valid native history.
 
 A failed read retains the previous page and continuation for retry. `clearHistory()`, head or non-append active-range changes, reconnect, watch closure and disposal invalidate pending responses. Clearing a page does not cancel native work or promise remote read termination. The controller preserves the exact host Context. Page-count limits do not bound message bytes or native storage allocation.
 

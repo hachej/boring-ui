@@ -13,7 +13,7 @@ import { ConversationFiles } from './conversation-files';
 import type { ConversationsConfig } from './config';
 import { EmptyState } from './empty-state';
 import type { Suggestion } from './empty-state';
-import { ConversationHistory, HistoryPanel, TranscriptHistory } from './history';
+import { ConversationHistory, TranscriptHistory } from './history';
 import { RowView } from './message';
 import { MessageQueue } from './queue';
 import { ChatNotices, Notice } from './notice';
@@ -124,7 +124,6 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
   useChatDraft(controller, draftKey);
   useChatPlacement(controller, placement);
   const { title } = labels;
-  const [browsingHistory, setBrowsingHistory] = useState(false);
   const [pickingConversation, setPickingConversation] = useState(false);
   const scrollToBottom = useRef<() => void>(() => {});
   // A reply's Fork button calls the host's latest `fork`; the row context changes only when forking is switched on or off.
@@ -133,10 +132,10 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
   const rowExtras = useMemo(() => canFork ? { onFork: (entryId: string) => { void fork.current?.(entryId).catch(() => {}); } } : undefined, [canFork]);
   const session = useChatSession({ controller, activeController: active, mode, actions, renderEntry, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept,
     slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => scrollToBottom.current(), feedback, rowExtras, onOpenFile, fileChanges, pasteToFile, composerChips });
-  const { state, derived, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, files, loading, developer } = session;
-  const empty = session.empty && (state.history.kind === 'disabled' || state.history.kind === 'idle');
-  const { rows, pinned, retry } = derived;
-  const transcript = useTranscript(rows, PAGE, MORE);
+  const { state, derived, rows, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, files, loading } = session;
+  const empty = session.empty;
+  const { pinned, retry } = derived;
+  const transcript = useTranscript(rows, PAGE, MORE, { state: state.history, connected: !state.disposed && connected, load: controller.loadEarlier });
   const { stick, hidden } = transcript;
   scrollToBottom.current = () => { void stick.scrollToBottom('instant'); };
   const visible = transcript.visible(rows);
@@ -164,11 +163,8 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
       {renamingTitle && onRenameTitle ? <form className="min-w-0 flex-1" onSubmit={event => { event.preventDefault(); const value = new FormData(event.currentTarget).get('title')?.toString().trim(); if (value) { setTitleError(false); void Promise.resolve().then(() => onRenameTitle(value)).catch(() => setTitleError(true)); } setRenamingTitle(false); }}>
         <input name="title" aria-label={labels.conversationName} maxLength={200} autoFocus defaultValue={conversationTitle ?? title} onBlur={() => setRenamingTitle(false)} onKeyDown={event => { if (event.key === 'Escape') setRenamingTitle(false); }} className="w-full min-w-0 rounded-md bg-muted px-2 py-1 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring" />
       </form> : <h2 className="m-0 min-w-0 flex-1 truncate font-(family-name:--chat-display) text-sm font-medium tracking-tight max-[641px]:text-center">{onRenameTitle ? <button type="button" className="max-w-full cursor-pointer truncate rounded-md px-1 py-2 text-left max-[641px]:min-h-11 pointer-coarse:min-h-11 max-[641px]:text-center outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setRenamingTitle(true)}>{conversationTitle ?? title}</button> : conversationTitle ?? title}</h2>}
-      {showHistory && (conversations && historyList
-        ? <Button size="sm" data-testid="history-open" className="text-muted-foreground" aria-haspopup="dialog" aria-expanded={pickingConversation} disabled={state.disposed}
-          onClick={() => setPickingConversation(open => !open)}><icons.history className="size-3.5" aria-hidden="true" />{labels.history}</Button>
-        : state.history.kind !== 'disabled' && !browsingHistory && <Button size="sm" data-testid="history-open" className="text-muted-foreground" disabled={state.disposed || !connected}
-          onClick={() => { setBrowsingHistory(true); act(controller.loadEarlier); }}><icons.history className="size-3.5" aria-hidden="true" />{labels.history}</Button>)}
+      {showHistory && conversations && historyList && <Button size="sm" data-testid="history-open" className="text-muted-foreground" aria-haspopup="dialog" aria-expanded={pickingConversation} disabled={state.disposed}
+        onClick={() => setPickingConversation(open => !open)}><icons.history className="size-3.5" aria-hidden="true" />{labels.history}</Button>}
       <BlockActions actions={headerActions} testId="chat-action" menuLabel={labels.moreActions} />
       {showConnectionStatus && <ConnectionBadge kind={connectionKind} />}
       {controls}
@@ -182,17 +178,13 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
         <span className="flex-1">{connectionKind === 'error' ? labels.loadFailed : labels.disconnected}</span>
         {!state.disposed && <Button size="sm" variant="outline" onClick={() => act(controller.connect)}><icons.reconnect className="size-3.5" aria-hidden="true" />{labels.reconnect}</Button>}
       </Notice></div>}
-    {pickingConversation && conversations && historyList && <ConversationHistory conversations={conversations} onClose={() => setPickingConversation(false)}
-      onBrowseEarlier={state.history.kind !== 'disabled' && connected && Boolean(state.view?.entries.length) ? () => { setBrowsingHistory(true); act(controller.loadEarlier); } : undefined} />}
-    {browsingHistory && state.history.kind !== 'disabled' && <HistoryPanel history={state.history} developer={developer} replyFooter={replyFooter} connected={!state.disposed && connected}
-      onLoad={() => act(controller.loadEarlier)} onClose={() => { setBrowsingHistory(false); if (!state.disposed) controller.clearHistory(); }} />}
+    {pickingConversation && conversations && historyList && <ConversationHistory conversations={conversations} onClose={() => setPickingConversation(false)} />}
 
     <div data-testid="conversation-content" className={cn('relative min-h-0 flex-1', empty && emptyLayout === 'centered' && 'min-[641px]:min-h-60 min-[641px]:flex-none')}>
-      <div ref={stick.scrollRef} data-testid="transcript-scroll" className="h-full overflow-x-hidden overflow-y-auto overscroll-contain">
+      <div ref={stick.scrollRef} data-testid="transcript-scroll" className="h-full overflow-x-hidden overflow-y-auto overscroll-contain [overflow-anchor:none]">
         <div ref={stick.contentRef} className="flex min-h-full flex-col">
-          {!browsingHistory && <TranscriptHistory history={state.history} developer={developer} replyFooter={replyFooter} connected={!state.disposed && connected} onLoad={() => { stick.stopScroll(); act(controller.loadEarlier); }} onClose={() => { if (!state.disposed) controller.clearHistory(); }} />}
           <div role="log" aria-label={labels.messages} aria-live="polite" data-testid="transcript" className="mx-auto flex min-h-0 w-full max-w-[720px] flex-1 flex-col gap-6 px-4 pt-6 pb-8 sm:px-6">
-            {hidden > 0 && <div className="flex justify-center"><Button size="sm" variant="outline" data-testid="show-earlier" className="text-muted-foreground" onClick={transcript.reveal}>{labels.showEarlier}</Button></div>}
+            <TranscriptHistory history={state.history} connected={!state.disposed && connected} onLoad={transcript.reveal} sentinelRef={transcript.sentinelRef} hidden={hidden} loaded={transcript.loaded} />
             {visible.map(row => <RowView key={row.key} row={row} context={rowContext} />)}
           </div>
         </div>
