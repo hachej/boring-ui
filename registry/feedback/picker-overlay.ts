@@ -8,11 +8,11 @@ import { createOverlay, type PickerOverlay } from '@hachej/boring-feedback/page'
  * tokens only; tones (hover, pinned, reveal, candidate) keep the base styles' borders. Parts: `box`, `label`, `toolbar` (and `box-<tone>`, `label-<tone>` for hover, pinned,
  * reveal and candidate). The colors read the host's `--boring-feedback-*` variables, which inherit through the shadow boundary. */
 export const pickerOverlayStyles = `
-.box { border-radius: var(--radius-sm); }
-.label { border-radius: var(--radius-sm); box-shadow: var(--shadow-sm); font-family: var(--font-sans); font-size: var(--text-xs); font-weight: var(--font-weight-medium); line-height: var(--leading-normal); }
-.label[data-tone="candidate"] { font-weight: var(--font-weight-bold); }
-.toolbar { border-radius: var(--radius-xl); box-shadow: var(--shadow-lg); }
-.toolbar button { border-radius: var(--radius-md); font-family: var(--font-sans); font-size: var(--text-sm); font-weight: var(--font-weight-semibold); line-height: var(--leading-tight); }
+.box { border-radius: var(--radius-sm, calc(var(--radius, 0.625rem) * 0.6)); }
+.label { border-radius: var(--radius-sm, calc(var(--radius, 0.625rem) * 0.6)); box-shadow: var(--shadow-sm, none); font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif); font-size: var(--text-xs, 0.75rem); font-weight: var(--font-weight-medium, 500); line-height: var(--leading-normal, 1.5); }
+.label[data-tone="candidate"] { font-weight: var(--font-weight-bold, 700); }
+.toolbar { border-radius: var(--radius-xl, calc(var(--radius, 0.625rem) * 1.4)); box-shadow: var(--shadow-lg, none); }
+.toolbar button { border-radius: var(--radius-md, calc(var(--radius, 0.625rem) * 0.8)); font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif); font-size: var(--text-sm, 0.875rem); font-weight: var(--font-weight-semibold, 600); line-height: var(--leading-tight, 1.25); }
 `;
 
 /** One overlay for the page, created after mount and removed on unmount. */

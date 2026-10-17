@@ -682,8 +682,7 @@
         "react@^19.0.0"
       ],
       "registryDependencies": [
-        "@boring-ui/utils",
-        "badge"
+        "@boring-ui/utils"
       ],
       "files": [
         {

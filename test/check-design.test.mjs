@@ -108,7 +108,8 @@ test('the committed inventory covers all source and every shipped CSS item, with
   const result = checkDesign();
   assert.deepEqual(result.errors, []);
   assert.ok(result.files > 100);
-  assert.ok(result.findings.some(finding => finding.file.endsWith('/@css')));
+  // Shipped registry CSS is scanned even without a source file: the theme item's own values are found (and allowed).
+  assert.ok(result.allowed.some(entry => entry.file === 'registry.json#theme'));
   assert.ok(result.allowed.length > 0, 'the optional theme definition is explicit');
   assert.deepEqual(readDesignConfig().groups.map(group => group.id), ['1', '2', '3', '4', '5', '6', '7']);
   assert.ok(result.findings.length > 0, 'group 0 cannot claim the existing custom components are conformant');

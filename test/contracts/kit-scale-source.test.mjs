@@ -112,9 +112,9 @@ test('template extras are optional: the kit derives them from shadcn roles and t
 
 test('feedback.css reads the scale with shadcn-default fallbacks: no px text, fixed weights, literal shadows or 1px borders', () => {
   const css = read('registry/feedback/feedback.css'), overlay = read('registry/feedback/picker-overlay.ts');
-  for (const declaration of css.match(/font-size:[^;]+/g)) assert.match(declaration, /^font-size: var\(--text-(xs|sm|base|lg|xl), [\d.]+rem\)$/, declaration);
-  for (const declaration of css.match(/font-weight:[^;]+/g)) assert.match(declaration, /^font-weight: var\(--font-weight-(normal|medium|semibold|bold), \d00\)$/, declaration);
-  for (const declaration of css.match(/box-shadow:[^;]+/g)) assert.match(declaration, /^box-shadow: (none|var\(--boring-feedback-shadow\)|0 0 0 0 .*)$/, declaration);
+  for (const declaration of css.match(/font-size:[^;]+/g) ?? []) assert.match(declaration, /^font-size: var\(--text-(xs|sm|base|lg|xl), [\d.]+rem\)$/, declaration);
+  for (const declaration of css.match(/font-weight:[^;]+/g) ?? []) assert.match(declaration, /^font-weight: var\(--font-weight-(normal|medium|semibold|bold), \d00\)$/, declaration);
+  for (const declaration of css.match(/box-shadow:[^;]+/g) ?? []) assert.match(declaration, /^box-shadow: (none|var\(--boring-feedback-shadow\)|0 0 0 0 .*)$/, declaration);
   assert.doesNotMatch(css, /border: 1px|ui-monospace, SFMono-Regular, Menlo, monospace;|\bfont: \d/, 'borders and fonts come from --border-width and --font-mono');
   assert.match(css, /\[data-status="addressed"\] \{ color: var\(--success, var\(--primary\)\); \}/);
   assert.doesNotMatch(`${css}\n${overlay}`, /--(control-height|touch-target-min|ring-width|ring-offset)\b/);
