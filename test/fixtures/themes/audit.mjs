@@ -20,7 +20,8 @@ export function auditDesign({ groups, palette, radiusBindings }) {
   // Compare painted channels: translucent native variants quantize during canvas
   // premultiplication, so unpremultiplied RGB can differ by several integers.
   const equalColor = (left, right) => left.slice(0, 3).every((channel, index) => Math.abs(channel - right[index]) * right[3] / 255 <= 1);
-  const normalizeShadow = value => value === 'none' ? '' : value.split(/,(?![^(]*\))/).map(part => part.trim()).filter(part => !/^rgba\([^)]*,\s*0\)/.test(part)).join(', ');
+  // Transparent layers and zero-geometry layers (a stock `ring-0`: no offset, blur or spread) paint nothing.
+  const normalizeShadow = value => value === 'none' ? '' : value.split(/,(?![^(]*\))/).map(part => part.trim()).filter(part => !/^rgba\([^)]*,\s*0\)/.test(part) && !/(?:^|\s)0px 0px 0px 0px$/.test(part)).join(', ');
   const shadows = ['xs', 'sm', 'md', 'lg', 'xl', '2xl'].filter(size => root.getPropertyValue(`--shadow-${size}`).trim()).map(size => normalizeShadow(resolve('box-shadow', `var(--shadow-${size})`)));
   const radii = ['0px', resolve('border-radius', 'var(--radius)')];
   for (const name of new Set([...Object.keys(radiusBindings), ...['sm', 'md', 'lg', 'xl', '2xl', '3xl', '4xl'].map(size => `radius-${size}`)])) {

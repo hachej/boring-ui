@@ -63,7 +63,7 @@ export function SlashPicker({ query, items, onSelect, onDismiss }: {
               {item.source === 'skill' && <Badge variant="secondary" data-testid="slash-badge-skill">{labels.skillBadge}</Badge>}
               {item.sourcePlugin && <Badge variant="outline" data-testid="slash-badge-source">{item.sourcePlugin}</Badge>}
             </ItemTitle>
-            {item.description && <ItemDescription className="truncate">{item.description}</ItemDescription>}
+            {item.description && <ItemDescription className="m-0 truncate">{item.description}</ItemDescription>}
           </ItemContent>
         </Item>)}
       </ul>}

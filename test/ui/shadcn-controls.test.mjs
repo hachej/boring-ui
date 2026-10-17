@@ -6,7 +6,7 @@ import { Window } from 'happy-dom';
 
 async function mount(t) {
   const window = new Window({ url: 'https://fictional.invalid/' });
-  const names = ['window', 'document', 'navigator', 'HTMLElement', 'HTMLButtonElement', 'Element', 'Node', 'Text', 'MutationObserver', 'getComputedStyle', 'IS_REACT_ACT_ENVIRONMENT'];
+  const names = ['window', 'document', 'navigator', 'HTMLElement', 'HTMLButtonElement', 'Element', 'Node', 'Text', 'MutationObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'IS_REACT_ACT_ENVIRONMENT'];
   const saved = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
   for (const name of names) {
     const value = name === 'window' ? window : name === 'IS_REACT_ACT_ENVIRONMENT' ? true : window[name];
@@ -33,7 +33,9 @@ test('composer actions use the host Button, preserve submit/stop and never submi
   const value = { ...props(), onSend: () => events.push('send'), onStop: () => events.push('stop') };
   await ui.render(ui.h(ui.Composer, value));
   assert.equal(ui.q('[data-testid=composer-submit]').dataset.slot, 'button');
-  assert.equal(ui.q('[data-testid=composer-plus]').dataset.slot, 'button');
+  // The "+" is the host Button rendered as the host DropdownMenu trigger (shadcn's own composition).
+  assert.equal(ui.q('[data-testid=composer-plus]').dataset.slot, 'dropdown-menu-trigger');
+  assert.ok(ui.q('[data-testid=composer-plus]').classList.contains('group/button'));
   assert.equal(ui.q('[data-testid=composer-plus]').type, 'button');
   assert.equal(ui.q('[data-testid=composer-submit]').type, 'submit');
   await ui.click(ui.q('[data-testid=composer-plus]'));

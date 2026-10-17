@@ -658,6 +658,9 @@
           ".pi-chat, .pi-chat *, .pi-chat *::before, .pi-chat *::after": {
             "box-sizing": "border-box"
           },
+          ".pi-chat :where(*), .pi-chat :where(*)::before, .pi-chat :where(*)::after": {
+            "border-color": "var(--border)"
+          },
           ".pi-chat :where(button, input, textarea)": {
             "font": "inherit",
             "color": "inherit",

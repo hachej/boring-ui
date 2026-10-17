@@ -9,6 +9,7 @@ import { AmbientChat } from '../../registry/pi-ambient/ambient.tsx';
 import { Button } from '@/components/ui/button';
 import { GroupOneControls } from '../../test/fixtures/themes/group-one.jsx';
 import { GroupFiveControls } from '../../test/fixtures/themes/group-five.jsx';
+import { GroupThreeControls } from '../../test/fixtures/themes/group-three.jsx';
 
 const { token, identity } = window.__APP__;
 const authorized = request => { const headers = new Headers(request.headers); headers.set('authorization', `Bearer ${token}`); return fetch(new Request(request, { headers })); };
@@ -74,4 +75,4 @@ function App() {
 }
 
 const controls = new URLSearchParams(location.search).get('controls');
-createRoot(document.getElementById('root')).render(controls?.startsWith('transcript-') ? <GroupFiveControls surface={controls.slice('transcript-'.length)} /> : controls ? <GroupOneControls surface={controls} /> : <App />);
+createRoot(document.getElementById('root')).render(controls?.startsWith('composer-') ? <GroupThreeControls surface={controls.slice('composer-'.length)} /> : controls?.startsWith('transcript-') ? <GroupFiveControls surface={controls.slice('transcript-'.length)} /> : controls ? <GroupOneControls surface={controls} /> : <App />);
