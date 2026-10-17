@@ -480,9 +480,10 @@
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/utils.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/button.json",
         "trace",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/drawer.json",
+        "drawer",
         "button",
-        "toggle"
+        "toggle",
+        "dropdown-menu"
       ],
       "files": [
         {
@@ -832,7 +833,7 @@
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/viewers.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/utils.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/button.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/drawer.json",
+        "drawer",
         "button",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/file-tree.json"
       ],
@@ -923,13 +924,12 @@
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/feedback.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/utils.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/button.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/drawer.json",
+        "drawer",
         "sidebar",
         "avatar",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/dropdown-menu.json",
+        "dropdown-menu",
         "button",
-        "switch",
-        "dropdown-menu"
+        "switch"
       ],
       "css": {
         "@layer base": {
@@ -1018,9 +1018,14 @@
           "target": "components/app-shell/account.tsx"
         },
         {
-          "path": "registry/app-shell/sheet.tsx",
+          "path": "registry/app-shell/app-sheet.tsx",
           "type": "registry:component",
-          "target": "components/app-shell/sheet.tsx"
+          "target": "components/app-shell/app-sheet.tsx"
+        },
+        {
+          "path": "registry/app-shell/use-exclusive-sheet.ts",
+          "type": "registry:hook",
+          "target": "components/app-shell/use-exclusive-sheet.ts"
         },
         {
           "path": "registry/app-shell/compact.ts",
@@ -1065,7 +1070,8 @@
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/button.json",
         "button",
         "toggle",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/version-history.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/version-history.json",
+        "dropdown-menu"
       ],
       "files": [
         {
@@ -1734,7 +1740,7 @@
       "name": "provider-setup",
       "type": "registry:component",
       "title": "Provider setup",
-      "description": "A Tailwind popover for configuring model access: pick any registered Pi provider and model, save an API key (masked, shows \"saved\"), run a device-code subscription sign-in (code, link and status), set an optional gateway and see when a provider needs one. Transport-agnostic: props in, callbacks out, no fetch. Owned, editable source; fits the pi-chat controls slot.",
+      "description": "A shadcn popover for configuring model access: pick any registered Pi provider and model, save an API key (masked, shows \"saved\"), run a device-code subscription sign-in (code, link and status), set an optional gateway and see when a provider needs one. Transport-agnostic: props in, callbacks out, no fetch. Owned, editable source; fits the pi-chat controls slot.",
       "dependencies": [
         "react@^19.0.0",
         "react-dom@^19.0.0",
@@ -1743,7 +1749,11 @@
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/theme.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/utils.json",
-        "button"
+        "button",
+        "input",
+        "label",
+        "native-select",
+        "popover"
       ],
       "files": [
         {
@@ -2614,7 +2624,7 @@
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/app-shell.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/file-tree.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/viewers.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/drawer.json",
+        "drawer",
         "button"
       ],
       "files": [
@@ -2642,46 +2652,6 @@
           "path": "registry/documents/documents-labels.ts",
           "type": "registry:lib",
           "target": "components/documents/documents-labels.ts"
-        }
-      ]
-    },
-    {
-      "name": "drawer",
-      "type": "registry:component",
-      "title": "Drawer",
-      "description": "Pinned Base UI drawer presentation, independent of the consumer’s shadcn style. Native snap points, swipe handles and focus management.",
-      "dependencies": [
-        "@base-ui/react@1.9.0",
-        "react@^19.0.0"
-      ],
-      "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/utils.json"
-      ],
-      "files": [
-        {
-          "path": "registry/drawer/drawer.tsx",
-          "type": "registry:component",
-          "target": "components/drawer/drawer.tsx"
-        }
-      ]
-    },
-    {
-      "name": "dropdown-menu",
-      "type": "registry:component",
-      "title": "Dropdown Menu",
-      "description": "Pinned Base UI dropdown presentation for app-shell, independent of the consumer’s shadcn style.",
-      "dependencies": [
-        "@base-ui/react@1.9.0",
-        "react@^19.0.0"
-      ],
-      "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/utils.json"
-      ],
-      "files": [
-        {
-          "path": "registry/dropdown-menu/dropdown-menu.tsx",
-          "type": "registry:component",
-          "target": "components/dropdown-menu/dropdown-menu.tsx"
         }
       ]
     }
