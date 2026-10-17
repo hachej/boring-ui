@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { Popover } from '@base-ui/react/popover';
 import { FileTextIcon, ShapesIcon } from 'lucide-react';
 import { Drawer, DrawerContent, DrawerTitle, DrawerTrigger } from '../drawer/drawer';
-import { Button } from '../button/button';
+import { Button } from '@/components/ui/button';
 import { useChatText } from './labels';
 
 /** A conversation's observed file, opened only through the host's existing callback. */
@@ -27,7 +27,7 @@ export function ConversationFiles({ files }: { readonly files: readonly Conversa
     return () => media.removeEventListener('change', change);
   }, []);
   if (!files.length) return null;
-  const trigger = <Button variant="outline" data-testid="conversation-files" className="mb-3 h-10 max-w-full gap-2 rounded-2xl bg-card px-3 text-sm font-medium shadow-none max-sm:h-11 pointer-coarse:h-11"><ShapesIcon className="size-4 text-muted-foreground" aria-hidden="true" />{labels.artifacts}<span className="text-muted-foreground">· {files.length}</span></Button>;
+  const trigger = <Button variant="outline" data-testid="conversation-files" className="mb-3 max-w-full gap-2"><ShapesIcon data-icon="inline-start" aria-hidden="true" />{labels.artifacts}<span className="text-muted-foreground">· {files.length}</span></Button>;
   const content = <ul className="m-0 max-h-[60dvh] list-none overflow-y-auto p-2">
     {files.map(file => <li key={file.id}><Button variant="ghost" disabled={!file.open} data-testid="conversation-file" data-file={file.id} className="h-10 w-full justify-start gap-2 px-3 max-sm:h-11 pointer-coarse:h-11" onClick={() => { setOpen(false); file.open?.(); }}><FileTextIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" /><span className="min-w-0 truncate">{file.name}</span></Button></li>)}
   </ul>;

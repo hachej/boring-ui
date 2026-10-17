@@ -2,7 +2,8 @@
 
 import type { ReactNode } from 'react';
 import { Drawer, DrawerContent, DrawerTitle } from '../drawer/drawer';
-import { Button, NavigationMenuIcon } from '../button/button';
+import { Button } from '@/components/ui/button';
+import { MenuIcon } from 'lucide-react';
 import { useAppText } from './app-labels';
 import { ConversationList } from '../pi-chat/pi-chat';
 import type { ConversationsConfig } from '../pi-chat/pi-chat';
@@ -40,7 +41,7 @@ export function SessionsPane({ conversations, title: givenTitle, drawer, onClose
       </select> : <h2 className="m-0 min-w-0 flex-1 truncate text-sm font-semibold tracking-tight">{agents?.items[0]?.label ?? title}</h2>}
       {(drawer ? onClose : onCollapse) && <SessionsToggle open drawer={drawer} navigation={Boolean(library || libraryContent)} onToggle={(drawer ? onClose : onCollapse)!} />}
     </header>
-    {conversations?.onNew && <Button variant="ghost" data-testid="conversation-new" className="mx-2 mb-1 justify-start font-medium" onClick={() => { conversations.onNew?.(); picked(); }}><icons.newChat className="size-4" aria-hidden="true" />{labels.newChat}</Button>}
+    {conversations?.onNew && <Button variant="ghost" data-testid="conversation-new" className="mx-2 mb-1 justify-start" onClick={() => { conversations.onNew?.(); picked(); }}><icons.newChat data-icon="inline-start" aria-hidden="true" />{labels.newChat}</Button>}
     {tabs && <div role="tablist" aria-label={title} className="mx-2 flex gap-1">{(['conversations', 'library'] as const).map(tab => <Button key={tab} role="tab" variant="ghost" aria-selected={shown === tab} data-testid={`sessions-tab-${tab}`} onClick={() => onViewChange?.(tab)}>{tab === 'library' ? labels.library : title}</Button>)}</div>}
     {shown === 'library' && libraryContent ? <div data-testid="sessions-library" className="flex min-h-0 flex-1 flex-col overflow-auto">{libraryContent(() => { if (drawer) onClose?.(); })}</div>
       : conversations ? <ConversationList conversations={conversations} onPicked={picked} navigation={navigation} /> : navigation}
@@ -57,7 +58,7 @@ export function SessionsToggle({ open, drawer, onToggle, navigation = false }: {
   const { labels, icons } = useAppText();
   const label = navigation ? drawer ? open ? labels.closeNavigation : labels.openNavigation : open ? labels.hideNavigation : labels.showNavigation
     : drawer ? open ? labels.closeSessions : labels.openSessions : open ? labels.hideSessions : labels.showSessions;
-  return <Button size="icon-sm" variant="ghost" data-testid="sessions-toggle" aria-label={label} title={label} aria-expanded={open} onClick={onToggle} className={cn('shrink-0 text-muted-foreground', drawer && 'size-11')}>
-    {drawer && !open ? <NavigationMenuIcon /> : <icons.sessionsToggle className="size-4" aria-hidden="true" />}
+  return <Button size="icon-sm" variant="ghost" data-testid="sessions-toggle" aria-label={label} title={label} aria-expanded={open} onClick={onToggle} className="shrink-0">
+    {drawer && !open ? <MenuIcon data-icon="inline-start" aria-hidden="true" /> : <icons.sessionsToggle data-icon="inline-start" aria-hidden="true" />}
   </Button>;
 }

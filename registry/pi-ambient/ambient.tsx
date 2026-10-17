@@ -5,8 +5,9 @@ import type { KeyboardEvent, PointerEvent, ReactNode } from 'react';
 import type { EntryRecord } from '@earendil-works/pi-durable';
 import type { ImageContent, ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
-import { BellIcon, ChevronDownIcon, ExternalLinkIcon, GripVerticalIcon, Loader2Icon, MinusIcon, PanelLeftIcon, ThumbsDownIcon, ThumbsUpIcon } from 'lucide-react';
-import { Button } from '../button/button';
+import { BellIcon, ChevronDownIcon, CircleAlertIcon, CircleCheckIcon, ExternalLinkIcon, GripVerticalIcon, Loader2Icon, MessageCircleQuestionIcon, MinusIcon, PanelLeftIcon, ThumbsDownIcon, ThumbsUpIcon } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Toggle } from '@/components/ui/toggle';
 import { BlockActions } from '../button/actions';
 import type { BlockAction, BlockIcon } from '../button/actions';
 import { useChatPlacement } from '../pi-chat/use-remote-chat';
@@ -246,8 +247,6 @@ export function AmbientChat(props: AmbientChatProps) {
     onWindowState={next => { if (props.state === undefined) setLocal(next); props.onStateChange?.(next); }} /></ChatTextProvider>;
 }
 
-const iconButton = 'inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg border-0 bg-transparent text-muted-foreground shadow-none outline-none transition-colors hover:bg-muted/60 hover:text-foreground active:bg-muted focus-visible:ring-2 focus-visible:ring-ring/60 max-sm:size-11 pointer-coarse:size-11 motion-reduce:transition-none';
-
 type SessionProps = Omit<AmbientChatProps, 'labels' | 'icons'> & { readonly labels: AmbientLabels; readonly icons: AmbientIcons; readonly activeController: { readonly current: NativeChatController }; readonly windowState: AmbientState; readonly store: NotificationStore; readonly onWindowState: (state: AmbientState) => void };
 
 function AmbientSession({ controller, embedded = false, labels, icons, avatar, headerActions, headerTools, messageActions, variant = 'contrast', mode = 'expert', actions,
@@ -277,14 +276,14 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
   // Replies get copy, optional feedback and the time; the host may hand the conversation to its full chat.
   const conversationRef = useRef('');
   const replyActions = useMemo<NonNullable<RowContext['replyActions']>>(() => (reply, host) => <div data-testid="reply-actions" className="mt-2 -ml-2 flex items-center gap-0.5 text-muted-foreground opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 max-sm:opacity-100 pointer-coarse:opacity-100 motion-reduce:transition-none">
-    <CopyButton text={reply.text} label={labels.copyResponse} iconOnly {...(onCopy ? { onCopy } : {})} className="size-8 p-0 text-muted-foreground max-sm:size-11" />
+    <CopyButton text={reply.text} label={labels.copyResponse} iconOnly {...(onCopy ? { onCopy } : {})} />
     {onFeedback && <>
-      {(['up', 'down'] as const).map(value => <button key={value} type="button" data-testid={`feedback-${value}`} aria-pressed={feedback[reply.key] === value} aria-label={value === 'up' ? labels.goodResponse : labels.badResponse}
+      {(['up', 'down'] as const).map(value => <Toggle key={value} data-testid={`feedback-${value}`} pressed={feedback[reply.key] === value} aria-label={value === 'up' ? labels.goodResponse : labels.badResponse}
         title={value === 'up' ? labels.goodResponse : labels.badResponse}
-        onClick={() => { const next = feedback[reply.key] === value ? null : value; setFeedback(current => { const { [reply.key]: _removed, ...rest } = current; return next ? { ...rest, [reply.key]: next } : rest; }); onFeedback({ key: reply.key, text: reply.text }, next); }}
-        className={cn(iconButton, 'aria-pressed:text-foreground')}>{value === 'up' ? <icons.goodResponse className="size-3.5" aria-hidden="true" /> : <icons.badResponse className="size-3.5" aria-hidden="true" />}</button>)}
+        onPressedChange={pressed => { const next = pressed ? value : null; setFeedback(current => { const { [reply.key]: _removed, ...rest } = current; return next ? { ...rest, [reply.key]: next } : rest; }); onFeedback({ key: reply.key, text: reply.text }, next); }}>
+        {value === 'up' ? <icons.goodResponse data-icon="inline-start" aria-hidden="true" /> : <icons.badResponse data-icon="inline-start" aria-hidden="true" />}</Toggle>)}
     </>}
-    {onOpenFull && <button type="button" data-testid="open-full" aria-label={labels.openFull} title={labels.openFull} onClick={() => onOpenFull(conversationRef.current)} className={iconButton}><icons.openFull className="size-3.5" aria-hidden="true" /></button>}
+    {onOpenFull && <Button variant="ghost" size="icon" data-testid="open-full" aria-label={labels.openFull} title={labels.openFull} onClick={() => onOpenFull(conversationRef.current)}><icons.openFull data-icon="inline-start" aria-hidden="true" /></Button>}
     {host}
     {reply.timestamp !== undefined && <time dateTime={new Date(reply.timestamp).toISOString()} data-testid="reply-time" className="ml-1.5 text-xs tabular-nums">{new Date(reply.timestamp).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}</time>}
   </div>, [onCopy, onFeedback, onOpenFull, feedback, labels, icons]);
@@ -379,8 +378,8 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
     const next = delta ? clamp({ right: placed.right + delta.right, bottom: placed.bottom + delta.bottom }, size, viewport) : clamp(DEFAULT_POSITION, size, viewport);
     setPosition(next); writePosition(storageKey, storage, next);
   };
-  const grip = (className?: string) => <button type="button" data-testid="ambient-grip" aria-label={labels.move} title={labels.moveHint} onPointerDown={onGripDown} onKeyDown={onGripKey}
-    className={cn(iconButton, 'cursor-grab touch-none active:cursor-grabbing', className)}><icons.grip className="size-4" aria-hidden="true" /></button>;
+  const grip = (className?: string) => <Button variant="ghost" size="icon" data-testid="ambient-grip" aria-label={labels.move} title={labels.moveHint} onPointerDown={onGripDown} onKeyDown={onGripKey}
+    className={cn('touch-none', className)}><icons.grip data-icon="inline-start" aria-hidden="true" /></Button>;
 
   const expand = () => { setOutcome(null); store.dismissConversation(conversationId); setWindowState('expanded'); };
   useEffect(() => {
@@ -420,43 +419,45 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
       {...(autoDismissMs !== undefined ? { autoDismissMs } : {})} {...(maxToasts !== undefined ? { max: maxToasts } : {})} className="absolute right-0 bottom-full mb-3 w-[min(26rem,calc(100vw-1rem))]" />}
     <div data-testid="ambient-pill-box" onPointerDown={event => beginDrag(event, 4)} onKeyDown={onGripKey} onClickCapture={event => { if (dragged.current) { dragged.current = false; event.stopPropagation(); event.preventDefault(); } }}
       className={cn('relative flex h-11 max-w-[min(20rem,calc(100vw-1rem))] items-center rounded-full border border-border bg-background text-foreground shadow-lg transition-colors hover:bg-popover motion-reduce:transition-none', !phone && 'cursor-grab touch-none select-none active:cursor-grabbing')}>
-      {!phone && grip('ml-1.5 size-8 rounded-lg')}
-      <button ref={pill} type="button" data-testid="ambient-pill" onClick={() => setWindowState('bar')} aria-label={labels.openAgent(shownTitle, unread)}
-        className={cn('relative flex h-full min-w-0 cursor-pointer items-center gap-2.5 rounded-full pr-4 text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/70', phone ? 'pl-3.5' : 'pl-1.5')}>
-        {status === 'working' ? <Loader2Icon className="size-4 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" aria-hidden="true" />
-          : status ? <KindIcon kind={status === 'input' ? 'input' : status} className="size-4" /> : null}
-        <span className="min-w-0 truncate text-sm">{shownTitle}</span>
+      {!phone && grip('ml-1.5')}
+      <Button ref={pill} variant="ghost" data-testid="ambient-pill" onClick={() => setWindowState('bar')} aria-label={labels.openAgent(shownTitle, unread)}
+        className="relative min-w-0 gap-2.5">
+        {status === 'working' ? <Loader2Icon data-icon="inline-start" aria-hidden="true" />
+          : status === 'input' ? <MessageCircleQuestionIcon data-icon="inline-start" aria-hidden="true" />
+          : status === 'done' ? <CircleCheckIcon data-icon="inline-start" aria-hidden="true" />
+          : status === 'error' ? <CircleAlertIcon data-icon="inline-start" aria-hidden="true" /> : null}
+        <span className="min-w-0 truncate">{shownTitle}</span>
         {unread && <span data-testid="ambient-unread" aria-hidden="true" className="absolute top-1.5 right-2 size-2.5 rounded-full border-2 border-background bg-primary" />}
-      </button>
+      </Button>
     </div>
   </div>;
 
   const visibleRows = transcript.visible(rows);
   const conversation = <section className="flex min-h-0 min-w-0 flex-1 flex-col">
       <header hidden={embedded} data-testid="ambient-header" className={cn(embedded && '!hidden','flex h-12 shrink-0 items-center gap-0.5 px-2 max-sm:h-14 max-sm:px-3', !expanded && 'border-b border-border')}>
-        <button type="button" data-testid="ambient-minimize" aria-label={labels.minimize} title={labels.minimize} onClick={() => { setPicking(false); setWindowState(expanded ? 'bar' : 'minimized'); }} className={iconButton}><icons.minimize className="size-4" aria-hidden="true" /></button>
+        <Button variant="ghost" size="icon" data-testid="ambient-minimize" aria-label={labels.minimize} title={labels.minimize} onClick={() => { setPicking(false); setWindowState(expanded ? 'bar' : 'minimized'); }}><icons.minimize data-icon="inline-start" aria-hidden="true" /></Button>
         <span data-testid="ambient-status" data-status={status ?? 'idle'} role="img" aria-label={status === 'working' ? labels.statusWorking : status === 'input' ? labels.needsInput : status === 'done' ? labels.finished : status === 'error' ? labels.failedRun : undefined}
           aria-hidden={status ? undefined : 'true'} className={cn('flex shrink-0 items-center justify-center', status ? 'mx-1.5 w-5' : 'w-1.5')}>
           {status === 'working' ? <Loader2Icon className="size-4 animate-spin text-muted-foreground motion-reduce:animate-none" aria-hidden="true" /> : status ? <KindIcon kind={status === 'input' ? 'input' : status} className="size-[1.125rem]" /> : null}
         </span>
         {avatar && <span data-testid="ambient-avatar" className="flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-full [&>img]:size-full [&>img]:object-cover [&>svg]:size-4">{avatar}</span>}
-        <button ref={titleButton} type="button" data-testid="ambient-title" onClick={expand} disabled={expanded} aria-label={expanded ? shownTitle : labels.openChat(shownTitle)}
-          className="min-h-8 min-w-0 max-w-full cursor-pointer truncate rounded-md border-0 bg-transparent px-1 py-1 text-left max-sm:min-h-11 pointer-coarse:min-h-11 font-(family-name:--chat-display) text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-default max-sm:py-2.5">{shownTitle}</button>
-        {conversations && <button type="button" data-testid="ambient-switch" aria-label={labels.switchConversation} aria-haspopup="dialog" aria-expanded={picking} title={labels.switchConversation} onClick={() => setPicking(open => !open)}
-          className={cn(iconButton, 'size-8 max-sm:size-11 pointer-coarse:size-11')}><icons.switchConversation className="size-3.5" aria-hidden="true" /></button>}
-        {expanded ? <span className="flex-1" /> : <button type="button" tabIndex={-1} aria-hidden="true" data-testid="ambient-header-fill" onClick={expand} className="h-full min-w-2 flex-1 cursor-pointer" />}
-        {systemNotifications && permission === 'default' && <button type="button" data-testid="ambient-enable-notifications" aria-label={labels.enableNotifications} title={labels.enableNotifications}
-          onClick={() => { void requestNotifyPermission().then(setPermission); }} className={iconButton}><icons.notify className="size-4" aria-hidden="true" /></button>}
+        <Button ref={titleButton} variant="ghost" data-testid="ambient-title" onClick={expand} disabled={expanded} aria-label={expanded ? shownTitle : labels.openChat(shownTitle)}
+          className="min-w-0 max-w-full"><span className="truncate">{shownTitle}</span></Button>
+        {conversations && <Button variant="ghost" size="icon" data-testid="ambient-switch" aria-label={labels.switchConversation} aria-haspopup="dialog" aria-expanded={picking} title={labels.switchConversation} onClick={() => setPicking(open => !open)}>
+          <icons.switchConversation data-icon="inline-start" aria-hidden="true" /></Button>}
+        {expanded ? <span className="flex-1" /> : <Button variant="ghost" tabIndex={-1} aria-hidden="true" data-testid="ambient-header-fill" onClick={expand} className="min-w-2 flex-1" />}
+        {systemNotifications && permission === 'default' && <Button variant="ghost" size="icon" data-testid="ambient-enable-notifications" aria-label={labels.enableNotifications} title={labels.enableNotifications}
+          onClick={() => { void requestNotifyPermission().then(setPermission); }}><icons.notify data-icon="inline-start" aria-hidden="true" /></Button>}
         {headerTools}
-        <BlockActions actions={headerActions} testId="ambient-action" menuLabel={labels.moreActions} className="[&_button]:max-sm:size-11 [&_button]:pointer-coarse:size-11" />
-        {onDock && !phone && <button type="button" data-testid="ambient-dock" aria-label={labels.dock} title={labels.dockHint} onClick={() => { setPicking(false); onDock(); }} className={iconButton}><icons.dock className="size-4" aria-hidden="true" /></button>}
+        <BlockActions actions={headerActions} testId="ambient-action" menuLabel={labels.moreActions} />
+        {onDock && !phone && <Button variant="ghost" size="icon" data-testid="ambient-dock" aria-label={labels.dock} title={labels.dockHint} onClick={() => { setPicking(false); onDock(); }}><icons.dock data-icon="inline-start" aria-hidden="true" /></Button>}
         {!phone && grip()}
       </header>
 
       {expanded && <div className="flex min-h-0 flex-1 flex-col">
         {(connectionKind === 'error' || connectionKind === 'closed') && <div className="px-4 pb-2"><Notice tone={connectionKind === 'error' ? 'error' : 'info'} testid="connection-notice">
           <span className="flex-1">{connectionKind === 'error' ? labels.loadFailed : labels.disconnected}</span>
-          {!state.disposed && <Button size="sm" variant="outline" onClick={() => act(controller.connect)}><icons.reconnect className="size-3.5" aria-hidden="true" />{labels.reconnect}</Button>}</Notice></div>}
+          {!state.disposed && <Button size="sm" variant="outline" onClick={() => act(controller.connect)}><icons.reconnect data-icon="inline-start" aria-hidden="true" />{labels.reconnect}</Button>}</Notice></div>}
         {derived.pinned.length > 0 && <aside aria-label={labels.requiredActions} className="shrink-0 space-y-2 px-4 pb-2">{derived.pinned.map(card => <div key={card.key}>{card.content}</div>)}</aside>}
         <div className="relative flex min-h-0 flex-1 flex-col">
           <div ref={stick.scrollRef} data-testid="transcript-scroll" className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain [overflow-anchor:none]">
@@ -470,7 +471,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
             </div>
           </div>
           {!stick.isAtBottom && <Button variant="outline" size="icon" data-testid="jump-latest" aria-label={labels.jumpToLatest} title={labels.jumpToLatest} onClick={() => { transcript.reset(); void stick.scrollToBottom(); }}
-            className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-background/95 shadow-md backdrop-blur"><icons.jumpToLatest className="size-4" aria-hidden="true" /></Button>}
+            className="absolute bottom-2 left-1/2 -translate-x-1/2"><icons.jumpToLatest data-icon="inline-start" aria-hidden="true" /></Button>}
         </div>
       </div>}
 

@@ -5,6 +5,7 @@
 // a conflict), images and PDFs read-only from the file's bytes, anything else as text. A host viewer (`viewers[kind]`) takes precedence.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { Button } from '@/components/ui/button';
 import { randomUUID } from '@hachej/boring-files/platform';
 import type { ResourceLocator, ResourceSnapshot } from '@hachej/boring-files';
 import { createMarkdownController } from '@hachej/boring-ui-kit/markdown';
@@ -154,7 +155,7 @@ export function FileViewer({ path, locator, options, onClose, onBack, backLabel,
 }) {
   const kind = viewerKindOf(path);
   const { labels, icons } = useAppText();
-  const back = onBack ? <button type="button" data-testid="file-back" onClick={onBack} className="inline-flex h-8 min-w-8 shrink-0 cursor-pointer items-center justify-center gap-1 rounded-md px-2 text-xs text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 max-sm:h-11 max-sm:min-w-11 pointer-coarse:h-11 pointer-coarse:min-w-11"><icons.back className="size-4" aria-hidden="true" /><span className="max-sm:sr-only">{backLabel ?? labels.back}</span></button> : undefined;
+  const back = onBack ? <Button variant="ghost" size="sm" data-testid="file-back" aria-label={backLabel ?? labels.back} title={backLabel ?? labels.back} onClick={onBack} className="shrink-0"><icons.back data-icon="inline-start" aria-hidden="true" /><span className="max-sm:sr-only">{backLabel ?? labels.back}</span></Button> : undefined;
   const custom = options.viewers?.[kind];
   const common: Common = { path, kind, locator, options, onClose, back, onUnsavedChange, onBeforeLeaveChange };
   return <div data-testid="file-viewer" data-kind={kind} data-path={path} aria-label={labels.fileViewer(KIND_LABEL[kind])} className="flex h-full min-h-0 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1">

@@ -21,7 +21,7 @@ import { displayName, fileKind, isUploadPath, pieces, visibleParts } from './con
 import type { FileKind, Piece, PreviewRead } from './config';
 import { isFileBlock, segments } from './rows';
 import type { DeriveOptions, Row } from './rows';
-import { Button } from '../button/button';
+import { Button } from '@/components/ui/button';
 import { BlockActions } from '../button/actions';
 import type { BlockAction } from '../button/actions';
 import { useChatText } from './labels';
@@ -219,9 +219,9 @@ export function RowView({ row, context: liveContext }: { readonly row: Row; read
         {row.stopReason === 'aborted' && <Notice tone="muted" testid="interrupted" icon={<CircleSlashIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />}>{labels.interrupted}</Notice>}
         {settled && row.text && context.replyActions?.({ key: row.key, text: row.text, timestamp: row.timestamp }, host)}
         {settled && row.text && !context.replyActions && <div className="mt-1 -ml-2 flex opacity-0 transition-opacity group-focus-within/message:opacity-100 group-hover/message:opacity-100 pointer-coarse:opacity-100 max-sm:opacity-100 motion-reduce:transition-none">
-          <CopyButton iconOnly text={row.text} label={labels.copyResponse} {...(context.onCopy ? { onCopy: context.onCopy } : {})} className="text-muted-foreground" />
+          <CopyButton iconOnly text={row.text} label={labels.copyResponse} {...(context.onCopy ? { onCopy: context.onCopy } : {})} />
           {context.onFork && row.entryId && <Button size="icon-sm" variant="ghost" aria-label={labels.fork} title={labels.forkHint} data-testid="fork-reply"
-            className="text-muted-foreground" onClick={() => context.onFork!(row.entryId!)}><icons.fork className="size-3.5" aria-hidden="true" /></Button>}
+            onClick={() => context.onFork!(row.entryId!)}><icons.fork data-icon="inline-start" aria-hidden="true" /></Button>}
           {host}</div>}
         {settled && !row.active && row.text && context.replyFooter?.(replyRef(row))}
       </article>;

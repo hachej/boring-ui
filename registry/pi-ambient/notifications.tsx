@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { KeyboardEvent } from 'react';
 import { CircleCheckIcon, CircleAlertIcon, MessageCircleQuestionIcon, XIcon } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { notifyWhenHidden } from './browser-notify';
 import { parseQuestion } from '../pi-chat/question-card';
@@ -158,18 +159,19 @@ function Toast({ item, autoDismissMs, onActivate, onDismiss, labels }: {
     const timer = setTimeout(() => onDismiss(item), autoDismissMs);
     return () => clearTimeout(timer);
   }, [dismissible, paused, autoDismissMs, item, onDismiss]);
+  const { Icon } = ICONS[item.kind];
   const label = labels[ICONS[item.kind].label];
   return <li data-testid="agent-toast" data-kind={item.kind} data-conversation-id={item.conversationId} className="pointer-events-auto relative list-none"
     onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)} onFocus={() => setPaused(true)} onBlur={() => setPaused(false)}
     onKeyDown={(event: KeyboardEvent) => { if (event.key === 'Escape') { event.stopPropagation(); onDismiss(item); } }}>
-    <button type="button" data-testid="agent-toast-open" onClick={() => onActivate(item)} aria-label={labels.openNotification(label, item.title, item.summary)}
-      className="block w-full cursor-pointer rounded-3xl border border-border bg-background py-3.5 pr-6 pl-4 text-left text-foreground shadow-lg outline-none transition-colors hover:bg-popover focus-visible:ring-2 focus-visible:ring-ring/70 motion-reduce:transition-none">
-      <span className="flex items-center gap-2.5"><KindIcon kind={item.kind} /><span className="min-w-0 flex-1 truncate text-sm font-medium">{item.title}</span></span>
-      {item.summary && <span data-testid="agent-toast-summary" className="mt-1 block truncate text-sm text-muted-foreground">{item.summary}</span>}
-    </button>
-    <button type="button" data-testid="agent-toast-close" aria-label={labels.dismissNotification(item.title)} title={labels.dismissShort} onClick={() => onDismiss(item)}
-      className="absolute -top-2 -left-2 inline-flex size-6 cursor-pointer items-center justify-center rounded-lg border border-border bg-background text-foreground shadow-md outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/70 max-sm:size-8 pointer-coarse:size-8 motion-reduce:transition-none">
-      <XIcon className="size-3.5" aria-hidden="true" /></button>
+    <Button variant="ghost" data-testid="agent-toast-open" onClick={() => onActivate(item)} aria-label={labels.openNotification(label, item.title, item.summary)}
+      className="w-full flex-col items-start">
+      <span className="flex items-center gap-2.5"><Icon data-icon="inline-start" aria-hidden="true" /><span className="min-w-0 flex-1 truncate">{item.title}</span></span>
+      {item.summary && <span data-testid="agent-toast-summary" className="mt-1 block max-w-full truncate">{item.summary}</span>}
+    </Button>
+    <Button variant="ghost" size="icon-sm" data-testid="agent-toast-close" aria-label={labels.dismissNotification(item.title)} title={labels.dismissShort} onClick={() => onDismiss(item)}
+      className="absolute -top-2 -left-2">
+      <XIcon data-icon="inline-start" aria-hidden="true" /></Button>
   </li>;
 }
 

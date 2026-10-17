@@ -1,4 +1,4 @@
-import { Button } from '../button/button';
+import { Button } from '@/components/ui/button';
 import { useAppText } from './app-labels';
 import { cn } from '../utils/utils';
 

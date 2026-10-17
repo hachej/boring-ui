@@ -6,6 +6,7 @@ import type { EntryRecord } from '@earendil-works/pi-durable';
 import type { ImageContent, ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
 import type { ChatAttachment, ChatHistoryState, NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { useStickToBottom } from 'use-stick-to-bottom';
+import { Button } from '@/components/ui/button';
 import type { ComposerFeedback, ComposerProps, PendingUpload } from './composer';
 import type { ConversationFile } from './conversation-files';
 import type { AttachmentsConfig, EffortConfig, MentionsConfig, ModelConfig, ModelRef, PastedText, PasteToFile, SlashConfig } from './config';
@@ -333,8 +334,8 @@ export function useChatSession(options: ChatSessionOptions) {
     const barStart = model || effort ? <ModelEffortPicker model={model} effort={effort} currentModel={optimistic.model ?? viewModel} currentEffort={optimistic.effort ?? viewEffort} disabled={disabled} busy={changing}
       onModel={next => void change('model', () => model!.change(next), () => setOptimistic(value => ({ ...value, model: next })), () => {})}
       onEffort={next => void change('effort', () => effort!.change(next), () => setOptimistic(value => ({ ...value, effort: next })), () => {})} /> : undefined;
-    const barNote = changeError ? <button type="button" role="alert" data-testid="configure-error" title={`${changeError} (${labels.dismissHint})`} onClick={() => setChangeError(null)}
-      className="min-w-0 max-w-[16rem] cursor-pointer truncate rounded-md bg-destructive/10 px-2 py-1 text-xs text-destructive outline-none focus-visible:ring-2 focus-visible:ring-ring/60">{changeError}</button> : undefined;
+    const barNote = changeError ? <Button variant="ghost" size="sm" role="alert" data-testid="configure-error" title={`${changeError} (${labels.dismissHint})`} onClick={() => setChangeError(null)}
+      className="min-w-0 max-w-[16rem]"><span className="truncate">{changeError}</span></Button> : undefined;
     return { barStart, barNote };
   };
 

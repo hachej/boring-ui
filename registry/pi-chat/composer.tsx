@@ -3,7 +3,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, ClipboardEvent, DragEvent, KeyboardEvent, ReactNode, Ref } from 'react';
 import { AlertCircleIcon, FileTextIcon, Loader2Icon, MessageSquarePlusIcon, SlashIcon, XIcon } from 'lucide-react';
-import { Button } from '../button/button';
+import { Button } from '@/components/ui/button';
+import { Toggle } from '@/components/ui/toggle';
 import { hasMention, isLongPaste, mentionToken, mentionTrigger, removeMention, slashItems, slashQuery } from './config';
 import type { MentionsConfig, PastedText, PasteToFile, SlashConfig, SlashItem } from './config';
 import { MentionMenu } from './mention-menu';
@@ -96,17 +97,13 @@ export interface ComposerProps {
   readonly feedback?: ComposerFeedback | undefined;
 }
 
-/** Compact bar buttons expand to 44px for touch. */
-const ROUND = 'inline-flex size-10 max-sm:size-11 pointer-coarse:size-11 shrink-0 cursor-pointer items-center justify-center rounded-(--chat-send-radius) bg-muted text-muted-foreground transition-colors outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-45 motion-reduce:transition-none';
-
-/** The annotate toggle (a round bar button beside the "+" menu in both layouts). */
+/** The annotate toggle beside the "+" menu in both layouts. */
 function AnnotateButton({ feedback, disabled }: { readonly feedback: ComposerFeedback; readonly disabled: boolean }) {
   const { labels } = useChatText();
-  return <button type="button" data-testid="composer-annotate" aria-pressed={feedback.active} disabled={disabled}
-    title={labels.annotateHint} onClick={() => feedback.annotate()}
-    className={cn(ROUND, feedback.active && 'bg-accent')}>
-    <MessageSquarePlusIcon className="size-4" aria-hidden="true" /><span className="sr-only">{labels.annotate}</span>
-  </button>;
+  return <Toggle data-testid="composer-annotate" pressed={feedback.active} disabled={disabled}
+    aria-label={labels.annotate} title={labels.annotateHint} onPressedChange={() => feedback.annotate()}>
+    <MessageSquarePlusIcon data-icon="inline-start" aria-hidden="true" />
+  </Toggle>;
 }
 
 /** The count chip: how many notes go with the next message, and a way to drop them. */
@@ -115,8 +112,8 @@ function NotesChip({ feedback }: { readonly feedback: ComposerFeedback }) {
   return <span data-testid="feedback-count" data-count={feedback.count} className="flex h-9 items-center gap-1.5 rounded-full border border-border bg-muted/50 py-1 pr-1 pl-2.5">
     <MessageSquarePlusIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
     <span className="text-xs font-medium">{labels.annotateNotes(feedback.count)}</span>
-    <button type="button" data-testid="feedback-count-clear" aria-label={labels.annotateClear} title={labels.annotateClear} onClick={() => feedback.clear()}
-      className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground relative after:absolute after:-inset-3 after:content-[''] transition-colors outline-none hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60"><XIcon className="size-3" aria-hidden="true" /></button>
+    <Button variant="ghost" size="icon-sm" data-testid="feedback-count-clear" aria-label={labels.annotateClear} title={labels.annotateClear} onClick={() => feedback.clear()}>
+      <XIcon data-icon="inline-start" aria-hidden="true" /></Button>
   </span>;
 }
 
@@ -143,8 +140,8 @@ function PlusMenu({ disabled, onAttach, onCommands }: { readonly disabled: boole
     else if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setOpen(false); trigger.current?.focus(); }
   };
   return <div ref={root} className="relative shrink-0" onKeyDown={onKeyDown}>
-    <button ref={trigger} type="button" data-testid="composer-plus" aria-label={labels.add} title={labels.add} aria-haspopup="menu" aria-expanded={open} disabled={disabled} onClick={() => setOpen(value => !value)} className={ROUND}>
-      <icons.add className="size-5" aria-hidden="true" /></button>
+    <Button ref={trigger} variant="ghost" size="icon" data-testid="composer-plus" aria-label={labels.add} title={labels.add} aria-haspopup="menu" aria-expanded={open} disabled={disabled} onClick={() => setOpen(value => !value)}>
+      <icons.add data-icon="inline-start" aria-hidden="true" /></Button>
     {open && <div role="menu" aria-label={labels.add} data-testid="composer-plus-menu" className="absolute bottom-full left-0 z-30 mb-2 w-52 rounded-lg border border-border bg-popover p-1.5 text-popover-foreground shadow-lg">
       {entries.map((entry, index) => entry && <button key={entry.testid} type="button" role="menuitem" data-testid={entry.testid} autoFocus={index === 0}
         onClick={() => { setOpen(false); entry.run(); }}
@@ -257,8 +254,8 @@ export function Composer(props: ComposerProps) {
         {chips.map(path => <li key={path} data-testid="mention-chip" data-path={path} title={path} className="flex h-9 max-w-full sm:max-w-[16rem] items-center gap-1.5 rounded-full border border-border bg-muted/50 py-1 pr-1 pl-2.5">
           <FileTextIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
           <span className="min-w-0 flex-1 truncate text-xs font-medium">{path}</span>
-          <button type="button" aria-label={labels.remove(path)} onClick={() => props.onText(removeMention(text, path))}
-            className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground relative after:absolute after:-inset-3 after:content-[''] transition-colors outline-none hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60"><XIcon className="size-3" aria-hidden="true" /></button>
+          <Button variant="ghost" size="icon-sm" aria-label={labels.remove(path)} title={labels.remove(path)} onClick={() => props.onText(removeMention(text, path))}>
+            <XIcon data-icon="inline-start" aria-hidden="true" /></Button>
         </li>)}
       </ul>}
       {(props.uploads?.length ?? 0) > 0 && <ul data-testid="uploads" aria-label={labels.uploads} className="m-0 contents list-none p-0">
@@ -267,10 +264,10 @@ export function Composer(props: ComposerProps) {
           {item.state === 'failed' ? <AlertCircleIcon className="size-3.5 shrink-0 text-destructive" aria-hidden="true" />
             : <Loader2Icon className="size-3.5 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" aria-hidden="true" />}
           <span className="min-w-0 flex-1 truncate text-xs font-medium">{item.state === 'failed' ? labels.uploadFailed(item.name, item.error) : labels.uploading(item.name)}</span>
-          {item.cancel && <button type="button" aria-label={labels.restorePaste} title={labels.restorePaste} onClick={() => item.cancel!()}
-            className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground relative after:absolute after:-inset-3 after:content-[''] transition-colors outline-none hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60"><XIcon className="size-3" aria-hidden="true" /></button>}
-          {item.state === 'failed' && <button type="button" aria-label={labels.dismiss(item.name)} onClick={() => props.onDismissUpload?.(item.id)}
-            className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground relative after:absolute after:-inset-3 after:content-[''] transition-colors outline-none hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60"><XIcon className="size-3" aria-hidden="true" /></button>}
+          {item.cancel && <Button variant="ghost" size="icon-sm" aria-label={labels.restorePaste} title={labels.restorePaste} onClick={() => item.cancel!()}>
+            <XIcon data-icon="inline-start" aria-hidden="true" /></Button>}
+          {item.state === 'failed' && <Button variant="ghost" size="icon-sm" aria-label={labels.dismiss(item.name)} title={labels.dismiss(item.name)} onClick={() => props.onDismissUpload?.(item.id)}>
+            <XIcon data-icon="inline-start" aria-hidden="true" /></Button>}
         </li>)}
       </ul>}
     </div>}
@@ -281,8 +278,8 @@ export function Composer(props: ComposerProps) {
         return <li key={attachment.id} data-testid="attachment" className="flex h-9 max-w-full sm:max-w-[14rem] items-center gap-2 rounded-full border border-border bg-muted/50 py-1 pr-1 pl-1">
           {src ? <img src={src} alt="" className="size-7 shrink-0 rounded-full object-cover" /> : <span className="size-7 shrink-0 rounded-full bg-muted" />}
           <span className="min-w-0 flex-1 truncate text-xs font-medium">{attachment.name}</span>
-          <button type="button" aria-label={labels.remove(attachment.name)} onClick={() => props.onRemoveAttachment(attachment.id)}
-            className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground relative after:absolute after:-inset-3 after:content-[''] transition-colors outline-none hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60"><XIcon className="size-3" aria-hidden="true" /></button>
+          <Button variant="ghost" size="icon-sm" aria-label={labels.remove(attachment.name)} title={labels.remove(attachment.name)} onClick={() => props.onRemoveAttachment(attachment.id)}>
+            <XIcon data-icon="inline-start" aria-hidden="true" /></Button>
         </li>;
       })}
     </ul>;
@@ -298,12 +295,12 @@ export function Composer(props: ComposerProps) {
   const plus = (canAttach || items.length > 0) && <PlusMenu disabled={disabled} onAttach={canAttach ? () => fileInput.current?.click() : undefined} onCommands={items.length > 0 ? openCommands : undefined} />;
   const fileEl = canAttach && <input ref={fileInput} type="file" multiple accept={props.fileAccept} disabled={disabled} tabIndex={-1} aria-hidden="true" className="sr-only" data-testid="composer-file" data-attach="true"
     onChange={event => { const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ''; props.onPickFiles(files); }} />;
-  const chipsControl = props.chips && <div className="flex min-w-0 items-center gap-2 [&>button]:h-10 [&>button]:rounded-full [&>button]:px-3 max-sm:[&>button]:h-11 pointer-coarse:[&>button]:h-11">{props.chips}</div>;
+  const chipsControl = props.chips && <div className="flex min-w-0 items-center gap-2">{props.chips}</div>;
   const send = working
-    ? <Button variant="default" size="icon" data-testid="composer-submit" data-state="stop" aria-label={labels.stop} title={labels.stop} disabled={disabled || stopRequested} onClick={props.onStop} className="ml-auto size-10 rounded-(--chat-send-radius) max-sm:size-11 pointer-coarse:size-11 shrink-0">
-      {stopRequested ? <Loader2Icon className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <icons.stop className="size-4 fill-current" aria-hidden="true" />}</Button>
-    : <Button variant="default" size="icon" type="submit" data-testid="composer-submit" data-state="send" aria-label={labels.send} title={labels.sendHint} disabled={!canSubmit} className="ml-auto size-10 rounded-(--chat-send-radius) max-sm:size-11 pointer-coarse:size-11 shrink-0 disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100">
-      <icons.send className="size-5" aria-hidden="true" /></Button>;
+    ? <Button variant="default" size="icon" data-testid="composer-submit" data-state="stop" aria-label={labels.stop} title={labels.stop} disabled={disabled || stopRequested} onClick={props.onStop} className="ml-auto shrink-0">
+      {stopRequested ? <Loader2Icon data-icon="inline-start" aria-hidden="true" /> : <icons.stop data-icon="inline-start" aria-hidden="true" />}</Button>
+    : <Button variant="default" size="icon" type="submit" data-testid="composer-submit" data-state="send" aria-label={labels.send} title={labels.sendHint} disabled={!canSubmit} className="ml-auto shrink-0">
+      <icons.send data-icon="inline-start" aria-hidden="true" /></Button>;
 
   if (layout === 'inline') return <form data-testid="composer" data-layout="inline" onSubmit={event => { event.preventDefault(); if (canSubmit) props.onSend(); }} onDragOver={drag} onDragLeave={drag} onDrop={drop}
     className={cn('relative bg-card', dragging && 'rounded-2xl ring-2 ring-ring/40', disabled && 'opacity-70')}>
@@ -321,7 +318,7 @@ export function Composer(props: ComposerProps) {
       {chipsControl}
       {props.barEnd}
       {uploading && !(props.uploads?.length) && <Loader2Icon role="status" aria-label={labels.preparingAttachmentsShort} className="size-3.5 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" />}
-      {working && hasContent && <Button variant="secondary" size="sm" data-testid="composer-queue" disabled={!canSubmit} onClick={props.onSend} className="h-11 shrink-0 rounded-full px-4"><icons.queue className="size-3.5" aria-hidden="true" />{labels.queue}</Button>}
+      {working && hasContent && <Button variant="secondary" size="sm" data-testid="composer-queue" disabled={!canSubmit} onClick={props.onSend} className="shrink-0"><icons.queue data-icon="inline-start" aria-hidden="true" />{labels.queue}</Button>}
       {send}
     </div>
   </form>;
@@ -344,9 +341,9 @@ export function Composer(props: ComposerProps) {
       {props.barNote}
       {uploading && !(props.uploads?.length) && <span role="status" className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2Icon className="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />{labels.preparingAttachments}</span>}
       {layout !== 'pill' && <span className="min-w-0 flex-1" />}
-      {props.barEnd && <div data-testid="composer-tools" className="flex shrink-0 items-center gap-2 [&>button]:h-10 [&>button]:min-w-10 [&>button]:rounded-(--chat-send-radius) [&>button]:bg-muted max-sm:[&>button]:h-11 max-sm:[&>button]:min-w-11 pointer-coarse:[&>button]:h-11 pointer-coarse:[&>button]:min-w-11">{props.barEnd}</div>}
-      {working && hasContent && <Button variant="secondary" size="sm" data-testid="composer-queue" disabled={!canSubmit} onClick={props.onSend} className="h-10 shrink-0 rounded-full px-4 max-sm:h-11 pointer-coarse:h-11">
-        <icons.queue className="size-3.5" aria-hidden="true" />{labels.queue}</Button>}
+      {props.barEnd && <div data-testid="composer-tools" className="flex shrink-0 items-center gap-2">{props.barEnd}</div>}
+      {working && hasContent && <Button variant="secondary" size="sm" data-testid="composer-queue" disabled={!canSubmit} onClick={props.onSend} className="shrink-0">
+        <icons.queue data-icon="inline-start" aria-hidden="true" />{labels.queue}</Button>}
       {send}
     </div>
   </form>;
