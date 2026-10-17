@@ -86,7 +86,20 @@ try {
   await click('conversation-file');
   assert.equal(opened, 1, 'file selection invokes the existing host callback once');
   assert.equal(find('conversation-files').getAttribute('aria-expanded'), 'false');
-  console.log('PASS: installed portalled viewer menu keyboard/radio/children, versions and phone conversation-files drawer');
+  const detached = new Window({ url: 'https://fictional.invalid/detached' });
+  const detachedContainer = detached.document.createElement('div'); detached.document.body.append(detachedContainer);
+  const detachedRoot = createRoot(detachedContainer);
+  try {
+    await act(async () => detachedRoot.render(h(ViewerMenu, { label: 'Detached document actions', icon: '…', testId: 'detached-menu', items: [{ id: 'copy', label: 'Copy', onSelect: () => { selected = 'detached-copy'; } }] })));
+    await act(async () => detached.document.querySelector('[data-testid=detached-menu]').click());
+    assert.equal(!!detached.document.querySelector('[data-testid=detached-menu-list]'), true, 'the consumer portal stays in the trigger owner document');
+    assert.equal(!!document.querySelector('[data-testid=detached-menu-list]'), false, 'a detached viewer never places its actions in the opener');
+    await act(async () => detached.document.querySelector('[data-testid=detached-menu-copy]').click());
+    assert.equal(selected, 'detached-copy');
+  } finally {
+    await act(async () => detachedRoot.unmount()); await detached.happyDOM.close();
+  }
+  console.log('PASS: installed owner-document viewer menu keyboard/radio/children, versions and phone conversation-files drawer');
 } finally {
   await act(async () => root.unmount());
   await window.happyDOM.close();

@@ -183,11 +183,11 @@ export default [
       await history.create();
       assert.equal(await history.count(), before + 1);
       await history.select(current);
-      // The earlier records of the open conversation: the chat header's History (the list itself is the sessions pane).
-      await browser.click(q('[data-testid=history-open]'));
-      await browser.until('the read-only earlier records panel', `!!${q('[data-testid=history]')}`, 10000);
-      await browser.click(q('[aria-label="Return to active conversation"]'));
-      await browser.until('back to the transcript', `!${q('[data-testid=history]')}`, 5000);
+      // Earlier records load inline; the sessions pane remains the conversation picker.
+      await browser.evaluate(`${q('[data-testid=transcript-scroll]')}.scrollTop = 0`);
+      await browser.until('earlier records reached the beginning inline', `${q('[data-testid=transcript-history]')}?.innerText.includes('Start of conversation') && ${q('[data-testid=transcript-history-load]')}?.disabled`, 10000);
+      assert.equal(await browser.evaluate(`!!${q('[data-testid=history]')}`), false, 'no separate history panel');
+      assert.equal(await browser.evaluate(`/ENTER-OK/.test(${logText}) && !!${q('[data-testid=transcript] article[data-role=assistant]')}`), true, 'the ordinary transcript remains visible');
     },
   },
   {

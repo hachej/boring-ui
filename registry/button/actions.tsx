@@ -1,9 +1,9 @@
 'use client';
 
-import { Fragment } from 'react';
+import { Fragment, useRef } from 'react';
 import type { ComponentType, ReactNode } from 'react';
 import { EllipsisIcon } from 'lucide-react';
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuGroup, DropdownMenuLabel, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuShortcut } from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuPortal, DropdownMenuContent, DropdownMenuGroup, DropdownMenuLabel, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuShortcut } from '@/components/ui/dropdown-menu';
 import { Button, IconButton } from './button';
 import { cn } from '../utils/utils';
 
@@ -51,6 +51,7 @@ export interface ActionMenuProps {
 
 /** Only maps host actions to the consumer's shadcn Base UI menu. The primitive owns focus, positioning and dismissal. */
 export function ActionMenu({ label, icon, items, testId = 'menu', align = 'end', size = 'icon-bar', className, children, onOpenChange }: ActionMenuProps) {
+  const portal = useRef<HTMLElement | null>(null);
   const groups: MenuItem[][] = [];
   for (const item of items) {
     const last = groups[groups.length - 1];
@@ -77,11 +78,13 @@ export function ActionMenu({ label, icon, items, testId = 'menu', align = 'end',
     </DropdownMenuGroup>
   </Fragment>);
   return <DropdownMenu onOpenChange={open => onOpenChange?.(open)}>
-    <DropdownMenuTrigger render={<IconButton label={label} size={size} data-testid={testId} className={className}>{icon}</IconButton>} />
-    <DropdownMenuContent align={align} aria-label={label} data-testid={`${testId}-list`} className="w-64 max-w-[calc(100vw-1rem)]">
-      {children}
-      {choices ? <DropdownMenuRadioGroup value={items.find(item => item.checked)?.id ?? ''}>{rows}</DropdownMenuRadioGroup> : rows}
-    </DropdownMenuContent>
+    <DropdownMenuTrigger render={<IconButton ref={node => { portal.current = node?.ownerDocument.body ?? null; }} label={label} size={size} data-testid={testId} className={className}>{icon}</IconButton>} />
+    <DropdownMenuPortal container={portal}>
+      <DropdownMenuContent align={align} aria-label={label} data-testid={`${testId}-list`} className="w-64 max-w-[calc(100vw-1rem)]">
+        {children}
+        {choices ? <DropdownMenuRadioGroup value={items.find(item => item.checked)?.id ?? ''}>{rows}</DropdownMenuRadioGroup> : rows}
+      </DropdownMenuContent>
+    </DropdownMenuPortal>
   </DropdownMenu>;
 }
 
