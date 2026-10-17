@@ -126,7 +126,7 @@ export function ConversationList({ conversations, onPicked, autoFocus = false, s
   }, [conversations.items, found, query, now, labels.untitled]);
   const loading = found ? found.loading : conversations.loading;
   const total = shown.reduce((sum, group) => sum + group.items.length, 0);
-  const rowActionItems = (item: ConversationItem, title: string, extraButtons: readonly BlockAction[], extraMenu: readonly BlockAction[]): MenuItem[] => [
+  const rowActionItems = (item: ConversationItem, extraButtons: readonly BlockAction[], extraMenu: readonly BlockAction[]): MenuItem[] => [
     ...(conversations.rename ? [{ id: 'rename', icon: <PencilIcon />, label: labels.rename, testId: 'conversation-rename', onSelect: () => setRenaming(item.id) }] : []),
     ...(conversations.archive ? [{ id: 'archive', icon: item.archived ? <ArchiveRestoreIcon /> : <ArchiveIcon />, label: item.archived ? labels.restore : labels.archive, testId: 'conversation-archive', onSelect: () => run(() => conversations.archive!(item.id, !item.archived)) }] : []),
     ...(conversations.remove ? [{ id: 'delete', icon: <Trash2Icon />, destructive: true, separatorBefore: true, label: labels.delete, testId: 'conversation-delete', onSelect: () => setConfirming(item.id) }] : []),
@@ -188,7 +188,7 @@ export function ConversationList({ conversations, onPicked, autoFocus = false, s
                   {confirming === item.id && conversations.remove ? <>
                     <Button size="sm" variant="destructive" data-testid="conversation-delete-confirm" onClick={() => { const remove = conversations.remove!; setConfirming(null); run(() => remove(item.id)); }}>{labels.delete}</Button>
                     <Button size="icon-sm" variant="ghost" aria-label={labels.keep} title={labels.keep} onClick={() => setConfirming(null)}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>
-                  </> : rowActionLayout === 'menu' ? <RowActions label={labels.moreActions} items={rowActionItems(item, title, extraButtons, extraMenu)} /> : <>
+                  </> : rowActionLayout === 'menu' ? <RowActions label={labels.moreActions} items={rowActionItems(item, extraButtons, extraMenu)} /> : <>
                     {conversations.rename && <Button size="icon-sm" variant="ghost" aria-label={labels.renameItem(title)} title={labels.rename} data-testid="conversation-rename" onClick={() => setRenaming(item.id)}><PencilIcon data-icon="inline-start" aria-hidden="true" /></Button>}
                     {conversations.archive && <Button size="icon-sm" variant="ghost" aria-label={labels.archiveItem(title, item.archived === true)} title={item.archived ? labels.restore : labels.archive} data-testid="conversation-archive"
                       onClick={() => { const archive = conversations.archive!; run(() => archive(item.id, !item.archived)); }}>{item.archived ? <ArchiveRestoreIcon data-icon="inline-start" aria-hidden="true" /> : <ArchiveIcon data-icon="inline-start" aria-hidden="true" />}</Button>}

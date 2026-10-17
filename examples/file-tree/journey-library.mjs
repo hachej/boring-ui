@@ -62,7 +62,7 @@ for (const [name, start, trigger] of [
       assert.equal(new TextDecoder().decode(saved.snapshot.bytes), brief, 'drop uses the authenticated publication path');
     } else {
       await browser.until('folder', `!!${q('[role=treeitem][data-path="Policies"]')}`);
-      await browser.click(q('[role=treeitem][data-path="Policies"] [data-slot=sidebar-menu-button]'));
+      await browser.click(q('[role=treeitem][data-path="Policies"] .file-tree-row-button'));
       await browser.until('folder expanded', `!!${q('[role=treeitem][data-path="Policies/AP policy.md"]')}`);
     }
 
@@ -81,7 +81,7 @@ for (const [name, start, trigger] of [
         await browser.until('folder ready', `!!${q(`[role=treeitem][data-path="${folder}"]`)}`);
         if (!(await browser.evaluate(`!!${q(actions)}`))) {
           await browser.until('Library entrance settled', `${q(tree)}.getAnimations({subtree:true}).every(a=>a.playState!=='running')`);
-          await browser.click(q(`[role=treeitem][data-path="${folder}"] [data-slot=sidebar-menu-button]`));
+          await browser.click(q(`[role=treeitem][data-path="${folder}"] .file-tree-row-button`));
         }
         await browser.until('file actions', `!!${q(actions)}`);
         await new Promise(resolve => setTimeout(resolve, 300));
@@ -90,7 +90,7 @@ for (const [name, start, trigger] of [
           const folderName=${q(`[role=treeitem][data-path="${folder}"] > div .file-tree-name`)}, fileName=${q(`[role=treeitem][data-path=${JSON.stringify(file)}] > div .file-tree-name`)};
           const measure = name => { const button=name.closest('button'), style=getComputedStyle(button); return { slot:button.dataset.slot, x:button.getBoundingClientRect().x, padding:style.paddingLeft, gap:style.gap, children:[...button.children].map(node=>({name:node.className?.baseVal ?? node.className, x:node.getBoundingClientRect().x, w:node.getBoundingClientRect().width})) }; };
           return { left:s.left-p.left, right:p.right-s.right, indent:fileName.getBoundingClientRect().left-folderName.getBoundingClientRect().left, folderButton:measure(folderName), fileButton:measure(fileName), copyAlign:getComputedStyle(fileName.parentElement).textAlign, ghostBackground:getComputedStyle(fileName.closest('button')).backgroundColor,
-            rows:[...panel.querySelectorAll('[data-slot=sidebar-menu-button]')].map(row=>row.getBoundingClientRect().height),
+            rows:[...panel.querySelectorAll('.file-tree-row-button')].map(row=>row.getBoundingClientRect().height),
             allMeta:[...panel.querySelectorAll('[data-file-meta]')].every(meta=>meta.textContent.trim().length>0),
             folderMeta:[...panel.querySelectorAll('[role=treeitem][aria-expanded] > div [data-file-meta]')].map(meta=>meta.textContent),
             announcements:(() => { const live=panel.querySelector('[aria-live=polite]'), style=getComputedStyle(live), box=live.getBoundingClientRect(); return live && style.position==='absolute' && box.width<=1 && box.height<=1 && style.clip!=='auto'; })(),

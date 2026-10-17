@@ -1,7 +1,6 @@
 // Pinned shadcn@4.21.4 Base UI fixture (style base-nova), fetched 2026-10-17 from https://ui.shadcn.com/r/styles/base-nova/scroll-area.json. MIT, Copyright (c) 2023 shadcn.
 "use client"
 
-import * as React from "react"
 import { ScrollArea as ScrollAreaPrimitive } from "@base-ui/react/scroll-area"
 import { cn } from "@/lib/utils"
 

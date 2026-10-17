@@ -46,3 +46,4 @@
 @media (prefers-reduced-motion: reduce) {
   [data-boring="file-tree"] [data-upload-spinner] { animation: none; }
 }
+[data-boring="file-tree"] .file-tree-empty { min-height: 14rem; }

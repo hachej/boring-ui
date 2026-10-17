@@ -306,7 +306,7 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
     return <>
       {listing.entries.length === 0 && (directory || temporaryEntries.length === 0) && <li role="none" className={list && !directory ? undefined : 'file-tree-status'}>
         {list && !directory
-          ? <Empty icon={<FolderOpen aria-hidden="true" />} title={search ? labels.noMatches : labels.empty} description={search ? undefined : labels.emptyHint}>{!search && upload && uploadButton}</Empty>
+          ? <Empty className="file-tree-empty" icon={<FolderOpen aria-hidden="true" />} title={search ? labels.noMatches : labels.empty} description={search ? undefined : labels.emptyHint}>{!search && upload && uploadButton}</Empty>
           : <span>{search ? labels.noMatches : labels.empty}</span>}
       </li>}
       {listing.cursor !== undefined && <li role="none"><Button type="button" variant="ghost" onClick={() => { void (search ? controller.moreSearch() : controller.more(directory)); }}>{labels.loadMore}</Button></li>}
@@ -326,7 +326,7 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
     const childCount = children?.kind === 'ready' && children.cursor === undefined ? labels.childCount(children.entries.length) : undefined;
     const kind = folder ? { icon: Folder, label: labels.folder } : fileKind(entry.path, labels);
     const Icon = kind.icon;
-    const button = <Button type="button" variant={selectedPath === entry.path ? 'secondary' : 'ghost'} data-slot="sidebar-menu-button" data-active={selectedPath === entry.path} tabIndex={-1} title={entry.path} disabled={temporary}
+    const button = <Button type="button" variant={selectedPath === entry.path ? 'secondary' : 'ghost'} data-active={selectedPath === entry.path} tabIndex={-1} title={entry.path} disabled={temporary}
       className="file-tree-row-button"
       onClick={() => { focus(entry.path); if (!folder) onOpen?.(entry.path); }}>
       {folder ? <ChevronRight aria-hidden="true" /> : list && <span className="file-tree-chevron-space" aria-hidden="true" />}

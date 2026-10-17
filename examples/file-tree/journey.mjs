@@ -40,9 +40,9 @@ try {
     for (const path of ['node_modules', 'dist', 'debug.log']) assert.equal(await browser.evaluate(`!!${q(row(path))}`), false);
     await browser.click(q(`${row('docs')} button`));
     await browser.until('notes visible', `!!${q(row('docs/notes.md'))}`);
-    assert.equal(await browser.evaluate(`getComputedStyle(${q('[data-slot=sidebar-menu-button]')}).height`), '48px');
-    assert.equal(await browser.evaluate(`getComputedStyle(${q('.file-tree-tile svg')}).width`), '16px');
-    assert.equal(await browser.evaluate(`getComputedStyle(${q('[data-slot=sidebar-menu-sub]')}).paddingLeft`), '14px');
+    assert.equal(await browser.evaluate(`getComputedStyle(${q('.file-tree-row-button')}).height`), '48px');
+    assert.equal(await browser.evaluate(`getComputedStyle(${q('.file-tree-row-button svg')}).width`), '16px');
+    assert.equal(await browser.evaluate(`getComputedStyle(${q('[data-slot=sidebar-menu-sub]')}).paddingLeft`), '10px');
     await browser.evaluate(`${q(row('docs/notes.md'))}.focus()`); await browser.press('Enter');
     assert.equal(await browser.evaluate(`${q('output[aria-label="Opened file"]')}.textContent`), 'docs/notes.md');
   });
@@ -210,7 +210,7 @@ try {
       await detached.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 });
       await detached.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 });
       await detached.until('detached notes', `!!${q(row('docs/notes.md'))}`);
-      assert.equal(await detached.evaluate(`getComputedStyle(${q('[data-slot=sidebar-menu-button]')}).height`), '48px');
+      assert.equal(await detached.evaluate(`getComputedStyle(${q('.file-tree-row-button')}).height`), '48px');
       await detached.evaluate(`${q(row('docs/notes.md'))}.focus()`);
       await detached.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
       await detached.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
