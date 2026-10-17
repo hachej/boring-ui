@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { Loader2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { MessageScroller, MessageScrollerProvider, MessageScrollerViewport, MessageScrollerContent, MessageScrollerItem, MessageScrollerButton } from '@/components/ui/message-scroller';
 import { BlockActions } from '../button/actions';
 import type { BlockAction } from '../button/actions';
 import { Composer } from './composer';
@@ -106,7 +107,7 @@ export function PiChat(props: PiChatProps) {
   const [mount, setMount] = useState({ controller: props.controller, sequence: 0 });
   if (mount.controller !== props.controller) setMount({ controller: props.controller, sequence: mount.sequence + 1 });
   const text = useMergedText(props.labels, props.icons, chatTextFor(props.locale));
-  return <ChatTextProvider value={text}><PiChatSession key={mount.sequence} {...props} activeController={active} /></ChatTextProvider>;
+  return <ChatTextProvider value={text}><MessageScrollerProvider key={mount.sequence} autoScroll><PiChatSession {...props} activeController={active} /></MessageScrollerProvider></ChatTextProvider>;
 }
 
 function ConnectionBadge({ kind }: { readonly kind: string }) {
@@ -181,21 +182,22 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
     {pickingConversation && conversations && historyList && <ConversationHistory conversations={conversations} onClose={() => setPickingConversation(false)} />}
 
     <div data-testid="conversation-content" className={cn('relative min-h-0 flex-1', empty && emptyLayout === 'centered' && 'min-[641px]:min-h-60 min-[641px]:flex-none')}>
-      <div ref={stick.scrollRef} data-testid="transcript-scroll" className="h-full overflow-x-hidden overflow-y-auto overscroll-contain [overflow-anchor:none]">
-        <div ref={stick.contentRef} className="flex min-h-full flex-col">
-          <div role="log" aria-label={labels.messages} aria-live="polite" data-testid="transcript" className="mx-auto flex min-h-0 w-full max-w-[720px] flex-1 flex-col gap-6 px-4 pt-6 pb-8 sm:px-6">
-            {!empty && <TranscriptHistory history={state.history} connected={!state.disposed && connected} onLoad={transcript.reveal} sentinelRef={transcript.sentinelRef} hidden={hidden} loaded={transcript.loaded} />}
-            {visible.map(row => <RowView key={row.key} row={row} context={rowContext} />)}
+      <MessageScroller>
+        <MessageScrollerViewport ref={stick.scrollRef} data-testid="transcript-scroll" aria-label={labels.messages}>
+          {!empty && <TranscriptHistory history={state.history} connected={!state.disposed && connected} onLoad={transcript.reveal} sentinelRef={transcript.sentinelRef} hidden={hidden} loaded={transcript.loaded} />}
+          <div className="mx-auto w-full max-w-[720px] px-4 pt-6 pb-8 sm:px-6">
+          <MessageScrollerContent aria-label={labels.messages} aria-live="polite" data-testid="transcript">
+            {visible.map(row => <MessageScrollerItem key={row.key} messageId={row.key} className="[content-visibility:visible]"><RowView row={row} context={rowContext} /></MessageScrollerItem>)}
+          </MessageScrollerContent>
           </div>
-        </div>
-      </div>
+        </MessageScrollerViewport>
+        {!empty && !stick.isAtBottom && <MessageScrollerButton data-testid="jump-latest" aria-label={labels.jumpToLatest} title={labels.jumpToLatest} onClick={transcript.reset}><icons.jumpToLatest aria-hidden="true" /></MessageScrollerButton>}
+      </MessageScroller>
       {(empty || loading) && <div className="pointer-events-none absolute inset-0">
         <div className="pointer-events-auto h-full">
           {loading ? <p role="status" data-testid="loading" className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2Icon className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />{labels.loading}</p>
             : emptyState ?? <EmptyState title={title} description={labels.emptyDescription} {...(avatar ? { avatar } : {})} {...(suggestions ? { suggestions } : {})} onSelect={text => { controller.setText(text); textarea.current?.focus(); }} />}
         </div></div>}
-      {!empty && !stick.isAtBottom && <Button variant="outline" size="icon" data-testid="jump-latest" aria-label={labels.jumpToLatest} title={labels.jumpToLatest} onClick={() => { transcript.reset(); void stick.scrollToBottom(); }}
-        className="absolute bottom-3 left-1/2 -translate-x-1/2"><icons.jumpToLatest data-icon="inline-start" aria-hidden="true" /></Button>}
     </div>
 
     <footer data-testid="composer-dock" className="shrink-0 px-4 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6">

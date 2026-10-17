@@ -10,14 +10,16 @@ import { Window } from 'happy-dom';
 const ENTRY = `
 import { createElement as h } from 'react';
 import { useTranscript } from ${JSON.stringify(new URL('../../registry/pi-chat/session.tsx', import.meta.url).pathname)};
-export function Host({ rows, heights, expose, open = true }) {
+import { MessageScroller, MessageScrollerProvider, MessageScrollerViewport, MessageScrollerContent, MessageScrollerItem } from ${JSON.stringify(new URL('../../examples/app-shell/components/ui/message-scroller.tsx', import.meta.url).pathname)};
+export function Host(props) { return h(MessageScrollerProvider, { autoScroll: true }, h(Transcript, props)); }
+function Transcript({ rows, heights, expose, open = true }) {
   const { stick, visible } = useTranscript(rows, 60, 40);
   expose(stick);
   // Like AmbientChat, the scroller is mounted only while the panel is open.
   if (!open) return null;
-  return h('div', { ref: stick.scrollRef, 'data-testid': 'transcript-scroll' },
-    h('div', { ref: stick.contentRef, 'data-testid': 'transcript' },
-      visible(rows).map(row => h('div', { key: row.key, 'data-h': heights[row.key] }, row.key))));
+  return h(MessageScroller, null, h(MessageScrollerViewport, { ref: stick.scrollRef, 'data-testid': 'transcript-scroll' },
+    h(MessageScrollerContent, { 'data-testid': 'transcript' },
+      visible(rows).map(row => h(MessageScrollerItem, { key: row.key, messageId: row.key, 'data-h': heights[row.key] }, row.key)))));
 }`;
 
 async function harness(t) {
@@ -52,7 +54,7 @@ async function harness(t) {
   const heights = {};
   // The scroller's layout: content height is the sum of the rows' heights, the viewport is a fixed height the test can change, scrollTop clamps.
   let scroller;
-  const contentHeight = () => [...scroller.firstElementChild.children].reduce((sum, row) => sum + Number(row.dataset.h), 0);
+  const contentHeight = () => [...scroller.querySelectorAll('[data-h]')].reduce((sum, row) => sum + Number(row.dataset.h), 0);
   const maxTop = () => Math.max(0, contentHeight() - viewport);
   const setTop = value => { top = Math.max(0, Math.min(Number(value), maxTop())); };
   let top = 0;
@@ -60,6 +62,15 @@ async function harness(t) {
   const layout = () => {
     scroller = element.querySelector('[data-testid="transcript-scroll"]');
     if (!scroller) return;
+    scroller.getBoundingClientRect = () => ({ top: 0, bottom: viewport, height: viewport });
+    scroller.firstElementChild.getBoundingClientRect = () => ({ top: -top, bottom: contentHeight() - top, height: contentHeight() });
+    const children = [...scroller.querySelectorAll('[data-h]')];
+    for (const [index, child] of children.entries()) child.getBoundingClientRect = () => {
+      const y = children.slice(0, index).reduce((sum, item) => sum + Number(item.dataset.h), 0) - top;
+      const height = Number(child.dataset.h);
+      return { top: y, bottom: y + height, height };
+    };
+    scroller.scrollTo = ({ top: value }) => { scroller.scrollTop = value; };
     Object.defineProperty(scroller, 'clientHeight', { configurable: true, get: () => viewport });
     Object.defineProperty(scroller, 'scrollHeight', { configurable: true, get: contentHeight });
     // A write clamps and queues one scroll event, as a browser does; the position is not clamped on read, so a shrink
@@ -84,7 +95,7 @@ async function harness(t) {
   });
   return { render, frames, expose: () => stick, heights, distanceFromBottom,
     // A reader's scroll: one event, dispatched before the next animation frame as the browser does.
-    scrollTo: value => { setTop(value); scroller.dispatchEvent(new window.Event('scroll')); }, scroller: () => scroller, layout,
+    scrollTo: value => { scroller.dispatchEvent(new window.WheelEvent('wheel', { deltaY: -100, bubbles: true })); setTop(value); scroller.dispatchEvent(new window.Event('scroll')); }, scroller: () => scroller, layout,
     setViewport: async value => { viewport = value; await render(lastRows); },
     setOpen: async show => { await render(lastRows, { show }); } };
 }

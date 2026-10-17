@@ -5,7 +5,7 @@ import type { KeyboardEvent, ReactNode } from 'react';
 import type { EntryRecord } from '@earendil-works/pi-durable';
 import type { ImageContent, ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
 import type { ChatAttachment, ChatHistoryState, NativeChatController } from '@hachej/boring-ui-kit/native-chat';
-import { useStickToBottom } from 'use-stick-to-bottom';
+import { useMessageScroller, useMessageScrollerScrollable } from '@/components/ui/message-scroller';
 import { Button } from '@/components/ui/button';
 import type { ComposerFeedback, ComposerProps, PendingUpload } from './composer';
 import type { ConversationFile } from './conversation-files';
@@ -367,80 +367,39 @@ export function useTranscript(rows: readonly Row[], page = 60, more = 40, histor
   const [sentinel, setSentinel] = useState<HTMLDivElement | null>(null);
   const [loaded, setLoaded] = useState(0);
   const pending = useRef(false);
-  const anchor = useRef<{ readonly key: string | undefined; readonly y: number; readonly height: number; readonly top: number; readonly length: number; readonly limit: number } | undefined>(undefined);
-  // Growth re-pins at once: a spring trails the rows that grow after insert (streamed text, late images) and leaves the newest one under the composer.
-  const library = useStickToBottom({ initial: 'instant', resize: 'instant' });
-  // The scroller can mount later (AmbientChat starts collapsed) and unmount on collapse, so the element is held in state.
-  const [scroller, setScroller] = useState<HTMLElement | null>(null);
-  const scrollRef = useCallback((element: HTMLElement | null) => { library.scrollRef(element); setScroller(element); }, [library.scrollRef]);
-  const stick = { ...library, scrollRef };
-  // The library observes only the content. A shorter viewport (phone keyboard, a taller composer) leaves the newest row below the fold,
-  // so re-pin when the viewport shrinks while the reader is at the bottom.
-  useEffect(() => {
-    if (!scroller || typeof ResizeObserver === 'undefined') return;
-    let height = scroller.clientHeight;
-    const observer = new ResizeObserver(() => {
-      const shrank = scroller.clientHeight < height;
-      height = scroller.clientHeight;
-      if (shrank && library.state.isAtBottom) void library.scrollToBottom('instant');
-    });
-    observer.observe(scroller);
-    return () => observer.disconnect();
-  }, [scroller, library.state, library.scrollToBottom]);
-  // The library ignores scroll events while it is absorbing a growth (a resize difference), so a scroll-up in that window would be
-  // snapped back by its pending frame. Release the bottom lock as soon as the reader moves up. The library's own programmatic
-  // writes are marked in ignoreScrollToTop, which its listener clears: this listener is a capture listener so it reads the mark first.
-  useEffect(() => {
-    if (!scroller) return;
-    let last = scroller.scrollTop;
-    const onScroll = () => {
-      const top = scroller.scrollTop;
-      const programmatic = library.state.ignoreScrollToTop === top;
-      if (!programmatic && top < last && scroller.scrollHeight - scroller.clientHeight - top > 70) library.stopScroll();
-      if (!programmatic && anchor.current) {
-        const edge = scroller.getBoundingClientRect().top;
-        const first = [...scroller.querySelectorAll<HTMLElement>('[data-row-id]')].find(row => row.getBoundingClientRect().bottom > edge + 1);
-        anchor.current = { ...anchor.current, key: first?.dataset['rowId'], y: first?.getBoundingClientRect().top ?? edge, height: scroller.scrollHeight, top };
-      }
-      last = top;
-    };
-    scroller.addEventListener('scroll', onScroll, { passive: true, capture: true });
-    return () => scroller.removeEventListener('scroll', onScroll, { capture: true });
-  }, [scroller, library.state, library.stopScroll]);
+  const anchor = useRef<{ readonly length: number; readonly limit: number } | undefined>(undefined);
+  const { scrollToEnd } = useMessageScroller();
+  const scrollable = useMessageScrollerScrollable();
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
+  const scrollToBottom = useCallback((behavior?: 'instant') => scrollToEnd({ behavior: behavior === 'instant' ? 'instant' : 'smooth' }), [scrollToEnd]);
+  const stick = { scrollRef: setScroller, scrollToBottom, isAtBottom: !scrollable.end };
   const hidden = Math.max(0, rows.length - limit);
   const reveal = useCallback(() => {
     if (pending.current || anchor.current) return;
     const state = history?.state;
     if (hidden === 0 && (!history?.connected || !state || state.kind === 'disabled' || state.kind === 'loading' || state.kind === 'ready' && !state.hasMore)) return;
-    library.stopScroll();
-    if (scroller) {
-      const top = scroller.getBoundingClientRect().top;
-      const first = [...scroller.querySelectorAll<HTMLElement>('[data-row-id]')].find(row => row.getBoundingClientRect().bottom > top + 1);
-      anchor.current = { key: first?.dataset['rowId'], y: first?.getBoundingClientRect().top ?? top, height: scroller.scrollHeight, top: scroller.scrollTop, length: rows.length, limit };
-    }
+    anchor.current = { length: rows.length, limit };
     if (hidden > 0) setLimit(value => value + more);
     else if (history) {
       pending.current = true;
       void Promise.resolve().then(history.load).catch(() => { anchor.current = undefined; }).finally(() => { pending.current = false; });
     }
-  }, [hidden, history?.state, history?.connected, history?.load, scroller, library.stopScroll, rows.length, limit, more]);
+  }, [hidden, history?.state, history?.connected, history?.load, rows.length, limit, more]);
   useLayoutEffect(() => {
     const saved = anchor.current;
     if (!scroller || !saved || history?.state.kind === 'loading') return;
     const added = Math.max(0, rows.length - saved.length);
     if (limit < saved.limit + added) { setLimit(saved.limit + added); return; }
-    const first = [...scroller.querySelectorAll<HTMLElement>('[data-row-id]')].find(row => row.dataset['rowId'] === saved.key);
-    scroller.scrollTop = first ? scroller.scrollTop + first.getBoundingClientRect().top - saved.y : saved.top + scroller.scrollHeight - saved.height;
     anchor.current = undefined;
     setLoaded(count => count + Math.max(0, Math.min(rows.length, limit) - Math.min(saved.length, saved.limit)));
   }, [rows, limit, scroller, history?.state]);
   useEffect(() => {
     if (!scroller || !sentinel || typeof IntersectionObserver === 'undefined' || history?.state.kind === 'loading' || history?.state.kind === 'error') return;
     const observer = new IntersectionObserver(entries => {
-      if (entries.some(entry => entry.isIntersecting) && (scroller.scrollHeight <= scroller.clientHeight || !library.state.isAtBottom)) reveal();
+      if (entries.some(entry => entry.isIntersecting) && (scroller.scrollHeight <= scroller.clientHeight || scrollable.start)) reveal();
     }, { root: scroller, rootMargin: '240px 0px 0px' });
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [scroller, sentinel, reveal, library.state, history?.state]);
+  }, [scroller, sentinel, reveal, scrollable.start, history?.state]);
   return { stick, hidden, reveal, sentinelRef: setSentinel, loaded, visible: <T,>(items: readonly T[]): readonly T[] => hidden ? items.slice(hidden) : items, reset: () => { anchor.current = undefined; setLimit(page); } };
 }

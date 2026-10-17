@@ -27,6 +27,8 @@ const TITLE = `document.querySelector('[data-testid=ambient-title]')`;
 const STATUS = `document.querySelector('[data-testid=ambient-status]')?.dataset.status`;
 const TRANSCRIPT = `(document.querySelector('[data-testid=transcript]')?.innerText ?? '')`;
 const toast = kind => `[...document.querySelectorAll('[data-testid=agent-toast]')].find(t => ${kind === undefined ? 'true' : `t.dataset.kind === ${JSON.stringify(kind)}`})`;
+/** A menu popup is portalled to the body (shadcn DropdownMenu), outside the chat root. */
+const popup = testid => `document.querySelector('[data-testid=${testid}]')`;
 const control = testid => `document.querySelector('[data-boring=ambient-chat] [data-testid=${testid}]')`;
 const rectOf = selector => `(() => { const e = ${selector}; if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height, right: document.documentElement.clientWidth - r.right, bottom: document.documentElement.clientHeight - r.bottom }; })()`;
 
@@ -132,10 +134,10 @@ try {
     const tab = await browser.evaluate(`(() => { const q = ${control('queue')}.getBoundingClientRect(), c = ${control('composer')}.getBoundingClientRect(); return { qTop: q.top, qBottom: q.bottom, cTop: c.top, qLeft: q.left, cLeft: c.left, qRight: q.right, cRight: c.right }; })()`);
     assert.ok(tab.qBottom > tab.cTop && tab.qBottom - tab.cTop < 20 && tab.qLeft > tab.cLeft && tab.qRight < tab.cRight, `the queue is a tab tucked behind the composer's top edge ${JSON.stringify(tab)}`);
     await browser.click(control('queue-more'));
-    await browser.until('the menu offers Edit', `!!${control('queue-edit')}`, 3000);
+    await browser.until('the menu offers Edit', `!!${popup('queue-edit')}`, 3000);
     await shot('03-queued');
     await browser.press('Escape');
-    await browser.until('the menu closed and the window stayed', `!${control('queue-edit')} && !!${ROOT}`, 3000);
+    await browser.until('the menu closed and the window stayed', `!${popup('queue-edit')} && !!${ROOT}`, 3000);
     await browser.click(control('queue-steer'));
     await browser.until('the row now reads Steering (it is placed into the running turn)', `document.querySelector('[data-testid=queue-item]')?.dataset.mode === 'steer' && !${control('queue-steer')}`, 15000);
     await shot('03b-steering');
