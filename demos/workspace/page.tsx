@@ -13,11 +13,13 @@ import { useRemoteChat } from '../../registry/pi-chat/use-remote-chat.ts';
 import { VoiceInput } from '../../registry/feedback/voice-input.tsx';
 import { useRevisionAttachments } from '../../registry/pi-app/use-revision-attachments.ts';
 import { useConversations } from '../../registry/pi-app/use-conversations.ts';
+import { SessionsPane } from '../../registry/pi-app/sessions.tsx';
 import { FileViewer } from '../../registry/pi-app/file-viewer.tsx';
 import { BlockActions } from '../../registry/button/actions.tsx';
 import { PdfPane } from '../../registry/viewers/pdf-pane.tsx';
 import { Button } from '@/components/ui/button';
 import { Badge as ShadcnBadge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
 import { MenuIcon } from 'lucide-react';
 import { cn } from '../../registry/utils/utils.ts';
 import { AgentContextProvider, readAgentContext, useAgentContext } from '../../registry/app-shell/agent-context.ts';
@@ -258,6 +260,23 @@ function Column({ view }) {
 
 // The same chat and file column stay mounted in every Dock placement.
 const PANEL = 560; // the file viewer's width beside the chat
+// History is a side column of the agent pane when the pane is wide enough (page and docked placements), a popover or sheet otherwise.
+// With a file open the column needs room for itself, the viewer and a usable chat; below that it steps aside until the file closes.
+const HISTORY = { id: 'agent-history-column', key: 'workspace-demo.history-column', width: 261 /* SessionsPane's column and its separator */, minPane: 720, minChat: 360 };
+const readHistoryOpen = () => { try { return localStorage.getItem(HISTORY.key) === 'open'; } catch { return false; } };
+const writeHistoryOpen = (open: boolean) => { try { localStorage.setItem(HISTORY.key, open ? 'open' : 'closed'); } catch { /* a per-viewer convenience */ } };
+function usePaneWidth() {
+  const [width, setWidth] = useState(0);
+  const observer = useRef<ResizeObserver | null>(null);
+  const ref = useCallback((element: HTMLElement | null) => {
+    observer.current?.disconnect();
+    if (!element) return;
+    setWidth(element.getBoundingClientRect().width);
+    observer.current = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));
+    observer.current.observe(element);
+  }, []);
+  return [ref, width] as const;
+}
 const transcribe = async (audio: Blob, signal: AbortSignal) => (await (await authorized(new Request(at('/api/transcribe'), { method: 'POST', headers: { 'content-type': audio.type || 'audio/webm' }, body: audio, signal }))).json()).text ?? '';
 
 function Chat({ api, provider, file, openFile, closeFile, setUnsaved, setBeforeLeave, active, conversations, feed }) {
@@ -270,6 +289,19 @@ function Chat({ api, provider, file, openFile, closeFile, setUnsaved, setBeforeL
   if (api.placement === 'docked' && !file && !widened.current) base.current = api.width;
   const side = api.placement === 'docked' && Boolean(file);
   const replaceChat = Boolean(file) && (api.floating || isMobile);
+  const [paneRef, paneWidth] = usePaneWidth();
+  const [historyOpen, setHistoryOpen] = useState(readHistoryOpen);
+  const columnFits = !api.floating && !isMobile && paneWidth >= (file ? HISTORY.width + PANEL + HISTORY.minChat : HISTORY.minPane);
+  const showHistory = columnFits && historyOpen && Boolean(conversations);
+  const historyColumn = useRef<HTMLDivElement>(null);
+  const toggleHistory = () => {
+    const next = !historyOpen;
+    writeHistoryOpen(next); setHistoryOpen(next);
+    // Opening moves focus to the open conversation's row; closing leaves it on the toggle that was pressed.
+    requestAnimationFrame(() => {
+      if (next) historyColumn.current?.querySelector<HTMLElement>('[data-testid=conversation-row][aria-current=true], [data-testid=conversation-row]')?.focus({ preventScroll: true });
+    });
+  };
   useEffect(() => {
     if (side && !widened.current) { widened.current = true; api.setWidth(Math.min(base.current + PANEL, Math.max(base.current, Math.round(window.innerWidth * 0.62)))); }
     else if (!side && widened.current) { widened.current = false; if (!api.floating) api.setWidth(base.current); }
@@ -288,7 +320,7 @@ function Chat({ api, provider, file, openFile, closeFile, setUnsaved, setBeforeL
     ...headerActions.filter(action => action.id === 'navigation'),
     { id: 'dock', label: 'Dock beside app', icon: PanelLeftIcon, onSelect: api.dock },
   ] : headerActions;
-  const barTools = <ChatTools conversations={conversations} provider={provider} file={file} openFile={openFile} feed={feed} />;
+  const barTools = <ChatTools conversations={conversations} provider={provider} file={file} openFile={openFile} feed={feed} column={columnFits && conversations ? { id: HISTORY.id, open: showHistory, onToggle: toggleHistory } : null} />;
   const tools = voice ? <VoiceInput controller={chat.controller} transcribe={transcribe} /> : undefined;
   const common = { controller: chat.controller, actions: chat.actions, headerActions, className: '[&_[data-action=navigation]]:md:hidden', tools, ...(attachments ? { attachments, pasteToFile: {} } : {}), onOpenFile: openFile, fileChanges: true };
   const viewer = file && provider ? <Document path={file} provider={provider} close={closeFile} onBack={replaceChat ? closeFile : undefined} onUnsaved={setUnsaved} setBeforeLeave={setBeforeLeave} /> : null;
@@ -299,10 +331,16 @@ function Chat({ api, provider, file, openFile, closeFile, setUnsaved, setBeforeL
   const conversation = <div hidden={replaceChat} inert={replaceChat} className={cn('min-h-0 flex-1 flex-col', replaceChat ? 'hidden' : 'flex')}>
     <AmbientChat key={active} {...common} headerTools={api.floating ? barTools : undefined} embedded={!api.floating} variant="surface" defaultState="expanded" labels={{ title: 'AP helper', placeholder: 'Ask about your payables…', empty: 'Review an invoice, check the policy, or ask what needs your approval.' }} onDock={() => { api.dock(); api.setWidth(base.current); }} />
   </div>;
-  return <FloatingViewer active={replaceChat} header={!api.floating && !replaceChat ? header : null}>
+  return <div ref={paneRef} data-history={showHistory ? 'column' : undefined} className="flex min-h-0 min-w-0 flex-1">
+    {showHistory && <div ref={historyColumn} id={HISTORY.id} data-testid="history-column" className="flex min-h-0 shrink-0">
+      <SessionsPane conversations={conversations} drawer={false} title="Conversations" />
+      <Separator orientation="vertical" className="w-px" />
+    </div>}
+    <FloatingViewer active={replaceChat} header={!api.floating && !replaceChat ? header : null}>
     <ArtifactWorkspace chat={conversation} open={Boolean(file)} panel={viewer} onClose={closeFile} sheetBelow={0} minPanel={replaceChat ? 0 : 360} minChat={replaceChat ? 0 : 360} defaultWidth={PANEL} storageKey="workspace-demo.file-panel" panelLabel="File viewer" variant="inset"
       className={cn('bg-transparent', replaceChat && '[&>[data-testid=workspace-chat]]:hidden [&>[data-testid=workspace-divider]]:hidden [&>[data-testid=workspace-panel]]:!m-0 [&>[data-testid=workspace-panel]]:!w-full [&>[data-testid=workspace-panel]]:flex-1')} />
-  </FloatingViewer>;
+    </FloatingViewer>
+  </div>;
 }
 
 function WorkspaceLayout(props) {
