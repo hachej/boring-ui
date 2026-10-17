@@ -83,7 +83,7 @@ jobs:
         run: node scripts/publish-npm-packages.mjs "$RUNNER_TEMP/npm-release" "$RELEASE_VERSION" "$RELEASE_TAG" --dry-run
       - name: Confirm the reviewed source was not modified
         run: test -z "$(git status --porcelain --untracked-files=no)"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         id: archive
         with:
           name: npm-release-${{ github.run_id }}-${{ github.run_attempt }}
@@ -127,7 +127,7 @@ jobs:
         run: node scripts/publish-npm-packages.mjs "$RUNNER_TEMP/npm-release" "$RELEASE_VERSION" "$RELEASE_TAG" --publish
       - name: Preserve partial and complete publication receipts
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: npm-publication-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/npm-release/publication.json

@@ -49,7 +49,7 @@ jobs:
           DESIGN_EVIDENCE: .cache/evidence/shadcn-first/viewer-chrome
       - name: Design evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: shadcn-first-design-evidence
           path: .cache/evidence/shadcn-first
@@ -97,7 +97,7 @@ jobs:
           AMBIENT_EVIDENCE: ${{ runner.temp }}/evidence/ambient
       - name: Canvas command evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: canvas-command-evidence
           path: .cache/evidence/canvas-browser
@@ -105,7 +105,7 @@ jobs:
           retention-days: 7
       - name: Canvas proposal evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: canvas-proposal-evidence
           path: .cache/evidence/canvas-proposals-browser
@@ -113,7 +113,7 @@ jobs:
           retention-days: 7
       - name: Remote canvas evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: canvas-remote-evidence
           path: .cache/evidence/canvas-remote-browser
@@ -121,7 +121,7 @@ jobs:
           retention-days: 7
       - name: Task-list evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: task-list-evidence
           path: .cache/evidence/task-list-browser
@@ -129,14 +129,14 @@ jobs:
           retention-days: 7
       - name: Morning experience evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: morning-evidence
           path: .cache/evidence/morning-browser
           retention-days: 7
       - name: Evidence of a failed run
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: journey-evidence
           path: |
@@ -147,7 +147,7 @@ jobs:
 
       - name: Draft recovery evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: draft-recovery-evidence
           path: .cache/evidence/draft-recovery-browser
@@ -155,7 +155,7 @@ jobs:
           if-no-files-found: ignore
       - name: File tree evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: file-tree-evidence
           path: |
