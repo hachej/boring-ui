@@ -218,7 +218,7 @@ const defaultLocate = (path: string): ResourceLocator => ({ resource: { provider
  * its versions, the file viewer and the host's own views). Agent artifacts open the panel as they appear. Every prop is data or a callback:
  * the host owns the routes, authentication, the controller and what is open (when controlled).
  */
-export function AgentWorkspace({ controller, conversationId, chat = {}, labels, icons, panelActions, connecting, conversations, sessions, history = 'column', resources, revisionProvider, libraryPlacement = 'panel', locale, fileTree: treeOptions, uploads, agents, detect, viewers, interactive, share, opened: controlled,
+export function AgentWorkspace({ controller, conversationId, chat = {}, labels, icons, panelActions, connecting, conversations, sessions, history: historyPlacement = 'column', resources, revisionProvider, libraryPlacement = 'panel', locale, fileTree: treeOptions, uploads, agents, detect, viewers, interactive, share, opened: controlled,
   defaultOpened = null, onOpenedChange, onUnsavedChange, panels, autoOpen = true, fileBack, floatingChat, chatTop, controls, storageKey = 'boring.agent-workspace', sheetBelow = 641, drawerBelow = 641, floatBelow, className }: AgentWorkspaceProps) {
   const [own, setOwn] = useState<OpenedView | null>(defaultOpened);
   const [panelLibrary, setPanelLibrary] = useState(false);
@@ -437,11 +437,11 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
     ? <FileTreeView variant="list" refresh={libraryPlacement !== 'panel'} title={text.labels.library} {...(onClose ? { onClose } : {})} key={JSON.stringify([revisionProvider?.workspace, revisionProvider?.identity])} {...(locale ? { locale } : {})} {...viewOptions} controller={fileTree} historyKey={feed.seq} onOpen={onOpen} {...(isFile(opened) ? { selectedPath: opened.path } : {})} />
     : <p role="status" className="m-0 p-3 text-sm text-muted-foreground">{treeOptions?.labels?.loading ?? text.labels.loading}</p>;
   // `history="popover"` keeps the conversations out of the pane. With an open panel the column steps aside unless column, panel and chat fit.
-  const paneConversations = history === 'column' ? conversations : undefined;
+  const paneConversations = historyPlacement === 'column' ? conversations : undefined;
   const hasNavigation = sessions !== false && Boolean(paneConversations || revisionProvider);
   const stepAside = Boolean(paneConversations) && hasNavigation && !narrow && panelOpen && !historyColumnFits(width, VIEWER_MIN);
   const docked = hasNavigation && width > 0 && !narrow && paneOpen && !stepAside;
-  const popoverHistory = history === 'popover' || stepAside;
+  const popoverHistory = historyPlacement === 'popover' || stepAside;
   const toggle = hasNavigation && !docked && !drawer && !stepAside && <SessionsToggle navigation={Boolean(revisionProvider)} open={narrow ? drawer : paneOpen} drawer={narrow} controls={narrow ? undefined : paneId}
     onToggle={() => { if (narrow) setDrawer(value => !value); else { setPaneOpen(!paneOpen); if (!paneOpen) focusHistoryRow(paneId); } }} />;
 
