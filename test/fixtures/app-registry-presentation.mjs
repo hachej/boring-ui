@@ -10,7 +10,7 @@ for (const name of ['window', 'document', 'navigator', 'HTMLElement', 'Element',
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const { createElement: h, act } = await import('react');
 const { createRoot } = await import('react-dom/client');
-const { ViewerActions, ViewerVersions, ConversationFiles, FileTree } = await import('./presentation-components.mjs');
+const { ViewerActions, ViewerVersions, ConversationFiles, FileTree, HistoryColumnToggle, useHistoryColumn } = await import('./presentation-components.mjs');
 const container = document.createElement('div'); document.body.append(container);
 const root = createRoot(container);
 const find = id => { const node = document.querySelector(`[data-testid="${id}"]`); assert.ok(node, id); return node; };
@@ -135,7 +135,27 @@ try {
   } finally {
     await act(async () => detachedRoot.unmount()); await detached.happyDOM.close();
   }
-  console.log('PASS: installed consumer Button/dropdown, owner-document menus, keyboard/radio/history, Library Open/Close and phone files drawer');
+  // The History column as the consumer installed it: a pane wide enough gets History as the column's toggle; a floating one keeps the popover.
+  const conversations = { items: [{ id: 'one', title: 'Fictional plan' }, { id: 'two', title: 'Fictional notes' }], activeId: 'one', onSelect() {}, onNew() {} };
+  const measure = window.HTMLElement.prototype.getBoundingClientRect;
+  window.HTMLElement.prototype.getBoundingClientRect = () => ({ width: 1024, height: 700, left: 0, right: 1024, top: 0, bottom: 700, x: 0, y: 0 });
+  try {
+    const Pane = ({ floating }) => {
+      const history = useHistoryColumn({ id: 'pane-history', storageKey: 'consumer.history-column', conversations, enabled: !floating, title: 'Conversations' });
+      return h('div', { ref: history.ref }, history.column, history.toggle ? h(HistoryColumnToggle, { toggle: history.toggle }) : h('p', { 'data-testid': 'history-popover-fallback' }));
+    };
+    await render(h(Pane, { floating: false }));
+    assert.equal(find('chat-action-history').getAttribute('aria-expanded'), 'false');
+    assert.equal(find('chat-action-history').getAttribute('aria-controls'), 'pane-history');
+    await click('chat-action-history');
+    assert.equal(find('chat-action-history').getAttribute('aria-expanded'), 'true');
+    assert.equal(find('history-column').id, 'pane-history');
+    assert.equal(find('history-column').querySelectorAll('[data-testid=conversation-row]').length, 2, 'the column lists the conversations with the consumer sidebar parts');
+    await render(h(Pane, { floating: true }));
+    find('history-popover-fallback');
+    assert.equal(document.querySelector('[data-testid=history-column]'), null, 'a floating pane keeps the popover');
+  } finally { window.HTMLElement.prototype.getBoundingClientRect = measure; }
+  console.log('PASS: installed consumer Button/dropdown, owner-document menus, keyboard/radio/history, Library Open/Close, phone files drawer and the History column');
 } finally {
   await act(async () => root.unmount());
   await window.happyDOM.close();

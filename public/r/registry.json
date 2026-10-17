@@ -762,6 +762,11 @@
           "target": "components/pi-app/sessions.tsx"
         },
         {
+          "path": "registry/pi-app/history-column.tsx",
+          "type": "registry:component",
+          "target": "components/pi-app/history-column.tsx"
+        },
+        {
           "path": "registry/pi-app/artifact-panel.tsx",
           "type": "registry:component",
           "target": "components/pi-app/artifact-panel.tsx"
