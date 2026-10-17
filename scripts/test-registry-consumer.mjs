@@ -45,7 +45,7 @@ try {
   const dependencies = Object.fromEntries(item.dependencies.filter(pin => !pin.startsWith('@hachej/boring-')).map(pin => {
     const split = pin.lastIndexOf('@'); return [pin.slice(0, split), pin.slice(split + 1)];
   }));
-  for (const name of ['typescript', '@types/react', '@types/react-dom', 'happy-dom', 'esbuild', 'shadcn', 'tailwindcss', ...(taskList ? ['@base-ui/react', 'class-variance-authority', 'cn', 'clsx', 'tailwind-merge', 'lucide-react'] : [])]) dependencies[name] = rootManifest.devDependencies[name];
+  for (const name of ['typescript', '@types/react', '@types/react-dom', 'happy-dom', 'esbuild', 'shadcn', 'tailwindcss', '@base-ui/react', 'class-variance-authority', 'cn', ...(taskList ? ['clsx', 'tailwind-merge', 'lucide-react'] : [])]) dependencies[name] = rootManifest.devDependencies[name];
   // The SQLite workspace host loads Pi's portable env entry at runtime (the optional files peer); nothing else of Pi.
   dependencies['@earendil-works/pi-durable'] = JSON.parse(readFileSync(join(root, 'packages/files/package.json'), 'utf8')).peerDependencies['@earendil-works/pi-durable'];
   const manifest = { name: 'isolated-registry-consumer', version: '1.0.0', private: true, type: 'module', dependencies };

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { PinIcon } from 'lucide-react';
 import { EmptyState } from '../../../registry/pi-chat/empty-state';
 import { QuestionCard } from '../../../registry/pi-chat/question-card';
 import { AgentNotifications, createNotificationStore } from '../../../registry/pi-ambient/notifications';
@@ -30,7 +31,7 @@ export function GroupOneControls({ surface }) {
     {surface === 'notification' && <AgentNotifications store={notifications} variant="surface" placement="inline" autoDismissMs={0} onActivate={() => setEvent('notification opened')} className="static w-full" />}
     {surface === 'provider' && <ProviderSetup defaultOpen providers={[{ id: 'fictional', name: 'Fictional provider', models: [{ id: 'fictional-model', name: 'Fictional model' }], auth: ['api_key'], configured: true }]} value={{ provider: 'fictional', modelId: 'fictional-model' }} onSave={async () => { setEvent('provider saved'); }} />}
     {surface === 'toggles' && <>
-      <ActionButton action={{ id: 'pin', label: 'Pin fictional document', pressed: pinned, onSelect: () => setPinned(value => !value) }} testId="fixture" />
+      <ActionButton action={{ id: 'pin', label: 'Pin fictional document', icon: PinIcon, pressed: pinned, onSelect: () => setPinned(value => !value) }} testId="fixture" />
       <div className="app-shell"><AgentLayerProvider><AccountMenu account={{ name: 'Fictional reviewer', menu: [], theme: { value: dark ? 'dark' : 'light', onChange: value => { setDark(value === 'dark'); setEvent(count => String(Number(count || 0) + 1)); } } }} improve={false} text={appShellText('en')} done={() => {}} /></AgentLayerProvider></div>
     </>}
     <output data-testid="group-one-event">{event}</output>

@@ -40,7 +40,7 @@ export async function testDesign({ evidence = process.env.DESIGN_EVIDENCE } = {}
       const inspect = async (surface, params) => {
         await browser.evaluate(`Promise.all(document.getAnimations().filter(animation => Number.isFinite(animation.effect?.getComputedTiming().endTime)).map(animation => animation.finished.catch(() => {})))`);
         if (params.width === 390) {
-          const small = await browser.evaluate(`[...document.querySelectorAll('[data-slot=button], [data-slot=toggle]')].filter(element => element.checkVisibility() && element.closest('.pi-chat, .boring-viewer, .app-shell')).map(element => ({ id: element.dataset.testid ?? element.getAttribute('aria-label'), width: element.getBoundingClientRect().width, height: element.getBoundingClientRect().height })).filter(box => box.width < 43.9 || box.height < 43.9)`);
+          const small = await browser.evaluate(`[...document.querySelectorAll('[data-slot=button], [data-slot=toggle], [class~="group/button"], [class~="group/toggle"]')].filter(element => element.checkVisibility() && element.closest('.pi-chat, .boring-viewer, .app-shell, [data-boring], [role=dialog]')).map(element => ({ id: element.dataset.testid ?? element.getAttribute('aria-label'), width: element.getBoundingClientRect().width, height: element.getBoundingClientRect().height })).filter(box => box.width < 43.9 || box.height < 43.9)`);
           assert.deepEqual(small, [], `${surface}: native button/toggle touch targets must be at least 44px`);
         }
         const result = await browser.evaluate(`(${auditDesign.toString()})(${JSON.stringify(options)})`);
@@ -57,6 +57,8 @@ export async function testDesign({ evidence = process.env.DESIGN_EVIDENCE } = {}
         const previousDocument = await browser.evaluate('performance.timeOrigin');
         await browser.send('Page.navigate', { url });
         await browser.until(`${name}-${theme}-${mode}-${width}: new document and mounted controls`, `performance.timeOrigin !== ${previousDocument} && document.readyState === 'complete' && (${ready}) && document.documentElement.classList.contains('dark') === ${mode === 'dark'} && ${theme === 'brand' ? "getComputedStyle(document.documentElement).getPropertyValue('--border-width').trim() === '2px'" : 'true'}`, 30000);
+        assert.equal(await browser.evaluate('innerWidth'), width, 'the audit uses the requested CSS viewport, not a shrink-to-fit page');
+        assert.equal(await browser.evaluate('visualViewport.scale'), 1, 'the audit never zooms the page to fit');
       };
       let prepared = false;
       for (const themeName of ['stock', 'brand']) for (const mode of ['light', 'dark']) for (const width of [1440, 390]) {

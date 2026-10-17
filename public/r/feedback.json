@@ -103,6 +103,14 @@
       "line-height": "var(--leading-normal, 1.5)",
       "color": "var(--boring-feedback-text)"
     },
+    "@layer base": {
+      "[data-boring=\"feedback\"] :where(button, [role=\"button\"])": {
+        "appearance": "none",
+        "background-color": "transparent",
+        "border": "0",
+        "padding": "0"
+      }
+    },
     "[data-boring=\"feedback\"] *, [data-boring=\"feedback\"] *::before, [data-boring=\"feedback\"] *::after": {
       "box-sizing": "border-box"
     },
@@ -595,7 +603,7 @@
         "flex-wrap": "wrap",
         "border-radius": "var(--boring-feedback-radius)"
       },
-      "[data-boring=\"feedback\"] :is([data-slot=\"button\"], [data-slot=\"toggle\"])": {
+      "[data-boring=\"feedback\"] :is([data-slot=\"button\"], [data-slot=\"toggle\"], [class~=\"group/button\"], [class~=\"group/toggle\"])": {
         "min-height": "2.75rem",
         "min-width": "2.75rem"
       }

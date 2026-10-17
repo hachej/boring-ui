@@ -32,14 +32,14 @@ export function auditDesign({ groups, palette, radiusBindings }) {
   const borderWidth = resolve('width', root.getPropertyValue('--border-width').trim() || '1px');
   const results = groups.map(group => ({ id: group.id, name: group.name, mode: group.mode, elements: 0, checks: 0, violations: [] }));
   for (const element of document.querySelectorAll('body *')) {
-    if (element === probe || element.namespaceURI !== 'http://www.w3.org/1999/xhtml' || !element.checkVisibility() || !element.closest('.pi-chat, .boring-viewer, .app-shell, [data-boring=file-tree], [data-boring=feedback], [data-slot=dropdown-menu-content]')) continue;
+    if (element === probe || element.namespaceURI !== 'http://www.w3.org/1999/xhtml' || !element.checkVisibility() || !element.closest('.pi-chat, .boring-viewer, .app-shell, [data-boring], [data-slot=dropdown-menu-content], [role=dialog]')) continue;
     const box = element.getBoundingClientRect();
     if (!box.width || !box.height || box.bottom <= 0 || box.top >= innerHeight || box.right <= 0 || box.left >= innerWidth) continue;
     // A PDF's foreign document and rich editor document are content exceptions; their chrome remains audited.
     if (element.closest('.tiptap, .ProseMirror') || element.matches('iframe, canvas, img, script, style, link')) continue;
     // A semantic list/card/menu button remains in its own unmigrated group. Native
     // Button/Toggle/Switch instances are group 1 wherever another block composes them.
-    const nativeControl = ['button', 'toggle', 'switch'].includes(element.dataset.slot);
+    const nativeControl = ['button', 'toggle', 'switch'].includes(element.dataset.slot) || element.classList.contains('group/button') || element.classList.contains('group/toggle');
     let legacy;
     if (!nativeControl && element.matches('button, [role=switch]')) {
       if (element.matches('[role^=menuitem], [data-slot^=dropdown-menu-]') || element.closest('.app-shell [role=dialog]')) legacy = '2';

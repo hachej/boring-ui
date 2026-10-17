@@ -114,17 +114,25 @@
         "color": "inherit",
         "letter-spacing": "inherit"
       },
+      ".boring-viewer :where(button, [role=\"button\"])": {
+        "appearance": "none",
+        "background-color": "transparent",
+        "border": "0",
+        "padding": "0"
+      },
       ".boring-viewer :where(textarea, input)": {
         "margin": "0"
       },
+      ".boring-viewer [hidden]": {
+        "display": "none"
+      }
+    },
+    "@layer utilities": {
       "@media (max-width: 640px), (pointer: coarse)": {
-        ".boring-viewer :is([data-slot=\"button\"], [data-slot=\"toggle\"])": {
+        ".boring-viewer :is([data-slot=\"button\"], [data-slot=\"toggle\"], [class~=\"group/button\"], [class~=\"group/toggle\"])": {
           "min-height": "2.75rem",
           "min-width": "2.75rem"
         }
-      },
-      ".boring-viewer [hidden]": {
-        "display": "none"
       }
     },
     "@layer components": {

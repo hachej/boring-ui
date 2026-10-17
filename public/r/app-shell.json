@@ -131,9 +131,11 @@
       ".app-shell :where(h2)": {
         "margin": "0",
         "font": "inherit"
-      },
+      }
+    },
+    "@layer utilities": {
       "@media (max-width: 640px), (pointer: coarse)": {
-        ".app-shell :is([data-slot=\"button\"], [data-slot=\"toggle\"])": {
+        ".app-shell :is([data-slot=\"button\"], [data-slot=\"toggle\"], [class~=\"group/button\"], [class~=\"group/toggle\"])": {
           "min-height": "2.75rem",
           "min-width": "2.75rem"
         }

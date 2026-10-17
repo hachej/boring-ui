@@ -8,7 +8,7 @@
       "folders": [
         "registry/button/button.tsx"
       ],
-      "selector": "button, [role=button], [role=switch], [role=checkbox], [role=radio]"
+      "selector": "button, [role=button], [role=switch], [role=checkbox], [role=radio], [class~=\"group/button\"], [class~=\"group/toggle\"]"
     },
     {
       "id": "2",
