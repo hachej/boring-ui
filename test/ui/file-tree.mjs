@@ -131,6 +131,12 @@ test('file tree renders in StrictMode, expands by keyboard and reads history wit
   const { createElement, act, StrictMode } = await import('react');
   const { createRoot } = await import('react-dom/client');
   const { FileTree } = await import('@hachej/boring-ui-kit/file-tree-view');
+  const { build } = await import('esbuild'); const { mkdirSync } = await import('node:fs');
+  const out = new URL('../../.cache/file-tree-test/', import.meta.url); mkdirSync(out, { recursive: true });
+  const output = new URL('presentation.mjs', out);
+  await build({ entryPoints: [new URL('../../registry/file-tree/file-tree.tsx', import.meta.url).pathname], outfile: output.pathname, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external',
+    plugins: [{ name: 'dom-without-css', setup(builder) { builder.onResolve({ filter: /\.css$/ }, () => ({ path: 'styles', namespace: 'empty-style' })); builder.onLoad({ filter: /.*/, namespace: 'empty-style' }, () => ({ contents: '', loader: 'js' })); } }] });
+  const { fileTreeComponents } = await import(output.href);
   const opened = [];
   const f = fixture(t, { list: async ({ directory }) => ({ entries: directory ? [entry('docs/note.md')] : [{ path: 'docs', kind: 'directory', size: 0 }] }) });
   const seed = await f.controller.upload({ path: 'docs/note.md', bytes: new TextEncoder().encode('Original fictional version'), mediaType: 'text/markdown' });
@@ -142,7 +148,7 @@ test('file tree renders in StrictMode, expands by keyboard and reads history wit
     await act(async () => root.unmount()); await window.happyDOM.close();
     for (const [name, descriptor] of globals) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else delete globalThis[name]; }
   });
-  await act(async () => root.render(createElement(StrictMode, null, createElement(FileTree, { variant: 'list', revisionProvider: f.binding, onOpen: path => opened.push(path) }))));
+  await act(async () => root.render(createElement(StrictMode, null, createElement(FileTree, { components: fileTreeComponents, variant: 'list', revisionProvider: f.binding, onOpen: path => opened.push(path) }))));
   const directory = element.querySelector('[role=treeitem][data-path="docs"]');
   assert.ok(directory); assert.equal(directory.getAttribute('aria-expanded'), 'false');
   await t.test('folder rows do not repeat the generic kind as metadata', () => {
@@ -150,6 +156,9 @@ test('file tree renders in StrictMode, expands by keyboard and reads history wit
   });
   await act(async () => directory.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })));
   assert.equal(directory.getAttribute('aria-expanded'), 'true');
+  await t.test('complete provider listings show the folder child count', () => {
+    assert.equal(directory.querySelector(':scope > div [data-file-meta]')?.textContent, '1 item');
+  });
   const folderButton = directory.querySelector('[data-slot=sidebar-menu-button]'); assert.ok(folderButton);
   await act(async () => folderButton.click());
   assert.equal(directory.getAttribute('aria-expanded'), 'false', 'the controlled shadcn trigger toggles exactly once');
@@ -160,7 +169,7 @@ test('file tree renders in StrictMode, expands by keyboard and reads history wit
   assert.deepEqual(opened, ['docs/note.md']);
   assert.match(file.querySelector('[data-file-meta]')?.textContent ?? '', /Markdown · 1 B/);
   assert.equal(file.querySelector('[aria-label="History of docs/note.md"]'), null, 'history is not an always-visible row button');
-  await act(async () => file.querySelector('[aria-label="Actions for docs/note.md"]').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
+  await act(async () => file.querySelector('[aria-label="Actions for docs/note.md"]').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true })));
   const historyAction = window.document.querySelector('[role=menuitem][data-action=history]');
   assert.equal(historyAction?.textContent, 'Version history');
   await act(async () => historyAction.click());
@@ -175,6 +184,21 @@ test('file tree renders in StrictMode, expands by keyboard and reads history wit
   assert.doesNotMatch(preview.textContent, /New fictional version/);
   assert.equal(preview.querySelector('textarea, [contenteditable=true]'), null);
   assert.deepEqual(opened, ['docs/note.md'], 'history did not retarget an open editor');
+  const read = f.binding.read;
+  f.binding.read = async () => ({ kind: 'unavailable', reason: 'Fictional download refusal' });
+  const download = async () => {
+    await act(async () => file.querySelector('[data-file-more]').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true })));
+    await act(async () => element.querySelector('[data-action=download]').click());
+  };
+  await download();
+  assert.match(element.querySelector('p[role=alert]')?.textContent ?? '', /could not be downloaded/);
+  const nextDownload = later(); f.binding.read = () => nextDownload.promise;
+  await download();
+  await t.test('a new download clears the previous error before its read settles', () => {
+    assert.equal(Boolean(element.querySelector('p[role=alert]')), false);
+  });
+  await act(async () => nextDownload.resolve({ kind: 'unavailable', reason: 'Fictional second refusal' }));
+  f.binding.read = read;
   const loading = later();
   f.binding.list = ({ directory }) => directory === 'empty' ? loading.promise : Promise.resolve({ entries: [{ path: 'empty', kind: 'directory', size: 0 }, entry('sibling.md')] });
   await act(async () => element.querySelector('[aria-label="Refresh"]').click());
@@ -253,6 +277,20 @@ test('file tree renders in StrictMode, expands by keyboard and reads history wit
   assert.equal(reads, 2);
   const reread = await f.binding.read({ target: f.binding.locate('uploads/unreadable.md'), revision: { kind: 'latest' } });
   assert.equal(new TextDecoder().decode(reread.snapshot.bytes), 'Fictional readable retry');
+
+  f.binding.publish = async request => { const result = await publish(request); if (result.kind === 'committed') uploaded.add(request.changes[0].target.resource.path); throw new Error('Fictional acknowledgement lost'); };
+  const uncertain = new File(['Fictional uncertain upload'], 'uncertain.md', { type: 'text/markdown' });
+  await act(async () => panel.dispatchEvent(drag('drop', uncertain)));
+  const uncertainRow = () => element.querySelector('[data-path="uploads/uncertain.md"]');
+  for (let attempt = 0; attempt < 50 && uncertainRow()?.dataset.uploadState !== 'failed'; attempt++) await act(async () => new Promise(resolve => setTimeout(resolve, 10)));
+  const check = uncertainRow().querySelector('[data-upload-retry]');
+  await t.test('unconfirmed upload control has the same visible and accessible name', () => {
+    assert.equal(check.textContent, 'Check upload status');
+    assert.equal(check.textContent, check.getAttribute('aria-label'));
+  });
+  const published = f.publishes();
+  await act(async () => check.click());
+  assert.equal(f.publishes(), published, 'checking an unconfirmed upload does not republish');
 });
 
 test('throwing file-tree subscribers cannot strand a publication before dispatch', async t => {

@@ -66,7 +66,7 @@ test('the agent workspace reloads the tree, the open history panel and the @ sea
   await act(async () => element.querySelector('[data-testid=workspace-library]').click());
   await settle(() => element.querySelector('[role=treeitem][data-path="notes.md"]'), 'the tree lists the file');
   // Open the history panel of the file.
-  await act(async () => element.querySelector('button[aria-label="Actions for notes.md"]').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
+  await act(async () => element.querySelector('button[aria-label="Actions for notes.md"]').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true })));
   await act(async () => element.querySelector('[role=menuitem][data-action=history]').click());
   await settle(() => calls.history === 1, 'the history panel loads once');
 

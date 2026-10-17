@@ -30,7 +30,7 @@ Item and file types follow the shadcn schema: the multi-file chat items are `reg
 | `pi-app` | `... add <registry>/pi-app.json` (also installs `pi-chat`, `pi-workspace` and `viewers`) | the page is a whole agent app: sessions, chat and artifact viewers in one `AgentWorkspace` (see [below](#whole-agent-app-pi-app-agentworkspace)) |
 | `app-shell` | `... add <registry>/app-shell.json` (also installs `pi-chat`, `feedback` and pinned `drawer` and `dropdown-menu` recipes plus the shadcn `sidebar` and `avatar` of your own style; add `<registry>/theme.json` too when the host has no shadcn tokens) | one agent above any app: a bottom drawer with peek, half and full on a phone, a right panel on a wide screen (see [below](#agent-layer-app-shell)) |
 
-The `drawer` and `dropdown-menu` items pin public `@base-ui/react@1.9.0` primitives and install into their own folders, never over the host’s `components/ui` files. Shared blocks use those APIs explicitly; the host’s `base-nova` or `radix-nova` style still resolves its sidebar, avatar and Trace. Viewer menus use the shared style-independent `ActionMenu`. `npm run test:app-registry-consumer` installs and strictly checks both styles sequentially, including the phone files drawer and portalled viewer/version menus.
+The `drawer` and `dropdown-menu` items pin public `@base-ui/react@1.9.0` primitives and install into their own folders, never over the host's `components/ui` files. Blocks support the consumer's `base-nova` Base UI style only. Library uses that consumer's real shadcn Button and the pinned dropdown recipe. Viewer menus retain the shared `ActionMenu` pending their separate migration. `npm run test:app-registry-consumer` installs and strictly checks Base UI controls, including Library actions, the phone files drawer and viewer/version menus.
 
 Tokens: `pi-ambient`, `pi-workspace`, `pi-app`, `viewers`, `provider-setup` and `file-tree` depend on `theme` (directly or through a block), so `shadcn add` merges the tokens into the app's CSS file. `pi-chat`, `button`, `dock`, `feedback` and `app-shell` do not: they use the host's shadcn tokens (`background`, `foreground`, `muted`, `primary`, `border`, `ring`, `destructive` and the rest) and their own layout, and they install no global tokens. A host that has those tokens changes nothing. A host without them must also install `theme.json` (`npx shadcn@4.21.4 add <registry>/theme.json <registry>/<block>.json`), or those items render with semantic colours and focus styling missing (dock's resize indicator loses its colour). The blocks import `cn` from `utils` and, when they render buttons, `Button` from `button`; the CLI installs each once. File counts, taken from the items in `registry.json` (each item's files plus those of its registry dependencies; not a fresh CLI install): `pi-chat` 33 (its 29, `button` 2, `utils` 1, `drawer` 1), `pi-workspace` 36 (its two plus `dock`'s one), `pi-ambient` 39 (its three plus `pi-workspace`), `viewers` 15 (its 12, `button`, `utils`); each theme-carrying install also merges the theme tokens into the CSS file, keeping tokens the host already defines.
 
@@ -415,7 +415,11 @@ Run `npm run test:task-list-registry-consumer` after building the packages. It u
 ## File tree
 
 Install `file-tree.json` for portable `FileTree` and `FileTreeView` wrappers.
-The renderer adapts shadcn `sidebar-11`; the recipe imports its scoped stylesheet.
+The renderer adapts the structure of shadcn `sidebar-11`; the recipe imports its scoped stylesheet.
+Buttons come from the consumer's `@/components/ui/button`; actions use the existing
+pinned Base UI dropdown recipe. Their look is not overridden by Library CSS.
+The package renderer takes an explicit `components` binding; these installed wrappers
+supply it, so installed consumers need no extra props.
 It can mount in a detached window without the workspace layout. Pass the concrete
 `revisionProvider` from the [files guide](../packages/files/README.md#frontend-revision-provider).
 The `pi-app` recipe accepts the same binding and supplies the tree, `@` filename

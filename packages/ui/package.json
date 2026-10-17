@@ -137,7 +137,8 @@
     "zod": "^4.6.5",
     "@tldraw/tlschema": "^5.5.2",
     "lucide-react": "^1.51.0",
-    "radix-ui": "^1.8.0"
+    "radix-ui": "^1.8.0",
+    "@base-ui/react": "1.9.0"
   },
   "peerDependenciesMeta": {
     "@hachej/boring-files": {
@@ -222,6 +223,9 @@
       "optional": true
     },
     "radix-ui": {
+      "optional": true
+    },
+    "@base-ui/react": {
       "optional": true
     }
   },

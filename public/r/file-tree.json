@@ -2,7 +2,7 @@
   "$schema": "https://ui.shadcn.com/schema/registry-item.json",
   "name": "file-tree",
   "title": "File tree",
-  "description": "Browse, search, upload and inspect retained versions through one revisionProvider binding.",
+  "description": "Browse, search, upload and inspect retained versions through one revisionProvider binding. Uses the consumer's shadcn Button and the pinned Base UI dropdown-menu; Base UI style only.",
   "dependencies": [
     "@hachej/boring-ui-kit@^0.3.2",
     "@hachej/boring-files@^0.3.2",
@@ -11,12 +11,15 @@
     "lucide-react@^1.51.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/theme.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/theme.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/dropdown-menu.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/utils.json",
+    "button"
   ],
   "files": [
     {
       "path": "registry/file-tree/file-tree.tsx",
-      "content": "'use client';\n\nimport '@hachej/boring-ui-kit/file-tree.css';\n\nexport { FileTree, FileTreeView } from '@hachej/boring-ui-kit/file-tree-view';\nexport type { FileTreeProps, FileTreeViewProps } from '@hachej/boring-ui-kit/file-tree-view';\nexport { createFileTreeController } from '@hachej/boring-ui-kit/file-tree';\nexport type { FileTreeController } from '@hachej/boring-ui-kit/file-tree';\n",
+      "content": "'use client';\n\nimport '@hachej/boring-ui-kit/file-tree.css';\nimport { FileTree as PackageFileTree, FileTreeView as PackageFileTreeView } from '@hachej/boring-ui-kit/file-tree-view';\nimport type { FileTreeComponents, FileTreeActionsProps, FileTreeButtonProps, FileTreeProps as PackageFileTreeProps, FileTreeViewProps as PackageFileTreeViewProps } from '@hachej/boring-ui-kit/file-tree-view';\nimport { Button } from '@/components/ui/button';\nimport { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../dropdown-menu/dropdown-menu';\nimport { cn } from '../utils/utils';\n\n// Only touch-target layout is added; appearance remains the consumer's shadcn Button.\nfunction LibraryButton({ className, ...props }: FileTreeButtonProps) {\n  return <Button {...props} className={cn('max-sm:min-h-11 max-sm:min-w-11 pointer-coarse:min-h-11 pointer-coarse:min-w-11', className)} />;\n}\n\nfunction FileActionMenu({ label, icon, items, container }: FileTreeActionsProps) {\n  return <DropdownMenu modal={false}>\n    <DropdownMenuTrigger render={<LibraryButton type=\"button\" variant=\"ghost\" size=\"icon\" />} data-file-more aria-label={label}>{icon}</DropdownMenuTrigger>\n    <DropdownMenuContent data-boring=\"file-actions\" align=\"end\" portalContainer={container}>\n      {items.map(item => <DropdownMenuItem key={item.id} data-action={item.id} onClick={item.onSelect} className=\"max-sm:min-h-11 pointer-coarse:min-h-11\">{item.icon}{item.label}</DropdownMenuItem>)}\n    </DropdownMenuContent>\n  </DropdownMenu>;\n}\n\nexport const fileTreeComponents = { Button: LibraryButton, Actions: FileActionMenu } satisfies FileTreeComponents;\nexport type FileTreeProps = Omit<PackageFileTreeProps, 'components'>;\nexport type FileTreeViewProps = Omit<PackageFileTreeViewProps, 'components'>;\n\nexport function FileTree(props: FileTreeProps) {\n  return <PackageFileTree {...props} components={fileTreeComponents} />;\n}\nexport function FileTreeView(props: FileTreeViewProps) {\n  return <PackageFileTreeView {...props} components={fileTreeComponents} />;\n}\nexport { createFileTreeController } from '@hachej/boring-ui-kit/file-tree';\nexport type { FileTreeController } from '@hachej/boring-ui-kit/file-tree';\n",
       "type": "registry:component",
       "target": "components/file-tree/file-tree.tsx"
     }

@@ -95,13 +95,14 @@ for (const [name, start, trigger] of [
             announcements:(() => { const live=panel.querySelector('[aria-live=polite]'), style=getComputedStyle(live), box=live.getBoundingClientRect(); return live && style.position==='absolute' && box.width<=1 && box.height<=1 && style.clip!=='auto'; })(),
             settledRows:[...panel.querySelectorAll('[data-upload-state]')].length,
             overflow:document.documentElement.scrollWidth>innerWidth || panel.scrollWidth>panel.clientWidth,
-            targets:[...panel.querySelectorAll('.file-tree-more,.file-tree-upload,.file-tree-close')].map(e=>({w:e.getBoundingClientRect().width,h:e.getBoundingClientRect().height})) };
+            targets:[...panel.querySelectorAll('[data-file-more],[data-file-upload],[data-file-close]')].map(e=>({w:e.getBoundingClientRect().width,h:e.getBoundingClientRect().height})) };
         })()`);
         assert.ok(geometry.left >= 16 && geometry.right >= 16, `inset search: ${JSON.stringify(geometry)}`);
         assert.ok(geometry.rows.every(height => height >= 44 && height <= 48), JSON.stringify(geometry));
         assert.ok(geometry.indent >= 12 && geometry.indent <= 16, `nested files indent to the right of their folder: ${JSON.stringify(geometry)}`);
         assert.equal(geometry.allMeta, true);
-        assert.deepEqual(geometry.folderMeta, [], 'folders omit generic Folder metadata');
+        assert.deepEqual(geometry.folderMeta, [name === 'standalone' ? '3 items' : '1 item'], 'only complete provider child listings supply folder counts');
+        assert.ok(geometry.targets.length >= 3, 'the real shadcn upload, close and file-actions controls are present');
         assert.equal(geometry.announcements, true, 'upload status is a clipped polite live region, not visible log lines');
         assert.equal(geometry.settledRows, 0, 'completed uploads leave no row status or error');
         assert.equal(geometry.overflow, false, `${name}: no horizontal overflow at ${phone ? 360 : 1440}px`);

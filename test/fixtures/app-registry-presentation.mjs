@@ -10,7 +10,7 @@ for (const name of ['window', 'document', 'navigator', 'HTMLElement', 'Element',
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const { createElement: h, act } = await import('react');
 const { createRoot } = await import('react-dom/client');
-const { ViewerMenu, ViewerVersions, ConversationFiles } = await import('./presentation-components.mjs');
+const { ViewerMenu, ViewerVersions, ConversationFiles, FileTree } = await import('./presentation-components.mjs');
 const container = document.createElement('div'); document.body.append(container);
 const root = createRoot(container);
 const find = id => { const node = document.querySelector(`[data-testid="${id}"]`); assert.ok(node, id); return node; };
@@ -83,7 +83,35 @@ try {
   await click('conversation-file');
   assert.equal(opened, 1, 'file selection invokes the existing host callback once');
   assert.equal(find('conversation-files').getAttribute('aria-expanded'), 'false');
-  console.log('PASS: installed portalled viewer menu keyboard/radio/children, versions and phone conversation-files drawer');
+  let historyReads = 0, libraryClosed = 0, fileOpened;
+  const provider = {
+    identity: { principalId: 'fictional', initiatorId: 'fictional', scopeId: 'fictional' },
+    workspace: { providerId: 'fictional', instanceId: 'one', incarnation: 'one', viewId: 'published' },
+    locate: path => ({ resource: { providerId: 'fictional', path }, view: { kind: 'published' } }),
+    list: async () => ({ entries: [{ path: 'fictional.md', kind: 'file', size: 12 }] }), search: async () => ({ entries: [] }),
+    history: async () => { historyReads++; return [{ revision: 'a'.repeat(40), savedAt: 1 }]; },
+    read: async () => ({ kind: 'missing' }), publish: async () => ({ kind: 'unavailable', reason: 'fictional read-only fixture' }), lookup: async () => ({ kind: 'not-found' }),
+  };
+  await render(h(FileTree, { revisionProvider: provider, refresh: false, onClose: () => { libraryClosed++; }, onOpen: path => { fileOpened = path; } }));
+  assert.equal(container.querySelector('[data-file-upload]').getAttribute('data-slot'), 'button', 'Upload is the CLI-installed consumer shadcn Button');
+  assert.equal(container.querySelector('[data-file-close]').getAttribute('data-slot'), 'button', 'Close is the consumer Button too');
+  const trigger = container.querySelector('[data-file-more]'); assert.ok(trigger);
+  assert.equal(trigger.tagName, 'BUTTON'); assert.equal(trigger.querySelector('button'), null, 'one real trigger button, not nested primitives');
+  await key(trigger, 'ArrowDown');
+  const fileMenu = document.querySelector('[data-boring="file-actions"]'); assert.ok(fileMenu);
+  assert.equal(fileMenu.getAttribute('data-slot'), 'dropdown-menu-content', 'the installed Base UI dropdown recipe owns menu presentation');
+  assert.deepEqual([...fileMenu.querySelectorAll('[role=menuitem]')].map(item => item.textContent), ['Open', 'Version history', 'Download']);
+  await key(document.activeElement, 'Escape');
+  assert.equal(Boolean(document.querySelector('[data-boring="file-actions"]')), false);
+  await key(trigger, 'ArrowDown');
+  await act(async () => document.querySelector('[data-action=history]').click());
+  assert.equal(historyReads, 1, 'installed menu opens actual version history');
+  await key(trigger, 'ArrowDown');
+  await act(async () => document.querySelector('[data-action=open]').click());
+  assert.equal(fileOpened, 'fictional.md');
+  await act(async () => container.querySelector('[data-file-close]').click());
+  assert.equal(libraryClosed, 1);
+  console.log('PASS: installed viewer/conversation controls and Library consumer Button/Base UI menu, keyboard, history, Open and Close');
 } finally {
   await act(async () => root.unmount());
   await window.happyDOM.close();

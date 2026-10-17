@@ -220,6 +220,18 @@ try {
     assert.equal(await browser.evaluate('window.fileTreeFixture.provider.identity.scopeId'), 'second');
     assert.equal((await host.storage.workspace('first').read({ target: host.target('docs/notes.md'), revision: { kind: 'latest' } }, host.access('first'))).kind, 'available');
   });
+  await step('plain nested search results keep filename and parent on one visible line', async () => {
+    const plain = await browser.openTab(`http://127.0.0.1:${server.address().port}/?detached&plain`);
+    try {
+      await plain.send('Emulation.setDeviceMetricsOverride', { width: 360, height: 800, deviceScaleFactor: 1, mobile: true });
+      await plain.until('plain search', `!!${q('input[type=search]')}`);
+      await plain.evaluate(`${q('input[type=search]')}.focus()`);
+      await plain.send('Input.insertText', { text: 'notes' });
+      await plain.until('nested result', `!!${q('[data-path="docs/notes.md"] .file-tree-parent')}`);
+      const layout = await plain.evaluate(`(() => { const row=${q('[data-path="docs/notes.md"]')}, copy=row.querySelector('.file-tree-copy'), name=row.querySelector('.file-tree-name').getBoundingClientRect(), parent=row.querySelector('.file-tree-parent').getBoundingClientRect(); return { direction:getComputedStyle(copy).flexDirection, nameWidth:name.width, parentWidth:parent.width, aligned:Math.abs(name.y+name.height/2-parent.y-parent.height/2)<1, ordered:name.right<=parent.left+1 }; })()`);
+      assert.equal(layout.direction, 'row'); assert.ok(layout.aligned && layout.ordered && layout.nameWidth>0 && layout.parentWidth>0, JSON.stringify(layout));
+    } finally { await plain.close(); }
+  });
   assert.deepEqual(browser.problems, []); report.status = 'passed';
 } catch (error) { report.status = 'failed'; report.error = String(error.stack ?? error); throw error; }
 finally { record(); await browser?.close(); await new Promise(resolve => server ? server.close(resolve) : resolve()); host?.close(); rmSync(directory, { recursive: true, force: true }); }

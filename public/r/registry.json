@@ -794,7 +794,8 @@
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/viewers.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/utils.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/button.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/drawer.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/drawer.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/file-tree.json"
       ],
       "files": [
         {
@@ -2594,7 +2595,7 @@
       "name": "file-tree",
       "type": "registry:component",
       "title": "File tree",
-      "description": "Browse, search, upload and inspect retained versions through one revisionProvider binding.",
+      "description": "Browse, search, upload and inspect retained versions through one revisionProvider binding. Uses the consumer's shadcn Button and the pinned Base UI dropdown-menu; Base UI style only.",
       "dependencies": [
         "@hachej/boring-ui-kit@^0.3.2",
         "@hachej/boring-files@^0.3.2",
@@ -2603,7 +2604,10 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/theme.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/theme.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/dropdown-menu.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/utils.json",
+        "button"
       ],
       "files": [
         {

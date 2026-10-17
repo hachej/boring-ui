@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Popover } from '@base-ui/react/popover';
 import { FolderOpenIcon, HistoryIcon, PlusIcon, XIcon } from 'lucide-react';
-import { FileTree } from '@hachej/boring-ui-kit/file-tree-view';
-import '@hachej/boring-ui-kit/file-tree.css';
+import { FileTree } from '../../registry/file-tree/file-tree';
 import { ConversationList } from '../../registry/pi-chat/history';
 import { Button } from '../../registry/button/button';
 import { Drawer, DrawerContent, DrawerTitle } from '../../examples/app-shell/components/ui/drawer';
@@ -33,7 +32,7 @@ export function ChatTools({ conversations, provider, file, openFile, feed }) {
     focus();
     return () => cancelAnimationFrame(frame);
   }, [panel, provider]);
-  const body = id => id === 'history' ? conversations ? <ConversationList conversations={conversations} autoFocus onPicked={() => setPanel(null)} /> : <p role="status" className="p-4 text-sm text-muted-foreground">Loading…</p> : provider ? <div className="min-h-48 flex-1 overflow-auto"><FileTree variant="list" refresh={false} onClose={() => setPanel(null)} revisionProvider={provider} refreshKey={feed} selectedPath={file} onOpen={path => { if (openFile(path)) { picked.current = true; setPanel(null); focusAfterSelection(); } }} /></div> : <p role="status" className="p-4 text-sm text-muted-foreground">Loading…</p>;
+  const body = id => id === 'history' ? conversations ? <ConversationList conversations={conversations} autoFocus onPicked={() => setPanel(null)} /> : <p role="status" className="p-4 text-sm text-muted-foreground">Loading…</p> : provider ? <div className="min-h-48 flex-1 overflow-auto"><FileTree variant="list" refresh={false} onClose={() => setPanel(null)} revisionProvider={provider} refreshKey={feed} historyKey={feed} selectedPath={file} onOpen={path => { if (openFile(path)) { picked.current = true; setPanel(null); focusAfterSelection(); } }} /></div> : <p role="status" className="p-4 text-sm text-muted-foreground">Loading…</p>;
   if (phone) return <div className="flex shrink-0 items-center gap-0.5" data-testid="chat-tools">
     {([['history', 'History', HistoryIcon], ['library', 'Library', FolderOpenIcon]] as const).map(([id, title, Icon]) => <Button key={id} ref={id === 'library' ? libraryTrigger : undefined} variant="ghost" size="icon" data-testid={`chat-action-${id}`} aria-label={title} onClick={() => setPanel(id)}><Icon className="size-4" aria-hidden="true" /></Button>)}
     <Drawer open={panel !== null} showSwipeHandle onOpenChange={next => { if (!next) setPanel(null); }}><DrawerContent ref={popup} data-testid={panel === 'history' ? 'conversations' : 'library-popover'} className="pi-chat h-[80dvh] pb-[env(safe-area-inset-bottom)] duration-200 motion-reduce:transition-none"><DrawerTitle className={panel === 'library' ? 'sr-only' : 'px-5 py-3'}>{panel === 'history' ? 'Conversations' : 'Library'}</DrawerTitle>{panel && body(panel)}</DrawerContent></Drawer>

@@ -24,8 +24,8 @@ visit('app-shell');
 visit('file-tree');
 // The documents screen: its Library, revisions and sheet, installed and checked strictly with the rest of the closure.
 visit('documents');
-const styles = process.env.BORING_CONSUMER_STYLE ? [process.env.BORING_CONSUMER_STYLE] : ['base-nova', 'radix-nova'];
-assert.ok(styles.every(style => ['base-nova', 'radix-nova'].includes(style)), 'Only the documented consumer styles are supported');
+const styles = process.env.BORING_CONSUMER_STYLE ? [process.env.BORING_CONSUMER_STYLE] : ['base-nova'];
+assert.ok(styles.every(style => style === 'base-nova'), 'Blocks support the consumer shadcn Base UI style only');
 const cache = process.env.npm_config_cache;
 assert.ok(cache, 'Set npm_config_cache to a writable npm cache (npm run sets it)');
 
@@ -47,8 +47,8 @@ async function testStyle(style) {
     const union = { dependencies: pins };
     const archiveByName = packBoringDependencies(root, union, join(directory, 'packs'), run);
     const dependencies = consumerDependencies(root, union, ['typescript', '@types/react', '@types/react-dom', 'esbuild', 'shadcn', 'tailwindcss', 'happy-dom']);
-    // Style-resolved sidebar/Trace built-ins import class-variance-authority and cn. The blocks' drawers and shell dropdowns are
-    // explicit registry dependencies, not style-selected built-ins; no implicit Vaul dependency is needed by radix-nova.
+    // The consumer's real shadcn Button/sidebar/Trace import class-variance-authority and cn.
+    // Drawers and dropdowns remain explicitly pinned Base UI recipes.
     const lockedVersion = name => { const entry = JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8')).packages[`node_modules/${name}`]; assert.ok(entry?.version, `${name} is locked`); return entry.version; };
     for (const name of ['class-variance-authority', 'cn']) dependencies[name] = lockedVersion(name);
     writeLockedManifest(root, directory, 'isolated-app-consumer', dependencies);
@@ -125,7 +125,7 @@ async function testStyle(style) {
       assert.ok(inputs.some(path => path.endsWith(`src/components/${file}`)), `the bundle uses the CLI-installed ${file}`);
     assert.deepEqual(inputs.filter(path => /@hachej\/boring-agent|pi-durable\/dist\/(storage|env)|sqlite|node:|tldraw/.test(path)), [], 'browser bundle holds no agent, storage, Node or canvas code');
     // Keep the DOM setup outside the component bundle: public Base UI modules must initialize in that DOM realm.
-    writeFileSync(join(directory, 'presentation-components.tsx'), "export { ViewerMenu, ViewerVersions } from './src/components/viewers/menu';\nexport { ConversationFiles } from './src/components/pi-chat/conversation-files';\n");
+    writeFileSync(join(directory, 'presentation-components.tsx'), "export { ViewerMenu, ViewerVersions } from './src/components/viewers/menu';\nexport { ConversationFiles } from './src/components/pi-chat/conversation-files';\nexport { FileTree } from './src/components/file-tree/file-tree';\n");
     writeFileSync(join(directory, 'dist/presentation.mjs'), readFileSync(join(root, 'test/fixtures/app-registry-presentation.mjs'), 'utf8'));
     run(process.execPath, ['node_modules/esbuild/bin/esbuild', 'presentation-components.tsx', '--bundle', '--platform=node', '--format=esm', '--packages=external', '--jsx=automatic', '--outfile=dist/presentation-components.mjs', '--alias:@=./src'], isolated);
     run(process.execPath, ['dist/presentation.mjs'], isolated);

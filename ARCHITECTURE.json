@@ -194,7 +194,9 @@
         "@earendil-works/chord/delta",
         "@tldraw/tlschema",
         "radix-ui",
-        "lucide-react"
+        "lucide-react",
+        "@base-ui/react",
+        "@base-ui/react/collapsible"
       ],
       "typeOnlyExternal": [
         "@earendil-works/pi-durable",
@@ -544,6 +546,7 @@
       "dropdown-menu": "@base-ui/react/menu@1.9.0; explicit app-shell dependency, not a style-selected built-in"
     },
     "actionMenus": "host presentation through React DOM portals; no consumer-style dropdown API or Pi lifecycle",
+    "fileTreeControls": "required host presentation binding; registry supplies the consumer shadcn Button and pinned Base UI dropdown-menu, never a package-owned button or menu skin",
     "chatActivity": "shadcn built-in trace, resolved by the consumer style; host presentation over native Pi views, no execution state",
     "runtimeImports": [
       "@hachej/boring-ui-kit/markdown-editor",

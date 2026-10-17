@@ -276,8 +276,8 @@ Bind the authenticated [revision provider](../files/README.md#frontend-revision-
 to the tree:
 
 ```tsx
-import '@hachej/boring-ui-kit/file-tree.css';
-import { FileTree } from '@hachej/boring-ui-kit/file-tree-view';
+// Installed file-tree recipe, with the consumer's real shadcn Base UI controls.
+import { FileTree } from '@/components/file-tree/file-tree';
 
 <FileTree
   revisionProvider={revisionProvider}
@@ -290,9 +290,17 @@ The renderer adapts the official shadcn `sidebar-11` tree. Its shipped CSS works
 without a SidebarProvider or scanning package sources with Tailwind. Attribution
 and the pinned upstream revision are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
+The recipe supplies the consumer's actual shadcn Button and the pinned Base UI
+dropdown-menu. Direct callers of `@hachej/boring-ui-kit/file-tree-view` now pass a
+required `components` binding with `Button` and `Actions`; `FileTreeComponents`,
+`FileTreeButtonProps` and `FileTreeActionsProps` describe it. There is no package-owned
+primitive fallback. The installed wrappers supply this binding automatically.
+
 The default `list` variant has a Library header, visible-item count, inset search,
 48px rows with kind and size, and a file actions menu. The count describes loaded,
-visible items, including folders; it is not a workspace total. The menu offers
+visible items, including folders; it is not a workspace total. A folder shows its
+child count only after its provider listing is complete; unloaded, loading, failed
+or paginated listings show no count. The menu offers
 Open, Version history and Download through the same provider. Rename and Delete
 are absent because `RevisionProvider` exposes neither operation. No edit date or
 author is invented or fetched per row. `variant="plain"` keeps the compact tree.
@@ -312,7 +320,7 @@ Both components take `locale` (`en` by default, or `fr`; the words are exported 
 including the accessible names, or to add another language, `upload={false}` and
 `history={false}` to hide upload controls or the version-history menu item, and `refreshKey`: when its value changes the open folders and the current
 search reload, for example after an agent saves a file. A search result shows its
-name with its folder in the metadata line. `AgentWorkspace` passes the same options to its
+name with its folder in the metadata line in `list`, or on the same line in `plain`. `AgentWorkspace` passes the same options to its
 Library through `fileTree`, with its own `locale`.
 
 For custom layouts, import `createFileTreeController` from
