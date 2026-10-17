@@ -3,7 +3,8 @@
 import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ArrowLeftIcon, CheckIcon, CopyIcon, DownloadIcon, ExternalLinkIcon, RefreshCwIcon } from 'lucide-react';
-import { Button, IconButton } from '../button/button';
+import { Button } from '@/components/ui/button';
+import { Toggle } from '@/components/ui/toggle';
 import { ActionButton, actionMenuItem, headerActions, menuActions } from '../button/actions';
 import type { BlockAction } from '../button/actions';
 import { ViewerMenu } from './menu';
@@ -77,7 +78,7 @@ const DOTS: Record<ViewerTone, string> = {
   warning: 'bg-foreground',
   danger: 'bg-destructive',
 };
-/** Buttons are 44px on touch and 32px with a mouse; narrow panes drop optional controls. */
+/** Narrow panes drop optional controls. */
 const TIGHT_WIDTH = { touch: 440, pointer: 340 };
 const touchScreen = () => typeof matchMedia === 'function' && matchMedia('(max-width: 639px), (pointer: coarse)').matches;
 
@@ -86,9 +87,6 @@ export interface ViewerBarSpace { readonly tight: boolean }
 const ViewerBarContext = createContext<ViewerBarSpace>({ tight: false });
 export const useViewerBar = (): ViewerBarSpace => useContext(ViewerBarContext);
 const NOTICE_MS = 2600;
-
-/** A bar button: an icon with an accessible name and a tooltip. */
-export const ViewerIconButton = IconButton;
 
 /** One choice of a mode toggle, for example Rich | Source. Icon only: `label` is the accessible name and the tooltip, `text` the short word for hosts that want it. */
 export interface ViewerToggleOption<T extends string> { readonly id: T; readonly label: string; readonly text: string; readonly icon?: ReactNode; readonly disabled?: boolean; readonly testId?: string }
@@ -126,7 +124,7 @@ function ManualCopy({ testId, link, text, onClose, labels }: { readonly testId: 
     <p id={labelId} className="m-0 text-xs font-medium">{labels.manualCopy(link)}</p>
     <textarea ref={field} readOnly rows={Math.min(6, Math.max(2, Math.ceil(text.length / 48)))} value={text} data-testid={`${testId}-manual-copy-text`} onFocus={event => event.currentTarget.select()}
       className="w-full resize-none rounded-md border border-border bg-background p-2 font-mono text-xs break-all outline-none focus-visible:ring-2 focus-visible:ring-ring/60" />
-    <div className="flex justify-end"><Button variant="quiet" size="bar" data-testid={`${testId}-manual-copy-close`} onClick={onClose}>{labels.done}</Button></div>
+    <div className="flex justify-end"><Button variant="ghost" size="sm" data-testid={`${testId}-manual-copy-close`} onClick={onClose}>{labels.done}</Button></div>
   </div>;
 }
 
@@ -210,7 +208,7 @@ export function ViewerFrame({ title, subtitle, status, showSavedStatus = false, 
   const stacked = !compactHeader && host?.headerLayout === 'stacked';
   const toolbar = controls && <div data-testid={`${testId}-controls`} className={cn('flex shrink-0 items-center gap-1', compactHeader && 'max-[641px]:hidden', stacked && 'flex-wrap border-t border-border px-3 py-2')}>{controls}</div>;
   const titlebar = <>
-        {compactHeader && !headerStart && onClose && <ViewerIconButton label={labels.close} data-testid={`${testId}-close`} onClick={() => run(onClose)}><ArrowLeftIcon className="size-4 min-[641px]:hidden" aria-hidden="true" /><icons.close className="hidden size-4 min-[641px]:block" aria-hidden="true" /></ViewerIconButton>}
+        {compactHeader && !headerStart && onClose && <Button variant="ghost" size="icon-sm" aria-label={labels.close} title={labels.close} data-testid={`${testId}-close`} onClick={() => run(onClose)}><ArrowLeftIcon data-icon="inline-start" className="min-[641px]:hidden" aria-hidden="true" /><icons.close data-icon="inline-start" className="hidden min-[641px]:block" aria-hidden="true" /></Button>}
         {headerStart}
         <div className="group/title relative min-w-0 flex-1 basis-0 text-left">
           <h2 data-testid={titleTestId ?? `${testId}-title`} title={title} className="m-0 truncate text-sm leading-5 font-semibold tracking-tight">{title}</h2>
@@ -219,12 +217,12 @@ export function ViewerFrame({ title, subtitle, status, showSavedStatus = false, 
         {!stacked && toolbar}
         {status && !reading && (showSavedStatus || status.kind !== 'saved' && status.label !== labels.saved) && <StatusMark status={status} testId={testId} />}
         <div className="flex shrink-0 items-center gap-0.5">
-          {headerActions(hostActions).map(action => <ActionButton key={action.id} action={action} testId={testId} size="icon-bar" />)}
-          {!compactHeader && onShare && <ViewerIconButton label={labels.share} data-testid={`${testId}-share`} disabled={busy === 'share'} onClick={share}><icons.share className="size-4" aria-hidden="true" /></ViewerIconButton>}
-          {(menuItems.length > 0 || controls) && <ViewerMenu label={labels.moreActions} testId={`${testId}-more`} icon={<icons.more className="size-4" aria-hidden="true" />} items={menuItems}>{compactHeader && controls && <div className="flex flex-wrap items-center gap-2 p-2 min-[641px]:hidden">{controls}</div>}</ViewerMenu>}
-          {!compactHeader && host?.onFullscreenChange && <ViewerIconButton label={host.fullscreen ? labels.exitFullscreen : labels.enterFullscreen} data-testid={`${testId}-fullscreen`} aria-pressed={host.fullscreen === true}
-            onClick={() => host.onFullscreenChange!(!host.fullscreen)}>{host.fullscreen ? <icons.exitFullscreen className="size-4" aria-hidden="true" /> : <icons.enterFullscreen className="size-4" aria-hidden="true" />}</ViewerIconButton>}
-          {(!compactHeader || headerStart) && onClose && <ViewerIconButton className={compactHeader ? 'max-[641px]:hidden' : undefined} label={labels.close} data-testid={`${testId}-close`} onClick={() => run(onClose)}><icons.close className="size-4" aria-hidden="true" /></ViewerIconButton>}
+          {headerActions(hostActions).map(action => <ActionButton key={action.id} action={action} testId={testId} size="icon-sm" />)}
+          {!compactHeader && onShare && <Button variant="ghost" size="icon-sm" aria-label={labels.share} title={labels.share} data-testid={`${testId}-share`} disabled={busy === 'share'} onClick={share}><icons.share data-icon="inline-start" aria-hidden="true" /></Button>}
+          {(menuItems.length > 0 || controls) && <ViewerMenu label={labels.moreActions} testId={`${testId}-more`} icon={<icons.more data-icon="inline-start" aria-hidden="true" />} items={menuItems}>{compactHeader && controls && <div className="flex flex-wrap items-center gap-2 p-2 min-[641px]:hidden">{controls}</div>}</ViewerMenu>}
+          {!compactHeader && host?.onFullscreenChange && <Toggle size="sm" aria-label={host.fullscreen ? labels.exitFullscreen : labels.enterFullscreen} title={host.fullscreen ? labels.exitFullscreen : labels.enterFullscreen} data-testid={`${testId}-fullscreen`} pressed={host.fullscreen === true}
+            onPressedChange={pressed => host.onFullscreenChange!(pressed)}>{host.fullscreen ? <icons.exitFullscreen data-icon="inline-start" aria-hidden="true" /> : <icons.enterFullscreen data-icon="inline-start" aria-hidden="true" />}</Toggle>}
+          {(!compactHeader || headerStart) && onClose && <Button variant="ghost" size="icon-sm" className={compactHeader ? 'max-[641px]:hidden' : undefined} aria-label={labels.close} title={labels.close} data-testid={`${testId}-close`} onClick={() => run(onClose)}><icons.close data-icon="inline-start" aria-hidden="true" /></Button>}
         </div>
       </>;
   const header = <header ref={bar} data-testid={`${testId}-bar`} data-layout={stacked ? 'stacked' : undefined}

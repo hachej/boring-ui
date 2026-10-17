@@ -511,6 +511,7 @@
   },
   "upstreamExportsVersion": "1.2.0",
   "runtimeProofs": {
+    "BORING-UI-1": ["npm", "run", "test:design"],
     "BORING-PI-1": "test/contracts/pi-native-state.test.mjs",
     "BORING-PI-2": "test/contracts/pi-harness-attachment.test.mjs",
     "BORING-PI-3": "test/contracts/pi-optional-extensions.test.mjs",

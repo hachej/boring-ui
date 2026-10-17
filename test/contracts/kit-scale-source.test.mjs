@@ -58,7 +58,10 @@ test('template extras are optional: the kit derives them from shadcn roles and t
   const registry = JSON.parse(read('registry.json'));
   const theme = registry.items.find(item => item.name === 'theme').cssVars;
   const EXTRA = /^(success|warning|info)|^(font-display|border-width|duration-|ease-standard|default-)/;
-  for (const scope of ['light', 'dark', 'theme']) for (const name of Object.keys(theme[scope])) assert.doesNotMatch(name.replace(/^color-/, ''), EXTRA, `theme item ${scope} adds ${name}`);
+  for (const scope of ['light', 'dark', 'theme']) for (const name of Object.keys(theme[scope])) {
+    if (scope === 'theme' && name === 'default-border-width') assert.equal(theme[scope][name], 'var(--border-width, 1px)', 'the Tailwind binding keeps border-width optional with the stock fallback');
+    else assert.doesNotMatch(name.replace(/^color-/, ''), EXTRA, `theme item ${scope} adds ${name}`);
+  }
   // Every radius tier the kit uses follows --radius in the bundled theme (2xl and 3xl copied from theme.derived.css at ec044d6).
   assert.equal(theme.theme['radius-2xl'], 'calc(var(--radius) * 1.8)');
   assert.equal(theme.theme['radius-3xl'], 'calc(var(--radius) * 2.2)');

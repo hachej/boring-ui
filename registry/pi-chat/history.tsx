@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { ChatHistoryState } from '@hachej/boring-ui-kit/native-chat';
 import { ArchiveIcon, ArchiveRestoreIcon, ArrowLeftIcon, CheckIcon, EllipsisIcon, Loader2Icon, MessageSquareIcon, PencilIcon, SearchIcon, Trash2Icon, XIcon } from 'lucide-react';
-import { Button } from '../button/button';
+import { Button } from '@/components/ui/button';
+import { Toggle } from '@/components/ui/toggle';
 import { Drawer, DrawerContent, DrawerTitle } from '../drawer/drawer';
 import { ActionButton, ActionMenu, actionMenuItem, headerActions, menuActions } from '../button/actions';
 import type { ConversationItem, ConversationsConfig } from './config';
@@ -98,16 +99,15 @@ export function ConversationList({ conversations, onPicked, autoFocus = false, s
     return ORDER.flatMap(key => groups.has(key) ? [{ key, items: groups.get(key)! }] : []);
   }, [conversations.items, found, query, now, labels.untitled]);
   const loading = found ? found.loading : conversations.loading;
-  const action = 'text-muted-foreground';
   const total = shown.reduce((sum, group) => sum + group.items.length, 0);
   return <>
-      {!searchOpen && <Button variant="ghost" data-testid="conversation-search-open" className="mx-2 justify-start" onClick={() => { setSearchOpen(true); requestAnimationFrame(() => search.current?.focus()); }}><SearchIcon className="size-4" aria-hidden="true" />{labels.search}</Button>}
+      {!searchOpen && <Button variant="ghost" data-testid="conversation-search-open" className="mx-2 justify-start" onClick={() => { setSearchOpen(true); requestAnimationFrame(() => search.current?.focus()); }}><SearchIcon data-icon="inline-start" aria-hidden="true" />{labels.search}</Button>}
       {searchOpen && <div className="relative flex shrink-0 flex-wrap items-center gap-2 px-3 py-2">
         <SearchIcon className="pointer-events-none absolute top-5 left-5.5 size-4 text-muted-foreground" aria-hidden="true" />
         <input ref={search} type="search" value={query} onChange={event => setQuery(event.currentTarget.value)} placeholder={labels.searchConversations} aria-label={labels.searchConversations} data-testid="conversation-search"
           className={cn('h-9 w-full rounded-lg border border-border bg-background pr-3 pl-8 text-base outline-none max-sm:h-11 pointer-coarse:h-11 placeholder:text-muted-foreground focus-visible:border-ring/60 focus-visible:ring-[3px] focus-visible:ring-ring/15 sm:text-sm', conversations.archive && serverSearch && 'pr-10')} />
-        {conversations.archive && serverSearch && <Button size="icon-sm" variant={archived ? 'secondary' : 'ghost'} aria-pressed={archived} aria-label={labels.archived} title={labels.archived} data-testid="conversations-archived"
-          className="h-8 w-auto gap-2 rounded-full px-3 text-muted-foreground" onClick={() => setArchived(value => !value)}><ArchiveIcon className="size-3.5" aria-hidden="true" />{labels.archived}</Button>}
+        {conversations.archive && serverSearch && <Toggle pressed={archived} aria-label={labels.archived} title={labels.archived} data-testid="conversations-archived"
+          onPressedChange={setArchived}><ArchiveIcon data-icon="inline-start" aria-hidden="true" />{labels.archived}</Toggle>}
       </div>}
       {navigation}
       {failure && <p role="alert" className="m-0 shrink-0 px-3 pt-2 text-xs text-destructive">{failure}</p>}
@@ -156,19 +156,19 @@ export function ConversationList({ conversations, onPicked, autoFocus = false, s
                     confirming === item.id ? '' : 'opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 pointer-coarse:opacity-100')}>
                   {confirming === item.id && conversations.remove ? <>
                     <Button size="sm" variant="destructive" data-testid="conversation-delete-confirm" onClick={() => { const remove = conversations.remove!; setConfirming(null); run(() => remove(item.id)); }}>{labels.delete}</Button>
-                    <Button size="icon-sm" variant="ghost" aria-label={labels.keep} className={action} onClick={() => setConfirming(null)}><XIcon className="size-3.5" aria-hidden="true" /></Button>
-                  </> : rowActionLayout === 'menu' ? <ActionMenu label={labels.moreActions} size="icon-sm" testId="conversation-action-more" icon={<EllipsisIcon className="size-4" aria-hidden="true" />} items={[
+                    <Button size="icon-sm" variant="ghost" aria-label={labels.keep} title={labels.keep} onClick={() => setConfirming(null)}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>
+                  </> : rowActionLayout === 'menu' ? <ActionMenu label={labels.moreActions} size="icon-sm" testId="conversation-action-more" icon={<EllipsisIcon data-icon="inline-start" aria-hidden="true" />} items={[
                     ...(conversations.rename ? [{ id: 'rename', icon: <PencilIcon className="size-4" />, label: labels.rename, testId: 'conversation-rename', onSelect: () => setRenaming(item.id) }] : []),
                     ...(conversations.archive ? [{ id: 'archive', icon: item.archived ? <ArchiveRestoreIcon className="size-4" /> : <ArchiveIcon className="size-4" />, label: item.archived ? labels.restore : labels.archive, testId: 'conversation-archive', onSelect: () => run(() => conversations.archive!(item.id, !item.archived)) }] : []),
                     ...(conversations.remove ? [{ id: 'delete', icon: <Trash2Icon className="size-4" />, destructive: true, separatorBefore: true, label: labels.delete, testId: 'conversation-delete', onSelect: () => setConfirming(item.id) }] : []),
                     ...[...extraButtons, ...extraMenu].map(entry => actionMenuItem(entry, 'conversation-action')),
                   ]} /> : <>
-                    {conversations.rename && <Button size="icon-sm" variant="ghost" aria-label={labels.renameItem(title)} title={labels.rename} data-testid="conversation-rename" className={action} onClick={() => setRenaming(item.id)}><PencilIcon className="size-3.5" aria-hidden="true" /></Button>}
-                    {conversations.archive && <Button size="icon-sm" variant="ghost" aria-label={labels.archiveItem(title, item.archived === true)} title={item.archived ? labels.restore : labels.archive} data-testid="conversation-archive" className={action}
-                      onClick={() => { const archive = conversations.archive!; run(() => archive(item.id, !item.archived)); }}>{item.archived ? <ArchiveRestoreIcon className="size-3.5" aria-hidden="true" /> : <ArchiveIcon className="size-3.5" aria-hidden="true" />}</Button>}
-                    {conversations.remove && <Button size="icon-sm" variant="ghost" aria-label={labels.deleteItem(title)} title={labels.delete} data-testid="conversation-delete" className={action} onClick={() => setConfirming(item.id)}><Trash2Icon className="size-3.5" aria-hidden="true" /></Button>}
-                    {extraButtons.map(entry => <ActionButton key={entry.id} action={entry} testId="conversation-action" className={action} />)}
-                    {extraMenu.length > 0 && <ActionMenu label={labels.moreActions} size="icon-sm" testId="conversation-action-more" icon={<EllipsisIcon className="size-3.5" aria-hidden="true" />}
+                    {conversations.rename && <Button size="icon-sm" variant="ghost" aria-label={labels.renameItem(title)} title={labels.rename} data-testid="conversation-rename" onClick={() => setRenaming(item.id)}><PencilIcon data-icon="inline-start" aria-hidden="true" /></Button>}
+                    {conversations.archive && <Button size="icon-sm" variant="ghost" aria-label={labels.archiveItem(title, item.archived === true)} title={item.archived ? labels.restore : labels.archive} data-testid="conversation-archive"
+                      onClick={() => { const archive = conversations.archive!; run(() => archive(item.id, !item.archived)); }}>{item.archived ? <ArchiveRestoreIcon data-icon="inline-start" aria-hidden="true" /> : <ArchiveIcon data-icon="inline-start" aria-hidden="true" />}</Button>}
+                    {conversations.remove && <Button size="icon-sm" variant="ghost" aria-label={labels.deleteItem(title)} title={labels.delete} data-testid="conversation-delete" onClick={() => setConfirming(item.id)}><Trash2Icon data-icon="inline-start" aria-hidden="true" /></Button>}
+                    {extraButtons.map(entry => <ActionButton key={entry.id} action={entry} testId="conversation-action" />)}
+                    {extraMenu.length > 0 && <ActionMenu label={labels.moreActions} size="icon-sm" testId="conversation-action-more" icon={<EllipsisIcon data-icon="inline-start" aria-hidden="true" />}
                       items={extraMenu.map(entry => actionMenuItem(entry, 'conversation-action'))} />}
                   </>}
                 </div>}
@@ -200,10 +200,10 @@ export function ConversationHistory({ conversations, onClose, placement = 'below
   }, [onClose]);
   const content = <>
       <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2.5 max-sm:pt-[max(0.625rem,env(safe-area-inset-top))]">
-        <Button size="icon-sm" variant="ghost" aria-label={labels.closeHistory} title={labels.close} data-testid="conversations-close" onClick={onClose} className="sm:hidden"><ArrowLeftIcon className="size-4" aria-hidden="true" /></Button>
+        <Button size="icon-sm" variant="ghost" aria-label={labels.closeHistory} title={labels.close} data-testid="conversations-close" onClick={onClose} className="sm:hidden"><ArrowLeftIcon data-icon="inline-start" aria-hidden="true" /></Button>
         <h3 className="m-0 min-w-0 flex-1 font-(family-name:--chat-display) text-sm font-semibold tracking-tight">{labels.history}</h3>
-        {conversations.onNew && <Button size="sm" variant="outline" data-testid="conversation-new" onClick={() => { conversations.onNew!(); onClose(); }}><icons.newChat className="size-3.5" aria-hidden="true" />{labels.newConversation}</Button>}
-        <Button size="icon-sm" variant="ghost" aria-label={labels.closeHistory} title={labels.close} onClick={onClose} className="max-sm:hidden"><XIcon className="size-4" aria-hidden="true" /></Button>
+        {conversations.onNew && <Button size="sm" variant="outline" data-testid="conversation-new" onClick={() => { conversations.onNew!(); onClose(); }}><icons.newChat data-icon="inline-start" aria-hidden="true" />{labels.newConversation}</Button>}
+        <Button size="icon-sm" variant="ghost" aria-label={labels.closeHistory} title={labels.close} onClick={onClose} className="max-sm:hidden"><XIcon data-icon="inline-start" aria-hidden="true" /></Button>
       </header>
       <ConversationList conversations={conversations} onPicked={onClose} autoFocus />
   </>;
@@ -224,7 +224,7 @@ export function TranscriptHistory({ history, connected, onLoad, sentinelRef, hid
   if (history.kind === 'disabled' && hidden === 0) return null;
   const exhausted = hidden === 0 && history.kind === 'ready' && !history.hasMore;
   return <div ref={sentinelRef} data-testid="transcript-history" className="flex min-h-8 shrink-0 items-center justify-center text-xs text-muted-foreground">
-    <button type="button" data-testid="transcript-history-load" className="sr-only focus:not-sr-only" disabled={!connected || history.kind === 'loading' || exhausted} onClick={onLoad}>{labels.loadEarlierMessages}</button>
+    <Button variant="ghost" data-testid="transcript-history-load" className="sr-only focus:not-sr-only" disabled={!connected || history.kind === 'loading' || exhausted} onClick={onLoad}>{labels.loadEarlierMessages}</Button>
     {history.kind === 'loading' && <Loader2Icon className="size-4 animate-spin motion-reduce:animate-none" aria-label={labels.loadingShort} />}
     {history.kind === 'error' && <span role="alert">{labels.historyFailed}</span>}
     {exhausted && <span>{labels.beginning}</span>}

@@ -35,7 +35,7 @@ test('type scaffold does not discharge pending proofs; executable and ambient st
     // promote the real repository's slots with actual runtime evidence.
     const registry = JSON.parse(readFileSync(join(root, 'VERIFY.json'), 'utf8'));
     for (const law of Object.values(registry.invariants)) for (const proof of law.verifiers) {
-      if (proof.scope === 'runtime') { proof.kind = 'pending'; proof.reason = 'Deliberately pending fixture'; }
+      if (proof.scope === 'runtime' && proof.kind !== 'journey') { proof.kind = 'pending'; proof.reason = 'Deliberately pending fixture'; }
     }
     delete registry.features; // feature laws have their own fixture in test/pi-boundary.test.mjs
     writeFileSync(join(dir, 'VERIFY.json'), JSON.stringify(registry));
@@ -56,7 +56,7 @@ test('type scaffold does not discharge pending proofs; executable and ambient st
     let result = loadBoundary(dir);
     assert.deepEqual(result.errors, []);
     assert.equal(result.contracts, 1);
-    assert.equal(result.pending.length, Object.keys(registry.invariants).length);
+    assert.equal(result.pending.length, Object.values(registry.invariants).filter(law => law.verifiers.some(proof => proof.kind === 'pending')).length);
     for (const code of ['export const impl = 1;', 'export declare function impl(): void;', 'import "isomorphic-git";']) {
       writeFileSync(source, code);
       result = loadBoundary(dir);
@@ -103,7 +103,7 @@ test('the scaffold retains every policy-required runtime proof slot', () => {
   for (const [id, file] of Object.entries(policy.runtimeProofs)) {
     const proofs = registry.invariants[id].verifiers.filter((v) => v.scope === 'runtime');
     assert.equal(proofs.length, 1, id);
-    assert.deepEqual(proofs[0].command, ['node', '--test', file]);
-    assert.ok(['pending', 'command'].includes(proofs[0].kind));
+    assert.deepEqual(proofs[0].command, Array.isArray(file) ? file : ['node', '--test', file]);
+    assert.ok((Array.isArray(file) ? ['journey'] : ['pending', 'command']).includes(proofs[0].kind));
   }
 });

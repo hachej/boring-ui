@@ -5,8 +5,8 @@
 import { useState } from 'react';
 import type { ComponentType, MouseEvent } from 'react';
 import { EllipsisIcon } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../dropdown-menu/dropdown-menu';
-import { cn } from '../utils/utils';
 import { afterBack } from './back';
 import { AppSheet, SHEET_ROW } from './sheet';
 import type { AppShellText } from './text';
@@ -26,16 +26,12 @@ export interface ScreenHeaderAction {
   readonly onSelect: () => void;
 }
 
-export const ICON_BUTTON = 'inline-flex size-9 shrink-0 items-center justify-center rounded-md text-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 pointer-coarse:min-h-11 pointer-coarse:min-w-11';
-const LABEL_BUTTON = 'inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-md border border-border px-3 text-sm outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 pointer-coarse:min-h-11';
-
 /** One action as a control: an anchor when it has `href`, else a button. `onSelect` is the caller's run (it reads the live action at click time). */
 function ActionControl({ action, prefix, onSelect }: { readonly action: ScreenHeaderAction; readonly prefix: string; readonly onSelect: () => void }) {
-  const className = action.showLabel === 'always' ? LABEL_BUTTON : ICON_BUTTON;
-  const content = <><action.icon className="size-4" aria-hidden="true" />{action.showLabel === 'always' && action.label}</>;
-  return action.href !== undefined
-    ? <a href={action.href} target={action.target} rel={action.rel} data-testid={`${prefix}-action-${action.id}`} aria-label={action.label} title={action.label} onClick={onSelect} className={className}>{content}</a>
-    : <button type="button" data-testid={`${prefix}-action-${action.id}`} aria-label={action.label} title={action.label} onClick={onSelect} className={className}>{content}</button>;
+  const content = <><action.icon data-icon="inline-start" aria-hidden="true" />{action.showLabel === 'always' && action.label}</>;
+  return <Button variant="ghost" size={action.showLabel === 'always' ? 'default' : 'icon'}
+    {...(action.href !== undefined ? { nativeButton: false, render: <a href={action.href} target={action.target} rel={action.rel} /> } : {})}
+    data-testid={`${prefix}-action-${action.id}`} aria-label={action.label} title={action.label} onClick={onSelect}>{content}</Button>;
 }
 
 /** Up to two actions as controls; the rest go in « … » (a sheet when compact, a menu otherwise). `prefix` names the test ids. Shared with the AgentLayer header. */
@@ -55,7 +51,7 @@ export function HeaderActions({ actions, compact, text, prefix, run }: { readonl
     {shown.map(action => <ActionControl key={action.id} action={action} prefix={prefix} onSelect={() => run(action.id)} />)}
     {extra.length > 0 && (compact
       ? <>
-        <button type="button" data-testid={`${prefix}-more`} aria-label={text.actions} title={text.actions} onClick={() => setSheetOpen(true)} className={ICON_BUTTON}><EllipsisIcon className="size-4" aria-hidden="true" /></button>
+        <Button variant="ghost" size="icon" data-testid={`${prefix}-more`} aria-label={text.actions} title={text.actions} onClick={() => setSheetOpen(true)}><EllipsisIcon data-icon="inline-start" aria-hidden="true" /></Button>
         <AppSheet open={sheetOpen} onOpenChange={setSheetOpen} title={text.actions}>
           {extra.map(action => action.href === undefined
             ? <button key={action.id} type="button" data-testid={`${prefix}-action-${action.id}`} className={SHEET_ROW} onClick={() => { setSheetOpen(false); afterBack(() => run(action.id)); }}><action.icon className="size-4" />{action.label}</button>
@@ -63,7 +59,7 @@ export function HeaderActions({ actions, compact, text, prefix, run }: { readonl
         </AppSheet>
       </>
       : <DropdownMenu>
-        <DropdownMenuTrigger data-testid={`${prefix}-more`} aria-label={text.actions} className={cn(ICON_BUTTON, 'data-popup-open:bg-accent')}><EllipsisIcon className="size-4" aria-hidden="true" /></DropdownMenuTrigger>
+        <DropdownMenuTrigger render={<Button variant="ghost" size="icon" />} data-testid={`${prefix}-more`} aria-label={text.actions} title={text.actions}><EllipsisIcon data-icon="inline-start" aria-hidden="true" /></DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="app-shell w-48">
           {extra.map(action => <DropdownMenuItem key={action.id} data-testid={`${prefix}-action-${action.id}`} className="pointer-coarse:min-h-11" onClick={() => run(action.id)}
             render={action.href === undefined ? undefined : <a href={action.href} target={action.target} rel={action.rel} />}><action.icon className="size-4" />{action.label}</DropdownMenuItem>)}

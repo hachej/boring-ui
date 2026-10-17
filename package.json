@@ -12,7 +12,7 @@
     "packages/*"
   ],
   "scripts": {
-    "check": "node scripts/check-docs.mjs && node scripts/check-platform-apis.mjs && node scripts/check-handlers.mjs && node scripts/check-sqlite-settings.mjs && node scripts/check-registry-blocks.mjs && node scripts/check-pi-boundary.mjs && node scripts/check-doc-drafts.mjs",
+    "check": "node scripts/check-docs.mjs && node scripts/check-platform-apis.mjs && node scripts/check-handlers.mjs && node scripts/check-sqlite-settings.mjs && node scripts/check-registry-blocks.mjs && node scripts/check-design.mjs && node scripts/check-pi-boundary.mjs && node scripts/check-doc-drafts.mjs",
     "build": "node scripts/build.mjs",
     "typecheck": "npm run build && tsc --project tsconfig.contract-tests.json --noEmit",
     "pretest": "npm run build",
@@ -57,7 +57,8 @@
     "browser-agent": "node examples/browser-agent/serve.mjs",
     "browser-agent:journey": "node examples/browser-agent/journey.mjs",
     "test:document-consumer": "node scripts/test-document-consumer.mjs",
-    "verify": "npm run check && npm run typecheck && node scripts/run-tests.mjs && node scripts/verify-invariants.mjs",
+    "test:design": "node scripts/test-design.mjs",
+    "verify": "npm run check && npm run typecheck && node scripts/run-tests.mjs && node scripts/verify-invariants.mjs && npm run test:design",
     "verify:release": "npm run check && npm run typecheck && node scripts/run-tests.mjs && node scripts/verify-invariants.mjs --release",
     "test:editor-consumer": "node scripts/test-editor-consumer.mjs",
     "test:virtual-consumer": "node scripts/test-virtual-consumer.mjs",

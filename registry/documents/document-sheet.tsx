@@ -5,6 +5,7 @@
 // first. The file is the same viewer the Library opens (editable where the viewer edits). Closing a file with unsaved edits asks first.
 // `onShowAll` adds « Toutes les fiches »: the sheet closes, then the host's navigation runs after the sheet's Back entry is gone.
 import { useCallback, useEffect, useRef } from 'react';
+import { Button } from '@/components/ui/button';
 import { Drawer, DrawerContent, DrawerTitle } from '../drawer/drawer';
 import { afterBack } from '../app-shell/back';
 import { useShellLayer } from '../app-shell/shell-layer';
@@ -60,10 +61,9 @@ export function DocumentSheet({ provider, path, onClose, onShowAll, locale, labe
         {/* The title is for assistive technology: the viewer's own bar shows the file name. */}
         <DrawerTitle className="sr-only">{title}</DrawerTitle>
         {onShowAll && <div className="flex shrink-0 justify-end px-3 pt-1 pb-2">
-          <button type="button" data-testid="document-sheet-all" onClick={() => { if (!mayLeave()) return; close(); afterBack(onShowAll); }}
-            className="inline-flex min-h-8 pointer-coarse:min-h-11 pointer-coarse:min-w-11 shrink-0 items-center rounded-lg border border-border bg-background px-3 text-xs pointer-coarse:text-sm outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60">{labels.allDocuments}</button>
+          <Button variant="ghost" data-testid="document-sheet-all" onClick={() => { if (!mayLeave()) return; close(); afterBack(onShowAll); }}>{labels.allDocuments}</Button>
         </div>}
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden [&_button]:pointer-coarse:min-h-11 [&_button]:pointer-coarse:min-w-11">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {path !== undefined && <FileViewer key={path} path={path} locator={provider.locate(path)} onUnsavedChange={report}
             options={{ client: provider, identity: provider.identity, ...(viewers ? { viewers } : {}), ...(share ? { share } : {}) }} onClose={requestClose} />}
         </div>

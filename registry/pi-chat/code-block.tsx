@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { CheckIcon, CopyIcon } from 'lucide-react';
-import { Button } from '../button/button';
-import { copyText, cn } from '../utils/utils';
+import { Button } from '@/components/ui/button';
+import { copyText } from '../utils/utils';
 import { useChatText } from './labels';
 
 /** Copy button with a short "copied" confirmation. Failures stay visible as a title instead of throwing. */
@@ -14,9 +14,9 @@ export function CopyButton({ text, label: given, onCopy, className, iconOnly = f
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
   const settle = (next: 'copied' | 'failed') => { setState(next); clearTimeout(timer.current); timer.current = setTimeout(() => setState('idle'), 1600); };
-  return <Button size={iconOnly ? 'icon-sm' : 'sm'} className={cn('max-sm:min-w-11 pointer-coarse:min-w-11', className)} data-testid="copy" aria-label={label} title={state === 'failed' ? labels.copyFailed : label}
+  return <Button variant="ghost" size={iconOnly ? 'icon-sm' : 'sm'} className={className} data-testid="copy" aria-label={label} title={state === 'failed' ? labels.copyFailed : label}
     onClick={() => { copyText(text, onCopy).then(() => settle('copied'), () => settle('failed')); }}>
-    {state === 'copied' ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
+    {state === 'copied' ? <CheckIcon data-icon="inline-start" /> : <CopyIcon data-icon="inline-start" />}
     <span className={iconOnly ? 'sr-only' : 'sr-only md:not-sr-only'}>{state === 'copied' ? labels.copied : state === 'failed' ? labels.failed : label}</span>
   </Button>;
 }
@@ -28,7 +28,7 @@ export function CodeBlock({ code, language, onCopy }: { readonly code: string; r
   return <div data-testid="code-block" className="my-3 overflow-hidden rounded-lg border border-border bg-muted/40 text-foreground">
     <div className="flex min-h-8 items-center justify-between border-b border-border bg-muted/60 pr-1 pl-3">
       <span data-testid="code-language" className="font-mono text-xs tracking-wide text-muted-foreground lowercase">{label || 'text'}</span>
-      <CopyButton text={code} label={labels.copyCode} {...(onCopy ? { onCopy } : {})} className="text-xs text-muted-foreground" />
+      <CopyButton text={code} label={labels.copyCode} {...(onCopy ? { onCopy } : {})} />
     </div>
     <pre className="m-0 overflow-x-auto p-3 font-mono text-xs leading-5"><code>{code}</code></pre>
   </div>;

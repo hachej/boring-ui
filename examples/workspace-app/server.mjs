@@ -24,6 +24,7 @@ import { createRevisionHandler } from '@hachej/boring-files/revision-handler';
 import { sendWebResponse, webRequest } from '@hachej/boring-files/node-http';
 import { readFiles, writeFiles } from '../../shared/workspace-tools.mjs';
 import { buildTailwind } from '../../lab/studio/tailwind.mjs';
+import { stockShadowTokens, themePreviewHead, themePreviewStatics } from '../../test/fixtures/themes/preview.mjs';
 
 const here = name => fileURLToPath(new URL(name, import.meta.url));
 
@@ -69,13 +70,13 @@ export async function startWorkspaceApp({ directory, port = 0, token = randomUUI
 
   // ---- The page: page.jsx bundled once, Tailwind over the registry blocks, the token and identity in the page.
   const bundle = await build({ entryPoints: [here('./page.jsx')], bundle: true, write: false, outdir: here('./out'), format: 'esm', platform: 'browser', jsx: 'automatic',
-    define: { 'process.env.NODE_ENV': '"production"' }, logLevel: 'silent' });
-  const css = [await buildTailwind(), ...bundle.outputFiles.filter(file => file.path.endsWith('.css')).map(file => file.text),
-    'html,body,#root{height:100%;margin:0}body{background:var(--background);color:var(--foreground);font:15px/1.5 ui-sans-serif,system-ui,sans-serif}'].join('\n');
+    alias: { '@': here('../app-shell') }, define: { 'process.env.NODE_ENV': '"production"' }, logLevel: 'silent' });
+  const css = [await buildTailwind({ extraDirectories: ['examples/workspace-app', 'test/fixtures/themes'] }), ...bundle.outputFiles.filter(file => file.path.endsWith('.css')).map(file => file.text),
+    'html,body,#root{height:100%;margin:0}body{background:var(--background);color:var(--foreground);font:15px/1.5 var(--font-sans,ui-sans-serif,system-ui,sans-serif)}', stockShadowTokens].join('\n');
   const page = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Workspace app (fictional)</title>
-<link rel="stylesheet" href="/app.css"></head><body><div id="root"></div><script>window.__APP__=${JSON.stringify({ token, identity: { runtimeId: 'app', ...person } })}</script>
+<link rel="stylesheet" href="/app.css">${themePreviewHead}</head><body><div id="root"></div><script>window.__APP__=${JSON.stringify({ token, identity: { runtimeId: 'app', ...person } })}</script>
 <script type="module" src="/app.js"></script></body></html>`;
-  const statics = { '/': ['text/html; charset=utf-8', page], '/app.js': ['text/javascript; charset=utf-8', bundle.outputFiles.find(file => file.path.endsWith('.js')).text], '/app.css': ['text/css; charset=utf-8', css] };
+  const statics = { ...themePreviewStatics, '/': ['text/html; charset=utf-8', page], '/app.js': ['text/javascript; charset=utf-8', bundle.outputFiles.find(file => file.path.endsWith('.js')).text], '/app.css': ['text/css; charset=utf-8', css] };
 
   const server = createServer(async (incoming, outgoing) => {
     const url = new URL(incoming.url, `http://${incoming.headers.host}`);

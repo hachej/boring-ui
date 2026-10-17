@@ -16,7 +16,8 @@ import { useConversations } from '../../registry/pi-app/use-conversations.ts';
 import { FileViewer } from '../../registry/pi-app/file-viewer.tsx';
 import { BlockActions } from '../../registry/button/actions.tsx';
 import { PdfPane } from '../../registry/viewers/pdf-pane.tsx';
-import { Button, NavigationMenuIcon } from '../../registry/button/button.tsx';
+import { Button } from '@/components/ui/button';
+import { MenuIcon } from 'lucide-react';
 import { cn } from '../../registry/utils/utils.ts';
 import { AgentContextProvider, readAgentContext, useAgentContext } from '../../registry/app-shell/agent-context.ts';
 import { ACTIONS, CELLS, SCREENS, experienceCells } from './cells.mjs';
@@ -279,7 +280,7 @@ function Chat({ api, provider, file, openFile, closeFile, setUnsaved, setBeforeL
   }, [api.placement, file, chat.status]);
   if (chat.status !== 'ready') return <p role="status" data-testid="chat-connecting" className="p-4 text-sm text-muted-foreground">{chat.status === 'offline' ? 'Server unreachable. Retrying…' : 'Connecting…'}</p>;
   const headerActions = [
-    { id: 'navigation', label: 'Open navigation', icon: NavigationMenuIcon, onSelect: () => setOpenMobile(true) },
+    { id: 'navigation', label: 'Open navigation', icon: MenuIcon, onSelect: () => setOpenMobile(true) },
     { id: 'page', label: 'Agent as page', icon: MaximizeIcon, onSelect: () => api.setPlacement('page') },
   ];
   const placementActions = api.placement === 'page' ? [
@@ -307,7 +308,10 @@ function WorkspaceLayout(props) {
   const api = useDock('chat');
   props.dock.current = api;
   const { approvalCount } = useAp();
-  const [theme, setTheme] = useState(() => matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  const [theme, setTheme] = useState(() => {
+    const mode = new URLSearchParams(location.search).get('mode');
+    return mode === 'light' || mode === 'dark' ? mode : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  });
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
     const media = matchMedia('(prefers-color-scheme: dark)'), update = () => setTheme(media.matches ? 'dark' : 'light');

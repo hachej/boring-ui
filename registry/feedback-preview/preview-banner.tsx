@@ -3,6 +3,7 @@
 // the subagent ("darker"), and offers Approve and Discard. Everything it shows and does is the headless `createPreviewSession` from
 // `@hachej/boring-feedback/preview`; this file is how it looks. It is `data-feedback-ignore`, so the preview tools and every snapshot skip it.
 import { useState, useSyncExternalStore, type FormEvent } from 'react';
+import { Button } from '@/components/ui/button';
 import { readableElement } from '@hachej/boring-feedback/format';
 import type { PreviewSession, PreviewSnapshot } from '@hachej/boring-feedback/preview';
 
@@ -48,11 +49,11 @@ export function PreviewBanner({ session }: PreviewBannerProps) {
     {!done && <form className="boring-feedback-preview-actions" onSubmit={submit}>
       <input className="boring-feedback-preview-input" data-testid="preview-input" value={text} maxLength={300} disabled={busy}
         aria-label="Tell the preview what to change" placeholder="Adjust it… (e.g. darker)" onChange={event => setText(event.currentTarget.value)} />
-      <button type="submit" className="boring-feedback-button" data-testid="preview-say" disabled={busy || !text.trim()}>Send</button>
-      <button type="button" className="boring-feedback-button" data-variant="primary" data-testid="preview-approve" disabled={busy || state.changes.length === 0}
-        onClick={() => { void session.approve(); }}>Approve</button>
-      <button type="button" className="boring-feedback-button" data-testid="preview-discard" disabled={state.status === 'answering'}
-        onClick={() => { void session.discard(); }}>Discard</button>
+      <Button type="submit" variant="default" data-testid="preview-say" disabled={busy || !text.trim()}>Send</Button>
+      <Button variant="default" data-testid="preview-approve" disabled={busy || state.changes.length === 0}
+        onClick={() => { void session.approve(); }}>Approve</Button>
+      <Button variant="ghost" data-testid="preview-discard" disabled={state.status === 'answering'}
+        onClick={() => { void session.discard(); }}>Discard</Button>
     </form>}
   </section>;
 }

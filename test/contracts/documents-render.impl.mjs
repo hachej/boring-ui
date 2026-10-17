@@ -305,9 +305,11 @@ test('Documents at 1280 in French: the viewer bar and the revision view use the 
 test('the all-documents button is 44px on a coarse pointer, tablets included (no fine-pointer-only size)', async () => {
   const { readFileSync: read } = await import('node:fs');
   const source = read(new URL('../../registry/documents/document-sheet.tsx', import.meta.url), 'utf8');
-  const button = source.slice(source.indexOf('data-testid="document-sheet-all"'), source.indexOf('>{labels.allDocuments}'));
-  assert.match(button, /pointer-coarse:min-h-11/, 'a 44px minimum on a coarse pointer');
-  assert.doesNotMatch(button, /md:min-h-8/, 'no md override that shrinks it on a tablet');
+  assert.match(source, /import \{ Button \} from '@\/components\/ui\/button'/);
+  assert.match(source, /className=\{cn\('app-shell /, 'the native control is inside the shell touch-target scope');
+  const item = JSON.parse(read(new URL('../../registry.json', import.meta.url), 'utf8')).items.find(item => item.name === 'app-shell');
+  assert.deepEqual(item.css['@layer utilities']['@media (max-width: 640px), (pointer: coarse)']['.app-shell :is([data-slot="button"], [data-slot="toggle"], [class~="group/button"], [class~="group/toggle"])'], { 'min-height': '2.75rem', 'min-width': '2.75rem' }, '44px minimum on coarse pointers, tablets included');
+  assert.doesNotMatch(source, /md:min-h-8/, 'no md override that shrinks it on a tablet');
 });
 
 test('useShellLayer: one owner registers Back; an observer unmounting releases only its subscription', async t => {

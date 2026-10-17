@@ -6,6 +6,8 @@ import { createRoot } from 'react-dom/client';
 import { connectRevisionProvider } from '@hachej/boring-files/revision';
 import { AgentWorkspace, useConversations, useRemoteChat } from '../../registry/pi-app/agent-workspace.tsx';
 import { AmbientChat } from '../../registry/pi-ambient/ambient.tsx';
+import { Button } from '@/components/ui/button';
+import { GroupOneControls } from '../../test/fixtures/themes/group-one.jsx';
 
 const { token, identity } = window.__APP__;
 const authorized = request => { const headers = new Headers(request.headers); headers.set('authorization', `Bearer ${token}`); return fetch(new Request(request, { headers })); };
@@ -64,10 +66,11 @@ function App() {
       labels={{ sessionsTitle: 'Writer', ...config.labels }} panelActions={config.panelActions} {...floating}
       connecting={<p role="status" className="p-4 text-sm text-muted-foreground">{chat.status === 'offline' ? 'Server unreachable. Retrying…' : 'Connecting…'}</p>} />
       : discovery.failed
-        ? <p role="alert" className="p-4 text-sm text-muted-foreground">The workspace could not be reached. <button type="button" className="underline" onClick={() => setDiscovery(current => ({ attempt: current.attempt + 1, failed: false }))}>Retry</button></p>
+        ? <p role="alert" className="p-4 text-sm text-muted-foreground">The workspace could not be reached. <Button variant="link" onClick={() => setDiscovery(current => ({ attempt: current.attempt + 1, failed: false }))}>Retry</Button></p>
         : <p role="status" className="p-4 text-sm text-muted-foreground">Connecting…</p>}
     {configured && <output data-testid="host-log" className="sr-only">{logged.join(' ')}</output>}
   </main>;
 }
 
-createRoot(document.getElementById('root')).render(<App />);
+const controls = new URLSearchParams(location.search).get('controls');
+createRoot(document.getElementById('root')).render(controls ? <GroupOneControls surface={controls} /> : <App />);

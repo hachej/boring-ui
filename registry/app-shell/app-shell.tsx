@@ -9,6 +9,7 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { SidebarProvider } from '@/components/ui/sidebar';
+import { Button } from '@/components/ui/button';
 import { AccountAvatar, AccountMenu } from './account';
 import type { AccountSpec } from './account';
 import { AgentDockLayout, AgentLayer, AgentLayerProvider } from './agent-layer';
@@ -61,8 +62,7 @@ function Shell({ layout, title, nav, agent, improve, account, route, text }: { r
   if (!active) return null;
   const hasAccount = Boolean(account) || improve;
   const avatar = hasAccount ? <>
-    <button type="button" data-testid="account-button" aria-label={account?.name ?? text.account} onClick={() => setAccountOpen(true)}
-      className="inline-flex size-9 shrink-0 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring/60 pointer-coarse:min-h-11 pointer-coarse:min-w-11"><AccountAvatar account={account} /></button>
+    <Button variant="ghost" size="icon" data-testid="account-button" aria-label={account?.name ?? text.account} title={account?.name ?? text.account} onClick={() => setAccountOpen(true)}><AccountAvatar account={account} /></Button>
     <AppSheet open={accountOpen} onOpenChange={setAccountOpen} title={text.account}>
       <AccountMenu account={account} improve={improve} text={text} done={() => setAccountOpen(false)} />
     </AppSheet>

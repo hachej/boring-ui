@@ -3,7 +3,7 @@
 import { useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { DownloadIcon, FileTextIcon } from 'lucide-react';
-import { Button } from '../button/button';
+import { Button } from '@/components/ui/button';
 import { downloadFile } from './download';
 import { formatBytes, useMediaUrl } from './media';
 import type { MediaSource } from './media';
@@ -63,8 +63,8 @@ export function PdfPane({ name, bytes, blob, url: hostUrl, subtitle, status, tar
             <p className="m-0 text-sm font-medium">{labels.pdfUnsupported}</p>
             <p className="m-0 text-xs text-muted-foreground">{labels.pdfHint(downloadName, Boolean(open))}</p>
             <div className="flex flex-wrap justify-center gap-2">
-              <Button variant="default" size="bar" data-testid={`${testId}-pdf-download`} onClick={download}><DownloadIcon className="size-3.5" aria-hidden="true" />{labels.download}</Button>
-              {open && <Button variant="outline" size="bar" onClick={() => open()}>{labels.openInNewTab}</Button>}
+              <Button variant="default" size="sm" data-testid={`${testId}-pdf-download`} onClick={download}><DownloadIcon data-icon="inline-start" aria-hidden="true" />{labels.download}</Button>
+              {open && <Button variant="outline" size="sm" onClick={() => open()}>{labels.openInNewTab}</Button>}
             </div>
           </div>}
     </div>

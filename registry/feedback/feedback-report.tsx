@@ -2,6 +2,8 @@
 // `@hachej/boring-feedback/ui`): exact and moved placements are revealed on the overlay, ambiguous ones are numbered for the person to choose,
 // and missing, stale or unsupported results are said as they are. Nothing uncertain is revealed without that choice.
 import { useEffect, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { XIcon } from 'lucide-react';
 import type { FeedbackReport as Report } from '@hachej/boring-feedback/format';
 import type { PickerOverlay, PrivacyPolicy } from '@hachej/boring-feedback/page';
 import { reportView, showAnchor, type ShowOutcome } from '@hachej/boring-feedback/ui';
@@ -43,7 +45,7 @@ export function FeedbackReport({ report, page, onClose }: FeedbackReportProps) {
   return <article data-boring="feedback" data-feedback-ignore="" className="boring-feedback-report" data-testid="feedback-report" data-id={view.id}>
     <header className="boring-feedback-sheet-header">
       <h2>{view.title}</h2>
-      {onClose && <button type="button" className="boring-feedback-icon" aria-label="Close" onClick={onClose}>×</button>}
+      {onClose && <Button variant="ghost" size="icon" aria-label="Close" title="Close" onClick={onClose}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>}
     </header>
     <p className="boring-feedback-meta">
       <span data-status={view.status}>{view.status}</span>
@@ -58,7 +60,7 @@ export function FeedbackReport({ report, page, onClose }: FeedbackReportProps) {
         return <li key={anchor.index} data-testid="feedback-anchor">
           <span>{anchor.fallback}</span>
           {anchor.source !== undefined && <code>{anchor.source}</code>}
-          {page && anchor.placeable && <button type="button" className="boring-feedback-button" data-testid="feedback-show" disabled={current === 'working'} onClick={() => { void show(anchor.index); }}>Show</button>}
+          {page && anchor.placeable && <Button variant="ghost" data-testid="feedback-show" disabled={current === 'working'} onClick={() => { void show(anchor.index); }}>Show</Button>}
           {!anchor.placeable && <span className="boring-feedback-meta">This page cannot place {anchor.kind}.</span>}
           {current !== undefined && current !== 'working' && <div role="status" className="boring-feedback-status" data-testid="feedback-show-result" data-kind={current.kind}>
             {outcomeText(current)}

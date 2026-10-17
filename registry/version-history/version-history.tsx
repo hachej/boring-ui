@@ -95,7 +95,7 @@ export function VersionHistoryRows({ versions, current, onSelect, labels: given,
   return <ul data-boring="version-history" className="m-0 list-none p-0">
     {items.map((item, index) => <li key={item.id}>
       {item.group && item.group !== items[index - 1]?.group && <p className="px-2 pt-3 pb-1 text-xs text-muted-foreground">{item.group}</p>}
-      <Button type="button" variant="ghost" aria-pressed={item.checked} data-item={item.id} data-testid={item.testId} onClick={item.onSelect} className="h-auto min-h-11 w-full justify-start gap-2 py-2 text-left">
+      <Button type="button" variant="ghost" aria-pressed={item.checked} data-item={item.id} data-testid={item.testId} onClick={item.onSelect} className="h-auto min-h-11 w-full justify-start gap-2 text-left">
         <ActionMenuItemContent item={item} testId={testId} />
       </Button>
     </li>)}

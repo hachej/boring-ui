@@ -16,7 +16,7 @@ function fixture(t) {
   for (const path of ['ARCHITECTURE.json', 'VERIFY.json', 'INVARIANTS.md', 'package.json', 'docs/LAWS.md', 'packages/feedback/INVARIANTS.md']) write(path, readFileSync(join(repository, path)));
   // Fixture controls evidence status independently of later real implementations.
   const registry = JSON.parse(readFileSync(join(root, 'VERIFY.json'), 'utf8'));
-  for (const law of Object.values(registry.invariants)) for (const proof of law.verifiers) if (proof.scope === 'runtime') { proof.kind = 'pending'; proof.reason = 'deliberately unqualified fixture'; }
+  for (const law of Object.values(registry.invariants)) for (const proof of law.verifiers) if (proof.scope === 'runtime' && proof.kind !== 'journey') { proof.kind = 'pending'; proof.reason = 'deliberately unqualified fixture'; }
   // Feature laws (VERIFY.json `features`) have their own fixture in test/pi-boundary.test.mjs; this one covers the root slots.
   delete registry.features;
   write('VERIFY.json', JSON.stringify(registry));

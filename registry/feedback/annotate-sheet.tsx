@@ -2,6 +2,8 @@
 // the headless `createAnnotation` from `@hachej/boring-feedback/ui`; this file is how the sheet looks and what it says.
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { protectionNotice, type Annotation, type CopyState, type FeedbackProtection, type SaveState } from '@hachej/boring-feedback/ui';
+import { Button } from '@/components/ui/button';
+import { XIcon } from 'lucide-react';
 import { useExternal } from './use-external';
 import { withLabels, type FeedbackLabels } from './feedback-labels';
 
@@ -107,7 +109,7 @@ export function AnnotateSheet({ annotation, onClose, near, protection, title, la
     className="boring-feedback-sheet" data-docked={place ? undefined : 'bottom'} style={place} onKeyDown={onKeyDown}>
     <header className="boring-feedback-sheet-header">
       <h2>{heading}</h2>
-      <button type="button" className="boring-feedback-icon" aria-label={words.close} data-testid="feedback-close" onClick={onClose}>×</button>
+      <Button variant="ghost" size="icon" aria-label={words.close} title={words.close} data-testid="feedback-close" onClick={onClose}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>
     </header>
     {state.selected && <ul className="boring-feedback-targets" data-testid="feedback-targets">
       {state.targets.map((target, index) => <li key={index}>{target}</li>)}
@@ -120,11 +122,11 @@ export function AnnotateSheet({ annotation, onClose, near, protection, title, la
       <textarea ref={note} data-testid="feedback-note" rows={4} value={state.said} readOnly={saved} onChange={event => annotation.setSaid(event.target.value)} />
     </label>
     <div className="boring-feedback-actions">
-      {state.selected && state.save.kind !== 'saved' && <button type="button" className="boring-feedback-button" data-testid="feedback-cancel-selection" disabled={state.save.kind === 'saving'}
-        onClick={cancelSelection}>{words.cancelSelection}</button>}
-      <button type="button" className="boring-feedback-button" data-testid="feedback-copy" onClick={() => { void annotation.copy(); }}>{words.copyReport}</button>
-      {state.canSave && <button type="button" className="boring-feedback-button" data-variant="primary" data-testid="feedback-save" disabled={state.save.kind === 'saving' || saved}
-        onClick={() => { void annotation.save(); }}>{state.save.kind === 'unknown' ? words.saveAgain : saved ? words.saved : words.save}</button>}
+      {state.selected && state.save.kind !== 'saved' && <Button variant="ghost" data-testid="feedback-cancel-selection" disabled={state.save.kind === 'saving'}
+        onClick={cancelSelection}>{words.cancelSelection}</Button>}
+      <Button variant="ghost" data-testid="feedback-copy" onClick={() => { void annotation.copy(); }}>{words.copyReport}</Button>
+      {state.canSave && <Button variant="default" data-testid="feedback-save" disabled={state.save.kind === 'saving' || saved}
+        onClick={() => { void annotation.save(); }}>{state.save.kind === 'unknown' ? words.saveAgain : saved ? words.saved : words.save}</Button>}
     </div>
     <p role="status" aria-live="polite" className="boring-feedback-status" data-testid="feedback-status" data-copy={state.copy.kind} data-save={state.save.kind}>
       {[copyMessage(state.copy), saveMessage(state.save), cancelled && !state.selected ? words.selectionCancelled : ''].filter(Boolean).join(' ')}

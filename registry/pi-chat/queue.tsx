@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ChatDraft } from '@hachej/boring-ui-kit/native-chat';
 import { CornerDownRightIcon, EllipsisIcon, ListEndIcon, LoaderIcon, PencilIcon, RouteIcon, Trash2Icon } from 'lucide-react';
 import { TraceIcon, TraceLine, TraceTitle } from '@/components/ui/trace';
+import { Button } from '@/components/ui/button';
 import { isFileBlock, type QueuedMessage } from './rows';
 import { defaultChatLabels, useChatText } from './labels';
 
@@ -28,8 +29,6 @@ export interface QueueActions {
   readonly steer?: ((item: QueuedMessage) => Promise<void>) | undefined;
 }
 
-const rowButton = 'inline-flex shrink-0 cursor-pointer items-center justify-center gap-1 rounded-lg text-muted-foreground outline-none transition-colors hover:bg-background/70 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-45 motion-reduce:transition-none';
-
 /** The "…" button of one queued message: a small menu of the secondary actions (Edit). */
 function MoreMenu({ disabled, onEdit }: { readonly disabled: boolean; readonly onEdit: () => void }) {
   const { labels } = useChatText();
@@ -43,8 +42,8 @@ function MoreMenu({ disabled, onEdit }: { readonly disabled: boolean; readonly o
     return () => { document.removeEventListener('mousedown', outside); document.removeEventListener('keydown', escape, true); };
   }, [open]);
   return <div ref={root} className="relative shrink-0">
-    <button ref={trigger} type="button" data-testid="queue-more" aria-label={labels.moreActions} title={labels.more} aria-haspopup="menu" aria-expanded={open} disabled={disabled} onClick={() => setOpen(value => !value)}
-      className={`${rowButton} size-8 max-sm:size-10`}><EllipsisIcon className="size-4" aria-hidden="true" /></button>
+    <Button ref={trigger} variant="ghost" size="icon" data-testid="queue-more" aria-label={labels.moreActions} title={labels.more} aria-haspopup="menu" aria-expanded={open} disabled={disabled} onClick={() => setOpen(value => !value)}>
+      <EllipsisIcon data-icon="inline-start" aria-hidden="true" /></Button>
     {open && <div role="menu" data-testid="queue-menu" className="absolute right-0 bottom-full z-30 mb-1 w-40 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-lg">
       <button type="button" role="menuitem" data-testid="queue-edit" autoFocus onClick={() => { setOpen(false); onEdit(); }}
         className="flex min-h-9 w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm text-foreground outline-none hover:bg-accent focus-visible:bg-accent max-sm:min-h-10"><PencilIcon className="size-3.5 text-muted-foreground" aria-hidden="true" />{labels.edit}</button>
@@ -89,11 +88,11 @@ export function MessageQueue({ items, sending = [], withdraw, actions }: {
             <TraceIcon>{steering ? <RouteIcon /> : <ListEndIcon />}</TraceIcon>
             <TraceTitle><span className="sr-only">{steering ? labels.steering : labels.queued}: </span><span data-testid="queue-text">{queuedText(item, labels.images)}</span></TraceTitle>
           </TraceLine>
-          {!steering && actions?.steer && <button type="button" data-testid="queue-steer" title={labels.steerHint} disabled={working} onClick={() => { void run(item, () => actions.steer!(item)); }}
-            className={`${rowButton} h-8 px-2 text-sm max-sm:h-10 max-sm:px-2.5`}><CornerDownRightIcon className="size-3.5" aria-hidden="true" />{labels.steer}</button>}
+          {!steering && actions?.steer && <Button variant="ghost" size="sm" data-testid="queue-steer" title={labels.steerHint} disabled={working} onClick={() => { void run(item, () => actions.steer!(item)); }}>
+            <CornerDownRightIcon data-icon="inline-start" aria-hidden="true" />{labels.steer}</Button>}
           {steering && <span className="shrink-0 px-1 text-xs text-muted-foreground">{labels.steering}</span>}
-          <button type="button" data-testid="queue-cancel" aria-label={labels.removeQueued} title={labels.removeHint} disabled={!withdraw || working} onClick={() => { void remove(item); }}
-            className={`${rowButton} size-8 max-sm:size-10`}><Trash2Icon className="size-3.5" aria-hidden="true" /></button>
+          <Button variant="ghost" size="icon" data-testid="queue-cancel" aria-label={labels.removeQueued} title={labels.removeHint} disabled={!withdraw || working} onClick={() => { void remove(item); }}>
+            <Trash2Icon data-icon="inline-start" aria-hidden="true" /></Button>
           {actions?.edit && <MoreMenu disabled={working} onEdit={() => { void run(item, () => actions.edit!(item)); }} />}
         </li>;
       })}

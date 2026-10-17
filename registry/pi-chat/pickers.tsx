@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { CheckIcon, ChevronDownIcon, Loader2Icon } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import type { EffortConfig, ModelConfig, ModelRef } from './config';
 import { cn } from '../utils/utils';
 import { useChatText } from './labels';
@@ -80,13 +81,13 @@ export function ModelEffortPicker({ model, effort, currentModel, currentEffort, 
       {items.map((choice, index) => row(choice, offset + index))}
     </ul></li>;
   return <div ref={root} className="relative min-w-0 max-w-[65%] shrink @max-[480px]/composer:max-w-20" onKeyDown={onKeyDown}>
-    <button ref={trigger} type="button" data-testid="composer-model" data-value={modelValue} data-effort={currentEffort ?? ''} disabled={disabled} aria-haspopup="listbox" aria-expanded={open} aria-label={description} title={description}
+    <Button ref={trigger} variant="ghost" data-testid="composer-model" data-value={modelValue} data-effort={currentEffort ?? ''} disabled={disabled} aria-haspopup="listbox" aria-expanded={open} aria-label={description} title={description}
       onClick={() => setOpen(value => !value)}
-      className="inline-flex h-10 min-w-0 max-w-full cursor-pointer items-center gap-1.5 rounded-full bg-muted px-3 text-sm font-medium max-sm:h-11 pointer-coarse:h-11 text-foreground transition-colors outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-60 motion-reduce:transition-none max-sm:px-3">
-      {busy && <Loader2Icon className="size-3.5 shrink-0 animate-spin motion-reduce:animate-none" aria-hidden="true" />}
+      className="min-w-0 max-w-full gap-1.5">
+      {busy && <Loader2Icon data-icon="inline-start" className="animate-spin motion-reduce:animate-none" aria-hidden="true" />}
       <span data-testid="composer-model-label" className="min-w-0 truncate">{summary}</span>
-      <ChevronDownIcon className="size-3.5 shrink-0 opacity-50" aria-hidden="true" />
-    </button>
+      <ChevronDownIcon data-icon="inline-end" aria-hidden="true" />
+    </Button>
     {open && <ul ref={list} role="listbox" aria-label={labels.modelAndEffort} data-testid="composer-model-menu" className="absolute bottom-full left-0 z-20 mb-2 m-0 max-h-80 min-w-56 list-none overflow-y-auto rounded-lg border border-border bg-popover p-1.5 text-popover-foreground shadow-lg max-sm:fixed max-sm:inset-x-0 max-sm:bottom-0 max-sm:mb-0 max-sm:max-h-[70dvh] max-sm:rounded-b-none max-sm:p-2 max-sm:pb-[max(0.5rem,env(safe-area-inset-bottom))]">
       {model && section(labels.model, models, 0)}
       {effort && section(labels.effort, levels, models.length)}

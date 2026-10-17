@@ -32,6 +32,7 @@ import { createRevisionHandler } from '@hachej/boring-files/revision-handler';
 import { sendWebResponse, webRequest } from '@hachej/boring-files/node-http';
 import { readFiles, writeFiles } from '../../shared/workspace-tools.mjs';
 import { buildTailwind } from '../../lab/studio/tailwind.mjs';
+import { stockShadowTokens, themePreviewHead, themePreviewStatics } from '../../test/fixtures/themes/preview.mjs';
 import { openAccountsPayable, decisionSchema } from './ap.mjs';
 import { validWorkspacePath } from './paths.mjs';
 import { ACCOUNTS, BUDGETS, COMPANY, POLICY, SUPPLIERS, contractPdf, invoicePdf } from './data.mjs';
@@ -176,11 +177,11 @@ export async function startWorkspaceDemo({ directory = mkdtempSync(join(tmpdir()
     alias: { '@': here('../../examples/app-shell') }, define: { 'process.env.NODE_ENV': '"production"' }, logLevel: 'silent' });
   const css = [await buildTailwind({ extraDirectories: ['demos/workspace', 'packages/ui/src', 'registry/feedback', 'registry/dock', 'registry/pi-app', 'registry/documents', 'registry/viewers', 'examples/app-shell/components', 'examples/app-shell/hooks'], extraCss: readFileSync(here('./style.css'), 'utf8') }), ...bundle.outputFiles.filter(file => file.path.endsWith('.css')).map(file => file.text),
     '@layer base{*,::before,::after{box-sizing:border-box}ul,ol{list-style:none;margin:0;padding:0}h1,h2,h3,p{margin:0}button{border:0;background:transparent;padding:0;font:inherit;color:inherit;cursor:pointer}button:disabled{cursor:default}}',
-    'html,body,#root{height:100%;margin:0}body{background:var(--background);color:var(--foreground);font:14px/1.5 ui-sans-serif,system-ui,sans-serif}'].join('\n');
+    'html,body,#root{height:100%;margin:0}body{background:var(--background);color:var(--foreground);font:14px/1.5 var(--font-sans,ui-sans-serif,system-ui,sans-serif)}', stockShadowTokens].join('\n');
   const page = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>${COMPANY} - Accounts payable (fictional)</title>
-<link rel="stylesheet" href="/app.css"></head><body><div id="root"></div><script>window.__APP__=${JSON.stringify({ token, conversation: String(current.id), identity: { runtimeId: 'app', ...person }, voice: Boolean(voice) })}</script>
+<link rel="stylesheet" href="/app.css">${themePreviewHead}</head><body><div id="root"></div><script>window.__APP__=${JSON.stringify({ token, conversation: String(current.id), identity: { runtimeId: 'app', ...person }, voice: Boolean(voice) })}</script>
 <script type="module" src="/app.js"></script></body></html>`;
-  const statics = { '/': ['text/html; charset=utf-8', page], '/app.js': ['text/javascript; charset=utf-8', bundle.outputFiles.find(file => file.path.endsWith('.js')).text], '/app.css': ['text/css; charset=utf-8', css] };
+  const statics = { ...themePreviewStatics, '/': ['text/html; charset=utf-8', page], '/app.js': ['text/javascript; charset=utf-8', bundle.outputFiles.find(file => file.path.endsWith('.js')).text], '/app.css': ['text/css; charset=utf-8', css] };
 
   const server = createServer(async (incoming, outgoing) => {
     const url = new URL(incoming.url, `http://${incoming.headers.host}`);

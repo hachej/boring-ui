@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
 import { CheckIcon, ShieldAlertIcon, XIcon } from 'lucide-react';
-import { Button } from '../button/button';
+import { Button } from '@/components/ui/button';
 import type { AnswerOutcome } from './question-card';
 import { cn } from '../utils/utils';
 import { useChatText } from './labels';
@@ -91,8 +91,8 @@ export function ApprovalCard({ call, result, answer, questionId, summary, decisi
         })()}
         {open && <>
           <div role="group" aria-label={labels.decision} className="mt-3 flex flex-wrap gap-2">
-            <Button variant="default" data-testid="approval-approve" disabled={!answer || !questionId || busy} onClick={() => { void decide(APPROVE); }} className={cn('min-h-11 sm:min-h-9 pointer-coarse:min-h-11', sending === APPROVE && 'opacity-70')}><CheckIcon className="size-3.5" aria-hidden="true" />{labels.approve}</Button>
-            <Button variant="outline" data-testid="approval-deny" disabled={!answer || !questionId || busy} onClick={() => { void decide(DENY); }} className={cn('min-h-11 sm:min-h-9 pointer-coarse:min-h-11', sending === DENY && 'border-ring')}><XIcon className="size-3.5" aria-hidden="true" />{labels.deny}</Button>
+            <Button variant="default" data-testid="approval-approve" disabled={!answer || !questionId || busy} onClick={() => { void decide(APPROVE); }}><CheckIcon data-icon="inline-start" aria-hidden="true" />{labels.approve}</Button>
+            <Button variant="outline" data-testid="approval-deny" disabled={!answer || !questionId || busy} onClick={() => { void decide(DENY); }}><XIcon data-icon="inline-start" aria-hidden="true" />{labels.deny}</Button>
           </div>
           {live && <p className="mt-3 mb-0 text-xs text-muted-foreground">{labels.stillWritingCall}</p>}
           {(!answer || !questionId) && !live && <p className="mt-3 mb-0 text-xs text-muted-foreground">{labels.decidingUnavailable}</p>}

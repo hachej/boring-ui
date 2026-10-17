@@ -32,7 +32,7 @@ try {
   const pins = [...new Set([...closure.values()].flatMap(item => item.dependencies ?? []))];
   const union = { dependencies: pins };
   const archiveByName = packBoringDependencies(root, union, join(directory, 'packs'), run);
-  const dependencies = consumerDependencies(root, union, ['typescript', '@types/react', '@types/react-dom', 'esbuild', 'shadcn', 'tailwindcss', 'cn', '@base-ui/react']);
+  const dependencies = consumerDependencies(root, union, ['typescript', '@types/react', '@types/react-dom', 'esbuild', 'shadcn', 'tailwindcss', 'cn', 'class-variance-authority', '@base-ui/react']);
   writeLockedManifest(root, directory, 'isolated-pi-chat-consumer', dependencies);
   run('npm', ['install', '--package-lock-only', ...npmInstallFlags(cache), ...archiveByName.values()]);
   run('npm', ['ci', ...npmInstallFlags(cache)]);

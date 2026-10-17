@@ -24,7 +24,7 @@ const source = /\.(?:tsx?|jsx?|mjs)$/;
 const namespace = '@boring-ui/';
 const local = (dependency) => dependency.startsWith(namespace) ? dependency.slice(namespace.length) : dependency;
 /** The shadcn built-in components a registry item may depend on by bare name. Fixed: a new one is a decision, not a convenience. */
-export const SHADCN_BUILTINS = Object.freeze(['button', 'drawer', 'sidebar', 'avatar', 'dropdown-menu', 'separator', 'tooltip', 'trace']);
+export const SHADCN_BUILTINS = Object.freeze(['button', 'toggle', 'switch', 'drawer', 'sidebar', 'avatar', 'dropdown-menu', 'separator', 'tooltip', 'trace']);
 const importPattern = /\b(?:from|import)\s*\(?\s*['"]([^'"]+)['"]/g;
 
 /** Cycles among the source files under `folders`, following relative imports (`./x`, `./x.js` for `x.ts`, `./x` for `x.tsx`). */
@@ -81,7 +81,7 @@ export function checkRegistryBlocks(root) {
   const items = new Map(manifest.items.map((item) => [item.name, item]));
   const listed = (item) => new Set(item.files.map((file) => file.path));
   const closure = (name, seen = new Set()) => {
-    for (const dependency of (items.get(name)?.registryDependencies ?? []).map(local)) if (!seen.has(dependency)) { seen.add(dependency); closure(dependency, seen); }
+    for (const dependency of (items.get(name)?.registryDependencies ?? []).filter(dependency => !SHADCN_BUILTINS.includes(dependency)).map(local)) if (!seen.has(dependency)) { seen.add(dependency); closure(dependency, seen); }
     return seen;
   };
   let files = 0;

@@ -7,7 +7,8 @@ import type { VoiceCapture, VoiceRefusal } from '@hachej/boring-feedback/page';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { useChatText } from '../pi-chat/labels';
 import type { ChatLabels } from '../pi-chat/labels';
-import { cn } from '../utils/utils';
+import { Button } from '@/components/ui/button';
+import { Toggle } from '@/components/ui/toggle';
 
 export interface VoiceInputProps {
   /** The chat whose composer draft receives the transcript. */
@@ -27,8 +28,6 @@ const REFUSAL: Readonly<Record<VoiceRefusal, (labels: ChatLabels) => string>> = 
   unsupported: labels => labels.voiceUnsupported,
   failed: labels => labels.voiceStartFailed,
 };
-
-const ROUND = 'inline-flex size-10 max-sm:size-11 pointer-coarse:size-11 shrink-0 cursor-pointer items-center justify-center rounded-(--chat-send-radius) bg-muted text-foreground transition-colors outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-45 motion-reduce:transition-none';
 
 export function VoiceInput({ controller, transcribe }: VoiceInputProps) {
   const { labels } = useChatText();
@@ -110,15 +109,14 @@ export function VoiceInput({ controller, transcribe }: VoiceInputProps) {
   const busy = phase === 'transcribing';
   return (
     <div className="flex items-center gap-1.5">
-      {(recording || busy) && <button type="button" data-testid="composer-voice-cancel" aria-label={labels.voiceCancel} title={labels.voiceCancel} onClick={cancel} className={ROUND}>
-        <XIcon className="size-4" aria-hidden="true" /></button>}
-      <button type="button" data-testid="composer-voice" data-state={phase} aria-pressed={recording} aria-label={recording ? labels.voiceStop : labels.voiceRecord}
-        title={recording ? labels.voiceStop : labels.voiceRecord} disabled={phase === 'starting' || busy} onClick={onClick}
-        className={cn(ROUND, recording && 'bg-destructive text-white hover:bg-destructive/90')}>
-        {busy ? <Loader2Icon role="status" aria-label={labels.voiceTranscribing} className="size-4 animate-spin motion-reduce:animate-none" />
-          : recording ? <SquareIcon className="size-4 fill-current" aria-hidden="true" />
-          : <MicIcon className="size-5" aria-hidden="true" />}
-      </button>
+      {(recording || busy) && <Button variant="ghost" size="icon" data-testid="composer-voice-cancel" aria-label={labels.voiceCancel} title={labels.voiceCancel} onClick={cancel}>
+        <XIcon data-icon="inline-start" aria-hidden="true" /></Button>}
+      <Toggle data-testid="composer-voice" data-state={phase} pressed={recording} aria-label={recording ? labels.voiceStop : labels.voiceRecord}
+        title={recording ? labels.voiceStop : labels.voiceRecord} disabled={phase === 'starting' || busy} onPressedChange={onClick}>
+        {busy ? <Loader2Icon data-icon="inline-start" className="animate-spin motion-reduce:animate-none" role="status" aria-label={labels.voiceTranscribing} />
+          : recording ? <SquareIcon data-icon="inline-start" aria-hidden="true" />
+          : <MicIcon data-icon="inline-start" aria-hidden="true" />}
+      </Toggle>
       {problem && <span role="alert" data-testid="composer-voice-problem" className="max-w-56 text-xs leading-4 text-destructive">{problem}</span>}
     </div>
   );

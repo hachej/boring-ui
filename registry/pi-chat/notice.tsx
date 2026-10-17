@@ -2,7 +2,7 @@
 
 import type { ReactNode } from 'react';
 import type { NativeChatSnapshot } from '@hachej/boring-ui-kit/native-chat';
-import { Button } from '../button/button';
+import { Button } from '@/components/ui/button';
 import { useChatText } from './labels';
 import { cn } from '../utils/utils';
 

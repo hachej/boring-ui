@@ -27,6 +27,6 @@ export function ViewerVersions({ versions, current, onSelect, testId = 'viewer-v
 }) {
   const { labels } = useViewerText();
   const [now, setNow] = useState(Date.now);
-  return <ViewerMenu label={label ?? labels.versionHistory} testId={testId} align="end" icon={<HistoryIcon className="size-4" aria-hidden="true" />} onOpenChange={open => { if (open) setNow(Date.now()); }}
+  return <ViewerMenu label={label ?? labels.versionHistory} testId={testId} align="end" icon={<HistoryIcon data-icon="inline-start" aria-hidden="true" />} onOpenChange={open => { if (open) setNow(Date.now()); }}
     items={versionHistoryItems({ versions, current, onSelect, labels, now, testId })} />;
 }

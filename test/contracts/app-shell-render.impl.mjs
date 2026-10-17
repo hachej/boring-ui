@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 import { Window } from 'happy-dom';
@@ -19,7 +19,7 @@ async function bundle(name, source) {
   const outfile = `${out}/${name.replace(/\.tsx?$/, '')}.mjs`;
   const entry = source ? `${out}/${name}` : `${root}${folder}/${name}`;
   if (source) writeFileSync(entry, source);
-  await build({ entryPoints: [entry], outfile, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', alias: { '@': `${root}examples/app-shell` }, logLevel: 'silent' });
+  await build({ entryPoints: [entry], outfile, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', alias: { '@': `${root}examples/app-shell` }, logLevel: 'silent', plugins: process.env.BEFORE_ACCOUNT_SOURCE ? [{ name: 'pre-fix-account', setup(builder) { builder.onLoad({ filter: /registry\/app-shell\/account\.tsx$/ }, () => ({ contents: readFileSync(process.env.BEFORE_ACCOUNT_SOURCE, 'utf8'), loader: 'tsx', resolveDir: `${root}registry/app-shell` })); } }] : [] });
   return import(`${pathToFileURL(outfile).href}?fresh=${++bundles}`);
 }
 
@@ -117,7 +117,11 @@ test('the account theme: one « Mode sombre » switch when the app gives a theme
   const row = window.document.querySelector('[data-testid=app-sheet] [data-testid=account-theme]');
   assert.equal(row?.getAttribute('role'), 'switch');
   assert.equal(row?.getAttribute('aria-checked'), 'false');
-  assert.equal(row?.textContent.trim(), 'Mode sombre');
+  assert.equal(row?.getAttribute('data-slot'), 'switch');
+  assert.equal(row?.getAttribute('aria-label'), 'Mode sombre');
+  const label = row?.parentElement.querySelector('label');
+  assert.equal(label?.textContent.trim(), 'Mode sombre');
+  assert.equal(label?.htmlFor, row?.parentElement.querySelector('input[type=checkbox]')?.id);
   await act(async () => row.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true })));
   assert.deepEqual(changed, ['dark'], 'a light app turns dark');
   await unmount();
@@ -134,6 +138,24 @@ test('the account theme: one « Mode sombre » switch when the app gives a theme
   const none = await openAccount(t, { account: { name: 'Camille Martin', menu: [], signOut() {} }, locale: 'fr' });
   assert.equal(none.window.document.querySelector('[data-testid=account-theme]'), null, 'no theme, no row');
   await none.unmount();
+});
+
+test('desktop account theme stays in the native menu keyboard order and closes on selection', async t => {
+  const changed = [];
+  const ui = await render(t, { account: { name: 'Fictional reviewer', menu: [{ label: 'Settings', onSelect() {} }], signOut() {}, theme: { value: 'light', onChange: value => changed.push(value) } } }, { width: 1440 });
+  const { act } = await import('react');
+  const key = async (element, value) => act(async () => element.dispatchEvent(new ui.window.KeyboardEvent('keydown', { key: value, bubbles: true, cancelable: true })));
+  const until = async condition => { for (let attempt = 0; attempt < 40 && !condition(); attempt++) await act(async () => new Promise(resolve => setTimeout(resolve, 25))); assert.ok(condition()); };
+  await key(ui.container.querySelector('[data-testid=nav-user]'), 'ArrowDown');
+  await until(() => ui.window.document.activeElement?.textContent === 'Settings');
+  await key(ui.window.document.activeElement, 'ArrowDown');
+  assert.equal(ui.window.document.activeElement?.getAttribute('data-testid'), 'account-theme');
+  assert.equal(ui.window.document.activeElement?.getAttribute('role'), 'menuitemcheckbox');
+  assert.equal(ui.window.document.activeElement?.getAttribute('aria-checked'), 'false');
+  await key(ui.window.document.activeElement, 'Enter');
+  assert.deepEqual(changed, ['dark']);
+  await until(() => !ui.window.document.querySelector('[role=menu]'));
+  await ui.unmount();
 });
 
 // One happy-dom window per test: `dom()` saves and restores the globals, so two windows in one test would leave happy-dom's globals behind for

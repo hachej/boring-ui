@@ -5,16 +5,14 @@
 // (registry/pi-chat): ONE annotate toggle and a count chip, structurally, so neither item imports the other.
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { MicIcon, SquareIcon, XIcon } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Toggle } from '@/components/ui/toggle';
 import { readableElement } from '@hachej/boring-feedback/format';
 import { createVoiceCapture, type VoiceCapture } from '@hachej/boring-feedback/page';
 import { pinMark, type FeedbackSession, type FeedbackSessionSnapshot, type SessionNote } from '@hachej/boring-feedback/ui';
 import { useExternal } from './use-external';
 import { withLabels, type FeedbackLabels } from './feedback-labels';
-
-/** A microphone outline drawn inline: emoji glyphs (🎙) are missing from some system fonts. */
-const MicIcon = () => <svg className="boring-feedback-mic" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
-  <rect x="9" y="2" width="6" height="13" rx="3" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><path d="M12 19v3" />
-</svg>;
 
 const plural = (count: number, one: string, many: string): string => `${count} ${count === 1 ? one : many}`;
 /** Notes the chip and the bar count: every note that says something (not a pin still being typed), plus the general note. */
@@ -79,19 +77,19 @@ export function FeedbackBar({ session, className, docked = false }: FeedbackBarP
     onKeyDown={event => { if (event.key === 'Escape' && state.bubble) { event.stopPropagation(); session.cancelBubble(); } }}>
     <span className="boring-feedback-bar-title"><span className="boring-feedback-dot" aria-hidden="true" />Feedback</span>
     <span className="boring-feedback-bar-meta" data-testid="feedback-bar-count">{plural(noteCount(state), 'note', 'notes')}{pins ? ` · ${plural(pins, 'pin', 'pins')}` : ''}</span>
-    {state.voiceAvailable && <button type="button" className="boring-feedback-button boring-feedback-record" data-testid="feedback-voice" aria-pressed={recording}
+    {state.voiceAvailable && <Toggle data-testid="feedback-voice" pressed={recording}
       disabled={processing || state.voice.kind === 'starting' || state.voice.kind === 'stopping'} title={recording ? 'Stop recording' : 'Record your voice while you point: each click drops a pin, what you say becomes its note'}
-      onClick={() => { void session.toggleVoice(); }}>
-      {recording ? <><span className="boring-feedback-stop" aria-hidden="true" />Stop</> : <><MicIcon />{state.voice.kind === 'starting' ? 'Starting…' : state.voice.kind === 'stopping' ? 'Stopping…' : 'Record'}</>}
-    </button>}
+      onPressedChange={() => { void session.toggleVoice(); }}>
+      {recording ? <><SquareIcon data-icon="inline-start" aria-hidden="true" />Stop</> : <><MicIcon data-icon="inline-start" aria-hidden="true" />{state.voice.kind === 'starting' ? 'Starting…' : state.voice.kind === 'stopping' ? 'Stopping…' : 'Record'}</>}
+    </Toggle>}
     {recording && <span className="boring-feedback-recording" role="status" data-testid="feedback-recording"><span className="boring-feedback-rec" aria-hidden="true" />
       <span className="boring-feedback-timer" data-testid="feedback-recording-time">{time}</span></span>}
     <span className="boring-feedback-hint" role="status" aria-live="polite" data-testid="feedback-bar-hint">{barHint(state)}</span>
     {voiceProblem && <span className="boring-feedback-voice-problem" role="alert" data-testid="feedback-voice-problem" data-code={voiceProblem.code}>{voiceProblem.reason}</span>}
     {!processing && <span className="boring-feedback-keys boring-feedback-alt">Hold ⌥ to use the app</span>}
-    {!processing && <button type="button" className="boring-feedback-button" data-testid="feedback-use-app" aria-pressed={state.useToggle} onClick={() => session.setUseToggle(!state.useToggle)}>Use app</button>}
-    <button type="button" className="boring-feedback-button" data-variant="primary" data-testid="feedback-done" disabled={processing} onClick={() => { void session.done(); }}>Done</button>
-    <button type="button" className="boring-feedback-icon" data-testid="feedback-discard" aria-label="Discard feedback" title="Discard feedback" disabled={processing} onClick={() => session.discard()}>×</button>
+    {!processing && <Toggle data-testid="feedback-use-app" pressed={state.useToggle} onPressedChange={pressed => session.setUseToggle(pressed)}>Use app</Toggle>}
+    <Button variant="default" data-testid="feedback-done" disabled={processing} onClick={() => { void session.done(); }}>Done</Button>
+    <Button variant="ghost" size="icon" data-testid="feedback-discard" aria-label="Discard feedback" title="Discard feedback" disabled={processing} onClick={() => session.discard()}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>
   </div>;
 }
 
@@ -164,12 +162,12 @@ function PinMic({ session, transcribe, words }: { readonly session: FeedbackSess
   };
   const recording = phase === 'recording';
   return <>
-    <button type="button" className="boring-feedback-pin-mic" data-testid="feedback-bubble-mic" data-state={phase} aria-pressed={recording}
+    <Toggle className="boring-feedback-pin-mic" data-testid="feedback-bubble-mic" data-state={phase} pressed={recording}
       aria-label={recording ? words.voiceStop : words.voiceRecord} title={recording ? words.voiceStop : words.voiceRecord} disabled={phase === 'starting' || phase === 'transcribing'}
-      onClick={() => { if (phase === 'idle') void start(); else if (recording) void finish(); }}>
+      onPressedChange={() => { if (phase === 'idle') void start(); else if (recording) void finish(); }}>
       {phase === 'transcribing' ? <span role="status" aria-label={words.voiceTranscribing}>…</span>
-        : recording ? <span className="boring-feedback-stop" aria-hidden="true" /> : <MicIcon />}
-    </button>
+        : recording ? <SquareIcon data-icon="inline-start" aria-hidden="true" /> : <MicIcon data-icon="inline-start" aria-hidden="true" />}
+    </Toggle>
     {problem && <span className="boring-feedback-voice-problem" role="alert" data-testid="feedback-bubble-voice-problem">{problem}</span>}
   </>;
 }
@@ -230,8 +228,8 @@ export function NoteBubble({ session, labels, transcribe }: { readonly session: 
       {transcribe && <PinMic key={bubble.noteId} session={session} transcribe={transcribe} words={words} />}
     </span>
     <span className="boring-feedback-bubble-actions">
-      <button type="button" className="boring-feedback-button" data-testid="feedback-cancel-selection" onClick={cancel}>{words.cancelSelection}</button>
-      <button type="button" className="boring-feedback-button" data-variant="primary" data-testid="feedback-bubble-save" onClick={() => session.saveBubble()}>{words.add}</button>
+      <Button variant="ghost" data-testid="feedback-cancel-selection" onClick={cancel}>{words.cancelSelection}</Button>
+      <Button variant="default" data-testid="feedback-bubble-save" onClick={() => session.saveBubble()}>{words.add}</Button>
     </span>
     {!touchScreen() && <span className="boring-feedback-keys" data-testid="feedback-bubble-hint">{words.altHint}</span>}
   </div></>;
@@ -255,11 +253,11 @@ export function FeedbackChip({ session, defaultOpen = false, copy = false }: Fee
   const pins = emptyPinCount(state);
   const refusal = state.send.kind !== 'idle' && state.send.kind !== 'sending' && state.send.kind !== 'saved' ? state.send.reason : undefined;
   return <span ref={chip} data-boring="feedback" data-feedback-ignore="" data-testid="feedback-chip" data-send={state.send.kind} className="boring-feedback-chip">
-    <button type="button" className="boring-feedback-chip-open" data-testid="feedback-chip-open" aria-expanded={open} onClick={() => setOpen(value => !value)}
+    <Button variant="ghost" className="min-w-0 max-w-full" data-testid="feedback-chip-open" aria-expanded={open} onClick={() => setOpen(value => !value)}
       title={refusal ?? 'Review your feedback before sending'}>
       <span aria-hidden="true">💬</span> Feedback · {plural(count, 'note', 'notes')}{pins ? ` · ${plural(pins, 'pin', 'pins')} to describe` : ''} · <span className="boring-feedback-chip-route">{state.route}</span>
-    </button>
-    <button type="button" className="boring-feedback-icon boring-feedback-chip-remove" data-testid="feedback-chip-discard" aria-label="Discard feedback" onClick={() => { session.highlight(undefined); session.discard(); }}>×</button>
+    </Button>
+    <Button variant="ghost" size="icon-sm" data-testid="feedback-chip-discard" aria-label="Discard feedback" title="Discard feedback" onClick={() => { session.highlight(undefined); session.discard(); }}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>
     {state.problem && <span className="boring-feedback-warning" role="alert" data-testid="feedback-chip-voice">{state.problem}</span>}
     {refusal && <span className="boring-feedback-warning" role="alert" data-testid="feedback-chip-problem">{refusal}</span>}
     {/* In the page's body: the chip may sit in a transformed chat bar, where a fixed panel would not be placed against the viewport. */}
@@ -291,7 +289,7 @@ export function FeedbackReview({ session, anchor = null, copy = false, onClose }
   return <section data-boring="feedback" data-feedback-ignore="" role="dialog" aria-label="Review feedback" data-testid="feedback-review" className="boring-feedback-review"
     style={place} onKeyDown={onKeyDown} onMouseLeave={() => hover(undefined)}>
     <header className="boring-feedback-sheet-header"><h2>Feedback · {state.route}</h2>
-      <button type="button" className="boring-feedback-icon" aria-label="Close review" data-testid="feedback-review-close" onClick={onClose}>×</button></header>
+      <Button variant="ghost" size="icon" aria-label="Close review" title="Close review" data-testid="feedback-review-close" onClick={onClose}><XIcon data-icon="inline-start" aria-hidden="true" /></Button></header>
     {state.problem && <p className="boring-feedback-warning" role="alert" data-testid="feedback-review-problem">{state.problem}</p>}
     <ol className="boring-feedback-notes">
       {state.notes.map(note => <li key={note.id} data-testid="feedback-review-note" data-note={note.number} data-where={where[note.id]}
@@ -300,7 +298,7 @@ export function FeedbackReview({ session, anchor = null, copy = false, onClose }
           <ElementName note={note} />
           {note.from === 'voice' && <span className="boring-feedback-badge" data-testid="feedback-review-voice">voice</span>}
           {where[note.id] === 'not-on-page' && <span className="boring-feedback-badge" data-testid="feedback-review-elsewhere">not on this page</span>}
-          <button type="button" className="boring-feedback-icon" aria-label={`Remove note ${note.number}`} data-testid="feedback-review-remove" onClick={() => session.removeNote(note.id)}>×</button></span>
+          <Button variant="ghost" size="icon" aria-label={`Remove note ${note.number}`} title={`Remove note ${note.number}`} data-testid="feedback-review-remove" onClick={() => session.removeNote(note.id)}><XIcon data-icon="inline-start" aria-hidden="true" /></Button></span>
         <textarea rows={2} aria-label={`Note ${note.number}`} data-testid="feedback-review-text" value={note.text} placeholder={note.recorded ? 'Nothing was said here: type a note, or remove the pin' : undefined}
           onChange={event => session.setNoteText(note.id, event.target.value)} />
       </li>)}
@@ -309,7 +307,7 @@ export function FeedbackReview({ session, anchor = null, copy = false, onClose }
       <textarea rows={2} data-testid="feedback-review-general" placeholder="Anything else? (optional)" value={state.general} onChange={event => session.setGeneral(event.target.value)} /></label>
     <p className="boring-feedback-meta">{state.stepCount > 1 ? `${plural(state.stepCount, 'step', 'steps')} recorded between the notes. ` : ''}{copy ? 'Copy the report and paste it anywhere.' : 'Sent with your next message.'}</p>
     {copy && <div className="boring-feedback-actions">
-      <button type="button" className="boring-feedback-button" data-variant="primary" data-testid="feedback-copy" onClick={() => { void session.copy(); }}>Copy report</button></div>}
+      <Button variant="default" data-testid="feedback-copy" onClick={() => { void session.copy(); }}>Copy report</Button></div>}
     {copy && <p role="status" aria-live="polite" className="boring-feedback-status" data-testid="feedback-status" data-copy={state.copy.kind}>
       {state.copy.kind === 'copied' ? 'Report copied. Paste it anywhere.' : state.copy.kind === 'manual' ? 'The clipboard is not available here: select the report below and copy it.' : state.copy.kind === 'refused' ? state.copy.reason : ''}</p>}
     {copy && state.copy.kind === 'manual' && <textarea readOnly className="boring-feedback-manual" data-testid="feedback-manual-copy" value={state.copy.text} rows={6} onFocus={event => event.currentTarget.select()} />}

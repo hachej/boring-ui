@@ -8,6 +8,8 @@
 // minimised, and the panel returns as it was when pointing ends. Mount PointBar (and the one NoteBubble) outside the panel, because the
 // panel may unmount while it is hidden.
 import { createPortal } from 'react-dom';
+import { Button } from '@/components/ui/button';
+import { Toggle } from '@/components/ui/toggle';
 import { isPointing, type FeedbackSession, type FeedbackSessionSnapshot } from '@hachej/boring-feedback/ui';
 import { useExternal } from './use-external';
 import { withLabels, type FeedbackLabels } from './feedback-labels';
@@ -49,12 +51,12 @@ export function PointBar({ session, bottomOffset = '0px', labels, className }: P
       <span className="boring-feedback-point-count" data-testid="feedback-point-count">{words.pointCount(state.notes.length)}</span>
     </span>
     <span className="boring-feedback-point-actions">
-      <button type="button" className="boring-feedback-button" data-testid="feedback-point-use-app" aria-pressed={state.useToggle} disabled={processing}
-        onClick={() => session.setUseToggle(!state.useToggle)}>{words.pointUseApp}</button>
+      <Toggle data-testid="feedback-point-use-app" pressed={state.useToggle} disabled={processing}
+        onPressedChange={pressed => session.setUseToggle(pressed)}>{words.pointUseApp}</Toggle>
       <span className="boring-feedback-point-spacer" />
-      <button type="button" className="boring-feedback-button" data-testid="feedback-point-cancel" disabled={processing} onClick={() => session.discard()}>{words.pointCancel}</button>
-      <button type="button" className="boring-feedback-button" data-variant="primary" data-testid="feedback-point-done" disabled={processing}
-        onClick={() => { void session.done(); }}>{words.pointDone}</button>
+      <Button variant="ghost" data-testid="feedback-point-cancel" disabled={processing} onClick={() => session.discard()}>{words.pointCancel}</Button>
+      <Button variant="default" data-testid="feedback-point-done" disabled={processing}
+        onClick={() => { void session.done(); }}>{words.pointDone}</Button>
     </span>
   </div>, document.body);
 }

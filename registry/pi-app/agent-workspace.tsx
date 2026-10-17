@@ -29,7 +29,7 @@ import type { WorkspacePanelApi } from '../pi-workspace/workspace';
 import { ViewerWindowProvider } from '../viewers/viewer-frame';
 import type { ViewerShare } from '../viewers/viewer-frame';
 import type { InteractiveHtml } from '../viewers/interactive-html';
-import { Button } from '../button/button';
+import { Button } from '@/components/ui/button';
 import type { BlockAction } from '../button/actions';
 import { ChatTextProvider, useMergedText } from '../pi-chat/labels';
 import { cn, withDefaults } from '../utils/utils';
@@ -443,10 +443,10 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
     followHeader.current = new ResizeObserver(() => { if (toggleRow.current) toggleRow.current.style.height = `${header.clientHeight}px`; });
     followHeader.current.observe(header);
   }, []);
-  const toggleSpace = toggle && <Button ref={headerSlot} size="icon-sm" aria-hidden="true" tabIndex={-1} className="invisible min-[641px]:-ml-1" />;
+  const toggleSpace = toggle && <Button ref={headerSlot} variant="ghost" size="icon-sm" aria-hidden="true" tabIndex={-1} className="invisible min-[641px]:-ml-1" />;
 
   // ---- The chat in the center: docked PiChat, or the host's floating surface over the same controller (with the toggle in its header).
-  const header = <>{conversations?.onNew && <Button variant="ghost" size="icon-sm" data-testid="workspace-new-chat" aria-label={text.labels.newChat} className="size-11 min-[641px]:hidden [&_svg]:size-5 [&_svg]:stroke-[1.5]" onClick={conversations.onNew}><text.icons.newChat className="size-4" aria-hidden="true" /></Button>}{typeof controls === 'function' ? controls({ panelOpen }) : controls ?? chat.controls}</>;
+  const header = <>{conversations?.onNew && <Button variant="ghost" size="icon-sm" data-testid="workspace-new-chat" aria-label={text.labels.newChat} title={text.labels.newChat} className="min-[641px]:hidden" onClick={conversations.onNew}><text.icons.newChat data-icon="inline-start" aria-hidden="true" /></Button>}{typeof controls === 'function' ? controls({ panelOpen }) : controls ?? chat.controls}</>;
   const conversationTitle = conversations?.items.find(item => item.id === conversationId)?.title;
   const chatProps: PiChatProps | undefined = controller && { ...(mentionsForChat ? { mentions: mentionsForChat } : {}), ...(attachments ? { attachments } : {}), ...(locale ? { locale } : {}), ...chat, controller, artifacts, ...(conversations ? { conversations, historyList: false, showHistory: chat.showHistory ?? false, conversationTitle, onRenameTitle: conversations.rename && conversationId ? (title: string) => conversations.rename!(conversationId, title) : undefined } : {}),
     headerStart: <>{toggle}{chat.headerStart}</>, ...(header === undefined ? {} : { controls: header }) };
@@ -476,7 +476,7 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
     ...(libraryInPane ? { libraryContent: (onPicked: () => void) => libraryTree(path => { openFile(path); onPicked(); }) } : {}),
   };
   return <AppTextProvider value={text}><ChatTextProvider value={chatText}><div ref={root} data-boring="agent-workspace" data-sessions={!hasNavigation ? undefined : narrow ? (drawer ? 'drawer' : 'closed') : docked ? 'docked' : 'hidden'}
-    className={cn('relative flex h-full min-h-0 min-w-0 flex-1 overflow-hidden', className)}>
+    className={cn('pi-chat relative flex h-full min-h-0 min-w-0 flex-1 overflow-hidden', className)}>
     <DockLayout storageKey={`${storageKey}.dock`} minMain={SESSIONS_WIDTH + 480}>
     {hasNavigation && (docked || (narrow && drawer)) && (sessions ? sessions(sessionProps) : <SessionsPane {...sessionProps} />)}
     <DockMain><ArtifactWorkspace open={panelOpen && !(panelLibrary && narrow)} onClose={close} panelLabel={text.labels.artifactPanel} labels={{ resize: text.labels.resizePanel, floatHint: text.labels.floatHint }} fullscreen={fullscreen} onFullscreenChange={setFullscreen} storageKey={`${storageKey}.panel-width`}
@@ -518,7 +518,7 @@ function WidthProbe({ width, onWidth }: { readonly width: number; readonly onWid
 function UploadNotice({ controller, onOpen }: { readonly controller: FileTreeController; readonly onOpen: () => void }) {
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const failures = state.uploads.filter(upload => upload.state.kind === 'settled' && upload.state.result.kind !== 'committed');
-  return failures.length ? <p role="alert" className="m-0 px-4 py-2 text-sm">{failures.length} upload{failures.length === 1 ? '' : 's'} need attention. <button type="button" className="underline" onClick={onOpen}>Open Library</button> to review the results and check unconfirmed uploads.</p> : null;
+  return failures.length ? <p role="alert" className="m-0 px-4 py-2 text-sm">{failures.length} upload{failures.length === 1 ? '' : 's'} need attention. <Button variant="link" onClick={onOpen}>Open Library</Button> to review the results and check unconfirmed uploads.</p> : null;
 }
 
 /** Keep the selected chat surface mounted while Library temporarily uses its layout space. */

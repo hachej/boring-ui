@@ -10,6 +10,9 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      CHROMIUM: ${{ github.workspace }}/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -21,7 +24,19 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm test
+      - name: Install Chromium for the design audit included in verify
+        run: npx --yes playwright@1.63.0 install --with-deps chromium-headless-shell
+      - name: Allow the Chromium sandbox
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: npm run verify
+      - name: Design evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: verify-design-evidence
+          path: .cache/evidence/shadcn-first
+          retention-days: 7
+          if-no-files-found: ignore
       - name: Release gate lists deferrals as backlog but fails on real failures
         shell: bash
         run: |

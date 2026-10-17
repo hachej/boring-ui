@@ -5,6 +5,13 @@
     { "owner": "packages/feedback/INVARIANTS.md", "prefix": "FEEDBACK", "package": "feedback" }
   ],
   "invariants": {
+    "BORING-UI-1": {
+      "appliesTo": ["ui"],
+      "verifiers": [
+        { "scope": "structural", "kind": "command", "command": ["node", "--test", "test/check-design.test.mjs"], "claim": "scripts/check-design.mjs scans registry and UI source plus shipped registry CSS. Mutation tests cover visual literals, owned primitives, undeclared host imports, obsolete style references, explicit exceptions and REPORT/FAIL enforcement. Unmigrated groups remain reported debt." },
+        { "scope": "runtime", "kind": "journey", "command": ["npm", "run", "test:design"], "claim": "Chromium loads the standalone workspace example and workspace demo in stock and fictional brand themes, light/dark at 1440px and 390px. Computed border widths, radii, shadows, fonts and sampled colours are reported per group; FAIL groups require coverage and no violations. Main token role pairs always require WCAG AA. Group 0 introduces checks, not component conformance." }
+      ]
+    },
     "BORING-PI-1": {
       "appliesTo": ["agent", "execution", "browser"],
       "verifiers": [

@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import { CodeXmlIcon, EyeIcon, RotateCcwIcon, SaveIcon, SearchCheckIcon } from 'lucide-react';
 import { HtmlViewer } from '@hachej/boring-ui-kit/html-viewer';
 import type { HtmlController } from '@hachej/boring-ui-kit/html';
-import { IconButton } from '../button/button';
+import { Button } from '@/components/ui/button';
 import { downloadFile, fileNameFor } from './download';
 import { copyText } from '../utils/utils';
 import { InteractiveFrame } from './interactive-html';
@@ -81,10 +81,10 @@ export function HtmlPane({ controller, labels: ownLabels, title = 'HTML document
       <ViewerToggle label={labels.view} value={mode} onChange={setMode} options={[
         { id: 'preview', label: labels.htmlPreview, text: labels.preview, icon: <EyeIcon className="size-4" aria-hidden="true" />, testId: `${testId}-mode-preview` },
         { id: 'source', label: labels.htmlSource, text: labels.source, icon: <CodeXmlIcon className="size-4" aria-hidden="true" />, testId: `${testId}-mode-source` }]} />
-      {!state.readOnly && state.dirty && <IconButton label={labels.save} variant="default" data-testid={`${testId}-save`} disabled={disposed || pending || unconfirmed} onClick={() => perform(() => controller.flush(controller.actions.selection()))}><SaveIcon className="size-4" aria-hidden="true" /></IconButton>}
-      {unconfirmed && <IconButton label={labels.checkSave} onClick={() => perform(controller.actions.reconcile)}><SearchCheckIcon className="size-4" aria-hidden="true" /></IconButton>}
-      {unconfirmed && <IconButton label={labels.abandon} onClick={() => perform(controller.actions.abandon)}><RotateCcwIcon className="size-4" aria-hidden="true" /></IconButton>}
-      {state.remote !== null && <IconButton label={labels.discardLocal} disabled={pending || unconfirmed} onClick={() => perform(controller.actions.discardToRemote)}><RotateCcwIcon className="size-4" aria-hidden="true" /></IconButton>}
+      {!state.readOnly && state.dirty && <Button variant="default" size="icon-sm" aria-label={labels.save} title={labels.save} data-testid={`${testId}-save`} disabled={disposed || pending || unconfirmed} onClick={() => perform(() => controller.flush(controller.actions.selection()))}><SaveIcon data-icon="inline-start" aria-hidden="true" /></Button>}
+      {unconfirmed && <Button variant="ghost" size="icon-sm" aria-label={labels.checkSave} title={labels.checkSave} onClick={() => perform(controller.actions.reconcile)}><SearchCheckIcon data-icon="inline-start" aria-hidden="true" /></Button>}
+      {unconfirmed && <Button variant="ghost" size="icon-sm" aria-label={labels.abandon} title={labels.abandon} onClick={() => perform(controller.actions.abandon)}><RotateCcwIcon data-icon="inline-start" aria-hidden="true" /></Button>}
+      {state.remote !== null && <Button variant="ghost" size="icon-sm" aria-label={labels.discardLocal} title={labels.discardLocal} disabled={pending || unconfirmed} onClick={() => perform(controller.actions.discardToRemote)}><RotateCcwIcon data-icon="inline-start" aria-hidden="true" /></Button>}
       {controls}
     </>}>
     {error && <p role="alert" className="m-0 border-b border-border bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>}

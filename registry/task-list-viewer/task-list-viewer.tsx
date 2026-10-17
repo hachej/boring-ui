@@ -2,6 +2,7 @@
 
 import { randomUUID } from '@hachej/boring-files/platform';
 import React, { useId, useRef, useState, useSyncExternalStore } from 'react';
+import { Button } from '@/components/ui/button';
 import type { ReadResult } from '@hachej/boring-files';
 import type { SaveResult } from '@hachej/boring-ui-kit/resources';
 import type { TaskListController } from './task-list-controller';
@@ -52,18 +53,18 @@ export function TaskListViewer({ controller, title = 'Tasks', className }: TaskL
     <ul>{state.document.items.map(item => <li key={item.id} data-task-id={item.id}>
       <label><input type="checkbox" aria-label={`Complete ${item.title}`} checked={item.completed} disabled={disabled}
         onChange={event => edit([{ kind: 'set-completed', id: item.id, completed: event.target.checked }])} />{item.title}</label>
-      <button type="button" aria-label={`Remove ${item.title}`} disabled={disabled} onClick={() => edit([{ kind: 'remove', id: item.id }])}>Remove</button>
+      <Button variant="ghost" aria-label={`Remove ${item.title}`} disabled={disabled} onClick={() => edit([{ kind: 'remove', id: item.id }])}>Remove</Button>
     </li>)}</ul>
     <form onSubmit={event => { event.preventDefault(); if (edit([{ kind: 'add', id: randomUUID(), title: draftTitle }]).kind === 'applied') setDraftTitle(''); }}>
       <label htmlFor={inputId}>New task</label><input id={inputId} value={draftTitle} disabled={disabled} onChange={event => setDraftTitle(event.target.value)} />
-      <button type="submit" disabled={disabled || !draftTitle.trim()}>Add task</button>
+      <Button variant="default" type="submit" disabled={disabled || !draftTitle.trim()}>Add task</Button>
     </form>
     <div className="boring-task-list-actions">
-      <button type="button" disabled={disabled || !state.dirty || state.save.kind === 'pending'} onClick={() => void run(() => controller.flush(controller.actions.selection()))}>Save</button>
-      <button type="button" disabled={state.lifecycle === 'disposed'} onClick={() => void run(controller.actions.refresh)}>Refresh</button>
-      <button type="button" disabled={disabled || (!state.dirty && !state.remote)} onClick={() => void run(controller.actions.discardToRemote)}>Discard</button>
-      <button type="button" disabled={state.lifecycle === 'disposed' || save?.kind !== 'unknown'} onClick={() => void run(controller.actions.reconcile)}>Reconcile</button>
-      <button type="button" disabled={state.lifecycle === 'disposed' || save?.kind !== 'unknown'} onClick={() => void run(controller.actions.abandon)}>Abandon save</button>
+      <Button variant="default" disabled={disabled || !state.dirty || state.save.kind === 'pending'} onClick={() => void run(() => controller.flush(controller.actions.selection()))}>Save</Button>
+      <Button variant="ghost" disabled={state.lifecycle === 'disposed'} onClick={() => void run(controller.actions.refresh)}>Refresh</Button>
+      <Button variant="ghost" disabled={disabled || (!state.dirty && !state.remote)} onClick={() => void run(controller.actions.discardToRemote)}>Discard</Button>
+      <Button variant="ghost" disabled={state.lifecycle === 'disposed' || save?.kind !== 'unknown'} onClick={() => void run(controller.actions.reconcile)}>Reconcile</Button>
+      <Button variant="ghost" disabled={state.lifecycle === 'disposed' || save?.kind !== 'unknown'} onClick={() => void run(controller.actions.abandon)}>Abandon save</Button>
     </div>
     {notice && <p role="alert">{notice}</p>}
   </section>;

@@ -90,6 +90,11 @@ test('registry dependency pins and scoped styles preserve the declared source di
       const { theme, light, dark } = item.cssVars;
       assert.deepEqual(Object.keys(dark).sort(), Object.keys(light).filter(name => name !== 'radius').sort(), 'dark redefines every color token');
       for (const [name, value] of Object.entries(theme)) {
+        if (name === 'default-border-width') {
+          assert.equal(value, 'var(--border-width, 1px)', 'optional host border width keeps the stock Tailwind fallback');
+          assert.ok(!('border-width' in light) && !('border-width' in dark), 'the binding requires no extra core token');
+          continue;
+        }
         const used = /^var\(--([\w-]+)\)$/.exec(value)?.[1] ?? /var\(--([\w-]+)\)/.exec(value)?.[1];
         assert.ok(used && used in light, `${name} binds a token of the theme`);
       }
@@ -123,14 +128,14 @@ test('registry dependency pins and scoped styles preserve the declared source di
     assert.equal(item.cssVars, undefined, 'No registry theme replacement');
     if (item.name in TAILWIND) {
       const { scope, keyframes, folder } = TAILWIND[item.name];
-      // Layered base/component rules scoped to the item's root class, plus prefixed keyframes. Never a root, html or body rule.
+      // Standard Tailwind layers stay scoped to the item's root class, plus prefixed keyframes. Never a root, html or body rule.
       const scoped = (rules, where) => { for (const [key, value] of Object.entries(rules)) {
         if (typeof value === 'object' && /^@(media|container|supports)\b/.test(key)) { scoped(value, where + ' ' + key); continue; }
         for (const part of key.split(/,(?![^(]*\))/)) assert.ok(part.trim().startsWith(scope), where + ': ' + key);
       } };
       for (const [at, rules] of Object.entries(item.css ?? {})) {
         if (at.startsWith('@keyframes ')) { assert.match(at, keyframes); continue; }
-        assert.match(at, /^@layer (base|components)$/);
+        assert.match(at, /^@layer (base|components|utilities)$/);
         scoped(rules, at);
       }
       if (item.name === 'viewers') assert.deepEqual(item.css, viewersCss(), 'registry.json css differs from registry/viewers/viewers.css: run node registry/viewers/build-css.mjs');
@@ -160,6 +165,7 @@ test('registry dependency pins and scoped styles preserve the declared source di
       else assert.ok(!item.dependencies.some(name => name.startsWith('@earendil-works/pi-ai')), 'annotation-only feedback must not install the model SDK');
       if (item.name === 'feedback') assert.deepEqual(item.css, feedbackCss(), 'registry.json css differs from registry/feedback/feedback.css: run node scripts/build-feedback-css.mjs');
       const scoped = (rules, where) => { for (const [key, value] of Object.entries(rules)) {
+        if (key.startsWith('@layer ')) { assert.match(key, /^@layer (base|components|utilities)$/); scoped(value, where + ' ' + key); continue; }
         if (/^@(media|container|supports)\b/.test(key)) { scoped(value, where + ' ' + key); continue; }
         for (const part of key.split(/,(?![^(]*\))/)) assert.ok(part.trim().startsWith('[data-boring="feedback"]'), where + ': ' + key);
       } };
@@ -172,6 +178,8 @@ test('registry dependency pins and scoped styles preserve the declared source di
         const { typeOnly, valued } = importKinds(source);
         for (const imported of [...source.matchAll(/\bfrom\s+['"]([^'"]+)['"]/g)].map(match => match[1])) {
           if (imported.startsWith('./')) { assert.ok(names.includes(imported.slice(2)), `${file.path} imports missing ${imported}`); continue; }
+          const hostUi = /^@\/components\/ui\/([\w-]+)$/.exec(imported);
+          if (hostUi) { assert.ok(SHADCN_BUILTINS.includes(hostUi[1]) && item.registryDependencies?.includes(hostUi[1]), `${file.path} imports undeclared host ${imported}`); continue; }
           if (HOST_IMPORTS.some(prefix => imported.startsWith(prefix))) { assert.ok(item.registryDependencies.includes('@boring-ui/pi-chat') && item.registryDependencies.includes('@boring-ui/utils'), `${file.path} imports its host ${imported} without depending on it`); continue; }
           if (TYPE_ONLY_IMPORTS.has(imported) && typeOnly.has(imported) && !valued.has(imported)) continue;
           assert.ok(FEEDBACK_IMPORTS.has(imported), `${file.path} imports ${imported}: only React, React DOM and @hachej/boring-feedback/format, /page, /ui and /preview`);
@@ -192,6 +200,8 @@ test('registry dependency pins and scoped styles preserve the declared source di
       const imports = [...source.matchAll(/\bfrom\s+['"]([^'"]+)['"]/g)].map(match => match[1]);
       assert.ok(imports.length > 0);
       for (const imported of imports) {
+        const hostUi = /^@\/components\/ui\/([\w-]+)$/.exec(imported);
+        if (hostUi) { assert.ok(SHADCN_BUILTINS.includes(hostUi[1]) && item.registryDependencies?.includes(hostUi[1]), `${file.path} imports undeclared host ${imported}`); continue; }
         if (item.name !== 'task-list-viewer') { assert.ok(architecture.sourceDistribution.runtimeImports.includes(imported), imported); continue; }
         if (imported.startsWith('./')) {
           assert.ok(item.files.some(entry => entry.path.replace(/\.tsx?$/, '').endsWith('/' + imported.slice(2))), `${file.path} imports unshipped ${imported}`);

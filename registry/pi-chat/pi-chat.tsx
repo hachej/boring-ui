@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { Loader2Icon } from 'lucide-react';
-import { Button } from '../button/button';
+import { Button } from '@/components/ui/button';
 import { BlockActions } from '../button/actions';
 import type { BlockAction } from '../button/actions';
 import { Composer } from './composer';
@@ -162,9 +162,9 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
       {avatar && <span data-testid="chat-avatar" className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full [&>img]:size-full [&>img]:object-cover [&>svg]:size-4">{avatar}</span>}
       {renamingTitle && onRenameTitle ? <form className="min-w-0 flex-1" onSubmit={event => { event.preventDefault(); const value = new FormData(event.currentTarget).get('title')?.toString().trim(); if (value) { setTitleError(false); void Promise.resolve().then(() => onRenameTitle(value)).catch(() => setTitleError(true)); } setRenamingTitle(false); }}>
         <input name="title" aria-label={labels.conversationName} maxLength={200} autoFocus defaultValue={conversationTitle ?? title} onBlur={() => setRenamingTitle(false)} onKeyDown={event => { if (event.key === 'Escape') setRenamingTitle(false); }} className="w-full min-w-0 rounded-md bg-muted px-2 py-1 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring" />
-      </form> : <h2 className="m-0 min-w-0 flex-1 truncate font-(family-name:--chat-display) text-sm font-medium tracking-tight max-[641px]:text-center">{onRenameTitle ? <button type="button" className="max-w-full cursor-pointer truncate rounded-md px-1 py-2 text-left max-[641px]:min-h-11 pointer-coarse:min-h-11 max-[641px]:text-center outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setRenamingTitle(true)}>{conversationTitle ?? title}</button> : conversationTitle ?? title}</h2>}
-      {showHistory && conversations && historyList && <Button size="sm" data-testid="history-open" className="text-muted-foreground" aria-haspopup="dialog" aria-expanded={pickingConversation} disabled={state.disposed}
-        onClick={() => setPickingConversation(open => !open)}><icons.history className="size-3.5" aria-hidden="true" />{labels.history}</Button>}
+      </form> : <h2 className="m-0 min-w-0 flex-1 truncate font-(family-name:--chat-display) text-sm font-medium tracking-tight max-[641px]:text-center">{onRenameTitle ? <Button variant="ghost" className="max-w-full" onClick={() => setRenamingTitle(true)}><span className="truncate">{conversationTitle ?? title}</span></Button> : conversationTitle ?? title}</h2>}
+      {showHistory && conversations && historyList && <Button variant="ghost" size="sm" data-testid="history-open" aria-haspopup="dialog" aria-expanded={pickingConversation} disabled={state.disposed}
+        onClick={() => setPickingConversation(open => !open)}><icons.history data-icon="inline-start" aria-hidden="true" />{labels.history}</Button>}
       <BlockActions actions={headerActions} testId="chat-action" menuLabel={labels.moreActions} />
       {showConnectionStatus && <ConnectionBadge kind={connectionKind} />}
       {controls}
@@ -176,7 +176,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
     {(connectionKind === 'error' || connectionKind === 'closed') && <div className="shrink-0 px-4 pt-2">
       <Notice tone={connectionKind === 'error' ? 'error' : 'info'} testid="connection-notice">
         <span className="flex-1">{connectionKind === 'error' ? labels.loadFailed : labels.disconnected}</span>
-        {!state.disposed && <Button size="sm" variant="outline" onClick={() => act(controller.connect)}><icons.reconnect className="size-3.5" aria-hidden="true" />{labels.reconnect}</Button>}
+        {!state.disposed && <Button size="sm" variant="outline" onClick={() => act(controller.connect)}><icons.reconnect data-icon="inline-start" aria-hidden="true" />{labels.reconnect}</Button>}
       </Notice></div>}
     {pickingConversation && conversations && historyList && <ConversationHistory conversations={conversations} onClose={() => setPickingConversation(false)} />}
 
@@ -195,7 +195,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
             : emptyState ?? <EmptyState title={title} description={labels.emptyDescription} {...(avatar ? { avatar } : {})} {...(suggestions ? { suggestions } : {})} onSelect={text => { controller.setText(text); textarea.current?.focus(); }} />}
         </div></div>}
       {!empty && !stick.isAtBottom && <Button variant="outline" size="icon" data-testid="jump-latest" aria-label={labels.jumpToLatest} title={labels.jumpToLatest} onClick={() => { transcript.reset(); void stick.scrollToBottom(); }}
-        className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-background/95 shadow-md backdrop-blur"><icons.jumpToLatest className="size-4" aria-hidden="true" /></Button>}
+        className="absolute bottom-3 left-1/2 -translate-x-1/2"><icons.jumpToLatest data-icon="inline-start" aria-hidden="true" /></Button>}
     </div>
 
     <footer data-testid="composer-dock" className="shrink-0 px-4 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6">

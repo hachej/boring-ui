@@ -286,8 +286,8 @@ try {
     assert.equal(await browser.evaluate(taps), before, 'the tab bar behind a modal layer does not receive the tap');
     await browser.screenshot('phone-half.png');
     await controls('half');
-    // Round c: the layer's own buttons are not browser-grey (the scoped reset stands in for Tailwind's preflight), and the microphone is in the composer row.
-    assert.deepEqual(await browser.evaluate(`(() => { const s = getComputedStyle(${q('[data-testid=agent-layer-close]')}); return [s.appearance, s.borderTopWidth, s.backgroundColor]; })()`), ['none', '0px', 'rgba(0, 0, 0, 0)']);
+    // Native ghost Button keeps its transparent border, not the browser's grey control chrome.
+    assert.deepEqual(await browser.evaluate(`(() => { const button = ${q('[data-testid=agent-layer-close]')}, s = getComputedStyle(button); return [button.dataset.slot, s.appearance, s.borderTopWidth, s.borderTopColor, s.backgroundColor]; })()`), ['button', 'none', '1px', 'rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0)']);
     const mic = await browser.evaluate(rect('[data-testid=agent-talk]')), composer = await browser.evaluate(rect('[data-testid=composer]'));
     assert.ok(mic.y >= composer.y && mic.bottom <= composer.bottom, 'the microphone is in the composer row, not over the messages');
   });
@@ -471,7 +471,7 @@ try {
     await browser.until('improve shown', `${q('[data-testid=agent-layer-title]')}?.textContent === "Améliorer l’app"`);
     await settle();
     assert.deepEqual(await browser.evaluate(`(() => { const form = ${q('[data-spec=improve] [data-testid=composer]')}; const toggles = [...form.querySelectorAll('[data-testid=composer-annotate]')]; const r = toggles[0]?.getBoundingClientRect();
-      return { toggles: toggles.length, label: toggles[0]?.textContent, size: r ? [Math.round(r.width), Math.round(r.height)] : null, words: /Retour|Feedback|Montrer dans|question générale|Terminé/i.test(form.innerText),
+      return { toggles: toggles.length, label: toggles[0]?.getAttribute('aria-label'), size: r ? [Math.round(r.width), Math.round(r.height)] : null, words: /Retour|Feedback|Montrer dans|question générale|Terminé/i.test(form.innerText),
         gone: ['composer-feedback', 'composer-point', 'feedback-bar', 'feedback-chip', 'feedback-general', 'feedback-count'].filter(id => document.querySelector('[data-testid=' + id + ']')) }; })()`),
       { toggles: 1, label: 'Annoter', size: [44, 44], words: false, gone: [] }, 'exactly one annotate control, 44px, and no Feedback block');
     await tap('[data-spec=improve] [data-testid=composer-annotate]');
@@ -880,9 +880,9 @@ try {
     await pause(500);
     const IMPROVE = '[data-spec=improve]';
     const found = await browser.evaluate(`(() => { const form = ${q(IMPROVE + ' [data-testid=composer]')}; const toggles = [...form.querySelectorAll('[data-testid=composer-annotate]')]; const r = toggles[0]?.getBoundingClientRect();
-      return { toggles: toggles.length, label: toggles[0]?.textContent, size: r ? [Math.round(r.width), Math.round(r.height)] : null, words: /Retour|Feedback|Montrer dans|question générale|Terminé/i.test(form.innerText),
+      return { toggles: toggles.length, label: toggles[0]?.getAttribute('aria-label'), size: r ? [Math.round(r.width), Math.round(r.height)] : null, words: /Retour|Feedback|Montrer dans|question générale|Terminé/i.test(form.innerText),
         gone: ['composer-feedback', 'composer-point', 'feedback-bar', 'feedback-chip', 'feedback-general', 'feedback-count'].filter(id => document.querySelector('[data-testid=' + id + ']')) }; })()`);
-    assert.deepEqual(found, { toggles: 1, label: 'Annoter', size: [40, 40], words: false, gone: [] }, 'exactly one pointer annotate control, 40px like the other composer controls, and no Feedback block');
+    assert.deepEqual(found, { toggles: 1, label: 'Annoter', size: [34, 32], words: false, gone: [] }, 'exactly one stock native pointer Toggle and no Feedback block');
     await browser.click(q(IMPROVE + ' [data-testid=composer-annotate]'));
     await browser.until('annotating', `${q(IMPROVE + ' [data-testid=composer-annotate]')}.getAttribute('aria-pressed') === 'true'`);
     assert.equal(await browser.evaluate(`!!${q('[data-testid=feedback-point-bar]')} || !!${q('[data-testid=feedback-bar]')}`), false, 'pins, not point mode, and no bar');
@@ -897,11 +897,12 @@ try {
     const pin = await browser.evaluate(`(() => { const f = ${q('[data-testid=feedback-bubble-input]')}.getBoundingClientRect(), m = ${q('[data-testid=feedback-bubble-mic]')}?.getBoundingClientRect(), b = ${q('[data-testid=feedback-bubble]')}.getBoundingClientRect();
       return { mic: m ? [Math.round(m.width), Math.round(m.height)] : null, inside: !!m && m.left >= f.left && m.right <= f.right && m.bottom <= f.bottom + 1, hint: ${q('[data-testid=feedback-bubble-hint]')}?.textContent, general: !!${q('[data-testid=feedback-bubble-general]')},
         inViewport: b.left >= 0 && b.top >= 0 && b.right <= innerWidth && b.bottom <= innerHeight, buttons: [...${q('[data-testid=feedback-bubble]')}.querySelectorAll('button')].map(x => Math.round(x.getBoundingClientRect().height)) }; })()`);
-    assert.ok(pin.mic && pin.mic[0] >= 44 && pin.mic[1] >= 44 && pin.inside, `a 44px mic inside the field: ${JSON.stringify(pin)}`);
+    assert.deepEqual(pin.mic, [34, 32], 'stock pointer Toggle geometry');
+    assert.ok(pin.inside, `the native mic stays inside the field: ${JSON.stringify(pin)}`);
     assert.equal(pin.hint, 'Maintenez ⌥ pour utiliser l’app');
     assert.equal(pin.general, false);
     assert.equal(pin.inViewport, true, 'the pin is inside the viewport');
-    assert.ok(pin.buttons.every(height => height >= 44), `44px targets in the pin: ${pin.buttons}`);
+    assert.ok(pin.buttons.every(height => height === 32), `stock pointer controls in the pin: ${pin.buttons}`);
     await browser.type(q('[data-testid=feedback-bubble-input]'), 'Montrer les pas de la semaine.');
     await browser.screenshot('desktop-annotate-pin.png');
     await browser.press('Enter');

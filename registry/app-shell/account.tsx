@@ -2,13 +2,15 @@
 
 // The account menu: the compact sheet's content (`AccountMenu`) and the expanded sidebar's footer (`NavUser`, the sidebar-07 pattern).
 // Both list « Améliorer l’app » (when the app has an `improve` agent, opened in the AgentLayer), the app's own `menu`, then sign out.
+import { useId } from 'react';
 import { ChevronsUpDownIcon, LogOutIcon, MoonIcon, SparklesIcon } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '../dropdown-menu/dropdown-menu';
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { useAgentLayer } from './agent-layer';
 import { afterBack } from './back';
-import { cn } from '../utils/utils';
+import { Switch } from '@/components/ui/switch';
+import { DropdownMenuCheckboxItem } from '@/components/ui/dropdown-menu';
 import { SHEET_ROW } from './sheet';
 import type { AppShellText } from './text';
 
@@ -25,11 +27,11 @@ export interface AccountSpec {
 const darkOn = (theme: NonNullable<AccountSpec['theme']>) => theme.value === 'dark';
 
 function ThemeSwitch({ theme, text }: { readonly theme: NonNullable<AccountSpec['theme']>; readonly text: AppShellText }) {
-  const on = darkOn(theme);
-  return <button type="button" role="switch" aria-checked={on} data-testid="account-theme" className={SHEET_ROW} onClick={() => theme.onChange(on ? 'light' : 'dark')}>
-    <MoonIcon className="size-4" aria-hidden="true" />{text.darkMode}
-    <span aria-hidden="true" className={cn('ml-auto flex h-5 w-9 shrink-0 rounded-full p-0.5', on ? 'justify-end bg-primary' : 'justify-start bg-muted')}><span className="size-4 rounded-full bg-background" /></span>
-  </button>;
+  const id = useId();
+  return <div className="flex items-center gap-3">
+    <label htmlFor={id} className="flex min-h-11 items-center gap-3"><MoonIcon aria-hidden="true" />{text.darkMode}</label>
+    <Switch id={id} data-testid="account-theme" aria-label={text.darkMode} checked={darkOn(theme)} className="ml-auto" onCheckedChange={on => theme.onChange(on ? 'dark' : 'light')} />
+  </div>;
 }
 
 /** « Jean Dupont » gives « JD »; one word gives its first letter. */
@@ -75,7 +77,7 @@ export function NavUser({ account, improve, text }: { readonly account: AccountS
       <DropdownMenuContent side="right" align="end" sideOffset={4} className="app-shell w-56 min-w-56">
         {improve && <DropdownMenuItem className="pointer-coarse:min-h-11" data-testid="account-improve" onClick={() => layer.open('improve')}><SparklesIcon className="size-4" aria-hidden="true" />{text.improve}</DropdownMenuItem>}
         {account?.menu.map(entry => <DropdownMenuItem key={entry.label} className="pointer-coarse:min-h-11" onClick={entry.onSelect}>{entry.label}</DropdownMenuItem>)}
-        {account?.theme && <DropdownMenuItem role="switch" aria-checked={darkOn(account.theme)} data-testid="account-theme" className="pointer-coarse:min-h-11" onClick={() => account.theme?.onChange(darkOn(account.theme!) ? 'light' : 'dark')}><MoonIcon className="size-4" aria-hidden="true" />{text.darkMode}</DropdownMenuItem>}
+        {account?.theme && <DropdownMenuCheckboxItem checked={darkOn(account.theme)} closeOnClick data-testid="account-theme" className="pointer-coarse:min-h-11" onCheckedChange={on => account.theme?.onChange(on ? 'dark' : 'light')}><MoonIcon aria-hidden="true" />{text.darkMode}</DropdownMenuCheckboxItem>}
         {account?.signOut && <><DropdownMenuSeparator /><DropdownMenuItem className="pointer-coarse:min-h-11" data-testid="account-sign-out" onClick={account.signOut}><LogOutIcon className="size-4" aria-hidden="true" />{text.signOut}</DropdownMenuItem></>}
       </DropdownMenuContent>
     </DropdownMenu>

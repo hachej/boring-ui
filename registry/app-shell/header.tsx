@@ -7,8 +7,9 @@ import { createContext, createElement, useContext, useLayoutEffect, useRef, useS
 import type { ComponentType, ReactNode } from 'react';
 import { ArrowLeftIcon } from 'lucide-react';
 import { SidebarTrigger } from '@/components/ui/sidebar';
+import { Button } from '@/components/ui/button';
 import { ScreenActiveContext } from './agent-context';
-import { HeaderActions, ICON_BUTTON } from './header-actions';
+import { HeaderActions } from './header-actions';
 import type { ScreenHeaderAction } from './header-actions';
 import { AgentTrigger } from './agent-layer';
 import type { AppShellText } from './text';
@@ -98,9 +99,9 @@ export function ScreenHeader({ fallbackTitle, compact, avatar, text }: { readonl
   const spec = top?.spec;
   const actions = spec?.actions ?? [];
   const run = (id: string) => top?.spec.actions?.find(action => action.id === id)?.onSelect();
-  const back = spec?.back ? <button type="button" data-testid="header-back" aria-label={text.goBack} onClick={() => top?.spec.back?.()} className={ICON_BUTTON}><ArrowLeftIcon className="size-4" aria-hidden="true" /></button> : null;
+  const back = spec?.back ? <Button variant="ghost" size="icon" data-testid="header-back" aria-label={text.goBack} title={text.goBack} onClick={() => top?.spec.back?.()}><ArrowLeftIcon data-icon="inline-start" aria-hidden="true" /></Button> : null;
   return <header data-testid="screen-header" className="sticky top-0 z-10 flex min-h-14 shrink-0 items-center gap-1 border-b border-border bg-background px-2 pt-[env(safe-area-inset-top)]">
-    {compact ? (back ?? avatar) : <><SidebarTrigger className="pointer-coarse:min-h-11 pointer-coarse:min-w-11" />{back}</>}
+    {compact ? (back ?? avatar) : <><SidebarTrigger />{back}</>}
     <div className="min-w-0 flex-1 px-1">
       <h1 data-testid="header-title" className="m-0 truncate text-base leading-tight font-semibold [font-family:var(--font-display,var(--font-sans))]">{spec?.title ?? fallbackTitle}</h1>
       {spec?.subtitle && <p data-testid="header-subtitle" className="m-0 truncate text-xs text-muted-foreground">{spec.subtitle}</p>}
