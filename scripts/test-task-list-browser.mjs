@@ -36,7 +36,7 @@ const native = async args => { const id = await admitDocumentTool(conversation, 
 async function external(operations) { const snapshot = await read(); return native({ expected: { kind: 'revision', revision: snapshot.ref.revision }, operations }); }
 try {
   await step('bundle real custom viewer and Markdown without native/server code', async () => {
-    const result = await build({ entryPoints: ['test/fixtures/task-list-browser.jsx'], outdir: directory, entryNames: 'fixture', bundle: true, platform: 'browser', format: 'esm', metafile: true, define: { 'process.env.NODE_ENV': '"production"' } });
+    const result = await build({ entryPoints: ['test/fixtures/task-list-browser.jsx'], outdir: directory, entryNames: 'fixture', bundle: true, platform: 'browser', format: 'esm', jsx: 'automatic', metafile: true, define: { 'process.env.NODE_ENV': '"production"' } });
     assert.deepEqual(Object.keys(result.metafile.inputs).filter(path => /pi-durable|packages\/(agent|execution)\/|sqlite|task-list-tools|node:fs/.test(path)), []);
     writeFileSync(join(evidence, 'bundle.json'), JSON.stringify(result.metafile, null, 2));
   });
