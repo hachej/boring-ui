@@ -474,13 +474,14 @@
         "@earendil-works/pi-ai@~1.2.0",
         "@modelcontextprotocol/sdk@^1.32.0",
         "lucide-react@^1.51.0",
-        "use-stick-to-bottom@^1.1.6"
+        "@shadcn/react@0.3.1"
       ],
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/utils.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/button.json",
         "trace",
         "message",
+        "message-scroller",
         "bubble",
         "attachment",
         "badge",
@@ -709,6 +710,7 @@
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/pi-workspace.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/utils.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/button.json",
+        "message-scroller",
         "button",
         "toggle"
       ],

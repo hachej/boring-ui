@@ -474,13 +474,14 @@
         "@earendil-works/pi-ai@~1.2.0",
         "@modelcontextprotocol/sdk@^1.32.0",
         "lucide-react@^1.51.0",
-        "use-stick-to-bottom@^1.1.6"
+        "@shadcn/react@0.3.1"
       ],
       "registryDependencies": [
         "@boring-ui/utils",
         "@boring-ui/button",
         "trace",
         "message",
+        "message-scroller",
         "bubble",
         "attachment",
         "badge",
@@ -709,6 +710,7 @@
         "@boring-ui/pi-workspace",
         "@boring-ui/utils",
         "@boring-ui/button",
+        "message-scroller",
         "button",
         "toggle"
       ],

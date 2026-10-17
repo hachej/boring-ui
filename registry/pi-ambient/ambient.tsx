@@ -7,6 +7,7 @@ import type { ImageContent, ToolCall, ToolResultMessage } from '@earendil-works/
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { BellIcon, ChevronDownIcon, CircleAlertIcon, CircleCheckIcon, ExternalLinkIcon, GripVerticalIcon, Loader2Icon, MessageCircleQuestionIcon, MinusIcon, PanelLeftIcon, ThumbsDownIcon, ThumbsUpIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { MessageScroller, MessageScrollerProvider, MessageScrollerViewport, MessageScrollerContent, MessageScrollerItem, MessageScrollerButton } from '@/components/ui/message-scroller';
 import { Toggle } from '@/components/ui/toggle';
 import { BlockActions } from '../button/actions';
 import type { BlockAction, BlockIcon } from '../button/actions';
@@ -243,8 +244,8 @@ export function AmbientChat(props: AmbientChatProps) {
   if (props.embedded && local !== 'expanded') setLocal('expanded');
   const internalStore = useMemo(createNotificationStore, []);
   const text = useMergedText<AmbientLabels, AmbientIcons>(props.labels, props.icons, AMBIENT_TEXT);
-  return <ChatTextProvider value={text}><AmbientSession key={mount.sequence} {...props} labels={text.labels} icons={text.icons} activeController={active} windowState={props.embedded ? 'expanded' : props.state ?? local} store={props.notifications || internalStore}
-    onWindowState={next => { if (props.state === undefined) setLocal(next); props.onStateChange?.(next); }} /></ChatTextProvider>;
+  return <ChatTextProvider value={text}><MessageScrollerProvider key={mount.sequence} autoScroll><AmbientSession {...props} labels={text.labels} icons={text.icons} activeController={active} windowState={props.embedded ? 'expanded' : props.state ?? local} store={props.notifications || internalStore}
+    onWindowState={next => { if (props.state === undefined) setLocal(next); props.onStateChange?.(next); }} /></MessageScrollerProvider></ChatTextProvider>;
 }
 
 type SessionProps = Omit<AmbientChatProps, 'labels' | 'icons'> & { readonly labels: AmbientLabels; readonly icons: AmbientIcons; readonly activeController: { readonly current: NativeChatController }; readonly windowState: AmbientState; readonly store: NotificationStore; readonly onWindowState: (state: AmbientState) => void };
@@ -460,18 +461,17 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
           {!state.disposed && <Button size="sm" variant="outline" onClick={() => act(controller.connect)}><icons.reconnect data-icon="inline-start" aria-hidden="true" />{labels.reconnect}</Button>}</Notice></div>}
         {derived.pinned.length > 0 && <aside aria-label={labels.requiredActions} className="shrink-0 space-y-2 px-4 pb-2">{derived.pinned.map(card => <div key={card.key}>{card.content}</div>)}</aside>}
         <div className="relative flex min-h-0 flex-1 flex-col">
-          <div ref={stick.scrollRef} data-testid="transcript-scroll" className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain [overflow-anchor:none]">
-            <div ref={stick.contentRef}>
-              <div role="log" aria-label={labels.messages} aria-live="polite" data-testid="transcript" className="flex min-h-28 flex-col gap-6 px-4 pt-4 pb-6">
-                {!empty && <TranscriptHistory history={state.history} connected={!state.disposed && connected} onLoad={transcript.reveal} sentinelRef={transcript.sentinelRef} hidden={hidden} loaded={transcript.loaded} />}
-                {visibleRows.map(row => <RowView key={row.key} row={row} context={rowContext} />)}
+          <MessageScroller>
+            <MessageScrollerViewport ref={stick.scrollRef} data-testid="transcript-scroll" aria-label={labels.messages}>
+              {!empty && <TranscriptHistory history={state.history} connected={!state.disposed && connected} onLoad={transcript.reveal} sentinelRef={transcript.sentinelRef} hidden={hidden} loaded={transcript.loaded} />}
+              <MessageScrollerContent aria-label={labels.messages} aria-live="polite" data-testid="transcript" className="px-4 pt-4 pb-6">
+                {visibleRows.map(row => <MessageScrollerItem key={row.key} messageId={row.key}><RowView row={row} context={rowContext} /></MessageScrollerItem>)}
                 {loading && <p role="status" data-testid="loading" className="m-0 flex items-center gap-2 text-sm text-muted-foreground"><Loader2Icon className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />{labels.loading}</p>}
                 {empty && !loading && <p data-testid="ambient-empty" className="m-0 max-w-sm py-8 text-sm leading-6 text-muted-foreground">{labels.empty}</p>}
-              </div>
-            </div>
-          </div>
-          {!stick.isAtBottom && <Button variant="outline" size="icon" data-testid="jump-latest" aria-label={labels.jumpToLatest} title={labels.jumpToLatest} onClick={() => { transcript.reset(); void stick.scrollToBottom(); }}
-            className="absolute bottom-2 left-1/2 -translate-x-1/2"><icons.jumpToLatest data-icon="inline-start" aria-hidden="true" /></Button>}
+              </MessageScrollerContent>
+            </MessageScrollerViewport>
+            {!stick.isAtBottom && <MessageScrollerButton data-testid="jump-latest" aria-label={labels.jumpToLatest} title={labels.jumpToLatest} onClick={transcript.reset}><icons.jumpToLatest aria-hidden="true" /></MessageScrollerButton>}
+          </MessageScroller>
         </div>
       </div>}
 
