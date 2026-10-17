@@ -685,6 +685,27 @@
         },
         ".boring-viewer .boring-markdown-toolbar": {
           "display": "none"
+        },
+        ".boring-viewer.boring-markdown-dock": {
+          "display": "flex",
+          "align-items": "center",
+          "gap": "0.125rem",
+          "overflow-x": "auto",
+          "scrollbar-width": "none",
+          "position": "fixed",
+          "inset-inline": "0",
+          "z-index": "50",
+          "padding": "0.25rem 1.5rem 0.25rem 0.5rem",
+          "padding-bottom": "calc(0.25rem + env(safe-area-inset-bottom, 0px))",
+          "border-top": "1px solid var(--border)",
+          "background": "var(--background)",
+          "mask-image": "linear-gradient(to right, black calc(100% - 2rem), transparent)"
+        },
+        ".boring-viewer.boring-markdown-dock[data-keyboard]": {
+          "padding-bottom": "0.25rem"
+        },
+        ".boring-viewer [data-boring=\"markdown-editor\"][data-dock] .boring-markdown-content": {
+          "padding-bottom": "6rem"
         }
       },
       "@media (pointer: coarse), (max-width: 639px)": {

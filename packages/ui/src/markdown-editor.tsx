@@ -7,6 +7,7 @@ import type { SaveResult } from './resources.js';
 export type { MarkdownAutosave, MarkdownFlush } from './markdown-autosave.js';
 
 import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { createPortal } from 'react-dom';
 import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react/menus';
 import type { SelectionBookmark } from '@tiptap/pm/state';
@@ -44,7 +45,7 @@ export interface MarkdownEditorProps {
   /** Registers the async navigation barrier. Null while autosave is disabled or the editor is unmounted. */
   readonly onAutosaveChange?: (flush: MarkdownFlush | null) => void;
   readonly onSaveResult?: (result: SaveResult) => void;
-  /** The complete formatting row is pinned by default on desktop; phones always use the selection bubble. */
+  /** The complete formatting row is pinned by default on desktop; phones show it above the keyboard while editing, plus the selection bubble. */
   readonly formattingToolbar?: 'selection' | 'pinned';
 }
 
@@ -67,6 +68,34 @@ const subscribePhone = (notify: () => void) => {
 };
 const BUBBLE_OPTIONS = { strategy: 'fixed', placement: 'top', offset: 8, shift: { padding: 12 }, flip: true } as const;
 const bubbleContainer = () => document.body;
+
+function useEditorFocus(editor: ReturnType<typeof useEditor> | null): boolean {
+  const [focused, setFocused] = useState(false);
+  useEffect(() => {
+    if (!editor || editor.isDestroyed) return;
+    const update = () => setFocused(editor.isFocused);
+    update();
+    editor.on('focus', update);
+    editor.on('blur', update);
+    return () => { editor.off('focus', update); editor.off('blur', update); };
+  }, [editor]);
+  return focused;
+}
+
+/** Height the soft keyboard covers at the bottom of the layout viewport, so a fixed bar can sit directly above it. */
+function useKeyboardInset(active: boolean): number {
+  const [inset, setInset] = useState(0);
+  useEffect(() => {
+    const viewport = globalThis.visualViewport;
+    if (!active || !viewport) { setInset(0); return; }
+    const update = () => setInset(Math.max(0, Math.round(globalThis.innerHeight - viewport.offsetTop - viewport.height)));
+    update();
+    viewport.addEventListener('resize', update);
+    viewport.addEventListener('scroll', update);
+    return () => { viewport.removeEventListener('resize', update); viewport.removeEventListener('scroll', update); };
+  }, [active]);
+  return inset;
+}
 
 function MarkdownEditorSession({ controller, title = 'Document', initialMode = 'rich', placeholder = 'Start writing', className, onMountedTools, header = true, showOutline = header, mode: controlledMode, onModeChange, onRichSafety, resolveImage, formattingToolbar = 'pinned', autosave = true, onAutosaveChange, onSaveResult, activeController: active }: MarkdownEditorProps & { readonly activeController: { readonly current: MarkdownController } }) {
   const phone = useSyncExternalStore(subscribePhone, phoneSnapshot, desktopSnapshot);
@@ -219,6 +248,10 @@ function MarkdownEditorSession({ controller, title = 'Document', initialMode = '
   };
   const richOnly = unavailable || mode === 'source' || !editor;
   const [linkDraft, setLinkDraft] = useState<string | null>(null);
+  // On a phone the full formatting row docks above the soft keyboard while the rich surface has focus.
+  const editing = useEditorFocus(editor);
+  const dockVisible = phone && !unavailable && !!editor && (editing || linkDraft !== null);
+  const keyboardInset = useKeyboardInset(dockVisible);
   const command = (operation: () => unknown) => { interaction.current = true; try { operation(); } finally { interaction.current = false; } };
   const tool = (label: string, icon: MarkdownIconName, pressed: boolean | undefined, operation: () => unknown, extra: { disabled?: boolean } = {}) => (
     <button type="button" className="boring-markdown-tool" aria-label={label} title={label} aria-pressed={pressed === true} data-active={pressed === true || undefined}
@@ -234,7 +267,33 @@ function MarkdownEditorSession({ controller, title = 'Document', initialMode = '
     setLinkDraft(null);
   };
 
-  return <section className={className} data-boring="markdown-editor" data-mode={mode} data-dirty={state.dirty || undefined}
+  const formatTools = <>
+    {tool('Bold', 'Bold', marks?.bold, () => chain().toggleBold().run())}
+    {tool('Italic', 'Italic', marks?.italic, () => chain().toggleItalic().run())}
+    {tool('Strikethrough', 'Strike', marks?.strike, () => chain().toggleStrike().run())}
+    {tool('Highlight', 'Highlight', marks?.highlight, () => chain().toggleHighlight().run())}
+    {tool('Code', 'Code', marks?.code, () => chain().toggleCode().run())}
+    {separator}
+    {tool('Heading 1', 'Heading1', marks?.h1, () => chain().toggleHeading({ level: 1 }).run())}
+    {tool('Heading 2', 'Heading2', marks?.h2, () => chain().toggleHeading({ level: 2 }).run())}
+    {tool('Heading 3', 'Heading3', marks?.h3, () => chain().toggleHeading({ level: 3 }).run())}
+    {separator}
+    {tool('Bullet list', 'BulletList', marks?.bullet, () => chain().toggleBulletList().run())}
+    {tool('Numbered list', 'OrderedList', marks?.ordered, () => chain().toggleOrderedList().run())}
+    {tool('Task list', 'TaskList', marks?.task, () => chain().toggleTaskList().run())}
+    {separator}
+    {tool('Quote', 'Quote', marks?.quote, () => chain().toggleBlockquote().run())}
+    {tool('Code block', 'CodeBlock', marks?.codeBlock, () => chain().toggleCodeBlock().run())}
+    {tool('Link', 'Link', marks?.link || linkDraft !== null, openLink)}
+    {tool('Table', 'Table', marks?.table, () => marks?.table ? chain().deleteTable().run() : chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run())}
+    {tool('Horizontal rule', 'Rule', false, () => chain().setHorizontalRule().run())}
+    {marks?.table && <>{separator}
+      {tool('Add table row', 'Rows', false, () => chain().addRowAfter().run())}
+      {tool('Add table column', 'Columns', false, () => chain().addColumnAfter().run())}
+      {tool('Delete table', 'Trash', false, () => chain().deleteTable().run())}</>}
+  </>;
+
+  return <section className={className} data-boring="markdown-editor" data-mode={mode} data-dock={(mode === 'rich' && dockVisible) || undefined} data-dirty={state.dirty || undefined}
     onBlurCapture={event => { if (saving.enabled && !event.currentTarget.contains(event.relatedTarget)) void saving.immediate(); }}
     onKeyDownCapture={event => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') { event.preventDefault(); if (!unavailable && !uncertain) save(); }
@@ -248,31 +307,9 @@ function MarkdownEditorSession({ controller, title = 'Document', initialMode = '
       {!saving.enabled && <button type="button" disabled={unavailable || !state.dirty || pending || uncertain} onClick={save}>Save</button>}
     </header>}
     <TextDraftControls recovery={state.recovery} actions={controller.actions} readOnly={state.readOnly} blocked={state.lifecycle !== 'active' || state.save.kind === 'pending' || (state.save.kind === 'settled' && state.save.result.kind === 'unknown')} />
-    {mode === 'rich' && showPinned && <div role="toolbar" aria-label="Text formatting" className="boring-markdown-toolbar">
-      {tool('Bold', 'Bold', marks?.bold, () => chain().toggleBold().run())}
-      {tool('Italic', 'Italic', marks?.italic, () => chain().toggleItalic().run())}
-      {tool('Strikethrough', 'Strike', marks?.strike, () => chain().toggleStrike().run())}
-      {tool('Highlight', 'Highlight', marks?.highlight, () => chain().toggleHighlight().run())}
-      {tool('Code', 'Code', marks?.code, () => chain().toggleCode().run())}
-      {separator}
-      {tool('Heading 1', 'Heading1', marks?.h1, () => chain().toggleHeading({ level: 1 }).run())}
-      {tool('Heading 2', 'Heading2', marks?.h2, () => chain().toggleHeading({ level: 2 }).run())}
-      {tool('Heading 3', 'Heading3', marks?.h3, () => chain().toggleHeading({ level: 3 }).run())}
-      {separator}
-      {tool('Bullet list', 'BulletList', marks?.bullet, () => chain().toggleBulletList().run())}
-      {tool('Numbered list', 'OrderedList', marks?.ordered, () => chain().toggleOrderedList().run())}
-      {tool('Task list', 'TaskList', marks?.task, () => chain().toggleTaskList().run())}
-      {separator}
-      {tool('Quote', 'Quote', marks?.quote, () => chain().toggleBlockquote().run())}
-      {tool('Code block', 'CodeBlock', marks?.codeBlock, () => chain().toggleCodeBlock().run())}
-      {tool('Link', 'Link', marks?.link || linkDraft !== null, openLink)}
-      {tool('Table', 'Table', marks?.table, () => marks?.table ? chain().deleteTable().run() : chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run())}
-      {tool('Horizontal rule', 'Rule', false, () => chain().setHorizontalRule().run())}
-      {marks?.table && <>{separator}
-        {tool('Add table row', 'Rows', false, () => chain().addRowAfter().run())}
-        {tool('Add table column', 'Columns', false, () => chain().addColumnAfter().run())}
-        {tool('Delete table', 'Trash', false, () => chain().deleteTable().run())}</>}
-    </div>}
+    {mode === 'rich' && showPinned && <div role="toolbar" aria-label="Text formatting" className="boring-markdown-toolbar">{formatTools}</div>}
+    {mode === 'rich' && dockVisible && createPortal(<div role="toolbar" aria-label="Text formatting" className="boring-viewer boring-markdown-dock" data-testid="markdown-dock" data-keyboard={keyboardInset > 0 || undefined}
+      style={{ bottom: keyboardInset }} onPointerDown={event => event.preventDefault()}>{formatTools}</div>, document.body)}
     {mode === 'rich' && editor && !showPinned && !unavailable && <BubbleMenu editor={editor} updateDelay={0} options={BUBBLE_OPTIONS} appendTo={bubbleContainer}
       role="toolbar" aria-label="Text formatting" className="boring-viewer boring-markdown-bubble">
       {tool('Bold', 'Bold', marks?.bold, () => chain().toggleBold().run())}

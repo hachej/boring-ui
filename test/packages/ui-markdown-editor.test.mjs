@@ -296,6 +296,51 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
     }
   });
 
+  await t.test('a phone docks the full formatting row above the keyboard while the rich surface has focus', async t => {
+    const mediaDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'matchMedia');
+    const viewportDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'visualViewport');
+    const innerHeight = Object.getOwnPropertyDescriptor(globalThis, 'innerHeight');
+    const listeners = new Set();
+    const viewport = { offsetTop: 0, height: 844, addEventListener: (_, listener) => listeners.add(listener), removeEventListener: (_, listener) => listeners.delete(listener) };
+    Object.defineProperty(globalThis, 'matchMedia', { configurable: true, value: query => ({ matches: query === '(max-width: 640px)' || query === '(pointer: coarse)', addEventListener() {}, removeEventListener() {} }) });
+    Object.defineProperty(globalThis, 'visualViewport', { configurable: true, value: viewport });
+    Object.defineProperty(globalThis, 'innerHeight', { configurable: true, value: 844 });
+    try {
+      let tools;
+      const f = await fixture(t, 'phone text\n', { props: { formattingToolbar: 'pinned', onMountedTools: value => { tools = value; } } });
+      const dock = () => document.querySelector('[data-testid="markdown-dock"]');
+      assert.equal(dock(), null, 'reading shows no bar');
+      const surface = f.container.querySelector('[contenteditable="true"]');
+      await act(async () => { surface.focus(); });
+      assert.ok(dock(), 'focusing the editor shows the bar');
+      assert.equal(dock().getAttribute('role'), 'toolbar');
+      for (const label of ['Bold', 'Italic', 'Strikethrough', 'Highlight', 'Code', 'Heading 1', 'Heading 2', 'Heading 3', 'Bullet list', 'Numbered list', 'Task list', 'Quote', 'Code block', 'Link', 'Table', 'Horizontal rule']) {
+        assert.ok(dock().querySelector(`[aria-label="${label}"]`), label);
+      }
+      assert.equal(dock().style.bottom, '0px', 'docked at the bottom with no keyboard');
+      await act(async () => { viewport.height = 544; for (const listener of listeners) listener(); });
+      assert.equal(dock().style.bottom, '300px', 'the bar sits directly above the keyboard');
+      assert.ok(dock().hasAttribute('data-keyboard'));
+      await act(async () => {
+        const result = await tools.select.invoke(tools.getTarget(), { expiresAt: Date.now() + 5000, selection: { kind: 'rich', anchor: 1, head: 6 } });
+        assert.equal(result.kind, 'applied');
+      });
+      await act(async () => dock().querySelector('[aria-label="Bold"]').click());
+      assert.equal(f.controller.getSnapshot().text, '**phone** text\n');
+      assert.equal(f.writes(), 0, 'formatting does not publish');
+      await act(async () => { surface.blur(); });
+      assert.equal(dock(), null, 'the bar hides when the keyboard closes');
+      await act(async () => { surface.focus(); });
+      assert.ok(dock());
+      await f.click('Markdown source');
+      assert.equal(dock(), null, 'source mode has no bar');
+    } finally {
+      for (const [name, descriptor] of [['matchMedia', mediaDescriptor], ['visualViewport', viewportDescriptor], ['innerHeight', innerHeight]]) {
+        if (descriptor) Object.defineProperty(globalThis, name, descriptor); else delete globalThis[name];
+      }
+    }
+  });
+
   await t.test('mount and rich/source switches preserve exact bytes without a publication', async t => {
     const raw = '# title\n\nplain *emphasis* and **strong**\n\n- one\n- two\n';
     const f = await fixture(t, raw);

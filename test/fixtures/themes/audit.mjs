@@ -45,7 +45,7 @@ export function auditDesign({ groups, palette, radiusBindings }) {
       if (element.matches('[role^=menuitem], [data-slot^=dropdown-menu-]') || element.closest('.app-shell [role=dialog]')) legacy = '2';
       else if (element.closest('[data-boring=file-tree], [data-testid=conversation-row], .boring-feedback-candidates, .boring-feedback-list') || element.matches('[data-testid=revision-item]')) legacy = '4';
       else if (element.matches('[data-testid=artifact-card], [data-testid=message-file]') || element.closest('[data-testid=question-card], [data-testid=approval-card]')) legacy = '6';
-      else if (element.closest('.boring-markdown-toolbar, .boring-markdown-bubble, .boring-html-toolbar') || element.hasAttribute('data-mode') || element.matches('[role=tab]')) legacy = '7';
+      else if (element.closest('.boring-markdown-toolbar, .boring-markdown-bubble, .boring-markdown-dock, .boring-html-toolbar') || element.hasAttribute('data-mode') || element.matches('[role=tab]')) legacy = '7';
       else if (element.matches('[data-testid=message-mention], [data-testid=feedback-fallback]') || element.closest('[data-testid=message-files]')) legacy = '5';
     }
     let index = legacy ? groups.findIndex(group => group.id === legacy) : -1;
