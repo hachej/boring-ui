@@ -298,7 +298,7 @@ export function Composer(props: ComposerProps) {
   const chipsControl = props.chips && <div className="flex min-w-0 items-center gap-2">{props.chips}</div>;
   const send = working
     ? <Button variant="default" size="icon" data-testid="composer-submit" data-state="stop" aria-label={labels.stop} title={labels.stop} disabled={disabled || stopRequested} onClick={props.onStop} className="ml-auto shrink-0">
-      {stopRequested ? <Loader2Icon data-icon="inline-start" aria-hidden="true" /> : <icons.stop data-icon="inline-start" aria-hidden="true" />}</Button>
+      {stopRequested ? <Loader2Icon data-icon="inline-start" className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <icons.stop data-icon="inline-start" aria-hidden="true" />}</Button>
     : <Button variant="default" size="icon" type="submit" data-testid="composer-submit" data-state="send" aria-label={labels.send} title={labels.sendHint} disabled={!canSubmit} className="ml-auto shrink-0">
       <icons.send data-icon="inline-start" aria-hidden="true" /></Button>;
 
