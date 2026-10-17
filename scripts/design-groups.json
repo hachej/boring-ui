@@ -80,7 +80,7 @@
     {
       "id": "7",
       "name": "viewer-chrome",
-      "mode": "REPORT",
+      "mode": "FAIL",
       "folders": [
         "registry/",
         "packages/ui/src/",

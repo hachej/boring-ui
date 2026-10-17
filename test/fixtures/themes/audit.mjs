@@ -62,8 +62,10 @@ export function auditDesign({ groups, palette, radiusBindings }) {
     // Resolve native geometry outside the block's ancestor selectors. The consumer's
     // unchanged component owns geometry such as a Switch's circular track; blocks
     // may not override it, even with a different otherwise-valid radius token.
-    // Every stock shadcn part (`data-slot`) owns its own geometry; compare it with the same part outside the block.
-    const reference = nativeControl || element.hasAttribute('data-slot') ? element.cloneNode(true) : null;
+    // A stock shadcn part (`data-slot`) may also keep the geometry its own classes give it outside the block (a
+    // rounded-full avatar or switch thumb); parts whose classes read their ancestors still match the theme tokens.
+    const part = !nativeControl && element.hasAttribute('data-slot');
+    const reference = nativeControl || part ? element.cloneNode(true) : null;
     const referenceRoot = reference ? document.createElement('div') : null;
     if (referenceRoot) {
       // The examples scope standard preflight to .pi-chat rather than reset the
@@ -73,11 +75,11 @@ export function auditDesign({ groups, palette, radiusBindings }) {
     }
     const host = reference ? getComputedStyle(reference) : null;
     for (const edge of ['Top', 'Right', 'Bottom', 'Left']) if (host || parseFloat(style[`border${edge}Width`]) > 0) {
-      const expected = host ? host[`border${edge}Width`] : borderWidth;
-      check('border-width', style[`border${edge}Width`], expected, style[`border${edge}Width`] === expected);
+      const expected = part ? [borderWidth, host[`border${edge}Width`]] : [host ? host[`border${edge}Width`] : borderWidth];
+      check('border-width', style[`border${edge}Width`], expected, expected.includes(style[`border${edge}Width`]));
     }
     for (const corner of ['TopLeft', 'TopRight', 'BottomLeft', 'BottomRight']) {
-      const expected = host ? [host[`border${corner}Radius`]] : radii;
+      const expected = part ? [...radii, host[`border${corner}Radius`]] : host ? [host[`border${corner}Radius`]] : radii;
       check('radius', style[`border${corner}Radius`], expected, expected.includes(style[`border${corner}Radius`]));
     }
     // Native focus rings are focus indicators, not elevation shadows; a shadcn popup's `ring-1` is its stock hairline edge (zero offset and blur), also not elevation.

@@ -2,6 +2,7 @@
 import { BotIcon, Building2Icon, CheckCheckIcon, ChevronRightIcon, CreditCardIcon, FileTextIcon, LayoutDashboardIcon, MoonIcon, SunIcon, ChartNoAxesCombinedIcon } from 'lucide-react';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarTrigger, useSidebar } from '../../examples/app-shell/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { SCREEN_NAMES } from './screen-names.mjs';
 
 const entries = [
@@ -19,7 +20,7 @@ export function WorkspaceNav({ view, go, api, count }) {
       <div className="my-5 border-t border-border" />
       <SidebarMenu><SidebarMenuItem><SidebarMenuButton data-testid="nav-agent" isActive={api?.placement === 'page'} onClick={() => { close(); api?.setPlacement('page'); }} className="h-9 rounded-md px-2.5 text-sm max-sm:h-11 pointer-coarse:h-11 data-[active=true]:bg-accent data-[active=true]:text-accent-foreground"><BotIcon aria-hidden="true" className="size-4" /><span>Agent</span></SidebarMenuButton></SidebarMenuItem></SidebarMenu>
     </SidebarContent>
-    <SidebarFooter className="gap-4 p-4"><p className="text-xs leading-5 text-muted-foreground">Demo workspace<br />Fictional data. No payments sent.</p><div className="flex items-center gap-2.5 border-t border-border pt-4"><span className="flex size-8 shrink-0 items-center justify-center rounded-full border border-border bg-background text-xs font-medium">JR</span><div><p className="text-sm font-medium">Jamie Reed</p><p className="text-xs text-muted-foreground">Finance team</p></div></div></SidebarFooter>
+    <SidebarFooter className="gap-4 p-4"><p className="text-xs leading-5 text-muted-foreground">Demo workspace<br />Fictional data. No payments sent.</p><div className="flex items-center gap-2.5 border-t border-border pt-4"><Avatar><AvatarFallback>JR</AvatarFallback></Avatar><div><p className="text-sm font-medium">Jamie Reed</p><p className="text-xs text-muted-foreground">Finance team</p></div></div></SidebarFooter>
   </Sidebar>;
 }
 
