@@ -28,9 +28,7 @@ export default [
       let scope = VIEWER('docs/picnic-plan.md');
       await standardBar(scope, 'Markdown');
       assert.equal(await browser.evaluate(`${q(`${scope} [data-testid=file-title]`)}.textContent`), 'picnic-plan.md');
-      assert.equal(await browser.evaluate(`${k.qa(`${scope} .boring-markdown-toolbar`)}.length`), 0, 'selection formatting is the default');
-      await browser.click(q(`${scope} [aria-label="Pin formatting toolbar"]`));
-      await browser.until('Aa pins the full toolbar', `!!${q(`${scope} .boring-markdown-toolbar`)}`, 5000);
+      assert.equal(await browser.evaluate(`${k.qa(`${scope} .boring-markdown-toolbar`)}.length`), 1, 'formatting is pinned by default');
       const tools = await browser.evaluate(`${k.qa(`${scope} [role=toolbar] button`)}.map(b => ({ label: b.getAttribute('aria-label'), icon: !!b.querySelector('svg'), text: b.textContent.trim() }))`);
       assert.ok(tools.length >= 14, `a formatting toolbar: ${tools.length} buttons`);
       assert.deepEqual(tools.filter(tool => !tool.label || !tool.icon || tool.text), [], 'every toolbar button is an icon with an accessible name');
@@ -42,16 +40,15 @@ export default [
       await shots('fileviewers-markdown');
       await browser.click(q(`${scope} [aria-label=Bold]`));
       await browser.until('Bold is off again', `${q(`${scope} [aria-label=Bold]`)}?.getAttribute('aria-pressed') === 'false'`);
-      assert.equal(await browser.evaluate(`!${q(`${scope} [data-testid=viewer-status]`)}`), true, 'toggling formatting twice leaves the document clean (no status shown)');
+      assert.equal(await browser.evaluate(`${q(`${scope} [data-testid=viewer-status]`)}?.textContent`), 'Saved', 'toggling formatting twice leaves the document clean');
 
-      // A rich-mode edit and Save keep the tables (a padded one and an unpadded aligned one with code, emphasis, an escaped pipe and an
+      // A rich-mode edit and autosave keep the tables (a padded one and an unpadded aligned one with code, emphasis, an escaped pipe and an
       // empty cell), link, image line and task list in the saved file.
       const original = await readText('docs/picnic-plan.md');
       await caretAtStart(scope);
       await browser.send('Input.insertText', { text: 'EDITED ' });
       await browser.until('unsaved', `${q(`${scope} [data-testid=viewer-status]`)}?.textContent === 'Unsaved'`);
-      await browser.click(q(`${scope} [data-testid=viewer-save]`));
-      await browser.until('saved', `${q(`${scope} [data-testid=viewer-status]`)}?.textContent === undefined`);
+      await browser.until('autosaved', `${q(`${scope} [data-testid=viewer-status]`)}?.textContent === 'Saved'`);
       const after = await readText('docs/picnic-plan.md');
       assert.ok(after.includes('# EDITED Moon picnic plan'), `the edit reached the workspace file: ${JSON.stringify(after.slice(0, 200))}`);
       assert.equal(after.replace('EDITED ', ''), original, 'everything but the edited text is byte for byte unchanged');
@@ -67,8 +64,7 @@ export default [
       await shots('fileviewers-markdown-source-only');
       const legacy = await readText('docs/legacy-notes.md');
       await browser.type(`${q(`${scope} textarea`)}`, '\nAn unrelated source edit.\n');
-      await browser.click(q(`${scope} [data-testid=viewer-save]`));
-      await browser.until('saved', `${q(`${scope} [data-testid=viewer-status]`)}?.textContent === undefined`);
+      await browser.until('source autosaved', `${q(`${scope} [data-testid=viewer-status]`)}?.textContent === 'Saved'`);
       assert.equal(await readText('docs/legacy-notes.md'), `${legacy}\nAn unrelated source edit.\n`);
 
       // Refresh never drops unsaved edits and shows that the file changed elsewhere.
@@ -95,7 +91,6 @@ export default [
       await browser.until('dirty', `${q(`${scope} [data-testid=viewer-status]`)}?.textContent === 'Unsaved'`);
       const agentWrote = `${await readText('docs/picnic-plan.md')}\nWritten by the agent while the editor was open.\n`;
       await write('docs/picnic-plan.md', agentWrote);
-      await browser.click(q(`${scope} [data-testid=viewer-save]`));
       await browser.until('the save is refused as stale', `${q(scope)}.innerText.includes('Publication precondition failed') && ${q(scope)}.innerText.includes('Your local text has been kept.')`);
       assert.equal(await readText('docs/picnic-plan.md'), agentWrote, 'the refused save wrote nothing over the agent');
       assert.ok((await browser.evaluate(editorText('docs/picnic-plan.md'))).includes('STALE-DRAFT'), 'the draft is still in the editor');
@@ -104,8 +99,7 @@ export default [
       await caretAtStart(scope);
       await browser.send('Input.insertText', { text: 'RETRIED ' });
       await browser.until('dirty again', `${q(`${scope} [data-testid=viewer-status]`)}?.textContent === 'Unsaved'`);
-      await browser.click(q(`${scope} [data-testid=viewer-save]`));
-      await browser.until('saved after the reload', `${q(`${scope} [data-testid=viewer-status]`)}?.textContent === undefined`);
+      await browser.until('autosaved after the reload', `${q(`${scope} [data-testid=viewer-status]`)}?.textContent === 'Saved'`);
       const retried = await readText('docs/picnic-plan.md');
       assert.ok(retried.includes('RETRIED') && retried.includes('Written by the agent while the editor was open.'), 'the retry saved the person\'s text on top of the agent\'s');
 
@@ -120,7 +114,7 @@ export default [
       assert.ok((await browser.evaluate(editorText('docs/picnic-plan.md'))).includes('Added behind the editor'), 'the text is still in the editor');
       await write('docs/picnic-plan.md', kept);
       await t.menu(scope, 'viewer', 'refresh');
-      await browser.until('saved again', `${q(`${scope} [data-testid=viewer-status]`)}?.textContent === undefined`);
+      await browser.until('saved again', `${q(`${scope} [data-testid=viewer-status]`)}?.textContent === 'Saved'`);
       void FILE;
     },
   },
@@ -290,7 +284,7 @@ export default [
       await browser.until('the mode toggle', `${k.qa(`${scope} [data-testid=viewer-controls] [role=group] button`)}.length === 2`, 10000);
       const toggles = await browser.evaluate(`${k.qa(`${scope} [data-testid=viewer-controls] [role=group] button`)}.map(b => ({ label: b.getAttribute('aria-label'), title: b.title, text: b.textContent.trim() }))`);
       assert.deepEqual(toggles, [{ label: 'Rich text', title: 'Rich text', text: '' }, { label: 'Markdown source', title: 'Markdown source', text: '' }]);
-      assert.equal(await browser.evaluate(`!${q(`${scope} [data-testid=viewer-status]`)}`), true, 'a clean document shows no status');
+      assert.equal(await browser.evaluate(`${q(`${scope} [data-testid=viewer-status]`)}?.textContent`), 'Saved', 'a clean Markdown document quietly confirms persistence');
       await shots('fileviewers-bar-markdown');
       await openFile('docs/tide-times.html', 'html');
       await shots('fileviewers-bar-html');

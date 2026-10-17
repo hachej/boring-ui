@@ -56,8 +56,18 @@
     },
     ".boring-markdown-recipe[data-boring=\"markdown-editor\"] [role=\"toolbar\"]": {
       "display": "flex",
-      "flex-wrap": "wrap",
+      "flex-wrap": "nowrap",
       "gap": "0.375rem"
+    },
+    ".boring-markdown-recipe[data-boring=\"markdown-editor\"] .boring-markdown-toolbar": {
+      "min-width": "0",
+      "overflow-x": "auto",
+      "scrollbar-width": "none",
+      "padding-right": "1.5rem",
+      "mask-image": "linear-gradient(to right, #000 calc(100% - 2rem), transparent)"
+    },
+    ".boring-markdown-recipe[data-boring=\"markdown-editor\"] .boring-markdown-toolbar > *": {
+      "flex-shrink": "0"
     },
     ".boring-markdown-recipe[data-boring=\"markdown-editor\"] button": {
       "appearance": "none",

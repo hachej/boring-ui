@@ -95,10 +95,9 @@ try {
   await browser.screenshot('1-created.png');
   await step('human edits and saves in the browser', async () => {
     await browser.type(SOURCE, '\n- HUMAN-ADDED thermos\n');
-    await browser.click(button('Save'));
     const deadline = Date.now() + 15000;
     while (!(await savedText()).includes('HUMAN-ADDED thermos')) { assert.ok(Date.now() < deadline, 'human save did not reach the provider'); await new Promise(resolve => setTimeout(resolve, 100)); }
-    await browser.until('clean editor', `${button('Save')}?.disabled === true`);
+    await browser.until('clean editor', `document.querySelector('[data-boring=markdown-editor] [role=status]')?.textContent === 'Saved'`);
   });
   await step('real model revises against the human revision without losing it', async () => {
     await browser.type(MESSAGE, 'Add one more bullet item "star map" to the list. Keep everything else exactly.');

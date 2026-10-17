@@ -1,6 +1,10 @@
 'use client';
 
 import { TextDraftControls } from './text-draft-controls.js';
+import { useMarkdownAutosave } from './markdown-autosave.js';
+import type { MarkdownAutosave, MarkdownFlush } from './markdown-autosave.js';
+import type { SaveResult } from './resources.js';
+export type { MarkdownAutosave, MarkdownFlush } from './markdown-autosave.js';
 
 import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
@@ -35,7 +39,12 @@ export interface MarkdownEditorProps {
   readonly onRichSafety?: (safety: MarkdownRichSafety) => void;
   /** Images never load unless this maps their address to a URL (inline `data:` images load without it). */
   readonly resolveImage?: MarkdownImageResolver;
-  /** Selection bubble by default. `pinned` keeps the complete formatting row on desktop; phones always use the selection bubble. */
+  /** Autosave defaults to 1200ms idle, blur, hide and removal. false keeps explicit saving. */
+  readonly autosave?: MarkdownAutosave;
+  /** Registers the async navigation barrier. Null while autosave is disabled or the editor is unmounted. */
+  readonly onAutosaveChange?: (flush: MarkdownFlush | null) => void;
+  readonly onSaveResult?: (result: SaveResult) => void;
+  /** The complete formatting row is pinned by default on desktop; phones always use the selection bubble. */
   readonly formattingToolbar?: 'selection' | 'pinned';
 }
 
@@ -59,7 +68,7 @@ const subscribePhone = (notify: () => void) => {
 const BUBBLE_OPTIONS = { strategy: 'fixed', placement: 'top', offset: 8, shift: { padding: 12 }, flip: true } as const;
 const bubbleContainer = () => document.body;
 
-function MarkdownEditorSession({ controller, title = 'Document', initialMode = 'rich', placeholder = 'Start writing', className, onMountedTools, header = true, showOutline = header, mode: controlledMode, onModeChange, onRichSafety, resolveImage, formattingToolbar = 'selection', activeController: active }: MarkdownEditorProps & { readonly activeController: { readonly current: MarkdownController } }) {
+function MarkdownEditorSession({ controller, title = 'Document', initialMode = 'rich', placeholder = 'Start writing', className, onMountedTools, header = true, showOutline = header, mode: controlledMode, onModeChange, onRichSafety, resolveImage, formattingToolbar = 'pinned', autosave = true, onAutosaveChange, onSaveResult, activeController: active }: MarkdownEditorProps & { readonly activeController: { readonly current: MarkdownController } }) {
   const phone = useSyncExternalStore(subscribePhone, phoneSnapshot, desktopSnapshot);
   const [pinned, setPinned] = useState(formattingToolbar === 'pinned');
   useEffect(() => { setPinned(formattingToolbar === 'pinned'); }, [formattingToolbar]);
@@ -190,16 +199,19 @@ function MarkdownEditorSession({ controller, title = 'Document', initialMode = '
   const outcome = state.save.kind === 'settled' ? state.save.result : null;
   const uncertain = outcome?.kind === 'unknown';
   const conflict = outcome?.kind === 'conflict' || state.remote !== null;
-  const save = () => {
-    const selected = controller.actions.selection();
-    setError(null);
-    void controller.flush(selected).then(report, () => { if (active.current === controller) setError('The save could not be completed. Your text is still available.'); });
-  };
   /** Shows a refused save or accept; the buffer keeps the text. */
   const report = (result: unknown) => {
     if (active.current !== controller || !result || typeof result !== 'object') return;
     const { kind, reason } = result as { kind?: unknown; reason?: unknown };
+    if (kind === 'saved') setError(null);
     if (kind === 'denied' || kind === 'conflict' || kind === 'unavailable' || kind === 'file_too_large') setError(typeof reason === 'string' && reason ? reason : kind === 'conflict' ? 'The document changed elsewhere. Your text is still available.' : 'The document could not be saved. Your text is still available.');
+  };
+  const saving = useMarkdownAutosave(controller, autosave, result => { report(result); onSaveResult?.(result); });
+  useEffect(() => { onAutosaveChange?.(saving.enabled ? saving.immediate : null); return () => onAutosaveChange?.(null); }, [onAutosaveChange, saving.enabled, saving.immediate]);
+  const save = () => {
+    setError(null);
+    if (saving.enabled) void saving.manual();
+    else void controller.flush(controller.actions.selection()).then(report, () => { if (active.current === controller) setError('The save could not be completed. Your text is still available.'); });
   };
   const run = (operation: () => Promise<unknown>) => {
     setError(null);
@@ -223,16 +235,17 @@ function MarkdownEditorSession({ controller, title = 'Document', initialMode = '
   };
 
   return <section className={className} data-boring="markdown-editor" data-mode={mode} data-dirty={state.dirty || undefined}
+    onBlurCapture={event => { if (saving.enabled && !event.currentTarget.contains(event.relatedTarget)) void saving.immediate(); }}
     onKeyDownCapture={event => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') { event.preventDefault(); if (!unavailable && !pending && !uncertain) save(); }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') { event.preventDefault(); if (!unavailable && !uncertain) save(); }
     }}>
     {header && <header>
       <strong>{title}</strong>
       {state.readOnly && <span>Read only</span>}
-      <span role="status">{state.lifecycle === 'disposed' ? 'Closed' : pending ? 'Saving' : uncertain ? 'Save unconfirmed' : conflict ? 'Changed elsewhere' : state.dirty ? 'Unsaved changes' : 'Saved'}</span>
+      <span role="status">{state.lifecycle === 'disposed' ? 'Closed' : pending ? 'Saving…' : uncertain ? 'Save unconfirmed' : conflict ? 'Changed elsewhere' : state.dirty ? 'Unsaved changes' : 'Saved'}</span>
       {mode === 'rich' && !phone && !unavailable && <button type="button" className="boring-markdown-pin" aria-label="Pin formatting toolbar" title="Pin formatting toolbar" aria-pressed={pinned} onClick={() => setPinned(value => !value)}>Aa</button>}
       <button type="button" aria-pressed={mode === 'source'} disabled={!richOffered} onClick={switchMode}>Markdown source</button>
-      <button type="button" disabled={unavailable || !state.dirty || pending || uncertain} onClick={save}>Save</button>
+      {!saving.enabled && <button type="button" disabled={unavailable || !state.dirty || pending || uncertain} onClick={save}>Save</button>}
     </header>}
     <TextDraftControls recovery={state.recovery} actions={controller.actions} readOnly={state.readOnly} blocked={state.lifecycle !== 'active' || state.save.kind === 'pending' || (state.save.kind === 'settled' && state.save.result.kind === 'unknown')} />
     {mode === 'rich' && showPinned && <div role="toolbar" aria-label="Text formatting" className="boring-markdown-toolbar">

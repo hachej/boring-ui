@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { insecureUrl, launch, pause, q, qa } from '@hachej/boring-testing/browser';
 
 process.env.STUDIO_MODEL = 'scripted';
@@ -38,9 +39,12 @@ const SIDEWAYS = `(() => { const pane = ${q('[data-testid=conversations]')}; ret
 const inside = selector => `(() => { const r = ${q(selector)}?.getBoundingClientRect(); return !!r && r.width > 0 && r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight; })()`;
 
 const app = await startWorkspaceApp({ directory: mkdtempSync(join(tmpdir(), 'boring-workspace-app-')) });
+const { connectRevisionProvider } = await import('@hachej/boring-files/revision');
+const reader = await connectRevisionProvider({ endpoint: new URL('/api/resources', app.url), fetch: request => { const headers = new Headers(request.headers); headers.set('authorization', `Bearer ${app.token}`); return fetch(new Request(request, { headers })); } });
 let browser;
 try {
-  browser = await launch(insecureUrl(app.url), { evidence });
+  browser = await launch(insecureUrl(app.url), { evidence, args: ['--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4'] });
+  assert.equal(await browser.evaluate(`matchMedia('(hover: hover) and (pointer: fine)').matches`), true, 'desktop exercises native fine-pointer hover; touch emulation replaces this on phones');
   const say = async text => { await browser.type(INPUT, text); await browser.press('Enter'); };
   const live = () => browser.until('the chat is live', `!!${INPUT} && !${INPUT}.disabled`, 20000);
 
@@ -73,7 +77,7 @@ try {
     assert.equal(await browser.evaluate(`!!${q('[data-testid=connection]')}`), false, 'no default Live badge');
     assert.equal(await browser.evaluate(`${q('[data-testid=composer-submit]')}.disabled`), true, 'empty send is disabled');
     const composer = await browser.evaluate(rect('[data-testid=composer]'));
-    assert.ok(composer.y > 250 && composer.y < 650, 'empty desktop composer is centered');
+    assert.ok(composer.y > 250 && composer.y < 650, `empty desktop composer is centered: ${JSON.stringify({ composer, state: await browser.evaluate(`({ empty: ${q('[data-boring=pi-chat]')}.dataset.empty, height: ${q('[data-boring=pi-chat]')}.getBoundingClientRect().height, content: ${q('[data-testid=conversation-content]')}.className })`) })}`);
     await browser.screenshot('standalone-empty-desktop.png');
   });
 
@@ -129,6 +133,73 @@ try {
     assert.ok(sessions.x < 2 && panel.x + panel.w > 1400, `sessions on the left, panel on the right: ${JSON.stringify({ sessions, panel })}`);
     await pause(300);
     await browser.screenshot('workspace-app-desktop.png');
+  });
+
+  await step('markdown artifact controls, pinned toolbar and visible divider resize on desktop', async () => {
+    for (const selector of ['[data-testid=artifact-mode-source]', '[aria-label="Pin formatting toolbar"]', '[data-testid=artifact-more]', '.boring-markdown-toolbar']) assert.equal(await browser.evaluate(`!!${q(`[data-testid=artifact-panel] ${selector}`)}?.checkVisibility()`), true, selector);
+    const divider = await browser.evaluate(`(() => { const e = ${q('[data-testid=workspace-divider]')}, r = e.getBoundingClientRect(), line = e.firstElementChild; return { x: r.x + r.width / 2, y: r.y + r.height / 2, hit: r.width, line: line.getBoundingClientRect().width, color: getComputedStyle(line).backgroundColor, before: Number(e.getAttribute('aria-valuenow')) }; })()`);
+    assert.equal(divider.line, 1); assert.ok(divider.hit >= 8 && divider.hit <= 12);
+    assert.doesNotMatch(divider.color, /transparent|rgba\(0, 0, 0, 0\)/);
+    await browser.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: divider.x, y: divider.y, button: 'left', clickCount: 1 });
+    await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: divider.x - 50, y: divider.y, button: 'left', buttons: 1 });
+    await browser.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: divider.x - 50, y: divider.y, button: 'left', clickCount: 1 });
+    await browser.until('divider drag resizes the artifact', `Number(${q('[data-testid=workspace-divider]')}.getAttribute('aria-valuenow')) > ${divider.before}`, 5000);
+    await browser.evaluate(`${q('[data-testid=workspace-divider]')}.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); ${q('[data-testid=workspace-divider]')}.focus()`);
+    await browser.until('double click resets the artifact width', `Number(${q('[data-testid=workspace-divider]')}.getAttribute('aria-valuenow')) === ${divider.before}`, 5000);
+    await browser.press('ArrowRight');
+    await browser.until('keyboard resizes the artifact', `Number(${q('[data-testid=workspace-divider]')}.getAttribute('aria-valuenow')) === ${divider.before - 24}`, 5000);
+    assert.equal(await browser.evaluate(`${q('[data-testid=workspace-divider] span')}.getBoundingClientRect().width`), 2, 'focused divider strengthens');
+    await browser.evaluate(`${q('[data-testid=workspace-divider]')}.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
+    await browser.click(q('[data-testid=artifact-mode-source]'));
+    await browser.type(q('[data-testid=artifact-panel] textarea'), '\nA fictional desktop autosave.');
+    await browser.until('artifact autosaved', `${q('[data-testid=artifact-status]')}?.textContent === 'Saved'`, 10000);
+    assert.equal(await browser.evaluate(`!!${q('[data-testid=artifact-save]')}`), false);
+    await browser.click(q('[data-testid=artifact-mode-rich]'));
+    for (const scheme of ['light', 'dark']) {
+      await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] });
+      await browser.evaluate(`${q('[data-testid=artifact-panel] [contenteditable]')}.focus()`); await pause(200);
+      await browser.screenshot(`markdown-desktop-${scheme}.png`);
+    }
+    await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] });
+  });
+
+  await step('Base UI viewer menus are flat, grouped and show version time with provenance', async () => {
+    const checkFlat = async testId => {
+      const styles = await browser.evaluate(`[...${q(`[data-testid=${testId}-list]`)}.querySelectorAll('[role^=menuitem]')].map(item => { const css = getComputedStyle(item); return { border: css.borderTopWidth, height: item.getBoundingClientRect().height }; })`);
+      assert.ok(styles.length > 0);
+      assert.ok(styles.every(style => style.border === '0px' && style.height >= 32), JSON.stringify(styles));
+    };
+    for (const scheme of ['light', 'dark']) {
+      await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] });
+      await browser.click(q('[data-testid=artifact-more]'));
+      await browser.until('native overflow menu', `!!${q('[data-testid=artifact-more-list]')}`, 5000);
+      await checkFlat('artifact-more');
+      assert.ok(await browser.evaluate(`${q('[data-testid=artifact-more-list]')}.querySelectorAll('[role=separator]').length > 0`));
+      await browser.screenshot(`menu-overflow-${scheme}.png`);
+      await browser.press('Tab');
+      await browser.until('native Tab dismisses overflow', `!${q('[data-testid=artifact-more-list]')}`, 5000);
+      await browser.until('version history after the human save', `!!${q('[data-testid=artifact-versions]')}`, 10000);
+      await browser.click(q('[data-testid=artifact-versions]'));
+      await browser.until('native versions menu', `!!${q('[data-testid=artifact-versions-list]')}`, 5000);
+      await checkFlat('artifact-versions');
+      const versions = await browser.evaluate(`${q('[data-testid=artifact-versions-list]')}.innerText`);
+      assert.match(versions, /Just now|\d+ min ago/); assert.match(versions, /Agent/); assert.match(versions, /You/); assert.match(versions, /Current/);
+      assert.ok(await browser.evaluate(`${q('[data-testid=artifact-versions-list]')}.querySelectorAll('[data-testid=artifact-versions-description]').length >= 2`));
+      const current = await browser.evaluate(`(() => { const row = ${q('[data-testid=artifact-versions-list] [aria-checked=true]')}; return { text: row.querySelector('[data-testid=artifact-versions-hint]').getBoundingClientRect().right, check: row.querySelector('[data-slot=dropdown-menu-radio-item-indicator]').getBoundingClientRect().left, padding: getComputedStyle(row).paddingRight, classes: row.className }; })()`);
+      assert.equal(await browser.evaluate(`getComputedStyle(${q('[data-testid=artifact-versions-list] [aria-checked=true] [data-slot=dropdown-menu-radio-item-indicator] svg')}).width`), '16px', 'the demo preserves the consumer shadcn arbitrary-selector utilities');
+      assert.ok(current.check - current.text >= 4, `Current and its check never overlap: ${JSON.stringify(current)}`);
+      assert.equal(await browser.evaluate(`!!${q('[data-testid=transcript-history] [role=alert]')}`), false, 'automatic history loading has no race failure');
+      await browser.screenshot(`menu-versions-${scheme}.png`); await browser.press('Escape');
+      await browser.until('version menu dismissed', `!${q('[data-testid=artifact-versions-list]')}`, 5000);
+    }
+    await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] });
+    const reply = `Array.from(document.querySelectorAll('[data-testid=transcript] [data-role=assistant]')).at(-1)`;
+    await browser.evaluate(`${reply}.querySelector('[aria-label="Copy response"]').scrollIntoView({ block: 'center', behavior: 'instant' })`);
+    await browser.hover(`${reply}.querySelector('[aria-label="Copy response"]')`);
+    const action = await browser.evaluate(`(() => { const button = ${reply}.querySelector('[aria-label="Copy response"]'), rect = button.getBoundingClientRect(); return { width: rect.width, height: rect.height, title: button.title, hiddenLabel: getComputedStyle(button.querySelector('span')).position }; })()`);
+    assert.deepEqual(action, { width: 32, height: 32, title: 'Copy response', hiddenLabel: 'absolute' });
+    await browser.until('reply actions visible on pointer hover', `getComputedStyle(${reply}.querySelector('[aria-label="Copy response"]').parentElement).opacity === '1'`, 5000);
+    await browser.screenshot('reply-actions-desktop.png');
   });
 
   await step('the artifacts chip counts the file and opens its desktop list', async () => {
@@ -325,7 +396,7 @@ try {
     await browser.emulate('desktop');
   });
 
-  await step('declining phone Back preserves the file draft and restores its history entry', async () => {
+  await step('phone autosave survives reload; failed flush still guards Back and preserves its draft', async () => {
     await browser.emulate('phone');
     await browser.click(q('[data-testid=sessions-toggle]'));
     await browser.until('navigation before file edit', `!!${q('[data-testid=workspace-library]')}`, 5000);
@@ -334,12 +405,33 @@ try {
     await browser.until('editable file in Library', `!!${item}`, 5000);
     await browser.click(item);
     await browser.until('editable phone file', `!!${q('[data-testid=file-viewer] [data-testid=viewer-more]')}`, 10000);
-    await browser.click(q('[data-testid=viewer-more]'));
+    await browser.tap(q('[data-testid=file-viewer] [data-testid=viewer-more]'));
     await browser.until('source action in overflow', `!!${q('[data-testid=viewer-more-list] [data-testid=viewer-mode-source]')}`, 5000);
     await browser.click(q('[data-testid=viewer-more-list] [data-testid=viewer-mode-source]'));
     const source = q('[data-testid=file-viewer] textarea');
     await browser.until('file source', `!!${source}`, 5000);
+    await browser.type(source, '\nA fictional autosaved note.');
+    await browser.until('phone file autosaved', `${q('[data-testid=file-viewer] [data-testid=viewer-status]')}?.textContent === 'Saved'`, 10000);
+    const persisted = await browser.evaluate(`${source}.value`);
+    const read = await reader.read({ target: reader.locate('picnic-plan.md'), revision: { kind: 'latest' } });
+    assert.equal(new TextDecoder().decode(read.snapshot.bytes), persisted);
+    for (const scheme of ['light', 'dark']) {
+      await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }); await pause(200);
+      await browser.screenshot(`markdown-phone-${scheme}.png`);
+    }
+    await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] });
+    await browser.reload(); await live();
+    await browser.click(q('[data-testid=sessions-toggle]')); await browser.click(q('[data-testid=workspace-library]'));
+    await browser.until('persisted file listed', `!!${item}`, 5000); await browser.click(item);
+    await browser.until('persisted file opens after reload', `!!${q('[data-testid=file-viewer] [data-testid=viewer-more]')}`, 10000);
+    await browser.tap(q('[data-testid=file-viewer] [data-testid=viewer-more]'));
+    await browser.until('reloaded phone menu opens', `!!${q('[data-testid=viewer-more-list] [data-testid=viewer-mode-source]')}`, 5000);
+    await browser.tap(q('[data-testid=viewer-more-list] [data-testid=viewer-mode-source]'));
+    await browser.until('persisted source after reload', `!!${source} && ${source}.value === ${JSON.stringify(persisted)}`, 10000);
+    // A real concurrent workspace write makes the next conditional flush refuse.
     await browser.type(source, '\nA fictional unsaved note.');
+    const remote = await reader.read({ target: reader.locate('picnic-plan.md'), revision: { kind: 'latest' } });
+    await reader.publish({ operationId: 'phone-back-concurrent-write', atomicity: 'all-or-nothing', changes: [{ kind: 'replace', target: remote.snapshot.ref, bytes: new TextEncoder().encode(`${persisted}\nChanged by another writer.`), mediaType: 'text/markdown' }] });
     await browser.until('dirty file', `${q('[data-testid=file-viewer] [data-boring=markdown-editor]')}?.dataset.dirty === 'true'`, 5000);
     await browser.evaluate(`new Promise(requestAnimationFrame).then(() => new Promise(requestAnimationFrame))`);
     const draft = await browser.evaluate(`${source}.value`);
@@ -433,10 +525,70 @@ try {
     await browser.emulate('desktop');
   });
 
+  await step('older records scroll into the same transcript without moving the first visible message', async () => {
+    const conversation = await app.conversations.open(app.owner, Number(await browser.evaluate(ACTIVE)));
+    const write = async (prefix, index) => conversation.submit({ type: 'write', entry: { kind: 'fictional.history', model: [
+      { role: 'user', content: `${prefix} question ${index}.`, timestamp: Date.now() },
+      { role: 'assistant', content: [{ type: 'text', text: `${prefix} answer ${index}.` }], api: 'openai-responses', provider: 'openai', model: 'gpt-5-mini', stopReason: 'stop', timestamp: Date.now(), usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } },
+    ] } }, context);
+    for (let index = 0; index < 105; index++) await write('Archived fictional', index);
+    await conversation.reset('Fictional history boundary', context);
+    for (let index = 0; index < 12; index++) await write('Current fictional', index);
+    await browser.reload(); await live();
+    await browser.until('current transcript at the bottom', `${q('[data-testid=transcript]')}?.innerText.includes('Current fictional answer 11.') && ${q('[data-testid=transcript-scroll]')}.scrollTop > 100`, 10000);
+    const anchor = await browser.evaluate(`(() => { const scroll = ${q('[data-testid=transcript-scroll]')}; scroll.scrollTop = 120; scroll.dispatchEvent(new Event('scroll')); const row = [...scroll.querySelectorAll('[data-row-id]')].find(row => row.getBoundingClientRect().bottom > scroll.getBoundingClientRect().top + 1); return { key: row.dataset.rowId, y: row.getBoundingClientRect().top }; })()`);
+    await browser.until('sentinel prepends older records inline', `!!${q('[data-testid=transcript] [data-row-id^="history:"]')}`, 10000);
+    await browser.evaluate('new Promise(requestAnimationFrame).then(() => new Promise(requestAnimationFrame))');
+    const y = await browser.evaluate(`${q(`[data-row-id="${anchor.key}"]`)}.getBoundingClientRect().top`);
+    assert.ok(Math.abs(y - anchor.y) <= 2, `first visible row stays anchored: ${anchor.y} -> ${y}`);
+    assert.equal(await browser.evaluate(`!!${q('[data-testid=history]')}`), false, 'no separate read-only history panel');
+    assert.equal(await browser.evaluate(`${q('[data-testid=transcript-history-load]')}.getAttribute('tabindex')`), null, 'the hidden fallback remains in keyboard order');
+    const holdHistory = () => {
+      let resume;
+      const held = new Promise(resolve => { resume = resolve; });
+      app.faults.history = () => held;
+      return () => { app.faults.history = undefined; resume(); };
+    };
+    const captureAnchor = `(() => { const scroll = ${q('[data-testid=transcript-scroll]')}; const row = [...scroll.querySelectorAll('[data-row-id]')].find(row => row.getBoundingClientRect().bottom > scroll.getBoundingClientRect().top + 1); return { key: row.dataset.rowId, y: row.getBoundingClientRect().top, top: scroll.scrollTop }; })()`;
+    const before = await browser.evaluate(`document.querySelectorAll('[data-row-id^="history:"]').length`);
+    const resume = holdHistory();
+    await browser.evaluate(`${q('[data-testid=transcript-history-load]')}.focus()`); await browser.press('Enter');
+    await browser.until('slow history is loading', `!!${q('[data-testid=transcript-history] svg')}`, 5000);
+    const start = await browser.evaluate(captureAnchor), scroll = await browser.evaluate(rect('[data-testid=transcript-scroll]'));
+    await browser.wheel(scroll.x + scroll.w / 2, scroll.y + scroll.h / 2, 400); await pause(120);
+    const moved = await browser.evaluate(captureAnchor);
+    assert.ok(moved.top - start.top > 100, 'the reader really scrolls while the native read is held');
+    resume();
+    await browser.until('keyboard loads another page inline', `document.querySelectorAll('[data-row-id^="history:"]').length > ${before}`, 10000);
+    await browser.evaluate('new Promise(requestAnimationFrame).then(() => new Promise(requestAnimationFrame))');
+    const movedY = await browser.evaluate(`${q(`[data-row-id="${moved.key}"]`)}.getBoundingClientRect().top`);
+    assert.ok(Math.abs(movedY - moved.y) <= 2, `history completion preserves intervening scrolling: ${moved.y} -> ${movedY}`);
+    const finish = holdHistory();
+    await browser.evaluate(`${q('[data-testid=transcript-history-load]')}.focus()`); await browser.press('Enter');
+    await browser.until('another native history read is held', `!!${q('[data-testid=transcript-history] svg')}`, 5000);
+    await browser.click(q('[data-testid=jump-latest]'));
+    const atBottom = `(() => { const e = ${q('[data-testid=transcript-scroll]')}; return Math.abs(e.scrollHeight - e.clientHeight - e.scrollTop) <= 2; })()`;
+    await browser.until('the reader jumps to latest before the read completes', atBottom, 5000);
+    finish();
+    await browser.until('the slow read completed', `!${q('[data-testid=transcript-history] svg')}`, 10000);
+    await pause(100);
+    assert.equal(await browser.evaluate(atBottom), true, 'a completed read cannot undo Jump to latest');
+    assert.ok(await browser.evaluate(`${q('[data-testid=transcript-history] [role=status]')}.textContent.includes('earlier messages loaded')`));
+    for (const device of ['desktop', 'phone']) {
+      await browser.emulate(device);
+      await browser.evaluate(`${q('[data-testid=transcript-scroll]')}.scrollTop = 0`);
+      await pause(500);
+      await browser.screenshot(`inline-history-${device}.png`);
+      assert.equal(await browser.evaluate(`!!${q('[data-testid=history]')}`), false);
+    }
+    await browser.emulate('desktop');
+  });
+
   assert.deepEqual(misses, [], 'every prompt had a scripted answer');
   assert.deepEqual(browser.problems, [], 'no page errors');
   console.log(`PASS workspace-app journey; screenshots in ${evidence}`);
 } finally {
+  await browser?.screenshot('last-state.png');
   await browser?.close();
   await app.close();
 }

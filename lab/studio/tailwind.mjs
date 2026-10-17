@@ -43,7 +43,12 @@ export function themeCss() {
 /** Candidates are any run of non-space, non-quote characters: Tailwind ignores those that are not utilities. */
 function candidates(paths) {
   const found = new Set();
-  for (const path of paths) for (const token of readFileSync(path, 'utf8').split(/[\s"'`]+/)) if (token) found.add(token);
+  for (const path of paths) {
+    const source = readFileSync(path, 'utf8');
+    // Quoted attribute selectors inside arbitrary utilities belong to the class, not its delimiter.
+    const bracketed = source.match(/[^\s"'`]*\[[^\s]*?=["'][^\s"'`]*["'][^\s]*?\]:[^\s"'`]+/g) ?? [];
+    for (const token of [...source.split(/[\s"'`]+/), ...bracketed]) if (token) found.add(token);
+  }
   return [...found];
 }
 

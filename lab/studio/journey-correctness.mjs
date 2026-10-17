@@ -109,12 +109,11 @@ try {
       };`);
     await browser.type(source, 'Human edit survives.\n');
     const text = await browser.evaluate(`${source}.value`);
-    await browser.click(q('[data-testid=viewer-save]'));
     await browser.until('save uncertain', `${status}?.textContent.includes('Save unconfirmed')`);
     assert.equal(await savedText(), text);
     const revision = (await saved()).ref.revision;
     await browser.click(button('Check save outcome'));
-    await browser.until('save reconciled', `${status}?.textContent === undefined`);
+    await browser.until('save reconciled', `${status}?.textContent === 'Saved'`);
     assert.equal((await saved()).ref.revision, revision);
     assert.equal(await browser.evaluate('window.correctness.publications.length'), 1);
   });
@@ -125,7 +124,6 @@ try {
       { kind: 'replace', target: before.ref, bytes: encode('# External fictional revision\n'), mediaType: 'text/markdown' },
     ] }, app.host.agentAccess);
     assert.equal(external.kind, 'committed');
-    await browser.click(q('[data-testid=viewer-save]'));
     await browser.until('conflict shown', `document.body.innerText.includes('Your local text has been kept.')`);
     assert.equal(await browser.evaluate(`${source}.value`), draft);
     assert.equal(await savedText(), '# External fictional revision\n');

@@ -1,6 +1,6 @@
 import type { Context } from '@earendil-works/chord';
 import { RequestGuardError, hasJsonContentType, readJsonBody } from '@hachej/boring-files/request-guard';
-import type { Conversation, ConversationView, ConversationWatch, Cursor, EntryRecord, InputSubmissionDraft, SubmissionId, SubmissionRecord, WatchEnd } from '@earendil-works/pi-durable';
+import type { Conversation, ConversationView, ConversationWatch, Cursor, EntryId, EntryQuery, EntryRecord, InputSubmissionDraft, SubmissionId, SubmissionRecord, WatchEnd } from '@earendil-works/pi-durable';
 
 /** Wire protocol shared with the browser client in `@hachej/boring-ui-kit/remote-chat`. */
 export const CHAT_TRANSPORT = Object.freeze({ schema: 'boring.chat-transport', version: 1, maxRequestBytes: 8_388_608, maxContextBytes: 4096, maxHistoryPage: 200, maxPendingFrames: 100, heartbeatMs: 15_000 });
@@ -100,8 +100,8 @@ async function body(request: Request): Promise<Record<string, unknown>> {
  */
 function reads(conversation: Conversation, context: Context, project: ((view: ConversationView) => ConversationView) | undefined) {
   return {
-    async entries(limit: number, cursor: Cursor | undefined) {
-      const page = await conversation.entries({}, limit, cursor, context);
+    async entries(query: Omit<EntryQuery, 'conversationId'>, limit: number, cursor: Cursor | undefined) {
+      const page = await conversation.entries(query, limit, cursor, context);
       if (!project) return page;
       const record = await conversation.commit(tx => tx.conversation(conversation.id), context);
       if (!record) throw new Error('The conversation is not available');
@@ -217,7 +217,16 @@ export function createChatTransportHandler(options: ChatTransportOptions): (requ
         let cursor: Cursor | undefined;
         const encoded = params.get('cursor');
         if (encoded !== null) { try { cursor = JSON.parse(encoded) as Cursor; } catch { return failure(400, 'invalid-request'); } }
-        const page = await read.entries(limit, cursor);
+        const entryId = (encoded: string | null): EntryId | undefined => {
+          if (encoded === null) return undefined;
+          const value = Number(encoded);
+          if (!Number.isSafeInteger(value) || value < 1) throw new RequestGuardError(400, 'Invalid native entry bound');
+          return value as EntryId;
+        };
+        const maxEntryId = entryId(params.get('maxEntryId')), minEntryId = entryId(params.get('minEntryId'));
+        const order = params.get('order');
+        if (order !== null && order !== 'ascending' && order !== 'descending') return failure(400, 'invalid-request');
+        const page = await read.entries({ ...(maxEntryId === undefined ? {} : { maxEntryId }), ...(minEntryId === undefined ? {} : { minEntryId }), ...(order === null ? {} : { order }) }, limit, cursor);
         if (access.revoked?.aborted) return failure(403, 'not-authorized');
         return json({ page });
       }

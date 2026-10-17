@@ -49,7 +49,7 @@ test('installed registry Markdown wrapper with real React/Tiptap/SQLite (DOM, no
     let mounted = true;
     const unmount = async () => { if (mounted) { mounted = false; await act(async () => root.unmount()); } };
     t.after(async () => { await unmount(); controller.dispose(); provider.close(); container.remove(); });
-    await act(async () => root.render(createElement(MarkdownEditor, { controller, title: 'Fictional registry notes', placeholder: 'Fictional placeholder', ...options.props })));
+    await act(async () => root.render(createElement(MarkdownEditor, { controller, title: 'Fictional registry notes', placeholder: 'Fictional placeholder', autosave: false, ...options.props })));
     const button = label => { const found = [...container.querySelectorAll('button')].find(node => (node.getAttribute('aria-label') || node.textContent) === label); assert.ok(found, label); return found; };
     const click = async label => { await act(async () => button(label).click()); };
     const settled = async () => {
@@ -85,6 +85,18 @@ test('installed registry Markdown wrapper with real React/Tiptap/SQLite (DOM, no
     assert.equal(f.container.querySelector('textarea').value, source);
     assert.equal(f.controller.getSnapshot().text, source); assert.equal(f.controller.getSnapshot().bufferVersion, 0);
     assert.equal(f.controller.getSnapshot().dirty, false); assert.equal(f.writes(), 0);
+  });
+
+  await t.test('installed Markdown defaults to pinned formatting and autosaves exact bytes without Save', async t => {
+    const f = await fixture(t, 'fictional note\n', { props: { autosave: { delayMs: 250 } } });
+    assert.ok(f.container.querySelector('.boring-markdown-toolbar [aria-label="Bold"]'));
+    assert.equal([...f.container.querySelectorAll('button')].find(node => node.textContent === 'Save'), undefined);
+    await f.click('Markdown source'); await f.input('autosaved fictional note\n');
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 400)); });
+    await f.settled();
+    assert.equal(f.writes(), 1);
+    assert.equal(f.controller.getSnapshot().dirty, false);
+    assert.equal(new TextDecoder().decode((await f.client.read({ target: f.target, revision: { kind: 'latest' } })).snapshot.bytes), 'autosaved fictional note\n');
   });
 
   await t.test('source editing and Save publish exact bytes with a real lookup receipt', async t => {
@@ -133,7 +145,7 @@ test('installed registry Markdown wrapper with real React/Tiptap/SQLite (DOM, no
   });
 
   await t.test('read-only controller keeps formatting, text input and publication disabled', async t => {
-    const quiet = await fixture(t, 'readonly fiction', { readOnly: true });
+    const quiet = await fixture(t, 'readonly fiction', { readOnly: true, props: { formattingToolbar: 'selection' } });
     assert.equal(quiet.container.querySelector('.boring-markdown-toolbar'), null, 'read-only selection mode has no formatting row');
     assert.equal(document.querySelector('.boring-markdown-bubble'), null, 'a read-only document offers no formatting bubble');
     assert.equal(quiet.button('Save').disabled, true);

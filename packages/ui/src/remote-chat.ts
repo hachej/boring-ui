@@ -280,8 +280,12 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
     // The controller only reconciles a submission by request ID; no other transaction work crosses the wire.
     commit: async (change, _context) => change({ submissionByRequest: (_conversationId, requestId) => lookup(requestId) }),
     abort: async () => { await post('abort', {}); },
-    entries: async (_query, limit, cursor: Cursor | undefined) =>
-      (await call<{ page: Page<EntryRecord, Cursor> }>('entries', {}, { limit: String(limit), ...(cursor === undefined ? {} : { cursor: JSON.stringify(cursor) }) })).page,
+    entries: async (query, limit, cursor: Cursor | undefined) =>
+      (await call<{ page: Page<EntryRecord, Cursor> }>('entries', {}, { limit: String(limit),
+        ...(query.maxEntryId === undefined ? {} : { maxEntryId: String(query.maxEntryId) }),
+        ...(query.minEntryId === undefined ? {} : { minEntryId: String(query.minEntryId) }),
+        ...(query.order === undefined ? {} : { order: query.order }),
+        ...(cursor === undefined ? {} : { cursor: JSON.stringify(cursor) }) })).page,
   };
   const context = Object.freeze({}) as unknown as Context;
   const close = async () => { const first = unclaimed; unclaimed = undefined; await first?.stop(); };
