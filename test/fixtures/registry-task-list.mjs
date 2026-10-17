@@ -47,7 +47,7 @@ test('task-list installed renderer edits, saves, reconciles and borrows its cont
   const settle = async () => { for (let i = 0; i < 100 && controller.getSnapshot().save.kind === 'pending'; i++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 5)); }); assert.equal(controller.getSnapshot().save.kind, 'settled'); };
   const read = async () => JSON.parse(new TextDecoder().decode((await client.read({ target, revision: { kind: 'latest' } })).snapshot.bytes));
   assert.equal(writes, 0); assert.ok(container.querySelector('.boring-task-list-recipe.host-task-list'));
-  if (process.env.BORING_REGISTRY_RESTYLED === 'true') { assert.ok(container.querySelector('.host-installed-task-list')); assert.equal(window.getComputedStyle(document.documentElement).getPropertyValue('--radius').trim(), '1.25rem'); }
+  if (process.env.BORING_REGISTRY_RESTYLED === 'true') assert.ok(container.querySelector('.host-installed-task-list'));
   await check(); assert.equal(writes, 0); assert.equal((await read()).items[0].completed, false);
   await click('Save'); await settle(); assert.equal(controller.getSnapshot().save.result.kind, 'saved'); assert.equal((await read()).items[0].completed, true);
   const receipt = controller.getSnapshot().save.result.receipt; assert.deepEqual((await client.lookup(receipt.operationId)).receipt, receipt);

@@ -459,9 +459,9 @@ try {
     await browser.click(q('[role=treeitem][data-path="Contracts/fernhill-agreement.pdf"]'));
     await browser.until('the PDF in the agent panel', `${q('[data-dock=chat] [data-testid=library-document]')}?.dataset.path === 'Contracts/fernhill-agreement.pdf'`, 15000);
     await pause(500);
-    const card = await browser.evaluate(`(() => { const panel = document.querySelector('[data-testid=workspace-panel]'), dock = document.querySelector('[data-dock=chat]').getBoundingClientRect(), chat = document.querySelector('[data-boring=pi-chat]').getBoundingClientRect(), r = panel.getBoundingClientRect(), style = getComputedStyle(panel);
-      return { top: r.top - dock.top, bottom: dock.bottom - r.bottom, right: dock.right - r.right, gap: r.left - chat.right, radius: parseFloat(style.borderTopLeftRadius), borderLeft: parseFloat(style.borderLeftWidth), divider: getComputedStyle(document.querySelector('[data-testid=workspace-divider] span')).backgroundColor }; })()`);
-    assert.ok(card.top >= 4 && card.bottom >= 4 && card.right >= 4 && card.radius >= 8, `an inset rounded card inside the panel: ${JSON.stringify(card)}`);
+    const card = await browser.evaluate(`(() => { const panel = document.querySelector('[data-testid=workspace-panel]'), dock = document.querySelector('[data-dock=chat]').getBoundingClientRect(), chat = document.querySelector('[data-boring=pi-chat]').getBoundingClientRect(), r = panel.getBoundingClientRect(), chrome = panel.querySelector(':scope > [data-slot=card]'), style = getComputedStyle(chrome ?? panel);
+      return { card: !!chrome, top: r.top - dock.top, bottom: dock.bottom - r.bottom, right: dock.right - r.right, gap: r.left - chat.right, radius: parseFloat(style.borderTopLeftRadius), borderLeft: parseFloat(style.borderLeftWidth), divider: getComputedStyle(document.querySelector('[data-testid=workspace-divider] span')).backgroundColor }; })()`);
+    assert.ok(card.card && card.top >= 4 && card.bottom >= 4 && card.right >= 4 && card.radius >= 8, `an inset rounded host Card inside the panel: ${JSON.stringify(card)}`);
     assert.doesNotMatch(card.divider, /rgba\(0, 0, 0, 0\)|transparent/, `a visible divider separates chat and card: ${card.divider}`);
     await coherentHeader();
     await shot('9-docked-pdf.png');
