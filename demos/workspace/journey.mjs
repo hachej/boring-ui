@@ -1,4 +1,4 @@
-// Scripted browser journey over the real demo, including AP decisions, no-remount placement and icon-anchored chat popovers.
+// Scripted browser journey over the real demo, including AP decisions, no-remount placement, the desktop History column and icon-anchored chat popovers.
 // Screenshots go to .cache/evidence/saas-v2/. Run: npm run workspace-demo:journey
 import assert from 'node:assert/strict';
 import { expandTrace } from '../../scripts/trace-journey.mjs';
@@ -126,7 +126,21 @@ try {
     await browser.press('ArrowLeft', { alt: true });
     await browser.until('floating through the existing divider', `${placement} === 'floating'`, 5000);
   };
-  const openConversation = async title => { await history(); await browser.click(row(title)); await browser.until('the list closed', `!${q('[data-testid=conversations]')}`, 5000); };
+  // A wide Agent pane shows History as a side column that stays open on a pick; elsewhere it is a popover or sheet that closes.
+  const historyColumn = q('[data-testid=history-column]');
+  const historyToggle = q('[data-testid=chat-action-history]');
+  const openConversation = async title => {
+    await history();
+    const column = await browser.evaluate(`!!${historyColumn}`);
+    await browser.click(row(title));
+    if (column) await browser.until('the column stays open on the picked conversation', `!!${historyColumn} && ${row(title)}?.getAttribute('aria-current') === 'true'`, 5000);
+    else await browser.until('the list closed', `!${q('[data-testid=conversations]')}`, 5000);
+  };
+  const closeHistoryColumn = async () => {
+    if (!(await browser.evaluate(`!!${historyColumn}`))) return;
+    await browser.click(historyToggle);
+    await browser.until('the column closed, focus on its toggle', `!${historyColumn} && ${historyToggle}.getAttribute('aria-expanded') === 'false' && document.activeElement === ${historyToggle}`, 5000);
+  };
   const row = title => `[...document.querySelectorAll('[data-testid=conversation-row]')].find(item => item.innerText.includes(${JSON.stringify(title)}))`;
 
   await step('start: Agent as the page, with History and Library in its chat top bar', async () => {
@@ -140,12 +154,17 @@ try {
     assert.equal(await browser.evaluate(`!!${q('[data-testid=composer-attach]')} || !!${q('[data-testid=composer-file]')}`), true, 'the composer can attach files');
     assert.equal(await browser.evaluate(`!!${q('[data-testid=composer-voice]')}`), false, 'no microphone without a transcription key');
     await history();
+    // The 1440 Agent page is wide: History is the side column, toggled by the top-bar icon, not a dialog.
+    assert.deepEqual(await browser.evaluate(`({ column: !!${historyColumn}, expanded: ${historyToggle}.getAttribute('aria-expanded'), controls: ${historyToggle}.getAttribute('aria-controls'), name: ${historyToggle}.getAttribute('aria-label'), dialog: !!${q('[data-testid=conversations]')}.closest('[role=dialog]'), inColumn: !!${historyColumn}.querySelector('[data-testid=conversations]'), id: ${historyColumn}.id })`),
+      { column: true, expanded: 'true', controls: 'agent-history-column', name: 'History', dialog: false, inColumn: true, id: 'agent-history-column' });
     const titles = await browser.evaluate(`[...document.querySelectorAll('[data-testid=conversation-row]')].map(item => item.innerText)`);
     for (const title of ['Month-end close checklist', 'Fernhill Labels terms', "This week's approvals"]) assert.ok(titles.some(text => text.includes(title)), `${title} in ${JSON.stringify(titles)}`);
     assert.equal(await browser.evaluate(viewing), 'Approvals');
     await pause(300);
     await browser.screenshot('1-start-history.png');
-    // Archived is a labeled chip inside search; pressing it toggles the filter.
+    // The column's search is a disclosure, as in the standalone app's sidebar. Archived is a labeled chip inside it; pressing it toggles the filter.
+    await browser.click(q('[data-testid=conversation-search-open]'));
+    await browser.until('search field focused', `document.activeElement === ${q('[data-testid=conversation-search]')}`, 5000);
     assert.equal(await browser.evaluate(`document.querySelectorAll('[data-testid=conversations] input[type=search]').length`), 1);
     const archived = `${q('[data-testid=conversations-archived]')}`;
     assert.deepEqual(await browser.evaluate(`({ text: ${archived}.textContent.trim(), label: ${archived}.getAttribute('aria-label'), pressed: ${archived}.getAttribute('aria-pressed') })`), { text: 'Archived', label: 'Archived', pressed: 'false' });
@@ -154,15 +173,57 @@ try {
     await browser.click(archived);
     await browser.until('the filter is off', `${archived}.getAttribute('aria-pressed') === 'false'`, 5000);
     await browser.press('Escape');
-    await browser.until('the list closed', `!${q('[data-testid=conversations]')}`, 5000);
-    await history();
+    await pause(300);
+    assert.equal(await browser.evaluate(`!!${historyColumn}`), true, 'Escape does not close the persistent column');
     await library();
-    await browser.until('switching top-bar icons closes History and opens only Library', `!${q('[data-testid=conversations]')} && !!${q('[data-testid=library-popover]')}`, 5000);
+    await browser.until('Library opens beside the open column', `!!${historyColumn} && !!${q('[data-testid=library-popover]')}`, 5000);
     await browser.press('Escape');
     await browser.until('Library returns focus to its icon', `!${q('[data-testid=library-popover]')} && document.activeElement?.dataset.testid === 'chat-action-library'`, 5000);
+    await closeHistoryColumn();
     await browser.screenshot('1-start.png');
     assert.equal(await browser.evaluate(`!!${q('[data-boring=pi-chat] > header')}`), false, 'the host owns the one header');
     await headerShots('docked-empty');
+  });
+
+  await step('desktop History column: opens without remounting the chat, keeps a pick open, remembers itself, fits beside a file, phone keeps the sheet', async () => {
+    const stored = `localStorage.getItem('workspace-demo.history-column')`;
+    const chatWidth = `${q('[data-testid=workspace-chat]')}.getBoundingClientRect().width`;
+    const pageWidth = await browser.evaluate(chatWidth);
+    await browser.click(historyToggle);
+    await browser.until('the column opened and focus moved to the open conversation', `!!${historyColumn} && document.activeElement?.dataset.testid === 'conversation-row' && document.activeElement.getAttribute('aria-current') === 'true' && ${historyColumn}.contains(document.activeElement)`, 5000);
+    assert.deepEqual(await browser.evaluate(`({ expanded: ${historyToggle}.getAttribute('aria-expanded'), stored: ${stored}, composer: window.__composer === ${INPUT}, conversation: window.__conversation === ${q('[data-boring=pi-chat]')} })`), { expanded: 'true', stored: 'open', composer: true, conversation: true }, 'opening the column keeps the same conversation and composer nodes');
+    const columnBox = await browser.evaluate(rect('[data-testid=history-column]'));
+    assert.ok(columnBox.w >= 240 && columnBox.w <= 280, `a fixed sidebar width: ${JSON.stringify(columnBox)}`);
+    assert.ok(Math.abs(await browser.evaluate(chatWidth) - (pageWidth - columnBox.w)) <= 2, 'the chat sits beside the column, not under it');
+    await openConversation('Fernhill Labels');
+    await sees('the picked transcript beside the open column', 'Fernhill Labels is on net 30');
+    await browser.press('Escape');
+    await pause(300);
+    assert.equal(await browser.evaluate(`!!${historyColumn}`), true, 'Escape keeps the column');
+    // A file opens beside the chat; at 1440 the column, the chat and the viewer all fit, and the chat keeps a usable width.
+    await library();
+    await choosePolicyWithKeyboard();
+    await browser.until('the policy beside the chat and the column', `!!${q('[data-testid=library-document]')} && !!${historyColumn}`, 10000);
+    assert.ok(await browser.evaluate(chatWidth) >= 360, `the chat keeps a usable width beside the column and the file: ${await browser.evaluate(chatWidth)}`);
+    await pause(800);
+    await browser.screenshot('1-history-column-file.png');
+    await browser.click(q('[data-testid=library-document] [data-testid=viewer-close]'));
+    await browser.until('the policy closed', `!${q('[data-testid=library-document]')}`, 5000);
+    await openConversation("This week's approvals");
+    // The phone ignores the remembered column: History is the bottom sheet that closes on a pick.
+    await browser.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await browser.until('phone page without the column', `${placement} === 'page' && ${rect('[data-dock=chat]')}.w >= 388 && !${historyColumn}`, 10000);
+    await history();
+    assert.equal(await browser.evaluate(`!${historyColumn} && !!${q('[data-testid=conversations]')}.closest('[role=dialog]')`), true, 'the phone keeps the sheet');
+    await shot('1-history-phone-sheet.png');
+    await browser.press('Escape');
+    await browser.until('the phone sheet closed', `!${q('[data-testid=conversations]')}`, 5000);
+    await browser.send('Emulation.clearDeviceMetricsOverride');
+    await browser.until('the remembered column is back on desktop', `innerWidth >= 768 && !!${historyColumn}`, 10000);
+    await closeHistoryColumn();
+    assert.equal(await browser.evaluate(stored), 'closed');
+    // Picking conversations remounted the chat by design; later steps follow this one.
+    await browser.evaluate(`window.__conversation = ${q('[data-boring=pi-chat]')}; window.__composer = ${INPUT}; void 0;`);
   });
 
   await step('Library opens on the first press across 30 desktop-to-phone breakpoint changes', async () => {
@@ -181,6 +242,7 @@ try {
     }
     await browser.send('Emulation.clearDeviceMetricsOverride');
     await browser.until('desktop restored', 'innerWidth >= 768', 5000);
+    await closeHistoryColumn();
   });
 
   await step('keyboard Library selection and re-selection restore focus to the visible top-bar icon', async () => {

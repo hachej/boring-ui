@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from '@/components/ui/popover';
 import { Drawer, DrawerContent, DrawerTitle } from '../../examples/app-shell/components/ui/drawer';
 
-export function ChatTools({ conversations, provider, file, openFile, feed }) {
+/** `column`: History toggles the agent pane's side column (wide page and docked placements) instead of opening a popover. */
+export function ChatTools({ conversations, provider, file, openFile, feed, column = null }: { column?: { readonly id: string; readonly open: boolean; readonly onToggle: () => void } | null; [key: string]: any }) {
   const [panel, setPanel] = useState<'history' | 'library' | null>(null);
   const [phone, setPhone] = useState(() => matchMedia('(max-width: 640px)').matches);
   useEffect(() => { const media = matchMedia('(max-width: 640px)'); const change = () => setPhone(media.matches); media.addEventListener('change', change); return () => media.removeEventListener('change', change); }, []);
@@ -38,7 +39,8 @@ export function ChatTools({ conversations, provider, file, openFile, feed }) {
     <Drawer open={panel !== null} showSwipeHandle onOpenChange={next => { if (!next) setPanel(null); }}><DrawerContent ref={popup} data-testid={panel === 'history' ? 'conversations' : 'library-popover'} className="pi-chat h-[80dvh] pb-[env(safe-area-inset-bottom)] duration-200 motion-reduce:transition-none"><DrawerTitle className={panel === 'library' ? 'sr-only' : 'px-5 py-3'}>{panel === 'history' ? 'Conversations' : 'Library'}</DrawerTitle>{panel && body(panel)}</DrawerContent></Drawer>
   </div>;
   return <div className="flex shrink-0 items-center gap-0.5" data-testid="chat-tools">
-    {([['history', 'History', HistoryIcon], ['library', 'Library', FolderOpenIcon]] as const).map(([id, title, Icon]) => <Popover key={id} open={panel === id} onOpenChange={open => { if (open) picked.current = false; setPanel(current => open ? id : current === id ? null : current); }}>
+    {([['history', 'History', HistoryIcon], ['library', 'Library', FolderOpenIcon]] as const).map(([id, title, Icon]) => id === 'history' && column ? <Button key={id} size="icon" variant="ghost" data-testid="chat-action-history" aria-label={title} title={column.open ? 'Hide history' : 'Show history'}
+      aria-expanded={column.open} aria-controls={column.id} data-state={column.open ? 'open' : 'closed'} onClick={() => { setPanel(null); column.onToggle(); }} className="size-11 text-muted-foreground"><Icon className="size-4" aria-hidden="true" /></Button> : <Popover key={id} open={panel === id} onOpenChange={open => { if (open) picked.current = false; setPanel(current => open ? id : current === id ? null : current); }}>
       <PopoverTrigger ref={id === 'library' ? libraryTrigger : undefined} render={<Button size="icon" variant="ghost" />} data-testid={`chat-action-${id}`} aria-label={title} title={title} className="size-11 text-muted-foreground"><Icon className="size-4" aria-hidden="true" /></PopoverTrigger>
       <PopoverContent ref={panel === id ? popup : undefined} side="bottom" align="end" sideOffset={8} data-testid={id === 'history' ? 'conversations' : 'library-popover'}
         initialFocus={type => type === 'touch' ? false : popup.current?.querySelector('input[type=search]') ?? true}
