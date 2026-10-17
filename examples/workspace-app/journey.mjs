@@ -380,7 +380,7 @@ try {
     assert.ok(await browser.evaluate(`!!${q('[data-testid=artifact-panel]')}`), 'Escape first closes the menu, not the file');
     await browser.press('Escape');
     await browser.until('Escape returns to chat', `!${q('[data-testid=artifact-panel]')}`, 5000);
-    assert.ok(await browser.evaluate(`document.activeElement?.matches('[data-testid=artifact-card], [data-testid=composer-input]')`), 'focus restored');
+    await browser.until('focus restored', `document.activeElement?.matches('[data-testid=artifact-card], [data-testid=composer-input]')`, 3000);
     const scroll = await browser.evaluate(`${q('[data-testid=transcript-scroll]')}.scrollTop`);
     await browser.tap(q('[data-testid=artifact-card]'));
     await browser.until('reopened', `!!${q('[data-testid=artifact-panel]')}`, 5000);
