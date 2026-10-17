@@ -439,7 +439,7 @@ With a `revisionProvider`, `pi-app` opens Library in the artifact column by defa
 Choosing a file closes Library and opens its viewer. Opening Library asks before discarding an unsaved file.
 The chat stays mounted. `libraryPlacement="side"` retains the separate resizable column to the
 right of the viewer, with its viewer-header toggle. `libraryPlacement="center"` retains the
-center Library view and its Back to chat action.
+center Library view; its close button returns to chat.
 `libraryPlacement="pane"` shows the Library in the left pane instead: a tab beside
 the conversations, or the whole pane on a single-session page without
 `conversations` (a bot with one conversation). `agents={{ items, activeId, onSelect }}`
@@ -450,7 +450,16 @@ the panes, the viewers and the Library to French; English stays the default. The
 words are exported (`frenchChatLabels`, `frenchAppLabels`, `frenchFileTreeLabels`) and typed
 like the English ones, and `labels` / `chat.labels` still override any word.
 `fileTree={{ upload: false, history: false, refreshKey }}` hides the Library's Upload and
-History buttons and reloads it when `refreshKey` changes.
+version-history menu item and reloads it when `refreshKey` changes.
+The shared tree defaults to `variant="list"`: one title/count/upload/close row,
+inset search, 48px rows with kind and size, and Open, Version history and Download
+in a keyboard-accessible ⋯ menu. Picker and drop uploads use the existing provider.
+`variant="plain"` keeps the compact tree. These defaults apply to every Library
+placement, the file-tree recipe, Documents and the demo's popover and phone sheet.
+The count is visible loaded items, not a workspace total. The catalog supplies no
+edit date or author, so rows show neither. Run `node examples/file-tree/journey-library.mjs`
+with `CHROMIUM` set for both consumers' light/dark and 360px browser checks.
+
 `AgentWorkspace` omits the chat header's duplicate History action. An IntersectionObserver sentinel loads
 older native records near the top of the same transcript in standalone, docked, embedded, page and floating
 chats. Older messages use the normal bubbles, Markdown, Trace and file cards, not a separate read-only

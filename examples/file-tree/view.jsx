@@ -5,7 +5,7 @@ import { FileTree } from '../../registry/file-tree/file-tree';
 import { AgentWorkspace } from '../../registry/pi-app/agent-workspace';
 import { MentionMenu } from '../../registry/pi-chat/mention-menu';
 
-window.fileTreeFixture = { ready: false, dropNextPublish: false, holdNextList: false, publishCalls: 0, releaseList: undefined };
+window.fileTreeFixture = { ready: false, dropNextPublish: false, holdNextList: false, holdNextPublish: false, publishCalls: 0, releaseList: undefined, releasePublish: undefined };
 function App() {
   // `?side=1` opens the integrated workspace with the explicit legacy side Library; the main journey page keeps the center Library.
   const side = new URLSearchParams(location.search).has('side');
@@ -25,7 +25,10 @@ function App() {
       headers.set('authorization', 'Bearer fictional-file-tree');
       headers.set('x-fictional-workspace', scope);
       const call = request.method === 'POST' ? await request.clone().json() : undefined;
-      if (call?.kind === 'publish') window.fileTreeFixture.publishCalls++;
+      if (call?.kind === 'publish') {
+        window.fileTreeFixture.publishCalls++;
+        if (window.fileTreeFixture.holdNextPublish) { window.fileTreeFixture.holdNextPublish = false; await new Promise(resolve => { window.fileTreeFixture.releasePublish = resolve; }); }
+      }
       const response = await fetch(new Request(request, { headers }));
       if (call?.kind === 'publish' && window.fileTreeFixture.dropNextPublish) { window.fileTreeFixture.dropNextPublish = false; await response.arrayBuffer(); throw new Error('Fictional lost publication acknowledgement'); }
       if (call?.kind === 'list' && window.fileTreeFixture.holdNextList) { window.fileTreeFixture.holdNextList = false; await new Promise(resolve => { window.fileTreeFixture.releaseList = resolve; }); }

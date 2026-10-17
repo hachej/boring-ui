@@ -23,7 +23,7 @@ function pushFeed() {
 
 async function harness(t) {
   const window = new Window({ url: 'https://fictional.invalid/', settings: { disableIframePageLoading: true } });
-  const names = ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node', 'Text', 'DOMParser', 'MutationObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'IS_REACT_ACT_ENVIRONMENT', 'confirm', 'sessionStorage', 'localStorage', 'ResizeObserver'];
+  const names = ['window', 'document', 'navigator', 'HTMLElement', 'HTMLInputElement', 'Element', 'Node', 'NodeFilter', 'Text', 'CustomEvent', 'DOMParser', 'MutationObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'IS_REACT_ACT_ENVIRONMENT', 'confirm', 'sessionStorage', 'localStorage', 'ResizeObserver'];
   const globals = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
   for (const name of names) {
     const value = name === 'window' ? window : name === 'IS_REACT_ACT_ENVIRONMENT' ? true : window[name];
@@ -66,7 +66,8 @@ test('the agent workspace reloads the tree, the open history panel and the @ sea
   await act(async () => element.querySelector('[data-testid=workspace-library]').click());
   await settle(() => element.querySelector('[role=treeitem][data-path="notes.md"]'), 'the tree lists the file');
   // Open the history panel of the file.
-  await act(async () => element.querySelector('button[aria-label="History of notes.md"]').click());
+  await act(async () => element.querySelector('button[aria-label="Actions for notes.md"]').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
+  await act(async () => element.querySelector('[role=menuitem][data-action=history]').click());
   await settle(() => calls.history === 1, 'the history panel loads once');
 
   // An agent write arrives on the feed: the tree and the open history panel reload, keyed on the new seq.
