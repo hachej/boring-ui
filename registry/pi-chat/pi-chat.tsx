@@ -137,7 +137,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
   const { pinned, retry } = derived;
   const transcript = useTranscript(rows, PAGE, MORE, { state: state.history, connected: !state.disposed && connected, load: controller.loadEarlier });
   const { stick, hidden } = transcript;
-  scrollToBottom.current = () => { void stick.scrollToBottom('instant'); };
+  scrollToBottom.current = () => { transcript.reset(); void stick.scrollToBottom('instant'); };
   const visible = transcript.visible(rows);
   const { barStart, barNote } = session.pickers();
   const connectionKind = state.connection.kind;

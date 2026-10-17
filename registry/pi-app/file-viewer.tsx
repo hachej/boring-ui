@@ -52,8 +52,7 @@ function FileDocument({ path, kind, locator, options, onClose, back, onUnsavedCh
   const saved = useSaved({ client, target: locator, create, beforeDispose: controller => autosave.current?.controller === controller ? autosave.current.flush() : undefined });
   const registerAutosave = useCallback((flush: (() => Promise<boolean>) | null) => {
     autosave.current = flush && saved.controller ? { controller: saved.controller, flush } : null;
-    onBeforeLeaveChange?.(flush);
-  }, [saved.controller, onBeforeLeaveChange]);
+  }, [saved.controller]);
   useLayoutEffect(() => {
     const controller = saved.controller;
     if (!controller) return;
@@ -80,7 +79,7 @@ function FileDocument({ path, kind, locator, options, onClose, back, onUnsavedCh
   // The preview selector the journeys use keeps working: the wrapper holds the document's text.
   return <div data-testid="file-preview" className="h-full min-h-0" data-revision={revision}>
     {kind === 'markdown'
-      ? <MarkdownPane key={revision} controller={saved.controller as MarkdownController} revision={revision} initialMode={mode as 'rich'} onModeChange={setMode} onAutosaveChange={registerAutosave} {...common} />
+      ? <MarkdownPane key={revision} controller={saved.controller as MarkdownController} revision={revision} initialMode={mode as 'rich'} onModeChange={setMode} onAutosaveChange={registerAutosave} onBeforeLeaveChange={onBeforeLeaveChange} {...common} />
       : <HtmlPane key={revision} controller={saved.controller as HtmlController} revision={revision} initialMode={mode as 'preview'} onModeChange={setMode} {...(options.interactive ? { interactive: options.interactive } : {})} {...common} />}
   </div>;
 }

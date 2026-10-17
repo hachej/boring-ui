@@ -103,6 +103,31 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
     assert.equal(f.writes(), 0);
   });
 
+  await t.test('every automatic flush leaves an untouched new buffer absent; explicit Ctrl+S can create it', async t => {
+    for (const trigger of ['blur', 'visibilitychange', 'pagehide', 'navigation', 'unmount']) {
+      let flush;
+      const f = await fixture(t, '', { newDocument: true, props: { initialMode: 'source', autosave: { delayMs: 20 }, onAutosaveChange: next => { flush = next; } } });
+      assert.equal(f.controller.getSnapshot().bufferVersion, 0);
+      await act(async () => {
+        await new Promise(resolve => setTimeout(resolve, 35));
+        if (trigger === 'blur') f.container.querySelector('textarea').dispatchEvent(new window.FocusEvent('focusout', { bubbles: true }));
+        else if (trigger === 'visibilitychange') { Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' }); document.dispatchEvent(new window.Event('visibilitychange')); }
+        else if (trigger === 'pagehide') window.dispatchEvent(new window.Event('pagehide'));
+        else if (trigger === 'navigation') await flush();
+        else f.root.render(null);
+        await new Promise(resolve => setTimeout(resolve, 20));
+      });
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+      assert.equal(f.writes(), 0, `${trigger}: an automatic flush does not publish version zero`);
+      assert.equal((await f.client.read({ target: f.target, revision: { kind: 'latest' } })).kind, 'missing');
+      if (trigger === 'unmount') await f.render();
+      await act(async () => f.container.querySelector('textarea').dispatchEvent(new window.KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true, cancelable: true })));
+      await f.settled();
+      assert.equal(f.writes(), 1, 'an explicit save still creates an empty document');
+      assert.equal(await f.saved(), '');
+    }
+  });
+
   await t.test('autosave debounces edits once, hides Save, and keeps the exact persisted text', async t => {
     const f = await fixture(t, 'original', { props: { initialMode: 'source', autosave: { delayMs: 250 } } });
     assert.equal([...f.container.querySelectorAll('button')].find(button => button.textContent === 'Save'), undefined);

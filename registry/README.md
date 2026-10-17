@@ -487,6 +487,7 @@ There is no Save button while autosave is on; Cmd/Ctrl+S still saves immediately
 `autosave={false}` on `MarkdownEditor` or `MarkdownPane` restores explicit saving.
 `autosave={{ delayMs: 2000 }}` changes the idle delay. `ViewerWindowProvider value={{ autosave: false }}`
 sets the policy for its Markdown panes; a pane's own prop wins. Read-only panes never autosave.
+An untouched new buffer is not automatically published by idle, blur, page hide or teardown; explicit Cmd/Ctrl+S can create it.
 
 Autosave uses the same [conditional write, operation lookup and receipts](../docs/architecture/FILES-GIT-EXEC.md#one-place-for-files).
 Stale revisions still refuse. Conflicts, refused or unavailable writes, and unconfirmed acknowledgements
@@ -494,8 +495,11 @@ pause that file's autosave and retain its buffer. Typing does not retry a refusa
 resolution controls resume saving once the base or outcome is resolved. Agent writes retain their current
 change-event and stale-revision semantics. Workspace navigation flushes first and asks about discarding
 only when the flush failed or remains unconfirmed. A host with its own navigation can register the
-`onAutosaveChange` flush callback on the editor or pane, or `onBeforeLeaveChange` on `FileViewer`, and
-await it before unmounting. Hidden-page and unmount flushes are best effort, not a persistence guarantee
+`onAutosaveChange` flush callback on the editor or pane and await it before unmounting.
+To delegate refused-close/discard decisions to a real host guard, pass `onBeforeLeaveChange` to
+`MarkdownPane` or `FileViewer` (or the artifact's `ViewerOptions`) and route `onClose` through that guard.
+Internal teardown registration alone never permits closing over a failed flush.
+Hidden-page and unmount flushes are best effort, not a persistence guarantee
 when the browser terminates. `MarkdownEditor showOutline` controls heading navigation; by default it follows `header`.
 `onUnsavedChange` reports an open file's unsaved changes, so a host can ask before
 it switches workspace or identity. Chat attachments are saved as

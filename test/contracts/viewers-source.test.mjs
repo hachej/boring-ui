@@ -1,7 +1,20 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+
+test('the public Markdown guide documents current defaults and the owner teardown barrier', () => {
+  const readme = readFileSync(new URL('../../packages/ui/README.md', import.meta.url), 'utf8');
+  const editor = readme.split('## Optional Markdown editor')[1].split('### Mounted Markdown commands')[0];
+  assert.match(editor, /Formatting defaults to the pinned desktop toolbar\./);
+  assert.match(editor, /autosave.*default.*1200|default.*autosave.*1200/i);
+  assert.match(editor, /autosave=\{false\}/);
+  assert.match(editor, /onAutosaveChange/);
+  assert.match(editor, /await.*flush/i);
+  assert.match(editor, /before.*clos.*unmount.*dispos/i);
+  assert.match(editor, /\(\.\.\/\.\.\/registry\/README\.md\)/);
+});
 
 // Base UI binds document-scoped event state. Keep this DOM realm out of the shared test runner.
 test('viewer controls, menus, publication and legacy header behavior in an isolated DOM realm', () => {

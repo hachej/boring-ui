@@ -309,7 +309,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
   const known = opened ? versions.filter(version => artifactKey(version) === artifactKey(opened.descriptor)) : [];
   const shownArtifact = opened ? (opened.follow ? known[0] ?? opened.descriptor : opened.descriptor) : undefined;
   const { stick, hidden } = transcript;
-  scrollToBottom.current = () => { void stick.scrollToBottom('instant'); };
+  scrollToBottom.current = () => { transcript.reset(); void stick.scrollToBottom('instant'); };
   const { barStart, barNote } = session.pickers();
 
   const conversationId = String(conversations?.activeId ?? state.conversationId);

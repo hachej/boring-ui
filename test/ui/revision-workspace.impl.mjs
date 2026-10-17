@@ -20,7 +20,7 @@ test('revision workspace preserves file drafts, docked and floating chat mounts,
   const out = new URL('../../.cache/file-tree-test/', import.meta.url); mkdirSync(out, { recursive: true });
   const output = new URL('workspace.mjs', out);
   await build({ entryPoints: [new URL('../../registry/pi-app/agent-workspace.tsx', import.meta.url).pathname], outfile: output.pathname, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', plugins: [{ name: 'bundle-file-tree-css', setup(builder) { builder.onResolve({ filter: /^@hachej\/boring-ui-kit\/file-tree\.css$/ }, () => ({ path: new URL(import.meta.resolve('@hachej/boring-ui-kit/file-tree.css')).pathname, external: false })); } }] });
-  const { AgentWorkspace, FileViewer } = await import(output.href);
+  const { AgentWorkspace, FileViewer, ArtifactPanel } = await import(output.href);
   const element = window.document.createElement('div'); window.document.body.append(element); const root = createRoot(element);
   t.after(async () => {
     await act(async () => root.unmount()); await window.happyDOM.close();
@@ -63,6 +63,44 @@ test('revision workspace preserves file drafts, docked and floating chat mounts,
       await act(async () => { back.click(); bar.querySelector('[data-testid=viewer-close]').click(); });
     }
     assert.deepEqual([backed, closed], [4, 4]);
+  });
+  await t.test('standalone file and artifact owners keep a refused Markdown draft mounted without a host guard', async () => {
+    for (const artifact of [false, true]) {
+      const path = artifact ? 'refused-artifact.md' : 'refused-file.md';
+      await binding.publish({ operationId: path, atomicity: 'all-or-nothing', changes: [{ kind: 'create', target: locate(path), expected: { kind: 'absent' }, bytes: new TextEncoder().encode('Original fictional notes'), mediaType: 'text/markdown' }] });
+      let offline = true, closed = 0;
+      const client = { ...binding, publish: request => offline ? Promise.resolve({ kind: 'unavailable', reason: 'Fictional offline provider' }) : binding.publish(request) };
+      const snapshot = (await binding.read({ target: locate(path), revision: { kind: 'latest' } })).snapshot;
+      const descriptor = { schema: 'boring.artifact', version: 1, title: path, type: 'markdown', mediaType: 'text/markdown', target: locate(path), revision: snapshot.ref.revision };
+      function Standalone() {
+        const [open, setOpen] = useState(true);
+        const common = { options: { client, identity }, onClose: () => { closed++; setOpen(false); } };
+        return !open ? null : artifact
+          ? createElement(ArtifactPanel, { active: { descriptor, follow: true }, versions: [descriptor], onSelect() {}, ...common })
+          : createElement(FileViewer, { path, locator: locate(path), ...common });
+      }
+      await act(async () => root.render(createElement(Standalone, { key: path })));
+      const prefix = artifact ? 'artifact' : 'viewer';
+      for (let n = 0; n < 100 && !element.querySelector(`[data-testid=${prefix}-mode-source]`); n++) await act(async () => new Promise(resolve => setTimeout(resolve, 10)));
+      await act(async () => element.querySelector(`[data-testid=${prefix}-mode-source]`).click());
+      await act(async () => {
+        const textarea = element.querySelector('textarea');
+        Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(textarea, 'Retain this fictional refused draft');
+        textarea.dispatchEvent(new window.Event('input', { bubbles: true }));
+        element.querySelector(`[data-testid=${prefix}-close]`).click();
+      });
+      for (let n = 0; n < 100 && closed === 0 && !element.querySelector(`[data-testid=${prefix}-status]`)?.textContent.includes('Not saved'); n++) await act(async () => new Promise(resolve => setTimeout(resolve, 10)));
+      assert.equal(closed, 0, `${path}: internal teardown registration is not a host discard guard`);
+      assert.equal(element.querySelector('textarea').value, 'Retain this fictional refused draft');
+      assert.match(element.querySelector(`[data-testid=${prefix}-status]`).textContent, /Not saved/);
+      assert.equal(new TextDecoder().decode((await binding.read({ target: locate(path), revision: { kind: 'latest' } })).snapshot.bytes), 'Original fictional notes');
+      offline = false;
+      await act(async () => element.querySelector('textarea').dispatchEvent(new window.KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true, cancelable: true })));
+      for (let n = 0; n < 100 && element.querySelector(`[data-testid=${prefix}-status]`)?.textContent !== 'Saved'; n++) await act(async () => new Promise(resolve => setTimeout(resolve, 10)));
+      assert.equal(new TextDecoder().decode((await binding.read({ target: locate(path), revision: { kind: 'latest' } })).snapshot.bytes), 'Retain this fictional refused draft', 'the live controller can still save the retained draft');
+      await act(async () => element.querySelector(`[data-testid=${prefix}-close]`).click());
+      assert.equal(closed, 1, 'a successful flush allows the actual owner to close');
+    }
   });
   await act(async () => root.render(createElement(AgentWorkspace, { controller: undefined, conversationId: undefined, revisionProvider: binding, libraryPlacement: 'center' })));
   const library = () => window.document.querySelector('[data-testid=workspace-library]');
