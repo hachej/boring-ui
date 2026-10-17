@@ -608,16 +608,17 @@ function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSi
     setPos({ left: Math.min(Math.max(event.clientX - grab.dx, 0), Math.max(0, innerWidth - rect.width)), top: Math.min(Math.max(event.clientY - grab.dy, 0), Math.max(0, innerHeight - rect.height)) });
   };
   const end = () => { drag.current = null; };
-  const Panel = floating ? Card : 'div';
-  return <Panel ref={box} data-testid="agent-layer" data-state={open ? 'open' : 'closed'} data-placement={api.placement} data-side={side} role={floating ? 'dialog' : 'complementary'} aria-label={title}
+  // Floating, the host's Card is drawn behind the layer (a sibling layer, so docking or floating never remounts the chat).
+  return <div ref={box} data-testid="agent-layer" data-state={open ? 'open' : 'closed'} data-placement={api.placement} data-side={side} role={floating ? 'dialog' : 'complementary'} aria-label={title}
     style={floating ? pos ?? { right: 16, bottom: 16 } : undefined}
     className={cn('app-shell relative flex min-h-0 flex-col',
-      floating ? 'fixed z-(--app-shell-z-layer) h-[min(36rem,calc(100dvh-2rem))] w-[min(24rem,calc(100vw-2rem))] gap-0'
+      floating ? 'fixed isolate z-(--app-shell-z-layer) h-[min(36rem,calc(100dvh-2rem))] w-[min(24rem,calc(100vw-2rem))]'
         : 'h-full min-w-0 flex-1 bg-background text-foreground')}>
+    {floating && <Card aria-hidden="true" data-boring="chrome" className="pointer-events-none absolute inset-0 -z-10" />}
     {!floating && <Separator orientation="vertical" className={cn('absolute inset-y-0', side === 'right' ? 'left-0' : 'right-0')} />}
     <Header text={text} title={title} controls={controls} className={cn('pt-2', floating && 'cursor-move touch-none select-none')} onPointerDown={down} onPointerMove={move} onPointerUp={end} onPointerCancel={end} />
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden"><VoiceProblem /><ChatSlot /></div>
-  </Panel>;
+  </div>;
 }
 
 function AgentDock({ side }: { readonly side: DockSide }) {

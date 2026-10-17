@@ -40,7 +40,7 @@ export function HeaderActions({ actions, compact, text, prefix, run }: { readonl
   const [sheetOpen, setSheetOpen] = useState(false);
   // A link in the phone sheet: the sheet closes first and a same-tab navigation waits for its history entry (afterBack), so the Back
   // manager never undoes it. A new tab, or a modified click, keeps the browser's own default.
-  const sheetLink = (event: MouseEvent<HTMLAnchorElement>, action: ScreenHeaderAction) => {
+  const sheetLink = (event: MouseEvent<HTMLElement>, action: ScreenHeaderAction) => {
     setSheetOpen(false);
     if ((action.target !== undefined && action.target !== '_self') || event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) { afterBack(() => run(action.id)); return; }
     event.preventDefault();

@@ -411,11 +411,11 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
   const status = waitingForAnswer ? 'input' : working ? 'working' : outcome;
   const label = waitingForAnswer ? labels.waitingForAnswer : labels.working(seconds);
   const panelOpen = expanded && shownArtifact !== undefined && artifactPanel !== undefined;
-  // The floating window is the host's Card; embedded and full-screen phone windows are plain page regions.
+  // The floating window is drawn by the host's Card behind it (a sibling layer, so switching placement never remounts the chat);
+  // embedded and full-screen phone windows are plain page regions.
   const card = !embedded && !(phone && expanded);
-  const surface = embedded ? 'relative flex min-h-0 flex-1 flex-col overflow-clip bg-transparent text-foreground' : cn('relative flex flex-col', card ? 'gap-0' : 'min-h-dvh max-h-dvh bg-background pt-[env(safe-area-inset-top)] text-foreground',
-    !phone && expanded && (panelOpen ? 'max-h-full min-h-full overflow-hidden' : 'max-h-[70dvh]'));
-  const Surface = card ? Card : 'div';
+  const surface = embedded ? 'relative flex min-h-0 flex-1 flex-col overflow-clip bg-transparent text-foreground' : cn('relative flex flex-col', card ? 'isolate' : 'h-dvh bg-background pt-[env(safe-area-inset-top)] text-foreground',
+    !phone && expanded && (panelOpen ? 'h-full overflow-hidden' : 'max-h-[70dvh]'));
   // With an artifact open the window widens (most of the viewport, at most 72rem) and takes a fixed height so the panel fills it.
   const rootClass = embedded ? cn('pi-chat relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden', className) : cn('pi-chat pi-ambient fixed z-50', variant === 'contrast' && 'dark scheme-dark', phone ? (expanded ? 'inset-0' : 'inset-x-2 bottom-[max(0.5rem,env(safe-area-inset-bottom))]')
     : cn('transition-[width] motion-reduce:transition-none', minimized ? 'w-auto' : panelOpen ? 'h-[min(46rem,calc(100dvh-1rem))] w-[min(72rem,calc(100vw-1rem))]' : expanded ? 'w-[min(35rem,calc(100vw-1rem))]' : 'w-[min(26rem,calc(100vw-1rem))]'), className);
@@ -502,12 +502,13 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
     {!embedded && notifications !== false && !(phone && expanded) && <AgentNotifications store={store} variant={variant} placement="inline" systemNotifications={systemNotifications} onActivate={onActivate} labels={labels}
       {...(autoDismissMs !== undefined ? { autoDismissMs } : {})} {...(maxToasts !== undefined ? { max: maxToasts } : {})} className="absolute right-0 bottom-full mb-3 w-full" />}
     {picking && conversations && <ConversationHistory conversations={conversations} placement={expanded ? 'below' : 'above'} onClose={() => setPicking(false)} />}
-    <Surface data-testid="ambient-surface" className={surface}>
+    <div data-testid="ambient-surface" className={surface}>
+      {card && <Card aria-hidden="true" data-boring="chrome" className="pointer-events-none absolute inset-0 -z-10" />}
       {artifactPanel ? <ArtifactWorkspace open={panelOpen} onClose={() => { setOpened(null); setFullscreen(false); }} fullscreen={fullscreen} onFullscreenChange={setFullscreen} storageKey="boring.ambient.panel-width" panelLabel={labels.artifactPanel}
         defaultWidth={600} minPanel={320} minChat={300} sheetBelow={720}
         panel={api => shownArtifact ? artifactPanel(shownArtifact, { ...api, versions: known, follow: opened?.follow ?? true,
           select: version => setOpened(current => current ? (version === 'latest' ? { descriptor: known[0] ?? current.descriptor, follow: true } : { descriptor: version, follow: false }) : current) }) : null}
         chat={conversation} /> : conversation}
-    </Surface>
+    </div>
   </div>;
 }

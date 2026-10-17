@@ -51,7 +51,7 @@ function useTabbarHeight(bar: { readonly current: HTMLElement | null }, shown: b
 }
 
 /** Layout for a tab on the host's Button: icon over label, filling its share of the bar. */
-const TAB = 'relative min-h-14 min-w-0 flex-1 flex-col gap-0.5';
+const TAB = 'relative h-auto min-w-0 flex-1 flex-col gap-0.5';
 
 /** The tab bar's arrow keys: Left and Right move the focus between the tabs (wrapping). */
 const arrows = (event: KeyboardEvent<HTMLElement>) => {
@@ -78,7 +78,7 @@ export function TabBar({ items, activeId, onChange, text }: { readonly items: re
   </Button>;
   const Plus = overflow.length ? (inOverflow?.icon ?? EllipsisIcon) : undefined;
   return <nav ref={bar} role="tablist" aria-label={text.tabs} data-testid="tabbar" data-feedback-ignore="" onKeyDown={arrows}
-    className="relative z-(--app-shell-z-tabs) box-border flex shrink-0 bg-background pb-[env(safe-area-inset-bottom)]">
+    className="relative z-(--app-shell-z-tabs) box-border flex min-h-[calc(3.5rem+env(safe-area-inset-bottom))] shrink-0 bg-background pb-[env(safe-area-inset-bottom)]">
     <Separator className="absolute inset-x-0 top-0" />
     {tabs.map(tab)}
     {Plus && <>
