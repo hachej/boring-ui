@@ -101,8 +101,7 @@ const needsManualCopy = (error: unknown): error is ManualCopyError => (error as 
 function ManualCopy({ testId, link, text, onClose, labels }: { readonly testId: string; readonly link: boolean; readonly text: string; readonly onClose: () => void; readonly labels: ViewerLabels }) {
   const field = useRef<HTMLTextAreaElement>(null);
   return <Dialog open onOpenChange={open => { if (!open) onClose(); }}>
-    <DialogContent data-testid={`${testId}-manual-copy`} 
-      onOpenAutoFocus={event => { event.preventDefault(); field.current?.focus(); field.current?.select(); }}>
+    <DialogContent showCloseButton={false} className="boring-viewer" data-testid={`${testId}-manual-copy`} initialFocus={field}>
       <DialogHeader><DialogTitle>{labels.manualCopy(link)}</DialogTitle></DialogHeader>
       <Textarea ref={field} readOnly rows={Math.min(6, Math.max(2, Math.ceil(text.length / 48)))} value={text} data-testid={`${testId}-manual-copy-text`} onFocus={event => event.currentTarget.select()} />
       <div className="flex justify-end"><Button variant="ghost" size="sm" data-testid={`${testId}-manual-copy-close`} onClick={onClose}>{labels.done}</Button></div>
@@ -110,9 +109,9 @@ function ManualCopy({ testId, link, text, onClose, labels }: { readonly testId: 
   </Dialog>;
 }
 
-/** The status as a small dot with the words in a tooltip and for screen readers. The frame shows it only when the state is not plain "Saved". */
+/** Status uses the consumer's Badge; the frame decides whether a saved acknowledgement is shown. */
 function StatusMark({ status, testId }: { readonly status: ViewerStatus; readonly testId: string }) {
-  return <Badge role="status" data-testid={`${testId}-status`} data-tone={status.tone ?? 'neutral'} variant={status.tone === 'danger' ? 'destructive' : 'secondary'}>{status.label}</Badge>;
+  return <Badge role="status" title={status.label} data-testid={`${testId}-status`} data-tone={status.tone ?? 'neutral'} variant={status.tone === 'danger' ? 'destructive' : 'secondary'}>{status.label}</Badge>;
 }
 
 /** The one top bar of every viewer, always a single row: title and facts, viewer controls, a status dot when something needs attention, Share, full screen, Close and the "…" menu. */
@@ -196,7 +195,7 @@ export function ViewerFrame({ title, subtitle, status, showSavedStatus = false, 
         <div className="flex shrink-0 items-center gap-0.5">
           {headerActions(hostActions).map(action => <ActionButton key={action.id} action={action} testId={testId} size="icon-sm" />)}
           {!compactHeader && onShare && <Button variant="ghost" size="icon-sm" aria-label={labels.share} title={labels.share} data-testid={`${testId}-share`} disabled={busy === 'share'} onClick={share}><icons.share data-icon="inline-start" aria-hidden="true" /></Button>}
-          {(menuItems.length > 0 || controls) && <ViewerMenu label={labels.moreActions} testId={`${testId}-more`} icon={<icons.more data-icon="inline-start" aria-hidden="true" />} items={menuItems}>{compactHeader && controls && <div className="flex flex-wrap items-center gap-2 p-2 min-[641px]:hidden">{controls}</div>}</ViewerMenu>}
+          {(menuItems.length > 0 || controls) && <ViewerMenu label={labels.moreActions} testId={`${testId}-more`} icon={<icons.more data-icon="inline-start" aria-hidden="true" />} items={menuItems}>{compactHeader && controls && <div className="boring-viewer flex flex-wrap items-center gap-2 p-2 min-[641px]:hidden">{controls}</div>}</ViewerMenu>}
           {!compactHeader && host?.onFullscreenChange && <Toggle size="sm" aria-label={host.fullscreen ? labels.exitFullscreen : labels.enterFullscreen} title={host.fullscreen ? labels.exitFullscreen : labels.enterFullscreen} data-testid={`${testId}-fullscreen`} pressed={host.fullscreen === true}
             onPressedChange={pressed => host.onFullscreenChange!(pressed)}>{host.fullscreen ? <icons.exitFullscreen data-icon="inline-start" aria-hidden="true" /> : <icons.enterFullscreen data-icon="inline-start" aria-hidden="true" />}</Toggle>}
           {(!compactHeader || headerStart) && onClose && <Button variant="ghost" size="icon-sm" className={compactHeader ? 'max-[641px]:hidden' : undefined} aria-label={labels.close} title={labels.close} data-testid={`${testId}-close`} onClick={() => run(onClose)}><icons.close data-icon="inline-start" aria-hidden="true" /></Button>}

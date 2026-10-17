@@ -158,6 +158,8 @@ Mounted `tools.propose` accepts the same complete edits as the headless command 
 
 ## Optional HTML source and preview
 
+Both `MarkdownEditor` and `HtmlViewer` accept optional `components` bindings for host buttons, inputs, textareas and the selection bubble. Installed registry recipes supply the consumer's unchanged shadcn components. Bindings forward refs and native input events. Omitting them retains unstyled native HTML for direct package consumers; it is not installed-block design qualification. See the [registry theming contract](../../registry/README.md#styling).
+
 Import `createHtmlController` and the concrete `HtmlController` from `@hachej/boring-ui-kit/html`. Import `HtmlViewer` from `@hachej/boring-ui-kit/html-viewer` only when selecting the React renderer. These entries need no agent, native environment, Tiptap or canvas runtime. The headless controller accepts the same resource identity/client and new or saved source shape as the Markdown controller. Saved resources must be `text/html` with valid UTF-8.
 
 `actions.edit`, `actions.selection` and `flush(selection)` preserve exact source bytes through the existing conditional publication contract. Refresh preserves dirty text, discard is explicit, and reconciliation handles lost acknowledgements without another write. Late saves retain later edits. The concrete controller has no mounted HTML tools; the native document tools remain Markdown-specific. Unmount borrows the controller and never saves or disposes it.

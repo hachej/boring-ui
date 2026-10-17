@@ -14,7 +14,8 @@
     "button",
     "toggle",
     "input",
-    "textarea"
+    "textarea",
+    "card"
   ],
   "files": [
     {
@@ -25,7 +26,7 @@
     },
     {
       "path": "registry/button/editor-controls.tsx",
-      "content": "'use client';\n\nimport type { ComponentPropsWithRef } from 'react';\nimport { Button } from '@/components/ui/button';\nimport { Toggle } from '@/components/ui/toggle';\nimport { Input } from '@/components/ui/input';\nimport { Textarea } from '@/components/ui/textarea';\n\nfunction EditorAction({ 'aria-pressed': pressed, ...props }: ComponentPropsWithRef<'button'>) {\n  return pressed === undefined\n    ? <Button variant=\"ghost\" size=\"sm\" {...props} />\n    : <Toggle size=\"sm\" pressed={pressed === true || pressed === 'true'} {...props} />;\n}\n\n/** Maps native editor action/input props to the consumer's unchanged shadcn controls. */\nexport const editorControls = { button: EditorAction, input: Input, textarea: Textarea };\n",
+      "content": "'use client';\n\nimport type { ComponentPropsWithRef, PropsWithChildren } from 'react';\nimport { Button } from '@/components/ui/button';\nimport { Toggle } from '@/components/ui/toggle';\nimport { Input } from '@/components/ui/input';\nimport { Textarea } from '@/components/ui/textarea';\nimport { Card, CardContent } from '@/components/ui/card';\n\nfunction EditorAction({ 'aria-pressed': pressed, value, ...props }: ComponentPropsWithRef<'button'>) {\n  return pressed === undefined\n    ? <Button variant=\"ghost\" size=\"sm\" value={value} {...props} />\n    : <Toggle size=\"sm\" pressed={pressed === true || pressed === 'true'} value={value === undefined ? undefined : String(value)} {...props} />;\n}\n\nfunction EditorBubble({ children }: PropsWithChildren) {\n  return <Card size=\"sm\"><CardContent className=\"flex items-center gap-1\">{children}</CardContent></Card>;\n}\n\n/** Maps native editor action/input props to the consumer's unchanged shadcn controls. */\nexport const editorControls = { button: EditorAction, input: Input, textarea: Textarea, bubble: EditorBubble };\n",
       "type": "registry:component",
       "target": "components/button/editor-controls.tsx"
     }

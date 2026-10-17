@@ -130,7 +130,7 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     assert.equal(view.q('[data-testid="viewer-notice"]').textContent, 'Refresh failed');
   });
 
-  await t.test('the status is a dot only when something needs attention; read-only is a word in the subtitle', async t => {
+  await t.test('the status appears only when something needs attention; read-only is a word in the subtitle', async t => {
     const saved = await mount(t, h(frame.ViewerFrame, { title: 'a', status: { label: 'Saved', tone: 'success' } }));
     assert.equal(saved.q('[data-testid="viewer-status"]') === null, true);
     const unsaved = await mount(t, h(frame.ViewerFrame, { title: 'a', status: { label: 'Unsaved', tone: 'warning' } }));

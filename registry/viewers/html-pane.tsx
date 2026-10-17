@@ -80,8 +80,8 @@ export function HtmlPane({ controller, labels: ownLabels, title = 'HTML document
     onDownload={() => downloadFile(filename, controller.getSnapshot().text, 'text/html;charset=utf-8')} onOpenInNewTab={onOpenInNewTab} onClose={onClose}
     controls={<>
       <ViewerToggle label={labels.view} value={mode} onChange={setMode} options={[
-        { id: 'preview', label: labels.htmlPreview, text: labels.preview, icon: <EyeIcon className="size-4" aria-hidden="true" />, testId: `${testId}-mode-preview` },
-        { id: 'source', label: labels.htmlSource, text: labels.source, icon: <CodeXmlIcon className="size-4" aria-hidden="true" />, testId: `${testId}-mode-source` }]} />
+        { id: 'preview', label: labels.htmlPreview, text: labels.preview, icon: <EyeIcon data-icon="inline-start" aria-hidden="true" />, testId: `${testId}-mode-preview` },
+        { id: 'source', label: labels.htmlSource, text: labels.source, icon: <CodeXmlIcon data-icon="inline-start" aria-hidden="true" />, testId: `${testId}-mode-source` }]} />
       {!state.readOnly && state.dirty && <Button variant="default" size="icon-sm" aria-label={labels.save} title={labels.save} data-testid={`${testId}-save`} disabled={disposed || pending || unconfirmed} onClick={() => perform(() => controller.flush(controller.actions.selection()))}><SaveIcon data-icon="inline-start" aria-hidden="true" /></Button>}
       {unconfirmed && <Button variant="ghost" size="icon-sm" aria-label={labels.checkSave} title={labels.checkSave} onClick={() => perform(controller.actions.reconcile)}><SearchCheckIcon data-icon="inline-start" aria-hidden="true" /></Button>}
       {unconfirmed && <Button variant="ghost" size="icon-sm" aria-label={labels.abandon} title={labels.abandon} onClick={() => perform(controller.actions.abandon)}><RotateCcwIcon data-icon="inline-start" aria-hidden="true" /></Button>}

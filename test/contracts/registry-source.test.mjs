@@ -202,6 +202,12 @@ test('registry dependency pins and scoped styles preserve the declared source di
       for (const imported of imports) {
         const hostUi = /^@\/components\/ui\/([\w-]+)$/.exec(imported);
         if (hostUi) { assert.ok(SHADCN_BUILTINS.includes(hostUi[1]) && item.registryDependencies?.includes(hostUi[1]), `${file.path} imports undeclared host ${imported}`); continue; }
+        const sibling = /^\.\.\/([\w-]+)\/([\w-]+)$/.exec(imported);
+        if (sibling) {
+          const dependency = manifest.items.find(entry => entry.name === sibling[1]);
+          assert.ok(dependency && item.registryDependencies?.includes('@boring-ui/' + dependency.name) && dependency.files.some(entry => entry.path.replace(/\.tsx?$/, '') === `registry/${dependency.name}/${sibling[2]}`), `${file.path} imports unshipped or undeclared ${imported}`);
+          continue;
+        }
         if (item.name !== 'task-list-viewer') { assert.ok(architecture.sourceDistribution.runtimeImports.includes(imported), imported); continue; }
         if (imported.startsWith('./')) {
           assert.ok(item.files.some(entry => entry.path.replace(/\.tsx?$/, '').endsWith('/' + imported.slice(2))), `${file.path} imports unshipped ${imported}`);

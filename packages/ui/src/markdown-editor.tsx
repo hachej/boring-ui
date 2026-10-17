@@ -8,7 +8,7 @@ import type { MarkdownAutosave, MarkdownFlush } from './markdown-autosave.js';
 import type { SaveResult } from './resources.js';
 export type { MarkdownAutosave, MarkdownFlush } from './markdown-autosave.js';
 
-import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Fragment, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react/menus';
 import type { SelectionBookmark } from '@tiptap/pm/state';
@@ -74,6 +74,7 @@ const bubbleContainer = () => document.body;
 
 function MarkdownEditorSession({ components, controller, title = 'Document', initialMode = 'rich', placeholder = 'Start writing', className, onMountedTools, header = true, showOutline = header, mode: controlledMode, onModeChange, onRichSafety, resolveImage, formattingToolbar = 'pinned', autosave = true, onAutosaveChange, onSaveResult, activeController: active }: MarkdownEditorProps & { readonly activeController: { readonly current: MarkdownController } }) {
   const Control = components?.button ?? 'button';
+  const Bubble = components?.bubble ?? Fragment;
   const Source = components?.textarea ?? 'textarea';
   const LinkInput = components?.input ?? 'input';
   const phone = useSyncExternalStore(subscribePhone, phoneSnapshot, desktopSnapshot);
@@ -282,11 +283,13 @@ function MarkdownEditorSession({ components, controller, title = 'Document', ini
     </div>}
     {mode === 'rich' && editor && !showPinned && !unavailable && <BubbleMenu editor={editor} updateDelay={0} options={BUBBLE_OPTIONS} appendTo={bubbleContainer}
       role="toolbar" aria-label="Text formatting" className="boring-viewer boring-markdown-bubble">
+      <Bubble>
       {tool('Bold', 'Bold', marks?.bold, () => chain().toggleBold().run())}
       {tool('Italic', 'Italic', marks?.italic, () => chain().toggleItalic().run())}
       {tool('Highlight', 'Highlight', marks?.highlight, () => chain().toggleHighlight().run())}
       {tool('Code', 'Code', marks?.code, () => chain().toggleCode().run())}
       {tool('Link', 'Link', marks?.link || linkDraft !== null, openLink)}
+      </Bubble>
     </BubbleMenu>}
     {mode === 'rich' && linkDraft !== null && <form className="boring-markdown-link" aria-label="Link address" onSubmit={event => { event.preventDefault(); applyLink(); }}>
       <LinkInput type="text" inputMode="url" autoFocus aria-label="Link address" placeholder="https://" value={linkDraft} onChange={event => setLinkDraft(event.currentTarget.value)}

@@ -1,7 +1,7 @@
 // Tailwind v4 for the studio and every example, compiled once at startup with the library API (no CLI, no PostCSS, no config file).
 // Utilities are generated for every class-like token found in the Tailwind registry items' source and the studio itself.
 // Global preflight would restyle viewer panels, so chat brings scoped base rules (see registry.json).
-// Library's real shadcn controls use upstream preflight scoped to their roots, as a normal consumer's Tailwind setup does.
+// Library and viewer shadcn controls use upstream preflight scoped to their roots, as a normal consumer's Tailwind setup does.
 // The tokens are the `theme` item of registry.json (the one source: the CLI installs the same values into a consumer's CSS).
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -27,7 +27,7 @@ export function registryCss(item) {
 }
 
 /** Every item written in Tailwind: their source is scanned for classes and their `css` is compiled in. */
-const TAILWIND_ITEMS = ['button', 'utils', 'dropdown-menu', 'file-tree', 'version-history', 'pi-chat', 'pi-ambient', 'pi-workspace', 'pi-app', 'viewers', 'app-shell'];
+const TAILWIND_ITEMS = ['button', 'utils', 'dropdown-menu', 'file-tree', 'version-history', 'pi-chat', 'pi-ambient', 'pi-workspace', 'pi-app', 'viewers', 'markdown-editor', 'html-viewer', 'app-shell'];
 
 /**
  * The registry `theme` item as CSS: light tokens on `:root`, dark tokens on `.dark` (as the CLI writes them in a consumer app; the
@@ -59,7 +59,7 @@ export async function buildTailwind({ extraDirectories = [], extraCss = '' } = {
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities);
 @layer base {
-  [data-boring="file-tree"], [data-boring="file-actions"] {
+  [data-boring="file-tree"], [data-boring="file-actions"], .boring-viewer {
     @import "tailwindcss/preflight.css";
   }
 }
