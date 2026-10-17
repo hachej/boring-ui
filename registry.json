@@ -490,7 +490,10 @@
         "popover",
         "scroll-area",
         "separator",
-        "sidebar"
+        "sidebar",
+        "badge",
+        "item",
+        "drawer"
       ],
       "files": [
         {
@@ -2499,7 +2502,9 @@
         "@boring-ui/pi-chat",
         "@boring-ui/utils",
         "button",
-        "toggle"
+        "toggle",
+        "badge",
+        "item"
       ]
     },
     {

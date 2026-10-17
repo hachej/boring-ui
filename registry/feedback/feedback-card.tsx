@@ -7,6 +7,9 @@ import type { ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
 import { FEEDBACK_ID, readableElement } from '@hachej/boring-feedback/format';
 import { CheckIcon, LocateFixedIcon, MessageSquareTextIcon, ShieldAlertIcon } from 'lucide-react';
 import type { ChatCard } from '../pi-chat/rows';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Item, ItemContent, ItemDescription, ItemHeader, ItemMedia, ItemTitle } from '@/components/ui/item';
 import { cn } from '../utils/utils';
 
 /*
@@ -169,9 +172,8 @@ function ElementLine({ request, label, source, onShowFeedback, onHideFeedback, i
   const outcome = typeof state === 'object' ? state : undefined;
   const readable = readableElement(label, source);
   const badge = state === 'showing' ? <span data-testid="feedback-outcome" role="status" className="shrink-0 text-xs text-muted-foreground">looking…</span>
-    : outcome ? <span data-testid="feedback-outcome" role="status" title={outcome.reason ?? 'Shown in the page.'} data-outcome={outcome.kind}
-      className={cn('inline-flex shrink-0 items-center gap-0.5 rounded-full px-1.5 text-xs leading-normal font-normal', outcome.kind === 'applied' ? 'text-(--chat-success)' : 'bg-muted text-muted-foreground')}>
-      {outcome.kind === 'applied' ? <><CheckIcon className="size-3" aria-hidden="true" />{outcomeBadge(outcome).slice(1).trim() || <span className="sr-only">shown in the page</span>}</> : outcomeBadge(outcome)}</span>
+    : outcome ? <Badge data-testid="feedback-outcome" role="status" title={outcome.reason ?? 'Shown in the page.'} data-outcome={outcome.kind} variant={outcome.kind === 'applied' ? 'secondary' : 'outline'}>
+      {outcome.kind === 'applied' ? <><CheckIcon aria-hidden="true" />{outcomeBadge(outcome).slice(1).trim() || <span className="sr-only">shown in the page</span>}</> : outcomeBadge(outcome)}</Badge>
       : children;
   const text = <span className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
     <span data-testid="feedback-fallback" className="font-semibold [overflow-wrap:anywhere]">{readable.name}</span>
@@ -179,10 +181,10 @@ function ElementLine({ request, label, source, onShowFeedback, onHideFeedback, i
     {badge}</span>;
   return <span className="block" data-outcome={outcome?.kind}>
     {onShowFeedback
-      ? <button type="button" data-testid="feedback-element" data-feedback-id={request.id} data-anchor={request.anchor} title={`${label}${readable.path ? ` · ${readable.path}` : ''}\nHover to see it on the page; click to choose if it matches several places`}
+      ? <Button variant="ghost" data-testid="feedback-element" data-feedback-id={request.id} data-anchor={request.anchor} title={`${label}${readable.path ? ` · ${readable.path}` : ''}\nHover to see it on the page; click to choose if it matches several places`}
         onMouseEnter={() => { void show('hover'); }} onFocus={() => { void show('hover'); }} onMouseLeave={hide} onBlur={hide} onClick={() => { void show('click'); }}
-        className="-mx-1 block w-[calc(100%+0.5rem)] cursor-pointer rounded-md px-1 py-0.5 text-left text-sm leading-5 outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/60">{text}</button>
-      : <span data-testid="feedback-element" data-feedback-id={request.id} data-anchor={request.anchor} title={label} className="block py-0.5 text-sm leading-5">{text}</span>}
+        className="h-auto w-full justify-start whitespace-normal text-left">{text}</Button>
+      : <span data-testid="feedback-element" data-feedback-id={request.id} data-anchor={request.anchor} title={label} className="block">{text}</span>}
   </span>;
 }
 
@@ -191,67 +193,63 @@ function ClampedTitle({ text: title }: { readonly text: string }) {
   const [open, setOpen] = useState(false);
   const long = title.length > 110 || title.includes('\n');
   return <span className="block">
-    <span data-testid="feedback-title" className={cn('block text-sm leading-5 font-medium whitespace-pre-line [overflow-wrap:anywhere]', !open && 'line-clamp-2')}>{title}</span>
-    {long && <button type="button" data-testid="feedback-title-more" aria-expanded={open} onClick={() => setOpen(value => !value)}
-      className="cursor-pointer text-xs text-muted-foreground underline-offset-2 hover:underline">{open ? 'less' : 'more'}</button>}
+    <span data-testid="feedback-title" className={cn('block whitespace-pre-line [overflow-wrap:anywhere]', !open && 'line-clamp-2')}>{title}</span>
+    {long && <Button variant="link" size="xs" data-testid="feedback-title-more" aria-expanded={open} onClick={() => setOpen(value => !value)}>{open ? 'less' : 'more'}</Button>}
   </span>;
 }
 
 function Offer({ view, onShowFeedback, onHideFeedback }: { readonly view: Extract<FeedbackResultView, { kind: 'offer' }>; readonly onShowFeedback: FeedbackCardConfig['onShowFeedback']; readonly onHideFeedback: FeedbackCardConfig['onHideFeedback'] }) {
   const [outcome, setOutcome] = useState<FeedbackShowOutcome | undefined>(onShowFeedback ? undefined : NO_PAGE);
-  return <section data-testid="feedback-card" data-kind="offer" data-feedback-id={view.id} data-outcome={outcome?.kind} aria-label="Feedback offer"
-    className="my-2 flex max-w-md flex-col gap-2 rounded-xl border border-border bg-card px-3 py-2.5 text-card-foreground shadow-xs">
-    <div className="flex items-start gap-3">
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"><LocateFixedIcon className="size-4" aria-hidden="true" /></span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-xs text-muted-foreground">Feedback {view.id}</span>
-        <ElementLine request={{ id: view.id, anchor: view.anchor, ...(view.note === undefined ? {} : { note: view.note }) }} label={view.fallback}
-          onShowFeedback={onShowFeedback} onHideFeedback={onHideFeedback} initial={onShowFeedback ? undefined : NO_PAGE} onOutcome={next => setOutcome(next)} />
-        {view.note && <span data-testid="feedback-note" className="mt-1 block text-sm leading-5 text-muted-foreground [overflow-wrap:anywhere]">{view.note}</span>}
-      </span>
-    </div>
-  </section>;
+  return <Item variant="outline" size="sm" render={<section />} data-testid="feedback-card" data-kind="offer" data-feedback-id={view.id} data-outcome={outcome?.kind} aria-label="Feedback offer" className="my-2 max-w-md">
+    <ItemMedia variant="icon"><LocateFixedIcon aria-hidden="true" /></ItemMedia>
+    <ItemContent className="min-w-0 basis-0">
+      <ItemDescription>Feedback {view.id}</ItemDescription>
+      <ElementLine request={{ id: view.id, anchor: view.anchor, ...(view.note === undefined ? {} : { note: view.note }) }} label={view.fallback}
+        onShowFeedback={onShowFeedback} onHideFeedback={onHideFeedback} initial={onShowFeedback ? undefined : NO_PAGE} onOutcome={next => setOutcome(next)} />
+      {view.note && <ItemDescription data-testid="feedback-note" className="line-clamp-none [overflow-wrap:anywhere]">{view.note}</ItemDescription>}
+    </ItemContent>
+  </Item>;
 }
 
 function List({ view, onShowFeedback, onHideFeedback }: { readonly view: Extract<FeedbackResultView, { kind: 'list' }>; readonly onShowFeedback: FeedbackCardConfig['onShowFeedback']; readonly onHideFeedback: FeedbackCardConfig['onHideFeedback'] }) {
-  return <section data-testid="feedback-card" data-kind="list" aria-label="Feedback" className="my-2 max-w-xl rounded-xl border border-border bg-card px-3 py-2.5 text-card-foreground shadow-xs">
-    <header className="flex items-center gap-2 text-sm font-medium">
-      <MessageSquareTextIcon className="size-4 text-muted-foreground" aria-hidden="true" />
-      <span>Feedback · {view.items.length}{view.more ? '+' : ''}</span>
-      {view.unprotected && <span data-testid="feedback-unprotected" className="ml-auto inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"><ShieldAlertIcon className="size-3" aria-hidden="true" />Unprotected store</span>}
-    </header>
-    {view.items.length === 0 && <p className="m-0 mt-1 text-xs text-muted-foreground">No feedback.</p>}
-    <ul className="m-0 mt-2 list-none space-y-1.5 p-0">
-      {view.items.map(item => <li key={item.id} data-testid="feedback-item" data-feedback-id={item.id} data-status={item.status} className="rounded-lg bg-muted/40 px-2.5 py-1.5">
-        <ClampedTitle text={item.title} />
-        <span data-testid="feedback-meta" className="block text-xs leading-4 text-muted-foreground/80">{[item.status, item.author, item.age, item.unavailable ? 'unavailable' : ''].filter(Boolean).join(' · ')}</span>
-        {item.anchors.length > 0 && <ul className="m-0 mt-1 list-none p-0">
-          {item.anchors.map(anchor => <li key={anchor.index} data-testid="feedback-anchor" className="[overflow-wrap:anywhere]">
-            <ElementLine request={{ id: item.id, anchor: anchor.index }} label={anchor.fallback} source={anchor.source}
-              onShowFeedback={anchor.kind === 'app.element@1' ? onShowFeedback : undefined} onHideFeedback={onHideFeedback}>
-              {anchor.placement && <span data-testid="feedback-placement" title={anchor.placementDetail} className="shrink-0 rounded-full bg-muted px-1.5 text-xs leading-normal font-normal text-muted-foreground">{anchor.placement}</span>}
-            </ElementLine></li>)}
-        </ul>}
-      </li>)}
+  return <Item variant="outline" size="sm" render={<section />} data-testid="feedback-card" data-kind="list" aria-label="Feedback" className="my-2 max-w-xl flex-col items-stretch">
+    <ItemHeader>
+      <ItemTitle><MessageSquareTextIcon className="size-4" aria-hidden="true" />Feedback · {view.items.length}{view.more ? '+' : ''}</ItemTitle>
+      {view.unprotected && <Badge variant="secondary" data-testid="feedback-unprotected"><ShieldAlertIcon aria-hidden="true" />Unprotected store</Badge>}
+    </ItemHeader>
+    {view.items.length === 0 && <ItemDescription>No feedback.</ItemDescription>}
+    <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
+      {view.items.map(item => <Item key={item.id} variant="muted" size="xs" render={<li />} data-testid="feedback-item" data-feedback-id={item.id} data-status={item.status}>
+        <ItemContent className="min-w-0 basis-0">
+          <ClampedTitle text={item.title} />
+          <ItemDescription data-testid="feedback-meta" className="line-clamp-none">{[item.status, item.author, item.age, item.unavailable ? 'unavailable' : ''].filter(Boolean).join(' · ')}</ItemDescription>
+          {item.anchors.length > 0 && <ul className="m-0 list-none p-0">
+            {item.anchors.map(anchor => <li key={anchor.index} data-testid="feedback-anchor" className="[overflow-wrap:anywhere]">
+              <ElementLine request={{ id: item.id, anchor: anchor.index }} label={anchor.fallback} source={anchor.source}
+                onShowFeedback={anchor.kind === 'app.element@1' ? onShowFeedback : undefined} onHideFeedback={onHideFeedback}>
+                {anchor.placement && <Badge variant="outline" data-testid="feedback-placement" title={anchor.placementDetail}>{anchor.placement}</Badge>}
+              </ElementLine></li>)}
+          </ul>}
+        </ItemContent>
+      </Item>)}
     </ul>
-  </section>;
+  </Item>;
 }
 
 /** One `feedback` tool result: a list, an offer, or a refusal stated as such. Element lines highlight in the page on hover. */
 export function FeedbackCard({ view, onShowFeedback, onHideFeedback }: { readonly view: FeedbackResultView; readonly onShowFeedback?: FeedbackCardConfig['onShowFeedback']; readonly onHideFeedback?: FeedbackCardConfig['onHideFeedback'] }) {
   if (view.kind === 'list') return <List view={view} onShowFeedback={onShowFeedback} onHideFeedback={onHideFeedback} />;
   if (view.kind === 'offer') return <Offer view={view} onShowFeedback={onShowFeedback} onHideFeedback={onHideFeedback} />;
-  return <section data-testid="feedback-card" data-kind="refused" data-outcome={view.outcome} aria-label="Feedback" className="my-2 max-w-md rounded-xl border border-dashed border-border px-3 py-2 text-sm text-muted-foreground">
-    Feedback not shown ({view.outcome}){view.reason ? `: ${view.reason}` : ''}</section>;
+  return <Item variant="muted" size="sm" render={<section />} data-testid="feedback-card" data-kind="refused" data-outcome={view.outcome} aria-label="Feedback" className="my-2 max-w-md">
+    <ItemContent className="min-w-0 basis-0"><ItemDescription className="line-clamp-none">Feedback not shown ({view.outcome}){view.reason ? `: ${view.reason}` : ''}</ItemDescription></ItemContent></Item>;
 }
 
 /** An `@<root><id>.md` mention of a report in a sent message. */
 export function FeedbackMention({ path, id, onOpen }: { readonly path: string; readonly id: string; readonly onOpen?: ((path: string) => void) | undefined }) {
-  const className = 'inline-flex items-center gap-1 rounded-md bg-background px-1.5 py-0.5 align-baseline font-mono text-sm font-medium text-foreground ring-1 ring-border';
-  const body = <><MessageSquareTextIcon className="size-3.5 text-muted-foreground" aria-hidden="true" />{id}</>;
+  const body = <><MessageSquareTextIcon aria-hidden="true" />{id}</>;
   return onOpen
-    ? <button type="button" data-testid="feedback-mention" data-path={path} aria-label={`Open feedback ${id}`} onClick={() => onOpen(path)} className={cn(className, 'cursor-pointer outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60')}>{body}</button>
-    : <span data-testid="feedback-mention" data-path={path} title={`Feedback ${id}`} className={className}>{body}</span>;
+    ? <Button variant="outline" size="xs" data-testid="feedback-mention" data-path={path} aria-label={`Open feedback ${id}`} onClick={() => onOpen(path)}>{body}</Button>
+    : <Badge variant="outline" data-testid="feedback-mention" data-path={path} title={`Feedback ${id}`}>{body}</Badge>;
 }
 
 /**

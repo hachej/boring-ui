@@ -66,7 +66,7 @@
     {
       "id": "6",
       "name": "cards",
-      "mode": "REPORT",
+      "mode": "FAIL",
       "folders": [
         "registry/pi-chat/approval-card.tsx",
         "registry/pi-chat/question-card.tsx",

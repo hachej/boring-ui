@@ -490,7 +490,10 @@
         "popover",
         "scroll-area",
         "separator",
-        "sidebar"
+        "sidebar",
+        "badge",
+        "item",
+        "drawer"
       ],
       "files": [
         {
@@ -2499,7 +2502,9 @@
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/pi-chat.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/utils.json",
         "button",
-        "toggle"
+        "toggle",
+        "badge",
+        "item"
       ]
     },
     {
