@@ -113,7 +113,7 @@ export function VoiceInput({ controller, transcribe }: VoiceInputProps) {
         <XIcon data-icon="inline-start" aria-hidden="true" /></Button>}
       <Toggle data-testid="composer-voice" data-state={phase} pressed={recording} aria-label={recording ? labels.voiceStop : labels.voiceRecord}
         title={recording ? labels.voiceStop : labels.voiceRecord} disabled={phase === 'starting' || busy} onPressedChange={onClick}>
-        {busy ? <Loader2Icon data-icon="inline-start" role="status" aria-label={labels.voiceTranscribing} />
+        {busy ? <Loader2Icon data-icon="inline-start" className="animate-spin motion-reduce:animate-none" role="status" aria-label={labels.voiceTranscribing} />
           : recording ? <SquareIcon data-icon="inline-start" aria-hidden="true" />
           : <MicIcon data-icon="inline-start" aria-hidden="true" />}
       </Toggle>
