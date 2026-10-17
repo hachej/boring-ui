@@ -10,9 +10,9 @@ const modulePath = process.env.TASK_LIST_REGISTRY_MODULE ?? '../../dist/task-lis
 test('task-list installed renderer edits, saves, reconciles and borrows its controller (DOM evidence)', { timeout: 30000 }, async t => {
   const window = new Window({ url: 'https://fictional.invalid/' }), globals = new Map();
   let cleanup = async () => {};
-  for (const name of ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node', 'Text', 'MutationObserver', 'getComputedStyle']) {
+  for (const name of ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node', 'Text', 'MutationObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame']) {
     globals.set(name, Object.getOwnPropertyDescriptor(globalThis, name));
-    Object.defineProperty(globalThis, name, { configurable: true, writable: true, value: name === 'window' ? window : name === 'getComputedStyle' ? window.getComputedStyle.bind(window) : window[name] });
+    Object.defineProperty(globalThis, name, { configurable: true, writable: true, value: name === 'window' ? window : name === 'getComputedStyle' || name.endsWith('AnimationFrame') ? window[name].bind(window) : window[name] });
   }
   globals.set('IS_REACT_ACT_ENVIRONMENT', Object.getOwnPropertyDescriptor(globalThis, 'IS_REACT_ACT_ENVIRONMENT')); globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   t.after(async () => { await cleanup(); await window.happyDOM.close(); for (const [name, descriptor] of globals) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else delete globalThis[name]; } });
@@ -41,7 +41,9 @@ test('task-list installed renderer edits, saves, reconciles and borrows its cont
   await act(async () => root.render(createElement(TaskListViewer, { controller, title: 'Installed fictional tasks', className: 'host-task-list' })));
   const button = label => { const found = [...container.querySelectorAll('button')].find(node => node.textContent === label); assert.ok(found, label); return found; };
   const click = async label => act(async () => button(label).click());
-  const check = async () => act(async () => container.querySelector('input[type=checkbox]').click());
+  // Base UI's Checkbox forwards a root click to its own hidden checkbox input with a constructed event, whose activation happy-dom
+  // does not run; clicking that input is the same change path. The Chromium journey clicks the visible checkbox.
+  const check = async () => act(async () => container.querySelector('[role=checkbox] ~ input[type=checkbox], [role=checkbox] input[type=checkbox]').click());
   const settle = async () => { for (let i = 0; i < 100 && controller.getSnapshot().save.kind === 'pending'; i++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 5)); }); assert.equal(controller.getSnapshot().save.kind, 'settled'); };
   const read = async () => JSON.parse(new TextDecoder().decode((await client.read({ target, revision: { kind: 'latest' } })).snapshot.bytes));
   assert.equal(writes, 0); assert.ok(container.querySelector('.boring-task-list-recipe.host-task-list'));
@@ -100,7 +102,7 @@ test('task-list installed renderer edits, saves, reconciles and borrows its cont
   assert.equal(container.querySelector('input:not([type=checkbox])').value, ''); assert.equal(container.querySelector('[role=alert]'), null);
   const readonly = createTaskListController({ identity, source: { kind: 'saved', snapshot: (await client.read({ target, revision: { kind: 'latest' } })).snapshot }, client, instanceId: 'readonly', epoch: 'page', readOnly: true });
   await act(async () => root.render(createElement(TaskListViewer, { controller: readonly })));
-  assert.equal(container.querySelector('input[type=checkbox]').disabled, true); assert.equal(button('Save').disabled, true);
+  assert.equal(container.querySelector('[role=checkbox] ~ input[type=checkbox], [role=checkbox] input[type=checkbox]').disabled, true); assert.equal(button('Save').disabled, true);
   assert.equal(readonly.actions.edit(readonly.actions.selection(), [{ kind: 'remove', id: 'one' }]).kind, 'denied');
   await act(async () => root.render(null)); await readonly.dispose(); assert.equal(controller.getSnapshot().lifecycle, 'active'); assert.equal((await client.read({ target, revision: { kind: 'latest' } })).kind, 'available');
 });

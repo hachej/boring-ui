@@ -30,6 +30,7 @@ import { ViewerWindowProvider } from '../viewers/viewer-frame';
 import type { ViewerShare } from '../viewers/viewer-frame';
 import type { InteractiveHtml } from '../viewers/interactive-html';
 import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
 import type { BlockAction } from '../button/actions';
 import { ChatTextProvider, useMergedText } from '../pi-chat/labels';
 import { cn, withDefaults } from '../utils/utils';
@@ -457,7 +458,7 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
     <div className="relative flex min-h-0 flex-1 flex-col">
       {chatProps ? <PiChat key={conversationId} {...chatProps} headerStart={<>{toggleSpace}{chat.headerStart}</>} className={cn('min-h-0 flex-1', chat.className)} />
         // Same geometry as the PiChat header, so nothing moves when the chat arrives.
-        : <>{toggle && <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2 sm:gap-3 sm:px-4 sm:py-2.5">{toggleSpace}</div>}{connecting}</>}
+        : <>{toggle && <><div className="flex shrink-0 items-center gap-2 px-3 py-2 sm:gap-3 sm:px-4 sm:py-2.5">{toggleSpace}</div><Separator /></>}{connecting}</>}
       {toggle && <div ref={toggleRow} className="pointer-events-none absolute top-0 left-0 z-10 flex items-center px-3 sm:px-4 [&>*]:pointer-events-auto">{toggle}</div>}
     </div>
   </div>;
@@ -499,14 +500,14 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
             : host ? panels![host.kind]!(host, win) : null}
         </div></ViewerWindowProvider>} /></DockMain>
     {librarySide && <Dock id="library" side="right" open={sideOpen} onOpenChange={setSideOpen} defaultWidth={LIBRARY_WIDTH} minWidth={240} narrowBelow={Math.max(drawerBelow, (docked ? SESSIONS_WIDTH : 0) + (panelOpen ? VIEWER_MIN + CHAT_MIN : CHAT_MIN) + libraryWidth)} narrow="sheet"
-      labels={{ region: text.labels.library, resize: text.labels.resizePanel }} className="border-l border-border">
+      labels={{ region: text.labels.library, resize: text.labels.resizePanel }} >
       {api => <section data-testid="workspace-library-side" aria-label={text.labels.library} className="flex min-h-0 flex-1 flex-col">
         <WidthProbe width={api.width} onWidth={setLibraryWidth} />
         <div className="min-h-0 flex-1 overflow-auto">{libraryTree(path => { void setOpened({ kind: 'file', path }).then(opened => { if (opened && narrow) setSideOpen(false); }); }, () => setSideOpen(false))}</div>
       </section>}
     </Dock>}
     </DockLayout>
-    {panelLibrary && narrow && <Drawer open showSwipeHandle onOpenChange={next => { if (!next) setPanelLibrary(false); }}><DrawerContent aria-label={text.labels.library} className="pi-chat h-[80dvh] pb-[env(safe-area-inset-bottom)] duration-200 motion-reduce:transition-none"><DrawerTitle className="sr-only">{text.labels.library}</DrawerTitle><div data-testid="workspace-library-side" className="min-h-0 flex-1 overflow-auto">{libraryTree(openFile, () => setPanelLibrary(false))}</div></DrawerContent></Drawer>}
+    {panelLibrary && narrow && <Drawer open showSwipeHandle onOpenChange={next => { if (!next) setPanelLibrary(false); }}><DrawerContent aria-label={text.labels.library} className="pi-chat min-h-[80dvh] max-h-[80dvh]"><DrawerTitle className="sr-only">{text.labels.library}</DrawerTitle><div data-testid="workspace-library-side" className="min-h-0 flex-1 overflow-auto pb-[env(safe-area-inset-bottom)]">{libraryTree(openFile, () => setPanelLibrary(false))}</div></DrawerContent></Drawer>}
   </div></ChatTextProvider></AppTextProvider>;
 }
 

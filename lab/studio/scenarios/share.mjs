@@ -123,8 +123,9 @@ export default [
       // When the browser refuses even the execCommand copy, the link is shown selected for a manual copy: never a bare "Could not share".
       await browser.evaluate(`(() => { document.execCommand = () => false; return true; })()`);
       await t.menu(VIEWER('docs/picnic-plan.md'), 'viewer', 'share');
-      await browser.until('manual copy popover', `!!${q(`${VIEWER('docs/picnic-plan.md')} [data-testid=viewer-manual-copy-text]`)}`);
-      assert.equal(await browser.evaluate(`(() => { const f = ${q(`${VIEWER('docs/picnic-plan.md')} [data-testid=viewer-manual-copy-text]`)}; return f.value.slice(f.selectionStart, f.selectionEnd); })()`), markdownLink, 'the link is shown selected');
+      const manualField = '[data-testid=viewer-manual-copy][data-slot=dialog-content] [data-testid=viewer-manual-copy-text][data-slot=textarea]';
+      await browser.until('native manual-copy dialog', `!!${q(manualField)}`);
+      assert.equal(await browser.evaluate(`(() => { const f = ${q(manualField)}; return f.value.slice(f.selectionStart, f.selectionEnd); })()`), markdownLink, 'the link is shown selected');
       assert.doesNotMatch(await browser.evaluate(`${q(`${VIEWER('docs/picnic-plan.md')} [data-testid=viewer-bar]`)}.innerText`), /Could not share/);
       await browser.send('Page.navigate', { url: markdownLink });
       await browser.until('the linked document', `${editorText('docs/picnic-plan.md')}.includes('Moon picnic plan')`, 30000);

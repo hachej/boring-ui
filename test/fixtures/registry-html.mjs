@@ -6,12 +6,12 @@ import { Window } from 'happy-dom';
 import { createHtmlController } from '@hachej/boring-ui-kit/html';
 import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 
-test('installed HTML source recipe applies scoped host styles and preserves its concrete controller', async t => {
+test('installed HTML source recipe uses host shadcn controls and preserves its concrete controller', async t => {
   const window = new Window({ url: 'https://fictional.invalid/', settings: { enableJavaScriptEvaluation: false, disableIframePageLoading: true } });
   const globals = new Map();
-  for (const name of ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node']) {
+  for (const name of ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node', 'MutationObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame']) {
     globals.set(name, Object.getOwnPropertyDescriptor(globalThis, name));
-    Object.defineProperty(globalThis, name, { configurable: true, writable: true, value: name === 'window' ? window : window[name] });
+    Object.defineProperty(globalThis, name, { configurable: true, writable: true, value: name === 'window' ? window : typeof window[name] === 'function' && /^[a-z]/.test(name) ? window[name].bind(window) : window[name] });
   }
   globals.set('IS_REACT_ACT_ENVIRONMENT', Object.getOwnPropertyDescriptor(globalThis, 'IS_REACT_ACT_ENVIRONMENT'));
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -45,19 +45,16 @@ test('installed HTML source recipe applies scoped host styles and preserves its 
   const section = container.querySelector('[data-boring="html-viewer"]');
   assert.ok(section.classList.contains('boring-html-recipe'));
   assert.ok(section.classList.contains('host-extra-class'));
-  const style = window.getComputedStyle(section);
-  assert.equal(style.backgroundColor, 'rgb(16, 24, 32)');
-  assert.equal(style.color, 'rgb(248, 250, 252)');
-  assert.equal(style.borderRadius, process.env.BORING_REGISTRY_RESTYLED === 'true' ? '20px' : '12px');
-  if (process.env.BORING_REGISTRY_RESTYLED === 'true') {
-    assert.ok(section.classList.contains('host-installed-html'));
-    assert.equal(style.getPropertyValue('--boring-html-radius').trim(), '1.25rem');
-  }
+  assert.equal(section.style.cssText, '', 'the wrapper adds no visual overrides');
+  assert.equal(section.classList.contains('host-installed-html'), false, 'rebranding changes core tokens, not copied source');
+  if (process.env.BORING_REGISTRY_RESTYLED === 'true') assert.equal(window.getComputedStyle(document.documentElement).getPropertyValue('--radius').trim(), '1.25rem');
+  for (const button of container.querySelectorAll('button')) assert.ok(['button', 'toggle'].includes(button.dataset.slot), 'actions use the host shadcn components');
   assert.equal(window.getComputedStyle(unrelated).cssText, baseline);
   const source = [...container.querySelectorAll('button')].find(button => button.textContent === 'HTML source');
   await act(async () => source.click());
   assert.equal(container.querySelector('textarea').value, '<p>Fictional HTML</p>');
-  assert.equal(window.getComputedStyle(container.querySelector('textarea')).backgroundColor, 'rgb(16, 24, 32)');
+  assert.equal(container.querySelector('textarea').dataset.slot, 'textarea');
+  assert.equal(source.getAttribute('aria-pressed'), 'true', 'source remains a controlled native Toggle');
   let saved;
   await act(async () => { saved = await controller.flush(controller.actions.selection()); });
   assert.equal(saved.kind, 'saved');

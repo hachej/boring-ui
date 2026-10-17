@@ -762,7 +762,7 @@ test('registry: on touch or a compact screen the toggle enters point mode', { ti
   await act(async () => ui.unmount());
 });
 
-test('registry: recording mode in the bar (Record, red dot, timer, Stop), clicks pin without a bubble, Transcribing…, every failure said in the bar', { timeout: 30000 }, async t => {
+test('registry: recording mode in the bar (Record, destructive badge, timer, Stop), clicks pin without a bubble, Transcribing…, every failure said in the bar', { timeout: 30000 }, async t => {
   const { window, document, components, createElement, act, createRoot } = await registry(t);
   const { FeedbackBar, NoteBubble, FeedbackChip } = components;
   const { VOICE_REFUSALS } = await import('@hachej/boring-feedback/page');
@@ -785,7 +785,7 @@ test('registry: recording mode in the bar (Record, red dot, timer, Stop), clicks
   assert.equal($t('feedback-voice').textContent, 'Stop');
   assert.equal($t('feedback-voice').getAttribute('aria-pressed'), 'true');
   assert.equal($t('feedback-recording-time').textContent, '00:00', 'a running timer, mm:ss');
-  assert.ok($t('feedback-recording').querySelector('.boring-feedback-rec'), 'a red dot');
+  assert.equal($t('feedback-recording').dataset.variant, 'destructive', 'the recording indicator is the host Badge in its destructive variant');
   assert.equal($t('feedback-bar-hint').textContent, 'Recording — point and talk');
   assert.equal(components.elapsed(65_000), '01:05');
   // Two clicks while recording: two numbered pins, no bubble, nothing to type.

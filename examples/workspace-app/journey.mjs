@@ -91,7 +91,8 @@ try {
     await say('Reply with exactly: AMBER-HARBOUR');
     await browser.until('the reply', `/AMBER-HARBOUR/.test(${REPLIES}) && ${idle}`, 20000);
     const composer = await browser.evaluate(rect('[data-testid=composer]'));
-    assert.ok(composer.y > 700, 'composer docks after the first message');
+    const height = await browser.evaluate('innerHeight');
+    assert.ok(composer.y > height / 2 && Math.abs(height - composer.y - composer.h) <= 24, `composer docks at the bottom after the first message: ${JSON.stringify({ composer, height })}`);
   });
 
   await step('reference composer: empty and one-line controls share a centre; files chip is absent', async () => {
@@ -299,9 +300,9 @@ try {
       assert.deepEqual(await browser.evaluate(`(() => { const r = ${q('[data-testid=workspace-panel]')}.getBoundingClientRect(); return { w: r.width, h: r.height }; })()`), { w: 390, h: 844 }, 'full screen');
       assert.ok(await browser.evaluate(noOverflow), 'no horizontal scroll with the sheet');
       await browser.until('phone Markdown content', `!!${q('[data-testid=artifact-panel] .boring-markdown-content')}`, 5000);
-      const typography = await browser.evaluate(`(() => { const css = getComputedStyle(${q('[data-testid=artifact-panel] .boring-markdown-content')}); return { size: parseFloat(css.fontSize), line: parseFloat(css.lineHeight) }; })()`);
-      assert.equal(typography.size, 17, 'generated phone typography wins after the base prose rules');
-      assert.ok(Math.abs(typography.line - 17 * 1.65) < .1);
+      const typography = await browser.evaluate(`(() => { const element = ${q('[data-testid=artifact-panel] .boring-markdown-content')}; const css = getComputedStyle(element); const reference = document.createElement('span'); reference.style.fontSize = 'var(--text-base)'; reference.style.lineHeight = 'var(--leading-relaxed)'; element.parentElement.append(reference); const native = getComputedStyle(reference); const result = { size: css.fontSize, line: css.lineHeight, tokenSize: native.fontSize, tokenLine: native.lineHeight }; reference.remove(); return result; })()`);
+      assert.equal(typography.size, typography.tokenSize, 'phone document typography follows the host type scale');
+      assert.equal(typography.line, typography.tokenLine, 'phone line height follows the host leading token');
       const bar = await browser.evaluate(rect('[data-testid=artifact-bar]'));
       assert.ok(bar.h <= 56, 'single row artifact header');
       assert.ok(await browser.evaluate(inside('[data-testid=artifact-close]')) && await browser.evaluate(inside('[data-testid=artifact-more]')), 'back and menu inside viewport');

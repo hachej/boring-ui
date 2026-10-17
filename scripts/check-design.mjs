@@ -51,7 +51,7 @@ export function checkDesign(root = designRoot, { config = readDesignConfig(root)
   const manifest = JSON.parse(readFileSync(resolve(root, 'registry.json'), 'utf8'));
   const ignored = gitIgnored(root);
   let files = 0;
-  for (const folder of ['registry', 'packages/ui/src']) if (existsSync(resolve(root, folder))) walkProject(root, folder, (entry, file) => {
+  for (const folder of ['registry', 'packages/ui/src', 'packages/ui/styles']) if (existsSync(resolve(root, folder))) walkProject(root, folder, (entry, file) => {
     if (entry.isSymbolicLink()) { errors.push(`Design source symlink: ${file}`); return false; }
     if (entry.isDirectory() || !/\.(?:tsx?|jsx?|mjs|css|json|md)$/.test(file)) return;
     files++;

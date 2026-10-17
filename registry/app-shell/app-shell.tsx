@@ -10,7 +10,7 @@ import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
-import { AccountAvatar, AccountMenu } from './account';
+import { AccountAvatar, AccountChoices } from './account';
 import type { AccountSpec } from './account';
 import { AgentDockLayout, AgentLayer, AgentLayerProvider } from './agent-layer';
 import type { AgentSpec } from './agent-layer';
@@ -64,7 +64,7 @@ function Shell({ layout, title, nav, agent, improve, account, route, text }: { r
   const avatar = hasAccount ? <>
     <Button variant="ghost" size="icon" data-testid="account-button" aria-label={account?.name ?? text.account} title={account?.name ?? text.account} onClick={() => setAccountOpen(true)}><AccountAvatar account={account} /></Button>
     <AppSheet open={accountOpen} onOpenChange={setAccountOpen} title={text.account}>
-      <AccountMenu account={account} improve={improve} text={text} done={() => setAccountOpen(false)} />
+      <AccountChoices account={account} improve={improve} text={text} done={() => setAccountOpen(false)} />
     </AppSheet>
   </> : null;
   // The structure is the same compact or expanded, so a resize never remounts a screen.

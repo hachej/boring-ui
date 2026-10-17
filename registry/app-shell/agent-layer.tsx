@@ -10,8 +10,11 @@ import { createPortal } from 'react-dom';
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ComponentType, CSSProperties, HTMLAttributes, PointerEvent as ReactPointerEvent, ReactElement, ReactNode, Ref, RefObject } from 'react';
 import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, Loader2Icon, MicIcon, PanelLeftIcon, PanelRightIcon, PictureInPicture2Icon, SparklesIcon, XIcon } from 'lucide-react';
-import { Drawer as DrawerPrimitive } from '@base-ui/react/drawer';
+// Behaviour only: Base UI's keyboard-inset provider for the host drawer's content. It renders nothing visible.
+import * as BaseDrawerParts from '@base-ui/react/drawer';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Separator } from '@/components/ui/separator';
 import { createVoiceCapture } from '@hachej/boring-feedback/page';
 import type { VoiceCapture, VoiceRefusal } from '@hachej/boring-feedback/page';
 import type { FeedbackSession } from '@hachej/boring-feedback/ui';
@@ -523,7 +526,7 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
       className={cn('app-shell box-border z-(--app-shell-z-layer) data-[swipe-direction=down]:bottom-(--drawer-keyboard-inset,0px) data-[swipe-axis=y]:[--drawer-content-max-height:calc(var(--app-shell-vv-height,100dvh)-1.5rem)]',
         // The peek is the top PEEK_REM of the popup; the part that overlaps the tab bar is clipped away, so the tabs stay visible and tappable.
         'data-[peek=true]:not-data-swiping:[clip-path:inset(0_0_calc(100%_-_6rem)_0)]')}>
-      <DrawerPrimitive.VirtualKeyboardProvider>
+      <BaseDrawerParts.Drawer.VirtualKeyboardProvider>
         <div data-testid="agent-layer-sheet" onFocusCapture={event => { if ((event.target as HTMLElement).matches('[data-testid=composer-input]')) layer.setSnap('full'); }}
           className={cn('relative flex min-h-0 flex-1 flex-col overflow-hidden overscroll-contain',
             // The layer's own header carries the title and Close, so the chat's is hidden. At peek: one line of the last reply above the
@@ -534,7 +537,7 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
             peek && ['[&_[data-boring=pi-chat]>.relative]:overflow-hidden [&_[data-boring=pi-chat]>.relative>.pointer-events-none]:hidden',
               '[&_[data-boring=pi-chat]>footer]:px-2 [&_[data-boring=pi-chat]>footer]:pt-1 [&_[data-boring=pi-chat]>footer]:pb-2',
               '[&_[data-testid=transcript]]:gap-0 [&_[data-testid=transcript]]:p-0 [&_[data-testid=transcript]]:px-3 [&_[data-testid=transcript]>*]:max-h-5 [&_[data-testid=transcript]>*]:truncate [&_[data-testid=transcript]_button]:hidden',
-              '[&_[data-testid=composer]]:flex [&_[data-testid=composer]]:items-center [&_[data-testid=composer]]:rounded-full',
+              '[&_[data-testid=composer]]:flex [&_[data-testid=composer]]:items-center',
               '[&_[data-testid=composer-input]]:min-h-11 [&_[data-testid=composer-input]]:max-h-11 [&_[data-testid=composer-input]]:flex-1 [&_[data-testid=composer-input]]:px-4 [&_[data-testid=composer-input]]:py-2.5',
               '[&_[data-testid=composer]>div]:min-w-0 [&_[data-testid=composer]>div]:flex-1 [&_[data-testid=composer]>div]:p-0 [&_[data-testid=composer]>div]:pr-1 [&_[data-testid=composer]>div>span.flex-1]:hidden',
               '[&_[data-testid=composer-plus]]:hidden [&_[data-testid=composer-annotate]]:hidden'])}>
@@ -546,7 +549,7 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
           {/* The transcript scrolls and never drags the sheet: only the handle and the title row swipe. */}
           <div data-base-ui-swipe-ignore="" className="flex min-h-0 flex-1 flex-col"><ChatSlot /></div>
         </div>
-      </DrawerPrimitive.VirtualKeyboardProvider>
+      </BaseDrawerParts.Drawer.VirtualKeyboardProvider>
     </DrawerContent>
   </Drawer>;
 }
@@ -605,11 +608,14 @@ function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSi
     setPos({ left: Math.min(Math.max(event.clientX - grab.dx, 0), Math.max(0, innerWidth - rect.width)), top: Math.min(Math.max(event.clientY - grab.dy, 0), Math.max(0, innerHeight - rect.height)) });
   };
   const end = () => { drag.current = null; };
+  // Floating, the host's Card is drawn behind the layer (a sibling layer, so docking or floating never remounts the chat).
   return <div ref={box} data-testid="agent-layer" data-state={open ? 'open' : 'closed'} data-placement={api.placement} data-side={side} role={floating ? 'dialog' : 'complementary'} aria-label={title}
     style={floating ? pos ?? { right: 16, bottom: 16 } : undefined}
-    className={cn('app-shell flex min-h-0 flex-col bg-background text-foreground',
-      floating ? 'fixed z-(--app-shell-z-layer) h-[min(36rem,calc(100dvh-2rem))] w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-border shadow-xl'
-        : cn('h-full min-w-0 flex-1', side === 'right' ? 'border-l border-border' : 'border-r border-border'))}>
+    className={cn('app-shell relative flex min-h-0 flex-col',
+      floating ? 'fixed isolate z-(--app-shell-z-layer) h-[min(36rem,calc(100dvh-2rem))] w-[min(24rem,calc(100vw-2rem))]'
+        : 'h-full min-w-0 flex-1 bg-background text-foreground')}>
+    {floating && <Card aria-hidden="true" data-boring="chrome" className="pointer-events-none absolute inset-0 -z-10" />}
+    {!floating && <Separator orientation="vertical" className={cn('absolute inset-y-0', side === 'right' ? 'left-0' : 'right-0')} />}
     <Header text={text} title={title} controls={controls} className={cn('pt-2', floating && 'cursor-move touch-none select-none')} onPointerDown={down} onPointerMove={move} onPointerUp={end} onPointerCancel={end} />
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden"><VoiceProblem /><ChatSlot /></div>
   </div>;

@@ -3,6 +3,9 @@
 import { randomUUID } from '@hachej/boring-files/platform';
 import React, { useId, useRef, useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import type { ReadResult } from '@hachej/boring-files';
 import type { SaveResult } from '@hachej/boring-ui-kit/resources';
 import type { TaskListController } from './task-list-controller';
@@ -45,18 +48,18 @@ export function TaskListViewer({ controller, title = 'Tasks', className }: TaskL
     catch (error) { setNotice(String(error)); }
   };
   const save = state.save.kind === 'settled' ? state.save.result : undefined;
-  return <section className={['boring-task-list-recipe', className].filter(Boolean).join(' ')} data-boring="task-list-viewer">
+  return <Card className={['boring-task-list-recipe', className].filter(Boolean).join(' ')} data-boring="task-list-viewer">
     <h2>{title}</h2>
     <p role="status" aria-live="polite">{state.lifecycle === 'disposed' ? 'Closed' : state.readOnly ? 'Read only' : state.dirty ? 'Unsaved changes' : 'Saved'}
       {state.save.kind === 'pending' ? ' · Saving' : save ? ` · ${save.kind}${'reason' in save ? `: ${save.reason}` : ''}` : ''}
       {state.remote ? ' · Remote changes available' : ''}</p>
     <ul>{state.document.items.map(item => <li key={item.id} data-task-id={item.id}>
-      <label><input type="checkbox" aria-label={`Complete ${item.title}`} checked={item.completed} disabled={disabled}
-        onChange={event => edit([{ kind: 'set-completed', id: item.id, completed: event.target.checked }])} />{item.title}</label>
+      <label><Checkbox aria-label={`Complete ${item.title}`} checked={item.completed} disabled={disabled}
+        onCheckedChange={completed => edit([{ kind: 'set-completed', id: item.id, completed }])} />{item.title}</label>
       <Button variant="ghost" aria-label={`Remove ${item.title}`} disabled={disabled} onClick={() => edit([{ kind: 'remove', id: item.id }])}>Remove</Button>
     </li>)}</ul>
     <form onSubmit={event => { event.preventDefault(); if (edit([{ kind: 'add', id: randomUUID(), title: draftTitle }]).kind === 'applied') setDraftTitle(''); }}>
-      <label htmlFor={inputId}>New task</label><input id={inputId} value={draftTitle} disabled={disabled} onChange={event => setDraftTitle(event.target.value)} />
+      <label htmlFor={inputId}>New task</label><Input id={inputId} value={draftTitle} disabled={disabled} onChange={event => setDraftTitle(event.target.value)} />
       <Button variant="default" type="submit" disabled={disabled || !draftTitle.trim()}>Add task</Button>
     </form>
     <div className="boring-task-list-actions">
@@ -67,5 +70,5 @@ export function TaskListViewer({ controller, title = 'Tasks', className }: TaskL
       <Button variant="ghost" disabled={state.lifecycle === 'disposed' || save?.kind !== 'unknown'} onClick={() => void run(controller.actions.abandon)}>Abandon save</Button>
     </div>
     {notice && <p role="alert">{notice}</p>}
-  </section>;
+  </Card>;
 }

@@ -90,7 +90,7 @@ export function QuestionCard({ call, result, answer, questionId, live = false }:
     {open && <ItemFooter className="flex-col items-stretch">
       {question.options.length > 0 && <div role="group" aria-label={labels.answerOptions} className="flex flex-col items-stretch gap-2">
         {question.options.map(option => <Button key={option} variant="outline" data-testid="question-option" data-option={option} disabled={unavailable}
-          onClick={() => { void submit(option); }} className="h-auto w-full justify-start whitespace-normal text-start">{option}</Button>)}
+          onClick={() => { void submit(option); }} className="h-auto min-h-11 w-full justify-start whitespace-normal py-2 text-start">{option}</Button>)}
       </div>}
       {question.allowFreeText && <form onSubmit={onSubmit} className="flex gap-2">
         <Input data-testid="question-input" value={text} maxLength={2000} disabled={unavailable} placeholder={question.options.length ? labels.ownAnswer : labels.typeAnswer}

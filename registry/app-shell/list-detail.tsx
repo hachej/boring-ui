@@ -6,6 +6,7 @@
 // one the page was opened on, and the app's `onBack` (called by Back, and by « ← » which is Back) clears the selection and replaces the URL.
 import { useContext } from 'react';
 import type { ReactNode } from 'react';
+import { Separator } from '@/components/ui/separator';
 import { cn } from '../utils/utils';
 import { ScreenActiveContext } from './agent-context';
 import { useBackLayer } from './back';
@@ -37,7 +38,8 @@ export function ListDetail({ list, detail, onBack, title }: ListDetailProps) {
   // « ← » is the browser's Back, so there is one path: the popstate calls `onBack`, and the URL the entry below holds is the one the app then replaces.
   useScreenHeader(stacked ? { back: () => history.back(), ...(title ? { title } : {}) } : {}, { overlay: true });
   return <div data-testid="list-detail" data-view={view} className="flex h-full min-h-0">
-    <div hidden={view === 'detail'} data-testid="list-pane" className={cn('min-h-0 overflow-y-auto overscroll-contain', compact ? 'w-full' : 'w-80 shrink-0 border-r border-border')}>{list}</div>
+    <div hidden={view === 'detail'} data-testid="list-pane" className={cn('min-h-0 overflow-y-auto overscroll-contain', compact ? 'w-full' : 'w-80 shrink-0')}>{list}</div>
+    {!compact && view !== 'detail' && <Separator orientation="vertical" />}
     <div hidden={view === 'list'} data-testid="detail-pane" className={cn('min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain', detail === null && 'bg-muted/30')}>{detail}</div>
   </div>;
 }

@@ -1,6 +1,8 @@
 'use client';
 
 import { TextDraftControls } from './text-draft-controls.js';
+import type { ViewerComponents } from './viewer-components.js';
+export type { ViewerComponents } from './viewer-components.js';
 
 import { useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { HtmlController } from './html.js';
@@ -9,6 +11,8 @@ import type { SaveResult } from './resources.js';
 import { passiveHtml } from './html-preview.js';
 
 export interface HtmlViewerProps {
+  /** Installed recipes supply the host's shadcn controls. Omit only for unstyled native HTML rendering. */
+  readonly components?: ViewerComponents;
   readonly controller: HtmlController;
   readonly title?: string;
   readonly className?: string;
@@ -51,7 +55,9 @@ function HtmlPreview({ text }: { readonly text: string }) {
   </div>;
 }
 
-function MountedHtmlViewer({ controller, title = 'HTML document', className, header = true, mode: controlledMode, onModeChange }: HtmlViewerProps) {
+function MountedHtmlViewer({ components, controller, title = 'HTML document', className, header = true, mode: controlledMode, onModeChange }: HtmlViewerProps) {
+  const Control = components?.button ?? 'button';
+  const Source = components?.textarea ?? 'textarea';
   const snapshot = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const [ownMode, setOwnMode] = useState<'source' | 'preview'>('preview');
   const mode = controlledMode ?? ownMode;
@@ -74,18 +80,18 @@ function MountedHtmlViewer({ controller, title = 'HTML document', className, hea
   return <section data-boring="html-viewer" className={['boring-html-viewer', className].filter(Boolean).join(' ')} aria-label={title}>
     {header && <header><strong>{title}</strong><span role="status">{status}</span></header>}
     {header && <div role="toolbar" aria-label="HTML document controls">
-      <button type="button" aria-pressed={mode === 'preview'} onClick={() => setMode('preview')}>HTML preview</button>
-      <button type="button" aria-pressed={mode === 'source'} onClick={() => setMode('source')}>HTML source</button>
-      <button type="button" disabled={disposed || snapshot.readOnly || !snapshot.dirty || pending || unknown} onClick={() => { const selection = controller.actions.selection(); perform(() => controller.flush(selection)); }}>Save</button>
-      <button type="button" disabled={disposed || pending || unknown} onClick={() => perform(controller.actions.refresh)}>Refresh</button>
-      <button type="button" disabled={disposed || !unknown} onClick={() => perform(controller.actions.reconcile)}>Reconcile save</button>
-      <button type="button" disabled={disposed || !unknown} onClick={() => perform(controller.actions.abandon)}>Abandon and refresh, keeping my draft</button>
-      <button type="button" disabled={disposed || pending || unknown || snapshot.remote === null} onClick={() => perform(controller.actions.discardToRemote)}>Discard local edits</button>
+      <Control type="button" aria-pressed={mode === 'preview'} onClick={() => setMode('preview')}>HTML preview</Control>
+      <Control type="button" aria-pressed={mode === 'source'} onClick={() => setMode('source')}>HTML source</Control>
+      <Control type="button" disabled={disposed || snapshot.readOnly || !snapshot.dirty || pending || unknown} onClick={() => { const selection = controller.actions.selection(); perform(() => controller.flush(selection)); }}>Save</Control>
+      <Control type="button" disabled={disposed || pending || unknown} onClick={() => perform(controller.actions.refresh)}>Refresh</Control>
+      <Control type="button" disabled={disposed || !unknown} onClick={() => perform(controller.actions.reconcile)}>Reconcile save</Control>
+      <Control type="button" disabled={disposed || !unknown} onClick={() => perform(controller.actions.abandon)}>Abandon and refresh, keeping my draft</Control>
+      <Control type="button" disabled={disposed || pending || unknown || snapshot.remote === null} onClick={() => perform(controller.actions.discardToRemote)}>Discard local edits</Control>
     </div>}
-    <TextDraftControls recovery={snapshot.recovery} actions={controller.actions} readOnly={snapshot.readOnly} blocked={snapshot.lifecycle !== 'active' || snapshot.save.kind === 'pending' || (snapshot.save.kind === 'settled' && snapshot.save.result.kind === 'unknown')} />
+    <TextDraftControls components={components} recovery={snapshot.recovery} actions={controller.actions} readOnly={snapshot.readOnly} blocked={snapshot.lifecycle !== 'active' || snapshot.save.kind === 'pending' || (snapshot.save.kind === 'settled' && snapshot.save.result.kind === 'unknown')} />
     {error && <p role="alert">{error}</p>}
     {mode === 'source'
-      ? <textarea className="boring-html-viewer__source" aria-label="HTML source" readOnly={snapshot.readOnly || disposed} value={snapshot.text} onChange={event => { if (!snapshot.readOnly && !disposed) controller.actions.edit(event.currentTarget.value); }} />
+      ? <Source className="boring-html-viewer__source" aria-label="HTML source" readOnly={snapshot.readOnly || disposed} value={snapshot.text} onChange={event => { if (!snapshot.readOnly && !disposed) controller.actions.edit(event.currentTarget.value); }} />
       : <HtmlPreview text={snapshot.text} />}
   </section>;
 }
