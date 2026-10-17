@@ -2,17 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { EntryRecord } from '@earendil-works/pi-durable';
-import type { AssistantMessage, Message } from '@earendil-works/pi-ai';
 import type { ChatHistoryState } from '@hachej/boring-ui-kit/native-chat';
-import { ArchiveIcon, ArchiveRestoreIcon, ArrowLeftIcon, CheckIcon, EllipsisIcon, MessageSquareIcon, PencilIcon, SearchIcon, Trash2Icon, XIcon } from 'lucide-react';
+import { ArchiveIcon, ArchiveRestoreIcon, ArrowLeftIcon, CheckIcon, EllipsisIcon, Loader2Icon, MessageSquareIcon, PencilIcon, SearchIcon, Trash2Icon, XIcon } from 'lucide-react';
 import { Button } from '../button/button';
 import { Drawer, DrawerContent, DrawerTitle } from '../drawer/drawer';
 import { ActionButton, ActionMenu, actionMenuItem, headerActions, menuActions } from '../button/actions';
-import type { ConversationItem, ConversationsConfig, ReplyRef } from './config';
-import { Markdown } from './markdown';
+import type { ConversationItem, ConversationsConfig } from './config';
 import { cn } from '../utils/utils';
-import { isFileBlock, replyMeta } from './rows';
 import { defaultChatLabels, useChatText } from './labels';
 import type { ChatLabels } from './labels';
 
@@ -162,9 +158,9 @@ export function ConversationList({ conversations, onPicked, autoFocus = false, s
                     <Button size="sm" variant="destructive" data-testid="conversation-delete-confirm" onClick={() => { const remove = conversations.remove!; setConfirming(null); run(() => remove(item.id)); }}>{labels.delete}</Button>
                     <Button size="icon-sm" variant="ghost" aria-label={labels.keep} className={action} onClick={() => setConfirming(null)}><XIcon className="size-3.5" aria-hidden="true" /></Button>
                   </> : rowActionLayout === 'menu' ? <ActionMenu label={labels.moreActions} size="icon-sm" testId="conversation-action-more" icon={<EllipsisIcon className="size-4" aria-hidden="true" />} items={[
-                    ...(conversations.rename ? [{ id: 'rename', label: labels.rename, testId: 'conversation-rename', onSelect: () => setRenaming(item.id) }] : []),
-                    ...(conversations.archive ? [{ id: 'archive', label: item.archived ? labels.restore : labels.archive, testId: 'conversation-archive', onSelect: () => run(() => conversations.archive!(item.id, !item.archived)) }] : []),
-                    ...(conversations.remove ? [{ id: 'delete', label: labels.delete, testId: 'conversation-delete', onSelect: () => setConfirming(item.id) }] : []),
+                    ...(conversations.rename ? [{ id: 'rename', icon: <PencilIcon className="size-4" />, label: labels.rename, testId: 'conversation-rename', onSelect: () => setRenaming(item.id) }] : []),
+                    ...(conversations.archive ? [{ id: 'archive', icon: item.archived ? <ArchiveRestoreIcon className="size-4" /> : <ArchiveIcon className="size-4" />, label: item.archived ? labels.restore : labels.archive, testId: 'conversation-archive', onSelect: () => run(() => conversations.archive!(item.id, !item.archived)) }] : []),
+                    ...(conversations.remove ? [{ id: 'delete', icon: <Trash2Icon className="size-4" />, destructive: true, separatorBefore: true, label: labels.delete, testId: 'conversation-delete', onSelect: () => setConfirming(item.id) }] : []),
                     ...[...extraButtons, ...extraMenu].map(entry => actionMenuItem(entry, 'conversation-action')),
                   ]} /> : <>
                     {conversations.rename && <Button size="icon-sm" variant="ghost" aria-label={labels.renameItem(title)} title={labels.rename} data-testid="conversation-rename" className={action} onClick={() => setRenaming(item.id)}><PencilIcon className="size-3.5" aria-hidden="true" /></Button>}
@@ -188,11 +184,9 @@ export function ConversationList({ conversations, onPicked, autoFocus = false, s
  * The list of past conversations in a dialog: a header with New, then `ConversationList`.
  * An anchored card on a wide screen and a bottom drawer on a phone. Escape or a click outside closes it.
  */
-export function ConversationHistory({ conversations, onClose, onBrowseEarlier, placement = 'below' }: {
+export function ConversationHistory({ conversations, onClose, placement = 'below' }: {
   readonly conversations: ConversationsConfig;
   readonly onClose: () => void;
-  /** When given, a footer action opens the earlier records of the open conversation. */
-  readonly onBrowseEarlier?: (() => void) | undefined;
   /** `above` opens the card upwards from a bar docked at the bottom of the screen; the backdrop then covers the whole page. */
   readonly placement?: 'below' | 'above';
 }) {
@@ -212,66 +206,28 @@ export function ConversationHistory({ conversations, onClose, onBrowseEarlier, p
         <Button size="icon-sm" variant="ghost" aria-label={labels.closeHistory} title={labels.close} onClick={onClose} className="max-sm:hidden"><XIcon className="size-4" aria-hidden="true" /></Button>
       </header>
       <ConversationList conversations={conversations} onPicked={onClose} autoFocus />
-      {onBrowseEarlier && <footer className="shrink-0 border-t border-border p-1.5 max-sm:pb-[max(0.375rem,env(safe-area-inset-bottom))]">
-        <Button size="sm" variant="ghost" data-testid="history-earlier" className="w-full justify-start text-muted-foreground" onClick={() => { onBrowseEarlier(); onClose(); }}>
-          <icons.history className="size-3.5" aria-hidden="true" />{labels.earlierInConversation}</Button>
-      </footer>}
   </>;
   return phone ? <Drawer open showSwipeHandle onOpenChange={next => { if (!next) onClose(); }}><DrawerContent data-testid="conversations" aria-label={labels.historyDialog} className="pi-chat h-[80dvh] pb-[env(safe-area-inset-bottom)] duration-(--chat-sheet-duration) motion-reduce:transition-none"><DrawerTitle className="sr-only">{labels.historyDialog}</DrawerTitle>{content}</DrawerContent></Drawer>
     : <><button type="button" tabIndex={-1} aria-hidden="true" data-testid="conversations-backdrop" onClick={onClose} className={cn('z-20 cursor-default', placement === 'above' ? 'fixed inset-0' : 'absolute inset-0')} /><section role="dialog" aria-label={labels.historyDialog} data-testid="conversations" className={cn('absolute z-30 flex w-[23rem] flex-col rounded-2xl border border-border bg-background text-foreground shadow-lg', placement === 'above' ? 'bottom-full left-0 mb-2 max-h-[min(26rem,60dvh)]' : 'top-12 right-3 max-h-[min(34rem,calc(100%-4rem))]')}>{content}</section></>;
 }
 
-function line(message: Message, developer: boolean, labels: ChatLabels): { readonly role: string; readonly body: string; readonly assistant?: AssistantMessage } | undefined {
-  if (message.role === 'system') return developer ? { role: labels.roleSystem, body: typeof message.content === 'string' ? message.content : message.content.map(part => part.text).join('\n') } : undefined;
-  if (message.role === 'toolResult') return { role: labels.roleToolResult(message.toolName, message.isError), body: message.content.map(part => part.type === 'text' ? part.text : '[image result]').join('\n') };
-  if (message.role === 'user') return { role: labels.roleUser, body: typeof message.content === 'string' ? message.content : message.content.filter(part => part.type !== 'text' || !isFileBlock(part.text)).map(part => part.type === 'text' ? part.text : '[image attachment]').join('\n') };
-  const body = message.content.map(part => part.type === 'text' ? part.text : part.type === 'toolCall' ? `[tool call: ${part.name}]` : developer ? `[reasoning]\n${part.thinking}` : '').filter(Boolean).join('\n\n');
-  return { role: labels.roleAssistant(message.stopReason === 'aborted' ? 'interrupted' : message.stopReason === 'error' ? 'failed' : 'ok'), body, ...(message.stopReason === 'error' || message.stopReason === 'aborted' ? {} : { assistant: message }) };
-}
-
-type HistoryRow = { readonly key: string; readonly role: string; readonly body: string; readonly entryId: string; readonly assistant: AssistantMessage | undefined };
-const replyText = (message: AssistantMessage) => message.content.flatMap(part => part.type === 'text' && part.text ? [part.text] : []).join('\n\n');
-
-/** Read-only older records of the open conversation, paged in by the controller. Historical tool results are not current actions. */
-export function HistoryPanel({ history, developer, connected, onLoad, onClose, replyFooter }: {
-  readonly history: ChatHistoryState; readonly developer: boolean; readonly connected: boolean; readonly onLoad: () => void; readonly onClose: () => void;
-  /** The host's reply footer, shown under each earlier reply that has text. Earlier records get no actions. */
-  readonly replyFooter?: ((reply: ReplyRef) => ReactNode) | undefined;
+/** The only history chrome inside the normal transcript: a sentinel, spinner and accessible fallback. */
+export function TranscriptHistory({ history, connected, onLoad, sentinelRef, hidden, loaded }: {
+  readonly history: ChatHistoryState;
+  readonly connected: boolean;
+  readonly onLoad: () => void;
+  readonly sentinelRef: (element: HTMLDivElement | null) => void;
+  readonly hidden: number;
+  readonly loaded: number;
 }) {
-  const { labels, icons } = useChatText();
-  const entries: readonly EntryRecord[] = 'entries' in history ? history.entries : [];
-  const rows = entries.flatMap((entry): HistoryRow[] => entry.model?.length
-    ? entry.model.flatMap((message, index) => { const made = line(message, developer, labels); return made ? [{ key: `history:${entry.id}:${index}`, entryId: String(entry.id), assistant: undefined, ...made }] : []; })
-    : [{ key: `history:${entry.id}`, role: labels.roleEvent, body: entry.head === undefined ? entry.kind : labels.contextBoundary, entryId: String(entry.id), assistant: undefined }]);
-  const exhausted = history.kind === 'ready' && !history.hasMore;
-  return <section aria-label={labels.earlierMessages} data-testid="history" aria-live="off" className="shrink-0 border-b border-border bg-muted/20">
-    <div className="mx-auto flex max-w-3xl items-center gap-2 px-4 py-2">
-      <icons.history className="size-4 text-muted-foreground" aria-hidden="true" />
-      <h3 className="m-0 min-w-0 flex-1 truncate font-(family-name:--chat-display) text-sm font-medium">{labels.earlierMessages} <span className="font-normal text-muted-foreground">{labels.readOnly}</span></h3>
-      <Button size="sm" variant="outline" data-testid="history-load" onClick={onLoad} disabled={!connected || history.kind === 'loading' || history.kind === 'disabled' || exhausted}>
-        {history.kind === 'error' ? labels.retry : history.kind === 'loading' ? labels.loadingShort : labels.loadEarlier}</Button>
-      <Button size="icon-sm" aria-label={labels.returnToConversation} title={labels.returnToConversation} onClick={onClose}><XIcon className="size-4" aria-hidden="true" /></Button>
-    </div>
-    <div className="mx-auto max-h-[40dvh] max-w-3xl space-y-3 overflow-y-auto px-4 pb-3">
-      {history.kind === 'error' && <p role="alert" className="m-0 text-sm text-destructive">{labels.historyFailed}</p>}
-      {history.kind === 'idle' && <p className="m-0 text-sm text-muted-foreground">{labels.loadPage}</p>}
-      {rows.map(row => <article key={row.key} data-history-row-id={row.key} className="rounded-lg border border-border bg-background/60 px-3 py-2">
-        <p className="m-0 mb-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">{row.role}</p>
-        <div className="text-sm opacity-90"><Markdown text={row.body} /></div>
-        {replyFooter && row.assistant && replyText(row.assistant) && replyFooter({ key: row.key, text: replyText(row.assistant), entryId: row.entryId, ...replyMeta(row.assistant) })}</article>)}
-      {history.kind === 'ready' && !rows.length && <p className="m-0 text-sm text-muted-foreground">{labels.noRecords}</p>}
-      {exhausted && <p className="m-0 text-center text-xs text-muted-foreground">{labels.beginning}</p>}
-    </div>
-  </section>;
-}
-
-/** Native archived records remain reachable even when the host hides the chat header or conversation History action. */
-export function TranscriptHistory(props: Parameters<typeof HistoryPanel>[0]) {
   const { labels } = useChatText();
-  if (props.history.kind === 'disabled') return null;
-  return <div className="relative z-10" data-testid="transcript-history">
-    {props.history.kind === 'idle'
-      ? <div className="flex justify-center"><Button size="sm" variant="quiet" data-testid="transcript-history-load" disabled={!props.connected} onClick={props.onLoad}>{labels.loadEarlier}</Button></div>
-      : <HistoryPanel {...props} />}
+  if (history.kind === 'disabled' && hidden === 0) return null;
+  const exhausted = hidden === 0 && history.kind === 'ready' && !history.hasMore;
+  return <div ref={sentinelRef} data-testid="transcript-history" className="flex min-h-8 shrink-0 items-center justify-center text-xs text-muted-foreground">
+    <button type="button" data-testid="transcript-history-load" className="sr-only focus:not-sr-only" disabled={!connected || history.kind === 'loading' || exhausted} onClick={onLoad}>{labels.loadEarlierMessages}</button>
+    {history.kind === 'loading' && <Loader2Icon className="size-4 animate-spin motion-reduce:animate-none" aria-label={labels.loadingShort} />}
+    {history.kind === 'error' && <span role="alert">{labels.historyFailed}</span>}
+    {exhausted && <span>{labels.beginning}</span>}
+    <span role="status" aria-live="polite" className="sr-only">{loaded > 0 ? labels.earlierMessagesLoaded(loaded) : ''}</span>
   </div>;
 }

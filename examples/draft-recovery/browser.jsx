@@ -56,7 +56,7 @@ function App() {
   return <main><h1>Fictional opt-in draft recovery</h1><p>Stored drafts are local recovery content. Save publishes through the SQLite resource provider. This fixture makes no encryption claim.</p>
     <button onClick={() => window.drafts.logout()}>Log out of draft storage</button>
     <p role="status">{html.recovery.kind === 'revoked' ? 'Draft session revoked' : 'Fictional authenticated draft session'}</p>
-    <section data-format="markdown"><MarkdownEditor controller={controllers.get('markdown')} initialMode="source" title="Fictional Markdown" /></section>
+    <section data-format="markdown"><MarkdownEditor autosave={false} controller={controllers.get('markdown')} initialMode="source" title="Fictional Markdown" /></section>
     <section data-format="html"><HtmlViewer controller={controllers.get('html')} mode="source" /></section>
     <section data-format="experience"><ExperienceDocument controller={controllers.get('experience')} cells={cells} canView={canView} /></section>
     <section data-format="canvas"><CanvasEditor controller={controllers.get('canvas')} assetUrls={ASSETS} height={500} onMount={editor => { window.drafts.editor = editor; }} /></section>

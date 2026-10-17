@@ -55,6 +55,36 @@ test('remote chat drives the unchanged native chat controller through the transp
   await until('replica converges', () => JSON.stringify(controller.getSnapshot().view) === JSON.stringify(native.value));
 });
 
+test('remote history preserves its native upper bound when a write races the first page', async t => {
+  const { conversation, fetch: served } = await fixture(t);
+  const write = text => conversation.submit({ type: 'write', entry: { kind: 'fictional.history', model: [{ role: 'user', content: text, timestamp: 0 }] } }, context);
+  for (let index = 0; index < 50; index++) await write(`Earlier fictional ${index}`);
+  let raced = false;
+  const requests = [];
+  const fetch = async request => {
+    const url = new URL(request.url);
+    if (url.searchParams.get('op') === 'entries') {
+      requests.push(url);
+      if (!raced) { raced = true; await write('Newer than the selected history bound'); }
+    }
+    return served(request);
+  };
+  const controller = createNativeChatController({ identity, ...await createRemoteChat({ endpoint, fetch }) });
+  t.after(() => controller.dispose()); await controller.connect();
+  const bound = Math.max(...controller.getSnapshot().view.entries.map(entry => entry.id));
+  await controller.loadEarlier();
+  assert.equal(controller.getSnapshot().history.kind, 'ready', 'a concurrent append does not turn automatic history loading into an error');
+  assert.equal(requests[0].searchParams.get('maxEntryId'), String(bound));
+  assert.ok(controller.getSnapshot().history.entries.every(entry => entry.id <= bound));
+  await controller.loadEarlier();
+  assert.equal(controller.getSnapshot().history.entries.length, 50);
+  assert.equal(requests[1].searchParams.get('maxEntryId'), String(bound));
+  for (const maxEntryId of ['-1', 'NaN', '1.5']) {
+    const response = await served(new Request(`${endpoint}?op=entries&limit=40&maxEntryId=${maxEntryId}`));
+    assert.equal(response.status, 400, 'malformed native entry bounds are refused at the HTTP boundary');
+  }
+});
+
 test('remote stop aborts the native generation and reload restores the transcript', async t => {
   const { fake, conversation, fetch } = await fixture(t);
   const first = createNativeChatController({ identity, ...await createRemoteChat({ endpoint, fetch }) });

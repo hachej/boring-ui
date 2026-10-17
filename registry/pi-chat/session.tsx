@@ -4,7 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import type { KeyboardEvent, ReactNode } from 'react';
 import type { EntryRecord } from '@earendil-works/pi-durable';
 import type { ImageContent, ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
-import type { ChatAttachment, NativeChatController } from '@hachej/boring-ui-kit/native-chat';
+import type { ChatAttachment, ChatHistoryState, NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { useStickToBottom } from 'use-stick-to-bottom';
 import type { ComposerFeedback, ComposerProps, PendingUpload } from './composer';
 import type { ConversationFile } from './conversation-files';
@@ -17,7 +17,7 @@ import type { QueueActions, QueuedMessage } from './queue';
 import type { AnswerOutcome } from './question-card';
 import type { ArtifactsConfig } from './artifact';
 import { derive, isFileBlock, object, queuedMessages } from './rows';
-import type { ChatCard, Mode } from './rows';
+import type { ChatCard, Mode, Row } from './rows';
 import { useChatText } from './labels';
 import type { BlockAction } from '../button/actions';
 import type { ReplyRef } from './config';
@@ -119,7 +119,15 @@ export function useChatSession(options: ChatSessionOptions) {
   const artifactDetect = useMemo(() => artifacts ? { detect: artifacts.detect } : undefined, [Boolean(artifacts), artifacts?.detect]); // eslint-disable-line react-hooks/exhaustive-deps
   const derived = useMemo(() => derive(state.view, { mode, renderEntry, renderTool, groupTool, artifacts: artifactDetect }), [state.view, mode, renderEntry, renderTool, groupTool, artifactDetect]);
   const queued = useMemo(() => queuedMessages(state.view), [state.view]);
-  const { rows, run } = derived;
+  const { run } = derived;
+  const earlier = useMemo<readonly Row[]>(() => {
+    if (!state.view || !('entries' in state.history)) return [];
+    const activeIds = new Set(state.view.entries.map(entry => entry.id));
+    const entries = state.history.entries.filter(entry => !activeIds.has(entry.id));
+    return derive({ ...state.view, entries, docs: {} }, { mode, renderEntry: undefined, renderTool: undefined, groupTool: undefined, artifacts: artifactDetect }).rows
+      .map(row => ({ ...row, key: `history:${row.key}`, historical: true }));
+  }, [state.view, state.history, mode, artifactDetect]);
+  const rows = useMemo(() => [...earlier, ...derived.rows], [earlier, derived.rows]);
   const files = useMemo(() => {
     const found = new Map<string, ConversationFile>();
     const open = onOpenFile ?? mentions?.open;
@@ -130,7 +138,7 @@ export function useChatSession(options: ChatSessionOptions) {
     };
     for (const path of picked) add(path);
     for (const item of state.draft.attachments) found.set(`draft:${item.id}`, { id: `draft:${item.id}`, name: item.name, open: onOpenImage ? () => onOpenImage(item.content) : undefined });
-    for (const row of rows) {
+    for (const row of derived.rows) {
       if (row.type === 'user') {
         const content = typeof row.message.content === 'string' ? [{ type: 'text' as const, text: row.message.content }] : row.message.content;
         for (const [index, part] of content.entries()) {
@@ -171,7 +179,7 @@ export function useChatSession(options: ChatSessionOptions) {
     if (images.length) controller.setAttachments([...images, ...draft.attachments.filter(item => !images.some(image => image.id === item.id))]);
   };
   const working = Boolean(run);
-  const waitingForAnswer = rows.some(row => row.type === 'assistant' && row.parts.some(part => (part.kind === 'question' || part.kind === 'approval') && !part.live && !part.result));
+  const waitingForAnswer = derived.rows.some(row => row.type === 'assistant' && row.parts.some(part => (part.kind === 'question' || part.kind === 'approval') && !part.live && !part.result));
   const send = () => {
     if (sendBlocked || !current()) return;
     const attach = feedback && feedback.count > 0 ? feedback.attach : undefined;
@@ -352,10 +360,13 @@ export function useChatSession(options: ChatSessionOptions) {
 
 export type ChatSession = ReturnType<typeof useChatSession>;
 
-/** Scroll-to-bottom transcript with older rows revealed in pages as the person scrolls up. */
-export function useTranscript(rows: readonly unknown[], page = 60, more = 40) {
+/** One scroll root for current and archived rows. Native paging stays in the borrowed controller. */
+export function useTranscript(rows: readonly Row[], page = 60, more = 40, history?: { readonly state: ChatHistoryState; readonly connected: boolean; readonly load: () => Promise<void> }) {
   const [limit, setLimit] = useState(page);
-  const anchor = useRef<{ readonly height: number; readonly top: number } | undefined>(undefined);
+  const [sentinel, setSentinel] = useState<HTMLDivElement | null>(null);
+  const [loaded, setLoaded] = useState(0);
+  const pending = useRef(false);
+  const anchor = useRef<{ readonly key: string | undefined; readonly y: number; readonly height: number; readonly top: number; readonly length: number; readonly limit: number } | undefined>(undefined);
   // Growth re-pins at once: a spring trails the rows that grow after insert (streamed text, late images) and leaves the newest one under the composer.
   const library = useStickToBottom({ initial: 'instant', resize: 'instant' });
   // The scroller can mount later (AmbientChat starts collapsed) and unmount on collapse, so the element is held in state.
@@ -384,27 +395,46 @@ export function useTranscript(rows: readonly unknown[], page = 60, more = 40) {
     const onScroll = () => {
       const top = scroller.scrollTop;
       const programmatic = library.state.ignoreScrollToTop === top;
-      if (!programmatic && top < last && !library.state.isNearBottom && library.state.isAtBottom) library.stopScroll();
+      if (!programmatic && top < last && scroller.scrollHeight - scroller.clientHeight - top > 70) library.stopScroll();
       last = top;
     };
     scroller.addEventListener('scroll', onScroll, { passive: true, capture: true });
     return () => scroller.removeEventListener('scroll', onScroll, { capture: true });
   }, [scroller, library.state, library.stopScroll]);
   const hidden = Math.max(0, rows.length - limit);
-  // Reveal older rows when the person scrolls near the top, keeping the same rows in view.
   const reveal = useCallback(() => {
-    if (scroller) anchor.current = { height: scroller.scrollHeight, top: scroller.scrollTop };
-    setLimit(value => value + more);
-  }, [scroller, more]);
+    if (pending.current || anchor.current) return;
+    const state = history?.state;
+    if (hidden === 0 && (!history?.connected || !state || state.kind === 'disabled' || state.kind === 'loading' || state.kind === 'ready' && !state.hasMore)) return;
+    library.stopScroll();
+    if (scroller) {
+      const top = scroller.getBoundingClientRect().top;
+      const first = [...scroller.querySelectorAll<HTMLElement>('[data-row-id]')].find(row => row.getBoundingClientRect().bottom > top + 1);
+      anchor.current = { key: first?.dataset['rowId'], y: first?.getBoundingClientRect().top ?? top, height: scroller.scrollHeight, top: scroller.scrollTop, length: rows.length, limit };
+    }
+    if (hidden > 0) setLimit(value => value + more);
+    else if (history) {
+      pending.current = true;
+      void Promise.resolve().then(history.load).catch(() => { anchor.current = undefined; }).finally(() => { pending.current = false; });
+    }
+  }, [hidden, history?.state, history?.connected, history?.load, scroller, library.stopScroll, rows.length, limit, more]);
   useLayoutEffect(() => {
     const saved = anchor.current;
-    if (scroller && saved) { scroller.scrollTop = saved.top + scroller.scrollHeight - saved.height; anchor.current = undefined; }
-  }, [limit, scroller]);
+    if (!scroller || !saved || history?.state.kind === 'loading') return;
+    const added = Math.max(0, rows.length - saved.length);
+    if (limit < saved.limit + added) { setLimit(saved.limit + added); return; }
+    const first = [...scroller.querySelectorAll<HTMLElement>('[data-row-id]')].find(row => row.dataset['rowId'] === saved.key);
+    scroller.scrollTop = first ? scroller.scrollTop + first.getBoundingClientRect().top - saved.y : saved.top + scroller.scrollHeight - saved.height;
+    anchor.current = undefined;
+    setLoaded(count => count + Math.max(0, Math.min(rows.length, limit) - Math.min(saved.length, saved.limit)));
+  }, [rows, limit, scroller, history?.state]);
   useEffect(() => {
-    if (!scroller) return;
-    const onScroll = () => { if (scroller.scrollTop < 240 && scroller.scrollHeight > scroller.clientHeight && hidden > 0 && !anchor.current) reveal(); };
-    scroller.addEventListener('scroll', onScroll, { passive: true });
-    return () => scroller.removeEventListener('scroll', onScroll);
-  }, [hidden, reveal, scroller]);
-  return { stick, hidden, reveal, visible: <T,>(items: readonly T[]): readonly T[] => hidden ? items.slice(hidden) : items, reset: () => setLimit(page) };
+    if (!scroller || !sentinel || typeof IntersectionObserver === 'undefined' || history?.state.kind === 'loading' || history?.state.kind === 'error') return;
+    const observer = new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting) && (scroller.scrollHeight <= scroller.clientHeight || !library.state.isAtBottom)) reveal();
+    }, { root: scroller, rootMargin: '240px 0px 0px' });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [scroller, sentinel, reveal, library.state, history?.state]);
+  return { stick, hidden, reveal, sentinelRef: setSentinel, loaded, visible: <T,>(items: readonly T[]): readonly T[] => hidden ? items.slice(hidden) : items, reset: () => setLimit(page) };
 }

@@ -215,12 +215,12 @@ class ViewerBoundary extends Component {
 }
 
 /** The agent's file viewer: one flat frame (a single header with the name, path, mode toggle and close) over the editor. `onBack` returns to the chat where the file replaces it. */
-function Document({ path, provider, close, onBack, onUnsaved }) {
+function Document({ path, provider, close, onBack, onUnsaved, setBeforeLeave }) {
   useAgentContext({ name: 'Library document', params: { path } });
   const options = useMemo(() => ({ client: provider, identity: provider.identity, history: provider.history }), [provider]);
   return <div data-testid="library-document" data-path={path} role="region" aria-label={`File ${path}`} tabIndex={-1} className="flex min-h-0 min-w-0 flex-1 flex-col outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&>*]:min-h-0 [&>*]:flex-1">
     <ViewerBoundary key={path} onClose={close}>
-      <FileViewer path={path} locator={provider.locate(path)} options={options} onClose={close} {...(onBack ? { onBack, backLabel: 'Chat' } : {})} onUnsavedChange={onUnsaved} />
+      <FileViewer path={path} locator={provider.locate(path)} options={options} onClose={close} {...(onBack ? { onBack, backLabel: 'Chat' } : {})} onUnsavedChange={onUnsaved} onBeforeLeaveChange={setBeforeLeave} />
     </ViewerBoundary>
   </div>;
 }
@@ -258,7 +258,7 @@ function Column({ view }) {
 const PANEL = 560; // the file viewer's width beside the chat
 const transcribe = async (audio: Blob, signal: AbortSignal) => (await (await authorized(new Request(at('/api/transcribe'), { method: 'POST', headers: { 'content-type': audio.type || 'audio/webm' }, body: audio, signal }))).json()).text ?? '';
 
-function Chat({ api, provider, file, openFile, closeFile, setUnsaved, active, conversations, feed }) {
+function Chat({ api, provider, file, openFile, closeFile, setUnsaved, setBeforeLeave, active, conversations, feed }) {
   const { isMobile, setOpenMobile } = useSidebar();
   const base = useRef(620), widened = useRef(false);
   const chat = useRemoteChat({ conversationId: active, endpoint: id => at(`/api/chat?conversation=${id}`), fetch: authorized, identity, requestContext: () => ({ ...readAgentContext(), tab: TAB }) });
@@ -289,7 +289,7 @@ function Chat({ api, provider, file, openFile, closeFile, setUnsaved, active, co
   const barTools = <ChatTools conversations={conversations} provider={provider} file={file} openFile={openFile} feed={feed} />;
   const tools = voice ? <VoiceInput controller={chat.controller} transcribe={transcribe} /> : undefined;
   const common = { controller: chat.controller, actions: chat.actions, headerActions, className: '[&_[data-action=navigation]]:md:hidden', tools, ...(attachments ? { attachments, pasteToFile: {} } : {}), onOpenFile: openFile, fileChanges: true };
-  const viewer = file && provider ? <Document path={file} provider={provider} close={closeFile} onBack={replaceChat ? closeFile : undefined} onUnsaved={setUnsaved} /> : null;
+  const viewer = file && provider ? <Document path={file} provider={provider} close={closeFile} onBack={replaceChat ? closeFile : undefined} onUnsaved={setUnsaved} setBeforeLeave={setBeforeLeave} /> : null;
   const header = <div data-testid="agent-panel-header" className="pi-chat flex h-14 shrink-0 items-center gap-0.5 px-3 text-foreground [&_button]:min-h-11 [&_button]:min-w-11">
     <h2 className="m-0 min-w-0 flex-1 truncate text-sm font-semibold tracking-tight">AP helper</h2>
     {barTools}<BlockActions actions={placementActions} testId="chat-action" menuLabel="More actions" className="[&_[data-action=navigation]]:md:hidden" />
@@ -347,9 +347,23 @@ function App() {
   const [active, setActive] = useState(firstConversation);
   // An open document may hold unsaved edits: leaving it (another file, closing it, an agent command) asks first. App screens never touch it.
   const dirty = useRef(false);
-  const leave = () => !dirty.current || globalThis.confirm('This document has unsaved changes. Discard them and leave?');
-  const openFile = useCallback((raw: string) => { const path = validWorkspacePath(raw); if (!path) return false; if (path === file) return true; if (!leave()) return false; dirty.current = false; setFile(path); return true; }, [file]);
-  const closeFile = useCallback(() => { if (!leave()) return false; dirty.current = false; setFile(undefined); return true; }, []);
+  const beforeLeave = useRef<(() => Promise<boolean>) | null>(null);
+  const setBeforeLeave = useCallback((flush: (() => Promise<boolean>) | null) => { beforeLeave.current = flush; }, []);
+  const currentFile = useRef(file); currentFile.current = file;
+  const leaving = useRef(false);
+  const leave = async () => {
+    if (leaving.current) return false;
+    if (!dirty.current) return true;
+    const selected = currentFile.current;
+    leaving.current = true;
+    try {
+      const saved = await beforeLeave.current?.();
+      if (currentFile.current !== selected) return false;
+      return saved === true || !dirty.current || globalThis.confirm('This document has unsaved changes. Discard them and leave?');
+    } finally { leaving.current = false; }
+  };
+  const openFile = useCallback(async (raw: string) => { const path = validWorkspacePath(raw); if (!path) return false; if (path === currentFile.current) return true; if (!await leave()) return false; dirty.current = false; setFile(path); return true; }, []);
+  const closeFile = useCallback(async () => { if (!await leave()) return false; dirty.current = false; setFile(undefined); return true; }, []);
   // Commands (the agent's `show`) reach the app's screens, or the agent's own viewer for a file.
   const go = useCallback((next, fromAgent = false) => { if (next.screen === 'file') return openFile(next.path); setView(next); if (fromAgent || dock.current?.placement === 'page') dock.current?.setPlacement('floating'); return true; }, [openFile]);
   return <AgentContextProvider>
@@ -357,7 +371,7 @@ function App() {
       <OpenFile.Provider value={openFile}>
         <SidebarProvider style={{ '--sidebar-width': '14.5rem', minHeight: 0, height: '100%' }}>
           <DockLayout storageKey="workspace-demo" minMain={600} className="h-full">
-            <WorkspaceLayout view={view} go={go} dock={dock} provider={provider} file={file} openFile={openFile} closeFile={closeFile} setUnsaved={unsaved => { dirty.current = unsaved; }} active={active} setActive={setActive} />
+            <WorkspaceLayout view={view} go={go} dock={dock} provider={provider} file={file} openFile={openFile} closeFile={closeFile} setBeforeLeave={setBeforeLeave} setUnsaved={unsaved => { dirty.current = unsaved; }} active={active} setActive={setActive} />
           </DockLayout>
         </SidebarProvider>
       </OpenFile.Provider>

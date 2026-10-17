@@ -19,7 +19,7 @@ export default {
   ] },
   expect: [{ toolCalled: 'present' }, { artifact: { type: 'markdown', count: 1 } }],
   async verify(t) {
-    const { browser, q, button, idle, SOURCE, SUBMIT } = t;
+    const { browser, q, idle, SOURCE, SUBMIT } = t;
     // The document follows the save: open it from its card if the panel still shows the Workspace tabs.
     if (!await browser.evaluate(`!!${q('[data-testid=artifact-panel]')}`)) await browser.click(`${t.qa('[data-testid=artifact-card][data-state=ready]')}.at(-1)`);
     await browser.until('the document is in the panel', `!!${q('[data-testid=workspace-panel] [data-testid=document]')}`, 30000);
@@ -27,8 +27,7 @@ export default {
     await browser.click(q('[data-testid=workspace-panel] [data-testid=artifact-mode-source]'));
     await browser.until('document in editor', `${SOURCE}?.value.includes('Moon picnic')`, 60000);
     await browser.type(SOURCE, '\n- HUMAN-ADDED thermos\n');
-    await browser.click(button('Save'));
-    await browser.until('saved', `!${button('Save')}`);
+    await browser.until('autosaved', `${q('[data-testid=artifact-status]')}?.textContent === 'Saved'`);
     await t.say('Add one more bullet item "star map". Keep everything else exactly.');
     await browser.until('revised document', `/star map/i.test(${SOURCE}?.value ?? '') && /HUMAN-ADDED thermos/.test(${SOURCE}.value)`, 180000);
     await browser.until('idle', idle, 120000);

@@ -41,7 +41,7 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
     const controller = createMarkdownController({ source: options.newDocument ? { kind: 'new', target: selectedTarget } : { kind: 'saved', snapshot }, identity, client, instanceId: `editor-${++sequence}`, epoch: 'page', readOnly: options.readOnly });
     const container = document.createElement('div'); document.body.append(container);
     const root = createRoot(container);
-    const render = async (selected = controller) => { await act(async () => { root.render(createElement(MarkdownEditor, { controller: selected, title: 'Notes', ...(options.props ?? {}) })); }); };
+    const render = async (selected = controller) => { await act(async () => { root.render(createElement(MarkdownEditor, { controller: selected, title: 'Notes', autosave: false, ...(options.props ?? {}) })); }); };
     await render();
     t.after(async () => { await act(async () => root.unmount()); controller.dispose(); provider.close(); container.remove(); });
     const button = label => { const found = [...container.querySelectorAll('button')].find(node => (node.getAttribute('aria-label') || node.textContent) === label); assert.ok(found, label); return found; };
@@ -60,9 +60,174 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
     return { controller, client, target: selectedTarget, container, root, render, button, click, input, settled, writes: () => writes, saved: async () => new TextDecoder().decode((await client.read({ target: selectedTarget, revision: { kind: 'latest' } })).snapshot.bytes) };
   }
 
-  await t.test('selection formatting is the default, formats the native selection, and can be pinned without a write', async t => {
+  await t.test('the owner document with a legacy nbsp-only trailing paragraph reopens rich and never writes nbsp again', async t => {
+    const raw = '# Hello\n\nHow are you ?\n\n&nbsp;\n';
+    const f = await fixture(t, raw);
+    assert.equal(f.container.querySelector('section').dataset.mode, 'rich');
+    await f.click('Heading 2'); await f.click('Save'); await f.settled();
+    assert.equal(await f.saved(), '## Hello\n\nHow are you ?\n');
+    await f.render();
+    assert.equal(f.container.querySelector('section').dataset.mode, 'rich');
+  });
+
+  await t.test('editor-produced Markdown is idempotent after one pass and stays rich across a corpus', async t => {
+    const corpus = [
+      '# Heading\n\nA paragraph.\n', 'First paragraph.\n\nSecond paragraph.\n',
+      '- first\n- second\n', '- parent\n  - child\n    - grandchild\n', '1. first\n2. second\n',
+      '- [ ] next\n- [x] done\n', '> A quote\n>\n> Another paragraph.\n',
+      '```ts\nconst fictional = 1;\n\n```\n', '|A|B|\n|-|-|\n|1|2|\n',
+      '[Fictional](https://fictional.invalid/) and **bold**, *italic*, `code`.\n',
+      '\n\nStart.\n', 'First.\n\n&nbsp;\n\nSecond.\n', 'End.\n\n&nbsp;\n\n&nbsp;\n',
+      'A hard break  \nthen more.\n', '# Hello\n\nHow are you ?\n\n&nbsp;\n',
+    ];
+    for (const markdown of corpus) {
+      const f = await fixture(t, markdown);
+      assert.equal(f.container.querySelector('section').dataset.mode, 'rich', markdown);
+      // Native undo restores the parsed document; its update runs the real renderer's serializer.
+      await f.click('Heading 1');
+      const undo = async fixture => act(async () => fixture.container.querySelector('[contenteditable]').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'z', code: 'KeyZ', keyCode: 90, ctrlKey: true, bubbles: true, cancelable: true })));
+      await undo(f);
+      const once = f.controller.getSnapshot().text;
+      assert.doesNotMatch(once, /^\s*&nbsp;\s*$/m, markdown);
+      assert.equal(checkMarkdownRichSafety(once).safe, true, once);
+      const again = await fixture(t, once);
+      assert.equal(again.container.querySelector('section').dataset.mode, 'rich', once);
+      await again.click('Heading 1'); await undo(again);
+      assert.equal(again.controller.getSnapshot().text, once, `stable serialization: ${JSON.stringify(markdown)}`);
+    }
+  });
+
+  await t.test('desktop formatting is pinned by default and selection formatting remains an option', async t => {
+    const f = await fixture(t, 'original text\n');
+    assert.ok(f.container.querySelector('.boring-markdown-toolbar [aria-label="Bold"]'), 'desktop toolbar is visible by default');
+    assert.equal(f.writes(), 0);
+  });
+
+  await t.test('autosave debounces edits once, hides Save, and keeps the exact persisted text', async t => {
+    const f = await fixture(t, 'original', { props: { initialMode: 'source', autosave: { delayMs: 250 } } });
+    assert.equal([...f.container.querySelectorAll('button')].find(button => button.textContent === 'Save'), undefined);
+    await f.input('one'); await f.input('two'); await f.input('final');
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 350)); });
+    assert.equal(f.writes(), 1);
+    assert.equal(await f.saved(), 'final');
+    assert.equal(f.controller.getSnapshot().dirty, false);
+    assert.match(f.container.querySelector('[role=status]').textContent, /Saved/);
+  });
+
+  await t.test('default autosave waits about 1200ms and visibilitychange flushes immediately', async t => {
+    const f = await fixture(t, 'original', { props: { initialMode: 'source', autosave: true } });
+    await f.input('default delay');
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 950)); });
+    assert.equal(f.writes(), 0, 'the default does not save early');
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 400)); });
+    assert.equal(f.writes(), 1); assert.equal(await f.saved(), 'default delay');
+    await f.input('saved when hidden');
+    const descriptor = Object.getOwnPropertyDescriptor(document, 'visibilityState');
+    try {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+      await act(async () => { document.dispatchEvent(new window.Event('visibilitychange')); await new Promise(resolve => setTimeout(resolve, 20)); });
+      await f.settled(); assert.equal(await f.saved(), 'saved when hidden');
+    } finally {
+      if (descriptor) Object.defineProperty(document, 'visibilityState', descriptor); else delete document.visibilityState;
+    }
+  });
+
+  await t.test('autosave queues edits during a flush and Ctrl+S never starts a competing write', async t => {
+    const started = Promise.withResolvers(), release = Promise.withResolvers();
+    let active = 0, maxActive = 0, calls = 0;
+    const f = await fixture(t, 'original', { props: { initialMode: 'source', autosave: true }, publish: async (request, commit) => {
+      calls++; active++; maxActive = Math.max(active, maxActive);
+      const result = await commit();
+      if (calls === 1) { started.resolve(); await release.promise; }
+      active--; return result;
+    } });
+    const shortcut = async () => act(async () => { f.container.querySelector('textarea').dispatchEvent(new window.KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true, cancelable: true })); });
+    await f.input('first'); await shortcut(); await started.promise;
+    assert.equal(f.container.querySelector('[role=status]').textContent, 'Saving…');
+    await f.input('second'); await shortcut();
+    assert.equal(f.writes(), 1);
+    await act(async () => { release.resolve(); await new Promise(resolve => setTimeout(resolve, 50)); });
+    await f.settled();
+    assert.equal(f.writes(), 2); assert.equal(maxActive, 1);
+    assert.equal(await f.saved(), 'second'); assert.equal(f.controller.getSnapshot().dirty, false);
+  });
+
+  await t.test('autosave conflicts pause typing, blur and hide saves until explicit resolution, retaining the buffer', async t => {
+    const f = await fixture(t, 'original', { props: { initialMode: 'source', autosave: { delayMs: 100 } } });
+    await f.client.publish({ operationId: 'agent-write', atomicity: 'all-or-nothing', changes: [{ kind: 'replace', target: f.controller.getSnapshot().base.target, bytes: new TextEncoder().encode('agent text'), mediaType: 'text/markdown' }] });
+    await f.input('human draft');
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 200)); });
+    assert.equal(f.controller.getSnapshot().save.result.kind, 'conflict');
+    await f.input('newer human draft');
+    await act(async () => { f.container.querySelector('textarea').dispatchEvent(new window.FocusEvent('focusout', { bubbles: true })); window.dispatchEvent(new window.Event('pagehide')); await new Promise(resolve => setTimeout(resolve, 200)); });
+    assert.equal(f.writes(), 2, 'one agent write and one refused autosave, no retries');
+    assert.equal(f.container.querySelector('textarea').value, 'newer human draft');
+    assert.equal(await f.saved(), 'agent text');
+    await f.click('Discard local changes and reload');
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
+    await f.input('resolved edit');
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 200)); });
+    assert.equal(await f.saved(), 'resolved edit');
+  });
+
+  await t.test('refused and unavailable autosaves stop without losing the draft', async t => {
+    for (const kind of ['denied', 'unavailable']) {
+      const f = await fixture(t, 'original', { props: { initialMode: 'source', autosave: { delayMs: 80 } }, publish: async () => ({ kind, reason: 'Fictional refusal' }) });
+      await f.input('kept draft');
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 160)); });
+      await f.input('kept newer draft');
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 160)); });
+      assert.equal(f.writes(), 1); assert.equal(f.controller.getSnapshot().text, 'kept newer draft');
+      assert.match(f.container.textContent, /Fictional refusal/);
+      assert.equal(await f.saved(), 'original');
+    }
+  });
+
+  await t.test('explicit refresh resolves a temporary refusal and resumes autosave without replacing the buffer', async t => {
+    let available = false;
+    const f = await fixture(t, 'original', { props: { initialMode: 'source', autosave: { delayMs: 100 } }, publish: (request, commit) => available ? commit() : Promise.resolve({ kind: 'unavailable', reason: 'Fictional offline provider' }) });
+    await f.input('retained edit');
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 180)); });
+    assert.equal(f.writes(), 1); assert.equal(await f.saved(), 'original');
+    available = true;
+    await act(async () => { await f.controller.actions.refresh(); await new Promise(resolve => setTimeout(resolve, 180)); });
+    assert.equal(await f.saved(), 'retained edit'); assert.equal(f.writes(), 2);
+    assert.doesNotMatch(f.container.textContent, /Fictional offline provider/);
+  });
+
+  await t.test('blur, page hide, unmount and switching controllers flush before the idle delay', async t => {
+    for (const trigger of ['blur', 'hide', 'unmount', 'switch']) {
+      const f = await fixture(t, 'original', { props: { initialMode: 'source', autosave: true } });
+      await f.input(`saved on ${trigger}`);
+      assert.equal(f.writes(), 0);
+      if (trigger === 'switch') {
+        const other = await fixture(t, 'other file'); await f.render(other.controller);
+        assert.equal(other.writes(), 0);
+      } else await act(async () => {
+        if (trigger === 'blur') f.container.querySelector('textarea').dispatchEvent(new window.FocusEvent('focusout', { bubbles: true }));
+        else if (trigger === 'hide') window.dispatchEvent(new window.Event('pagehide'));
+        else f.root.unmount();
+        await new Promise(resolve => setTimeout(resolve, 30));
+      });
+      await f.settled();
+      assert.equal(await f.saved(), `saved on ${trigger}`); assert.equal(f.writes(), 1);
+    }
+  });
+
+  await t.test('opt-out never automatically flushes and read-only documents never publish', async t => {
+    const f = await fixture(t, 'original', { props: { initialMode: 'source', autosave: false } });
+    await f.input('manual draft');
+    await act(async () => { f.container.querySelector('textarea').dispatchEvent(new window.FocusEvent('focusout', { bubbles: true })); window.dispatchEvent(new window.Event('pagehide')); await new Promise(resolve => setTimeout(resolve, 1300)); });
+    assert.equal(f.writes(), 0); assert.equal(await f.saved(), 'original');
+    await f.click('Save'); await f.settled(); assert.equal(await f.saved(), 'manual draft');
+    const readonly = await fixture(t, 'reference', { readOnly: true, props: { initialMode: 'source', autosave: { delayMs: 10 } } });
+    await act(async () => { readonly.container.querySelector('textarea').dispatchEvent(new window.FocusEvent('focusout', { bubbles: true })); window.dispatchEvent(new window.Event('pagehide')); await new Promise(resolve => setTimeout(resolve, 50)); });
+    assert.equal(readonly.writes(), 0);
+  });
+
+  await t.test('selection formatting formats the native selection and can be pinned without a write', async t => {
     let tools;
-    const f = await fixture(t, 'original text\n', { props: { onMountedTools: value => { tools = value; } } });
+    const f = await fixture(t, 'original text\n', { props: { formattingToolbar: 'selection', onMountedTools: value => { tools = value; } } });
     assert.ok(f.container.querySelector('.boring-markdown-toolbar') === null, 'no permanent formatting row by default');
     assert.equal(document.querySelector('.boring-markdown-bubble'), null, 'no menu before a text selection');
     const target = tools.getTarget();

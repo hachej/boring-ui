@@ -38,16 +38,22 @@ interface Common {
   readonly onClose: () => void;
   readonly back: ReactNode;
   readonly onUnsavedChange?: ((unsaved: boolean) => void) | undefined;
+  readonly onBeforeLeaveChange?: ((flush: (() => Promise<boolean>) | null) => void) | undefined;
 }
 
 const subtitleOf = (locator: ResourceLocator) => <span data-testid="file-path" className="truncate">{locator.resource.path}</span>;
 
 /** Markdown or HTML: a revisioned controller over the file. A new revision remounts the pane; it starts in the mode the person chose. */
-function FileDocument({ path, kind, locator, options, onClose, back, onUnsavedChange }: Common) {
+function FileDocument({ path, kind, locator, options, onClose, back, onUnsavedChange, onBeforeLeaveChange }: Common) {
   const { client, identity } = options;
   const create = useMemo(() => (snapshot: ResourceSnapshot): MarkdownController | HtmlController => (kind === 'markdown' ? createMarkdownController : createHtmlController)({
     identity, client, instanceId: randomUUID(), epoch: 'workspace', source: { kind: 'saved', snapshot } }), [kind, client, identity]);
-  const saved = useSaved({ client, target: locator, create });
+  const autosave = useRef<{ controller: MarkdownController | HtmlController; flush: () => Promise<boolean> } | null>(null);
+  const saved = useSaved({ client, target: locator, create, beforeDispose: controller => autosave.current?.controller === controller ? autosave.current.flush() : undefined });
+  const registerAutosave = useCallback((flush: (() => Promise<boolean>) | null) => {
+    autosave.current = flush && saved.controller ? { controller: saved.controller, flush } : null;
+    onBeforeLeaveChange?.(flush);
+  }, [saved.controller, onBeforeLeaveChange]);
   useLayoutEffect(() => {
     const controller = saved.controller;
     if (!controller) return;
@@ -74,7 +80,7 @@ function FileDocument({ path, kind, locator, options, onClose, back, onUnsavedCh
   // The preview selector the journeys use keeps working: the wrapper holds the document's text.
   return <div data-testid="file-preview" className="h-full min-h-0" data-revision={revision}>
     {kind === 'markdown'
-      ? <MarkdownPane key={revision} controller={saved.controller as MarkdownController} revision={revision} initialMode={mode as 'rich'} onModeChange={setMode} {...common} />
+      ? <MarkdownPane key={revision} controller={saved.controller as MarkdownController} revision={revision} initialMode={mode as 'rich'} onModeChange={setMode} onAutosaveChange={registerAutosave} {...common} />
       : <HtmlPane key={revision} controller={saved.controller as HtmlController} revision={revision} initialMode={mode as 'preview'} onModeChange={setMode} {...(options.interactive ? { interactive: options.interactive } : {})} {...common} />}
   </div>;
 }
@@ -134,7 +140,7 @@ function FileBytes({ path, kind, locator, options, onClose, back }: Common) {
  * One file in the panel. `path` is the host's name for it (shown in the share target and `data-path`); `locator` is the resource the
  * client reads. Remount per file with a `key`. `onBack` adds a back button to the bar (for example to the host's file list).
  */
-export function FileViewer({ path, locator, options, onClose, onBack, backLabel, onUnsavedChange }: {
+export function FileViewer({ path, locator, options, onClose, onBack, backLabel, onUnsavedChange, onBeforeLeaveChange }: {
   readonly path: string;
   readonly locator: ResourceLocator;
   readonly options: ViewerOptions;
@@ -143,12 +149,14 @@ export function FileViewer({ path, locator, options, onClose, onBack, backLabel,
   readonly backLabel?: string | undefined;
   /** Built-in editable viewers report unsaved and unconfirmed changes for navigation guards. */
   readonly onUnsavedChange?: ((unsaved: boolean) => void) | undefined;
+  /** The Markdown autosave barrier, for flush-before-navigation guards. Null for explicit-save viewers. */
+  readonly onBeforeLeaveChange?: ((flush: (() => Promise<boolean>) | null) => void) | undefined;
 }) {
   const kind = viewerKindOf(path);
   const { labels, icons } = useAppText();
   const back = onBack ? <button type="button" data-testid="file-back" onClick={onBack} className="inline-flex h-8 min-w-8 shrink-0 cursor-pointer items-center justify-center gap-1 rounded-md px-2 text-xs text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 max-sm:h-11 max-sm:min-w-11 pointer-coarse:h-11 pointer-coarse:min-w-11"><icons.back className="size-4" aria-hidden="true" /><span className="max-sm:sr-only">{backLabel ?? labels.back}</span></button> : undefined;
   const custom = options.viewers?.[kind];
-  const common: Common = { path, kind, locator, options, onClose, back, onUnsavedChange };
+  const common: Common = { path, kind, locator, options, onClose, back, onUnsavedChange, onBeforeLeaveChange };
   return <div data-testid="file-viewer" data-kind={kind} data-path={path} aria-label={labels.fileViewer(KIND_LABEL[kind])} className="flex h-full min-h-0 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1">
     {custom ? custom({ target: locator, title: nameOf(path), frame: { titleTestId: 'file-title', onClose, target: { file: path }, headerStart: back } })
       : kind === 'markdown' || kind === 'html' ? <FileDocument {...common} />

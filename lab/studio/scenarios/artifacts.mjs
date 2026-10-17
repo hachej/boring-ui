@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { artifactKit, REPORT_PROMPT, REVISE_PROMPT } from './_artifacts.mjs';
 import { call, latestArtifact, writeAndPresent, REPORT_PATH, REPORT_TURNS, REVISE_TURNS } from './_script.mjs';
 
-const TIME = /\d{1,2}:\d{2}:\d{2}/;
+const RELATIVE_TIME = /^(Just now|\d+ (min|h) ago)$/;
 
 export default [
   {
@@ -184,16 +184,15 @@ document.getElementById('chart').append(svg);
       assert.equal((await kit.cards()).filter(c => c.id === report.id).length, 2, 'one card per message for the same artifact');
       await browser.click(cardWhere(report.id, 2));
       await browser.until('latest shows the revision', `/Safety notes/i.test(${editorText}) && ${q(PANEL)}.dataset.follow === 'true'`);
-      // The history menu: an icon button with a tooltip, newest first, the latest marked and the one on display checked.
+      // The history menu: relative time and provenance, newest first, with the displayed revision marked Current.
       const bar = `${PANEL} [data-testid=artifact-bar]`;
-      const items = () => browser.evaluate(`${qa('[data-testid=artifact-versions-item]')}.map(i => [i.children[1].textContent, i.children[2]?.textContent ?? '', i.getAttribute('aria-checked')])`);
+      const items = () => browser.evaluate(`${qa('[data-testid=artifact-versions-item]')}.map(i => { const description = i.querySelector('[data-testid=artifact-versions-description]'); return [description.previousElementSibling.textContent, description.textContent, i.querySelector('[data-testid=artifact-versions-hint]')?.textContent ?? '', i.getAttribute('aria-checked')]; })`);
       const trigger = `${PANEL} [data-testid=artifact-versions]`;
       assert.deepEqual(await browser.evaluate(`({ label: ${q(trigger)}.getAttribute('aria-label'), title: ${q(trigger)}.title, text: ${q(trigger)}.textContent.trim(), popup: ${q(trigger)}.getAttribute('aria-haspopup') })`), { label: 'Version history', title: 'Version history', text: '', popup: 'menu' });
       await browser.click(q(trigger));
       await browser.until('history menu', `!!${q('[data-testid=artifact-versions-list]')}`, 3000);
-      // Versions are named by when they were saved (a clock time), never by a number; the newest carries the "Latest" marker.
-      const shape = list => list.map(([label, marker, checked]) => [TIME.test(label) && !/^Version/.test(label), marker, checked]);
-      assert.deepEqual(shape(await items()), [[true, 'Latest', 'true'], [true, '', 'false']]);
+      const shape = list => list.map(([label, author, marker, checked]) => [RELATIVE_TIME.test(label), author, marker, checked]);
+      assert.deepEqual(shape(await items()), [[true, 'Agent', 'Current', 'true'], [true, 'Agent', '', 'false']]);
       await browser.press('Escape');
       await browser.until('Escape closes the history menu', `!${q('[data-testid=artifact-versions-list]')} && document.activeElement === ${q(trigger)}`, 3000);
       // The whole bar is one row at the panel's width.
@@ -204,12 +203,13 @@ document.getElementById('chart').append(svg);
       await browser.click(cardWhere(report.id, 1));
       await browser.until('pinned version 1', `${q(PANEL)}.dataset.follow === 'false' && ${q(PANEL)}.dataset.artifactPosition === '1' && ${editorText}.length > 100`);
       assert.equal(await browser.evaluate(`${q('[data-testid=artifact-readonly]')}?.textContent`), 'Read-only', 'an older version is labelled read-only in the subtitle');
+      assert.equal(await browser.evaluate(`${q('[data-testid=version-view-only]')}?.textContent`), 'Viewing an older version. Restore is not available in this viewer.');
       assert.equal(await browser.evaluate(`!/Safety notes/i.test(${editorText})`), true, 'version 1 has the original text');
       assert.equal(await browser.evaluate(`${q(`${PANEL} [role=textbox]`)}.getAttribute('contenteditable')`), 'false');
       await shots('artifacts-pinned');
       await browser.click(q(trigger));
       await browser.until('history menu on a pinned version', `!!${q('[data-testid=artifact-versions-list]')}`, 3000);
-      assert.deepEqual(shape(await items()), [[true, 'Latest', 'false'], [true, '', 'true']]);
+      assert.deepEqual(shape(await items()), [[true, 'Agent', '', 'false'], [true, 'Agent', 'Current', 'true']]);
       await browser.until('version menu owns focus', `${q('[data-testid=artifact-versions-list]')}?.contains(document.activeElement)`, 5000);
       await browser.press('Home');
       await browser.until('latest version focused', `document.activeElement === ${qa('[data-testid=artifact-versions-item]')}[0]`, 5000);
@@ -227,8 +227,7 @@ document.getElementById('chart').append(svg);
       const SOURCE = `document.querySelector('${PANEL} textarea')`;
       await browser.until('source editor', `!!${SOURCE}`);
       await browser.type(SOURCE, '\n\nHUMAN-EDIT-MARKER: bring a thermos.\n');
-      await browser.click(button('Save'));
-      await browser.until('saved', `!${button('Save')}`);
+      await browser.until('autosaved', `${q('[data-testid=artifact-status]')}?.textContent === 'Saved'`);
       assert.match(await kit.stored(report.id), /HUMAN-EDIT-MARKER/);
       await t.say('Add a short final section titled "Packing" to the trail report. Keep everything else. One short sentence for the reply.');
       // The person closes the panel while the agent works: the new version does not open it again during this turn.

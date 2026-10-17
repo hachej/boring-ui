@@ -146,6 +146,8 @@ export const frenchChatLabels: ChatLabels = {
   retry: 'Réessayer',
   loadingShort: 'Chargement…',
   loadEarlier: 'Charger les précédents',
+  loadEarlierMessages: 'Charger les messages précédents',
+  earlierMessagesLoaded: count => `${count} messages précédents chargés`,
   returnToConversation: 'Revenir à la conversation en cours',
   historyFailed: 'L’historique n’a pas pu être chargé. La page précédente reste affichée.',
   loadPage: 'Chargez une page pour parcourir les messages précédents.',

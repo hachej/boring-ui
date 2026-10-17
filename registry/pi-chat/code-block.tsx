@@ -14,7 +14,7 @@ export function CopyButton({ text, label: given, onCopy, className, iconOnly = f
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
   const settle = (next: 'copied' | 'failed') => { setState(next); clearTimeout(timer.current); timer.current = setTimeout(() => setState('idle'), 1600); };
-  return <Button size="sm" className={cn('max-sm:min-w-11 pointer-coarse:min-w-11', className)} data-testid="copy" aria-label={label} title={state === 'failed' ? labels.copyFailed : label}
+  return <Button size={iconOnly ? 'icon-sm' : 'sm'} className={cn('max-sm:min-w-11 pointer-coarse:min-w-11', className)} data-testid="copy" aria-label={label} title={state === 'failed' ? labels.copyFailed : label}
     onClick={() => { copyText(text, onCopy).then(() => settle('copied'), () => settle('failed')); }}>
     {state === 'copied' ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
     <span className={iconOnly ? 'sr-only' : 'sr-only md:not-sr-only'}>{state === 'copied' ? labels.copied : state === 'failed' ? labels.failed : label}</span>
