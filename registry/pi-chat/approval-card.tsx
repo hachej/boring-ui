@@ -77,7 +77,7 @@ export function ApprovalCard({ call, result, answer, questionId, summary, decisi
   const unavailable = !answer || !questionId || busy;
 
   // shadcn's Confirmation recipe: an outline Item with the question and Approve/Deny actions; pending approvals are prompts, not activity.
-  return <Item variant="outline" size="sm" render={<section />} data-testid="approval-card" data-state={state} data-call-id={call.id} data-tool={call.name} aria-label={labels.approvalNeeded} className="my-2">
+  return <Item variant="outline" size="sm" render={<section />} data-testid="approval-card" data-state={state} data-call-id={call.id} data-tool={call.name} aria-label={labels.approvalNeeded} className="my-2 text-start">
     <ItemMedia variant="icon">
       {approved ? <CheckIcon aria-hidden="true" /> : denied ? <XIcon aria-hidden="true" /> : <ShieldAlertIcon aria-hidden="true" />}
     </ItemMedia>
