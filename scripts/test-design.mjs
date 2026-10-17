@@ -93,12 +93,14 @@ export async function testDesign({ evidence = process.env.DESIGN_EVIDENCE } = {}
             await browser.press('Escape');
           }
         } else {
-          // History and Library popovers are mounted by the workspace host in every placement.
+          // Library is a popover; History is the side column on a wide Agent page (remembered, so it may already be open) and a sheet on a phone.
           for (const panel of ['library', 'history']) {
-            await browser.click(q(`[data-testid=chat-action-${panel}]`));
-            await browser.until(`${panel} surface`, `!!${q(panel === 'library' ? '[data-testid=library-popover]' : '[data-testid=conversations]')}`, 5000);
+            const surface = q(panel === 'library' ? '[data-testid=library-popover]' : '[data-testid=conversations]');
+            if (!(await browser.evaluate(`!!${surface}`))) await browser.click(q(`[data-testid=chat-action-${panel}]`));
+            await browser.until(`${panel} surface`, `!!${surface}`, 5000);
             await inspect(`${prefix}-${panel}`, params);
-            await browser.press('Escape');
+            if (await browser.evaluate(`!!${q('[data-testid=history-column]')}`)) await browser.click(q('[data-testid=chat-action-history]'));
+            else await browser.press('Escape');
           }
         }
         // Prove the audit rejects bad values on a REAL block control, independently of REPORT mode.
