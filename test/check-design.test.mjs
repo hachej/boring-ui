@@ -80,6 +80,13 @@ test('allowances match exact file, rule and pattern with an owned reason', t => 
   assert.ok(checkDesign(f.root, f).errors.includes('Invalid design allowlist entry'));
 });
 
+test('shipped CSS objects are checked as declarations, not quoted JSON keys', t => {
+  const f = fixture(t, 'export const marker = true;');
+  f.write('registry.json', JSON.stringify({ items: [{ name: 'button', files: [{ path: 'registry/button/button.tsx' }], css: { '@layer components': { '.fixture': { 'border-width': '2px', 'border-radius': '0.5rem', 'box-shadow': '0 1px 5px black', 'font-family': 'Arial', 'transition-duration': '150ms' } } } }] }));
+  const rules = new Set(checkDesign(f.root, f).findings.filter(finding => finding.file.endsWith('/@css')).map(finding => finding.rule));
+  for (const rule of ['border-width', 'radius', 'shadow', 'font', 'motion']) assert.ok(rules.has(rule), `${rule} must inspect shipped CSS declarations`);
+});
+
 test('the committed inventory covers all source and every shipped CSS item, with no unowned group', () => {
   const result = checkDesign();
   assert.deepEqual(result.errors, []);

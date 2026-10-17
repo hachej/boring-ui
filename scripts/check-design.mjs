@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gitIgnored, walkProject } from './project-files.mjs';
 import { SHADCN_BUILTINS } from './check-registry-blocks.mjs';
+import { registryCss } from '../lab/studio/tailwind.mjs';
 
 export const designRoot = fileURLToPath(new URL('../', import.meta.url));
 export const readDesignConfig = (root = designRoot) => JSON.parse(readFileSync(resolve(root, 'scripts/design-groups.json'), 'utf8'));
@@ -10,7 +11,7 @@ export const groupForFile = (file, config) => config.groups.find(group => group.
 const primitive = /^(?:Button|IconButton|Toggle|ToggleGroup|Input|Textarea|Select|Checkbox|Switch|RadioGroup|Dialog|Sheet|Drawer|Popover|Tooltip|DropdownMenu|ActionMenu|SidebarMenu\w*)$/;
 const patterns = [
   ['shadow', /(?<![\w-])shadow-(?:xs|sm|md|lg|xl|2xl)(?![\w-])|\b(?:box-shadow|boxShadow)\s*[:=]\s*['"]?(?!\s*(?:var\(|none\b|inherit\b))[0-9.-][^;\n"']*/g],
-  ['radius', /(?<![\w-])rounded(?:-(?:sm|md|lg|xl|2xl|3xl|4xl|full)|-\[(?!var\(|--)[^\]]+\])?(?![\w-])|\b(?:border-radius|borderRadius)\s*:\s*['"]?(?!\s*(?:var\(|inherit\b|0\b))[0-9.][^;\n"']*/g],
+  ['radius', /(?<![\w-])rounded(?:-(?:sm|md|lg|xl|2xl|3xl|4xl|full)|-\[(?!var\(|--)[^\]]+\])?(?![\w-])|\b(?:border-radius|borderRadius)\s*:\s*['"]?(?!\s*(?:var\(|inherit\b))(?:[0-9.]|calc\()[^;\n"']*/g],
   ['border-width', /(?<![\w-])border(?:-[trblxyse])?(?:-(?:\d+|\[(?:\d|\.)[^\]]*\]))?(?![\w-]|["']?\s*:)|\b(?:border(?:-[\w]+)?|borderWidth)\s*:\s*['"]?\d+(?:\.\d+)?px\b[^;\n"']*/g],
   ['color', /#[0-9a-fA-F]{3,8}\b|\b(?:rgb|rgba|hsl|hsla|oklch|oklab)\([^)]*\)|\b(?:bg|text|border|ring|fill|stroke|outline|decoration|shadow)-(?:white|black|(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3})(?:\/\d+)?\b/g],
   ['font', /\bfont-\[(?!var\(|--)[^\]]+\]|\bfont-family\s*:\s*(?!\s*(?:var\(|inherit\b))[^;\n}]+|\bfontFamily\s*:\s*['"](?!var\()[^'"]+['"]|\bfont\s*:\s*[^;\n}]*\b(?:serif|monospace|system-ui)\b[^;\n}]*/g],
@@ -78,7 +79,7 @@ export function checkDesign(root = designRoot, { config = readDesignConfig(root)
   // Registry css is shipped even when there is no adjacent .css file. Include it without scanning generated public/r twice.
   for (const item of manifest.items) {
     const file = item.name === 'theme' ? 'registry.json#theme' : `registry/${item.name}/@css`;
-    const text = Object.entries(item.css ?? item.cssVars ?? {}).map(([key, value]) => `${key}: ${JSON.stringify(value)}`).join('\n');
+    const text = registryCss({ css: item.css ?? item.cssVars ?? {} });
     for (const finding of scanDesign(file, text)) add(finding);
   }
   findings.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.column - b.column || a.rule.localeCompare(b.rule));
