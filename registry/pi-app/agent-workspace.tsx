@@ -2,7 +2,7 @@
 
 import '@hachej/boring-ui-kit/file-tree.css';
 
-import { Drawer, DrawerContent, DrawerTitle } from '../drawer/drawer';
+import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import type { ResourceLocator } from '@hachej/boring-files';

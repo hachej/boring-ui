@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer';
 import { afterBack } from '../app-shell/back';
 import { useShellLayer } from '../app-shell/shell-layer';
-import { useExclusiveSheet } from '../app-shell/sheet';
+import { useExclusiveSheet } from '../app-shell/use-exclusive-sheet';
 import { FileViewer } from '../pi-app/file-viewer';
 import type { CustomViewers, ViewerOptions } from '../pi-app/artifact-panel';
 import type { RevisionProvider } from '@hachej/boring-files/revision';
