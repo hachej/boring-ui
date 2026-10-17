@@ -43,7 +43,7 @@ function App() {
   if (new URLSearchParams(location.search).has('detached')) return <main>
     <h1>Detached library</h1>
     {failure && <p role="alert">{failure}</p>}
-    {provider && <FileTree revisionProvider={provider} onOpen={setOpened} selectedPath={opened} />}
+    {provider && <FileTree variant={new URLSearchParams(location.search).has('plain') ? 'plain' : 'list'} revisionProvider={provider} onOpen={setOpened} selectedPath={opened} />}
     <output aria-label="Opened file">{opened}</output>
   </main>;
   return <main>

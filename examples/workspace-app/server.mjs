@@ -61,6 +61,7 @@ export async function startWorkspaceApp({ directory, port = 0, token = randomUUI
     '/api/chat': createChatTransportHandler({ authenticate: async request => {
       const id = Number(new URL(request.url).searchParams.get('conversation'));
       const conversation = allowed(request) && Number.isSafeInteger(id) ? await conversations.open(agent.id, id) : undefined;
+      if (conversation && new URL(request.url).searchParams.get('op') === 'entries') await faults.history?.();
       return conversation ? { conversation, context, abortSubmission: submission => harness.abortSubmission(submission, context, conversation.id) } : null;
     } }),
     // The workspace's revision protocol: the binding, the change feed, listing, search, saved history and the resource calls.

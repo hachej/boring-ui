@@ -823,8 +823,7 @@
         "@hachej/boring-files@^0.3.2",
         "react@^19.0.0",
         "react-dom@^19.0.0",
-        "lucide-react@^1.51.0",
-        "radix-ui@^1.8.0"
+        "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
         "@boring-ui/theme",
@@ -834,7 +833,8 @@
         "@boring-ui/utils",
         "@boring-ui/button",
         "@boring-ui/drawer",
-        "button"
+        "button",
+        "@boring-ui/file-tree"
       ],
       "files": [
         {
@@ -1064,7 +1064,8 @@
         "@boring-ui/utils",
         "@boring-ui/button",
         "button",
-        "toggle"
+        "toggle",
+        "@boring-ui/version-history"
       ],
       "files": [
         {
@@ -2545,19 +2546,44 @@
       ]
     },
     {
+      "name": "version-history",
+      "type": "registry:component",
+      "title": "Version history rows",
+      "description": "Shared view-only version rows and menu metadata with relative time, provenance and Current. No file reads, publication or restoration.",
+      "dependencies": [
+        "@hachej/boring-files@^0.3.2",
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "@boring-ui/theme",
+        "@boring-ui/button",
+        "button"
+      ],
+      "files": [
+        {
+          "path": "registry/version-history/version-history.tsx",
+          "type": "registry:component",
+          "target": "components/version-history/version-history.tsx"
+        }
+      ]
+    },
+    {
       "name": "file-tree",
       "type": "registry:component",
       "title": "File tree",
-      "description": "Browse, search, upload and inspect retained versions through one revisionProvider binding.",
+      "description": "Browse, search, upload and inspect retained versions through one revisionProvider binding. Uses the consumer's shadcn Button and dropdown-menu with shared version-history rows; Base UI style only.",
       "dependencies": [
         "@hachej/boring-ui-kit@^0.3.2",
         "@hachej/boring-files@^0.3.2",
         "react@^19.0.0",
-        "radix-ui@^1.8.0",
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "@boring-ui/theme"
+        "@boring-ui/theme",
+        "@boring-ui/utils",
+        "@boring-ui/version-history",
+        "button",
+        "dropdown-menu"
       ],
       "files": [
         {

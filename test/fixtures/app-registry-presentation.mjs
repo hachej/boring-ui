@@ -10,7 +10,7 @@ for (const name of ['window', 'document', 'navigator', 'HTMLElement', 'Element',
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const { createElement: h, act } = await import('react');
 const { createRoot } = await import('react-dom/client');
-const { ViewerMenu, ViewerVersions, ConversationFiles } = await import('./presentation-components.mjs');
+const { ViewerMenu, ViewerVersions, ConversationFiles, FileTree } = await import('./presentation-components.mjs');
 const container = document.createElement('div'); document.body.append(container);
 const root = createRoot(container);
 const find = id => { const node = document.querySelector(`[data-testid="${id}"]`); assert.ok(node, id); return node; };
@@ -52,12 +52,16 @@ try {
   await act(async () => { document.body.dispatchEvent(new window.PointerEvent('pointerdown', { bubbles: true, button: 0, pointerType: 'mouse' })); await new Promise(resolve => setTimeout(resolve, 20)); });
   assert.equal(document.querySelector('[data-testid="viewer-menu-list"]') === null, true, 'outside press dismisses the menu');
 
-  await render(h(ViewerVersions, { versions: [{ id: 'v2', label: 'Second', latest: true }, { id: 'v1', label: 'First' }], current: 'v1', onSelect: id => { selected = id; } }));
+  const savedAt = Date.now() - 120000;
+  const savedVersions = [{ id: 'v2', label: 'Second', latest: true, savedAt, source: 'publish' }, { id: 'v1', label: 'First', savedAt: savedAt - 180000, source: 'agent' }];
+  await render(h(ViewerVersions, { versions: savedVersions, current: 'v1', onSelect: id => { selected = id; } }));
   await click('viewer-versions');
   const versions = [...document.querySelectorAll('[data-testid="viewer-versions-item"]')];
   assert.equal(versions.length, 2);
   assert.equal(versions[1].getAttribute('aria-checked'), 'true');
   assert.match(versions[1].textContent, /Current/);
+  const viewerRows = versions.map(row => ({ label: row.querySelector('.truncate').textContent, author: row.querySelector('[data-testid=viewer-versions-description]').textContent }));
+  assert.deepEqual(viewerRows, [{ label: '2 min ago', author: 'You' }, { label: '5 min ago', author: 'Agent' }]);
   await act(async () => versions[0].click());
   assert.equal(selected, 'v2');
 
@@ -86,6 +90,38 @@ try {
   await click('conversation-file');
   assert.equal(opened, 1, 'file selection invokes the existing host callback once');
   assert.equal(find('conversation-files').getAttribute('aria-expanded'), 'false');
+  let historyReads = 0, libraryClosed = 0, fileOpened;
+  const provider = {
+    identity: { principalId: 'fictional', initiatorId: 'fictional', scopeId: 'fictional' },
+    workspace: { providerId: 'fictional', instanceId: 'one', incarnation: 'one', viewId: 'published' },
+    locate: path => ({ resource: { providerId: 'fictional', path }, view: { kind: 'published' } }),
+    list: async () => ({ entries: [{ path: 'fictional.md', kind: 'file', size: 12 }] }), search: async () => ({ entries: [] }),
+    history: async () => { historyReads++; return savedVersions.map(version => ({ revision: version.id, savedAt: version.savedAt, source: version.source })); },
+    read: async () => ({ kind: 'missing' }), publish: async () => ({ kind: 'unavailable', reason: 'fictional read-only fixture' }), lookup: async () => ({ kind: 'not-found' }),
+  };
+  await render(h(FileTree, { revisionProvider: provider, refresh: false, onClose: () => { libraryClosed++; }, onOpen: path => { fileOpened = path; } }));
+  assert.equal(container.querySelector('[data-file-upload]').getAttribute('data-slot'), 'button', 'Upload is the CLI-installed consumer shadcn Button');
+  assert.equal(container.querySelector('[data-file-close]').getAttribute('data-slot'), 'button', 'Close is the consumer Button too');
+  const trigger = container.querySelector('[data-file-more]'); assert.ok(trigger);
+  assert.equal(trigger.tagName, 'BUTTON'); assert.equal(trigger.querySelector('button'), null, 'one real trigger button, not nested primitives');
+  await key(trigger, 'ArrowDown');
+  const fileMenu = document.querySelector('[data-boring="file-actions"]'); assert.ok(fileMenu);
+  assert.equal(fileMenu.getAttribute('data-slot'), 'dropdown-menu-content', 'the consumer shadcn dropdown built-in owns menu presentation');
+  assert.deepEqual([...fileMenu.querySelectorAll('[role=menuitem]')].map(item => item.textContent), ['Open', 'Version history', 'Download']);
+  await key(document.activeElement, 'Escape');
+  assert.equal(Boolean(document.querySelector('[data-boring="file-actions"]')), false);
+  await key(trigger, 'ArrowDown');
+  await act(async () => document.querySelector('[data-action=history]').click());
+  assert.equal(historyReads, 1, 'installed menu opens actual version history');
+  const libraryRows = [...container.querySelectorAll('[data-testid=file-history-versions-item]')];
+  assert.deepEqual(libraryRows.map(row => ({ label: row.querySelector('.truncate').textContent, author: row.querySelector('[data-testid=file-history-versions-description]').textContent })), viewerRows, 'Library and viewer use the same version rows');
+  assert.match(libraryRows[0].textContent, /Current/);
+  assert.equal(libraryRows[0].getAttribute('data-slot'), 'button', 'history selections use the consumer shadcn Button');
+  await key(trigger, 'ArrowDown');
+  await act(async () => document.querySelector('[data-action=open]').click());
+  assert.equal(fileOpened, 'fictional.md');
+  await act(async () => container.querySelector('[data-file-close]').click());
+  assert.equal(libraryClosed, 1);
   const detached = new Window({ url: 'https://fictional.invalid/detached' });
   const detachedContainer = detached.document.createElement('div'); detached.document.body.append(detachedContainer);
   const detachedRoot = createRoot(detachedContainer);
@@ -99,7 +135,7 @@ try {
   } finally {
     await act(async () => detachedRoot.unmount()); await detached.happyDOM.close();
   }
-  console.log('PASS: installed owner-document viewer menu keyboard/radio/children, versions and phone conversation-files drawer');
+  console.log('PASS: installed consumer Button/dropdown, owner-document menus, keyboard/radio/history, Library Open/Close and phone files drawer');
 } finally {
   await act(async () => root.unmount());
   await window.happyDOM.close();

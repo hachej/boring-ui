@@ -68,7 +68,7 @@ test('native controls stay in FAIL group 1 across later-group folders and permit
   f.config.groups = [{ id: '1', name: 'buttons', mode: 'FAIL', folders: [], selector: 'button' }, { id: '6', name: 'cards', mode: 'REPORT', folders: ['registry/'], selector: 'section' }];
   for (const component of ['Button', 'Toggle', 'Switch']) {
     const prefix = `import { ${component} as Control } from '@/components/ui/${component.toLowerCase()}'; `;
-    f.write('registry/button/button.tsx', `${prefix}const a = <Control className="w-full gap-2 whitespace-normal" />;`);
+    f.write('registry/button/button.tsx', `${prefix}const a = <Control className="w-full gap-2 whitespace-normal text-left" />;`);
     assert.deepEqual(checkDesign(f.root, f).findings, []);
     for (const appearance of ['text-muted-foreground', 'font-mono', 'rounded-(--radius)', 'border-(length:--border-width)', 'shadow-(--shadow-sm)']) {
       f.write('registry/button/button.tsx', `${prefix}const a = <Control className="${appearance}" />;`);

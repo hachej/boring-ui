@@ -88,20 +88,25 @@ for (const [name, start, trigger] of [
         const geometry = await browser.evaluate(`(() => {
           const panel=${q(tree)}, input=panel.querySelector('input[type=search]'), p=panel.getBoundingClientRect(), s=input.getBoundingClientRect();
           const folderName=${q(`[role=treeitem][data-path="${folder}"] > div .file-tree-name`)}, fileName=${q(`[role=treeitem][data-path=${JSON.stringify(file)}] > div .file-tree-name`)};
-          return { left:s.left-p.left, right:p.right-s.right, indent:fileName.getBoundingClientRect().left-folderName.getBoundingClientRect().left,
+          const measure = name => { const button=name.closest('button'), style=getComputedStyle(button); return { slot:button.dataset.slot, x:button.getBoundingClientRect().x, padding:style.paddingLeft, gap:style.gap, children:[...button.children].map(node=>({name:node.className?.baseVal ?? node.className, x:node.getBoundingClientRect().x, w:node.getBoundingClientRect().width})) }; };
+          return { left:s.left-p.left, right:p.right-s.right, indent:fileName.getBoundingClientRect().left-folderName.getBoundingClientRect().left, folderButton:measure(folderName), fileButton:measure(fileName), copyAlign:getComputedStyle(fileName.parentElement).textAlign, ghostBackground:getComputedStyle(fileName.closest('button')).backgroundColor,
             rows:[...panel.querySelectorAll('[data-slot=sidebar-menu-button]')].map(row=>row.getBoundingClientRect().height),
             allMeta:[...panel.querySelectorAll('[data-file-meta]')].every(meta=>meta.textContent.trim().length>0),
             folderMeta:[...panel.querySelectorAll('[role=treeitem][aria-expanded] > div [data-file-meta]')].map(meta=>meta.textContent),
             announcements:(() => { const live=panel.querySelector('[aria-live=polite]'), style=getComputedStyle(live), box=live.getBoundingClientRect(); return live && style.position==='absolute' && box.width<=1 && box.height<=1 && style.clip!=='auto'; })(),
             settledRows:[...panel.querySelectorAll('[data-upload-state]')].length,
             overflow:document.documentElement.scrollWidth>innerWidth || panel.scrollWidth>panel.clientWidth,
-            targets:[...panel.querySelectorAll('.file-tree-more,.file-tree-upload,.file-tree-close')].map(e=>({w:e.getBoundingClientRect().width,h:e.getBoundingClientRect().height})) };
+            targets:[...panel.querySelectorAll('[data-file-more],[data-file-upload],[data-file-close]')].map(e=>({w:e.getBoundingClientRect().width,h:e.getBoundingClientRect().height})) };
         })()`);
         assert.ok(geometry.left >= 16 && geometry.right >= 16, `inset search: ${JSON.stringify(geometry)}`);
         assert.ok(geometry.rows.every(height => height >= 44 && height <= 48), JSON.stringify(geometry));
         assert.ok(geometry.indent >= 12 && geometry.indent <= 16, `nested files indent to the right of their folder: ${JSON.stringify(geometry)}`);
+        assert.equal(geometry.folderButton.children[0].w, 16, 'the consumer shadcn Button sizes its icon through its quoted nested selector');
         assert.equal(geometry.allMeta, true);
-        assert.deepEqual(geometry.folderMeta, [], 'folders omit generic Folder metadata');
+        assert.ok(['start', 'left'].includes(geometry.copyAlign), 'file names align to the start of their row');
+        assert.ok(['rgba(0, 0, 0, 0)', 'transparent'].includes(geometry.ghostBackground), 'native shadcn ghost buttons use the host preflight, not browser default button chrome');
+        assert.deepEqual(geometry.folderMeta, [name === 'standalone' ? '3 items' : '1 item'], 'only complete provider child listings supply folder counts');
+        assert.ok(geometry.targets.length >= 3, 'the real shadcn upload, close and file-actions controls are present');
         assert.equal(geometry.announcements, true, 'upload status is a clipped polite live region, not visible log lines');
         assert.equal(geometry.settledRows, 0, 'completed uploads leave no row status or error');
         assert.equal(geometry.overflow, false, `${name}: no horizontal overflow at ${phone ? 360 : 1440}px`);
@@ -136,6 +141,18 @@ for (const [name, start, trigger] of [
         await browser.until('menu reopened', `!!${q('[role=menuitem][data-action=history]')}`);
         await browser.click(q('[role=menuitem][data-action=history]'));
         await browser.until('retained version history', `${q(`section[aria-label=${JSON.stringify(`History of ${file}`)}]`)}?.querySelectorAll('li button').length > 0`);
+        const historyRows = await browser.evaluate(`(() => { const rows=[...document.querySelectorAll('[data-testid=file-history-versions-item]')]; return rows.map(row=>({ text:row.innerText, slot:row.dataset.slot, pressed:row.getAttribute('aria-pressed'), author:row.querySelector('[data-testid=file-history-versions-description]')?.textContent, hash:row.dataset.item?.slice(0,8) })); })()`);
+        assert.ok(historyRows.length > 0);
+        assert.equal(historyRows.filter(row => row.pressed === 'true' && row.text.includes('Current')).length, 1);
+        for (const row of historyRows) {
+          assert.equal(row.slot, 'button', 'shared history rows use the consumer shadcn Button');
+          assert.match(row.author, /^(You|Agent|External change|Saved version)$/);
+          assert.equal(row.text.includes(row.hash), false, 'revision hashes are not human version labels');
+        }
+        await browser.click(`[...document.querySelectorAll('[data-testid=file-history-versions-item]')].at(-1)`);
+        await browser.until('exact read-only history preview', `!!${q('[data-testid=file-history-preview]')}`);
+        assert.equal(await browser.evaluate(`document.querySelector('[data-testid=file-history-preview] textarea, [data-testid=file-history-preview] [contenteditable=true]') === null`), true);
+        assert.equal(await browser.evaluate(`[...document.querySelectorAll('[data-testid=file-history-versions-item]')].at(-1).getAttribute('aria-pressed')`), 'true');
         await browser.screenshot(`${name}-${phone ? 'phone' : 'desktop'}-history-${dark ? 'dark' : 'light'}.png`);
         await browser.evaluate(`[...document.querySelectorAll('button')].find(b=>b.textContent==='Close history')?.click()`);
         await browser.press('Escape');

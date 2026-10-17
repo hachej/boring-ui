@@ -29,7 +29,7 @@ export function useMarkdownAutosave(controller: MarkdownController, autosave: Ma
           continue;
         }
         if (state.save.kind === 'settled' && state.save.result.kind === 'unknown') return false;
-        if (!state.dirty) return true;
+        if (!state.dirty || !manual && state.bufferVersion === 0) return true;
         if (!manual && (paused.current || state.remote !== null)) return false;
         const result = await controller.flush(controller.actions.selection());
         reporting.current(result);

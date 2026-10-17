@@ -12,11 +12,11 @@ import type { FileEntry, RevisionProvider } from '@hachej/boring-files/revision'
 import { createFileTreeController } from '@hachej/boring-ui-kit/file-tree';
 import { randomUUID } from '@hachej/boring-files/platform';
 import type { FileTreeController } from '@hachej/boring-ui-kit/file-tree';
-import { FileTreeView } from '@hachej/boring-ui-kit/file-tree-view';
+import { FileTreeView } from '../file-tree/file-tree';
 import { frenchAppLabels } from './app-labels-fr';
 import { chatTextFor } from '../pi-chat/locale';
 import type { ChatLocale } from '../pi-chat/locale';
-import type { FileTreeViewProps } from '@hachej/boring-ui-kit/file-tree-view';
+import type { FileTreeViewProps } from '../file-tree/file-tree';
 import type { ResourceIdentity } from '@hachej/boring-files/remote';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { PiChat, artifactKey } from '../pi-chat/pi-chat';
@@ -48,7 +48,7 @@ export type { CustomViewerProps, CustomViewers, SavedRevision, ViewerOptions } f
 export { FileViewer } from './file-viewer';
 export { SessionsPane, SessionsToggle } from './sessions';
 export { ConversationList, ConversationHistory } from '../pi-chat/history';
-export { FileTree } from '@hachej/boring-ui-kit/file-tree-view';
+export { FileTree } from '../file-tree/file-tree';
 export type { SessionsView, WorkspaceAgent, WorkspaceAgents } from './sessions';
 export { useConversations } from './use-conversations';
 export { useRemoteChat } from '../pi-chat/use-remote-chat';

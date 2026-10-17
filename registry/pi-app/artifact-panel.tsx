@@ -160,8 +160,7 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose }: {
   const controller = saved.controller;
   const registerAutosave = useCallback((flush: (() => Promise<boolean>) | null) => {
     autosave.current = flush && controller ? { controller, flush } : null;
-    options.onBeforeLeaveChange?.(flush);
-  }, [controller, options.onBeforeLeaveChange]);
+  }, [controller]);
   useLayoutEffect(() => {
     if (!controller) return;
     const notify = () => {
@@ -203,7 +202,7 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose }: {
     {pinned && <p role="note" data-testid="version-view-only" className="m-0 shrink-0 border-b border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">{labels.versionViewOnly}</p>}
     <div className="min-h-0 flex-1">{children}</div>
   </div>;
-  if (type === 'markdown' && controller) return body(document(<MarkdownPane controller={controller as MarkdownController} initialMode="rich" onAutosaveChange={registerAutosave} {...frame} />));
+  if (type === 'markdown' && controller) return body(document(<MarkdownPane controller={controller as MarkdownController} initialMode="rich" onAutosaveChange={registerAutosave} onBeforeLeaveChange={options.onBeforeLeaveChange} {...frame} />));
   if (type === 'html' && controller) return body(document(<HtmlPane controller={controller as HtmlController} {...(options.interactive ? { interactive: options.interactive } : {})} {...frame} />));
   const actions = { onCopy: () => copyText(text ?? ''), onDownload: () => downloadFile(filename, text ?? '', `${artifact.mediaType};charset=utf-8`) };
   if (type === 'svg') return body(<SvgView text={saved.text} title={artifact.title} frame={{ ...frame, ...actions }} />);

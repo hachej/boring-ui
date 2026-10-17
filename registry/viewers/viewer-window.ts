@@ -8,6 +8,7 @@ import type { ReactNode } from 'react';
 import type { MarkdownEditorProps } from '@hachej/boring-ui-kit/markdown-editor';
 import type { BlockAction, BlockIcon } from '../button/actions';
 import { withDefaults } from '../utils/utils';
+import { defaultVersionHistoryLabels } from '../version-history/version-history';
 
 export const defaultViewerLabels = {
   share: 'Share',
@@ -30,18 +31,7 @@ export const defaultViewerLabels = {
   /** Shown when the browser allowed no automatic copy: `link` is true for Share, false for Copy. */
   manualCopy: (link: boolean) => `This browser blocked automatic copying. Copy the ${link ? 'link' : 'text'} below.`,
   done: 'Done',
-  versionHistory: 'Version history',
-  currentVersion: 'Current',
-  versionYou: 'You',
-  versionAgent: 'Agent',
-  versionObserved: 'External change',
-  versionUnknownAuthor: 'Saved version',
-  versionJustNow: 'Just now',
-  versionMinutesAgo: (count: number) => `${count} min ago`,
-  versionHoursAgo: (count: number) => `${count} h ago`,
-  versionYesterdayAt: (time: string) => `Yesterday ${time}`,
-  versionToday: 'Today',
-  versionYesterday: 'Yesterday',
+  ...defaultVersionHistoryLabels,
   versionViewOnly: 'Viewing an older version. Restore is not available in this viewer.',
   latest: 'Latest',
   loading: 'Loading…',

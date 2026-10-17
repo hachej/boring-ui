@@ -72,7 +72,7 @@ export function checkDesign(root = designRoot, { config = readDesignConfig(root)
     for (const match of text.matchAll(/<([A-Z]\w*)\b[^>]*?\bclassName\s*=\s*(?:["']([^"']*)["']|\{([^}]*?)\})/g)) {
       if (!hostComponents.has(match[1])) continue;
       const classes = match[2] ?? match[3];
-      if (/(?<![\w-])(?:(?:bg|text|font|shadow|rounded|border|ring|duration|animate|size|p[xytrblse]?)-|h-(?!auto\b))/.test(classes)) add({ file, line: text.slice(0, match.index).split('\n').length, column: 1, rule: 'shadcn-restyle', value: `${match[1]} className changes appearance: ${classes}`, ...(['button', 'toggle', 'switch'].includes(hostComponents.get(match[1])) ? { group: '1' } : {}) });
+      if (/(?<![\w-])(?:(?:bg|font|shadow|rounded|border|ring|duration|animate|size|p[xytrblse]?)-|text-(?!(?:left|right|center|justify|start|end)\b)|h-(?!auto\b))/.test(classes)) add({ file, line: text.slice(0, match.index).split('\n').length, column: 1, rule: 'shadcn-restyle', value: `${match[1]} className changes appearance: ${classes}`, ...(['button', 'toggle', 'switch'].includes(hostComponents.get(match[1])) ? { group: '1' } : {}) });
     }
   }, ignored);
   for (const entry of config.primitives ?? []) if (existsSync(resolve(root, entry.file))) add({ file: entry.file, line: 1, column: 1, rule: 'primitive-file', value: `delete owned primitive; compose ${entry.replacement}` });

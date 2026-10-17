@@ -36,7 +36,13 @@ import { MarkdownEditor } from '@hachej/boring-ui-kit/markdown-editor';
 
 Install the pinned React, React DOM, Marked and Tiptap peers listed in this package's manifest when selecting this entry. They remain optional for headless consumers. The renderer borrows its controller; unmounting does not dispose it or close its resource client. The host owns selection, identity and teardown.
 
-Formatting defaults to a native Tiptap selection bubble. `formattingToolbar="pinned"` retains the full desktop toolbar; the Aa header control also pins it. Phones always use the selection bubble. Keyboard shortcuts and Markdown input rules remain available. Rich formatting and Markdown source controls share controller state. Mounting, switching modes and projecting remote text never serialize the original buffer. Genuine rich edits use Tiptap's Markdown serialization and may normalize supported formatting. Save and Ctrl/Cmd+S capture the exact controller selection. Proposal review shows added/removed lines with two lines of context and expandable unchanged runs. It preserves exact line endings and marks a missing final newline. An inner details panel retains exact before/after text. Accept and save delegates to the controller; reviewing or expanding context never publishes. Conflict and unknown outcomes expose explicit discard or reconciliation controls.
+Formatting defaults to the pinned desktop toolbar. The Aa header control toggles it; `formattingToolbar="selection"` selects the native Tiptap selection bubble instead. Phones always use the selection bubble. Keyboard shortcuts and Markdown input rules remain available. Rich formatting and Markdown source controls share controller state. Mounting, switching modes and projecting remote text never serialize the original buffer. Genuine rich edits use Tiptap's Markdown serialization and may normalize supported formatting.
+
+Autosave is enabled by default after 1200ms of idle editing and flushes on blur and page hide through the existing conditional `controller.flush`. Untouched new buffers are not automatically published. `autosave={false}` restores explicit Save; `autosave={{ delayMs: 500 }}` changes the idle delay. Ctrl/Cmd+S always saves the exact selected buffer explicitly. Refused, conflicting and unconfirmed saves retain the draft and pause automatic retries until resolved.
+
+Use `onAutosaveChange` to register the mounted flush barrier. Await that flush before closing, unmounting or disposing the controller. If it returns false, keep the editor mounted with its refusal/conflict UI unless a real host navigation guard obtains deliberate discard consent. Internal flush registration is not a discard guard. Unmount cleanup and browser page hide are best effort, not substitutes for awaiting the owner teardown barrier. See the [registry recipes](../../registry/README.md) for `MarkdownPane`, viewer-window policy and navigation integration.
+
+Proposal review shows added/removed lines with two lines of context and expandable unchanged runs. It preserves exact line endings and marks a missing final newline. An inner details panel retains exact before/after text. Accept and save delegates to the controller; reviewing or expanding context never publishes. Conflict and unknown outcomes expose explicit discard or reconciliation controls.
 
 Detailed alignment uses a matrix of at most 250,000 cells after trimming equal prefix/suffix lines. Larger comparisons show all removed/added middle lines with an explicit notice. This bounds the comparison matrix, not total document size, string-comparison cost or rendered rows.
 
@@ -276,8 +282,8 @@ Bind the authenticated [revision provider](../files/README.md#frontend-revision-
 to the tree:
 
 ```tsx
-import '@hachej/boring-ui-kit/file-tree.css';
-import { FileTree } from '@hachej/boring-ui-kit/file-tree-view';
+// Installed file-tree recipe, with the consumer's real shadcn Base UI controls.
+import { FileTree } from '@/components/file-tree/file-tree';
 
 <FileTree
   revisionProvider={revisionProvider}
@@ -290,9 +296,20 @@ The renderer adapts the official shadcn `sidebar-11` tree. Its shipped CSS works
 without a SidebarProvider or scanning package sources with Tailwind. Attribution
 and the pinned upstream revision are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
+The recipe supplies the consumer's actual shadcn Button and dropdown-menu, plus
+shared version-history rows. Direct callers of `@hachej/boring-ui-kit/file-tree-view`
+pass a required `components` binding with `Button`, `Actions` and `Versions`;
+`FileTreeComponents`, `FileTreeButtonProps`, `FileTreeActionsProps` and
+`FileTreeVersionsProps` describe it. There is no package-owned control fallback.
+The installed wrappers supply this binding automatically. Library history and viewer
+menus share relative time, provenance and Current presentation. Selecting a retained
+version still reads an exact, read-only preview without retargeting an editor.
+
 The default `list` variant has a Library header, visible-item count, inset search,
 48px rows with kind and size, and a file actions menu. The count describes loaded,
-visible items, including folders; it is not a workspace total. The menu offers
+visible items, including folders; it is not a workspace total. A folder shows its
+child count only after its provider listing is complete; unloaded, loading, failed
+or paginated listings show no count. The menu offers
 Open, Version history and Download through the same provider. Rename and Delete
 are absent because `RevisionProvider` exposes neither operation. No edit date or
 author is invented or fetched per row. `variant="plain"` keeps the compact tree.
@@ -312,7 +329,7 @@ Both components take `locale` (`en` by default, or `fr`; the words are exported 
 including the accessible names, or to add another language, `upload={false}` and
 `history={false}` to hide upload controls or the version-history menu item, and `refreshKey`: when its value changes the open folders and the current
 search reload, for example after an agent saves a file. A search result shows its
-name with its folder in the metadata line. `AgentWorkspace` passes the same options to its
+name with its folder in the metadata line in `list`, or on the same line in `plain`. `AgentWorkspace` passes the same options to its
 Library through `fileTree`, with its own `locale`.
 
 For custom layouts, import `createFileTreeController` from

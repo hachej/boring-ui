@@ -2,21 +2,24 @@
   "$schema": "https://ui.shadcn.com/schema/registry-item.json",
   "name": "file-tree",
   "title": "File tree",
-  "description": "Browse, search, upload and inspect retained versions through one revisionProvider binding.",
+  "description": "Browse, search, upload and inspect retained versions through one revisionProvider binding. Uses the consumer's shadcn Button and dropdown-menu with shared version-history rows; Base UI style only.",
   "dependencies": [
     "@hachej/boring-ui-kit@^0.3.2",
     "@hachej/boring-files@^0.3.2",
     "react@^19.0.0",
-    "radix-ui@^1.8.0",
     "lucide-react@^1.51.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/theme.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/theme.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/utils.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/version-history.json",
+    "button",
+    "dropdown-menu"
   ],
   "files": [
     {
       "path": "registry/file-tree/file-tree.tsx",
-      "content": "'use client';\n\nimport '@hachej/boring-ui-kit/file-tree.css';\n\nexport { FileTree, FileTreeView } from '@hachej/boring-ui-kit/file-tree-view';\nexport type { FileTreeProps, FileTreeViewProps } from '@hachej/boring-ui-kit/file-tree-view';\nexport { createFileTreeController } from '@hachej/boring-ui-kit/file-tree';\nexport type { FileTreeController } from '@hachej/boring-ui-kit/file-tree';\n",
+      "content": "'use client';\n\nimport '@hachej/boring-ui-kit/file-tree.css';\nimport { FileTree as PackageFileTree, FileTreeView as PackageFileTreeView } from '@hachej/boring-ui-kit/file-tree-view';\nimport type { FileTreeComponents, FileTreeActionsProps, FileTreeButtonProps, FileTreeVersionsProps, FileTreeProps as PackageFileTreeProps, FileTreeViewProps as PackageFileTreeViewProps } from '@hachej/boring-ui-kit/file-tree-view';\nimport { useRef } from 'react';\nimport { Button } from '@/components/ui/button';\nimport { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';\nimport { VersionHistoryRows, frenchVersionHistoryLabels } from '../version-history/version-history';\nimport { cn } from '../utils/utils';\n\n// Only touch-target layout is added; appearance remains the consumer's shadcn Button.\nfunction LibraryButton({ className, ...props }: FileTreeButtonProps) {\n  return <Button {...props} className={cn('max-sm:min-h-11 max-sm:min-w-11 pointer-coarse:min-h-11 pointer-coarse:min-w-11', className)} />;\n}\n\nfunction FileActionMenu({ label, icon, items }: FileTreeActionsProps) {\n  const trigger = useRef<HTMLButtonElement>(null);\n  const portal = useRef<HTMLElement | null>(null);\n  return <DropdownMenu>\n    <DropdownMenuTrigger ref={trigger} render={<LibraryButton type=\"button\" variant=\"ghost\" size=\"icon\" ref={node => { portal.current = node?.ownerDocument.body ?? null; }} />} data-file-more aria-label={label}>{icon}</DropdownMenuTrigger>\n    <DropdownMenuPortal container={portal}>\n      <DropdownMenuContent data-boring=\"file-actions\" align=\"end\" finalFocus={trigger} className=\"w-max max-w-(--available-width)\">\n        {items.map(item => <DropdownMenuItem key={item.id} data-action={item.id} onClick={item.onSelect} className=\"max-sm:min-h-11 pointer-coarse:min-h-11\">{item.icon}{item.label}</DropdownMenuItem>)}\n      </DropdownMenuContent>\n    </DropdownMenuPortal>\n  </DropdownMenu>;\n}\n\nfunction FileVersions({ versions, current, onSelect, locale, earlierVersion }: FileTreeVersionsProps) {\n  return <VersionHistoryRows versions={versions.map(version => ({ id: version.revision, label: earlierVersion, savedAt: version.savedAt, ...(version.source ? { source: version.source } : {}) }))}\n    current={current} onSelect={onSelect} testId=\"file-history-versions\" {...(locale === 'fr' ? { labels: frenchVersionHistoryLabels } : {})} />;\n}\n\nexport const fileTreeComponents = { Button: LibraryButton, Actions: FileActionMenu, Versions: FileVersions } satisfies FileTreeComponents;\nexport type FileTreeProps = Omit<PackageFileTreeProps, 'components'>;\nexport type FileTreeViewProps = Omit<PackageFileTreeViewProps, 'components'>;\n\nexport function FileTree(props: FileTreeProps) {\n  return <PackageFileTree {...props} components={fileTreeComponents} />;\n}\nexport function FileTreeView(props: FileTreeViewProps) {\n  return <PackageFileTreeView {...props} components={fileTreeComponents} />;\n}\nexport { createFileTreeController } from '@hachej/boring-ui-kit/file-tree';\nexport type { FileTreeController } from '@hachej/boring-ui-kit/file-tree';\n",
       "type": "registry:component",
       "target": "components/file-tree/file-tree.tsx"
     }

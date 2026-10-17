@@ -28,7 +28,10 @@ export interface MarkdownPaneProps {
   readonly placeholder?: string;
   /** Defaults to 1200ms idle autosave; false keeps the Save button. */
   readonly autosave?: MarkdownEditorProps['autosave'];
+  /** Registers the flush for owner teardown; this is not a navigation guard. */
   readonly onAutosaveChange?: MarkdownEditorProps['onAutosaveChange'];
+  /** Registers with a host navigation guard whose onClose handles refused saves and deliberate discard. */
+  readonly onBeforeLeaveChange?: MarkdownEditorProps['onAutosaveChange'];
   /** Pinned by default on desktop. Phones always use the selection bubble. */
   readonly formattingToolbar?: MarkdownEditorProps['formattingToolbar'];
   /** Leading header content, before the title. */
@@ -62,15 +65,15 @@ export function markdownStatus(state: ReturnType<MarkdownController['getSnapshot
 }
 
 /** The Markdown editor in the standard viewer frame: mode toggle, Save while there are edits, Share, and Reload, Copy and Download under the "…" menu. */
-export function MarkdownPane({ controller, title: givenTitle, labels: ownLabels, subtitle, target, revision, initialMode = 'rich', onModeChange, placeholder, formattingToolbar = 'pinned', autosave: ownAutosave, onAutosaveChange, headerStart, controls, onRefresh, onShare, onOpenInNewTab, onClose, resolveImage, onMountedTools, testId = 'viewer', titleTestId, className }: MarkdownPaneProps) {
+export function MarkdownPane({ controller, title: givenTitle, labels: ownLabels, subtitle, target, revision, initialMode = 'rich', onModeChange, placeholder, formattingToolbar = 'pinned', autosave: ownAutosave, onAutosaveChange, onBeforeLeaveChange, headerStart, controls, onRefresh, onShare, onOpenInNewTab, onClose, resolveImage, onMountedTools, testId = 'viewer', titleTestId, className }: MarkdownPaneProps) {
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const { labels } = useViewerText(ownLabels);
   const window = useViewerWindow();
   const autosave = ownAutosave ?? window?.autosave ?? true;
   const flush = useRef<(() => Promise<boolean>) | null>(null);
-  const registerAutosave = useCallback((save: (() => Promise<boolean>) | null) => { flush.current = save; onAutosaveChange?.(save); }, [onAutosaveChange]);
+  const registerAutosave = useCallback((save: (() => Promise<boolean>) | null) => { flush.current = save; onAutosaveChange?.(save); onBeforeLeaveChange?.(save); }, [onAutosaveChange, onBeforeLeaveChange]);
   const close = onClose ? async () => {
-    if (autosave !== false && flush.current && !await flush.current() && !onAutosaveChange) return false;
+    if (autosave !== false && flush.current && !await flush.current() && !onBeforeLeaveChange) return false;
     return onClose();
   } : undefined;
   const title = givenTitle ?? labels.document;

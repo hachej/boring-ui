@@ -546,9 +546,36 @@ try {
     assert.ok(Math.abs(y - anchor.y) <= 2, `first visible row stays anchored: ${anchor.y} -> ${y}`);
     assert.equal(await browser.evaluate(`!!${q('[data-testid=history]')}`), false, 'no separate read-only history panel');
     assert.equal(await browser.evaluate(`${q('[data-testid=transcript-history-load]')}.tabIndex`), 0, 'the hidden fallback remains in keyboard order');
+    const holdHistory = () => {
+      let resume;
+      const held = new Promise(resolve => { resume = resolve; });
+      app.faults.history = () => held;
+      return () => { app.faults.history = undefined; resume(); };
+    };
+    const captureAnchor = `(() => { const scroll = ${q('[data-testid=transcript-scroll]')}; const row = [...scroll.querySelectorAll('[data-row-id]')].find(row => row.getBoundingClientRect().bottom > scroll.getBoundingClientRect().top + 1); return { key: row.dataset.rowId, y: row.getBoundingClientRect().top, top: scroll.scrollTop }; })()`;
     const before = await browser.evaluate(`document.querySelectorAll('[data-row-id^="history:"]').length`);
+    const resume = holdHistory();
     await browser.evaluate(`${q('[data-testid=transcript-history-load]')}.focus()`); await browser.press('Enter');
+    await browser.until('slow history is loading', `!!${q('[data-testid=transcript-history] svg')}`, 5000);
+    const start = await browser.evaluate(captureAnchor), scroll = await browser.evaluate(rect('[data-testid=transcript-scroll]'));
+    await browser.wheel(scroll.x + scroll.w / 2, scroll.y + scroll.h / 2, 400); await pause(120);
+    const moved = await browser.evaluate(captureAnchor);
+    assert.ok(moved.top - start.top > 100, 'the reader really scrolls while the native read is held');
+    resume();
     await browser.until('keyboard loads another page inline', `document.querySelectorAll('[data-row-id^="history:"]').length > ${before}`, 10000);
+    await browser.evaluate('new Promise(requestAnimationFrame).then(() => new Promise(requestAnimationFrame))');
+    const movedY = await browser.evaluate(`${q(`[data-row-id="${moved.key}"]`)}.getBoundingClientRect().top`);
+    assert.ok(Math.abs(movedY - moved.y) <= 2, `history completion preserves intervening scrolling: ${moved.y} -> ${movedY}`);
+    const finish = holdHistory();
+    await browser.evaluate(`${q('[data-testid=transcript-history-load]')}.focus()`); await browser.press('Enter');
+    await browser.until('another native history read is held', `!!${q('[data-testid=transcript-history] svg')}`, 5000);
+    await browser.click(q('[data-testid=jump-latest]'));
+    const atBottom = `(() => { const e = ${q('[data-testid=transcript-scroll]')}; return Math.abs(e.scrollHeight - e.clientHeight - e.scrollTop) <= 2; })()`;
+    await browser.until('the reader jumps to latest before the read completes', atBottom, 5000);
+    finish();
+    await browser.until('the slow read completed', `!${q('[data-testid=transcript-history] svg')}`, 10000);
+    await pause(100);
+    assert.equal(await browser.evaluate(atBottom), true, 'a completed read cannot undo Jump to latest');
     assert.ok(await browser.evaluate(`${q('[data-testid=transcript-history] [role=status]')}.textContent.includes('earlier messages loaded')`));
     for (const device of ['desktop', 'phone']) {
       await browser.emulate(device);

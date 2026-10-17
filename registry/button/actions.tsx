@@ -52,6 +52,15 @@ export interface ActionMenuProps {
   readonly onOpenChange?: (open: boolean) => void;
 }
 
+export function ActionMenuItemContent({ item, testId }: { readonly item: MenuItem; readonly testId: string }) {
+  return <>
+    {item.icon && <span className="text-muted-foreground">{item.icon}</span>}
+    <span className="min-w-0 flex-1"><span className="block truncate">{item.label}</span>{item.description && <span data-testid={`${testId}-description`} className="block text-xs text-muted-foreground">{item.description}</span>}</span>
+    {item.hint && <span data-testid={`${testId}-hint`} className="shrink-0 text-xs text-muted-foreground">{item.hint}</span>}
+    {item.shortcut && <DropdownMenuShortcut>{item.shortcut}</DropdownMenuShortcut>}
+  </>;
+}
+
 /** Only maps host actions to the consumer's shadcn Base UI menu. The primitive owns focus, positioning and dismissal. */
 export function ActionMenu({ label, icon, items, testId = 'menu', align = 'end', size = 'icon-sm', className, children, onOpenChange }: ActionMenuProps) {
   const portal = useRef<HTMLElement | null>(null);
@@ -67,12 +76,7 @@ export function ActionMenu({ label, icon, items, testId = 'menu', align = 'end',
     <DropdownMenuGroup>
       {group[0]?.group && <DropdownMenuLabel>{group[0].group}</DropdownMenuLabel>}
       {group.map(item => {
-        const content = <>
-          {item.icon && <span className="text-muted-foreground">{item.icon}</span>}
-          <span className="min-w-0 flex-1"><span className="block truncate">{item.label}</span>{item.description && <span data-testid={`${testId}-description`} className="block text-xs text-muted-foreground">{item.description}</span>}</span>
-          {item.hint && <span data-testid={`${testId}-hint`} className="shrink-0 text-xs text-muted-foreground">{item.hint}</span>}
-          {item.shortcut && <DropdownMenuShortcut>{item.shortcut}</DropdownMenuShortcut>}
-        </>;
+        const content = <ActionMenuItemContent item={item} testId={testId} />;
         const common = { disabled: item.disabled, 'data-testid': item.testId ?? `${testId}-${item.id}`, 'data-item': item.id, onClick: item.onSelect, className: 'min-h-8 max-sm:min-h-10 pointer-coarse:min-h-10' };
         return item.checked !== undefined
           ? <DropdownMenuRadioItem key={item.id} value={item.id} {...common}>{content}</DropdownMenuRadioItem>

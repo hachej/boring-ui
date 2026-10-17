@@ -30,7 +30,7 @@ Item and file types follow the shadcn schema: the multi-file chat items are `reg
 | `pi-app` | `... add <registry>/pi-app.json` (also installs `pi-chat`, `pi-workspace` and `viewers`) | the page is a whole agent app: sessions, chat and artifact viewers in one `AgentWorkspace` (see [below](#whole-agent-app-pi-app-agentworkspace)) |
 | `app-shell` | `... add <registry>/app-shell.json` (also installs `pi-chat`, `feedback` and pinned `drawer` and `dropdown-menu` recipes plus the shadcn `sidebar` and `avatar` of your own style; add `<registry>/theme.json` too when the host has no shadcn tokens) | one agent above any app: a bottom drawer with peek, half and full on a phone, a right panel on a wide screen (see [below](#agent-layer-app-shell)) |
 
-Registry blocks support the shadcn **Base UI style only**. `base-nova` is the tested style; Radix styles are not supported. Shared viewer and chat menus use the consumer's real `@/components/ui/dropdown-menu`, declared as the bare `dropdown-menu` registry dependency of `button`. `ActionMenu` only maps actions and metadata to that component; it owns no menu positioning, focus loop or visual primitive. The consumer's shadcn component supplies the appearance and interaction. `npm run test:app-registry-consumer` installs and strictly checks Base UI, including portalled viewer/version menus and the phone files drawer. Ordinary buttons and icon actions import the consumer's `@/components/ui/button` directly. Pressed actions use `@/components/ui/toggle`; the compact account theme uses `@/components/ui/switch`. Their bare registry dependencies install the consumer's components. `button/actions.tsx` adapts host actions, not visual primitives. Other component groups remain tracked in `scripts/design-groups.json`.
+Registry blocks support the shadcn **Base UI style only**. `base-nova` is the tested style; Radix styles are not supported. Viewer, Library and shared chat menus use the consumer's real `@/components/ui/dropdown-menu`, declared as the bare `dropdown-menu` registry dependency. `ActionMenu` only maps actions and metadata to that component; it owns no menu positioning, focus loop or visual primitive. The consumer's shadcn components supply appearance and interaction. `npm run test:app-registry-consumer` installs and strictly checks Base UI, including Library controls, portalled viewer/version menus and the phone files drawer. Ordinary buttons and icon actions import the consumer's `@/components/ui/button` directly. Pressed actions use `@/components/ui/toggle`; the compact account theme uses `@/components/ui/switch`. Their bare registry dependencies install the consumer's components. `button/actions.tsx` adapts host actions, not visual primitives. Other component groups remain tracked in `scripts/design-groups.json`.
 
 Tokens: `pi-ambient`, `pi-workspace`, `pi-app`, `viewers`, `provider-setup` and `file-tree` depend on `theme` (directly or through a block), so `shadcn add` merges the tokens into the app's CSS file. `pi-chat`, `button`, `dock`, `feedback` and `app-shell` do not: they use the host's shadcn tokens (`background`, `foreground`, `muted`, `primary`, `border`, `ring`, `destructive` and the rest) and their own layout, and they install no global tokens. A host that has those tokens changes nothing. A host without them must also install `theme.json` (`npx shadcn@4.21.4 add <registry>/theme.json <registry>/<block>.json`), or those items render with semantic colours and focus styling missing (dock's resize indicator loses its colour). The blocks import `cn` from `utils` and controls directly from the consumer's `components/ui/`; the CLI installs each dependency once. `registry.json` owns the current file lists. Theme-carrying installs merge the theme tokens into CSS and keep tokens the host already defines.
 
@@ -427,7 +427,11 @@ Run `npm run test:task-list-registry-consumer` after building the packages. It u
 ## File tree
 
 Install `file-tree.json` for portable `FileTree` and `FileTreeView` wrappers.
-The renderer adapts shadcn `sidebar-11`; the recipe imports its scoped stylesheet.
+The renderer adapts the structure of shadcn `sidebar-11`; the recipe imports its scoped stylesheet.
+Buttons come from the consumer's `@/components/ui/button`; actions use the existing
+pinned Base UI dropdown recipe. Their look is not overridden by Library CSS.
+The package renderer takes an explicit `components` binding; these installed wrappers
+supply it, so installed consumers need no extra props.
 It can mount in a detached window without the workspace layout. Pass the concrete
 `revisionProvider` from the [files guide](../packages/files/README.md#frontend-revision-provider).
 The `pi-app` recipe accepts the same binding and supplies the tree, `@` filename
@@ -459,9 +463,10 @@ in a keyboard-accessible ⋯ menu. Picker and drop uploads use the existing prov
 `variant="plain"` keeps the compact tree. These defaults apply to every Library
 placement, the file-tree recipe, Documents and the demo's popover and phone sheet.
 The count is visible loaded items, not a workspace total. The catalog supplies no
-edit date or author, so rows show neither. Run `node examples/file-tree/journey-library.mjs`
-with `CHROMIUM` set for both consumers' light/dark and 360px browser checks.
-
+edit date or author, so file rows show neither. The Library history panel and viewer
+version menu share relative-time, You/Agent and Current rows through `version-history`.
+Run `node examples/file-tree/journey-library.mjs` with `CHROMIUM` set for both
+consumers' light/dark and 360px browser checks.
 `AgentWorkspace` omits the chat header's duplicate History action. An IntersectionObserver sentinel loads
 older native records near the top of the same transcript in standalone, docked, embedded, page and floating
 chats. Older messages use the normal bubbles, Markdown, Trace and file cards, not a separate read-only
@@ -508,6 +513,7 @@ There is no Save button while autosave is on; Cmd/Ctrl+S still saves immediately
 `autosave={false}` on `MarkdownEditor` or `MarkdownPane` restores explicit saving.
 `autosave={{ delayMs: 2000 }}` changes the idle delay. `ViewerWindowProvider value={{ autosave: false }}`
 sets the policy for its Markdown panes; a pane's own prop wins. Read-only panes never autosave.
+An untouched new buffer is not automatically published by idle, blur, page hide or teardown; explicit Cmd/Ctrl+S can create it.
 
 Autosave uses the same [conditional write, operation lookup and receipts](../docs/architecture/FILES-GIT-EXEC.md#one-place-for-files).
 Stale revisions still refuse. Conflicts, refused or unavailable writes, and unconfirmed acknowledgements
@@ -515,8 +521,11 @@ pause that file's autosave and retain its buffer. Typing does not retry a refusa
 resolution controls resume saving once the base or outcome is resolved. Agent writes retain their current
 change-event and stale-revision semantics. Workspace navigation flushes first and asks about discarding
 only when the flush failed or remains unconfirmed. A host with its own navigation can register the
-`onAutosaveChange` flush callback on the editor or pane, or `onBeforeLeaveChange` on `FileViewer`, and
-await it before unmounting. Hidden-page and unmount flushes are best effort, not a persistence guarantee
+`onAutosaveChange` flush callback on the editor or pane and await it before unmounting.
+To delegate refused-close/discard decisions to a real host guard, pass `onBeforeLeaveChange` to
+`MarkdownPane` or `FileViewer` (or the artifact's `ViewerOptions`) and route `onClose` through that guard.
+Internal teardown registration alone never permits closing over a failed flush.
+Hidden-page and unmount flushes are best effort, not a persistence guarantee
 when the browser terminates. `MarkdownEditor showOutline` controls heading navigation; by default it follows `header`.
 `onUnsavedChange` reports an open file's unsaved changes, so a host can ask before
 it switches workspace or identity. Chat attachments are saved as

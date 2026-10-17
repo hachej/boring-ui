@@ -397,6 +397,11 @@ export function useTranscript(rows: readonly Row[], page = 60, more = 40, histor
       const top = scroller.scrollTop;
       const programmatic = library.state.ignoreScrollToTop === top;
       if (!programmatic && top < last && scroller.scrollHeight - scroller.clientHeight - top > 70) library.stopScroll();
+      if (!programmatic && anchor.current) {
+        const edge = scroller.getBoundingClientRect().top;
+        const first = [...scroller.querySelectorAll<HTMLElement>('[data-row-id]')].find(row => row.getBoundingClientRect().bottom > edge + 1);
+        anchor.current = { ...anchor.current, key: first?.dataset['rowId'], y: first?.getBoundingClientRect().top ?? edge, height: scroller.scrollHeight, top };
+      }
       last = top;
     };
     scroller.addEventListener('scroll', onScroll, { passive: true, capture: true });
@@ -437,5 +442,5 @@ export function useTranscript(rows: readonly Row[], page = 60, more = 40, histor
     observer.observe(sentinel);
     return () => observer.disconnect();
   }, [scroller, sentinel, reveal, library.state, history?.state]);
-  return { stick, hidden, reveal, sentinelRef: setSentinel, loaded, visible: <T,>(items: readonly T[]): readonly T[] => hidden ? items.slice(hidden) : items, reset: () => setLimit(page) };
+  return { stick, hidden, reveal, sentinelRef: setSentinel, loaded, visible: <T,>(items: readonly T[]): readonly T[] => hidden ? items.slice(hidden) : items, reset: () => { anchor.current = undefined; setLimit(page); } };
 }
