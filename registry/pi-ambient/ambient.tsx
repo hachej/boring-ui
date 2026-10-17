@@ -464,11 +464,13 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
           <MessageScroller>
             <MessageScrollerViewport ref={stick.scrollRef} data-testid="transcript-scroll" aria-label={labels.messages}>
               {!empty && <TranscriptHistory history={state.history} connected={!state.disposed && connected} onLoad={transcript.reveal} sentinelRef={transcript.sentinelRef} hidden={hidden} loaded={transcript.loaded} />}
-              <MessageScrollerContent aria-label={labels.messages} aria-live="polite" data-testid="transcript" className="px-4 pt-4 pb-6">
-                {visibleRows.map(row => <MessageScrollerItem key={row.key} messageId={row.key}><RowView row={row} context={rowContext} /></MessageScrollerItem>)}
+              <div className="px-4 pt-4 pb-6">
+              <MessageScrollerContent aria-label={labels.messages} aria-live="polite" data-testid="transcript">
+                {visibleRows.map(row => <MessageScrollerItem key={row.key} messageId={row.key} className="[content-visibility:visible]"><RowView row={row} context={rowContext} /></MessageScrollerItem>)}
                 {loading && <p role="status" data-testid="loading" className="m-0 flex items-center gap-2 text-sm text-muted-foreground"><Loader2Icon className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />{labels.loading}</p>}
                 {empty && !loading && <p data-testid="ambient-empty" className="m-0 max-w-sm py-8 text-sm leading-6 text-muted-foreground">{labels.empty}</p>}
               </MessageScrollerContent>
+              </div>
             </MessageScrollerViewport>
             {!stick.isAtBottom && <MessageScrollerButton data-testid="jump-latest" aria-label={labels.jumpToLatest} title={labels.jumpToLatest} onClick={transcript.reset}><icons.jumpToLatest aria-hidden="true" /></MessageScrollerButton>}
           </MessageScroller>

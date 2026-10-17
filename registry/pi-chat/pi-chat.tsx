@@ -185,9 +185,11 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
       <MessageScroller>
         <MessageScrollerViewport ref={stick.scrollRef} data-testid="transcript-scroll" aria-label={labels.messages}>
           {!empty && <TranscriptHistory history={state.history} connected={!state.disposed && connected} onLoad={transcript.reveal} sentinelRef={transcript.sentinelRef} hidden={hidden} loaded={transcript.loaded} />}
-          <MessageScrollerContent aria-label={labels.messages} aria-live="polite" data-testid="transcript" className="mx-auto w-full max-w-[720px] px-4 pt-6 pb-8 sm:px-6">
-            {visible.map(row => <MessageScrollerItem key={row.key} messageId={row.key}><RowView row={row} context={rowContext} /></MessageScrollerItem>)}
+          <div className="mx-auto w-full max-w-[720px] px-4 pt-6 pb-8 sm:px-6">
+          <MessageScrollerContent aria-label={labels.messages} aria-live="polite" data-testid="transcript">
+            {visible.map(row => <MessageScrollerItem key={row.key} messageId={row.key} className="[content-visibility:visible]"><RowView row={row} context={rowContext} /></MessageScrollerItem>)}
           </MessageScrollerContent>
+          </div>
         </MessageScrollerViewport>
         {!empty && !stick.isAtBottom && <MessageScrollerButton data-testid="jump-latest" aria-label={labels.jumpToLatest} title={labels.jumpToLatest} onClick={transcript.reset}><icons.jumpToLatest aria-hidden="true" /></MessageScrollerButton>}
       </MessageScroller>

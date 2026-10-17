@@ -148,7 +148,7 @@ function renderToken(value: unknown, context: Context, before = '', after = ''):
         : <ul className="my-3 list-disc ps-6 marker:text-muted-foreground">{children(value['items'], context)}</ul>;
     }
     case 'list_item': return <li className="ps-1 [&+li]:mt-1 [&>p]:my-1 [&>ol]:my-1 [&>ul]:my-1">{children(value['tokens'], context, '', '', true)}</li>;
-    case 'checkbox': return <Checkbox checked={value['checked'] === true} disabled aria-label={context.labels.taskStatus} />;
+    case 'checkbox': return <Checkbox className="inline-flex" checked={value['checked'] === true} disabled aria-label={context.labels.taskStatus} />;
     case 'table': return <Table>
       <TableHeader><TableRow>{cells(value['header'], true, context)}</TableRow></TableHeader>
       <TableBody>{Array.isArray(value['rows']) ? value['rows'].map((row: unknown, index) => <TableRow key={index}>{cells(row, false, context)}</TableRow>) : null}</TableBody></Table>;
