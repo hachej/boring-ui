@@ -43,6 +43,10 @@ jobs:
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Stock and brand token conformance, light and dark, desktop and phone
         run: npm run test:design
+      - name: Viewer chrome on stock and brand, light and dark, desktop and phone
+        run: npm run test:viewer-chrome
+        env:
+          DESIGN_EVIDENCE: .cache/evidence/shadcn-first/viewer-chrome
       - name: Design evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
