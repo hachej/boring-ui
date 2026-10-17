@@ -16,6 +16,8 @@
 }
 html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 body { background: var(--sidebar); color: var(--foreground); font: 14px/1.5 ui-sans-serif, system-ui, sans-serif; }
+/* The host's own form-control baseline (Tailwind preflight's rule): host shadcn inputs take the page font and colour. */
+@layer base { :where(input, select, textarea) { font: inherit; color: inherit; } }
 [data-testid^="screen-"] [data-boring="experience-row"] > [data-boring="experience-cell"] { flex: 1 1 18rem; min-width: 0; }
 progress::-webkit-progress-bar { background: var(--muted); border-radius: 2px; }
 progress::-webkit-progress-value { background: var(--primary); border-radius: 2px; }

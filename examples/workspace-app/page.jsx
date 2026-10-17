@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { GroupOneControls } from '../../test/fixtures/themes/group-one.jsx';
 import { ViewerChromeControls } from '../../test/fixtures/themes/viewer-chrome.jsx';
 import { GroupFiveControls } from '../../test/fixtures/themes/group-five.jsx';
+import { GroupThreeControls } from '../../test/fixtures/themes/group-three.jsx';
 
 const { token, identity } = window.__APP__;
 const authorized = request => { const headers = new Headers(request.headers); headers.set('authorization', `Bearer ${token}`); return fetch(new Request(request, { headers })); };
@@ -76,4 +77,4 @@ function App() {
 
 const controls = new URLSearchParams(location.search).get('controls');
 const viewer = new URLSearchParams(location.search).get('viewer');
-createRoot(document.getElementById('root')).render(viewer ? <ViewerChromeControls surface={viewer} fetch={authorized} /> : controls?.startsWith('transcript-') ? <GroupFiveControls surface={controls.slice('transcript-'.length)} /> : controls ? <GroupOneControls surface={controls} /> : <App />);
+createRoot(document.getElementById('root')).render(viewer ? <ViewerChromeControls surface={viewer} fetch={authorized} /> : controls?.startsWith('composer-') ? <GroupThreeControls surface={controls.slice('composer-'.length)} /> : controls?.startsWith('transcript-') ? <GroupFiveControls surface={controls.slice('transcript-'.length)} /> : controls ? <GroupOneControls surface={controls} /> : <App />);

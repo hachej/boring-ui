@@ -57,7 +57,7 @@
     "browser-agent": "node examples/browser-agent/serve.mjs",
     "browser-agent:journey": "node examples/browser-agent/journey.mjs",
     "test:document-consumer": "node scripts/test-document-consumer.mjs",
-    "test:design": "node scripts/test-design.mjs && node scripts/test-transcript-design.mjs",
+    "test:design": "node scripts/test-design.mjs && node scripts/test-transcript-design.mjs && node scripts/test-composer-design.mjs",
     "test:viewer-chrome": "node scripts/test-viewer-chrome.mjs",
     "verify": "npm run check && npm run typecheck && node scripts/run-tests.mjs && node scripts/verify-invariants.mjs && npm run test:design",
     "verify:release": "npm run check && npm run typecheck && node scripts/run-tests.mjs && node scripts/verify-invariants.mjs --release",

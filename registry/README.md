@@ -491,10 +491,12 @@ in `PiChat`; connection failures still appear inline. `showConnectionStatus={tru
 
 `PiChat` centers the empty greeting and composer on desktop. After a message, the composer docks
 to the bottom. Phones always dock it. `emptyLayout="docked"` retains the former empty layout,
-and the default `composerLayout="card"` follows the owner reference: full-width, growing text above
-one centred row of 40px pointer or 44px touch controls. `composerLayout="pill"` explicitly restores
-the previous single-line pill; `stacked` and `inline` remain available. `AmbientChat` uses the same
-default and compatibility prop. Attachments stay inside the card above the text. An `Artifacts · n`
+and the default `composerLayout="card"` follows the owner reference: one host shadcn `InputGroup` with
+attachment, upload and mention chips (shadcn `Attachment`) above full-width, growing text, then one centred
+row with "+" (a shadcn `DropdownMenu`) on the left and Send on the right. The `@` and `/` pickers are shadcn
+`Popover`s of `Item` rows, and the model pill opens a `DropdownMenu` with radio groups; the block adds layout
+only. `composerLayout="pill"` puts the text between the controls on one row; `stacked` and `inline` are
+accepted and render as `card`. `AmbientChat` uses the same default and compatibility prop. An `Artifacts · n`
 chip appears above it for observed conversation files and uploads, opening a desktop popover or
 phone drawer through the existing file/artifact callbacks. `ConversationList` defaults to
 search disclosure and overflow row actions; `searchMode="inline"` and `rowActionLayout="inline"`

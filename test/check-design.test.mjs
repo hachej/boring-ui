@@ -112,7 +112,9 @@ test('the committed inventory covers all source and every shipped CSS item, with
   assert.ok(result.allowed.some(entry => entry.file === 'registry.json#theme'));
   assert.ok(result.allowed.length > 0, 'the optional theme definition is explicit');
   assert.deepEqual(readDesignConfig().groups.map(group => group.id), ['1', '2', '3', '4', '5', '6', '7']);
-  assert.ok(result.findings.length > 0, 'group 0 cannot claim the existing custom components are conformant');
+  // Every group is migrated (group 3 was the last): all are enforced and the inventory is empty.
+  assert.deepEqual(readDesignConfig().groups.filter(group => group.mode !== 'FAIL').map(group => group.id), []);
+  assert.deepEqual(result.findings, []);
   const manifest = JSON.parse(readFileSync(join(designRoot, 'VERIFY.json'), 'utf8'));
   assert.deepEqual(manifest.invariants['BORING-UI-1'].verifiers.find(verifier => verifier.scope === 'runtime').command, ['npm', 'run', 'test:design']);
 });

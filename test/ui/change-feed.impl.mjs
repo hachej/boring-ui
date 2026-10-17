@@ -109,15 +109,15 @@ test('the agent workspace reloads the tree, the open history panel and the @ sea
     search: async request => { otherSearches.push(request.query); return { entries: [{ path: 'other-workspace.md', kind: 'file', size: 1 }] }; }, changes: other.changes };
   await act(async () => root.render(createElement(AgentWorkspace, { controller: chat, conversationId: '1', revisionProvider: secondBinding })));
   await settle(() => otherSearches.includes('no'), 'the second binding searches the open query itself');
-  await settle(() => [...element.querySelectorAll('[data-testid=mention-item]')].some(item => item.dataset.path === 'other-workspace.md'), 'the second binding results show');
-  assert.ok(![...element.querySelectorAll('[data-testid=mention-item]')].some(item => item.dataset.path === 'notes.md'), 'the first workspace names are never shown');
+  await settle(() => [...window.document.querySelectorAll('[data-testid=mention-item]')].some(item => item.dataset.path === 'other-workspace.md'), 'the second binding results show');
+  assert.ok(![...window.document.querySelectorAll('[data-testid=mention-item]')].some(item => item.dataset.path === 'notes.md'), 'the first workspace names are never shown');
   const [secondTextarea] = [element.querySelector('[data-testid=workspace-chat-surface] textarea')];
   await act(async () => {
     Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(secondTextarea, '@n');
     secondTextarea.dispatchEvent(new window.Event('input', { bubbles: true }));
   });
   await settle(() => otherSearches.length >= 2, 'the second binding keeps searching its own workspace');
-  assert.ok(![...element.querySelectorAll('[data-testid=mention-item]')].some(item => item.dataset.path === 'notes.md'), 'still no names of the first workspace');
+  assert.ok(![...window.document.querySelectorAll('[data-testid=mention-item]')].some(item => item.dataset.path === 'notes.md'), 'still no names of the first workspace');
 });
 
 test('an @ search result of one workspace binding is never shown in another, even before any change event', async t => {
@@ -138,13 +138,13 @@ test('an @ search result of one workspace binding is never shown in another, eve
     textarea().dispatchEvent(new window.Event('input', { bubbles: true }));
   });
   await type('@no');
-  await settle(() => first.length === 1 && element.querySelector('[data-testid=mention-item][data-path="alice-secret.md"]'), 'alice sees her own result');
+  await settle(() => first.length === 1 && window.document.querySelector('[data-testid=mention-item][data-path="alice-secret.md"]'), 'alice sees her own result');
   await type('');
   await act(async () => root.render(createElement(AgentWorkspace, { controller: chat, conversationId: '1', revisionProvider: b })));
   await type('@no');
   await settle(() => second.includes('no'), 'bob\'s workspace is searched');
-  await settle(() => element.querySelector('[data-testid=mention-item][data-path="bob-file.md"]'), 'bob sees his own result');
-  assert.equal(element.querySelector('[data-testid=mention-item][data-path="alice-secret.md"]'), null, 'alice\'s names are never shown to bob');
+  await settle(() => window.document.querySelector('[data-testid=mention-item][data-path="bob-file.md"]'), 'bob sees his own result');
+  assert.equal(window.document.querySelector('[data-testid=mention-item][data-path="alice-secret.md"]'), null, 'alice\'s names are never shown to bob');
 });
 
 test('switching the binding while the picker is open hides the previous binding\'s results before the new search settles', async t => {
@@ -164,10 +164,10 @@ test('switching the binding while the picker is open hides the previous binding\
     textarea().setSelectionRange?.(3, 3);
     textarea().dispatchEvent(new window.Event('input', { bubbles: true }));
   });
-  await settle(() => element.querySelector('[data-testid=mention-item][data-path="alice-secret.md"]'), 'alice sees her own result');
+  await settle(() => window.document.querySelector('[data-testid=mention-item][data-path="alice-secret.md"]'), 'alice sees her own result');
   await act(async () => root.render(createElement(AgentWorkspace, { controller: chat, conversationId: '1', revisionProvider: bob })));
   await settle(() => bobSearches.includes('no'), 'bob\'s search starts and stays pending');
   await act(async () => new Promise(resolve => setTimeout(resolve, 200)));
-  assert.equal(element.querySelector('[data-testid=mention-item][data-path="alice-secret.md"]'), null, 'alice\'s rows are not displayed while bob\'s search is pending');
-  assert.equal(element.querySelectorAll('[data-testid=mention-item]').length, 0, 'nothing from alice is selectable');
+  assert.equal(window.document.querySelector('[data-testid=mention-item][data-path="alice-secret.md"]'), null, 'alice\'s rows are not displayed while bob\'s search is pending');
+  assert.equal(window.document.querySelectorAll('[data-testid=mention-item]').length, 0, 'nothing from alice is selectable');
 });

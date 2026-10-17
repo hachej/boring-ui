@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { connectRevisionProvider } from '@hachej/boring-files/revision';
 import { FileTree } from '../../registry/file-tree/file-tree';
 import { AgentWorkspace } from '../../registry/pi-app/agent-workspace';
-import { MentionMenu } from '../../registry/pi-chat/mention-menu';
+import { MentionPicker } from '../../registry/pi-chat/mention-menu';
 
 window.fileTreeFixture = { ready: false, dropNextPublish: false, holdNextList: false, holdNextPublish: false, publishCalls: 0, releaseList: undefined, releasePublish: undefined };
 function App() {
@@ -59,7 +59,7 @@ function App() {
       <output aria-label="Opened file">{opened}</output>
       <section aria-label="Mention picker" style={{ position: 'relative', maxWidth: 480 }}>
         <label>File mention<input aria-label="File mention" value={mention} onChange={event => setMention(event.target.value)} /></label>
-        {mention.startsWith('@') && <MentionMenu query={mention.slice(1)} search={(query, signal) => provider.search({ query, limit: 8 }, signal).then(page => page.entries)} onSelect={path => { setSelectedMention(path); setMention(''); }} onDismiss={() => setMention('')} />}
+        {mention.startsWith('@') && <MentionPicker query={mention.slice(1)} search={(query, signal) => provider.search({ query, limit: 8 }, signal).then(page => page.entries)} onSelect={path => { setSelectedMention(path); setMention(''); }} onDismiss={() => setMention('')} />}
         <output aria-label="Selected mention">{selectedMention}</output>
       </section>
     </>}
