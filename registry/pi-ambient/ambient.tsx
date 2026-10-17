@@ -422,7 +422,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
       {!phone && grip('ml-1.5')}
       <Button ref={pill} variant="ghost" data-testid="ambient-pill" onClick={() => setWindowState('bar')} aria-label={labels.openAgent(shownTitle, unread)}
         className="relative min-w-0 gap-2.5">
-        {status === 'working' ? <Loader2Icon data-icon="inline-start" aria-hidden="true" />
+        {status === 'working' ? <Loader2Icon data-icon="inline-start" className="animate-spin motion-reduce:animate-none" aria-hidden="true" />
           : status === 'input' ? <MessageCircleQuestionIcon data-icon="inline-start" aria-hidden="true" />
           : status === 'done' ? <CircleCheckIcon data-icon="inline-start" aria-hidden="true" />
           : status === 'error' ? <CircleAlertIcon data-icon="inline-start" aria-hidden="true" /> : null}
@@ -442,7 +442,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
         </span>
         {avatar && <span data-testid="ambient-avatar" className="flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-full [&>img]:size-full [&>img]:object-cover [&>svg]:size-4">{avatar}</span>}
         <Button ref={titleButton} variant="ghost" data-testid="ambient-title" onClick={expand} disabled={expanded} aria-label={expanded ? shownTitle : labels.openChat(shownTitle)}
-          className="min-w-0 max-w-full"><span className="truncate">{shownTitle}</span></Button>
+          className="min-w-0 max-w-full shrink"><span className="truncate">{shownTitle}</span></Button>
         {conversations && <Button variant="ghost" size="icon" data-testid="ambient-switch" aria-label={labels.switchConversation} aria-haspopup="dialog" aria-expanded={picking} title={labels.switchConversation} onClick={() => setPicking(open => !open)}>
           <icons.switchConversation data-icon="inline-start" aria-hidden="true" /></Button>}
         {expanded ? <span className="flex-1" /> : <Button variant="ghost" tabIndex={-1} aria-hidden="true" data-testid="ambient-header-fill" onClick={expand} className="min-w-2 flex-1" />}

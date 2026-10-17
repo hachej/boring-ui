@@ -84,7 +84,7 @@ export function ModelEffortPicker({ model, effort, currentModel, currentEffort, 
     <Button ref={trigger} variant="ghost" data-testid="composer-model" data-value={modelValue} data-effort={currentEffort ?? ''} disabled={disabled} aria-haspopup="listbox" aria-expanded={open} aria-label={description} title={description}
       onClick={() => setOpen(value => !value)}
       className="min-w-0 max-w-full gap-1.5">
-      {busy && <Loader2Icon data-icon="inline-start" aria-hidden="true" />}
+      {busy && <Loader2Icon data-icon="inline-start" className="animate-spin motion-reduce:animate-none" aria-hidden="true" />}
       <span data-testid="composer-model-label" className="min-w-0 truncate">{summary}</span>
       <ChevronDownIcon data-icon="inline-end" aria-hidden="true" />
     </Button>
