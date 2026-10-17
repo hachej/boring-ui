@@ -545,7 +545,7 @@ try {
     const y = await browser.evaluate(`${q(`[data-row-id="${anchor.key}"]`)}.getBoundingClientRect().top`);
     assert.ok(Math.abs(y - anchor.y) <= 2, `first visible row stays anchored: ${anchor.y} -> ${y}`);
     assert.equal(await browser.evaluate(`!!${q('[data-testid=history]')}`), false, 'no separate read-only history panel');
-    assert.equal(await browser.evaluate(`${q('[data-testid=transcript-history-load]')}.getAttribute('tabindex')`), null, 'the hidden fallback remains in keyboard order');
+    assert.equal(await browser.evaluate(`${q('[data-testid=transcript-history-load]')}.tabIndex`), 0, 'the hidden fallback remains in keyboard order');
     const before = await browser.evaluate(`document.querySelectorAll('[data-row-id^="history:"]').length`);
     await browser.evaluate(`${q('[data-testid=transcript-history-load]')}.focus()`); await browser.press('Enter');
     await browser.until('keyboard loads another page inline', `document.querySelectorAll('[data-row-id^="history:"]').length > ${before}`, 10000);
