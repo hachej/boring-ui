@@ -42,12 +42,16 @@ import { FileViewer } from './file-viewer';
 import { useRevisionAttachments } from './use-revision-attachments';
 import { imageData } from './revision-files';
 import { SessionsPane, SessionsToggle } from './sessions';
+import { focusHistoryRow, historyColumnFits, useHistoryOpen } from './history-column';
+import type { HistoryPlacement } from './history-column';
 import type { SessionsView, WorkspaceAgents } from './sessions';
 
 export { ArtifactPanel, useArtifactVersions, useTurn } from './artifact-panel';
 export type { CustomViewerProps, CustomViewers, SavedRevision, ViewerOptions } from './artifact-panel';
 export { FileViewer } from './file-viewer';
 export { SessionsPane, SessionsToggle } from './sessions';
+export { HistoryColumn, HistoryColumnToggle, historyColumnFits, useHistoryColumn } from './history-column';
+export type { HistoryPlacement } from './history-column';
 export { ConversationList, ConversationHistory } from '../pi-chat/history';
 export { FileTree } from '../file-tree/file-tree';
 export type { SessionsView, WorkspaceAgent, WorkspaceAgents } from './sessions';
@@ -142,6 +146,11 @@ interface AgentWorkspaceBaseProps {
   readonly conversations?: ConversationsConfig | undefined;
   /** Place the sessions pieces in host navigation. Default: SessionsPane. False leaves navigation entirely to the host; conversations still powers chat Fork. */
   readonly sessions?: false | ((props: ComponentProps<typeof SessionsPane>) => ReactNode) | undefined;
+  /**
+   * `column` (default): the conversations are the pane's side column, open or closed as this viewer left it; while an open panel leaves
+   * the chat too narrow beside it, the column steps aside and the chat's History opens the popover. `popover`: History is always the popover.
+   */
+  readonly history?: HistoryPlacement | undefined;
   /** Recognise artifacts in tool results that carry no descriptor (`ArtifactsConfig.detect`). */
   readonly detect?: ArtifactsConfig['detect'] | undefined;
   /** Host viewers by artifact type or file kind, for example `{ canvas: props => <MyCanvas {...props} /> }`. */
@@ -172,7 +181,7 @@ interface AgentWorkspaceBaseProps {
   readonly chatTop?: ReactNode;
   /** The chat header's controls; a function receives whether the panel is open. */
   readonly controls?: ReactNode | ((state: { readonly panelOpen: boolean }) => ReactNode);
-  /** Prefix of the session-scoped layout keys (panel width, floating chat, collapsed sessions). */
+  /** Prefix of the layout keys (panel width and floating chat for the session; whether the sessions column is open, per viewer). */
   readonly storageKey?: string;
   /** Below this width of the workspace the artifact panel is a full-screen sheet. */
   readonly sheetBelow?: number;
@@ -209,7 +218,7 @@ const defaultLocate = (path: string): ResourceLocator => ({ resource: { provider
  * its versions, the file viewer and the host's own views). Agent artifacts open the panel as they appear. Every prop is data or a callback:
  * the host owns the routes, authentication, the controller and what is open (when controlled).
  */
-export function AgentWorkspace({ controller, conversationId, chat = {}, labels, icons, panelActions, connecting, conversations, sessions, resources, revisionProvider, libraryPlacement = 'panel', locale, fileTree: treeOptions, uploads, agents, detect, viewers, interactive, share, opened: controlled,
+export function AgentWorkspace({ controller, conversationId, chat = {}, labels, icons, panelActions, connecting, conversations, sessions, history = 'column', resources, revisionProvider, libraryPlacement = 'panel', locale, fileTree: treeOptions, uploads, agents, detect, viewers, interactive, share, opened: controlled,
   defaultOpened = null, onOpenedChange, onUnsavedChange, panels, autoOpen = true, fileBack, floatingChat, chatTop, controls, storageKey = 'boring.agent-workspace', sheetBelow = 641, drawerBelow = 641, floatBelow, className }: AgentWorkspaceProps) {
   const [own, setOwn] = useState<OpenedView | null>(defaultOpened);
   const [panelLibrary, setPanelLibrary] = useState(false);
@@ -409,7 +418,8 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
     return () => observer.disconnect();
   }, []);
   const narrow = width > 0 && width < drawerBelow;
-  const [collapsed, setCollapsed] = useState(() => readFlag(`${storageKey}.sessions-hidden`));
+  const [paneOpen, setPaneOpen] = useHistoryOpen(`${storageKey}.history-column`, true);
+  const paneId = `${storageKey}-sessions`;
   const [drawer, setDrawer] = useState(false);
   const [paneView, setPaneView] = useState<SessionsView>(() => readFlag(`${storageKey}.library`) ? 'library' : 'conversations');
   const changePaneView = useCallback((next: SessionsView) => { writeFlag(`${storageKey}.library`, next === 'library'); setPaneView(next); }, [storageKey]);
@@ -418,7 +428,7 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
     if (librarySide) { setSideOpen(true); return; }
     if (!libraryInPane) { openLibrary(); return; }
     changePaneView('library');
-    if (narrow) setDrawer(true); else { writeFlag(`${storageKey}.sessions-hidden`, false); setCollapsed(false); }
+    if (narrow) setDrawer(true); else setPaneOpen(true);
   };
   useEffect(() => { if (!narrow) setDrawer(false); }, [narrow]);
   const toggleSide = useCallback(() => setSideOpen(!sideOpen), [setSideOpen, sideOpen]);
@@ -426,10 +436,14 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   const libraryTree = (onOpen: (path: string) => void, onClose?: () => void) => fileTree
     ? <FileTreeView variant="list" refresh={libraryPlacement !== 'panel'} title={text.labels.library} {...(onClose ? { onClose } : {})} key={JSON.stringify([revisionProvider?.workspace, revisionProvider?.identity])} {...(locale ? { locale } : {})} {...viewOptions} controller={fileTree} historyKey={feed.seq} onOpen={onOpen} {...(isFile(opened) ? { selectedPath: opened.path } : {})} />
     : <p role="status" className="m-0 p-3 text-sm text-muted-foreground">{treeOptions?.labels?.loading ?? text.labels.loading}</p>;
-  const hasNavigation = sessions !== false && Boolean(conversations || revisionProvider);
-  const docked = hasNavigation && width > 0 && !narrow && !collapsed;
-  const toggle = hasNavigation && !docked && !drawer && <SessionsToggle navigation={Boolean(revisionProvider)} open={narrow ? drawer : !collapsed} drawer={narrow}
-    onToggle={() => { if (narrow) setDrawer(value => !value); else setCollapsed(value => { writeFlag(`${storageKey}.sessions-hidden`, !value); return !value; }); }} />;
+  // `history="popover"` keeps the conversations out of the pane. With an open panel the column steps aside unless column, panel and chat fit.
+  const paneConversations = history === 'column' ? conversations : undefined;
+  const hasNavigation = sessions !== false && Boolean(paneConversations || revisionProvider);
+  const stepAside = Boolean(paneConversations) && hasNavigation && !narrow && panelOpen && !historyColumnFits(width, VIEWER_MIN);
+  const docked = hasNavigation && width > 0 && !narrow && paneOpen && !stepAside;
+  const popoverHistory = history === 'popover' || stepAside;
+  const toggle = hasNavigation && !docked && !drawer && !stepAside && <SessionsToggle navigation={Boolean(revisionProvider)} open={narrow ? drawer : paneOpen} drawer={narrow} controls={narrow ? undefined : paneId}
+    onToggle={() => { if (narrow) setDrawer(value => !value); else { setPaneOpen(!paneOpen); if (!paneOpen) focusHistoryRow(paneId); } }} />;
 
   // ---- The docked chat's header is replaced on every switch and connect (the `connecting` row, then a new `PiChat`). The toggle is not
   // part of it: it stays mounted in the shell, over an invisible space of its size in whichever header is showing, and follows that
@@ -449,7 +463,7 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   // ---- The chat in the center: docked PiChat, or the host's floating surface over the same controller (with the toggle in its header).
   const header = <>{conversations?.onNew && <Button variant="ghost" size="icon-sm" data-testid="workspace-new-chat" aria-label={text.labels.newChat} title={text.labels.newChat} className="min-[641px]:hidden" onClick={conversations.onNew}><text.icons.newChat data-icon="inline-start" aria-hidden="true" /></Button>}{typeof controls === 'function' ? controls({ panelOpen }) : controls ?? chat.controls}</>;
   const conversationTitle = conversations?.items.find(item => item.id === conversationId)?.title;
-  const chatProps: PiChatProps | undefined = controller && { ...(mentionsForChat ? { mentions: mentionsForChat } : {}), ...(attachments ? { attachments } : {}), ...(locale ? { locale } : {}), ...chat, controller, artifacts, ...(conversations ? { conversations, historyList: false, showHistory: chat.showHistory ?? false, conversationTitle, onRenameTitle: conversations.rename && conversationId ? (title: string) => conversations.rename!(conversationId, title) : undefined } : {}),
+  const chatProps: PiChatProps | undefined = controller && { ...(mentionsForChat ? { mentions: mentionsForChat } : {}), ...(attachments ? { attachments } : {}), ...(locale ? { locale } : {}), ...chat, controller, artifacts, ...(conversations ? { conversations, historyList: popoverHistory, showHistory: chat.showHistory ?? popoverHistory, conversationTitle, onRenameTitle: conversations.rename && conversationId ? (title: string) => conversations.rename!(conversationId, title) : undefined } : {}),
     headerStart: <>{toggle}{chat.headerStart}</>, ...(header === undefined ? {} : { controls: header }) };
   const docked_chat = <div data-testid="workspace-center" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
     {attachmentFailure?.tree === fileTree && attachmentFailure?.reasons.map((reason, index) => <p key={index} role="alert" className="m-0 px-4 py-2 text-sm">{reason}</p>)}
@@ -471,7 +485,7 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
     ...(floatChat ? [{ id: 'float-chat', label: text.labels.floatChat, icon: text.icons.floatChat, placement: 'menu' as const, onSelect: floatChat }] : []),
     ...(shown ? typeof panelActions === 'function' ? panelActions(shown) : panelActions ?? [] : []),
   ];
-  const sessionProps: ComponentProps<typeof SessionsPane> = { conversations, drawer: narrow, onClose: () => setDrawer(false), onChat: () => setCenterMode('chat'), onCollapse: () => { writeFlag(`${storageKey}.sessions-hidden`, true); setCollapsed(true); }, title: labels?.sessionsTitle,
+  const sessionProps: ComponentProps<typeof SessionsPane> = { id: paneId, conversations: paneConversations, drawer: narrow, onClose: () => setDrawer(false), onChat: () => setCenterMode('chat'), onCollapse: () => setPaneOpen(false), title: labels?.sessionsTitle,
     agents, view: paneView, onViewChange: changePaneView,
     ...(librarySide ? { library: { selected: sideOpen, onSelect: toggleSide, side: true } } : revisionProvider && !libraryInPane ? { library: { selected: libraryOpen || panelLibrary, onSelect: openLibrary } } : {}),
     ...(libraryInPane ? { libraryContent: (onPicked: () => void) => libraryTree(path => { openFile(path); onPicked(); }) } : {}),

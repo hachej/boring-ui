@@ -16,7 +16,9 @@ export interface WorkspaceAgents { readonly items: readonly WorkspaceAgent[]; re
 export type SessionsView = 'conversations' | 'library';
 
 /** The same navigation in a desktop column and a focus-trapped, swipe-dismissable phone drawer. */
-export function SessionsPane({ conversations, title: givenTitle, drawer, onClose, onCollapse, library, onChat, libraryContent, view = 'conversations', onViewChange, agents }: {
+export function SessionsPane({ id, conversations, title: givenTitle, drawer, onClose, onCollapse, library, onChat, libraryContent, view = 'conversations', onViewChange, agents }: {
+  /** The pane's element id (the toggle's `aria-controls`). */
+  readonly id?: string | undefined;
   readonly conversations?: ConversationsConfig | undefined;
   readonly library?: { readonly selected: boolean; readonly onSelect: () => void; readonly side?: boolean } | undefined;
   readonly onChat?: (() => void) | undefined;
@@ -35,7 +37,7 @@ export function SessionsPane({ conversations, title: givenTitle, drawer, onClose
   const tabs = Boolean(libraryContent && conversations);
   const shown = !conversations && libraryContent ? 'library' : tabs ? view : 'conversations';
   const navigation = library && <Button variant="ghost" data-testid="workspace-library" aria-pressed={library.selected} className="mx-2 justify-start" onClick={() => { library.onSelect(); if (drawer) onClose?.(); }}><icons.library aria-hidden="true" />{labels.library}</Button>;
-  const pane = <aside data-testid="conversations" data-drawer={drawer ? 'true' : 'false'} aria-label={title}
+  const pane = <aside id={id} data-testid="conversations" data-drawer={drawer ? 'true' : 'false'} aria-label={title}
     className={cn('pi-chat flex min-h-0 flex-1 flex-col bg-muted/30 text-foreground', drawer ? 'pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]' : 'w-[260px] shrink-0 flex-none')}>
     <header className="flex h-13 shrink-0 items-center gap-2 px-4">
       {agents && agents.items.length > 1 ? <DropdownMenu>
@@ -63,11 +65,11 @@ export function SessionsPane({ conversations, title: givenTitle, drawer, onClose
   </Drawer>;
 }
 
-export function SessionsToggle({ open, drawer, onToggle, navigation = false }: { readonly open: boolean; readonly drawer: boolean; readonly onToggle: () => void; readonly navigation?: boolean }) {
+export function SessionsToggle({ open, drawer, onToggle, navigation = false, controls }: { readonly open: boolean; readonly drawer: boolean; readonly onToggle: () => void; readonly navigation?: boolean; readonly controls?: string | undefined }) {
   const { labels, icons } = useAppText();
   const label = navigation ? drawer ? open ? labels.closeNavigation : labels.openNavigation : open ? labels.hideNavigation : labels.showNavigation
     : drawer ? open ? labels.closeSessions : labels.openSessions : open ? labels.hideSessions : labels.showSessions;
-  return <Button size="icon-sm" variant="ghost" data-testid="sessions-toggle" aria-label={label} title={label} aria-expanded={open} onClick={onToggle} className="shrink-0">
+  return <Button size="icon-sm" variant="ghost" data-testid="sessions-toggle" aria-label={label} title={label} aria-expanded={open} aria-controls={controls} onClick={onToggle} className="shrink-0">
     {drawer && !open ? <MenuIcon data-icon="inline-start" aria-hidden="true" /> : <icons.sessionsToggle data-icon="inline-start" aria-hidden="true" />}
   </Button>;
 }
