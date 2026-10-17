@@ -7,13 +7,16 @@
   .boring-viewer, .boring-viewer *, .boring-viewer *::before, .boring-viewer *::after {
     box-sizing: border-box;
   }
-  .boring-viewer :where(input, textarea) {
+  .boring-viewer :where(button, input, textarea) {
     font: inherit;
     color: inherit;
     letter-spacing: inherit;
   }
   .boring-viewer :where(textarea, input) {
     margin: 0;
+  }
+  @media (max-width: 640px), (pointer: coarse) {
+    .boring-viewer :is([data-slot="button"], [data-slot="toggle"]) { min-height: 2.75rem; min-width: 2.75rem; }
   }
   .boring-viewer [hidden] {
     display: none;

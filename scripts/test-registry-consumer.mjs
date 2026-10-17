@@ -45,7 +45,7 @@ try {
   const dependencies = Object.fromEntries(item.dependencies.filter(pin => !pin.startsWith('@hachej/boring-')).map(pin => {
     const split = pin.lastIndexOf('@'); return [pin.slice(0, split), pin.slice(split + 1)];
   }));
-  for (const name of ['typescript', '@types/react', '@types/react-dom', 'happy-dom', 'esbuild', 'shadcn', 'tailwindcss']) dependencies[name] = rootManifest.devDependencies[name];
+  for (const name of ['typescript', '@types/react', '@types/react-dom', 'happy-dom', 'esbuild', 'shadcn', 'tailwindcss', ...(taskList ? ['@base-ui/react', 'class-variance-authority', 'cn', 'clsx', 'tailwind-merge', 'lucide-react'] : [])]) dependencies[name] = rootManifest.devDependencies[name];
   // The SQLite workspace host loads Pi's portable env entry at runtime (the optional files peer); nothing else of Pi.
   dependencies['@earendil-works/pi-durable'] = JSON.parse(readFileSync(join(root, 'packages/files/package.json'), 'utf8')).peerDependencies['@earendil-works/pi-durable'];
   const manifest = { name: 'isolated-registry-consumer', version: '1.0.0', private: true, type: 'module', dependencies };
@@ -106,7 +106,7 @@ try {
   assert.deepEqual(unchanged, item);
   writeFileSync(join(directory, recipe.name + '.json'), JSON.stringify(localItem));
   for (const path of ['src', 'test/fixtures', 'dist']) mkdirSync(join(directory, path), { recursive: true });
-  writeFileSync(join(directory, 'components.json'), JSON.stringify({ $schema: 'https://ui.shadcn.com/schema.json', style: 'new-york', rsc: false, tsx: true, tailwind: { config: '', css: 'src/index.css', baseColor: '', cssVariables: true, prefix: '' }, iconLibrary: 'lucide', aliases: { components: '@/components', utils: '@/lib/utils', ui: '@/components/ui', lib: '@/lib', hooks: '@/hooks' } }));
+  writeFileSync(join(directory, 'components.json'), JSON.stringify({ $schema: 'https://ui.shadcn.com/schema.json', style: 'base-nova', rsc: false, tsx: true, tailwind: { config: '', css: 'src/index.css', baseColor: '', cssVariables: true, prefix: '' }, iconLibrary: 'lucide', aliases: { components: '@/components', utils: '@/lib/utils', ui: '@/components/ui', lib: '@/lib', hooks: '@/hooks' } }));
   writeFileSync(join(directory, 'src/index.css'), '');
   writeFileSync(join(directory, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'ESNext', moduleResolution: 'Bundler', jsx: 'react-jsx', strict: true, exactOptionalPropertyTypes: true, skipLibCheck: false, noEmit: true, types: [], lib: ['ES2023', 'DOM'], baseUrl: '.', paths: { '@/*': ['./src/*'] } }, include: ['src/**/*.tsx', 'src/**/*.ts', 'consumer.ts'] }));
   const installer = { ...process.env, npm_config_cache: cache, npm_config_offline: 'true', npm_config_ignore_scripts: 'true', npm_config_audit: 'false', npm_config_fund: 'false' };

@@ -5,6 +5,7 @@
 // that exact revision read-only, and « Back to editing » returns to the file. The editor stays mounted while a revision is inspected, so its
 // unsaved edits survive; leaving the file with unsaved edits asks first. Every read goes through the one `revisionProvider` the host binds.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Button } from '@/components/ui/button';
 import { createFileTreeController } from '@hachej/boring-ui-kit/file-tree';
 import type { FileTreeController } from '@hachej/boring-ui-kit/file-tree';
 import { FileTreeView } from '../file-tree/file-tree';
@@ -124,8 +125,7 @@ function OlderVersion({ provider, path, revision, options, labels, onBack, onClo
     : { schema: 'boring.artifact', version: 1, title: nameOf(path), type, mediaType: mediaTypeOf(path), target: provider.locate(path), revision };
   const bar = <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
     <span role="status" className="min-w-0 flex-1 truncate text-sm font-medium">{labels.readOnlyRevision}</span>
-    <button type="button" data-testid="back-to-editing" onClick={onBack}
-      className="inline-flex min-h-8 pointer-coarse:min-h-11 pointer-coarse:min-w-11 shrink-0 items-center rounded-lg border border-border bg-background px-3 text-xs pointer-coarse:text-sm outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60">{labels.backToEditing}</button>
+    <Button variant="ghost" data-testid="back-to-editing" onClick={onBack}>{labels.backToEditing}</Button>
   </div>;
   let body;
   if (artifact) body = <ArtifactPanel active={{ descriptor: artifact, follow: false }} versions={[]} options={{ ...options, client: pinned }} onSelect={onBack} onClose={onClose} />;
@@ -151,7 +151,7 @@ function DocumentDetail({ provider, path, version, options, labels, locale, olde
   readonly onBack: () => void;
   readonly onClose: () => void;
 }) {
-  return <div data-testid="documents-detail" className="flex h-full min-h-0 flex-col md:flex-row [&_button]:pointer-coarse:min-h-11 [&_button]:pointer-coarse:min-w-11">
+  return <div data-testid="documents-detail" className="flex h-full min-h-0 flex-col md:flex-row">
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       {/* The editor stays mounted (hidden) while a revision is on show, so its unsaved edits are kept. */}
       <div className={cn('min-h-0 flex-1 flex-col', older === undefined ? 'flex' : 'hidden')}>
@@ -184,7 +184,7 @@ export function Documents({ provider, locale, labels: given, viewers, share }: D
     setPinned(undefined);
   };
   const closeFile = () => { if (!mayLeave()) return; setPath(undefined); setPinned(undefined); };
-  const list = tree ? <div className="min-h-0 [&_button]:pointer-coarse:min-h-11 [&_button]:pointer-coarse:min-w-11">
+  const list = tree ? <div className="min-h-0">
     <FileTreeView controller={tree} onOpen={choose} selectedPath={path} locale={language} upload={false} history={false} />
   </div> : null;
   const older = path !== undefined && pinned?.path === path ? pinned.revision : undefined;

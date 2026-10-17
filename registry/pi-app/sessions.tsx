@@ -32,7 +32,7 @@ export function SessionsPane({ conversations, title: givenTitle, drawer, onClose
   const picked = () => { onChat?.(); if (drawer) onClose?.(); };
   const tabs = Boolean(libraryContent && conversations);
   const shown = !conversations && libraryContent ? 'library' : tabs ? view : 'conversations';
-  const navigation = library && <Button variant="ghost" data-testid="workspace-library" aria-pressed={library.selected} className="mx-2 justify-start" onClick={() => { library.onSelect(); if (drawer) onClose?.(); }}><icons.library className="size-4" aria-hidden="true" />{labels.library}</Button>;
+  const navigation = library && <Button variant="ghost" data-testid="workspace-library" aria-pressed={library.selected} className="mx-2 justify-start" onClick={() => { library.onSelect(); if (drawer) onClose?.(); }}><icons.library aria-hidden="true" />{labels.library}</Button>;
   const pane = <aside data-testid="conversations" data-drawer={drawer ? 'true' : 'false'} aria-label={title}
     className={cn('pi-chat flex min-h-0 flex-1 flex-col bg-muted/30 text-foreground', !drawer && 'w-[260px] shrink-0 flex-none')}>
     <header className="flex h-13 shrink-0 items-center gap-2 px-4">

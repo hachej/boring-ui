@@ -42,7 +42,7 @@ export function checkDesign(root = designRoot, { config = readDesignConfig(root)
   const exemptions = new Set(allowlist.exceptions.map(entry => entry.id));
   for (const entry of allowlist.allow) if (!exemptions.has(entry.exception) || !entry.file || !entry.rules?.length || !entry.pattern) errors.push('Invalid design allowlist entry');
   const add = finding => {
-    const group = finding.file === 'registry.json#theme' ? config.groups.at(-1) : groupForFile(finding.file, config);
+    const group = finding.group ? config.groups.find(group => group.id === finding.group) : finding.file === 'registry.json#theme' ? config.groups.at(-1) : groupForFile(finding.file, config);
     if (!group) { errors.push(`Unowned design source: ${finding.file}`); return; }
     const result = { ...finding, group: group.id, mode: group.mode };
     const exemption = allowlist.allow.find(entry => entry.file === finding.file && entry.rules.includes(finding.rule) && new RegExp(entry.pattern).test(finding.value));
@@ -59,20 +59,20 @@ export function checkDesign(root = designRoot, { config = readDesignConfig(root)
     // Documentation contains syntax examples, not shipped classes. Still report obsolete style support.
     for (const finding of scanDesign(file, text)) if (!file.endsWith('.md') || finding.rule === 'style') add(finding);
     const item = manifest.items.find(item => item.files?.some(entry => entry.path === file));
-    const hostComponents = new Set();
+    const hostComponents = new Map();
     for (const match of text.matchAll(/\b(?:import|export)\s+([^;]*?)\s+from\s+['"]([^'"]+)['"]/g)) {
       const [, bindings, specifier] = match;
       const ui = /^@\/components\/ui\/([\w-]+)$/.exec(specifier);
-      if (ui) for (const [name] of bindings.matchAll(/\b[A-Z]\w*/g)) hostComponents.add(name);
+      if (ui) for (const [name] of bindings.matchAll(/\b[A-Z]\w*/g)) hostComponents.set(name, ui[1]);
       let reason;
       if (ui && (!SHADCN_BUILTINS.includes(ui[1]) || !item?.registryDependencies?.includes(ui[1]))) reason = `undeclared shadcn import ${specifier}`;
       else if (!ui && !/^type\b/.test(bindings.trim()) && [...bindings.matchAll(/\b[A-Z]\w*/g)].some(([name]) => primitive.test(name))) reason = `UI primitive must come from the host's @/components/ui/*: ${specifier}`;
-      if (reason) add({ file, line: text.slice(0, match.index).split('\n').length, column: 1, rule: 'primitive-import', value: reason });
+      if (reason) add({ file, line: text.slice(0, match.index).split('\n').length, column: 1, rule: 'primitive-import', value: reason, ...(/\b(?:Button|IconButton|Toggle|Switch)\b/.test(bindings) ? { group: '1' } : {}) });
     }
     for (const match of text.matchAll(/<([A-Z]\w*)\b[^>]*?\bclassName\s*=\s*(?:["']([^"']*)["']|\{([^}]*?)\})/g)) {
       if (!hostComponents.has(match[1])) continue;
       const classes = match[2] ?? match[3];
-      if (/(?<![\w-])(?:bg|text|font|shadow|rounded|border|ring|duration|animate|size|h)-/.test(classes)) add({ file, line: text.slice(0, match.index).split('\n').length, column: 1, rule: 'shadcn-restyle', value: `${match[1]} className changes appearance: ${classes}` });
+      if (/(?<![\w-])(?:(?:bg|text|font|shadow|rounded|border|ring|duration|animate|size|p[xytrblse]?)-|h-(?!auto\b))/.test(classes)) add({ file, line: text.slice(0, match.index).split('\n').length, column: 1, rule: 'shadcn-restyle', value: `${match[1]} className changes appearance: ${classes}`, ...(['button', 'toggle', 'switch'].includes(hostComponents.get(match[1])) ? { group: '1' } : {}) });
     }
   }, ignored);
   for (const entry of config.primitives ?? []) if (existsSync(resolve(root, entry.file))) add({ file: entry.file, line: 1, column: 1, rule: 'primitive-file', value: `delete owned primitive; compose ${entry.replacement}` });

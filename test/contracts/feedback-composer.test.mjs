@@ -109,25 +109,28 @@ test('without the feedback prop the composer renders byte-identical markup to th
   }
 });
 
+const controlTag = (html, id) => new RegExp(`<button\\b[^>]*data-testid="${id}"[^>]*>`).exec(html)?.[0] ?? '';
 const idle = { annotate: () => {}, active: false, count: 0, clear: () => {}, attach: async () => ({ kind: 'ok', text: '' }), sent: () => {} };
 
 test('with the feedback prop: ONE annotate button beside the + menu in both layouts, pressed while active; no Feedback button, no point button, no bar', () => {
   const cases = composerCases();
   for (const name of ['stacked-empty', 'inline-empty']) {
     const html = renderToStaticMarkup(createElement(Composer, { ...cases[name], feedback: idle }));
-    const button = /<button type="button" data-testid="composer-annotate"[^>]*>/.exec(html)?.[0];
+    const button = controlTag(html, 'composer-annotate');
     assert.ok(button, name);
     assert.match(button, /aria-pressed="false"/);
-    assert.match(button, /\bsize-11\b|class="[^"]*\bsize-11\b/, '44px');
+    assert.match(button, /data-slot="toggle"/, 'the consumer owns the control');
+    const css = JSON.parse(readFileSync(join(root, 'registry.json'), 'utf8')).items.find(item => item.name === 'pi-chat').css;
+    assert.equal(css['@layer base']['@media (max-width: 640px), (pointer: coarse)']['.pi-chat :is([data-slot="button"], [data-slot="toggle"])']['min-height'], '2.75rem', '44px on touch, without overriding the desktop component size');
     assert.ok(html.indexOf('data-attach="true"') < html.indexOf('data-testid="composer-annotate"'), 'after the file input and the + menu');
     assert.equal((html.match(/composer-annotate/g) ?? []).length, 1);
     assert.doesNotMatch(html, /composer-feedback|composer-point|feedback-bar|feedback-chip|feedback-general/, 'no Feedback button, Show in app, or Feedback block');
-    assert.match(html, /data-testid="composer-submit"[^>]*disabled=""/, 'nothing to send yet');
+    assert.match(controlTag(html, 'composer-submit'), /disabled=""/, 'nothing to send yet');
     assert.doesNotMatch(html, /data-testid="feedback-count"/, 'no chip with no notes');
   }
   const active = renderToStaticMarkup(createElement(Composer, { ...cases['stacked-empty'], feedback: { ...idle, active: true } }));
-  assert.match(active, /data-testid="composer-annotate" aria-pressed="true"/);
-  assert.doesNotMatch(active, /data-testid="composer-annotate"[^>]*disabled=""/, 'the same toggle exits annotating');
+  assert.match(controlTag(active, 'composer-annotate'), /aria-pressed="true"/);
+  assert.doesNotMatch(controlTag(active, 'composer-annotate'), /disabled=""/, 'the same toggle exits annotating');
 });
 
 test('notes taken: a count chip (not a Feedback block) in the composer, Send allowed with no text, the toggle stays available to add more', async () => {
@@ -137,11 +140,11 @@ test('notes taken: a count chip (not a Feedback block) in the composer, Send all
     assert.match(html, /data-testid="feedback-count" data-count="2"/);
     assert.match(html, /2 notes/);
     assert.match(html, /data-testid="feedback-count-clear"/);
-    assert.doesNotMatch(html, /data-testid="composer-submit"[^>]*disabled=""/, 'the notes are something to send');
-    assert.doesNotMatch(html, /data-testid="composer-annotate"[^>]*disabled=""/, 'pending notes never block annotating again');
+    assert.doesNotMatch(controlTag(html, 'composer-submit'), /disabled=""/, 'the notes are something to send');
+    assert.doesNotMatch(controlTag(html, 'composer-annotate'), /disabled=""/, 'pending notes never block annotating again');
     assert.match(renderToStaticMarkup(createElement(Composer, { ...cases[name], feedback: { ...idle, count: 1 } })), /1 note\b(?!s)/);
   }
-  assert.doesNotMatch(renderToStaticMarkup(createElement(Composer, { ...cases['stacked-empty'], feedback: { ...idle, count: 2, active: true } })), /data-testid="composer-annotate"[^>]*disabled=""/, 'annotating with notes can still be turned off');
+  assert.doesNotMatch(controlTag(renderToStaticMarkup(createElement(Composer, { ...cases['stacked-empty'], feedback: { ...idle, count: 2, active: true } })), 'composer-annotate'), /disabled=""/, 'annotating with notes can still be turned off');
   // One bundle, so the provider and the composer share one context.
   const fr = await load('composer-fr', `export { Composer } from '${root}registry/pi-chat/composer.tsx'; export { ChatTextProvider } from '${root}registry/pi-chat/labels.ts'; export { chatTextFor } from '${root}registry/pi-chat/locale.ts';`);
   const french = renderToStaticMarkup(createElement(fr.ChatTextProvider, { value: fr.chatTextFor('fr') }, createElement(fr.Composer, { ...cases['stacked-empty'], feedback: { ...idle, count: 2 } })));

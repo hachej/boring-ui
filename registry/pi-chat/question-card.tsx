@@ -85,7 +85,7 @@ export function QuestionCard({ call, result, answer, questionId, live = false }:
         {open && <>
           {question.options.length > 0 && <div role="group" aria-label={labels.answerOptions} className="mt-3 flex flex-wrap gap-2">
             {question.options.map(option => <Button key={option} variant="outline" data-testid="question-option" data-option={option} disabled={!answer || !questionId || busy}
-              onClick={() => { void submit(option); }} className="max-w-full">{option}</Button>)}
+              onClick={() => { void submit(option); }} className="h-auto max-w-full whitespace-normal">{option}</Button>)}
           </div>}
           {question.allowFreeText && <form onSubmit={onSubmit} className="mt-3 flex gap-2">
             <input data-testid="question-input" value={text} maxLength={2000} disabled={!answer || !questionId || busy} placeholder={question.options.length ? labels.ownAnswer : labels.typeAnswer}

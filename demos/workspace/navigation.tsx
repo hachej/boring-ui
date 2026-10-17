@@ -1,7 +1,7 @@
 // Adapted from tremorlabs/template-planner, pinned in README.md. MIT, Tremor Labs, Inc.
 import { BotIcon, Building2Icon, CheckCheckIcon, ChevronRightIcon, CreditCardIcon, FileTextIcon, LayoutDashboardIcon, MoonIcon, SunIcon, ChartNoAxesCombinedIcon } from 'lucide-react';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarTrigger, useSidebar } from '../../examples/app-shell/components/ui/sidebar';
-import { Button } from '../../registry/button/button';
+import { Button } from '@/components/ui/button';
 import { SCREEN_NAMES } from './screen-names.mjs';
 
 const entries = [
@@ -24,5 +24,5 @@ export function WorkspaceNav({ view, go, api, count }) {
 }
 
 export function SiteHeader({ title, theme, setTheme }) {
-  return <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background px-4 sm:px-6"><SidebarTrigger className="min-h-8 min-w-8 max-sm:min-h-11 max-sm:min-w-11 pointer-coarse:min-h-11 pointer-coarse:min-w-11" /><span className="h-4 w-px bg-border" /><span className="hidden text-sm text-muted-foreground sm:inline">Finance</span><ChevronRightIcon aria-hidden="true" className="hidden size-3.5 text-muted-foreground sm:block" /><span className="min-w-0 truncate text-sm font-medium">{title}</span><span className="ml-auto hidden text-xs text-muted-foreground sm:inline">March 2031</span><Button size="icon" variant="ghost" aria-label={theme === 'dark' ? 'Use light theme' : 'Use dark theme'} data-testid="theme-toggle" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="ml-auto size-9 max-sm:size-11 pointer-coarse:size-11 sm:ml-0">{theme === 'dark' ? <SunIcon className="size-4" /> : <MoonIcon className="size-4" />}</Button></header>;
+  return <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background px-4 sm:px-6"><SidebarTrigger className="min-h-8 min-w-8 max-sm:min-h-11 max-sm:min-w-11 pointer-coarse:min-h-11 pointer-coarse:min-w-11" /><span className="h-4 w-px bg-border" /><span className="hidden text-sm text-muted-foreground sm:inline">Finance</span><ChevronRightIcon aria-hidden="true" className="hidden size-3.5 text-muted-foreground sm:block" /><span className="min-w-0 truncate text-sm font-medium">{title}</span><span className="ml-auto hidden text-xs text-muted-foreground sm:inline">March 2031</span><Button size="icon" variant="ghost" aria-label={theme === 'dark' ? 'Use light theme' : 'Use dark theme'} data-testid="theme-toggle" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="ml-auto sm:ml-0">{theme === 'dark' ? <SunIcon /> : <MoonIcon />}</Button></header>;
 }

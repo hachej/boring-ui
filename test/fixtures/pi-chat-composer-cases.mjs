@@ -6,6 +6,8 @@
 // controls' rounded-full to the --radius tiers rounded-lg/rounded-md).
 // Regenerated for the impeccable design pass: only class attributes changed (compact pointer tools, 44px touch targets,
 // quieter frame and focus ring). The update verified byte-identical markup after removing class attributes.
+// Group 1 refresh: consumer-owned Base UI Buttons intentionally change markup and attributes. Approved against the
+// stock/brand browser matrix; regenerate with scripts/update-composer-baseline.mjs. shadcn-controls.test.mjs covers behavior.
 export const composerCases = () => {
   const noop = () => {};
   const base = { text: '', onText: noop, attachments: [], onRemoveAttachment: noop, working: false, sendBlocked: false, disabled: false, stopRequested: false,

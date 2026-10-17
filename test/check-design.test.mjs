@@ -63,6 +63,23 @@ test('host shadcn components allow layout but not appearance overrides', t => {
   assert.ok(checkDesign(f.root, f).findings.some(finding => finding.rule === 'shadcn-restyle'));
 });
 
+test('native controls stay in FAIL group 1 across later-group folders and permit only layout', t => {
+  const f = fixture(t, '', ['button', 'toggle', 'switch']);
+  f.config.groups = [{ id: '1', name: 'buttons', mode: 'FAIL', folders: [], selector: 'button' }, { id: '6', name: 'cards', mode: 'REPORT', folders: ['registry/'], selector: 'section' }];
+  for (const component of ['Button', 'Toggle', 'Switch']) {
+    const prefix = `import { ${component} as Control } from '@/components/ui/${component.toLowerCase()}'; `;
+    f.write('registry/button/button.tsx', `${prefix}const a = <Control className="w-full gap-2 whitespace-normal" />;`);
+    assert.deepEqual(checkDesign(f.root, f).findings, []);
+    for (const appearance of ['text-muted-foreground', 'font-mono', 'rounded-(--radius)', 'border-(length:--border-width)', 'shadow-(--shadow-sm)']) {
+      f.write('registry/button/button.tsx', `${prefix}const a = <Control className="${appearance}" />;`);
+      const result = checkDesign(f.root, f);
+      assert.ok(result.findings.some(finding => finding.rule === 'shadcn-restyle' && finding.group === '1' && finding.mode === 'FAIL'), `${component}: ${appearance} must not disappear into group 6 REPORT`);
+    }
+    f.write('registry/button/button.tsx', `${prefix}const a = <Control className="h-auto whitespace-normal" />;`);
+    assert.deepEqual(checkDesign(f.root, f).findings, [], 'content sizing is layout');
+  }
+});
+
 test('primitive inventory names deletion and its shadcn replacement, not a restyle', t => {
   const f = fixture(t, 'export const marker = true;');
   f.config.primitives = [{ file: 'registry/button/button.tsx', replacement: '@/components/ui/button' }];

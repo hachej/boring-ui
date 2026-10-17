@@ -18,7 +18,7 @@ export function EmptyState({ title, description, avatar, suggestions, onSelect, 
     {children}
     {suggestions && suggestions.length > 0 && <ul className="m-0 flex w-full max-w-lg list-none flex-wrap justify-center gap-2 p-0">
       {suggestions.map(item => <li key={item.label}><Button variant="ghost" onClick={() => onSelect?.(item.text)} data-testid="suggestion"
-        className="flex-col gap-1">
+        className="h-auto flex-col gap-1 whitespace-normal">
         <span>{item.label}</span>{item.hint && <span>{item.hint}</span>}</Button></li>)}
     </ul>}
   </div>;

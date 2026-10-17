@@ -1,20 +1,114 @@
 {
   "version": 1,
   "groups": [
-    { "id": "1", "name": "buttons", "mode": "REPORT", "folders": ["registry/button/button.tsx"], "selector": "button, [role=button], [role=switch], [role=checkbox], [role=radio]" },
-    { "id": "2", "name": "overlays", "mode": "REPORT", "folders": ["registry/button/actions.tsx", "registry/drawer/", "registry/dropdown-menu/", "registry/app-shell/sheet.tsx", "registry/provider-setup/"], "selector": "[role=dialog], [role=menu], [role=menuitem], [role=tooltip], [data-slot=popover-content], [data-slot=sheet-content], [data-slot=drawer-content]" },
-    { "id": "3", "name": "inputs", "mode": "REPORT", "folders": ["registry/pi-chat/composer.tsx", "registry/pi-chat/pickers.tsx", "registry/pi-chat/mention-menu.tsx", "registry/pi-chat/slash-menu.tsx"], "selector": "input, textarea, select, [data-testid=composer], [data-testid=mention-menu], [data-testid=slash-menu]" },
-    { "id": "4", "name": "lists", "mode": "REPORT", "folders": ["registry/pi-chat/history.tsx", "registry/pi-chat/empty-state.tsx", "registry/pi-app/sessions.tsx", "registry/documents/", "registry/file-tree/", "packages/ui/src/file-tree"], "selector": "[role=tree], [role=treeitem], [data-testid=conversations], [data-testid=conversation-row], [data-boring=file-tree], [data-testid=empty-state]" },
-    { "id": "5", "name": "transcript", "mode": "REPORT", "folders": ["registry/pi-chat/message.tsx", "registry/pi-chat/markdown.tsx", "registry/pi-chat/activity.tsx", "registry/pi-chat/tool.tsx", "registry/pi-chat/queue.tsx", "registry/pi-chat/shimmer.tsx"], "selector": "[data-testid=transcript], [data-role=assistant], [data-role=user], [data-testid=activity], [data-testid=queue]" },
-    { "id": "6", "name": "cards", "mode": "REPORT", "folders": ["registry/pi-chat/approval-card.tsx", "registry/pi-chat/question-card.tsx", "registry/pi-chat/artifact-card.tsx", "registry/pi-chat/code-block.tsx", "registry/pi-chat/conversation-files.tsx", "registry/feedback/feedback-card.tsx"], "selector": "[data-testid=approval-card], [data-testid=question-card], [data-testid=artifact-card], [data-testid=code-block], [data-testid=message-file]" },
-    { "id": "7", "name": "viewer-chrome", "mode": "REPORT", "folders": ["registry/", "packages/ui/src/"], "selector": "[data-boring], [data-slot], .boring-viewer, .app-shell" }
+    {
+      "id": "1",
+      "name": "buttons",
+      "mode": "FAIL",
+      "folders": [
+        "registry/button/button.tsx"
+      ],
+      "selector": "button, [role=button], [role=switch], [role=checkbox], [role=radio]"
+    },
+    {
+      "id": "2",
+      "name": "overlays",
+      "mode": "REPORT",
+      "folders": [
+        "registry/button/actions.tsx",
+        "registry/drawer/",
+        "registry/dropdown-menu/",
+        "registry/app-shell/sheet.tsx",
+        "registry/provider-setup/"
+      ],
+      "selector": "[role=dialog], [role=menu], [role=menuitem], [role=tooltip], [data-slot=popover-content], [data-slot=sheet-content], [data-slot=drawer-content]"
+    },
+    {
+      "id": "3",
+      "name": "inputs",
+      "mode": "REPORT",
+      "folders": [
+        "registry/pi-chat/composer.tsx",
+        "registry/pi-chat/pickers.tsx",
+        "registry/pi-chat/mention-menu.tsx",
+        "registry/pi-chat/slash-menu.tsx"
+      ],
+      "selector": "input, textarea, select, [data-testid=composer], [data-testid=mention-menu], [data-testid=slash-menu]"
+    },
+    {
+      "id": "4",
+      "name": "lists",
+      "mode": "REPORT",
+      "folders": [
+        "registry/pi-chat/history.tsx",
+        "registry/pi-chat/empty-state.tsx",
+        "registry/pi-app/sessions.tsx",
+        "registry/documents/",
+        "registry/file-tree/",
+        "packages/ui/src/file-tree"
+      ],
+      "selector": "[role=tree], [role=treeitem], [data-testid=conversations], [data-testid=conversation-row], [data-boring=file-tree], [data-testid=empty-state]"
+    },
+    {
+      "id": "5",
+      "name": "transcript",
+      "mode": "REPORT",
+      "folders": [
+        "registry/pi-chat/message.tsx",
+        "registry/pi-chat/markdown.tsx",
+        "registry/pi-chat/activity.tsx",
+        "registry/pi-chat/tool.tsx",
+        "registry/pi-chat/queue.tsx",
+        "registry/pi-chat/shimmer.tsx"
+      ],
+      "selector": "[data-testid=transcript], [data-role=assistant], [data-role=user], [data-testid=activity], [data-testid=queue]"
+    },
+    {
+      "id": "6",
+      "name": "cards",
+      "mode": "REPORT",
+      "folders": [
+        "registry/pi-chat/approval-card.tsx",
+        "registry/pi-chat/question-card.tsx",
+        "registry/pi-chat/artifact-card.tsx",
+        "registry/pi-chat/code-block.tsx",
+        "registry/pi-chat/conversation-files.tsx",
+        "registry/feedback/feedback-card.tsx"
+      ],
+      "selector": "[data-testid=approval-card], [data-testid=question-card], [data-testid=artifact-card], [data-testid=code-block], [data-testid=message-file]"
+    },
+    {
+      "id": "7",
+      "name": "viewer-chrome",
+      "mode": "REPORT",
+      "folders": [
+        "registry/",
+        "packages/ui/src/"
+      ],
+      "selector": "[data-boring], [data-slot], .boring-viewer, .app-shell"
+    }
   ],
   "primitives": [
-    { "file": "registry/button/button.tsx", "replacement": "@/components/ui/button and tooltip" },
-    { "file": "registry/button/actions.tsx", "replacement": "@/components/ui/dropdown-menu" },
-    { "file": "registry/drawer/drawer.tsx", "replacement": "@/components/ui/drawer" },
-    { "file": "registry/dropdown-menu/dropdown-menu.tsx", "replacement": "@/components/ui/dropdown-menu" },
-    { "file": "registry/app-shell/sheet.tsx", "replacement": "@/components/ui/sheet" },
-    { "file": "packages/ui/src/file-tree-shadcn.tsx", "replacement": "host shadcn sidebar/item/scroll-area" }
-  ]
+    {
+      "file": "registry/button/actions.tsx",
+      "replacement": "@/components/ui/dropdown-menu"
+    },
+    {
+      "file": "registry/drawer/drawer.tsx",
+      "replacement": "@/components/ui/drawer"
+    },
+    {
+      "file": "registry/dropdown-menu/dropdown-menu.tsx",
+      "replacement": "@/components/ui/dropdown-menu"
+    },
+    {
+      "file": "registry/app-shell/sheet.tsx",
+      "replacement": "@/components/ui/sheet"
+    },
+    {
+      "file": "packages/ui/src/file-tree-shadcn.tsx",
+      "replacement": "host shadcn sidebar/item/scroll-area"
+    }
+  ],
+  "evidenceDirectory": ".cache/evidence/shadcn-first/group-1"
 }

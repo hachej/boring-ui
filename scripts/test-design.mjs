@@ -21,8 +21,9 @@ export function designFailures(audits, config) {
   return failures;
 }
 
-export async function testDesign({ evidence = process.env.DESIGN_EVIDENCE ?? '.cache/evidence/shadcn-first/group-0' } = {}) {
+export async function testDesign({ evidence = process.env.DESIGN_EVIDENCE } = {}) {
   const config = readDesignConfig(), audits = [];
+  evidence ??= config.evidenceDirectory ?? '.cache/evidence/shadcn-first/group-0';
   const theme = JSON.parse(readFileSync(join(designRoot, 'registry.json'), 'utf8')).items.find(item => item.name === 'theme');
   const options = { groups: config.groups, palette: [...new Set([...Object.keys(theme.cssVars.light), 'overlay', 'sidebar', 'sidebar-foreground', 'sidebar-primary', 'sidebar-primary-foreground', 'sidebar-accent', 'sidebar-accent-foreground'])], radiusBindings: Object.fromEntries(Object.entries(theme.cssVars.theme).filter(([name]) => name.startsWith('radius-'))) };
   mkdirSync(evidence, { recursive: true });
@@ -37,22 +38,31 @@ export async function testDesign({ evidence = process.env.DESIGN_EVIDENCE ?? '.c
     try {
       browser = await launch('about:blank', { evidence });
       const inspect = async (surface, params) => {
+        await browser.evaluate(`Promise.all(document.getAnimations().filter(animation => Number.isFinite(animation.effect?.getComputedTiming().endTime)).map(animation => animation.finished.catch(() => {})))`);
+        if (params.width === 390) {
+          const small = await browser.evaluate(`[...document.querySelectorAll('[data-slot=button], [data-slot=toggle]')].filter(element => element.checkVisibility() && element.closest('.pi-chat, .boring-viewer, .app-shell')).map(element => ({ id: element.dataset.testid ?? element.getAttribute('aria-label'), width: element.getBoundingClientRect().width, height: element.getBoundingClientRect().height })).filter(box => box.width < 43.9 || box.height < 43.9)`);
+          assert.deepEqual(small, [], `${surface}: native button/toggle touch targets must be at least 44px`);
+        }
         const result = await browser.evaluate(`(${auditDesign.toString()})(${JSON.stringify(options)})`);
         assert.ok(result.groups.reduce((sum, group) => sum + group.checks, 0) > 20, 'audit must inspect real mounted blocks');
         audits.push({ app: name, surface, ...params, ...result });
         await browser.screenshot(`${surface}.png`);
         writeFileSync(join(evidence, `${surface}.json`), JSON.stringify(audits.at(-1), null, 2));
       };
-      let prepared = false;
-      for (const themeName of ['stock', 'brand']) for (const mode of ['light', 'dark']) for (const width of [1440, 390]) {
-        const params = { theme: themeName, mode, width };
-        const prefix = `${name}-${themeName}-${mode}-${width}`;
+      const visit = async (params, url, ready) => {
+        const { width, mode, theme } = params;
         await browser.send('Emulation.setDeviceMetricsOverride', { width, height: width === 390 ? 844 : 950, deviceScaleFactor: 1, mobile: width === 390 });
         await browser.send('Emulation.setTouchEmulationEnabled', { enabled: width === 390, maxTouchPoints: 5 });
         await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: mode }, { name: 'prefers-reduced-motion', value: 'reduce' }] });
         const previousDocument = await browser.evaluate('performance.timeOrigin');
-        await browser.send('Page.navigate', { url: `${app.url}?theme=${themeName}&mode=${mode}` });
-        await browser.until(`${prefix}: new document, mounted chat and theme`, `performance.timeOrigin !== ${previousDocument} && document.readyState === 'complete' && !!${input} && !${input}.disabled && document.documentElement.classList.contains('dark') === ${mode === 'dark'} && ${themeName === 'brand' ? "getComputedStyle(document.documentElement).getPropertyValue('--border-width').trim() === '2px'" : 'true'}`, 30000);
+        await browser.send('Page.navigate', { url });
+        await browser.until(`${name}-${theme}-${mode}-${width}: new document and mounted controls`, `performance.timeOrigin !== ${previousDocument} && document.readyState === 'complete' && (${ready}) && document.documentElement.classList.contains('dark') === ${mode === 'dark'} && ${theme === 'brand' ? "getComputedStyle(document.documentElement).getPropertyValue('--border-width').trim() === '2px'" : 'true'}`, 30000);
+      };
+      let prepared = false;
+      for (const themeName of ['stock', 'brand']) for (const mode of ['light', 'dark']) for (const width of [1440, 390]) {
+        const params = { theme: themeName, mode, width };
+        const prefix = `${name}-${themeName}-${mode}-${width}`;
+        await visit(params, `${app.url}?theme=${themeName}&mode=${mode}`, `!!${input} && !${input}.disabled`);
         await inspect(`${prefix}-chat`, params);
         if (!prepared) {
           await browser.type(input, prompt);
@@ -91,6 +101,36 @@ export async function testDesign({ evidence = process.env.DESIGN_EVIDENCE ?? '.c
         const mutant = await browser.evaluate(`(() => { const element = ${input}; const old = element.style.cssText; element.style.cssText += ';border:7px solid red!important;border-radius:37px!important;box-shadow:rgb(255,0,0) 13px 17px 19px 0!important;font-family:serif!important;color:rgb(255,0,0)!important;background:rgb(255,0,0)!important'; const result = (${auditDesign.toString()})(${JSON.stringify(options)}); element.style.cssText = old; return result; })()`);
         const findings = mutant.groups.flatMap(group => group.violations).filter(finding => finding.target === 'textarea[data-testid=composer-input]');
         for (const [family, actual] of [['border-width', '7px'], ['radius', '37px'], ['shadow', '13px 17px 19px'], ['font', 'serif'], ['text-color', 'rgb(255, 0, 0)'], ['background-color', 'rgb(255, 0, 0)']]) assert.ok(findings.some(finding => finding.family === family && finding.actual.includes(actual)), `${prefix}: audit did not detect ${family} mutation on the actual composer`);
+        const badButton = await browser.evaluate(`(async () => { const element = ${q('[data-testid=composer-submit]')}; const old = element.style.cssText; element.style.cssText += ';border:7px solid red!important;border-radius:37px!important;box-shadow:rgb(255,0,0) 13px 17px 19px 0!important'; getComputedStyle(element).borderTopWidth; await new Promise(requestAnimationFrame); for (const animation of element.getAnimations()) if (Number.isFinite(animation.effect?.getComputedTiming().endTime)) animation.finish(); const subject = { style: element.style.cssText, border: getComputedStyle(element).borderTopWidth }; const result = (${auditDesign.toString()})(${JSON.stringify(options)}); element.style.cssText = old; return { ...result, subject }; })()`);
+        writeFileSync(join(evidence, `${prefix}-button-mutation.json`), JSON.stringify(badButton, null, 2));
+        for (const family of ['border-width', 'radius', 'shadow']) assert.ok(badButton.groups.find(group => group.id === '1').violations.some(finding => finding.target === 'button[data-testid=composer-submit]' && finding.family === family), `${prefix}: native Button ${family} mutation must fail group 1`);
+      }
+      if (name === 'standalone') for (const theme of ['stock', 'brand']) for (const mode of ['light', 'dark']) for (const width of [1440, 390]) for (const surface of ['choices', 'notification', 'provider', 'toggles']) {
+        const params = { theme, mode, width }, prefix = `${name}-${theme}-${mode}-${width}-${surface}`;
+        await visit(params, `${app.url}?controls=${surface}&theme=${theme}&mode=${mode}`, `!!${q('[data-testid=group-one-controls]')}`);
+        await inspect(prefix, params);
+        if (surface === 'choices') {
+          const bounds = await browser.evaluate('[...document.querySelectorAll("[data-testid=question-option], [data-testid=suggestion]")].map(button => ({ width: button.clientWidth, scroll: button.scrollWidth, height: button.clientHeight, content: button.scrollHeight }))');
+          assert.ok(bounds.length >= 4 && bounds.every(box => box.scroll <= box.width + 1 && box.content <= box.height + 1), `${prefix}: multiline choices must fit their activation boxes`);
+          await browser.click(q('[data-testid=question-option]'));
+          await browser.until('fictional question callback', `${q('[data-testid=question-card]')}.dataset.state === 'sent'`);
+        } else if (surface === 'notification') {
+          const box = await browser.evaluate(`(() => { const button = ${q('[data-testid=agent-toast-open]')}; return { height: button.clientHeight, content: button.scrollHeight }; })()`);
+          assert.ok(box.content <= box.height + 1, `${prefix}: notification text must fit its activation box`);
+          await browser.click(q('[data-testid=agent-toast-open]'));
+          await browser.until('notification callback', `${q('[data-testid=group-one-event]')}.textContent === 'notification opened'`);
+        } else if (surface === 'provider') {
+          await browser.click(q('[data-testid=provider-save]'));
+          await browser.until('provider callback', `${q('[data-testid=group-one-event]')}.textContent === 'provider saved'`);
+        } else {
+          if (width === 390) assert.ok(await browser.evaluate(`${q('[data-testid=account-theme]')}.parentElement.querySelector('label').getBoundingClientRect().height >= 44`), 'Switch keeps its stock track and a 44px associated label target');
+          await browser.click(q('[data-testid=fixture-pin]'));
+          await browser.click(q('[data-testid=account-theme]'));
+          assert.equal(await browser.evaluate(`${q('[data-testid=fixture-pin]')}.getAttribute('aria-pressed')`), 'true');
+          assert.equal(await browser.evaluate(`${q('[data-testid=account-theme]')}.getAttribute('aria-checked')`), 'true');
+          assert.equal(await browser.evaluate(`${q('[data-testid=group-one-event]')}.textContent`), '1', 'one pointer click changes the theme once');
+          await inspect(`${prefix}-pressed`, params);
+        }
       }
       assert.deepEqual(browser.problems, [], 'no browser console errors');
     } finally { if (browser) await browser.close(); await app.close(); }

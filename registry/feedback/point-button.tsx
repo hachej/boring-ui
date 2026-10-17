@@ -2,6 +2,7 @@
 // `createPicker` from `@hachej/boring-feedback/page`; this file is the button and the hint people see while they point.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPicker, type Picker, type PickerOverlay, type PickerState, type PrivacyPolicy } from '@hachej/boring-feedback/page';
+import { Toggle } from '@/components/ui/toggle';
 
 export interface PointButtonProps {
   /** The application root; only elements inside it can be picked. */
@@ -40,9 +41,9 @@ export function PointButton({ root, policy, overlay, onPinned, onCancel, multipl
   };
 
   return <span data-boring="feedback" data-feedback-ignore="" className={['boring-feedback-point', className].filter(Boolean).join(' ')}>
-    <button type="button" data-testid="feedback-point" aria-pressed={picking} disabled={!overlay} onClick={toggle} className="boring-feedback-button">
+    <Toggle data-testid="feedback-point" pressed={picking} disabled={!overlay} onPressedChange={toggle}>
       {picking ? 'Cancel' : children}
-    </button>
+    </Toggle>
     {picking && <span role="status" aria-live="polite" data-testid="feedback-point-hint" className="boring-feedback-hint">
       {state?.label ?? state?.refusal ?? 'Point at an element'}
       <span className="boring-feedback-keys"> · Click to pin{multiple ? ', Shift-click for several' : ''} · ↑ parent ↓ child · Esc</span>

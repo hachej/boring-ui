@@ -275,7 +275,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
 
   // Replies get copy, optional feedback and the time; the host may hand the conversation to its full chat.
   const conversationRef = useRef('');
-  const replyActions = useMemo<NonNullable<RowContext['replyActions']>>(() => (reply, host) => <div data-testid="reply-actions" className="mt-2 -ml-2 flex items-center gap-0.5 text-muted-foreground opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 max-sm:opacity-100 pointer-coarse:opacity-100 motion-reduce:transition-none">
+  const replyActions = useMemo<NonNullable<RowContext['replyActions']>>(() => (reply, host) => <div data-testid="reply-actions" className="mt-2 -ml-2 flex items-center gap-0.5 opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 max-sm:opacity-100 pointer-coarse:opacity-100 motion-reduce:transition-none">
     <CopyButton text={reply.text} label={labels.copyResponse} iconOnly {...(onCopy ? { onCopy } : {})} />
     {onFeedback && <>
       {(['up', 'down'] as const).map(value => <Toggle key={value} data-testid={`feedback-${value}`} pressed={feedback[reply.key] === value} aria-label={value === 'up' ? labels.goodResponse : labels.badResponse}
@@ -285,7 +285,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
     </>}
     {onOpenFull && <Button variant="ghost" size="icon" data-testid="open-full" aria-label={labels.openFull} title={labels.openFull} onClick={() => onOpenFull(conversationRef.current)}><icons.openFull data-icon="inline-start" aria-hidden="true" /></Button>}
     {host}
-    {reply.timestamp !== undefined && <time dateTime={new Date(reply.timestamp).toISOString()} data-testid="reply-time" className="ml-1.5 text-xs tabular-nums">{new Date(reply.timestamp).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}</time>}
+    {reply.timestamp !== undefined && <time dateTime={new Date(reply.timestamp).toISOString()} data-testid="reply-time" className="ml-1.5 text-xs tabular-nums text-muted-foreground">{new Date(reply.timestamp).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}</time>}
   </div>, [onCopy, onFeedback, onOpenFull, feedback, labels, icons]);
   const scrollToBottom = useRef<() => void>(() => {});
   const rowExtras = useMemo(() => ({ replyActions }), [replyActions]);

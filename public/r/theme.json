@@ -28,7 +28,14 @@
       "radius-lg": "var(--radius)",
       "radius-xl": "calc(var(--radius) + 4px)",
       "radius-2xl": "calc(var(--radius) * 1.8)",
-      "radius-3xl": "calc(var(--radius) * 2.2)"
+      "radius-3xl": "calc(var(--radius) * 2.2)",
+      "default-border-width": "var(--border-width, 1px)",
+      "shadow-xs": "var(--shadow-xs)",
+      "shadow-sm": "var(--shadow-sm)",
+      "shadow-md": "var(--shadow-md)",
+      "shadow-lg": "var(--shadow-lg)",
+      "shadow-xl": "var(--shadow-xl)",
+      "shadow-2xl": "var(--shadow-2xl)"
     },
     "light": {
       "radius": "0.75rem",
@@ -50,7 +57,13 @@
       "border": "oklch(0.92 0.004 286.32)",
       "input": "oklch(0.89 0.005 286.32)",
       "ring": "oklch(0.55 0.02 286.067)",
-      "shell": "oklch(0.975 0.002 286)"
+      "shell": "oklch(0.975 0.002 286)",
+      "shadow-xs": "0 1px 2px 0 rgb(0 0 0 / 0.05)",
+      "shadow-sm": "0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)",
+      "shadow-md": "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
+      "shadow-lg": "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)",
+      "shadow-xl": "0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)",
+      "shadow-2xl": "0 25px 50px -12px rgb(0 0 0 / 0.25)"
     },
     "dark": {
       "background": "oklch(0.175 0.006 285.885)",
@@ -71,7 +84,13 @@
       "border": "oklch(1 0 0 / 11%)",
       "input": "oklch(1 0 0 / 16%)",
       "ring": "oklch(0.65 0.02 286.067)",
-      "shell": "oklch(0.13 0.005 285.823)"
+      "shell": "oklch(0.13 0.005 285.823)",
+      "shadow-xs": "0 1px 2px 0 rgb(0 0 0 / 0.05)",
+      "shadow-sm": "0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)",
+      "shadow-md": "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
+      "shadow-lg": "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)",
+      "shadow-xl": "0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)",
+      "shadow-2xl": "0 25px 50px -12px rgb(0 0 0 / 0.25)"
     }
   },
   "type": "registry:theme"

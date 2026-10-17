@@ -165,7 +165,7 @@ function Toast({ item, autoDismissMs, onActivate, onDismiss, labels }: {
     onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)} onFocus={() => setPaused(true)} onBlur={() => setPaused(false)}
     onKeyDown={(event: KeyboardEvent) => { if (event.key === 'Escape') { event.stopPropagation(); onDismiss(item); } }}>
     <Button variant="ghost" data-testid="agent-toast-open" onClick={() => onActivate(item)} aria-label={labels.openNotification(label, item.title, item.summary)}
-      className="w-full flex-col items-start">
+      className="h-auto w-full flex-col items-start whitespace-normal">
       <span className="flex items-center gap-2.5"><Icon data-icon="inline-start" aria-hidden="true" /><span className="min-w-0 flex-1 truncate">{item.title}</span></span>
       {item.summary && <span data-testid="agent-toast-summary" className="mt-1 block max-w-full truncate">{item.summary}</span>}
     </Button>

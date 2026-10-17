@@ -188,7 +188,7 @@ export function RowView({ row, context: liveContext }: { readonly row: Row; read
       const active = row.active === true || row.streaming;
       const lastText = [...row.parts].reverse().find(part => part.kind === 'text');
       const host = settled && row.text && context.messageActions
-        ? <BlockActions iconOnly actions={context.messageActions(replyRef(row))} testId="reply-action" menuLabel={labels.moreActions} className="text-muted-foreground" />
+        ? <BlockActions iconOnly actions={context.messageActions(replyRef(row))} testId="reply-action" menuLabel={labels.moreActions} />
         : null;
       return <article data-row-id={row.key} data-role="assistant" aria-live={row.historical ? 'off' : undefined} data-streaming={row.streaming ? 'true' : undefined} className="group/message">
         <div className="space-y-3">

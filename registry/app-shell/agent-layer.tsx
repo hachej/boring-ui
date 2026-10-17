@@ -11,6 +11,7 @@ import { createContext, useCallback, useContext, useEffect, useLayoutEffect, use
 import type { ComponentType, CSSProperties, HTMLAttributes, PointerEvent as ReactPointerEvent, ReactElement, ReactNode, Ref, RefObject } from 'react';
 import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, Loader2Icon, MicIcon, PanelLeftIcon, PanelRightIcon, PictureInPicture2Icon, SparklesIcon, XIcon } from 'lucide-react';
 import { Drawer as DrawerPrimitive } from '@base-ui/react/drawer';
+import { Button } from '@/components/ui/button';
 import { createVoiceCapture } from '@hachej/boring-feedback/page';
 import type { VoiceCapture, VoiceRefusal } from '@hachej/boring-feedback/page';
 import type { FeedbackSession } from '@hachej/boring-feedback/ui';
@@ -355,12 +356,12 @@ export function AgentTrigger({ className, children }: { readonly className?: str
       voice.cancel();
     }
   };
-  return <button type="button" data-agent-trigger="" data-testid="agent-trigger" aria-label={text.open} aria-expanded={layer.state !== 'closed'}
+  return <Button variant="ghost" size="icon" data-agent-trigger="" data-testid="agent-trigger" aria-label={text.open} title={text.open} aria-expanded={layer.state !== 'closed'}
     onPointerDown={down} onPointerUp={release} onPointerCancel={release} onPointerMove={move} onContextMenu={event => event.preventDefault()}
     onClick={event => { if (event.detail === 0) toggle(); }}
-    className={cn('inline-flex min-h-9 min-w-9 touch-none items-center justify-center rounded-md text-foreground outline-none select-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 pointer-coarse:min-h-11 pointer-coarse:min-w-11', className)}>
-    {children ?? <SparklesIcon className="size-4" aria-hidden="true" />}
-  </button>;
+    className={cn('touch-none', className)}>
+    {children ?? <SparklesIcon data-icon="inline-start" aria-hidden="true" />}
+  </Button>;
 }
 
 const clock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
@@ -377,11 +378,11 @@ function TalkButton({ text }: { readonly text: AppShellText }) {
     const box = event.currentTarget.getBoundingClientRect(), slack = 24;
     if (event.clientX < box.left - slack || event.clientX > box.right + slack || event.clientY < box.top - slack || event.clientY > box.bottom + slack) voice.cancel();
   };
-  return <button type="button" data-testid="agent-talk" data-state={voice.phase} disabled={busy} aria-label={text.holdToTalk} title={text.holdToTalk}
+  return <Button variant="ghost" size="icon" data-testid="agent-talk" data-state={voice.phase} disabled={busy} aria-label={text.holdToTalk} title={text.holdToTalk}
     onPointerDown={down} onPointerUp={up} onPointerCancel={up} onPointerMove={move} onContextMenu={event => event.preventDefault()}
-    className={cn('inline-flex size-10 max-sm:size-11 pointer-coarse:size-11 shrink-0 touch-none items-center justify-center rounded-(--chat-send-radius) bg-muted text-foreground outline-none select-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 disabled:opacity-60', recording && 'bg-destructive text-white hover:bg-destructive/90')}>
-    {busy ? <Loader2Icon className="size-5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <MicIcon className="size-5" aria-hidden="true" />}
-  </button>;
+    className="touch-none">
+    {busy ? <Loader2Icon data-icon="inline-start" aria-hidden="true" /> : <MicIcon data-icon="inline-start" aria-hidden="true" />}
+  </Button>;
 }
 
 /** What went wrong with the microphone, in the flow under the title row (never over the messages). */
@@ -429,21 +430,19 @@ function Chats({ showing }: { readonly showing: Which }) {
   </>;
 }
 
-const ICON_BUTTON = 'inline-flex size-9 shrink-0 items-center justify-center rounded-md text-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60 pointer-coarse:min-h-11 pointer-coarse:min-w-11';
-
 /** Title row: « ← » when the improve view has an agent to go back to, the title, then Expand or Collapse (compact only), the dock controls (expanded only) and Close. */
 function Header({ text, title, compactSnap, closeRef, controls, className, ...rest }: { readonly text: AppShellText; readonly title: string; readonly compactSnap?: Snap; readonly closeRef?: Ref<HTMLButtonElement>; readonly controls?: ReactNode } & Omit<HTMLAttributes<HTMLDivElement>, 'title'>) {
   const layer = useInternal();
   const back = layer.showing === 'improve' && layer.agent;
   const actions = (layer.showing === 'improve' ? layer.improve : layer.agent)?.headerActions ?? [];
   return <div data-testid="agent-layer-header" {...rest} className={cn('flex shrink-0 items-center gap-1 px-2 pb-1', className)}>
-    {back && <button type="button" data-testid="agent-layer-back" aria-label={text.back} title={text.back} onClick={layer.showAgent} className={ICON_BUTTON}><ArrowLeftIcon className="size-4" aria-hidden="true" /></button>}
+    {back && <Button variant="ghost" size="icon" data-testid="agent-layer-back" aria-label={text.back} title={text.back} onClick={layer.showAgent}><ArrowLeftIcon data-icon="inline-start" aria-hidden="true" /></Button>}
     <h2 data-testid="agent-layer-title" className="m-0 min-w-0 flex-1 truncate px-1 text-sm font-semibold">{title}</h2>
     {actions.length > 0 && <HeaderActions actions={actions} compact={compactSnap !== undefined} text={text} prefix="agent-layer" run={id => actions.find(action => action.id === id)?.onSelect()} />}
-    {compactSnap === 'half' && <button type="button" data-testid="agent-layer-expand" aria-label={text.expand} title={text.expand} onClick={() => layer.setSnap('full')} className={ICON_BUTTON}><ChevronUpIcon className="size-4" aria-hidden="true" /></button>}
-    {compactSnap === 'full' && <button type="button" data-testid="agent-layer-collapse" aria-label={text.collapse} title={text.collapse} onClick={() => layer.setSnap('half')} className={ICON_BUTTON}><ChevronDownIcon className="size-4" aria-hidden="true" /></button>}
+    {compactSnap === 'half' && <Button variant="ghost" size="icon" data-testid="agent-layer-expand" aria-label={text.expand} title={text.expand} onClick={() => layer.setSnap('full')}><ChevronUpIcon data-icon="inline-start" aria-hidden="true" /></Button>}
+    {compactSnap === 'full' && <Button variant="ghost" size="icon" data-testid="agent-layer-collapse" aria-label={text.collapse} title={text.collapse} onClick={() => layer.setSnap('half')}><ChevronDownIcon data-icon="inline-start" aria-hidden="true" /></Button>}
     {controls}
-    <button type="button" ref={closeRef} data-testid="agent-layer-close" aria-label={text.close} title={text.close} onClick={layer.close} className={ICON_BUTTON}><XIcon className="size-4" aria-hidden="true" /></button>
+    <Button variant="ghost" size="icon" ref={closeRef} data-testid="agent-layer-close" aria-label={text.close} title={text.close} onClick={layer.close}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>
   </div>;
 }
 
@@ -588,7 +587,7 @@ function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSi
   }, [pos, floating, open, viewport]);
   const act = (run: () => void) => () => { layer.restoreFocus.current = true; run(); };
   const control = (id: string, label: string, Icon: ComponentType<{ className?: string }>, run: () => void) =>
-    <button type="button" key={id} data-testid={`agent-layer-${id}`} data-dock-control="" aria-label={label} title={label} onClick={act(run)} className={ICON_BUTTON}><Icon className="size-4" aria-hidden="true" /></button>;
+    <Button variant="ghost" size="icon" key={id} data-testid={`agent-layer-${id}`} data-dock-control="" aria-label={label} title={label} onClick={act(run)}><Icon data-icon="inline-start" aria-hidden="true" /></Button>;
   const controls = <>
     {!floating && control('float', text.float, PictureInPicture2Icon, () => api.float())}
     {(floating || side === 'right') && control('dock-left', text.dockLeft, PanelLeftIcon, () => { layer.setSide('left'); api.dock(); })}

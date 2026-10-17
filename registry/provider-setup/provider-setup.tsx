@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { CheckIcon, ChevronDownIcon, KeyRoundIcon, SettingsIcon } from 'lucide-react';
 import { cn } from '../utils/utils';
+import { Button } from '@/components/ui/button';
 
 /** One model a provider offers. */
 export interface ProviderModel { readonly id: string; readonly name?: string }
@@ -60,7 +61,6 @@ export interface ProviderSetupProps {
 }
 
 const field = 'h-9 w-full min-w-0 rounded-lg border border-input bg-background px-2.5 text-base outline-none sm:text-sm placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/60 max-sm:h-11 pointer-coarse:h-11';
-const button = 'inline-flex h-9 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-lg px-3.5 text-sm font-medium whitespace-nowrap outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-45 max-sm:h-11 pointer-coarse:h-11';
 
 /** Popover for choosing a provider and model and giving access to it. Transport-agnostic: props in, callbacks out. */
 export function ProviderSetup({ providers, value, onSave, onLogin, loginState = { state: 'idle' }, gatewayPlaceholder = 'https://…/gateway', showGateway = true,
@@ -104,10 +104,10 @@ export function ProviderSetup({ providers, value, onSave, onLogin, loginState = 
   }
 
   return <div ref={root} data-boring="provider-setup" className={cn('provider-setup relative inline-block text-foreground', className)}>
-    <button type="button" data-testid="provider-setup-trigger" aria-haspopup="dialog" aria-expanded={open} aria-controls={`${id}-panel`} onClick={() => setOpen(!open)}
-      className={trigger ? 'contents' : cn(button, 'border border-border bg-background hover:bg-muted max-w-56 truncate')}>
-      {trigger ?? <><SettingsIcon className="size-3.5" aria-hidden="true" /><span className="truncate">{current ? `${current.name} · ${value.modelId}` : label}</span><ChevronDownIcon className="size-3.5" aria-hidden="true" /></>}
-    </button>
+    <Button variant="ghost" data-testid="provider-setup-trigger" aria-haspopup="dialog" aria-expanded={open} aria-controls={`${id}-panel`} onClick={() => setOpen(!open)}
+      className={trigger ? 'contents' : 'max-w-56'}>
+      {trigger ?? <><SettingsIcon data-icon="inline-start" aria-hidden="true" /><span className="truncate">{current ? `${current.name} · ${value.modelId}` : label}</span><ChevronDownIcon data-icon="inline-end" aria-hidden="true" /></>}
+    </Button>
     {open && <form id={`${id}-panel`} role="dialog" aria-label="Model access" data-testid="provider-setup-panel" onSubmit={save}
       className={cn('absolute z-50 flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-3 rounded-xl border border-border bg-card p-4 text-card-foreground shadow-lg',
         side === 'bottom' ? 'top-full mt-2' : 'bottom-full mb-2', align === 'end' ? 'right-0' : 'left-0')}>
@@ -129,8 +129,7 @@ export function ProviderSetup({ providers, value, onSave, onLogin, loginState = 
       </label>}
 
       {canLogin && <div className="flex flex-col gap-2">
-        <button type="button" data-testid="provider-login" disabled={loginState.state === 'starting' || loginState.state === 'pending'} onClick={() => { void onLogin?.(chosen.id); }}
-          className={cn(button, 'border border-border bg-background hover:bg-muted')}>{chosen.loginLabel ?? `Sign in with ${chosen.name}`}{chosen.auth.includes('oauth') && chosen.configured && loginState.state === 'idle' ? ' again' : ''}</button>
+        <Button variant="ghost" data-testid="provider-login" disabled={loginState.state === 'starting' || loginState.state === 'pending'} onClick={() => { void onLogin?.(chosen.id); }}>{chosen.loginLabel ?? `Sign in with ${chosen.name}`}{chosen.auth.includes('oauth') && chosen.configured && loginState.state === 'idle' ? ' again' : ''}</Button>
         {loginState.state === 'starting' && <p role="status" className="m-0 text-xs text-muted-foreground">Requesting a sign-in code…</p>}
         {loginState.state === 'pending' && <p role="status" data-testid="login-pending" className="m-0 text-sm">Open <a href={loginState.verificationUri} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 [overflow-wrap:anywhere]">{loginState.verificationUri}</a> and enter
           <strong data-testid="device-code" className="ms-1 rounded-md bg-muted px-1.5 py-0.5 font-mono tracking-wider">{loginState.userCode}</strong>
@@ -145,7 +144,7 @@ export function ProviderSetup({ providers, value, onSave, onLogin, loginState = 
         {chosen.name} refuses model calls made directly from a web page. Set a gateway: a pass-through that adds no secrets.</p>}
 
       <div className="flex items-center gap-3">
-        <button type="submit" data-testid="provider-save" disabled={saving} className={cn(button, 'bg-primary text-primary-foreground hover:bg-primary/90')}>{saving ? 'Saving…' : 'Save'}</button>
+        <Button type="submit" variant="default" data-testid="provider-save" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
         {saved && <span role="status" data-testid="provider-saved" className="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400"><CheckIcon className="size-3" aria-hidden="true" />Saved</span>}
       </div>
       {error && <p role="alert" data-testid="provider-error" className="m-0 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>}
