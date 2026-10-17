@@ -91,7 +91,8 @@ try {
     await say('Reply with exactly: AMBER-HARBOUR');
     await browser.until('the reply', `/AMBER-HARBOUR/.test(${REPLIES}) && ${idle}`, 20000);
     const composer = await browser.evaluate(rect('[data-testid=composer]'));
-    assert.ok(composer.y > 700, `composer docks after the first message: ${JSON.stringify(composer)}`);
+    const viewport = await browser.evaluate('innerHeight');
+    assert.ok(composer.y > 650 && composer.y + composer.h > viewport - 40, `composer docks after the first message: ${JSON.stringify({ composer, viewport })}`);
   });
 
   await step('reference composer: empty and one-line controls share a centre; files chip is absent', async () => {
