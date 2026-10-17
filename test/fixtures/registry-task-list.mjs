@@ -41,11 +41,11 @@ test('task-list installed renderer edits, saves, reconciles and borrows its cont
   await act(async () => root.render(createElement(TaskListViewer, { controller, title: 'Installed fictional tasks', className: 'host-task-list' })));
   const button = label => { const found = [...container.querySelectorAll('button')].find(node => node.textContent === label); assert.ok(found, label); return found; };
   const click = async label => act(async () => button(label).click());
-  const check = async () => act(async () => container.querySelector('input[type=checkbox]').click());
+  const check = async () => act(async () => container.querySelector('[role=checkbox]').click());
   const settle = async () => { for (let i = 0; i < 100 && controller.getSnapshot().save.kind === 'pending'; i++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 5)); }); assert.equal(controller.getSnapshot().save.kind, 'settled'); };
   const read = async () => JSON.parse(new TextDecoder().decode((await client.read({ target, revision: { kind: 'latest' } })).snapshot.bytes));
   assert.equal(writes, 0); assert.ok(container.querySelector('.boring-task-list-recipe.host-task-list'));
-  if (process.env.BORING_REGISTRY_RESTYLED === 'true') assert.ok(container.querySelector('.host-installed-task-list'));
+  if (process.env.BORING_REGISTRY_RESTYLED === 'true') { assert.ok(container.querySelector('.host-installed-task-list')); assert.equal(window.getComputedStyle(document.documentElement).getPropertyValue('--radius').trim(), '1.25rem'); }
   await check(); assert.equal(writes, 0); assert.equal((await read()).items[0].completed, false);
   await click('Save'); await settle(); assert.equal(controller.getSnapshot().save.result.kind, 'saved'); assert.equal((await read()).items[0].completed, true);
   const receipt = controller.getSnapshot().save.result.receipt; assert.deepEqual((await client.lookup(receipt.operationId)).receipt, receipt);
@@ -100,7 +100,7 @@ test('task-list installed renderer edits, saves, reconciles and borrows its cont
   assert.equal(container.querySelector('input:not([type=checkbox])').value, ''); assert.equal(container.querySelector('[role=alert]'), null);
   const readonly = createTaskListController({ identity, source: { kind: 'saved', snapshot: (await client.read({ target, revision: { kind: 'latest' } })).snapshot }, client, instanceId: 'readonly', epoch: 'page', readOnly: true });
   await act(async () => root.render(createElement(TaskListViewer, { controller: readonly })));
-  assert.equal(container.querySelector('input[type=checkbox]').disabled, true); assert.equal(button('Save').disabled, true);
+  assert.equal(container.querySelector('[role=checkbox]').getAttribute('aria-disabled'), 'true'); assert.equal(button('Save').disabled, true);
   assert.equal(readonly.actions.edit(readonly.actions.selection(), [{ kind: 'remove', id: 'one' }]).kind, 'denied');
   await act(async () => root.render(null)); await readonly.dispose(); assert.equal(controller.getSnapshot().lifecycle, 'active'); assert.equal((await client.read({ target, revision: { kind: 'latest' } })).kind, 'available');
 });

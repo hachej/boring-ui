@@ -1509,9 +1509,6 @@
           "--boring-feedback-text": "var(--popover-foreground)",
           "--boring-feedback-muted": "var(--muted-foreground)",
           "--boring-feedback-border": "var(--border)",
-          "--boring-feedback-radius": "var(--radius-lg, var(--radius, 0.625rem))",
-          "--boring-feedback-radius-md": "var(--radius-md, calc(var(--radius, 0.625rem) * 0.8))",
-          "--boring-feedback-shadow": "var(--shadow-lg, 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1))",
           "--boring-feedback-label-background": "var(--foreground)",
           "--boring-feedback-label-foreground": "var(--background)",
           "font-family": "inherit",
@@ -1530,31 +1527,6 @@
         "[data-boring=\"feedback\"] *, [data-boring=\"feedback\"] *::before, [data-boring=\"feedback\"] *::after": {
           "box-sizing": "border-box"
         },
-        "[data-boring=\"feedback\"] :where(button, input, textarea)": {
-          "font-family": "inherit"
-        },
-        "[data-boring=\"feedback\"] .boring-feedback-candidates .boring-feedback-button": {
-          "display": "inline-flex",
-          "align-items": "center",
-          "justify-content": "center",
-          "gap": "0.375rem",
-          "min-height": "2.25rem",
-          "padding": "0 0.875rem",
-          "border": "var(--border-width, 1px) solid var(--boring-feedback-border)",
-          "border-radius": "var(--boring-feedback-radius-md)",
-          "background": "var(--boring-feedback-surface)",
-          "color": "var(--boring-feedback-text)",
-          "font": "inherit",
-          "font-weight": "var(--font-weight-semibold, 600)",
-          "cursor": "pointer"
-        },
-        "[data-boring=\"feedback\"] .boring-feedback-candidates .boring-feedback-button:hover": {
-          "background": "var(--accent)"
-        },
-        "[data-boring=\"feedback\"] .boring-feedback-candidates .boring-feedback-button:focus-visible, [data-boring=\"feedback\"] textarea:focus-visible": {
-          "outline": "2px solid var(--ring)",
-          "outline-offset": "2px"
-        },
         "[data-boring=\"feedback\"].boring-feedback-point": {
           "display": "inline-flex",
           "align-items": "center",
@@ -1571,18 +1543,11 @@
         "[data-boring=\"feedback\"] .boring-feedback-keys": {
           "opacity": "0.8"
         },
-        "[data-boring=\"feedback\"].boring-feedback-sheet, [data-boring=\"feedback\"].boring-feedback-report, [data-boring=\"feedback\"].boring-feedback-list": {
-          "display": "flex",
-          "flex-direction": "column",
-          "gap": "0.75rem",
-          "padding": "1rem",
-          "border": "var(--border-width, 1px) solid var(--boring-feedback-border)",
-          "border-radius": "var(--boring-feedback-radius)",
-          "background": "var(--boring-feedback-surface)"
+        "[data-boring=\"feedback\"]:is(.boring-feedback-sheet, .boring-feedback-report, .boring-feedback-list, .boring-feedback-bubble, .boring-feedback-review, .boring-feedback-pointbar, .boring-feedback-preview, .boring-feedback-bar)": {
+          "padding-inline": "var(--card-spacing)"
         },
         "[data-boring=\"feedback\"].boring-feedback-sheet": {
           "z-index": "2147483000",
-          "box-shadow": "var(--boring-feedback-shadow)",
           "max-height": "calc(100dvh - 24px)",
           "overflow": "auto"
         },
@@ -1623,18 +1588,6 @@
           "font-weight": "var(--font-weight-semibold, 600)",
           "font-size": "var(--text-sm, 0.875rem)"
         },
-        "[data-boring=\"feedback\"] textarea": {
-          "width": "100%",
-          "padding": "0.5rem 0.625rem",
-          "border": "var(--border-width, 1px) solid var(--input)",
-          "border-radius": "var(--boring-feedback-radius-md)",
-          "background": "var(--background)",
-          "color": "inherit",
-          "font": "inherit",
-          "font-size": "var(--text-base, 1rem)",
-          "font-weight": "var(--font-weight-normal, 400)",
-          "resize": "vertical"
-        },
         "[data-boring=\"feedback\"] .boring-feedback-actions": {
           "display": "flex",
           "flex-wrap": "wrap",
@@ -1653,9 +1606,7 @@
         },
         "[data-boring=\"feedback\"] .boring-feedback-notice": {
           "margin": "0",
-          "padding": "0.5rem 0.625rem",
-          "border-radius": "var(--boring-feedback-radius-md)",
-          "background": "color-mix(in srgb, var(--boring-feedback-reveal) 14%, transparent)",
+          "color": "var(--boring-feedback-muted)",
           "font-size": "var(--text-sm, 0.875rem)"
         },
         "[data-boring=\"feedback\"] .boring-feedback-copied pre, [data-boring=\"feedback\"] .boring-feedback-manual": {
@@ -1679,22 +1630,6 @@
           "margin": "0",
           "padding": "0",
           "list-style": "none"
-        },
-        "[data-boring=\"feedback\"].boring-feedback-list li button": {
-          "display": "grid",
-          "gap": "0.125rem",
-          "width": "100%",
-          "padding": "0.5rem 0.625rem",
-          "border": "0",
-          "border-radius": "var(--boring-feedback-radius-md)",
-          "background": "transparent",
-          "color": "inherit",
-          "font": "inherit",
-          "text-align": "left",
-          "cursor": "pointer"
-        },
-        "[data-boring=\"feedback\"].boring-feedback-list li button:hover, [data-boring=\"feedback\"].boring-feedback-list li button[aria-current=\"true\"]": {
-          "background": "var(--accent)"
         },
         "[data-boring=\"feedback\"] .boring-feedback-title": {
           "font-weight": "var(--font-weight-semibold, 600)"
@@ -1746,30 +1681,20 @@
           "left": "0",
           "right": "0",
           "z-index": "2147483000",
-          "display": "flex",
+          "flex-direction": "row",
           "flex-wrap": "nowrap",
           "align-items": "center",
           "gap": "0.5rem",
           "width": "max-content",
           "max-width": "calc(100vw - 24px)",
-          "margin": "0 auto",
-          "padding": "0.375rem 0.5rem 0.375rem 0.875rem",
-          "border": "var(--border-width, 1px) solid var(--boring-feedback-border)",
-          "border-radius": "999px",
-          "background": "var(--boring-feedback-surface)",
-          "box-shadow": "var(--boring-feedback-shadow)"
-        },
-        "[data-boring=\"feedback\"].boring-feedback-bar[data-using=\"true\"]": {
-          "border-color": "var(--boring-feedback-reveal)"
+          "margin": "0 auto"
         },
         "[data-boring=\"feedback\"].boring-feedback-bar[data-docked=\"true\"]": {
           "position": "static",
           "width": "auto",
           "max-width": "none",
           "margin": "0 0.625rem 0.625rem",
-          "flex-wrap": "wrap",
-          "border-radius": "var(--radius-xl, calc(var(--radius, 0.625rem) * 1.4))",
-          "box-shadow": "none"
+          "flex-wrap": "wrap"
         },
         "[data-boring=\"feedback\"].boring-feedback-bar > *": {
           "flex": "none"
@@ -1786,15 +1711,6 @@
           "gap": "0.375rem",
           "font-weight": "var(--font-weight-semibold, 600)"
         },
-        "[data-boring=\"feedback\"] .boring-feedback-dot": {
-          "width": "0.5rem",
-          "height": "0.5rem",
-          "border-radius": "50%",
-          "background": "var(--boring-feedback-accent)"
-        },
-        "[data-boring=\"feedback\"].boring-feedback-bar[data-using=\"true\"] .boring-feedback-dot": {
-          "background": "var(--boring-feedback-reveal)"
-        },
         "[data-boring=\"feedback\"] .boring-feedback-bar-meta": {
           "color": "var(--boring-feedback-muted)",
           "font-size": "var(--text-sm, 0.875rem)"
@@ -1803,23 +1719,6 @@
           "color": "var(--boring-feedback-muted)",
           "font-size": "var(--text-xs, 0.75rem)"
         },
-        "[data-boring=\"feedback\"] .boring-feedback-recording": {
-          "display": "inline-flex",
-          "align-items": "center",
-          "gap": "0.375rem",
-          "padding": "0.125rem 0.5rem",
-          "border-radius": "999px",
-          "background": "color-mix(in srgb, var(--destructive) 12%, transparent)",
-          "color": "var(--destructive)",
-          "font-size": "var(--text-xs, 0.75rem)",
-          "font-weight": "var(--font-weight-semibold, 600)"
-        },
-        "[data-boring=\"feedback\"] .boring-feedback-rec": {
-          "width": "0.5rem",
-          "height": "0.5rem",
-          "border-radius": "50%",
-          "background": "var(--destructive)"
-        },
         "[data-boring=\"feedback\"].boring-feedback-bar[data-docked=\"true\"] > .boring-feedback-hint": {
           "flex": "1 1 10rem",
           "max-width": "none",
@@ -1827,9 +1726,6 @@
         },
         "[data-boring=\"feedback\"] .boring-feedback-timer": {
           "font-variant-numeric": "tabular-nums"
-        },
-        "[data-boring=\"feedback\"].boring-feedback-bar[data-recording=\"true\"]": {
-          "border-color": "color-mix(in srgb, var(--destructive) 55%, var(--boring-feedback-border))"
         },
         "[data-boring=\"feedback\"] .boring-feedback-voice-problem": {
           "flex": "1 1 100%",
@@ -1865,24 +1761,8 @@
           "font-size": "var(--text-xs, 0.75rem)",
           "line-height": "var(--leading-snug, 1.375)"
         },
-        "[data-boring=\"feedback\"] .boring-feedback-badge": {
-          "flex": "none",
-          "padding": "0 0.375rem",
-          "border-radius": "999px",
-          "background": "var(--muted)",
-          "color": "var(--boring-feedback-muted)",
-          "font-size": "var(--text-xs, 0.75rem)",
-          "line-height": "calc(var(--spacing, 0.25rem) * 5)"
-        },
         "[data-boring=\"feedback\"].boring-feedback-bubble": {
-          "z-index": "2147483001",
-          "display": "grid",
-          "gap": "0.375rem",
-          "padding": "0.5rem",
-          "border": "var(--border-width, 1px) solid var(--boring-feedback-border)",
-          "border-radius": "var(--boring-feedback-radius)",
-          "background": "var(--boring-feedback-surface)",
-          "box-shadow": "var(--boring-feedback-shadow)"
+          "z-index": "2147483001"
         },
         "[data-boring=\"feedback\"] .boring-feedback-bubble-head, [data-boring=\"feedback\"] .boring-feedback-note-head": {
           "display": "flex",
@@ -1909,12 +1789,7 @@
           "flex-wrap": "wrap",
           "align-items": "center",
           "gap": "0.125rem",
-          "max-width": "100%",
-          "padding": "0.125rem 0.125rem 0.125rem 0.625rem",
-          "border": "var(--border-width, 1px) solid var(--boring-feedback-border)",
-          "border-radius": "999px",
-          "background": "color-mix(in srgb, var(--boring-feedback-accent) 8%, var(--boring-feedback-surface))",
-          "font-size": "var(--text-sm, 0.875rem)"
+          "max-width": "100%"
         },
         "[data-boring=\"feedback\"] .boring-feedback-chip-route": {
           "color": "var(--boring-feedback-muted)",
@@ -1923,16 +1798,8 @@
         },
         "[data-boring=\"feedback\"].boring-feedback-review": {
           "z-index": "2147483000",
-          "display": "flex",
-          "flex-direction": "column",
-          "gap": "0.625rem",
           "max-height": "min(28rem, calc(100dvh - 24px))",
           "overflow": "auto",
-          "padding": "0.875rem",
-          "border": "var(--border-width, 1px) solid var(--boring-feedback-border)",
-          "border-radius": "var(--boring-feedback-radius)",
-          "background": "var(--boring-feedback-surface)",
-          "box-shadow": "var(--boring-feedback-shadow)",
           "text-align": "left"
         },
         "[data-boring=\"feedback\"] .boring-feedback-notes": {
@@ -1945,34 +1812,15 @@
         },
         "[data-boring=\"feedback\"] .boring-feedback-notes > li": {
           "display": "grid",
-          "gap": "0.25rem",
-          "padding": "0.375rem",
-          "border-radius": "var(--boring-feedback-radius-md)"
-        },
-        "[data-boring=\"feedback\"] .boring-feedback-notes > li:hover, [data-boring=\"feedback\"] .boring-feedback-notes > li:focus-within": {
-          "background": "var(--accent)"
+          "gap": "0.25rem"
         },
         "[data-boring=\"feedback\"].boring-feedback-pointbar": {
           "position": "fixed",
           "left": "8px",
           "right": "8px",
           "z-index": "2147483000",
-          "display": "flex",
-          "flex-direction": "column",
-          "gap": "0.375rem",
           "max-width": "32rem",
-          "margin": "0 auto",
-          "padding": "0.5rem",
-          "border": "var(--border-width, 1px) solid var(--boring-feedback-border)",
-          "border-radius": "var(--boring-feedback-radius)",
-          "background": "var(--boring-feedback-surface)",
-          "box-shadow": "var(--boring-feedback-shadow)"
-        },
-        "[data-boring=\"feedback\"].boring-feedback-pointbar[data-using=\"true\"]": {
-          "border-color": "var(--boring-feedback-reveal)"
-        },
-        "[data-boring=\"feedback\"].boring-feedback-pointbar[data-using=\"true\"] .boring-feedback-dot": {
-          "background": "var(--boring-feedback-reveal)"
+          "margin": "0 auto"
         },
         "[data-boring=\"feedback\"] .boring-feedback-point-line": {
           "display": "flex",
@@ -1980,9 +1828,6 @@
           "gap": "0.5rem",
           "min-width": "0",
           "padding": "0 0.25rem"
-        },
-        "[data-boring=\"feedback\"] .boring-feedback-point-line .boring-feedback-dot": {
-          "flex": "none"
         },
         "[data-boring=\"feedback\"] .boring-feedback-point-hint": {
           "flex": "1",
@@ -2004,9 +1849,6 @@
           "flex": "1"
         },
         "@media (max-width: 640px), (pointer: coarse)": {
-          "[data-boring=\"feedback\"] .boring-feedback-candidates .boring-feedback-button": {
-            "min-height": "2.75rem"
-          },
           "[data-boring=\"feedback\"] .boring-feedback-hint": {
             "display": "none"
           },
@@ -2016,8 +1858,7 @@
           "[data-boring=\"feedback\"].boring-feedback-bar": {
             "top": "auto",
             "bottom": "12px",
-            "flex-wrap": "wrap",
-            "border-radius": "var(--boring-feedback-radius)"
+            "flex-wrap": "wrap"
           },
           "[data-boring=\"feedback\"] :is([data-slot=\"button\"], [data-slot=\"toggle\"], [class~=\"group/button\"], [class~=\"group/toggle\"])": {
             "min-height": "2.75rem",
@@ -2030,31 +1871,14 @@
           "left": "0",
           "right": "0",
           "z-index": "2147483001",
-          "display": "flex",
-          "flex-direction": "column",
-          "gap": "0.5rem",
           "width": "min(40rem, calc(100vw - 24px))",
-          "margin": "0 auto",
-          "padding": "0.75rem 0.875rem",
-          "border": "calc(var(--border-width, 1px) * 2) solid var(--boring-feedback-reveal)",
-          "border-radius": "var(--boring-feedback-radius)",
-          "background": "var(--boring-feedback-surface)",
-          "box-shadow": "var(--boring-feedback-shadow)"
+          "margin": "0 auto"
         },
         "[data-boring=\"feedback\"] .boring-feedback-preview-head": {
           "display": "flex",
           "flex-wrap": "wrap",
           "align-items": "baseline",
           "gap": "0.5rem"
-        },
-        "[data-boring=\"feedback\"] .boring-feedback-preview-title": {
-          "padding": "0.125rem 0.5rem",
-          "border-radius": "999px",
-          "background": "var(--primary)",
-          "color": "var(--primary-foreground)",
-          "font-size": "var(--text-sm, 0.875rem)",
-          "letter-spacing": "var(--tracking-wide, 0.025em)",
-          "text-transform": "uppercase"
         },
         "[data-boring=\"feedback\"] .boring-feedback-preview-notice": {
           "font-weight": "var(--font-weight-semibold, 600)"
@@ -2086,17 +1910,6 @@
           "flex-wrap": "wrap",
           "gap": "0.5rem"
         },
-        "[data-boring=\"feedback\"] .boring-feedback-preview-input": {
-          "flex": "1 1 12rem",
-          "min-width": "0",
-          "min-height": "2.25rem",
-          "padding": "0 0.75rem",
-          "border": "var(--border-width, 1px) solid var(--boring-feedback-border)",
-          "border-radius": "var(--boring-feedback-radius-md)",
-          "background": "var(--boring-feedback-surface)",
-          "color": "var(--boring-feedback-text)",
-          "font": "inherit"
-        },
         "[data-boring=\"feedback\"] .boring-feedback-pin-field": {
           "display": "grid"
         },
@@ -2110,10 +1923,8 @@
           "grid-row": "2"
         },
         "[data-boring=\"feedback\"] .boring-feedback-pin-field textarea": {
-          "display": "block",
-          "box-sizing": "border-box",
           "width": "100%",
-          "padding-right": "3.25rem"
+          "padding-inline-end": "3.25rem"
         },
         "[data-boring=\"feedback\"] .boring-feedback-pin-mic": {
           "justify-self": "end",
@@ -2129,7 +1940,10 @@
         "@boring-ui/pi-chat",
         "@boring-ui/utils",
         "button",
-        "toggle"
+        "toggle",
+        "card",
+        "badge",
+        "textarea"
       ]
     },
     {
@@ -2150,7 +1964,10 @@
         }
       ],
       "registryDependencies": [
-        "button"
+        "button",
+        "card",
+        "badge",
+        "input"
       ]
     },
     {
@@ -2184,11 +2001,7 @@
       ],
       "css": {
         ".boring-task-list-recipe[data-boring=\"task-list-viewer\"]": {
-          "padding": "1rem",
-          "border": "1px solid var(--border, #d1d5db)",
-          "border-radius": "var(--boring-task-list-radius, 0.75rem)",
-          "background": "var(--background, #fff)",
-          "color": "var(--foreground, #111827)"
+          "padding-inline": "var(--card-spacing)"
         },
         ".boring-task-list-recipe[data-boring=\"task-list-viewer\"] ul": {
           "list-style": "none",
@@ -2202,25 +2015,16 @@
           "gap": "0.5rem",
           "flex-wrap": "wrap"
         },
-        ".boring-task-list-recipe[data-boring=\"task-list-viewer\"] button": {
-          "min-height": "2.25rem",
-          "padding": "0.375rem 0.75rem"
-        },
-        ".boring-task-list-recipe[data-boring=\"task-list-viewer\"] input[type=\"text\"]": {
-          "min-height": "2.25rem",
-          "max-width": "100%"
-        },
         ".boring-task-list-recipe[data-boring=\"task-list-viewer\"] [role=\"alert\"]": {
-          "color": "var(--destructive, #b91c1c)"
-        },
-        ".boring-task-list-recipe[data-boring=\"task-list-viewer\"] :focus-visible": {
-          "outline": "2px solid var(--ring, #2563eb)",
-          "outline-offset": "2px"
+          "color": "var(--destructive)"
         }
       },
       "docs": "The installed task-list schema/controller are trusted consumer code; publication and draft recovery come from @hachej/boring-ui-kit/text-buffer. Construct a feature with a host-authenticated ResourceClient and exact source, then pass its concrete controller to TaskListViewer. Install native tools separately on the server. No host credentials or native kernel are copied into this item. Local tarball qualification only; no hosted release endpoint is advertised.",
       "registryDependencies": [
-        "button"
+        "button",
+        "card",
+        "input",
+        "checkbox"
       ]
     },
     {

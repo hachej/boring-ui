@@ -14,7 +14,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 assert.ok(process.argv.length === 2 || process.argv.length === 3 && ['--html', '--task-list'].includes(process.argv[2]), 'Expected no option, --html or --task-list');
 const html = process.argv[2] === '--html';
 const taskList = process.argv[2] === '--task-list';
-const recipe = taskList ? { name: 'task-list-viewer', exportName: 'TaskListViewer', className: 'boring-task-list-recipe', hostClass: 'host-installed-task-list', radius: '--boring-task-list-radius', fixture: 'registry-task-list.mjs' } : html ? { name: 'html-viewer', exportName: 'HtmlViewer', className: 'boring-html-recipe', hostClass: 'host-installed-html', radius: '--boring-html-radius', fixture: 'registry-html.mjs' }
+const recipe = taskList ? { name: 'task-list-viewer', exportName: 'TaskListViewer', className: 'boring-task-list-recipe', hostClass: 'host-installed-task-list', fixture: 'registry-task-list.mjs' } : html ? { name: 'html-viewer', exportName: 'HtmlViewer', className: 'boring-html-recipe', hostClass: 'host-installed-html', radius: '--boring-html-radius', fixture: 'registry-html.mjs' }
   : { name: 'markdown-editor', exportName: 'MarkdownEditor', className: 'boring-markdown-recipe', hostClass: 'host-installed-editor', radius: '--boring-editor-radius', fixture: 'registry-markdown.mjs' };
 const closure = new Map();
 const visit = name => {
@@ -203,7 +203,7 @@ controller.flush(controller.actions.selection());
   const copied = readFileSync(join(directory, component), 'utf8');
   assert.ok(copied.includes(recipe.className));
   if (taskList) writeFileSync(join(directory, component), copied.replace(recipe.className, recipe.className + ' ' + recipe.hostClass));
-  writeFileSync(join(directory, 'src/index.css'), readFileSync(join(directory, 'src/index.css'), 'utf8') + (taskList ? `\n.${recipe.hostClass} { ${recipe.radius}: 1.25rem; }\n` : '\n:root { --radius: 1.25rem; }\n'));
+  writeFileSync(join(directory, 'src/index.css'), readFileSync(join(directory, 'src/index.css'), 'utf8') + '\n:root { --radius: 1.25rem; }\n');
   compile();
   run(process.execPath, ['--test', '--experimental-test-isolation=none', 'test/fixtures/' + recipe.fixture, ...(!html && !taskList ? ['test/fixtures/registry-markdown-mounted-dom.mjs', 'test/fixtures/registry-markdown-proposals-dom.mjs'] : [])], { ...isolated, BORING_REGISTRY_RESTYLED: 'true' });
   const controllerExport = taskList ? 'createTaskListController' : html ? 'createHtmlController' : 'createMarkdownController';
