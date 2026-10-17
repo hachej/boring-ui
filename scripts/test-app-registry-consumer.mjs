@@ -113,6 +113,10 @@ async function testStyle(style) {
   }
   createRoot(document.getElementById('root')!).render(<App />);
   `);
+    // The consumer's own shadcn scroll-area ships an unused `import * as React`, which this strict consumer (noUnusedLocals) rejects. That file is
+    // host-owned, not ours: drop the import as the consumer's linter autofix would, and keep the strictness for every block file.
+    const scrollArea = join(directory, 'src/components/ui/scroll-area.tsx');
+    if (existsSync(scrollArea) && !/\bReact\./.test(readFileSync(scrollArea, 'utf8'))) writeFileSync(scrollArea, readFileSync(scrollArea, 'utf8').replace(/^import \* as React from ["']react["']\n/m, ''));
     assertConsumerTypeFiles(run(process.execPath, ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.json', '--listFiles'], isolated), directory);
     run(process.execPath, ['node_modules/esbuild/bin/esbuild', 'src/page.tsx', '--bundle', '--platform=browser', '--format=esm', '--jsx=automatic', '--outfile=dist/page.js', '--metafile=dist/meta.json',
       '--define:process.env.NODE_ENV="production"', '--alias:@=./src'], isolated);
