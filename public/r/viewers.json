@@ -145,8 +145,13 @@
         "max-width": "calc(100vw - 24px)"
       },
       ".boring-viewer .boring-markdown-toolbar": {
-        "padding": "0.375rem 0.75rem",
-        "overflow-x": "auto"
+        "padding": "0.375rem 1.5rem 0.375rem 0.75rem",
+        "overflow-x": "auto",
+        "scrollbar-width": "none",
+        "mask-image": "linear-gradient(to right, black calc(100% - 2rem), transparent)"
+      },
+      ".boring-viewer .boring-markdown-toolbar::-webkit-scrollbar": {
+        "display": "none"
       },
       ".boring-viewer .boring-markdown-tool": {
         "flex": "none"

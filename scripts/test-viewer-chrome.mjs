@@ -36,6 +36,11 @@ try {
         if (surface === 'markdown') assert.deepEqual(save, { name: 'Save', background: 'rgba(0, 0, 0, 0)' }, `${surface}: Save is a ghost icon button`);
         await browser.evaluate(`document.activeElement?.blur()`);
       }
+      if (surface === 'markdown' && width === 1440) {
+        // A narrow artifact column makes the formatting toolbar overflow: it scrolls, but shows no native scrollbar.
+        const bar = await browser.evaluate(`(() => { const toolbar = ${q('.boring-markdown-toolbar')}; toolbar.style.width = '240px'; const style = getComputedStyle(toolbar); return { overflows: toolbar.scrollWidth > toolbar.clientWidth, scrollbarWidth: style.scrollbarWidth, barHeight: toolbar.offsetHeight - toolbar.clientHeight, overflowX: style.overflowX }; })()`);
+        assert.deepEqual(bar, { overflows: true, scrollbarWidth: 'none', barHeight: 0, overflowX: 'auto' }, `${surface}: overflowing toolbar scrolls with no native scrollbar`);
+      }
       if (surface === 'selection' || surface === 'markdown' && width === 390) {
         await browser.evaluate(`(() => { const editor = ${q('[contenteditable=true]')}; editor.focus(); const range = document.createRange(); range.selectNodeContents(editor.querySelector('p')); const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range); document.dispatchEvent(new Event('selectionchange')); })()`);
         // On a phone the focused editor docks the full formatting bar above the keyboard; on a desktop the selection opens the bubble.
