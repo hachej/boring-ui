@@ -56,6 +56,8 @@
 
   /* Markdown is document content, not a control skin. All visual values read the host's tokens. */
   .boring-viewer .boring-markdown-content { max-width: 68ch; min-height: 100%; margin: 0 auto; padding: 1.5rem 1.5rem 3rem; overflow-wrap: anywhere; color: var(--foreground); font-size: var(--text-base); line-height: var(--leading-relaxed); }
+  /* The editing surface is the page: the caret marks focus, so no frame is drawn around the whole document. Toolbar controls keep their own focus rings. */
+  .boring-viewer .boring-markdown-content:focus { outline: none; }
   .boring-viewer .boring-markdown-content > :first-child { margin-top: 0; }
   .boring-viewer .boring-markdown-content p { margin: 0.75rem 0; }
   .boring-viewer .boring-markdown-content p.is-editor-empty:first-child::before { content: attr(data-placeholder); float: left; height: 0; color: var(--muted-foreground); pointer-events: none; }

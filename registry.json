@@ -297,10 +297,6 @@
         ".boring-markdown-recipe[data-boring=\"markdown-editor\"] [data-boring=\"proposal\"] summary": {
           "cursor": "pointer"
         },
-        ".boring-markdown-recipe[data-boring=\"markdown-editor\"] .boring-markdown-content:focus-visible": {
-          "outline": "var(--default-border-width) solid var(--ring)",
-          "outline-offset": "2px"
-        },
         ".boring-markdown-recipe[data-boring=\"markdown-editor\"] [data-boring=\"proposal-diff\"]": {
           "overflow-x": "auto"
         },
@@ -308,6 +304,9 @@
           "white-space": "pre-wrap",
           "overflow-wrap": "anywhere",
           "padding": "0.125rem 0.375rem"
+        },
+        ".boring-markdown-recipe[data-boring=\"markdown-editor\"] .boring-markdown-content:focus": {
+          "outline": "none"
         }
       },
       "docs": "Create and own a MarkdownController from @hachej/boring-ui-kit/markdown. Pass it to MarkdownEditor. The wrapper does not acquire resources or dispose the controller. Check the repository release notes for available npm versions; local tarball tests do not establish registry availability.",
@@ -1165,6 +1164,9 @@
             "color": "var(--foreground)",
             "font-size": "var(--text-base)",
             "line-height": "var(--leading-relaxed)"
+          },
+          ".boring-viewer .boring-markdown-content:focus": {
+            "outline": "none"
           },
           ".boring-viewer .boring-markdown-content > :first-child": {
             "margin-top": "0"
