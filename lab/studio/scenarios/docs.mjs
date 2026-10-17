@@ -180,20 +180,22 @@ export default [
       await browser.until('the new image', `${q(`${scope} [data-testid=viewer-image]`)}?.naturalWidth === 64`);
       assert.equal(await browser.evaluate(`window.__samePage`), 'yes');
 
-      // A PDF opens in the PDF viewer, inline where the browser can, otherwise with a working Download.
+      // A PDF opens in the PDF viewer: the browser's own viewer where there is one, otherwise pages drawn by pdf.js; Download works either way.
       await openFile('media/moon-brief.pdf', 'pdf');
       scope = VIEWER('media/moon-brief.pdf');
-      await browser.until('pdf stage', `['inline', 'fallback'].includes(${q(`${scope} [data-testid=viewer-stage]`)}?.dataset.pdf)`);
+      await browser.until('pdf stage', `['inline', 'pages', 'fallback'].includes(${q(`${scope} [data-testid=viewer-stage]`)}?.dataset.pdf)`);
       await standardBar(scope, 'PDF');
       const mode = await browser.evaluate(`${q(`${scope} [data-testid=viewer-stage]`)}.dataset.pdf`);
       console.log(`    pdf viewer in headless Chromium: ${mode} (pdfViewerEnabled=${await browser.evaluate('navigator.pdfViewerEnabled')})`);
       if (mode === 'inline') assert.equal(await browser.evaluate(`!!${q(`${scope} iframe`)}`), true);
       else {
-        assert.equal(await browser.evaluate(`!!${q(`${scope} [data-testid=viewer-pdf-fallback]`)}`), true);
-        // A real click on the fallback's Download: the viewer offers the bytes as a file named like the PDF.
+        if (mode === 'pages') await browser.until('pdf.js drew the first page', `!!${q(`${scope} [data-testid=viewer-pdf-page][data-rendered] canvas`)}?.width`);
+        else assert.equal(await browser.evaluate(`!!${q(`${scope} [data-testid=viewer-pdf-fallback]`)}`), true);
+        // A real click on Download (the fallback's button, or the menu over drawn pages): the viewer offers the bytes as a file named like the PDF.
         await browser.evaluate(`(() => { window.__downloads = []; const click = HTMLAnchorElement.prototype.click;
           HTMLAnchorElement.prototype.click = function () { if (this.download) window.__downloads.push({ name: this.download, href: this.href }); else click.call(this); }; return true; })()`);
-        await browser.click(q(`${scope} [data-testid=viewer-pdf-download]`));
+        if (mode === 'pages') await t.menu(scope, 'viewer', 'download');
+        else await browser.click(q(`${scope} [data-testid=viewer-pdf-download]`));
         await browser.until('download offered', `window.__downloads.length === 1`);
         const offered = await browser.evaluate(`(async () => { const { name, href } = window.__downloads[0]; const bytes = new Uint8Array(await (await fetch(href)).arrayBuffer());
           return { name, size: bytes.length, head: String.fromCharCode(...bytes.slice(0, 5)) }; })()`);
