@@ -108,7 +108,7 @@ export function MarkdownPane({ controller, title: givenTitle, labels: ownLabels,
       <ViewerToggle label={labels.editorMode} value={mode} onChange={setRequested} options={[
         { id: 'rich', label: labels.richText, text: labels.rich, icon: <PencilLineIcon data-icon="inline-start" aria-hidden="true" />, disabled: !safety.safe, testId: `${testId}-mode-rich` },
         { id: 'source', label: labels.markdownSource, text: labels.source, icon: <CodeXmlIcon data-icon="inline-start" aria-hidden="true" />, testId: `${testId}-mode-source` }]} />
-      {autosave === false && !state.readOnly && state.dirty && <Button variant="default" size="icon-sm" aria-label={labels.save} title={labels.save} data-testid={`${testId}-save`} disabled={unavailable || pending || unconfirmed} onClick={save}><SaveIcon data-icon="inline-start" aria-hidden="true" /></Button>}
+      {autosave === false && !state.readOnly && state.dirty && <Button variant="ghost" size="icon-sm" aria-label={labels.save} title={labels.save} data-testid={`${testId}-save`} disabled={unavailable || pending || unconfirmed} onClick={save}><SaveIcon data-icon="inline-start" aria-hidden="true" /></Button>}
       {controls}
     </>}>
     <MarkdownEditor components={editorControls} controller={controller} title={title} header={false} autosave={autosave} onAutosaveChange={registerAutosave} onSaveResult={report} formattingToolbar={toolbar} mode={mode} onModeChange={setRequested} onRichSafety={setSafety}

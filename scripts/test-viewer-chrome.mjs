@@ -26,6 +26,16 @@ try {
         await browser.click(q('summary'));
         await browser.until('proposal diff', `!!${q('[data-boring=proposal-diff]')}`);
       }
+      if (['markdown', 'standalone-markdown'].includes(surface)) {
+        // The document surface draws no focus frame while editing (the caret is the cue), even after keyboard input.
+        await browser.press('Shift');
+        const frame = await browser.evaluate(`(() => { const editor = ${q('.boring-markdown-content[contenteditable=true]')}; editor.focus(); const style = getComputedStyle(editor); return { focused: document.activeElement === editor, outline: style.outlineStyle === 'none' || parseFloat(style.outlineWidth) === 0 ? 'none' : style.outlineStyle + ' ' + style.outlineWidth, shadow: style.boxShadow }; })()`);
+        assert.deepEqual(frame, { focused: true, outline: 'none', shadow: 'none' }, `${surface}: no focus frame around the editing surface`);
+        // Save stays a quiet ghost icon action beside the status (autosave saves on its own); its name and Ctrl/Cmd+S remain.
+        const save = await browser.evaluate(`(() => { const button = document.querySelector('[data-testid$=-save][data-slot=button]'); return button && { name: button.getAttribute('aria-label'), background: getComputedStyle(button).backgroundColor }; })()`);
+        if (surface === 'markdown') assert.deepEqual(save, { name: 'Save', background: 'rgba(0, 0, 0, 0)' }, `${surface}: Save is a ghost icon button`);
+        await browser.evaluate(`document.activeElement?.blur()`);
+      }
       if (surface === 'selection' || surface === 'markdown' && width === 390) {
         await browser.evaluate(`(() => { const editor = ${q('[contenteditable=true]')}; editor.focus(); const range = document.createRange(); range.selectNodeContents(editor.querySelector('p')); const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range); document.dispatchEvent(new Event('selectionchange')); })()`);
         // On a phone the focused editor docks the full formatting bar above the keyboard; on a desktop the selection opens the bubble.
