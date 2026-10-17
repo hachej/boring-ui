@@ -75,7 +75,8 @@ async function testStyle(style) {
   import { createRoot } from 'react-dom/client';
   import { AgentWorkspace, useConversations, useRemoteChat } from './components/pi-app/agent-workspace';
   import type { OpenedView } from './components/pi-app/agent-workspace';
-  import type { BlockAction, ChatLabels } from './components/pi-chat/pi-chat';
+  import type { BlockAction, ChatLabels, ConversationsConfig } from './components/pi-chat/pi-chat';
+  import { HistoryColumnToggle, useHistoryColumn } from './components/pi-app/agent-workspace';
   import { DownloadIcon } from 'lucide-react';
   import { FileTree } from './components/file-tree/file-tree';
   import { Documents } from './components/documents/documents';
@@ -83,10 +84,16 @@ async function testStyle(style) {
   import type { RevisionProvider } from '@hachej/boring-files/revision';
 
   export function BoundWorkspace({ revisionProvider }: { readonly revisionProvider: RevisionProvider }) {
-    return <><AgentWorkspace revisionProvider={revisionProvider} controller={undefined} conversationId={undefined} /><FileTree revisionProvider={revisionProvider} />
+    return <><AgentWorkspace revisionProvider={revisionProvider} controller={undefined} conversationId={undefined} history="popover" /><FileTree revisionProvider={revisionProvider} />
     <Documents provider={revisionProvider} locale="fr" /><DocumentSheet provider={revisionProvider} path={undefined} onClose={() => {}} onShowAll={() => {}} />
       <AgentWorkspace revisionProvider={revisionProvider} chat={{ showHistory: false, showConnectionStatus: false, tools: <button type="button">Mic</button> }} libraryPlacement="pane" locale="fr" fileTree={{ labels: { search: 'Rechercher' }, upload: false, history: false, refreshKey: 1 }} onUnsavedChange={unsaved => { void unsaved; }} controller={undefined} conversationId={undefined}
         agents={{ items: [{ id: 'pm', label: 'PM' }, { id: 'dev', label: 'Developer' }], activeId: 'pm', onSelect: () => {} }} /></>;
+  }
+
+  // A hand-built agent pane gets the same History column: the column at its start, History as its toggle, the popover where it does not fit.
+  export function HistoryPane({ conversations, floating }: { readonly conversations: ConversationsConfig | undefined; readonly floating: boolean }) {
+    const history = useHistoryColumn({ id: 'pane-history', storageKey: 'consumer.history-column', conversations, enabled: !floating, beside: 0, title: 'Conversations' });
+    return <div ref={history.ref} className="flex min-h-0 flex-1">{history.column}{history.toggle ? <HistoryColumnToggle toggle={history.toggle} /> : null}</div>;
   }
 
   const identity = { runtimeId: 'app', scopeId: 'fictional-team', principalId: 'fictional-person', initiatorId: 'fictional-person' };
@@ -128,7 +135,7 @@ async function testStyle(style) {
       assert.ok(inputs.some(path => path.endsWith(`src/components/${file}`)), `the bundle uses the CLI-installed ${file}`);
     assert.deepEqual(inputs.filter(path => /@hachej\/boring-agent|pi-durable\/dist\/(storage|env)|sqlite|node:|tldraw/.test(path)), [], 'browser bundle holds no agent, storage, Node or canvas code');
     // Keep the DOM setup outside the component bundle: public Base UI modules must initialize in that DOM realm.
-    writeFileSync(join(directory, 'presentation-components.tsx'), "export { ViewerActions, ViewerVersions } from './src/components/viewers/menu';\nexport { ConversationFiles } from './src/components/pi-chat/conversation-files';\nexport { FileTree } from './src/components/file-tree/file-tree';\n");
+    writeFileSync(join(directory, 'presentation-components.tsx'), "export { ViewerActions, ViewerVersions } from './src/components/viewers/menu';\nexport { ConversationFiles } from './src/components/pi-chat/conversation-files';\nexport { FileTree } from './src/components/file-tree/file-tree';\nexport { HistoryColumnToggle, useHistoryColumn } from './src/components/pi-app/history-column';\n");
     writeFileSync(join(directory, 'dist/presentation.mjs'), readFileSync(join(root, 'test/fixtures/app-registry-presentation.mjs'), 'utf8'));
     run(process.execPath, ['node_modules/esbuild/bin/esbuild', 'presentation-components.tsx', '--bundle', '--platform=node', '--format=esm', '--packages=external', '--jsx=automatic', '--outfile=dist/presentation-components.mjs', '--alias:@=./src', '--alias:@hachej/boring-ui-kit/file-tree.css=./node_modules/@hachej/boring-ui-kit/styles/file-tree.css'], isolated);
     run(process.execPath, ['dist/presentation.mjs'], isolated);

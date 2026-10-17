@@ -4,7 +4,7 @@
  */
 import { createContext, createElement, useContext } from 'react';
 import type { ReactNode } from 'react';
-import { ArrowLeftIcon, LibraryIcon, MessageSquareIcon, PanelLeftIcon, PictureInPicture2Icon, SquarePenIcon, XIcon } from 'lucide-react';
+import { ArrowLeftIcon, HistoryIcon, LibraryIcon, MessageSquareIcon, PanelLeftIcon, PictureInPicture2Icon, SquarePenIcon, XIcon } from 'lucide-react';
 import type { BlockIcon } from '../button/actions';
 import { defaultViewerIcons, defaultViewerLabels } from '../viewers/viewer-window';
 
@@ -25,6 +25,9 @@ export const defaultAppLabels = {
   openSessions: 'Open chats',
   hideSessions: 'Hide chats',
   showSessions: 'Show chats',
+  history: 'History',
+  showHistory: 'Show history',
+  hideHistory: 'Hide history',
   floatChat: 'Float chat',
   floatHint: 'Release to float the chat',
   resizePanel: 'Resize artifact panel',
@@ -49,6 +52,7 @@ export type AppLabels = typeof defaultAppLabels;
 export const defaultAppIcons = {
   ...defaultViewerIcons,
   sessionsToggle: PanelLeftIcon as BlockIcon,
+  history: HistoryIcon as BlockIcon,
   library: LibraryIcon as BlockIcon,
   chat: MessageSquareIcon as BlockIcon,
   newChat: SquarePenIcon as BlockIcon,

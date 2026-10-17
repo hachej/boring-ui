@@ -249,7 +249,15 @@ try {
     const panel = await browser.evaluate(rect('[data-testid=workspace-panel]'));
     assert.ok(panel.x + panel.w > 1200, `the panel is on the right: ${JSON.stringify(panel)}`);
     assert.ok(await browser.evaluate(noOverflow));
+    // The History column (the sessions pane) stays beside the artifact while column, viewer and chat fit, and steps aside when they do not.
+    const SESSIONS = `${q('[data-boring=agent-workspace]')}.dataset.sessions`;
+    assert.equal(await browser.evaluate(SESSIONS), 'docked', 'the column fits beside the artifact at 1280px');
     await browser.screenshot('workspace-desktop-chat.png');
+    await send('Emulation.setDeviceMetricsOverride', { width: 900, height: 800, deviceScaleFactor: 1, mobile: false });
+    await browser.until('the column steps aside; History is the popover', `innerWidth === 900 && ${SESSIONS} === 'hidden' && !!${q('[data-testid=history-open]')} && !${q('[data-testid=sessions-toggle]')}`, 10000);
+    await browser.click(q('[data-testid=artifact-close]'));
+    await browser.until('the column returns', `${SESSIONS} === 'docked' && !${q('[data-testid=history-open]')}`, 10000);
+    assert.ok(await browser.evaluate(noOverflow));
   });
 
   if (failed.length) console.log(`COLLECT: ${failed.length} failing step(s): ${failed.join(' | ')}`);

@@ -270,6 +270,36 @@ try {
     assert.equal(await browser.evaluate(`${qa('[data-testid=sessions-toggle]')}.filter(e=>e.getBoundingClientRect().width>0).length`), 1, 'no duplicate toggle after switching');
   });
 
+  await step('History column: remembered per viewer, controlled by its toggle, and it steps aside while an artifact leaves the chat too narrow', async () => {
+    const SESSIONS = `${q('[data-boring=agent-workspace]')}.dataset.sessions`;
+    const STORED = `localStorage.getItem('boring.agent-workspace.history-column')`;
+    assert.equal(await browser.evaluate(SESSIONS), 'docked', 'column, artifact and chat fit on a wide page');
+    assert.equal(await browser.evaluate(`${q('[data-testid=conversations]')}.id`), 'boring.agent-workspace-sessions');
+    await browser.click(q('[data-testid=conversations] [data-testid=sessions-toggle]'));
+    await browser.until('closed', `${SESSIONS} === 'hidden'`, 5000);
+    assert.equal(await browser.evaluate(STORED), 'closed', 'the viewer\'s choice is kept in localStorage');
+    assert.deepEqual(await browser.evaluate(`[${q('[data-testid=sessions-toggle]')}.getAttribute('aria-expanded'), ${q('[data-testid=sessions-toggle]')}.getAttribute('aria-controls')]`), ['false', 'boring.agent-workspace-sessions']);
+    await browser.click(q('[data-testid=sessions-toggle]'));
+    await browser.until('open, focus on the open conversation', `${SESSIONS} === 'docked' && document.activeElement?.dataset.testid === 'conversation-row'`, 5000);
+    assert.equal(await browser.evaluate(STORED), 'open');
+    // 900px with the artifact open: column (260), viewer (360) and chat (360) do not fit, so the column steps aside and History is the popover.
+    await browser.send('Emulation.setDeviceMetricsOverride', { width: 900, height: 800, deviceScaleFactor: 1, mobile: false });
+    await browser.until('aside', `innerWidth === 900 && ${SESSIONS} === 'hidden' && !!${q('[data-testid=artifact-panel]')}`, 10000);
+    assert.equal(await browser.evaluate(`!${q('[data-testid=sessions-toggle]')} && !!${q('[data-testid=history-open]')}`), true, 'History falls back to the popover');
+    await browser.click(q('[data-testid=history-open]'));
+    await browser.until('the popover lists the chats', `!!${q('[data-testid=conversations] [data-testid=conversation-row]')}`, 5000);
+    await browser.screenshot('history-aside-popover-900.png');
+    await browser.press('Escape');
+    await browser.until('popover closed', `!${q('[data-testid=conversations]')}`, 5000);
+    await browser.click(q('[data-testid=artifact-close]'));
+    await browser.until('the column returns with the artifact closed', `${SESSIONS} === 'docked' && !${q('[data-testid=history-open]')}`, 5000);
+    assert.equal(await browser.evaluate(STORED), 'open', 'stepping aside is not the viewer\'s choice');
+    await browser.emulate('desktop');
+    await browser.click(q('[data-testid=artifact-card]'));
+    await browser.until('artifact restored', `!!${q('[data-testid=artifact-panel]')} && ${SESSIONS} === 'docked'`, 5000);
+    await browser.screenshot('history-column-artifact-desktop.png');
+  });
+
   await step('Library reselecting the current file closes Library and returns to that file', async () => {
     const draft = 'A fictional draft retained through Library';
     await browser.type(INPUT, draft);
