@@ -281,7 +281,7 @@ export function Composer(props: ComposerProps) {
       {...(slash || mentions ? { role: 'combobox', 'aria-expanded': menuOpen, 'aria-haspopup': 'listbox', 'aria-autocomplete': 'list' } as const : {})}
       onChange={onChange} onKeyDown={onKeyDown} onPaste={onPaste} onKeyUp={event => trackCaret(event.currentTarget)} onClick={event => trackCaret(event.currentTarget)}
       onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }}
-      className={pill ? 'max-h-52 min-h-0 min-w-0' : 'max-h-52'} />;
+      className={pill ? 'max-h-52 min-h-0 min-w-0' : 'max-h-52 min-h-11'} />;
   const plus = (canAttach || items.length > 0) && <PlusActions disabled={disabled} textarea={inner} onAttach={canAttach ? () => fileInput.current?.click() : undefined} onCommands={items.length > 0 ? openCommands : undefined} />;
   const fileEl = canAttach && <Input ref={fileInput} type="file" multiple accept={props.fileAccept} disabled={disabled} tabIndex={-1} aria-hidden="true" className="sr-only" data-testid="composer-file" data-attach="true"
     onChange={event => { const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ''; props.onPickFiles(files); }} />;
