@@ -44,7 +44,7 @@ export function SlashPicker({ query, items, onSelect, onDismiss }: {
   return <ComposerSuggestions testId="slash-menu" onDismiss={onDismiss}>
     <InputGroup>
       <InputGroupAddon><SearchIcon aria-hidden="true" /></InputGroupAddon>
-      <InputGroupInput aria-label={labels.searchCommands} data-testid="slash-search" type="text" autoComplete="off" spellCheck={false} value={search}
+      <InputGroupInput className="max-sm:min-h-11 pointer-coarse:min-h-11" aria-label={labels.searchCommands} data-testid="slash-search" type="text" autoComplete="off" spellCheck={false} value={search}
         onChange={event => { setSearch(event.currentTarget.value); setActive(0); }} placeholder={labels.searchCommands} />
     </InputGroup>
     <div role="tablist" aria-label={labels.filterBySource} className="flex flex-wrap gap-1">

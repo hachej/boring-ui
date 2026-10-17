@@ -30,7 +30,7 @@ try {
     assert.deepEqual(audit.contrast.filter(pair => !pair.pass), [], name);
     if (width === 390) {
       assert.equal(await browser.evaluate(`getComputedStyle(${input}).fontSize`), '16px', `${name}: 16px text, no iOS zoom`);
-      const small = await browser.evaluate(`[...document.querySelectorAll('[data-slot=button], [data-slot=toggle]')].filter(element => element.checkVisibility()).map(element => ({ id: element.dataset.testid ?? element.getAttribute('aria-label'), width: element.getBoundingClientRect().width, height: element.getBoundingClientRect().height })).filter(box => box.width < 43.9 || box.height < 43.9)`);
+      const small = await browser.evaluate(`[...document.querySelectorAll('[data-slot=button], [data-slot=toggle], [data-testid=slash-search], [data-testid=composer-input]')].filter(element => element.checkVisibility()).map(element => ({ id: element.dataset.testid ?? element.getAttribute('aria-label'), width: element.getBoundingClientRect().width, height: element.getBoundingClientRect().height })).filter(box => box.width < 43.9 || box.height < 43.9)`);
       assert.deepEqual(small, [], `${name}: 44px touch targets, including chip remove buttons`);
     }
     await browser.screenshot(`${name}.png`);
