@@ -1,6 +1,7 @@
-// shadcn@4.21.4 base-nova fixture from https://ui.shadcn.com/r/styles/base-nova/checkbox.json
-// Icons resolved to lucide as `shadcn add` writes them.
-// Registry SHA-256: e6df7b595f25a7ee97c3fb94e0ddc35998f74c98b990d3030e485905ec677178. Host-owned test/example source only.
+// Pinned shadcn@4.21.4 Base UI fixture, 2026-10 release.
+// https://ui.shadcn.com/r/styles/base-nova/checkbox.json. MIT, Copyright (c) 2023 shadcn.
+"use client"
+
 import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox"
 import { cn } from "cn"
 

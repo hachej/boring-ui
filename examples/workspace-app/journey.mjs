@@ -381,7 +381,7 @@ try {
     assert.ok(await browser.evaluate(`!!${q('[data-testid=artifact-panel]')}`), 'Escape first closes the menu, not the file');
     await browser.press('Escape');
     await browser.until('Escape returns to chat', `!${q('[data-testid=artifact-panel]')}`, 5000);
-    assert.ok(await browser.evaluate(`document.activeElement?.matches('[data-testid=artifact-card], [data-testid=composer-input]')`), 'focus restored');
+    await browser.until('focus restored', `document.activeElement?.matches('[data-testid=artifact-card], [data-testid=composer-input]')`, 3000);
     const scroll = await browser.evaluate(`${q('[data-testid=transcript-scroll]')}.scrollTop`);
     await browser.tap(q('[data-testid=artifact-card]'));
     await browser.until('reopened', `!!${q('[data-testid=artifact-panel]')}`, 5000);
@@ -571,7 +571,7 @@ try {
     for (let index = 0; index < 12; index++) await write('Current fictional', index);
     await browser.reload(); await live();
     await browser.until('current transcript at the bottom', `${q('[data-testid=transcript]')}?.innerText.includes('Current fictional answer 11.') && ${q('[data-testid=transcript-scroll]')}.scrollTop > 100`, 10000);
-    const anchor = await browser.evaluate(`(() => { const scroll = ${q('[data-testid=transcript-scroll]')}; scroll.scrollTop = 120; scroll.dispatchEvent(new Event('scroll')); const row = [...scroll.querySelectorAll('[data-row-id]')].find(row => row.getBoundingClientRect().bottom > scroll.getBoundingClientRect().top + 1); return { key: row.dataset.rowId, y: row.getBoundingClientRect().top }; })()`);
+    const anchor = await browser.evaluate(`(() => { const scroll = ${q('[data-testid=transcript-scroll]')}; scroll.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -1 })); scroll.scrollTop = 120; scroll.dispatchEvent(new Event('scroll')); const row = [...scroll.querySelectorAll('[data-row-id]')].find(row => row.getBoundingClientRect().bottom > scroll.getBoundingClientRect().top + 1); return { key: row.dataset.rowId, y: row.getBoundingClientRect().top }; })()`);
     await browser.until('sentinel prepends older records inline', `!!${q('[data-testid=transcript] [data-row-id^="history:"]')}`, 10000);
     await browser.evaluate('new Promise(requestAnimationFrame).then(() => new Promise(requestAnimationFrame))');
     const y = await browser.evaluate(`${q(`[data-row-id="${anchor.key}"]`)}.getBoundingClientRect().top`);

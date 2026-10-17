@@ -49,6 +49,16 @@ test('settled reply actions are icon-only, named and sized for pointer and touch
   assert.match(html, /group-hover\/message:opacity-100/);
 });
 
+test('transcript composes the consumer Message, Bubble and Attachment without a block skin', async () => {
+  const { RowView } = await load('shadcn-message', 'message.tsx');
+  const context = { developer: false, pieces: { mentions: true, skills: ['plan'] }, openFile() {} };
+  const html = renderToStaticMarkup(createElement(RowView, { row: { key: 'user', type: 'user', message: { role: 'user', content: '/plan hello @uploads/fictional.txt', timestamp: 0 } }, context }));
+  for (const slot of ['message', 'message-content', 'bubble', 'bubble-content', 'attachment', 'attachment-title', 'attachment-trigger']) assert.match(html, new RegExp(`data-slot="${slot}"`));
+  assert.match(html, /data-testid="message-mention"/);
+  assert.match(html, /aria-label="Open fictional.txt"/);
+  assert.doesNotMatch(html, /chat-user-radius|rounded-md bg-primary/);
+});
+
 const user = text => ({ role: 'user', content: text, timestamp: 0 });
 const call = (id, name, args = {}) => ({ type: 'toolCall', id, name, arguments: args });
 const assistant = (content, extra = {}) => ({ role: 'assistant', content, api: 'x', provider: 'x', model: 'x', usage: {}, stopReason: 'stop', timestamp: 0, ...extra });

@@ -1,5 +1,5 @@
-// shadcn@4.21.4 base-nova fixture from https://ui.shadcn.com/r/styles/base-nova/card.json
-// Registry SHA-256: e73e3fe00ab2e14c4db1dccb1ff5c67041a94c0926ac3216c1dc6dd6dee9d7e0. Host-owned test/example source only.
+// Pinned shadcn@4.21.4 Base UI fixture, 2026-10 release.
+// https://ui.shadcn.com/r/styles/base-nova/card.json. MIT, Copyright (c) 2023 shadcn.
 import * as React from "react"
 import { cn } from "cn"
 

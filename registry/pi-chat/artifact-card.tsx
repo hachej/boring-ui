@@ -2,13 +2,15 @@
 
 import type { ComponentType } from 'react';
 import { ChevronRightIcon, FileCodeIcon, FileTextIcon, GlobeIcon, ImageIcon, PenToolIcon } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@/components/ui/item';
 import { Shimmer } from './shimmer';
 import { artifactKey, typeLabel } from './artifact';
 import type { ArtifactDescriptor, ArtifactType } from './artifact';
-import { cn } from '../utils/utils';
 import { useChatText } from './labels';
 
-const ICONS: Record<ArtifactType, ComponentType<{ readonly className?: string; readonly 'aria-hidden'?: boolean | 'true' }>> = {
+const ICONS: Record<ArtifactType, ComponentType<{ readonly 'aria-hidden'?: boolean | 'true' }>> = {
   markdown: FileTextIcon, html: GlobeIcon, svg: ImageIcon, code: FileCodeIcon, canvas: PenToolIcon,
 };
 
@@ -26,31 +28,25 @@ export function ArtifactCard({ artifact, pending, title, open = false, onOpen }:
 }) {
   const { labels } = useChatText();
   if (!artifact) {
-    return <div data-testid="artifact-card" data-state={pending ?? 'presenting'} role="status" aria-busy="true"
-      className="my-2 flex min-h-16 items-center gap-3 rounded-lg border border-dashed border-border bg-card px-4 py-3">
-      <span className="flex size-8 shrink-0 items-center justify-center text-muted-foreground"><FileTextIcon className="size-5" aria-hidden="true" /></span>
-      <span className="min-w-0 flex-1">
-        <span data-testid="artifact-title" className="block truncate text-sm font-medium"><Shimmer>{title ?? labels.artifact}</Shimmer></span>
-        <span className="block text-xs text-muted-foreground"><Shimmer>{labels.opening}</Shimmer></span>
-      </span>
-    </div>;
+    return <Item variant="outline" size="sm" data-testid="artifact-card" data-state={pending ?? 'presenting'} role="status" aria-busy="true" className="my-2 text-start">
+      <ItemMedia variant="icon"><FileTextIcon aria-hidden="true" /></ItemMedia>
+      <ItemContent className="min-w-0 basis-0">
+        <ItemTitle data-testid="artifact-title"><Shimmer>{title ?? labels.artifact}</Shimmer></ItemTitle>
+        <ItemDescription><Shimmer>{labels.opening}</Shimmer></ItemDescription>
+      </ItemContent>
+    </Item>;
   }
   const Icon = ICONS[artifact.type];
-  return <button type="button" data-testid="artifact-card" data-state="ready" data-artifact-id={artifactKey(artifact)} data-artifact-revision={artifact.revision} data-artifact-version={artifact.ordinal} data-artifact-type={artifact.type}
-    data-open={open ? 'true' : undefined} aria-pressed={onOpen ? open : undefined} aria-label={labels.openArtifact(artifact.title, artifact.ordinal)} disabled={!onOpen}
-    onClick={() => onOpen?.(artifact)}
-    className={cn('group/artifact my-2 flex min-h-12 w-full max-w-md cursor-pointer items-center gap-3 rounded-lg border bg-card px-3 py-2 text-left text-card-foreground outline-none transition-[border-color,background-color] motion-reduce:transition-none',
-      'hover:border-ring/50 hover:bg-accent focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-default',
-      open ? 'border-ring/50 bg-accent' : 'border-border')}>
-    <span className={cn('flex size-8 shrink-0 items-center justify-center transition-colors motion-reduce:transition-none', open ? 'text-foreground' : 'text-muted-foreground group-hover/artifact:text-foreground')}>
-      <Icon className="size-5" aria-hidden="true" /></span>
-    <span className="flex min-w-0 flex-1 items-center gap-2">
-      <span data-testid="artifact-title" className="block truncate text-sm leading-5 font-medium">{artifact.title}</span>
-      <span className="hidden shrink-0 text-xs leading-5 text-muted-foreground sm:block"><span data-testid="artifact-type">{typeLabel(artifact)}</span>{artifact.ordinal !== undefined && <> · <span data-testid="artifact-version">{labels.version(artifact.ordinal)}</span></>}</span>
+  return <Button variant="outline" disabled={!onOpen} onClick={() => onOpen?.(artifact)}
+    data-testid="artifact-card" data-state="ready" data-artifact-id={artifactKey(artifact)} data-artifact-revision={artifact.revision} data-artifact-version={artifact.ordinal} data-artifact-type={artifact.type}
+    data-open={open ? 'true' : undefined} aria-pressed={onOpen ? open : undefined} aria-label={labels.openArtifact(artifact.title, artifact.ordinal)}
+    className="my-2 h-auto w-full max-w-md justify-start gap-2.5 text-left">
+    <Icon aria-hidden="true" />
+    <span className="flex min-w-0 flex-1 flex-col">
+      <span data-testid="artifact-title" className="truncate">{artifact.title}</span>
+      <span className="truncate text-xs text-muted-foreground"><span data-testid="artifact-type">{typeLabel(artifact)}</span>{artifact.ordinal !== undefined && <> · <span data-testid="artifact-version">{labels.version(artifact.ordinal)}</span></>}</span>
     </span>
-    <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
-      <span data-testid="artifact-hint" className={cn(open ? 'font-medium text-foreground' : 'opacity-0 transition-opacity group-hover/artifact:opacity-100 group-focus-visible/artifact:opacity-100 motion-reduce:transition-none pointer-coarse:opacity-100 max-sm:opacity-100')}>{labels.open}</span>
-      <ChevronRightIcon className="size-4" aria-hidden="true" />
-    </span>
-  </button>;
+    {open ? <Badge variant="secondary" data-testid="artifact-hint">{labels.open}</Badge> : <span data-testid="artifact-hint" className="text-xs text-muted-foreground">{labels.open}</span>}
+    <ChevronRightIcon aria-hidden="true" />
+  </Button>;
 }

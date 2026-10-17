@@ -411,7 +411,7 @@ try {
     await browser.until('the created file autosaved', `${q('[data-testid=library-document] [data-testid=viewer-status]')}?.textContent === 'Saved'`, 10000);
     assert.equal(new TextDecoder().decode((await reader.read({ target: reader.locate('tt.md'), revision: { kind: 'latest' } })).snapshot.bytes), createdDraft);
     const card = q('[data-testid=reply-files] [data-testid=message-mention][data-path="tt.md"]');
-    await browser.until('a Created file card outside the collapsed activity', `${card}?.innerText.includes('Created')`, 10000);
+    await browser.until('a Created file card outside the collapsed activity', `${card}?.closest('[data-slot=attachment]').innerText.includes('Created')`, 10000);
     assert.equal(await browser.evaluate(`document.querySelectorAll('[data-testid=reply-files] [data-path="tt.md"]').length`), 1);
     await browser.click(q('[data-testid=library-document] [data-testid=viewer-close]'));
     await browser.until('the file closed', `!${q('[data-testid=library-document]')}`, 5000);

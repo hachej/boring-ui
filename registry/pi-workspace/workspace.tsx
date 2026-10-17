@@ -134,6 +134,8 @@ export function ArtifactWorkspace({ chat, open, panel, onClose, fullscreen: cont
       const previous = opener.current;
       const target = previous?.isConnected && previous !== document.body ? previous : root.current?.querySelector<HTMLElement>('[data-testid=composer-input]');
       target?.focus({ preventScroll: true });
+      // A shadcn Button transitions its inherited visibility, so it stays hidden (unfocusable) briefly after the sheet closes: retry per frame.
+      if (target) { let frames = 30; const retry = () => { if (document.activeElement === target || document.activeElement !== document.body || frames-- <= 0) return; target.focus({ preventScroll: true }); requestAnimationFrame(retry); }; requestAnimationFrame(retry); }
     };
   }, [open]);
   useEffect(() => {

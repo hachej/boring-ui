@@ -40,7 +40,7 @@ export function auditDesign({ groups, palette, radiusBindings }) {
     if (element.closest('.tiptap, .ProseMirror') || element.matches('iframe, canvas, img, script, style, link')) continue;
     // A semantic list/card/menu button remains in its own unmigrated group. Native
     // Button/Toggle/Switch instances are group 1 wherever another block composes them.
-    const nativeControl = ['button', 'toggle', 'switch'].includes(element.dataset.slot) || element.classList.contains('group/button') || element.classList.contains('group/toggle');
+    const nativeControl = ['button', 'toggle', 'switch', 'checkbox'].includes(element.dataset.slot) || element.classList.contains('group/button') || element.classList.contains('group/toggle');
     let legacy;
     if (!nativeControl && element.matches('button, [role=switch]')) {
       if (element.matches('[role^=menuitem], [data-slot^=dropdown-menu-]') || element.closest('.app-shell [role=dialog]')) legacy = '2';

@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import type { ToolResultMessage } from '@earendil-works/pi-ai';
-import { AlertCircleIcon, BrainIcon, CheckIcon, CircleSlashIcon, Loader2Icon } from 'lucide-react';
+import { AlertCircleIcon, BrainIcon, CheckIcon, CircleSlashIcon } from 'lucide-react';
+import { Spinner } from '@/components/ui/spinner';
 import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceDescription, TraceIcon, TraceLine, TraceTitle } from '@/components/ui/trace';
 import { ToolCard, liveLabel } from './tool';
 import type { ToolStatus } from './tool';
@@ -58,14 +59,14 @@ export function ActivityBlock({ steps, state, streaming, developer, onOpenImage 
   const { labels } = useChatText();
   const [chosen, setChosen] = useState<boolean | undefined>();
   const open = chosen ?? state === 'failed';
-  const Icon = state === 'running' ? Loader2Icon : state === 'failed' ? AlertCircleIcon : state === 'stopped' ? CircleSlashIcon : CheckIcon;
+  const Icon = state === 'running' ? Spinner : state === 'failed' ? AlertCircleIcon : state === 'stopped' ? CircleSlashIcon : CheckIcon;
   return <Trace data-testid="activity" data-boring="activity" data-state={state} data-open={open ? 'true' : 'false'} className="my-1.5">
     <TraceCollapsible open={open} onOpenChange={setChosen}>
       <TraceCollapsibleTrigger className="min-h-8 max-sm:min-h-11 pointer-coarse:min-h-11">
         <TraceLine {...(state === 'running' ? { status: 'running' } : state === 'failed' ? { status: 'error' } : {})}>
-          <TraceIcon><Icon className={state === 'running' ? 'animate-spin motion-reduce:animate-none' : undefined} /></TraceIcon>
+          <TraceIcon><Icon aria-hidden="true" /></TraceIcon>
           <TraceTitle data-testid="activity-label">{header(steps, state, streaming, labels)}</TraceTitle>
-          <TraceDescription data-testid="activity-count" className="text-xs text-muted-foreground">{labels.steps(steps.length)}</TraceDescription>
+          <TraceDescription data-testid="activity-count">{labels.steps(steps.length)}</TraceDescription>
         </TraceLine>
       </TraceCollapsibleTrigger>
       <TraceCollapsibleContent>

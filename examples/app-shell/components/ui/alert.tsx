@@ -1,5 +1,5 @@
-// shadcn@4.21.4 base-nova fixture from https://ui.shadcn.com/r/styles/base-nova/alert.json
-// Registry SHA-256: 0799cfc29a481568f6e9b48e96518a446032350dec576bfe31b7f67b4b262028. Host-owned test/example source only.
+// Pinned shadcn@4.21.4 Base UI fixture, 2026-10 release.
+// https://ui.shadcn.com/r/styles/base-nova/alert.json. MIT, Copyright (c) 2023 shadcn.
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"

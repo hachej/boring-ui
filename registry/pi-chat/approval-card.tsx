@@ -3,9 +3,10 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
 import { CheckIcon, ShieldAlertIcon, XIcon } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Item, ItemActions, ItemContent, ItemDescription, ItemFooter, ItemMedia, ItemTitle } from '@/components/ui/item';
 import type { AnswerOutcome } from './question-card';
-import { cn } from '../utils/utils';
 import { useChatText } from './labels';
 
 // The strings `requireApproval` (`@hachej/boring-agent/approval`) asks with and puts at the start of a denial result.
@@ -72,34 +73,32 @@ export function ApprovalCard({ call, result, answer, questionId, summary, decisi
   }
   const approved = state === 'approved' || state === 'approved-sent', denied = state === 'denied' || state === 'denied-sent';
 
-  return <section data-testid="approval-card" data-state={state} data-call-id={call.id} data-tool={call.name} aria-label={labels.approvalNeeded}
-    className={cn('my-2 rounded-lg border bg-card p-4 text-card-foreground', open ? 'border-(--chat-warning)/60' : 'border-border')}>
-    <div className="flex items-start gap-3">
-      <span className={cn('mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg', open ? 'bg-(--chat-warning-soft) text-(--chat-warning-soft-foreground)' : denied ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground')}>
-        {approved ? <CheckIcon className="size-4" aria-hidden="true" /> : denied ? <XIcon className="size-4" aria-hidden="true" /> : <ShieldAlertIcon className="size-4" aria-hidden="true" />}
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="m-0 text-xs font-medium text-muted-foreground">{open ? labels.needsApproval : approved ? labels.approved : denied ? labels.denied : labels.notDecided}</p>
-        {summary && <p data-testid="approval-summary" className="mt-1 mb-0 text-base leading-6 font-semibold [overflow-wrap:anywhere]">{summary}</p>}
-        <p data-testid="approval-tool" className={cn('mb-0 [overflow-wrap:anywhere]', summary ? 'mt-1 text-xs text-muted-foreground' : 'mt-1 text-sm leading-6 font-medium')}>{labels.wantsToRun} <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">{call.name}</code></p>
-        {args.length > 0 && (() => {
-          const list = <dl data-testid="approval-args" className="mt-2 mb-0 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
-            {args.map(item => [<dt key={`${item.name}:n`} className="text-muted-foreground">{item.name}</dt>, <dd key={`${item.name}:v`} className="m-0 font-mono whitespace-pre-wrap [overflow-wrap:anywhere]">{item.value}</dd>])}
-          </dl>;
-          // With a summary the raw arguments are the detail behind it; without one they are all the person has to decide on.
-          return summary ? <details data-testid="approval-details" className="mt-2 text-xs"><summary className="inline-flex min-h-8 cursor-pointer items-center text-muted-foreground select-none max-sm:min-h-11 pointer-coarse:min-h-11">{labels.arguments}</summary>{list}</details> : list;
-        })()}
-        {open && <>
-          <div role="group" aria-label={labels.decision} className="mt-3 flex flex-wrap gap-2">
-            <Button variant="default" data-testid="approval-approve" disabled={!answer || !questionId || busy} onClick={() => { void decide(APPROVE); }}><CheckIcon data-icon="inline-start" aria-hidden="true" />{labels.approve}</Button>
-            <Button variant="outline" data-testid="approval-deny" disabled={!answer || !questionId || busy} onClick={() => { void decide(DENY); }}><XIcon data-icon="inline-start" aria-hidden="true" />{labels.deny}</Button>
-          </div>
-          {live && <p className="mt-3 mb-0 text-xs text-muted-foreground">{labels.stillWritingCall}</p>}
-          {(!answer || !questionId) && !live && <p className="mt-3 mb-0 text-xs text-muted-foreground">{labels.decidingUnavailable}</p>}
-        </>}
-        {(state === 'approved-sent' || state === 'denied-sent') && <p className="mt-2 mb-0 text-xs text-muted-foreground">{labels.decisionSent(approved)}</p>}
-        {refusal && open && <p role="alert" data-testid="approval-refusal" className="mt-3 mb-0 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{refusal}</p>}
-      </div>
-    </div>
-  </section>;
+  const status = open ? labels.needsApproval : approved ? labels.approved : denied ? labels.denied : labels.notDecided;
+  const unavailable = !answer || !questionId || busy;
+
+  // shadcn's Confirmation recipe: an outline Item with the question and Approve/Deny actions; pending approvals are prompts, not activity.
+  return <Item variant="outline" size="sm" render={<section />} data-testid="approval-card" data-state={state} data-call-id={call.id} data-tool={call.name} aria-label={labels.approvalNeeded} className="my-2 text-start">
+    <ItemMedia variant="icon">
+      {approved ? <CheckIcon aria-hidden="true" /> : denied ? <XIcon aria-hidden="true" /> : <ShieldAlertIcon aria-hidden="true" />}
+    </ItemMedia>
+    <ItemContent className="min-w-0 basis-0">
+      <ItemDescription className="line-clamp-none"><Badge variant={open ? 'outline' : denied ? 'destructive' : 'secondary'}>{status}</Badge></ItemDescription>
+      {summary && <ItemTitle data-testid="approval-summary" className="line-clamp-none [overflow-wrap:anywhere]">{summary}</ItemTitle>}
+      <ItemDescription data-testid="approval-tool" className="line-clamp-none [overflow-wrap:anywhere]">{labels.wantsToRun} <code className="font-mono">{call.name}</code></ItemDescription>
+      {args.length > 0 && (() => {
+        const list = <dl data-testid="approval-args" className="m-0 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
+          {args.map(item => [<dt key={`${item.name}:n`} className="text-muted-foreground">{item.name}</dt>, <dd key={`${item.name}:v`} className="m-0 font-mono whitespace-pre-wrap [overflow-wrap:anywhere]">{item.value}</dd>])}
+        </dl>;
+        // With a summary the raw arguments are the detail behind it; without one they are all the person has to decide on.
+        return summary ? <details data-testid="approval-details" className="text-xs"><summary className="inline-flex min-h-8 cursor-pointer items-center text-muted-foreground select-none max-sm:min-h-11 pointer-coarse:min-h-11">{labels.arguments}</summary>{list}</details> : list;
+      })()}
+    </ItemContent>
+    {open && <ItemActions role="group" aria-label={labels.decision}>
+      <Button variant="default" data-testid="approval-approve" disabled={unavailable} onClick={() => { void decide(APPROVE); }}><CheckIcon data-icon="inline-start" aria-hidden="true" />{labels.approve}</Button>
+      <Button variant="outline" data-testid="approval-deny" disabled={unavailable} onClick={() => { void decide(DENY); }}><XIcon data-icon="inline-start" aria-hidden="true" />{labels.deny}</Button>
+    </ItemActions>}
+    {(open && (live || !answer || !questionId)) && <ItemFooter><ItemDescription>{live ? labels.stillWritingCall : labels.decidingUnavailable}</ItemDescription></ItemFooter>}
+    {(state === 'approved-sent' || state === 'denied-sent') && <ItemFooter><ItemDescription>{labels.decisionSent(approved)}</ItemDescription></ItemFooter>}
+    {refusal && open && <ItemFooter><p role="alert" data-testid="approval-refusal" className="m-0 text-sm text-destructive">{refusal}</p></ItemFooter>}
+  </Item>;
 }

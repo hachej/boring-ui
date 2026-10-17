@@ -5,7 +5,9 @@ import type { ReactNode } from 'react';
 import type { ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
 import { WrenchIcon } from 'lucide-react';
 import { TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceDescription, TraceIcon, TraceLine, TraceTitle } from '@/components/ui/trace';
-import { cn } from '../utils/utils';
+import { Card, CardContent } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
 import { defaultChatLabels, useChatText } from './labels';
 import type { ChatLabels } from './labels';
 
@@ -42,19 +44,19 @@ export function ToolCard({ entry, onOpenImage, details = true }: { readonly entr
   const line = <TraceLine {...(status === 'running' ? { status: 'running' } : status === 'failed' ? { status: 'error' } : {})}>
     <TraceIcon><WrenchIcon /></TraceIcon>
     <TraceTitle><span data-testid="tool-name">{call.name}</span>{hint && ` · ${hint}`}</TraceTitle>
-    <TraceDescription data-testid="tool-status" className="text-xs text-muted-foreground">{labels[STATUS_LABEL[status]]}</TraceDescription>
+    <TraceDescription data-testid="tool-status">{labels[STATUS_LABEL[status]]}</TraceDescription>
   </TraceLine>;
   return <TraceCollapsible data-testid="tool-card" data-boring="tool-card" data-status={status} data-tool={call.name} data-call-id={call.id} open={open} onOpenChange={setChosen}>
     {details ? <TraceCollapsibleTrigger className="min-h-8 max-sm:min-h-11 pointer-coarse:min-h-11">{line}</TraceCollapsibleTrigger> : line}
-    {details && <TraceCollapsibleContent><div data-testid="tool-details" className="space-y-3 text-foreground">
-      <Section title={labels.arguments}><pre className="m-0 max-h-60 overflow-auto rounded-md bg-muted/60 p-2.5 font-mono text-xs leading-5 whitespace-pre-wrap [overflow-wrap:anywhere]">{JSON.stringify(call.arguments, null, 2)}</pre></Section>
+    {details && <TraceCollapsibleContent><div data-testid="tool-details" className="flex flex-col gap-3">
+      <Section title={labels.arguments}><Card><CardContent><pre className="m-0 max-h-60 overflow-auto whitespace-pre-wrap [overflow-wrap:anywhere]">{JSON.stringify(call.arguments, null, 2)}</pre></CardContent></Card></Section>
       {result && <Section title={result.isError ? labels.error : labels.result}>
-        <div role={result.isError ? 'alert' : undefined} className={cn('space-y-2 rounded-md p-2.5', result.isError ? 'bg-destructive/10 text-destructive' : 'bg-muted/60')}>
+        <Alert variant={result.isError ? 'destructive' : 'default'} role={result.isError ? 'alert' : 'status'}><AlertDescription>
           {result.content.map((part, index) => part.type === 'text'
-            ? <pre key={index} className="m-0 max-h-72 overflow-auto font-mono text-xs leading-5 whitespace-pre-wrap [overflow-wrap:anywhere]">{part.text}</pre>
-            : <button key={index} type="button" disabled={!onOpenImage} onClick={() => onOpenImage?.(part)} className="cursor-pointer rounded-md border border-border bg-background px-2 py-1 text-xs disabled:cursor-default">{labels.openImageResult}</button>)}
-          {result.content.length === 0 && <span className="text-xs text-muted-foreground">{labels.emptyResult}</span>}
-        </div></Section>}
+            ? <pre key={index} className="m-0 max-h-72 overflow-auto whitespace-pre-wrap [overflow-wrap:anywhere]">{part.text}</pre>
+            : <Button key={index} variant="outline" size="sm" disabled={!onOpenImage} onClick={() => onOpenImage?.(part)}>{labels.openImageResult}</Button>)}
+          {result.content.length === 0 && <span>{labels.emptyResult}</span>}
+        </AlertDescription></Alert></Section>}
     </div></TraceCollapsibleContent>}
   </TraceCollapsible>;
 }

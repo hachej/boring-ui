@@ -1,9 +1,9 @@
-// shadcn@4.21.4 base-nova fixture from https://ui.shadcn.com/r/styles/base-nova/badge.json
-// Registry SHA-256: ccc20021cdcbf0fb23c0d4d28f1da4adde8e51ba59f4b11dd2722ed97a5ee3a4. Host-owned test/example source only.
+// Pinned shadcn fixture: `shadcn@4.21.4 add badge` (style base-nova, icons lucide), generated 2026-10-17
+// from https://ui.shadcn.com/r/styles/base-nova/. Used only to type-check and run the registry blocks; consumers install their own.
 import { mergeProps } from "@base-ui/react/merge-props"
 import { useRender } from "@base-ui/react/use-render"
 import { cva, type VariantProps } from "class-variance-authority"
-import { cn } from "cn"
+import { cn } from "@/lib/utils"
 
 const badgeVariants = cva(
   "group/badge inline-flex h-5 w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-4xl border border-transparent px-2 py-0.5 text-xs font-medium whitespace-nowrap transition-all focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&>svg]:pointer-events-none [&>svg]:size-3!",
