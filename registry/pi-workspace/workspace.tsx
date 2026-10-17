@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { KeyboardEvent, PointerEvent, ReactNode } from 'react';
+import { Badge } from '@/components/ui/badge';
+import { Card } from '@/components/ui/card';
 import { cn } from '../utils/utils';
 
 /** What the open panel can do to its workspace. Pass `onFullscreenChange` on to the viewer's top bar; it is absent in the phone sheet. */
@@ -174,13 +176,16 @@ export function ArtifactWorkspace({ chat, open, panel, onClose, fullscreen: cont
 
   const api: WorkspacePanelApi = { fullscreen, onFullscreenChange: sheet ? undefined : setFullscreen, close: onClose, sheet, floatChat: floatBelow !== undefined && !sheet && !floating ? () => setFloating(true) : undefined };
   const covering = open && (sheet || fullscreen);
+  // The inset panel is drawn by the host's Card behind it (a sibling layer, so a placement change never remounts the panel);
+  // every other placement is a plain region of the page.
+  const inset = variant === 'inset' && !sheet && !fullscreen && !floating;
   return <div ref={root} data-boring="artifact-workspace" data-open={open ? 'true' : 'false'} data-fullscreen={fullscreen ? 'true' : 'false'} data-sheet={sheet && open ? 'true' : 'false'}
     className={cn('relative flex h-full min-h-0 min-w-0 flex-1', className)}>
     <div data-testid="workspace-chat" data-floating={floating ? 'true' : undefined} {...(covering ? { inert: true, 'aria-hidden': true } : {})}
       className={cn('relative flex min-h-0 min-w-0 flex-col', floating ? 'w-0 flex-none' : 'flex-1', covering && 'invisible')}>
       {typeof chat === 'function' ? chat({ floating, dock: () => setFloating(false) }) : chat}
-      {floatHint && <div role="status" data-testid="workspace-float-hint" className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-background/75 p-4 backdrop-blur-[2px]">
-        <span className="rounded-full border border-border bg-popover px-4 py-2 text-sm font-medium text-popover-foreground shadow-lg">{labels?.floatHint ?? 'Release to float the chat'}</span>
+      {floatHint && <div role="status" data-testid="workspace-float-hint" className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-background/75 p-4">
+        <Badge variant="secondary">{labels?.floatHint ?? 'Release to float the chat'}</Badge>
       </div>}
     </div>
     {open && <>
@@ -194,9 +199,10 @@ export function ArtifactWorkspace({ chat, open, panel, onClose, fullscreen: cont
       </div>}
       <aside onTouchStart={event => { const point = event.touches[0]; swipe.current = sheet && point && point.clientX < 32 ? { x: point.clientX, y: point.clientY } : null; }} onTouchEnd={event => { const point = event.changedTouches[0], start = swipe.current; swipe.current = null; if (point && start && point.clientX - start.x > 80 && Math.abs(point.clientY - start.y) < 60) onClose(); }} data-testid="workspace-panel" aria-label={panelLabel} data-state={entered ? 'open' : 'entering'} data-floating={floating ? 'true' : undefined} data-fullscreen={fullscreen ? 'true' : 'false'} data-sheet={sheet ? 'true' : 'false'}
         style={sheet || fullscreen || floating ? undefined : { width, minWidth: minPanel }}
-        className={cn('flex min-h-0 min-w-0 flex-col overflow-hidden bg-background text-foreground transition-opacity motion-reduce:transition-none',
-          sheet || fullscreen ? 'fixed inset-0 z-50' : floating ? 'flex-1' : variant === 'inset' ? 'my-3 me-3 ms-0 shrink-0 rounded-lg border border-border' : 'shrink-0',
+        className={cn('flex min-h-0 min-w-0 flex-col overflow-hidden transition-opacity motion-reduce:transition-none', !inset && 'bg-background text-foreground',
+          sheet || fullscreen ? 'fixed inset-0 z-50' : floating ? 'flex-1' : inset ? 'relative isolate my-3 me-3 ms-0 shrink-0' : 'shrink-0',
           entered ? 'opacity-100' : 'opacity-0', dragging && 'pointer-events-none select-none')}>
+        {inset && <Card aria-hidden="true" data-boring="chrome" className="pointer-events-none absolute inset-0 -z-10" />}
         {typeof panel === 'function' ? panel(api) : panel}
       </aside>
     </>}

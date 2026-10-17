@@ -17,6 +17,7 @@ import { FileViewer } from '../../registry/pi-app/file-viewer.tsx';
 import { BlockActions } from '../../registry/button/actions.tsx';
 import { PdfPane } from '../../registry/viewers/pdf-pane.tsx';
 import { Button } from '@/components/ui/button';
+import { Badge as ShadcnBadge } from '@/components/ui/badge';
 import { MenuIcon } from 'lucide-react';
 import { cn } from '../../registry/utils/utils.ts';
 import { AgentContextProvider, readAgentContext, useAgentContext } from '../../registry/app-shell/agent-context.ts';
@@ -85,7 +86,7 @@ function ApProvider({ children, view, go, conversation }) {
 // ---- Cell renderers, one per kind. They read their bindings through `resolve` and act through named actions.
 const card = 'border-y border-border bg-background py-5 text-foreground';
 const label = 'text-xs font-medium text-muted-foreground';
-const Badge = ({ tone = 'muted', children }) => <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${tone === 'warn' ? 'bg-destructive/10 text-destructive' : tone === 'ok' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>{children}</span>;
+const Badge = ({ tone = 'muted', children }) => <ShadcnBadge variant={tone === 'warn' ? 'destructive' : tone === 'ok' ? 'default' : 'secondary'}>{children}</ShadcnBadge>;
 
 function ApprovalQueue({ cell }) {
   const { resolve, act } = useAp();

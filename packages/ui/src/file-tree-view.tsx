@@ -343,7 +343,7 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
       className="file-tree-item">
       <div className="flex items-center gap-1">
         {folder ? <CollapsibleTrigger render={button} /> : button}
-        {status?.kind === 'pending' && <LoaderCircle data-upload-spinner aria-hidden="true" />}
+        {status?.kind === 'pending' && <LoaderCircle data-upload-spinner className="animate-spin motion-reduce:animate-none" aria-hidden="true" />}
         {status?.kind === 'failed' && <Button type="button" variant="ghost" data-upload-retry aria-label={status.retryLabel} onClick={status.retry}>{status.retryLabel}</Button>}
         {!folder && !temporary && !status && <FileActions Actions={Actions} controller={controller} entry={entry} labels={labels}
           onOpen={onOpen ? () => onOpen(entry.path) : undefined} onHistory={history ? () => setHistoryPath(entry.path) : undefined} onError={setUploadError} />}

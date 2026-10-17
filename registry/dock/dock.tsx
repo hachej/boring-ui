@@ -247,8 +247,8 @@ export function Dock({ id, side, children, defaultWidth = 400, minWidth = 280, f
       placement === 'floating' && 'w-0 flex-none overflow-visible', placement === 'sheet' && 'fixed inset-0 z-50 bg-background text-foreground', hidden && 'hidden',
       dragging && '[&_iframe]:pointer-events-none select-none', className)}>
     {typeof children === 'function' ? children(api) : children}
-    {hint && <div role="status" data-testid={`dock-hint-${id}`} className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-background/75 p-4 backdrop-blur-[2px]">
-      <span className="rounded-full border border-border bg-popover px-4 py-2 text-center text-sm font-medium text-popover-foreground shadow-lg">
+    {hint && <div role="status" data-testid={`dock-hint-${id}`} className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-background/75 p-4">
+      <span className="text-sm font-medium text-foreground">
         {floatable ? labels?.floatHint ?? 'Release to float' : labels?.closeHint ?? 'Release to close'}</span>
     </div>}
   </section>;

@@ -29,7 +29,8 @@ const read = async (provider = files, selected = target) => { const result = awa
 const doc = async () => JSON.parse(new TextDecoder().decode((await read()).bytes));
 const run = body => browser.evaluate(`(async () => { const j = window.taskList; ${body} })()`);
 const button = label => `[...document.querySelector('[data-boring="task-list-viewer"]').querySelectorAll('button')].find(button => button.textContent === ${JSON.stringify(label)})`;
-const check = () => browser.click('document.querySelector("[data-boring=task-list-viewer] input[type=checkbox]")');
+// A real click on the row's label text: it activates the host Checkbox (this fixture page loads no Tailwind, so the box itself has no size).
+const check = () => browser.click('document.querySelector("[data-boring=task-list-viewer] li label")');
 const settled = kind => browser.until(`task save ${kind}`, `window.taskList.state().save.kind === 'settled' && window.taskList.state().save.result.kind === ${JSON.stringify(kind)}`);
 const step = async (name, action) => { const item = { name, status: 'running' }; report.steps.push(item); try { await action(); item.status = 'passed'; } catch (error) { item.status = 'failed'; item.error = String(error); throw error; } };
 const native = async args => { const id = await admitDocumentTool(conversation, args, 'edit_task_list'); const outcome = await toolResultText(harness, conversation, id); const result = JSON.parse(outcome.text); report.native.push({ id, result }); return result; };
@@ -82,7 +83,7 @@ try {
     const before = await read(); await check(); assert.equal(writes, 0); assert.deepEqual(await read(), before);
     await browser.click(button('Save')); await settled('saved'); assert.equal(writes, 1); assert.equal((await doc()).items[0].completed, true);
     const receipt = await run('return j.state().save.result.receipt;'); assert.deepEqual((await files.reconciliation.lookup(receipt.operationId, identity)).receipt, receipt);
-    await browser.reload(); await browser.until('reloaded saved checkbox', 'window.taskList?.fixture && document.querySelector("[data-boring=task-list-viewer] input[type=checkbox]").checked');
+    await browser.reload(); await browser.until('reloaded saved checkbox', 'window.taskList?.fixture && document.querySelector("[data-boring=task-list-viewer] [role=checkbox]").getAttribute("aria-checked") === "true"');
   });
   await step('native concurrent save cannot overwrite or absorb human dirty draft', async () => {
     await check(); const draft = await run('return j.state().text;');
@@ -103,7 +104,7 @@ try {
     await browser.click(button('Reconcile')); await settled('saved'); assert.equal(writes, count); assert.equal((await doc()).items[0].completed, true);
   });
   await step('readonly and stale target refuse local changes', async () => {
-    await run('await j.mount(true);'); assert.equal(await run('return document.querySelector("[data-boring=task-list-viewer] input[type=checkbox]").disabled;'), true);
+    await run('await j.mount(true);'); assert.equal(await run('return document.querySelector("[data-boring=task-list-viewer] [role=checkbox]").getAttribute("aria-disabled") === "true";'), true);
     assert.equal(await run('return j.fixture.controller.actions.edit(j.fixture.controller.actions.selection(), [{kind:"remove",id:"one"}]).kind;'), 'denied');
     await run('await j.mount(); const old=j.fixture.controller.actions.selection(); j.fixture.controller.actions.edit(old,[{kind:"set-completed",id:"one",completed:false}]); return j.fixture.controller.actions.edit(old,[{kind:"remove",id:"one"}]).kind;').then(value => assert.equal(value, 'stale'));
   });

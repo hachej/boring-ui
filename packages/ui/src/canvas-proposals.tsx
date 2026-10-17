@@ -6,6 +6,7 @@ import type { Editor } from '@tldraw/editor';
 import type { CanvasController, CanvasProposal, CanvasState } from './canvas.js';
 import type { SaveResult } from './resources.js';
 import { sameBase } from './text-buffer.js';
+import type { ViewerComponents } from './viewer-components.js';
 
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -41,7 +42,8 @@ function ProposalChanges({ proposal }: { readonly proposal: CanvasProposal }) {
   </details>;
 }
 
-export function CanvasProposals({ controller, state, editor, busy, run }: {
+export function CanvasProposals({ components, controller, state, editor, busy, run }: {
+  readonly components?: ViewerComponents | undefined;
   readonly controller: CanvasController;
   readonly state: CanvasState;
   readonly editor: Editor | null;
@@ -51,6 +53,7 @@ export function CanvasProposals({ controller, state, editor, busy, run }: {
   const nativeReadOnly = useValue('canvas proposal readonly', () => !editor || editor.isDisposed || editor.getIsReadonly(), [editor]);
   const blocked = busy || nativeReadOnly || state.readOnly || state.lifecycle !== 'active' || state.problem !== null
     || state.save.kind === 'pending' || (state.save.kind === 'settled' && state.save.result.kind === 'unknown');
+  const Control = components?.button ?? 'button';
   if (!state.proposals.length) return null;
   return <aside aria-label="Canvas proposals">
     {state.proposals.map(proposal => {
@@ -59,11 +62,11 @@ export function CanvasProposals({ controller, state, editor, busy, run }: {
         <h3>{proposal.summary || 'Canvas change proposal'}</h3>
         <ProposalChanges proposal={proposal} />
         {proposal.adopted ? <p>Applied locally. Publication status is shown above.</p> : stale ? <p>Canvas changed since this proposal.</p> : null}
-        {!proposal.adopted && <button type="button" disabled={blocked || stale} onClick={() => {
+        {!proposal.adopted && <Control type="button" disabled={blocked || stale} onClick={() => {
           if (!editor || editor.isDisposed || editor.getIsReadonly()) return;
           void run(() => controller.actions.accept(proposal.id));
-        }}>Accept and save</button>}
-        <button type="button" disabled={busy || state.lifecycle !== 'active'} onClick={() => controller.actions.reject(proposal.id)}>Dismiss</button>
+        }}>Accept and save</Control>}
+        <Control type="button" disabled={busy || state.lifecycle !== 'active'} onClick={() => controller.actions.reject(proposal.id)}>Dismiss</Control>
       </article>;
     })}
   </aside>;

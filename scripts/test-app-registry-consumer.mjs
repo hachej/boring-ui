@@ -128,7 +128,7 @@ async function testStyle(style) {
       assert.ok(inputs.some(path => path.endsWith(`src/components/${file}`)), `the bundle uses the CLI-installed ${file}`);
     assert.deepEqual(inputs.filter(path => /@hachej\/boring-agent|pi-durable\/dist\/(storage|env)|sqlite|node:|tldraw/.test(path)), [], 'browser bundle holds no agent, storage, Node or canvas code');
     // Keep the DOM setup outside the component bundle: public Base UI modules must initialize in that DOM realm.
-    writeFileSync(join(directory, 'presentation-components.tsx'), "export { ViewerMenu, ViewerVersions } from './src/components/viewers/menu';\nexport { ConversationFiles } from './src/components/pi-chat/conversation-files';\nexport { FileTree } from './src/components/file-tree/file-tree';\n");
+    writeFileSync(join(directory, 'presentation-components.tsx'), "export { ViewerActions, ViewerVersions } from './src/components/viewers/menu';\nexport { ConversationFiles } from './src/components/pi-chat/conversation-files';\nexport { FileTree } from './src/components/file-tree/file-tree';\n");
     writeFileSync(join(directory, 'dist/presentation.mjs'), readFileSync(join(root, 'test/fixtures/app-registry-presentation.mjs'), 'utf8'));
     run(process.execPath, ['node_modules/esbuild/bin/esbuild', 'presentation-components.tsx', '--bundle', '--platform=node', '--format=esm', '--packages=external', '--jsx=automatic', '--outfile=dist/presentation-components.mjs', '--alias:@=./src', '--alias:@hachej/boring-ui-kit/file-tree.css=./node_modules/@hachej/boring-ui-kit/styles/file-tree.css'], isolated);
     run(process.execPath, ['dist/presentation.mjs'], isolated);

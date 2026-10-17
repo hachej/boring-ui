@@ -54,9 +54,9 @@ export function InteractiveFrame({ text, sources, reload = 0, title = 'HTML page
   readonly testId?: string;
   readonly children?: ReactNode;
 }) {
-  return <div className="boring-html-run flex min-h-0 flex-1 flex-col bg-white" data-testid={`${testId}-run`}>
+  return <div className="boring-html-run flex min-h-0 flex-1 flex-col" data-testid={`${testId}-run`}>
     <iframe key={reload} title={title} sandbox="allow-scripts" allow="" referrerPolicy="no-referrer" srcDoc={interactiveDocument(text, sources)}
-      data-testid={`${testId}-run-frame`} className="size-full min-h-0 flex-1 border-0 bg-white" />
+      data-testid={`${testId}-run-frame`} className="size-full min-h-0 flex-1" />
     {children}
   </div>;
 }

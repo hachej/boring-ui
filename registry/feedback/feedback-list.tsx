@@ -2,6 +2,8 @@
 // `@hachej/boring-feedback/ui`; an unprotected store is stated above them.
 import type { FeedbackListItem } from '@hachej/boring-feedback/format';
 import { listRows, protectionNotice, type FeedbackProtection } from '@hachej/boring-feedback/ui';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 
 export interface FeedbackListProps {
   readonly items: readonly FeedbackListItem[];
@@ -17,17 +19,17 @@ export interface FeedbackListProps {
 export function FeedbackList({ items, protection, onOpen, activeId, problem, now }: FeedbackListProps) {
   const notice = protectionNotice(protection);
   const rows = listRows(items, now);
-  return <section data-boring="feedback" data-feedback-ignore="" className="boring-feedback-list" aria-label="Feedback" data-testid="feedback-list">
+  return <Card size="sm" role="region" data-boring="feedback" data-feedback-ignore="" className="boring-feedback-list" aria-label="Feedback" data-testid="feedback-list">
     {notice && <p className="boring-feedback-notice" data-testid="feedback-protection">{notice}</p>}
     {problem !== undefined && <p role="alert" className="boring-feedback-warning">{problem}</p>}
     {problem === undefined && rows.length === 0 && <p className="boring-feedback-empty">No feedback yet. Point at something to leave some.</p>}
     <ul>
       {rows.map(row => <li key={row.id}>
-        <button type="button" data-testid="feedback-item" data-id={row.id} aria-current={row.id === activeId ? 'true' : undefined} onClick={() => onOpen(row.id)}>
+        <Button variant="ghost" className="h-auto w-full flex-col items-start" data-testid="feedback-item" data-id={row.id} aria-current={row.id === activeId ? 'true' : undefined} onClick={() => onOpen(row.id)}>
           <span className="boring-feedback-title">{row.title}</span>
           <span className="boring-feedback-meta"><span data-status={row.status}>{row.status}</span> · {row.where} · {row.age}</span>
-        </button>
+        </Button>
       </li>)}
     </ul>
-  </section>;
+  </Card>;
 }

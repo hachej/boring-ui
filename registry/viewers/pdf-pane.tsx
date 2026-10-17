@@ -57,9 +57,9 @@ export function PdfPane({ name, bytes, blob, url: hostUrl, subtitle, status, tar
     onRefresh={onRefresh} onShare={onShare} onDownload={url ? download : undefined} onOpenInNewTab={open} onClose={onClose} controls={controls}>
     <div data-testid={`${testId}-stage`} data-pdf={url ? (canShow ? 'inline' : 'fallback') : 'loading'} className="boring-viewer-stage relative flex min-h-0 flex-1">
       {!url ? <p role="status" className="m-auto p-6 text-sm text-muted-foreground">{labels.loading}</p>
-        : canShow ? <iframe src={fit === 'none' ? url : `${url}#view=${fit === 'page' ? 'Fit' : 'FitH'}`} title={`${downloadName} (PDF)`} data-testid={`${testId}-frame-pdf`} className="size-full min-h-0 flex-1 border-0 bg-background" />
+        : canShow ? <iframe src={fit === 'none' ? url : `${url}#view=${fit === 'page' ? 'Fit' : 'FitH'}`} title={`${downloadName} (PDF)`} data-testid={`${testId}-frame-pdf`} className="size-full min-h-0 flex-1 bg-background" />
           : <div role="alert" data-testid={`${testId}-pdf-fallback`} className="m-auto flex max-w-sm flex-col items-center gap-3 p-6 text-center">
-            <span className="grid size-12 place-items-center rounded-full bg-muted text-muted-foreground"><FileTextIcon className="size-6" aria-hidden="true" /></span>
+            <span className="grid size-12 place-items-center  bg-muted text-muted-foreground"><FileTextIcon className="size-6" aria-hidden="true" /></span>
             <p className="m-0 text-sm font-medium">{labels.pdfUnsupported}</p>
             <p className="m-0 text-xs text-muted-foreground">{labels.pdfHint(downloadName, Boolean(open))}</p>
             <div className="flex flex-wrap justify-center gap-2">
