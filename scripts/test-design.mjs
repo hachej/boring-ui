@@ -114,6 +114,8 @@ export async function testDesign({ evidence = process.env.DESIGN_EVIDENCE } = {}
         if (surface === 'choices') {
           const bounds = await browser.evaluate('[...document.querySelectorAll("[data-testid=question-option], [data-testid=suggestion]")].map(button => ({ width: button.clientWidth, scroll: button.scrollWidth, height: button.clientHeight, content: button.scrollHeight }))');
           assert.ok(bounds.length >= 4 && bounds.every(box => box.scroll <= box.width + 1 && box.content <= box.height + 1), `${prefix}: multiline choices must fit their activation boxes`);
+          const aligns = await browser.evaluate('[...document.querySelectorAll("[data-testid=question-text], [data-testid=question-option]")].map(element => getComputedStyle(element).textAlign)');
+          assert.ok(aligns.length >= 3 && aligns.every(align => align === 'start' || align === 'left'), `${prefix}: question card content must be start-aligned, got ${aligns}`);
           await browser.click(q('[data-testid=question-option]'));
           await browser.until('fictional question callback', `${q('[data-testid=question-card]')}.dataset.state === 'sent'`);
         } else if (surface === 'notification') {

@@ -27,7 +27,7 @@ export function CodeBlock({ code, language, onCopy }: { readonly code: string; r
   const { labels } = useChatText();
   const label = language?.trim().split(/\s+/)[0]?.slice(0, 24);
   // shadcn's own Code Block installs a syntax highlighter (shiki) this block never uses, so the frame is an outline Item.
-  return <Item variant="outline" size="xs" data-testid="code-block" className="my-3 flex-col items-stretch">
+  return <Item variant="outline" size="xs" data-testid="code-block" className="my-3 flex-col items-stretch text-start">
     <ItemHeader>
       <ItemTitle data-testid="code-language" className="lowercase">{label || 'text'}</ItemTitle>
       <CopyButton text={code} label={labels.copyCode} {...(onCopy ? { onCopy } : {})} />

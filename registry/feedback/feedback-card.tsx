@@ -200,7 +200,7 @@ function ClampedTitle({ text: title }: { readonly text: string }) {
 
 function Offer({ view, onShowFeedback, onHideFeedback }: { readonly view: Extract<FeedbackResultView, { kind: 'offer' }>; readonly onShowFeedback: FeedbackCardConfig['onShowFeedback']; readonly onHideFeedback: FeedbackCardConfig['onHideFeedback'] }) {
   const [outcome, setOutcome] = useState<FeedbackShowOutcome | undefined>(onShowFeedback ? undefined : NO_PAGE);
-  return <Item variant="outline" size="sm" render={<section />} data-testid="feedback-card" data-kind="offer" data-feedback-id={view.id} data-outcome={outcome?.kind} aria-label="Feedback offer" className="my-2 max-w-md">
+  return <Item variant="outline" size="sm" render={<section />} data-testid="feedback-card" data-kind="offer" data-feedback-id={view.id} data-outcome={outcome?.kind} aria-label="Feedback offer" className="my-2 max-w-md text-start">
     <ItemMedia variant="icon"><LocateFixedIcon aria-hidden="true" /></ItemMedia>
     <ItemContent className="min-w-0 basis-0">
       <ItemDescription>Feedback {view.id}</ItemDescription>
@@ -212,7 +212,7 @@ function Offer({ view, onShowFeedback, onHideFeedback }: { readonly view: Extrac
 }
 
 function List({ view, onShowFeedback, onHideFeedback }: { readonly view: Extract<FeedbackResultView, { kind: 'list' }>; readonly onShowFeedback: FeedbackCardConfig['onShowFeedback']; readonly onHideFeedback: FeedbackCardConfig['onHideFeedback'] }) {
-  return <Item variant="outline" size="sm" render={<section />} data-testid="feedback-card" data-kind="list" aria-label="Feedback" className="my-2 max-w-xl flex-col items-stretch">
+  return <Item variant="outline" size="sm" render={<section />} data-testid="feedback-card" data-kind="list" aria-label="Feedback" className="my-2 max-w-xl flex-col items-stretch text-start">
     <ItemHeader>
       <ItemTitle><MessageSquareTextIcon className="size-4" aria-hidden="true" />Feedback · {view.items.length}{view.more ? '+' : ''}</ItemTitle>
       {view.unprotected && <Badge variant="secondary" data-testid="feedback-unprotected"><ShieldAlertIcon aria-hidden="true" />Unprotected store</Badge>}
@@ -240,7 +240,7 @@ function List({ view, onShowFeedback, onHideFeedback }: { readonly view: Extract
 export function FeedbackCard({ view, onShowFeedback, onHideFeedback }: { readonly view: FeedbackResultView; readonly onShowFeedback?: FeedbackCardConfig['onShowFeedback']; readonly onHideFeedback?: FeedbackCardConfig['onHideFeedback'] }) {
   if (view.kind === 'list') return <List view={view} onShowFeedback={onShowFeedback} onHideFeedback={onHideFeedback} />;
   if (view.kind === 'offer') return <Offer view={view} onShowFeedback={onShowFeedback} onHideFeedback={onHideFeedback} />;
-  return <Item variant="muted" size="sm" render={<section />} data-testid="feedback-card" data-kind="refused" data-outcome={view.outcome} aria-label="Feedback" className="my-2 max-w-md">
+  return <Item variant="muted" size="sm" render={<section />} data-testid="feedback-card" data-kind="refused" data-outcome={view.outcome} aria-label="Feedback" className="my-2 max-w-md text-start">
     <ItemContent className="min-w-0 basis-0"><ItemDescription className="line-clamp-none">Feedback not shown ({view.outcome}){view.reason ? `: ${view.reason}` : ''}</ItemDescription></ItemContent></Item>;
 }
 

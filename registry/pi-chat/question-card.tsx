@@ -76,7 +76,7 @@ export function QuestionCard({ call, result, answer, questionId, live = false }:
 
   const unavailable = !answer || !questionId || busy;
 
-  return <Item variant="outline" size="sm" render={<section />} data-testid="question-card" data-state={state} data-call-id={call.id} aria-label={labels.question} className="my-2">
+  return <Item variant="outline" size="sm" render={<section />} data-testid="question-card" data-state={state} data-call-id={call.id} aria-label={labels.question} className="my-2 text-start">
     <ItemMedia variant="icon">
       {state === 'answered' || state === 'sent' ? <CheckIcon aria-hidden="true" /> : <MessageCircleQuestionIcon aria-hidden="true" />}
     </ItemMedia>
@@ -88,9 +88,9 @@ export function QuestionCard({ call, result, answer, questionId, live = false }:
       {state === 'failed' && settled && 'failure' in settled && <p role="alert" className="m-0 text-sm text-destructive">{settled.failure}</p>}
     </ItemContent>
     {open && <ItemFooter className="flex-col items-stretch">
-      {question.options.length > 0 && <div role="group" aria-label={labels.answerOptions} className="flex flex-wrap gap-2">
+      {question.options.length > 0 && <div role="group" aria-label={labels.answerOptions} className="flex flex-col items-stretch gap-2">
         {question.options.map(option => <Button key={option} variant="outline" data-testid="question-option" data-option={option} disabled={unavailable}
-          onClick={() => { void submit(option); }} className="h-auto max-w-full whitespace-normal">{option}</Button>)}
+          onClick={() => { void submit(option); }} className="h-auto w-full justify-start whitespace-normal text-start">{option}</Button>)}
       </div>}
       {question.allowFreeText && <form onSubmit={onSubmit} className="flex gap-2">
         <Input data-testid="question-input" value={text} maxLength={2000} disabled={unavailable} placeholder={question.options.length ? labels.ownAnswer : labels.typeAnswer}
