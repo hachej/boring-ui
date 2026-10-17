@@ -30,7 +30,7 @@ export function ArtifactCard({ artifact, pending, title, open = false, onOpen }:
   if (!artifact) {
     return <Item variant="outline" size="sm" data-testid="artifact-card" data-state={pending ?? 'presenting'} role="status" aria-busy="true" className="my-2">
       <ItemMedia variant="icon"><FileTextIcon aria-hidden="true" /></ItemMedia>
-      <ItemContent>
+      <ItemContent className="min-w-0 basis-0">
         <ItemTitle data-testid="artifact-title"><Shimmer>{title ?? labels.artifact}</Shimmer></ItemTitle>
         <ItemDescription><Shimmer>{labels.opening}</Shimmer></ItemDescription>
       </ItemContent>

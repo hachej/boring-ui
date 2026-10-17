@@ -80,7 +80,7 @@ export function QuestionCard({ call, result, answer, questionId, live = false }:
     <ItemMedia variant="icon">
       {state === 'answered' || state === 'sent' ? <CheckIcon aria-hidden="true" /> : <MessageCircleQuestionIcon aria-hidden="true" />}
     </ItemMedia>
-    <ItemContent>
+    <ItemContent className="min-w-0 basis-0">
       <ItemDescription className="line-clamp-none"><Badge variant={open ? 'outline' : 'secondary'}>{open ? labels.questionForYou : state === 'failed' ? labels.notAnswered : labels.answered}</Badge></ItemDescription>
       <ItemTitle data-testid="question-text" className="line-clamp-none [overflow-wrap:anywhere]">{question.question || labels.askedQuestion}</ItemTitle>
       {(state === 'answered' || state === 'sent') && current !== undefined && <ItemDescription className="line-clamp-none">{labels.yourAnswer} <span data-testid="question-answer" className="font-medium text-foreground [overflow-wrap:anywhere]">{current}</span>

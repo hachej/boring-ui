@@ -81,7 +81,7 @@ export function ApprovalCard({ call, result, answer, questionId, summary, decisi
     <ItemMedia variant="icon">
       {approved ? <CheckIcon aria-hidden="true" /> : denied ? <XIcon aria-hidden="true" /> : <ShieldAlertIcon aria-hidden="true" />}
     </ItemMedia>
-    <ItemContent>
+    <ItemContent className="min-w-0 basis-0">
       <ItemDescription className="line-clamp-none"><Badge variant={open ? 'outline' : denied ? 'destructive' : 'secondary'}>{status}</Badge></ItemDescription>
       {summary && <ItemTitle data-testid="approval-summary" className="line-clamp-none [overflow-wrap:anywhere]">{summary}</ItemTitle>}
       <ItemDescription data-testid="approval-tool" className="line-clamp-none [overflow-wrap:anywhere]">{labels.wantsToRun} <code className="font-mono">{call.name}</code></ItemDescription>

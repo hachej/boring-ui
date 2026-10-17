@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { CheckIcon, CopyIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { CodeBlock as Block, CodeBlockActions, CodeBlockContent, CodeBlockHeader, CodeBlockTitle } from '@/components/ui/code-block';
+import { Item, ItemHeader, ItemTitle } from '@/components/ui/item';
 import { copyText } from '../utils/utils';
 import { useChatText } from './labels';
 
@@ -26,11 +26,12 @@ export function CopyButton({ text, label: given, onCopy, className, iconOnly = f
 export function CodeBlock({ code, language, onCopy }: { readonly code: string; readonly language?: string; readonly onCopy?: (text: string) => Promise<void> }) {
   const { labels } = useChatText();
   const label = language?.trim().split(/\s+/)[0]?.slice(0, 24);
-  return <Block data-testid="code-block" className="my-3">
-    <CodeBlockHeader>
-      <CodeBlockTitle data-testid="code-language" className="lowercase">{label || 'text'}</CodeBlockTitle>
-      <CodeBlockActions><CopyButton text={code} label={labels.copyCode} {...(onCopy ? { onCopy } : {})} /></CodeBlockActions>
-    </CodeBlockHeader>
-    <CodeBlockContent>{code}</CodeBlockContent>
-  </Block>;
+  // shadcn's own Code Block installs a syntax highlighter (shiki) this block never uses, so the frame is an outline Item.
+  return <Item variant="outline" size="xs" data-testid="code-block" className="my-3 flex-col items-stretch">
+    <ItemHeader>
+      <ItemTitle data-testid="code-language" className="lowercase">{label || 'text'}</ItemTitle>
+      <CopyButton text={code} label={labels.copyCode} {...(onCopy ? { onCopy } : {})} />
+    </ItemHeader>
+    <pre className="m-0 overflow-x-auto font-mono text-xs leading-5"><code>{code}</code></pre>
+  </Item>;
 }

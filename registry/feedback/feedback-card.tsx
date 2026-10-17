@@ -202,7 +202,7 @@ function Offer({ view, onShowFeedback, onHideFeedback }: { readonly view: Extrac
   const [outcome, setOutcome] = useState<FeedbackShowOutcome | undefined>(onShowFeedback ? undefined : NO_PAGE);
   return <Item variant="outline" size="sm" render={<section />} data-testid="feedback-card" data-kind="offer" data-feedback-id={view.id} data-outcome={outcome?.kind} aria-label="Feedback offer" className="my-2 max-w-md">
     <ItemMedia variant="icon"><LocateFixedIcon aria-hidden="true" /></ItemMedia>
-    <ItemContent>
+    <ItemContent className="min-w-0 basis-0">
       <ItemDescription>Feedback {view.id}</ItemDescription>
       <ElementLine request={{ id: view.id, anchor: view.anchor, ...(view.note === undefined ? {} : { note: view.note }) }} label={view.fallback}
         onShowFeedback={onShowFeedback} onHideFeedback={onHideFeedback} initial={onShowFeedback ? undefined : NO_PAGE} onOutcome={next => setOutcome(next)} />
@@ -220,7 +220,7 @@ function List({ view, onShowFeedback, onHideFeedback }: { readonly view: Extract
     {view.items.length === 0 && <ItemDescription>No feedback.</ItemDescription>}
     <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
       {view.items.map(item => <Item key={item.id} variant="muted" size="xs" render={<li />} data-testid="feedback-item" data-feedback-id={item.id} data-status={item.status}>
-        <ItemContent>
+        <ItemContent className="min-w-0 basis-0">
           <ClampedTitle text={item.title} />
           <ItemDescription data-testid="feedback-meta" className="line-clamp-none">{[item.status, item.author, item.age, item.unavailable ? 'unavailable' : ''].filter(Boolean).join(' · ')}</ItemDescription>
           {item.anchors.length > 0 && <ul className="m-0 list-none p-0">
@@ -241,7 +241,7 @@ export function FeedbackCard({ view, onShowFeedback, onHideFeedback }: { readonl
   if (view.kind === 'list') return <List view={view} onShowFeedback={onShowFeedback} onHideFeedback={onHideFeedback} />;
   if (view.kind === 'offer') return <Offer view={view} onShowFeedback={onShowFeedback} onHideFeedback={onHideFeedback} />;
   return <Item variant="muted" size="sm" render={<section />} data-testid="feedback-card" data-kind="refused" data-outcome={view.outcome} aria-label="Feedback" className="my-2 max-w-md">
-    <ItemContent><ItemDescription className="line-clamp-none">Feedback not shown ({view.outcome}){view.reason ? `: ${view.reason}` : ''}</ItemDescription></ItemContent></Item>;
+    <ItemContent className="min-w-0 basis-0"><ItemDescription className="line-clamp-none">Feedback not shown ({view.outcome}){view.reason ? `: ${view.reason}` : ''}</ItemDescription></ItemContent></Item>;
 }
 
 /** An `@<root><id>.md` mention of a report in a sent message. */
