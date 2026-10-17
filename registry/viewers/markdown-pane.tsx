@@ -103,7 +103,7 @@ export function MarkdownPane({ controller, title: givenTitle, labels: ownLabels,
     onRefresh={onRefresh ?? (() => controller.actions.refresh())} onShare={onShare} onCopy={() => copyText(controller.getSnapshot().text)}
     onDownload={() => downloadFile(filename, controller.getSnapshot().text, 'text/markdown;charset=utf-8')} onOpenInNewTab={onOpenInNewTab} onClose={close}
     controls={<>
-      {mode === 'rich' && <Toggle size="sm" className="max-[640px]:hidden" aria-label="Pin formatting toolbar" title="Pin formatting toolbar" pressed={toolbar === 'pinned'}
+      {mode === 'rich' && <Toggle size="sm" className="max-[640px]:hidden pointer-coarse:hidden" aria-label="Pin formatting toolbar" title="Pin formatting toolbar" pressed={toolbar === 'pinned'}
         onPressedChange={pressed => setToolbar(pressed ? 'pinned' : 'selection')}>Aa</Toggle>}
       <ViewerToggle label={labels.editorMode} value={mode} onChange={setRequested} options={[
         { id: 'rich', label: labels.richText, text: labels.rich, icon: <PencilLineIcon data-icon="inline-start" aria-hidden="true" />, disabled: !safety.safe, testId: `${testId}-mode-rich` },

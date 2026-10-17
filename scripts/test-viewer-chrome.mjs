@@ -39,7 +39,9 @@ try {
       if (surface === 'selection' || surface === 'markdown' && width === 390) {
         await browser.evaluate(`(() => { const editor = ${q('[contenteditable=true]')}; editor.focus(); const range = document.createRange(); range.selectNodeContents(editor.querySelector('p')); const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range); document.dispatchEvent(new Event('selectionchange')); })()`);
         // On a phone the focused editor docks the full formatting bar above the keyboard; on a desktop the selection opens the bubble.
-        await browser.until('native formatting toolbar', width === 390 ? `!!${q('[data-testid=markdown-dock] [data-slot=toggle]')} && !!${q('[data-testid=markdown-dock] [data-slot=separator]')}` : `!!${q('.boring-markdown-bubble [data-slot=toggle]')}`, 10000);
+        await browser.until('native formatting toolbar', width === 390 ? `!!${q('.boring-markdown-toolbar [data-slot=toggle]')} && !!${q('.boring-markdown-toolbar [data-slot=separator]')}` : `!!${q('.boring-markdown-bubble [data-slot=toggle]')}`, 10000);
+        // A phone keeps the top row: no keyboard-docked bottom bar and no selection bubble.
+        if (width === 390) assert.equal(await browser.evaluate(`!!document.querySelector('[data-testid=markdown-dock], .boring-markdown-bubble')`), false, `${surface}: phone has only the top formatting row`);
       }
       if (surface === 'manual') {
         await browser.click(q('[data-testid=fixture-viewer-more]'));
@@ -48,7 +50,7 @@ try {
         assert.equal(await browser.evaluate(`${q('[data-testid=fixture-viewer-manual-copy-text]')}.value`), '# Cedar Works\n\nA fictional picnic plan.\n\n- Bring a blanket\n- Pack some sandwiches\n');
       }
       await browser.evaluate(`Promise.all(document.getAnimations().filter(animation => Number.isFinite(animation.effect?.getComputedTiming().endTime)).map(animation => animation.finished.catch(() => {})))`);
-      const rawControls = await browser.evaluate(`Array.from(document.querySelectorAll('[data-testid=viewer-chrome-fixture] button, [data-testid=viewer-chrome-fixture] input, [data-testid=viewer-chrome-fixture] textarea, [data-testid=markdown-dock] button, .boring-markdown-bubble button')).filter(element => element.checkVisibility() && !element.dataset.slot).map(element => element.outerHTML)`);
+      const rawControls = await browser.evaluate(`Array.from(document.querySelectorAll('[data-testid=viewer-chrome-fixture] button, [data-testid=viewer-chrome-fixture] input, [data-testid=viewer-chrome-fixture] textarea, .boring-markdown-bubble button')).filter(element => element.checkVisibility() && !element.dataset.slot).map(element => element.outerHTML)`);
       assert.deepEqual(rawControls, [], `${surface}: every mounted viewer control comes from shadcn`);
       const file = `viewer-${theme}-${mode}-${width}-${surface}.png`;
       await browser.screenshot(file); screenshots.push(file);

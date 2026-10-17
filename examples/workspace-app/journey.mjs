@@ -400,7 +400,7 @@ try {
     await browser.emulate('desktop');
   });
 
-  await step('phone: the formatting bar docks inside the viewport while editing and hides when focus leaves', async () => {
+  await step('phone: the same top formatting row as desktop while editing; bold applies to a selection; no bottom bar, no bubble', async () => {
     await browser.emulate('phone');
     await browser.click(q('[data-testid=sessions-toggle]'));
     await browser.until('navigation before rich edit', `!!${q('[data-testid=workspace-library]')}`, 5000);
@@ -410,22 +410,24 @@ try {
     await browser.click(item);
     const surface = q('[data-testid=file-viewer] .boring-markdown-content');
     await browser.until('rich phone surface', `!!${surface}`, 10000);
-    const dock = q('[data-testid=markdown-dock]');
-    assert.equal(await browser.evaluate(`!!${dock}`), false, 'reading shows no formatting bar');
-    await browser.screenshot('mobile-toolbar-phone-reading.png');
-    await browser.tap(surface);
-    await browser.until('formatting bar while editing', `!!${dock}`, 5000);
-    const geometry = await browser.evaluate(`(() => { const box = ${dock}.getBoundingClientRect(); const tool = ${dock}.querySelector('[aria-label=Bold]').getBoundingClientRect(); const viewport = window.visualViewport; const cs = getComputedStyle(${dock}); return { pos: cs.position, bot: cs.bottom, cls: ${dock}.className, bottom: box.bottom, top: box.top, left: box.left, right: box.right, tool: Math.min(tool.width, tool.height), height: viewport.height + viewport.offsetTop, width: innerWidth }; })()`);
-    assert.ok(geometry.top >= 0 && geometry.bottom <= geometry.height + 1 && geometry.left >= 0 && geometry.right <= geometry.width + 1, 'the bar is inside the visible viewport ' + JSON.stringify(geometry));
+    const bar = q('[data-testid=file-viewer] .boring-markdown-toolbar[role=toolbar]');
+    await browser.until('top formatting row in edit mode, before any tap', `!!${bar} && ${bar}.checkVisibility()`, 5000);
+    const geometry = await browser.evaluate(`(() => { const box = ${bar}.getBoundingClientRect(), header = ${q('[data-testid=file-viewer] [data-testid=viewer-bar]')}.getBoundingClientRect(), surfaceBox = ${surface}.getBoundingClientRect(), tool = ${bar}.querySelector('[aria-label=Bold]').getBoundingClientRect(); return { top: box.top, bottom: box.bottom, headerBottom: header.bottom, surfaceTop: surfaceBox.top, left: box.left, right: box.right, width: innerWidth, tool: Math.min(tool.width, tool.height), rows: new Set([...${bar}.querySelectorAll('[data-slot=toggle], [data-slot=button]')].map(e => Math.round(e.getBoundingClientRect().top))).size }; })()`);
+    assert.ok(geometry.top >= geometry.headerBottom - 1 && geometry.bottom <= geometry.surfaceTop + 1, 'the row sits under the viewer header, above the text ' + JSON.stringify(geometry));
+    assert.ok(geometry.left >= 0 && geometry.right <= geometry.width + 1 && geometry.rows === 1, 'one row inside the viewport ' + JSON.stringify(geometry));
     assert.ok(geometry.tool >= 44, 'tools are 44px touch targets');
-    assert.equal(await browser.evaluate(`${dock}.scrollWidth > ${dock}.clientWidth`), true, 'the row scrolls horizontally');
-    for (const scheme of ['light', 'dark']) {
-      await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }); await pause(200);
-      await browser.screenshot(`mobile-toolbar-phone-editing-${scheme}.png`);
-    }
-    await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] });
-    await browser.evaluate(`document.activeElement.blur()`);
-    await browser.until('formatting bar hides when focus leaves', `!${dock}`, 5000);
+    assert.equal(await browser.evaluate(`${bar}.scrollWidth > ${bar}.clientWidth`), true, 'the row scrolls horizontally');
+    await browser.tap(surface);
+    await browser.evaluate(`(() => { const p = ${surface}.querySelector('p') ?? ${surface}.querySelector('li'); const range = document.createRange(); range.selectNodeContents(p); const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range); document.dispatchEvent(new Event('selectionchange')); })()`);
+    await pause(200);
+    assert.equal(await browser.evaluate(`!!document.querySelector('[data-testid=markdown-dock], .boring-markdown-bubble')`), false, 'no bottom bar and no selection bubble on a phone');
+    await browser.screenshot('mobile-toolbar-phone-editing.png');
+    await browser.tap(`${bar}.querySelector('[aria-label=Bold]')`);
+    await browser.until('bold applied to the selection', `!!${surface}.querySelector('strong')`, 5000);
+    await browser.tap(`${bar}.querySelector('[aria-label=Bold]')`);
+    await browser.until('bold removed again, leaving the fixture text as it was', `!${surface}.querySelector('strong')`, 5000);
+    await browser.evaluate(`document.activeElement?.blur()`);
+    assert.equal(await browser.evaluate(`!!${bar}`), true, 'the row stays when focus leaves');
     await browser.click(q('[data-testid=file-viewer] [data-testid=viewer-close]'));
     await browser.until('file viewer closed', `!${q('[data-testid=file-viewer]')}`, 5000);
     await browser.emulate('desktop');

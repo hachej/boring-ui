@@ -9,7 +9,6 @@ import type { SaveResult } from './resources.js';
 export type { MarkdownAutosave, MarkdownFlush } from './markdown-autosave.js';
 
 import { Fragment, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { createPortal } from 'react-dom';
 import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react/menus';
 import type { SelectionBookmark } from '@tiptap/pm/state';
@@ -49,7 +48,7 @@ export interface MarkdownEditorProps {
   /** Registers the async navigation barrier. Null while autosave is disabled or the editor is unmounted. */
   readonly onAutosaveChange?: (flush: MarkdownFlush | null) => void;
   readonly onSaveResult?: (result: SaveResult) => void;
-  /** The complete formatting row is pinned by default on desktop; phones show it above the keyboard while editing, plus the selection bubble. */
+  /** The complete formatting row is pinned by default on desktop; phones and coarse pointers always show it while editing, with no selection bubble. */
   readonly formattingToolbar?: 'selection' | 'pinned';
 }
 
@@ -62,7 +61,8 @@ export function MarkdownEditor(props: MarkdownEditorProps) {
   return <MarkdownEditorSession key={mount.sequence} {...props} activeController={active} />;
 }
 
-const PHONE_QUERY = '(max-width: 640px)';
+/** Phones and other coarse pointers: the top formatting row is always shown while editing and there is no selection bubble. */
+const PHONE_QUERY = '(max-width: 640px), (pointer: coarse)';
 const phoneSnapshot = () => globalThis.matchMedia?.(PHONE_QUERY).matches === true;
 const desktopSnapshot = () => false;
 const subscribePhone = (notify: () => void) => {
@@ -73,34 +73,6 @@ const subscribePhone = (notify: () => void) => {
 const BUBBLE_OPTIONS = { strategy: 'fixed', placement: 'top', offset: 8, shift: { padding: 12 }, flip: true } as const;
 const bubbleContainer = () => document.body;
 
-function useEditorFocus(editor: ReturnType<typeof useEditor> | null): boolean {
-  const [focused, setFocused] = useState(false);
-  useEffect(() => {
-    if (!editor || editor.isDestroyed) return;
-    const update = () => setFocused(editor.isFocused);
-    update();
-    editor.on('focus', update);
-    editor.on('blur', update);
-    return () => { editor.off('focus', update); editor.off('blur', update); };
-  }, [editor]);
-  return focused;
-}
-
-/** Height the soft keyboard covers at the bottom of the layout viewport, so a fixed bar can sit directly above it. */
-function useKeyboardInset(active: boolean): number {
-  const [inset, setInset] = useState(0);
-  useEffect(() => {
-    const viewport = globalThis.visualViewport;
-    if (!active || !viewport) { setInset(0); return; }
-    const update = () => setInset(Math.max(0, Math.round(globalThis.innerHeight - viewport.offsetTop - viewport.height)));
-    update();
-    viewport.addEventListener('resize', update);
-    viewport.addEventListener('scroll', update);
-    return () => { viewport.removeEventListener('resize', update); viewport.removeEventListener('scroll', update); };
-  }, [active]);
-  return inset;
-}
-
 function MarkdownEditorSession({ components, controller, title = 'Document', initialMode = 'rich', placeholder = 'Start writing', className, onMountedTools, header = true, showOutline = header, mode: controlledMode, onModeChange, onRichSafety, resolveImage, formattingToolbar = 'pinned', autosave = true, onAutosaveChange, onSaveResult, activeController: active }: MarkdownEditorProps & { readonly activeController: { readonly current: MarkdownController } }) {
   const Control = components?.button ?? 'button';
   const Bubble = components?.bubble ?? Fragment;
@@ -109,7 +81,7 @@ function MarkdownEditorSession({ components, controller, title = 'Document', ini
   const phone = useSyncExternalStore(subscribePhone, phoneSnapshot, desktopSnapshot);
   const [pinned, setPinned] = useState(formattingToolbar === 'pinned');
   useEffect(() => { setPinned(formattingToolbar === 'pinned'); }, [formattingToolbar]);
-  const showPinned = pinned && !phone;
+  const showPinned = phone || pinned;
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const projected = useRef<string | null>(null);
   const emitted = useRef<string | null>(null);
@@ -256,10 +228,6 @@ function MarkdownEditorSession({ components, controller, title = 'Document', ini
   };
   const richOnly = unavailable || mode === 'source' || !editor;
   const [linkDraft, setLinkDraft] = useState<string | null>(null);
-  // On a phone the full formatting row docks above the soft keyboard while the rich surface has focus.
-  const editing = useEditorFocus(editor);
-  const dockVisible = phone && !unavailable && !!editor && (editing || linkDraft !== null);
-  const keyboardInset = useKeyboardInset(dockVisible);
   const command = (operation: () => unknown) => { interaction.current = true; try { operation(); } finally { interaction.current = false; } };
   const tool = (label: string, icon: MarkdownIconName, pressed: boolean | undefined, operation: () => unknown, extra: { disabled?: boolean } = {}) => (
     <Control type="button" className="boring-markdown-tool" aria-label={label} title={label} aria-pressed={pressed === true} data-active={pressed === true || undefined}
@@ -302,7 +270,7 @@ function MarkdownEditorSession({ components, controller, title = 'Document', ini
       {tool('Delete table', 'Trash', false, () => chain().deleteTable().run())}</>}
   </>;
 
-  return <section className={className} data-boring="markdown-editor" data-mode={mode} data-dock={(mode === 'rich' && dockVisible) || undefined} data-dirty={state.dirty || undefined}
+  return <section className={className} data-boring="markdown-editor" data-mode={mode} data-dirty={state.dirty || undefined}
     onBlurCapture={event => { if (saving.enabled && !event.currentTarget.contains(event.relatedTarget)) void saving.immediate(); }}
     onKeyDownCapture={event => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') { event.preventDefault(); if (!unavailable && !uncertain) save(); }
@@ -316,10 +284,9 @@ function MarkdownEditorSession({ components, controller, title = 'Document', ini
       {!saving.enabled && <Control type="button" disabled={unavailable || !state.dirty || pending || uncertain} onClick={save}>Save</Control>}
     </header>}
     <TextDraftControls components={components} recovery={state.recovery} actions={controller.actions} readOnly={state.readOnly} blocked={state.lifecycle !== 'active' || state.save.kind === 'pending' || (state.save.kind === 'settled' && state.save.result.kind === 'unknown')} />
-    {mode === 'rich' && showPinned && <div role="toolbar" aria-label="Text formatting" className="boring-markdown-toolbar">{formatTools}</div>}
-    {mode === 'rich' && dockVisible && createPortal(<div role="toolbar" aria-label="Text formatting" className="boring-viewer boring-markdown-dock" data-testid="markdown-dock" data-keyboard={keyboardInset > 0 || undefined}
-      style={{ bottom: keyboardInset }} onPointerDown={event => event.preventDefault()}>{Rule && <Rule className="boring-markdown-dock-rule" />}{formatTools}</div>, document.body)}
-    {mode === 'rich' && editor && !showPinned && !unavailable && <BubbleMenu editor={editor} updateDelay={0} options={BUBBLE_OPTIONS} appendTo={bubbleContainer}
+    {mode === 'rich' && showPinned && !(phone && unavailable) && <div role="toolbar" aria-label="Text formatting" className="boring-markdown-toolbar"
+      onPointerDown={phone ? event => { if (event.target !== event.currentTarget) event.preventDefault(); } : undefined}>{formatTools}</div>}
+    {mode === 'rich' && editor && !showPinned && !phone && !unavailable && <BubbleMenu editor={editor} updateDelay={0} options={BUBBLE_OPTIONS} appendTo={bubbleContainer}
       role="toolbar" aria-label="Text formatting" className="boring-viewer boring-markdown-bubble">
       <Bubble>
       {tool('Bold', 'Bold', marks?.bold, () => chain().toggleBold().run())}
