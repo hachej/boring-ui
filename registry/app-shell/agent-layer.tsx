@@ -381,7 +381,7 @@ function TalkButton({ text }: { readonly text: AppShellText }) {
   return <Button variant="ghost" size="icon" data-testid="agent-talk" data-state={voice.phase} disabled={busy} aria-label={text.holdToTalk} title={text.holdToTalk}
     onPointerDown={down} onPointerUp={up} onPointerCancel={up} onPointerMove={move} onContextMenu={event => event.preventDefault()}
     className="touch-none">
-    {busy ? <Loader2Icon data-icon="inline-start" aria-hidden="true" /> : <MicIcon data-icon="inline-start" aria-hidden="true" />}
+    {busy ? <Loader2Icon data-icon="inline-start" className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <MicIcon data-icon="inline-start" aria-hidden="true" />}
   </Button>;
 }
 
