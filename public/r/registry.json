@@ -482,7 +482,16 @@
         "trace",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/drawer.json",
         "button",
-        "toggle"
+        "toggle",
+        "drawer",
+        "dropdown-menu",
+        "empty",
+        "input",
+        "input-group",
+        "popover",
+        "scroll-area",
+        "separator",
+        "sidebar"
       ],
       "files": [
         {
@@ -651,6 +660,14 @@
           },
           ".pi-chat [hidden]": {
             "display": "none"
+          },
+          ".pi-chat :where([data-slot=\"empty\"])": {
+            "border-width": "0"
+          },
+          ".pi-chat :where([data-slot=\"sidebar-menu\"], [data-slot=\"sidebar-menu-sub\"])": {
+            "margin": "0",
+            "padding": "0",
+            "list-style": "none"
           }
         },
         "@layer utilities": {
@@ -834,7 +851,10 @@
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/button.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/drawer.json",
         "button",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/file-tree.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/file-tree.json",
+        "drawer",
+        "dropdown-menu",
+        "scroll-area"
       ],
       "files": [
         {
@@ -2604,7 +2624,12 @@
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/utils.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/version-history.json",
         "button",
-        "dropdown-menu"
+        "dropdown-menu",
+        "collapsible",
+        "empty",
+        "input",
+        "separator",
+        "sidebar"
       ],
       "files": [
         {
@@ -2636,7 +2661,10 @@
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/file-tree.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/viewers.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.3.2/r/drawer.json",
-        "button"
+        "button",
+        "drawer",
+        "scroll-area",
+        "separator"
       ],
       "files": [
         {

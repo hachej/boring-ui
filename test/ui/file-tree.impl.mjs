@@ -163,7 +163,7 @@ test('file tree renders in StrictMode, expands by keyboard and reads history wit
   await t.test('complete provider listings show the folder child count', () => {
     assert.equal(directory.querySelector(':scope > div [data-file-meta]')?.textContent, '1 item');
   });
-  const folderButton = directory.querySelector('[data-slot=sidebar-menu-button]'); assert.ok(folderButton);
+  const folderButton = directory.querySelector('.file-tree-row-button'); assert.ok(folderButton);
   await act(async () => folderButton.click());
   assert.equal(directory.getAttribute('aria-expanded'), 'false', 'the controlled shadcn trigger toggles exactly once');
   await act(async () => folderButton.click());

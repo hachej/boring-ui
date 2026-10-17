@@ -482,7 +482,16 @@
         "trace",
         "@boring-ui/drawer",
         "button",
-        "toggle"
+        "toggle",
+        "drawer",
+        "dropdown-menu",
+        "empty",
+        "input",
+        "input-group",
+        "popover",
+        "scroll-area",
+        "separator",
+        "sidebar"
       ],
       "files": [
         {
@@ -651,6 +660,14 @@
           },
           ".pi-chat [hidden]": {
             "display": "none"
+          },
+          ".pi-chat :where([data-slot=\"empty\"])": {
+            "border-width": "0"
+          },
+          ".pi-chat :where([data-slot=\"sidebar-menu\"], [data-slot=\"sidebar-menu-sub\"])": {
+            "margin": "0",
+            "padding": "0",
+            "list-style": "none"
           }
         },
         "@layer utilities": {
@@ -834,7 +851,10 @@
         "@boring-ui/button",
         "@boring-ui/drawer",
         "button",
-        "@boring-ui/file-tree"
+        "@boring-ui/file-tree",
+        "drawer",
+        "dropdown-menu",
+        "scroll-area"
       ],
       "files": [
         {
@@ -2604,7 +2624,12 @@
         "@boring-ui/utils",
         "@boring-ui/version-history",
         "button",
-        "dropdown-menu"
+        "dropdown-menu",
+        "collapsible",
+        "empty",
+        "input",
+        "separator",
+        "sidebar"
       ],
       "files": [
         {
@@ -2636,7 +2661,10 @@
         "@boring-ui/file-tree",
         "@boring-ui/viewers",
         "@boring-ui/drawer",
-        "button"
+        "button",
+        "drawer",
+        "scroll-area",
+        "separator"
       ],
       "files": [
         {
