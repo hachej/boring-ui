@@ -24,19 +24,21 @@ const freePort = () => new Promise(resolve => { const server = createServer().li
 /** `wrangler dev --local` on a free port with these vars; resolves once it answers. Its state lives in a fresh temporary folder. */
 async function startWorker(vars = {}) {
   const port = await freePort();
-  const child = spawn('npx', ['wrangler', 'dev', '--local', '--config', config, '--ip', '127.0.0.1', '--port', String(port), '--inspector-port', String(await freePort()),
+  // Its own process group, so stopping it ends wrangler and the workerd it starts (otherwise they outlive the journey).
+  const child = spawn(fileURLToPath(new URL('../../../node_modules/.bin/wrangler', import.meta.url)), ['dev', '--local', '--config', config, '--ip', '127.0.0.1', '--port', String(port), '--inspector-port', String(await freePort()),
     '--persist-to', mkdtempSync(join(tmpdir(), 'demo-worker-state-')), ...Object.entries(vars).flatMap(([name, value]) => ['--var', `${name}:${value}`])],
-  { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, WRANGLER_SEND_METRICS: 'false', CI: '1' } });
+  { stdio: ['ignore', 'pipe', 'pipe'], detached: true, env: { ...process.env, WRANGLER_SEND_METRICS: 'false', CI: '1' } });
+  const stop = signal => new Promise(resolve => { if (child.exitCode !== null) return resolve(); child.once('exit', resolve); try { process.kill(-child.pid, signal); } catch { resolve(); } });
   let log = '';
   child.stdout.on('data', chunk => { log += chunk; });
   child.stderr.on('data', chunk => { log += chunk; });
   const url = `http://127.0.0.1:${port}/`;
   for (let i = 0; i < 240; i++) {
     if (child.exitCode !== null) throw new Error(`wrangler dev exited ${child.exitCode}\n${log}`);
-    try { if ((await fetch(url)).ok) return { url, log: () => log, stop: () => new Promise(resolve => { child.once('exit', resolve); child.kill('SIGTERM'); }) }; } catch { /* not up yet */ }
+    try { if ((await fetch(url)).ok) return { url, log: () => log, stop: () => stop('SIGTERM') }; } catch { /* not up yet */ }
     await pause(500);
   }
-  child.kill('SIGKILL');
+  await stop('SIGKILL');
   throw new Error(`wrangler dev did not answer\n${log}`);
 }
 

@@ -50,8 +50,10 @@ The adaptation uses Planner's sidebar, breadcrumbs, table-first layout, flat met
 
 Live candidate screenshots are under `.cache/evidence/saas-v2/candidates/`: `studio-finance.png`, `studio-invoices.png`, `tremor-insights.png`, `tremor-dashboard.png`, `tremor-planner.png`, `shadcn-dashboard-01.png` and `shadcn-sidebar-07.png`. Planner's compact metrics and flat operational tables fit daily AP review without the finance dashboard's dense card grid or the sidebar block's placeholder content. The clone was inspected read-only; no template scripts were run.
 
-## Deployment plan
+## Deployment
 
-Nothing is deployed. A single Node 22 process with SQLite and a writable `APP_DATA` volume fits this fictional single-user demo. Set `PORT` behind an HTTPS front that does not buffer streams. The server gives its bearer token to anyone loading the page, so a public copy must use `STUDIO_MODEL=scripted` without a provider key, or sit behind host authentication and a spend cap. Reset fictional data on a schedule.
+The public copy runs on a Cloudflare Worker, one Durable Object per anonymous visitor, with the scripted model: [cloudflare/README.md](cloudflare/README.md) has its limits, verification and deploy commands. It shares this folder's agent, tools, routes and page (`app.mjs`, `assets.mjs`); only the host differs.
+
+The Node server fits a single-user copy: one process with SQLite and a writable `APP_DATA` volume. Set `PORT` behind an HTTPS front that does not buffer streams. It gives its bearer token to anyone loading the page, so a public Node copy must use `STUDIO_MODEL=scripted` without a provider key, or sit behind host authentication and a spend cap.
 
 A future "Today in AP" generated region can use the registered cell metadata from `candidates()` without exposing invoice contents to a layout evaluator. It is not implemented here.
