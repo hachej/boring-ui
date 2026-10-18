@@ -38,14 +38,37 @@ Tokens: `pi-ambient`, `pi-workspace`, `pi-app`, `viewers`, `provider-setup` and 
 
 ## Updating installed blocks
 
-Installed blocks are generated copies: an app installs the shell and the chat once and updates them with one command, and it never edits a copied file. Everything an app changes goes through an extension point below; a change that has none is a request for a new extension point in this repository, not a local edit. These instructions live here only: the update command writes nothing but the block files into an app.
+Installed blocks are generated copies: an app installs the shell and the chat once and updates them with one command, and it never edits a copied file. Everything an app changes goes through an extension point below; a change that has none is a request for a new extension point in this repository, not a local edit. These instructions live here only.
+
+An app enforces every kit rule with this one command and copies no script; there is no app-level allowlist (fix the app, never the rule).
 
 ```sh
-npx boring-ui-blocks check                    # lists every installed block file that differs from the installed kit's registry item (exit 1)
-npx boring-ui-blocks update --version 0.3.3   # npx -y shadcn@4.21.5 add <every installed block at 0.3.3> --overwrite --yes
+npx boring-ui-blocks check [--design <dir>...] [--cwd <app web dir>] [--json]
+npx boring-ui-blocks update [--version <v>] [--registry <url>] [--dry-run] [--cwd <dir>]
+npx boring-ui-blocks add <shadcn add arguments...> [--cwd <dir>]
+npx boring-ui-blocks manifest [--cwd <dir>]
 ```
 
-`boring-ui-blocks` is the `bin` of `@hachej/boring-ui-kit` (`packages/ui/bin/boring-ui-blocks.mjs`). `check` reads the item JSON that the installed kit ships in `node_modules/@hachej/boring-ui-kit/r/` and compares each file of every installed block (a block counts as installed when one of its files exists under `--dir`, default `src/components` or `components`); a dropped `'use client'` directive and line endings are not edits. `update` reinstalls every installed block from `https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@<version>/r/` (default: the installed version; `--registry <url>` for another host, `--dry-run` prints the command), which also moves the package dependencies the items pin. Run `check` first: `update` overwrites edited copies.
+`boring-ui-blocks` is the `bin` of `@hachej/boring-ui-kit` (`packages/ui/bin/boring-ui-blocks.mjs`). It runs in the app's web directory (the one holding `components.json`), or in `--cwd`. Paths come from `components.json` `aliases`: `components` (default `@/components`) and `ui` (default `<components>/ui`); an `@/` alias resolves to `src/` when the app has one, else to the app root. The kit version is the `version` of the installed `node_modules/@hachej/boring-ui-kit/package.json`, and the registry items are the ones that package ships in `node_modules/@hachej/boring-ui-kit/r/`, so `check` needs no network.
+
+`check` writes nothing and runs three checks:
+
+1. **blocks**: each file of every installed block (one of its files exists under the `components` alias) equals the registry item of the installed kit; a dropped `'use client'` directive and line endings are not edits.
+2. **design** (only with `--design`; none by default): the app's own `.js/.jsx/.ts/.tsx/.mjs/.cjs/.css` files under those directories are tokens-only, with the same rule engine `scripts/check-design.mjs` applies to this repository (BORING-UI-1). Rules: `color` (`#hex`, `rgb()/hsl()/oklch()/oklab()` literals, palette classes such as `bg-red-500`, `text-white`), `font` (`font-[…]`, `font-family`), `shadow` (`shadow-xs`…`shadow-2xl`, literal `box-shadow`), `radius` (`rounded`, its steps and `rounded-[…]`, literal `border-radius`), `border-width` (`border`, `border-2`, `border-[N]`, literal widths), `arbitrary-value` (`text-[…]`, `tracking-[…]`, `leading-[…]`, `shadow-[…]`, pixel `font-size`, `letter-spacing`, `line-height`) and `dark` (`dark:` variants; the theme's `.dark` tokens handle dark mode). `var(--…)` values pass. Layout metrics (gaps, widths, grid tracks, `min-h-[44px]` touch targets) match no rule. Skipped automatically: the `ui` directory (checked by 3), installed block files (checked by 1), `node_modules` and dot entries. The repository's exception classes that apply to an app apply by construction: Markdown is content (not scanned) and a CSS custom property declaration (`--primary: oklch(…)`) is the theme definition. Recommended: `--design src` in the web directory (from the repository root: `npx boring-ui-blocks check --cwd web --design src`); `--design` directories resolve against the app directory.
+3. **ui**: every file under the `ui` alias matches its sha256 in `SHADCN-GENERATED.json` (next to `components.json`). A file edited by hand (`edited`), added without the manifest (`unrecorded`) or deleted (`missing`) fails.
+
+Output, one line per violation, then one summary line starting with `ok ` or `fail `:
+
+```text
+blocks edited src/components/pi-chat/artifact.ts pi-chat
+design color src/features/alert.tsx:2:30 #ff0000
+ui unrecorded src/components/ui/card.tsx SHADCN-GENERATED.json
+fail @hachej/boring-ui-kit@0.4.1: 3 violation(s) (blocks 1, design 1, ui 1). …
+```
+
+The line format is `<check> <rule> <file>[:<line>:<column>] <detail>` with paths relative to the app (detail: the block name, the matched text or the manifest name). `--json` prints `{ ok, kit, version, blocks, violations: [{ check, rule, file, line?, column?, detail }] }` instead, or `{ ok: false, error }`. Exit codes: `0` all checks pass; `1` rule violations; `2` usage or configuration error (unknown command or flag, no `components.json`, the kit not installed or shipping no `r/`, a `--design` directory that does not exist), with `error: …` on stderr.
+
+`add` runs `npx -y shadcn@4.21.5 add <arguments>` in the app and, when it succeeds, rewrites `SHADCN-GENERATED.json`; add shadcn components with it. After a deliberate `npx shadcn add`, run `manifest` to record the files. `update` reinstalls every installed block from `https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@<version>/r/` with `npx -y shadcn@4.21.5 add <items> --overwrite --yes` (default: the installed version; `--registry <url>` for another host; `--dry-run` prints the command) and rewrites the manifest, which also moves the package dependencies the items pin and the shadcn components they depend on. Run `check` first: `update` overwrites edited copies. Only `add`, `update` and `manifest` write into the app, and only the shadcn files and `SHADCN-GENERATED.json`.
 
 | An app wants to | Extension point |
 | --- | --- |
