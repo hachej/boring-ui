@@ -90,6 +90,10 @@
       "types": "./dist/agents.d.ts",
       "import": "./dist/agents.js"
     },
+    "./schedule": {
+      "types": "./dist/schedule.d.ts",
+      "import": "./dist/schedule.js"
+    },
     "./chat-transport": {
       "types": "./dist/chat-transport.d.ts",
       "import": "./dist/chat-transport.js"
