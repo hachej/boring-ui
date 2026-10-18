@@ -6,6 +6,8 @@ import type { ExecutionEnv } from '@earendil-works/pi-durable/env';
 import { createSelfEvolution } from './self-evolving.js';
 import type { SelfEvolution, SelfEvolutionReport } from './self-evolving.js';
 import { NAME, createSkillsExtension, parseSkill, validSkill } from './skills.js';
+import { createDelegateTool } from './delegate.js';
+import type { DelegateOptions } from './delegate.js';
 import type { Skill } from './skills.js';
 
 export type { SelfEvolutionError, SelfEvolutionReport } from './self-evolving.js';
@@ -13,6 +15,8 @@ export { createSkillsExtension, parseSkill } from './skills.js';
 export type { Skill } from './skills.js';
 export { jsonSchemaTool } from './json-schema-tool.js';
 export type { JsonObjectSchema, JsonSchemaToolOptions } from './json-schema-tool.js';
+export { createDelegateTool, DELEGATE_TOOL } from './delegate.js';
+export type { DelegateOptions } from './delegate.js';
 
 /** One agent as plain data over native Pi pieces. It is a convenience, not another registry or lifecycle. */
 export interface AgentSpec {
@@ -26,6 +30,11 @@ export interface AgentSpec {
   /** Additional native extensions this agent selects, for example Pi's `CodingTools`. */
   readonly extensions?: readonly Extension[];
   readonly skills?: readonly Skill[];
+  /**
+   * Sub-agents this agent may hand a task to: each becomes a `delegate` tool (`createDelegateTool`) among this agent's tools, and
+   * `install` installs the child agent's extensions too. The child runs in a conversation owned by the tool call, with only its own tools.
+   */
+  readonly delegates?: readonly (DelegateOptions & { readonly agent: DefinedAgent })[];
   /** Directory within the harness environment. */
   readonly cwd?: string;
   /**
@@ -72,16 +81,17 @@ export function defineAgent(spec: AgentSpec): DefinedAgent {
   // Self-evolving (SELF-3): Pi renders native `instructions` after every extension section, so the host's instructions become the first
   // section of the agent's own (first) extension instead, and the agent-written section, in the last extension, comes after them.
   const base = spec.selfEvolving && spec.instructions !== undefined ? spec.instructions : undefined;
+  const tools = [...spec.tools ?? [], ...(spec.delegates ?? []).map(createDelegateTool)];
   const own: Extension[] = [];
-  if (spec.tools?.length || base !== undefined) {
-    own.push(defineExtension({ name: `agent.${spec.id}`, tools: [...spec.tools ?? []], sections: base === undefined ? [] : [{ key: 'host-instructions', render: () => base }] }));
+  if (tools.length || base !== undefined) {
+    own.push(defineExtension({ name: `agent.${spec.id}`, tools, sections: base === undefined ? [] : [{ key: 'host-instructions', render: () => base }] }));
   }
   // The skills of a self-evolving agent live in its per-workspace extension, so agent-written skills join them on reload. Without a
   // workspace (a self-evolving agent whose workspace is chosen per conversation, before `inWorkspace`) they stay the host's alone.
   const evolving = spec.selfEvolving === true && spec.workspace !== undefined;
   const hostSkills = spec.skills?.length && !evolving ? [createSkillsExtension(`agent.${spec.id}.skills`, spec.skills)] : [];
   const listed = (skills: readonly Skill[]) => Object.freeze(skills.map(skill => Object.freeze({ name: skill.name, description: skill.description.trim() })));
-  const reserved = [...(spec.tools ?? []), ...(spec.extensions ?? []).flatMap(extension => extension.tools ?? [])].map(tool => tool.name);
+  const reserved = [...tools, ...(spec.extensions ?? []).flatMap(extension => extension.tools ?? [])].map(tool => tool.name);
 
   /** The agent as one native configuration: its own extensions, the host's, and with `evolution` the per-workspace one last. */
   function assemble(selected: readonly Extension[], evolution: SelfEvolution | undefined, inWorkspace?: (name: string) => DefinedAgent): DefinedAgent {
@@ -98,7 +108,10 @@ export function defineAgent(spec: AgentSpec): DefinedAgent {
     return Object.freeze({
       id: spec.id, extensions, agent,
       get skills() { return evolution ? listed(evolution.skills()) : fixedSkills; },
-      install: (registry: Registry) => { for (const extension of extensions) { if (extension === initial) evolution!.install(registry); else registry.install(extension); } },
+      install: (registry: Registry) => {
+        for (const delegate of spec.delegates ?? []) delegate.agent.install(registry);
+        for (const extension of extensions) { if (extension === initial) evolution!.install(registry); else registry.install(extension); }
+      },
       ...(evolution ? { reload: evolution.reload } : {}),
       createConversation: (harness: Harness, context: Context, options: Partial<Pick<ConversationCreateOptions, 'ownership' | 'init'>> = {}) =>
         harness.createConversation({ ownership: options.ownership ?? { kind: 'ownerless' }, agent, ...(options.init ? { init: options.init } : {}) }, context),
