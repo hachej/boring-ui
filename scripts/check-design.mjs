@@ -4,33 +4,15 @@ import { fileURLToPath } from 'node:url';
 import { gitIgnored, walkProject } from './project-files.mjs';
 import { SHADCN_BUILTINS } from './check-registry-blocks.mjs';
 import { registryCss } from '../lab/studio/tailwind.mjs';
+import { scanDesign } from '../packages/ui/bin/boring-ui-blocks.mjs';
+
+// The rule engine ships in the kit's bin (`boring-ui-blocks check --design`); this script applies it to the registry and the kit.
+export { scanDesign };
 
 export const designRoot = fileURLToPath(new URL('../', import.meta.url));
 export const readDesignConfig = (root = designRoot) => JSON.parse(readFileSync(resolve(root, 'scripts/design-groups.json'), 'utf8'));
 export const groupForFile = (file, config) => config.groups.find(group => group.folders.some(folder => file.startsWith(folder)));
 const primitive = /^(?:Button|IconButton|Toggle|ToggleGroup|Input|Textarea|Select|Checkbox|Switch|RadioGroup|Dialog|Sheet|Drawer|Popover|Tooltip|DropdownMenu|ActionMenu|SidebarMenu\w*)$/;
-const patterns = [
-  ['shadow', /(?<![\w-])shadow-(?:xs|sm|md|lg|xl|2xl)(?![\w-])|\b(?:box-shadow|boxShadow)\s*[:=]\s*['"]?(?!\s*(?:var\(|none\b|inherit\b))[0-9.-][^;\n"']*/g],
-  ['radius', /(?<![\w-])rounded(?:-(?:sm|md|lg|xl|2xl|3xl|4xl|full)|-\[(?!var\(|--)[^\]]+\])?(?![\w-])|\b(?:border-radius|borderRadius)\s*:\s*['"]?(?!\s*(?:var\(|inherit\b))(?:[0-9.]|calc\()[^;\n"']*/g],
-  ['border-width', /(?<![\w-])border(?:-[trblxyse])?(?:-(?:\d+|\[(?:\d|\.)[^\]]*\]))?(?![\w-]|["']?\s*:)|\b(?:border(?:-[\w]+)?|borderWidth)\s*:\s*['"]?\d+(?:\.\d+)?px\b[^;\n"']*/g],
-  ['color', /#[0-9a-fA-F]{3,8}\b|\b(?:rgb|rgba|hsl|hsla|oklch|oklab)\([^)]*\)|\b(?:bg|text|border|ring|fill|stroke|outline|decoration|shadow)-(?:white|black|(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3})(?:\/\d+)?\b/g],
-  ['font', /\bfont-\[(?!var\(|--)[^\]]+\]|\bfont-family\s*:\s*(?!\s*(?:var\(|inherit\b))[^;\n}]+|\bfontFamily\s*:\s*['"](?!var\()[^'"]+['"]|\bfont\s*:\s*[^;\n}]*\b(?:serif|monospace|system-ui)\b[^;\n}]*/g],
-  ['motion', /\b(?:duration|delay)-\d+\b|\b(?:transition(?:-[\w-]+)?|animation(?:-[\w-]+)?|transitionDuration|animationDuration)\s*:\s*[^;\n}]*?\b\d*\.?\d+m?s\b[^;\n}]*/g],
-  ['style', /\bradix(?:-[\w-]+)?\b/gi],
-  ['primitive', /\b(?:function|const|class)\s+(?:Button|IconButton|ActionMenu|\w*Popover|\w*Tooltip|\w*Dialog|\w*Menu)\b|<(?:button|input|textarea|select)\b/g],
-];
-
-/** Lexical guard, not a CSS cascade or data-flow proof. Browser evidence covers computed values. */
-export function scanDesign(file, text) {
-  const findings = [];
-  const source = text.replace(/\/\*[\s\S]*?\*\//g, match => match.replace(/[^\n]/g, ' '));
-  for (const [rule, pattern] of patterns) for (const match of source.matchAll(pattern)) {
-    const before = text.slice(0, match.index), line = before.split('\n').length;
-    findings.push({ file, line, column: match.index - before.lastIndexOf('\n'), rule, value: match[0] });
-  }
-  return findings;
-}
-
 export function checkDesign(root = designRoot, { config = readDesignConfig(root), allowlist = JSON.parse(readFileSync(resolve(root, 'scripts/design-allowlist.json'), 'utf8')) } = {}) {
   const errors = [], findings = [], allowed = [];
   if (config.version !== 1 || !Array.isArray(config.groups) || !config.groups.length) throw new Error('Invalid design group config');

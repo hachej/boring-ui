@@ -199,7 +199,8 @@
         "node:fs",
         "node:path",
         "node:child_process",
-        "node:url"
+        "node:url",
+        "node:crypto"
       ],
       "typeOnlyExternal": [
         "@earendil-works/pi-durable",
