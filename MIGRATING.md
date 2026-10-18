@@ -1,3 +1,20 @@
+# Migrating to 0.4.1
+
+0.4.1 is non-breaking: no export, option or type was removed. Upgrade the registry blocks with
+`npx boring-ui-blocks update --version 0.4.1` (it reinstalls every installed block at that version; `npx boring-ui-blocks check` first lists the
+copies you edited; see [registry/README.md](registry/README.md#updating-installed-blocks)), and bump the npm pins to `0.4.1`.
+
+**Behaviour change.** `ask_user` now lets the person answer in their own words by default, also when options are given. Pass
+`allowFreeText: false` for an options-only question.
+
+New opt-ins (nothing changes until you use them):
+
+- `ask_user` `questions`: several questions in one form, each may be skipped; the feedback-request result reports `skipped`.
+- Artifact kinds, a `belowComposer` slot, a standalone `QuestionCard`, conversations in the app-shell chat layer, `RunCard` and a CSV viewer (kit).
+- `@hachej/boring-agent/agents` `createDelegateTool` and `@hachej/boring-agent/schedule`: agent delegation and schedule helpers.
+- `createConversationSocketHandler` and `createRemoteChat({ transport: 'websocket' })`: hibernatable WebSocket chat transport.
+- `boring-ui-blocks check|update`: the new CLI shipped with `@hachej/boring-ui-kit`.
+
 # Migrating to 0.4.0
 
 0.4.0 changes how the copied registry blocks relate to your shadcn setup. The rule is
