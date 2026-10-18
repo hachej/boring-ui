@@ -99,7 +99,6 @@
     "@aws-sdk/client-bedrock-agentcore": "3.1151.0",
     "@base-ui/react": "1.9.0",
     "@earendil-works/chord": "1.2.0",
-    "undici": "7.29.1",
     "@earendil-works/pi-ai": "1.2.0",
     "@earendil-works/pi-codemode": "1.2.0",
     "@earendil-works/pi-durable": "1.2.0",
