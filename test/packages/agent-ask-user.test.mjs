@@ -435,7 +435,7 @@ test('a legacy pending question resumes only under its original native task', { 
   harness.resume();
   await until('legacy pending question attached', async () => (await answerUserQuestion(conversation, 'fixture-call', 'lake')).kind === 'answered');
   assert.equal((await documentToolResult(harness, conversation, taskId)).result.answer, 'lake');
-  const next = await admitDocumentTool(conversation, { question: 'New?', options: ['red', 'blue'] }, 'ask_user');
+  const next = await admitDocumentTool(conversation, { question: 'New?', options: ['red', 'blue'], allowFreeText: false }, 'ask_user');
   const record = await harness.getTask(next, context);
   const questionId = JSON.stringify([record.input.assistant, 'fixture-call']);
   await until('new task never borrows legacy answer', async () => (await answerUserQuestion(conversation, questionId, 'lake')).kind === 'denied');
