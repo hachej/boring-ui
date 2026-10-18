@@ -1,3 +1,23 @@
+# Migrating to 0.4.1
+
+0.4.1 is non-breaking: no export, option or type was removed. Upgrade the registry blocks with
+`npx boring-ui-blocks update --version 0.4.1` (it reinstalls every installed block at that version; `npx boring-ui-blocks check` first lists the
+copies you edited; see [registry/README.md](registry/README.md#updating-installed-blocks)), and bump the npm pins to `0.4.1`.
+
+**Behaviour change.** `ask_user` now lets the person answer in their own words by default, also when options are given. Pass
+`allowFreeText: false` for an options-only question.
+
+New opt-ins (nothing changes until you use them):
+
+- `ask_user` `questions`: several questions in one form, each may be skipped; the feedback-request result reports `skipped`.
+- Artifact kinds, a `belowComposer` slot, a standalone `QuestionCard`, conversations in the app-shell chat layer, `RunCard` and a CSV viewer (kit).
+- `@hachej/boring-agent/agents` `createDelegateTool` and `@hachej/boring-agent/schedule`: agent delegation and schedule helpers.
+- `createConversationSocketHandler` and `createRemoteChat({ transport: 'websocket' })`: hibernatable WebSocket chat transport.
+- `boring-ui-blocks` (shipped with `@hachej/boring-ui-kit`): `check`, `update`, `add` and `manifest`. Recommended in CI: `npx boring-ui-blocks check --design src`
+  (blocks against the installed kit, plus the BORING-UI-1 design profile on your own code; `--manifest <path>` and `--json` are optional).
+  Exit codes: `0` all checks pass, `1` rule violations, `2` usage or configuration error. Contract: [registry/README.md](registry/README.md#updating-installed-blocks).
+- `PiChat` `keyboardInset` prop: pass `false` to opt out of the phone keyboard inset (the agent layer does, so the transcript stays visible in the phone drawer at half height).
+
 # Migrating to 0.4.0
 
 0.4.0 changes how the copied registry blocks relate to your shadcn setup. The rule is
