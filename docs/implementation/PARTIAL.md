@@ -182,7 +182,7 @@ The optional authenticated Fetch response handler now accepts only an exact orig
 
 The pinned pi-codemode 1.0.0/quickjs-wasi 3.6.2 standalone probe passed real engine timeout and cancellation. It also demonstrated that `max_output_tokens: 1` is parsed metadata while ten output items are retained. There is no public production output cap and reserved globals cannot replace built-in output functions. Native transcript truncation does not bound prior host accumulation. The bounded probe is under `.cache/evidence/implementation/codemode-public-api/`. It is not native Durable integration or A14/A22 proof. This seam blocks only configurations promising that hard output guarantee; other roadmap work continues.
 
-Strict question-consumer checking also requires the explicit `@modelcontextprotocol/sdk@1.32.0` development dependency because pinned upstream model declarations reference it as an optional peer. The initial isolated check failed on that missing declaration. The recipe installs the exact cached registry archive and transitive closure, then retains `skipLibCheck: false`. It does not claim the agent's declared peers alone suffice for strict checking.
+Strict question-consumer checking also requires the explicit `@modelcontextprotocol/sdk@1.32.1` development dependency because pinned upstream model declarations reference it as an optional peer. The initial isolated check failed on that missing declaration. The recipe installs the exact cached registry archive and transitive closure, then retains `skipLibCheck: false`. It does not claim the agent's declared peers alone suffice for strict checking.
 
 ## Native chat increment
 
