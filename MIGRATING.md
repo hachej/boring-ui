@@ -13,7 +13,10 @@ New opt-ins (nothing changes until you use them):
 - Artifact kinds, a `belowComposer` slot, a standalone `QuestionCard`, conversations in the app-shell chat layer, `RunCard` and a CSV viewer (kit).
 - `@hachej/boring-agent/agents` `createDelegateTool` and `@hachej/boring-agent/schedule`: agent delegation and schedule helpers.
 - `createConversationSocketHandler` and `createRemoteChat({ transport: 'websocket' })`: hibernatable WebSocket chat transport.
-- `boring-ui-blocks check|update`: the new CLI shipped with `@hachej/boring-ui-kit`.
+- `boring-ui-blocks` (shipped with `@hachej/boring-ui-kit`): `check`, `update`, `add` and `manifest`. Recommended in CI: `npx boring-ui-blocks check --design src`
+  (blocks against the installed kit, plus the BORING-UI-1 design profile on your own code; `--manifest <path>` and `--json` are optional).
+  Exit codes: `0` all checks pass, `1` rule violations, `2` usage or configuration error. Contract: [registry/README.md](registry/README.md#updating-installed-blocks).
+- `PiChat` `keyboardInset` prop: pass `false` to opt out of the phone keyboard inset (the agent layer does, so the transcript stays visible in the phone drawer at half height).
 
 # Migrating to 0.4.0
 
