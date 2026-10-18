@@ -216,8 +216,9 @@ test('the run card follows a headless run: title, status badge, spinner and elap
   const states = [{ id: 'run-7', status: 'running', agent: 'Fictional planner', startedAt: 1_000 },
     { id: 'run-7', status: 'completed', agent: 'Fictional planner', startedAt: 1_000, finishedAt: 66_000, text: '**Plan** ready' }];
   const fetched = [];
-  const fetchRun = async id => { fetched.push(id); return states[Math.min(fetched.length, states.length - 1)]; };
-  await page.render(page.h(kit.RunCard, { run: { id: 'run-7', status: 'queued', agent: 'Fictional planner', startedAt: 1_000 }, fetchRun, pollMs: 20, now: () => 43_000 }));
+  // The first poll still runs; later polls see it completed.
+  const fetchRun = async id => { fetched.push(id); return states[Math.min(fetched.length - 1, states.length - 1)]; };
+  await page.render(page.h(kit.RunCard, { run: { id: 'run-7', status: 'queued', agent: 'Fictional planner', startedAt: 1_000 }, fetchRun, pollMs: 60, now: () => 43_000 }));
   const card = () => page.container.querySelector('[data-testid=run-card]');
   assert.equal(card().getAttribute('aria-label'), 'Fictional planner');
   assert.ok(page.container.querySelector('[data-testid=run-spinner]'), 'a spinner while queued or running');
