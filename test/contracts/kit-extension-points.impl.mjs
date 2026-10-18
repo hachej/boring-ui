@@ -1,12 +1,10 @@
 // Run by kit-extension-points.test.mjs in its own process. The kit's extension points, driven through the real blocks: the multi-question ask_user form and its `skipped` label (EN, FR),
 // the question card on its own (a host popover), artifact kinds (label, icon and renderer, without editing artifact.ts), the CSV table,
-// the `belowComposer` slot, and the `boring-ui-blocks` drift check and update command. Fictional data only.
+// and the `belowComposer` slot (the `boring-ui-blocks` command: test/packages/ui-blocks-check.test.mjs). Fictional data only.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 
@@ -171,44 +169,6 @@ test('belowComposer renders host content under the PiChat composer', async t => 
   assert.equal(slot.textContent, '2 requests');
   assert.ok(page.container.querySelector('[data-testid=composer-dock]').contains(slot));
   assert.ok(page.container.querySelector('[data-testid=composer-input]').compareDocumentPosition(slot) & 4, 'under the composer');
-});
-
-const bin = join(root, 'packages/ui/bin/boring-ui-blocks.mjs');
-const runBin = (app, ...args) => spawnSync(process.execPath, [bin, ...args], { cwd: app, encoding: 'utf8' });
-
-test('boring-ui-blocks check lists an edited block file; update reinstalls every installed block at the pinned CLI', t => {
-  const app = mkdtempSync(join(tmpdir(), 'kit-blocks-'));
-  t.after(() => rmSync(app, { recursive: true, force: true }));
-  // An app with the kit installed (its registry items in r/) and pi-chat copied as `shadcn add` writes it.
-  const kitDir = join(app, 'node_modules/@hachej/boring-ui-kit');
-  mkdirSync(kitDir, { recursive: true });
-  cpSync(join(root, 'public/r'), join(kitDir, 'r'), { recursive: true });
-  writeFileSync(join(kitDir, 'package.json'), JSON.stringify({ name: '@hachej/boring-ui-kit', version: '9.9.9' }));
-  const item = JSON.parse(readFileSync(join(root, 'public/r/pi-chat.json'), 'utf8'));
-  for (const file of item.files) {
-    const path = join(app, 'src', file.target);
-    mkdirSync(join(path, '..'), { recursive: true });
-    // The CLI drops 'use client' in a non-RSC app; that is not an edit.
-    writeFileSync(path, file.content.replace(/^'use client';\n\n?/, ''));
-  }
-  const clean = runBin(app, 'check');
-  assert.equal(clean.status, 0, clean.stdout + clean.stderr);
-  assert.match(clean.stdout, /1 block\(s\) match @hachej\/boring-ui-kit@9\.9\.9: pi-chat/);
-
-  const edited = join(app, 'src/components/pi-chat/artifact.ts');
-  writeFileSync(edited, readFileSync(edited, 'utf8').replace("svg: 'SVG image'", "svg: 'SVG image', maquette: 'Maquette'"));
-  const drift = runBin(app, 'check');
-  assert.equal(drift.status, 1);
-  assert.match(drift.stdout, new RegExp(`edited  pi-chat  ${edited.replaceAll('/', '\\/')}`));
-  assert.equal(drift.stdout.match(/^edited/gm).length, 1, 'only the edited file is listed');
-
-  const update = runBin(app, 'update', '--version', '9.9.10', '--dry-run');
-  assert.equal(update.status, 0, update.stdout + update.stderr);
-  assert.equal(update.stdout.trim(), 'npx -y shadcn@4.21.5 add https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@9.9.10/r/pi-chat.json --overwrite --yes');
-  const architecture = JSON.parse(readFileSync(join(root, 'ARCHITECTURE.json'), 'utf8'));
-  assert.equal(architecture.sourceDistribution.format, 'shadcn@4.21.5', 'the command pins the CLI the registry is built for');
-  const manifest = JSON.parse(readFileSync(join(root, 'packages/ui/package.json'), 'utf8'));
-  assert.equal(manifest.bin['boring-ui-blocks'], './bin/boring-ui-blocks.mjs', 'shipped as the kit\'s bin');
 });
 
 test('the run card follows a headless run: title, status badge, spinner and elapsed time, then duration and output as Markdown, or the error', async t => {

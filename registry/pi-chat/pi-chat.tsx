@@ -75,6 +75,8 @@ export interface PiChatProps extends ChatFeatureProps {
   /** `false` lets the host supply one shared header around chat and viewers. Default true. */
   readonly header?: boolean;
   readonly className?: string;
+  /** Pad the chat's bottom by how far it reaches below the visual viewport (the phone's soft keyboard). Default true; `false` for a host that already follows the keyboard itself, such as a bottom drawer whose lower part sits off screen by design. */
+  readonly keyboardInset?: boolean;
   readonly decisions?: ReactNode;
   readonly controls?: ReactNode;
   /** Host controls at the end of the composer bar (for example a microphone), like AmbientChat's tools slot. */
@@ -130,7 +132,7 @@ function ConnectionBadge({ kind }: { readonly kind: string }) {
   </Badge>;
 }
 
-function PiChatSession({ controller, placement = 'docked', mode = 'expert', className, actions, avatar, headerActions, header = true, decisions, controls, tools, belowComposer, composerChips, headerStart, renderEntry, renderTool, groupTool, commandMentions,
+function PiChatSession({ controller, placement = 'docked', mode = 'expert', className, keyboardInset = true, actions, avatar, headerActions, header = true, decisions, controls, tools, belowComposer, composerChips, headerStart, renderEntry, renderTool, groupTool, commandMentions,
   onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = false, emptyLayout = 'centered', composerLayout = 'card', conversationTitle, onRenameTitle, feedback, draftKey, onOpenFile, fileChanges, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: NativeChatController } }) {
   const { labels, icons } = useChatText();
   useChatDraft(controller, draftKey);
@@ -158,7 +160,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
   const page = useRef<HTMLElement>(null);
   useEffect(() => {
     const viewport = globalThis.visualViewport;
-    if (!viewport) return;
+    if (!keyboardInset || !viewport) return;
     const element = page.current;
     if (!element) return;
     const measure = () => element.style.setProperty('--composer-keyboard-inset', `${Math.max(0, element.getBoundingClientRect().bottom - viewport.height - viewport.offsetTop)}px`);
@@ -168,7 +170,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
     return () => { observer?.disconnect(); viewport.removeEventListener('resize', measure); viewport.removeEventListener('scroll', measure); };
   }, []);
 
-  return <section ref={page} data-boring="pi-chat" data-connection={connectionKind} data-empty={empty && !loading ? emptyLayout : undefined} aria-label={title} className={cn('pi-chat relative box-border flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background text-foreground max-[641px]:pb-(--composer-keyboard-inset)', empty && emptyLayout === 'centered' && 'min-[641px]:justify-center', className)}>
+  return <section ref={page} data-boring="pi-chat" data-connection={connectionKind} data-empty={empty && !loading ? emptyLayout : undefined} aria-label={title} className={cn('pi-chat relative box-border flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background text-foreground ', keyboardInset && 'max-[641px]:pb-(--composer-keyboard-inset)', empty && emptyLayout === 'centered' && 'min-[641px]:justify-center', className)}>
     {header && <header className={cn(empty && emptyLayout === 'centered' && 'min-[641px]:absolute min-[641px]:inset-x-0 min-[641px]:top-0', 'flex h-13 shrink-0 items-center gap-2 px-3 sm:gap-3 sm:px-4')}>
       {headerStart}
       {avatar && <Avatar data-testid="chat-avatar" className="overflow-hidden"><AvatarFallback className="*:max-h-full *:max-w-full">{avatar}</AvatarFallback></Avatar>}

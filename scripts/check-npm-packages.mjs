@@ -16,7 +16,7 @@ export function checkPackage(manifest, paths, versions, { release = false } = {}
   if (manifest.name === '@hachej/boring-ui-kit' && !files.has('THIRD_PARTY_NOTICES.md')) errors.push('Missing embedded icon license notices');
   const isTreeStyles = path => manifest.name === '@hachej/boring-ui-kit' && path === 'styles/file-tree.css';
   const isRegistryFile = path => manifest.name === '@hachej/boring-ui-kit' && /^r\/[\w.-]+\.json$/.test(path);
-  // The kit's one command (`boring-ui-blocks`: drift check and update of installed registry blocks).
+  // The kit's one command (`boring-ui-blocks`: installed blocks, design rule and generated shadcn ui checks; update).
   const isKitBin = path => manifest.name === '@hachej/boring-ui-kit' && path === 'bin/boring-ui-blocks.mjs';
   for (const path of files) {
     if (isTreeStyles(path) || isRegistryFile(path) || isKitBin(path)) continue;

@@ -405,7 +405,7 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const transcribe = (spec.voice ?? layer.agent?.voice)?.transcribe;
   const fr = locale === 'fr';
   return <div data-spec={role} hidden={!visible} className={cn('min-h-0 min-w-0 flex-1', visible ? 'flex flex-col' : 'hidden')}>
-    <PiChat {...spec.chatProps} {...(locale ? { locale } : {})} controller={spec.controller} placement={layer.expanded && !layer.dockFloating ? 'docked' : 'floating'} {...(feedback ? { feedback } : {})}
+    <PiChat {...spec.chatProps} {...(locale ? { locale } : {})} controller={spec.controller} keyboardInset={false} placement={layer.expanded && !layer.dockFloating ? 'docked' : 'floating'} {...(feedback ? { feedback } : {})}
       {...(role === 'agent' && spec.voice ? { tools: <>{spec.chatProps?.tools}<TalkButton text={appShellText(locale)} /></> } : {})} />
     {/* The note editor of ordinary feedback lives inside the layer, in the modal's focus tree; while pointing the layer steps aside and AgentLayer renders it. */}
     {/* In the flow, inside the visible content box: the popup is transformed (a fixed element would be placed against its off-screen bottom). */}
