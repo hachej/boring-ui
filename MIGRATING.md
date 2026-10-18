@@ -1,3 +1,39 @@
+# Migrating to 0.4.0
+
+0.4.0 changes how the copied registry blocks relate to your shadcn setup. The rule is
+[BORING-UI-1](INVARIANTS.md#boring-ui-1--shadcn-first-blocks-carry-no-visual-value) and the details are in
+[registry/README.md](registry/README.md); this section lists only what you must change.
+
+- **Base UI only.** Blocks support the shadcn Base UI styles (`base-nova` / `base-*`). Radix style support is removed.
+- **Blocks use your shadcn components.** They compose the host's own `@/components/ui/*` and carry no visual values. Restyle through theme tokens, not by editing block files.
+- **Removed recipes.** `registry/drawer` and `registry/dropdown-menu` no longer exist: use your own shadcn `drawer` and `dropdown-menu`.
+- **`ActionMenu`** is now `useMenuPortal` + `ActionMenuContent` (`registry/button/actions.tsx`).
+- **App shell sheet.** `sheet.tsx` is now `app-sheet.tsx` plus `use-exclusive-sheet.ts`.
+- **Transcript.** It uses `@shadcn/react` `MessageScroller`; `use-stick-to-bottom` is removed.
+- **New prop.** `AgentWorkspace` takes `history="column" | "popover"` (default `column`).
+
+Upgrade: bump the npm pins to `0.4.0`, then re-run
+`npx shadcn add <0.4.0 item URLs> --overwrite` for every installed item
+(`https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.0/r/<item>.json`) and review the diff.
+
+## native-chat and remote-chat
+
+Apps that use only `@hachej/boring-ui-kit/native-chat` and `@hachej/boring-ui-kit/remote-chat`: no export, option or type changed since 0.3.2 (diff of `packages/ui/src/native-chat.ts` and `remote-chat.ts`). Two behaviour fixes:
+
+- `createNativeChatController`: loading older history now returns the earlier entries together with those already loaded, instead of replacing them with the page just fetched.
+- `createRemoteChat`: the `entries` call forwards the query's `maxEntryId`, `minEntryId` and `order` to the endpoint as search parameters (a server that ignores them behaves as before).
+
+`endpoint` still resolves relative to the page (`new URL(endpoint, location.href)`). The kit adds no auth headers: the only header it sets is `content-type` on POST; the host adds credentials in the `fetch` option.
+
+## Apps that copied blocks
+
+Re-copy with `npx shadcn add <0.4.0 URL> --overwrite`, then re-apply your local edits. Since 0.3.2 (`git diff --name-status v0.3.2 v0.4.0 -- registry/pi-chat registry/app-shell`):
+
+- `app-shell/`: `sheet.tsx` removed; `app-sheet.tsx` and `use-exclusive-sheet.ts` added. Every other file there is modified.
+- `pi-chat/`: `conversation-files.tsx` added; nothing removed or renamed. All other files are modified.
+
+New dependencies the host must have (installed by the items' bare shadcn registry dependencies, in your style): `pi-chat` adds `trace`, `message`, `message-scroller`, `bubble`, `attachment`, `badge`, `alert`, `checkbox`, `table`, `card`, `spinner`, `collapsible`, `drawer`, `button`, `toggle`, `dropdown-menu`, `empty`, `input`, `input-group`, `popover`, `scroll-area`, `separator`, `sidebar`, `item`, `avatar`; npm `@base-ui/react`, `@shadcn/react`, with `use-stick-to-bottom` dropped. `app-shell` adds `button`, `switch`, `badge`, `card`, `separator`.
+
 # Breaking migration to the native Pi library
 
 This candidate replaces the implementation in `hachej/boring-ui` with the v4

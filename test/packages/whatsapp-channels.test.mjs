@@ -138,7 +138,7 @@ test('transient send failures are retried; a permanent failure is reported, not 
 });
 
 test('ask_user questions go to the channel sender and a numbered reply answers them', async t => {
-  const asker = askingModel({ question: 'Where do we picnic?', options: ['park', 'lake'] });
+  const asker = askingModel({ question: 'Where do we picnic?', options: ['park', 'lake'], allowFreeText: false });
   const agent = defineAgent({ id: 'ask', model: asker.model, tools: [createAskUserTool()], instructions: 'Ask, then plan.' });
   const registry = createRegistry(); agent.install(registry);
   const harness = await Harness.open(new MemoryStorage(), { registry, models: asker.models }, context);

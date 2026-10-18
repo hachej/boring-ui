@@ -294,3 +294,47 @@ test('the screen header follows an action whose href, target or rel changes alon
 
 test('one layer at a time on a phone: opening the agent closes the product manager and back', t => oneLayerAt(t, 390));
 test('one layer at a time on a wide screen: opening the agent closes the product manager and back', t => oneLayerAt(t, 1280));
+
+for (const width of [390, 1280]) test(`the agent layer's chat at ${width} lists the agent's conversations over a relative, per-agent endpoint (useConversations from pi-chat): History, new, rename`, async t => {
+  const { createElement: h, useLayoutEffect, useMemo, useState, act } = await import('react');
+  const shell = await bundle('conversations-entry.tsx', `export { AppShell } from '${root}${folder}/app-shell.tsx';\nexport { useAgentLayer } from '${root}${folder}/agent-layer.tsx';\nexport { useConversations } from '${root}registry/pi-chat/use-conversations.ts';\n`);
+  const window = dom(t, width);
+  const requests = [];
+  const rows = [{ id: 1, title: 'Fictional week plan', lastMessage: 'Plan the week', updatedAt: 1, archived: false }, { id: 2, title: 'Fictional groceries', lastMessage: null, updatedAt: 2, archived: false }];
+  const fetch = async request => {
+    const body = request.method === 'POST' ? await request.json() : undefined;
+    requests.push({ url: request.url, method: request.method, body });
+    if (new URL(request.url).searchParams.get('op') === 'create') { rows.push({ id: 3, title: null, lastMessage: null, updatedAt: 3, archived: false }); return Response.json({ conversationId: 3 }); }
+    return Response.json({ conversations: rows });
+  };
+  let latest, listed, selected = [];
+  const Probe = () => { const api = shell.useAgentLayer(); useLayoutEffect(() => { latest = api; }); return null; };
+  const Host = () => {
+    const [active, setActive] = useState('1');
+    const conversations = shell.useConversations({ endpoint: '_agent/coach/conversations', fetch, activeId: active, onSelect: id => { selected.push(id); setActive(id); } });
+    listed = conversations;
+    const agent = useMemo(() => agentWith(conversations ? { conversations } : undefined), [conversations]);
+    return h(shell.AppShell, { layout: 'screen', title: 'Forme', nav: [{ id: 'Jour', label: 'Jour', icon: Icon, render: () => h(Probe) }], route: { id: 'Jour', onChange() {} }, locale: 'fr', agent });
+  };
+  const { createRoot } = await import('react-dom/client');
+  const container = window.document.createElement('div'); window.document.body.append(container);
+  const reactRoot = createRoot(container);
+  await act(async () => reactRoot.render(h(Host)));
+  for (let tries = 0; tries < 40 && !requests.length; tries++) await act(async () => new Promise(done => setTimeout(done, 25)));
+  assert.equal(requests[0].url, 'https://fictional.invalid/_agent/coach/conversations', 'the endpoint is relative to the page and names the agent');
+  const find = selector => window.document.querySelector(selector);
+  for (let tries = 0; tries < 40 && !listed; tries++) await act(async () => new Promise(done => setTimeout(done, 25)));
+  await act(async () => latest.open('agent', 'half'));
+  for (let tries = 0; tries < 80 && !find('[data-testid=agent-layer-header]'); tries++) await act(async () => new Promise(done => setTimeout(done, 25)));
+  assert.ok(find('[data-testid=agent-layer-header]'), 'the layer is open');
+  assert.ok(find('[data-spec=agent] [data-testid=history-open]'), 'the layer\'s chat offers History once the agent has conversations');
+  assert.deepEqual(listed.items.map(item => item.title), ['Fictional week plan', 'Fictional groceries'], 'the list the chat shows');
+  await act(async () => listed.onNew());
+  for (let tries = 0; tries < 40 && !selected.length; tries++) await act(async () => new Promise(done => setTimeout(done, 25)));
+  const create = requests.find(request => request.method === 'POST');
+  assert.equal(create.url, 'https://fictional.invalid/_agent/coach/conversations?op=create');
+  assert.deepEqual(selected, ['3'], 'New selects the conversation it made (the host then opens its controller)');
+  await act(async () => listed.rename('3', 'Fictional dinner'));
+  assert.deepEqual(requests.filter(request => request.method === 'POST').at(-1), { url: 'https://fictional.invalid/_agent/coach/conversations?op=rename', method: 'POST', body: { conversationId: '3', title: 'Fictional dinner' } });
+  await act(async () => reactRoot.unmount());
+});

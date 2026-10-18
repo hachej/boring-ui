@@ -37,8 +37,11 @@ import { cn } from '../utils/utils';
 export type { PiChatActions } from './session';
 export type { ChatCard, Mode } from './rows';
 export type { AnswerOutcome } from './question-card';
-export { artifactKey, collectArtifacts, detectArtifact, parseArtifact } from './artifact';
-export type { ArtifactDescriptor, ArtifactsConfig, ArtifactTarget, ArtifactType } from './artifact';
+export { artifactKey, artifactKind, collectArtifacts, detectArtifact, parseArtifact, typeLabel } from './artifact';
+export type { ArtifactDescriptor, ArtifactKind, ArtifactKindViewProps, ArtifactsConfig, ArtifactTarget, ArtifactType } from './artifact';
+export { QuestionCard, formAnswer, parseQuestion, ASK_USER_TOOL } from './question-card';
+export type { FormQuestion } from './question-card';
+export { ChatTextProvider } from './labels';
 export type { CommandMention, CommandMentions } from './markdown';
 export type { Suggestion } from './empty-state';
 export { ConversationList, relativeTime } from './history';
@@ -49,6 +52,9 @@ export { chatTextFor } from './locale';
 export type { ChatLocale } from './locale';
 export { BlockActions } from '../button/actions';
 export { useChatDraft } from './use-chat-draft';
+export { useConversations } from './use-conversations';
+export { RunCard, parseRun } from './run-card';
+export type { RunRecord, RunStatus } from './run-card';
 export type { BlockAction, BlockIcon } from '../button/actions';
 export type { AttachmentsConfig, ConversationItem, ConversationsConfig, EffortConfig, FileKind, MentionResult, MentionsConfig, ModelConfig, ModelRef, PasteToFile, PreviewRead, ReplyRef, SlashApi, SlashCommand, SlashConfig, SlashSkill, UploadResult } from './config';
 
@@ -73,6 +79,8 @@ export interface PiChatProps extends ChatFeatureProps {
   readonly controls?: ReactNode;
   /** Host controls at the end of the composer bar (for example a microphone), like AmbientChat's tools slot. */
   readonly tools?: ReactNode;
+  /** Host content under the composer (for example a collapsed list of the person's requests). Absent: nothing is shown. */
+  readonly belowComposer?: ReactNode;
   /** Rendered before the title in the header (for example a menu button on narrow screens). */
   readonly headerStart?: ReactNode;
   readonly onFiles?: FilesHandler;
@@ -122,7 +130,7 @@ function ConnectionBadge({ kind }: { readonly kind: string }) {
   </Badge>;
 }
 
-function PiChatSession({ controller, placement = 'docked', mode = 'expert', className, actions, avatar, headerActions, header = true, decisions, controls, tools, composerChips, headerStart, renderEntry, renderTool, groupTool, commandMentions,
+function PiChatSession({ controller, placement = 'docked', mode = 'expert', className, actions, avatar, headerActions, header = true, decisions, controls, tools, belowComposer, composerChips, headerStart, renderEntry, renderTool, groupTool, commandMentions,
   onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = false, emptyLayout = 'centered', composerLayout = 'card', conversationTitle, onRenameTitle, feedback, draftKey, onOpenFile, fileChanges, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: NativeChatController } }) {
   const { labels, icons } = useChatText();
   useChatDraft(controller, draftKey);
@@ -215,6 +223,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
           <ConversationFiles files={files} />
           <MessageQueue items={queued} sending={state.outbox} withdraw={actions?.withdraw} actions={queueActions} />
           <Composer {...composer} layout={composerLayout} placeholder={labels.placeholder === 'Message the agent…' ? `Message ${title}…` : labels.placeholder} barStart={barStart} barNote={barNote} barEnd={tools} />
+          {belowComposer !== undefined && <div data-testid="below-composer" className="pt-2">{belowComposer}</div>}
         </div>
       </div>
     </footer>

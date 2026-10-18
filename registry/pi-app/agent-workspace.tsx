@@ -55,7 +55,7 @@ export type { HistoryPlacement } from './history-column';
 export { ConversationList, ConversationHistory } from '../pi-chat/history';
 export { FileTree } from '../file-tree/file-tree';
 export type { SessionsView, WorkspaceAgent, WorkspaceAgents } from './sessions';
-export { useConversations } from './use-conversations';
+export { useConversations } from '../pi-chat/use-conversations';
 export { useRemoteChat } from '../pi-chat/use-remote-chat';
 export type { RemoteChatState } from '../pi-chat/use-remote-chat';
 export { savedLabel, useSaved } from './use-saved';
@@ -153,6 +153,8 @@ interface AgentWorkspaceBaseProps {
   readonly history?: HistoryPlacement | undefined;
   /** Recognise artifacts in tool results that carry no descriptor (`ArtifactsConfig.detect`). */
   readonly detect?: ArtifactsConfig['detect'] | undefined;
+  /** The app's own artifact kinds (`ArtifactKind`: match, label, icon, renderer): the chat's cards and the artifact panel consult them before the built-in types. */
+  readonly artifactKinds?: ArtifactsConfig['kinds'] | undefined;
   /** Host viewers by artifact type or file kind, for example `{ canvas: props => <MyCanvas {...props} /> }`. */
   readonly viewers?: CustomViewers | undefined;
   /** Run HTML pages in the viewers' sandboxed preview, loading scripts only from these origins. Off without it. */
@@ -218,7 +220,7 @@ const defaultLocate = (path: string): ResourceLocator => ({ resource: { provider
  * its versions, the file viewer and the host's own views). Agent artifacts open the panel as they appear. Every prop is data or a callback:
  * the host owns the routes, authentication, the controller and what is open (when controlled).
  */
-export function AgentWorkspace({ controller, conversationId, chat = {}, labels, icons, panelActions, connecting, conversations, sessions, history: historyPlacement = 'column', resources, revisionProvider, libraryPlacement = 'panel', locale, fileTree: treeOptions, uploads, agents, detect, viewers, interactive, share, opened: controlled,
+export function AgentWorkspace({ controller, conversationId, chat = {}, labels, icons, panelActions, connecting, conversations, sessions, history: historyPlacement = 'column', resources, revisionProvider, libraryPlacement = 'panel', locale, fileTree: treeOptions, uploads, agents, detect, artifactKinds, viewers, interactive, share, opened: controlled,
   defaultOpened = null, onOpenedChange, onUnsavedChange, panels, autoOpen = true, fileBack, floatingChat, chatTop, controls, storageKey = 'boring.agent-workspace', sheetBelow = 641, drawerBelow = 641, floatBelow, className }: AgentWorkspaceProps) {
   const [own, setOwn] = useState<OpenedView | null>(defaultOpened);
   const [panelLibrary, setPanelLibrary] = useState(false);
@@ -298,7 +300,7 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   const onShown = useCallback((view: { readonly path: string; readonly revision: string; readonly hidden?: true }) => {
     if (view.hidden) presentAcks.current?.hidden(view); else presentAcks.current?.shown(view);
   }, []);
-  const options: ViewerOptions = useMemo(() => ({ client, identity, history, viewers, interactive, share, onShown, onUnsavedChange: noteUnsaved, onBeforeLeaveChange: registerBeforeLeave }), [client, identityKey, history, viewers, interactive, share, onShown, noteUnsaved, registerBeforeLeave]); // eslint-disable-line react-hooks/exhaustive-deps
+  const options: ViewerOptions = useMemo(() => ({ client, identity, history, viewers, kinds: artifactKinds, interactive, share, onShown, onUnsavedChange: noteUnsaved, onBeforeLeaveChange: registerBeforeLeave }), [client, identityKey, history, viewers, artifactKinds, interactive, share, onShown, noteUnsaved, registerBeforeLeave]); // eslint-disable-line react-hooks/exhaustive-deps
   const locate = revisionProvider?.locate ?? resources?.locate ?? defaultLocate;
   const [fileBinding, setFileBinding] = useState<{ readonly provider: RevisionProvider; readonly tree: FileTreeController }>();
   useEffect(() => {
@@ -402,7 +404,8 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
     open: descriptor => { if (conversationId !== undefined) setOpened({ kind: 'artifact', conversation: conversationId, descriptor, follow: descriptor.revision === newestOf(artifactKey(descriptor))[0]?.revision }); },
     isOpen: descriptor => Boolean(active && artifactKey(active.descriptor) === artifactKey(descriptor) && (active.follow ? descriptor.revision === newestOf(artifactKey(descriptor))[0]?.revision : descriptor.revision === active.descriptor.revision)),
     ...(detect ? { detect } : {}),
-  }), [conversationId, active, versions, detect, setOpened]); // eslint-disable-line react-hooks/exhaustive-deps
+    ...(artifactKinds ? { kinds: artifactKinds } : {}),
+  }), [conversationId, active, versions, detect, artifactKinds, setOpened]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- Sessions: docked on a wide workspace (collapsible, remembered for the session), a drawer on a narrow one.
   const root = useRef<HTMLDivElement>(null);
