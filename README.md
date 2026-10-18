@@ -4,6 +4,10 @@ Build an AI assistant into your application with chat, document editors, canvas 
 
 **0.2.0 release candidate.** This is a breaking replacement for the 0.1.x implementation. Five packages (agent, ui-kit, files, execution, feedback) are published; boring-browser and boring-testing stay private. Per the owner ruling of 2026-10-10, deferred proofs are backlog, not release blockers. Read the [migration guide](MIGRATING.md) before upgrading. “v4” names the architecture, not the npm version.
 
+## Shipping an app
+
+Apps live in Cloudflare Artifacts git repos and ship through the [Factory](https://github.com/hachej/boring-factory/blob/main/docs/PROVISIONING.md) (signed artifact, cloud verify, live pointer), starting from its `templates/app`. Boring UI provides the npm packages and shadcn registry blocks that template consumes via a vendor release.
+
 ## What you can build
 
 - **An assistant beside your app.** Connect your tools and context to chat, notifications and document viewers inside your existing interface.

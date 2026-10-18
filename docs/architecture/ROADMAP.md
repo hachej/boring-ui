@@ -19,7 +19,7 @@ Implementation progress is recorded in [PARTIAL.md](../implementation/PARTIAL.md
 The reviewed hub SPEC is revision 6 at `3c5b9adfc08525594dc071f824813a8708d0e3f5`:
 registry/identity, capability invocation, file apps, companion and cross-app UI composition.
 Factory discovery/triage/claims/build/review/release belong to `boring-factory` and app
-repositories; skills belong to `boring-stack`. Pin the Factory/App contract revisions when their
+Artifacts repos ([provisioning](https://github.com/hachej/boring-factory/blob/main/docs/PROVISIONING.md)); skills belong to `boring-stack`. Pin the Factory/App contract revisions when their
 integration work begins. An ownership declaration is not proof that every consumer implements it.
 
 [Consumer compatibility](../compatibility/HUB-M1.md) preserves Hub M1/1 as the historical

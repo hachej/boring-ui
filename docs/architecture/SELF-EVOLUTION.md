@@ -66,7 +66,7 @@ changes to `.agent/` use the existing approval gate; it is not part of this feat
 ## Apps
 
 In a production app, agent-written improvements are promoted, not loaded live: the agent (or the factory workflow)
-opens a pull request on the app's repository, where review, tests and release turn them into ordinary trusted code.
+commits to the app's Artifacts repo, and the Factory ([signed artifact, then live pointer](https://github.com/hachej/boring-factory/blob/main/docs/PROVISIONING.md)) turns it into ordinary trusted code.
 Live self-evolution is for development, demos, personal and sandboxed agents. That workflow belongs to boring-factory.
 
 ## Laws
