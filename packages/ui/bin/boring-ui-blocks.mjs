@@ -2,12 +2,12 @@
 // The kit's one command: an app enforces the kit rules with it and copies no script. The contract (commands, flags, output, exit codes)
 // is documented once, in registry/README.md, "Updating installed blocks".
 //
-//   npx boring-ui-blocks check [--design <dir>...] [--cwd <app web dir>] [--json]
-//   npx boring-ui-blocks update [--version <v>] [--registry <url>] [--dry-run] [--cwd <dir>]
-//   npx boring-ui-blocks add <shadcn add arguments...> [--cwd <dir>]
-//   npx boring-ui-blocks manifest [--cwd <dir>]
+//   npx boring-ui-blocks check [--design <dir>...] [--manifest <path>] [--cwd <app web dir>] [--json]
+//   npx boring-ui-blocks update [--version <v>] [--registry <url>] [--dry-run] [--manifest <path>] [--cwd <dir>]
+//   npx boring-ui-blocks add <shadcn add arguments...> [--manifest <path>] [--cwd <dir>]
+//   npx boring-ui-blocks manifest [--manifest <path>] [--cwd <dir>]
 //
-// `check` writes nothing. `add`, `update` and `manifest` write the shadcn files they install and SHADCN-GENERATED.json, nothing else.
+// `check` writes nothing. `add`, `update` and `manifest` write the shadcn files they install and the manifest, nothing else.
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
@@ -35,10 +35,20 @@ export const DESIGN_RULES = [
   ['primitive', /\b(?:function|const|class)\s+(?:Button|IconButton|ActionMenu|\w*Popover|\w*Tooltip|\w*Dialog|\w*Menu)\b|<(?:button|input|textarea|select)\b/g],
 ];
 
-/** An app's own code: the visual rules above, plus arbitrary type/shadow/letter-spacing values and `dark:` variants (theme tokens handle dark). */
+/**
+ * The app profile of the same engine. Blocks pick no radius, border or shadow at all (DESIGN_RULES); an app's own code may use the
+ * utilities that resolve to theme variables (`rounded-md`, `border`, `border-t`, `shadow-md`, `text-sm`) and fails on literals:
+ * colour literals and palette classes, arbitrary visual values, other border widths, font families, literal radius/shadow/font-size/
+ * letter-spacing/border-width declarations (a 1px border equals the `border` utility) and `dark:` variants (the theme's `.dark` tokens).
+ */
+const LENGTH = String.raw`(?<![\w.#-])(?!1px\b)\d*\.?\d+(?:px|rem|em)\b`;
 export const APP_RULES = [
-  ...DESIGN_RULES.filter(([rule]) => ['shadow', 'radius', 'border-width', 'color', 'font'].includes(rule)),
-  ['arbitrary-value', /(?<![\w-])(?:text|tracking|leading|shadow)-\[(?!var\(|--)[^\]]+\]|\b(?:font-size|fontSize|letter-spacing|letterSpacing|line-height|lineHeight)\s*:\s*['"]?-?\d*\.?\d+px\b[^;\n"']*/g],
+  ['color', color],
+  ['arbitrary-value', /(?<![\w-])(?:bg|text|border(?:-[trblxyse])?|ring(?:-offset)?|outline|fill|stroke|decoration|shadow|drop-shadow|inset-shadow|rounded(?:-[trblse]{1,2})?|font|tracking|leading|from|via|to|divide(?:-[xy])?|placeholder|caret|accent)-\[(?!var\(|--|#|(?:rgb|rgba|hsl|hsla|oklch|oklab)\()[^\]]+\]/g],
+  ['border-width', /(?<![\w-])border(?:-[trblxyse])?-(?!0(?![\w.]))\d+(?![\w-])/g],
+  ['border-width', new RegExp(String.raw`\b(?:border(?:-(?:top|right|bottom|left|inline|block)(?:-(?:start|end))?)?(?:-width)?|border(?:Top|Right|Bottom|Left)?Width|border(?:Top|Right|Bottom|Left)?)\s*:\s*['"]?(?=[^;\n}"']*?${LENGTH})[^;\n}"']*`, 'g')],
+  ['font', /\bfont-family\s*:\s*(?!\s*(?:var\(|inherit\b))[^;\n}]+|\bfontFamily\s*:\s*['"](?!var\()[^'"]+['"]|\bfont\s*:\s*(?!\s*(?:var\(|inherit\b))[^;\n}]+/g],
+  ['literal-value', /\b(?:border-radius|borderRadius|box-shadow|boxShadow|font-size|fontSize|letter-spacing|letterSpacing)\s*:\s*['"]?(?!\s*(?:var\(|calc\(\s*var\(|inherit\b|initial\b|unset\b|none\b|0(?![\w.])))(?=[^;\n}"']*\d)[^;\n}"']*/g],
   ['dark', /(?<![\w-])dark:[^\s"'`]+/g],
 ];
 
@@ -53,15 +63,33 @@ export function scanDesign(file, text, rules = DESIGN_RULES) {
   return findings;
 }
 
+/** Offset ranges of the CSS token definition blocks (`:root`, `.dark`, `@theme`, `@layer theme`): the only place an app's CSS holds values. */
+function tokenBlocks(css) {
+  const ranges = [], stack = [];
+  let start = 0;
+  const token = prelude => /^@theme\b|^@layer\s+theme\b/.test(prelude)
+    || prelude.split(',').every(part => /^(?::root|html|\.dark|:root\.dark|html\.dark|:root:not\(\.dark\)|\[data-theme[^\]]*\])$/.test(part.trim()));
+  for (let i = 0; i < css.length; i++) {
+    if (css[i] === '{') { stack.push({ open: i, token: token(css.slice(start, i).trim()) || stack.at(-1)?.token }); start = i + 1; }
+    else if (css[i] === '}') { const block = stack.pop(); if (block?.token && !stack.at(-1)?.token) ranges.push([block.open, i]); start = i + 1; }
+    else if (css[i] === ';') start = i + 1;
+  }
+  return ranges;
+}
+
 /**
- * An app file under the tokens-only rule. The exception classes of the repository's `scripts/design-allowlist.json` that apply to an app
- * apply by construction, never through an app allowlist: Markdown is content (the command scans code and CSS only) and a CSS custom
- * property declaration (`--primary: oklch(…)`) is the app's theme definition.
+ * An app file under APP_RULES. The repository's exception classes that apply to an app apply by construction, never through an app
+ * allowlist: Markdown is content (the command scans code and CSS only) and a CSS token definition block is the app's theme.
  */
 export function scanAppDesign(file, text) {
-  const lines = text.split('\n');
-  const themeValue = ({ line, column }) => file.endsWith('.css') && /--[\w-]+\s*:[^;{}]*$/.test(lines[line - 1].slice(0, column - 1));
-  return scanDesign(file, text, APP_RULES).filter(finding => !themeValue(finding));
+  if (!file.endsWith('.css')) return scanDesign(file, text, APP_RULES);
+  const source = text.replace(/\/\*[\s\S]*?\*\//g, match => match.replace(/[^\n]/g, ' '));
+  const ranges = tokenBlocks(source), starts = [0];
+  for (let i = 0; i < text.length; i++) if (text[i] === '\n') starts.push(i + 1);
+  return scanDesign(file, text, APP_RULES).filter(({ line, column }) => {
+    const offset = starts[line - 1] + column - 1;
+    return !ranges.some(([open, close]) => offset > open && offset < close);
+  });
 }
 
 const KIT = '@hachej/boring-ui-kit';
@@ -72,7 +100,8 @@ export const MANIFEST = 'SHADCN-GENERATED.json';
 export const itemBase = version => `https://cdn.jsdelivr.net/npm/${KIT}@${version}/r`;
 
 const posix = path => path.split(sep).join('/');
-const sha256 = path => createHash('sha256').update(readFileSync(path)).digest('hex');
+// sha256 of a file's text with line endings normalised (a checkout may convert them).
+const sha256 = path => createHash('sha256').update(readFileSync(path, 'utf8').replace(/\r\n/g, '\n')).digest('hex');
 
 /** Every file under `dir` (recursive, sorted), without node_modules and dot entries. */
 function files(dir) {
@@ -104,7 +133,9 @@ export function appPaths(app) {
 }
 
 // The CLI may drop the `'use client'` directive (a non-RSC app) and an editor may change line endings: neither is an edit.
-const normal = text => text.replace(/\r\n/g, '\n').replace(/^(['"])use client\1;?\s*/, '').trimEnd();
+// The CLI also drops the leading comment of a file it writes. The rest of the file must match exactly.
+const preamble = /^(?:\s*(?:\/\/[^\n]*|\/\*[\s\S]*?\*\/|(['"])use client\1;?))*\s*/;
+const normal = text => text.replace(/\r\n/g, '\n').replace(preamble, '').trimEnd();
 
 /** Each installed block (one of its files exists): its files, and those that differ from the registry item (`edited`) or are gone (`missing`). */
 export function checkBlocks(app, components = appPaths(app).components) {
@@ -123,23 +154,29 @@ export function checkBlocks(app, components = appPaths(app).components) {
   return { version, blocks };
 }
 
-/** (Re)writes SHADCN-GENERATED.json from the files now under the `ui` alias. */
-export function writeManifest(app) {
+/** The generated shadcn files under the `ui` alias (`.js/.jsx/.ts/.tsx/.css`) and their sha256, by path relative to it. */
+const uiHashes = ui => new Map(files(ui).filter(path => /\.(?:[jt]sx?|css)$/.test(path)).map(path => [posix(relative(ui, path)), { path, hash: sha256(path) }]));
+
+/** (Re)writes the manifest (`manifest`, default SHADCN-GENERATED.json next to components.json): `files` is replaced, other keys are kept. */
+export function writeManifest(app, manifest = MANIFEST) {
   const { ui } = appPaths(app);
-  const hashes = Object.fromEntries(files(ui).map(path => [posix(relative(ui, path)), sha256(path)]));
-  writeFileSync(join(app, MANIFEST), `${JSON.stringify({ generatedBy: 'boring-ui-blocks', dir: posix(relative(app, ui)), files: hashes }, null, 2)}\n`);
+  const path = resolve(app, manifest);
+  const hashes = Object.fromEntries([...uiHashes(ui)].map(([name, { hash }]) => [name, hash]));
+  const kept = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : { generatedBy: 'boring-ui-blocks', dir: posix(relative(app, ui)) };
+  writeFileSync(path, `${JSON.stringify({ ...kept, files: hashes }, null, 2)}\n`);
   return Object.keys(hashes).length;
 }
 
 /** Generated shadcn files edited by hand (`edited`), present but not in the manifest (`unrecorded`) or deleted (`missing`). */
-export function checkUi(app) {
+export function checkUi(app, manifest = MANIFEST) {
   const { ui } = appPaths(app);
-  const recorded = existsSync(join(app, MANIFEST)) ? JSON.parse(readFileSync(join(app, MANIFEST), 'utf8')).files ?? {} : {};
-  const present = new Map(files(ui).map(path => [posix(relative(ui, path)), path]));
+  const path = resolve(app, manifest);
+  const recorded = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')).files ?? {} : {};
+  const present = uiHashes(ui);
   const found = [];
-  for (const [name, path] of present) {
-    if (!(name in recorded)) found.push({ rule: 'unrecorded', path });
-    else if (recorded[name] !== sha256(path)) found.push({ rule: 'edited', path });
+  for (const [name, file] of present) {
+    if (!(name in recorded)) found.push({ rule: 'unrecorded', path: file.path });
+    else if (recorded[name] !== file.hash) found.push({ rule: 'edited', path: file.path });
   }
   for (const name of Object.keys(recorded)) if (!present.has(name)) found.push({ rule: 'missing', path: join(ui, name) });
   return found;
@@ -161,7 +198,7 @@ export function checkDesign(app, dirs, skip) {
 }
 
 /** Every rule the kit enforces in an app: `{ version, blocks, violations }`, each violation `{ check, rule, file, line?, column?, detail }`. */
-export function check(app, design = []) {
+export function check(app, design = [], manifest = MANIFEST) {
   const { components } = appPaths(app);
   const { version, blocks } = checkBlocks(app, components);
   const rel = path => posix(relative(app, path));
@@ -173,18 +210,18 @@ export function check(app, design = []) {
   if (design.length) for (const finding of checkDesign(app, design, new Set(blocks.flatMap(block => block.files)))) {
     violations.push({ check: 'design', rule: finding.rule, file: finding.file, line: finding.line, column: finding.column, detail: finding.value });
   }
-  for (const { rule, path } of checkUi(app)) violations.push({ check: 'ui', rule, file: rel(path), detail: MANIFEST });
+  for (const { rule, path } of checkUi(app, manifest)) violations.push({ check: 'ui', rule, file: rel(path), detail: posix(manifest) });
   return { version, blocks: blocks.map(block => block.name), violations };
 }
 
-const USAGE = 'usage: boring-ui-blocks check [--design <dir>...] [--cwd <dir>] [--json] | update [--version <v>] [--registry <url>] [--dry-run] [--cwd <dir>] | add <shadcn add args...> [--cwd <dir>] | manifest [--cwd <dir>]';
-const FLAGS = { check: ['design', 'cwd', 'json'], update: ['version', 'registry', 'dry-run', 'cwd'], manifest: ['cwd'] };
+const USAGE = 'usage: boring-ui-blocks check [--design <dir>...] [--manifest <path>] [--cwd <dir>] [--json] | update [--version <v>] [--registry <url>] [--dry-run] [--manifest <path>] [--cwd <dir>] | add <shadcn add args...> [--manifest <path>] [--cwd <dir>] | manifest [--manifest <path>] [--cwd <dir>]';
+const FLAGS = { check: ['design', 'manifest', 'json'], update: ['version', 'registry', 'dry-run', 'manifest'], manifest: ['manifest'] };
 
 function parse(command, rest) {
   const flags = { design: [], pass: [] };
   for (let i = 0; i < rest.length; i++) {
     const name = rest[i].startsWith('--') ? rest[i].slice(2) : null;
-    if (command === 'add' && name !== 'cwd') { flags.pass.push(rest[i]); continue; }
+    if (command === 'add' && name !== 'cwd' && name !== 'manifest') { flags.pass.push(rest[i]); continue; }
     if (!name || !FLAGS[command]?.includes(name) && name !== 'cwd') throw new Error(`unknown argument ${rest[i]}`);
     if (name === 'json') flags.json = true;
     else if (name === 'dry-run') flags.dryRun = true;
@@ -214,20 +251,21 @@ export function main(argv, cwd = process.cwd(), log = console.log, error = conso
     flags = parse(command, rest);
     const app = resolve(cwd, flags.cwd ?? '.');
     if (command === 'check') {
-      const result = check(app, flags.design);
+      const manifest = flags.manifest ?? MANIFEST;
+      const result = check(app, flags.design, manifest);
       if (flags.json) { log(JSON.stringify({ ok: !result.violations.length, kit: `${KIT}@${result.version}`, ...result }, null, 2)); return result.violations.length ? 1 : 0; }
       for (const violation of result.violations) log(line(violation));
       const counts = ['blocks', 'design', 'ui'].map(name => `${name} ${result.violations.filter(v => v.check === name).length}`).join(', ');
-      if (!result.violations.length) { log(`ok ${KIT}@${result.version}: ${result.blocks.length} block(s), design ${flags.design.length ? flags.design.join(' ') : 'not checked'}, ${MANIFEST} matches`); return 0; }
+      if (!result.violations.length) { log(`ok ${KIT}@${result.version}: ${result.blocks.length} block(s), design ${flags.design.length ? flags.design.join(' ') : 'not checked'}, ${posix(manifest)} matches`); return 0; }
       log(`fail ${KIT}@${result.version}: ${result.violations.length} violation(s) (${counts}). Blocks and ui files are generated: move a change to an extension point or the theme, then run \`boring-ui-blocks update\`; fix design violations in the app, never the rule.`);
       return 1;
     }
-    if (command === 'manifest') { log(`${MANIFEST}: ${writeManifest(app)} file(s)`); return 0; }
+    if (command === 'manifest') { log(`${flags.manifest ?? MANIFEST}: ${writeManifest(app, flags.manifest)} file(s)`); return 0; }
     if (command === 'add') {
       appPaths(app);
       if (!flags.pass.length) throw new Error('add needs shadcn add arguments');
       const status = shadcnAdd(app, flags.pass, log);
-      if (status === 0) log(`${MANIFEST}: ${writeManifest(app)} file(s)`);
+      if (status === 0) log(`${flags.manifest ?? MANIFEST}: ${writeManifest(app, flags.manifest)} file(s)`);
       return status;
     }
     const { version: installed, blocks } = checkBlocks(app);
@@ -236,7 +274,7 @@ export function main(argv, cwd = process.cwd(), log = console.log, error = conso
     const items = blocks.map(block => `${base}/${block.name}.json`);
     if (flags.dryRun) { log(`npx -y ${SHADCN} add ${items.join(' ')} --overwrite --yes`); return 0; }
     const status = shadcnAdd(app, [...items, '--overwrite', '--yes'], log);
-    if (status === 0) log(`${MANIFEST}: ${writeManifest(app)} file(s)`);
+    if (status === 0) log(`${flags.manifest ?? MANIFEST}: ${writeManifest(app, flags.manifest)} file(s)`);
     return status;
   } catch (cause) {
     if (flags?.json) log(JSON.stringify({ ok: false, error: cause.message }, null, 2));

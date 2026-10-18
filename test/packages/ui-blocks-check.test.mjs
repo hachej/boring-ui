@@ -2,7 +2,7 @@
 // registry items are this repository's public/r. One command checks untouched blocks, the tokens-only design rule and generated shadcn ui.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -22,6 +22,7 @@ const APP = `import { Button } from "@/components/ui/button"
 import { PiChat } from "@/components/pi-chat/pi-chat"
 export function App() {
   return <main className="grid min-h-dvh grid-cols-[18rem_1fr] gap-4 bg-background text-foreground">
+    <section className="rounded-md border border-t shadow-md text-sm">Token-backed utilities</section>
     <Button className="min-h-[44px]">Fictional action</Button>
     <PiChat />
   </main>
@@ -34,12 +35,27 @@ const THEME = `@import "tailwindcss";
   --radius: 0.625rem;
 }
 .dark { --background: oklch(0.145 0 0); }
+@theme inline { --radius-lg: 12px; --shadow-md: 0 1px 2px rgb(0 0 0 / 0.1); }
+.card { border-radius: var(--radius); border: 1px solid var(--border); box-shadow: var(--shadow-md); }
 `;
 
+// The literals in the fixture's src/features/alert.{css,tsx}; the token-backed utilities and the :root token beside them pass.
+const EXPECTED_DESIGN = [
+  'design border-width src/features/alert.css:2:10 border-left: 3px solid var(--primary)',
+  'design literal-value src/features/alert.css:2:49 border-radius: 999px',
+  'design font src/features/alert.css:2:71 font: 13px/1.4 ui-monospace, monospace',
+  'design color src/features/alert.tsx:2:66 #ff0000',
+  'design arbitrary-value src/features/alert.tsx:3:19 rounded-[7px]',
+  'design border-width src/features/alert.tsx:3:33 border-2',
+  'design color src/features/alert.tsx:3:42 bg-red-500',
+  'design dark src/features/alert.tsx:3:53 dark:text-muted-foreground',
+];
+
 /** A fictional Vite app with the kit installed (version 9.9.9, items from public/r), pi-chat copied as `shadcn add` writes it, and one shadcn file. */
-function fixture(t) {
-  const app = mkdtempSync(join(tmpdir(), 'kit-blocks-check-'));
-  t.after(() => rmSync(app, { recursive: true, force: true }));
+function fixture(t, web = '.') {
+  const repo = mkdtempSync(join(tmpdir(), 'kit-blocks-check-'));
+  t.after(() => rmSync(repo, { recursive: true, force: true }));
+  const app = join(repo, web);
   const kit = join(app, 'node_modules/@hachej/boring-ui-kit');
   cpSync(join(root, 'public/r'), join(kit, 'r'), { recursive: true });
   write(join(kit, 'package.json'), JSON.stringify({ name: '@hachej/boring-ui-kit', version: '9.9.9' }));
@@ -84,27 +100,53 @@ test('an edited block file fails with exit 1 and names the file and block', t =>
   assert.match(drift.stdout, /^fail @hachej\/boring-ui-kit@9\.9\.9: 1 violation\(s\) \(blocks 1, design 0, ui 0\)/m);
 });
 
-test('--design lists hard-coded colour, shadow step and dark: variant in the app code with file:line:column and rule', t => {
+test('--design passes token-backed utilities and lists literals in app code and CSS with file:line:column and rule', t => {
   const app = fixture(t);
   run(app, ['manifest']);
   write(join(app, 'src/features/alert.tsx'), `export function Alert() {
-  return <div className="bg-[#ff0000] p-4">
-    <p className="shadow-lg dark:text-muted-foreground">Fictional alert</p>
+  return <div className="rounded-md border shadow-md text-sm bg-[#ff0000] p-4">
+    <p className="rounded-[7px] border-2 bg-red-500 dark:text-muted-foreground">Fictional alert</p>
   </div>
 }
+`);
+  write(join(app, 'src/features/alert.css'), `:root { --alert-edge: 3px; }
+.alert { border-left: 3px solid var(--primary); border-radius: 999px; font: 13px/1.4 ui-monospace, monospace; }
 `);
   // Without --design the app's own code is not checked.
   assert.equal(run(app, ['check']).status, 0);
   const result = run(app, ['check', '--design', 'src']);
   assert.equal(result.status, 1, result.stdout + result.stderr);
-  assert.deepEqual(result.stdout.split('\n').filter(line => line.startsWith('design ')), [
-    'design color src/features/alert.tsx:2:30 #ff0000',
-    'design shadow src/features/alert.tsx:3:19 shadow-lg',
-    'design dark src/features/alert.tsx:3:29 dark:text-muted-foreground',
-  ]);
+  assert.deepEqual(result.stdout.split('\n').filter(line => line.startsWith('design ')), EXPECTED_DESIGN);
   const json = JSON.parse(run(app, ['check', '--design', 'src', '--json']).stdout);
   assert.equal(json.ok, false);
-  assert.deepEqual(json.violations.map(v => [v.check, v.rule, v.file, v.line]), [['design', 'color', 'src/features/alert.tsx', 2], ['design', 'shadow', 'src/features/alert.tsx', 3], ['design', 'dark', 'src/features/alert.tsx', 3]]);
+  assert.deepEqual(json.violations.map(v => `${v.check} ${v.rule} ${v.file}:${v.line}:${v.column} ${v.detail}`), EXPECTED_DESIGN);
+});
+
+test('a block copy as the shadcn CLI writes it (leading comment and use client dropped) counts as clean', t => {
+  const app = fixture(t);
+  run(app, ['manifest']);
+  const item = JSON.parse(readFileSync(join(root, 'public/r/pi-chat.json'), 'utf8'));
+  const commented = item.files.filter(file => /^(?:'use client';\s*)?\/[/*]/.test(file.content));
+  assert.ok(commented.length > 0, 'pi-chat has files that start with a comment');
+  for (const file of commented) write(join(app, 'src', file.target), file.content.replace(/^(?:\s*(?:\/\/[^\n]*|\/\*[\s\S]*?\*\/|'use client';))*\s*/, ''));
+  const clean = run(app, ['check']);
+  assert.equal(clean.status, 0, clean.stdout + clean.stderr);
+});
+
+test('--manifest reads and rewrites an existing manifest elsewhere, keeping its own keys', t => {
+  // A repository with the app in web/ and its manifest under scripts/verify/, in another format with the same `files` map.
+  const app = fixture(t, 'web');
+  const verify = join(app, '../scripts/verify/SHADCN-GENERATED.json');
+  write(verify, JSON.stringify({ about: 'fictional app manifest', shadcn: '4.21.4', style: 'base-nova', files: {} }));
+  assert.equal(run(app, ['check', '--manifest', '../scripts/verify/SHADCN-GENERATED.json']).status, 1);
+  const written = run(app, ['manifest', '--manifest', '../scripts/verify/SHADCN-GENERATED.json']);
+  assert.equal(written.status, 0, written.stdout + written.stderr);
+  const kept = JSON.parse(readFileSync(verify, 'utf8'));
+  assert.deepEqual([kept.about, kept.shadcn, kept.style, Object.keys(kept.files)], ['fictional app manifest', '4.21.4', 'base-nova', ['button.tsx']]);
+  assert.equal(existsSync(join(app, 'SHADCN-GENERATED.json')), false, 'only the named manifest is written');
+  const clean = run(app, ['check', '--manifest', '../scripts/verify/SHADCN-GENERATED.json']);
+  assert.equal(clean.status, 0, clean.stdout + clean.stderr);
+  assert.match(clean.stdout, /\.\.\/scripts\/verify\/SHADCN-GENERATED\.json matches$/m);
 });
 
 test('a generated ui file edited by hand, added without the manifest or deleted fails with exit 1', t => {
