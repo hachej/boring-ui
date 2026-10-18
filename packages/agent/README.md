@@ -136,6 +136,28 @@ Failure is fail-open and Pi's: a throwing `context` is reported through `Harness
 
 Screen context: a browser can send what the person is looking at with each submit. `createRemoteChat({ requestContext })` adds the returned plain object to the submit body as `context`. In `ChatTransportAccess`, `requestContext(value)` receives it after validation and before `conversation.submit`; a value that is not a plain JSON object of at most 4 KB is `400 invalid-request`, and a host without `requestContext` ignores the field. The host stores `context` by conversation id in `requestContext` and renders it in `createPromptContext({ context })`; the transport keeps nothing. With `useRemoteChat` the context is the `requestContext` value as it is (`name`, `params`: a host written before placement keeps working) plus `placement` (`docked` or `floating`), reported by `PiChat` / `AmbientChat`; `PiChat` takes a `placement` prop for a host that floats it, as the `AgentLayer` does. `renderRequestContext(value)` (from `@hachej/boring-agent/prompt-context`) turns it into the agent's role and the screen for `createPromptContext`; placement changes behaviour, never authority (see [PAGE-TOOLS.md](../../docs/architecture/PAGE-TOOLS.md)). Tests: `test/packages/agent-chat-transport-context.test.mjs`, `test/packages/ui-remote-chat-context.test.mjs`, `test/packages/agent-prompt-context.test.mjs`, `test/contracts/chat-placement.test.mjs`, `test/contracts/chat-placement-registry.test.mjs`.
 
+## Chat over a hibernatable WebSocket
+
+`createConversationSocketHandler` (from `@hachej/boring-agent/chat-transport`) serves the chat transport over WebSockets accepted with the Durable Object Hibernation API, so an idle open page does not keep the object in memory (or billed). One socket carries the watch (the same `view` then `ops` frames as the NDJSON stream) and every call: `{"kind":"call","id","op","params","body"}` is answered by `{"kind":"reply","id","status","body"}` and runs through `createChatTransportHandler` unchanged (validation, `allow`, `project`, `submission-refused`, request-id deduplication). A submit without `whenBusy` is a follow-up when the conversation is busy. `ping` is answered `pong` (on Cloudflare by `setWebSocketAutoResponse`, without waking the object).
+
+Mount it in a Durable Object (any host with the same `acceptWebSocket`/`getWebSockets` and attachment methods works the same):
+
+```js
+sockets = createConversationSocketHandler({ state: this.ctx,
+  // Upgrade only: who and which conversation, kept in the socket's attachment (`serializeAttachment`). Null answers 401.
+  authenticate: async request => ({ owner: personOf(request), conversationId: selectedIn(request) }),
+  // From the attachment alone, at accept and after every wake: the same access the HTTP handler gets.
+  access: async ({ owner, conversationId }) => ({ conversation: await open(owner, conversationId), context }) });
+fetch(request) { if (request.headers.get('upgrade') === 'websocket') return this.sockets.fetch(request); /* ... */ }
+webSocketMessage(socket, message) { return this.sockets.webSocketMessage(socket, message); }
+webSocketClose(socket, code, reason) { return this.sockets.webSocketClose(socket, code, reason); }
+alarm() { void this.sockets.resume(); /* ... */ } // or Lifecycle's host `onStart`
+```
+
+After a wake the in-memory watches are gone; `resume()` (also run by every message and upgrade) reopens each socket's watch from its attachment and sends a complete view first. `broadcast(event, { owner?, conversationId? })` sends host events (`{"kind":"event","event"}`: presence, the conversation list) on the same sockets, and `connections({ owner?, conversationId? })` lists the open sockets' attachments. A browser cannot set headers on a WebSocket: a client offers `boring.chat` as subprotocol (the handler selects it) and a bearer host reads its credential from another offered value, as the Cloudflare recipe does. Pi keeps idle documents and contexts in memory on ten-minute timers by default, and a pending timer keeps a Durable Object from hibernating: open the harness with `settings: { documentRetentionMs: 0, contextRetentionMs: 0 }`.
+
+The client is `createRemoteChat({ transport: 'websocket' })` (or `useRemoteChat({ transport: 'websocket' })`): the controller API is unchanged; unanswered calls are sent again unchanged (same request ID) on the next socket, each socket starts from a complete view, and if the first socket cannot open it uses HTTP. Reused from Cloudflare: the platform Hibernation API itself; the agents SDK `WebSockets` capability (`agents/websockets`) was not used because it is a Lifecycle catch-all that claims every upgrade and speaks the Agent protocol, while this handler must mount in a plain Durable Object too. `PiHarness` leaves "how a session reaches a client" to the host. Tests: `test/packages/agent-chat-socket.test.mjs`; the recipe journey `examples/hosts/cloudflare/journey.mjs` (`CF_HIBERNATION=1` proves hibernation with the socket open).
+
 ## Native questions
 
 `createQuestions` from `@hachej/boring-agent/questions` exposes a native task, session document family and extension. Install the extension explicitly. Call `admit(tx, question, ownership, context)` in a native commit to persist a single-choice question and its task together. `resolve` and `consume` take the caller's native transaction so host writes can share that atomic commit. Call them before host table writes: native task reads after a table write are unavailable and the operation returns conflict. Host authentication and current subject/policy checks run at both boundaries. A resolved answer is clarification, never publication permission.

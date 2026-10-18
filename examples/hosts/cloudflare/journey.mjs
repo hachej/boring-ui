@@ -34,6 +34,53 @@ try {
     assert.equal((await fetch(`${base}/api/agent`, { headers: { authorization: 'Bearer not-the-token' } })).status, 401);
     assert.equal((await fetch(`${base}/`)).status, 200, 'the static page itself is public; it holds no data');
   });
+  // The chat socket (the page's default transport): the token rides as the subprotocol `bearer.<token>`, since a browser WebSocket has no headers.
+  const socketUrl = id => `${base.replace(/^http/, 'ws')}/api/chat?conversation=${id}`;
+  const openSocket = (id, protocols) => new Promise(resolve => {
+    const socket = new WebSocket(socketUrl(id), protocols), frames = [];
+    socket.onmessage = event => frames.push(event.data === 'pong' ? { kind: 'pong' } : JSON.parse(event.data));
+    socket.onopen = () => resolve({ socket, frames });
+    socket.onerror = () => resolve({ socket: undefined, frames });
+  });
+  const frameOf = async (frames, kind, from = 0, ms = 10000) => {
+    for (const deadline = Date.now() + ms; Date.now() < deadline; await pause(100)) { const found = frames.slice(from).find(frame => frame.kind === kind); if (found) return found; }
+    throw new Error(`no ${kind} frame within ${ms} ms`);
+  };
+  const instance = async () => (await (await api('/api/agent')).json()).instance;
+  const firstConversation = async () => (await (await api('/api/conversations')).json()).conversations[0].id;
+  await step('the chat socket refuses an upgrade without the token, and serves a snapshot, ping and calls with it', async () => {
+    const id = await firstConversation();
+    assert.equal((await openSocket(id, ['boring.chat'])).socket, undefined, 'no token: the upgrade is refused');
+    assert.equal((await openSocket(id, ['boring.chat', 'bearer.not-the-token'])).socket, undefined, 'a wrong token too');
+    const { socket, frames } = await openSocket(id, ['boring.chat', `bearer.${token}`]);
+    assert.ok(socket, 'the socket opens with the token');
+    assert.equal(socket.protocol, 'boring.chat', 'the host selects the chat subprotocol, never echoing the credential');
+    assert.equal((await frameOf(frames, 'view')).view.conversation.id, id, 'a snapshot first');
+    socket.send('ping'); await frameOf(frames, 'pong');
+    socket.send(JSON.stringify({ kind: 'call', id: 'journey-entries', op: 'entries', params: { limit: '5' } }));
+    assert.equal((await frameOf(frames, 'reply')).status, 200);
+    socket.close();
+  });
+  // Hibernation: an idle object with only this socket open (pinged every 10 s, answered by the platform's auto-response without waking it)
+  // leaves memory; the next request meets a new instance while the socket is still open, and the socket receives a fresh snapshot.
+  // Takes about two minutes (workerd evicts an idle object after 70 to 140 s), so it runs only with CF_HIBERNATION=1.
+  if (process.env.CF_HIBERNATION === '1') await step('an idle open chat socket lets the Durable Object hibernate; the wake sends a fresh snapshot', async () => {
+    const id = await firstConversation();
+    const { socket, frames } = await openSocket(id, ['boring.chat', `bearer.${token}`]);
+    await frameOf(frames, 'view');
+    const before = await instance();
+    for (let waited = 0; waited < 150_000; waited += 10_000) { await pause(10_000); socket.send('ping'); }
+    const views = frames.filter(frame => frame.kind === 'view').length;
+    const after = await instance();
+    assert.notEqual(after, before, 'the object left memory while the socket stayed open (hibernated)');
+    assert.equal(socket.readyState, WebSocket.OPEN);
+    socket.send(JSON.stringify({ kind: 'call', id: 'journey-wake', op: 'submission', params: { requestId: 'none' } }));
+    assert.equal((await frameOf(frames, 'reply')).status, 200);
+    assert.ok(frames.filter(frame => frame.kind === 'view').length > views || frames.slice(-3).some(frame => frame.kind === 'view'), 'the wake reopened the watch with a snapshot');
+    socket.close();
+    return { before, after };
+  });
+
   const agent = await (await api('/api/agent')).json();
   const variant = { ...agent.variant };
   assert.equal(variant.id, 'cloudflare');
@@ -56,10 +103,15 @@ try {
   // `refuseDiscovery` refuses that many discovery requests with a 503; `delayWrong` holds a discovery sent with that token for 5 s.
   const setFaults = faults => browser.evaluate(`sessionStorage.setItem('journey.faults', ${JSON.stringify(JSON.stringify(faults))})`);
   const PAGE_FAULTS = `(() => {
+    const Socket = window.WebSocket;
+    window.__chatSockets = [];
+    window.WebSocket = function (url, protocols) { const socket = new Socket(url, protocols); if (String(url).includes('/api/chat')) window.__chatSockets.push(socket); return socket; };
+    window.WebSocket.prototype = Socket.prototype; Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
     const send = window.fetch.bind(window);
     const read = () => { try { return JSON.parse(sessionStorage.getItem('journey.faults') ?? '{}'); } catch { return {}; } };
     window.fetch = async (input, init) => {
       const request = input instanceof Request ? input : new Request(input, init);
+      if (new URL(request.url).searchParams.get('op') === 'watch') window.__httpWatches = (window.__httpWatches ?? 0) + 1;
       if (new URL(request.url).pathname !== '/api/resources') return send(request);
       const faults = read();
       if (faults.refuseDiscovery > 0) { sessionStorage.setItem('journey.faults', JSON.stringify({ ...faults, refuseDiscovery: faults.refuseDiscovery - 1 })); return new Response(null, { status: 503 }); }
@@ -78,6 +130,11 @@ try {
     await browser.click(q('p[role="alert"] button'));
     await browser.until('the chat is live again', liveChat, 60000);
     await setFaults({});
+  });
+
+  await step('the page chat runs over the WebSocket transport, not an open HTTP stream', async () => {
+    await browser.until('an open chat socket', 'window.__chatSockets?.some(socket => socket.readyState === 1)', 30000);
+    assert.equal(await browser.evaluate('window.__httpWatches ?? 0'), 0, 'no HTTP watch stream was opened');
   });
 
   await step('a late 401 for a token the person replaced does not sign out the new token', async () => {

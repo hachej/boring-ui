@@ -14,7 +14,7 @@ import { answerUserQuestion } from '@hachej/boring-agent/ask-user';
 import { withWorkspace } from '@hachej/boring-agent/workspaces';
 import { defineStandardAgent } from '../../../../shared/standard-agent.mjs';
 import { EFFORTS, configureOffered, firstMessageTitle } from '../../../../shared/conversation-host.mjs';
-import { createChatTransportHandler, routeSubmissions } from '@hachej/boring-agent/chat-transport';
+import { createChatTransportHandler, createConversationSocketHandler, routeSubmissions } from '@hachej/boring-agent/chat-transport';
 import { durableObjectSqliteConnection } from '@hachej/boring-files/sqlite-durable-object';
 import { openSqliteFileSystem } from '@hachej/boring-files/sqlite-filesystem';
 import { createWorkspaceJournal } from '@hachej/boring-files/journal';
@@ -42,6 +42,9 @@ function openWorkspace(connection, name) {
   const files = createWorkspaceProvider({ identity: { providerId: 'workspace', instanceId: name, incarnation: fs.incarnation, viewId: 'published' }, fs, journal: createWorkspaceJournal(connection) });
   return { fs, files };
 }
+
+/** Pi's in-memory caches (an idle document, a kept context) expire on a timer by default; on this object they go right after use. */
+const HIBERNATABLE = { documentRetentionMs: 0, contextRetentionMs: 0 };
 
 const json = (value, status = 200) => Response.json(value, { status, headers: { 'cache-control': 'no-store' } });
 
@@ -73,7 +76,8 @@ export class Assistant extends DurableObject {
       const env = await this.#workspaceEnv();
       // The same scan as the agent's `reload`, so what the agent wrote in `.agent/` survives the object's restarts.
       await this.agent.reload(env, opening);
-      return Harness.open(storage, { models, registry: this.registry, env: () => env }, opening);
+      // Nothing kept in memory on a timer: a pending timer keeps a Durable Object from hibernating, and hibernation drops memory anyway.
+      return Harness.open(storage, { models, registry: this.registry, env: () => env, settings: HIBERNATABLE }, opening);
     },
     defaults: { model: this.ai(MODELS[0].modelId) },
   });
@@ -129,14 +133,40 @@ export class Assistant extends DurableObject {
     return configureOffered(conversation, change, context, model => model.provider === CLOUDFLARE_PROVIDER_ID && MODELS.some(item => item.modelId === model.modelId));
   }
 
+  /** The chat access to one conversation, the same for the HTTP transport and the socket. `touch` records activity on an effect. */
+  #access(conversation) {
+    const touched = async effect => { await this.#touch(conversation.id); return effect !== undefined; };
+    return { conversation: this.#viaHarness(conversation), context, abortSubmission: async id => (await this.harness.pi()).abortSubmission(id, context, conversation.id), answer: (callId, answer) => answerUserQuestion(conversation, callId, answer),
+      configure: change => this.#configure(conversation, change), allow: touched };
+  }
+
   #chat = createChatTransportHandler({ authenticate: async request => {
     await this.#open();
     const conversation = this.#conversations.get(new URL(request.url).searchParams.get('conversation') ?? '');
-    if (!conversation) return null;
-    if (request.method === 'POST') await this.#touch(conversation.id);
-    return { conversation: this.#viaHarness(conversation), context, abortSubmission: async id => (await this.harness.pi()).abortSubmission(id, context, conversation.id), answer: (callId, answer) => answerUserQuestion(conversation, callId, answer),
-      configure: change => this.#configure(conversation, change) };
+    return conversation ? this.#access(conversation) : null;
   } });
+
+  /**
+   * The chat over hibernatable WebSockets (the page's default): the socket's owner and conversation live in its attachment, so an idle
+   * open page lets this object hibernate; a wake (a message, or the harness alarm resuming a run) reopens the watches with a full view.
+   */
+  #sockets = createConversationSocketHandler({ state: this.ctx,
+    authenticate: async request => {
+      await this.#open();
+      const id = new URL(request.url).searchParams.get('conversation') ?? '';
+      return this.#conversations.has(id) ? { owner: OWNER.principalId, conversationId: id } : null;
+    },
+    access: async ({ conversationId }) => {
+      await this.#open();
+      const conversation = this.#conversations.get(conversationId);
+      return conversation ? this.#access(conversation) : null;
+    } });
+
+  webSocketMessage(socket, message) { return this.#sockets.webSocketMessage(socket, message); }
+  webSocketClose(socket, code, reason) { return this.#sockets.webSocketClose(socket, code, reason); }
+  webSocketError(socket) { return this.#sockets.webSocketClose(socket, 1011, 'error'); }
+  /** Lifecycle startup, also on an alarm wake: a run the harness resumes reaches the pages whose sockets slept with the object. */
+  onStart() { void this.#sockets.resume().catch(error => console.error('socket resume failed', String(error))); }
 
   /**
    * Proof that a multi-file save is atomic in this object's SQLite: a second workspace (`atomicity-proof`) whose connection fails the
@@ -170,7 +200,7 @@ export class Assistant extends DurableObject {
   async fetch(request) {
     const url = new URL(request.url);
     try {
-      if (url.pathname === '/api/chat') return await this.#chat(request);
+      if (url.pathname === '/api/chat') return await (request.headers.get('upgrade')?.toLowerCase() === 'websocket' ? this.#sockets.fetch(request) : this.#chat(request));
       if (url.pathname === '/api/resources') return await this.#resources(request);
       await this.#open();
       if (url.pathname === '/api/agent' && request.method === 'GET') {
