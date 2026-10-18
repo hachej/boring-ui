@@ -74,7 +74,9 @@ function Workspace({ token, onRejected }) {
   const conversationId = items ? (items.some(item => item.id === selected) ? selected : items.at(-1)?.id) : undefined;
   const active = conversationId === undefined ? undefined : String(conversationId);
   useEffect(() => { try { if (conversationId !== undefined) sessionStorage.setItem('recipe.conversation', String(conversationId)); } catch { /* optional */ } }, [conversationId]);
-  const chat = useRemoteChat({ conversationId: agent ? active : undefined, endpoint: id => new URL(`/api/chat?conversation=${id}`, location.href), fetch: authorized, identity: agent?.identity });
+  // The chat runs over a hibernatable WebSocket (an idle open page lets the Durable Object sleep); HTTP if the socket cannot open.
+  const webSocket = useMemo(() => ({ open: url => new WebSocket(url, ['boring.chat', `bearer.${token}`]) }), [token]);
+  const chat = useRemoteChat({ conversationId: agent ? active : undefined, endpoint: id => new URL(`/api/chat?conversation=${id}`, location.href), fetch: authorized, identity: agent?.identity, transport: 'websocket', webSocket });
   const controller = chat.status === 'ready' ? chat.controller : undefined;
   // The variant as the page and the scenario list see it: what this deployment gives the one standard agent.
   const variant = useMemo(() => agent && { ...agent.variant, notes: agent.notes, canvas: undefined }, [agent]);

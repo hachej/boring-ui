@@ -28,6 +28,21 @@ export interface RemoteChatOptions {
    * 30000), each with random jitter of up to half its length. Reopening stops when the watch is stopped (controller disposed).
    */
   readonly reconnect?: { readonly baseDelayMs?: number; readonly maxDelayMs?: number };
+  /**
+   * `websocket`: carry the watch and every call over one WebSocket to the same endpoint (`ws:`/`wss:` from the page), served by
+   * `createConversationSocketHandler` of `@hachej/boring-agent/chat-transport`. A Durable Object can then hibernate while the page
+   * is idle. Calls not yet answered when the socket drops are sent again unchanged (same request ID) on the next socket, and every
+   * socket begins with a complete view. If the first socket cannot open, the chat uses HTTP (`fetch`) instead. Default `http`.
+   */
+  readonly transport?: 'http' | 'websocket';
+  /**
+   * WebSocket details. `open` creates the socket (default `new WebSocket(url, 'boring.chat')`); a browser cannot set headers on a
+   * WebSocket, so a host with bearer tokens offers its credential as another subprotocol here. `pingMs` (default 15000): a `ping`
+   * every interval; a socket silent for 2.5 intervals is treated as lost and reopened.
+   */
+  readonly webSocket?: { readonly open?: (url: URL) => WebSocket; readonly pingMs?: number };
+  /** Host events the socket carries beside the chat (`broadcast` on the server, for example presence or the conversation list). */
+  readonly onEvent?: (event: unknown) => void;
 }
 
 export interface RemoteChat {
@@ -89,8 +104,25 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
     for (const [key, value] of Object.entries(extra)) target.searchParams.set(key, value);
     return target;
   };
+  // The transport in use: `websocket` until its first socket fails to open, then `http` for good.
+  let mode = options.transport ?? 'http', current: WebSocket | undefined, seq = 0;
+  /** Calls sent over a socket and not answered yet, by call ID: sent again unchanged on the next socket. */
+  const outbox = new Map<string, { readonly text: string; readonly http: () => Request; readonly resolve: (response: Response) => void; readonly reject: (error: unknown) => void }>();
+  function exchange(op: string, init: RequestInit, extra: Record<string, string>): Promise<Response> {
+    const http = () => new Request(url(op, extra), init);
+    if (mode !== 'websocket') return send(http());
+    const id = `c${++seq}`;
+    const text = JSON.stringify({ kind: 'call', id, op, params: extra, ...(typeof init.body === 'string' ? { body: JSON.parse(init.body) as unknown } : {}) });
+    return new Promise((resolve, reject) => { outbox.set(id, { text, http, resolve, reject }); try { current?.send(text); } catch { /* sent again on the next socket */ } });
+  }
+  /** Leave the socket for HTTP: calls still waiting for a socket go over HTTP, unchanged (same request ID, so the host deduplicates). */
+  function fallBack() {
+    mode = 'http';
+    const pending = [...outbox.values()]; outbox.clear();
+    for (const call of pending) send(call.http()).then(call.resolve, call.reject);
+  }
   async function call<T>(op: string, init: RequestInit = {}, extra: Record<string, string> = {}): Promise<T> {
-    const response = await send(new Request(url(op, extra), init));
+    const response = await exchange(op, init, extra);
     if (response.status === 402 && op === 'submit') {
       const refused = await response.json().catch(() => ({})) as { reason?: unknown; message?: unknown };
       if (refused.reason === 'submission-refused') throw new SubmissionRefused(typeof refused.message === 'string' && refused.message ? refused.message : 'The host refused this message');
@@ -101,12 +133,62 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
   const post = <T>(op: string, value: unknown) => call<T>(op, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(value) });
   const lookup = async (requestId: string) => (await call<{ record: SubmissionRecord | null }>('submission', {}, { requestId })).record ?? undefined;
 
-  async function watch(): Promise<Watch> {
+  /** One open watch connection: its first view, then frames until it ends (`undefined`: it closed without an end frame). */
+  type Source = { readonly first: ConversationView; readonly next: () => Promise<Frame | undefined>; readonly cancel: () => void };
+
+  const ping = options.webSocket?.pingMs ?? 15_000;
+  const openSocket = options.webSocket?.open ?? ((target: URL) => new WebSocket(target, 'boring.chat'));
+  function socketSource(): Promise<Source> {
+    return new Promise((ready, refuse) => {
+      const target = new URL(base); target.protocol = target.protocol === 'https:' ? 'wss:' : 'ws:';
+      let socket: WebSocket;
+      try { socket = openSocket(target); } catch (error) { refuse(error); return; }
+      const frames: Frame[] = [];
+      let wake: (() => void) | undefined, closed = false, opened = false, heard = Date.now();
+      const notify = () => { const resume = wake; wake = undefined; resume?.(); };
+      const finish = () => {
+        if (closed) return;
+        closed = true; clearInterval(timer); if (current === socket) current = undefined; notify();
+        if (!opened) refuse(new Error('Remote chat socket closed before its first view'));
+      };
+      const timer = setInterval(() => {
+        if (Date.now() - heard > ping * 2.5) { try { socket.close(); } catch { /* closing */ } finish(); }
+        else if (socket.readyState === 1) socket.send('ping');
+      }, ping);
+      const next = async () => { while (frames.length === 0 && !closed) await new Promise<void>(resolve => { wake = resolve; }); return frames.shift(); };
+      const cancel = () => { try { socket.close(1000); } catch { /* closing */ } finish(); };
+      socket.onclose = finish;
+      socket.onerror = () => { try { socket.close(); } catch { /* closing */ } finish(); };
+      socket.onmessage = event => {
+        heard = Date.now();
+        if (typeof event.data !== 'string' || event.data === 'pong') return;
+        let frame: Frame | { readonly kind: 'reply'; readonly id: string; readonly status: number; readonly body: unknown } | { readonly kind: 'event'; readonly event: unknown };
+        try { frame = JSON.parse(event.data) as typeof frame; } catch { return; }
+        if (frame.kind === 'reply') {
+          const pending = outbox.get(frame.id);
+          if (pending) { outbox.delete(frame.id); pending.resolve(new Response(JSON.stringify(frame.body), { status: frame.status, headers: { 'content-type': 'application/json' } })); }
+          return;
+        }
+        if (frame.kind === 'event') { try { options.onEvent?.(frame.event); } catch { /* a host listener never breaks the chat */ } return; }
+        if (!opened) {
+          if (frame.kind !== 'view') { cancel(); return; }
+          opened = true; current = socket;
+          // Unanswered calls go again, unchanged: a submit keeps its request ID, so the host runs it once.
+          for (const pending of outbox.values()) socket.send(pending.text);
+          ready({ first: frame.view, next, cancel });
+          return;
+        }
+        frames.push(frame); notify();
+      };
+    });
+  }
+
+  async function httpSource(): Promise<Source> {
     const stopped = new AbortController();
     const response = await send(new Request(url('watch'), { signal: stopped.signal }));
     if (!response.ok || !response.body) throw new WatchRefused(`Remote chat watch failed: ${await reason(response)}`, response.status);
     const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
-    let pending = '', staleMs = 0, lost = false;
+    let pending = '', staleMs = 0;
     // Once the server has announced its heartbeat interval, a read waiting 2.5 intervals means the stream is dead even if the
     // socket still looks open (a proxy that dropped it silently).
     async function read() {
@@ -114,7 +196,7 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
         return await Promise.race([reader.read(), new Promise<never>((_, reject) => {
-          timer = setTimeout(() => { lost = true; stopped.abort(); reject(new Error('Remote chat stream went silent')); }, staleMs);
+          timer = setTimeout(() => { stopped.abort(); reject(new Error('Remote chat stream went silent')); }, staleMs);
         })]);
       } finally { clearTimeout(timer); }
     }
@@ -134,9 +216,21 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
     }
     const first = await next().catch(() => undefined);
     if (first?.kind !== 'view') { stopped.abort(); throw new Error('Remote chat watch ended before its first view'); }
-    let value = first.view, started = false, settle!: (end: WatchEnd) => void, ended: WatchEnd | undefined;
+    return { first: first.view, next, cancel: () => stopped.abort() };
+  }
+
+  let socketWorked = false;
+  async function watch(): Promise<Watch> {
+    let source: Source;
+    if (mode === 'websocket') {
+      try { source = await socketSource(); socketWorked = true; }
+      catch (error) { if (socketWorked) throw error; fallBack(); source = await httpSource(); }
+    } else source = await httpSource();
+    const { next } = source;
+    let lost = false;
+    let value = source.first, started = false, settle!: (end: WatchEnd) => void, ended: WatchEnd | undefined;
     const closed = new Promise<WatchEnd>(resolve => { settle = resolve; });
-    const finish = (end: WatchEnd) => { if (!ended) { ended = end; stopped.abort(); settle(end); } };
+    const finish = (end: WatchEnd) => { if (!ended) { ended = end; source.cancel(); settle(end); } };
     const handle: Watch = {
       get value() { return value; },
       closed,
