@@ -242,6 +242,8 @@ export const defaultChatLabels = {
   ownAnswer: 'Or type your own answer',
   typeAnswer: 'Type your answer',
   yourAnswerInput: 'Your answer',
+  /** A question of a form left blank, in the answer sent to the agent. */
+  skipped: '(no answer)',
   answer: 'Answer',
   stillWritingQuestion: 'The agent is still writing this question…',
   answeringUnavailable: 'Answering is not available in this view.',

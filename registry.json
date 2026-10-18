@@ -748,7 +748,8 @@
         "@boring-ui/file-tree",
         "dropdown-menu",
         "scroll-area",
-        "separator"
+        "separator",
+        "table"
       ],
       "files": [
         {

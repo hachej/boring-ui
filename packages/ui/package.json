@@ -12,12 +12,16 @@
     "dist/**/*.js",
     "dist/**/*.d.ts",
     "r/*.json",
+    "bin/*.mjs",
     "README.md",
     "LICENSE",
     "THIRD_PARTY_NOTICES.md",
     "styles"
   ],
   "types": "./dist/index.d.ts",
+  "bin": {
+    "boring-ui-blocks": "./bin/boring-ui-blocks.mjs"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

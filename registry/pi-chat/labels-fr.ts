@@ -217,6 +217,7 @@ export const frenchChatLabels: ChatLabels = {
   ownAnswer: 'Ou écrivez votre propre réponse',
   typeAnswer: 'Écrivez votre réponse',
   yourAnswerInput: 'Votre réponse',
+  skipped: '(pas de réponse)',
   answer: 'Répondre',
   stillWritingQuestion: 'L’agent est encore en train d’écrire cette question…',
   answeringUnavailable: 'La réponse n’est pas disponible dans cette vue.',

@@ -16,8 +16,10 @@ export function checkPackage(manifest, paths, versions, { release = false } = {}
   if (manifest.name === '@hachej/boring-ui-kit' && !files.has('THIRD_PARTY_NOTICES.md')) errors.push('Missing embedded icon license notices');
   const isTreeStyles = path => manifest.name === '@hachej/boring-ui-kit' && path === 'styles/file-tree.css';
   const isRegistryFile = path => manifest.name === '@hachej/boring-ui-kit' && /^r\/[\w.-]+\.json$/.test(path);
+  // The kit's one command (`boring-ui-blocks`: drift check and update of installed registry blocks).
+  const isKitBin = path => manifest.name === '@hachej/boring-ui-kit' && path === 'bin/boring-ui-blocks.mjs';
   for (const path of files) {
-    if (isTreeStyles(path) || isRegistryFile(path)) continue;
+    if (isTreeStyles(path) || isRegistryFile(path) || isKitBin(path)) continue;
     if (!/^(package\.json|README\.md|LICENSE|INVARIANTS\.md|THIRD_PARTY_NOTICES\.md|dist\/(?:[\w.-]+\/)*[\w.-]+\.(?:js|d\.ts))$/.test(path)) errors.push(`Unexpected packed file: ${path}`);
   }
   function target(value) {
@@ -30,6 +32,7 @@ export function checkPackage(manifest, paths, versions, { release = false } = {}
   if (!manifest.exports || !Object.keys(manifest.exports).length) errors.push('Missing exports');
   else target(manifest.exports);
   if (manifest.types) target(manifest.types);
+  for (const [name, path] of Object.entries(manifest.bin ?? {})) if (typeof path !== 'string' || !path.startsWith('./') || !files.has(path.slice(2))) errors.push(`Missing or invalid bin target: ${name}`);
   if (manifest.license !== 'MIT') errors.push('Expected repository MIT license');
   if (!manifest.repository?.directory || manifest.repository?.url !== 'git+https://github.com/hachej/boring-ui.git') errors.push('Missing repository metadata');
   if (!manifest.engines?.node) errors.push('Missing Node engine');

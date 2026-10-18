@@ -98,7 +98,7 @@ test('a pending ask_user call is visible and a valid answer resumes the model', 
 });
 
 test('answers outside the options are denied, one answer wins and the same answer is idempotent', async t => {
-  const f = await fixture(t);
+  const f = await fixture(t, { question: 'Where do we picnic?', options: ['park', 'lake'], allowFreeText: false });
   await f.remote.conversation.submit({ type: 'input', requestId: 'r1', content: 'Plan a picnic.' }, f.remote.context);
   const call = await waitPending(f.remote);
   assert.equal((await f.remote.answer(call.id, 'moon')).kind, 'denied');
@@ -113,19 +113,34 @@ test('answers outside the options are denied, one answer wins and the same answe
   assert.ok(!JSON.stringify(await view(f.remote)).includes('no-such-call'), 'unknown IDs leave no record');
 });
 
-test('free text is accepted only when allowed', async t => {
-  const f = await fixture(t, { question: 'Any dietary note?', allowFreeText: true });
+test('free text is accepted unless allowFreeText is false', async t => {
+  const f = await fixture(t, { question: 'Any dietary note?' });
   await f.remote.conversation.submit({ type: 'input', requestId: 'r1', content: 'Plan a picnic.' }, f.remote.context);
   const call = await waitPending(f.remote);
   assert.deepEqual(await f.remote.answer(call.id, 'No nuts, please'), { kind: 'answered' });
   await until('model continues', async () => finalText(await view(f.remote))?.includes('No nuts, please'));
-  const strict = await fixture(t, { question: 'Where?', options: ['park', 'lake'] });
+  const choice = await fixture(t, { question: 'Where?', options: ['park', 'lake'] });
+  await choice.remote.conversation.submit({ type: 'input', requestId: 'r1', content: 'Plan.' }, choice.remote.context);
+  assert.deepEqual(await choice.remote.answer((await waitPending(choice.remote)).id, 'By the river'), { kind: 'answered' }, 'options alone still take free text');
+  const strict = await fixture(t, { question: 'Where?', options: ['park', 'lake'], allowFreeText: false });
   await strict.remote.conversation.submit({ type: 'input', requestId: 'r1', content: 'Plan.' }, strict.remote.context);
   assert.equal((await strict.remote.answer((await waitPending(strict.remote)).id, 'No nuts, please')).kind, 'denied');
 });
 
+test('a form of several questions is answered as one text', async t => {
+  const f = await fixture(t, { question: 'A few details', questions: [{ question: 'Where?', options: ['park', 'lake'] }, { question: 'Any dietary note?' }] });
+  await f.remote.conversation.submit({ type: 'input', requestId: 'r1', content: 'Plan a picnic.' }, f.remote.context);
+  const call = await waitPending(f.remote);
+  const text = '1. Where?\n→ lake\n\n2. Any dietary note?\n→ (no answer)';
+  assert.deepEqual(await f.remote.answer(call.id, text), { kind: 'answered' });
+  await until('model continues', async () => finalText(await view(f.remote))?.includes('→ lake'));
+  const bad = await fixture(t, { question: 'Form', questions: [{ question: 'Where?', options: ['only one'] }] });
+  await bad.remote.conversation.submit({ type: 'input', requestId: 'r1', content: 'Plan.' }, bad.remote.context);
+  await until('error result', async () => messages(await view(bad.remote)).some(m => m.role === 'toolResult' && m.isError));
+});
+
 test('malformed questions fail without suspending', async t => {
-  const f = await fixture(t, { question: 'Neither options nor free text' });
+  const f = await fixture(t, { question: 'Neither options nor free text', allowFreeText: false });
   await f.remote.conversation.submit({ type: 'input', requestId: 'r1', content: 'Plan.' }, f.remote.context);
   await until('error result', async () => messages(await view(f.remote)).some(m => m.role === 'toolResult' && m.isError));
   assert.deepEqual(pending(await view(f.remote)), []);
@@ -367,7 +382,7 @@ test('reused model call IDs cannot inherit or redirect a human answer across nat
   const firstId = JSON.stringify([firstTask.input.assistant, 'fixture-call']);
   await until('first question admitted', async () => (await answerUserQuestion(conversation, firstId, 'park')).kind === 'answered');
   assert.equal((await documentToolResult(harness, conversation, first)).result.answer, 'park');
-  const second = await admitDocumentTool(conversation, { question: 'Second?', options: ['red', 'blue'] }, 'ask_user');
+  const second = await admitDocumentTool(conversation, { question: 'Second?', options: ['red', 'blue'], allowFreeText: false }, 'ask_user');
   const secondTask = await harness.getTask(second, context);
   const secondId = JSON.stringify([secondTask.input.assistant, 'fixture-call']);
   await until('second question admitted', async () => (await answerUserQuestion(conversation, secondId, 'park')).kind === 'denied');
@@ -393,7 +408,7 @@ test('an opaque raw call ID cannot impersonate another question scoped ID', { ti
   await documentToolResult(harness, conversation, first);
   const second = await conversation.commit(async tx => {
     const firstEntry = await tx.entry(firstTask.input.assistant);
-    const entry = await tx.appendEntry(AssistantEntry, conversation.id, { model: [{ ...firstEntry.model[0], content: [{ type: 'toolCall', id: firstId, name: 'ask_user', arguments: { question: 'Second?', options: ['red', 'blue'] } }] }] });
+    const entry = await tx.appendEntry(AssistantEntry, conversation.id, { model: [{ ...firstEntry.model[0], content: [{ type: 'toolCall', id: firstId, name: 'ask_user', arguments: { question: 'Second?', options: ['red', 'blue'], allowFreeText: false } }] }] });
     return tx.createTask(ToolTask, { kind: 'model', assistant: entry.id, callId: firstId }, { ownership: { kind: 'conversation' } });
   }, context);
   const secondTask = await harness.getTask(second, context);

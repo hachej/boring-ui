@@ -24,7 +24,7 @@ export const askUserQuestionId = callBindingId;
 function refusal(options: readonly string[] | undefined, allowFreeText: boolean | undefined): string | undefined {
   if (options !== undefined && (options.length < 2 || options.length > 6 || options.some(option => typeof option !== 'string' || !option.trim() || option.length > 200)
     || new Set(options).size !== options.length)) return 'options must be 2 to 6 distinct short strings';
-  if (options === undefined && allowFreeText !== true) return 'give options, or set allowFreeText to true';
+  if (options === undefined && allowFreeText === false) return 'give options, or allow free text';
   return undefined;
 }
 
@@ -37,19 +37,26 @@ function refusal(options: readonly string[] | undefined, allowFreeText: boolean 
 export function createAskUserTool(options: { readonly description?: string } = {}): ToolRegistration {
   return defineTool({
     name: ASK_USER_TOOL,
-    description: options.description ?? 'Ask the person a question and wait for their answer. Give 2 to 6 short options, or allow free text, or both.',
+    description: options.description ?? 'Ask the person a question and wait for their answer. Give 2 to 6 short options when the answer is a choice; the person may also answer in their own words unless allowFreeText is false. To ask several related questions at once, give them as `questions` (up to 8, each with its own options): the person answers them in one form, may skip some, and the answer lists each question with its answer.',
     parameters: Type.Object({
       question: Type.String({ minLength: 1, maxLength: 1000 }),
       options: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 200 }), { minItems: 2, maxItems: 6 })),
       allowFreeText: Type.Optional(Type.Boolean()),
+      questions: Type.Optional(Type.Array(Type.Object({
+        question: Type.String({ minLength: 1, maxLength: 1000 }),
+        options: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 200 }), { minItems: 2, maxItems: 6 })),
+      }, { additionalProperties: false }), { minItems: 1, maxItems: 8 })),
     }, { additionalProperties: false }),
     replay: 'safe',
     // The wait binds to the calling model entry and call id; a nested `api.executeTool` caller has neither (see durable-wait.ts).
     callers: ['model'],
     execute: async (args, api, context) => {
-      const problem = refusal(args.options, args.allowFreeText);
+      // A form (`questions`) is answered as one free text that lists each question and its answer.
+      const form = args.questions?.length ? args.questions : undefined;
+      const problem = form ? form.map(item => refusal(item.options, true)).find(Boolean) : refusal(args.options, args.allowFreeText);
       if (problem) return { isError: true, output: [{ type: 'text', text: `Invalid question: ${problem}.` }] };
-      const answer = await askPerson(api, context, { prompt: args.question, ...(args.options === undefined ? {} : { options: args.options }), allowFreeText: args.allowFreeText === true });
+      const prompt = form ? [args.question, ...form.map((item, i) => `${i + 1}. ${item.question}`)].join('\n') : args.question;
+      const answer = await askPerson(api, context, { prompt, ...(form || args.options === undefined ? {} : { options: args.options }), allowFreeText: form ? true : args.allowFreeText !== false });
       return { output: [{ type: 'text', text: JSON.stringify({ kind: 'answered', answer }) }] };
     },
   });

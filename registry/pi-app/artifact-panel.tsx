@@ -17,9 +17,9 @@ import { createHtmlController } from '@hachej/boring-ui-kit/html';
 import type { HtmlController } from '@hachej/boring-ui-kit/html';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { artifactKey, collectArtifacts } from '../pi-chat/pi-chat';
-import type { ArtifactDescriptor, ArtifactTarget, ArtifactsConfig } from '../pi-chat/pi-chat';
+import type { ArtifactDescriptor, ArtifactKind, ArtifactTarget, ArtifactsConfig } from '../pi-chat/pi-chat';
 import { CodeBlock } from '../pi-chat/code-block';
-import { typeLabel } from '../pi-chat/artifact';
+import { artifactKind, typeLabel } from '../pi-chat/artifact';
 import { HtmlPane } from '../viewers/html-pane';
 import { MarkdownPane } from '../viewers/markdown-pane';
 import { ViewerFrame, ViewerToggle } from '../viewers/viewer-frame';
@@ -30,6 +30,7 @@ import type { InteractiveHtml } from '../viewers/interactive-html';
 import { downloadFile } from '../viewers/download';
 import { copyText } from '../utils/utils';
 import { Separator } from '@/components/ui/separator';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { savedLabel, useSaved } from './use-saved';
 import { useAppText } from './app-labels';
 
@@ -58,6 +59,8 @@ export interface ViewerOptions {
   readonly identity: ResourceIdentity;
   readonly history?: ((path: string) => Promise<readonly SavedRevision[]>) | undefined;
   readonly viewers?: CustomViewers | undefined;
+  /** The app's artifact kinds: their label names the artifact in the bar and their `renderer` draws it (before `viewers` and the built-in viewers). */
+  readonly kinds?: readonly ArtifactKind[] | undefined;
   /** The host's opt-in to running HTML pages in the sandboxed preview. */
   readonly interactive?: InteractiveHtml | undefined;
   readonly share?: ViewerShare | undefined;
@@ -136,6 +139,30 @@ function SvgView({ text, title, frame }: { readonly text: string; readonly title
   </ViewerFrame>;
 }
 
+/** Rows of a CSV text (comma or semicolon separated, double-quoted cells with `""` escapes), at most 2000. */
+export function csvRows(text: string): string[][] {
+  const rows: string[][] = []; let row: string[] = [], cell = '', quoted = false;
+  for (let i = 0; i < text.length && rows.length < 2000; i++) {
+    const c = text[i];
+    if (quoted) { if (c === '"' && text[i + 1] === '"') { cell += '"'; i++; } else if (c === '"') quoted = false; else cell += c; }
+    else if (c === '"') quoted = true;
+    else if (c === ',' || c === ';') { row.push(cell); cell = ''; }
+    else if (c === '\n' || c === '\r') { if (c === '\r' && text[i + 1] === '\n') i++; row.push(cell); rows.push(row); row = []; cell = ''; }
+    else cell += c;
+  }
+  if ((cell || row.length) && rows.length < 2000) { row.push(cell); rows.push(row); }
+  return rows;
+}
+
+/** A CSV artifact as a table: the first row is the header. */
+function CsvTable({ text }: { readonly text: string }) {
+  const [head = [], ...rows] = csvRows(text);
+  return <Table data-testid="artifact-csv">
+    <TableHeader><TableRow>{head.map((cell, i) => <TableHead key={i}>{cell}</TableHead>)}</TableRow></TableHeader>
+    <TableBody>{rows.map((row, i) => <TableRow key={i}>{row.map((cell, j) => <TableCell key={j} className="align-top">{cell}</TableCell>)}</TableRow>)}</TableBody>
+  </Table>;
+}
+
 type DocumentController = MarkdownController | HtmlController;
 
 /** One artifact version's frame and body. Mounted per resource and revision, so switching version starts clean. */
@@ -147,14 +174,15 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose }: {
   const { client, identity } = options;
   const { labels } = useAppText();
   const path = artifact.target.resource.path;
-  const custom = options.viewers?.[type];
+  const kind = artifactKind(artifact, options.kinds);
+  const custom = kind?.renderer ? undefined : options.viewers?.[type];
   const create = useMemo(() => {
     const base = (snapshot: ResourceSnapshot) => ({ identity, client, instanceId: randomUUID(), epoch: 'workspace', source: { kind: 'saved' as const, snapshot } });
-    if (custom) return undefined;
+    if (custom || kind?.renderer) return undefined;
     if (type === 'markdown') return (snapshot: ResourceSnapshot): DocumentController => createMarkdownController({ ...base(snapshot), readOnly: pinned });
     if (type === 'html') return (snapshot: ResourceSnapshot): DocumentController => createHtmlController({ ...base(snapshot), readOnly: true });
     return undefined;
-  }, [type, pinned, client, identity, custom]);
+  }, [type, pinned, client, identity, custom, kind?.renderer]);
   const autosave = useRef<{ controller: DocumentController; flush: () => Promise<boolean> } | null>(null);
   const saved = useSaved<DocumentController>({ client, target: artifact.target, revision: pinned ? artifact.revision : undefined, create,
     beforeDispose: controller => autosave.current?.controller === controller ? autosave.current.flush() : undefined });
@@ -184,7 +212,7 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose }: {
     title: artifact.title, testId: 'artifact', titleTestId: 'artifact-panel-title', controls: versions, onClose, target, ...(revision === undefined ? {} : { revision }), ...(options.share ? { onShare: options.share } : {}),
     subtitle: <>
       <span title={path}>{path}</span><span aria-hidden="true">·</span>
-      <span data-testid="artifact-panel-type">{typeLabel(artifact)}</span>
+      <span data-testid="artifact-panel-type">{typeLabel(artifact, options.kinds)}</span>
       <span aria-hidden="true">·</span>
       <span data-testid="artifact-panel-version">{pinned ? (menu.savedAt !== undefined ? labels.savedAt(savedLabel(menu.savedAt, Date.now(), labels.earlierVersion)) : labels.olderVersion) : menu.savedAt ? labels.latestSavedAt(savedLabel(menu.savedAt, Date.now(), labels.earlierVersion)) : labels.latest}</span>
     </>,
@@ -206,6 +234,8 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose }: {
   if (type === 'markdown' && controller) return body(document(<MarkdownPane controller={controller as MarkdownController} initialMode="rich" onAutosaveChange={registerAutosave} onBeforeLeaveChange={options.onBeforeLeaveChange} {...frame} />));
   if (type === 'html' && controller) return body(document(<HtmlPane controller={controller as HtmlController} {...(options.interactive ? { interactive: options.interactive } : {})} {...frame} />));
   const actions = { onCopy: () => copyText(text ?? ''), onDownload: () => downloadFile(filename, text ?? '', `${artifact.mediaType};charset=utf-8`) };
+  if (kind?.renderer) return body(<ViewerFrame {...frame} {...actions}><div data-testid="artifact-kind-view" className="min-h-0 flex-1 overflow-auto">{kind.renderer({ artifact, text: saved.text })}</div></ViewerFrame>);
+  if (type === 'code' && artifact.language === 'csv') return body(<ViewerFrame {...frame} {...actions}><div className="min-h-0 flex-1 overflow-auto"><CsvTable text={saved.text} /></div></ViewerFrame>);
   if (type === 'svg') return body(<SvgView text={saved.text} title={artifact.title} frame={{ ...frame, ...actions }} />);
   if (type === 'canvas') return body(<ViewerFrame {...frame}><p className="m-0 p-4 text-sm text-muted-foreground" role="status">{labels.noCanvasViewer}</p></ViewerFrame>);
   return body(<ViewerFrame {...frame} {...actions}><div className="min-h-0 flex-1 overflow-auto p-3"><CodeBlock code={saved.text} language={artifact.language ?? 'text'} /></div></ViewerFrame>);
