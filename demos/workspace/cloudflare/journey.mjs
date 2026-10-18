@@ -99,7 +99,8 @@ try {
     assert.equal(refused.status, 413);
     assert.equal((await refused.json()).reason, 'request-too-large');
     const stream = new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode('{}')); controller.close(); } });
-    assert.equal((await a.call('/api/resources', { method: 'POST', headers: { 'content-type': 'application/json' }, body: stream, duplex: 'half' })).status, 411);
+    // 411 from the Worker; behind Cloudflare's edge an unsized body is already refused there (403) and never reaches it.
+    assert.ok([411, 403].includes((await a.call('/api/resources', { method: 'POST', headers: { 'content-type': 'application/json' }, body: stream, duplex: 'half' })).status));
     assert.ok(!(await a.paths()).some(path => path.includes('too-big')));
   });
 
