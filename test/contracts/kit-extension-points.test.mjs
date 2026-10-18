@@ -210,3 +210,31 @@ test('boring-ui-blocks check lists an edited block file; update reinstalls every
   const manifest = JSON.parse(readFileSync(join(root, 'packages/ui/package.json'), 'utf8'));
   assert.equal(manifest.bin['boring-ui-blocks'], './bin/boring-ui-blocks.mjs', 'shipped as the kit\'s bin');
 });
+
+test('the run card follows a headless run: title, status badge, spinner and elapsed time, then duration and output as Markdown, or the error', async t => {
+  const page = await dom(t);
+  const states = [{ id: 'run-7', status: 'running', agent: 'Fictional planner', startedAt: 1_000 },
+    { id: 'run-7', status: 'completed', agent: 'Fictional planner', startedAt: 1_000, finishedAt: 66_000, text: '**Plan** ready' }];
+  const fetched = [];
+  const fetchRun = async id => { fetched.push(id); return states[Math.min(fetched.length, states.length - 1)]; };
+  await page.render(page.h(kit.RunCard, { run: { id: 'run-7', status: 'queued', agent: 'Fictional planner', startedAt: 1_000 }, fetchRun, pollMs: 20, now: () => 43_000 }));
+  const card = () => page.container.querySelector('[data-testid=run-card]');
+  assert.equal(card().getAttribute('aria-label'), 'Fictional planner');
+  assert.ok(page.container.querySelector('[data-testid=run-spinner]'), 'a spinner while queued or running');
+  assert.equal(page.container.querySelector('[data-testid=run-time]').textContent, 'Running for 42 s');
+  for (let i = 0; i < 20 && card().dataset.state !== 'completed'; i++) await page.act(async () => new Promise(resolve => setTimeout(resolve, 20)));
+  assert.equal(card().dataset.state, 'completed');
+  assert.equal(page.container.querySelector('[data-testid=run-status]').textContent, 'Completed');
+  assert.equal(page.container.querySelector('[data-testid=run-spinner]'), null);
+  assert.equal(page.container.querySelector('[data-testid=run-time]').textContent, 'Took 1 min 5 s');
+  assert.equal(page.container.querySelector('[data-testid=run-output] strong')?.textContent, 'Plan', 'text renders as Markdown');
+  const polls = fetched.length;
+  await page.act(async () => new Promise(resolve => setTimeout(resolve, 80)));
+  assert.equal(fetched.length, polls, 'a settled run is not polled');
+
+  await page.render(page.h(kit.ChatTextProvider, { value: kit.chatTextFor('fr') }, page.h(kit.RunCard, { run: kit.parseRun({ id: 'run-8', status: 'failed', error: 'Quota dépassé', output: { rows: 2 } }) })));
+  assert.equal(page.container.querySelector('[data-testid=run-status]').textContent, 'Échouée');
+  assert.equal(page.container.querySelector('[data-testid=run-error]').textContent, 'Quota dépassé');
+  assert.match(page.container.querySelector('[data-testid=run-output]').textContent, /"rows": 2/, 'structured output as JSON');
+  assert.equal(kit.parseRun({ id: 'x', status: 'paused' }), undefined, 'an unknown status is refused');
+});

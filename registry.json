@@ -569,6 +569,16 @@
           "path": "registry/pi-chat/locale.ts",
           "type": "registry:lib",
           "target": "components/pi-chat/locale.ts"
+        },
+        {
+          "path": "registry/pi-chat/use-conversations.ts",
+          "type": "registry:hook",
+          "target": "components/pi-chat/use-conversations.ts"
+        },
+        {
+          "path": "registry/pi-chat/run-card.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat/run-card.tsx"
         }
       ],
       "css": {
@@ -796,11 +806,6 @@
           "path": "registry/pi-app/new-version-notice.tsx",
           "type": "registry:component",
           "target": "components/pi-app/new-version-notice.tsx"
-        },
-        {
-          "path": "registry/pi-app/use-conversations.ts",
-          "type": "registry:hook",
-          "target": "components/pi-app/use-conversations.ts"
         },
         {
           "path": "registry/pi-app/app-labels.ts",

@@ -55,7 +55,7 @@ export type { HistoryPlacement } from './history-column';
 export { ConversationList, ConversationHistory } from '../pi-chat/history';
 export { FileTree } from '../file-tree/file-tree';
 export type { SessionsView, WorkspaceAgent, WorkspaceAgents } from './sessions';
-export { useConversations } from './use-conversations';
+export { useConversations } from '../pi-chat/use-conversations';
 export { useRemoteChat } from '../pi-chat/use-remote-chat';
 export type { RemoteChatState } from '../pi-chat/use-remote-chat';
 export { savedLabel, useSaved } from './use-saved';

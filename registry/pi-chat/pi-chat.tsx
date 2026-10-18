@@ -52,6 +52,9 @@ export { chatTextFor } from './locale';
 export type { ChatLocale } from './locale';
 export { BlockActions } from '../button/actions';
 export { useChatDraft } from './use-chat-draft';
+export { useConversations } from './use-conversations';
+export { RunCard, parseRun } from './run-card';
+export type { RunRecord, RunStatus } from './run-card';
 export type { BlockAction, BlockIcon } from '../button/actions';
 export type { AttachmentsConfig, ConversationItem, ConversationsConfig, EffortConfig, FileKind, MentionResult, MentionsConfig, ModelConfig, ModelRef, PasteToFile, PreviewRead, ReplyRef, SlashApi, SlashCommand, SlashConfig, SlashSkill, UploadResult } from './config';
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ConversationItem, ConversationsConfig } from '../pi-chat/pi-chat';
+import type { ConversationItem, ConversationsConfig } from './config';
 
 /** One row as `createConversationsHandler` of `@hachej/boring-agent/conversations` returns it. */
 interface ServedConversation {

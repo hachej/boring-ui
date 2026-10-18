@@ -12,7 +12,7 @@ import { AmbientChat } from '../../registry/pi-ambient/ambient.tsx';
 import { useRemoteChat } from '../../registry/pi-chat/use-remote-chat.ts';
 import { VoiceInput } from '../../registry/feedback/voice-input.tsx';
 import { useRevisionAttachments } from '../../registry/pi-app/use-revision-attachments.ts';
-import { useConversations } from '../../registry/pi-app/use-conversations.ts';
+import { useConversations } from '../../registry/pi-chat/use-conversations.ts';
 import { useHistoryColumn } from '../../registry/pi-app/history-column.tsx';
 import { FileViewer } from '../../registry/pi-app/file-viewer.tsx';
 import { BlockActions } from '../../registry/button/actions.tsx';
