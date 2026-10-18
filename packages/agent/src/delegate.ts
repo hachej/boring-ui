@@ -1,13 +1,15 @@
 import { AssistantEntry, configure, defineTool } from '@earendil-works/pi-durable';
 import type { AgentChange, ConversationId, ToolRegistration } from '@earendil-works/pi-durable';
 import { Type } from '@earendil-works/pi-ai';
-import type { DefinedAgent } from './agents.js';
 
 export const DELEGATE_TOOL = 'delegate';
 
 export interface DelegateOptions {
-  /** The child agent. The child conversation selects exactly its extensions, model and instructions: its tools are the whole toolset. */
-  readonly agent: Pick<DefinedAgent, 'id' | 'agent'>;
+  /**
+   * The child agent, usually a `defineAgent` result (its `id` and native `agent` change). The child conversation selects exactly its
+   * extensions, model and instructions: its tools are the whole toolset. Its extensions must be installed in the registry.
+   */
+  readonly agent: { readonly id: string; readonly agent: AgentChange };
   /** Tool name; default `delegate`. Give each delegate of one agent its own name. */
   readonly name?: string;
   readonly description?: string;
