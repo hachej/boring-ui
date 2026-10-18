@@ -32,6 +32,13 @@ for (const withResources of [false, true]) test(`actual packed UI installs/typec
     assert.deepEqual(readdirSync(join(consumer, 'node_modules/@hachej')).sort(), withResources ? ['boring-files', 'boring-ui-kit'] : ['boring-ui-kit']);
     // npm's link folder for the kit's one command (`boring-ui-blocks`), not a package.
     assert.equal(existsSync(join(consumer, 'node_modules/.bin/boring-ui-blocks')), true);
+    // The packed command runs alone in the consumer: one check, no repository script (exit 2 without components.json, 0 once configured).
+    const blocks = args => spawnSync(join(consumer, 'node_modules/.bin/boring-ui-blocks'), args, { cwd: consumer, encoding: 'utf8', timeout: 60000 });
+    assert.equal(blocks(['check']).status, 2);
+    writeFileSync(join(consumer, 'components.json'), JSON.stringify({ aliases: { components: '@/components', ui: '@/components/ui' } }));
+    const checked = blocks(['check', '--design', '.']);
+    assert.equal(checked.status, 0, checked.stdout + checked.stderr);
+    assert.match(checked.stdout, /^ok @hachej\/boring-ui-kit@\S+: 0 block\(s\), design \., SHADCN-GENERATED\.json matches$/m);
     assert.equal(existsSync(join(consumer, 'node_modules/@earendil-works/pi-durable')), false);
     assert.equal(existsSync(join(consumer, 'node_modules/@hachej/boring-agent')), false);
     assert.equal(existsSync(join(consumer, 'node_modules/@hachej/boring-files')), withResources);
