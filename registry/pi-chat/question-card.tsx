@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
 import { CheckIcon, MessageCircleQuestionIcon, SendIcon } from 'lucide-react';
@@ -80,6 +80,7 @@ export function QuestionCard({ call, result, answer, questionId, live = false }:
   const [refusal, setRefusal] = useState<string | undefined>();
   const [text, setText] = useState('');
   const [values, setValues] = useState<readonly string[]>([]);
+  const formId = useId();
   const setValue = (i: number, value: string) => setValues(previous => question.items.map((_, j) => j === i ? value : previous[j] ?? ''));
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -118,15 +119,15 @@ export function QuestionCard({ call, result, answer, questionId, live = false }:
     </ItemContent>
     {open && <ItemFooter className="flex-col items-stretch">
       {question.items.length > 0 ? <form data-testid="question-form" onSubmit={onSubmitForm} className="flex flex-col gap-4">
-        {question.items.map((item, i) => <fieldset key={i} data-testid="question-item" className="m-0 flex min-w-0 flex-col gap-2 p-0">
-          <legend className="mb-2 p-0 text-sm [overflow-wrap:anywhere]"><span className="me-1 text-muted-foreground">{i + 1}.</span>{item.question}</legend>
+        {question.items.map((item, i) => <div key={i} role="group" aria-labelledby={`${formId}-${i}`} data-testid="question-item" className="flex min-w-0 flex-col gap-2">
+          <p id={`${formId}-${i}`} className="m-0 text-sm [overflow-wrap:anywhere]"><span className="me-1 text-muted-foreground">{i + 1}.</span>{item.question}</p>
           {item.options.length > 0 && <div role="group" aria-label={labels.answerOptions} className="flex flex-wrap gap-2">
             {item.options.map(option => <Toggle key={option} variant="outline" data-testid="question-option" data-option={option} disabled={unavailable}
-              pressed={values[i] === option} onPressedChange={pressed => setValue(i, pressed ? option : '')} className="h-auto min-h-11 max-w-full whitespace-normal">{option}</Toggle>)}
+              pressed={values[i] === option} onPressedChange={pressed => setValue(i, pressed ? option : '')} className="h-auto min-h-11 max-w-full whitespace-normal py-2 text-start">{option}</Toggle>)}
           </div>}
           <Input data-testid="question-input" value={item.options.includes(values[i] ?? '') ? '' : values[i] ?? ''} maxLength={2000} disabled={unavailable}
             placeholder={item.options.length ? labels.ownAnswer : labels.typeAnswer} aria-label={`${labels.yourAnswerInput} ${i + 1}`} onChange={event => setValue(i, event.currentTarget.value)} className="min-w-0" />
-        </fieldset>)}
+        </div>)}
         <div><Button type="submit" variant="default" data-testid="question-submit" disabled={unavailable || !values.some(value => value.trim())}><SendIcon data-icon="inline-start" aria-hidden="true" />{labels.answer}</Button></div>
       </form> : <>
         {question.options.length > 0 && <div role="group" aria-label={labels.answerOptions} className="flex flex-col items-stretch gap-2">
