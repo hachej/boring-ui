@@ -107,12 +107,19 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
   // The transport in use: `websocket` until its first socket fails to open, then `http` for good.
   let mode = options.transport ?? 'http', current: WebSocket | undefined, seq = 0;
   /** Calls sent over a socket and not answered yet, by call ID: sent again unchanged on the next socket. */
-  const outbox = new Map<string, { readonly text: string; readonly resolve: (response: Response) => void }>();
+  const outbox = new Map<string, { readonly text: string; readonly http: () => Request; readonly resolve: (response: Response) => void; readonly reject: (error: unknown) => void }>();
   function exchange(op: string, init: RequestInit, extra: Record<string, string>): Promise<Response> {
-    if (mode !== 'websocket') return send(new Request(url(op, extra), init));
+    const http = () => new Request(url(op, extra), init);
+    if (mode !== 'websocket') return send(http());
     const id = `c${++seq}`;
     const text = JSON.stringify({ kind: 'call', id, op, params: extra, ...(typeof init.body === 'string' ? { body: JSON.parse(init.body) as unknown } : {}) });
-    return new Promise(resolve => { outbox.set(id, { text, resolve }); try { current?.send(text); } catch { /* sent again on the next socket */ } });
+    return new Promise((resolve, reject) => { outbox.set(id, { text, http, resolve, reject }); try { current?.send(text); } catch { /* sent again on the next socket */ } });
+  }
+  /** Leave the socket for HTTP: calls still waiting for a socket go over HTTP, unchanged (same request ID, so the host deduplicates). */
+  function fallBack() {
+    mode = 'http';
+    const pending = [...outbox.values()]; outbox.clear();
+    for (const call of pending) send(call.http()).then(call.resolve, call.reject);
   }
   async function call<T>(op: string, init: RequestInit = {}, extra: Record<string, string> = {}): Promise<T> {
     const response = await exchange(op, init, extra);
@@ -217,7 +224,7 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
     let source: Source;
     if (mode === 'websocket') {
       try { source = await socketSource(); socketWorked = true; }
-      catch (error) { if (socketWorked) throw error; mode = 'http'; source = await httpSource(); }
+      catch (error) { if (socketWorked) throw error; fallBack(); source = await httpSource(); }
     } else source = await httpSource();
     const { next } = source;
     let lost = false;
