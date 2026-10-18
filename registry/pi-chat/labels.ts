@@ -242,12 +242,21 @@ export const defaultChatLabels = {
   ownAnswer: 'Or type your own answer',
   typeAnswer: 'Type your answer',
   yourAnswerInput: 'Your answer',
+  /** A question of a form left blank, in the answer sent to the agent. */
+  skipped: '(no answer)',
   answer: 'Answer',
   stillWritingQuestion: 'The agent is still writing this question…',
   answeringUnavailable: 'Answering is not available in this view.',
   answerRefused: (kind: 'denied' | 'conflict' | 'unknown-question'): string => kind === 'denied' ? 'The host did not accept this answer.' : kind === 'conflict' ? 'This question was already answered.' : 'This question is no longer waiting for an answer.',
   answerNotSent: 'The answer could not be sent.',
   yourAnswer: 'Your answer:',
+  // Run card (a headless run: `runs/<id>`)
+  run: 'Run',
+  runStatus: (status: 'queued' | 'running' | 'completed' | 'failed'): string => ({ queued: 'Queued', running: 'Running', completed: 'Completed', failed: 'Failed' })[status],
+  runElapsed: (time: string) => `Running for ${time}`,
+  runDuration: (time: string) => `Took ${time}`,
+  runRefresh: 'Refresh',
+  runNotLoaded: 'The run could not be loaded.',
   // Artifact cards
   artifact: 'Artifact',
   opening: 'Opening…',

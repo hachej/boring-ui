@@ -115,7 +115,7 @@ export function pendingQuestions(entries: readonly EntryRecord[]): PendingQuesti
       const args = part.arguments as { question?: unknown; options?: unknown; allowFreeText?: unknown };
       if (typeof args.question !== 'string') continue;
       const options = Array.isArray(args.options) ? args.options.filter((option): option is string => typeof option === 'string') : [];
-      pending.set(part.id, { callId: askUserQuestionId(entry.id, part.id), prompt: args.question, options, allowFreeText: args.allowFreeText === true });
+      pending.set(part.id, { callId: askUserQuestionId(entry.id, part.id), prompt: args.question, options, allowFreeText: args.allowFreeText !== false || options.length === 0 });
     }
   }
   return [...pending.values()];

@@ -9,7 +9,8 @@ const packageOwner = (name, policy) => Object.keys(policy.packages).find(owner =
 const text = (node) => ts.isStringLiteralLike(node) ? node.text : undefined;
 
 export function checkSource(file, source, policy) {
-  const owner = /^packages\/([^/]+)\/src\//.exec(file)?.[1];
+  // Package sources live in src/; a package's command-line entry (bin/, plain JS shipped as is) follows the same rules and its pathRules.
+  const owner = /^packages\/([^/]+)\/(?:src|bin)\//.exec(file)?.[1];
   if (!owner || !policy.packages[owner]) return [`BORING-PI-5 ${file}: undeclared package/source location`];
   const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, file.endsWith('x') ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
   // Bind this one file's lexical symbols; no dependency resolution, I/O or type-validity claim.

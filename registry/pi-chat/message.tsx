@@ -46,7 +46,7 @@ export interface RowContext {
   /** Opens a file card through the host's workspace opener. */
   readonly openFile?: ((path: string) => void) | undefined;
   readonly answer: ((questionId: string, answer: string) => Promise<AnswerOutcome>) | undefined;
-  readonly artifacts: { readonly open: ArtifactsConfig['open']; readonly isOpen?: ArtifactsConfig['isOpen'] | undefined } | undefined;
+  readonly artifacts: { readonly open: ArtifactsConfig['open']; readonly isOpen?: ArtifactsConfig['isOpen'] | undefined; readonly kinds?: ArtifactsConfig['kinds'] } | undefined;
   /** Replaces the default copy button under a settled reply (the ambient window adds feedback and the time); `host` holds the host's message actions. */
   readonly replyActions?: ((reply: { readonly key: string; readonly text: string; readonly timestamp?: number | undefined }, host: ReactNode) => ReactNode) | undefined;
   /** The host's actions for a settled reply (`messageActions`). */
@@ -207,7 +207,7 @@ export function RowView({ row, context: liveContext }: { readonly row: Row; read
             if (part.kind === 'question') return <QuestionCard key={part.key} call={part.call} result={part.result} questionId={part.questionId} answer={context.answer} live={part.live} />;
             if (part.kind === 'artifact' && part.artifact && files.has(part.artifact.target.resource.path.replace(/^(\.\/)+/, ''))) return null;
             if (part.kind === 'artifact') return <ArtifactCard key={part.key} artifact={part.artifact} title={part.title} {...(part.state === 'ready' ? {} : { pending: part.state })}
-              open={part.artifact !== undefined && (context.artifacts?.isOpen?.(part.artifact) ?? false)} onOpen={context.artifacts?.open} />;
+              open={part.artifact !== undefined && (context.artifacts?.isOpen?.(part.artifact) ?? false)} onOpen={context.artifacts?.open} kinds={context.artifacts?.kinds} />;
             return part.entry.custom ? <div key={part.key}>{part.entry.custom}</div> : <ToolCard key={part.key} entry={part.entry} {...(context.onOpenImage ? { onOpenImage: context.onOpenImage } : {})} />;
           })}
           {files.size > 0 && <ul data-testid="reply-files" className="m-0 flex list-none flex-wrap gap-2 p-0">

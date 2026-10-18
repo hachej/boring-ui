@@ -1,5 +1,6 @@
 import type { ConversationView } from '@earendil-works/pi-durable';
 import type { ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
+import type { ComponentType, ReactNode } from 'react';
 
 /*
  * Artifacts in the chat: substantial content (a document, an HTML page, an SVG, code, a canvas) that the transcript shows as a
@@ -34,8 +35,34 @@ export interface ArtifactDescriptor {
 /** What identifies an artifact across its versions: its id, or for a presented file its path. */
 export const artifactKey = (artifact: Pick<ArtifactDescriptor, 'id' | 'target'>): string => artifact.id ?? artifact.target.resource.path;
 
+/** What an artifact kind's renderer receives: the artifact and its text at the revision shown. */
+export interface ArtifactKindViewProps { readonly artifact: ArtifactDescriptor; readonly text: string }
+
+/**
+ * An app's own kind of artifact (for example `.maquette.json` files): how its card and the panel name it, its icon, and optionally
+ * how the panel draws it. Kinds are consulted in order before the built-in types; the first whose `match` is true wins. A kind
+ * adds a presentation only: the descriptor, its type and how it is read are unchanged.
+ */
+export interface ArtifactKind {
+  /** True for the artifacts of this kind, for example `target => target.resource.path.endsWith('.maquette.json')`. */
+  readonly match: (target: ArtifactTarget, artifact: ArtifactDescriptor) => boolean;
+  /** The kind's name on the card and in the panel bar ("Maquette"). */
+  readonly label: string;
+  /** The card's icon (any component taking `className`, such as a lucide icon). The type's icon otherwise. */
+  readonly icon?: ComponentType<{ readonly className?: string; readonly 'aria-hidden'?: boolean | 'true' }> | undefined;
+  /** Draws the artifact in the panel (`AgentWorkspace`, `ArtifactPanel`) inside the standard viewer bar, with copy and download. */
+  readonly renderer?: ((props: ArtifactKindViewProps) => ReactNode) | undefined;
+}
+
+/** The first kind that matches the artifact; a `match` that throws counts as no match. */
+export function artifactKind(artifact: ArtifactDescriptor, kinds: readonly ArtifactKind[] | undefined): ArtifactKind | undefined {
+  return kinds?.find(kind => { try { return kind.match(artifact.target, artifact); } catch { return false; } });
+}
+
 /** What the host passes to `PiChat` to turn artifact tool results into cards. */
 export interface ArtifactsConfig {
+  /** The app's own artifact kinds (label, icon, renderer), consulted before the built-in types. */
+  readonly kinds?: readonly ArtifactKind[] | undefined;
   /** The person clicked a card: show this artifact (and revision) in the host's panel. */
   readonly open: (artifact: ArtifactDescriptor) => void;
   /** True for the card whose artifact version is on display. */
@@ -107,7 +134,10 @@ export function parseArtifact(value: unknown): ArtifactDescriptor | undefined {
 }
 
 const TYPE_LABEL: Record<ArtifactType, string> = { markdown: 'Document', html: 'HTML page', svg: 'SVG image', code: 'Code', canvas: 'Canvas' };
-export function typeLabel(artifact: Pick<ArtifactDescriptor, 'type' | 'language'>): string {
+/** The artifact's type name: the matching kind's label first, then the built-in name of its type. */
+export function typeLabel(artifact: ArtifactDescriptor, kinds?: readonly ArtifactKind[]): string {
+  const kind = artifactKind(artifact, kinds);
+  if (kind) return kind.label;
   return artifact.type === 'code' && artifact.language ? `Code · ${artifact.language}` : TYPE_LABEL[artifact.type];
 }
 

@@ -135,6 +135,8 @@ export interface AmbientChatProps extends ChatFeatureProps {
   readonly storage?: 'session' | 'local';
   /** Host controls in the composer row, between the effort picker and Send (for example a voice button the host guards itself). Absent: nothing is shown. */
   readonly tools?: ReactNode;
+  /** Host content under the composer (for example a collapsed list of the person's requests). Absent: nothing is shown. */
+  readonly belowComposer?: ReactNode;
   /** Two-row reference composer by default; older layouts require an explicit choice. */
   readonly composerLayout?: ComposerProps['layout'];
   /** Hand the conversation to a full `PiChat` or `ArtifactWorkspace`. Adds an "Open in full chat" action to replies. */
@@ -255,7 +257,7 @@ export function AmbientChat(props: AmbientChatProps) {
 type SessionProps = Omit<AmbientChatProps, 'labels' | 'icons'> & { readonly labels: AmbientLabels; readonly icons: AmbientIcons; readonly activeController: { readonly current: NativeChatController }; readonly windowState: AmbientState; readonly store: NotificationStore; readonly onWindowState: (state: AmbientState) => void };
 
 function AmbientSession({ controller, embedded = false, labels, icons, avatar, headerActions, headerTools, messageActions, variant = 'contrast', mode = 'expert', actions,
-  windowState, onWindowState, store, storageKey = 'boring.ambient.position', storage = 'session', tools, composerChips, composerLayout = 'card', onOpenFull, onFeedback, notifications, autoDismissMs, maxToasts, systemNotifications = false,
+  windowState, onWindowState, store, storageKey = 'boring.ambient.position', storage = 'session', tools, belowComposer, composerChips, composerLayout = 'card', onOpenFull, onFeedback, notifications, autoDismissMs, maxToasts, systemNotifications = false,
   renderEntry, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept = 'image/*', slash, mentions, attachments, onOpenFile, fileChanges, pasteToFile, model, effort, replyFooter, artifacts: hostArtifacts, artifactPanel, artifactTarget, conversations, onDock, feedback: composerFeedback, className,
   activeController }: SessionProps) {
   const { title } = labels;
@@ -301,6 +303,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
     open: descriptor => { const newest = versionsRef.current.filter(version => artifactKey(version) === artifactKey(descriptor)).reduce((top, version) => Math.max(top, version.ordinal ?? 0), 0); setOpened({ descriptor, follow: (descriptor.ordinal ?? 0) >= newest }); },
     isOpen: descriptor => opened !== null && artifactKey(opened.descriptor) === artifactKey(descriptor) && (opened.follow ? (descriptor.ordinal ?? 0) >= (versionsRef.current.find(version => artifactKey(version) === artifactKey(descriptor))?.ordinal ?? 0) : descriptor.revision === opened.descriptor.revision),
     ...(detect ? { detect } : {}),
+    ...(hostArtifacts?.kinds ? { kinds: hostArtifacts.kinds } : {}),
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inWindow, hostArtifacts, opened, detect]);
   const session = useChatSession({ controller, activeController, mode, actions, renderEntry, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept,
@@ -496,6 +499,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
           <ConversationFiles files={files} />
           <MessageQueue items={queued} sending={state.outbox} withdraw={actions?.withdraw} actions={queueActions} />
           <Composer {...composer} layout={composerLayout} placeholder={working || waitingForAnswer ? label : labels.placeholder} barStart={barStart} barNote={barNote} barEnd={tools} />
+          {belowComposer !== undefined && <div data-testid="below-composer" className="pt-2">{belowComposer}</div>}
         </div>
       </div>
       </section>;

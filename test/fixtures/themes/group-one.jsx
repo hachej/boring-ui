@@ -1,7 +1,12 @@
 import { useState } from 'react';
-import { PinIcon } from 'lucide-react';
+import { PinIcon, WorkflowIcon } from 'lucide-react';
 import { EmptyState } from '../../../registry/pi-chat/empty-state';
 import { QuestionCard } from '../../../registry/pi-chat/question-card';
+import { ArtifactCard } from '../../../registry/pi-chat/artifact-card';
+
+const MAQUETTE = [{ match: target => target.resource.path.endsWith('.maquette.json'), label: 'Maquette', icon: WorkflowIcon }];
+const onboarding = { schema: 'boring.artifact', version: 1, title: 'Fictional onboarding', type: 'code', mediaType: 'application/json', language: 'json',
+  target: { resource: { providerId: 'workspace', path: 'flows/onboarding.maquette.json' }, view: { kind: 'published' } }, revision: 'rev-1' };
 import { AgentNotifications, createNotificationStore } from '../../../registry/pi-ambient/notifications';
 import { ProviderSetup } from '../../../registry/provider-setup/provider-setup';
 import { ActionButton } from '../../../registry/button/actions';
@@ -27,6 +32,10 @@ export function GroupOneControls({ surface }) {
         { label: 'Write a short update', hint: 'No messages are sent.', text: 'update' },
       ]} onSelect={setEvent} />
       <QuestionCard call={{ type: 'toolCall', id: 'fictional-choice', name: 'ask_user', arguments: { question: 'Which fictional delivery should we prepare?', options: ['Prepare a complete fictional release checklist, with review notes and a summary for the Cedar Works team.', 'Prepare the short update.'] } }} questionId="fictional-choice" answer={async (_, answer) => { setEvent(answer); return { kind: 'answered' }; }} />
+      <QuestionCard call={{ type: 'toolCall', id: 'fictional-form', name: 'ask_user', arguments: { question: 'A few details for the fictional Cedar Works release', questions: [
+        { question: 'Which audience reads it first?', options: ['Reviewers', 'The whole team'] }, { question: 'Any date to avoid?' }, { question: 'Tone?', options: ['Short', 'Detailed'] }] } }}
+        questionId="fictional-form" answer={async (_, answer) => { setEvent(answer); return { kind: 'answered' }; }} />
+      <ArtifactCard artifact={onboarding} kinds={MAQUETTE} onOpen={() => setEvent('maquette opened')} />
     </>}
     {surface === 'notification' && <AgentNotifications store={notifications} variant="surface" placement="inline" autoDismissMs={0} onActivate={() => setEvent('notification opened')} className="static w-full" />}
     {surface === 'provider' && <ProviderSetup defaultOpen providers={[{ id: 'fictional', name: 'Fictional provider', models: [{ id: 'fictional-model', name: 'Fictional model' }], auth: ['api_key'], configured: true }]} value={{ provider: 'fictional', modelId: 'fictional-model' }} onSave={async () => { setEvent('provider saved'); }} />}
