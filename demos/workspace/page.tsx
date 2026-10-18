@@ -59,7 +59,14 @@ function ApProvider({ children, view, go, conversation }) {
     const last = body.navigation.at(-1);
     if (last) { seen.current = last.seq; go(last.screen === 'file' ? { screen: 'file', path: last.path } : { screen: last.screen, id: last.id }, true); }
   }, [conversation, go]);
-  useEffect(() => { void refresh(); const timer = setInterval(() => void refresh(), 400); return () => clearInterval(timer); }, [refresh]);
+  // Polls only while the tab is visible (every request wakes the session's Durable Object in the public demo, and a hidden tab must let it go idle).
+  useEffect(() => {
+    const poll = () => { if (!document.hidden) void refresh(); };
+    poll();
+    const timer = setInterval(poll, 1000);
+    document.addEventListener('visibilitychange', poll);
+    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', poll); };
+  }, [refresh]);
   const invoice = state.invoices.find(item => item.id === view.id);
   const supplier = state.suppliers[view.screen === 'supplier' ? view.id : invoice?.supplier];
   const named = item => ({ ...item, supplierName: state.suppliers[item.supplier]?.name });
