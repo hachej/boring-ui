@@ -10,5 +10,6 @@ packages/ui/r/
 *.tgz
 .claude/worktrees/
 examples/hosts/cloudflare/public/
+demos/workspace/cloudflare/public/
 .wrangler/
 .dev.vars

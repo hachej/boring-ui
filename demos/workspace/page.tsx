@@ -31,7 +31,8 @@ import { SCREEN_NAMES } from './screen-names.mjs';
 import { SidebarProvider, SidebarInset, useSidebar } from '../../examples/app-shell/components/ui/sidebar';
 
 const { token, identity, conversation: firstConversation, voice } = window.__APP__;
-const authorized = (request: Request) => { const headers = new Headers(request.headers); headers.set('authorization', `Bearer ${token}`); return fetch(new Request(request, { headers })); };
+// The Node server hands the page a bearer token; the public Worker hands none (its visitor session is an HttpOnly cookie the browser sends itself).
+const authorized = (request: Request) => { if (!token) return fetch(request); const headers = new Headers(request.headers); headers.set('authorization', `Bearer ${token}`); return fetch(new Request(request, { headers })); };
 const at = (path: string) => new URL(path, location.href);
 const money = (amount: number, currency = 'EUR') => new Intl.NumberFormat('en-GB', { style: 'currency', currency }).format(amount);
 const day = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
@@ -58,7 +59,14 @@ function ApProvider({ children, view, go, conversation }) {
     const last = body.navigation.at(-1);
     if (last) { seen.current = last.seq; go(last.screen === 'file' ? { screen: 'file', path: last.path } : { screen: last.screen, id: last.id }, true); }
   }, [conversation, go]);
-  useEffect(() => { void refresh(); const timer = setInterval(() => void refresh(), 400); return () => clearInterval(timer); }, [refresh]);
+  // Polls only while the tab is visible (every request wakes the session's Durable Object in the public demo, and a hidden tab must let it go idle).
+  useEffect(() => {
+    const poll = () => { if (!document.hidden) void refresh(); };
+    poll();
+    const timer = setInterval(poll, 1000);
+    document.addEventListener('visibilitychange', poll);
+    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', poll); };
+  }, [refresh]);
   const invoice = state.invoices.find(item => item.id === view.id);
   const supplier = state.suppliers[view.screen === 'supplier' ? view.id : invoice?.supplier];
   const named = item => ({ ...item, supplierName: state.suppliers[item.supplier]?.name });
