@@ -4,7 +4,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 
 // The chat and feedback items inherit the app's style from its shadcn roles and Tailwind's token-backed utilities only (type scale,
 // weights, leading, tracking, the --radius tiers, --shadow-*, font-sans/mono, default border width and transition). The template
-// extras of hachej/boring-app (web/src/index.css at f57053e: --success/--warning/--info and their soft variants, --font-display,
+// extras mirroring the former hachej/boring-app theme, kept for parity (web/src/index.css at f57053e: --success/--warning/--info and their soft variants, --font-display,
 // --border-width) are optional: read only through a kit derivation whose fallback is a shadcn role, so an app that sets only its
 // shadcn roles gets a matching chat.
 const root = new URL('../../', import.meta.url);
@@ -68,7 +68,7 @@ test('template extras are optional: the kit derives them from shadcn roles and t
   const RADIUS = /\brounded(?:-[trblse]{1,2})?-(xs|sm|md|lg|xl|2xl|3xl|4xl)\b/g;
   for (const path of sources) for (const [, tier] of read(path).matchAll(RADIUS)) assert.ok(theme.theme[`radius-${tier}`], `${path}: rounded-${tier} has a --radius binding in the theme item`);
   assert.deepEqual([...'rounded-xs rounded-t-xs'.matchAll(RADIUS)].map(match => match[1]), ['xs', 'xs'], 'the radius guard covers xs');
-  // Core extras fall back to a shadcn role; the soft variants mirror hachej/boring-app web/src/theme.derived.css (ec044d6) exactly.
+  // Core extras fall back to a shadcn role; the soft variants mirror the former hachej/boring-app web/src/theme.derived.css (ec044d6) exactly.
   const layer = registry.items.find(item => item.name === 'pi-chat').css['@layer components'];
   const light = layer['.pi-chat'], dark = layer['.pi-chat:is(.dark, .dark *)'];
   assert.deepEqual(light, {

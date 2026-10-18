@@ -1,5 +1,7 @@
 # Consumer compatibility: current hub and historical Hub M1
 
+Historical: apps now ship through the [Factory host](https://github.com/hachej/boring-factory/blob/main/docs/PROVISIONING.md), not this hub path.
+
 Status: accepted owner migration, not executed compatibility. The current hub source is revision 6 at [3c5b9adfc085](https://github.com/hachej/boring-hub/blob/3c5b9adfc08525594dc071f824813a8708d0e3f5/SPEC.md). It separates development Factory responsibilities from the hub. This document changes no consumer repository and certifies no implementation.
 
 ## Current consumer ownership
@@ -7,7 +9,7 @@ Status: accepted owner migration, not executed compatibility. The current hub so
 | Consumer | Owns | Library qualification boundary |
 | --- | --- | --- |
 | boring-hub revision 6 | Registry/identity/installations, authorized app capability invocation, companion, workspace files/file apps, fixed/derived/generated cross-app UI, change-request handoff | Identity/projections, truthful native/task/provider references, file/viewer composition and permitted data residency; no remote builder or deployment prerequisite |
-| boring-factory and app repositories | Discovery/claims/workers, verification, approvals, merge/release/deployment | Remote execution, protected verification and publication under the actual Factory/app contract; pin that contract independently |
+| boring-factory and app Artifacts repos | Discovery/claims/workers, verification, approvals, merge/release/deployment | Remote execution, protected verification and publication under the actual Factory/app contract; pin that contract independently |
 | boring-stack | Expert and worker skills | No runtime ownership; skill installation cannot manufacture tool authority |
 | Embedded app | Domain records/services, private inputs/results, host policy and acceptance | Native background tasks and optional question/validation/delivery without hub/browser/files required |
 

@@ -420,8 +420,8 @@ required.
   plugin, or an esbuild step. That is a dependency decision recorded in
   `ARCHITECTURE.json`.
 - The transform must never run in production builds.
-- It ships from this repository as a development helper; an application
-  template adopts it in its own repository.
+- It ships from this repository as a development helper; the app
+  template (`templates/app` in boring-factory) consumes it via the vendor release.
 - **Release 1 does not depend on it:** without it, `source` is simply absent.
 
 ### Later anchor kinds (outlines; each is specified after its spike)
