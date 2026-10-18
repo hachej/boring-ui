@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { createNativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import type { ChatIdentity, NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { createRemoteChat } from '@hachej/boring-ui-kit/remote-chat';
-import type { RemoteChat } from '@hachej/boring-ui-kit/remote-chat';
+import type { RemoteChat, RemoteChatOptions } from '@hachej/boring-ui-kit/remote-chat';
 import type { PiChatActions } from './session';
 
 // ---- Placement: where the chat is shown, reported by the component that shows it and sent with each submit (see `useRemoteChat`).
@@ -42,7 +42,7 @@ export type RemoteChatState =
  * The remote chat reopens a dropped stream itself (the controller reads `reconnecting` meanwhile); it never means the task stopped.
  * A failed connect retries every second. The previous conversation's controller is never handed out: it is disposed on change.
  */
-export function useRemoteChat({ conversationId, endpoint, fetch, identity, requestContext }: {
+export function useRemoteChat({ conversationId, endpoint, fetch, identity, requestContext, transport, webSocket }: {
   readonly conversationId: string | undefined;
   readonly endpoint: (conversationId: string) => string | URL;
   readonly fetch: (request: Request) => Promise<Response>;
@@ -52,11 +52,14 @@ export function useRemoteChat({ conversationId, endpoint, fetch, identity, reque
    * value as it is (so a host reading `name` and `params` keeps working) plus `placement`: `docked` or `floating`, reported by the chat.
    */
   readonly requestContext?: () => Readonly<Record<string, unknown>> | undefined;
+  /** `websocket`: one hibernation-friendly socket instead of the HTTP watch stream, falling back to HTTP (see `createRemoteChat`). Read when a conversation connects. */
+  readonly transport?: RemoteChatOptions['transport'];
+  readonly webSocket?: RemoteChatOptions['webSocket'];
 }): RemoteChatState {
   const url = conversationId === undefined ? undefined : String(endpoint(conversationId));
-  const key = JSON.stringify([conversationId, url, identity?.runtimeId, identity?.scopeId, identity?.principalId]);
-  const binding = useMemo(() => ({ key, fetch, requestContext }), [key]); // eslint-disable-line react-hooks/exhaustive-deps
-  useLayoutEffect(() => { binding.fetch = fetch; binding.requestContext = requestContext; }, [binding, fetch, requestContext]);
+  const key = JSON.stringify([conversationId, url, identity?.runtimeId, identity?.scopeId, identity?.principalId, transport]);
+  const binding = useMemo(() => ({ key, fetch, requestContext, webSocket }), [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  useLayoutEffect(() => { binding.fetch = fetch; binding.requestContext = requestContext; binding.webSocket = webSocket; }, [binding, fetch, requestContext, webSocket]);
   const [stored, setStored] = useState<{ readonly binding: typeof binding; readonly chat: RemoteChatState }>();
   useEffect(() => {
     if (conversationId === undefined || !identity || url === undefined) return;
@@ -70,7 +73,7 @@ export function useRemoteChat({ conversationId, endpoint, fetch, identity, reque
     void (async () => {
       while (!disposed) {
         try {
-          remote = await createRemoteChat({ endpoint: url, fetch: request => binding.fetch(request), requestContext: context });
+          remote = await createRemoteChat({ endpoint: url, fetch: request => binding.fetch(request), requestContext: context, ...(transport ? { transport } : {}), ...(binding.webSocket ? { webSocket: binding.webSocket } : {}) });
           if (disposed) return void remote.close();
           controller = createNativeChatController({ identity, ...remote });
           await controller.connect();

@@ -120,14 +120,27 @@ function reads(conversation: Conversation, context: Context, project: ((view: Co
   };
 }
 
+/** A watch frame: a complete view, or one native operation batch. The NDJSON stream and the socket send the same JSON. */
+type WatchFrame = { readonly kind: 'view'; readonly view: ConversationView } | { readonly kind: 'ops'; readonly ops: readonly unknown[] };
+/** Serialize one watch frame; with `project` a view is projected first (a throw means `projection_failed`). */
+function encodeFrame(frame: WatchFrame, project: ((view: ConversationView) => ConversationView) | undefined): string {
+  return JSON.stringify(frame.kind === 'view' && project ? { kind: 'view', view: project(frame.view) } : frame);
+}
+
+/** Open the conversation watch for an authenticated access, refusing a revoked one. Shared by the HTTP watch and the socket. */
+async function openWatch(access: ChatTransportAccess, signal?: AbortSignal): Promise<ConversationWatch | null> {
+  const watch = await access.conversation.watch(access.context);
+  if (signal?.aborted || access.revoked?.aborted) { await watch.stop(); return null; }
+  return watch;
+}
+
 /**
  * Stream newline-delimited JSON. A trusted viewer receives one view and then the exact native operation batches,
  * replayed in the browser with `@earendil-works/chord/delta`. With `project`, raw operations never leave the host:
  * the viewer receives complete projected views, and a slow reader gets the latest one rather than a backlog.
  */
 function stream(watch: ConversationWatch, project: ((view: ConversationView) => ConversationView) | undefined, signal: AbortSignal, heartbeatMs: number): Response {
-  type Pending = { readonly kind: 'view'; readonly view: ConversationView } | { readonly kind: 'ops'; readonly ops: readonly unknown[] };
-  let pending: Pending[] = [{ kind: 'view', view: watch.value }], wake: (() => void) | undefined, end: WatchEnd | undefined, finished = false;
+  let pending: WatchFrame[] = [{ kind: 'view', view: watch.value }], wake: (() => void) | undefined, end: WatchEnd | undefined, finished = false;
   // `beat` asks the next pull for a heartbeat. The timer restarts after every frame, so it fires only on an idle stream, and it is
   // cleared when the stream finishes or is cancelled: nothing outlives the response.
   let beat = false, timer: ReturnType<typeof setTimeout> | undefined;
@@ -157,7 +170,7 @@ function stream(watch: ConversationWatch, project: ((view: ConversationView) => 
       const frame = pending.shift();
       if (frame) {
         let line: string;
-        try { line = JSON.stringify(frame.kind === 'view' && project ? { kind: 'view', view: project(frame.view) } : frame); }
+        try { line = encodeFrame(frame, project); }
         catch { finished = true; stop(); controller.enqueue(encoder.encode(JSON.stringify({ kind: 'end', reason: 'projection_failed' }) + '\n')); controller.close(); return; }
         if (signal.aborted) { close('revoked'); return; }
         controller.enqueue(encoder.encode(line + '\n'));
@@ -200,8 +213,8 @@ export function createChatTransportHandler(options: ChatTransportOptions): (requ
     try {
       if (request.method === 'GET' && operation === 'watch') {
         const signal = access.revoked ? AbortSignal.any([request.signal, access.revoked]) : request.signal;
-        const watch = await conversation.watch(context);
-        if (signal.aborted) { await watch.stop(); return failure(403, 'not-authorized'); }
+        const watch = await openWatch(access, signal);
+        if (!watch) return failure(403, 'not-authorized');
         return stream(watch, access.project, signal, options.heartbeatMs ?? CHAT_TRANSPORT.heartbeatMs);
       }
       if (request.method === 'GET' && operation === 'submission') {
@@ -312,4 +325,200 @@ export function routeSubmissions(conversation: Conversation, admit: (draft: Inpu
     const value: unknown = Reflect.get(target, key, target);
     return typeof value === 'function' ? value.bind(target) : value;
   } });
+}
+
+/**
+ * A WebSocket accepted with the Durable Object Hibernation API (`ctx.acceptWebSocket`): the members this handler uses. Any host
+ * with the same shape can mount it (tests use an in-memory one).
+ */
+export interface HibernatableSocket {
+  send(message: string): void;
+  close(code?: number, reason?: string): void;
+  serializeAttachment(value: unknown): void;
+  deserializeAttachment(): unknown;
+}
+
+/** The Hibernation API of a Durable Object's `ctx` (`DurableObjectState`) that the handler uses. */
+export interface HibernationState {
+  acceptWebSocket(socket: HibernatableSocket, tags?: string[]): void;
+  getWebSockets(tag?: string): HibernatableSocket[];
+  setWebSocketAutoResponse?(pair?: unknown): void;
+}
+
+/**
+ * Per-socket state, kept in the socket's attachment so it survives hibernation. `owner` and `conversationId` are the host's
+ * (who the socket acts for, which conversation it watches); further JSON fields are the host's to add. `socketId` is the handler's.
+ */
+export interface ConversationSocketAttachment {
+  readonly owner: string;
+  readonly conversationId: string;
+  readonly [key: string]: unknown;
+}
+
+export interface ConversationSocketOptions {
+  /** The Durable Object's `ctx`, or any object with the same Hibernation API. */
+  readonly state: HibernationState;
+  /**
+   * Authenticate the upgrade request and select the conversation, in trusted host code (also the Origin policy: a browser sends
+   * cookies with a cross-site upgrade). Null refuses with 401 before any socket is accepted. The result becomes the attachment.
+   */
+  readonly authenticate: (request: Request) => Promise<ConversationSocketAttachment | null>;
+  /**
+   * The conversation access for a socket, from its attachment alone: called when the socket is accepted and again after every
+   * hibernation (the original request is gone by then). The same access the HTTP handler gets from `authenticate`. Null closes the socket.
+   */
+  readonly access: (attachment: ConversationSocketAttachment) => Promise<ChatTransportAccess | null>;
+}
+
+/** A socket frame a client sends: `ping` (plain text), or a call with the HTTP handler's operation, query parameters and JSON body. */
+type SocketCall = { readonly kind: 'call'; readonly id: string; readonly op: string; readonly params?: Record<string, string>; readonly body?: unknown };
+/** The subprotocol a browser client offers and the handler selects. Other offered values (for example a credential) are the host's. */
+export const CHAT_SOCKET_PROTOCOL = 'boring.chat';
+
+export interface ConversationSocketHandler {
+  /** Cloudflare upgrade: authenticate, create the `WebSocketPair`, accept the server end and answer 101 (401 when refused). */
+  readonly fetch: (request: Request) => Promise<Response>;
+  /** Accept a socket the host created: tag it with its owner and conversation, store the attachment and send the first view. False when refused. */
+  readonly accept: (socket: HibernatableSocket, request: Request) => Promise<boolean>;
+  /** The Durable Object's `webSocketMessage`. */
+  readonly webSocketMessage: (socket: HibernatableSocket, message: string | ArrayBuffer) => Promise<void>;
+  /** The Durable Object's `webSocketClose` (and `webSocketError`): stops the socket's watch. */
+  readonly webSocketClose: (socket: HibernatableSocket, code?: number, reason?: string) => Promise<void>;
+  /**
+   * Reopen the watch of every accepted socket that has none in memory: after a wake from hibernation each socket receives a
+   * complete view again, then deltas. Messages and upgrades call it; a host also calls it when the object wakes for another
+   * reason (an alarm), so a resumed run reaches open pages. Idempotent.
+   */
+  readonly resume: () => Promise<void>;
+  /** Send a host event (`{"kind":"event","event":...}`, for example presence or the conversation list) to the sockets of an owner or conversation, or all. */
+  readonly broadcast: (event: unknown, to?: { readonly owner?: string; readonly conversationId?: string }) => void;
+  /** The attachments of the open sockets, optionally by owner or conversation: presence is these. */
+  readonly connections: (to?: { readonly owner?: string; readonly conversationId?: string }) => ConversationSocketAttachment[];
+}
+
+const ownerTag = (owner: string) => `owner:${owner}`;
+const conversationTag = (id: string) => `conversation:${id}`;
+const tagFor = (to?: { readonly owner?: string; readonly conversationId?: string }) =>
+  to?.conversationId !== undefined ? conversationTag(to.conversationId) : to?.owner !== undefined ? ownerTag(to.owner) : undefined;
+
+/**
+ * The chat transport over hibernatable WebSockets, for a Durable Object (`ctx.acceptWebSocket`). One socket carries the watch (the
+ * same `view` then `ops` frames as the NDJSON stream) and every call (`{"kind":"call","id","op","params","body"}`, answered by
+ * `{"kind":"reply","id","status","body"}`), which runs through `createChatTransportHandler` unchanged: the same validation,
+ * `allow`, `project` and request-id deduplication. A submit without `whenBusy` is a follow-up when the conversation is busy.
+ * Nothing in memory is needed between messages: the attachment holds the socket's owner and conversation, so an idle page lets
+ * the object hibernate, and a wake reopens the watches with a complete view. `ping` is answered `pong` (on Cloudflare by the
+ * platform's auto-response, without waking the object).
+ */
+export function createConversationSocketHandler(options: ConversationSocketOptions): ConversationSocketHandler {
+  const { state } = options;
+  const Pair = (globalThis as { WebSocketRequestResponsePair?: new (request: string, response: string) => unknown }).WebSocketRequestResponsePair;
+  if (Pair && state.setWebSocketAutoResponse) state.setWebSocketAutoResponse(new Pair('ping', 'pong'));
+  /** Live watches by socket id, in memory only: empty after a wake, refilled by `attach`. */
+  const live = new Map<string, Promise<{ readonly access: ChatTransportAccess; readonly watch?: ConversationWatch } | null>>();
+  const attachment = (socket: HibernatableSocket) => socket.deserializeAttachment() as (ConversationSocketAttachment & { readonly socketId: string }) | null;
+  const send = (socket: HibernatableSocket, value: string) => { try { socket.send(value); } catch { /* the socket closed meanwhile */ } };
+  const end = (socket: HibernatableSocket, reason: string, code = 1000) => {
+    send(socket, JSON.stringify({ kind: 'end', reason }));
+    try { socket.close(code, reason); } catch { /* already closed */ }
+  };
+
+  function attach(socket: HibernatableSocket) {
+    const found = attachment(socket);
+    if (!found) return Promise.resolve(null);
+    let entry = live.get(found.socketId);
+    if (entry) return entry;
+    entry = (async () => {
+      let access: ChatTransportAccess | null;
+      try { access = await options.access(found); } catch { access = null; }
+      if (!access) { live.delete(found.socketId); end(socket, 'revoked', 1008); return null; }
+      const watch = await openWatch(access).catch(() => null);
+      if (!watch) { live.delete(found.socketId); end(socket, 'revoked', 1008); return null; }
+      const { project } = access;
+      const frame = (value: WatchFrame) => {
+        try { send(socket, encodeFrame(value, project)); }
+        catch { void watch.stop(); end(socket, 'projection_failed', 1011); }
+      };
+      frame({ kind: 'view', view: watch.value });
+      access.revoked?.addEventListener('abort', () => { void watch.stop(); }, { once: true });
+      watch.start(async (view, ops) => frame(project ? { kind: 'view', view } : { kind: 'ops', ops }));
+      void watch.closed.then(result => {
+        if (live.get(found.socketId) !== entry) return;
+        live.delete(found.socketId);
+        // A host restart (`session_closed`) asks the client to reconnect; the other reasons are final.
+        end(socket, access!.revoked?.aborted ? 'revoked' : result.reason, result.reason === 'session_closed' ? 1012 : 1000);
+      });
+      return { access, watch };
+    })();
+    live.set(found.socketId, entry);
+    return entry;
+  }
+
+  async function resume() { await Promise.all(state.getWebSockets().map(socket => attach(socket))); }
+
+  async function accept(socket: HibernatableSocket, request: Request): Promise<boolean> {
+    const found = await options.authenticate(request);
+    if (!found) return false;
+    state.acceptWebSocket(socket, [ownerTag(found.owner), conversationTag(found.conversationId)]);
+    socket.serializeAttachment({ ...found, socketId: crypto.randomUUID() });
+    void resume();
+    return true;
+  }
+
+  async function call(socket: HibernatableSocket, frame: SocketCall) {
+    const entry = await attach(socket);
+    if (!entry) return;
+    const url = new URL('https://socket.invalid/');
+    for (const [key, value] of Object.entries(frame.params ?? {})) if (typeof value === 'string') url.searchParams.set(key, value);
+    url.searchParams.set('op', frame.op);
+    let body = frame.body;
+    if (frame.op === 'submit' && body !== null && typeof body === 'object' && !Array.isArray(body) && (body as Record<string, unknown>)['whenBusy'] === undefined) body = { ...body, whenBusy: 'followUp' };
+    let response: Response;
+    if (frame.op === 'watch') response = failure(400, 'invalid-request');
+    else {
+      // The HTTP handler, unchanged, with this socket's access: the same checks, `allow`, `project` and request-id deduplication.
+      const handler = createChatTransportHandler({ authenticate: async () => entry.access });
+      response = await handler(new Request(url, body === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }));
+    }
+    const reply = await response.json().catch(() => null);
+    send(socket, JSON.stringify({ kind: 'reply', id: frame.id, status: response.status, body: reply }));
+  }
+
+  return {
+    accept,
+    resume,
+    async fetch(request) {
+      if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') return failure(426, 'upgrade-required');
+      const Socket = (globalThis as { WebSocketPair?: new () => Record<0 | 1, HibernatableSocket> }).WebSocketPair;
+      if (!Socket) return failure(501, 'not-supported');
+      const pair = new Socket();
+      let accepted: boolean;
+      try { accepted = await accept(pair[1], request); } catch { return failure(503, 'authentication-unavailable'); }
+      if (!accepted) return failure(401, 'authentication-required');
+      const offered = (request.headers.get('sec-websocket-protocol') ?? '').split(',').map(value => value.trim());
+      return new Response(null, { status: 101, webSocket: pair[0], ...(offered.includes(CHAT_SOCKET_PROTOCOL) ? { headers: { 'sec-websocket-protocol': CHAT_SOCKET_PROTOCOL } } : {}) } as ResponseInit);
+    },
+    async webSocketMessage(socket, message) {
+      if (message === 'ping') return send(socket, 'pong');
+      let frame: SocketCall;
+      try { frame = JSON.parse(typeof message === 'string' ? message : new TextDecoder().decode(message)) as SocketCall; }
+      catch { return; }
+      if (frame?.kind !== 'call' || typeof frame.id !== 'string' || typeof frame.op !== 'string') return;
+      void resume();
+      await call(socket, frame);
+    },
+    async webSocketClose(socket, code, reason) {
+      const found = attachment(socket);
+      const entry = found ? live.get(found.socketId) : undefined;
+      if (found) live.delete(found.socketId);
+      const opened = await entry?.catch(() => null);
+      await opened?.watch?.stop();
+      try { socket.close(code === undefined || code === 1005 || code === 1006 || code === 1015 ? 1000 : code, reason); } catch { /* already closed */ }
+    },
+    broadcast(event, to) {
+      const text = JSON.stringify({ kind: 'event', event });
+      for (const socket of state.getWebSockets(tagFor(to))) send(socket, text);
+    },
+    connections: to => state.getWebSockets(tagFor(to)).flatMap(socket => { const found = attachment(socket); return found ? [found] : []; }),
+  };
 }
