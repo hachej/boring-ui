@@ -1,0 +1,15 @@
+// The public workspace demo (README.md). No account id here: wrangler reads CLOUDFLARE_ACCOUNT_ID from the environment at deploy time.
+{
+  "name": "boring-ui-demo",
+  "main": "src/worker.mjs",
+  "compatibility_date": "2026-10-04",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "routes": [{ "pattern": "demo.senecaapp.ai", "custom_domain": true }],
+  "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": ["/api/*"] },
+  "durable_objects": { "bindings": [{ "name": "SESSIONS", "class_name": "DemoSession" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["DemoSession"] }],
+  // New sessions per client IP (Workers rate limiting binding): at most 20 a minute.
+  "ratelimits": [{ "name": "NEW_SESSIONS", "namespace_id": "4201", "simple": { "limit": 20, "period": 60 } }],
+  "observability": { "enabled": true }
+}
