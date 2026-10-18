@@ -1,62 +1,28 @@
-// The accounts-payable demo server: one agent ("AP helper") on a durable native Harness, the app's backend (./ap.mjs), the Library (a
-// workspace of documents served by the resource and revision handlers) and the chat transport behind a bearer check.
-//   - request context: the browser's `{ placement, screen }` is stored per conversation and rendered into the prompt of each request
-//     (`createPromptContext` + `renderRequestContext`); it is advice, never authority.
-//   - tools: pending_approvals, get_invoice, show (move the viewer to a screen or any workspace file), decide_invoice (the app's `decide` behind the approval card),
-//     and Pi's native read, write and edit over the Library's own provider (the file guard records agent writes: history entry 'agent' and a change event, no receipt).
-// Imports shared helpers from examples/ by their current path; re-point them after the examples restructure. Fictional content only.
+// The accounts-payable demo server on Node: the demo (./app.mjs: agent, tools, Library seed, routes) on a durable native Harness, the app's
+// backend (./ap.mjs) and the Library (a workspace of documents on disk) behind a bearer check. The public copy runs the same demo on a
+// Cloudflare Worker (./cloudflare/). Fictional content only.
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { build } from 'esbuild';
-import { Harness, createRegistry, defineTool } from '@earendil-works/pi-durable';
+import { Harness, createRegistry } from '@earendil-works/pi-durable';
 import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node';
 import { NodeExecutionEnv } from '@earendil-works/pi-durable/env/node';
 import { createModels } from '@earendil-works/pi-ai/models';
-import { Type } from '@earendil-works/pi-ai';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
-import { defineAgent } from '@hachej/boring-agent/agents';
-import { answerUserQuestion } from '@hachej/boring-agent/ask-user';
-import { requireApproval } from '@hachej/boring-agent/approval';
-import { createFileGuard } from '@hachej/boring-agent/file-guard';
-import { createChatTransportHandler } from '@hachej/boring-agent/chat-transport';
-import { createConversations, createConversationsHandler } from '@hachej/boring-agent/conversations';
-import { createPromptContext, renderRequestContext } from '@hachej/boring-agent/prompt-context';
+import { createConversations } from '@hachej/boring-agent/conversations';
 import { openNodeConnection } from '@hachej/boring-files/sqlite';
 import { createWorkspaceJournal } from '@hachej/boring-files/journal';
 import { createWorkspaceProvider } from '@hachej/boring-files/workspace';
-import { createRevisionHandler } from '@hachej/boring-files/revision-handler';
 import { sendWebResponse, webRequest } from '@hachej/boring-files/node-http';
-import { readFiles, writeFiles } from '../../shared/workspace-tools.mjs';
-import { buildTailwind } from '../../lab/studio/tailwind.mjs';
-import { stockShadowTokens, themePreviewHead, themePreviewStatics } from '../../test/fixtures/themes/preview.mjs';
-import { openAccountsPayable, decisionSchema } from './ap.mjs';
-import { validWorkspacePath } from './paths.mjs';
-import { ACCOUNTS, BUDGETS, COMPANY, POLICY, SUPPLIERS, contractPdf, invoicePdf } from './data.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
+import { openAccountsPayable } from './ap.mjs';
+import { PERSON as person, createWorkspaceDemo, routeOf, scriptedModels, seedLibrary } from './app.mjs';
+import { buildWorkspaceDemoAssets } from './assets.mjs';
 
-const NAVIGATION_TTL_MS = 15_000;
-const here = name => fileURLToPath(new URL(name, import.meta.url));
 const json = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
-const text = value => ({ output: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value) }] });
-const INSTRUCTIONS = `You are the AP helper of ${COMPANY}, a fictional company. You help one person approve supplier invoices. Be brief and concrete.
-Each request starts with a request-context block: where the chat is placed and which screen the person is looking at. Follow its role: when docked, open what answers the question in the viewer with the show tool; when floating, do not move the page unless asked. Never change an invoice yourself: propose the decision, then call decide_invoice, which asks the person to approve it first. You can read, create and edit files in the workspace (the Library) with read, write and edit, and list them with list_files; after creating or changing a file the person should see, open it with show (screen file, with its path). The AP policy is in the Library (Policies/AP policy.md), supplier agreements are in Contracts/.`;
-
-/** Seeds the workspace: Policies/AP policy.md and Contracts/ with one supply agreement per supplier. */
-async function seedLibrary(files, access) {
-  const locate = path => ({ resource: { providerId: 'workspace', path }, view: { kind: 'published' } });
-  // Stable operation ids: a restart on the same data folder repeats each seed (a committed one returns its receipt). The policy moved from
-  // Library/ to Policies/ with a new id (the old `seed-library-0` names the old path); the contracts keep theirs.
-  const documents = [['seed-policy-ap', 'Policies/AP policy.md', new TextEncoder().encode(POLICY), 'text/markdown'],
-    ...Object.values(SUPPLIERS).map((supplier, index) => [`seed-library-${index + 1}`, supplier.contract, contractPdf(supplier), 'application/pdf'])];
-  for (const [operationId, path, bytes, mediaType] of documents) {
-    const result = await files.publication.publish({ operationId, atomicity: 'all-or-nothing', changes: [{ kind: 'create', target: locate(path), expected: { kind: 'absent' }, bytes, mediaType }] }, access);
-    // `conflict`: the file is already there (the person edited it since the first start); a seed never overwrites.
-    if (result.kind !== 'committed' && result.kind !== 'conflict') throw new Error(`Library seed ${path} failed: ${result.kind}`);
-  }
-}
 
 /** Speech to text for the composer's microphone: OpenAI's transcription, only when a key is set (the scripted public copy has none, so no microphone). */
 const transcribeWith = key => async request => {
@@ -69,121 +35,31 @@ const transcribeWith = key => async request => {
 
 export async function startWorkspaceDemo({ directory = mkdtempSync(join(tmpdir(), 'boring-workspace-demo-')), port = 0, token = randomUUID(), scripted = process.env.STUDIO_MODEL === 'scripted' } = {}) {
   mkdirSync(join(directory, 'workspace'), { recursive: true });
-  const models = scripted ? (await (await import('../../lab/studio/scripted-model.mjs')).createScriptedModels({ sources: (await import('./script.mjs')).SOURCES })).models : createModels();
+  const models = scripted ? await scriptedModels() : createModels();
   if (!scripted) models.setProvider((await import('@earendil-works/pi-ai/providers/openai')).openaiProvider());
-  const person = { scopeId: 'fictional-ap-team', principalId: 'fictional-approver', initiatorId: 'fictional-approver' };
-  const agentAccess = { ...person, principalId: 'fictional-agent' };
   const root = join(directory, 'workspace');
   const env = new NodeExecutionEnv({ cwd: root });
   const db = openNodeConnection(join(directory, 'library.sqlite'));
   const files = createWorkspaceProvider({ identity: { providerId: 'workspace', instanceId: 'ap', incarnation: 'ap', viewId: 'published' }, fs: env, journal: createWorkspaceJournal(db) });
   await seedLibrary(files, person);
-  const ap = await openAccountsPayable({ filename: join(directory, 'ap.sqlite'), person });
+  const store = openSqliteWorkspaces({ filename: join(directory, 'ap.sqlite'), providerId: 'ap-invoices' });
+  const ap = await openAccountsPayable({ files: store.workspace(person.scopeId), person });
 
-  // What the browser said about itself with each submit, by conversation; and what the agent asked the viewer to show.
-  const contexts = [], latest = new Map(), navigation = [];
-  const navigate = command => { navigation.push({ seq: navigation.length + 1, at: Date.now(), ...command }); };
-  const lines = invoice => `${invoice.id} ${SUPPLIERS[invoice.supplier].name} ${invoice.amount.toFixed(2)} ${invoice.currency} due ${invoice.due}, ${invoice.status}`;
-  const tools = [
-    defineTool({ name: 'pending_approvals', description: 'List the invoices waiting for a decision this week.', parameters: Type.Object({}, { additionalProperties: false }), replay: 'safe',
-      execute: async () => text((await ap.list()).filter(invoice => invoice.status === 'pending' && invoice.week).map(lines).join('\n') || 'None.') }),
-    defineTool({ name: 'get_invoice', description: 'Read one invoice with its supplier and any look-alike invoices.', parameters: Type.Object({ id: Type.String() }, { additionalProperties: false }), replay: 'safe',
-      execute: async ({ id }) => {
-        const invoice = await ap.read(id);
-        if (!invoice) return { ...text(`No invoice ${id}.`), isError: true };
-        const matches = ap.duplicatesOf(invoice, await ap.list()).map(lines);
-        return text({ ...invoice, supplier: SUPPLIERS[invoice.supplier].name, terms: SUPPLIERS[invoice.supplier].terms, lookAlikes: matches });
-      } }),
-    defineTool({ name: 'show', description: 'Open something in the viewer beside the chat: the approvals queue, an invoice (with id), a supplier (with id) or any workspace file (screen file, with its path). Use it when the chat is docked.',
-      parameters: Type.Object({ screen: Type.Union([...['dashboard', 'approvals', 'invoices', 'invoice', 'suppliers', 'supplier', 'spend', 'payments', 'file'].map(screen => Type.Literal(screen))]), id: Type.Optional(Type.String()), path: Type.Optional(Type.String()) }, { additionalProperties: false }), replay: 'unsafe',
-      execute: async (args, api) => {
-        // The command belongs to the conversation that made it and to the tab that was talking to it; the page drops it otherwise.
-        // A file path is checked here, before anything is queued: it must be a plain workspace-relative path of a file that exists.
-        let command = args;
-        if (args.screen === 'file') {
-          const path = validWorkspacePath(args.path);
-          if (!path) return { ...text('Not a workspace file path: give a path relative to the workspace root, such as Policies/AP policy.md (no leading /, no .. segments).'), isError: true };
-          const found = await files.read({ target: { resource: { providerId: 'workspace', path }, view: { kind: 'published' } }, revision: { kind: 'latest' } }, person);
-          if (found.kind !== 'available') return { ...text(`No such file: ${path}.`), isError: true };
-          command = { screen: 'file', path };
-        }
-        const conversation = String(api.conversationId);
-        navigate({ conversation, tab: latest.get(conversation)?.tab, ...command });
-        return text(`Opened ${command.screen === 'file' ? command.path : `${command.screen}${command.id ? ` ${command.id}` : ''}`} in the viewer.`);
-      } }),
-    // The one way the agent changes an invoice: the app's own `decide`, after the person approves the card. Same receipt as the page's buttons.
-    requireApproval(defineTool({ name: 'decide_invoice', description: `Approve an invoice, approve it coded to another account (action recode, account one of: ${ACCOUNTS.join(', ')}), or put it on hold. Pass the revision from get_invoice as expected: a changed invoice is refused.`,
-      parameters: Type.Object({ invoice: Type.String(), action: Type.Union([Type.Literal('approve'), Type.Literal('recode'), Type.Literal('hold')]), account: Type.Optional(Type.String()), note: Type.Optional(Type.String()), expected: Type.String({ description: 'The invoice revision you read with get_invoice' }) }, { additionalProperties: false }), replay: 'unsafe',
-      execute: async args => { const result = await ap.decide(args); return { ...text(result), isError: result.kind !== 'committed' }; } }),
-    { summarize: ({ invoice, action, account }) => action === 'recode' ? `Approve ${invoice} coded to ${account}` : `${action === 'hold' ? 'Hold' : 'Approve'} ${invoice}` }),
-  ];
-  const agent = defineAgent({ id: 'ap-helper', model: { provider: 'openai', modelId: 'gpt-5-mini' }, instructions: INSTRUCTIONS, tools,
-    extensions: [readFiles, writeFiles, createFileGuard({ workspace: { files, root, access: agentAccess } }),
-      createPromptContext({ context: ({ conversationId }) => renderRequestContext(latest.get(String(conversationId))) })] });
+  const demo = createWorkspaceDemo({ files, root, ap });
   const registry = createRegistry();
-  agent.install(registry);
+  demo.agent.install(registry);
   const harness = await Harness.open(await openNodeSqliteStorage(join(directory, 'session.sqlite')), { registry, models, env: () => env }, context);
   const conversations = createConversations({ harness, context });
   harness.resume();
-  const start = init => agent.createConversation(harness, context, { init });
-  // Earlier conversations, so the sessions list is not empty. The current one is created last and so listed first.
-  // Only on a fresh data folder: a restart keeps the conversations it has (and never asks the model the seed questions again).
-  const existing = (await conversations.list({ owner: agent.id, archived: 'all' })).items;
-  const earlier = [];
-  if (existing.length === 0) for (const [title, question] of [['Month-end close checklist', 'Remind me what is left in the month-end close.'], ['Fernhill Labels terms', 'What are the payment terms for Fernhill Labels?']]) {
-    const old = await conversations.create(agent.id, { start, title });
-    await (await old.submit({ type: 'input', requestId: `seed-${old.id}`, content: question }, context)).wait(context);
-    earlier.push(String(old.id));
-  }
-  const current = existing.length ? existing[0] : await conversations.create(agent.id, { start, title: 'This week\'s approvals' });
-  if (existing.length) earlier.push(...existing.slice(1).map(item => String(item.id)));
+  const { start, current, earlier } = await demo.openConversations(conversations, harness, context);
 
   const voice = !scripted && process.env.OPENAI_API_KEY ? transcribeWith(process.env.OPENAI_API_KEY) : undefined;
   const allowed = request => request.headers.get('authorization') === `Bearer ${token}`;
   const submits = [];
-  const handlers = {
-    '/api/conversations': createConversationsHandler({ conversations, authenticate: async request => allowed(request) ? { owner: agent.id, start } : null }),
-    ...(voice ? { '/api/transcribe': async request => allowed(request) && request.method === 'POST' ? voice(request) : new Response(null, { status: 401 }) } : {}),
-    '/api/resources': createRevisionHandler({ resolve: async request => allowed(request) ? { provider: files, access: person } : null }),
-    '/api/chat': createChatTransportHandler({ authenticate: async request => {
-      const id = Number(new URL(request.url).searchParams.get('conversation'));
-      const conversation = allowed(request) && Number.isSafeInteger(id) ? await conversations.open(agent.id, id) : undefined;
-      return conversation ? { conversation, context, abortSubmission: submission => harness.abortSubmission(submission, context, conversation.id),
-        answer: (callId, answer) => answerUserQuestion(conversation, callId, answer, context),
-        requestContext: value => { latest.set(String(conversation.id), value); contexts.push({ conversation: String(conversation.id), value }); } } : null;
-    } }),
-    // The app's own routes: the page reads its state here and the buttons call the same `decide` as the agent's tool.
-    '/api/ap': async request => {
-      if (!allowed(request)) return new Response(null, { status: 401 });
-      const url = new URL(request.url), route = url.pathname.slice('/api/ap'.length);
-      if (request.method === 'GET' && route === '/state') {
-        const invoices = await ap.list();
-        return json({ invoices, duplicates: Object.fromEntries(invoices.map(invoice => [invoice.id, ap.duplicatesOf(invoice, invoices).map(other => other.id)])), suppliers: SUPPLIERS, accounts: ACCOUNTS, budgets: BUDGETS, latest: navigation.length,
-          // Only this tab's commands for the conversation it shows, and only fresh ones: a slow command is dropped, never delivered late.
-          navigation: navigation.filter(item => item.seq > Number(url.searchParams.get('after') ?? 0) && item.conversation === url.searchParams.get('conversation') && item.tab === url.searchParams.get('tab') && Date.now() - item.at < NAVIGATION_TTL_MS) });
-      }
-      const pdf = /^\/pdf\/(INV-\d{4})$/.exec(route);
-      if (request.method === 'GET' && pdf) { const invoice = await ap.read(pdf[1]); return invoice ? new Response(invoicePdf(invoice), { headers: { 'content-type': 'application/pdf' } }) : new Response(null, { status: 404 }); }
-      const action = /^\/actions\/(approve|recode|hold)$/.exec(route);
-      if (request.method === 'POST' && action) {
-        const parsed = decisionSchema.safeParse({ ...(await request.json().catch(() => ({}))), action: action[1] });
-        return parsed.success ? json(await ap.decide(parsed.data)) : json({ kind: 'denied', reason: 'Invalid request' }, 400);
-      }
-      return new Response(null, { status: 404 });
-    },
-  };
-
-  const bundle = await build({ entryPoints: [here('./page.tsx')], bundle: true, write: false, outdir: here('./out'), format: 'esm', platform: 'browser', jsx: 'automatic',
-    alias: { '@': here('../../examples/app-shell') }, define: { 'process.env.NODE_ENV': '"production"' }, logLevel: 'silent' });
-  const css = [await buildTailwind({ extraDirectories: ['demos/workspace', 'packages/ui/src', 'registry/feedback', 'registry/dock', 'registry/pi-app', 'registry/documents', 'registry/viewers', 'examples/app-shell/components', 'examples/app-shell/hooks'], extraCss: readFileSync(here('./style.css'), 'utf8') }), ...bundle.outputFiles.filter(file => file.path.endsWith('.css')).map(file => file.text),
-    '@layer base{*,::before,::after{box-sizing:border-box}ul,ol{list-style:none;margin:0;padding:0}h1,h2,h3,p{margin:0}button{border:0;background:transparent;padding:0;font:inherit;color:inherit;cursor:pointer}button:disabled{cursor:default}}',
-    'html,body,#root{height:100%;margin:0}body{background:var(--background);color:var(--foreground);font:14px/1.5 var(--font-sans,ui-sans-serif,system-ui,sans-serif)}', stockShadowTokens].join('\n');
-  const page = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>${COMPANY} - Accounts payable (fictional)</title>
-<link rel="stylesheet" href="/app.css">${themePreviewHead}</head><body><div id="root"></div><script>window.__APP__=${JSON.stringify({ token, conversation: String(current.id), identity: { runtimeId: 'app', ...person }, voice: Boolean(voice) })}</script>
-<script type="module" src="/app.js"></script></body></html>`;
-  const statics = { ...themePreviewStatics, '/': ['text/html; charset=utf-8', page], '/app.js': ['text/javascript; charset=utf-8', bundle.outputFiles.find(file => file.path.endsWith('.js')).text], '/app.css': ['text/css; charset=utf-8', css],
-    // pdf.js's worker at the URL the bundle resolves (esbuild leaves `new URL(<package path>, import.meta.url)` as is), for browsers without a PDF viewer.
-    '/pdfjs-dist/build/pdf.worker.min.mjs': ['text/javascript; charset=utf-8', readFileSync(fileURLToPath(import.meta.resolve('pdfjs-dist/build/pdf.worker.min.mjs')))] };
+  const handlers = demo.handlers({ conversations, harness, context, start, allowed, voice });
+  const assets = await buildWorkspaceDemoAssets();
+  const page = assets.page(`<script>window.__APP__=${JSON.stringify({ token, conversation: current, identity: { runtimeId: 'app', ...person }, voice: Boolean(voice) })}</script>`);
+  const statics = { ...assets.files, '/': ['text/html; charset=utf-8', page] };
 
   const server = createServer(async (incoming, outgoing) => {
     const url = new URL(incoming.url, `http://${incoming.headers.host}`);
@@ -192,7 +68,7 @@ export async function startWorkspaceDemo({ directory = mkdtempSync(join(tmpdir()
     try {
       const fixed = incoming.method === 'GET' && statics[url.pathname];
       if (fixed) return void outgoing.writeHead(200, { 'content-type': fixed[0], 'cache-control': 'no-store' }).end(fixed[1]);
-      const handler = handlers[url.pathname] ?? (url.pathname.startsWith('/api/ap/') ? handlers['/api/ap'] : undefined);
+      const handler = routeOf(handlers, url.pathname);
       const request = handler && await webRequest(incoming, url, { signal: closed.signal });
       if (request && url.pathname === '/api/chat' && url.searchParams.get('op') === 'submit' && request.method === 'POST') submits.push(await request.clone().json().catch(() => undefined));
       await sendWebResponse(request ? await handler(request) : new Response(null, { status: handler ? 413 : 404 }), outgoing, { signal: closed.signal });
@@ -204,10 +80,10 @@ export async function startWorkspaceDemo({ directory = mkdtempSync(join(tmpdir()
   });
   await new Promise(resolve => server.listen(port, '127.0.0.1', resolve));
   return {
-    url: `http://127.0.0.1:${server.address().port}/`, token, harness, conversations, ap, contexts, navigation, navigate, submits, current: String(current.id), earlier,
+    url: `http://127.0.0.1:${server.address().port}/`, token, harness, conversations, ap, contexts: demo.contexts, navigation: demo.navigation, navigate: demo.navigate, submits, current, earlier,
     /** How many operations the publication journal holds (agent writes add none: they are observed, never receipted). */
     publications: () => Number(db.all('SELECT COUNT(*) AS n FROM boring_operations')[0].n),
-    close: async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await conversations.dispose(); await harness.close(context); ap.close(); db.close(); },
+    close: async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await conversations.dispose(); await harness.close(context); store.close(); db.close(); },
   };
 }
 

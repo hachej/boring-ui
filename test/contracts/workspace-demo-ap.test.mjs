@@ -4,13 +4,15 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openAccountsPayable } from '../../demos/workspace/ap.mjs';
+import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 
 // The workspace demo's backend: a decision is a conditional write on the reviewed revision, and repeating it returns its receipt.
 const person = { scopeId: 'fictional-ap-team', principalId: 'fictional-approver', initiatorId: 'fictional-approver' };
 
 test('a decision needs the reviewed revision, refuses a stale one, and a retry returns the same receipt', async t => {
-  const ap = await openAccountsPayable({ filename: join(mkdtempSync(join(tmpdir(), 'boring-ap-')), 'ap.sqlite'), person });
-  t.after(() => ap.close());
+  const store = openSqliteWorkspaces({ filename: join(mkdtempSync(join(tmpdir(), 'boring-ap-')), 'ap.sqlite'), providerId: 'ap-invoices' });
+  t.after(() => store.close());
+  const ap = await openAccountsPayable({ files: store.workspace(person.scopeId), person });
   const reviewed = (await ap.read('INV-2041')).revision;
 
   assert.equal((await ap.decide({ invoice: 'INV-2041', action: 'approve' })).kind, 'denied', 'no revision, no decision');

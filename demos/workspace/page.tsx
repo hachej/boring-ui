@@ -31,7 +31,8 @@ import { SCREEN_NAMES } from './screen-names.mjs';
 import { SidebarProvider, SidebarInset, useSidebar } from '../../examples/app-shell/components/ui/sidebar';
 
 const { token, identity, conversation: firstConversation, voice } = window.__APP__;
-const authorized = (request: Request) => { const headers = new Headers(request.headers); headers.set('authorization', `Bearer ${token}`); return fetch(new Request(request, { headers })); };
+// The Node server hands the page a bearer token; the public Worker hands none (its visitor session is an HttpOnly cookie the browser sends itself).
+const authorized = (request: Request) => { if (!token) return fetch(request); const headers = new Headers(request.headers); headers.set('authorization', `Bearer ${token}`); return fetch(new Request(request, { headers })); };
 const at = (path: string) => new URL(path, location.href);
 const money = (amount: number, currency = 'EUR') => new Intl.NumberFormat('en-GB', { style: 'currency', currency }).format(amount);
 const day = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });

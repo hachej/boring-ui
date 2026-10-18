@@ -1,10 +1,9 @@
-// The accounts-payable backend: one invoice record per file in a workspace provider (shared/sqlite-workspaces.mjs; re-point
-// after the examples restructure). A decision is a conditional write: it names the revision the person saw, a stale revision is refused,
+// The accounts-payable backend: one invoice record per file in a workspace provider the host opens (the Node server: shared/sqlite-workspaces.mjs;
+// the Cloudflare Worker: a workspace in the session's Durable Object SQLite). A decision is a conditional write: it names the revision the person saw, a stale revision is refused,
 // and the committed write returns a receipt. The page's buttons and the agent's `decide_invoice` tool (behind the approval card) call
 // the same `decide`, so there is one way to change an invoice. Fictional data only.
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 import { ACCOUNTS, INVOICES, SUPPLIERS } from './data.mjs';
 
 const encoder = new TextEncoder(), decoder = new TextDecoder();
@@ -20,9 +19,8 @@ export const decisionSchema = z.strictObject({
   expected: z.string().min(1),
 });
 
-export async function openAccountsPayable({ filename, person }) {
-  const store = openSqliteWorkspaces({ filename, providerId: 'ap-invoices' });
-  const files = store.workspace(person.scopeId);
+/** `files`: the workspace provider (provider id `ap-invoices`) that holds the invoice records; the host owns and closes it. */
+export async function openAccountsPayable({ files, person }) {
   for (const invoice of INVOICES) {
     const result = await files.publication.publish({ operationId: `seed-${invoice.id}`, atomicity: 'all-or-nothing',
       changes: [{ kind: 'create', target: locate(invoice.id), expected: { kind: 'absent' }, bytes: encoder.encode(JSON.stringify(invoice)), mediaType: 'application/json' }] }, person);
@@ -57,5 +55,5 @@ export async function openAccountsPayable({ filename, person }) {
     return result.kind === 'committed' ? receiptOf(result.receipt) : result;
   }
 
-  return { list, read, decide, duplicatesOf, supplier: id => SUPPLIERS[id], close: () => store.close() };
+  return { list, read, decide, duplicatesOf, supplier: id => SUPPLIERS[id] };
 }
