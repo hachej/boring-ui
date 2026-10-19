@@ -9,6 +9,7 @@ Non-breaking: no export, option or type is removed, and a page that sets none of
 - A read-only Library with `resources` alone, when the endpoint is a `createRevisionHandler` route (it then also serves the viewers' reads).
 - `app-shell`'s screen header has a slot for an embedded page's controls (`utils/screen-header-slot.ts`, shipped in the `utils` item).
 - `pi-app` now also needs the shadcn `popover` and `tooltip` components (installed with the item).
+- Built-in maquette viewer: the `pi-app` artifact panel now draws `*.maquette.json` files (a PM agent's mock-ups, format v1) with the new `maquette-viewer` item instead of showing their JSON. Nothing to change; an app kind for those files in `artifactKinds` still wins, and `maquetteKind` / `createMaquetteKind({ locale })` are exported to rename or translate it. Kind renderers also receive the page's URL `fragment`. See [registry/README.md](registry/README.md#maquette-viewer-maquette-viewer).
 
 # Migrating to 0.4.1
 
