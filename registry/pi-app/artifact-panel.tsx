@@ -28,6 +28,7 @@ import { ViewerVersions } from '../viewers/menu';
 import type { ViewerVersion } from '../viewers/menu';
 import type { InteractiveHtml } from '../viewers/interactive-html';
 import { downloadFile } from '../viewers/download';
+import { maquetteKind } from '../maquette-viewer/maquette-viewer';
 import { copyText } from '../utils/utils';
 import { Separator } from '@/components/ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -59,7 +60,8 @@ export interface ViewerOptions {
   readonly identity: ResourceIdentity;
   readonly history?: ((path: string) => Promise<readonly SavedRevision[]>) | undefined;
   readonly viewers?: CustomViewers | undefined;
-  /** The app's artifact kinds: their label names the artifact in the bar and their `renderer` draws it (before `viewers` and the built-in viewers). */
+  /** The app's artifact kinds: their label names the artifact in the bar and their `renderer` draws it (before `viewers` and the built-in viewers).
+   * The built-in maquette kind (`*.maquette.json`, `maquette-viewer`) comes after them, so an app's kind for those files wins. */
   readonly kinds?: readonly ArtifactKind[] | undefined;
   /** The host's opt-in to running HTML pages in the sandboxed preview. */
   readonly interactive?: InteractiveHtml | undefined;
@@ -174,7 +176,8 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose }: {
   const { client, identity } = options;
   const { labels } = useAppText();
   const path = artifact.target.resource.path;
-  const kind = artifactKind(artifact, options.kinds);
+  const kinds = useMemo(() => [...(options.kinds ?? []), maquetteKind], [options.kinds]);
+  const kind = artifactKind(artifact, kinds);
   const custom = kind?.renderer ? undefined : options.viewers?.[type];
   const create = useMemo(() => {
     const base = (snapshot: ResourceSnapshot) => ({ identity, client, instanceId: randomUUID(), epoch: 'workspace', source: { kind: 'saved' as const, snapshot } });
@@ -212,7 +215,7 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose }: {
     title: artifact.title, testId: 'artifact', titleTestId: 'artifact-panel-title', controls: versions, onClose, target, ...(revision === undefined ? {} : { revision }), ...(options.share ? { onShare: options.share } : {}),
     subtitle: <>
       <span title={path}>{path}</span><span aria-hidden="true">·</span>
-      <span data-testid="artifact-panel-type">{typeLabel(artifact, options.kinds)}</span>
+      <span data-testid="artifact-panel-type">{typeLabel(artifact, kinds)}</span>
       <span aria-hidden="true">·</span>
       <span data-testid="artifact-panel-version">{pinned ? (menu.savedAt !== undefined ? labels.savedAt(savedLabel(menu.savedAt, Date.now(), labels.earlierVersion)) : labels.olderVersion) : menu.savedAt ? labels.latestSavedAt(savedLabel(menu.savedAt, Date.now(), labels.earlierVersion)) : labels.latest}</span>
     </>,

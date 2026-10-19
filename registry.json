@@ -735,6 +735,59 @@
       ]
     },
     {
+      "name": "maquette-viewer",
+      "type": "registry:component",
+      "title": "Maquette viewer",
+      "description": "MaquetteViewer and maquetteKind: a PM agent's *.maquette.json mock-up (format v1, versioned) as an overview (workflow diagram, every screen and where it leads) and a play mode that walks the screens through their goto links, drawn from the host's shadcn components. The pi-app artifact panel shows .maquette.json files with it by default; app artifactKinds win.",
+      "dependencies": [
+        "react@^19.0.0",
+        "lucide-react@^1.51.0"
+      ],
+      "registryDependencies": [
+        "@boring-ui/theme",
+        "alert",
+        "badge",
+        "bubble",
+        "button",
+        "card",
+        "empty",
+        "input",
+        "item",
+        "label",
+        "native-select",
+        "separator",
+        "table",
+        "toggle-group"
+      ],
+      "files": [
+        {
+          "path": "registry/maquette-viewer/maquette.ts",
+          "type": "registry:lib",
+          "target": "components/maquette-viewer/maquette.ts"
+        },
+        {
+          "path": "registry/maquette-viewer/maquette-labels.ts",
+          "type": "registry:lib",
+          "target": "components/maquette-viewer/maquette-labels.ts"
+        },
+        {
+          "path": "registry/maquette-viewer/maquette-blocks.tsx",
+          "type": "registry:component",
+          "target": "components/maquette-viewer/maquette-blocks.tsx"
+        },
+        {
+          "path": "registry/maquette-viewer/maquette-diagram.tsx",
+          "type": "registry:component",
+          "target": "components/maquette-viewer/maquette-diagram.tsx"
+        },
+        {
+          "path": "registry/maquette-viewer/maquette-viewer.tsx",
+          "type": "registry:component",
+          "target": "components/maquette-viewer/maquette-viewer.tsx"
+        }
+      ]
+    },
+    {
       "name": "pi-app",
       "type": "registry:block",
       "title": "Pi agent app",
@@ -751,6 +804,7 @@
         "@boring-ui/pi-chat",
         "@boring-ui/pi-workspace",
         "@boring-ui/viewers",
+        "@boring-ui/maquette-viewer",
         "@boring-ui/utils",
         "@boring-ui/button",
         "drawer",

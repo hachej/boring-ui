@@ -1,0 +1,168 @@
+/*
+ * The maquette format: a lo-fi mock-up a PM agent writes as `<name>.maquette.json` (screens built from a small catalogue of blocks, goto
+ * links between them, an optional workflow and its cases). Plain data drawn by `MaquetteViewer`: nothing in it is built or runs.
+ * The format is documented in registry/README.md ("Maquette viewer"). Model output is untrusted: `parseMaquette` reads it defensively,
+ * keeps what it understands, bounds every list and string, and never throws.
+ */
+
+/** The format version this viewer writes and reads. A file without `version` is read as version 1. */
+export const MAQUETTE_FORMAT_VERSION = 1;
+
+/** A block as written in format v1. `type` picks the drawing; the other fields are read by the types that use them. */
+export interface MaquetteBlockV1 {
+  readonly type: string;
+  /** The block's words (`text` and `title` are accepted as aliases). */
+  readonly label?: string;
+  readonly text?: string;
+  readonly title?: string;
+  /** The screen id a click on this block opens (buttons, links, list items, placeholders). */
+  readonly goto?: string;
+  /** A primary button. */
+  readonly primary?: boolean;
+  /** Nested blocks of `card`, `row`, `stack` (`blocks` is accepted as an alias). */
+  readonly children?: readonly MaquetteBlockV1[];
+  readonly blocks?: readonly MaquetteBlockV1[];
+  /** `list` rows, or `select` options. */
+  readonly items?: readonly string[];
+  readonly options?: readonly string[];
+  /** `table` header and rows. */
+  readonly columns?: readonly string[];
+  readonly rows?: readonly (readonly string[])[];
+  /** `chat` messages; `from: "user"` (or `person`, `me`, `moi`) is the person's side. */
+  readonly messages?: readonly { readonly from?: string; readonly text?: string }[];
+  /** `document` lines. */
+  readonly lines?: readonly string[];
+  /** `input`, `select` and `chat` hint and value. */
+  readonly placeholder?: string;
+  readonly value?: string;
+  /** A placeholder's note under its name. */
+  readonly note?: string;
+}
+
+/** A maquette file as written in format v1. */
+export interface MaquetteFileV1 {
+  /** Absent means 1. */
+  readonly version?: 1;
+  readonly title?: string;
+  /** The screen id play mode opens first; the first screen otherwise. */
+  readonly start?: string;
+  /** Screens by id, in the order they are shown. */
+  readonly screens: Readonly<Record<string, { readonly title?: string; readonly blocks: readonly MaquetteBlockV1[] }>>;
+  /** The app's navigation bar, shown above every screen. */
+  readonly nav?: readonly { readonly label: string; readonly goto: string }[];
+  /** The workflow understood: states and the transitions between them (`on` is accepted as an alias of `label`). */
+  readonly workflow?: {
+    readonly states: readonly ({ readonly id: string; readonly label?: string } | string)[];
+    readonly transitions: readonly { readonly from: string; readonly to: string; readonly label?: string; readonly on?: string; readonly by?: string }[];
+  };
+  /** Named paths through the workflow's states, highlighted on demand. */
+  readonly cases?: readonly { readonly name: string; readonly path: readonly string[] }[];
+}
+
+/** A block as the viewer draws it: every field read, bounded and defaulted. */
+export interface MaquetteBlock {
+  readonly type: string;
+  readonly label: string;
+  readonly goto: string | undefined;
+  readonly primary: boolean;
+  readonly children: readonly MaquetteBlock[];
+  readonly items: readonly string[];
+  readonly columns: readonly string[];
+  readonly rows: readonly (readonly string[])[];
+  readonly messages: readonly { readonly mine: boolean; readonly text: string }[];
+  readonly lines: readonly string[];
+  readonly placeholder: string;
+  readonly value: string;
+  readonly note: string;
+}
+export interface MaquetteScreen { readonly id: string; readonly title: string; readonly blocks: readonly MaquetteBlock[] }
+export interface MaquetteState { readonly id: string; readonly label: string }
+export interface MaquetteTransition { readonly from: string; readonly to: string; readonly label: string; readonly by: string }
+export interface MaquetteWorkflow { readonly states: readonly MaquetteState[]; readonly transitions: readonly MaquetteTransition[] }
+/** A maquette ready to draw. */
+export interface Maquette {
+  readonly title: string;
+  readonly start: string;
+  readonly screens: readonly MaquetteScreen[];
+  readonly nav: readonly { readonly label: string; readonly goto: string }[];
+  readonly workflow: MaquetteWorkflow | null;
+  readonly cases: readonly { readonly name: string; readonly path: readonly string[] }[];
+}
+
+/**
+ * The outcome of reading a file. `version` is the file's declared version (1 when absent); a version above `MAQUETTE_FORMAT_VERSION`
+ * is read as v1, best effort. `invalid` is not JSON (`json`) or has no screen to show (`shape`).
+ */
+export type MaquetteParse =
+  | { readonly kind: 'ok'; readonly maquette: Maquette; readonly version: number }
+  | { readonly kind: 'invalid'; readonly reason: 'json' | 'shape'; readonly version: number | undefined };
+
+const MINE = new Set(['user', 'person', 'me', 'moi']);
+const str = (value: unknown, max = 400): string => typeof value === 'string' ? value.slice(0, max) : typeof value === 'number' && Number.isFinite(value) ? String(value) : '';
+const arr = (value: unknown, max = 60): readonly unknown[] => Array.isArray(value) ? value.slice(0, max) : [];
+const obj = (value: unknown): Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+const strings = (value: unknown, max: number, length = 120): string[] => arr(value, max).map(item => str(item, length));
+
+function block(value: unknown, depth: number): MaquetteBlock | null {
+  const raw = obj(value);
+  const type = str(raw['type'], 40).trim().toLowerCase();
+  if (!type || depth > 6) return null;
+  const goto = str(raw['goto'], 60);
+  return {
+    type, label: str(raw['label'] ?? raw['text'] ?? raw['title']), goto: goto || undefined, primary: raw['primary'] === true,
+    children: arr(raw['children'] ?? raw['blocks'], 40).map(child => block(child, depth + 1)).filter((child): child is MaquetteBlock => child !== null),
+    items: strings(raw['items'] ?? raw['options'], 12),
+    columns: strings(raw['columns'], 8, 40),
+    rows: arr(raw['rows'], 12).map(row => strings(row, 8, 80)),
+    messages: arr(raw['messages'], 10).map(item => { const message = obj(item); return { mine: MINE.has(str(message['from'], 20).toLowerCase()), text: str(message['text'], 600) }; }).filter(message => message.text),
+    lines: strings(raw['lines'], 16, 300),
+    placeholder: str(raw['placeholder'], 120), value: str(raw['value'], 120), note: str(raw['note'], 200),
+  };
+}
+
+/** Reads a maquette (its JSON text or an already parsed value). Never throws. */
+export function parseMaquette(input: unknown): MaquetteParse {
+  let raw: unknown = input;
+  if (typeof raw === 'string') {
+    try { raw = JSON.parse(raw); } catch { return { kind: 'invalid', reason: 'json', version: undefined }; }
+  }
+  const spec = obj(raw);
+  const declared = spec['version'];
+  const version = declared === undefined ? 1 : typeof declared === 'number' && Number.isSafeInteger(declared) && declared >= 1 ? declared : undefined;
+  if (version === undefined) return { kind: 'invalid', reason: 'shape', version: undefined };
+  const screens = Object.entries(obj(spec['screens'])).slice(0, 30).map(([id, value]): MaquetteScreen => {
+    const screen = obj(value);
+    return { id: id.slice(0, 60), title: str(screen['title'], 120) || id.slice(0, 60),
+      blocks: arr(screen['blocks'] ?? screen['children']).map(item => block(item, 0)).filter((item): item is MaquetteBlock => item !== null) };
+  });
+  if (!screens.length) return { kind: 'invalid', reason: 'shape', version };
+  const ids = new Set(screens.map(screen => screen.id));
+  const flow = obj(spec['workflow']);
+  const states = arr(flow['states'], 40).map((value): MaquetteState | null => {
+    const state = obj(value), id = str(state['id'], 60) || str(value, 60);
+    return id ? { id, label: str(state['label'], 80) || id } : null;
+  }).filter((state): state is MaquetteState => state !== null);
+  const known = new Set(states.map(state => state.id));
+  const transitions = arr(flow['transitions'], 80).map((value): MaquetteTransition => {
+    const transition = obj(value);
+    return { from: str(transition['from'], 60), to: str(transition['to'], 60), label: str(transition['label'] ?? transition['on'], 80), by: str(transition['by'], 40) };
+  }).filter(transition => known.has(transition.from) && known.has(transition.to));
+  const start = str(spec['start'], 60);
+  return { kind: 'ok', version, maquette: {
+    title: str(spec['title'], 120), start: ids.has(start) ? start : screens[0]!.id, screens,
+    nav: arr(spec['nav'], 8).map(value => { const item = obj(value); return { label: str(item['label'], 40), goto: str(item['goto'], 60) }; }).filter(item => item.label && ids.has(item.goto)),
+    workflow: states.length ? { states, transitions } : null,
+    cases: arr(spec['cases'], 10).map(value => { const item = obj(value); return { name: str(item['name'], 80), path: strings(item['path'], 20, 60).filter(id => known.has(id)) }; }).filter(item => item.name),
+  } };
+}
+
+/** Every screen id a block tree links to, in order, without repeats. */
+export function linksOf(blocks: readonly MaquetteBlock[]): string[] {
+  const found = new Set<string>();
+  const walk = (list: readonly MaquetteBlock[]) => { for (const item of list) { if (item.goto) found.add(item.goto); walk(item.children); } };
+  walk(blocks);
+  return [...found];
+}
+
+/** True for a path the built-in maquette kind draws: a `.maquette.json` file. */
+export const isMaquettePath = (path: string): boolean => /\.maquette\.json$/i.test(path);
