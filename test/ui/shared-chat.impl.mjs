@@ -174,6 +174,14 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
     await act(async () => q('[data-testid=composer-reply-remove]').click());
     assert.equal(controller.getSnapshot().shared.replyTo, undefined);
   });
+  await t.test('request actions surface the host error message', async () => {
+    const action = source.action;
+    source.action = async () => { throw new Error('Action refusée par le projet.'); };
+    try {
+      await act(async () => q('[data-shared-message=six] [data-testid=request-card] button').click());
+      assert.equal(q('[data-shared-message=six] [role=alert]')?.textContent, 'Action refusée par le projet.');
+    } finally { source.action = action; }
+  });
   await t.test('the latest card drives the agent avatar and tooltip; missing state is neutral', async () => {
     const latest = controller.getSnapshot().shared.messages.find(message => message.id === 'six');
     for (const [state, expected] of [['building', 'working'], ['asked', 'thinking'], ['review', 'waiting'], ['fixing', 'blocked'], ['live', 'done'], ['unrecognized', 'neutral'], [undefined, 'neutral']]) {
@@ -182,15 +190,46 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
       const avatar = q('[data-testid=agent-avatar-pm]');
       assert.equal(avatar.dataset.state, expected);
       assert.equal(Boolean(avatar.querySelector('[data-testid=avatar-indicator]')), expected !== 'neutral');
-      assert.equal(Boolean(avatar.querySelector('[data-slot=spinner]')), expected === 'working' || expected === 'thinking');
+      assert.equal(Boolean(avatar.querySelector('[data-slot=spinner]')), false, 'avatar states use only a corner dot');
     }
-    // Real hover/focus visibility belongs to the Chromium journey. The DOM realm drives the phone's native tap disclosure.
+  });
+  await t.test('the phone state disclosure closes when the transcript scrolls', async () => {
+    const latest = controller.getSnapshot().shared.messages.find(message => message.id === 'six');
+    await act(async () => source.emit({ type: 'message', message: { ...latest, card: { ...latest.card, state: 'preview', line: 'Je prépare votre version.' } } }));
     await act(async () => window.happyDOM.setWindowSize({ width: 390, height: 844 }));
     await act(async () => q('[data-testid=agent-avatar-pm]').click());
     await settle(() => q('[data-slot=popover-content]'));
     assert.match(q('[data-slot=popover-content]').textContent, /Je prépare votre version/);
-    await act(async () => q('[data-testid=agent-avatar-pm]').click());
+    await act(async () => q('[data-testid=transcript-scroll]').dispatchEvent(new window.Event('scroll')));
+    await settle(() => !q('[data-slot=popover-content][data-open]'));
+    assert.equal(q('[data-testid=agent-avatar-pm]').getAttribute('aria-expanded'), 'false');
     await act(async () => window.happyDOM.setWindowSize({ width: 1024, height: 768 }));
+  });
+  await t.test('Reply reuses desktop hover/focus actions and a phone long-press exposes the same button', async () => {
+    const row = q('[data-shared-message=six]');
+    const actions = () => row.querySelector('[data-testid=shared-message-actions]');
+    assert.ok(actions().className.includes('group-hover/shared-message:opacity-100'));
+    assert.ok(actions().className.includes('group-focus-within/shared-message:opacity-100'));
+    await act(async () => window.happyDOM.setWindowSize({ width: 390, height: 844 }));
+    assert.equal(actions().hidden, true);
+    await act(async () => row.dispatchEvent(new window.PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch', clientX: 10, clientY: 10 })));
+    await act(async () => new Promise(resolve => setTimeout(resolve, 500)));
+    await act(async () => row.dispatchEvent(new window.PointerEvent('pointerup', { bubbles: true, pointerType: 'touch' })));
+    assert.equal(actions().hidden, false);
+    await act(async () => row.querySelector('[data-testid=shared-reply]').click());
+    assert.equal(controller.getSnapshot().shared.replyTo, 'six');
+    assert.equal(actions().hidden, true);
+    await act(async () => controller.setReplyTo(undefined));
+    await act(async () => window.happyDOM.setWindowSize({ width: 1024, height: 768 }));
+  });
+  await t.test('author continuations group only within one minute', async () => {
+    await act(async () => {
+      for (const [id, at] of [['timed-first', '2026-10-20T13:00:00Z'], ['timed-close', '2026-10-20T13:00:59Z'], ['timed-boundary', '2026-10-20T13:01:59Z'], ['timed-late', '2026-10-20T13:03:00Z']]) source.emit({ type: 'message', message: { id, at, conversationId: 'main', author: 'pm', text: id } });
+    });
+    assert.equal(q('[data-shared-message=timed-first] [data-testid=message-author]')?.textContent, 'PM');
+    assert.equal(q('[data-shared-message=timed-close] [data-testid=message-author]'), null);
+    assert.equal(q('[data-shared-message=timed-boundary] [data-testid=message-author]'), null);
+    assert.equal(q('[data-shared-message=timed-late] [data-testid=message-author]')?.textContent, 'PM');
   });
   await t.test('personal-agent attribution stays on the person, including my own user bubble', async () => {
     await act(async () => {

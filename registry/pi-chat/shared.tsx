@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { channelAvatarStates } from '@hachej/boring-ui-kit/shared-chat';
 import type { Card as Request, ChannelMessage, ChatController, Member, SharedChatState } from '@hachej/boring-ui-kit/shared-chat';
@@ -11,7 +11,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Spinner } from '@/components/ui/spinner';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ActivityBlock } from './activity';
 import type { Row } from './rows';
@@ -32,20 +31,26 @@ export function sharedQuote(shared: SharedChatState, id: string | undefined) {
 
 export function MemberAvatar({ member, card, interactive = true }: { readonly member: Member; readonly card?: Request | undefined; readonly interactive?: boolean }) {
   const phone = usePhone();
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    document.addEventListener('scroll', close, true);
+    return () => document.removeEventListener('scroll', close, true);
+  }, [open]);
   const state = member.kind === 'agent' && card?.state && Object.hasOwn(channelAvatarStates, card.state) ? channelAvatarStates[card.state] ?? 'neutral' : 'neutral';
-  const working = state === 'working' || state === 'thinking';
   const tone = state === 'blocked' ? 'text-destructive' : state === 'waiting' ? 'text-muted-foreground' : 'text-primary';
   const avatar = <Avatar data-testid="member-avatar" aria-label={member.name} data-state={state}>
     {member.avatarUrl && <AvatarImage src={member.avatarUrl} alt={member.name} />}
     <AvatarFallback>{member.name.replace(/[()]/g, '').split(/\s+/).slice(0, 2).map(word => word[0]).join('').toUpperCase()}</AvatarFallback>
-    {state !== 'neutral' && <span data-testid="avatar-indicator" data-state={state} className={`absolute right-0 bottom-0 flex items-center gap-0.5 ${tone}`}>
-      {working && <Spinner />}<CircleIcon className="size-2 fill-current" aria-hidden="true" />
+    {state !== 'neutral' && <span data-testid="avatar-indicator" data-state={state} className={`absolute right-0 bottom-0 ${tone}`}>
+      <CircleIcon className="size-2 fill-current" aria-hidden="true" />
     </span>}
   </Avatar>;
   if (member.kind !== 'agent' || !card || !interactive) return avatar;
   const trigger = <Button variant="ghost" size="icon" data-testid={`agent-avatar-${member.id}`} data-state={state} aria-label={`${member.name}: ${card.line}`}>{avatar}</Button>;
   return phone
-    ? <Popover><PopoverTrigger render={trigger} /><PopoverContent className="max-w-[calc(100vw-1rem)]">{card.line}</PopoverContent></Popover>
+    ? <Popover open={open} onOpenChange={setOpen}><PopoverTrigger render={trigger} /><PopoverContent data-testid="agent-state-popover" side="bottom" align="start" className="max-w-[calc(100vw-1rem)]">{card.line}</PopoverContent></Popover>
     : <Tooltip><TooltipTrigger render={trigger} /><TooltipContent>{card.line}</TooltipContent></Tooltip>;
 }
 function MemberBadge({ member }: { readonly member: Member }) {
@@ -84,11 +89,11 @@ export function SharedMembers({ controller }: { readonly controller: ChatControl
 
 function RequestCard({ card, action }: { readonly card: Request; readonly action: (card: Request) => Promise<void> }) {
   const { labels } = useChatText();
-  const [busy, setBusy] = useState(false), [error, setError] = useState(false);
+  const [busy, setBusy] = useState(false), [error, setError] = useState<string>();
   return <Card data-testid="request-card">
     <CardHeader><CardTitle>{card.title}</CardTitle></CardHeader>
-    <CardContent><p className="m-0">{card.line}</p>{card.since && <time dateTime={card.since} className="text-muted-foreground">{labels.sharedSince(relativeTime(card.since, Date.now(), labels))}</time>}{error && <p role="alert">{labels.actionFailedShort}</p>}</CardContent>
-    {card.action && <CardFooter><Button disabled={busy} onClick={() => { setBusy(true); setError(false); void action(card).catch(() => setError(true)).finally(() => setBusy(false)); }}>{card.action.label}</Button></CardFooter>}
+    <CardContent><p className="m-0">{card.line}</p>{card.since && <time dateTime={card.since} className="text-muted-foreground">{labels.sharedSince(relativeTime(card.since, Date.now(), labels))}</time>}{error && <p role="alert">{error}</p>}</CardContent>
+    {card.action && <CardFooter><Button disabled={busy} onClick={() => { setBusy(true); setError(undefined); void action(card).catch(error => setError(error instanceof Error ? error.message : labels.actionFailedShort)).finally(() => setBusy(false)); }}>{card.action.label}</Button></CardFooter>}
   </Card>;
 }
 
@@ -116,10 +121,34 @@ export function SharedMessage({ shared, children, remove, canRemove, openFile, o
   readonly onReveal?: ((messageId: string) => void) | undefined;
 }) {
   const { labels } = useChatText();
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<string>();
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const phone = usePhone();
+  const element = useRef<HTMLDivElement>(null);
+  const press = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const start = useRef<{ x: number; y: number } | undefined>(undefined);
+  const cancelPress = () => { clearTimeout(press.current); start.current = undefined; };
+  useEffect(() => cancelPress, []);
+  useEffect(() => {
+    if (!actionsOpen) return;
+    const outside = (event: PointerEvent) => { if (event.target instanceof Node && !element.current?.contains(event.target)) setActionsOpen(false); };
+    document.addEventListener('pointerdown', outside);
+    return () => document.removeEventListener('pointerdown', outside);
+  }, [actionsOpen]);
   const { message, author, first, own } = shared;
-  return <div data-shared-message={message.id} className="flex min-w-0 flex-col gap-2">
-    {first && (!own || message.via) && <div className={`flex min-w-0 items-center gap-2${own ? ' justify-end' : ''}`}>
+  const replyable = Boolean(onReply && ((author.kind === 'agent' && !message.via) || message.card));
+  const removable = Boolean(remove && canRemove?.(message));
+  const actionable = !message.removed && (replyable || removable);
+  return <div ref={element} data-shared-message={message.id} className="group/shared-message flex min-w-0 flex-col gap-2"
+    onPointerDown={event => {
+      if (!phone || !actionable || event.pointerType !== 'touch' || event.target instanceof Element && event.target.closest('button, a, input, textarea')) return;
+      cancelPress(); start.current = { x: event.clientX, y: event.clientY };
+      press.current = setTimeout(() => setActionsOpen(true), 400);
+    }}
+    onPointerMove={event => { if (start.current && (Math.abs(event.clientX - start.current.x) > 8 || Math.abs(event.clientY - start.current.y) > 8)) cancelPress(); }}
+    onPointerUp={cancelPress} onPointerCancel={cancelPress}
+    onContextMenu={event => { if (phone && actionable && event.target instanceof Element && !event.target.closest('button, a, input, textarea')) { event.preventDefault(); setActionsOpen(true); } }}>
+    {first && (!own || message.via) && <div data-testid="message-author-row" className={`flex min-w-0 items-center gap-2${own ? ' justify-end' : ''}`}>
       <MemberAvatar member={author} card={message.via ? undefined : shared.latestCard} /><span data-testid="message-author" className="min-w-0 truncate">{author.name}</span>
       {message.via && <span data-testid="message-via" className="min-w-0 truncate text-muted-foreground">{labels.sharedVia(message.via)}</span>}
       {!(message.via && author.kind === 'agent') && <MemberBadge member={author} />}
@@ -128,11 +157,11 @@ export function SharedMessage({ shared, children, remove, canRemove, openFile, o
     {message.removed ? <p className="text-muted-foreground">{labels.sharedRemoved}</p> : children}
     {!message.removed && !message.via && (message.streaming || message.steps?.length) && author.kind === 'agent' && <ActivityBlock participant={author.name} steps={(message.steps ?? []).map((step, index) => ({ kind: 'host', key: `${message.id}:step:${index}`, step }))} state={message.streaming ? 'running' : message.steps?.some(step => step.status === 'failed') ? 'failed' : 'done'} streaming={Boolean(message.streaming)} developer={false} />}
     {!message.removed && message.attachments?.map(file => <Button key={file.path} variant="outline" disabled={!openFile} onClick={() => openFile?.(file.path)} className="max-w-full justify-start"><span className="truncate">{file.title ?? file.path}</span></Button>)}
-    {!message.removed && <div className="flex items-center gap-1">
-      {onReply && ((author.kind === 'agent' && !message.via) || message.card) && <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon" data-testid="shared-reply" aria-label={labels.sharedReply} onClick={() => onReply(message.id)}><ReplyIcon aria-hidden="true" /></Button>} /><TooltipContent>{labels.sharedReply}</TooltipContent></Tooltip>}
-      {remove && canRemove?.(message) && <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon" aria-label={labels.delete} onClick={() => { void remove(message).catch(() => setError(true)); }}><Trash2Icon aria-hidden="true" /></Button>} /><TooltipContent>{labels.delete}</TooltipContent></Tooltip>}
+    {actionable && <div data-testid="shared-message-actions" hidden={phone && !actionsOpen} className={`flex items-center gap-1${phone ? '' : ' opacity-0 group-hover/shared-message:opacity-100 group-focus-within/shared-message:opacity-100'}`}>
+      {replyable && onReply && <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon" data-testid="shared-reply" aria-label={labels.sharedReply} onClick={() => { setActionsOpen(false); onReply(message.id); }}><ReplyIcon aria-hidden="true" /></Button>} /><TooltipContent>{labels.sharedReply}</TooltipContent></Tooltip>}
+      {removable && remove && <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon" aria-label={labels.delete} onClick={() => { void remove(message).catch(error => setError(error instanceof Error ? error.message : labels.actionFailedShort)); }}><Trash2Icon aria-hidden="true" /></Button>} /><TooltipContent>{labels.delete}</TooltipContent></Tooltip>}
     </div>}
-    {error && <p role="alert">{labels.actionFailedShort}</p>}
+    {error && <p role="alert">{error}</p>}
   </div>;
 }
 
@@ -140,7 +169,10 @@ export function sharedRows(shared: SharedChatState, action: (card: Request) => P
   return shared.messages.map((message, index): Row => {
     const key = `shared:${message.id}`, own = message.author === shared.me.id;
     const author = memberOf(shared, message.author);
-    const metadata = { message, author, own, first: index === 0 || shared.messages[index - 1]?.author !== message.author || shared.messages[index - 1]?.via !== message.via, latestCard: latestCard(shared, message.author), quote: sharedQuote(shared, message.replyTo) };
+    const previous = shared.messages[index - 1];
+    const elapsed = previous ? Date.parse(message.at) - Date.parse(previous.at) : NaN;
+    const first = previous?.author !== message.author || previous?.via !== message.via || !(elapsed >= 0 && elapsed <= 60_000);
+    const metadata = { message, author, own, first, latestCard: latestCard(shared, message.author), quote: sharedQuote(shared, message.replyTo) };
     if (message.card) return { key, type: 'card', card: { content: <RequestCard card={message.card} action={action} /> }, shared: metadata };
     if (own) return { key, type: 'user', message: { role: 'user', content: message.text ?? '', timestamp: Date.parse(message.at) }, shared: metadata };
     return { key, type: 'assistant', text: message.text ?? '', streaming: Boolean(message.streaming), parts: message.text ? [{ kind: 'text', key: `${key}:text`, text: message.text }] : [], shared: metadata };

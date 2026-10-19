@@ -1,6 +1,8 @@
 import type { ChatAttempt, ChatDraft, ChatSendInput, NativeChatController, NativeChatSnapshot } from './native-chat.js';
 import { randomUUID } from '@hachej/boring-files/platform';
 import { createChatOutbox } from './chat-outbox.js';
+import { ChannelRequestError } from './channel-error.js';
+export { ChannelRequestError } from './channel-error.js';
 import type { Card, ChannelEvent, ChannelMessage, ChannelSource, Member, SharedChatState } from './channel-source.js';
 export type * from './channel-source.js';
 export { channelAvatarStates } from './channel-source.js';
@@ -8,7 +10,9 @@ export { channelAvatarStates } from './channel-source.js';
 export type SharedChatSnapshot = Omit<NativeChatSnapshot, 'conversationId' | 'send' | 'shared'> & {
   readonly conversationId: string;
   readonly shared: SharedChatState;
-  readonly send: { readonly kind: 'idle' | 'submitting' | 'admitted' | 'unknown' } | { readonly kind: 'blocked'; readonly reason: string };
+  readonly send: { readonly kind: 'idle' | 'submitting' | 'admitted' }
+    | { readonly kind: 'unknown'; readonly reason: string; readonly retryable: boolean }
+    | { readonly kind: 'blocked'; readonly reason: string };
 };
 export type ChatSnapshot = NativeChatSnapshot | SharedChatSnapshot;
 /** The renderer's existing draft/lifecycle contract. Native controllers retain their concrete conversation and native return values. */
@@ -32,6 +36,7 @@ export function createSharedChat(source: ChannelSource, options: { readonly conv
     shared: { me: structuredClone(source.me), members: [], messages: [], files: [], replyTo: undefined, status: 'reconnecting' } });
   const listeners = new Set<() => void>();
   const outbox = createChatOutbox<Parameters<ChannelSource['send']>[0], ChannelMessage>();
+  const replayable = new Set<string>();
   let unsubscribe: (() => void) | undefined, opening: Promise<void> | undefined, paging: Promise<void> | undefined, before: string | undefined;
   let revision = 0;
   const changed = new Map<string, number>();
@@ -57,19 +62,24 @@ export function createSharedChat(source: ChannelSource, options: { readonly conv
     if (message.conversationId !== id || snapshot.disposed) return;
     changed.set(message.id, ++revision);
     merge([message]);
-    if (message.clientId) outbox.resolve(message.clientId, message);
+    if (message.clientId) { replayable.delete(message.clientId); outbox.resolve(message.clientId, message); }
   };
   const sendOne = (clientId: string, input: Parameters<ChannelSource['send']>[0]) => {
-    void source.send({ ...input, mentions: [...input.mentions], ...(input.attachments ? { attachments: [...input.attachments] } : {}) }).then(message => {
+    void Promise.resolve().then(() => source.send({ ...input, mentions: [...input.mentions], ...(input.attachments ? { attachments: [...input.attachments] } : {}) })).then(message => {
       if (snapshot.disposed) return;
       if (message.conversationId !== id || message.clientId !== clientId) throw new Error('Shared send returned another clientId or conversation');
       acknowledge(message);
-    }).catch(() => {
-      // The host may have committed. Keep exactly this payload and clientId until an echo, reconnect or explicit retry.
-      if (outbox.get(clientId)) publish({ send: { kind: 'unknown' } });
+    }).catch(error => {
+      if (!outbox.get(clientId)) return;
+      replayable.delete(clientId);
+      if (error instanceof ChannelRequestError && error.refused && !error.retryable) { outbox.reject(clientId, error); return; }
+      // An unconfirmed result retains its exact identity. Only an explicitly retryable failure may replay.
+      const retryable = error instanceof ChannelRequestError && error.retryable;
+      if (retryable) replayable.add(clientId);
+      publish({ send: { kind: 'unknown', reason: error instanceof Error ? error.message : 'Channel send is unconfirmed', retryable } });
     });
   };
-  const replay = () => { for (const call of outbox.values()) sendOne(call.input.clientId, call.input); };
+  const replay = () => { for (const call of outbox.values()) if (replayable.has(call.input.clientId)) sendOne(call.input.clientId, call.input); };
   async function refresh() {
     // Walk backward to the newest known message, not just one page: a long disconnect must not drop a gap.
     const known = new Set(snapshot.shared.messages.map(message => message.id));
@@ -166,16 +176,29 @@ export function createSharedChat(source: ChannelSource, options: { readonly conv
       publish({ shared: { ...snapshot.shared, files: [], replyTo: undefined }, ...(!input ? { draft: { text: '', attachments: [], version: snapshot.draft.version + 1 } } : {}), send: { kind: 'submitting' } });
       sendOne(clientId, payload);
       try { const message = await result; publish({ send: { kind: 'admitted' } }); return message; }
-      catch { return undefined; }
+      catch (error) {
+        if (!snapshot.disposed && error instanceof ChannelRequestError && error.refused) {
+          const current = snapshot.draft;
+          publish({ send: { kind: 'blocked', reason: error.message }, draft: { ...current, text: [input?.restore?.text ?? selected.text, current.text].filter(Boolean).join('\n'), version: current.version + 1 },
+            shared: { ...snapshot.shared, files: [...files, ...snapshot.shared.files], replyTo: snapshot.shared.replyTo ?? payload.replyTo } });
+        }
+        return undefined;
+      }
     },
-    reconcile: async () => { active(); await refresh(); },
+    reconcile: async () => {
+      active(); await refresh();
+      for (const call of outbox.values()) {
+        const message = snapshot.shared.messages.find(message => message.clientId === call.input.clientId);
+        if (message) acknowledge(message);
+      }
+    },
     retrySameRequest: async () => { active(); replay(); },
     stop: async () => { throw new Error('Only the host controls when an agent speaks'); },
     dispose: async () => {
       if (snapshot.disposed) return;
       unsubscribe?.(); unsubscribe = undefined;
       for (const call of outbox.values()) call.reject(new Error('Shared chat disposed'));
-      outbox.clear();
+      outbox.clear(); replayable.clear();
       snapshot = Object.freeze<SharedChatSnapshot>({ ...snapshot, disposed: true, connection: { kind: 'closed' } });
       for (const listener of [...listeners]) listener();
       listeners.clear();
@@ -201,4 +224,4 @@ function hasMemberMention(text: string, member: Member): boolean {
 export { createFakeChannelSource } from './fake-channel.js';
 export type { FakeChannelSeed } from './fake-channel.js';
 export { createChannelSocket } from './channel-socket.js';
-export type { ChannelSocketOptions } from './channel-socket.js';
+export type { ChannelSocketOptions, ChannelSocketSource } from './channel-socket.js';

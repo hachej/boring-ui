@@ -8,11 +8,11 @@ This fictional team uses the existing embedded `AgentWorkspace`, `PiChat`, compo
 2. Run `npm run shared-chat:demo` and open the printed URL.
 3. Type `@`. Agents appear first. Choose PM and send `@pm ajoute un export PDF`.
 4. Watch the two-line plan stream in place. The PM says `Je regarde vos fichiers.` as an ordinary participant message. A worker has its own live trace.
-5. The single `Export PDF` card starts in `building`, then updates in place to `Une version à essayer`, with `Essayer cette version` as its one action.
-6. Click the card's Reply icon, type a follow-up and send it. The composer chip and sent message quote the same card. Click the quote to reveal its parent.
-7. Open Admin through History. Expand the finished trace to see its fictional detail. The fake host supplies no detail in Main.
+5. The single `Export PDF` card starts in `building`, then updates in place to `On attend votre essai`, with `Essayer cette version` as its one action.
+6. Hover/focus the message on desktop, or long-press it on a phone, to reveal the same Reply icon. Click it, type a follow-up and send it. The composer chip and sent message quote the same card. Click the quote to reveal its parent.
+7. Open Admin through History. Expand the finished trace to see its fictional detail. The fake host supplies no detail in Équipe.
 
-Agent avatars reflect the latest card's state. Working shows the default Spinner and a primary dot; waiting shows a muted dot. Hover an avatar for the card's line, or tap it on a phone. The registry guide owns the full [state and source contract](../../registry/README.md#shared-conversations).
+Agent avatars reflect the latest card's state. Working shows a static primary corner dot; waiting shows a muted dot. There is no avatar spinner. Hover an avatar for the card's line, or tap it on a phone for a bottom/start Popover that closes on scroll. Author groups restart after a gap longer than one minute. The result stays on the card, without a duplicate status message. The registry guide owns the full [state and source contract](../../registry/README.md#shared-conversations).
 
 On the shared implementation VM, run every npm or Node command through the lane's capped wrapper with `TMPDIR=/var/tmp`. Exit 75 means wait and retry in the foreground.
 

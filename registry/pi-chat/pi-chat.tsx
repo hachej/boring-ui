@@ -55,7 +55,7 @@ export { BlockActions } from '../button/actions';
 export { useChatDraft } from './use-chat-draft';
 export { useConversations } from './use-conversations';
 export { useSharedChat } from './use-shared-chat';
-export { createSharedChat, createChannelSocket, createFakeChannelSource, channelAvatarStates } from '@hachej/boring-ui-kit/shared-chat';
+export { createSharedChat, createChannelSocket, createFakeChannelSource, channelAvatarStates, ChannelRequestError } from '@hachej/boring-ui-kit/shared-chat';
 export type { ChannelSource, ChannelEvent, ChannelMessage, Member, Conversation, Card, Step, AvatarState, ChatController } from '@hachej/boring-ui-kit/shared-chat';
 export { RunCard, parseRun } from './run-card';
 export type { RunRecord, RunStatus } from './run-card';
@@ -210,7 +210,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
     {pinned.length > 0 && <><aside aria-label={labels.requiredActions} className="shrink-0 space-y-2 px-4 py-2">{pinned.map(card => <div key={card.key}>{card.content}</div>)}</aside><Separator /></>}
     {(connectionKind === 'error' || connectionKind === 'closed') && <div className="shrink-0 px-4 pt-2">
       <Notice tone={connectionKind === 'error' ? 'error' : 'info'} testid="connection-notice">
-        <span className="flex-1">{connectionKind === 'error' ? labels.loadFailed : labels.disconnected}</span>
+        <span className="flex-1">{connectionKind === 'error' ? state.shared && state.connection.kind === 'error' && state.connection.error instanceof Error ? state.connection.error.message : labels.loadFailed : labels.disconnected}</span>
         {!state.disposed && <Button size="sm" variant="outline" onClick={() => act(controller.connect)}><icons.reconnect data-icon="inline-start" aria-hidden="true" />{labels.reconnect}</Button>}
       </Notice></div>}
     {pickingConversation && conversations && historyList && <ConversationHistory conversations={conversations} onClose={() => setPickingConversation(false)} />}

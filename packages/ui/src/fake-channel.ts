@@ -1,3 +1,4 @@
+import { ChannelRequestError } from './channel-error.js';
 import type { ChannelEvent, ChannelMessage, ChannelSource, Conversation, Member, SharedChatState } from './channel-source.js';
 
 export interface FakeChannelSeed {
@@ -51,7 +52,7 @@ export function createFakeChannelSource(seed: FakeChannelSeed) {
     },
     send: async (input: Parameters<ChannelSource['send']>[0]) => {
       sends.push({ ...input, mentions: [...input.mentions], ...(input.attachments ? { attachments: [...input.attachments] } : {}) });
-      if (!online) throw new Error('Offline');
+      if (!online) throw new ChannelRequestError('offline', 'Offline', true);
       const duplicate = data.messages.find(message => message.clientId === input.clientId && message.conversationId === input.conversationId);
       if (duplicate) return structuredClone(duplicate);
       const message: ChannelMessage = { id: `sent-${input.clientId}`, conversationId: input.conversationId, author: data.me.id, at: new Date().toISOString(), text: input.text, mentions: [...input.mentions], clientId: input.clientId, ...(input.replyTo ? { replyTo: input.replyTo } : {}) };

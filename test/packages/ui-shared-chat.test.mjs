@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createSharedChat, createFakeChannelSource, createChannelSocket } from '@hachej/boring-ui-kit/shared-chat';
+import { createSharedChat, createFakeChannelSource, createChannelSocket, ChannelRequestError } from '@hachej/boring-ui-kit/shared-chat';
 import { sharedChatSeed } from '../../examples/shared-chat/seed.mjs';
 
 const tick = () => new Promise(resolve => setTimeout(resolve, 10));
@@ -40,7 +40,7 @@ test('a committed send with a lost acknowledgement replays the same payload and 
     subscribe: (id, event, status) => fake.subscribe(id, update => { if (deliver) event(update); }, status),
     send: async input => {
       payloads.push({ ...input });
-      if (lost) { lost = false; deliver = false; await fake.send(input); deliver = true; fake.setStatus('offline'); throw new Error('Lost reply'); }
+      if (lost) { lost = false; deliver = false; await fake.send(input); deliver = true; fake.setStatus('offline'); throw new ChannelRequestError('network', 'Lost reply', true); }
       return fake.send(input);
     },
   };
@@ -79,18 +79,18 @@ test('shared file bytes are retained until the exact send; member ids do not dep
   assert.equal(await sent.attachments[0].text(), 'fictional seeds'); assert.equal(chat.getSnapshot().shared.files.length, 0);
 });
 
-test('channel socket default routes, validated events, overrides and owned reconnect lifecycle', async () => {
+test('channel socket RPC, validated events, overrides and owned reconnect lifecycle', async () => {
   const requests = [], sockets = [], events = [], statuses = [];
   const msg = { id: 'posted', conversationId: 'main', author: 'mira', at: '2026-10-20T12:00:00Z', text: 'Hello', clientId: 'c1', via: 'Claude', replyTo: 'parent', card: { requestId: 'pdf', title: 'Export PDF', line: 'Une version à essayer', state: 'preview' }, steps: [{ label: 'Vérifier le PDF', detail: 'fictional admin detail', status: 'done' }] };
-  const source = await createChannelSocket({ url: 'https://fictional.invalid/spaces/garden', reconnectMs: 1,
+  const source = await createChannelSocket({ url: 'https://fictional.invalid', reconnectMs: 1,
     fetch: async request => {
       requests.push(request);
       const path = new URL(request.url).pathname;
-      if (path.endsWith('/me')) return Response.json(sharedChatSeed.me);
+      if (path.endsWith('/me')) return Response.json({ space: 'sp_fictional', me: sharedChatSeed.me });
       if (path.endsWith('/conversations')) return Response.json(sharedChatSeed.conversations);
       if (path.endsWith('/members')) return Response.json(sharedChatSeed.members);
-      if (path.endsWith('/actions')) return new Response(null, { status: 204 });
-      return Response.json(request.method === 'POST' ? msg : { messages: [msg], before: 'old' });
+      if (path.endsWith('/action')) return Response.json({ ok: true });
+      return Response.json(path.endsWith('/send') ? msg : { messages: [msg], before: 'old' });
     },
     open: url => { const socket = { url, close() { this.onclose?.(); } }; sockets.push(socket); return socket; },
   });
@@ -100,13 +100,13 @@ test('channel socket default routes, validated events, overrides and owned recon
   const posted = await source.send({ conversationId: 'main', text: 'Hello', mentions: ['leo'], clientId: 'c1' }); assert.equal(posted.id, 'posted'); assert.equal(posted.via, 'Claude'); assert.equal(posted.card.state, 'preview'); assert.deepEqual(posted.steps, msg.steps);
   await source.action({ conversationId: 'main', requestId: 'review-plan', actionId: 'review' });
   assert.deepEqual(requests.map(request => [request.method, new URL(request.url).pathname]), [
-    ['GET', '/spaces/garden/me'], ['GET', '/spaces/garden/conversations'], ['GET', '/spaces/garden/conversations/main/members'],
-    ['GET', '/spaces/garden/conversations/main/messages'], ['POST', '/spaces/garden/conversations/main/messages'], ['POST', '/spaces/garden/conversations/main/actions'],
+    ['POST', '/_channel/me'], ['POST', '/_channel/conversations'], ['POST', '/_channel/members'],
+    ['POST', '/_channel/history'], ['POST', '/_channel/send'], ['POST', '/_channel/action'],
   ]);
-  assert.equal(new URL(requests[3].url).search, '?limit=20&before=last');
-  assert.deepEqual(await requests[4].json(), { text: 'Hello', mentions: ['leo'], clientId: 'c1' });
+  assert.deepEqual(await requests[3].json(), { conversationId: 'main', before: 'last', limit: 20 });
+  assert.deepEqual(await requests[4].json(), { conversationId: 'main', text: 'Hello', mentions: ['leo'], clientId: 'c1', idempotencyKey: 'c1' });
   const stop = source.subscribe('main', event => events.push(event), status => statuses.push(status));
-  assert.equal(sockets[0].url.href, 'wss://fictional.invalid/spaces/garden/live?conversationId=main');
+  assert.equal(sockets[0].url.href, 'wss://fictional.invalid/spaces/sp_fictional/live');
   sockets[0].onopen(); sockets[0].onmessage({ data: JSON.stringify({ type: 'message', message: msg }) });
   assert.equal(events[0].message.id, 'posted'); assert.equal(events[0].message.via, 'Claude');
   sockets[0].onmessage({ data: JSON.stringify({ type: 'step', messageId: 'posted', conversationId: 'main', index: 0, step: { label: 'Relire', status: 'running' } }) });
@@ -114,6 +114,6 @@ test('channel socket default routes, validated events, overrides and owned recon
   sockets[0].onclose(); await until(() => sockets.length === 2); sockets[1].onopen();
   assert.deepEqual(statuses, ['reconnecting', 'live', 'offline', 'reconnecting', 'live']);
   stop(); await tick(); assert.equal(sockets.length, 2);
-  const overridden = await createChannelSocket({ url: 'https://fictional.invalid/spaces/garden', me: sharedChatSeed.me, routes: { history: async () => ({ messages: [] }) } });
+  const overridden = await createChannelSocket({ url: 'https://fictional.invalid', fetch: async () => Response.json({ space: 'sp_fictional', me: sharedChatSeed.me }), routes: { history: async () => ({ messages: [] }) } });
   assert.deepEqual(await overridden.history('main', { limit: 20 }), { messages: [] });
 });

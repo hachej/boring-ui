@@ -22,9 +22,9 @@ export function ChatNotices({ state, error, onReconcile, onRetry }: {
   return <>
     {error && <Notice testid="chat-error">{error}</Notice>}
     {state.send.kind === 'blocked' && <Notice testid="send-blocked">{state.send.reason}</Notice>}
-    {state.send.kind === 'unknown' && <Notice testid="send-unknown"><span className="flex-1">{labels.sendUnknown}</span>
+    {state.send.kind === 'unknown' && <Notice testid="send-unknown"><span className="flex-1">{'reason' in state.send ? state.send.reason : labels.sendUnknown}</span>
       <Button size="sm" variant="outline" onClick={onReconcile}>{labels.checkSubmission}</Button>
-      <Button size="sm" variant="outline" onClick={onRetry}>{labels.retrySame}</Button></Notice>}
+      {(!('retryable' in state.send) || state.send.retryable) && <Button size="sm" variant="outline" onClick={onRetry}>{labels.retrySame}</Button>}</Notice>}
     {state.stop === 'requested' && <Notice tone="info" testid="stop-requested">{labels.stopRequested}</Notice>}
     {state.stop === 'unconfirmed' && <Notice testid="stop-unconfirmed">{labels.stopUnconfirmed}</Notice>}
   </>;

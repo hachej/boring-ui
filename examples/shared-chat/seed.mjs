@@ -8,7 +8,7 @@ export const sharedChatSeed = {
     { id: 'julien', name: 'Julien (admin)', kind: 'admin', role: 'admin', presence: 'here' },
   ],
   conversations: [
-    { id: 'main', title: 'Main', kind: 'main', members: ['mira', 'leo', 'pm', 'worker', 'julien'] },
+    { id: 'main', title: 'Équipe', kind: 'main', members: ['mira', 'leo', 'pm', 'worker', 'julien'] },
     { id: 'admin', title: 'Admin', kind: 'admin', members: ['mira', 'pm', 'julien'] },
     { id: 'direct', title: 'Mira and Leo', kind: 'direct', members: ['mira', 'leo'] },
   ],

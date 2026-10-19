@@ -39,8 +39,7 @@ export function createPdfDemo({ manual = false } = {}) {
     if (!plan) return; build();
     plan = { ...plan, streaming: false, steps: steps.map(step => ({ ...step, status: 'done' })) }; post(plan);
     worker = { ...worker, streaming: false, steps: [{ label: 'Document relu', status: 'done' }] }; post(worker);
-    card = { ...card, card: { ...card.card, state: 'preview', line: 'Une version à essayer', action: { id: 'try', label: 'Essayer cette version' } } }; post(card);
-    post({ id: 'pdf-answer', conversationId: plan.conversationId, author: 'pm', at: at(4), text: 'L’export PDF est prêt. Vous pouvez essayer cette version.' });
+    card = { ...card, card: { ...card.card, state: 'preview', line: 'On attend votre essai', action: { id: 'try', label: 'Essayer cette version' } } }; post(card);
   }
   return {
     ...source, planReady, build, finish,

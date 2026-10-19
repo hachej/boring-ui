@@ -106,7 +106,7 @@ A sent message that mentions an upload (`@uploads/<path>`, what `attachments` sa
 
 Multi-party conversation policy is a host concern Pi does not cover. Pi owns each agent's single conversation. The host forwards to the PM's Pi conversation and posts permitted replies into its shared log. The kit runs no agent and enforces no visibility, role or speaking rules.
 
-The additive `ChatController` renderer contract accepts concrete native controllers and shared controllers. Native controllers keep their numeric Pi IDs and full native APIs. A shared snapshot adds authors, request cards, members and live status without inventing native entries. Without shared metadata, the existing single-user rendering path is unchanged. Other authors show an avatar and name at the start of a consecutive group. Agent replies use the existing assistant Markdown and streaming renderer. Your own messages keep the existing user bubble.
+The additive `ChatController` renderer contract accepts concrete native controllers and shared controllers. Native controllers keep their numeric Pi IDs and full native APIs. A shared snapshot adds authors, request cards, members and live status without inventing native entries. Without shared metadata, the existing single-user rendering path is unchanged. Other authors show an avatar and name at the start of a consecutive group. A group continues only when the same author and `via` follow their previous message within one minute. Agent replies use the existing assistant Markdown and streaming renderer. Your own messages keep the existing user bubble.
 
 The package exports these host data shapes:
 
@@ -141,29 +141,36 @@ The existing `@` composer picker lists agents first, then people, and matches na
 
 Under CH-10, optional `ChannelMessage.via` names the person's personal agent, for example `Claude` or `ChatGPT`, that posted their message through the hub MCP. The author remains the person, with their name and avatar; my own message keeps the existing user bubble. The `sharedVia(name)` label adds muted `via Claude` after the name, with no Agent badge or agent avatar state. A change of `via` starts a new author group so the attribution is not hidden by a preceding manual message. The host supplies and validates this attribution; browser `send` inputs do not claim it.
 
-Agents are participants, with their avatar, name and a default secondary `Agent` Badge. Ordinary agent messages remain separate bubbles in one consecutive author group, including a short "what I'm doing" line and its answer. Plans use the existing streaming Markdown renderer without the native assistant Copy/Fork footer. One request card is replaced by subsequent messages with the same message ID. A completed card can change its line and action to the result, for example `Une version à essayer` and `Essayer cette version`; the Button still only calls `action()`.
+Agents are participants, with their avatar, name and a default secondary `Agent` Badge. Ordinary agent messages remain separate bubbles in one consecutive author group, including a short "what I'm doing" line and its answer. Plans use the existing streaming Markdown renderer without the native assistant Copy/Fork footer. One request card is replaced by subsequent messages with the same message ID. A completed card can change its line and action to the result, for example `On attend votre essai` and `Essayer cette version`; the Button still only calls `action()`. The demo does not repeat that result as another status message. Reply uses the existing inline action pattern: desktop hover or keyboard focus; phone long-press reveals the same button, without a new menu.
 
-`Card.state` is the platform's lifecycle ID. The exported `channelAvatarStates` table maps `building`, `executing` and `checks` to `working`; `asked` to `thinking`; `question`, `answer`, `review` and `preview` to `waiting`; `platform` and `fixing` to `blocked`; and `live` to `done`. `declined`, unknown and missing states are neutral, with no indicator. Each agent avatar reflects its latest card in this conversation. Working, thinking and done use a primary dot; waiting uses muted-foreground; blocked uses destructive. Working and thinking also show the default Spinner. Hover shows the card's `line` in a Tooltip; a phone tap opens a Popover. No lifecycle state grants permission or starts work.
+`Card.state` is the platform's lifecycle ID. The exported `channelAvatarStates` table maps `building`, `executing` and `checks` to `working`; `asked` to `thinking`; `question`, `answer`, `review` and `preview` to `waiting`; `platform` and `fixing` to `blocked`; and `live` to `done`. `declined`, unknown and missing states are neutral, with no indicator. Each agent avatar reflects its latest card in this conversation. Working, thinking and done use a primary dot; waiting uses muted-foreground; blocked uses destructive. Avatar indicators are static corner dots, with no spinner. Hover shows the card's `line` in a Tooltip; a phone tap opens a bottom/start Popover below the avatar/name row, dismissed on scroll. No lifecycle state grants permission or starts work.
 
 `ChannelMessage.steps` uses the existing `ActivityBlock` and `ToolCard` Trace rendering, not a new trace component or fabricated Pi tool calls. A `step` event sets or replaces `steps[index]` on the specified message. While streaming, the participant's writing label and default spinner accompany the open step list. Running steps have a Spinner, completed steps a check, and failed steps a destructive icon. When streaming ends, the list collapses to a localized `N steps` label and can be expanded. Each agent message owns its own trace, so simultaneous agents stay separate.
 
 When `detail` is present, it appears beneath the label, smaller, monospace and muted. The kit displays whatever the source sends. Under CH-8, the **host strips `detail` outside the admin conversation** and keeps labels plain. Renderer mode is not an authorization or redaction boundary.
 
-Sends reuse remote chat's transport outbox helper. A failed acknowledgement retains the exact payload and `clientId`; reconnect resends it. The host must implement idempotent send by `clientId` and echo that same value in its response and message event. Disposing the adapter releases its own subscription, not the source or agent. Request-card actions call `action` once per button activation; the host decides their idempotency and posts replacement cards.
+Sends reuse remote chat's transport outbox helper. An unconfirmed acknowledgement retains the exact payload and `clientId`. Only an explicitly retryable failure permits replay after reconnect or a manual retry. A permanent host refusal restores the draft and shows the host's message. An opaque or malformed reply stays unconfirmed without replay; Check the original submission can reconcile it from history. The host must implement idempotent send by `clientId` and echo that same value in its response and message event. Disposing the adapter releases its own subscription, not the source or agent. Request-card actions call `action` once per button activation; the host decides their effect and posts replacement cards.
 
-`createChannelSocket({ url, fetch?, me?, routes?, open?, reconnectMs? })` resolves a `ChannelSource`. `url` names the space, for example `https://host/spaces/garden`. `fetch` adds host credentials. Without `me`, the adapter reads the authenticated member from `GET <space>/me`. `open(url)` supplies WebSocket authentication, such as host subprotocols. The default reconnect backoff starts at one second and stops at 30 seconds.
+`createChannelSocket({ url, fetch?, routes?, open?, reconnectMs? })` resolves a `ChannelSocketSource`, extending `ChannelSource` with `space` and `join()`. `url` is the **app URL**, for example `https://app.example/`, not a space URL. The default follows the platform's [app host](https://github.com/hachej/boring-factory/blob/14fda52003d361dd8022d74656bb8886384e4a59/services/channel/host.mjs). `fetch` adds host credentials. Bootstrap `POST _channel/me` returns `{ space, me }`; that `space` supplies the live URL. `open(url)` supplies WebSocket authentication, such as host subprotocols. The default reconnect backoff starts at one second and stops at 30 seconds.
 
-| Default route, relative to the space URL | Result or body |
-| --- | --- |
-| `GET /me` | `Member` |
-| `GET /conversations` | `Conversation[]` |
-| `GET /conversations/<id>/members` | `Member[]` |
-| `GET /conversations/<id>/messages?limit=60&before=<cursor>` | `{ messages, before? }` |
-| `POST /conversations/<id>/messages` | JSON `{ text, mentions, replyTo?, clientId }`, returns `ChannelMessage`. With files, multipart `message` contains the JSON and repeated `attachments` fields contain files. |
-| `POST /conversations/<id>/actions` | JSON `{ requestId, actionId }`, returns JSON or HTTP 204. |
-| WebSocket `GET /live?conversationId=<id>` | One JSON `ChannelEvent` per frame. |
+Every HTTP operation is `POST <app>/_channel/<op>`, with `Content-Type: application/json`:
 
-`routes` overrides `conversations`, `members`, `history`, `send` and `action` independently. Delete has no default route; supply `remove` and `canRemove` together. HTTP results and socket events are schema-validated. The host must authorize every read, subscription, send, attachment and action; the renderer grants no authority.
+| Operation | JSON body | Result |
+| --- | --- | --- |
+| `me` | `{}` | `{ space: string, me: Member }` |
+| `conversations` | `{}` | `Conversation[]` |
+| `members` | `{ conversationId }` | `Member[]` |
+| `history` | `{ conversationId, before?, limit }` | `{ messages, before? }` |
+| `send` | `{ conversationId, text, mentions, replyTo?, clientId, idempotencyKey: clientId }` | `ChannelMessage` |
+| `action` | `{ conversationId, requestId, actionId, idempotencyKey }` | Host result; the adapter generates a fresh key for this activation. |
+| `remove` | `{ messageId }` | Host result |
+| `join` | `{}` | `{ space }`; `join()` resolves after validation. |
+
+Live uses WebSocket `GET <app>/spaces/<space>/live`, with no conversation query. It carries one JSON `ChannelEvent` per frame. The host authorizes the feed; the source forwards the selected conversation's events and presence updates.
+
+Errors are `{ error: { code, message, retryable } }`. Exported `ChannelRequestError` preserves these fields, and the UI shows `message` for sends and card actions. Reads and actions do not blindly retry. Send transport loss is explicitly retryable uncertainty; outbox replay reuses the original key. For custom sources, throw `ChannelRequestError(code, message, retryable)` to declare retryability; `{ refused: true }` as its fourth argument declares a confirmed refusal rather than an unknown outcome.
+
+`routes` still overrides `conversations`, `members`, `history`, `send`, `action`, `remove` and `canRemove` independently. There is no built-in REST fallback. Delete stays hidden unless the host supplies `canRemove`. JSON cannot upload `File[]`: the default rejects files before sending; supply a host `send` override that uploads through the workspace provider, or a custom source. HTTP data and socket events are schema-validated. The host must authorize every read, subscription, send, attachment and action; the renderer grants no authority.
 
 `createFakeChannelSource(seed)` uses the same source contract for fictional demos and tests. Its `emit`, `setStatus`, `sends` and `actions` controls drive live updates and inspect host calls. See the [shared conversation demo](../examples/shared-chat/README.md) and run `npm run shared-chat:journey` for phone-first browser evidence.
 

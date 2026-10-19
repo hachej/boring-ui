@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { randomUUID } from '@hachej/boring-files/platform';
+import { ChannelRequestError } from './channel-error.js';
 import type { ChannelEvent, ChannelMessage, ChannelSource, Member } from './channel-source.js';
 
 const member = z.object({ id: z.string(), name: z.string(), kind: z.enum(['person', 'agent', 'admin']), role: z.union([z.enum(['owner', 'validator', 'member', 'admin']), z.templateLiteral(['agent:', z.string()])]).optional(), avatarUrl: z.string().optional(), presence: z.enum(['here', 'away']).optional() });
@@ -16,11 +18,9 @@ const event = z.discriminatedUnion('type', [z.object({ type: z.literal('message'
 
 type Routes = Pick<ChannelSource, 'conversations' | 'members' | 'history' | 'send' | 'action' | 'remove' | 'canRemove'>;
 export interface ChannelSocketOptions {
-  /** Space URL, for example `https://host/spaces/garden`. `live` is appended, with the selected conversationId. */
+  /** App URL, for example `https://app.example/`. RPC lives under `_channel`; `me` supplies the live space. */
   readonly url: string | URL;
   readonly fetch?: (request: Request) => Promise<Response>;
-  /** Omit to load the authenticated member from GET <url>/me. */
-  readonly me?: Member;
   /** Host HTTP functions override the default routes independently. */
   readonly routes?: Partial<Routes>;
   /** Host subprotocol authentication may be supplied here. Closing a viewer closes only its own socket. */
@@ -28,41 +28,54 @@ export interface ChannelSocketOptions {
   readonly reconnectMs?: number;
 }
 
-/** WebSocket GET <space>/live plus overridable HTTP operations. All authorization and speaking policy remain at the host. */
-export async function createChannelSocket(options: ChannelSocketOptions): Promise<ChannelSource> {
+export interface ChannelSocketSource extends ChannelSource {
+  readonly space: string;
+  readonly join: () => Promise<void>;
+}
+
+/** The platform app host's POST `_channel/<op>` and space WebSocket. Policy and identity remain at that host. */
+export async function createChannelSocket(options: ChannelSocketOptions): Promise<ChannelSocketSource> {
   const base = new URL(options.url, globalThis.location?.href);
   base.pathname = base.pathname.replace(/\/$/, '') + '/';
   const request = options.fetch ?? (request => globalThis.fetch(request));
   const url = (path: string) => new URL(path, base);
-  async function json(path: string, init?: RequestInit): Promise<unknown> {
-    const response = await request(new Request(url(path), init));
-    if (!response.ok) throw new Error(`Channel request failed (${response.status})`);
-    return response.status === 204 ? undefined : response.json();
+  const failure = z.object({ error: z.object({ code: z.string(), message: z.string(), retryable: z.boolean() }) });
+  async function rpc(op: string, input: unknown = {}): Promise<unknown> {
+    let response: Response;
+    try { response = await request(new Request(url(`_channel/${op}`), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input) })); }
+    catch (error) { throw new ChannelRequestError('network', error instanceof Error ? error.message : 'Channel connection was lost', true); }
+    const body: unknown = await response.json().catch(() => undefined);
+    const rejected = failure.safeParse(body);
+    if (rejected.success) {
+      const error = rejected.data.error;
+      throw new ChannelRequestError(error.code, error.message, error.retryable, { refused: true });
+    }
+    if (!response.ok || body === undefined) throw new ChannelRequestError('invalid-response', `Channel ${op} returned an invalid response (${response.status})`, false);
+    return body;
   }
-  const post = (value: unknown): RequestInit => ({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(value) });
-  const me = options.me ?? member.parse(await json('me')) as Member;
+  const bootstrap = z.object({ space: z.string().min(1), me: member }).parse(await rpc('me'));
+  const space = bootstrap.space, me = bootstrap.me as Member;
   return {
-    me,
-    conversations: options.routes?.conversations ?? (async () => z.array(conversation).parse(await json('conversations'))),
-    members: options.routes?.members ?? (async id => z.array(member).parse(await json(`conversations/${encodeURIComponent(id)}/members`)) as Member[]),
-    history: options.routes?.history ?? (async (id, opts) => {
-      const query = new URLSearchParams({ limit: String(opts.limit), ...(opts.before ? { before: opts.before } : {}) });
-      return z.object({ messages: z.array(message), before: z.string().optional() }).parse(await json(`conversations/${encodeURIComponent(id)}/messages?${query}`)) as Awaited<ReturnType<ChannelSource['history']>>;
-    }),
+    me, space,
+    conversations: options.routes?.conversations ?? (async () => z.array(conversation).parse(await rpc('conversations'))),
+    members: options.routes?.members ?? (async conversationId => z.array(member).parse(await rpc('members', { conversationId })) as Member[]),
+    history: options.routes?.history ?? (async (conversationId, opts) =>
+      z.object({ messages: z.array(message), before: z.string().optional() }).parse(await rpc('history', { conversationId, ...opts })) as Awaited<ReturnType<ChannelSource['history']>>),
     send: options.routes?.send ?? (async input => {
-      const { conversationId, attachments, ...body } = input;
-      if (!attachments?.length) return message.parse(await json(`conversations/${encodeURIComponent(conversationId)}/messages`, post(body))) as ChannelMessage;
-      const form = new FormData(); form.set('message', JSON.stringify(body)); for (const file of attachments) form.append('attachments', file);
-      return message.parse(await json(`conversations/${encodeURIComponent(conversationId)}/messages`, { method: 'POST', body: form })) as ChannelMessage;
+      if (input.attachments?.length) throw new ChannelRequestError('unsupported-attachments', 'File attachments are not available here.', false, { refused: true });
+      const { conversationId, text, mentions, replyTo, clientId } = input;
+      return message.parse(await rpc('send', { conversationId, text, mentions, ...(replyTo === undefined ? {} : { replyTo }), clientId, idempotencyKey: clientId })) as ChannelMessage;
     }),
-    action: options.routes?.action ?? (async ({ conversationId, requestId, actionId }) => { await json(`conversations/${encodeURIComponent(conversationId)}/actions`, post({ requestId, actionId })); }),
-    ...(options.routes?.remove ? { remove: options.routes.remove } : {}), ...(options.routes?.canRemove ? { canRemove: options.routes.canRemove } : {}),
+    action: options.routes?.action ?? (async input => { await rpc('action', { ...input, idempotencyKey: randomUUID() }); }),
+    remove: options.routes?.remove ?? (async messageId => { await rpc('remove', { messageId }); }),
+    join: async () => { z.object({ space: z.string() }).parse(await rpc('join')); },
+    ...(options.routes?.canRemove ? { canRemove: options.routes.canRemove } : {}),
     subscribe: (id, onEvent, onStatus) => {
       let disposed = false, socket: WebSocket | undefined, retry: ReturnType<typeof setTimeout> | undefined, attempt = 0;
       function connect() {
         if (disposed) return;
         onStatus?.('reconnecting');
-        const target = url('live'); target.protocol = target.protocol === 'https:' ? 'wss:' : 'ws:'; target.searchParams.set('conversationId', id);
+        const target = url(`spaces/${encodeURIComponent(space)}/live`); target.protocol = target.protocol === 'https:' ? 'wss:' : 'ws:';
         let current: WebSocket;
         try { current = (options.open ?? (url => new WebSocket(url)))(target); }
         catch { lost(); return; }
@@ -71,7 +84,10 @@ export async function createChannelSocket(options: ChannelSocketOptions): Promis
         current.onmessage = frame => {
           if (disposed || current !== socket || typeof frame.data !== 'string') return;
           const parsed = event.safeParse((() => { try { return JSON.parse(frame.data) as unknown; } catch { return undefined; } })());
-          if (parsed.success) onEvent(parsed.data as ChannelEvent);
+          if (parsed.success) {
+            const update = parsed.data as ChannelEvent;
+            if (update.type === 'presence' || (update.type === 'message' ? update.message.conversationId : update.conversationId) === id) onEvent(update);
+          }
           else { current.close(1002, 'Invalid channel event'); }
         };
         current.onerror = () => current.close();
