@@ -207,3 +207,31 @@ test('add runs the pinned shadcn CLI then records the manifest, so check passes;
   const manifest = JSON.parse(readFileSync(join(root, 'packages/ui/package.json'), 'utf8'));
   assert.equal(manifest.bin['boring-ui-blocks'], './bin/boring-ui-blocks.mjs', 'shipped as the kit\'s bin');
 });
+
+test('update keeps the app\'s exact dependency pins when the CLI\'s package manager rewrites them to ranges', t => {
+  const app = fixture(t);
+  const pins = { 'lucide-react': '1.8.0', 'class-variance-authority': '0.7.1' };
+  const manifest = { name: 'fictional-app', private: true, dependencies: { ...pins }, devDependencies: { typescript: '5.9.3' } };
+  write(join(app, 'package.json'), `${JSON.stringify(manifest, null, 4)}\n`);
+  write(join(app, 'package-lock.json'), `${JSON.stringify({ name: 'fictional-app', lockfileVersion: 3, packages: { '': { name: 'fictional-app', dependencies: { ...pins }, devDependencies: { typescript: '5.9.3' } } } }, null, 2)}\n`);
+  // A stand-in `npx` that does what `npm install <name>` does under shadcn: saves ^ ranges over the pins and adds a new dependency.
+  const fake = join(app, '.fake-bin');
+  write(join(fake, 'rewrite.mjs'), `import { readFileSync, writeFileSync } from 'node:fs';
+for (const file of ['package.json', 'package-lock.json']) {
+  const json = JSON.parse(readFileSync(file, 'utf8')), root = file === 'package.json' ? json : json.packages[''];
+  for (const field of ['dependencies', 'devDependencies']) for (const name of Object.keys(root[field] ?? {})) root[field][name] = '^' + root[field][name];
+  root.dependencies['new-dependency'] = '^2.0.0';
+  writeFileSync(file, JSON.stringify(json, null, 2) + '\\n');
+}
+`);
+  write(join(fake, 'npx'), `#!/bin/sh\n${JSON.stringify(process.execPath)} "${join(fake, 'rewrite.mjs')}"\n`);
+  chmodSync(join(fake, 'npx'), 0o755);
+  const updated = run(app, ['update', '--version', '9.9.9'], { PATH: `${fake}${delimiter}${process.env.PATH}` });
+  assert.equal(updated.status, 0, updated.stdout + updated.stderr);
+  const after = JSON.parse(readFileSync(join(app, 'package.json'), 'utf8'));
+  assert.deepEqual(after.dependencies, { ...pins, 'new-dependency': '^2.0.0' }, 'exact pins stay exact; what the CLI added is kept');
+  assert.deepEqual(after.devDependencies, { typescript: '5.9.3' });
+  const lock = JSON.parse(readFileSync(join(app, 'package-lock.json'), 'utf8')).packages[''];
+  assert.deepEqual(lock.dependencies, { ...pins, 'new-dependency': '^2.0.0' }, 'the lockfile root agrees with package.json');
+  assert.match(updated.stdout, /kept the version specifiers of class-variance-authority, lucide-react, typescript/);
+});

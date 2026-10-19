@@ -58,7 +58,7 @@ async function panel(t, text, { path = 'documents/booking.maquette.json', kinds,
   await page.settle();
   const screen = () => page.$('[data-testid=maquette-walk]')?.dataset.screen;
   const key = async (key, init = {}) => { const walk = page.$('[data-testid=maquette-walk]'); await page.act(async () => walk.dispatchEvent(new page.window.KeyboardEvent('keydown', { key, bubbles: true, ...init }))); };
-  const menu = async item => { await page.click('[data-testid=maquette-menu]'); await page.settle(); await page.click(item); await page.settle(); };
+  const menu = async item => { await page.click('[data-testid=artifact-more]'); await page.settle(); await page.click(item); await page.settle(); };
   return { ...page, screen, key, menu };
 }
 
@@ -123,7 +123,7 @@ test('a case with steps is a guided tour from the menu: its screens in order, a 
   assert.equal(page.$('[data-testid=maquette-dots]').getAttribute('aria-label'), 'Step 3 of 3');
   await page.click('[data-testid=maquette-end-tour]');
   assert.equal(page.$('[data-testid=maquette-caption]'), null);
-  assert.ok(page.$('[data-testid=maquette-menu]'), 'the menu is back');
+  assert.ok(page.$('[data-testid=artifact-more]'), 'the panel menu stays');
 });
 
 test('the workflow is hidden by default and opens from the menu; a legacy case path still highlights it', async t => {
@@ -135,6 +135,24 @@ test('the workflow is hidden by default and opens from the menu; a legacy case p
   const cancellation = page.$$('[data-testid=maquette-case]').find(button => button.textContent === 'Cancellation');
   await page.click(cancellation);
   assert.deepEqual(page.$$('[data-testid=diagram] g[data-node][data-lit]').map(state => state.dataset.node), ['browsing', 'requested', 'confirmed', 'cancelled']);
+});
+
+test('inside the panel there is one "…" menu: the panel header\'s, holding the tours and How it works', async t => {
+  const page = await panel(t, BOOKING);
+  assert.equal(page.$$('[aria-label="More actions"], [data-testid=maquette-menu], [data-testid=artifact-more]').length, 1, 'one "…" trigger');
+  assert.equal(page.$('[data-testid=maquette-menu]'), null, 'none beside the screen counter');
+  await page.click('[data-testid=artifact-more]'); await page.settle();
+  assert.ok(page.$('[data-testid=maquette-tour]') && page.$('[data-testid=maquette-how-open]'), 'the tours and How it works are in the panel menu');
+});
+
+test('the selected case in How it works uses the default button variant, not a muted one', async t => {
+  const page = await panel(t, BOOKING);
+  await page.menu('[data-testid=maquette-how-open]');
+  const cancellation = () => page.$$('[data-testid=maquette-case]').find(button => button.textContent === 'Cancellation');
+  await page.click(cancellation());
+  assert.equal(cancellation().getAttribute('aria-pressed'), 'true');
+  assert.match(cancellation().className, /\bbg-primary\b/);
+  assert.doesNotMatch(cancellation().className, /\bbg-secondary\b/);
 });
 
 test('device: phone draws the phone frame', async t => {

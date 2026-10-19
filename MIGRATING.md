@@ -1,4 +1,4 @@
-# Unreleased (0.4.3)
+## Unreleased
 
 - Shared conversations reuse `AgentWorkspace layout="embedded"`, `PiChat`, its composer and History. `@hachej/boring-ui-kit/shared-chat` exports `createSharedChat`, `createChannelSocket`, `createFakeChannelSource` and the host channel types. The registry adds `useSharedChat`. Its default channel source now follows the platform app host: pass the app URL, not `/spaces/<id>`. Bootstrap is `POST _channel/me` → `{ space, me }`; all HTTP operations use `POST _channel/<op>`. The former REST defaults and `me` override are removed; function overrides remain. See the [RPC bodies and retry rules](registry/README.md#shared-conversations).
 - `PiChat` and `AgentWorkspace` accept the additive `ChatController` presentation contract. Existing concrete native controllers and single-user behavior are unchanged. Shared metadata adds author groups, request cards, member mentions, presence and live status. The host owns all policy and every agent's Pi conversation.
@@ -7,16 +7,33 @@
 - Shared data adds optional `Card.state`, `ChannelMessage.steps` and the indexed `step` event. `Step` and `channelAvatarStates` are exported. Avatar indicators reflect the latest card; the existing activity/tool Trace renders live and collapsed steps. The host strips `detail` outside Admin; the renderer shows whatever arrives.
 - Copied `pi-chat` now also needs shadcn `tooltip` and the existing optional `zod` peer. Regenerate or update the registry copy to install `shared.tsx` and `use-shared-chat.ts`. See [Shared conversations](registry/README.md#shared-conversations) for source shapes, routes and idempotent `clientId` requirements.
 
+# Migrating to 0.4.3
+
+0.4.3 is non-breaking for existing files and props: older `*.maquette.json` files read unchanged, and a page that passes none of the new props renders as before.
+Upgrade the registry blocks with `npx boring-ui-blocks update --version 0.4.3` (`npx boring-ui-blocks check` first lists your edited copies), and bump the npm pins to `0.4.3`.
+
+## Consumer dependencies
+
+Re-add the installed items to install their new dependencies. If you copied blocks by hand, install these yourself:
+
+- `maquette-viewer` now needs `diagram-viewer` and the shadcn `toggle` and `tooltip` components. `pi-app` now installs both `diagram-viewer` and `mockup-viewer`.
+- `diagram-viewer` needs the theme item, shadcn `alert` and `badge`, React and `lucide-react`.
+- `mockup-viewer` needs `viewers`, shadcn `badge`, `toggle` and `tooltip`, plus React, `lucide-react`, `zod@^4.6.5` and the pinned `tailwindcss@4.3.3` compiler.
+- `file-tree` now needs shadcn `progress`.
+- The optional `board-viewer` block needs `maquette-viewer`, `mockup-viewer`, `pi-chat`, shadcn `button`, `alert`, `card` and `tooltip`, plus the matching kit/files packages, React, `lucide-react@1.51.0` and `tldraw@5.5.2`.
+- For the optional self-hosted canvas asset recipe, install `@tldraw/assets@5.5.2`, matching `tldraw`. This is not a new mandatory package peer.
+
+## Viewers and comments
+
+- `maquette-viewer` no longer draws a second "…" menu inside the `pi-app` artifact panel: its guided tours and "How it works" join the panel header's menu (`MaquetteMenuContext`; standalone use keeps its own menu). The selected case in "How it works" uses the default button variant.
+
 - Video blob pointers open in the panel and Library with native controls and Download; MP4, WebM, MOV, M4V and Ogg video extensions are recognised. Direct workspace videos without a streaming URL keep the cannot-preview state and are never buffered.
 
 - New `board-viewer` block: `createBoardKind({ client, identity, assetUrls, licenseKey })` renders `*.board.json` in the artifact panel. It lazily projects maquette screens, sandboxed HTML mock-ups, goto arrows and notes through `CanvasProjection` from `@hachej/boring-ui-kit/canvas-editor`. Saves contain only `board@1`, conditional on the shown revision. Pinned versions and phones are read-only. Install the block and pass the kind in `artifactKinds`; hosts supply their asset URLs and license key. The parser/planner exports remain available. See [registry/README.md](registry/README.md#board-format-board-viewer).
 
-Non-breaking. `CanvasEditor` now loads `tldraw/tldraw.css` itself, lazily with the canvas, so a host may stop importing it globally. Self-hosting tldraw's fonts, icons and translations is a host recipe ([UI guide](packages/ui/README.md#optional-react-canvas-editor), `examples/canvas-assets`); hosts that already pass a complete `assetUrls` map need no change.
+- `CanvasEditor` now loads `tldraw/tldraw.css` itself, lazily with the canvas, so a host may stop importing it globally. Self-hosting tldraw's fonts, icons and translations is a host recipe ([UI guide](packages/ui/README.md#optional-react-canvas-editor), `examples/canvas-assets`); hosts that already pass a complete `assetUrls` map need no change.
 
 - `pi-app` now renders `*.mockup.html` with the built-in `mockup-viewer` item. Re-add `pi-app` to install its dependency and pinned Tailwind compiler. `mockupKind` and `createMockupKind` are exported. Other HTML stays passive unless the host opts in. See the registry README for sandbox CSP requirements. `usePointComments` adds `pick`, `picking` and `reposition` for host-owned frame proxies; existing maquette comments are unchanged. `ArtifactKindViewProps.onReady` lets the asynchronous mock-up report its actual load before a presentation acknowledgement.
-
-Non-breaking for files and props: older `*.maquette.json` files read unchanged, and a page that passes none of the new props renders as before.
-`maquette-viewer` now also needs the new `diagram-viewer` item and the `toggle` and `tooltip` shadcn components; `pi-app` installs `diagram-viewer`.
 
 - Large files (blob pointers): new `@hachej/boring-files/blob` (`parseBlobPointer`, `withBlobPointers`, `checkBlobBase`, `BLOB_POINTER_MEDIA_TYPE`, …)
   and `FileEntry.blob`. `AgentWorkspace` takes `resources.blobBase` (default `/_files/`, same-origin path only; also allowed beside a `revisionProvider`)
@@ -37,6 +54,16 @@ Non-breaking for files and props: older `*.maquette.json` files read unchanged, 
   `data-feedback-id="maquette:<path>#screen=<id>&block=<id>"` (blocks may carry an optional `id`), so the note sent with the next message names
   the maquette, screen and block; the screen is a `data-feedback-visible` region. `SessionNote.feedbackId` (`@hachej/boring-feedback/ui`) is new.
   Without a session nothing shows. See [registry/README.md](registry/README.md#diagram-viewer-diagram-viewer).
+- Kinds everywhere: a file opened from the Library, the file tree or a link resolves its artifact kind by path with the same function as the chat card
+  and the panel (`resolveKind`): the app's `artifactKinds` first, then the built-in maquette and diagram kinds. `*.maquette.json` and `*.diagram.json`
+  now open in their viewers there (they showed raw JSON); an app kind for them still wins. `FileViewer` shows such files in the artifact panel
+  (`data-kind="artifact"`), and `ArtifactPanel` takes an optional `headerStart` (a back button).
+- Fixed app title: `AgentWorkspace layout="embedded" title="My app"` keeps the app's name in the bar; the conversation title follows it in muted text
+  (left to History on a phone). Without `title` the bar shows the conversation title as before. `WorkspaceBar` takes `subtitle` for the same.
+- No live feed: a host route that serves no `?op=changes` should answer **501**; `RevisionProvider.changes` then ends with an `invalid` `RevisionError`
+  at once (the views keep their own refresh). **400** ends it the same way and keeps working. See [registry/README.md](registry/README.md).
+- `boring-ui-blocks update` and `add` keep your exact dependency pins: the shadcn CLI's package manager saved `^<version>` over them; the command now
+  restores the specifier of every dependency that was in `package.json` (and the lockfile's root entry) before it ran. Dependencies the CLI adds keep what it wrote.
 - `ArtifactKindViewProps` (the props an app's artifact kind `renderer` receives) gains `revision`, the revision the panel shows (the one a conditional save is made against), and `pinned`, true when the panel shows a pinned historical version, read-only. Renderers that ignore them need no change.
 
 # Migrating to 0.4.2

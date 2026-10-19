@@ -124,7 +124,7 @@ test('createDiagramKind gives the French kind: « Diagramme » and French words'
 test('a maquette whose workflow links to a *.diagram.json reads it from its folder for How it works', async t => {
   const linked = JSON.stringify({ ...JSON.parse(MAQUETTE), workflow: 'booking.diagram.json', cases: [{ name: 'Waiting list', path: ['browse', 'pick', 'full', 'held'] }] });
   const page = await panel(t, linked, { path: 'flows/booking.maquette.json', files: { 'flows/booking.diagram.json': BOOKING } });
-  await page.click('[data-testid=maquette-menu]'); await page.settle();
+  await page.click('[data-testid=artifact-more]'); await page.settle();
   await page.click('[data-testid=maquette-how-open]'); await page.settle();
   assert.ok(page.reads.includes('flows/booking.diagram.json'), 'read next to the maquette');
   assert.equal(page.$$('[data-testid=maquette-how] [data-testid=diagram] g[data-node]').length, 8);
@@ -135,7 +135,7 @@ test('a maquette whose workflow links to a *.diagram.json reads it from its fold
 
 test('a linked diagram that cannot be read says so in the dialog', async t => {
   const page = await panel(t, JSON.stringify({ ...JSON.parse(MAQUETTE), workflow: 'missing.diagram.json' }), { path: 'flows/booking.maquette.json' });
-  await page.click('[data-testid=maquette-menu]'); await page.settle();
+  await page.click('[data-testid=artifact-more]'); await page.settle();
   await page.click('[data-testid=maquette-how-open]'); await page.settle();
   assert.ok(page.$('[data-testid=maquette-how-error]'));
 });

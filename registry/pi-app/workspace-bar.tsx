@@ -56,6 +56,8 @@ function BarPanel({ id, label, icon: Icon, narrow, open, onOpenChange, children 
 
 export interface WorkspaceBarProps {
   readonly title: string;
+  /** Muted after a fixed `title`: the conversation's title. Hidden on a phone, where History names the conversations. */
+  readonly subtitle?: string | undefined;
   readonly conversations: ConversationsConfig | undefined;
   /** The Library's list (`onPicked` closes the popover or sheet), or undefined without a Library. */
   readonly library: ((onPicked: () => void) => ReactNode) | undefined;
@@ -66,7 +68,7 @@ export interface WorkspaceBarProps {
 }
 
 /** The bar, or only its controls in the app shell's header when the page sits in a shell screen (then nothing renders here). */
-export function WorkspaceBar({ title, conversations, library, narrow, controls }: WorkspaceBarProps) {
+export function WorkspaceBar({ title, subtitle, conversations, library, narrow, controls }: WorkspaceBarProps) {
   const { labels, icons } = useAppText();
   const slot = useScreenHeaderSlot();
   const [shown, setShown] = useState<'history' | 'library' | null>(null);
@@ -89,7 +91,10 @@ export function WorkspaceBar({ title, conversations, library, narrow, controls }
   </div>;
   if (slot) return createPortal(tools, slot);
   return <header data-testid="workspace-bar" className="flex h-13 shrink-0 items-center gap-1 pr-2 pl-4 max-[640px]:h-14 max-[640px]:pl-3">
-    <h2 data-testid="workspace-bar-title" className="m-0 min-w-0 flex-1 truncate text-sm font-medium tracking-tight">{title}</h2>
+    <div className="flex min-w-0 flex-1 items-baseline gap-2">
+      <h2 data-testid="workspace-bar-title" className={cn('m-0 min-w-0 truncate text-sm font-medium tracking-tight', subtitle === undefined && 'flex-1')}>{title}</h2>
+      {subtitle !== undefined && <span data-testid="workspace-bar-conversation" className="min-w-0 flex-1 truncate text-sm text-muted-foreground max-sm:hidden">{subtitle}</span>}
+    </div>
     {tools}
   </header>;
 }

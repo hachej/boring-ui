@@ -26,7 +26,8 @@ import { isBlobPointerPath, resolveBlobPointer } from '@hachej/boring-files/blob
 import type { BlobItem } from '@hachej/boring-files/blob';
 import type { ViewerKind as FileKind } from '@hachej/boring-files/file-types';
 import { KIND_LABEL, decodeText } from './file-kinds';
-import { useReportShown } from './artifact-panel';
+import { ArtifactPanel, resolveKind, useReportShown } from './artifact-panel';
+import type { ArtifactDescriptor } from '../pi-chat/artifact';
 import type { ViewerOptions } from './artifact-panel';
 import { useSaved } from './use-saved';
 import { useAppText } from './app-labels';
@@ -44,6 +45,9 @@ interface Common {
   readonly onUnsavedChange?: ((unsaved: boolean) => void) | undefined;
   readonly onBeforeLeaveChange?: ((flush: (() => Promise<boolean>) | null) => void) | undefined;
 }
+
+/** A file as the artifact its kind sees: the same descriptor a `present` of it would carry, so one kind match serves every way of opening a file. */
+const fileArtifact = (path: string, locator: ResourceLocator): ArtifactDescriptor => ({ schema: 'boring.artifact', version: 1, title: nameOf(path), type: 'code', mediaType: mediaTypeOf(path), target: locator, revision: 'latest' });
 
 const subtitleOf = (locator: ResourceLocator) => <span data-testid="file-path" className="truncate">{locator.resource.path}</span>;
 
@@ -197,6 +201,13 @@ export function FileViewer({ path, locator, options, onClose, onBack, backLabel,
   const back = onBack ? <Button variant="ghost" size="sm" data-testid="file-back" aria-label={backLabel ?? labels.back} title={backLabel ?? labels.back} onClick={onBack} className="shrink-0"><icons.back data-icon="inline-start" aria-hidden="true" /><span className="max-sm:sr-only">{backLabel ?? labels.back}</span></Button> : undefined;
   const custom = options.viewers?.[kind];
   const common: Common = { path, kind, locator, options, onClose, back, onUnsavedChange, onBeforeLeaveChange };
+  // An app kind or a built-in one (maquette, diagram) that draws its files shows them in the artifact panel, whoever opened the file.
+  const locatorKey = JSON.stringify(locator);
+  const artifact = useMemo(() => fileArtifact(path, locator), [path, locatorKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const drawn = resolveKind(artifact, options.kinds)?.renderer ? artifact : undefined;
+  if (drawn) return <div data-testid="file-viewer" data-kind="artifact" data-path={path} aria-label={labels.fileViewer(drawn.title)} className="flex h-full min-h-0 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1">
+    <ArtifactPanel active={{ descriptor: drawn, follow: true }} versions={[]} options={options} onSelect={() => {}} onClose={onClose} headerStart={back} />
+  </div>;
   return <div data-testid="file-viewer" data-kind={kind} data-path={path} aria-label={labels.fileViewer(KIND_LABEL[kind])} className="flex h-full min-h-0 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1">
     {custom ? custom({ target: locator, title: nameOf(path), frame: { titleTestId: 'file-title', onClose, target: { file: path }, headerStart: back } })
       : kind === 'markdown' || kind === 'html' ? <FileDocument {...common} />

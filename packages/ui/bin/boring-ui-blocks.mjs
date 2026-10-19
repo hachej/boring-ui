@@ -234,10 +234,39 @@ function parse(command, rest) {
   return flags;
 }
 
+const DEPENDENCY_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'];
+const readJson = path => { try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return undefined; } };
+
+/** The version specifiers of an app's package.json (and the root entry of its npm lockfile), as written before the CLI runs. */
+function specifiers(app) {
+  const read = name => { const path = join(app, name), text = existsSync(path) ? readFileSync(path, 'utf8') : undefined; return { path, text, json: text === undefined ? undefined : readJson(path) }; };
+  return [read('package.json'), read('package-lock.json')].map((file, index) => ({ ...file, root: index === 0 ? file.json : file.json?.packages?.[''] }));
+}
+
+/**
+ * The shadcn CLI installs a block's dependencies by name (`npm install <name>`), and npm then saves `^<version>` over an exact pin the app
+ * already holds. The app owns its specifiers (AGENTS.md: pin dependencies), so after the CLI ran every dependency that was there before
+ * gets its old specifier back, in package.json and in the lockfile's root entry; dependencies the CLI added keep what it wrote.
+ */
+function restoreSpecifiers(before, app, log) {
+  const restored = new Set();
+  for (const [index, name] of ['package.json', 'package-lock.json'].entries()) {
+    const old = before[index], now = specifiers(app)[index];
+    if (!old.root || !now.root) continue;
+    for (const field of DEPENDENCY_FIELDS) for (const [dependency, range] of Object.entries(old.root[field] ?? {})) {
+      if (now.root[field]?.[dependency] !== undefined && now.root[field][dependency] !== range) { now.root[field][dependency] = range; restored.add(dependency); now.changed = true; }
+    }
+    if (now.changed) writeFileSync(now.path, `${JSON.stringify(now.json, null, /^\{\n([ \t]+)"/.exec(now.text)?.[1] ?? 2)}${now.text.endsWith('\n') ? '\n' : ''}`);
+  }
+  if (restored.size) log(`kept the version specifiers of ${[...restored].sort().join(', ')} (the CLI had rewritten them)`);
+}
+
 function shadcnAdd(app, args, log) {
   const argv = ['-y', SHADCN, 'add', ...args];
   log(`npx ${argv.join(' ')}`);
+  const before = specifiers(app);
   const result = spawnSync('npx', argv, { cwd: app, stdio: 'inherit', shell: process.platform === 'win32' });
+  restoreSpecifiers(before, app, log);
   return result.status ?? 1;
 }
 

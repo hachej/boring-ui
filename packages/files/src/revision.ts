@@ -66,7 +66,8 @@ export async function connectRevisionProvider(options: {
         if (response.redirected || !response.ok || !response.body) {
           void response.body?.cancel().catch(() => {});
           if (response.status === 403 || response.status === 409) throw new RevisionError('denied', 'The selected workspace is unavailable or no longer authorized');
-          if (response.status === 400) throw new RevisionError('invalid', 'The change feed request was refused');
+          // 501: the route serves no change feed (the intended signal); 400 is the same ending, kept for hosts that already answer it.
+          if (response.status === 400 || response.status === 501) throw new RevisionError('invalid', response.status === 501 ? 'The route serves no change feed' : 'The change feed request was refused');
           await pause(); continue;
         }
         try {

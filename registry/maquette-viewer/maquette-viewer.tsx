@@ -7,7 +7,7 @@
 // The workflow is drawn by the diagram-viewer item's `DiagramView`, inline or from a linked `*.diagram.json`. With `comments` (the feedback
 // item's `usePointComments`, structurally) one more icon enters point mode on the screen: a tap on a block pins a note that names the
 // maquette path, the screen id and the block id; the pins of the current screen show as small numbers on their blocks.
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ComponentType, KeyboardEvent, ReactNode, TouchEvent } from 'react';
 import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, CompassIcon, EllipsisIcon, InfoIcon, LayoutTemplateIcon, MessageSquarePlusIcon, TriangleAlertIcon, WorkflowIcon, XIcon } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -72,6 +72,13 @@ export interface MaquetteViewerProps {
 /** Where the person is: the screens visited (the last is shown) and the guided tour under way. */
 interface Walk { readonly history: readonly string[]; readonly tour: { readonly name: string; readonly index: number } | null }
 
+/**
+ * A host bar that owns the one "…" menu (the pi-app artifact panel) provides this: the viewer then publishes its tours and "How it works"
+ * there instead of drawing a second "…" menu beside the screen counter. Without a provider the viewer keeps its own menu.
+ */
+export interface MaquetteMenuEntry { readonly id: string; readonly label: string; readonly icon: ReactNode; readonly testId: string; readonly separatorBefore: boolean; readonly onSelect: () => void }
+export const MaquetteMenuContext = createContext<((items: readonly MaquetteMenuEntry[]) => void) | undefined>(undefined);
+
 const TYPING = 'input, select, textarea, [contenteditable="true"]';
 const ICON = 'pointer-coarse:min-h-11 pointer-coarse:min-w-11';
 
@@ -112,7 +119,7 @@ function HowItWorks({ maquette, source, labels, open, onOpenChange }: {
         : diagram === null ? <Alert variant="destructive" data-testid="maquette-how-error"><TriangleAlertIcon aria-hidden="true" /><AlertTitle>{labels.diagramUnavailable}</AlertTitle></Alert>
           : <p role="status" className="m-0 text-sm text-muted-foreground">{labels.loading}</p>}
       {highlighted.length > 0 && <div role="group" className="flex flex-wrap gap-2">
-        {highlighted.map(item => <Button key={item.name} type="button" size="sm" variant={shown === item.name ? 'secondary' : 'outline'} aria-pressed={shown === item.name}
+        {highlighted.map(item => <Button key={item.name} type="button" size="sm" variant={shown === item.name ? 'default' : 'outline'} aria-pressed={shown === item.name}
           data-testid="maquette-case" className="pointer-coarse:min-h-11" onClick={() => setShown(current => current === item.name ? null : item.name)}>{item.name}</Button>)}
       </div>}
     </DialogContent>
@@ -138,10 +145,14 @@ function Walkthrough({ maquette, labels, fragment, path, comments, read }: {
   const current: MaquetteScreen = screens.find(screen => screen.id === walk.history.at(-1)) ?? screens[0]!;
   const position = screens.indexOf(current);
   const tour: MaquetteCase | undefined = walk.tour ? maquette.cases.find(item => item.name === walk.tour!.name) : undefined;
-  const tours = maquette.cases.filter(item => item.steps.length > 0);
+  const tours = useMemo(() => maquette.cases.filter(item => item.steps.length > 0), [maquette]);
   const titleOf = (id: string) => screens.find(screen => screen.id === id)?.title ?? id;
   // Goto blocks pulse once, the first time their screen is shown.
-  const firstView = !seen.current.has(current.id);
+  // Decided once per shown screen, so a re-render of the same screen (the host menu updating) does not end the pulse.
+  const shown = useRef<{ readonly id: string; readonly first: boolean } | undefined>(undefined);
+  const view = shown.current?.id === current.id ? shown.current : { id: current.id, first: !seen.current.has(current.id) };
+  shown.current = view;
+  const firstView = view.first;
   useEffect(() => { seen.current.add(current.id); }, [current.id]);
 
   const move = (next: Walk) => { moved.current = true; setWalk(next); };
@@ -169,6 +180,18 @@ function Walkthrough({ maquette, labels, fragment, path, comments, read }: {
   const links: MaquetteLinks = { go, hint: id => labels.opens(titleOf(id)), target, pins };
   const source: DiagramSource = { path: maquette.diagramLink && read ? diagramPathOf(path ?? '', maquette.diagramLink) : undefined, read };
   const workflow = !!maquette.diagram || !!source.path;
+  // Inside a host bar with its own "…" menu, the tours and "How it works" go there (one menu, not two).
+  const publish = useContext(MaquetteMenuContext);
+  const latestTour = useRef(startTour); latestTour.current = startTour;
+  useEffect(() => {
+    if (!publish) return undefined;
+    const items: MaquetteMenuEntry[] = [
+      ...(tour ? [] : tours).map((item, i) => ({ id: `tour-${i}`, label: item.name, icon: <CompassIcon aria-hidden="true" />, testId: 'maquette-tour', separatorBefore: i === 0, onSelect: () => latestTour.current(item) })),
+      ...(workflow && !tour ? [{ id: 'how-it-works', label: labels.howItWorks, icon: <WorkflowIcon aria-hidden="true" />, testId: 'maquette-how-open', separatorBefore: true, onSelect: () => setHow(true) }] : []),
+    ];
+    publish(items);
+    return () => publish([]);
+  }, [publish, tours, workflow, tour, labels.howItWorks]);
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.shiftKey || (event.target as Element).closest?.(TYPING)) return;
     if (event.altKey) { if (event.key === 'ArrowLeft') { event.preventDefault(); back(); } return; }
@@ -197,7 +220,7 @@ function Walkthrough({ maquette, labels, fragment, path, comments, read }: {
       {comments && <Tooltip><TooltipTrigger render={<Toggle className={ICON} aria-label={labels.comment} pressed={comments.active}
         data-testid="maquette-comment" onPressedChange={() => comments.point()} />}><MessageSquarePlusIcon aria-hidden="true" /></TooltipTrigger><TooltipContent>{labels.comment}</TooltipContent></Tooltip>}
       {tour ? <Button type="button" variant="ghost" size="icon-sm" className={ICON} aria-label={labels.endTour} data-testid="maquette-end-tour" onClick={() => setWalk(previous => ({ ...previous, tour: null }))}><XIcon aria-hidden="true" /></Button>
-        : (tours.length > 0 || workflow) && <DropdownMenu>
+        : !publish && (tours.length > 0 || workflow) && <DropdownMenu>
           <DropdownMenuTrigger render={<Button type="button" variant="ghost" size="icon-sm" className={ICON} aria-label={labels.more} data-testid="maquette-menu" />}><EllipsisIcon aria-hidden="true" /></DropdownMenuTrigger>
           <DropdownMenuContent align="end" data-testid="maquette-menu-list">
             {tours.map(item => <DropdownMenuItem key={item.name} className="pointer-coarse:min-h-11" data-testid="maquette-tour" onClick={() => startTour(item)}><CompassIcon aria-hidden="true" />{item.name}</DropdownMenuItem>)}

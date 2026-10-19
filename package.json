@@ -1,6 +1,6 @@
 {
   "name": "boring-ui",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "license": "MIT",
   "private": true,
   "type": "module",
@@ -31,6 +31,7 @@
     "maquette:journey": "node examples/workspace-app/journey-maquette.mjs",
     "blobs:journey": "node examples/workspace-app/journey-blobs.mjs",
     "diagram:journey": "node examples/workspace-app/journey-diagram.mjs",
+    "gaps:journey": "node examples/workspace-app/journey-gaps.mjs",
     "board:journey": "node examples/board-viewer/journey.mjs",
     "workspace-demo": "node demos/workspace/server.mjs",
     "workspace-demo:journey": "node demos/workspace/journey.mjs",
