@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "title": "Tidewater Studio: booking a class",
+  "groups": [
+    { "id": "find", "label": "Find" },
+    { "id": "book", "label": "Book" },
+    { "id": "visit", "label": "Visit" }
+  ],
+  "nodes": [
+    { "id": "browse", "label": "Browse classes", "group": "find" },
+    { "id": "pick", "label": "Pick a class", "group": "find" },
+    { "id": "details", "label": "Name and email", "group": "book" },
+    { "id": "full", "label": "Waiting list", "group": "book" },
+    { "id": "held", "label": "Place held", "group": "book" },
+    { "id": "confirmed", "label": "Confirmed", "group": "book" },
+    { "id": "attended", "label": "Attended", "group": "visit" },
+    { "id": "cancelled", "label": "Cancelled", "group": "visit" }
+  ],
+  "edges": [
+    { "from": "browse", "to": "pick", "label": "filters by day", "by": "student" },
+    { "from": "pick", "to": "details", "label": "taps Book", "by": "student" },
+    { "from": "pick", "to": "full", "label": "class is full", "by": "app" },
+    { "from": "details", "to": "held", "label": "sends the form", "by": "student" },
+    { "from": "held", "to": "confirmed", "label": "email confirmation sent", "by": "app" },
+    { "from": "full", "to": "held", "label": "a place frees up", "by": "app" },
+    { "from": "confirmed", "to": "attended", "label": "checks in at the door", "by": "teacher" },
+    { "from": "confirmed", "to": "cancelled", "label": "cancels 24 h before", "by": "student" }
+  ],
+  "path": ["browse", "pick", "details", "held", "confirmed", "attended"],
+  "note": "Fictional flow of the invented Tidewater Studio. The highlighted path is a first booking that goes well."
+}
