@@ -2,12 +2,11 @@
 
 import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
-import { CodeXmlIcon, PencilLineIcon, SaveIcon } from 'lucide-react';
+import { SaveIcon } from 'lucide-react';
 import { MarkdownEditor } from '@hachej/boring-ui-kit/markdown-editor';
 import type { MarkdownEditorProps, MarkdownImageResolver, MarkdownMountedTools, MarkdownRichSafety } from '@hachej/boring-ui-kit/markdown-editor';
 import type { MarkdownController } from '@hachej/boring-ui-kit/markdown';
 import { Button } from '@/components/ui/button';
-import { Toggle } from '@/components/ui/toggle';
 import { editorControls } from '../button/editor-controls';
 import { downloadFile, fileNameFor } from './download';
 import { copyText } from '../utils/utils';
@@ -55,12 +54,12 @@ export interface MarkdownPaneProps {
   readonly labels?: Partial<ViewerLabels> | undefined;
 }
 
-/** The status chip for a Markdown controller: Saved, Unsaved, Saving, Changed elsewhere, Read-only. */
+/** The status dot for a Markdown controller: Saved (green), Unsaved or Saving (amber), Save unconfirmed or Changed elsewhere (red, with words), Read-only. */
 export function markdownStatus(state: ReturnType<MarkdownController['getSnapshot']>, labels: ViewerLabels = defaultViewerLabels): ViewerStatus {
   if (state.lifecycle === 'disposed') return { label: labels.closed };
-  if (state.save.kind === 'pending') return { label: labels.saving };
-  if (state.save.kind === 'settled' && state.save.result.kind === 'unknown') return { label: labels.saveUnconfirmed, tone: 'warning' };
-  if (state.save.kind === 'settled' && state.save.result.kind === 'conflict' || state.remote !== null) return { label: labels.changedElsewhere, tone: 'warning' };
+  if (state.save.kind === 'pending') return { label: labels.saving, tone: 'warning', kind: 'saving' };
+  if (state.save.kind === 'settled' && state.save.result.kind === 'unknown') return { label: labels.saveUnconfirmed, tone: 'danger' };
+  if (state.save.kind === 'settled' && state.save.result.kind === 'conflict' || state.remote !== null) return { label: labels.changedElsewhere, tone: 'danger' };
   if (state.readOnly) return { label: labels.readOnly, kind: 'read-only' };
   return state.dirty ? { label: labels.unsaved, tone: 'warning' } : { label: labels.saved, tone: 'success', kind: 'saved' };
 }
@@ -80,7 +79,6 @@ export function MarkdownPane({ controller, title: givenTitle, labels: ownLabels,
   const title = givenTitle ?? labels.document;
   const [requested, setRequestedState] = useState<'rich' | 'source'>(initialMode);
   const setRequested = (next: 'rich' | 'source') => { setRequestedState(next); onModeChange?.(next); };
-  const [toolbar, setToolbar] = useState(formattingToolbar);
   const [safety, setSafety] = useState<MarkdownRichSafety>({ safe: true });
   const mode = safety.safe ? requested : 'source';
   const unavailable = state.readOnly || state.lifecycle !== 'active';
@@ -99,19 +97,17 @@ export function MarkdownPane({ controller, title: givenTitle, labels: ownLabels,
     void controller.flush(controller.actions.selection()).then(report, () => setRefused({ save: controller.getSnapshot().save, label: labels.notSaved(labels.saveFailedReason) }));
   };
   const filename = useMemo(() => fileNameFor(title, 'md'), [title]);
-  return <ViewerFrame showSavedStatus title={title} subtitle={subtitle} headerStart={headerStart} status={refused && refused.save === state.save && state.save.kind !== 'pending' ? { label: refused.label, tone: 'warning' } : markdownStatus(state, labels)} target={target} labels={labels} revision={revision} testId={testId} {...(titleTestId ? { titleTestId } : {})} className={className}
+  return <ViewerFrame showSavedStatus title={title} subtitle={subtitle} headerStart={headerStart} status={refused && refused.save === state.save && state.save.kind !== 'pending' ? { label: refused.label, tone: 'danger' } : markdownStatus(state, labels)} target={target} labels={labels} revision={revision} testId={testId} {...(titleTestId ? { titleTestId } : {})} className={className}
     onRefresh={onRefresh ?? (() => controller.actions.refresh())} onShare={onShare} onCopy={() => copyText(controller.getSnapshot().text)}
     onDownload={() => downloadFile(filename, controller.getSnapshot().text, 'text/markdown;charset=utf-8')} onOpenInNewTab={onOpenInNewTab} onClose={close}
     controls={<>
-      {mode === 'rich' && <Toggle size="sm" className="max-[640px]:hidden" aria-label="Pin formatting toolbar" title="Pin formatting toolbar" pressed={toolbar === 'pinned'}
-        onPressedChange={pressed => setToolbar(pressed ? 'pinned' : 'selection')}>Aa</Toggle>}
       <ViewerToggle label={labels.editorMode} value={mode} onChange={setRequested} options={[
-        { id: 'rich', label: labels.richText, text: labels.rich, icon: <PencilLineIcon data-icon="inline-start" aria-hidden="true" />, disabled: !safety.safe, testId: `${testId}-mode-rich` },
-        { id: 'source', label: labels.markdownSource, text: labels.source, icon: <CodeXmlIcon data-icon="inline-start" aria-hidden="true" />, testId: `${testId}-mode-source` }]} />
+        { id: 'rich', label: labels.richText, text: labels.rich, disabled: !safety.safe, reason: safety.safe ? undefined : labels.richUnavailable(safety.reasons.join(', ')), testId: `${testId}-mode-rich` },
+        { id: 'source', label: labels.markdownSource, text: labels.markdown, testId: `${testId}-mode-source` }]} />
       {autosave === false && !state.readOnly && state.dirty && <Button variant="ghost" size="icon-sm" aria-label={labels.save} title={labels.save} data-testid={`${testId}-save`} disabled={unavailable || pending || unconfirmed} onClick={save}><SaveIcon data-icon="inline-start" aria-hidden="true" /></Button>}
       {controls}
     </>}>
-    <MarkdownEditor components={editorControls} controller={controller} title={title} header={false} autosave={autosave} onAutosaveChange={registerAutosave} onSaveResult={report} formattingToolbar={toolbar} mode={mode} onModeChange={setRequested} onRichSafety={setSafety}
+    <MarkdownEditor components={editorControls} controller={controller} title={title} header={false} autosave={autosave} onAutosaveChange={registerAutosave} onSaveResult={report} formattingToolbar={formattingToolbar} mode={mode} onModeChange={setRequested} onRichSafety={setSafety}
       {...(placeholder === undefined ? {} : { placeholder })} {...(resolveImage ? { resolveImage } : {})} {...(onMountedTools ? { onMountedTools } : {})} className="boring-markdown-editor" />
   </ViewerFrame>;
 }

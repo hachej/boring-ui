@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
-import { CodeXmlIcon, EyeIcon, RotateCcwIcon, SaveIcon, SearchCheckIcon } from 'lucide-react';
+import { RotateCcwIcon, SaveIcon, SearchCheckIcon } from 'lucide-react';
 import { HtmlViewer } from '@hachej/boring-ui-kit/html-viewer';
 import type { HtmlController } from '@hachej/boring-ui-kit/html';
 import { Button } from '@/components/ui/button';
@@ -51,9 +51,9 @@ export interface HtmlPaneProps {
 
 export function htmlStatus(state: ReturnType<HtmlController['getSnapshot']>, labels: ViewerLabels = defaultViewerLabels): ViewerStatus {
   if (state.lifecycle === 'disposed') return { label: labels.closed };
-  if (state.save.kind === 'pending') return { label: labels.saving };
-  if (state.save.kind === 'settled' && state.save.result.kind === 'unknown') return { label: labels.saveUnconfirmed, tone: 'warning' };
-  if (state.remote !== null || state.save.kind === 'settled' && state.save.result.kind === 'conflict') return { label: labels.changedElsewhere, tone: 'warning' };
+  if (state.save.kind === 'pending') return { label: labels.saving, tone: 'warning', kind: 'saving' };
+  if (state.save.kind === 'settled' && state.save.result.kind === 'unknown') return { label: labels.saveUnconfirmed, tone: 'danger' };
+  if (state.remote !== null || state.save.kind === 'settled' && state.save.result.kind === 'conflict') return { label: labels.changedElsewhere, tone: 'danger' };
   if (state.readOnly) return { label: labels.readOnly, kind: 'read-only' };
   return state.dirty ? { label: labels.unsaved, tone: 'warning' } : { label: labels.saved, tone: 'success', kind: 'saved' };
 }
@@ -80,8 +80,8 @@ export function HtmlPane({ controller, labels: ownLabels, title = 'HTML document
     onDownload={() => downloadFile(filename, controller.getSnapshot().text, 'text/html;charset=utf-8')} onOpenInNewTab={onOpenInNewTab} onClose={onClose}
     controls={<>
       <ViewerToggle label={labels.view} value={mode} onChange={setMode} options={[
-        { id: 'preview', label: labels.htmlPreview, text: labels.preview, icon: <EyeIcon data-icon="inline-start" aria-hidden="true" />, testId: `${testId}-mode-preview` },
-        { id: 'source', label: labels.htmlSource, text: labels.source, icon: <CodeXmlIcon data-icon="inline-start" aria-hidden="true" />, testId: `${testId}-mode-source` }]} />
+        { id: 'preview', label: labels.htmlPreview, text: labels.preview, testId: `${testId}-mode-preview` },
+        { id: 'source', label: labels.htmlSource, text: labels.source, testId: `${testId}-mode-source` }]} />
       {!state.readOnly && state.dirty && <Button variant="ghost" size="icon-sm" aria-label={labels.save} title={labels.save} data-testid={`${testId}-save`} disabled={disposed || pending || unconfirmed} onClick={() => perform(() => controller.flush(controller.actions.selection()))}><SaveIcon data-icon="inline-start" aria-hidden="true" /></Button>}
       {unconfirmed && <Button variant="ghost" size="icon-sm" aria-label={labels.checkSave} title={labels.checkSave} onClick={() => perform(controller.actions.reconcile)}><SearchCheckIcon data-icon="inline-start" aria-hidden="true" /></Button>}
       {unconfirmed && <Button variant="ghost" size="icon-sm" aria-label={labels.abandon} title={labels.abandon} onClick={() => perform(controller.actions.abandon)}><RotateCcwIcon data-icon="inline-start" aria-hidden="true" /></Button>}

@@ -138,7 +138,9 @@ try {
   });
 
   await step('markdown artifact controls, pinned toolbar and visible divider resize on desktop', async () => {
-    for (const selector of ['[data-testid=artifact-mode-source]', '[aria-label="Pin formatting toolbar"]', '[data-testid=artifact-more]', '.boring-markdown-toolbar']) assert.equal(await browser.evaluate(`!!${q(`[data-testid=artifact-panel] ${selector}`)}?.checkVisibility()`), true, selector);
+    for (const selector of ['[data-testid=artifact-mode-source]', '[data-testid=artifact-more]', '.boring-markdown-toolbar']) assert.equal(await browser.evaluate(`!!${q(`[data-testid=artifact-panel] ${selector}`)}?.checkVisibility()`), true, selector);
+    assert.equal(await browser.evaluate(`!!${q('[data-testid=artifact-panel] [aria-label="Pin formatting toolbar"]')}`), false, 'no pin button: the toolbar is pinned by the host');
+    assert.deepEqual(await browser.evaluate(`[...document.querySelectorAll('[data-testid=artifact-panel] [data-testid=artifact-controls] [data-mode]')].map(item => [item.innerText.trim(), item.getAttribute('aria-pressed')])`), [['Text', 'true'], ['Markdown', 'false']], 'the mode switch shows words and its pressed segment');
     const divider = await browser.evaluate(`(() => { const e = ${q('[data-testid=workspace-divider]')}, r = e.getBoundingClientRect(), line = e.firstElementChild; return { x: r.x + r.width / 2, y: r.y + r.height / 2, hit: r.width, line: line.getBoundingClientRect().width, color: getComputedStyle(line).backgroundColor, before: Number(e.getAttribute('aria-valuenow')) }; })()`);
     assert.equal(divider.line, 1); assert.ok(divider.hit >= 8 && divider.hit <= 12);
     assert.doesNotMatch(divider.color, /transparent|rgba\(0, 0, 0, 0\)/);
@@ -155,6 +157,7 @@ try {
     await browser.click(q('[data-testid=artifact-mode-source]'));
     await browser.type(q('[data-testid=artifact-panel] textarea'), '\nA fictional desktop autosave.');
     await browser.until('artifact autosaved', `${q('[data-testid=artifact-status]')}?.textContent === 'Saved'`, 10000);
+    assert.deepEqual(await browser.evaluate(`(() => { const status = ${q('[data-testid=artifact-status]')}, text = status.querySelector('[data-testid=artifact-status-text]').getBoundingClientRect(), dot = status.querySelector('svg').getBoundingClientRect(); return { label: status.getAttribute('aria-label'), tone: status.dataset.tone, textVisible: text.width > 1 && text.height > 1, dot: Math.round(dot.width) }; })()`), { label: 'Saved', tone: 'success', textVisible: false, dot: 8 }, 'saved is a green dot, its word only for screen readers');
     assert.equal(await browser.evaluate(`!!${q('[data-testid=artifact-save]')}`), false);
     await browser.click(q('[data-testid=artifact-mode-rich]'));
     for (const scheme of ['light', 'dark']) {

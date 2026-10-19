@@ -6,7 +6,6 @@
 // executes artifact content (HTML runs only in the viewers' sandboxed preview when the host passes `interactive`).
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
-import { CodeXmlIcon, EyeIcon } from 'lucide-react';
 import { randomUUID } from '@hachej/boring-files/platform';
 import type { ResourceClient, ResourceSnapshot } from '@hachej/boring-files';
 import type { ResourceIdentity } from '@hachej/boring-files/remote';
@@ -130,8 +129,8 @@ function SvgView({ text, title, frame }: { readonly text: string; readonly title
   useEffect(() => () => URL.revokeObjectURL(url), [url]);
   return <ViewerFrame {...frame} controls={<>
     <ViewerToggle label={labels.view} value={mode} onChange={setMode} options={[
-      { id: 'preview', label: labels.preview, text: labels.preview, icon: <EyeIcon className="size-4" aria-hidden="true" />, testId: 'artifact-mode' },
-      { id: 'source', label: labels.source, text: labels.source, icon: <CodeXmlIcon className="size-4" aria-hidden="true" />, testId: 'artifact-mode' }]} />
+      { id: 'preview', label: labels.preview, text: labels.preview, testId: 'artifact-mode' },
+      { id: 'source', label: labels.source, text: labels.source, testId: 'artifact-mode' }]} />
     {frame.controls}</>}>
     {mode === 'preview'
       ? <div className="boring-viewer-checker flex min-h-0 flex-1 items-center justify-center overflow-auto p-6"><img data-testid="artifact-svg" src={url} alt={title} className="max-h-full max-w-full" /></div>

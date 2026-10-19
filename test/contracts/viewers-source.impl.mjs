@@ -53,6 +53,19 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     return { container, q, click, render: async next => { await act(async () => rootNode.render(next)); } };
   };
   const settle = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 10)); });
+  // The words a sighted person sees: everything except screen-reader-only text.
+  const visibleText = node => [...node.childNodes].map(child => child.nodeType === 3 ? child.textContent : child.classList?.contains('sr-only') ? '' : visibleText(child)).join('');
+  // A quiet status is a coloured dot: its label is the tooltip and the accessible name, never visible words.
+  const assertDot = (view, label, tone) => {
+    const status = view.q('[data-testid="viewer-status"]');
+    assert.ok(status, `a ${label} status`);
+    assert.equal(status.getAttribute('role'), 'status');
+    assert.equal(status.getAttribute('aria-label'), label);
+    assert.equal(status.getAttribute('title'), label);
+    assert.equal(status.dataset.tone, tone);
+    assert.ok(status.querySelector('svg[aria-hidden="true"]'), 'the dot');
+    assert.equal(visibleText(status), '', `no visible ${label} text`);
+  };
   // Waits for a controller's own signal (a save settled, a refresh reported) instead of a fixed delay: a store write can take longer on a busy machine.
   const until = (controller, done) => act(() => new Promise((resolve, reject) => {
     const failed = setTimeout(() => { stop(); reject(new Error('the controller never reached the expected state')); }, 10000);
@@ -134,7 +147,14 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     const saved = await mount(t, h(frame.ViewerFrame, { title: 'a', status: { label: 'Saved', tone: 'success' } }));
     assert.equal(saved.q('[data-testid="viewer-status"]') === null, true);
     const unsaved = await mount(t, h(frame.ViewerFrame, { title: 'a', status: { label: 'Unsaved', tone: 'warning' } }));
-    assert.equal(unsaved.q('[data-testid="viewer-status"]').getAttribute('title'), 'Unsaved');
+    assertDot(unsaved, 'Unsaved', 'warning');
+    const saving = await mount(t, h(frame.ViewerFrame, { title: 'a', status: { label: 'Saving…', tone: 'warning', kind: 'saving' } }));
+    assertDot(saving, 'Saving…', 'warning');
+    assert.match(saving.q('[data-testid="viewer-status"] svg').getAttribute('class'), /animate-pulse motion-reduce:animate-none/, 'saving pulses, unless reduced motion');
+    assert.doesNotMatch(unsaved.q('[data-testid="viewer-status"] svg').getAttribute('class'), /animate-pulse/);
+    const refused = await mount(t, h(frame.ViewerFrame, { title: 'a', status: { label: 'Not saved: offline', tone: 'danger' } }));
+    assert.equal(refused.q('[data-testid="viewer-status"]').dataset.tone, 'danger');
+    assert.equal(visibleText(refused.q('[data-testid="viewer-status"]')), 'Not saved: offline', 'a status the person must act on shows its words beside the dot');
     const reading = await mount(t, h(frame.ViewerFrame, { title: 'a', subtitle: 'HTML page', status: { label: 'Read-only' } }));
     assert.equal(reading.q('[data-testid="viewer-status"]') === null, true);
     assert.equal(reading.q('[data-testid="viewer-subtitle"]').textContent, 'HTML page·Read-only');
@@ -277,33 +297,44 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     assert.equal(closed, 1, 'a bare pane never drops a draft when its save fails');
     assert.equal(view.q('textarea').value, 'keep this failed draft');
     assert.match(view.q('[data-testid="viewer-status"]').textContent, /Not saved/);
+    assert.match(visibleText(view.q('[data-testid="viewer-status"]')), /Not saved: Fictional offline provider/, 'a refused save shows its reason in words');
   });
 
   await t.test('the Markdown pane puts mode, Save and status in the bar; Refresh never drops unsaved edits; unsafe documents stay in source', async t => {
     const d = await documents(t, 'text/markdown', '# Plan\n\n- [x] done\n');
     const view = await mount(t, h(markdownPane.MarkdownPane, { controller: d.controller, title: 'Plan', subtitle: 'Markdown', autosave: false, onShare() {} }));
     assert.equal(view.q('section[data-boring="markdown-editor"] > header') === null, true, 'the editor has no header of its own');
-    assert.equal(view.q('[data-testid="viewer-status"]').textContent, 'Saved', 'a clean document quietly confirms persistence');
+    assertDot(view, 'Saved', 'success');
     assert.equal(view.q('[data-testid="viewer-save"]') === null, true, 'Save waits for an edit');
     assert.ok(view.q('.boring-markdown-toolbar button[aria-label="Bold"] svg'), 'formatting is pinned by default');
-    await view.click('[aria-label="Pin formatting toolbar"]');
-    assert.equal(view.q('.boring-markdown-toolbar'), null, 'Aa switches to selection formatting');
+    assert.equal(view.q('[aria-label="Pin formatting toolbar"]'), null, 'the bar has no pin button');
+    assert.equal(view.q('[data-testid="viewer-controls"]').textContent, 'TextMarkdown', 'the mode switch is two words and nothing else');
+    const modes = view.q('[data-testid="viewer-controls"] [role="group"]');
+    assert.equal(modes.getAttribute('aria-label'), 'Editor mode');
+    assert.equal(view.q('[data-testid="viewer-mode-rich"]').textContent, 'Text');
+    assert.equal(view.q('[data-testid="viewer-mode-rich"]').getAttribute('aria-pressed'), 'true');
+    assert.equal(view.q('[data-testid="viewer-mode-source"]').textContent, 'Markdown');
+    assert.equal(view.q('[data-testid="viewer-mode-source"]').getAttribute('aria-pressed'), 'false');
     await view.click('[data-testid="viewer-mode-source"]');
+    assert.equal(view.q('[data-testid="viewer-mode-source"]').getAttribute('aria-pressed'), 'true', 'the selected segment follows the mode');
+    assert.equal(view.q('[data-testid="viewer-mode-rich"]').getAttribute('aria-pressed'), 'false');
     const area = view.q('textarea');
     await act(async () => { Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(area, '# Plan\n\n- [x] done\n- [ ] local edit\n'); area.dispatchEvent(new window.Event('input', { bubbles: true })); });
-    assert.equal(view.q('[data-testid="viewer-status"]').textContent, 'Unsaved');
+    assertDot(view, 'Unsaved', 'warning');
     const base = d.controller.getSnapshot().base.target;
     await d.publish('elsewhere', '# Plan\n\nchanged by someone else\n', base);
     await view.click('[data-testid="viewer-more"]'); await view.click('[data-testid="viewer-refresh"]'); await until(d.controller, state => state.remote !== null);
     assert.equal(d.controller.getSnapshot().text, '# Plan\n\n- [x] done\n- [ ] local edit\n', 'Refresh kept the unsaved edit');
-    assert.equal(view.q('[data-testid="viewer-status"]').textContent, 'Changed elsewhere');
+    assert.equal(view.q('[data-testid="viewer-status"]').dataset.tone, 'danger');
+    assert.equal(visibleText(view.q('[data-testid="viewer-status"]')), 'Changed elsewhere', 'a conflict shows its words: the person must act');
     assert.match(view.container.textContent, /Your local text has been kept/);
     await view.click('[data-testid="viewer-save"]'); await saved(d.controller);
-    assert.equal(view.q('[data-testid="viewer-status"]').textContent, 'Changed elsewhere', 'a refused stale write retains the existing conflict status');
+    assert.equal(visibleText(view.q('[data-testid="viewer-status"]')), 'Changed elsewhere', 'a refused stale write retains the existing conflict status');
     // Unsupported constructs: rich is unavailable.
     const raw = await documents(t, 'text/markdown', '---\ntitle: x\n---\n\n<div>raw</div>\n');
     const unsafe = await mount(t, h(markdownPane.MarkdownPane, { controller: raw.controller, title: 'Raw' }));
     assert.equal(unsafe.q('[data-testid="viewer-mode-rich"]').disabled, true);
+    assert.match(unsafe.q('[data-testid="viewer-mode-rich"]').getAttribute('title'), /^Text mode is off: this document contains front matter, raw HTML/, 'the disabled mode says why');
     assert.equal(unsafe.q('[data-testid="viewer-mode-source"]').getAttribute('aria-pressed'), 'true');
     assert.match(unsafe.q('[data-testid="markdown-source-only"]').textContent, /front matter, raw HTML/);
   });

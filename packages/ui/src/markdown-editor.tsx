@@ -107,9 +107,7 @@ function MarkdownEditorSession({ components, controller, title = 'Document', ini
   const Source = components?.textarea ?? 'textarea';
   const LinkInput = components?.input ?? 'input';
   const phone = useSyncExternalStore(subscribePhone, phoneSnapshot, desktopSnapshot);
-  const [pinned, setPinned] = useState(formattingToolbar === 'pinned');
-  useEffect(() => { setPinned(formattingToolbar === 'pinned'); }, [formattingToolbar]);
-  const showPinned = pinned && !phone;
+  const showPinned = formattingToolbar === 'pinned' && !phone;
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const projected = useRef<string | null>(null);
   const emitted = useRef<string | null>(null);
@@ -311,7 +309,6 @@ function MarkdownEditorSession({ components, controller, title = 'Document', ini
       <strong>{title}</strong>
       {state.readOnly && <span>Read only</span>}
       <span role="status">{state.lifecycle === 'disposed' ? 'Closed' : pending ? 'Saving…' : uncertain ? 'Save unconfirmed' : conflict ? 'Changed elsewhere' : state.dirty ? 'Unsaved changes' : 'Saved'}</span>
-      {mode === 'rich' && !phone && !unavailable && <Control type="button" className="boring-markdown-pin" aria-label="Pin formatting toolbar" title="Pin formatting toolbar" aria-pressed={pinned} onClick={() => setPinned(value => !value)}>Aa</Control>}
       <Control type="button" aria-pressed={mode === 'source'} disabled={!richOffered} onClick={switchMode}>Markdown source</Control>
       {!saving.enabled && <Control type="button" disabled={unavailable || !state.dirty || pending || uncertain} onClick={save}>Save</Control>}
     </header>}
