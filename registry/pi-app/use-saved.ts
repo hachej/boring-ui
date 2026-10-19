@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import type { ResourceClient, ResourceLocator, ResourceSnapshot } from '@hachej/boring-files';
 
 const POLL_MS = 1500;
-const readText = (bytes: Uint8Array): string | undefined => { try { return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes); } catch { return undefined; } };
+export const readText = (bytes: Uint8Array): string | undefined => { try { return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes); } catch { return undefined; } };
 
 /** What a viewer controller exposes to `useSaved`: its buffer state (never replaced while dirty or saving) and teardown. */
 export interface SavedController {

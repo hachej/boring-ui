@@ -4,31 +4,62 @@
 // of icons: Back, ‹ 2 / 5 › (also arrow keys and swipe) and a menu holding the guided tours and "How it works" (the workflow, in a dialog).
 // During a tour the bar shows the step dots and ×, with the step's caption under it. `maquetteKind` is the kind the pi-app artifact panel
 // uses by default for `.maquette.json` files; an app's own kind in `artifactKinds` wins. It draws data only: nothing in the file runs.
+// The workflow is drawn by the diagram-viewer item's `DiagramView`, inline or from a linked `*.diagram.json`. With `comments` (the feedback
+// item's `usePointComments`, structurally) one more icon enters point mode on the screen: a tap on a block pins a note that names the
+// maquette path, the screen id and the block id; the pins of the current screen show as small numbers on their blocks.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ComponentType, KeyboardEvent, ReactNode, TouchEvent } from 'react';
-import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, CompassIcon, EllipsisIcon, InfoIcon, LayoutTemplateIcon, TriangleAlertIcon, WorkflowIcon, XIcon } from 'lucide-react';
+import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, CompassIcon, EllipsisIcon, InfoIcon, LayoutTemplateIcon, MessageSquarePlusIcon, TriangleAlertIcon, WorkflowIcon, XIcon } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { MAQUETTE_FORMAT_VERSION, isMaquettePath, parseMaquette, screenFromFragment } from './maquette';
-import type { Maquette, MaquetteCase, MaquetteScreen } from './maquette';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { parseDiagram } from '../diagram-viewer/diagram';
+import type { Diagram } from '../diagram-viewer/diagram';
+import { DiagramView } from '../diagram-viewer/diagram-view';
+import { MAQUETTE_FORMAT_VERSION, diagramPathOf, isMaquettePath, parseMaquette, screenFromFragment } from './maquette';
+import type { Maquette, MaquetteBlock, MaquetteCase, MaquetteScreen } from './maquette';
 import { maquetteLabelsFor } from './maquette-labels';
 import type { MaquetteLabels, MaquetteLocale } from './maquette-labels';
 import { MaquetteScreenView } from './maquette-blocks';
 import type { MaquetteLinks } from './maquette-blocks';
-import { MaquetteDiagram } from './maquette-diagram';
 
-export { MAQUETTE_FORMAT_VERSION, isMaquettePath, linksOf, parseMaquette, screenFromFragment } from './maquette';
+export { MAQUETTE_FORMAT_VERSION, diagramPathOf, isMaquettePath, linksOf, parseMaquette, screenFromFragment } from './maquette';
 export type { Maquette, MaquetteBlock, MaquetteBlockV1, MaquetteCase, MaquetteFileV1, MaquetteParse, MaquetteScreen, MaquetteState, MaquetteTransition, MaquetteWorkflow } from './maquette';
 export { defaultMaquetteLabels, frenchMaquetteLabels, maquetteLabelsFor } from './maquette-labels';
 export type { MaquetteLabels, MaquetteLocale } from './maquette-labels';
 
+/**
+ * Comment pins, structurally the feedback item's `usePointComments(session)`: pass it and the bar shows a comment icon; omit it (no feedback
+ * session in the host) and nothing shows.
+ */
+export interface MaquetteComments {
+  /** Point mode is on. */
+  readonly active: boolean;
+  /** Enters point mode (the person taps blocks to pin notes), or ends it when it is on. */
+  readonly point: () => void;
+  /** The pins taken: each one's number and the `data-feedback-id` its element sits in. */
+  readonly pins: readonly { readonly number: number; readonly target: string }[];
+}
+
+/** Reads another file of the workspace as text (the artifact panel passes one): a linked `*.diagram.json`. Undefined when it cannot. */
+export type MaquetteRead = (path: string) => Promise<string | undefined>;
+
+/** A block's `data-feedback-id`: `maquette:<path>#screen=<screen id>&block=<block id>`. */
+export const maquetteTarget = (path: string | undefined, screen: string, block: string): string => `maquette:${path ?? ''}#screen=${screen}&block=${block}`;
+
 export interface MaquetteViewerProps {
   /** The file's text (JSON). */
   readonly text: string;
+  /** The file's path: named by comment pins, and the folder a linked diagram is read from. */
+  readonly path?: string | undefined;
+  /** Comment pins on blocks (the feedback item's `usePointComments`). */
+  readonly comments?: MaquetteComments | undefined;
+  /** Reads a linked `*.diagram.json`; without it a linked workflow is not offered. */
+  readonly read?: MaquetteRead | undefined;
   /** The page's URL fragment: `screen=<id>` opens that screen (and follows later changes). */
   readonly fragment?: string | undefined;
   /** The base words: English by default. */
@@ -50,15 +81,35 @@ function Dots({ count, index, label }: { readonly count: number; readonly index:
   </svg>;
 }
 
+/** The diagram of a linked `*.diagram.json`, read when the dialog opens: undefined while reading, null when it cannot be read. */
+function useLinked(read: MaquetteRead | undefined, path: string | undefined, open: boolean): Diagram | null | undefined {
+  const [loaded, setLoaded] = useState<{ readonly path: string; readonly diagram: Diagram | null }>();
+  useEffect(() => {
+    if (!open || !path || !read || loaded?.path === path) return undefined;
+    let off = false;
+    read(path).then(text => text === undefined ? null : parseDiagram(text), () => null).then(parsed => {
+      if (!off) setLoaded({ path, diagram: parsed?.kind === 'ok' ? parsed.diagram : null });
+    });
+    return () => { off = true; };
+  }, [open, path, read, loaded?.path]);
+  return loaded && loaded.path === path ? loaded.diagram : undefined;
+}
+
 /** The workflow diagram, its legend and the cases' `path` highlights, in a dialog opened from the menu. */
-function HowItWorks({ maquette, labels, open, onOpenChange }: { readonly maquette: Maquette; readonly labels: MaquetteLabels; readonly open: boolean; readonly onOpenChange: (open: boolean) => void }) {
+function HowItWorks({ maquette, source, labels, open, onOpenChange }: {
+  readonly maquette: Maquette; readonly source: DiagramSource; readonly labels: MaquetteLabels; readonly open: boolean; readonly onOpenChange: (open: boolean) => void;
+}) {
   const [shown, setShown] = useState<string | null>(null);
+  const loaded = useLinked(source.read, source.path, open);
+  const diagram = maquette.diagram ?? loaded;
   const highlighted = maquette.cases.filter(item => item.path.length > 0);
-  if (!maquette.workflow) return null;
+  if (!maquette.diagram && !source.path) return null;
   return <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent data-testid="maquette-how" className="max-h-[85dvh] overflow-y-auto">
       <DialogHeader><DialogTitle>{labels.howItWorks}</DialogTitle></DialogHeader>
-      <MaquetteDiagram workflow={maquette.workflow} highlight={highlighted.find(item => item.name === shown)?.path ?? []} labels={labels} />
+      {diagram ? <DiagramView diagram={diagram} highlight={highlighted.find(item => item.name === shown)?.path ?? diagram.path} labels={labels} />
+        : diagram === null ? <Alert variant="destructive" data-testid="maquette-how-error"><TriangleAlertIcon aria-hidden="true" /><AlertTitle>{labels.diagramUnavailable}</AlertTitle></Alert>
+          : <p role="status" className="m-0 text-sm text-muted-foreground">{labels.loading}</p>}
       {highlighted.length > 0 && <div role="group" className="flex flex-wrap gap-2">
         {highlighted.map(item => <Button key={item.name} type="button" size="sm" variant={shown === item.name ? 'secondary' : 'outline'} aria-pressed={shown === item.name}
           data-testid="maquette-case" className="pointer-coarse:min-h-11" onClick={() => setShown(current => current === item.name ? null : item.name)}>{item.name}</Button>)}
@@ -67,7 +118,13 @@ function HowItWorks({ maquette, labels, open, onOpenChange }: { readonly maquett
   </Dialog>;
 }
 
-function Walkthrough({ maquette, labels, fragment }: { readonly maquette: Maquette; readonly labels: MaquetteLabels; readonly fragment: string | undefined }) {
+/** Where a linked diagram is read from: its resolved path and the reader (both absent for an inline workflow, or with no reader). */
+interface DiagramSource { readonly path: string | undefined; readonly read: MaquetteRead | undefined }
+
+function Walkthrough({ maquette, labels, fragment, path, comments, read }: {
+  readonly maquette: Maquette; readonly labels: MaquetteLabels; readonly fragment: string | undefined;
+  readonly path: string | undefined; readonly comments: MaquetteComments | undefined; readonly read: MaquetteRead | undefined;
+}) {
   const exists = (id: string | undefined): id is string => !!id && maquette.screens.some(screen => screen.id === id);
   const linked = screenFromFragment(fragment);
   const [walk, setWalk] = useState<Walk>(() => ({ history: [exists(linked) ? linked : maquette.start], tour: null }));
@@ -105,7 +162,12 @@ function Walkthrough({ maquette, labels, fragment }: { readonly maquette: Maquet
   useEffect(() => { if (moved.current) { moved.current = false; heading.current?.focus(); } }, [walk]);
 
   const index = tour && walk.tour ? walk.tour.index : position, count = tour ? tour.steps.length : screens.length;
-  const links: MaquetteLinks = { go, hint: id => labels.opens(titleOf(id)) };
+  const target = (block: MaquetteBlock) => maquetteTarget(path, current.id, block.id);
+  // While pointing, the session draws its own numbered pins over the page; the small numbers on the blocks are for afterwards.
+  const pins = (block: MaquetteBlock) => comments && !comments.active ? comments.pins.filter(pin => pin.target === target(block)).map(pin => pin.number) : [];
+  const links: MaquetteLinks = { go, hint: id => labels.opens(titleOf(id)), target, pins };
+  const source: DiagramSource = { path: maquette.diagramLink && read ? diagramPathOf(path ?? '', maquette.diagramLink) : undefined, read };
+  const workflow = !!maquette.diagram || !!source.path;
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.shiftKey || (event.target as Element).closest?.(TYPING)) return;
     if (event.altKey) { if (event.key === 'ArrowLeft') { event.preventDefault(); back(); } return; }
@@ -130,13 +192,15 @@ function Walkthrough({ maquette, labels, fragment }: { readonly maquette: Maquet
           : <span data-testid="maquette-position" className="min-w-10 text-center text-sm text-muted-foreground tabular-nums">{index + 1} / {count}</span>}
         <Button type="button" variant="ghost" size="icon-sm" className={ICON} aria-label={labels.next} data-testid="maquette-next" disabled={index >= count - 1} onClick={() => step(1)}><ChevronRightIcon aria-hidden="true" /></Button>
       </div>
+      {comments && <Tooltip><TooltipTrigger render={<Button type="button" variant="ghost" size="icon-sm" className={ICON} aria-label={labels.comment} aria-pressed={comments.active}
+        data-testid="maquette-comment" onClick={() => comments.point()} />}><MessageSquarePlusIcon aria-hidden="true" /></TooltipTrigger><TooltipContent>{labels.comment}</TooltipContent></Tooltip>}
       {tour ? <Button type="button" variant="ghost" size="icon-sm" className={ICON} aria-label={labels.endTour} data-testid="maquette-end-tour" onClick={() => setWalk(previous => ({ ...previous, tour: null }))}><XIcon aria-hidden="true" /></Button>
-        : (tours.length > 0 || maquette.workflow) && <DropdownMenu>
+        : (tours.length > 0 || workflow) && <DropdownMenu>
           <DropdownMenuTrigger render={<Button type="button" variant="ghost" size="icon-sm" className={ICON} aria-label={labels.more} data-testid="maquette-menu" />}><EllipsisIcon aria-hidden="true" /></DropdownMenuTrigger>
           <DropdownMenuContent align="end" data-testid="maquette-menu-list">
             {tours.map(item => <DropdownMenuItem key={item.name} className="pointer-coarse:min-h-11" data-testid="maquette-tour" onClick={() => startTour(item)}><CompassIcon aria-hidden="true" />{item.name}</DropdownMenuItem>)}
-            {tours.length > 0 && maquette.workflow && <DropdownMenuSeparator />}
-            {maquette.workflow && <DropdownMenuItem className="pointer-coarse:min-h-11" data-testid="maquette-how-open" onClick={() => setHow(true)}><WorkflowIcon aria-hidden="true" />{labels.howItWorks}</DropdownMenuItem>}
+            {tours.length > 0 && workflow && <DropdownMenuSeparator />}
+            {workflow && <DropdownMenuItem className="pointer-coarse:min-h-11" data-testid="maquette-how-open" onClick={() => setHow(true)}><WorkflowIcon aria-hidden="true" />{labels.howItWorks}</DropdownMenuItem>}
           </DropdownMenuContent>
         </DropdownMenu>}
     </nav>
@@ -157,12 +221,12 @@ function Walkthrough({ maquette, labels, fragment }: { readonly maquette: Maquet
       </div>}
     </div>
     <p aria-live="polite" className="m-0 sr-only">{labels.showing(current.title)}</p>
-    <HowItWorks maquette={maquette} labels={labels} open={how} onOpenChange={setHow} />
+    <HowItWorks maquette={maquette} source={source} labels={labels} open={how} onOpenChange={setHow} />
   </div>;
 }
 
 /** A maquette file drawn one screen at a time; a newer format version shows a notice, an unreadable file an inline error. */
-export function MaquetteViewer({ text, fragment, locale, labels: given }: MaquetteViewerProps) {
+export function MaquetteViewer({ text, fragment, locale, labels: given, path, comments, read }: MaquetteViewerProps) {
   const labels = useMemo(() => maquetteLabelsFor(locale, given), [locale, given]);
   const parsed = useMemo(() => parseMaquette(text), [text]);
   const newer = parsed.version !== undefined && parsed.version > MAQUETTE_FORMAT_VERSION;
@@ -170,7 +234,7 @@ export function MaquetteViewer({ text, fragment, locale, labels: given }: Maquet
   return <section data-boring="maquette-viewer" data-state={parsed.kind} aria-label={parsed.kind === 'ok' ? parsed.maquette.title || labels.kind : labels.kind}
     className="mx-auto flex w-full max-w-5xl min-w-0 flex-col gap-2 px-3 pt-1 pb-4 sm:px-6">
     {notice}
-    {parsed.kind === 'ok' ? <Walkthrough maquette={parsed.maquette} labels={labels} fragment={fragment} />
+    {parsed.kind === 'ok' ? <Walkthrough maquette={parsed.maquette} labels={labels} fragment={fragment} path={path} comments={comments} read={read} />
       : <Alert variant="destructive" data-testid="maquette-error" data-reason={parsed.reason}><TriangleAlertIcon aria-hidden="true" /><AlertTitle>{labels.errorTitle}</AlertTitle>
         <AlertDescription>{parsed.reason === 'json' ? labels.invalidJson : labels.invalidShape}</AlertDescription></Alert>}
   </section>;
@@ -184,16 +248,25 @@ export interface MaquetteKind {
   readonly match: (target: { readonly resource: { readonly path: string } }) => boolean;
   readonly label: string;
   readonly icon: ComponentType<{ readonly className?: string; readonly 'aria-hidden'?: boolean | 'true' }>;
-  readonly renderer: (props: { readonly text: string; readonly fragment?: string | undefined }) => ReactNode;
+  readonly renderer: (props: {
+    readonly text: string; readonly fragment?: string | undefined;
+    readonly artifact?: { readonly target: { readonly resource: { readonly path: string } } } | undefined; readonly read?: MaquetteRead | undefined;
+  }) => ReactNode;
 }
 
-/** A maquette kind in `locale` ("Mock-up" in English, "Maquette" in French) with any word overridden. */
-export function createMaquetteKind({ locale, labels }: { readonly locale?: MaquetteLocale | undefined; readonly labels?: Partial<MaquetteLabels> | undefined } = {}): MaquetteKind {
+/**
+ * A maquette kind in `locale` ("Mock-up" in English, "Maquette" in French) with any word overridden. `comments` (the feedback item's
+ * `usePointComments(session)`) adds the comment icon; pass a fresh kind when it changes.
+ */
+export function createMaquetteKind({ locale, labels, comments }: {
+  readonly locale?: MaquetteLocale | undefined; readonly labels?: Partial<MaquetteLabels> | undefined; readonly comments?: MaquetteComments | undefined;
+} = {}): MaquetteKind {
   return {
     match: target => isMaquettePath(target.resource.path),
     label: maquetteLabelsFor(locale, labels).kind,
     icon: LayoutTemplateIcon,
-    renderer: ({ text, fragment }) => <MaquetteViewer text={text} fragment={fragment} locale={locale} labels={labels} />,
+    renderer: ({ text, fragment, artifact, read }) => <MaquetteViewer text={text} fragment={fragment} locale={locale} labels={labels}
+      path={artifact?.target.resource.path} comments={comments} read={read} />,
   };
 }
 

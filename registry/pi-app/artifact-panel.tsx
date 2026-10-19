@@ -29,10 +29,11 @@ import type { ViewerVersion } from '../viewers/menu';
 import type { InteractiveHtml } from '../viewers/interactive-html';
 import { downloadFile } from '../viewers/download';
 import { maquetteKind } from '../maquette-viewer/maquette-viewer';
+import { diagramKind } from '../diagram-viewer/diagram-viewer';
 import { copyText } from '../utils/utils';
 import { Separator } from '@/components/ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { savedLabel, useSaved } from './use-saved';
+import { readText, savedLabel, useSaved } from './use-saved';
 import { useAppText } from './app-labels';
 
 const NOOP = () => () => {};
@@ -64,7 +65,8 @@ export interface ViewerOptions {
   readonly history?: ((path: string) => Promise<readonly SavedRevision[]>) | undefined;
   readonly viewers?: CustomViewers | undefined;
   /** The app's artifact kinds: their label names the artifact in the bar and their `renderer` draws it (before `viewers` and the built-in viewers).
-   * The built-in maquette kind (`*.maquette.json`, `maquette-viewer`) comes after them, so an app's kind for those files wins. */
+   * The built-in maquette and diagram kinds (`*.maquette.json`, `maquette-viewer`; `*.diagram.json`, `diagram-viewer`) come after them, so an
+   * app's kind for those files wins. */
   readonly kinds?: readonly ArtifactKind[] | undefined;
   /** The host's opt-in to running HTML pages in the sandboxed preview. */
   readonly interactive?: InteractiveHtml | undefined;
@@ -179,7 +181,12 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose }: {
   const { client, identity } = options;
   const { labels } = useAppText();
   const path = artifact.target.resource.path;
-  const kinds = useMemo(() => [...(options.kinds ?? []), maquetteKind], [options.kinds]);
+  const kinds = useMemo(() => [...(options.kinds ?? []), maquetteKind, diagramKind], [options.kinds]);
+  // A kind's file may link to another file of the same workspace (a maquette's diagram): read its latest revision as text.
+  const read = useCallback(async (other: string) => {
+    const result = await client.read({ target: { ...artifact.target, resource: { ...artifact.target.resource, path: other } }, revision: { kind: 'latest' } }).catch(() => undefined);
+    return result?.kind === 'available' ? readText(result.snapshot.bytes) : undefined;
+  }, [client, artifact.target]);
   const kind = artifactKind(artifact, kinds);
   const fragment = useSyncExternalStore(subscribeHash, readHash, () => '');
   const custom = kind?.renderer ? undefined : options.viewers?.[type];
@@ -241,7 +248,7 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose }: {
   if (type === 'markdown' && controller) return body(document(<MarkdownPane controller={controller as MarkdownController} initialMode="rich" onAutosaveChange={registerAutosave} onBeforeLeaveChange={options.onBeforeLeaveChange} {...frame} />));
   if (type === 'html' && controller) return body(document(<HtmlPane controller={controller as HtmlController} {...(options.interactive ? { interactive: options.interactive } : {})} {...frame} />));
   const actions = { onCopy: () => copyText(text ?? ''), onDownload: () => downloadFile(filename, text ?? '', `${artifact.mediaType};charset=utf-8`) };
-  if (kind?.renderer) return body(<ViewerFrame {...frame} {...actions}><div data-testid="artifact-kind-view" className="min-h-0 flex-1 overflow-auto">{kind.renderer({ artifact, text: saved.text, fragment })}</div></ViewerFrame>);
+  if (kind?.renderer) return body(<ViewerFrame {...frame} {...actions}><div data-testid="artifact-kind-view" className="min-h-0 flex-1 overflow-auto">{kind.renderer({ artifact, text: saved.text, fragment, read })}</div></ViewerFrame>);
   if (type === 'code' && artifact.language === 'csv') return body(<ViewerFrame {...frame} {...actions}><div className="min-h-0 flex-1 overflow-auto"><CsvTable text={saved.text} /></div></ViewerFrame>);
   if (type === 'svg') return body(<SvgView text={saved.text} title={artifact.title} frame={{ ...frame, ...actions }} />);
   if (type === 'canvas') return body(<ViewerFrame {...frame}><p className="m-0 p-4 text-sm text-muted-foreground" role="status">{labels.noCanvasViewer}</p></ViewerFrame>);

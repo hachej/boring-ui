@@ -3,7 +3,7 @@
 // `createFeedbackSession` from `@hachej/boring-feedback/ui` (hover labels, pins, steps, the draft and Send come from there, through the
 // privacy policy); this file is how it looks. `useComposerFeedback` adapts a session to the chat composer's optional `feedback` prop
 // (registry/pi-chat): ONE annotate toggle and a count chip, structurally, so neither item imports the other.
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { MicIcon, SquareIcon, XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -357,14 +357,14 @@ function pointsInstead(): boolean {
  * this listens on the window's capture phase BEFORE the session starts, and ends the mode (Done: the notes wait for Send) when no pin is
  * open. From the review, `resume` keeps the notes, anchors and save guards: a second round adds to the same draft.
  */
-function startAnnotating(session: FeedbackSession): void {
+function startAnnotating(session: FeedbackSession, mode: 'point' | undefined = pointsInstead() ? 'point' : undefined): void {
   const view = globalThis.window;
   const onKey = (event: globalThis.KeyboardEvent): void => {
     // Esc that ends annotating is spent: a host layer around the composer (a panel that closes on Esc) must not also react to it.
     if (event.key === 'Escape' && !session.getSnapshot().bubble) { event.preventDefault(); event.stopPropagation(); void session.done(); }
   };
   view?.addEventListener('keydown', onKey, { capture: true });
-  session.resume(pointsInstead() ? { mode: 'point' } : {});
+  session.resume(mode ? { mode } : {});
   const stop = session.subscribe(() => {
     if (session.getSnapshot().phase === 'active') return;
     view?.removeEventListener('keydown', onKey, { capture: true });
@@ -406,4 +406,33 @@ export function useComposerFeedback(session: FeedbackSession | undefined): Compo
 const NO_STATE = { getSnapshot: () => undefined, subscribe: () => () => {} };
 function useSyncState(session: FeedbackSession | undefined): FeedbackSessionSnapshot | undefined {
   return useExternal<FeedbackSessionSnapshot | undefined>(session ?? NO_STATE);
+}
+
+/** What `usePointComments` returns: the structural shape of the maquette viewer's `MaquetteComments` (any viewer may take it). */
+export interface PointCommentsProp {
+  /** The session is annotating now (point mode or feedback mode). */
+  readonly active: boolean;
+  /** Point mode on the page, keeping the notes already taken (from the review too); Done when it is on. Esc ends it like the composer's toggle. */
+  readonly point: () => void;
+  /** Every pin with a marked element: its number and the `data-feedback-id` it sits in (`SessionNote.feedbackId`). */
+  readonly pins: readonly { readonly number: number; readonly target: string }[];
+}
+
+/**
+ * Comment pins for a viewer inside the page (the maquette viewer's `comments`): the same session, notes, bubble, review and Send as the
+ * composer's toggle, entered in point mode from the viewer's own icon. A viewer marks its parts with `data-feedback-id` and matches the
+ * pins on them. Undefined without a session, so the viewer shows no icon.
+ */
+export function usePointComments(session: FeedbackSession | undefined): PointCommentsProp | undefined {
+  const state = useSyncState(session);
+  // One object per session state, so a host that puts it in a memoized kind list re-renders only when the pins or the mode change.
+  return useMemo(() => !session || !state ? undefined : {
+    active: state.phase === 'active' || state.phase === 'processing',
+    point: () => {
+      const phase = session.getSnapshot().phase;
+      if (phase === 'active') void session.done();
+      else if (phase === 'idle' || phase === 'review') startAnnotating(session, 'point');
+    },
+    pins: state.notes.flatMap(note => note.feedbackId ? [{ number: note.number, target: note.feedbackId }] : []),
+  }, [session, state]);
 }

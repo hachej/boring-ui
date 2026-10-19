@@ -2,7 +2,9 @@
 
 // One maquette screen drawn from the host's own shadcn components: each catalogue type is a real Button, Input, NativeSelect, Badge, Table,
 // Item, Card or Bubble, so a mock-up looks like the app it announces. A type the catalogue does not know becomes a named placeholder
-// (a grey dashed Empty). Blocks with a goto open their screen; the item's CSS gives them a soft ring on hover and focus.
+// (a grey dashed Empty). Blocks with a goto open their screen; the item's CSS gives them a soft ring on hover and focus. Each block sits
+// in a box marked `data-feedback-id` (the maquette path, screen id and block id), so a note pinned on it with the feedback item's point mode
+// says exactly which block it is about; the screen is a `data-feedback-visible` region, so the block's words go with the note.
 import type { ReactNode, Ref } from 'react';
 import { BoxIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -21,8 +23,16 @@ import type { MaquetteLabels } from './maquette-labels';
 
 /** Opens a screen by id. */
 export type MaquetteGo = (screen: string) => void;
-/** How a block reaches other screens: `go` opens one, `hint` names where a goto leads (the button's tooltip). */
-export interface MaquetteLinks { readonly go: MaquetteGo; readonly hint: (screen: string) => string }
+/**
+ * How a block reaches other screens: `go` opens one, `hint` names where a goto leads (the button's tooltip). `target` is a block's
+ * `data-feedback-id` and `pins` the numbers of the comment pins on it (none while point mode draws its own).
+ */
+export interface MaquetteLinks {
+  readonly go: MaquetteGo;
+  readonly hint: (screen: string) => string;
+  readonly target: (block: MaquetteBlock) => string;
+  readonly pins: (block: MaquetteBlock) => readonly number[];
+}
 
 const SKELETON = [92, 100, 64];
 
@@ -48,8 +58,16 @@ function GotoButton({ block, links, label }: { readonly block: MaquetteBlock; re
   </Button>;
 }
 
-/** One block and its children. */
+/** One block and its children, in its marked box with its comment pins. */
 export function MaquetteBlockView({ block, links, labels }: { readonly block: MaquetteBlock; readonly links: MaquetteLinks; readonly labels: MaquetteLabels }): ReactNode {
+  const pins = links.pins(block);
+  return <div data-testid="maquette-block" data-block={block.id} data-feedback-id={links.target(block)} className="relative min-w-0">
+    <BlockBody block={block} links={links} labels={labels} />
+    {pins.length > 0 && <Badge data-testid="maquette-pin" data-feedback-ignore="" aria-hidden="true" className="absolute -top-2 -right-2 tabular-nums">{pins.join(' ')}</Badge>}
+  </div>;
+}
+
+function BlockBody({ block, links, labels }: { readonly block: MaquetteBlock; readonly links: MaquetteLinks; readonly labels: MaquetteLabels }): ReactNode {
   const children = block.children.map((child, index) => <MaquetteBlockView key={index} block={child} links={links} labels={labels} />);
   switch (block.type) {
     case 'heading': return <h4 className="m-0 text-base font-semibold text-balance">{block.label}</h4>;
@@ -101,7 +119,7 @@ export function MaquetteScreenView({ maquette, screen, links, labels, headingRef
   readonly maquette: Maquette; readonly screen: MaquetteScreen; readonly links: MaquetteLinks; readonly labels: MaquetteLabels;
   readonly headingRef?: Ref<HTMLHeadingElement> | undefined;
 }) {
-  return <div data-testid="maquette-screen" data-screen={screen.id} className="flex min-w-0 flex-col gap-4">
+  return <div data-testid="maquette-screen" data-screen={screen.id} data-feedback-visible="" className="flex min-w-0 flex-col gap-4">
     {maquette.nav.length > 0 && <>
       <nav aria-label={labels.appNavigation} className="flex flex-wrap gap-1">
         {maquette.nav.map(item => <Button key={item.goto} type="button" size="sm" variant={item.goto === screen.id ? 'secondary' : 'ghost'} className="pointer-coarse:min-h-11"
