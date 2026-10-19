@@ -22,5 +22,6 @@ export interface SharedChatState {
   readonly me: Member;
   readonly members: readonly Member[];
   readonly messages: readonly ChannelMessage[];
+  readonly files: readonly File[];
   readonly status: 'live' | 'reconnecting' | 'offline';
 }

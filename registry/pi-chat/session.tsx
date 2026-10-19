@@ -258,7 +258,9 @@ export function useChatSession(options: ChatSessionOptions) {
   };
   /** Uploads files; `restore` (a pasted text) is what their pending cards undo: it abandons the upload and puts the text back. */
   async function upload(files: readonly File[], paste?: { readonly restore: () => void; readonly after: string }) {
-    if ((!onFiles && !attachments) || !files.length || !current()) return;
+    if (!files.length || !current()) return;
+    if (state.shared && controller.setFiles) { controller.setFiles([...state.shared.files, ...files]); return; }
+    if (!onFiles && !attachments) return;
     const abort = new AbortController(); uploads.current.add(abort); setUploading(value => value + 1);
     const ids = files.map(() => `upload-${++uploadIds.current}`);
     const settle = (failure?: string) => setPending(items => failure === undefined ? items.filter(item => !ids.includes(item.id))
@@ -362,11 +364,12 @@ export function useChatSession(options: ChatSessionOptions) {
     onRemoveAttachment: (id: string) => controller.setAttachments(controller.getSnapshot().draft.attachments.filter(item => item.id !== id)),
     working, sendBlocked, disabled: state.disposed, stopRequested: state.stop === 'requested',
     onSend: send, onStop: () => act(controller.stop),
-    uploading: uploading > 0, canAttach: Boolean(onFiles || attachments), fileAccept: attachments ? attachments.accept ?? '' : fileAccept, onPickFiles: (files: readonly File[]) => { void upload(files); },
+    hasFiles: Boolean(state.shared?.files.length),
+    uploading: uploading > 0, canAttach: Boolean(state.shared || onFiles || attachments), fileAccept: attachments ? attachments.accept ?? '' : fileAccept, onPickFiles: (files: readonly File[]) => { void upload(files); },
     slash, onSlashError: report, mentions, mentionPaths: picked, onMentionPicked: (path: string) => setPicked(value => value.includes(path) ? value : [...value, path]),
     uploads: pending, onDismissUpload: (id: string) => setPending(items => items.filter(item => item.id !== id)),
     onPasteText: attachments ? pasteText : undefined, pasteToFile,
-    feedback, chips: composerChips,
+    feedback, chips: state.shared ? <>{composerChips}{state.shared.files.map((file, index) => <Badge key={index} variant="secondary">{file.name}<Button variant="ghost" size="icon" aria-label={labels.remove(file.name)} onClick={() => controller.setFiles?.(state.shared!.files.filter((_, at) => at !== index))}><span aria-hidden="true">×</span></Button></Badge>)}</> : composerChips,
   };
 
   return { state, derived, rows, queued, queueActions, working, waitingForAnswer, connected, sendBlocked, error, setError, report, act, current, textarea, rowContext, composer, files, pickers, empty, loading, developer };

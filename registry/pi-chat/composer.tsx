@@ -77,6 +77,8 @@ export interface ComposerProps {
   readonly text: string;
   readonly onText: (text: string) => void;
   readonly attachments: readonly ComposerAttachment[];
+  /** Files retained by a shared host source, sent with the message instead of uploaded separately. */
+  readonly hasFiles?: boolean;
   readonly onRemoveAttachment: (id: string) => void;
   /** The agent is working: the primary button stops it and Enter queues the message (steering is chosen on the queued message). */
   readonly working: boolean;
@@ -224,7 +226,7 @@ export function Composer(props: ComposerProps) {
   const onChange = (event: ChangeEvent<HTMLTextAreaElement>) => { trackCaret(event.currentTarget); props.onText(event.currentTarget.value); };
 
   const { feedback } = props;
-  const hasContent = text.trim().length > 0 || attachments.length > 0 || (feedback?.count ?? 0) > 0;
+  const hasContent = text.trim().length > 0 || attachments.length > 0 || props.hasFiles || (feedback?.count ?? 0) > 0;
   const canSubmit = hasContent && !sendBlocked && !disabled;
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     props.onKeyDown?.(event);

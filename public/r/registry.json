@@ -396,11 +396,13 @@
         "@earendil-works/pi-ai@~1.2.0",
         "@modelcontextprotocol/sdk@^1.32.1",
         "lucide-react@^1.51.0",
-        "@shadcn/react@0.3.1"
+        "@shadcn/react@0.3.1",
+        "zod@^4.6.5"
       ],
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.2/r/utils.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.2/r/button.json",
+        "tooltip",
         "trace",
         "message",
         "message-scroller",
@@ -485,6 +487,16 @@
           "path": "registry/pi-chat/markdown.tsx",
           "type": "registry:component",
           "target": "components/pi-chat/markdown.tsx"
+        },
+        {
+          "path": "registry/pi-chat/shared.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat/shared.tsx"
+        },
+        {
+          "path": "registry/pi-chat/use-shared-chat.ts",
+          "type": "registry:hook",
+          "target": "components/pi-chat/use-shared-chat.ts"
         },
         {
           "path": "registry/pi-chat/mention-menu.tsx",

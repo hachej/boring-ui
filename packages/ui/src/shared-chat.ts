@@ -16,6 +16,7 @@ export type ChatController = Pick<NativeChatController, 'subscribe' | 'setText' 
   readonly send: (whenBusy?: ChatAttempt['whenBusy'], input?: ChatSendInput) => Promise<unknown>;
   readonly reconcile: () => Promise<unknown>;
   readonly retrySameRequest: () => Promise<unknown>;
+  readonly setFiles?: (files: readonly File[]) => void;
   readonly action?: (card: Card) => Promise<void>;
   readonly remove?: ((message: ChannelMessage) => Promise<void>) | undefined;
   readonly canRemove?: (message: ChannelMessage) => boolean;
@@ -26,11 +27,12 @@ export function createSharedChat(source: ChannelSource, options: { readonly conv
   const id = options.conversationId, limit = options.limit ?? 60;
   let snapshot: SharedChatSnapshot = Object.freeze<SharedChatSnapshot>({ identity: { runtimeId: 'shared-chat', scopeId: id, principalId: source.me.id }, conversationId: id,
     connection: { kind: 'idle' }, draft: { text: '', attachments: [], version: 0 }, outbox: [], history: { kind: 'idle' }, send: { kind: 'idle' }, stop: 'idle', disposed: false,
-    shared: { me: structuredClone(source.me), members: [], messages: [], status: 'reconnecting' } });
+    shared: { me: structuredClone(source.me), members: [], messages: [], files: [], status: 'reconnecting' } });
   const listeners = new Set<() => void>();
   const outbox = createChatOutbox<Parameters<ChannelSource['send']>[0], ChannelMessage>();
   let unsubscribe: (() => void) | undefined, opening: Promise<void> | undefined, paging: Promise<void> | undefined, before: string | undefined;
   let revision = 0;
+  const changed = new Map<string, number>();
   const publish = (change: Partial<SharedChatSnapshot>) => {
     if (snapshot.disposed) return;
     snapshot = Object.freeze({ ...snapshot, ...change });
@@ -47,14 +49,16 @@ export function createSharedChat(source: ChannelSource, options: { readonly conv
       if (message.clientId) for (const [key, value] of byId) if (value.clientId === message.clientId && key !== message.id) byId.delete(key);
       byId.set(message.id, structuredClone(message));
     }
-    publish({ shared: { ...snapshot.shared, messages: [...byId.values()] } });
+    publish({ shared: { ...snapshot.shared, messages: [...byId.values()].sort((a, b) => Date.parse(a.at) - Date.parse(b.at)) } });
   };
   const acknowledge = (message: ChannelMessage) => {
+    if (message.conversationId !== id || snapshot.disposed) return;
+    changed.set(message.id, ++revision);
     merge([message]);
     if (message.clientId) outbox.resolve(message.clientId, message);
   };
   const sendOne = (clientId: string, input: Parameters<ChannelSource['send']>[0]) => {
-    void source.send(structuredClone(input)).then(message => {
+    void source.send({ ...input, mentions: [...input.mentions], ...(input.attachments ? { attachments: [...input.attachments] } : {}) }).then(message => {
       if (snapshot.disposed) return;
       if (message.conversationId !== id || message.clientId !== clientId) throw new Error('Shared send returned another clientId or conversation');
       acknowledge(message);
@@ -73,7 +77,7 @@ export function createSharedChat(source: ChannelSource, options: { readonly conv
       const started = revision;
       const page = await source.history(id, { limit, ...(cursor ? { before: cursor } : {}) });
       if (snapshot.disposed) return;
-      merge(page.messages, started !== revision || cursor !== undefined);
+      merge(page.messages.filter(message => (changed.get(message.id) ?? 0) <= started));
       if (!known.size && cursor === undefined) before = page.before;
       if (!page.before || !known.size || page.messages.some(message => known.has(message.id))) break;
       if (seen.has(page.before)) throw new Error('Channel history cursor did not progress');
@@ -82,11 +86,12 @@ export function createSharedChat(source: ChannelSource, options: { readonly conv
     publish({ history: { kind: 'ready', entries: [], hasMore: before !== undefined } });
   }
   const event = (event: ChannelEvent) => {
+    if (snapshot.disposed) return;
     revision++;
     if (event.type === 'message') acknowledge(event.message);
     else if (event.type === 'delta' && event.conversationId === id) {
       const message = snapshot.shared.messages.find(message => message.id === event.messageId);
-      if (message) merge([{ ...message, text: (message.text ?? '') + event.text, streaming: true }]);
+      if (message) { changed.set(message.id, revision); merge([{ ...message, text: (message.text ?? '') + event.text, streaming: true }]); }
     } else if (event.type === 'presence') {
       publish({ shared: { ...snapshot.shared, members: snapshot.shared.members.map(member => {
         const update = event.members.find(update => update.id === member.id);
@@ -107,6 +112,7 @@ export function createSharedChat(source: ChannelSource, options: { readonly conv
     subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
     setText: (text: string) => { active(); publish({ draft: { ...snapshot.draft, text, version: snapshot.draft.version + 1 } }); },
     setAttachments: (attachments: ChatDraft['attachments']) => { active(); publish({ draft: { ...snapshot.draft, attachments, version: snapshot.draft.version + 1 } }); },
+    setFiles: (files: readonly File[]) => { active(); publish({ shared: { ...snapshot.shared, files: [...files] } }); },
     clearHistory: () => { active(); },
     loadEarlier: (): Promise<void> => {
       active();
@@ -134,20 +140,21 @@ export function createSharedChat(source: ChannelSource, options: { readonly conv
         if (snapshot.disposed) return;
         if (started === revision || !snapshot.shared.members.length) publish({ shared: { ...snapshot.shared, members: structuredClone(members) } });
         await refresh();
-        status('live');
+        if (!snapshot.disposed) publish({ connection: { kind: snapshot.shared.status === 'live' ? 'connected' : 'reconnecting' } });
       }).catch(error => { unsubscribe?.(); unsubscribe = undefined; publish({ connection: { kind: 'error', error } }); }).finally(() => { opening = undefined; });
       return opening;
     },
     send: async (_whenBusy?: ChatAttempt['whenBusy'], input?: ChatSendInput): Promise<ChannelMessage | undefined> => {
       active();
       const selected = input ?? snapshot.draft;
-      if (!selected.text.trim() && !selected.attachments?.length) return;
+      const files = [...snapshot.shared.files];
+      if (!selected.text.trim() && !selected.attachments?.length && !files.length) return;
       if (selected.attachments?.length) throw new Error('Use shared file attachments, not native image payloads');
       const clientId = randomUUID();
       const mentions = snapshot.shared.members.filter(member => hasMemberMention(selected.text, member)).map(member => member.id);
-      const payload = { conversationId: id, text: selected.text, mentions, clientId };
+      const payload = { conversationId: id, text: selected.text, mentions, clientId, ...(files.length ? { attachments: files } : {}) };
       const result = outbox.enqueue(clientId, payload);
-      publish({ ...(!input ? { draft: { text: '', attachments: [], version: snapshot.draft.version + 1 } } : {}), send: { kind: 'submitting' } });
+      publish({ shared: { ...snapshot.shared, files: [] }, ...(!input ? { draft: { text: '', attachments: [], version: snapshot.draft.version + 1 } } : {}), send: { kind: 'submitting' } });
       sendOne(clientId, payload);
       try { const message = await result; publish({ send: { kind: 'admitted' } }); return message; }
       catch { return undefined; }
@@ -173,7 +180,7 @@ export function createSharedChat(source: ChannelSource, options: { readonly conv
 }
 export type SharedChatController = ReturnType<typeof createSharedChat>;
 
-/** The composer uses the existing quoted @ token grammar. Names are display text; only resolved member ids leave the adapter. */
+/** The composer uses the existing quoted @ token grammar. Tokens carry stable member ids; picker labels show names. */
 export function memberMention(member: Member): string {
   return /[\s"\\]/.test(member.id) ? `@"${member.id.replace(/[\\"]/g, '\\$&')}"` : `@${member.id}`;
 }

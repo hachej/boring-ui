@@ -1,5 +1,9 @@
 # Unreleased (0.4.3)
 
+- Shared conversations reuse `AgentWorkspace layout="embedded"`, `PiChat`, its composer and History. `@hachej/boring-ui-kit/shared-chat` exports `createSharedChat`, `createChannelSocket`, `createFakeChannelSource` and the host channel types. The registry adds `useSharedChat`.
+- `PiChat` and `AgentWorkspace` accept the additive `ChatController` presentation contract. Existing concrete native controllers and single-user behavior are unchanged. Shared metadata adds author groups, request cards, member mentions, presence and live status. The host owns all policy and every agent's Pi conversation.
+- Copied `pi-chat` now also needs shadcn `tooltip` and the existing optional `zod` peer. Regenerate or update the registry copy to install `shared.tsx` and `use-shared-chat.ts`. See [Shared conversations](registry/README.md#shared-conversations) for source shapes, routes and idempotent `clientId` requirements.
+
 Non-breaking for files and props: older `*.maquette.json` files read unchanged, and a page that passes none of the new props renders as before.
 `maquette-viewer` now also needs the new `diagram-viewer` item and the `toggle` and `tooltip` shadcn components; `pi-app` installs `diagram-viewer`.
 

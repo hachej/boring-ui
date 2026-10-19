@@ -67,6 +67,10 @@ jobs:
         run: npm run workspace-app:journey
         env:
           APP_EVIDENCE: ${{ runner.temp }}/evidence/workspace-app
+      - name: Shared conversation in the existing embedded workspace
+        run: npm run shared-chat:journey
+        env:
+          SHARED_CHAT_EVIDENCE: ${{ runner.temp }}/evidence/shared-chat
       - name: Document draft recovery with IndexedDB
         run: npm run draft-recovery:journey
       - name: File tree, mentions, uploads and revision history
