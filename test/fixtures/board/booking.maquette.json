@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "title": "Harbour Lane Climbing: session booking",
+  "device": "phone",
+  "start": "sessions",
+  "screens": {
+    "sessions": {
+      "title": "Open sessions",
+      "note": "Where a climber lands: this week's sessions with places left.",
+      "blocks": [
+        { "type": "heading", "label": "Book a session" },
+        { "type": "text", "label": "Fictional bouldering sessions at the invented Harbour Lane wall." },
+        { "type": "select", "label": "Day", "items": ["Any day", "Monday", "Wednesday", "Saturday"] },
+        { "type": "list", "items": ["Beginners, Mon 18:00, 4 left", "Open wall, Wed 19:30, 9 left", "Youth club, Sat 10:00, full"] },
+        { "type": "button", "label": "Beginners, Mon 18:00", "goto": "details", "primary": true }
+      ]
+    },
+    "details": {
+      "title": "Session details",
+      "note": "What the climber checks before paying: level, gear, price.",
+      "blocks": [
+        { "type": "heading", "label": "Beginners, Monday 18:00" },
+        { "type": "badge", "label": "4 places left" },
+        { "type": "card", "label": "What to bring", "children": [
+          { "type": "text", "label": "Shoes and chalk are lent at the desk. Arrive ten minutes early for the safety talk." }
+        ] },
+        { "type": "input", "label": "Name", "placeholder": "Alex Placeholder" },
+        { "type": "row", "children": [
+          { "type": "button", "label": "Back", "goto": "sessions" },
+          { "type": "button", "label": "Confirm booking", "goto": "confirmed", "primary": true }
+        ] }
+      ]
+    },
+    "confirmed": {
+      "title": "Booking confirmed",
+      "note": "The end of the flow: the booking and how to cancel.",
+      "blocks": [
+        { "type": "heading", "label": "You're booked" },
+        { "type": "text", "label": "Beginners, Monday 18:00. A reminder arrives the evening before." },
+        { "type": "document", "label": "Booking HL-0042", "lines": ["Session: Beginners", "When: Monday 18:00", "Price: 12.00 (fictional)"] },
+        { "type": "link", "label": "Book another session", "goto": "sessions" }
+      ]
+    }
+  }
+}
