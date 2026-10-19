@@ -8,7 +8,7 @@ Registry blocks compose the host's real shadcn components through `@/components/
 
 Blocks carry no visual value of their own: colour, font, shadow, radius, border width or motion. They read shadcn tokens and the documented kit tokens `--shell` and `--overlay`. An app restyles every block by setting its core theme tokens, never the derived tokens, following boring-stack's `boring-design-system` skill. Presentation is a host concern, not a Pi execution extension.
 
-The exception reasons have one owner, [scripts/design-allowlist.json](scripts/design-allowlist.json): Markdown document content, the browser-rendered PDF document and layout metrics including gaps, widths and 44px touch targets. None exempts editor or viewer controls. Its `allow` entries name exact files, rules and patterns; the optional registry theme alone may define default visual values.
+The exception reasons have one owner, [scripts/design-allowlist.json](scripts/design-allowlist.json): Markdown document content, the browser-rendered PDF document, pinned upstream compiler input used only inside opaque mock-up frames, and layout metrics including gaps, widths and 44px touch targets. None exempts editor or viewer controls. Its `allow` entries name exact files, rules and patterns; the optional registry theme alone may define default visual values.
 
 [Design verification](registry/README.md#design-verification) records the migration boundary. Unmigrated groups report violations; a migrated group fails both static and browser checks. REPORT is not conformance and does not discharge the remaining groups.
 

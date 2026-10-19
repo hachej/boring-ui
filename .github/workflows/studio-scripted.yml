@@ -71,6 +71,10 @@ jobs:
         run: npm run shared-chat:journey
         env:
           SHARED_CHAT_EVIDENCE: ${{ runner.temp }}/evidence/shared-chat
+      - name: Sandboxed HTML mock-ups, theme and element comments
+        run: npm run mockup:journey
+        env:
+          APP_EVIDENCE: ${{ runner.temp }}/evidence/mockup-html
       - name: Document draft recovery with IndexedDB
         run: npm run draft-recovery:journey
       - name: File tree, mentions, uploads and revision history
@@ -81,6 +85,16 @@ jobs:
         run: npm run canvas:journey:proposals
       - name: Authenticated remote canvas commands
         run: npm run canvas:journey:remote
+      - name: Board artifact projection, conditional saves and phone read-only input
+        run: npm run board:journey
+      - name: Board viewer evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: board-viewer-evidence
+          path: .cache/evidence/feat-board-viewer
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Consumer task-list viewer
         run: npm run task-list:journey
       - name: Fictional morning experience

@@ -6,11 +6,11 @@
 - Shared data adds optional `Card.state`, `ChannelMessage.steps` and the indexed `step` event. `Step` and `channelAvatarStates` are exported. Avatar indicators reflect the latest card; the existing activity/tool Trace renders live and collapsed steps. The host strips `detail` outside Admin; the renderer shows whatever arrives.
 - Copied `pi-chat` now also needs shadcn `tooltip` and the existing optional `zod` peer. Regenerate or update the registry copy to install `shared.tsx` and `use-shared-chat.ts`. See [Shared conversations](registry/README.md#shared-conversations) for source shapes, routes and idempotent `clientId` requirements.
 
+- New `board-viewer` block: `createBoardKind({ client, identity, assetUrls, licenseKey })` renders `*.board.json` in the artifact panel. It lazily projects maquette screens, sandboxed HTML mock-ups, goto arrows and notes through `CanvasProjection` from `@hachej/boring-ui-kit/canvas-editor`. Saves contain only `board@1`, conditional on the shown revision. Pinned versions and phones are read-only. Install the block and pass the kind in `artifactKinds`; hosts supply their asset URLs and license key. The parser/planner exports remain available. See [registry/README.md](registry/README.md#board-format-board-viewer).
+
 Non-breaking. `CanvasEditor` now loads `tldraw/tldraw.css` itself, lazily with the canvas, so a host may stop importing it globally. Self-hosting tldraw's fonts, icons and translations is a host recipe ([UI guide](packages/ui/README.md#optional-react-canvas-editor), `examples/canvas-assets`); hosts that already pass a complete `assetUrls` map need no change.
 
-- New `board-viewer` registry item (library code only, no viewer yet): the `board@1` format for `*.board.json` files, with a strict parser
-  (`parseBoard`), the planner (`planBoard`) and the edit round-trip (`applyCanvasEdits`, `serializeBoard`). Installed next to `maquette-viewer`,
-  which it reads. See [registry/README.md](registry/README.md#board-format-board-viewer).
+- `pi-app` now renders `*.mockup.html` with the built-in `mockup-viewer` item. Re-add `pi-app` to install its dependency and pinned Tailwind compiler. `mockupKind` and `createMockupKind` are exported. Other HTML stays passive unless the host opts in. See the registry README for sandbox CSP requirements. `usePointComments` adds `pick`, `picking` and `reposition` for host-owned frame proxies; existing maquette comments are unchanged. `ArtifactKindViewProps.onReady` lets the asynchronous mock-up report its actual load before a presentation acknowledgement.
 
 Non-breaking for files and props: older `*.maquette.json` files read unchanged, and a page that passes none of the new props renders as before.
 `maquette-viewer` now also needs the new `diagram-viewer` item and the `toggle` and `tooltip` shadcn components; `pi-app` installs `diagram-viewer`.

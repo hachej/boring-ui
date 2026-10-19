@@ -410,6 +410,11 @@ function useSyncState(session: FeedbackSession | undefined): FeedbackSessionSnap
 
 /** What `usePointComments` returns: the structural shape of the maquette viewer's `MaquetteComments` (any viewer may take it). */
 export interface PointCommentsProp {
+  /** A host-owned proxy element for an opaque frame pick, checked by the session's root and privacy policy. */
+  readonly pick: (element: Element) => void;
+  readonly reposition: () => void;
+  /** Clicks are currently captured, false during Use app or processing. */
+  readonly picking: boolean;
   /** The session is annotating now (point mode or feedback mode). */
   readonly active: boolean;
   /** Point mode on the page, keeping the notes already taken (from the review too); Done when it is on. Esc ends it like the composer's toggle. */
@@ -428,6 +433,9 @@ export function usePointComments(session: FeedbackSession | undefined): PointCom
   // One object per session state, so a host that puts it in a memoized kind list re-renders only when the pins or the mode change.
   return useMemo(() => !session || !state ? undefined : {
     active: state.phase === 'active' || state.phase === 'processing',
+    pick: session.pick,
+    reposition: session.reposition,
+    picking: state.phase === 'active' && !state.using,
     point: () => {
       const phase = session.getSnapshot().phase;
       if (phase === 'active') void session.done();

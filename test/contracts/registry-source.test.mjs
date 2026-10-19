@@ -16,7 +16,7 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 // Items written in Tailwind, installed into their own folder, rather than recipes over a headless @hachej/boring-ui-kit controller.
 const manifest = registrySchema.parse(JSON.parse(readFileSync(join(root, 'registry.json'), 'utf8')));
 // Tailwind items bring owned source with shadcn tokens: every rule is scoped to the item's root class and lives in the base or components layer.
-const TAILWIND = { 'version-history': { scope: '[data-boring="version-history"]', keyframes: /^$/, folder: 'version-history' }, 'file-tree': { scope: '[data-boring="file-tree"]', keyframes: /^$/, folder: 'file-tree' }, button: { scope: '.pi-chat', keyframes: /^$/, folder: 'button' }, utils: { scope: '.pi-chat', keyframes: /^$/, folder: 'utils' }, 'pi-chat': { scope: '.pi-chat', keyframes: /^@keyframes pi-chat-/, folder: 'pi-chat' }, 'pi-ambient': { scope: '.pi-chat', keyframes: /^@keyframes pi-ambient-/, folder: 'pi-ambient' }, dock: { scope: '.pi-chat', keyframes: /^$/, folder: 'dock' }, 'pi-workspace': { scope: '.pi-chat', keyframes: /^@keyframes pi-workspace-/, folder: 'pi-workspace' }, 'pi-app': { scope: '.pi-chat', keyframes: /^@keyframes pi-app-/, folder: 'pi-app' }, viewers: { scope: '.boring-viewer', keyframes: /^@keyframes boring-viewer-/, folder: 'viewers' }, 'provider-setup': { scope: '.provider-setup', keyframes: /^@keyframes provider-setup-/, folder: 'provider-setup' }, 'app-shell': { scope: '.app-shell', keyframes: /^$/, folder: 'app-shell' }, documents: { scope: '.app-shell', keyframes: /^$/, folder: 'documents' }, 'maquette-viewer': { scope: '[data-boring="maquette-viewer"]', keyframes: /^$/, folder: 'maquette-viewer' }, 'diagram-viewer': { scope: '[data-boring="diagram-viewer"]', keyframes: /^$/, folder: 'diagram-viewer' } };
+const TAILWIND = { 'mockup-viewer': { scope: '[data-boring="mockup-viewer"]', keyframes: /^$/, folder: 'mockup-viewer' }, 'version-history': { scope: '[data-boring="version-history"]', keyframes: /^$/, folder: 'version-history' }, 'file-tree': { scope: '[data-boring="file-tree"]', keyframes: /^$/, folder: 'file-tree' }, button: { scope: '.pi-chat', keyframes: /^$/, folder: 'button' }, utils: { scope: '.pi-chat', keyframes: /^$/, folder: 'utils' }, 'pi-chat': { scope: '.pi-chat', keyframes: /^@keyframes pi-chat-/, folder: 'pi-chat' }, 'pi-ambient': { scope: '.pi-chat', keyframes: /^@keyframes pi-ambient-/, folder: 'pi-ambient' }, dock: { scope: '.pi-chat', keyframes: /^$/, folder: 'dock' }, 'pi-workspace': { scope: '.pi-chat', keyframes: /^@keyframes pi-workspace-/, folder: 'pi-workspace' }, 'pi-app': { scope: '.pi-chat', keyframes: /^@keyframes pi-app-/, folder: 'pi-app' }, viewers: { scope: '.boring-viewer', keyframes: /^@keyframes boring-viewer-/, folder: 'viewers' }, 'provider-setup': { scope: '.provider-setup', keyframes: /^@keyframes provider-setup-/, folder: 'provider-setup' }, 'app-shell': { scope: '.app-shell', keyframes: /^$/, folder: 'app-shell' }, documents: { scope: '.app-shell', keyframes: /^$/, folder: 'documents' }, 'maquette-viewer': { scope: '[data-boring="maquette-viewer"]', keyframes: /^$/, folder: 'maquette-viewer' }, 'diagram-viewer': { scope: '[data-boring="diagram-viewer"]', keyframes: /^$/, folder: 'diagram-viewer' } };
 // The feedback item imports the package's browser entries directly (no copied validators), React and React DOM (a portal); nothing from store, agent or source.
 const FEEDBACK_IMPORTS = new Set(['react', 'react-dom', 'lucide-react', '@hachej/boring-feedback/format', '@hachej/boring-feedback/page', '@hachej/boring-feedback/ui', '@hachej/boring-feedback/preview']);
 // The feedback item is a plug-in of its host pi-chat (owner ruling 6): its card and voice button import pi-chat's rows and labels and utils
@@ -156,7 +156,13 @@ test('registry dependency pins and scoped styles preserve the declared source di
           assert.ok(declared.has(pkg), `${file.path} imports ${imported} which the item does not declare`);
           assert.ok(!/^(ai|@ai-sdk\/.*)$/.test(pkg), 'No AI SDK');
         }
-        assert.doesNotMatch(source, /dangerouslySetInnerHTML|eval\s*\(|new Function|<script\b/);
+        assert.doesNotMatch(source, /dangerouslySetInnerHTML|eval\s*\(|new Function/);
+        // Only this sandbox-document builder contains the trusted pick script. Public/browser tests prove it stays in InteractiveFrame.
+        if (file.path === 'registry/mockup-viewer/mockup-frame.ts') {
+          assert.match(source, /export function mockupContent\(/);
+          assert.match(source, /const PICK = `<script>/);
+          assert.doesNotMatch(source, /from ['"]react|createElement|appendChild|contentDocument/);
+        } else assert.doesNotMatch(source, /<script\b/);
       }
       continue;
     }
@@ -191,7 +197,7 @@ test('registry dependency pins and scoped styles preserve the declared source di
       continue;
     }
     const prefix = { 'markdown-editor': '.boring-markdown-recipe[data-boring=\"markdown-editor\"]', chat: '.boring-chat-recipe[data-boring=\"chat\"]', 'html-viewer': '.boring-html-recipe[data-boring=\"html-viewer\"]', 'file-tree': '[data-boring=\"file-tree\"]', 'task-list-viewer': '.boring-task-list-recipe[data-boring=\"task-list-viewer\"]' }[item.name];
-    // A library item with no styles (board-viewer) has no css to scope; its files are still checked below.
+    // Items without CSS still validate every shipped source and dependency.
     if (item.css) {
       assert.ok(prefix);
       for (const selector of Object.keys(item.css)) {
@@ -209,6 +215,14 @@ test('registry dependency pins and scoped styles preserve the declared source di
         if (sibling) {
           const dependency = manifest.items.find(entry => entry.name === sibling[1]);
           assert.ok(dependency && item.registryDependencies?.includes('@boring-ui/' + dependency.name) && dependency.files.some(entry => entry.path.replace(/\.tsx?$/, '') === `registry/${dependency.name}/${sibling[2]}`), `${file.path} imports unshipped or undeclared ${imported}`);
+          continue;
+        }
+        if (item.name === 'board-viewer' || item.name === 'mockup-viewer') {
+          if (imported.startsWith('./')) assert.ok(item.files.some(entry => entry.path.replace(/\.tsx?$/, '').endsWith('/' + imported.slice(2))), `${file.path} imports unshipped ${imported}`);
+          else {
+            const pkg = imported.startsWith('@') ? imported.split('/').slice(0, 2).join('/') : imported.split('/')[0];
+            assert.ok(declared.has(pkg) || architecture.sourceDistribution.runtimeImports.includes(imported), `${file.path} imports undeclared ${imported}`);
+          }
           continue;
         }
         if (item.name !== 'task-list-viewer') { assert.ok(architecture.sourceDistribution.runtimeImports.includes(imported), imported); continue; }
