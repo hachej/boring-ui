@@ -1,21 +1,31 @@
-# Unreleased (0.4.2)
+# Migrating to 0.4.2
 
-Non-breaking: no export, option or type is removed, and a page that sets none of the new props renders as before.
+0.4.2 is non-breaking: no export, option or type was removed, and a page that sets none of the new props renders as before. Upgrade the registry
+blocks with `npx boring-ui-blocks update --version 0.4.2` (`npx boring-ui-blocks check` first lists the copies you edited; see
+[registry/README.md](registry/README.md#updating-installed-blocks)), and bump the npm pins to `0.4.2`.
 
-- `AgentWorkspace layout="embedded"`: no left column at any width and one compact top bar (title, History, Library, New, then
-  `chat.headerActions` and `controls`); History and Library are popovers on a wide workspace and sheets on a phone. Inside an app-shell
-  screen the bar's buttons join the shell's header. Pages that approximated it with `history="popover"`, `sessions={false}` and their own
-  Library wiring can drop those for `layout="embedded"`. See [registry/README.md](registry/README.md#whole-agent-app-pi-app-agentworkspace).
-- A read-only Library with `resources` alone, when the endpoint is a `createRevisionHandler` route (it then also serves the viewers' reads).
-- `app-shell`'s screen header has a slot for an embedded page's controls (`utils/screen-header-slot.ts`, shipped in the `utils` item).
-- `pi-app` now also needs the shadcn `popover` and `tooltip` components (installed with the item).
-- The `ask_user` question card is built from stock shadcn components only: a default `Card` while it asks, then a default `Item` recap (lucide check, the question as `ItemDescription`, the answer as `ItemTitle`; each answer of a form listed, a skipped one as a description). Props, behaviour and the answer sent to the agent are unchanged. Tests or journeys reading the old markup should select `[data-testid=question-answer]` (one per answer of a form, a skipped one with `data-skipped="true"`) instead of the "Your answer:" text or the `Badge`.
-- Built-in maquette viewer: the `pi-app` artifact panel now draws `*.maquette.json` files (a PM agent's mock-ups, format v1) with the new `maquette-viewer` item instead of showing their JSON. Nothing to change; an app kind for those files in `artifactKinds` still wins, and `maquetteKind` / `createMaquetteKind({ locale })` are exported to rename or translate it. Kind renderers also receive the page's URL `fragment`. See [registry/README.md](registry/README.md#maquette-viewer-maquette-viewer).
-- **Viewer header (Markdown editor and every viewer).** The save status is a dot in the default shadcn roles (primary saved, muted-foreground unsaved
-  or saving, destructive for a refused, conflicting or unconfirmed save); its words are the tooltip and the screen-reader label, and only a destructive status also shows its words. The Rich/Source
-  switch is an outlined icon-only segmented `ToggleGroup` whose pressed segment is filled and the other muted. The "Aa" pin-formatting-toolbar button is
-  removed: `formattingToolbar` (default `pinned`) decides. Selectors: `[data-testid=<id>-status]` keeps its `role=status`
-  and text content, now in `[data-testid=<id>-status-text]`; `ViewerToggleOption` adds `reason`.
+**New shadcn components to install.** `pi-app` now also needs `popover` and `tooltip`, and the new `maquette-viewer` item needs `alert`, `badge`,
+`bubble`, `button`, `card`, `empty`, `input`, `item`, `label`, `native-select`, `separator`, `table`, `dialog`, `dropdown-menu` and `popover`
+(plus `lucide-react`). `boring-ui-blocks update` and `shadcn add` install them with the items; install them yourself if you copied blocks by hand.
+
+- `AgentWorkspace layout="embedded"` and `WorkspaceBar`: no left column at any width and one compact top bar (title, History, Library, New, then
+  `chat.headerActions` and `controls`); History and Library are popovers on a wide workspace and sheets on a phone. Pages that approximated it with
+  `history="popover"`, `sessions={false}` and their own Library wiring can drop those. `app-shell`'s screen header has a slot for an embedded
+  page's controls (`utils/screen-header-slot.ts`, shipped in the `utils` item), so inside an app-shell screen the bar's buttons join the shell's header.
+  See [registry/README.md](registry/README.md#whole-agent-app-pi-app-agentworkspace).
+- Read-only Library: `resources` alone is enough when the endpoint is a `createRevisionHandler` route (it then also serves the viewers' reads).
+- Built-in maquette viewer: the `pi-app` artifact panel draws `*.maquette.json` files (a PM agent's mock-ups, format v1) with the new
+  `maquette-viewer` item instead of showing their JSON. Nothing to change; an app kind for those files in `artifactKinds` still wins.
+  `maquetteKind` / `createMaquetteKind({ locale })` are exported to rename or translate it, and kind renderers also receive the page's URL
+  `fragment`. See [registry/README.md](registry/README.md#maquette-viewer-maquette-viewer).
+- Viewer header (Markdown editor and every viewer): the save status is a dot in the default shadcn roles (primary saved, muted-foreground unsaved
+  or saving, destructive for a refused, conflicting or unconfirmed save); its words are the tooltip and the screen-reader label, and only a destructive
+  status also shows its words. The Rich/Source switch is an outlined icon-only segmented `ToggleGroup`. The "Aa" pin-formatting-toolbar button is
+  removed: `formattingToolbar` (default `pinned`) decides. Selectors: `[data-testid=<id>-status]` keeps its `role=status` and text content, now in
+  `[data-testid=<id>-status-text]`; `ViewerToggleOption` adds `reason`.
+- The `ask_user` question card is built from stock shadcn components only (a default `Card` while it asks, then a default `Item` recap). Props,
+  behaviour and the answer sent to the agent are unchanged. Tests or journeys reading the old markup should select `[data-testid=question-answer]`
+  (one per answer of a form, a skipped one with `data-skipped="true"`) instead of the "Your answer:" text or the `Badge`.
 
 # Migrating to 0.4.1
 
