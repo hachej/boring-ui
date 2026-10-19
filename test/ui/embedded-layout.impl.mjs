@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { build } from 'esbuild';
@@ -22,6 +22,13 @@ test('AgentWorkspace embedded: one bar, no left column, and a Library over resou
   const provider = createWorkspaceProvider({ fs, journal: createWorkspaceJournal(db), identity: { providerId: 'workspace', instanceId: 'fictional', incarnation: fs.incarnation, viewId: 'published' } });
   const handler = createRevisionHandler({ resolve: async () => ({ provider, access, release() {} }) });
   await provider.publication.publish({ operationId: 'seed-notes', atomicity: 'all-or-nothing', changes: [{ kind: 'create', target: { resource: { providerId: 'workspace', path: 'notes.md' }, view: { kind: 'published' } }, expected: { kind: 'absent' }, bytes: new TextEncoder().encode('# Fictional notes\n'), mediaType: 'text/markdown' }] }, access);
+
+  // A maquette and a diagram beside the notes: the Library opens them in their viewers, not as raw JSON.
+  for (const name of ['booking.maquette.json', 'booking.diagram.json']) {
+    const path = name.replace('booking', 'flow');
+    await provider.publication.publish({ operationId: `seed-${path}`, atomicity: 'all-or-nothing', changes: [{ kind: 'create', target: { resource: { providerId: 'workspace', path }, view: { kind: 'published' } }, expected: { kind: 'absent' },
+      bytes: readFileSync(new URL(`../fixtures/${name.split('.')[1]}/${name}`, import.meta.url)), mediaType: 'application/json' }] }, access);
+  }
 
   const window = new Window({ url: 'https://fictional.invalid/', settings: { disableIframePageLoading: true } });
   const names = ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node', 'Text', 'DOMParser', 'MutationObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'ResizeObserver', 'sessionStorage', 'localStorage', 'matchMedia', 'IS_REACT_ACT_ENVIRONMENT', 'confirm'];
@@ -101,6 +108,66 @@ test('AgentWorkspace embedded: one bar, no left column, and a Library over resou
     await settle(() => q('[data-testid=file-viewer]'));
     assert.equal(q('[data-testid=file-viewer]')?.dataset.path, 'notes.md', 'the pick opens in the artifact panel');
     assert.equal(q('[data-testid=workspace-library]'), null, 'the Library closes on a pick');
+  });
+
+  const pickFromLibrary = async path => {
+    await act(async () => bar('library').click());
+    const row = () => q(`[data-testid=workspace-library] [role=treeitem][data-path="${path}"] button`);
+    await settle(row);
+    assert.ok(row(), `the Library lists ${path}`);
+    await act(async () => row().click());
+    await settle(() => q('[data-testid=file-viewer]'));
+  };
+  for (const [path, viewer] of [['flow.maquette.json', 'maquette-walk'], ['flow.diagram.json', 'diagram']]) {
+    await t.test(`a ${path.split('.')[1]} opened from the Library draws its viewer, not raw JSON`, async () => {
+      measured = 1440;
+      await render({ key: `kind-${viewer}` });
+      await settle(() => bar('library'));
+      await pickFromLibrary(path);
+      await settle(() => q(`[data-testid=${viewer}]`));
+      assert.equal(q('[data-testid=file-viewer]').dataset.path, path);
+      assert.ok(q(`[data-testid=${viewer}]`), `${viewer} is drawn`);
+      assert.equal(q('[data-testid=file-preview]'), null, 'no raw text preview');
+    });
+  }
+
+  await t.test('an app kind for *.maquette.json wins over the built-in one in the Library too', async () => {
+    measured = 1440;
+    const artifactKinds = [{ match: target => target.resource.path.endsWith('.maquette.json'), label: 'Fictional kind', renderer: ({ text }) => createElement('div', { 'data-testid': 'app-kind' }, `app:${text.length > 0}`) }];
+    await render({ key: 'kind-app', artifactKinds });
+    await settle(() => bar('library'));
+    await pickFromLibrary('flow.maquette.json');
+    await settle(() => q('[data-testid=app-kind]'));
+    assert.equal(q('[data-testid=app-kind]')?.textContent, 'app:true');
+    assert.equal(q('[data-testid=maquette-walk]'), null, 'the built-in maquette viewer is not used');
+    assert.equal(q('[data-testid=artifact-panel-type]')?.textContent, 'Fictional kind');
+  });
+
+  await t.test('a fixed title stays when the conversation has one; the conversation title follows it, muted, and a phone leaves it to History', async () => {
+    for (const width of [1440, 390]) {
+      measured = width;
+      await render({ key: `title-${width}`, title: 'Fictional app' });
+      await settle(() => bar('library'));
+      assert.equal(q('[data-testid=workspace-bar-title]')?.textContent, 'Fictional app', `${width}: the app title`);
+      const conversation = q('[data-testid=workspace-bar-conversation]');
+      assert.equal(conversation?.textContent, 'Fictional plan', `${width}: the conversation title follows`);
+      assert.ok(conversation.classList.contains('text-muted-foreground'), `${width}: muted`);
+      assert.equal(conversation.classList.contains('max-sm:hidden'), true, `${width}: hidden on a phone`);
+    }
+    measured = 1440;
+    await render({ key: 'title-switch', title: 'Fictional app', conversationId: 'two' });
+    assert.equal(q('[data-testid=workspace-bar-title]')?.textContent, 'Fictional app', 'switching conversation keeps the app title');
+    assert.equal(q('[data-testid=workspace-bar-conversation]')?.textContent, 'Another fictional chat');
+    await render({ key: 'title-untitled', title: 'Fictional app', conversations: { ...conversations, items: [{ id: 'one', title: '' }] } });
+    assert.equal(q('[data-testid=workspace-bar-conversation]'), null, 'no conversation title, no second element');
+  });
+
+  await t.test('without the title prop the conversation title is the bar title, as before', async () => {
+    measured = 1440;
+    await render({ key: 'title-none' });
+    await settle(() => bar('library'));
+    assert.equal(q('[data-testid=workspace-bar-title]')?.textContent, 'Fictional plan');
+    assert.equal(q('[data-testid=workspace-bar-conversation]'), null);
   });
 
   await t.test('inside a host header slot (the app shell\'s), the bar\'s controls move there: one row', { skip: !slot && 'no header slot on this revision' }, async () => {
