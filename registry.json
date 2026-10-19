@@ -741,6 +741,20 @@
       ]
     },
     {
+      "name": "mockup-viewer",
+      "type": "registry:block",
+      "title": "HTML mock-up viewer",
+      "description": "Sandboxed *.mockup.html artifacts with host theme variables, lazy Tailwind compilation and feedback point comments. Host presentation only; artifact scripts run in an opaque-origin InteractiveFrame, never in the host.",
+      "dependencies": ["react@^19.3.0", "lucide-react@^1.57.0", "tailwindcss@4.3.3", "zod@4.6.7"],
+      "registryDependencies": ["@boring-ui/viewers", "badge", "toggle", "tooltip"],
+      "files": [
+        { "path": "registry/mockup-viewer/mockup-viewer.tsx", "type": "registry:component", "target": "components/mockup-viewer/mockup-viewer.tsx" },
+        { "path": "registry/mockup-viewer/mockup-frame.ts", "type": "registry:lib", "target": "components/mockup-viewer/mockup-frame.ts" },
+        { "path": "registry/mockup-viewer/mockup-compile.ts", "type": "registry:lib", "target": "components/mockup-viewer/mockup-compile.ts" },
+        { "path": "registry/mockup-viewer/mockup-tailwind.ts", "type": "registry:lib", "target": "components/mockup-viewer/mockup-tailwind.ts" }
+      ]
+    },
+    {
       "name": "diagram-viewer",
       "type": "registry:component",
       "title": "Diagram viewer",
@@ -895,6 +909,7 @@
         "@boring-ui/viewers",
         "@boring-ui/maquette-viewer",
         "@boring-ui/diagram-viewer",
+        "@boring-ui/mockup-viewer",
         "@boring-ui/utils",
         "@boring-ui/button",
         "drawer",
