@@ -29,7 +29,7 @@ try {
     const screenshot = await browser.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true, clip: { x: 0, y: 0, width: cssContentSize.width, height: cssContentSize.height, scale: 1 } });
     writeFileSync(join(evidence, `${name}.png`), Buffer.from(screenshot.data, 'base64'));
   };
-  for (const brand of ['stock', 'brand']) for (const mode of ['light', 'dark']) for (const width of [1440, 390]) for (const surface of ['messages', 'activity', 'notices', 'queue']) {
+  for (const brand of ['stock', 'brand']) for (const mode of ['light', 'dark']) for (const width of [1440, 390]) for (const surface of ['messages', 'activity', 'notices', 'queue', 'questions']) {
     const name = `transcript-${brand}-${mode}-${width}-${surface}`;
     await browser.send('Emulation.setDeviceMetricsOverride', { width, height: width === 390 ? 844 : 950, deviceScaleFactor: 1, mobile: width === 390 });
     await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: mode }, { name: 'prefers-reduced-motion', value: 'reduce' }] });
@@ -54,6 +54,19 @@ try {
     } else if (surface === 'notices') {
       await browser.click(q('[data-role=system] button'));
       await inspect(`${name}-system`);
+    } else if (surface === 'questions') {
+      const recap = await browser.evaluate(`[...document.querySelectorAll('[data-testid=question-card][data-state=answered]')].map(card => ({ question: parseFloat(getComputedStyle(card.querySelector('[data-testid=question-text]')).fontSize), answer: parseFloat(getComputedStyle(card.querySelector('[data-testid=question-answer]')).fontSize), signals: card.querySelectorAll('svg').length, border: ['Top', 'Right', 'Bottom'].map(edge => parseFloat(getComputedStyle(card)['border' + edge + 'Width'])) }))`);
+      assert.equal(recap.length, 2, `${name}: two answered recaps`);
+      for (const card of recap) assert.ok(card.answer > card.question && card.signals === 1 && card.border.every(width => width === 0), `${name}: answered recap must show the answer larger than the question, one signal and no box: ${JSON.stringify(card)}`);
+      await browser.click(q('[data-testid=question-card][data-call-id=pending-single] [data-testid=question-option]'));
+      await browser.until('pending answer sent', `${q('[data-testid=question-card][data-call-id=pending-single]')}.dataset.state === 'sent'`, 5000);
+      assert.match(await browser.evaluate(`${q('[data-testid=group-five-event]')}.textContent`), /^A complete release checklist/);
+      await inspect(`${name}-sent`);
+      if (width === 390) {
+        await browser.send('Emulation.setDeviceMetricsOverride', { width: 360, height: 800, deviceScaleFactor: 1, mobile: true });
+        const overflow = await browser.evaluate(`({ page: document.documentElement.scrollWidth, cards: [...document.querySelectorAll('[data-testid=question-card]')].filter(card => card.scrollWidth > card.clientWidth || card.getBoundingClientRect().right > 360).length })`);
+        assert.deepEqual(overflow, { page: 360, cards: 0 }, `${name}: no horizontal overflow at 360px`);
+      }
     } else {
       await browser.click(q('[data-testid=queue-more]'));
       await browser.until('native queue menu', `!!${q('[data-testid=queue-menu]')}`, 5000);

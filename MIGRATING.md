@@ -1,3 +1,7 @@
+# Unreleased (0.4.2)
+
+- The `ask_user` question card, once answered, is a quiet recap: the question small and muted, the answer as the main line, one answered mark, every answer of a form listed, a skipped one muted. The pending card keeps its controls; props, behaviour and the answer sent to the agent are unchanged. Tests or journeys reading the old markup should select `[data-testid=question-answer]` (one per answer of a form, a skipped one with `data-skipped="true"`) instead of the "Your answer:" text or the `Badge`.
+
 # Migrating to 0.4.1
 
 0.4.1 is non-breaking: no export, option or type was removed. Upgrade the registry blocks with
