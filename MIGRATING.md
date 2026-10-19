@@ -1,4 +1,20 @@
-# Unreleased (0.4.3)
+# Migrating to 0.4.3
+
+0.4.3 is non-breaking for existing files and props: older `*.maquette.json` files read unchanged, and a page that passes none of the new props renders as before.
+Upgrade the registry blocks with `npx boring-ui-blocks update --version 0.4.3` (`npx boring-ui-blocks check` first lists your edited copies), and bump the npm pins to `0.4.3`.
+
+## Consumer dependencies
+
+Re-add the installed items to install their new dependencies. If you copied blocks by hand, install these yourself:
+
+- `maquette-viewer` now needs `diagram-viewer` and the shadcn `toggle` and `tooltip` components. `pi-app` now installs both `diagram-viewer` and `mockup-viewer`.
+- `diagram-viewer` needs the theme item, shadcn `alert` and `badge`, React and `lucide-react`.
+- `mockup-viewer` needs `viewers`, shadcn `badge`, `toggle` and `tooltip`, plus React, `lucide-react`, `zod@^4.6.5` and the pinned `tailwindcss@4.3.3` compiler.
+- `file-tree` now needs shadcn `progress`.
+- The optional `board-viewer` block needs `maquette-viewer`, `mockup-viewer`, `pi-chat`, shadcn `button`, `alert`, `card` and `tooltip`, plus the matching kit/files packages, React, `lucide-react@1.51.0` and `tldraw@5.5.2`.
+- For the optional self-hosted canvas asset recipe, install `@tldraw/assets@5.5.2`, matching `tldraw`. This is not a new mandatory package peer.
+
+## Viewers and comments
 
 - `maquette-viewer` no longer draws a second "…" menu inside the `pi-app` artifact panel: its guided tours and "How it works" join the panel header's menu (`MaquetteMenuContext`; standalone use keeps its own menu). The selected case in "How it works" uses the default button variant.
 
@@ -6,12 +22,9 @@
 
 - New `board-viewer` block: `createBoardKind({ client, identity, assetUrls, licenseKey })` renders `*.board.json` in the artifact panel. It lazily projects maquette screens, sandboxed HTML mock-ups, goto arrows and notes through `CanvasProjection` from `@hachej/boring-ui-kit/canvas-editor`. Saves contain only `board@1`, conditional on the shown revision. Pinned versions and phones are read-only. Install the block and pass the kind in `artifactKinds`; hosts supply their asset URLs and license key. The parser/planner exports remain available. See [registry/README.md](registry/README.md#board-format-board-viewer).
 
-Non-breaking. `CanvasEditor` now loads `tldraw/tldraw.css` itself, lazily with the canvas, so a host may stop importing it globally. Self-hosting tldraw's fonts, icons and translations is a host recipe ([UI guide](packages/ui/README.md#optional-react-canvas-editor), `examples/canvas-assets`); hosts that already pass a complete `assetUrls` map need no change.
+- `CanvasEditor` now loads `tldraw/tldraw.css` itself, lazily with the canvas, so a host may stop importing it globally. Self-hosting tldraw's fonts, icons and translations is a host recipe ([UI guide](packages/ui/README.md#optional-react-canvas-editor), `examples/canvas-assets`); hosts that already pass a complete `assetUrls` map need no change.
 
 - `pi-app` now renders `*.mockup.html` with the built-in `mockup-viewer` item. Re-add `pi-app` to install its dependency and pinned Tailwind compiler. `mockupKind` and `createMockupKind` are exported. Other HTML stays passive unless the host opts in. See the registry README for sandbox CSP requirements. `usePointComments` adds `pick`, `picking` and `reposition` for host-owned frame proxies; existing maquette comments are unchanged. `ArtifactKindViewProps.onReady` lets the asynchronous mock-up report its actual load before a presentation acknowledgement.
-
-Non-breaking for files and props: older `*.maquette.json` files read unchanged, and a page that passes none of the new props renders as before.
-`maquette-viewer` now also needs the new `diagram-viewer` item and the `toggle` and `tooltip` shadcn components; `pi-app` installs `diagram-viewer`.
 
 - Large files (blob pointers): new `@hachej/boring-files/blob` (`parseBlobPointer`, `withBlobPointers`, `checkBlobBase`, `BLOB_POINTER_MEDIA_TYPE`, …)
   and `FileEntry.blob`. `AgentWorkspace` takes `resources.blobBase` (default `/_files/`, same-origin path only; also allowed beside a `revisionProvider`)
