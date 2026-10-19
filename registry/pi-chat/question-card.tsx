@@ -133,7 +133,7 @@ export function QuestionCard({ call, result, answer, questionId, live = false }:
       : state === 'sent' ? <Spinner aria-label={labels.waitingForAgent} />
       : <CircleSlashIcon role="img" aria-label={labels.notAnswered} className="size-3.5" />;
     return <Item variant="muted" size="sm" render={<section />} data-testid="question-card" data-state={state} data-call-id={call.id} aria-label={labels.question}
-      className={cn('my-1 w-fit max-w-full min-w-0 flex-col items-stretch gap-1 text-start', wasOpen.current && 'transition-[opacity,translate] ease-out starting:translate-y-1 starting:opacity-0 motion-reduce:transition-none')}>
+      className={cn('my-1 w-fit max-w-full min-w-0 flex-col items-stretch gap-1 text-start', wasOpen.current && 'transition-[opacity,translate] starting:translate-y-1 starting:opacity-0 motion-reduce:transition-none')}>
       <p className={cn(textClass, 'flex items-start gap-1.5 text-xs/5 text-muted-foreground')}>
         <span className="flex h-5 shrink-0 items-center [&_svg]:size-3.5">{signal}</span><span data-testid="question-text">{question.question || labels.askedQuestion}</span></p>
       <div className="flex min-w-0 flex-col gap-1 ps-5">
