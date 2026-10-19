@@ -8,7 +8,7 @@
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { insecureUrl, launch, pause, q, qa } from '@hachej/boring-testing/browser';
 
@@ -17,6 +17,8 @@ const { startWorkspaceApp } = await import('./server.mjs');
 const { misses } = await import('../../lab/studio/scripted-model.mjs');
 const evidence = process.env.APP_EVIDENCE ?? '.cache/evidence/workspace-app';
 mkdirSync(evidence, { recursive: true });
+const embeddedEvidence = process.env.EMBEDDED_EVIDENCE ?? '.cache/evidence/embedded';
+mkdirSync(embeddedEvidence, { recursive: true });
 const step = async (name, run) => { const started = Date.now(); await run(); console.log(`ok  ${name} (${Date.now() - started} ms)`); };
 const INPUT = q('[data-testid=composer-input]');
 const LOG = `(${q('[data-testid=transcript]')}?.innerText ?? '')`;
@@ -649,6 +651,69 @@ try {
       await browser.screenshot(`inline-history-${device}.png`);
       assert.equal(await browser.evaluate(`!!${q('[data-testid=history]')}`), false);
     }
+    await browser.emulate('desktop');
+  });
+
+  await step('embedded, resources only: no left column, one bar with History, Library and New; a read-only Library of the resources opens a document; 1440, 390 and 360, light and dark', async () => {
+    const shot = name => browser.screenshot(join(relative(evidence, embeddedEvidence), name));
+    const BAR = id => q(`[data-testid=workspace-bar] [data-testid=workspace-bar-${id}]`);
+    const libraryRow = `[...document.querySelectorAll('[data-testid=workspace-library] [data-path]')].find(e => e.dataset.path === 'picnic-plan.md')`;
+    const embedded = async where => {
+      assert.equal(await browser.evaluate(`${q('[data-boring=agent-workspace]')}.dataset.layout`), 'embedded');
+      assert.equal(await browser.evaluate(`!!${q('[data-testid=conversations]')} || !!${q('[data-testid=sessions-toggle]')} || !!${q('[data-boring=agent-workspace]')}.dataset.sessions`), false, `${where}: no sessions column`);
+      for (const id of ['history', 'library', 'new']) assert.equal(await browser.evaluate(`!!${BAR(id)}`), true, `${where}: ${id} in the bar`);
+      assert.equal(await browser.evaluate(`!!${q('[data-boring=pi-chat] header')}`), false, `${where}: the bar is the only header`);
+      assert.ok(await browser.evaluate(noOverflow), `${where}: horizontal overflow`);
+    };
+    const pick = async (tapIt) => {
+      await (tapIt ? browser.tap(BAR('library')) : browser.click(BAR('library')));
+      await browser.until('the read-only Library lists the resources', `!!${libraryRow}`, 10000);
+      assert.equal(await browser.evaluate(`!!${q('[data-testid=workspace-library] [data-file-upload]')}`), false, 'read-only: no Upload');
+    };
+    await browser.emulate('desktop');
+    await browser.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+    await browser.send('Page.navigate', { url: `${insecureUrl(app.url)}?embedded&resources` });
+    await live();
+    await embedded('1440');
+    for (const scheme of ['light', 'dark']) {
+      await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] });
+      await browser.click(BAR('history'));
+      await browser.until('the History popover', `${qa('[data-testid=workspace-history] [data-testid=conversation-row]')}.length >= 1`, 5000);
+      await pause(400); await shot(`standalone-desktop-history-${scheme}.png`);
+      await browser.press('Escape');
+      await browser.until('History closed', `!${q('[data-testid=workspace-history]')}`, 5000);
+      await pick(false);
+      await pause(400); await shot(`standalone-desktop-library-${scheme}.png`);
+      await browser.click(`${libraryRow}.querySelector('button')`);
+      await browser.until('the document opens in the artifact panel', `!${q('[data-testid=workspace-library]')} && /Picnic plan/.test(${q('[data-testid=viewer-panel]')}?.innerText ?? '')`, 10000);
+      await pause(400); await shot(`standalone-desktop-document-${scheme}.png`);
+      await embedded('1440 with a document');
+    }
+    await browser.emulate('phone');
+    await browser.send('Page.navigate', { url: `${insecureUrl(app.url)}?embedded&resources` });
+    await live();
+    await embedded('390');
+    const small = await browser.evaluate(`[...document.querySelectorAll('[data-testid=workspace-bar] button')].map(e => e.getBoundingClientRect()).filter(r => r.width < 43.5 || r.height < 43.5).length`);
+    assert.equal(small, 0, 'bar buttons are 44px on a phone');
+    for (const scheme of ['light', 'dark']) {
+      await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] });
+      await browser.tap(BAR('history'));
+      await browser.until('the History sheet', `${qa('[data-testid=workspace-history] [data-testid=conversation-row]')}.length >= 1`, 5000);
+      await pause(600); await shot(`standalone-phone-history-${scheme}.png`);
+      await browser.press('Escape');
+      await browser.until('History closed', `!${q('[data-testid=workspace-history]')}`, 5000);
+      await pick(true);
+      await pause(600); await shot(`standalone-phone-library-${scheme}.png`);
+      await browser.tap(`${libraryRow}.querySelector('button')`);
+      await browser.until('the document opens in the sheet', `!${q('[data-testid=workspace-library]')} && /Picnic plan/.test(${q('[data-testid=viewer-panel]')}?.innerText ?? '')`, 10000);
+      await pause(600); await shot(`standalone-phone-document-${scheme}.png`);
+      await browser.evaluate(`[...document.querySelectorAll('[data-testid=viewer-panel] [data-testid$="-close"]')].find(e => e.checkVisibility())?.click()`);
+      await browser.until('the sheet closed', `!${q('[data-testid=viewer-panel]')}?.checkVisibility()`, 5000);
+    }
+    await browser.send('Emulation.setDeviceMetricsOverride', { width: 360, height: 780, deviceScaleFactor: 3, mobile: true });
+    await browser.until('360px', 'innerWidth === 360', 5000);
+    await embedded('360');
+    await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] });
     await browser.emulate('desktop');
   });
 

@@ -93,9 +93,9 @@ function mergedSpec(entries: readonly Entry[]): ScreenHeaderSpec {
 
 /**
  * The header of the screen on show: the avatar button (compact) or the sidebar trigger (expanded) or « ← », then the title and subtitle,
- * then up to two actions, « … » and the agent trigger. `avatar` is the compact account button.
+ * then the slot of the screen's own controls (`slotRef`), up to two actions, « … » and the agent trigger. `avatar` is the compact account button.
  */
-export function ScreenHeader({ fallbackTitle, compact, avatar, text }: { readonly fallbackTitle: string; readonly compact: boolean; readonly avatar: ReactNode; readonly text: AppShellText }) {
+export function ScreenHeader({ fallbackTitle, compact, avatar, text, slotRef }: { readonly fallbackTitle: string; readonly compact: boolean; readonly avatar: ReactNode; readonly text: AppShellText; readonly slotRef?: (element: HTMLElement | null) => void }) {
   const top = useTopHeader();
   const spec = top?.spec;
   const actions = spec?.actions ?? [];
@@ -108,6 +108,8 @@ export function ScreenHeader({ fallbackTitle, compact, avatar, text }: { readonl
       <h1 data-testid="header-title" className="m-0 truncate text-base leading-tight font-semibold [font-family:var(--font-display,var(--font-sans))]">{spec?.title ?? fallbackTitle}</h1>
       {spec?.subtitle && <p data-testid="header-subtitle" className="m-0 truncate text-xs text-muted-foreground">{spec.subtitle}</p>}
     </div>
+    {/* An embedded page's own controls (`ScreenHeaderSlotContext`, for example AgentWorkspace layout="embedded"), so it needs no second row. */}
+    <div ref={slotRef} data-testid="header-slot" className="flex shrink-0 items-center gap-1 empty:hidden" />
     <HeaderActions actions={actions} compact={compact} text={text} prefix="header" run={run} />
     {compact && back && avatar}
     <AgentTrigger />

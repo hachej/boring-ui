@@ -9,13 +9,16 @@
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { launch, pause, q, qa } from '@hachej/boring-testing/browser';
 
 process.env.STUDIO_MODEL = 'scripted';
 const { startAppShell } = await import('./server.mjs');
 const evidence = process.env.APP_EVIDENCE ?? '.cache/evidence/app-shell';
 mkdirSync(evidence, { recursive: true });
+// The embedded layout's screenshots (AgentWorkspace layout="embedded" inside the shell) go beside the standalone ones of the workspace-app journey.
+const embeddedEvidence = process.env.EMBEDDED_EVIDENCE ?? '.cache/evidence/embedded';
+mkdirSync(embeddedEvidence, { recursive: true });
 const collect = process.env.COLLECT === '1';
 const failed = [];
 // COLLECT=1 (fail-first evidence): a failing step is reported and the journey goes on.
@@ -63,6 +66,18 @@ try {
   const settle = () => pause(900);
   const rest = async selector => { let last = -1; for (let i = 0; i < 50; i++) { await pause(100); const now = await browser.evaluate(`${q(selector)}.scrollTop`); if (now === last) break; last = now; } return last; };
   const back = () => browser.evaluate(`history.back()`);
+  const shot = name => browser.screenshot(join(relative(evidence, embeddedEvidence), name));
+  // AgentWorkspace layout="embedded" in the shell: its History, Library and New sit in the shell's header (one row), with no left column.
+  const BAR = id => q(`[data-testid=screen-header] [data-testid=header-slot] [data-testid=workspace-bar-${id}]`);
+  const libraryRow = name => `[...document.querySelectorAll('[data-testid=workspace-library] [data-path]')].find(e => e.dataset.path === ${JSON.stringify(name)})`;
+  const embeddedInShell = async where => {
+    for (const id of ['history', 'library', 'new']) assert.equal(await browser.evaluate(`!!${BAR(id)}`), true, `${where}: ${id} in the shell header`);
+    assert.equal(await browser.evaluate(`!!${q('[data-testid=workspace-bar]')}`), false, `${where}: no second bar row`);
+    assert.equal(await browser.evaluate(`!!${q('[data-testid=conversations]')} || !!${q('[data-testid=sessions-toggle]')}`), false, `${where}: no sessions column or toggle`);
+    assert.equal(await browser.evaluate(`${q('[data-boring=agent-workspace]')}.dataset.layout`), 'embedded');
+    const header = await browser.evaluate(rect('[data-testid=screen-header]')), history = await browser.evaluate(rect('[data-testid=workspace-bar-history]'));
+    assert.ok(history.y >= header.y && history.bottom <= header.bottom + 1, `${where}: History is inside the header row: ${JSON.stringify({ header, history })}`);
+  };
 
   await browser.emulate('phone');
   await open('app=redaction');
@@ -258,6 +273,64 @@ try {
     await browser.click(q('[data-testid=artifact-close]'));
     await browser.until('the column returns', `${SESSIONS} === 'docked' && !${q('[data-testid=history-open]')}`, 10000);
     assert.ok(await browser.evaluate(noOverflow));
+  });
+
+  await step('8 embedded chat layout compact: History, Library and New join the shell header; sheets; a picked document opens; 44px and no overflow at 390 and 360, light and dark', async () => {
+    await browser.emulate('phone');
+    await open('app=pm&embedded');
+    await browser.until('the chat is live', CHAT_LIVE, 20000);
+    await embeddedInShell('390');
+    await browser.type(q('[data-testid=composer-input]'), 'Write a picnic plan and present it.');
+    await tap('[data-testid=composer-submit]');
+    await browser.until('the reply', `/picnic plan is ready/.test(${q('[data-testid=transcript]')}?.innerText ?? '')`, 30000);
+    for (const dark of [false, true]) {
+      const scheme = dark ? 'dark' : 'light';
+      await browser.evaluate(`document.documentElement.classList.toggle('dark', ${dark})`);
+      await controls(`embedded ${scheme}`);
+      await shot(`shell-phone-${scheme}.png`);
+      await browser.tap(BAR('history'));
+      await browser.until('the History sheet', `!!${q('[data-testid=workspace-history]')} && ${qa('[data-testid=workspace-history] [data-testid=conversation-row]')}.length >= 1`, 5000);
+      await settle(); await shot(`shell-phone-history-${scheme}.png`);
+      await browser.press('Escape');
+      await browser.until('the History sheet closed', `!${q('[data-testid=workspace-history]')}`, 5000);
+      await browser.tap(BAR('library'));
+      await browser.until('the Library sheet lists the document', `!!${libraryRow('picnic-plan.md')}`, 10000);
+      await settle(); await shot(`shell-phone-library-${scheme}.png`);
+      await browser.tap(`${libraryRow('picnic-plan.md')}.querySelector('button') ?? ${libraryRow('picnic-plan.md')}`);
+      await browser.until('the document opens in the artifact panel', `!${q('[data-testid=workspace-library]')} && /Picnic plan/.test(${q('[data-testid=viewer-panel]')}?.innerText ?? '')`, 10000);
+      await settle(); await shot(`shell-phone-document-${scheme}.png`);
+      await browser.evaluate(`[...document.querySelectorAll('[data-testid=viewer-panel] [data-testid$="-close"]')].find(e => e.checkVisibility())?.click()`);
+      await browser.until('the panel closed', `!${q('[data-testid=viewer-panel]')}?.checkVisibility()`, 5000);
+    }
+    await send('Emulation.setDeviceMetricsOverride', { width: 360, height: 780, deviceScaleFactor: 3, mobile: true });
+    await browser.until('360px', 'innerWidth === 360', 5000);
+    await embeddedInShell('360');
+    await controls('embedded 360');
+    await browser.evaluate(`document.documentElement.classList.remove('dark')`);
+  });
+
+  await step('9 embedded chat layout expanded 1440x900: History and Library are popovers from the shell header; a picked document opens the panel, light and dark', async () => {
+    await open('app=pm&embedded', 'desktop');
+    await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+    await browser.until('the chat is live', `innerWidth === 1440 && ${CHAT_LIVE}`, 20000);
+    await embeddedInShell('1440');
+    for (const dark of [false, true]) {
+      const scheme = dark ? 'dark' : 'light';
+      await browser.evaluate(`document.documentElement.classList.toggle('dark', ${dark})`);
+      await browser.click(BAR('history'));
+      await browser.until('the History popover', `!!${q('[data-testid=workspace-history]')} && ${qa('[data-testid=workspace-history] [data-testid=conversation-row]')}.length >= 1`, 5000);
+      await settle(); await shot(`shell-desktop-history-${scheme}.png`);
+      await browser.press('Escape');
+      await browser.until('the History popover closed', `!${q('[data-testid=workspace-history]')}`, 5000);
+      await browser.click(BAR('library'));
+      await browser.until('the Library popover lists the document', `!!${libraryRow('picnic-plan.md')}`, 10000);
+      await settle(); await shot(`shell-desktop-library-${scheme}.png`);
+      await browser.click(`${libraryRow('picnic-plan.md')}.querySelector('button') ?? ${libraryRow('picnic-plan.md')}`);
+      await browser.until('the document opens in the artifact panel', `!${q('[data-testid=workspace-library]')} && /Picnic plan/.test(${q('[data-testid=viewer-panel]')}?.innerText ?? '')`, 10000);
+      assert.ok(await browser.evaluate(noOverflow));
+      await settle(); await shot(`shell-desktop-document-${scheme}.png`);
+    }
+    await browser.evaluate(`document.documentElement.classList.remove('dark')`);
   });
 
   if (failed.length) console.log(`COLLECT: ${failed.length} failing step(s): ${failed.join(' | ')}`);

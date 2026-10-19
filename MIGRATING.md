@@ -1,5 +1,14 @@
 # Unreleased (0.4.2)
 
+Non-breaking: no export, option or type is removed, and a page that sets none of the new props renders as before.
+
+- `AgentWorkspace layout="embedded"`: no left column at any width and one compact top bar (title, History, Library, New, then
+  `chat.headerActions` and `controls`); History and Library are popovers on a wide workspace and sheets on a phone. Inside an app-shell
+  screen the bar's buttons join the shell's header. Pages that approximated it with `history="popover"`, `sessions={false}` and their own
+  Library wiring can drop those for `layout="embedded"`. See [registry/README.md](registry/README.md#whole-agent-app-pi-app-agentworkspace).
+- A read-only Library with `resources` alone, when the endpoint is a `createRevisionHandler` route (it then also serves the viewers' reads).
+- `app-shell`'s screen header has a slot for an embedded page's controls (`utils/screen-header-slot.ts`, shipped in the `utils` item).
+- `pi-app` now also needs the shadcn `popover` and `tooltip` components (installed with the item).
 - **Viewer header (Markdown editor and every viewer).** The save status is a coloured dot (green saved, amber unsaved or saving, red for a refused,
   conflicting or unconfirmed save); its words are the tooltip and the screen-reader label, and only a red status also shows its words. The Rich/Source
   switch is an outlined icon-only segmented `ToggleGroup` whose pressed segment is filled and the other muted. The "Aa" pin-formatting-toolbar button is
