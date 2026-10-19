@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { mkdirSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { build } from 'esbuild';
 import { Window } from 'happy-dom';
 import { createSharedChat, createFakeChannelSource } from '@hachej/boring-ui-kit/shared-chat';
@@ -17,7 +18,13 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
   const { createElement, act } = await import('react'); const { createRoot } = await import('react-dom/client');
   mkdirSync(new URL('../../.cache/shared-chat-test/', import.meta.url), { recursive: true });
   const output = new URL('../../.cache/shared-chat-test/chat.mjs', import.meta.url);
-  await build({ entryPoints: [new URL('../../registry/pi-chat/pi-chat.tsx', import.meta.url).pathname], outfile: output.pathname, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', tsconfig: new URL('../../tsconfig.json', import.meta.url).pathname });
+  await build({ entryPoints: [new URL('../../registry/pi-chat/pi-chat.tsx', import.meta.url).pathname], outfile: output.pathname, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', tsconfig: new URL('../../tsconfig.json', import.meta.url).pathname,
+    plugins: process.env.SHARED_CHAT_OLD_RENDERER ? [{ name: 'pre-shared-renderer', setup(builder) {
+      builder.onLoad({ filter: /registry\/pi-chat\/.*\.(ts|tsx)$/ }, ({ path }) => {
+        const relative = path.slice(new URL('../../', import.meta.url).pathname.length);
+        return { contents: execFileSync('git', ['show', `97bea0756:${relative}`], { encoding: 'utf8' }), loader: path.endsWith('.tsx') ? 'tsx' : 'ts' };
+      });
+    } }] : [] });
   const { PiChat } = await import(output.href);
   const source = createFakeChannelSource(sharedChatSeed);
   let controller = createSharedChat(source, { conversationId: 'main' });
@@ -25,7 +32,8 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
   const host = document.createElement('div'); document.body.append(host); const root = createRoot(host);
   const q = selector => document.querySelector(selector);
   const settle = async ready => { for (let n = 0; n < 200 && !ready(); n++) await act(async () => new Promise(resolve => setTimeout(resolve, 10))); assert.ok(ready(), 'expected UI appeared'); };
-  const render = () => act(async () => root.render(createElement(PiChat, { controller, conversations: { items: sharedChatSeed.conversations, activeId: controller.getSnapshot().conversationId, onSelect(id) { controller = createSharedChat(source, { conversationId: id }); controllers.push(controller); void render(); } } })));
+  const draw = () => root.render(createElement(PiChat, { controller, conversations: { items: sharedChatSeed.conversations, activeId: controller.getSnapshot().conversationId, onSelect(id) { controller = createSharedChat(source, { conversationId: id }); controllers.push(controller); draw(); } } }));
+  const render = () => act(async () => draw());
   t.after(async () => { await act(async () => { root.unmount(); for (const controller of controllers) await controller.dispose(); }); await window.happyDOM.close(); for (const [name, descriptor] of globals) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else delete globalThis[name]; } });
   await render();
   await settle(() => q('[data-shared-message="one"]'));
@@ -69,7 +77,12 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
   });
   await t.test('existing composer mention picker sends member ids', async () => {
     const textarea = q('textarea');
-    await act(async () => { controller.setText('@Le'); textarea.focus(); textarea.setSelectionRange(3, 3); textarea.dispatchEvent(new window.Event('select', { bubbles: true })); });
+    await act(async () => {
+      textarea.focus();
+      Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(textarea, '@Le');
+      textarea.setSelectionRange(3, 3);
+      textarea.dispatchEvent(new window.Event('input', { bubbles: true }));
+    });
     await settle(() => q('[data-testid=mention-item]'));
     assert.match(q('[data-testid=mention-item]').textContent, /Leo/);
     await act(async () => textarea.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })));

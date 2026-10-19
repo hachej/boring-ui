@@ -495,7 +495,7 @@
         },
         {
           "path": "registry/pi-chat/use-shared-chat.ts",
-          "type": "registry:lib",
+          "type": "registry:hook",
           "target": "components/pi-chat/use-shared-chat.ts"
         },
         {

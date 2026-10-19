@@ -1,4 +1,4 @@
-import type { ChannelEvent, ChannelMessage, ChannelSource, Conversation, Member, SharedChatState } from './shared-chat.js';
+import type { ChannelEvent, ChannelMessage, ChannelSource, Conversation, Member, SharedChatState } from './channel-source.js';
 
 export interface FakeChannelSeed {
   readonly me: Member;
