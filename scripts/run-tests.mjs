@@ -16,7 +16,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const files = testFiles(fileURLToPath(new URL('../test', import.meta.url)));
   if (!files.length) throw new Error('No tests discovered');
   const env = { ...process.env }; delete env.NODE_TEST_CONTEXT;
-  const result = spawnSync(process.execPath, ['--test', '--experimental-test-isolation=none', ...files], { stdio: 'inherit', env });
+  const result = spawnSync(process.execPath, ['--import', fileURLToPath(new URL('./css-stub-register.mjs', import.meta.url)), '--test', '--experimental-test-isolation=none', ...files], { stdio: 'inherit', env });
   if (result.error) throw result.error;
   process.exitCode = result.status ?? 1;
 }
