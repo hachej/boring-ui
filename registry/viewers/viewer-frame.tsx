@@ -85,12 +85,12 @@ export const useViewerBar = (): ViewerBarSpace => useContext(ViewerBarContext);
 const NOTICE_MS = 2600;
 
 /**
- * One choice of a mode toggle, for example Text | Markdown. `text` is the visible word, `label` the accessible name and the tooltip, `icon`
- * an optional mark before the word. A disabled choice shows `reason` as its tooltip.
+ * One choice of a mode toggle, for example Rich | Source. Icon only: `label` is the accessible name and the tooltip, `text` the short word
+ * for hosts that want it (shown when there is no icon). A disabled choice shows `reason` as its tooltip.
  */
 export interface ViewerToggleOption<T extends string> { readonly id: T; readonly label: string; readonly text: string; readonly icon?: ReactNode; readonly disabled?: boolean; readonly reason?: string | undefined; readonly testId?: string }
 
-/** A segmented control over the consumer's outlined ToggleGroup: visible words, one pressed segment. */
+/** A segmented control over the consumer's outlined ToggleGroup: the pressed segment is filled with a full-contrast icon, the others muted. */
 export function ViewerToggle<T extends string>({ label, value, options, onChange }: { readonly label: string; readonly value: T; readonly options: readonly ViewerToggleOption<T>[]; readonly onChange: (id: T) => void }) {
   return <ToggleGroup aria-label={label} variant="outline" size="sm" spacing={0} value={[value]} onValueChange={values => {
     const selected = options.find(option => option.id === values[0] && !option.disabled);
@@ -98,7 +98,7 @@ export function ViewerToggle<T extends string>({ label, value, options, onChange
   }}>
     {options.map(option => <ToggleGroupItem key={option.id} value={option.id} aria-label={option.label} title={option.disabled && option.reason ? option.reason : option.label} disabled={option.disabled}
       className="disabled:pointer-events-auto disabled:cursor-not-allowed" data-testid={option.testId} data-mode={option.id}>
-      {option.icon}{option.text}</ToggleGroupItem>)}
+      <span className={cn('inline-flex items-center', value !== option.id && 'text-muted-foreground')}>{option.icon ?? option.text}</span></ToggleGroupItem>)}
   </ToggleGroup>;
 }
 

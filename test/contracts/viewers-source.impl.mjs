@@ -308,16 +308,16 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     assert.equal(view.q('[data-testid="viewer-save"]') === null, true, 'Save waits for an edit');
     assert.ok(view.q('.boring-markdown-toolbar button[aria-label="Bold"] svg'), 'formatting is pinned by default');
     assert.equal(view.q('[aria-label="Pin formatting toolbar"]'), null, 'the bar has no pin button');
-    assert.equal(view.q('[data-testid="viewer-controls"]').textContent, 'TextMarkdown', 'the mode switch is two words and nothing else');
     const modes = view.q('[data-testid="viewer-controls"] [role="group"]');
     assert.equal(modes.getAttribute('aria-label'), 'Editor mode');
-    assert.equal(view.q('[data-testid="viewer-mode-rich"]').textContent, 'Text');
-    assert.equal(view.q('[data-testid="viewer-mode-rich"]').getAttribute('aria-pressed'), 'true');
-    assert.equal(view.q('[data-testid="viewer-mode-source"]').textContent, 'Markdown');
-    assert.equal(view.q('[data-testid="viewer-mode-source"]').getAttribute('aria-pressed'), 'false');
+    assert.equal(modes.dataset.variant, 'outline', 'a segmented, outlined switch');
+    const rich = () => view.q('[data-testid="viewer-mode-rich"]'), source = () => view.q('[data-testid="viewer-mode-source"]');
+    assert.deepEqual([rich(), source()].map(item => [item.getAttribute('aria-label'), item.getAttribute('title'), item.textContent, !!item.querySelector('svg[aria-hidden="true"]')]),
+      [['Rich text', 'Rich text', '', true], ['Markdown source', 'Markdown source', '', true]], 'icons only; the words are the accessible names and tooltips');
+    const muted = item => item.querySelector('svg').parentElement.classList.contains('text-muted-foreground');
+    assert.deepEqual([rich().getAttribute('aria-pressed'), muted(rich()), source().getAttribute('aria-pressed'), muted(source())], ['true', false, 'false', true], 'the selected segment is pressed at full contrast, the other muted');
     await view.click('[data-testid="viewer-mode-source"]');
-    assert.equal(view.q('[data-testid="viewer-mode-source"]').getAttribute('aria-pressed'), 'true', 'the selected segment follows the mode');
-    assert.equal(view.q('[data-testid="viewer-mode-rich"]').getAttribute('aria-pressed'), 'false');
+    assert.deepEqual([rich().getAttribute('aria-pressed'), muted(rich()), source().getAttribute('aria-pressed'), muted(source())], ['false', true, 'true', false], 'the selected segment follows the mode');
     const area = view.q('textarea');
     await act(async () => { Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(area, '# Plan\n\n- [x] done\n- [ ] local edit\n'); area.dispatchEvent(new window.Event('input', { bubbles: true })); });
     assertDot(view, 'Unsaved', 'warning');
@@ -334,7 +334,7 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     const raw = await documents(t, 'text/markdown', '---\ntitle: x\n---\n\n<div>raw</div>\n');
     const unsafe = await mount(t, h(markdownPane.MarkdownPane, { controller: raw.controller, title: 'Raw' }));
     assert.equal(unsafe.q('[data-testid="viewer-mode-rich"]').disabled, true);
-    assert.match(unsafe.q('[data-testid="viewer-mode-rich"]').getAttribute('title'), /^Text mode is off: this document contains front matter, raw HTML/, 'the disabled mode says why');
+    assert.match(unsafe.q('[data-testid="viewer-mode-rich"]').getAttribute('title'), /^Rich text is off: this document contains front matter, raw HTML/, 'the disabled mode says why');
     assert.equal(unsafe.q('[data-testid="viewer-mode-source"]').getAttribute('aria-pressed'), 'true');
     assert.match(unsafe.q('[data-testid="markdown-source-only"]').textContent, /front matter, raw HTML/);
   });

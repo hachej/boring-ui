@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
-import { SaveIcon } from 'lucide-react';
+import { CodeXmlIcon, PencilLineIcon, SaveIcon } from 'lucide-react';
 import { MarkdownEditor } from '@hachej/boring-ui-kit/markdown-editor';
 import type { MarkdownEditorProps, MarkdownImageResolver, MarkdownMountedTools, MarkdownRichSafety } from '@hachej/boring-ui-kit/markdown-editor';
 import type { MarkdownController } from '@hachej/boring-ui-kit/markdown';
@@ -102,8 +102,8 @@ export function MarkdownPane({ controller, title: givenTitle, labels: ownLabels,
     onDownload={() => downloadFile(filename, controller.getSnapshot().text, 'text/markdown;charset=utf-8')} onOpenInNewTab={onOpenInNewTab} onClose={close}
     controls={<>
       <ViewerToggle label={labels.editorMode} value={mode} onChange={setRequested} options={[
-        { id: 'rich', label: labels.richText, text: labels.rich, disabled: !safety.safe, reason: safety.safe ? undefined : labels.richUnavailable(safety.reasons.join(', ')), testId: `${testId}-mode-rich` },
-        { id: 'source', label: labels.markdownSource, text: labels.markdown, testId: `${testId}-mode-source` }]} />
+        { id: 'rich', label: labels.richText, text: labels.rich, icon: <PencilLineIcon data-icon="inline-start" aria-hidden="true" />, disabled: !safety.safe, reason: safety.safe ? undefined : labels.richUnavailable(safety.reasons.join(', ')), testId: `${testId}-mode-rich` },
+        { id: 'source', label: labels.markdownSource, text: labels.source, icon: <CodeXmlIcon data-icon="inline-start" aria-hidden="true" />, testId: `${testId}-mode-source` }]} />
       {autosave === false && !state.readOnly && state.dirty && <Button variant="ghost" size="icon-sm" aria-label={labels.save} title={labels.save} data-testid={`${testId}-save`} disabled={unavailable || pending || unconfirmed} onClick={save}><SaveIcon data-icon="inline-start" aria-hidden="true" /></Button>}
       {controls}
     </>}>

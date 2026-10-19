@@ -53,12 +53,11 @@ export const defaultViewerLabels = {
   htmlPreview: 'HTML preview',
   htmlSource: 'HTML source',
   editorMode: 'Editor mode',
-  rich: 'Text',
-  markdown: 'Markdown',
+  rich: 'Rich',
   richText: 'Rich text',
   markdownSource: 'Markdown source',
   /** Tooltip of the disabled Text mode: what the rich editor could not keep exactly. */
-  richUnavailable: (reasons: string) => `Text mode is off: this document contains ${reasons}, which it could not keep exactly`,
+  richUnavailable: (reasons: string) => `Rich text is off: this document contains ${reasons}, which it could not keep exactly`,
   document: 'Document',
   // Images and PDFs
   zoom: 'Zoom',
