@@ -18,7 +18,7 @@ import { useChatText } from './labels';
 export function MemberAvatar({ member }: { readonly member: Member }) {
   return <Avatar data-testid="member-avatar" aria-label={member.name}>
     {member.avatarUrl && <AvatarImage src={member.avatarUrl} alt={member.name} />}
-    <AvatarFallback>{member.name.replace(/[()]/g, '').split(/\s+/).slice(0, 2).map(word => word[0]).join('')}</AvatarFallback>
+    <AvatarFallback>{member.name.replace(/[()]/g, '').split(/\s+/).slice(0, 2).map(word => word[0]).join('').toUpperCase()}</AvatarFallback>
   </Avatar>;
 }
 function MemberBadge({ member }: { readonly member: Member }) {
@@ -54,7 +54,7 @@ export function SharedMembers({ controller }: { readonly controller: ChatControl
     {phone ? <>{<Button variant="ghost" data-testid="shared-members" aria-label={labels.sharedMemberCount(shared.members.length)} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}>
       <AvatarGroup>{shared.members.slice(0, 1).map(member => <MemberAvatar key={member.id} member={member} />)}<AvatarGroupCount>{shared.members.length}</AvatarGroupCount></AvatarGroup>
     </Button>}
-      <Drawer open={open} onOpenChange={setOpen}><DrawerContent><div className="flex items-center justify-between p-4"><DrawerTitle>{labels.sharedMembers}</DrawerTitle><Button variant="ghost" size="icon" data-testid="shared-members-close" aria-label={labels.close} onClick={() => setOpen(false)}><XIcon aria-hidden="true" /></Button></div>{content}</DrawerContent></Drawer></>
+      {open && <Drawer open onOpenChange={setOpen} showSwipeHandle><DrawerContent className="pi-chat max-h-[80dvh]"><div className="flex shrink-0 items-center justify-between p-4"><DrawerTitle>{labels.sharedMembers}</DrawerTitle><Button variant="ghost" size="icon" data-testid="shared-members-close" aria-label={labels.close} onClick={() => setOpen(false)}><XIcon aria-hidden="true" /></Button></div><div className="min-h-0 overflow-y-auto">{content}</div></DrawerContent></Drawer>}</>
       : <Popover open={open} onOpenChange={setOpen}><PopoverTrigger render={trigger} /><PopoverContent role="dialog" aria-label={labels.sharedMembers} align="end" className="max-w-[calc(100vw-1rem)]">{content}</PopoverContent></Popover>}
   </div>;
 }
@@ -95,6 +95,6 @@ export function sharedRows(shared: SharedChatState, action: (card: Request) => P
     const metadata = { message, author, own, first: index === 0 || shared.messages[index - 1]?.author !== message.author };
     if (message.card) return { key, type: 'card', card: { content: <RequestCard card={message.card} action={action} /> }, shared: metadata };
     if (own) return { key, type: 'user', message: { role: 'user', content: message.text ?? '', timestamp: Date.parse(message.at) }, shared: metadata };
-    return { key, type: 'assistant', text: message.text ?? '', streaming: Boolean(message.streaming), parts: [{ kind: 'text', key: `${key}:text`, text: message.text ?? '' }], shared: metadata };
+    return { key, type: 'assistant', text: message.text ?? '', streaming: Boolean(message.streaming), parts: message.text ? [{ kind: 'text', key: `${key}:text`, text: message.text }] : [], shared: metadata };
   });
 }

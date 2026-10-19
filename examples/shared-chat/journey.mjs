@@ -24,13 +24,14 @@ try {
       assert.equal(await browser.evaluate(noOverflow), true, `${width}: page fits`);
       assert.equal(await browser.evaluate(`${q('[data-shared-message=four] [data-testid=author-badge]')}?.textContent`), 'Admin');
       assert.equal(await browser.evaluate(`${q('[data-shared-message=five] [data-testid=author-badge]')}?.textContent`), 'App');
-      await browser.evaluate(`${q('[data-shared-message=five]')}.scrollIntoView({ block: 'start', behavior: 'instant' })`);
+      await browser.evaluate(`${q('[data-shared-message=four]')}.scrollIntoView({ block: 'start', behavior: 'instant' })`);
       await pause(150);
       await browser.screenshot(`${width}-${scheme}-conversation.png`);
 
       await browser.type(input, '@Le');
       await browser.until('the member mention popover', `!!${q('[data-testid=mention-item][data-path=leo]')}`);
       assert.equal(await browser.evaluate(noOverflow), true, `${width}: mention fits`);
+      await pause(300);
       await browser.screenshot(`${width}-${scheme}-mention.png`);
       await browser.press('ArrowDown'); await browser.press('ArrowUp'); await browser.press('Enter');
       assert.match(await browser.evaluate(`${input}.value`), /@leo/);
@@ -42,19 +43,21 @@ try {
       assert.match(await browser.evaluate(`${q('[data-testid=member-list]')}.innerText`), /Julien \(admin\)/);
       await browser.evaluate(`window.__SHARED__.emit({ type: 'presence', members: [{ id: 'leo', presence: 'away' }] })`);
       await browser.until('presence update', `${q('[data-member-id=leo] [data-testid=presence]')}?.dataset.presence === 'away'`);
+      await pause(600);
       await browser.screenshot(`${width}-${scheme}-members.png`);
       if (device === 'phone') await browser.click(q('[data-testid=shared-members-close]')); else await browser.press('Escape');
       await browser.until('member list closes', `!${q('[data-testid=member-list]')}`);
 
       await browser.click(q('[data-testid=workspace-bar-history]'));
       await browser.until('History main, admin and direct', `${qa('[data-testid=conversation-row]')}.length === 3`);
-      assert.deepEqual(await browser.evaluate(`${qa('[data-testid=conversation-row]')}.map(row => row.innerText.trim())`), ['Main', 'Admin', 'Mira and Leo']);
+      assert.deepEqual(await browser.evaluate(`${qa('[data-testid=conversation-row]')}.map(row => row.querySelector('span').textContent)`), ['Main', 'Admin', 'Mira and Leo']);
+      await pause(600);
       await browser.screenshot(`${width}-${scheme}-history.png`);
       await browser.click(`${qa('[data-testid=conversation-row]')}.find(row => row.innerText.includes('Mira and Leo'))`);
       await browser.until('direct conversation', `!!${q('[data-shared-message=direct-one]')} && !${q('[data-shared-message=one]')}`);
       await browser.click(q('[data-testid=workspace-bar-history]'));
       await browser.until('History reopens', `${qa('[data-testid=conversation-row]')}.length === 3`);
-      await browser.click(`${qa('[data-testid=conversation-row]')}.find(row => row.innerText.trim() === 'Main')`);
+      await browser.click(q('[data-testid=conversation-row][data-conversation-id=main]'));
       await browser.until('main selected', `!!${q('[data-shared-message=six]')}`);
 
       await browser.click(q('[data-shared-message=six] button'));
@@ -65,6 +68,7 @@ try {
       await browser.evaluate(`window.__SHARED__.emit({ type: 'message', message: { id: 'stream', conversationId: 'main', author: 'pm', at: new Date().toISOString(), text: 'I am checking', streaming: true } }); window.__SHARED__.emit({ type: 'delta', messageId: 'stream', conversationId: 'main', text: ' the fictional garden plan.' })`);
       await browser.until('streaming assistant rendering', `${q('[data-shared-message=stream] [data-role=assistant]')}?.dataset.streaming === 'true' && ${q('[data-shared-message=stream]')}.innerText.includes('checking the fictional')`);
       await browser.evaluate(`${q('[data-shared-message=stream]')}.scrollIntoView({ block: 'end', behavior: 'instant' })`);
+      await pause(300);
       await browser.screenshot(`${width}-${scheme}-streaming.png`);
       console.log(`PASS ${width}px ${scheme}: authors, cards, mentions, members, History and streaming`);
     }

@@ -68,7 +68,7 @@ export function MentionPicker({ query, search, generation, kind, onSelect, onDis
             onMouseEnter={() => setActive(index)} onMouseDown={event => { event.preventDefault(); onSelect(item.path); }}
             className="cursor-pointer flex-nowrap max-sm:min-h-11 pointer-coarse:min-h-11">
             <ItemMedia variant="icon"><Icon aria-hidden="true" /></ItemMedia>
-            <ItemContent className="min-w-0"><ItemTitle>{highlight(name, query)}</ItemTitle>
+            <ItemContent className="min-w-0"><ItemTitle>{item.kind === 'member' ? name : highlight(name, query)}</ItemTitle>
               <ItemDescription className="m-0 truncate">{item.path}</ItemDescription></ItemContent>
           </Item>;
         })}

@@ -2,7 +2,7 @@
 // shadcn CLI over HTTP (its registry dependencies served locally, nothing else), with every package pinned to an integrity-checked archive.
 // It then type-checks the copied chat and a page that imports the moved useRemoteChat, and bundles the page for the browser. No pi-app,
 // file-tree or other block is installed, so a dependency that only the blocks bring in is caught here.
-// Usage: npm run build && npm run registry:build && npm_config_cache=<cache> npm run test:pi-chat-consumer
+// Usage: npm run registry:build && npm run build && npm_config_cache=<cache> npm run test:pi-chat-consumer
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -51,6 +51,9 @@ try {
   for (const [name, item] of closure) for (const file of item.files ?? []) assert.ok(existsSync(join(directory, 'src', file.target)), `the CLI must create ${file.target} (${name})`);
   for (const name of ['trace', 'collapsible']) assert.ok(existsSync(join(directory, `src/components/ui/${name}.tsx`)), `the CLI installs the declared ${name} built-in`);
   assert.ok(existsSync(join(directory, 'src/components/pi-chat/use-remote-chat.ts')), 'the moved hook is installed with pi-chat alone');
+  const blocks = 'node_modules/@hachej/boring-ui-kit/bin/boring-ui-blocks.mjs';
+  run(process.execPath, [blocks, 'manifest']);
+  run(process.execPath, [blocks, 'check']);
 
   // A consumer page: the moved hook and the chat, nothing from pi-app.
   writeFileSync(join(directory, 'src/page.tsx'), `import { createRoot } from 'react-dom/client';
