@@ -1,6 +1,6 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import type { ReactNode, Ref } from 'react';
 
 /**
  * Host opt-in for running an HTML document's own scripts. `scriptSources` are the HTTPS origins the page may load libraries, styles and fonts
@@ -46,16 +46,19 @@ export function interactiveDocument(text: string, sources: readonly string[]): s
  * storage or access to this page), and no top navigation, popups, forms, downloads or modals. `allow=""` withholds camera, microphone, location
  * and the other powerful features. Changing `reload` loads the page again from the start.
  */
-export function InteractiveFrame({ text, sources, reload = 0, title = 'HTML page (running)', testId = 'viewer', children }: {
+export function InteractiveFrame({ text, sources, reload = 0, title = 'HTML page (running)', testId = 'viewer', children, frameRef, onLoad }: {
   readonly text: string;
   readonly sources: readonly string[];
   readonly reload?: number;
   readonly title?: string;
   readonly testId?: string;
   readonly children?: ReactNode;
+  /** Host message bridges may identify the sender, never read the frame's document. */
+  readonly frameRef?: Ref<HTMLIFrameElement> | undefined;
+  readonly onLoad?: (() => void) | undefined;
 }) {
   return <div className="boring-html-run flex min-h-0 flex-1 flex-col" data-testid={`${testId}-run`}>
-    <iframe key={reload} title={title} sandbox="allow-scripts" allow="" referrerPolicy="no-referrer" srcDoc={interactiveDocument(text, sources)}
+    <iframe key={reload} ref={frameRef} onLoad={onLoad} title={title} sandbox="allow-scripts" allow="" referrerPolicy="no-referrer" srcDoc={interactiveDocument(text, sources)}
       data-testid={`${testId}-run-frame`} className="size-full min-h-0 flex-1" />
     {children}
   </div>;

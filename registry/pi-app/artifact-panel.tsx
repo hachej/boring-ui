@@ -30,6 +30,7 @@ import type { InteractiveHtml } from '../viewers/interactive-html';
 import { downloadFile } from '../viewers/download';
 import { maquetteKind } from '../maquette-viewer/maquette-viewer';
 import { diagramKind } from '../diagram-viewer/diagram-viewer';
+import { mockupKind } from '../mockup-viewer/mockup-viewer';
 import { copyText } from '../utils/utils';
 import { Separator } from '@/components/ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -181,7 +182,7 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose }: {
   const { client, identity } = options;
   const { labels } = useAppText();
   const path = artifact.target.resource.path;
-  const kinds = useMemo(() => [...(options.kinds ?? []), maquetteKind, diagramKind], [options.kinds]);
+  const kinds = useMemo(() => [...(options.kinds ?? []), maquetteKind, diagramKind, mockupKind], [options.kinds]);
   // A kind's file may link to another file of the same workspace (a maquette's diagram): read its latest revision as text.
   const read = useCallback(async (other: string) => {
     const result = await client.read({ target: { ...artifact.target, resource: { ...artifact.target.resource, path: other } }, revision: { kind: 'latest' } }).catch(() => undefined);
