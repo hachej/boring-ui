@@ -8,11 +8,13 @@ const BOOKING = readFileSync(new URL('../../test/fixtures/maquette/booking.maque
 // The diagram journey's flow: the fictional booking diagram (test/fixtures/diagram/booking.diagram.json).
 const FLOW = readFileSync(new URL('../../test/fixtures/diagram/booking.diagram.json', import.meta.url), 'utf8');
 const HTML_BOOKING = readFileSync(new URL('../../test/fixtures/booking.mockup.html', import.meta.url), 'utf8');
+const HOSTILE = readFileSync(new URL('../../test/fixtures/hostile.mockup.html', import.meta.url), 'utf8');
 const NOTES = '# Picnic plan\n\nA fictional picnic by the invented Lake Placeholder.\n\n- Blanket and baskets\n- Lemonade\n';
 
 export const SOURCES = [{ name: 'workspace-app', entries: Object.entries({
   'booking mock-up': [call('write', { path: 'booking.maquette.json', content: BOOKING }), call('present', { path: 'booking.maquette.json' }), 'The booking mock-up is ready.'],
   'booking HTML': [call('write', { path: 'booking.mockup.html', content: HTML_BOOKING }), call('present', { path: 'booking.mockup.html' }), 'The HTML booking mock-up is ready.'],
+  'sandbox probe': [call('write', { path: 'hostile.mockup.html', content: HOSTILE }), call('present', { path: 'hostile.mockup.html' }), 'The sandbox probe is ready.'],
   'HTML calendar change': ['Noted: the calendar element in booking.mockup.html.'],
   'booking diagram': [call('write', { path: 'booking.diagram.json', content: FLOW }), call('present', { path: 'booking.diagram.json' }), 'The booking diagram is ready.'],
   // The comment pins of the diagram journey arrive with this message (the feedback report, fenced): the PM agent acknowledges them.

@@ -1,0 +1,19 @@
+<!-- Ported from the canvas spike hostile probe. Fictional and keyless. -->
+<main class="p-4"><h1>Sandbox probe</h1><pre id="out"></pre></main>
+<script>
+  const out = {};
+  const probe = (key, read) => { try { out[key] = read(); } catch (error) { out[key] = 'blocked: ' + error.name; } };
+  probe('origin', () => self.origin);
+  probe('parentDocument', () => !!parent.document);
+  probe('topLocation', () => String(top.location.href));
+  probe('cookie', () => document.cookie);
+  probe('localStorage', () => localStorage.length);
+  probe('indexedDB', () => typeof indexedDB.open('fictional'));
+  function show() { document.getElementById('out').textContent = JSON.stringify(out); }
+  fetch('https://example.com/api').then(() => { out.fetchHost = 'reached'; }, error => { out.fetchHost = 'blocked: ' + error.name; }).finally(show);
+  const image = new Image();
+  image.onerror = () => { out.externalImage = 'blocked'; show(); };
+  image.onload = () => { out.externalImage = 'loaded'; show(); };
+  image.src = 'https://example.com/pixel.png';
+  show();
+</script>

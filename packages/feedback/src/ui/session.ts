@@ -172,6 +172,8 @@ export interface FeedbackSession extends ExternalState<FeedbackSessionSnapshot> 
   readonly resume: (options?: SessionStartOptions) => void;
   /** A trusted viewer's host-DOM proxy for an opaque frame pick. Uses the same root, privacy and anchor checks as page picking. */
   readonly pick: (element: Element) => void;
+  /** A trusted viewer moved its proxy elements. Refreshes pin and bubble placement without changing the notes. */
+  readonly reposition: () => void;
   /** Done: closes feedback mode, transcribes and aligns voice, and leaves the draft for review. */
   readonly done: () => Promise<void>;
   /** ✕: discards everything (feedback mode or the attached draft). */
@@ -760,6 +762,7 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
       if (state.getSnapshot().using || pickRefusal(element, root) !== undefined) return;
       onPick(element);
     },
+    reposition: () => publish(),
     done,
     discard,
     setBubbleText: text => { if (bubble) { bubble.text = text; publish(); } },

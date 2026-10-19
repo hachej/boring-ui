@@ -17,5 +17,6 @@ ${sources.bindings}
       return { path: id, base: '/', content: sources[id] };
     },
   });
-  return compiler.build([...new Set(`${html} bg-background text-foreground`.split(/[\s"'`<>=]+/).filter(Boolean))]);
+  const classes = [...html.matchAll(/\bclass\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/g)].flatMap(match => (match[1] ?? match[2] ?? match[3] ?? '').split(/\s+/));
+  return compiler.build([...new Set([...classes, ...html.split(/[\s"'`]+/), 'bg-background', 'text-foreground'])]);
 }

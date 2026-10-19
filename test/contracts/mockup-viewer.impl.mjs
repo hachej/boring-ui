@@ -1,8 +1,4 @@
-// Run by mockup-viewer.test.mjs in its own process. The built-in maquette kind driven through the real pi-app ArtifactPanel, as a
-// presented `*.maquette.json` opens in it: format v1 and its versioning, the stepper and arrow keys, goto links and their hint, Back and the
-// breadcrumb, guided tours, the device frame, `#screen=` deep links, the collapsed workflow, errors, an app kind overriding the built-in, and
-// comment pins: the feedback item's point mode entered from the viewer, with the note sent to the conversation naming the screen and block.
-// Fictional data only (test/fixtures/maquette/booking.maquette.json).
+// Public artifact-panel and feedback tests. Actual browser security is exercised separately by mockup:journey.
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -14,6 +10,8 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 const out = join(root, '.cache/mockup-viewer-test');
 mkdirSync(out, { recursive: true });
 writeFileSync(join(out, 'entry.tsx'), `export { ArtifactPanel } from '${root}registry/pi-app/artifact-panel.tsx';
+export { createMockupKind, mockupKind } from '${root}registry/mockup-viewer/mockup-viewer.tsx';
+export { compileMockup } from '${root}registry/mockup-viewer/mockup-compile.ts';
 export { useComposerFeedback, usePointComments } from '${root}registry/feedback/feedback-session.tsx';`);
 await build({ entryPoints: [join(out, 'entry.tsx')], outfile: join(out, 'kit.mjs'), bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
 // Imported once the first test's DOM globals exist: Base UI decides at load time whether it runs in a browser.
@@ -47,14 +45,14 @@ async function dom(t, url = 'https://fictional.invalid/') {
   return { window, act, container, $, $$, click, settle, h: createElement, render: async element => act(async () => ui.render(element)) };
 }
 
-/** The real ArtifactPanel showing `text` as a presented file at `path`, with the host's `kinds` (none: only the built-in maquette kind). */
-async function panel(t, text, { path = 'documents/booking.mockup.html', kinds, url } = {}) {
+/** The real panel showing a workspace file. No kinds means its built-in default. */
+async function panel(t, text, { path = 'documents/booking.mockup.html', kinds, url, onShown } = {}) {
   const page = await dom(t, url);
   const artifact = { schema: 'boring.artifact', version: 1, title: 'Booking', type: 'html', mediaType: 'text/html',
     target: { resource: { providerId: 'workspace', path }, view: { kind: 'published' } }, revision: 'rev-1' };
   const bytes = new TextEncoder().encode(text);
   const client = { read: async () => ({ kind: 'available', snapshot: { bytes, ref: { revision: 'rev-1', providerId: 'workspace', path } } }), saves: async () => [], search: async () => [] };
-  await page.render(page.h(kit.ArtifactPanel, { active: { descriptor: artifact, follow: false }, versions: [artifact], options: { client, identity: { runtimeId: 'fixture' }, ...(kinds ? { kinds } : {}) }, onSelect: () => {}, onClose: () => {} }));
+  await page.render(page.h(kit.ArtifactPanel, { active: { descriptor: artifact, follow: false }, versions: [artifact], options: { client, identity: { runtimeId: 'fixture' }, ...(kinds ? { kinds } : {}), onShown }, onSelect: () => {}, onClose: () => {} }));
   await page.settle();
   return page;
 }
@@ -70,4 +68,96 @@ test('a mockup.html file uses the built-in opaque sandbox and host theme', async
   assert.match(frame.srcdoc, /connect-src 'none'/);
   assert.match(frame.srcdoc, /bg-primary/);
   assert.equal(page.$('#calendar'), null, 'artifact markup never enters the host document');
+});
+
+test('an app kind overrides the built-in, and ordinary HTML stays passive', async t => {
+  const page = await panel(t, BOOKING, { kinds: [{ match: () => true, label: 'Host mock-up', renderer: () => 'Host renderer' }] });
+  assert.equal(page.$('[data-testid=mockup-run-frame]'), null);
+  assert.match(page.container.textContent, /Host renderer/);
+});
+
+test('presentation acknowledgement waits for the async frame load', async t => {
+  const shown = [];
+  await panel(t, BOOKING, { onShown: value => shown.push({ ...value, hasFrame: !!document.querySelector('[data-testid=mockup-run-frame]') }) });
+  assert.ok(shown.length, 'the loaded frame acknowledges its revision');
+  assert.equal(shown[0].hasFrame, true, 'the async frame exists before the revision is acknowledged');
+  assert.equal(shown[0].path, 'documents/booking.mockup.html');
+  assert.equal(shown[0].revision, 'rev-1');
+});
+
+test('Tailwind keeps child and attribute variants intact', async t => {
+  await dom(t);
+  const css = await kit.compileMockup('<main class="[&>button]:p-2 data-[state=open]:bg-primary"><button>Fictional</button></main>');
+  assert.match(css, /padding: calc\(var\(--spacing\) \* 2\)/);
+  assert.match(css, /data-state/);
+});
+
+async function commented(t) {
+  const page = await dom(t);
+  const { createFeedbackSession } = await import('@hachej/boring-feedback/ui');
+  const { createPrivacyPolicy } = await import('@hachej/boring-feedback/page');
+  const { useMemo } = await import('react');
+  const session = createFeedbackSession({ app: 'fictional-mockup', root: page.container, policy: createPrivacyPolicy() });
+  t.after(() => session.dispose());
+  const path = 'booking.mockup.html';
+  const artifact = { schema: 'boring.artifact', version: 1, title: 'Booking', type: 'html', mediaType: 'text/html',
+    target: { resource: { providerId: 'workspace', path }, view: { kind: 'published' } }, revision: 'rev-1' };
+  const client = { read: async () => ({ kind: 'available', snapshot: { bytes: new TextEncoder().encode(BOOKING), ref: { revision: 'rev-1', providerId: 'workspace', path } } }) };
+  const composer = { current: undefined };
+  function Host() {
+    const comments = kit.usePointComments(session);
+    composer.current = kit.useComposerFeedback(session);
+    const kinds = useMemo(() => [kit.createMockupKind({ comments })], [comments]);
+    return page.h(kit.ArtifactPanel, { active: { descriptor: artifact, follow: false }, versions: [artifact], options: { client, identity: { runtimeId: 'fixture' }, kinds }, onSelect: () => {}, onClose: () => {} });
+  }
+  await page.render(page.h(Host));
+  await page.settle();
+  const message = async (data, source = page.$('[data-testid=mockup-run-frame]').contentWindow, origin = 'null') => page.act(async () => {
+    page.window.dispatchEvent(new page.window.MessageEvent('message', { data, source, origin }));
+  });
+  return { ...page, session, composer, message };
+}
+const PICK = { type: 'mockup:pick', selector: ':root > :nth-child(2) > :nth-child(1) > :nth-child(1)', rect: { x: 10, y: 20, w: 100, h: 40 } };
+
+test('a frame pick pins through the real feedback session and sends the file and structural selector', async t => {
+  const page = await commented(t);
+  await page.click('[data-testid=mockup-comment]');
+  assert.equal(page.session.getSnapshot().mode, 'point');
+  await page.message(PICK);
+  assert.ok(page.session.getSnapshot().bubble);
+  await page.act(async () => { page.session.setBubbleText('Make the action clearer'); page.session.saveBubble(); });
+  assert.equal(page.session.getSnapshot().notes[0].feedbackId, 'mockup:booking.mockup.html#element=' + PICK.selector);
+  await page.click('[data-testid=mockup-comment]');
+  const sent = await page.composer.current.attach('Please change this');
+  assert.equal(sent.kind, 'ok');
+  assert.match(sent.text, /Make the action clearer/);
+  assert.match(sent.text, /mockup:booking\.mockup\.html#element=:root/);
+});
+
+test('forged senders, invalid selectors, oversized messages, wrong origins and suspended picks cannot create notes', async t => {
+  const page = await commented(t);
+  await page.click('[data-testid=mockup-comment]');
+  await page.message(PICK, page.window);
+  await page.message(PICK, undefined, 'https://hostile.invalid');
+  await page.message({ ...PICK, selector: '#private-canary' });
+  await page.message({ ...PICK, selector: 'x'.repeat(5000) });
+  await page.message({ ...PICK, rect: { ...PICK.rect, x: Infinity } });
+  assert.equal(page.session.getSnapshot().notes.length, 0);
+  await page.act(async () => page.session.setUseToggle(true));
+  await page.message(PICK);
+  assert.equal(page.session.getSnapshot().notes.length, 0);
+  await page.act(async () => page.session.setUseToggle(false));
+  await page.message(PICK);
+  assert.equal(page.session.getSnapshot().notes.length, 1);
+});
+
+test('proxy layout updates keep the note and element identity', async t => {
+  const page = await commented(t);
+  await page.click('[data-testid=mockup-comment]');
+  await page.message(PICK);
+  const bubble = page.session.getSnapshot().bubble;
+  await page.message({ ...PICK, type: 'mockup:layout', rect: { ...PICK.rect, y: 60 } });
+  assert.equal(page.session.getSnapshot().bubble.element, bubble.element);
+  assert.equal(bubble.element.style.top, '60px');
+  assert.equal(page.session.getSnapshot().notes.length, 1);
 });

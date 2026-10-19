@@ -412,6 +412,7 @@ function useSyncState(session: FeedbackSession | undefined): FeedbackSessionSnap
 export interface PointCommentsProp {
   /** A host-owned proxy element for an opaque frame pick, checked by the session's root and privacy policy. */
   readonly pick: (element: Element) => void;
+  readonly reposition: () => void;
   /** Clicks are currently captured, false during Use app or processing. */
   readonly picking: boolean;
   /** The session is annotating now (point mode or feedback mode). */
@@ -433,6 +434,7 @@ export function usePointComments(session: FeedbackSession | undefined): PointCom
   return useMemo(() => !session || !state ? undefined : {
     active: state.phase === 'active' || state.phase === 'processing',
     pick: session.pick,
+    reposition: session.reposition,
     picking: state.phase === 'active' && !state.using,
     point: () => {
       const phase = session.getSnapshot().phase;

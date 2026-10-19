@@ -574,6 +574,22 @@ once point mode ends. Without a session `usePointComments` returns undefined and
 digits in a row or an `@`, so keep maquette paths and ids free of those for the pins to name them. `usePointComments` returns
 `{ active, point, pins: [{ number, target }] }`, built on the new `SessionNote.feedbackId`.
 
+## HTML mock-ups (`mockup-viewer`)
+
+An agent writes `booking.mockup.html` in its workspace and presents it. `AgentWorkspace` and `ArtifactPanel` render this suffix by default, before the ordinary HTML viewer. Other `.html` files keep their existing passive default. App kinds in `artifactKinds` still win. For standalone use, import `MockupViewer`, `mockupKind` or `createMockupKind({ locale, comments })` from the installed `components/mockup-viewer/mockup-viewer`.
+
+The renderer ports the HTML implementation from `spike/canvas-board` at `3b838e3a5`. It reuses `InteractiveFrame` with `sandbox="allow-scripts"`, `allow=""`, an opaque origin, no-referrer and the existing CSP with no allowed origins. Artifact scripts run only inside that sandbox. The host never parses artifact markup into its DOM or imports artifact code. Files are still read through the workspace provider, with no new storage.
+
+The viewer copies the host element's computed CSS variables into the frame. Theme changes update those variables without restarting the page. Tailwind 4.3.3 compiles the document's classes in a lazy module, with the upstream theme and preflight confined to the frame. The generated compiler input retains Tailwind's MIT license; regenerate it with `node registry/mockup-viewer/build-tailwind.mjs` after upgrading Tailwind or changing theme bindings. Hosts must enable ESM chunk splitting to keep the compiler out of their entry bundle.
+
+Pass `usePointComments(session)` as `AgentWorkspace comments` or to `createMockupKind`. Its icon enters the existing feedback point mode. A click inside the frame sends a bounded structural selector and rectangle. The host accepts only the current iframe window with an opaque origin. It creates a host-DOM proxy and submits it through the session's normal root, privacy, anchor and note checks. Selectors contain only child positions, never IDs, text, attributes or form values. The note's marked target is `mockup:<file path>#element=<selector>`. As with maquettes, the privacy policy drops marked targets containing three consecutive digits or `@`. Picks are untrusted observations of that document. Pin overlays belong to the current viewer mount; retained notes do not silently rebind to a rewritten file. Use app suspends frame interception too.
+
+### Host CSP
+
+A `srcdoc` frame inherits its host's CSP. Hosts that forbid inline scripts need a separate sandbox origin, such as a usercontent domain, instead of `srcdoc`; this block does not provision that origin. Set the host's `frame-src 'none'`, or a narrowly qualified sandbox-origin allowlist, to prevent a hostile page from navigating its own frame to an external site. The frame's own restrictive CSP closes fetch, external images, child frames and forms, but cannot enforce its own navigation policy.
+
+`npm run mockup:journey` drives the fictional `test/fixtures/booking.mockup.html` through the workspace app and real point comments. It checks theme variables, opaque-origin isolation, blocked storage and network, delivered element notes and 360px overflow. Screenshots cover phone 390 and desktop 1440 in light and dark.
+
 ## Diagram viewer (`diagram-viewer`)
 
 An agent writes boxes and arrows as `<name>.diagram.json` and presents it; the `pi-app` artifact panel draws it with `DiagramViewer` by default.
