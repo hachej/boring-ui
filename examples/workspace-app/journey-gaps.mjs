@@ -25,6 +25,20 @@ const libraryPick = async (tap, path) => {
   await (tap ? browser.tap : browser.click)(row);
 };
 
+const oneMenuAndSelectedCase = async (tap, name) => {
+  const click = tap ? browser.tap : browser.click;
+  assert.equal(await browser.evaluate(`!!${q('[data-testid=maquette-menu]')}`), false, 'no second "…" menu beside the counter');
+  await click(q('[data-testid=artifact-more]'));
+  await browser.until('the panel menu lists How it works', `!!${q('[data-testid=maquette-how-open]')}`, 5000);
+  await click(q('[data-testid=maquette-how-open]'));
+  await browser.until('the How it works dialog', `!!${q('[data-testid=maquette-case]')}`, 5000);
+  await click(q('[data-testid=maquette-case]'));
+  await pause(300);
+  await shoot(`${name}-how-selected`);
+  await browser.press('Escape');
+  await browser.until('the dialog closed', `!${q('[data-testid=maquette-how]')}`, 5000);
+};
+
 const app = await startWorkspaceApp({ directory: mkdtempSync(join(tmpdir(), 'boring-gaps-')) });
 let browser;
 try {
@@ -47,6 +61,7 @@ try {
     await browser.until('the maquette viewer', `!!${q('[data-testid=maquette-walk]')}`, 10000);
     assert.equal(await browser.evaluate(`${q('[data-testid=file-preview]')}`), null);
     await shoot('desktop-library-maquette');
+    await oneMenuAndSelectedCase(false, 'desktop-library-maquette');
   });
 
   await step('390: the bar keeps the app title and leaves the conversation to History; the Library opens the maquette', async () => {
@@ -67,6 +82,7 @@ try {
     await browser.until('the maquette viewer', `!!${q('[data-testid=maquette-walk]')}`, 10000);
     assert.ok(await browser.evaluate(noOverflow), 'no horizontal scroll at 390');
     await shoot('phone-library-maquette');
+    await oneMenuAndSelectedCase(true, 'phone-library-maquette');
   });
 } finally {
   await browser?.close();

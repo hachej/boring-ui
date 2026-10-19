@@ -22,6 +22,8 @@ function run(command, args, env) {
 }
 try {
   const isolated = prepareConsumerIsolation(directory);
+  // Plain Node tests load the canvas renderer, which imports tldraw.css: the same stub hook as run-tests, copied inside the isolated install.
+  for (const name of ['css-stub-hooks.mjs', 'css-stub-register.mjs']) writeFileSync(join(directory, name), readFileSync(join(root, 'scripts', name)));
   mkdirSync(join(directory, 'packs'));
   const archives = [];
   for (const name of ['files', 'ui', ...(remote ? ['agent'] : [])]) {
@@ -159,12 +161,12 @@ console.log('server document import and validation completed without DOM or edit
   // Tests are copied flat; their host (one SQLite workspace per scope, public @hachej/boring-files entries only) sits beside them.
   copyFileSync(join(root, 'shared/sqlite-workspaces.mjs'), join(directory, 'sqlite-workspaces.mjs'));
   for (const name of tests) writeFileSync(join(directory, name), readFileSync(join(root, 'test/packages', name), 'utf8').replace("'../../shared/sqlite-workspaces.mjs'", "'./sqlite-workspaces.mjs'"));
-  run(process.execPath, ['--test', '--experimental-test-isolation=none', ...tests], isolated);
+  run(process.execPath, ['--import', './css-stub-register.mjs', '--test', '--experimental-test-isolation=none', ...tests], isolated);
   if (remote) {
     const copied = ['shared/canvas-transport-protocol.mjs', 'shared/canvas-transport-server.mjs', 'shared/canvas-transport-client.mjs',
       'test/compatibility/canvas-transport.test.mjs', 'test/compatibility/canvas-transport-protocol.test.mjs', 'test/fixtures/canvas-transport-crash-child.mjs', 'test/fixtures/native-document.mjs', 'test/compatibility/canvas-transport-client.test.mjs'];
     for (const path of copied) { mkdirSync(join(directory, path, '..'), { recursive: true }); copyFileSync(join(root, path), join(directory, path)); }
-    run(process.execPath, ['--test', '--experimental-test-isolation=none', 'test/compatibility/canvas-transport.test.mjs', 'test/compatibility/canvas-transport-protocol.test.mjs', 'test/compatibility/canvas-transport-client.test.mjs'], isolated);
+    run(process.execPath, ['--import', './css-stub-register.mjs', '--test', '--experimental-test-isolation=none', 'test/compatibility/canvas-transport.test.mjs', 'test/compatibility/canvas-transport-protocol.test.mjs', 'test/compatibility/canvas-transport-client.test.mjs'], isolated);
   }
   writeFileSync(join(directory, 'browser-entry.js'), `export { createCanvasController, canvasMediaType } from '@hachej/boring-ui-kit/canvas';\n${editor ? "export { CanvasEditor } from '@hachej/boring-ui-kit/canvas-editor';\nimport 'tldraw/tldraw.css';\n" : ''}${remote ? "export { connectCanvasPresentation } from './shared/canvas-transport-client.mjs';\n" : ''}`);
   run(process.execPath, ['node_modules/esbuild/bin/esbuild', 'browser-entry.js', '--bundle', '--platform=browser', '--format=esm', '--outfile=browser.js', '--metafile=browser-meta.json'], isolated);

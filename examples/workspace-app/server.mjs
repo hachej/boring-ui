@@ -4,7 +4,7 @@
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { Harness, createRegistry } from '@earendil-works/pi-durable';
@@ -23,12 +23,13 @@ import { createWorkspaceProvider } from '@hachej/boring-files/workspace';
 import { createRevisionHandler } from '@hachej/boring-files/revision-handler';
 import { sendWebResponse, webRequest } from '@hachej/boring-files/node-http';
 import { readFiles, writeFiles } from '../../shared/workspace-tools.mjs';
+import { BLOB_LIMIT, createBlobHost } from './blobs.mjs';
 import { buildTailwind } from '../../lab/studio/tailwind.mjs';
 import { stockShadowTokens, themePreviewHead, themePreviewStatics } from '../../test/fixtures/themes/preview.mjs';
 
 const here = name => fileURLToPath(new URL(name, import.meta.url));
 
-export async function startWorkspaceApp({ directory, port = 0, token = randomUUID(), scripted = process.env.STUDIO_MODEL === 'scripted' } = {}) {
+export async function startWorkspaceApp({ directory, port = 0, token = randomUUID(), scripted = process.env.STUDIO_MODEL === 'scripted', blobs = false } = {}) {
   mkdirSync(join(directory, 'workspace'), { recursive: true });
   // The model: a real provider, or the keyless scripted layer of the journeys (./script.mjs), chosen by the host process only.
   const models = scripted ? (await (await import('../../lab/studio/scripted-model.mjs')).createScriptedModels({ sources: (await import('./script.mjs')).SOURCES })).models : createModels();
@@ -56,6 +57,9 @@ export async function startWorkspaceApp({ directory, port = 0, token = randomUUI
   // Journey fault: the next N discovery requests are refused with a 503 (the page then shows its Retry).
   const faults = { resources: 0 };
   const resources = createRevisionHandler({ resolve: async request => allowed(request) ? { provider: files, access: person } : null });
+  // `blobs`: large files as pointers (./blobs.mjs), served and uploaded at /_files, with three fictional files to start with.
+  const blobHost = blobs ? createBlobHost({ files, access: person, allowed, token }) : undefined;
+  await blobHost?.seed();
   const handlers = {
     '/api/conversations': createConversationsHandler({ conversations, authenticate: async request => allowed(request) ? { owner: agent.id, start } : null }),
     '/api/chat': createChatTransportHandler({ authenticate: async request => {
@@ -71,7 +75,7 @@ export async function startWorkspaceApp({ directory, port = 0, token = randomUUI
   };
 
   // ---- The page: page.jsx bundled once, Tailwind over the registry blocks, the token and identity in the page.
-  const bundle = await build({ entryPoints: [here('./page.jsx')], bundle: true, write: false, outdir: here('./out'), format: 'esm', platform: 'browser', jsx: 'automatic',
+  const bundle = await build({ entryPoints: [here('./page.jsx')], bundle: true, write: false, outdir: here('./out'), entryNames: 'app', chunkNames: 'chunk-[hash]', splitting: true, format: 'esm', platform: 'browser', jsx: 'automatic',
     alias: { '@': here('../app-shell') }, define: { 'process.env.NODE_ENV': '"production"' }, logLevel: 'silent' });
   const css = [await buildTailwind({ extraDirectories: ['examples/workspace-app', 'test/fixtures/themes'] }), ...bundle.outputFiles.filter(file => file.path.endsWith('.css')).map(file => file.text),
     readFileSync(here('../../registry/feedback/feedback.css'), 'utf8'),
@@ -80,6 +84,7 @@ export async function startWorkspaceApp({ directory, port = 0, token = randomUUI
 <link rel="stylesheet" href="/app.css">${themePreviewHead}</head><body><div id="root"></div><script>window.__APP__=${JSON.stringify({ token, identity: { runtimeId: 'app', ...person } })}</script>
 <script type="module" src="/app.js"></script></body></html>`;
   const statics = { ...themePreviewStatics, '/': ['text/html; charset=utf-8', page], '/app.js': ['text/javascript; charset=utf-8', bundle.outputFiles.find(file => file.path.endsWith('.js')).text], '/app.css': ['text/css; charset=utf-8', css],
+    ...Object.fromEntries(bundle.outputFiles.filter(file => file.path.endsWith('.js')).map(file => [`/${basename(file.path)}`, ['text/javascript; charset=utf-8', file.text]])),
     // pdf.js's worker at the URL the bundle resolves (esbuild leaves `new URL(<package path>, import.meta.url)` as is), for browsers without a PDF viewer.
     '/pdfjs-dist/build/pdf.worker.min.mjs': ['text/javascript; charset=utf-8', readFileSync(fileURLToPath(import.meta.resolve('pdfjs-dist/build/pdf.worker.min.mjs')))] };
 
@@ -89,9 +94,12 @@ export async function startWorkspaceApp({ directory, port = 0, token = randomUUI
     outgoing.on('close', () => closed.abort());
     try {
       const fixed = incoming.method === 'GET' && statics[url.pathname];
-      if (fixed) return void outgoing.writeHead(200, { 'content-type': fixed[0], 'cache-control': 'no-store' }).end(fixed[1]);
-      const handler = handlers[url.pathname];
-      const request = handler && await webRequest(incoming, url, { signal: closed.signal });
+      // An opaque srcdoc frame may run scripts but cannot navigate to an external origin.
+      // The page's cookie lets its <img> and PDF frame reach /_files, which checks it on every request (they cannot send the bearer).
+      if (fixed) return void outgoing.writeHead(200, { 'content-type': fixed[0], 'cache-control': 'no-store', 'content-security-policy': "frame-src 'none'", ...(blobHost && url.pathname === '/' ? { 'set-cookie': `boring-blob=${token}; HttpOnly; SameSite=Strict; Path=/_files` } : {}) }).end(fixed[1]);
+      const blobRoute = blobHost && (url.pathname === '/_files' || url.pathname.startsWith('/_files/'));
+      const handler = blobRoute ? blobHost.handle : handlers[url.pathname];
+      const request = handler && await webRequest(incoming, url, { signal: closed.signal, ...(blobRoute ? { maxBytes: BLOB_LIMIT } : {}) });
       await sendWebResponse(request ? await handler(request) : new Response(null, { status: handler ? 413 : 404 }), outgoing, { signal: closed.signal });
     } catch (error) {
       if (!outgoing.headersSent) outgoing.writeHead(500);
@@ -107,7 +115,7 @@ export async function startWorkspaceApp({ directory, port = 0, token = randomUUI
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const app = await startWorkspaceApp({ directory: process.env.APP_DATA ?? '.cache/workspace-app', port: Number(process.env.PORT ?? 0) });
+  const app = await startWorkspaceApp({ directory: process.env.APP_DATA ?? '.cache/workspace-app', port: Number(process.env.PORT ?? 0), blobs: process.env.APP_BLOBS === '1' });
   console.log(`Workspace app on ${app.url}. Fictional content only.`);
   for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => { app.close().finally(() => process.exit(0)); });
 }

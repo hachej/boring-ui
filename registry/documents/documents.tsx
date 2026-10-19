@@ -12,6 +12,7 @@ import type { FileTreeController } from '@hachej/boring-ui-kit/file-tree';
 import { FileTreeView } from '../file-tree/file-tree';
 import type { RevisionProvider } from '@hachej/boring-files/revision';
 import { mediaTypeOf, viewerKindOf } from '@hachej/boring-files/file-types';
+import { checkBlobBase, withBlobPointers } from '@hachej/boring-files/blob';
 import type { ViewerKind } from '@hachej/boring-files/file-types';
 import { ListDetail } from '../app-shell/list-detail';
 import { ArtifactPanel } from '../pi-app/artifact-panel';
@@ -37,6 +38,8 @@ export interface DocumentsProps {
   /** Host viewers by kind, as for the Library (for example a canvas). */
   readonly viewers?: CustomViewers | undefined;
   readonly share?: ViewerOptions['share'];
+  /** Where the host serves the bytes of large files (blob pointers): a same-origin path starting with `/`, default `/_files/`. */
+  readonly blobBase?: string | undefined;
 }
 
 const nameOf = (path: string) => path.split('/').pop() || path;
@@ -56,14 +59,14 @@ function useWorkspaceVersion(provider: RevisionProvider): number {
 }
 
 /** The Library's tree over the provider: created and disposed with the binding, read again when the workspace changes. */
-function useFileTree(provider: RevisionProvider, version: number): FileTreeController | undefined {
+function useFileTree(provider: RevisionProvider, version: number, blobBase: string): FileTreeController | undefined {
   const [tree, setTree] = useState<FileTreeController>();
   useEffect(() => {
-    const next = createFileTreeController({ revisionProvider: provider });
+    const next = createFileTreeController({ revisionProvider: withBlobPointers(provider, blobBase) });
     setTree(next);
     void next.refresh();
     return () => next.dispose();
-  }, [provider]);
+  }, [provider, blobBase]);
   useEffect(() => {
     if (!tree || version === 0) return;
     const { query, expanded } = tree.getSnapshot();
@@ -171,11 +174,12 @@ function DocumentDetail({ provider, path, version, options, labels, locale, olde
   </div>;
 }
 
-export function Documents({ provider, locale, labels: given, viewers, share }: DocumentsProps) {
+export function Documents({ provider, locale, labels: given, viewers, share, blobBase: givenBase }: DocumentsProps) {
   const labels = documentsLabels(locale, given);
   const language: DocumentsLocale = locale === 'fr' ? 'fr' : 'en';
   const version = useWorkspaceVersion(provider);
-  const tree = useFileTree(provider, version);
+  const blobBase = checkBlobBase(givenBase);
+  const tree = useFileTree(provider, version, blobBase);
   const [path, setPath] = useState<string>();
   // An older revision of the file on show (`undefined`: the editable file).
   const [pinned, setPinned] = useState<{ readonly path: string; readonly revision: string }>();
@@ -183,7 +187,7 @@ export function Documents({ provider, locale, labels: given, viewers, share }: D
   const dirty = useRef(false);
   const onDirty = useCallback((unsaved: boolean) => { dirty.current = unsaved; }, []);
   const mayLeave = () => !dirty.current || window.confirm(labels.discardChanges);
-  const options = useMemo<ViewerOptions>(() => ({ client: provider, identity: provider.identity, ...(viewers ? { viewers } : {}), ...(share ? { share } : {}) }), [provider, viewers, share]);
+  const options = useMemo<ViewerOptions>(() => ({ client: provider, identity: provider.identity, blobBase, ...(viewers ? { viewers } : {}), ...(share ? { share } : {}) }), [provider, viewers, share, blobBase]);
   const choose = (next: string) => {
     if (next === path || !mayLeave()) return;
     setPath(next);

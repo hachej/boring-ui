@@ -24,12 +24,14 @@ import { HtmlPane } from '../viewers/html-pane';
 import { MarkdownPane } from '../viewers/markdown-pane';
 import { ViewerFrame, ViewerToggle } from '../viewers/viewer-frame';
 import type { ViewerFrameProps, ViewerShare } from '../viewers/viewer-frame';
+import type { ViewerMenuItem } from '../viewers/menu';
 import { ViewerVersions } from '../viewers/menu';
 import type { ViewerVersion } from '../viewers/menu';
 import type { InteractiveHtml } from '../viewers/interactive-html';
 import { downloadFile } from '../viewers/download';
-import { maquetteKind } from '../maquette-viewer/maquette-viewer';
+import { MaquetteMenuContext, maquetteKind } from '../maquette-viewer/maquette-viewer';
 import { diagramKind } from '../diagram-viewer/diagram-viewer';
+import { isMockupPath, mockupKind } from '../mockup-viewer/mockup-viewer';
 import { copyText } from '../utils/utils';
 import { Separator } from '@/components/ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -48,7 +50,7 @@ const EXTENSION = /\.([A-Za-z0-9]{1,8})$/;
  * app's kind for those files wins. The chat card (through the kinds `AgentWorkspace` hands it), the panel and a file opened from the Library,
  * the file tree or a link all resolve here.
  */
-export const withBuiltInKinds = (kinds: readonly ArtifactKind[] | undefined): readonly ArtifactKind[] => [...(kinds ?? []), maquetteKind, diagramKind];
+export const withBuiltInKinds = (kinds: readonly ArtifactKind[] | undefined): readonly ArtifactKind[] => [...(kinds ?? []), maquetteKind, diagramKind, mockupKind];
 export const resolveKind = (artifact: ArtifactDescriptor, kinds: readonly ArtifactKind[] | undefined): ArtifactKind | undefined => artifactKind(artifact, withBuiltInKinds(kinds));
 
 /** One retained revision of a file with its save time (`files.saves(path)` of `@hachej/boring-files/workspace`). */
@@ -83,6 +85,8 @@ export interface ViewerOptions {
   readonly onBeforeLeaveChange?: ((flush: (() => Promise<boolean>) | null) => void) | undefined;
   /** Told each revision a built-in viewer has mounted and shows (after it loads, never before): the page's acknowledgement of `present`. */
   readonly onShown?: ((shown: { readonly path: string; readonly revision: string; readonly hidden?: true }) => void) | undefined;
+  /** Where the host serves blob bytes (a checked same-origin path, default `/_files/`): a pointer file opens from `<blobBase><id>`. */
+  readonly blobBase?: string | undefined;
 }
 
 /** Reports `revision` of `path` once the viewer showing it has mounted (an effect, so never before the panel really shows it), and `hidden` when it stops. */
@@ -189,6 +193,8 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose, headerSta
   const { client, identity } = options;
   const { labels } = useAppText();
   const path = artifact.target.resource.path;
+  const [ready, setReady] = useState<{ revision: string | undefined; text: string }>();
+  const [kindMenu, setKindMenu] = useState<readonly ViewerMenuItem[]>([]);
   const kinds = useMemo(() => withBuiltInKinds(options.kinds), [options.kinds]);
   // A kind's file may link to another file of the same workspace (a maquette's diagram): read its latest revision as text.
   const read = useCallback(async (other: string) => {
@@ -226,7 +232,7 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose, headerSta
   const extension = EXTENSION.exec(path)?.[1] ?? 'txt';
   const revision = saved.kind === 'open' ? saved.snapshot.ref.revision : pinned ? artifact.revision : undefined;
   // A host viewer and the canvas (which shows only a "no viewer" note) never report a mount: a presented file in them stays unconfirmed.
-  useReportShown(options.onShown, path, !custom && type !== 'canvas' && saved.kind === 'open' ? saved.snapshot.ref.revision : undefined);
+  useReportShown(options.onShown, path, !custom && type !== 'canvas' && saved.kind === 'open' && (!isMockupPath(path) || ready !== undefined && ready.revision === revision && ready.text === saved.text) ? saved.snapshot.ref.revision : undefined);
   // Choosing newest follows live saves; Current marks the displayed revision.
   const versions = menu.items.length > 1 ? <ViewerVersions testId="artifact-versions" current={menu.current} onSelect={onSelect} versions={menu.items} /> : undefined;
   const target = { artifact: artifactKey(artifact), version: pinned ? artifact.revision : 'latest' };
@@ -256,7 +262,7 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose, headerSta
   if (type === 'markdown' && controller) return body(document(<MarkdownPane controller={controller as MarkdownController} initialMode="rich" onAutosaveChange={registerAutosave} onBeforeLeaveChange={options.onBeforeLeaveChange} {...frame} />));
   if (type === 'html' && controller) return body(document(<HtmlPane controller={controller as HtmlController} {...(options.interactive ? { interactive: options.interactive } : {})} {...frame} />));
   const actions = { onCopy: () => copyText(text ?? ''), onDownload: () => downloadFile(filename, text ?? '', `${artifact.mediaType};charset=utf-8`) };
-  if (kind?.renderer) return body(<ViewerFrame {...frame} {...actions}><div data-testid="artifact-kind-view" className="min-h-0 flex-1 overflow-auto">{kind.renderer({ artifact, text: saved.text, revision: saved.snapshot.ref.revision, pinned, fragment, read })}</div></ViewerFrame>);
+  if (kind?.renderer) return body(<ViewerFrame {...frame} {...actions} menu={kindMenu}><MaquetteMenuContext value={setKindMenu}><div data-testid="artifact-kind-view" className="min-h-0 flex-1 overflow-auto">{kind.renderer({ artifact, text: saved.text, revision: saved.snapshot.ref.revision, pinned, fragment, read, onReady: () => setReady({ revision, text: saved.text }) })}</div></MaquetteMenuContext></ViewerFrame>);
   if (type === 'code' && artifact.language === 'csv') return body(<ViewerFrame {...frame} {...actions}><div className="min-h-0 flex-1 overflow-auto"><CsvTable text={saved.text} /></div></ViewerFrame>);
   if (type === 'svg') return body(<SvgView text={saved.text} title={artifact.title} frame={{ ...frame, ...actions }} />);
   if (type === 'canvas') return body(<ViewerFrame {...frame}><p className="m-0 p-4 text-sm text-muted-foreground" role="status">{labels.noCanvasViewer}</p></ViewerFrame>);

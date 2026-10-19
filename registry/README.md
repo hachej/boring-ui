@@ -241,6 +241,17 @@ The host mounts these handlers, each behind its own authentication (one composit
 
 `examples/workspace-app` is that page and server only (`npm run workspace-app`; `npm run workspace-app:journey` drives it with the scripted model: the list, search, switching, an artifact on the right, collapse right after a switch (the toggle is the same button across it), and the phone drawer and sheet at 390px; then `?configured`, the same page rebranded through the props below, with every host action clicked, by keyboard too, and at 390px).
 
+### Large files (blob pointers)
+
+A large or binary file (up to 100 MB) can live in the host's blob store while the workspace holds a small pointer file, `<name>.blob.json` (`@hachej/boring-files/blob`, format in [the files README](../packages/files/README.md#large-files-blob-pointers-and-media-sniffing)). The host serves the bytes at `GET <blobBase><encodeURIComponent(id)>`, same origin, checking access on every request (an `<img>` or PDF frame sends cookies, not a bearer header) and setting disposition, `nosniff` and a CSP.
+
+- `resources.blobBase` (default `/_files/`; with a `revisionProvider`, `resources` may carry only the blob options): a same-origin path starting with `/`. Anything else (`https://…`, `//host/`, a relative path) is refused with a `TypeError` when the page renders. `Documents` takes the same `blobBase` prop.
+- The Library reads its listings through `withBlobPointers`: each pointer is resolved there once, to `{ name, size, type, url }`, and listed under its file's name, kind and size; the row's Download fetches the URL.
+- The file viewer resolves a pointer where it reads it and gives the viewers a URL, never the pointer: an image inline (`<img src>`), a PDF in the PDF viewer loading the URL itself (the bytes never enter the page), anything else a default shadcn download action named after the file. A newer pointer format (`"boring:blob": 2`) shows as its JSON file with a muted note; an invalid pointer shows as its JSON file.
+- `resources.uploadBlob(file, { signal, onProgress })`, optional: Library uploads above `uploads.maxBytes` go to it. The host stores the bytes and writes the pointer file itself (for example `POST /_files`), then resolves with the pointer it wrote; the Library checks it with `parseBlobPointer`, reloads its listing and writes nothing. `onProgress({ loaded, total })` drives a default shadcn `Progress` in the upload row, whose cancel icon button aborts `signal` (no error shown); a refusal rejects with `{ error: { code, message } }` and the Library shows `message`. Without `uploadBlob` a file above `uploads.maxBytes` is refused with the existing `attachmentTooLarge` message. The `file-tree` item now also installs the shadcn `progress` component.
+
+`examples/workspace-app` has a fictional in-memory host (`blobs.mjs`, `startWorkspaceApp({ blobs: true })` or `APP_BLOBS=1`, page `?blobs`), and `npm run blobs:journey` drives it at 1440 and 390, light and dark.
+
 ### Labels, icons and host actions
 
 Every block takes its words as one typed, partial `labels` object over its exported defaults (strings, or functions where a value goes in, for example `noMatch(query)`), its icons as a partial `icons` map (any component taking `className`; every lucide icon fits), and host actions as `BlockAction` lists: `{ id, label, icon?, onSelect, placement?: 'header' | 'menu', disabled? }`. A `header` action is a button beside the block's own (icon only when it has an icon, the label as its name and tooltip), a `menu` action an item of the "…" menu (arrow keys, Enter, Escape); its test id is `<surface>-<id>`. No i18n framework: an app that translates passes one object per language. `BlockAction`, `BlockActions` and the shared `ActionMenu` live in the `button` item (`button/actions.tsx`).
@@ -517,7 +528,7 @@ Differences from the PM skill (`boring-pm`): its `maquettes.md` describes no JSO
 
 ## Board format (`board-viewer`)
 
-A PM agent writes a board as `<name>.board.json` to lay its mock-ups out side by side: each maquette screen and each HTML mock-up becomes a frame, left to right, with an arrow for every `goto` link and a sticky note where it helps. The file is plain data; it names other files in the same folder and embeds nothing. The board file is the only authority: a canvas (none ships in this item) is a projection of it, and people's moves and notes come back as a new `board@1` file. An agent can write and check a board without any canvas runtime: the functions below are pure.
+A PM agent writes a board as `<name>.board.json` to lay its mock-ups out side by side: each maquette screen and each HTML mock-up becomes a frame, left to right, with an arrow for every `goto` link and a sticky note where it helps. The file is plain data; it names other files in the same folder and embeds nothing. The board file is the only authority: the viewer projects it into a disposable native canvas, and people's moves and notes come back as a new `board@1` file. An agent can write and check a board without any canvas runtime: the functions below are pure.
 
 ```jsonc
 {
@@ -545,6 +556,25 @@ The functions live in `registry/board-viewer/board.ts` (`components/board-viewer
 - `applyCanvasEdits(board, { positions, notes })` writes frame positions and the remaining notes back into the board (a note keeps its `near`); maquette, HTML and link entries never change. It returns `ok` or `invalid` with reasons. `serializeBoard(board)` gives the file text.
 
 Fictional fixtures for this format are in `test/fixtures/board/` (a three-screen booking maquette, one mock-up, one board).
+
+### Installing the board viewer
+
+Install `board-viewer` and pass its kind to the artifact panel or workspace:
+
+```tsx
+import { createBoardKind } from '@/components/board-viewer/board-viewer';
+
+const board = createBoardKind({ client, identity, assetUrls, licenseKey });
+<AgentWorkspace {...workspace} artifactKinds={[board]} />;
+```
+
+Use the same resource `client` and authenticated receipt `identity` as the workspace. The host supplies the complete tldraw `assetUrls` map and its license key as props. The [self-hosted assets recipe](../examples/canvas-assets/self-hosted.mjs) serves fonts, icons and translations from the host origin. The key never belongs in a board file. The current owner-approved key expires on 2027-01-01; hosts own renewal and the SDK's licensing and egress obligations.
+
+The block lazy-loads `CanvasProjection` from `@hachej/boring-ui-kit/canvas-editor`, including native CSS. Desktop controls move frames, pan, edit notes, undo and fit. Double-click a frame to interact with its contents; Escape returns to the canvas. Freehand/native drawing records are not part of `board@1`. Phone and coarse-pointer sessions start with the hand tool, hide drawing controls and fit the first frame. Native read-only mode also blocks accidental edits; a pinned historical board is always read-only. Optional `comments` accepts the existing host point-comments binding. Structured board pin delivery is a separate feature.
+
+Autosave waits 600 ms and conditionally replaces the board file at its observed revision. The shared text buffer retains dirty edits on conflict and requires explicit discard to reload. Lost acknowledgements retain their operation identity for lookup, never an automatic second publication. External board rewrites refresh clean projections and preserve dirty ones. Closing a viewer releases only its buffer and native editor, never the borrowed client or workspace. The native store, camera and selection are never persisted.
+
+HTML frames use `MockupViewer` and its sandbox, not host imports. A host that forbids inline scripts must serve mock-ups from a separate sandbox origin. Keep the parent frame navigation policy restricted; the frame's CSP alone cannot prevent a page from navigating itself. Run `npm run board:journey` for real desktop and phone pointer input, revision/receipt races and screenshots under `.cache/evidence/feat-board-viewer/`.
 ### Comment pins (with the `feedback` item)
 
 Pass the `feedback` item's `usePointComments(session)` as `AgentWorkspace comments` (or `createMaquetteKind({ comments })`) and the bar shows a
@@ -556,6 +586,22 @@ with the message names the maquette path, screen, block and the block's words. P
 once point mode ends. Without a session `usePointComments` returns undefined and no icon shows. The privacy policy drops a marked id with three
 digits in a row or an `@`, so keep maquette paths and ids free of those for the pins to name them. `usePointComments` returns
 `{ active, point, pins: [{ number, target }] }`, built on the new `SessionNote.feedbackId`.
+
+## HTML mock-ups (`mockup-viewer`)
+
+An agent writes `booking.mockup.html` in its workspace and presents it. `AgentWorkspace` and `ArtifactPanel` render this suffix by default, before the ordinary HTML viewer. Other `.html` files keep their existing passive default. App kinds in `artifactKinds` still win. For standalone use, import `MockupViewer`, `mockupKind` or `createMockupKind({ locale, comments })` from the installed `components/mockup-viewer/mockup-viewer`.
+
+The renderer ports the HTML implementation from `spike/canvas-board` at `3b838e3a5`. It reuses `InteractiveFrame` with `sandbox="allow-scripts"`, `allow=""`, an opaque origin, no-referrer and the existing CSP with no allowed origins. Artifact scripts run only inside that sandbox. The host never parses artifact markup into its DOM or imports artifact code. Files are still read through the workspace provider, with no new storage.
+
+The viewer copies the host element's computed CSS variables into the frame. Theme changes update those variables without restarting the page. Tailwind 4.3.3 compiles the document's classes in a lazy module, with the upstream theme and preflight confined to the frame. The generated compiler input retains Tailwind's MIT license; regenerate it with `node registry/mockup-viewer/build-tailwind.mjs` after upgrading Tailwind or changing theme bindings. Hosts must enable ESM chunk splitting to keep the compiler out of their entry bundle.
+
+Pass `usePointComments(session)` as `AgentWorkspace comments` or to `createMockupKind`. Its icon enters the existing feedback point mode. A click inside the frame sends a bounded structural selector and rectangle. The host accepts only the current iframe window with an opaque origin. It creates a host-DOM proxy and submits it through the session's normal root, privacy, anchor and note checks. Selectors contain only child positions, never IDs, text, attributes or form values. The note's marked target is `mockup:<file path>#element=<selector>`. As with maquettes, the privacy policy drops marked targets containing three consecutive digits or `@`. Picks are untrusted observations of that document. Pin overlays belong to the current viewer mount; retained notes do not silently rebind to a rewritten file. Use app suspends frame interception too.
+
+### Host CSP
+
+A `srcdoc` frame inherits its host's CSP. Hosts that forbid inline scripts need a separate sandbox origin, such as a usercontent domain, instead of `srcdoc`; this block does not provision that origin. Set the host's `frame-src 'none'`, or a narrowly qualified sandbox-origin allowlist, to prevent a hostile page from navigating its own frame to an external site. The frame's own restrictive CSP closes fetch, external images, child frames and forms, but cannot enforce its own navigation policy.
+
+`npm run mockup:journey` drives the fictional `test/fixtures/booking.mockup.html` through the workspace app and real point comments. It checks theme variables, opaque-origin isolation, blocked storage and network, delivered element notes and 360px overflow. Screenshots cover phone 390 and desktop 1440 in light and dark.
 
 ## Diagram viewer (`diagram-viewer`)
 

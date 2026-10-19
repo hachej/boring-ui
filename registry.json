@@ -741,6 +741,20 @@
       ]
     },
     {
+      "name": "mockup-viewer",
+      "type": "registry:block",
+      "title": "HTML mock-up viewer",
+      "description": "Sandboxed *.mockup.html artifacts with host theme variables, lazy Tailwind compilation and feedback point comments. Host presentation only; artifact scripts run in an opaque-origin InteractiveFrame, never in the host.",
+      "dependencies": ["react@^19.0.0", "lucide-react@^1.51.0", "tailwindcss@4.3.3", "zod@^4.6.5"],
+      "registryDependencies": ["@boring-ui/viewers", "badge", "toggle", "tooltip"],
+      "files": [
+        { "path": "registry/mockup-viewer/mockup-viewer.tsx", "type": "registry:component", "target": "components/mockup-viewer/mockup-viewer.tsx" },
+        { "path": "registry/mockup-viewer/mockup-frame.ts", "type": "registry:lib", "target": "components/mockup-viewer/mockup-frame.ts" },
+        { "path": "registry/mockup-viewer/mockup-compile.ts", "type": "registry:lib", "target": "components/mockup-viewer/mockup-compile.ts" },
+        { "path": "registry/mockup-viewer/mockup-tailwind.ts", "type": "registry:lib", "target": "components/mockup-viewer/mockup-tailwind.ts" }
+      ]
+    },
+    {
       "name": "diagram-viewer",
       "type": "registry:component",
       "title": "Diagram viewer",
@@ -861,19 +875,22 @@
     },
     {
       "name": "board-viewer",
-      "type": "registry:lib",
-      "title": "Board format (board@1)",
-      "description": "The board@1 format a PM agent writes as *.board.json: a strict parser that reports every problem (unversioned, newer or invalid files included), the planner that lays maquette screens and HTML mock-ups out left to right with goto arrows and notes, and the edit round-trip that writes frame moves and notes back into the board file. Plain data and pure functions: no canvas, no rendering, no storage.",
-      "dependencies": [],
+      "type": "registry:block",
+      "title": "Board viewer",
+      "description": "A board@1 artifact kind for *.board.json. Lazy native tldraw projection of maquette screens, sandboxed HTML mock-ups, goto arrows and notes. Conditional board-file autosave; phone viewing without accidental frame edits. Hosts supply their resource client, asset URLs and license key.",
+      "dependencies": ["@hachej/boring-ui-kit@^0.4.2", "@hachej/boring-files@^0.4.2", "react@^19.0.0", "lucide-react@1.51.0", "tldraw@5.5.2"],
       "registryDependencies": [
-        "@boring-ui/maquette-viewer"
+        "@boring-ui/maquette-viewer", "@boring-ui/mockup-viewer", "@boring-ui/pi-chat", "button", "alert", "card", "tooltip"
       ],
       "files": [
         {
           "path": "registry/board-viewer/board.ts",
           "type": "registry:lib",
           "target": "components/board-viewer/board.ts"
-        }
+        },
+        { "path": "registry/board-viewer/board-viewer.tsx", "type": "registry:component", "target": "components/board-viewer/board-viewer.tsx" },
+        { "path": "registry/board-viewer/board-canvas.tsx", "type": "registry:component", "target": "components/board-viewer/board-canvas.tsx" },
+        { "path": "registry/board-viewer/board-props.ts", "type": "registry:lib", "target": "components/board-viewer/board-props.ts" }
       ]
     },
     {
@@ -895,6 +912,7 @@
         "@boring-ui/viewers",
         "@boring-ui/maquette-viewer",
         "@boring-ui/diagram-viewer",
+        "@boring-ui/mockup-viewer",
         "@boring-ui/utils",
         "@boring-ui/button",
         "drawer",
@@ -2241,6 +2259,7 @@
         "collapsible",
         "empty",
         "input",
+        "progress",
         "separator",
         "sidebar"
       ],
