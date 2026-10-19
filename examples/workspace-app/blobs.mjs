@@ -6,6 +6,7 @@
 //    workspace through the provider's conditional write (the host's write, never the page's) and answers the pointer. A refusal is
 //    `{ error: { code, message } }`.
 import { createHash, randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { BLOB_POINTER_MEDIA_TYPE, BLOB_POINTER_SUFFIX, parseBlobPointer } from '@hachej/boring-files/blob';
 import { mediaTypeOf, sniffMediaType } from '@hachej/boring-files/file-types';
 import { fictionalPdf } from '../../test/fixtures/fictional-pdf.mjs';
@@ -35,6 +36,8 @@ export function createBlobHost({ files, access, allowed, token }) {
       await store('harbour.png', 'harbour.png', fictionalPng(640, 400), 'image/png');
       await store('quarterly-report.pdf', 'quarterly-report.pdf', fictionalPdf([['Fictional quarterly report', 'Harbour cafe, spring', 'Revenue grew in every fictional month.'], ['Page two', 'Nothing here is real.']]), 'application/pdf');
       await store('budget.xlsx', 'budget.xlsx', xlsxHead(), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      // Generated solid colour, 2 seconds, no audio: ffmpeg -f lavfi -i color=c=steelblue:s=640x360:r=10:d=2 -c:v libx264 -pix_fmt yuv420p -movflags +faststart -an fictional-video.mp4
+      await store('colour.mp4', 'colour.mp4', readFileSync(new URL('../../test/fixtures/fictional-video.mp4', import.meta.url)), 'video/mp4');
     },
     handle: async request => {
       const url = new URL(request.url);
@@ -45,7 +48,7 @@ export function createBlobHost({ files, access, allowed, token }) {
         try { id = decodeURIComponent(url.pathname.slice('/_files/'.length)); } catch { return refuse(400, 'invalid', 'Invalid id.'); }
         const blob = blobs.get(id);
         if (!blob) return refuse(404, 'missing', 'No such file.');
-        const disposition = `${INLINE.has(blob.type) ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(blob.name)}`;
+        const disposition = `${INLINE.has(blob.type) || blob.type.startsWith('video/') ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(blob.name)}`;
         return new Response(blob.bytes, { headers: { 'content-type': blob.type, 'content-length': String(blob.bytes.byteLength), 'content-disposition': disposition,
           'x-content-type-options': 'nosniff', 'content-security-policy': blob.type === 'application/pdf' ? "default-src 'none'; style-src 'unsafe-inline'" : "default-src 'none'; sandbox", 'cache-control': 'private, max-age=31536000, immutable' } });
       }

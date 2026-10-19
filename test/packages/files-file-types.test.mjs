@@ -94,14 +94,29 @@ test('agent kinds stay separate from viewer kinds and read the shared table', ()
 const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
-test('HEIC and HEIF by their ftyp brands; AVIF and other ISO-BMFF files are not claimed', () => {
+test('HEIC and HEIF by their ftyp brands; AVIF is not claimed', () => {
   assert.equal(sniffMediaType(ftypHead('heic', ['mif1', 'heic'])), 'image/heic');
   assert.equal(sniffMediaType(ftypHead('heix', ['mif1'])), 'image/heic');
   assert.equal(sniffMediaType(ftypHead('mif1', ['mif1', 'heic'])), 'image/heic', 'a generic brand with a HEVC compatible brand');
   assert.equal(sniffMediaType(ftypHead('msf1', ['msf1'])), 'image/heif');
   assert.equal(sniffMediaType(ftypHead('mif1', ['mif1', 'avif'])), undefined, 'AVIF is not HEIF here');
-  assert.equal(sniffMediaType(ftypHead('isom', ['isom', 'mp41'])), undefined, 'an MP4 is not an image');
+  assert.equal(sniffMediaType(ftypHead('isom', ['isom', 'mp41'])), 'video/mp4', 'an MP4 is not an image');
   assert.equal(mediaTypeOf('IMG_0001.HEIC'), 'image/heic');
+});
+
+test('video extensions and cheap container signatures use the shared table', () => {
+  for (const [extension, type] of [['mp4', 'video/mp4'], ['webm', 'video/webm'], ['mov', 'video/quicktime'], ['m4v', 'video/x-m4v'], ['ogg', 'video/ogg'], ['ogv', 'video/ogg']]) {
+    assert.equal(mediaTypeOf(`fictional.${extension.toUpperCase()}`), type);
+    assert.equal(viewerKindOf(`fictional.${extension}`), 'video');
+    assert.equal(isBinaryKind(`fictional.${extension}`), true);
+  }
+  for (const brand of ['isom', 'iso2', 'mp41', 'mp42', 'avc1']) assert.equal(sniffMediaType(ftypHead(brand)), 'video/mp4', brand);
+  assert.equal(sniffMediaType(ftypHead('qt  ')), 'video/quicktime');
+  assert.equal(sniffMediaType(ftypHead('M4V ')), 'video/x-m4v');
+  assert.equal(sniffMediaType(Uint8Array.from([0x1a, 0x45, 0xdf, 0xa3])), 'video/webm');
+  assert.equal(sniffMediaType(ftypHead('avif', ['mif1'])), undefined, 'an image container never becomes video');
+  assert.equal(sniffMediaType(ftypHead('zzzz')), undefined, 'an unknown ftyp brand is not claimed');
+  assert.equal(sniffMediaType(ftypHead('mp42').subarray(0, 10)), undefined, 'a truncated brand is not claimed');
 });
 
 test('zip-based office documents from their entries in the head, without inflating; a plain zip is not claimed', () => {

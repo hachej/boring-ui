@@ -37,6 +37,7 @@ export const frenchAppLabels: AppLabels = {
   noCanvasViewer: 'Cet espace n’a pas d’afficheur de canevas (à fournir dans `viewers.canvas`).',
   fileMissing: 'Ce fichier n’existe plus.',
   fileNotText: 'Ce fichier ne peut pas être affiché comme du texte.',
+  videoUnreadable: 'Cette vidéo ne peut pas être lue ici',
   binaryFile: size => `Fichier binaire (${size}) ; il ne peut pas être affiché comme du texte.`,
   fileViewer: kind => `Afficheur ${kind}`,
   newVersion: 'Une nouvelle version est disponible.',

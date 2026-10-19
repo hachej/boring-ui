@@ -1,5 +1,7 @@
 # Unreleased (0.4.3)
 
+- Video blob pointers open in the panel and Library with native controls and Download; MP4, WebM, MOV, M4V and Ogg video extensions are recognised. Direct workspace videos without a streaming URL keep the cannot-preview state and are never buffered.
+
 - New `board-viewer` block: `createBoardKind({ client, identity, assetUrls, licenseKey })` renders `*.board.json` in the artifact panel. It lazily projects maquette screens, sandboxed HTML mock-ups, goto arrows and notes through `CanvasProjection` from `@hachej/boring-ui-kit/canvas-editor`. Saves contain only `board@1`, conditional on the shown revision. Pinned versions and phones are read-only. Install the block and pass the kind in `artifactKinds`; hosts supply their asset URLs and license key. The parser/planner exports remain available. See [registry/README.md](registry/README.md#board-format-board-viewer).
 
 Non-breaking. `CanvasEditor` now loads `tldraw/tldraw.css` itself, lazily with the canvas, so a host may stop importing it globally. Self-hosting tldraw's fonts, icons and translations is a host recipe ([UI guide](packages/ui/README.md#optional-react-canvas-editor), `examples/canvas-assets`); hosts that already pass a complete `assetUrls` map need no change.
