@@ -48,13 +48,13 @@ async function dom(t, url = 'https://fictional.invalid/') {
 }
 
 /** The real ArtifactPanel showing `text` as a presented file at `path`, with the host's `kinds` (none: only the built-in maquette kind). */
-async function panel(t, text, { path = 'documents/booking.maquette.json', kinds, url } = {}) {
+async function panel(t, text, { path = 'documents/booking.maquette.json', kinds, url, follow = false } = {}) {
   const page = await dom(t, url);
   const artifact = { schema: 'boring.artifact', version: 1, title: 'Booking', type: 'code', mediaType: 'application/json', language: 'json',
     target: { resource: { providerId: 'workspace', path }, view: { kind: 'published' } }, revision: 'rev-1' };
   const bytes = new TextEncoder().encode(text);
   const client = { read: async () => ({ kind: 'available', snapshot: { bytes, ref: { revision: 'rev-1', providerId: 'workspace', path } } }), saves: async () => [], search: async () => [] };
-  await page.render(page.h(kit.ArtifactPanel, { active: { descriptor: artifact, follow: false }, versions: [artifact], options: { client, identity: { runtimeId: 'fixture' }, ...(kinds ? { kinds } : {}) }, onSelect: () => {}, onClose: () => {} }));
+  await page.render(page.h(kit.ArtifactPanel, { active: { descriptor: artifact, follow }, versions: [artifact], options: { client, identity: { runtimeId: 'fixture' }, ...(kinds ? { kinds } : {}) }, onSelect: () => {}, onClose: () => {} }));
   await page.settle();
   const screen = () => page.$('[data-testid=maquette-walk]')?.dataset.screen;
   const key = async (key, init = {}) => { const walk = page.$('[data-testid=maquette-walk]'); await page.act(async () => walk.dispatchEvent(new page.window.KeyboardEvent('keydown', { key, bubbles: true, ...init }))); };
@@ -202,6 +202,18 @@ test('an app kind for .maquette.json wins over the built-in', async t => {
   assert.equal(page.$('[data-testid=artifact-panel-type]').textContent, 'Wireframe');
   assert.equal(page.$('[data-testid=maquette-walk]'), null, 'the built-in viewer is not drawn');
   assert.equal(page.$('[data-testid=artifact-kind-view]').textContent, 'Tidewater Studio: class booking');
+});
+
+test('an app kind gets the revision it shows and that it is pinned (read-only) when the panel pins a version', async t => {
+  const seen = [];
+  await panel(t, BOOKING, { kinds: [{ match: target => target.resource.path.endsWith('.maquette.json'), label: 'Wireframe', renderer: props => { seen.push({ revision: props.revision, pinned: props.pinned }); return 'x'; } }] });
+  assert.deepEqual(seen.at(-1), { revision: 'rev-1', pinned: true });
+});
+
+test('an app kind following the latest version gets pinned false', async t => {
+  const seen = [];
+  await panel(t, BOOKING, { follow: true, kinds: [{ match: target => target.resource.path.endsWith('.maquette.json'), label: 'Wireframe', renderer: props => { seen.push({ revision: props.revision, pinned: props.pinned }); return 'x'; } }] });
+  assert.deepEqual(seen.at(-1), { revision: 'rev-1', pinned: false });
 });
 
 test('createMaquetteKind gives the French kind: « Maquette » and French words', async t => {
