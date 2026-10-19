@@ -22,6 +22,14 @@ export function createFakeChannelSource(seed: FakeChannelSeed) {
     } else if (event.type === 'presence') for (const update of event.members) {
       const member = data.members.find(member => member.id === update.id); if (member) member.presence = update.presence;
     }
+    else if (event.type === 'members') {
+      for (const member of event.members) {
+        const index = data.members.findIndex(existing => existing.id === member.id);
+        if (index < 0) data.members.push(structuredClone(member)); else data.members[index] = structuredClone(member);
+      }
+      const conversation = data.conversations.find(conversation => conversation.id === event.conversationId);
+      if (conversation) conversation.members = event.members.map(member => member.id);
+    }
     if (online) for (const listener of [...listeners]) {
       const id = event.type === 'message' ? event.message.conversationId : event.type === 'presence' ? undefined : event.conversationId;
       if (id === undefined || id === listener.id) listener.event(structuredClone(event));
@@ -39,7 +47,7 @@ export function createFakeChannelSource(seed: FakeChannelSeed) {
       return { messages: structuredClone(all.slice(start, end)), ...(start > 0 && all[start] ? { before: all[start].id } : {}) };
     },
     send: async (input: Parameters<ChannelSource['send']>[0]) => {
-      sends.push(structuredClone(input));
+      sends.push({ ...input, mentions: [...input.mentions], ...(input.attachments ? { attachments: [...input.attachments] } : {}) });
       if (!online) throw new Error('Offline');
       const duplicate = data.messages.find(message => message.clientId === input.clientId && message.conversationId === input.conversationId);
       if (duplicate) return structuredClone(duplicate);

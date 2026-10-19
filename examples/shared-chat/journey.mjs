@@ -34,7 +34,7 @@ try {
       await browser.screenshot(`${width}-${scheme}-mention.png`);
       await browser.press('ArrowDown'); await browser.press('ArrowUp'); await browser.press('Enter');
       assert.match(await browser.evaluate(`${input}.value`), /@leo/);
-      await browser.press('Enter');
+      await browser.click(q('[data-testid=composer-submit]'));
       await browser.until('the mention reaches the host', `window.__SHARED__.sends.at(-1)?.mentions.includes('leo')`);
 
       await browser.click(q('[data-testid=shared-members]'));
@@ -43,7 +43,7 @@ try {
       await browser.evaluate(`window.__SHARED__.emit({ type: 'presence', members: [{ id: 'leo', presence: 'away' }] })`);
       await browser.until('presence update', `${q('[data-member-id=leo] [data-testid=presence]')}?.dataset.presence === 'away'`);
       await browser.screenshot(`${width}-${scheme}-members.png`);
-      await browser.press('Escape');
+      if (device === 'phone') await browser.click(q('[data-testid=shared-members-close]')); else await browser.press('Escape');
       await browser.until('member list closes', `!${q('[data-testid=member-list]')}`);
 
       await browser.click(q('[data-testid=workspace-bar-history]'));
@@ -79,5 +79,6 @@ try {
   writeFileSync(`${evidence}/browser-result.json`, JSON.stringify({ passed: true, widths: [390, 1440, 360], themes: ['light', 'dark'], fictional: true }, null, 2));
   console.log(`PASS shared chat browser journey; evidence ${evidence}`);
 } catch (error) {
+  if (browser) writeFileSync(`${evidence}/browser-failure.json`, JSON.stringify(await browser.evaluate(`({ membersExpanded: ${q('[data-testid=shared-members]')}?.getAttribute('aria-expanded'), drawers: ${qa('[data-slot=drawer-popup]')}.map(element => ({ attributes: [...element.attributes].map(a => [a.name, a.value]), rect: element.getBoundingClientRect().toJSON(), display: getComputedStyle(element).display, transform: getComputedStyle(element).transform, animations: element.getAnimations().map(a => ({ state: a.playState, time: a.currentTime })) })) })`), null, 2));
   await browser?.screenshot('last-state.png'); throw error;
 } finally { await browser?.close(); await app.close(); }

@@ -56,6 +56,13 @@ try {
   writeFileSync(join(directory, 'src/page.tsx'), `import { createRoot } from 'react-dom/client';
 import { PiChat } from './components/pi-chat/pi-chat';
 import { useRemoteChat } from './components/pi-chat/use-remote-chat';
+import { useSharedChat, createFakeChannelSource } from './components/pi-chat/pi-chat';
+
+const fictional = createFakeChannelSource({ me: { id: 'mira', name: 'Mira', kind: 'person' }, members: [{ id: 'mira', name: 'Mira', kind: 'person' }], conversations: [{ id: 'main', title: 'Main', kind: 'main', members: ['mira'] }], messages: [] });
+export function SharedApp() {
+  const chat = useSharedChat(fictional);
+  return chat.controller ? <PiChat controller={chat.controller} conversations={chat.conversations} /> : <p>Connecting</p>;
+}
 
 const identity = { runtimeId: 'app', scopeId: 'fictional-team', principalId: 'fictional-person', initiatorId: 'fictional-person' };
 

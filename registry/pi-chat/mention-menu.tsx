@@ -29,8 +29,9 @@ function highlight(text: string, query: string) {
 }
 
 /** The `@` file picker, ported from v2's `MentionPicker`: debounced search, one highlighted row, name over path. */
-export function MentionPicker({ query, search, generation, onSelect, onDismiss }: {
+export function MentionPicker({ query, search, generation, kind, onSelect, onDismiss }: {
   readonly query: string;
+  readonly kind?: MentionsConfig['kind'];
   readonly generation?: MentionsConfig['generation'];
   readonly search: MentionsConfig['search'];
   readonly onSelect: (path: string) => void;
@@ -59,7 +60,7 @@ export function MentionPicker({ query, search, generation, onSelect, onDismiss }
   if (results.length === 0 && !failure) return null;
   return <ComposerSuggestions testId="mention-menu" onDismiss={onDismiss}>
     {failure ? <div role="alert" data-testid="mention-error" className="text-xs text-destructive">{failure}</div>
-      : <ul ref={list} role="listbox" aria-label={labels.workspaceFiles} className="m-0 flex max-h-[min(14rem,40dvh)] list-none flex-col overflow-y-auto p-0">
+      : <ul ref={list} role="listbox" aria-label={kind === 'member' ? labels.sharedMembers : labels.workspaceFiles} className="m-0 flex max-h-[min(14rem,40dvh)] list-none flex-col overflow-y-auto p-0">
         {results.map((item, index) => {
           const name = item.label ?? item.path.split('/').pop() ?? item.path;
           const Icon = item.kind === 'member' ? UserIcon : item.kind === 'directory' ? FolderIcon : FileTextIcon;

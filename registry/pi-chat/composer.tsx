@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, ClipboardEvent, ComponentProps, DragEvent, KeyboardEvent, ReactNode, Ref } from 'react';
-import { AlertCircleIcon, FileTextIcon, Loader2Icon, MessageSquarePlusIcon, SlashIcon, XIcon } from 'lucide-react';
+import { AlertCircleIcon, FileTextIcon, Loader2Icon, MessageSquarePlusIcon, SlashIcon, UserIcon, XIcon } from 'lucide-react';
 import { Attachment, AttachmentAction, AttachmentActions, AttachmentContent, AttachmentMedia, AttachmentTitle } from '@/components/ui/attachment';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -257,7 +257,7 @@ export function Composer(props: ComposerProps) {
     {feedback && feedback.count > 0 && <div role="list" className="contents"><NotesChip feedback={feedback} /></div>}
     {chips.length > 0 && <div role="list" data-testid="mention-chips" aria-label={labels.mentionedFiles} className="contents">
       {chips.map(path => <Chip key={path} data-testid="mention-chip" data-path={path} title={path} className="max-w-full sm:max-w-[16rem]"
-        media={<FileTextIcon aria-hidden="true" />} label={path} actions={<RemoveChip label={labels.remove(path)} onClick={() => props.onText(removeMention(text, path))} />} />)}
+        media={mentions?.kind === 'member' ? <UserIcon aria-hidden="true" /> : <FileTextIcon aria-hidden="true" />} label={mentions?.label?.(path) ?? path} actions={<RemoveChip label={labels.remove(mentions?.label?.(path) ?? path)} onClick={() => props.onText(removeMention(text, path))} />} />)}
     </div>}
     {(props.uploads?.length ?? 0) > 0 && <div role="list" data-testid="uploads" aria-label={labels.uploads} className="contents">
       {props.uploads!.map(item => <Chip key={item.id} data-testid="upload-chip" state={item.state === 'failed' ? 'error' : 'uploading'} data-state={item.state} title={item.error ?? item.name} className="max-w-full sm:max-w-[20rem]"
@@ -310,7 +310,7 @@ export function Composer(props: ComposerProps) {
     className={cn('relative flex flex-col gap-2', pill && '@container/composer')}>
     {fileEl}
     {slashOpen && <SlashPicker query={query!} items={items} onSelect={pickSlash} onDismiss={dismiss} />}
-    {mentionOpen && mentions && <MentionPicker query={trigger!.query} search={mentions.search} generation={mentions.generation} onSelect={pickMention} onDismiss={dismiss} />}
+    {mentionOpen && mentions && <MentionPicker query={trigger!.query} kind={mentions.kind} search={mentions.search} generation={mentions.generation} onSelect={pickMention} onDismiss={dismiss} />}
     {pill && chipList && <div className="flex flex-wrap gap-2">{chipList}</div>}
     {pill ? <InputGroup>
       <InputGroupAddon>{plus}{feedback && <AnnotateButton feedback={feedback} disabled={disabled} />}</InputGroupAddon>

@@ -101,11 +101,12 @@ export function useChatSession(options: ChatSessionOptions) {
   const { labels } = useChatText();
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const members = state.shared?.members;
-  const mentions = useMemo<MentionsConfig | undefined>(() => hostMentions ?? (members ? {
+  const mentions = useMemo<MentionsConfig | undefined>(() => members ? {
     kind: 'member',
+    label: id => members.find(member => member.id === id)?.name ?? id,
     search: async query => members.filter(member => member.name.toLowerCase().includes(query.toLowerCase())).map(member => ({ path: member.id, label: member.name, kind: 'member' as const })),
     render: id => <Badge variant="secondary">@{members.find(member => member.id === id)?.name ?? id}</Badge>,
-  } : undefined), [hostMentions, members]);
+  } : hostMentions, [hostMentions, members]);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(0);
   const [picked, setPicked] = useState<readonly string[]>([]);

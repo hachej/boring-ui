@@ -32,7 +32,7 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
   const host = document.createElement('div'); document.body.append(host); const root = createRoot(host);
   const q = selector => document.querySelector(selector);
   const settle = async ready => { for (let n = 0; n < 200 && !ready(); n++) await act(async () => new Promise(resolve => setTimeout(resolve, 10))); assert.ok(ready(), 'expected UI appeared'); };
-  const draw = () => root.render(createElement(PiChat, { controller, conversations: { items: sharedChatSeed.conversations, activeId: controller.getSnapshot().conversationId, onSelect(id) { controller = createSharedChat(source, { conversationId: id }); controllers.push(controller); draw(); } } }));
+  const draw = () => root.render(createElement(PiChat, { controller, mentions: { search: async () => [] }, conversations: { items: sharedChatSeed.conversations, activeId: controller.getSnapshot().conversationId, onSelect(id) { controller = createSharedChat(source, { conversationId: id }); controllers.push(controller); draw(); } } }));
   const render = () => act(async () => draw());
   t.after(async () => { await act(async () => { root.unmount(); for (const controller of controllers) await controller.dispose(); }); await window.happyDOM.close(); for (const [name, descriptor] of globals) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else delete globalThis[name]; } });
   await render();

@@ -37,6 +37,7 @@ export interface MentionResult { readonly path: string; readonly kind?: 'file' |
 export interface MentionsConfig {
   /** A member picker reuses the same token and keyboard behavior without treating people as workspace files. */
   readonly kind?: 'member';
+  readonly label?: (id: string) => string;
   /** Workspace search for the `@` picker. Empty `query` asks for a default listing. Abort `signal` when the query changes. */
   readonly search: (query: string, signal: AbortSignal) => Promise<readonly MentionResult[]>;
   /** Open a mentioned workspace file (for example in the right panel). When given, a mention in a sent message is a button. */

@@ -3,7 +3,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import type { Card as Request, ChannelMessage, ChatController, Member, SharedChatState } from '@hachej/boring-ui-kit/shared-chat';
-import { CircleIcon, Trash2Icon } from 'lucide-react';
+import { CircleIcon, Trash2Icon, XIcon } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarGroup, AvatarGroupCount, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -18,7 +18,7 @@ import { useChatText } from './labels';
 export function MemberAvatar({ member }: { readonly member: Member }) {
   return <Avatar data-testid="member-avatar" aria-label={member.name}>
     {member.avatarUrl && <AvatarImage src={member.avatarUrl} alt={member.name} />}
-    <AvatarFallback>{member.name.split(/\s+/).slice(0, 2).map(word => word[0]).join('')}</AvatarFallback>
+    <AvatarFallback>{member.name.replace(/[()]/g, '').split(/\s+/).slice(0, 2).map(word => word[0]).join('')}</AvatarFallback>
   </Avatar>;
 }
 function MemberBadge({ member }: { readonly member: Member }) {
@@ -54,7 +54,7 @@ export function SharedMembers({ controller }: { readonly controller: ChatControl
     {phone ? <>{<Button variant="ghost" data-testid="shared-members" aria-label={labels.sharedMemberCount(shared.members.length)} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}>
       <AvatarGroup>{shared.members.slice(0, 1).map(member => <MemberAvatar key={member.id} member={member} />)}<AvatarGroupCount>{shared.members.length}</AvatarGroupCount></AvatarGroup>
     </Button>}
-      <Drawer open={open} onOpenChange={setOpen}><DrawerContent><DrawerTitle>{labels.sharedMembers}</DrawerTitle>{content}</DrawerContent></Drawer></>
+      <Drawer open={open} onOpenChange={setOpen}><DrawerContent><div className="flex items-center justify-between p-4"><DrawerTitle>{labels.sharedMembers}</DrawerTitle><Button variant="ghost" size="icon" data-testid="shared-members-close" aria-label={labels.close} onClick={() => setOpen(false)}><XIcon aria-hidden="true" /></Button></div>{content}</DrawerContent></Drawer></>
       : <Popover open={open} onOpenChange={setOpen}><PopoverTrigger render={trigger} /><PopoverContent role="dialog" aria-label={labels.sharedMembers} align="end" className="max-w-[calc(100vw-1rem)]">{content}</PopoverContent></Popover>}
   </div>;
 }
