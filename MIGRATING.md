@@ -1,3 +1,12 @@
+# Unreleased (0.4.2)
+
+- **Viewer header (Markdown editor and every viewer).** The save status is a coloured dot (green saved, amber unsaved or saving, red for a refused,
+  conflicting or unconfirmed save); its words are the tooltip and the screen-reader label, and only a red status also shows its words. The Rich/Source
+  switch is an outlined icon-only segmented `ToggleGroup` whose pressed segment is filled and the other muted. The "Aa" pin-formatting-toolbar button is
+  removed: `formattingToolbar` (default `pinned`) decides. The dot reads optional `--success` and `--warning` theme roles (added to the registry
+  theme; without them the dot falls back to `--primary` and `--muted-foreground`). Selectors: `[data-testid=<id>-status]` keeps its `role=status`
+  and text content, now in `[data-testid=<id>-status-text]`; `ViewerStatus.kind` adds `'saving'`; `ViewerToggleOption` adds `reason`.
+
 # Migrating to 0.4.1
 
 0.4.1 is non-breaking: no export, option or type was removed. Upgrade the registry blocks with

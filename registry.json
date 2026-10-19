@@ -1090,6 +1090,10 @@
           }
         },
         "@layer components": {
+          ".boring-viewer": {
+            "--viewer-success": "var(--success, var(--primary))",
+            "--viewer-warning": "var(--warning, var(--muted-foreground))"
+          },
           ".boring-viewer .boring-markdown-editor, .boring-viewer .boring-html-pane": {
             "display": "flex",
             "flex-direction": "column",
