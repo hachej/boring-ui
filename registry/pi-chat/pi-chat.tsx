@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
+import type { ChatController } from '@hachej/boring-ui-kit/shared-chat';
 import { Loader2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -13,6 +13,7 @@ import { MessageScroller, MessageScrollerProvider, MessageScrollerViewport, Mess
 import { BlockActions } from '../button/actions';
 import type { BlockAction } from '../button/actions';
 import { Composer } from './composer';
+import { SharedMembers } from './shared';
 import type { ComposerFeedback, ComposerProps } from './composer';
 import { ConversationFiles } from './conversation-files';
 import type { ConversationsConfig } from './config';
@@ -53,13 +54,16 @@ export type { ChatLocale } from './locale';
 export { BlockActions } from '../button/actions';
 export { useChatDraft } from './use-chat-draft';
 export { useConversations } from './use-conversations';
+export { useSharedChat } from './use-shared-chat';
+export { createSharedChat, createChannelSocket, createFakeChannelSource } from '@hachej/boring-ui-kit/shared-chat';
+export type { ChannelSource, ChannelEvent, ChannelMessage, Member, Conversation, Card, ChatController } from '@hachej/boring-ui-kit/shared-chat';
 export { RunCard, parseRun } from './run-card';
 export type { RunRecord, RunStatus } from './run-card';
 export type { BlockAction, BlockIcon } from '../button/actions';
 export type { AttachmentsConfig, ConversationItem, ConversationsConfig, EffortConfig, FileKind, MentionResult, MentionsConfig, ModelConfig, ModelRef, PasteToFile, PreviewRead, ReplyRef, SlashApi, SlashCommand, SlashConfig, SlashSkill, UploadResult } from './config';
 
 export interface PiChatProps extends ChatFeatureProps {
-  readonly controller: NativeChatController;
+  readonly controller: ChatController;
   /** Where this chat is shown, reported with each submit (advisory, never authority). `docked` by default; a host that floats or tucks the same chat in a drawer says `floating`. */
   readonly placement?: ChatPlacement | undefined;
   /** Every word the chat shows (title, placeholder, buttons, notices, empty states): a partial object over `defaultChatLabels`. */
@@ -133,7 +137,7 @@ function ConnectionBadge({ kind }: { readonly kind: string }) {
 }
 
 function PiChatSession({ controller, placement = 'docked', mode = 'expert', className, keyboardInset = true, actions, avatar, headerActions, header = true, decisions, controls, tools, belowComposer, composerChips, headerStart, renderEntry, renderTool, groupTool, commandMentions,
-  onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = false, emptyLayout = 'centered', composerLayout = 'card', conversationTitle, onRenameTitle, feedback, draftKey, onOpenFile, fileChanges, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: NativeChatController } }) {
+  onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = false, emptyLayout = 'centered', composerLayout = 'card', conversationTitle, onRenameTitle, feedback, draftKey, onOpenFile, fileChanges, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: ChatController } }) {
   const { labels, icons } = useChatText();
   useChatDraft(controller, draftKey);
   useChatPlacement(controller, placement);
@@ -181,6 +185,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
         onClick={() => setPickingConversation(open => !open)}><icons.history data-icon="inline-start" aria-hidden="true" />{labels.history}</Button>}
       <BlockActions actions={headerActions} testId="chat-action" menuLabel={labels.moreActions} />
       {showConnectionStatus && <ConnectionBadge kind={connectionKind} />}
+      <SharedMembers controller={controller} />
       {controls}
     </header>}
 

@@ -2,6 +2,7 @@ import type { Context } from '@earendil-works/chord';
 import { applyImmutable } from '@earendil-works/chord/delta';
 import type { ConversationView, ConversationWatch, Cursor, InputSubmissionDraft, Page, EntryRecord, SettledSubmissionRecord, SubmissionRecord, WatchEnd } from '@earendil-works/pi-durable';
 import type { ChatConversation, ChatLink } from './native-chat.js';
+import { createChatOutbox } from './chat-outbox.js';
 
 /** Browser client for the `@hachej/boring-agent/chat-transport` handler. Bundles only Chord's standalone delta replay, no Pi runtime. */
 export interface RemoteChatOptions {
@@ -107,19 +108,21 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
   // The transport in use: `websocket` until its first socket fails to open, then `http` for good.
   let mode = options.transport ?? 'http', current: WebSocket | undefined, seq = 0;
   /** Calls sent over a socket and not answered yet, by call ID: sent again unchanged on the next socket. */
-  const outbox = new Map<string, { readonly text: string; readonly http: () => Request; readonly resolve: (response: Response) => void; readonly reject: (error: unknown) => void }>();
+  const outbox = createChatOutbox<{ readonly text: string; readonly http: () => Request }, Response>();
   function exchange(op: string, init: RequestInit, extra: Record<string, string>): Promise<Response> {
     const http = () => new Request(url(op, extra), init);
     if (mode !== 'websocket') return send(http());
     const id = `c${++seq}`;
     const text = JSON.stringify({ kind: 'call', id, op, params: extra, ...(typeof init.body === 'string' ? { body: JSON.parse(init.body) as unknown } : {}) });
-    return new Promise((resolve, reject) => { outbox.set(id, { text, http, resolve, reject }); try { current?.send(text); } catch { /* sent again on the next socket */ } });
+    const pending = outbox.enqueue(id, { text, http });
+    try { current?.send(text); } catch { /* sent again on the next socket */ }
+    return pending;
   }
   /** Leave the socket for HTTP: calls still waiting for a socket go over HTTP, unchanged (same request ID, so the host deduplicates). */
   function fallBack() {
     mode = 'http';
     const pending = [...outbox.values()]; outbox.clear();
-    for (const call of pending) send(call.http()).then(call.resolve, call.reject);
+    for (const call of pending) send(call.input.http()).then(call.resolve, call.reject);
   }
   async function call<T>(op: string, init: RequestInit = {}, extra: Record<string, string> = {}): Promise<T> {
     const response = await exchange(op, init, extra);
@@ -165,8 +168,7 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
         let frame: Frame | { readonly kind: 'reply'; readonly id: string; readonly status: number; readonly body: unknown } | { readonly kind: 'event'; readonly event: unknown };
         try { frame = JSON.parse(event.data) as typeof frame; } catch { return; }
         if (frame.kind === 'reply') {
-          const pending = outbox.get(frame.id);
-          if (pending) { outbox.delete(frame.id); pending.resolve(new Response(JSON.stringify(frame.body), { status: frame.status, headers: { 'content-type': 'application/json' } })); }
+          outbox.resolve(frame.id, new Response(JSON.stringify(frame.body), { status: frame.status, headers: { 'content-type': 'application/json' } }));
           return;
         }
         if (frame.kind === 'event') { try { options.onEvent?.(frame.event); } catch { /* a host listener never breaks the chat */ } return; }
@@ -174,7 +176,7 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
           if (frame.kind !== 'view') { cancel(); return; }
           opened = true; current = socket;
           // Unanswered calls go again, unchanged: a submit keeps its request ID, so the host runs it once.
-          for (const pending of outbox.values()) socket.send(pending.text);
+          for (const pending of outbox.values()) socket.send(pending.input.text);
           ready({ first: frame.view, next, cancel });
           return;
         }

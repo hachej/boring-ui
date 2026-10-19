@@ -33,8 +33,10 @@ export interface SlashConfig {
   readonly skills?: readonly SlashSkill[];
 }
 
-export interface MentionResult { readonly path: string; readonly kind?: 'file' | 'directory' }
+export interface MentionResult { readonly path: string; readonly kind?: 'file' | 'directory' | 'member'; readonly label?: string }
 export interface MentionsConfig {
+  /** A member picker reuses the same token and keyboard behavior without treating people as workspace files. */
+  readonly kind?: 'member';
   /** Workspace search for the `@` picker. Empty `query` asks for a default listing. Abort `signal` when the query changes. */
   readonly search: (query: string, signal: AbortSignal) => Promise<readonly MentionResult[]>;
   /** Open a mentioned workspace file (for example in the right panel). When given, a mention in a sent message is a button. */

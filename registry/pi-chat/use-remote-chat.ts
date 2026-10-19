@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { createNativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import type { ChatIdentity, NativeChatController } from '@hachej/boring-ui-kit/native-chat';
+import type { ChatController } from '@hachej/boring-ui-kit/shared-chat';
 import { createRemoteChat } from '@hachej/boring-ui-kit/remote-chat';
 import type { RemoteChat, RemoteChatOptions } from '@hachej/boring-ui-kit/remote-chat';
 import type { PiChatActions } from './session';
@@ -12,10 +13,10 @@ export type ChatPlacement = 'docked' | 'floating';
 
 // Keyed by controller (a page can hold several chats; floating or docking keeps the controller, PLACE-3). Each mounted presenter has its own
 // registration, so unmounting one never clears another's; the latest surviving registration wins.
-const placements = new WeakMap<NativeChatController, { readonly placement: ChatPlacement }[]>();
+const placements = new WeakMap<ChatController, { readonly placement: ChatPlacement }[]>();
 
 /** Reports the placement of the chat showing `controller` while the caller is mounted. */
-export function useChatPlacement(controller: NativeChatController, placement: ChatPlacement): void {
+export function useChatPlacement(controller: ChatController, placement: ChatPlacement): void {
   useLayoutEffect(() => {
     const entry = { placement };
     const list = placements.get(controller) ?? [];
@@ -27,7 +28,7 @@ export function useChatPlacement(controller: NativeChatController, placement: Ch
   }, [controller, placement]);
 }
 
-export function readChatPlacement(controller: NativeChatController | undefined): ChatPlacement | undefined {
+export function readChatPlacement(controller: ChatController | undefined): ChatPlacement | undefined {
   return controller ? placements.get(controller)?.at(-1)?.placement : undefined;
 }
 

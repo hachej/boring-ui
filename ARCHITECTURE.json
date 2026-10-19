@@ -583,6 +583,7 @@
       "@hachej/boring-ui-kit/markdown-editor",
       "@hachej/boring-ui-kit/native-chat",
       "@hachej/boring-ui-kit/remote-chat",
+      "@hachej/boring-ui-kit/shared-chat",
       "@hachej/boring-ui-kit/html-viewer",
       "@hachej/boring-ui-kit/text-buffer",
       "@hachej/boring-ui-kit/file-tree",

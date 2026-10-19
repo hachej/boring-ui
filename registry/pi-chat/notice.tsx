@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import type { NativeChatSnapshot } from '@hachej/boring-ui-kit/native-chat';
+import type { ChatSnapshot } from '@hachej/boring-ui-kit/shared-chat';
 import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/alert';
 import { useChatText } from './labels';
@@ -13,7 +13,7 @@ export function Notice({ tone = 'error', children, testid }: { readonly tone?: '
 
 /** What went wrong with sending or stopping, and the recovery for an unknown submission. Shared by every chat surface. */
 export function ChatNotices({ state, error, onReconcile, onRetry }: {
-  readonly state: Pick<NativeChatSnapshot, 'send' | 'stop'>;
+  readonly state: Pick<ChatSnapshot, 'send' | 'stop'>;
   readonly error: string | null;
   readonly onReconcile: () => void;
   readonly onRetry: () => void;

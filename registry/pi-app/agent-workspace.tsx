@@ -19,8 +19,9 @@ import { chatTextFor } from '../pi-chat/locale';
 import type { ChatLocale } from '../pi-chat/locale';
 import type { FileTreeViewProps } from '../file-tree/file-tree';
 import type { ResourceIdentity } from '@hachej/boring-files/remote';
-import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
+import type { ChatController } from '@hachej/boring-ui-kit/shared-chat';
 import { PiChat, artifactKey } from '../pi-chat/pi-chat';
+import { SharedMembers } from '../pi-chat/shared';
 import { createPresentAcks, pendingPresents } from '../pi-chat/artifact';
 import type { PresentAcks } from '../pi-chat/artifact';
 import type { ArtifactDescriptor, ArtifactsConfig, ConversationsConfig, PiChatProps } from '../pi-chat/pi-chat';
@@ -64,6 +65,7 @@ export { ConversationList, ConversationHistory } from '../pi-chat/history';
 export { FileTree } from '../file-tree/file-tree';
 export type { SessionsView, WorkspaceAgent, WorkspaceAgents } from './sessions';
 export { useConversations } from '../pi-chat/use-conversations';
+export { useSharedChat } from '../pi-chat/use-shared-chat';
 export { useRemoteChat } from '../pi-chat/use-remote-chat';
 export type { RemoteChatState } from '../pi-chat/use-remote-chat';
 export { savedLabel, useSaved } from './use-saved';
@@ -143,7 +145,7 @@ interface AgentWorkspaceBaseProps {
    */
   readonly agents?: WorkspaceAgents | undefined;
   /** The open conversation's controller (`useRemoteChat`); `undefined` while connecting, when `connecting` is shown instead. */
-  readonly controller: NativeChatController | undefined;
+  readonly controller: ChatController | undefined;
   /** The open conversation: auto-opened artifacts and the artifact view belong to it. */
   readonly conversationId: string | undefined;
   /** Everything else `PiChat` takes (labels, icons, headerActions, messageActions, mode, actions, slash, mentions, attachments, model, effort, emptyState, ...). */
@@ -520,7 +522,7 @@ export function AgentWorkspace({ layout = 'default', controller, conversationId,
     ...(embedded ? { header: false, historyList: false, showHistory: false } : {}) };
   const bar = embedded && <WorkspaceBar title={conversationTitle ?? chatText.labels.title} conversations={conversations} narrow={narrow}
     library={libraryController ? onPicked => libraryTree(path => { openFile(path); onPicked(); }, onPicked) : undefined}
-    controls={<><BlockActions actions={chat.headerActions} testId="chat-action" menuLabel={chatText.labels.moreActions} />{hostControls}</>} />;
+    controls={<>{controller && <SharedMembers controller={controller} />}<BlockActions actions={chat.headerActions} testId="chat-action" menuLabel={chatText.labels.moreActions} />{hostControls}</>} />;
   const docked_chat = <div data-testid="workspace-center" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
     {bar}
     {attachmentFailure?.tree === fileTree && attachmentFailure?.reasons.map((reason, index) => <p key={index} role="alert" className="m-0 px-4 py-2 text-sm">{reason}</p>)}

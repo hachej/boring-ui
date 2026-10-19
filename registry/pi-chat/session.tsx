@@ -4,9 +4,12 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import type { KeyboardEvent, ReactNode } from 'react';
 import type { EntryRecord } from '@earendil-works/pi-durable';
 import type { ImageContent, ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
-import type { ChatAttachment, ChatHistoryState, NativeChatController } from '@hachej/boring-ui-kit/native-chat';
+import type { ChatAttachment, ChatHistoryState } from '@hachej/boring-ui-kit/native-chat';
+import type { ChatController } from '@hachej/boring-ui-kit/shared-chat';
 import { useMessageScroller, useMessageScrollerScrollable } from '@/components/ui/message-scroller';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { sharedRows } from './shared';
 import type { ComposerFeedback, ComposerProps, PendingUpload } from './composer';
 import type { ConversationFile } from './conversation-files';
 import type { AttachmentsConfig, EffortConfig, MentionsConfig, ModelConfig, ModelRef, PastedText, PasteToFile, SlashConfig } from './config';
@@ -74,13 +77,13 @@ export interface ChatFeatureProps {
 }
 
 
-export type FilesHandler = (files: readonly File[], target: Pick<ReturnType<NativeChatController['getSnapshot']>, 'identity' | 'conversationId'> & { readonly signal: AbortSignal }) => Promise<readonly ChatAttachment[]>;
+export type FilesHandler = (files: readonly File[], target: Pick<ReturnType<ChatController['getSnapshot']>, 'identity' | 'conversationId'> & { readonly signal: AbortSignal }) => Promise<readonly ChatAttachment[]>;
 
 /** The chat behaviour every surface over a `NativeChatController` shares (`PiChat`, `AmbientChat`): sending, queue actions, uploads, pickers, rows. */
 export interface ChatSessionOptions extends Readonly<{ [Key in keyof ChatFeatureProps]: ChatFeatureProps[Key] | undefined }> {
-  readonly controller: NativeChatController;
+  readonly controller: ChatController;
   /** The controller the host currently passes; a surface that outlives its controller stops acting on the old one. */
-  readonly activeController: { readonly current: NativeChatController };
+  readonly activeController: { readonly current: ChatController };
   readonly mode: Mode;
   readonly fileAccept: string;
   readonly onFiles?: FilesHandler | undefined;
@@ -94,9 +97,15 @@ export interface ChatSessionOptions extends Readonly<{ [Key in keyof ChatFeature
 
 export function useChatSession(options: ChatSessionOptions) {
   const { controller, activeController: active, mode, actions, renderEntry, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept,
-    slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend, rowExtras, feedback, onOpenFile, fileChanges, pasteToFile, composerChips } = options;
+    slash, mentions: hostMentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend, rowExtras, feedback, onOpenFile, fileChanges, pasteToFile, composerChips } = options;
   const { labels } = useChatText();
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
+  const members = state.shared?.members;
+  const mentions = useMemo<MentionsConfig | undefined>(() => hostMentions ?? (members ? {
+    kind: 'member',
+    search: async query => members.filter(member => member.name.toLowerCase().includes(query.toLowerCase())).map(member => ({ path: member.id, label: member.name, kind: 'member' as const })),
+    render: id => <Badge variant="secondary">@{members.find(member => member.id === id)?.name ?? id}</Badge>,
+  } : undefined), [hostMentions, members]);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(0);
   const [picked, setPicked] = useState<readonly string[]>([]);
@@ -118,7 +127,10 @@ export function useChatSession(options: ChatSessionOptions) {
   const developer = mode === 'developer';
   // Only the recogniser takes part in deriving rows; which card is open changes without rebuilding them.
   const artifactDetect = useMemo(() => artifacts ? { detect: artifacts.detect } : undefined, [Boolean(artifacts), artifacts?.detect]); // eslint-disable-line react-hooks/exhaustive-deps
-  const derived = useMemo(() => derive(state.view, { mode, renderEntry, renderTool, groupTool, artifacts: artifactDetect }), [state.view, mode, renderEntry, renderTool, groupTool, artifactDetect]);
+  const derived = useMemo(() => {
+    const native = derive(state.view, { mode, renderEntry, renderTool, groupTool, artifacts: artifactDetect });
+    return state.shared ? { ...native, rows: sharedRows(state.shared, card => controller.action?.(card) ?? Promise.resolve()) } : native;
+  }, [state.view, state.shared, controller, mode, renderEntry, renderTool, groupTool, artifactDetect]);
   const queued = useMemo(() => queuedMessages(state.view), [state.view]);
   const { run } = derived;
   const earlier = useMemo<readonly Row[]>(() => {
@@ -140,7 +152,7 @@ export function useChatSession(options: ChatSessionOptions) {
     for (const path of picked) add(path);
     for (const item of state.draft.attachments) found.set(`draft:${item.id}`, { id: `draft:${item.id}`, name: item.name, open: onOpenImage ? () => onOpenImage(item.content) : undefined });
     for (const row of derived.rows) {
-      if (row.type === 'user') {
+      if (row.type === 'user' && !row.shared) {
         const content = typeof row.message.content === 'string' ? [{ type: 'text' as const, text: row.message.content }] : row.message.content;
         for (const [index, part] of content.entries()) {
           if (part.type === 'text' && !isFileBlock(part.text)) for (const piece of pieces(part.text, { mentions: true, skills: [] })) { if (piece.kind === 'mention' && piece.value) add(piece.value); }
@@ -318,6 +330,7 @@ export function useChatSession(options: ChatSessionOptions) {
   };
   const rowContext = useMemo<RowContext>(() => ({
     developer, groupTool, onOpenImage, onCopy, openFile: onOpenFile ?? mentions?.open, fileChanges,
+    sharedRemove: controller.remove, sharedCanRemove: controller.canRemove,
     commandMentions: commandMentions ? { commands: commandMentions.commands, onActivate: activateMention } : undefined,
     answer: actions?.answer,
     artifacts: artifacts ? { open: artifacts.open, isOpen: artifacts.isOpen, kinds: artifacts.kinds } : undefined,
@@ -326,7 +339,7 @@ export function useChatSession(options: ChatSessionOptions) {
     pieces: slash?.skills?.length || mentions || attachments ? { mentions: Boolean(mentions), uploads: Boolean(attachments), skills: (slash?.skills ?? []).map(skill => skill.name), openMention: mentions?.open, renderMention: mentions?.render, preview: mentions?.preview } : undefined,
     ...rowExtras,
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [developer, groupTool, onOpenImage, onCopy, onOpenFile, fileChanges, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, mentions?.preview, attachments, artifacts?.open, artifacts?.isOpen, artifacts?.kinds, messageActions, replyFooter, rowExtras]);
+  }), [controller, developer, groupTool, onOpenImage, onCopy, onOpenFile, fileChanges, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, mentions?.preview, attachments, artifacts?.open, artifacts?.isOpen, artifacts?.kinds, messageActions, replyFooter, rowExtras]);
 
   /** The model-and-effort pill and the note that reports a refused change. */
   const pickers = () => {

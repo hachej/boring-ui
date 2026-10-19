@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import type { ChannelMessage, Member } from '@hachej/boring-ui-kit/shared-chat';
 import type { ConversationView, EntryRecord, InboxItem, JsonObject } from '@earendil-works/pi-durable';
 import type { JsonValue } from '@earendil-works/chord';
 import type { AssistantMessage, Message, ToolCall, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai';
@@ -38,7 +39,7 @@ export type Row = (
   | { readonly key: string; readonly type: 'orphan-result'; readonly message: ToolResultMessage }
   | { readonly key: string; readonly type: 'system'; readonly text: string }
   | { readonly key: string; readonly type: 'event'; readonly label: string }
-  | { readonly key: string; readonly type: 'card'; readonly card: ChatCard }) & { readonly historical?: boolean };
+  | { readonly key: string; readonly type: 'card'; readonly card: ChatCard }) & { readonly historical?: boolean; readonly shared?: { readonly message: ChannelMessage; readonly author: Member; readonly own: boolean; readonly first: boolean } };
 
 export function object(value: JsonValue | undefined): JsonObject | undefined {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value : undefined;

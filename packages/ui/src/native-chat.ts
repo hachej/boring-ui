@@ -71,6 +71,8 @@ export type ChatHistoryState = { readonly kind: 'disabled' | 'idle' }
   | { readonly kind: 'loading' | 'ready'; readonly entries: readonly EntryRecord[]; readonly hasMore: boolean }
   | { readonly kind: 'error'; readonly entries: readonly EntryRecord[]; readonly hasMore: boolean; readonly error: unknown };
 export interface NativeChatSnapshot {
+  /** Absent for native single-user conversations. Shared host logs use the additive renderer contract in `shared-chat`. */
+  readonly shared?: never;
   readonly identity: ChatIdentity;
   readonly conversationId: Conversation['id'];
   readonly connection: ChatConnection;

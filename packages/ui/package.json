@@ -55,6 +55,10 @@
       "types": "./dist/native-chat.d.ts",
       "import": "./dist/native-chat.js"
     },
+    "./shared-chat": {
+      "types": "./dist/shared-chat.d.ts",
+      "import": "./dist/shared-chat.js"
+    },
     "./remote-chat": {
       "types": "./dist/remote-chat.d.ts",
       "import": "./dist/remote-chat.js"

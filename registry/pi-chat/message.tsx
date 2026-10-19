@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import type { ImageContent, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai';
 import { AlertCircleIcon, CircleSlashIcon, FileIcon, FileSpreadsheetIcon, FileTextIcon, ImageIcon, PresentationIcon } from 'lucide-react';
 import { CopyButton } from './code-block';
+import { SharedMessage } from './shared';
 import { Markdown } from './markdown';
 import type { CommandMentions } from './markdown';
 import { ArtifactCard } from './artifact-card';
@@ -35,6 +36,8 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 
 export interface RowContext {
   readonly developer: boolean;
+  readonly sharedRemove?: import('@hachej/boring-ui-kit/shared-chat').ChatController['remove'];
+  readonly sharedCanRemove?: import('@hachej/boring-ui-kit/shared-chat').ChatController['canRemove'];
   readonly groupTool: DeriveOptions['groupTool'];
   readonly commandMentions: CommandMentions | undefined;
   readonly onOpenImage: ((image: ImageContent) => void) | undefined;
@@ -159,7 +162,12 @@ function Notice({ tone, icon, children, testid }: { readonly tone: 'error' | 'mu
 
 function resultText(message: ToolResultMessage): string { return message.content.map(part => part.type === 'text' ? part.text : '').join('\n'); }
 
-export function RowView({ row, context: liveContext }: { readonly row: Row; readonly context: RowContext }) {
+export function RowView({ row, context }: { readonly row: Row; readonly context: RowContext }) {
+  const content = <RowBody row={row} context={context} />;
+  return row.shared ? <SharedMessage shared={row.shared} remove={context.sharedRemove} canRemove={context.sharedCanRemove} openFile={context.openFile}>{content}</SharedMessage> : content;
+}
+
+function RowBody({ row, context: liveContext }: { readonly row: Row; readonly context: RowContext }) {
   const context: RowContext = row.historical ? { ...liveContext, answer: undefined, onFork: undefined, messageActions: undefined, replyActions: undefined, commandMentions: undefined } : liveContext;
   const { labels, icons } = useChatText();
   switch (row.type) {
