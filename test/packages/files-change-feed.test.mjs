@@ -232,6 +232,16 @@ test('SSE: an unauthorized or mismatched consumer gets no events, revocation end
   assert.deepEqual(denied, []);
 });
 
+// A host route that serves no change feed ends it at once (no endless retries) and the views keep their own refresh.
+for (const status of [501, 400]) test(`a route answering ${status} to ?op=changes ends the feed with an invalid RevisionError, without retrying`, async t => {
+  const f = fixture(t);
+  let asked = 0;
+  const handler = request => new URL(request.url).searchParams.get('op') === 'changes' ? (asked++, Promise.resolve(new Response(null, { status }))) : f.handler(request);
+  const client = await connect(handler);
+  await within(assert.rejects((async () => { for await (const event of client.changes({})) void event; })(), error => error instanceof RevisionError && error.kind === 'invalid'), 1500, 'the feed to end');
+  assert.equal(asked, 1);
+});
+
 // ---- review fixes for PR #1631 --------------------------------------------------------------------------------------------------
 
 const readFrames = async (reader, ms = 400) => {

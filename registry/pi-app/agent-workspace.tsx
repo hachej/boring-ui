@@ -136,6 +136,12 @@ interface AgentWorkspaceBaseProps {
    */
   readonly layout?: 'default' | 'embedded' | undefined;
   /**
+   * `embedded` only: a fixed leading title for the bar, normally the app's name. It stays whatever the conversation is called; the
+   * conversation title then follows it as a muted second element (on a phone it is left to History). Without it the bar shows the
+   * conversation title alone, as before.
+   */
+  readonly title?: string | undefined;
+  /**
    * Where the Library of a `revisionProvider` opens. `panel` (default): the artifact column, or a bottom drawer on phones.
    * `side`: a column to the right of the viewer (a `Dock`, resizable), opened
    * from the Library button in the viewer's top bar or in the left pane, alone at the right edge when no file is open; on a phone a
@@ -262,7 +268,7 @@ const defaultLocate = (path: string): ResourceLocator => ({ resource: { provider
  * its versions, the file viewer and the host's own views). Agent artifacts open the panel as they appear. Every prop is data or a callback:
  * the host owns the routes, authentication, the controller and what is open (when controlled).
  */
-export function AgentWorkspace({ layout = 'default', controller, conversationId, chat = {}, labels, icons, panelActions, connecting, conversations, sessions, history: historyPlacement = 'column', resources, revisionProvider, libraryPlacement = 'panel', locale, fileTree: treeOptions, uploads, agents, detect, artifactKinds, comments, viewers, interactive, share, opened: controlled,
+export function AgentWorkspace({ layout = 'default', title, controller, conversationId, chat = {}, labels, icons, panelActions, connecting, conversations, sessions, history: historyPlacement = 'column', resources, revisionProvider, libraryPlacement = 'panel', locale, fileTree: treeOptions, uploads, agents, detect, artifactKinds, comments, viewers, interactive, share, opened: controlled,
   defaultOpened = null, onOpenedChange, onUnsavedChange, panels, autoOpen = true, fileBack, floatingChat, chatTop, controls, storageKey = 'boring.agent-workspace', sheetBelow = 641, drawerBelow = 641, floatBelow, className }: AgentWorkspaceProps) {
   const [own, setOwn] = useState<OpenedView | null>(defaultOpened);
   const [panelLibrary, setPanelLibrary] = useState(false);
@@ -551,7 +557,7 @@ export function AgentWorkspace({ layout = 'default', controller, conversationId,
     headerStart: <>{toggle}{chat.headerStart}</>, ...(header === undefined ? {} : { controls: header }),
     // Embedded: the bar above replaces the chat's header (History, New and the host's controls are in it); conversations stay for Fork.
     ...(embedded ? { header: false, historyList: false, showHistory: false } : {}) };
-  const bar = embedded && <WorkspaceBar title={conversationTitle ?? chatText.labels.title} conversations={conversations} narrow={narrow}
+  const bar = embedded && <WorkspaceBar title={title ?? conversationTitle ?? chatText.labels.title} {...(title && conversationTitle ? { subtitle: conversationTitle } : {})} conversations={conversations} narrow={narrow}
     library={libraryController ? onPicked => libraryTree(path => { openFile(path); onPicked(); }, onPicked) : undefined}
     controls={<><BlockActions actions={chat.headerActions} testId="chat-action" menuLabel={chatText.labels.moreActions} />{hostControls}</>} />;
   const docked_chat = <div data-testid="workspace-center" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">

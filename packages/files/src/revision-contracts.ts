@@ -96,7 +96,8 @@ export interface RevisionProvider extends ResourceClient {
   readonly history: (path: string, signal?: AbortSignal) => Promise<readonly SavedRevision[]>;
   /**
    * The workspace's change feed (`GET ?op=changes`, server-sent events), reconnecting after the last `seq` seen until `signal`
-   * aborts; a refused binding (another workspace, revoked access) ends it with a `RevisionError`. Optional: a hand-built provider
+   * aborts; a refused binding (another workspace, revoked access) ends it with a `RevisionError`, and so does a route that serves no feed:
+   * it answers 501 (the intended signal) or 400 to `?op=changes`, and the views then keep their own refresh. Optional: a hand-built provider
    * may have none, and a viewer then refreshes on its own schedule.
    */
   readonly changes?: (request?: ChangeFeedRequest) => AsyncIterable<WorkspaceChangeEvent>;

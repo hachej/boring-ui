@@ -29,6 +29,7 @@
     "maquette:journey": "node examples/workspace-app/journey-maquette.mjs",
     "blobs:journey": "node examples/workspace-app/journey-blobs.mjs",
     "diagram:journey": "node examples/workspace-app/journey-diagram.mjs",
+    "gaps:journey": "node examples/workspace-app/journey-gaps.mjs",
     "board:journey": "node examples/board-viewer/journey.mjs",
     "workspace-demo": "node demos/workspace/server.mjs",
     "workspace-demo:journey": "node demos/workspace/journey.mjs",

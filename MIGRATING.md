@@ -1,5 +1,7 @@
 # Unreleased (0.4.3)
 
+- `maquette-viewer` no longer draws a second "…" menu inside the `pi-app` artifact panel: its guided tours and "How it works" join the panel header's menu (`MaquetteMenuContext`; standalone use keeps its own menu). The selected case in "How it works" uses the default button variant.
+
 - Video blob pointers open in the panel and Library with native controls and Download; MP4, WebM, MOV, M4V and Ogg video extensions are recognised. Direct workspace videos without a streaming URL keep the cannot-preview state and are never buffered.
 
 - New `board-viewer` block: `createBoardKind({ client, identity, assetUrls, licenseKey })` renders `*.board.json` in the artifact panel. It lazily projects maquette screens, sandboxed HTML mock-ups, goto arrows and notes through `CanvasProjection` from `@hachej/boring-ui-kit/canvas-editor`. Saves contain only `board@1`, conditional on the shown revision. Pinned versions and phones are read-only. Install the block and pass the kind in `artifactKinds`; hosts supply their asset URLs and license key. The parser/planner exports remain available. See [registry/README.md](registry/README.md#board-format-board-viewer).
@@ -30,6 +32,16 @@ Non-breaking for files and props: older `*.maquette.json` files read unchanged, 
   `data-feedback-id="maquette:<path>#screen=<id>&block=<id>"` (blocks may carry an optional `id`), so the note sent with the next message names
   the maquette, screen and block; the screen is a `data-feedback-visible` region. `SessionNote.feedbackId` (`@hachej/boring-feedback/ui`) is new.
   Without a session nothing shows. See [registry/README.md](registry/README.md#diagram-viewer-diagram-viewer).
+- Kinds everywhere: a file opened from the Library, the file tree or a link resolves its artifact kind by path with the same function as the chat card
+  and the panel (`resolveKind`): the app's `artifactKinds` first, then the built-in maquette and diagram kinds. `*.maquette.json` and `*.diagram.json`
+  now open in their viewers there (they showed raw JSON); an app kind for them still wins. `FileViewer` shows such files in the artifact panel
+  (`data-kind="artifact"`), and `ArtifactPanel` takes an optional `headerStart` (a back button).
+- Fixed app title: `AgentWorkspace layout="embedded" title="My app"` keeps the app's name in the bar; the conversation title follows it in muted text
+  (left to History on a phone). Without `title` the bar shows the conversation title as before. `WorkspaceBar` takes `subtitle` for the same.
+- No live feed: a host route that serves no `?op=changes` should answer **501**; `RevisionProvider.changes` then ends with an `invalid` `RevisionError`
+  at once (the views keep their own refresh). **400** ends it the same way and keeps working. See [registry/README.md](registry/README.md).
+- `boring-ui-blocks update` and `add` keep your exact dependency pins: the shadcn CLI's package manager saved `^<version>` over them; the command now
+  restores the specifier of every dependency that was in `package.json` (and the lockfile's root entry) before it ran. Dependencies the CLI adds keep what it wrote.
 - `ArtifactKindViewProps` (the props an app's artifact kind `renderer` receives) gains `revision`, the revision the panel shows (the one a conditional save is made against), and `pinned`, true when the panel shows a pinned historical version, read-only. Renderers that ignore them need no change.
 
 # Migrating to 0.4.2
