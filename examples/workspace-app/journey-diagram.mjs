@@ -34,7 +34,7 @@ try {
   await browser.until('the chat is live', `!!${INPUT} && !${INPUT}.disabled`, 20000);
   await desktop();
   const send = async text => { await browser.type(INPUT, text); await browser.press('Enter'); };
-  const openMenu = async tap => { await (tap ? browser.tap : browser.click)(q('[data-testid=maquette-menu]')); await browser.until('the menu', `!!${q('[data-testid=maquette-menu-list]')}`, 5000); await pause(200); };
+  const openMenu = async tap => { await (tap ? browser.tap : browser.click)(q('[data-testid=artifact-more]')); await browser.until('the menu', `!!${q('[role=menu]')}`, 5000); await pause(200); };
   /** Pins a note on a block: a tap (phone) or click (desktop) on `selector`, the note typed in the pin, Enter. */
   const pin = async (tap, selector, words) => {
     await (tap ? browser.tap : browser.click)(q(selector));

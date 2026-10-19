@@ -36,7 +36,7 @@ let browser;
 try {
   browser = await launch(insecureUrl(app.url), { evidence });
   await browser.until('the chat is live', `!!${INPUT} && !${INPUT}.disabled`, 20000);
-  const openMenu = async tap => { await (tap ? browser.tap : browser.click)(q('[data-testid=maquette-menu]')); await browser.until('the menu', `!!${q('[data-testid=maquette-menu-list]')}`, 5000); await pause(200); };
+  const openMenu = async tap => { await (tap ? browser.tap : browser.click)(q('[data-testid=artifact-more]')); await browser.until('the menu', `!!${q('[role=menu]')}`, 5000); await pause(200); };
 
   await step('phone: the presented mock-up opens in the sheet, the screen taking most of the height', async () => {
     await browser.type(INPUT, 'Make the booking mock-up and present it.'); await browser.press('Enter');
