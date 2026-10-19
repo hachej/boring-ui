@@ -85,6 +85,10 @@
     "./file-types": {
       "types": "./dist/file-types.d.ts",
       "import": "./dist/file-types.js"
+    },
+    "./blob": {
+      "types": "./dist/blob.d.ts",
+      "import": "./dist/blob.js"
     }
   },
   "peerDependencies": {

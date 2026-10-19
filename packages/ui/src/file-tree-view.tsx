@@ -54,6 +54,9 @@ export const defaultFileTreeLabels = {
   checkUpload: 'Check upload status',
   uploadStatusUnavailable: 'Upload status unavailable',
   uploadFailed: (name: string) => `${name}: upload failed`,
+  tooLarge: 'The file is too large to upload.',
+  uploadProgress: (name: string) => `Uploading ${name}`,
+  cancelUpload: (name: string) => `Cancel uploading ${name}`,
 };
 export type FileTreeLabels = typeof defaultFileTreeLabels;
 
@@ -102,6 +105,9 @@ export const frenchFileTreeLabels: FileTreeLabels = {
   checkUpload: 'Vérifier l’import',
   uploadStatusUnavailable: 'État de l’import indisponible',
   uploadFailed: name => `${name} : échec de l’import`,
+  tooLarge: 'Le fichier est trop volumineux pour être importé.',
+  uploadProgress: name => `Import de ${name}`,
+  cancelUpload: name => `Annuler l’import de ${name}`,
 };
 /** The languages the tree ships with; anything else is set word by word through `labels`. */
 export type FileTreeLocale = 'en' | 'fr';
@@ -163,7 +169,18 @@ export interface FileTreeComponents {
   readonly CollapsibleContent: (props: Collapsible.Panel.Props) => ReactNode;
   /** The host's shadcn `Empty`, composed from an icon, a title, an optional description and optional actions. */
   readonly Empty: (props: { readonly icon?: ReactNode; readonly title: ReactNode; readonly description?: ReactNode; readonly className?: string; readonly children?: ReactNode }) => ReactNode;
+  /** The host's shadcn `Progress` (`value` 0–100, `null` while the total is unknown), for uploads through `uploadBlob`. */
+  readonly Progress?: (props: { readonly value: number | null; readonly 'aria-label': string }) => ReactNode;
 }
+
+/** How far an upload through `uploadBlob` is. */
+export interface UploadProgress { readonly loaded: number; readonly total: number }
+/**
+ * The host's upload of a large file: it stores the bytes and writes the workspace's pointer file itself, then resolves (with the
+ * pointer it wrote). The tree never writes anything for it; it reloads its listing. `signal` aborts it (the row's cancel button);
+ * a refusal rejects with `{ error: { code, message } }`, whose `message` the tree shows.
+ */
+export type UploadBlob = (file: globalThis.File, options: { readonly signal: AbortSignal; readonly onProgress: (progress: UploadProgress) => void }) => Promise<unknown>;
 
 export interface FileTreeProps {
   readonly components: FileTreeComponents;
@@ -192,6 +209,12 @@ export interface FileTreeProps {
   readonly refreshKey?: unknown;
   /** Reload the open history panel whenever this value changes (for example the seq of the workspace's latest change event). */
   readonly historyKey?: unknown;
+  /** The inline cap in bytes: a larger upload goes to `uploadBlob`, or is refused with `tooLarge` without it. No cap when omitted. */
+  readonly maxBytes?: number;
+  /** The refusal shown for a file above `maxBytes` when there is no `uploadBlob`. */
+  readonly tooLarge?: string;
+  /** The host's large-file upload (see `UploadBlob`), used above `maxBytes`. */
+  readonly uploadBlob?: UploadBlob;
 }
 
 /** One borrowed binding powers browsing, search, upload and history. Historical previews never replace an editor's draft. */
@@ -218,8 +241,8 @@ type UploadRow = { readonly kind: 'pending'; readonly size: number }
   | { readonly kind: 'failed'; readonly size: number; readonly reason: string; readonly retryLabel: string; readonly retry: () => void };
 
 /** Renders a borrowed controller, for a workspace whose chat and tree share upload state. */
-export function FileTreeView({ components, controller, onOpen, selectedPath, className, uploadDirectory = 'uploads', locale = 'en', labels: given, upload = true, history = true, refresh = true, variant = 'list', title, onClose, refreshKey, historyKey }: FileTreeViewProps) {
-  const { Button, Actions, Menu: SidebarMenu, MenuItem: SidebarMenuItem, MenuSub: SidebarMenuSub, Input, Collapsible: CollapsibleRoot, CollapsibleTrigger, CollapsibleContent, Empty } = components;
+export function FileTreeView({ components, controller, onOpen, selectedPath, className, uploadDirectory = 'uploads', locale = 'en', labels: given, upload = true, history = true, refresh = true, variant = 'list', title, onClose, refreshKey, historyKey, maxBytes, tooLarge, uploadBlob }: FileTreeViewProps) {
+  const { Button, Actions, Menu: SidebarMenu, MenuItem: SidebarMenuItem, MenuSub: SidebarMenuSub, Input, Collapsible: CollapsibleRoot, CollapsibleTrigger, CollapsibleContent, Empty, Progress } = components;
   const list = variant === 'list';
   const labels: FileTreeLabels = { ...LOCALES[locale], ...given };
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
@@ -239,9 +262,36 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
   const [uploadError, setUploadError] = useState('');
   const [historyPath, setHistoryPath] = useState<string>();
   const [localFailures, setLocalFailures] = useState<ReadonlyMap<string, { readonly file: globalThis.File; readonly reason: string }>>(new Map());
+  // Uploads through the host's `uploadBlob`, by a key of their own: the name, the progress and the abort behind the cancel button.
+  const [blobUploads, setBlobUploads] = useState<ReadonlyMap<string, { readonly name: string; readonly progress: UploadProgress | undefined; readonly abort: AbortController }>>(new Map());
+  const blobAborts = useRef(new Set<AbortController>());
+  useEffect(() => () => { for (const abort of blobAborts.current) abort.abort(); }, []);
+  const uploadLarge = async (file: globalThis.File, send: UploadBlob) => {
+    const key = `${file.name}:${Math.random()}`, abort = new AbortController();
+    const set = (progress: UploadProgress | undefined) => setBlobUploads(previous => new Map(previous).set(key, { name: file.name, progress, abort }));
+    blobAborts.current.add(abort); set(undefined);
+    try {
+      await send(file, { signal: abort.signal, onProgress: progress => { if (!abort.signal.aborted) set(progress); } });
+      if (abort.signal.aborted) return;
+      // The host wrote the pointer file: the listing is read again, never written.
+      const { query, expanded } = controller.getSnapshot();
+      if (query) void controller.search(query); else for (const directory of ['', ...expanded]) void controller.refresh(directory);
+    } catch (error) {
+      if (!abort.signal.aborted) setUploadError(refusalOf(error) ?? labels.uploadFailed(file.name));
+    } finally {
+      blobAborts.current.delete(abort);
+      setBlobUploads(previous => { const next = new Map(previous); next.delete(key); return next; });
+    }
+  };
   const uploadFiles = async (files: readonly globalThis.File[]) => {
+    setUploadError('');
     for (const file of files) {
       const path = uploadDirectory ? `${uploadDirectory}/${file.name}` : file.name;
+      if (maxBytes !== undefined && file.size > maxBytes) {
+        if (uploadBlob) void uploadLarge(file, uploadBlob);
+        else setLocalFailures(previous => new Map(previous).set(path, { file, reason: tooLarge ?? labels.tooLarge }));
+        continue;
+      }
       setLocalFailures(previous => { const next = new Map(previous); next.delete(path); return next; });
       try { await controller.upload({ path, bytes: new Uint8Array(await file.arrayBuffer()), mediaType: file.type || 'application/octet-stream' }); }
       catch (error) { setLocalFailures(previous => new Map(previous).set(path, { file, reason: error instanceof Error ? error.message : labels.uploadFailed(file.name) })); }
@@ -320,11 +370,13 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
     const folder = entry.kind === 'directory';
     const temporary = temporaryPaths.has(entry.path);
     const status = uploadRows.get(entry.path);
-    const name = entry.path.split('/').at(-1);
+    // A pointer file shows the file it stands for: its name, kind and size (`withBlobPointers` resolved it where the listing was read).
+    const blob = entry.blob && 'url' in entry.blob ? entry.blob : undefined;
+    const name = blob?.name ?? entry.path.split('/').at(-1);
     const parent = (state.query || temporary) && entry.path.includes('/') ? entry.path.slice(0, entry.path.lastIndexOf('/')) : '';
     const children = folder ? state.directories.get(entry.path) : undefined;
     const childCount = children?.kind === 'ready' && children.cursor === undefined ? labels.childCount(children.entries.length) : undefined;
-    const kind = folder ? { icon: Folder, label: labels.folder } : fileKind(entry.path, labels);
+    const kind = folder ? { icon: Folder, label: labels.folder } : fileKind(blob?.name ?? entry.path, labels);
     const Icon = kind.icon;
     const button = <Button type="button" variant={selectedPath === entry.path ? 'secondary' : 'ghost'} data-active={selectedPath === entry.path} tabIndex={-1} title={entry.path} disabled={temporary}
       className="file-tree-row-button"
@@ -332,10 +384,10 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
       {folder ? <ChevronRight aria-hidden="true" /> : list && <span className="file-tree-chevron-space" aria-hidden="true" />}
       <Icon aria-hidden="true" />
       <span className="file-tree-copy"><span className="file-tree-name">{name}</span>
-        {list ? folder ? childCount !== undefined && <span data-file-meta>{childCount}</span> : <span data-file-meta>{kind.label} · {fileSize(entry.size, locale)}{parent && ` · ${parent}`}</span> : parent && <span className="file-tree-parent" data-file-meta>{parent}</span>}
+        {list ? folder ? childCount !== undefined && <span data-file-meta>{childCount}</span> : <span data-file-meta>{kind.label} · {fileSize(blob?.size ?? entry.size, locale)}{parent && ` · ${parent}`}</span> : parent && <span className="file-tree-parent" data-file-meta>{parent}</span>}
       </span>
     </Button>;
-    const item = <SidebarMenuItem key={entry.path} role="treeitem" data-path={entry.path} data-upload-state={status?.kind} aria-busy={status?.kind === 'pending' || undefined}
+    const item = <SidebarMenuItem key={entry.path} role="treeitem" data-path={entry.path} data-blob-type={blob?.type} data-upload-state={status?.kind} aria-busy={status?.kind === 'pending' || undefined}
       aria-level={level} aria-selected={selectedPath === entry.path} aria-expanded={folder ? state.expanded.has(entry.path) : undefined}
       tabIndex={focusPath === entry.path ? 0 : -1}
       onFocus={event => { if (event.target === event.currentTarget) setFocused(entry.path); }}
@@ -380,6 +432,14 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
     }} />}
     {dropping && <div className="file-tree-drop" role="status"><Empty icon={<Upload aria-hidden="true" />} title={labels.dropFiles} /></div>}
     {uploadError && <p role="alert">{uploadError}</p>}
+    {blobUploads.size > 0 && <ul aria-label={labels.uploads} className="file-tree-blob-uploads">{[...blobUploads].map(([key, item]) => {
+      const percent = item.progress && item.progress.total > 0 ? Math.min(100, Math.round(item.progress.loaded / item.progress.total * 100)) : null;
+      return <li key={key} data-blob-upload={item.name} data-progress={percent ?? undefined} className="flex items-center gap-2">
+        <span className="min-w-0 flex-1 truncate">{item.name}</span>
+        {Progress ? <span className="w-24 shrink-0"><Progress value={percent} aria-label={labels.uploadProgress(item.name)} /></span> : <span role="status">{percent === null ? labels.uploading : `${percent}%`}</span>}
+        <Button type="button" variant="ghost" size="icon" data-blob-upload-cancel aria-label={labels.cancelUpload(item.name)} title={labels.cancelUpload(item.name)} onClick={() => item.abort.abort()}><X aria-hidden="true" /></Button>
+      </li>;
+    })}</ul>}
     <SidebarMenu ref={tree} role="tree" aria-label={labels.tree} className="file-tree-menu">
       {state.query ? <>{state.search.entries.map(entry => renderEntry(entry, 1))}{listingStatus(state.search, '', true)}</> : renderEntries('', 1)}
       {temporaryEntries.map(entry => renderEntry(entry, 1))}
@@ -389,6 +449,12 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
     </li>)}{[...localFailures].map(([path, failure]) => <li key={path}>{path}: {failure.reason}</li>)}</ul>
     {history && historyPath !== undefined && <FileHistory components={components} locale={locale} key={historyPath} controller={controller} path={historyPath} labels={labels} reload={historyKey} onClose={() => setHistoryPath(undefined)} />}
   </section>;
+}
+
+/** The message of a host refusal `{ error: { code, message } }` (or an Error's), if any. */
+function refusalOf(error: unknown): string | undefined {
+  const message = typeof error === 'object' && error !== null && 'error' in error && typeof error.error === 'object' && error.error !== null && 'message' in error.error ? error.error.message : error instanceof Error ? error.message : undefined;
+  return typeof message === 'string' && message ? message : undefined;
 }
 
 function FileActions({ Actions, controller, entry, labels, onOpen, onHistory, onError }: {
@@ -402,8 +468,15 @@ function FileActions({ Actions, controller, entry, labels, onOpen, onHistory, on
 }) {
   const lifetime = useRef<AbortController | undefined>(undefined);
   useEffect(() => () => lifetime.current?.abort(), []);
+  const blob = entry.blob && 'url' in entry.blob ? entry.blob : undefined;
   const download = async () => {
     onError('');
+    if (blob) {
+      // The host serves a blob's bytes at its URL, with its own disposition; nothing is read into the page.
+      const link = document.createElement('a'); link.href = blob.url; link.download = blob.name;
+      document.body.append(link); link.click(); link.remove();
+      return;
+    }
     lifetime.current?.abort();
     const abort = new AbortController(); lifetime.current = abort;
     try {

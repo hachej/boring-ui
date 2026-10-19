@@ -75,6 +75,8 @@ export interface ViewerOptions {
   readonly onBeforeLeaveChange?: ((flush: (() => Promise<boolean>) | null) => void) | undefined;
   /** Told each revision a built-in viewer has mounted and shows (after it loads, never before): the page's acknowledgement of `present`. */
   readonly onShown?: ((shown: { readonly path: string; readonly revision: string; readonly hidden?: true }) => void) | undefined;
+  /** Where the host serves blob bytes (a checked same-origin path, default `/_files/`): a pointer file opens from `<blobBase><id>`. */
+  readonly blobBase?: string | undefined;
 }
 
 /** Reports `revision` of `path` once the viewer showing it has mounted (an effect, so never before the panel really shows it), and `hidden` when it stops. */
