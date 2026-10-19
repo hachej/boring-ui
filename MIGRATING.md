@@ -1,3 +1,15 @@
+# Unreleased (0.4.2)
+
+Non-breaking: no export, option or type is removed, and a page that sets none of the new props renders as before.
+
+- `AgentWorkspace layout="embedded"`: no left column at any width and one compact top bar (title, History, Library, New, then
+  `chat.headerActions` and `controls`); History and Library are popovers on a wide workspace and sheets on a phone. Inside an app-shell
+  screen the bar's buttons join the shell's header. Pages that approximated it with `history="popover"`, `sessions={false}` and their own
+  Library wiring can drop those for `layout="embedded"`. See [registry/README.md](registry/README.md#whole-agent-app-pi-app-agentworkspace).
+- A read-only Library with `resources` alone, when the endpoint is a `createRevisionHandler` route (it then also serves the viewers' reads).
+- `app-shell`'s screen header has a slot for an embedded page's controls (`utils/screen-header-slot.ts`, shipped in the `utils` item).
+- `pi-app` now also needs the shadcn `popover` and `tooltip` components (installed with the item).
+
 # Migrating to 0.4.1
 
 0.4.1 is non-breaking: no export, option or type was removed. Upgrade the registry blocks with

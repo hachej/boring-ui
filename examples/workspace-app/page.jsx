@@ -16,6 +16,10 @@ const { token, identity } = window.__APP__;
 const authorized = request => { const headers = new Headers(request.headers); headers.set('authorization', `Bearer ${token}`); return fetch(new Request(request, { headers })); };
 const at = path => new URL(path, location.href);
 const configured = new URLSearchParams(location.search).has('configured');
+// `?embedded`: the same page as a host would embed it (no left column, one compact top bar). `?resources`: no revision provider, only
+// `resources` (the viewers' endpoint and file history): the Library is then read-only.
+const embedded = new URLSearchParams(location.search).has('embedded');
+const resourcesOnly = new URLSearchParams(location.search).has('resources');
 
 /** A host icon: any component that takes `className` (here a fictional brand mark instead of lucide's arrow). */
 const SparkIcon = ({ className }) => <svg data-testid="custom-send-icon" className={className} viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0l2 6 6 2-6 2-2 6-2-6-6-2 6-2z" /></svg>;
@@ -61,7 +65,8 @@ function App() {
   const floating = configured ? { floatBelow: 320, floatingChat: ({ headerStart, historyList, emptyState, decisions, controls, className, ...props }, dock) =>
     <AmbientChat {...props} headerActions={config.dockActions} variant="surface" defaultState="expanded" onDock={dock} /> } : {};
   return <main data-testid="app" data-conversation={active} data-configured={configured || undefined} className="flex h-full min-h-0">
-    {revisionProvider ? <AgentWorkspace conversationId={active} controller={chat.status === 'ready' ? chat.controller : undefined} conversations={conversations} revisionProvider={revisionProvider}
+    {revisionProvider ? <AgentWorkspace conversationId={active} controller={chat.status === 'ready' ? chat.controller : undefined} conversations={conversations}
+      {...(resourcesOnly ? { resources: { endpoint: at('/api/resources'), fetch: authorized, identity, history: at('/api/history') } } : { revisionProvider })} {...(embedded ? { layout: 'embedded' } : {})}
       chat={{ labels: { title: 'Writer', emptyDescription: 'What can I help you write today?' }, suggestions: [
         { label: 'Draft a plan', text: 'Write a picnic plan and present it.' },
         { label: 'Write a short reply', text: 'Reply with exactly: AMBER-HARBOUR' },
