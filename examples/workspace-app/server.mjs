@@ -23,12 +23,13 @@ import { createWorkspaceProvider } from '@hachej/boring-files/workspace';
 import { createRevisionHandler } from '@hachej/boring-files/revision-handler';
 import { sendWebResponse, webRequest } from '@hachej/boring-files/node-http';
 import { readFiles, writeFiles } from '../../shared/workspace-tools.mjs';
+import { BLOB_LIMIT, createBlobHost } from './blobs.mjs';
 import { buildTailwind } from '../../lab/studio/tailwind.mjs';
 import { stockShadowTokens, themePreviewHead, themePreviewStatics } from '../../test/fixtures/themes/preview.mjs';
 
 const here = name => fileURLToPath(new URL(name, import.meta.url));
 
-export async function startWorkspaceApp({ directory, port = 0, token = randomUUID(), scripted = process.env.STUDIO_MODEL === 'scripted' } = {}) {
+export async function startWorkspaceApp({ directory, port = 0, token = randomUUID(), scripted = process.env.STUDIO_MODEL === 'scripted', blobs = false } = {}) {
   mkdirSync(join(directory, 'workspace'), { recursive: true });
   // The model: a real provider, or the keyless scripted layer of the journeys (./script.mjs), chosen by the host process only.
   const models = scripted ? (await (await import('../../lab/studio/scripted-model.mjs')).createScriptedModels({ sources: (await import('./script.mjs')).SOURCES })).models : createModels();
@@ -56,6 +57,9 @@ export async function startWorkspaceApp({ directory, port = 0, token = randomUUI
   // Journey fault: the next N discovery requests are refused with a 503 (the page then shows its Retry).
   const faults = { resources: 0 };
   const resources = createRevisionHandler({ resolve: async request => allowed(request) ? { provider: files, access: person } : null });
+  // `blobs`: large files as pointers (./blobs.mjs), served and uploaded at /_files, with three fictional files to start with.
+  const blobHost = blobs ? createBlobHost({ files, access: person, allowed, token }) : undefined;
+  await blobHost?.seed();
   const handlers = {
     '/api/conversations': createConversationsHandler({ conversations, authenticate: async request => allowed(request) ? { owner: agent.id, start } : null }),
     '/api/chat': createChatTransportHandler({ authenticate: async request => {
@@ -90,11 +94,12 @@ export async function startWorkspaceApp({ directory, port = 0, token = randomUUI
     outgoing.on('close', () => closed.abort());
     try {
       const fixed = incoming.method === 'GET' && statics[url.pathname];
-      if (fixed) return void outgoing.writeHead(200, { 'content-type': fixed[0], 'cache-control': 'no-store',
-        // An opaque srcdoc frame may run scripts but cannot navigate to an external origin.
-        'content-security-policy': "frame-src 'none'" }).end(fixed[1]);
-      const handler = handlers[url.pathname];
-      const request = handler && await webRequest(incoming, url, { signal: closed.signal });
+      // An opaque srcdoc frame may run scripts but cannot navigate to an external origin.
+      // The page's cookie lets its <img> and PDF frame reach /_files, which checks it on every request (they cannot send the bearer).
+      if (fixed) return void outgoing.writeHead(200, { 'content-type': fixed[0], 'cache-control': 'no-store', 'content-security-policy': "frame-src 'none'", ...(blobHost && url.pathname === '/' ? { 'set-cookie': `boring-blob=${token}; HttpOnly; SameSite=Strict; Path=/_files` } : {}) }).end(fixed[1]);
+      const blobRoute = blobHost && (url.pathname === '/_files' || url.pathname.startsWith('/_files/'));
+      const handler = blobRoute ? blobHost.handle : handlers[url.pathname];
+      const request = handler && await webRequest(incoming, url, { signal: closed.signal, ...(blobRoute ? { maxBytes: BLOB_LIMIT } : {}) });
       await sendWebResponse(request ? await handler(request) : new Response(null, { status: handler ? 413 : 404 }), outgoing, { signal: closed.signal });
     } catch (error) {
       if (!outgoing.headersSent) outgoing.writeHead(500);
@@ -110,7 +115,7 @@ export async function startWorkspaceApp({ directory, port = 0, token = randomUUI
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const app = await startWorkspaceApp({ directory: process.env.APP_DATA ?? '.cache/workspace-app', port: Number(process.env.PORT ?? 0) });
+  const app = await startWorkspaceApp({ directory: process.env.APP_DATA ?? '.cache/workspace-app', port: Number(process.env.PORT ?? 0), blobs: process.env.APP_BLOBS === '1' });
   console.log(`Workspace app on ${app.url}. Fictional content only.`);
   for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => { app.close().finally(() => process.exit(0)); });
 }

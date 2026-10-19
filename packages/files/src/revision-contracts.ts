@@ -3,10 +3,24 @@ import type { ResourceAccess, ResourceLocator } from './contracts.js';
 import type { ResourceIdentity } from './remote-protocol.js';
 import type { WorkspaceKey } from './workspace-identity.js';
 
+/** What a viewer or a listing shows for a blob pointer (`./blob`): never the pointer itself. */
+export interface BlobItem {
+  readonly name: string;
+  readonly size: number;
+  readonly type: string;
+  /** Same-origin URL of the bytes: `<blobBase><encodeURIComponent(id)>`. */
+  readonly url: string;
+}
+
+/** A blob pointer written in a newer format than `./blob` reads: show it as its JSON file, and say it is a newer format. */
+export interface UnsupportedBlobPointer { readonly kind: 'unsupported-version'; readonly version: number }
+
 export interface FileEntry {
   readonly path: string;
   readonly kind: 'file' | 'directory';
   readonly size: number;
+  /** A pointer file (`*.blob.json`) as a listing shows it: the item it stands for, or its unsupported version. Set by `withBlobPointers` (`./blob`), never by the protocol. */
+  readonly blob?: BlobItem | UnsupportedBlobPointer;
 }
 
 export interface FilePage {

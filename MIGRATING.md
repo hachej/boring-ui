@@ -7,6 +7,8 @@
 - Shared data adds optional `Card.state`, `ChannelMessage.steps` and the indexed `step` event. `Step` and `channelAvatarStates` are exported. Avatar indicators reflect the latest card; the existing activity/tool Trace renders live and collapsed steps. The host strips `detail` outside Admin; the renderer shows whatever arrives.
 - Copied `pi-chat` now also needs shadcn `tooltip` and the existing optional `zod` peer. Regenerate or update the registry copy to install `shared.tsx` and `use-shared-chat.ts`. See [Shared conversations](registry/README.md#shared-conversations) for source shapes, routes and idempotent `clientId` requirements.
 
+- Video blob pointers open in the panel and Library with native controls and Download; MP4, WebM, MOV, M4V and Ogg video extensions are recognised. Direct workspace videos without a streaming URL keep the cannot-preview state and are never buffered.
+
 - New `board-viewer` block: `createBoardKind({ client, identity, assetUrls, licenseKey })` renders `*.board.json` in the artifact panel. It lazily projects maquette screens, sandboxed HTML mock-ups, goto arrows and notes through `CanvasProjection` from `@hachej/boring-ui-kit/canvas-editor`. Saves contain only `board@1`, conditional on the shown revision. Pinned versions and phones are read-only. Install the block and pass the kind in `artifactKinds`; hosts supply their asset URLs and license key. The parser/planner exports remain available. See [registry/README.md](registry/README.md#board-format-board-viewer).
 
 Non-breaking. `CanvasEditor` now loads `tldraw/tldraw.css` itself, lazily with the canvas, so a host may stop importing it globally. Self-hosting tldraw's fonts, icons and translations is a host recipe ([UI guide](packages/ui/README.md#optional-react-canvas-editor), `examples/canvas-assets`); hosts that already pass a complete `assetUrls` map need no change.
@@ -16,6 +18,13 @@ Non-breaking. `CanvasEditor` now loads `tldraw/tldraw.css` itself, lazily with t
 Non-breaking for files and props: older `*.maquette.json` files read unchanged, and a page that passes none of the new props renders as before.
 `maquette-viewer` now also needs the new `diagram-viewer` item and the `toggle` and `tooltip` shadcn components; `pi-app` installs `diagram-viewer`.
 
+- Large files (blob pointers): new `@hachej/boring-files/blob` (`parseBlobPointer`, `withBlobPointers`, `checkBlobBase`, `BLOB_POINTER_MEDIA_TYPE`, …)
+  and `FileEntry.blob`. `AgentWorkspace` takes `resources.blobBase` (default `/_files/`, same-origin path only; also allowed beside a `revisionProvider`)
+  and an optional `resources.uploadBlob`; `Documents` takes `blobBase`. Pointer files (`*.blob.json`) now list and open as the files they stand for.
+  The `file-tree` item needs the shadcn `progress` component. See [registry/README.md](registry/README.md#large-files-blob-pointers).
+- `uploads.maxBytes` now also caps Library uploads (refused with `attachmentTooLarge`, or sent to `resources.uploadBlob` when given), not only chat attachments.
+- `sniffMediaType` also names HEIC/HEIF, zip office documents and UTF-8 text (`text/plain`, a weak answer); new `SNIFF_BYTES` (8 KB) and
+  `delimitedTextType`. `@hachej/boring-agent/file-types` `SNIFF_BYTES` is now that 8 KB (was 16), and sniffed `text/plain` never overrides a name.
 - Built-in diagram viewer: the `pi-app` artifact panel draws `*.diagram.json` files (format v1: `nodes`, `edges`, optional `groups`, `path` and
   `note`) with the new `diagram-viewer` item. `diagramKind` / `createDiagramKind({ locale })` rename or translate it ("Diagram", « Diagramme »);
   an app kind for those files in `artifactKinds` still wins. `DiagramView` and `parseDiagram` are exported for other viewers.
