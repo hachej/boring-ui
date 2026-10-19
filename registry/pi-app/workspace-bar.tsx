@@ -23,13 +23,13 @@ import { useAppText } from './app-labels';
 const iconSize = (narrow: boolean) => cn(narrow && 'size-11');
 
 /** A hover and focus tooltip on a wide workspace; a phone has no hover, and focus coming back from a sheet must not raise one. */
-function BarTooltip({ label, trigger, narrow }: { readonly label: string; readonly trigger: ReactElement; readonly narrow: boolean }) {
+function Hinted({ label, trigger, narrow }: { readonly label: string; readonly trigger: ReactElement; readonly narrow: boolean }) {
   if (narrow) return trigger;
   return <Tooltip><TooltipTrigger render={trigger} /><TooltipContent>{label}</TooltipContent></Tooltip>;
 }
 
 /** One icon button that opens `children`: an anchored popover on a wide workspace, a bottom sheet on a phone. */
-function BarMenu({ id, label, icon: Icon, narrow, open, onOpenChange, children }: {
+function BarPanel({ id, label, icon: Icon, narrow, open, onOpenChange, children }: {
   readonly id: string;
   readonly label: string;
   readonly icon: BlockIcon;
@@ -49,8 +49,8 @@ function BarMenu({ id, label, icon: Icon, narrow, open, onOpenChange, children }
     </Drawer>
   </>;
   return <Popover open={open} onOpenChange={onOpenChange}>
-    <BarTooltip label={label} narrow={false} trigger={<PopoverTrigger render={button} />} />
-    <PopoverContent data-testid={`workspace-${id}`} aria-label={label} align="end" className="pi-chat w-[23rem] max-w-[calc(100vw-1rem)] max-h-[min(34rem,70dvh)] gap-0 p-0">{children}</PopoverContent>
+    <Hinted label={label} narrow={false} trigger={<PopoverTrigger render={button} />} />
+    <PopoverContent data-testid={`workspace-${id}`} aria-label={label} align="end" className="pi-chat w-[23rem] max-w-[calc(100vw-1rem)] max-h-[min(34rem,70dvh)]">{children}</PopoverContent>
   </Popover>;
 }
 
@@ -73,18 +73,18 @@ export function WorkspaceBar({ title, conversations, library, narrow, controls }
   const toggle = (which: 'history' | 'library') => (open: boolean) => setShown(open ? which : current => current === which ? null : current);
   const close = () => setShown(null);
   const tools = <div data-testid="workspace-bar-tools" className="flex shrink-0 items-center gap-0.5">
-    {conversations && <BarMenu id="history" label={labels.history} icon={icons.history} narrow={narrow} open={shown === 'history'} onOpenChange={toggle('history')}>
-      <header className="flex shrink-0 items-center gap-2 py-1.5 pr-1.5 pl-3">
+    {conversations && <BarPanel id="history" label={labels.history} icon={icons.history} narrow={narrow} open={shown === 'history'} onOpenChange={toggle('history')}>
+      <header className="flex shrink-0 items-center gap-2 pl-1">
         <h3 className="m-0 min-w-0 flex-1 truncate text-sm font-semibold">{labels.history}</h3>
         <Button variant="ghost" size="icon-sm" aria-label={labels.close} title={labels.close} className={iconSize(narrow)} onClick={close}><XIcon aria-hidden="true" /></Button>
       </header>
       <Separator />
-      <div className="flex min-h-0 flex-1 flex-col pt-1"><ConversationList conversations={conversations} onPicked={close} /></div>
-    </BarMenu>}
-    {library && <BarMenu id="library" label={labels.library} icon={icons.library} narrow={narrow} open={shown === 'library'} onOpenChange={toggle('library')}>
+      <div className="flex min-h-0 flex-1 flex-col"><ConversationList conversations={conversations} onPicked={close} /></div>
+    </BarPanel>}
+    {library && <BarPanel id="library" label={labels.library} icon={icons.library} narrow={narrow} open={shown === 'library'} onOpenChange={toggle('library')}>
       <div className="min-h-0 flex-1 overflow-auto">{library(close)}</div>
-    </BarMenu>}
-    {conversations?.onNew && <BarTooltip label={labels.newChat} narrow={narrow} trigger={<Button variant="ghost" size="icon" data-testid="workspace-bar-new" aria-label={labels.newChat} className={iconSize(narrow)} onClick={() => conversations.onNew?.()}><icons.newChat aria-hidden="true" /></Button>} />}
+    </BarPanel>}
+    {conversations?.onNew && <Hinted label={labels.newChat} narrow={narrow} trigger={<Button variant="ghost" size="icon" data-testid="workspace-bar-new" aria-label={labels.newChat} className={iconSize(narrow)} onClick={() => conversations.onNew?.()}><icons.newChat aria-hidden="true" /></Button>} />}
     {controls}
   </div>;
   if (slot) return createPortal(tools, slot);

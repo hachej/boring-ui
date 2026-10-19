@@ -113,6 +113,11 @@
           "path": "registry/utils/utils.ts",
           "type": "registry:lib",
           "target": "components/utils/utils.ts"
+        },
+        {
+          "path": "registry/utils/screen-header-slot.ts",
+          "type": "registry:lib",
+          "target": "components/utils/screen-header-slot.ts"
         }
       ]
     },
@@ -738,7 +743,7 @@
       "name": "pi-app",
       "type": "registry:block",
       "title": "Pi agent app",
-      "description": "AgentWorkspace: a whole agent page in one component. Left: the sessions pane (search, New, rename, archive, delete; collapsible, a drawer on a narrow screen). Center: PiChat. Right: the artifact viewers (artifact panel with versions, file viewer, auto-open of new artifacts) in the ArtifactWorkspace panel, a full-screen sheet on a phone. Props are data and callbacks; hooks for the conversations handler (useConversations), the chat transport (useRemoteChat) and saved resources (useSaved).",
+      "description": "AgentWorkspace: a whole agent page in one component. Left: the sessions pane (search, New, rename, archive, delete; collapsible, a drawer on a narrow screen). Center: PiChat. Right: the artifact viewers (artifact panel with versions, file viewer, auto-open of new artifacts) in the ArtifactWorkspace panel, a full-screen sheet on a phone. layout=\"embedded\" drops the left column for one compact top bar (title, History, Library, New) that joins an app-shell screen header. Props are data and callbacks; hooks for the conversations handler (useConversations), the chat transport (useRemoteChat) and saved resources (useSaved).",
       "dependencies": [
         "@hachej/boring-ui-kit@^0.4.1",
         "@hachej/boring-files@^0.4.1",
@@ -759,7 +764,9 @@
         "dropdown-menu",
         "scroll-area",
         "separator",
-        "table"
+        "table",
+        "popover",
+        "tooltip"
       ],
       "files": [
         {
@@ -776,6 +783,11 @@
           "path": "registry/pi-app/history-column.tsx",
           "type": "registry:component",
           "target": "components/pi-app/history-column.tsx"
+        },
+        {
+          "path": "registry/pi-app/workspace-bar.tsx",
+          "type": "registry:component",
+          "target": "components/pi-app/workspace-bar.tsx"
         },
         {
           "path": "registry/pi-app/artifact-panel.tsx",
