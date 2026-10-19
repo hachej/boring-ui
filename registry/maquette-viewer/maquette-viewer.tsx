@@ -1,18 +1,18 @@
 'use client';
 
-// The maquette viewer: a PM agent's `*.maquette.json` mock-up, one screen at a time at full size. A stepper walks the screens (Previous,
-// Next, arrow keys, swipe on a phone), goto blocks open their screen, Back and the breadcrumb follow the path taken, and a case with
-// `steps` is a guided tour with a caption per step. The workflow sits in a collapsed "How it works" section. `maquetteKind` is the kind
-// the pi-app artifact panel uses by default for `.maquette.json` files; an app's own kind in `artifactKinds` wins. It draws data only.
+// The maquette viewer: a PM agent's `*.maquette.json` mock-up, one screen at a time. The screen is the content; the chrome is one thin bar
+// of icons: Back, ‹ 2 / 5 › (also arrow keys and swipe) and a menu holding the guided tours and "How it works" (the workflow, in a dialog).
+// During a tour the bar shows the step dots and ×, with the step's caption under it. `maquetteKind` is the kind the pi-app artifact panel
+// uses by default for `.maquette.json` files; an app's own kind in `artifactKinds` wins. It draws data only: nothing in the file runs.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ComponentType, KeyboardEvent, ReactNode, TouchEvent } from 'react';
-import { ArrowLeftIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, CompassIcon, InfoIcon, LayoutTemplateIcon, TriangleAlertIcon, XIcon } from 'lucide-react';
-import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, CompassIcon, EllipsisIcon, InfoIcon, LayoutTemplateIcon, TriangleAlertIcon, WorkflowIcon, XIcon } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
-import { Separator } from '@/components/ui/separator';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { MAQUETTE_FORMAT_VERSION, isMaquettePath, parseMaquette, screenFromFragment } from './maquette';
 import type { Maquette, MaquetteCase, MaquetteScreen } from './maquette';
 import { maquetteLabelsFor } from './maquette-labels';
@@ -41,49 +41,38 @@ export interface MaquetteViewerProps {
 interface Walk { readonly history: readonly string[]; readonly tour: { readonly name: string; readonly index: number } | null }
 
 const TYPING = 'input, select, textarea, [contenteditable="true"]';
+const ICON = 'pointer-coarse:min-h-11 pointer-coarse:min-w-11';
 
-/** The screen in its frame: a light phone or desktop frame when the maquette asks for one, the panel's width otherwise. */
-function Frame({ device, title, children }: { readonly device: Maquette['device']; readonly title: string; readonly children: ReactNode }) {
-  if (device === 'phone') return <div className="mx-auto w-full max-w-sm"><Card data-testid="maquette-frame" data-device="phone">
-    <div aria-hidden="true" className="flex justify-center"><span className="block h-1 w-14 bg-muted" /></div>
-    <CardContent>{children}</CardContent>
-  </Card></div>;
-  if (device === 'desktop') return <Card data-testid="maquette-frame" data-device="desktop">
-    <div aria-hidden="true" className="flex items-center gap-1.5 px-4">
-      {[0, 1, 2].map(dot => <span key={dot} className="block size-2 bg-muted" />)}
-      <span className="ml-2 min-w-0 truncate text-xs text-muted-foreground">{title}</span>
-    </div>
-    <Separator />
-    <CardContent>{children}</CardContent>
-  </Card>;
-  return <Card data-testid="maquette-frame" data-device="panel"><CardContent>{children}</CardContent></Card>;
+/** One dot per tour step, the current one in the primary colour. */
+function Dots({ count, index, label }: { readonly count: number; readonly index: number; readonly label: string }) {
+  return <svg role="img" aria-label={label} data-testid="maquette-dots" width={count * 12} height="8" viewBox={`0 0 ${count * 12} 8`} className="shrink-0">
+    {Array.from({ length: count }, (_, i) => <circle key={i} cx={i * 12 + 6} cy="4" r="3" className={i === index ? 'fill-primary' : 'fill-muted-foreground/30'} />)}
+  </svg>;
 }
 
-function HowItWorks({ maquette, labels }: { readonly maquette: Maquette; readonly labels: MaquetteLabels }) {
+/** The workflow diagram, its legend and the cases' `path` highlights, in a dialog opened from the menu. */
+function HowItWorks({ maquette, labels, open, onOpenChange }: { readonly maquette: Maquette; readonly labels: MaquetteLabels; readonly open: boolean; readonly onOpenChange: (open: boolean) => void }) {
   const [shown, setShown] = useState<string | null>(null);
   const highlighted = maquette.cases.filter(item => item.path.length > 0);
   if (!maquette.workflow) return null;
-  return <Collapsible data-testid="maquette-how" className="flex min-w-0 flex-col gap-3">
-    <CollapsibleTrigger render={<Button type="button" variant="ghost" className="group w-fit pointer-coarse:min-h-11" data-testid="maquette-how-toggle" />}>
-      <ChevronDownIcon aria-hidden="true" className="transition-transform group-data-panel-open:rotate-180" />{labels.howItWorks}
-    </CollapsibleTrigger>
-    <CollapsibleContent>
-      <Card><CardContent className="flex min-w-0 flex-col gap-4">
-        <MaquetteDiagram workflow={maquette.workflow} highlight={highlighted.find(item => item.name === shown)?.path ?? []} labels={labels} />
-        {highlighted.length > 0 && <div role="group" aria-label={labels.cases} className="flex flex-wrap items-center gap-2">
-          <span className="text-sm text-muted-foreground">{labels.cases}</span>
-          {highlighted.map(item => <Button key={item.name} type="button" size="sm" variant={shown === item.name ? 'secondary' : 'outline'} aria-pressed={shown === item.name}
-            data-testid="maquette-case" className="pointer-coarse:min-h-11" onClick={() => setShown(current => current === item.name ? null : item.name)}>{item.name}</Button>)}
-        </div>}
-      </CardContent></Card>
-    </CollapsibleContent>
-  </Collapsible>;
+  return <Dialog open={open} onOpenChange={onOpenChange}>
+    <DialogContent data-testid="maquette-how" className="max-h-[85dvh] overflow-y-auto">
+      <DialogHeader><DialogTitle>{labels.howItWorks}</DialogTitle></DialogHeader>
+      <MaquetteDiagram workflow={maquette.workflow} highlight={highlighted.find(item => item.name === shown)?.path ?? []} labels={labels} />
+      {highlighted.length > 0 && <div role="group" className="flex flex-wrap gap-2">
+        {highlighted.map(item => <Button key={item.name} type="button" size="sm" variant={shown === item.name ? 'secondary' : 'outline'} aria-pressed={shown === item.name}
+          data-testid="maquette-case" className="pointer-coarse:min-h-11" onClick={() => setShown(current => current === item.name ? null : item.name)}>{item.name}</Button>)}
+      </div>}
+    </DialogContent>
+  </Dialog>;
 }
 
 function Walkthrough({ maquette, labels, fragment }: { readonly maquette: Maquette; readonly labels: MaquetteLabels; readonly fragment: string | undefined }) {
   const exists = (id: string | undefined): id is string => !!id && maquette.screens.some(screen => screen.id === id);
   const linked = screenFromFragment(fragment);
   const [walk, setWalk] = useState<Walk>(() => ({ history: [exists(linked) ? linked : maquette.start], tour: null }));
+  const [how, setHow] = useState(false);
+  const seen = useRef(new Set<string>());
   const heading = useRef<HTMLHeadingElement>(null);
   const moved = useRef(false);
   const touch = useRef<{ x: number; y: number } | null>(null);
@@ -93,6 +82,9 @@ function Walkthrough({ maquette, labels, fragment }: { readonly maquette: Maquet
   const tour: MaquetteCase | undefined = walk.tour ? maquette.cases.find(item => item.name === walk.tour!.name) : undefined;
   const tours = maquette.cases.filter(item => item.steps.length > 0);
   const titleOf = (id: string) => screens.find(screen => screen.id === id)?.title ?? id;
+  // Goto blocks pulse once, the first time their screen is shown.
+  const firstView = !seen.current.has(current.id);
+  useEffect(() => { seen.current.add(current.id); }, [current.id]);
 
   const move = (next: Walk) => { moved.current = true; setWalk(next); };
   const go = (id: string) => { if (exists(id) && id !== current.id) move({ history: [...walk.history, id], tour: null }); };
@@ -109,7 +101,7 @@ function Walkthrough({ maquette, labels, fragment }: { readonly maquette: Maquet
   const startTour = (item: MaquetteCase) => move({ history: [...walk.history, item.steps[0]!.screen], tour: { name: item.name, index: 0 } });
   // A later `#screen=<id>` (the PM's "see screen 2" link) opens that screen.
   useEffect(() => { if (exists(linked) && linked !== walk.history.at(-1)) setWalk(previous => ({ history: [...previous.history, linked], tour: null })); }, [linked]); // eslint-disable-line react-hooks/exhaustive-deps
-  // After a move, keyboard focus starts on the new screen's name, so Tab continues inside the screen just opened.
+  // After a move, keyboard focus starts on the new screen, so Tab continues inside the screen just opened.
   useEffect(() => { if (moved.current) { moved.current = false; heading.current?.focus(); } }, [walk]);
 
   const index = tour && walk.tour ? walk.tour.index : position, count = tour ? tour.steps.length : screens.length;
@@ -127,53 +119,45 @@ function Walkthrough({ maquette, labels, fragment }: { readonly maquette: Maquet
     const dx = point.clientX - start.x, dy = point.clientY - start.y;
     if (Math.abs(dx) > 56 && Math.abs(dx) > Math.abs(dy) * 1.5) step(dx < 0 ? 1 : -1);
   };
-  const crumbs = walk.history.map((id, at) => ({ id, at })).slice(-3);
+  const caption = tour && walk.tour ? tour.steps[walk.tour.index]?.caption : undefined;
 
-  return <div data-testid="maquette-walk" data-screen={current.id} data-tour={tour?.name} className="flex min-w-0 flex-col gap-4" onKeyDown={onKeyDown}>
-    {tours.length > 0 && !tour && <div role="group" aria-label={labels.tours} className="flex flex-wrap items-center gap-2">
-      <span className="flex items-center gap-1.5 text-sm text-muted-foreground"><CompassIcon className="size-4" aria-hidden="true" />{labels.tours}</span>
-      {tours.map(item => <Button key={item.name} type="button" size="sm" variant="outline" className="pointer-coarse:min-h-11" data-testid="maquette-tour" onClick={() => startTour(item)}>{item.name}</Button>)}
-    </div>}
-    {tour && walk.tour && <Alert data-testid="maquette-tour-step">
-      <CompassIcon aria-hidden="true" />
-      <AlertTitle>{labels.tour} · {tour.name} · {labels.tourStep(walk.tour.index + 1, tour.steps.length)}</AlertTitle>
-      <AlertDescription data-testid="maquette-caption">{tour.steps[walk.tour.index]?.caption || current.title}</AlertDescription>
-      <AlertAction><Button type="button" size="icon-sm" variant="ghost" className="pointer-coarse:min-h-11 pointer-coarse:min-w-11" aria-label={labels.endTour} data-testid="maquette-end-tour"
-        onClick={() => setWalk(previous => ({ ...previous, tour: null }))}><XIcon aria-hidden="true" /></Button></AlertAction>
-    </Alert>}
-
-    <nav aria-label={labels.screens} data-testid="maquette-stepper" className="flex items-center gap-2">
-      <Button type="button" variant="outline" size="sm" className="pointer-coarse:min-h-11" data-testid="maquette-previous" disabled={index <= 0} onClick={() => step(-1)}>
-        <ChevronLeftIcon aria-hidden="true" /><span className="max-sm:sr-only">{labels.previous}</span></Button>
-      <span data-testid="maquette-position" className="shrink-0 text-sm text-muted-foreground tabular-nums">{labels.position(index + 1, count)}</span>
-      <NativeSelect aria-label={labels.screen} data-testid="maquette-screen-select" className="min-w-0 flex-1 pointer-coarse:[&_select]:min-h-11" value={current.id} onChange={event => go(event.target.value)}>
-        {screens.map(screen => <NativeSelectOption key={screen.id} value={screen.id}>{screen.title}</NativeSelectOption>)}
-      </NativeSelect>
-      <Button type="button" variant="outline" size="sm" className="pointer-coarse:min-h-11" data-testid="maquette-next" disabled={index >= count - 1} onClick={() => step(1)}>
-        <span className="max-sm:sr-only">{labels.next}</span><ChevronRightIcon aria-hidden="true" /></Button>
-    </nav>
-
-    {walk.history.length > 1 && <div className="flex min-w-0 items-center gap-2">
-      <Button type="button" variant="ghost" size="sm" className="pointer-coarse:min-h-11" data-testid="maquette-back" onClick={back}><ArrowLeftIcon aria-hidden="true" />{labels.back}</Button>
-      <nav aria-label={labels.pathTaken} className="min-w-0 flex-1">
-        <ol data-testid="maquette-breadcrumb" className="m-0 flex min-w-0 list-none items-center gap-1 overflow-hidden p-0 text-sm text-muted-foreground">
-          {crumbs.map(({ id, at }, i) => <li key={at} className={`flex min-w-0 items-center gap-1 ${at === walk.history.length - 1 ? 'shrink-0' : 'shrink'}`}>
-            {i > 0 && <ChevronRightIcon className="size-3.5 shrink-0" aria-hidden="true" />}
-            <span aria-current={at === walk.history.length - 1 ? 'page' : undefined} className={`truncate ${at === walk.history.length - 1 ? 'max-w-[60vw] font-medium text-foreground' : ''}`}>{titleOf(id)}</span>
-          </li>)}
-        </ol>
-      </nav>
-    </div>}
-
-    <div className="grid min-w-0 gap-4 @2xl:grid-cols-[minmax(0,1fr)_16rem] @2xl:items-start">
-      <div className="min-w-0" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
-        <Frame device={maquette.device} title={current.title}>
-          <MaquetteScreenView key={current.id} maquette={maquette} screen={current} links={links} labels={labels} headingRef={heading} />
-        </Frame>
+  return <div data-testid="maquette-walk" data-screen={current.id} data-tour={tour?.name} className="flex min-w-0 flex-col gap-2" onKeyDown={onKeyDown}>
+    <nav aria-label={labels.screens} data-testid="maquette-stepper" className="flex items-center gap-1">
+      {walk.history.length > 1 && <Button type="button" variant="ghost" size="icon-sm" className={ICON} aria-label={labels.back} data-testid="maquette-back" onClick={back}><ArrowLeftIcon aria-hidden="true" /></Button>}
+      <div className="flex flex-1 items-center justify-center gap-1">
+        <Button type="button" variant="ghost" size="icon-sm" className={ICON} aria-label={labels.previous} data-testid="maquette-previous" disabled={index <= 0} onClick={() => step(-1)}><ChevronLeftIcon aria-hidden="true" /></Button>
+        {tour ? <Dots count={count} index={index} label={labels.tourStep(index + 1, count)} />
+          : <span data-testid="maquette-position" className="min-w-10 text-center text-sm text-muted-foreground tabular-nums">{index + 1} / {count}</span>}
+        <Button type="button" variant="ghost" size="icon-sm" className={ICON} aria-label={labels.next} data-testid="maquette-next" disabled={index >= count - 1} onClick={() => step(1)}><ChevronRightIcon aria-hidden="true" /></Button>
       </div>
-      {current.note && <p data-testid="maquette-note" className="m-0 flex gap-2 text-sm text-pretty text-muted-foreground"><InfoIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />{current.note}</p>}
+      {tour ? <Button type="button" variant="ghost" size="icon-sm" className={ICON} aria-label={labels.endTour} data-testid="maquette-end-tour" onClick={() => setWalk(previous => ({ ...previous, tour: null }))}><XIcon aria-hidden="true" /></Button>
+        : (tours.length > 0 || maquette.workflow) && <DropdownMenu>
+          <DropdownMenuTrigger render={<Button type="button" variant="ghost" size="icon-sm" className={ICON} aria-label={labels.more} data-testid="maquette-menu" />}><EllipsisIcon aria-hidden="true" /></DropdownMenuTrigger>
+          <DropdownMenuContent align="end" data-testid="maquette-menu-list">
+            {tours.map(item => <DropdownMenuItem key={item.name} className="pointer-coarse:min-h-11" data-testid="maquette-tour" onClick={() => startTour(item)}><CompassIcon aria-hidden="true" />{item.name}</DropdownMenuItem>)}
+            {tours.length > 0 && maquette.workflow && <DropdownMenuSeparator />}
+            {maquette.workflow && <DropdownMenuItem className="pointer-coarse:min-h-11" data-testid="maquette-how-open" onClick={() => setHow(true)}><WorkflowIcon aria-hidden="true" />{labels.howItWorks}</DropdownMenuItem>}
+          </DropdownMenuContent>
+        </DropdownMenu>}
+    </nav>
+    {caption && <p data-testid="maquette-caption" className="m-0 line-clamp-2 px-1 text-sm text-pretty text-muted-foreground">{caption}</p>}
+
+    <div className={maquette.device === 'phone' ? 'mx-auto flex w-full max-w-sm flex-col gap-2' : 'flex min-w-0 flex-col gap-2'}>
+      <div className="min-w-0" data-hint={firstView ? 'pulse' : undefined} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+        <Card data-testid="maquette-frame" data-device={maquette.device ?? 'panel'}><CardContent>
+          <MaquetteScreenView key={current.id} maquette={maquette} screen={current} links={links} labels={labels} headingRef={heading} />
+        </CardContent></Card>
+      </div>
+      {current.note && <div className="flex min-w-0 items-center gap-1 px-1">
+        <p data-testid="maquette-note" title={current.note} className="m-0 min-w-0 flex-1 truncate text-xs text-muted-foreground">{current.note}</p>
+        <Popover>
+          <PopoverTrigger render={<Button type="button" variant="ghost" size="icon-xs" className={ICON} aria-label={labels.aboutScreen} data-testid="maquette-note-more" />}><InfoIcon aria-hidden="true" /></PopoverTrigger>
+          <PopoverContent align="end" data-testid="maquette-note-full">{current.note}</PopoverContent>
+        </Popover>
+      </div>}
     </div>
     <p aria-live="polite" className="m-0 sr-only">{labels.showing(current.title)}</p>
+    <HowItWorks maquette={maquette} labels={labels} open={how} onOpenChange={setHow} />
   </div>;
 }
 
@@ -183,22 +167,13 @@ export function MaquetteViewer({ text, fragment, locale, labels: given }: Maquet
   const parsed = useMemo(() => parseMaquette(text), [text]);
   const newer = parsed.version !== undefined && parsed.version > MAQUETTE_FORMAT_VERSION;
   const notice = newer && <Alert data-testid="maquette-newer"><InfoIcon aria-hidden="true" /><AlertTitle>{labels.newerTitle}</AlertTitle><AlertDescription>{labels.newer(parsed.version!)}</AlertDescription></Alert>;
-  const frame = (children: ReactNode, state: string) => <section data-boring="maquette-viewer" data-state={state}
-    className="@container mx-auto flex w-full max-w-5xl min-w-0 flex-col gap-5 p-4 sm:p-6">{children}</section>;
-  if (parsed.kind === 'invalid') return frame(<>{notice}
-    <Alert variant="destructive" data-testid="maquette-error" data-reason={parsed.reason}><TriangleAlertIcon aria-hidden="true" /><AlertTitle>{labels.errorTitle}</AlertTitle>
-      <AlertDescription>{parsed.reason === 'json' ? labels.invalidJson : labels.invalidShape}</AlertDescription></Alert></>, 'invalid');
-  const { maquette } = parsed;
-  return frame(<>
-    <header className="flex min-w-0 flex-col gap-1">
-      <p className="m-0 text-xs font-medium tracking-wide text-muted-foreground uppercase">{labels.kind} · {labels.screenCount(maquette.screens.length)}</p>
-      <h2 data-testid="maquette-title" className="m-0 text-lg font-semibold text-balance">{maquette.title || labels.kind}</h2>
-      <p className="m-0 text-sm text-pretty text-muted-foreground">{labels.disclaimer}</p>
-    </header>
+  return <section data-boring="maquette-viewer" data-state={parsed.kind} aria-label={parsed.kind === 'ok' ? parsed.maquette.title || labels.kind : labels.kind}
+    className="mx-auto flex w-full max-w-5xl min-w-0 flex-col gap-2 px-3 pt-1 pb-4 sm:px-6">
     {notice}
-    <Walkthrough maquette={maquette} labels={labels} fragment={fragment} />
-    <HowItWorks maquette={maquette} labels={labels} />
-  </>, 'ok');
+    {parsed.kind === 'ok' ? <Walkthrough maquette={parsed.maquette} labels={labels} fragment={fragment} />
+      : <Alert variant="destructive" data-testid="maquette-error" data-reason={parsed.reason}><TriangleAlertIcon aria-hidden="true" /><AlertTitle>{labels.errorTitle}</AlertTitle>
+        <AlertDescription>{parsed.reason === 'json' ? labels.invalidJson : labels.invalidShape}</AlertDescription></Alert>}
+  </section>;
 }
 
 /**

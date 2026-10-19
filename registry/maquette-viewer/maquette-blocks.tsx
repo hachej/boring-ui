@@ -2,9 +2,9 @@
 
 // One maquette screen drawn from the host's own shadcn components: each catalogue type is a real Button, Input, NativeSelect, Badge, Table,
 // Item, Card or Bubble, so a mock-up looks like the app it announces. A type the catalogue does not know becomes a named placeholder
-// (a grey dashed Empty). Blocks with a goto open their screen and show an arrow hint.
+// (a grey dashed Empty). Blocks with a goto open their screen; the item's CSS gives them a soft ring on hover and focus.
 import type { ReactNode, Ref } from 'react';
-import { ArrowRightIcon, BoxIcon } from 'lucide-react';
+import { BoxIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Bubble, BubbleContent } from '@/components/ui/bubble';
 import { Button } from '@/components/ui/button';
@@ -39,13 +39,12 @@ function Placeholder({ block, links, labels }: { readonly block: MaquetteBlock; 
   </div>;
 }
 
-// A block with a goto says so: a trailing arrow and a tooltip naming the screen it opens. One without is drawn but does nothing.
+// A block with a goto opens its screen (its tooltip names it); one without is drawn but does nothing.
 function GotoButton({ block, links, label }: { readonly block: MaquetteBlock; readonly links: MaquetteLinks; readonly label: string }) {
   const target = block.goto;
   return <Button type="button" variant={block.type === 'link' ? 'link' : block.primary ? 'default' : 'outline'} className="w-fit max-w-full pointer-coarse:min-h-11"
     data-testid={target ? 'maquette-goto' : 'maquette-button'} data-goto={target} title={target ? links.hint(target) : undefined} onClick={() => { if (target) links.go(target); }}>
     <span className="truncate">{label || '…'}</span>
-    {target && <ArrowRightIcon data-icon="inline-end" data-testid="maquette-goto-hint" aria-hidden="true" />}
   </Button>;
 }
 
@@ -97,7 +96,7 @@ export function MaquetteBlockView({ block, links, labels }: { readonly block: Ma
   }
 }
 
-/** A screen as the app would show it: the app's navigation bar (when the maquette has one), the screen's name, then its blocks. */
+/** A screen as the app would show it: the app's navigation bar (when the maquette has one), then its blocks. Its name is for screen readers and focus. */
 export function MaquetteScreenView({ maquette, screen, links, labels, headingRef }: {
   readonly maquette: Maquette; readonly screen: MaquetteScreen; readonly links: MaquetteLinks; readonly labels: MaquetteLabels;
   readonly headingRef?: Ref<HTMLHeadingElement> | undefined;
@@ -110,7 +109,7 @@ export function MaquetteScreenView({ maquette, screen, links, labels, headingRef
       </nav>
       <Separator />
     </>}
-    <h3 ref={headingRef} tabIndex={-1} data-testid="maquette-screen-title" className="m-0 text-base font-semibold text-balance outline-none">{screen.title}</h3>
+    <h3 ref={headingRef} tabIndex={-1} data-testid="maquette-screen-title" className="sr-only">{screen.title}</h3>
     {screen.blocks.map((block, index) => <MaquetteBlockView key={index} block={block} links={links} labels={labels} />)}
   </div>;
 }

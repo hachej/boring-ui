@@ -1,7 +1,8 @@
 // Real-browser journey of the built-in maquette viewer in the workspace app (scripted model, no key): the agent writes and presents the
 // fictional booking mock-up (test/fixtures/maquette/booking.maquette.json) and the pi-app artifact panel draws it with no app kind. Phone
-// first (the panel is a full-screen sheet; the message is sent at desktop width, where the panel opens for `present`): the stepper and swipe walk the screens, a goto opens its screen with the
-// breadcrumb, a guided tour shows its captions, How it works opens the diagram, no horizontal scroll at 390 or 360 and 44px touch targets.
+// first (the panel is a full-screen sheet; the message is sent at desktop width, where the panel opens for `present`): the screen takes
+// most of the height under one thin bar, swipe walks the screens, a goto opens its screen and Back returns, a guided tour from the menu
+// shows its caption and dots, How it works opens the diagram in a dialog, no horizontal scroll at 390 or 360 and 44px touch targets.
 // Then desktop at 1440: arrow keys, Back, and `#screen=` opening a screen. Screenshots (light and dark) go to .cache/evidence/maquette/.
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync } from 'node:fs';
@@ -35,8 +36,9 @@ let browser;
 try {
   browser = await launch(insecureUrl(app.url), { evidence });
   await browser.until('the chat is live', `!!${INPUT} && !${INPUT}.disabled`, 20000);
+  const openMenu = async tap => { await (tap ? browser.tap : browser.click)(q('[data-testid=maquette-menu]')); await browser.until('the menu', `!!${q('[data-testid=maquette-menu-list]')}`, 5000); await pause(200); };
 
-  await step('phone: the presented mock-up opens from its card in the full-screen sheet', async () => {
+  await step('phone: the presented mock-up opens in the sheet, the screen taking most of the height', async () => {
     await browser.type(INPUT, 'Make the booking mock-up and present it.'); await browser.press('Enter');
     await browser.until('the card names the built-in kind', `${q('[data-testid=artifact-card][data-state=ready]')}?.dataset.artifactKind === 'Mock-up'`, 30000);
     await browser.emulate('phone');
@@ -44,28 +46,28 @@ try {
     if (!(await browser.evaluate(`!!${WALK}`))) await browser.tap(q('[data-testid=artifact-card][data-state=ready]'));
     await browser.until('the sheet with the viewer', `${q('[data-testid=workspace-panel]')}?.dataset.sheet === 'true' && ${SCREEN} === 'classes'`, 10000);
     assert.equal(await browser.evaluate(`${q('[data-testid=artifact-panel-type]')}?.textContent`), 'Mock-up');
-    assert.equal(await browser.evaluate(`${q('[data-testid=maquette-frame]')}.dataset.device`), 'phone');
     assert.equal(await browser.evaluate(`${q('[data-testid=maquette-position]')}.textContent`), '1 / 3');
+    const top = await browser.evaluate(`${q('[data-testid=maquette-frame]')}.getBoundingClientRect().top / innerHeight`);
+    assert.ok(top <= 0.15, `the screen starts within the top 15% of the phone (${top.toFixed(3)})`);
     assert.ok(await browser.evaluate(noOverflow), 'no horizontal scroll at 390');
     assert.deepEqual(await browser.evaluate(SMALL), [], '44px touch targets');
-    await shoot('phone-screen-stepper');
+    await shoot('phone-screen');
   });
 
-  await step('phone: swipe and Next walk the screens; a goto opens its screen with the breadcrumb', async () => {
+  await step('phone: swipe walks the screens; a goto opens its screen and Back returns', async () => {
     await swipe(-160);
     await browser.until('swiped to the next screen', `${SCREEN} === 'class'`, 5000);
     await swipe(160);
     await browser.until('swiped back', `${SCREEN} === 'classes'`, 5000);
     await browser.tap(q('[data-testid=maquette-screen] [data-testid=maquette-goto][data-goto=class]'));
     await browser.until('goto opened the class', `${SCREEN} === 'class'`, 5000);
-    assert.ok(await browser.evaluate(`!!${q('[data-testid=maquette-goto-hint]')}`), 'goto blocks carry their hint');
-    await browser.until('breadcrumb', `${qa('[data-testid=maquette-breadcrumb] li')}.length === 3`, 5000);
-    assert.ok(await browser.evaluate(noOverflow));
-    assert.ok((await browser.evaluate(`${q('[data-testid=maquette-breadcrumb]')}.getBoundingClientRect().height`)) <= 24, 'the breadcrumb stays on one line');
-    await shoot('phone-goto-breadcrumb');
+    await browser.tap(q('[data-testid=maquette-back]'));
+    await browser.until('Back returned', `${SCREEN} === 'classes'`, 5000);
   });
 
-  await step('phone: a guided tour walks its steps with captions', async () => {
+  await step('phone: the menu starts a guided tour with a caption and step dots', async () => {
+    await openMenu(true);
+    await shoot('phone-menu');
     await browser.tap(q('[data-testid=maquette-tour]'));
     await browser.until('first tour step', `/Alex, a fictional student/.test(${q('[data-testid=maquette-caption]')}?.textContent ?? '')`, 5000);
     await browser.tap(q('[data-testid=maquette-next]'));
@@ -76,22 +78,24 @@ try {
     await browser.tap(q('[data-testid=maquette-end-tour]'));
   });
 
-  await step('phone: How it works is collapsed, opens the diagram, scrolls inside its box', async () => {
-    assert.equal(await browser.evaluate(`!!${q('[data-testid=maquette-diagram]')}`), false, 'collapsed by default');
-    await browser.tap(q('[data-testid=maquette-how-toggle]'));
-    await browser.until('diagram', `!!${q('[data-testid=maquette-diagram]')}`, 5000);
+  await step('phone: How it works opens from the menu in a dialog; the diagram scrolls inside its box', async () => {
+    assert.equal(await browser.evaluate(`!!${q('[data-testid=maquette-diagram]')}`), false, 'hidden by default');
+    await openMenu(true);
+    await browser.tap(q('[data-testid=maquette-how-open]'));
+    await browser.until('diagram', `!!${q('[data-testid=maquette-how] [data-testid=maquette-diagram]')}`, 5000);
     await browser.tap(qa('[data-testid=maquette-case]') + `.find(e => e.textContent === 'Cancellation')`);
     await browser.until('highlighted', `${qa('[data-testid=maquette-diagram] g[data-state][data-lit]')}.length === 4`, 5000);
     assert.equal(await browser.evaluate(`${q('[data-testid=maquette-diagram]')}.dataset.layout`), 'vertical', 'steps run top to bottom on a phone');
     assert.ok(await browser.evaluate(noOverflow), 'the diagram never scrolls the page');
-    await browser.evaluate(`${q('[data-testid=maquette-how]')}.scrollIntoView({ block: 'start' })`);
     await shoot('phone-how-it-works');
+    await browser.press('Escape');
+    await browser.until('dialog closed', `!${q('[data-testid=maquette-how]')}`, 5000);
     await browser.send('Emulation.setDeviceMetricsOverride', { width: 360, height: 780, deviceScaleFactor: 2, mobile: true });
     await pause(300);
     assert.ok(await browser.evaluate(noOverflow), 'no horizontal scroll at 360');
   });
 
-  await step('desktop 1440: arrow keys, Back, and #screen= opens a screen', async () => {
+  await step('desktop 1440: arrow keys, Back, a tour, How it works, and #screen= opens a screen', async () => {
     await browser.emulate('desktop');
     await browser.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
     await browser.until('panel beside the chat', `${q('[data-testid=workspace-panel]')}?.dataset.sheet !== 'true' && !!${WALK}`, 10000);
@@ -101,16 +105,17 @@ try {
     await browser.until('arrow key moved on', `${SCREEN} !== ${JSON.stringify(before)}`, 5000);
     await browser.click(q('[data-testid=maquette-back]'));
     await browser.until('Back returned', `${SCREEN} === ${JSON.stringify(before)}`, 5000);
-    await browser.evaluate(`${q('[data-testid=artifact-panel] [data-testid=artifact-body] > div')}?.scrollTo(0, 0)`);
-    await shoot('desktop-screen-stepper');
+    await shoot('desktop-screen');
+    await openMenu(false);
     await browser.click(q('[data-testid=maquette-tour]'));
     await browser.until('tour', `!!${q('[data-testid=maquette-caption]')}`, 5000);
     await shoot('desktop-tour-step');
     await browser.click(q('[data-testid=maquette-end-tour]'));
-    if (!(await browser.evaluate(`!!${q('[data-testid=maquette-diagram]')}`))) await browser.click(q('[data-testid=maquette-how-toggle]'));
-    await browser.until('diagram', `!!${q('[data-testid=maquette-diagram]')}`, 5000);
-    await browser.evaluate(`${q('[data-testid=maquette-how]')}.scrollIntoView({ block: 'start' })`);
+    await openMenu(false);
+    await browser.click(q('[data-testid=maquette-how-open]'));
+    await browser.until('diagram', `!!${q('[data-testid=maquette-how] [data-testid=maquette-diagram]')}`, 5000);
     await shoot('desktop-how-it-works');
+    await browser.press('Escape');
     await browser.evaluate(`location.hash = 'screen=confirmed'`);
     await browser.until('#screen= opened the screen', `${SCREEN} === 'confirmed'`, 5000);
   });

@@ -14,10 +14,11 @@ const out = join(root, '.cache/maquette-viewer-test');
 mkdirSync(out, { recursive: true });
 writeFileSync(join(out, 'entry.tsx'), `export { ArtifactPanel } from '${root}registry/pi-app/artifact-panel.tsx'; export { createMaquetteKind, maquetteKind } from '${root}registry/maquette-viewer/maquette-viewer.tsx';`);
 await build({ entryPoints: [join(out, 'entry.tsx')], outfile: join(out, 'kit.mjs'), bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
-const kit = await import(pathToFileURL(join(out, 'kit.mjs')).href);
+// Imported once the first test's DOM globals exist: Base UI decides at load time whether it runs in a browser.
+let kit;
 const BOOKING = readFileSync(join(root, 'test/fixtures/maquette/booking.maquette.json'), 'utf8');
 
-const DOM = ['window', 'document', 'navigator', 'location', 'HTMLElement', 'Element', 'Node', 'Text', 'Event', 'KeyboardEvent', 'addEventListener', 'removeEventListener', 'MutationObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'IS_REACT_ACT_ENVIRONMENT', 'ResizeObserver', 'localStorage', 'sessionStorage'];
+const DOM = ['window', 'document', 'navigator', 'location', 'HTMLElement', 'HTMLButtonElement', 'Element', 'Node', 'Text', 'Event', 'KeyboardEvent', 'MouseEvent', 'PointerEvent', 'addEventListener', 'removeEventListener', 'MutationObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'IS_REACT_ACT_ENVIRONMENT', 'ResizeObserver', 'localStorage', 'sessionStorage'];
 async function dom(t, url = 'https://fictional.invalid/') {
   const { Window } = await import('happy-dom');
   const window = new Window({ url, settings: { disableIframePageLoading: true } });
@@ -26,6 +27,7 @@ async function dom(t, url = 'https://fictional.invalid/') {
     const value = name === 'window' ? window : name === 'IS_REACT_ACT_ENVIRONMENT' ? true : name === 'ResizeObserver' ? class { observe() {} unobserve() {} disconnect() {} } : window[name];
     Object.defineProperty(globalThis, name, { configurable: true, writable: true, value: typeof value === 'function' && /^[a-z]/.test(name) ? value.bind(window) : value });
   }
+  kit ??= await import(pathToFileURL(join(out, 'kit.mjs')).href);
   const { act, createElement } = await import('react');
   const { createRoot } = await import('react-dom/client');
   const container = document.createElement('div'); document.body.append(container);
@@ -36,8 +38,9 @@ async function dom(t, url = 'https://fictional.invalid/') {
     for (const [name, descriptor] of globals) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else delete globalThis[name]; }
   });
   const settle = async () => { for (let i = 0; i < 10; i++) await act(async () => new Promise(resolve => setTimeout(resolve, 5))); };
-  const $ = selector => container.querySelector(selector);
-  const $$ = selector => [...container.querySelectorAll(selector)];
+  // The whole document: menus and dialogs render in a portal outside the panel.
+  const $ = selector => document.querySelector(selector);
+  const $$ = selector => [...document.querySelectorAll(selector)];
   const click = async selector => { const element = typeof selector === 'string' ? $(selector) : selector; assert.ok(element, `missing ${selector}`); await act(async () => element.click()); };
   return { window, act, container, $, $$, click, settle, h: createElement, render: async element => act(async () => ui.render(element)) };
 }
@@ -53,17 +56,21 @@ async function panel(t, text, { path = 'documents/booking.maquette.json', kinds,
   await page.settle();
   const screen = () => page.$('[data-testid=maquette-walk]')?.dataset.screen;
   const key = async (key, init = {}) => { const walk = page.$('[data-testid=maquette-walk]'); await page.act(async () => walk.dispatchEvent(new page.window.KeyboardEvent('keydown', { key, bubbles: true, ...init }))); };
-  return { ...page, screen, key };
+  const menu = async item => { await page.click('[data-testid=maquette-menu]'); await page.settle(); await page.click(item); await page.settle(); };
+  return { ...page, screen, key, menu };
 }
 
-test('a v1 file renders its start screen in the panel, named Mock-up, with real blocks and a note', async t => {
+test('a v1 file renders its start screen in the panel, named Mock-up, with real blocks and a one-line note', async t => {
   const page = await panel(t, BOOKING);
   assert.equal(page.$('[data-testid=artifact-panel-type]').textContent, 'Mock-up');
-  assert.equal(page.$('[data-testid=maquette-title]').textContent, 'Tidewater Studio: class booking');
+  assert.equal(page.$('[data-boring=maquette-viewer]').getAttribute('aria-label'), 'Tidewater Studio: class booking');
   assert.equal(page.screen(), 'classes');
   assert.equal(page.$('[data-testid=maquette-screen-title]').textContent, "This week's classes");
   assert.deepEqual(page.$$('[data-testid=maquette-screen] th').map(cell => cell.textContent), ['Class', 'When', 'Places']);
-  assert.match(page.$('[data-testid=maquette-note]').textContent, /this week's classes and how many places/);
+  const note = page.$('[data-testid=maquette-note]');
+  assert.match(note.textContent, /this week's classes and how many places/);
+  assert.equal(note.getAttribute('title'), note.textContent, 'the full note in its tooltip');
+  assert.ok(page.$('[data-testid=maquette-note-more]'), 'and behind the info button');
   assert.equal(page.$('[data-testid=maquette-position]').textContent, '1 / 3');
 });
 
@@ -81,47 +88,47 @@ test('the stepper walks the screens with Previous, Next and the arrow keys', asy
   assert.equal(document.activeElement, page.$('[data-testid=maquette-screen-title]'), 'focus starts on the screen just opened');
 });
 
-test('a goto block is marked as a link, opens its screen, and Back and the breadcrumb follow the path taken', async t => {
+test('a goto block names its screen, pulses on first view, opens its screen, and Back returns', async t => {
   const page = await panel(t, BOOKING);
   const goto = page.$('[data-testid=maquette-screen] [data-testid=maquette-goto][data-goto=class]');
-  assert.ok(goto.querySelector('[data-testid=maquette-goto-hint]'), 'an arrow hint');
   assert.equal(goto.getAttribute('title'), 'Opens “Wheel throwing, beginners”');
-  assert.equal(page.$('[data-testid=maquette-breadcrumb]'), null, 'no breadcrumb before a move');
+  assert.equal(goto.closest('[data-hint]')?.dataset.hint, 'pulse', 'goto blocks pulse the first time their screen is shown');
+  assert.equal(page.$('[data-testid=maquette-back]'), null, 'no Back before a move');
   await page.click(goto);
   assert.equal(page.screen(), 'class');
   await page.click('[data-testid=maquette-goto][data-goto=confirmed]');
   assert.equal(page.screen(), 'confirmed');
-  assert.deepEqual(page.$$('[data-testid=maquette-breadcrumb] li').map(item => item.textContent), ["This week's classes", 'Wheel throwing, beginners', 'Booking confirmed']);
   await page.click('[data-testid=maquette-back]');
   assert.equal(page.screen(), 'class');
+  assert.equal(page.$('[data-testid=maquette-walk] [data-hint]')?.dataset.hint, undefined, 'a screen seen before does not pulse again');
   await page.click('[data-testid=maquette-back]');
   assert.equal(page.screen(), 'classes');
-  assert.equal(page.$('[data-testid=maquette-breadcrumb]'), null, 'back at the start of the path');
+  assert.equal(page.$('[data-testid=maquette-back]'), null, 'back at the start of the path');
 });
 
-test('a case with steps is a guided tour: its screens in order, each with its caption', async t => {
+test('a case with steps is a guided tour from the menu: its screens in order, a caption and step dots', async t => {
   const page = await panel(t, BOOKING);
-  await page.click('[data-testid=maquette-tour]');
+  await page.menu('[data-testid=maquette-tour]');
   assert.equal(page.$('[data-testid=maquette-walk]').dataset.tour, 'First booking');
   assert.match(page.$('[data-testid=maquette-caption]').textContent, /^Alex, a fictional student, opens/);
-  assert.equal(page.$('[data-testid=maquette-position]').textContent, '1 / 3');
+  assert.equal(page.$('[data-testid=maquette-dots]').getAttribute('aria-label'), 'Step 1 of 3');
+  assert.equal(page.$('[data-testid=maquette-position]'), null, 'dots replace the counter');
   await page.click('[data-testid=maquette-next]');
   assert.equal(page.screen(), 'class');
   assert.match(page.$('[data-testid=maquette-caption]').textContent, /types a name and an email/);
   await page.key('ArrowRight');
   assert.equal(page.screen(), 'confirmed');
-  assert.match(page.$('[data-testid=maquette-tour-step]').textContent, /Step 3 of 3/);
+  assert.equal(page.$('[data-testid=maquette-dots]').getAttribute('aria-label'), 'Step 3 of 3');
   await page.click('[data-testid=maquette-end-tour]');
   assert.equal(page.$('[data-testid=maquette-caption]'), null);
+  assert.ok(page.$('[data-testid=maquette-menu]'), 'the menu is back');
 });
 
-test('the workflow is collapsed by default; a legacy case path still highlights it', async t => {
+test('the workflow is hidden by default and opens from the menu; a legacy case path still highlights it', async t => {
   const page = await panel(t, BOOKING);
-  assert.ok(page.$('[data-testid=maquette-how]'));
-  assert.equal(page.$('[data-testid=maquette-diagram]'), null, 'collapsed: no diagram drawn');
-  await page.click('[data-testid=maquette-how-toggle]');
-  await page.settle();
-  assert.ok(page.$('[data-testid=maquette-diagram]'));
+  assert.equal(page.$('[data-testid=maquette-diagram]'), null, 'hidden: no diagram drawn');
+  await page.menu('[data-testid=maquette-how-open]');
+  assert.ok(page.$('[data-testid=maquette-how] [data-testid=maquette-diagram]'), 'in the How it works dialog');
   assert.equal(page.$$('[data-testid=maquette-legend] li').length, 5, 'a numbered legend line per transition');
   const cancellation = page.$$('[data-testid=maquette-case]').find(button => button.textContent === 'Cancellation');
   await page.click(cancellation);
@@ -192,5 +199,5 @@ test('an app kind for .maquette.json wins over the built-in', async t => {
 test('createMaquetteKind gives the French kind: « Maquette » and French words', async t => {
   const french = await panel(t, BOOKING, { kinds: [kit.createMaquetteKind({ locale: 'fr' })] });
   assert.equal(french.$('[data-testid=artifact-panel-type]').textContent, 'Maquette');
-  assert.match(french.$('[data-testid=maquette-stepper]').textContent, /Précédent/);
+  assert.equal(french.$('[data-testid=maquette-previous]').getAttribute('aria-label'), 'Écran précédent');
 });
