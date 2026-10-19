@@ -25,6 +25,7 @@
     "ambient:journey:scripted": "node examples/ambient/journey.mjs --scripted",
     "workspace-app": "node examples/workspace-app/server.mjs",
     "workspace-app:journey": "node examples/workspace-app/journey.mjs",
+    "mockup:journey": "node examples/workspace-app/journey-mockup.mjs",
     "maquette:journey": "node examples/workspace-app/journey-maquette.mjs",
     "diagram:journey": "node examples/workspace-app/journey-diagram.mjs",
     "workspace-demo": "node demos/workspace/server.mjs",

@@ -43,6 +43,8 @@ export const artifactKey = (artifact: Pick<ArtifactDescriptor, 'id' | 'target'>)
 export interface ArtifactKindViewProps {
   readonly artifact: ArtifactDescriptor;
   readonly text: string;
+  /** Async built-in viewers call this only once their document is loaded. */
+  readonly onReady?: (() => void) | undefined;
   readonly fragment?: string | undefined;
   readonly read?: ((path: string) => Promise<string | undefined>) | undefined;
 }

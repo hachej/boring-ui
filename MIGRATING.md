@@ -1,5 +1,7 @@
 # Unreleased (0.4.3)
 
+- `pi-app` now renders `*.mockup.html` with the built-in `mockup-viewer` item. Re-add `pi-app` to install its dependency and pinned Tailwind compiler. `mockupKind` and `createMockupKind` are exported. Other HTML stays passive unless the host opts in. See the registry README for sandbox CSP requirements. `usePointComments` adds `pick`, `picking` and `reposition` for host-owned frame proxies; existing maquette comments are unchanged. `ArtifactKindViewProps.onReady` lets the asynchronous mock-up report its actual load before a presentation acknowledgement.
+
 Non-breaking for files and props: older `*.maquette.json` files read unchanged, and a page that passes none of the new props renders as before.
 `maquette-viewer` now also needs the new `diagram-viewer` item and the `toggle` and `tooltip` shadcn components; `pi-app` installs `diagram-viewer`.
 

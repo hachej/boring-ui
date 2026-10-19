@@ -20,6 +20,7 @@ export interface MockupComments {
   readonly point: () => void;
   readonly pins: readonly { readonly number: number; readonly target: string }[];
   readonly pick?: ((element: Element) => void) | undefined;
+  readonly reposition?: (() => void) | undefined;
 }
 
 export interface MockupViewerProps {
@@ -27,6 +28,7 @@ export interface MockupViewerProps {
   readonly path?: string | undefined;
   readonly comments?: MockupComments | undefined;
   readonly locale?: 'en' | 'fr' | undefined;
+  readonly onReady?: (() => void) | undefined;
 }
 
 function useTheme(root: RefObject<HTMLDivElement | null>) {
@@ -52,7 +54,7 @@ function useTheme(root: RefObject<HTMLDivElement | null>) {
   return theme;
 }
 
-export function MockupViewer({ text, path = '', comments, locale }: MockupViewerProps) {
+export function MockupViewer({ text, path = '', comments, locale, onReady }: MockupViewerProps) {
   const root = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const proxies = useRef(new Map<string, HTMLSpanElement>());
@@ -94,14 +96,15 @@ export function MockupViewer({ text, path = '', comments, locale }: MockupViewer
     pending.current = undefined;
     const proxy = selector === undefined ? undefined : proxies.current.get(selector);
     if (proxy) comments?.pick?.(proxy);
-  }, [picks, comments?.pick]);
+    else comments?.reposition?.();
+  }, [picks, comments?.pick, comments?.reposition]);
   return <div ref={root} data-boring="mockup-viewer" className="flex h-full min-h-0 min-w-0 flex-col">
     {comments?.pick && <nav data-feedback-ignore="" className="flex shrink-0 justify-end px-2 py-1">
       <Tooltip><TooltipTrigger render={<Toggle aria-label={label} pressed={comments.active} onPressedChange={comments.point} data-testid="mockup-comment" className="pointer-coarse:min-h-11 pointer-coarse:min-w-11" />}><MessageSquarePlusIcon aria-hidden="true" /></TooltipTrigger><TooltipContent>{label}</TooltipContent></Tooltip>
     </nav>}
     <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
       {content === undefined ? <p role="status" className="p-3 text-muted-foreground">{compiled && 'error' in compiled ? 'HTML mock-up unavailable.' : 'Loading HTML mock-up…'}</p>
-        : <InteractiveFrame key={content} text={content} sources={[]} title="HTML mock-up" testId="mockup" frameRef={frame} onLoad={mode} />}
+        : <InteractiveFrame key={content} text={content} sources={[]} title="HTML mock-up" testId="mockup" frameRef={frame} onLoad={() => { mode(); onReady?.(); }} />}
       {picks.map(pick => <span key={pick.selector} ref={element => { if (element) proxies.current.set(pick.selector, element); else proxies.current.delete(pick.selector); }}
         data-testid="mockup-element" data-feedback-id={mockupTarget(path, pick.selector)} role="img" aria-label="HTML mock-up element"
         className="pointer-events-none absolute overflow-hidden" style={{ left: pick.rect.x, top: pick.rect.y, width: pick.rect.w, height: pick.rect.h }}>
@@ -115,11 +118,11 @@ export interface MockupKind {
   readonly match: (target: { readonly resource: { readonly path: string } }) => boolean;
   readonly label: string;
   readonly icon: ComponentType<{ readonly className?: string; readonly 'aria-hidden'?: boolean | 'true' }>;
-  readonly renderer: (props: { readonly text: string; readonly artifact?: { readonly target: { readonly resource: { readonly path: string } } } | undefined }) => ReactNode;
+  readonly renderer: (props: { readonly text: string; readonly onReady?: (() => void) | undefined; readonly artifact?: { readonly target: { readonly resource: { readonly path: string } } } | undefined }) => ReactNode;
 }
 
 export function createMockupKind({ comments, locale }: { readonly comments?: MockupComments | undefined; readonly locale?: 'en' | 'fr' | undefined } = {}): MockupKind {
   return { match: target => isMockupPath(target.resource.path), label: locale === 'fr' ? 'Maquette HTML' : 'HTML mock-up', icon: CodeXmlIcon,
-    renderer: ({ text, artifact }) => <MockupViewer key={artifact?.target.resource.path} text={text} path={artifact?.target.resource.path} comments={comments} locale={locale} /> };
+    renderer: ({ text, artifact, onReady }) => <MockupViewer key={artifact?.target.resource.path} text={text} path={artifact?.target.resource.path} comments={comments} locale={locale} onReady={onReady} /> };
 }
 export const mockupKind: MockupKind = createMockupKind();
