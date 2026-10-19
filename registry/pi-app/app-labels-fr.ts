@@ -40,4 +40,6 @@ export const frenchAppLabels: AppLabels = {
   binaryFile: size => `Fichier binaire (${size}) ; il ne peut pas être affiché comme du texte.`,
   fileViewer: kind => `Afficheur ${kind}`,
   newVersion: 'Une nouvelle version est disponible.',
+  newerBlobFormat: 'Ce fichier renvoie à un gros fichier dans un format plus récent que celui que cette page lit. Il est affiché tel qu’il est enregistré.',
+  invalidBlobPointer: name => `${name} : l’import n’a pas renvoyé de référence de fichier valide.`,
 };
