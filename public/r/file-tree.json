@@ -4,15 +4,15 @@
   "title": "File tree",
   "description": "Browse, search, upload and inspect retained versions through one revisionProvider binding. Uses the consumer's shadcn Button and dropdown-menu with shared version-history rows; Base UI style only.",
   "dependencies": [
-    "@hachej/boring-ui-kit@^0.4.1",
-    "@hachej/boring-files@^0.4.1",
+    "@hachej/boring-ui-kit@^0.4.2",
+    "@hachej/boring-files@^0.4.2",
     "react@^19.0.0",
     "lucide-react@^1.51.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.1/r/theme.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.1/r/utils.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.1/r/version-history.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.2/r/theme.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.2/r/utils.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.2/r/version-history.json",
     "button",
     "dropdown-menu",
     "collapsible",
