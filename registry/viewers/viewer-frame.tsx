@@ -25,11 +25,11 @@ export type { ViewerIcons, ViewerLabels, ViewerWindow } from './viewer-window';
 
 export type ViewerTone = 'neutral' | 'success' | 'warning' | 'danger';
 /**
- * `kind` says what the status is whatever its (translated) label: the bar hides a plain `saved` (unless `showSavedStatus`), pulses the dot
- * while `saving` and shows `read-only` as a fact. The bar shows a coloured dot: `success` green, `warning` amber, `danger` red. Only a
+ * `kind` says what the status is whatever its (translated) label: the bar hides a plain `saved` (unless `showSavedStatus`) and shows
+ * `read-only` as a fact. The bar shows a dot in the default shadcn roles: `success` primary, `warning` and `neutral` muted-foreground, `danger` destructive. Only a
  * `danger` status also shows its words, because the person must act on it; the others keep the label in the tooltip and for screen readers.
  */
-export interface ViewerStatus { readonly label: string; readonly tone?: ViewerTone; readonly kind?: 'saved' | 'saving' | 'read-only' | undefined }
+export interface ViewerStatus { readonly label: string; readonly tone?: ViewerTone; readonly kind?: 'saved' | 'read-only' | undefined }
 
 export interface ViewerFrameProps {
   /** What is shown, for example the file name. */
@@ -117,12 +117,12 @@ function ManualCopy({ testId, link, text, onClose, labels }: { readonly testId: 
   </Dialog>;
 }
 
-/** Dot colours: semantic tokens, with `--success`/`--warning` from the host theme (viewers.css falls back to the neutral roles). */
+/** Dot colours: default shadcn roles only. */
 const DOTS: Record<ViewerTone, string> = {
-  neutral: 'text-muted-foreground',
-  success: 'text-(--viewer-success)',
-  warning: 'text-(--viewer-warning)',
-  danger: 'text-destructive',
+  neutral: 'fill-muted-foreground',
+  success: 'fill-primary',
+  warning: 'fill-muted-foreground',
+  danger: 'fill-destructive',
 };
 
 /** The save status as a coloured dot; the label is the tooltip and the screen-reader text, and is shown only when the person must act (`danger`). */
@@ -130,7 +130,7 @@ function StatusMark({ status, testId }: { readonly status: ViewerStatus; readonl
   const tone = status.tone ?? 'neutral';
   return <span role="status" aria-label={status.label} title={status.label} data-testid={`${testId}-status`} data-tone={tone} data-kind={status.kind}
     className="inline-flex h-6 min-w-6 shrink-0 cursor-default items-center justify-center gap-1.5 text-xs">
-    <CircleIcon aria-hidden="true" strokeWidth={0} className={cn('size-2 shrink-0 fill-current', DOTS[tone], status.kind === 'saving' && 'animate-pulse motion-reduce:animate-none')} />
+    <CircleIcon aria-hidden="true" strokeWidth={0} className={cn('size-2 shrink-0', DOTS[tone])} />
     <span data-testid={`${testId}-status-text`} className={tone === 'danger' ? 'max-w-48 truncate text-destructive' : 'sr-only'}>{status.label}</span>
   </span>;
 }

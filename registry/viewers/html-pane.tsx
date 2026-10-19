@@ -51,7 +51,7 @@ export interface HtmlPaneProps {
 
 export function htmlStatus(state: ReturnType<HtmlController['getSnapshot']>, labels: ViewerLabels = defaultViewerLabels): ViewerStatus {
   if (state.lifecycle === 'disposed') return { label: labels.closed };
-  if (state.save.kind === 'pending') return { label: labels.saving, tone: 'warning', kind: 'saving' };
+  if (state.save.kind === 'pending') return { label: labels.saving, tone: 'warning' };
   if (state.save.kind === 'settled' && state.save.result.kind === 'unknown') return { label: labels.saveUnconfirmed, tone: 'danger' };
   if (state.remote !== null || state.save.kind === 'settled' && state.save.result.kind === 'conflict') return { label: labels.changedElsewhere, tone: 'danger' };
   if (state.readOnly) return { label: labels.readOnly, kind: 'read-only' };

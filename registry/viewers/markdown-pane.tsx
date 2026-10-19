@@ -54,10 +54,10 @@ export interface MarkdownPaneProps {
   readonly labels?: Partial<ViewerLabels> | undefined;
 }
 
-/** The status dot for a Markdown controller: Saved (green), Unsaved or Saving (amber), Save unconfirmed or Changed elsewhere (red, with words), Read-only. */
+/** The status dot for a Markdown controller: Saved (primary), Unsaved or Saving (muted), Save unconfirmed or Changed elsewhere (destructive, with words), Read-only. */
 export function markdownStatus(state: ReturnType<MarkdownController['getSnapshot']>, labels: ViewerLabels = defaultViewerLabels): ViewerStatus {
   if (state.lifecycle === 'disposed') return { label: labels.closed };
-  if (state.save.kind === 'pending') return { label: labels.saving, tone: 'warning', kind: 'saving' };
+  if (state.save.kind === 'pending') return { label: labels.saving, tone: 'warning' };
   if (state.save.kind === 'settled' && state.save.result.kind === 'unknown') return { label: labels.saveUnconfirmed, tone: 'danger' };
   if (state.save.kind === 'settled' && state.save.result.kind === 'conflict' || state.remote !== null) return { label: labels.changedElsewhere, tone: 'danger' };
   if (state.readOnly) return { label: labels.readOnly, kind: 'read-only' };

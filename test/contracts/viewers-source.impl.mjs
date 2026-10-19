@@ -148,10 +148,8 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     assert.equal(saved.q('[data-testid="viewer-status"]') === null, true);
     const unsaved = await mount(t, h(frame.ViewerFrame, { title: 'a', status: { label: 'Unsaved', tone: 'warning' } }));
     assertDot(unsaved, 'Unsaved', 'warning');
-    const saving = await mount(t, h(frame.ViewerFrame, { title: 'a', status: { label: 'Saving…', tone: 'warning', kind: 'saving' } }));
-    assertDot(saving, 'Saving…', 'warning');
-    assert.match(saving.q('[data-testid="viewer-status"] svg').getAttribute('class'), /animate-pulse motion-reduce:animate-none/, 'saving pulses, unless reduced motion');
-    assert.doesNotMatch(unsaved.q('[data-testid="viewer-status"] svg').getAttribute('class'), /animate-pulse/);
+    assert.match(unsaved.q('[data-testid="viewer-status"] svg').getAttribute('class'), /\bfill-muted-foreground\b/, 'unsaved and saving use the muted role');
+    assert.doesNotMatch(unsaved.q('[data-testid="viewer-status"] svg').getAttribute('class'), /animate-|--success|--warning/, 'no pulse, no host-only roles');
     const refused = await mount(t, h(frame.ViewerFrame, { title: 'a', status: { label: 'Not saved: offline', tone: 'danger' } }));
     assert.equal(refused.q('[data-testid="viewer-status"]').dataset.tone, 'danger');
     assert.equal(visibleText(refused.q('[data-testid="viewer-status"]')), 'Not saved: offline', 'a status the person must act on shows its words beside the dot');
@@ -305,6 +303,7 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     const view = await mount(t, h(markdownPane.MarkdownPane, { controller: d.controller, title: 'Plan', subtitle: 'Markdown', autosave: false, onShare() {} }));
     assert.equal(view.q('section[data-boring="markdown-editor"] > header') === null, true, 'the editor has no header of its own');
     assertDot(view, 'Saved', 'success');
+    assert.match(view.q('[data-testid="viewer-status"] svg').getAttribute('class'), /\bfill-primary\b/, 'saved uses the primary role');
     assert.equal(view.q('[data-testid="viewer-save"]') === null, true, 'Save waits for an edit');
     assert.ok(view.q('.boring-markdown-toolbar button[aria-label="Bold"] svg'), 'formatting is pinned by default');
     assert.equal(view.q('[aria-label="Pin formatting toolbar"]'), null, 'the bar has no pin button');
@@ -326,6 +325,7 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     await view.click('[data-testid="viewer-more"]'); await view.click('[data-testid="viewer-refresh"]'); await until(d.controller, state => state.remote !== null);
     assert.equal(d.controller.getSnapshot().text, '# Plan\n\n- [x] done\n- [ ] local edit\n', 'Refresh kept the unsaved edit');
     assert.equal(view.q('[data-testid="viewer-status"]').dataset.tone, 'danger');
+    assert.match(view.q('[data-testid="viewer-status"] svg').getAttribute('class'), /\bfill-destructive\b/, 'a conflict uses the destructive role');
     assert.equal(visibleText(view.q('[data-testid="viewer-status"]')), 'Changed elsewhere', 'a conflict shows its words: the person must act');
     assert.match(view.container.textContent, /Your local text has been kept/);
     await view.click('[data-testid="viewer-save"]'); await saved(d.controller);

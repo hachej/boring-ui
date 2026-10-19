@@ -9,12 +9,11 @@ Non-breaking: no export, option or type is removed, and a page that sets none of
 - A read-only Library with `resources` alone, when the endpoint is a `createRevisionHandler` route (it then also serves the viewers' reads).
 - `app-shell`'s screen header has a slot for an embedded page's controls (`utils/screen-header-slot.ts`, shipped in the `utils` item).
 - `pi-app` now also needs the shadcn `popover` and `tooltip` components (installed with the item).
-- **Viewer header (Markdown editor and every viewer).** The save status is a coloured dot (green saved, amber unsaved or saving, red for a refused,
-  conflicting or unconfirmed save); its words are the tooltip and the screen-reader label, and only a red status also shows its words. The Rich/Source
+- **Viewer header (Markdown editor and every viewer).** The save status is a dot in the default shadcn roles (primary saved, muted-foreground unsaved
+  or saving, destructive for a refused, conflicting or unconfirmed save); its words are the tooltip and the screen-reader label, and only a destructive status also shows its words. The Rich/Source
   switch is an outlined icon-only segmented `ToggleGroup` whose pressed segment is filled and the other muted. The "Aa" pin-formatting-toolbar button is
-  removed: `formattingToolbar` (default `pinned`) decides. The dot reads the optional host roles `--success` and `--warning` (define them in your theme
-  for green and amber; without them it falls back to `--primary` and `--muted-foreground`, as pi-chat does). Selectors: `[data-testid=<id>-status]` keeps its `role=status`
-  and text content, now in `[data-testid=<id>-status-text]`; `ViewerStatus.kind` adds `'saving'`; `ViewerToggleOption` adds `reason`.
+  removed: `formattingToolbar` (default `pinned`) decides. Selectors: `[data-testid=<id>-status]` keeps its `role=status`
+  and text content, now in `[data-testid=<id>-status-text]`; `ViewerToggleOption` adds `reason`.
 
 # Migrating to 0.4.1
 
