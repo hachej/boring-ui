@@ -7,7 +7,7 @@
     "@hachej/boring-ui-kit@^0.4.2",
     "@hachej/boring-files@^0.4.2",
     "react@^19.0.0",
-    "lucide-react@1.57.0",
+    "lucide-react@1.51.0",
     "tldraw@5.5.2"
   ],
   "registryDependencies": [
