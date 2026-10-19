@@ -31,6 +31,8 @@ try {
   await pause(400);
   if (!(await browser.evaluate(`!!${FRAME}`))) await browser.tap(qa('[data-testid=artifact-card][data-state=ready]') + '.at(-1)');
   await ready();
+  await inside(`document.getElementById('toggle').click()`);
+  assert.equal(await inside(`document.getElementById('reminder-state').textContent`), 'Off', 'the artifact script runs only in its frame');
 
   for (const size of ['phone-390', 'desktop-1440']) {
     if (size.startsWith('desktop')) {
@@ -45,6 +47,7 @@ try {
       const actual = await inside(`getComputedStyle(document.documentElement).getPropertyValue('--primary').trim()`);
       assert.ok(host.length, 'the host defines its theme');
       assert.equal(actual, host, `${size} ${scheme}: host theme inside the frame`);
+      assert.equal(await inside(`document.getElementById('reminder-state').textContent`), 'Off', 'theme changes do not restart artifact scripts');
       const style = await inside(`({ color: getComputedStyle(document.getElementById('calendar')).backgroundColor, width: document.documentElement.scrollWidth, viewport: innerWidth })`);
       assert.notEqual(style.color, 'rgba(0, 0, 0, 0)', 'Tailwind bg-primary was compiled');
       assert.ok(style.width <= style.viewport, 'mock-up has no horizontal overflow');
@@ -62,6 +65,14 @@ try {
       await browser.type(q('[data-testid=feedback-bubble-input]'), 'Make the calendar action clearer');
       await browser.press('Enter');
       await browser.screenshot(`${size}-${scheme}-point-pin.png`);
+      if (size === 'phone-390' && scheme === 'light') {
+        await browser.click(q('[data-testid=feedback-point-use-app]'));
+        await pause(100);
+        await inside(`document.getElementById('toggle').click()`);
+        assert.equal(await inside(`document.getElementById('reminder-state').textContent`), 'On', 'Use app suspends frame click interception');
+        await inside(`document.getElementById('toggle').click()`);
+        await browser.click(q('[data-testid=feedback-point-use-app]'));
+      }
       await browser.click(q('[data-testid=mockup-comment]'));
       await browser.until('point mode ended', `!${q('[data-testid=feedback-point-bar]')}`, 5000);
     }
