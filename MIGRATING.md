@@ -4,6 +4,10 @@
 - `PiChat` and `AgentWorkspace` accept the additive `ChatController` presentation contract. Existing concrete native controllers and single-user behavior are unchanged. Shared metadata adds author groups, request cards, member mentions, presence and live status. The host owns all policy and every agent's Pi conversation.
 - Copied `pi-chat` now also needs shadcn `tooltip` and the existing optional `zod` peer. Regenerate or update the registry copy to install `shared.tsx` and `use-shared-chat.ts`. See [Shared conversations](registry/README.md#shared-conversations) for source shapes, routes and idempotent `clientId` requirements.
 
+- New `board-viewer` registry item (library code only, no viewer yet): the `board@1` format for `*.board.json` files, with a strict parser
+  (`parseBoard`), the planner (`planBoard`) and the edit round-trip (`applyCanvasEdits`, `serializeBoard`). Installed next to `maquette-viewer`,
+  which it reads. See [registry/README.md](registry/README.md#board-format-board-viewer).
+
 Non-breaking for files and props: older `*.maquette.json` files read unchanged, and a page that passes none of the new props renders as before.
 `maquette-viewer` now also needs the new `diagram-viewer` item and the `toggle` and `tooltip` shadcn components; `pi-app` installs `diagram-viewer`.
 
@@ -19,6 +23,7 @@ Non-breaking for files and props: older `*.maquette.json` files read unchanged, 
   `data-feedback-id="maquette:<path>#screen=<id>&block=<id>"` (blocks may carry an optional `id`), so the note sent with the next message names
   the maquette, screen and block; the screen is a `data-feedback-visible` region. `SessionNote.feedbackId` (`@hachej/boring-feedback/ui`) is new.
   Without a session nothing shows. See [registry/README.md](registry/README.md#diagram-viewer-diagram-viewer).
+- `ArtifactKindViewProps` (the props an app's artifact kind `renderer` receives) gains `revision`, the revision the panel shows (the one a conditional save is made against), and `pinned`, true when the panel shows a pinned historical version, read-only. Renderers that ignore them need no change.
 
 # Migrating to 0.4.2
 

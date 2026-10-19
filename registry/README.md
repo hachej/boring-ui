@@ -568,6 +568,36 @@ Blocks may carry an optional `id` (named by comment pins). Block types: `heading
 
 Differences from the PM skill (`boring-pm`): its `maquettes.md` describes no JSON format (it asks for Markdown scenarios and no static HTML). The format above is the one the PM's `present` tool validates (`maquetteProblem`: `{ title, start, screens: { <id>: { title, blocks } }, workflow?, cases?, nav? }`) and the Factory attaches, plus what v1 adds: `version`, a screen's `note`, `device`, and `cases[].steps`. A case's `path` keeps highlighting the workflow diagram. A block's `height` is no longer read.
 
+## Board format (`board-viewer`)
+
+A PM agent writes a board as `<name>.board.json` to lay its mock-ups out side by side: each maquette screen and each HTML mock-up becomes a frame, left to right, with an arrow for every `goto` link and a sticky note where it helps. The file is plain data; it names other files in the same folder and embeds nothing. The board file is the only authority: a canvas (none ships in this item) is a projection of it, and people's moves and notes come back as a new `board@1` file. An agent can write and check a board without any canvas runtime: the functions below are pure.
+
+```jsonc
+{
+  "format": "board@1",                // required. Missing: invalid (unversioned). "board@2" and up: reported as newer, not read
+  "title": "Session booking, v1",     // optional, 120 characters
+  "items": [
+    { "id": "booking", "maquette": "booking.maquette.json" },                      // one frame per screen, id "booking/<screen>"
+    { "id": "confirm-html", "html": "confirm.mockup.html", "device": "phone" },    // one frame; device "phone" (390 wide) or "desktop" (1024)
+    { "id": "note-1", "note": "Is the reminder opt-in or opt-out?", "near": "confirm-html" }
+  ],
+  "links": [{ "from": "booking/confirmed", "to": "confirm-html", "label": "richer version" }],   // frame ids: <item>/<screen> or an html item id
+  "layout": { "booking/sessions": { "x": 0, "y": 267 } }                           // optional: top-left corner per frame or note id
+}
+```
+
+- Every item has exactly one of `maquette`, `html` or `note`, and an `id` of 1 to 60 letters, digits, `-` or `_`, unique on the board. At most 40 items, 80 links and 200 layout entries. Unknown fields are errors, so a typo is reported, not dropped.
+- Paths are relative to the board's folder: no scheme, no leading `/`, no `..`. A `maquette` ends in `.maquette.json` (format above); an `html` ends in `.mockup.html`. An HTML mock-up is a plain page using Tailwind classes and the app's theme tokens (`bg-background`, `text-foreground`, `bg-primary`, `text-muted-foreground`, `border-border`, `bg-card`); it has no external resources.
+- Goto arrows are drawn from the maquette's `goto` blocks, between screens of the same maquette. A `links` entry draws any other arrow. A link to a frame that does not exist is a problem for the planner to report, not a crash.
+- Lay out by `layout` only when you need a place; otherwise frames follow each other left to right.
+
+The functions live in `registry/board-viewer/board.ts` (`components/board-viewer/board.ts` once installed):
+
+- `parseBoard(text)` returns `{ kind: 'ok', board }`, `{ kind: 'newer', format, version }` or `{ kind: 'invalid', issues: [{ path, message }] }`. It never throws.
+- `planBoard(board, files)` takes a map from each referenced path to its text and returns `frames`, `arrows`, `notes` and `problems` (missing files and dangling links), left to right.
+- `applyCanvasEdits(board, { positions, notes })` writes frame positions and the remaining notes back into the board (a note keeps its `near`); maquette, HTML and link entries never change. It returns `ok` or `invalid` with reasons. `serializeBoard(board)` gives the file text.
+
+Fictional fixtures for this format are in `test/fixtures/board/` (a three-screen booking maquette, one mock-up, one board).
 ### Comment pins (with the `feedback` item)
 
 Pass the `feedback` item's `usePointComments(session)` as `AgentWorkspace comments` (or `createMaquetteKind({ comments })`) and the bar shows a
