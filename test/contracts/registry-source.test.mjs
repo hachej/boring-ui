@@ -197,9 +197,12 @@ test('registry dependency pins and scoped styles preserve the declared source di
       continue;
     }
     const prefix = { 'markdown-editor': '.boring-markdown-recipe[data-boring=\"markdown-editor\"]', chat: '.boring-chat-recipe[data-boring=\"chat\"]', 'html-viewer': '.boring-html-recipe[data-boring=\"html-viewer\"]', 'file-tree': '[data-boring=\"file-tree\"]', 'task-list-viewer': '.boring-task-list-recipe[data-boring=\"task-list-viewer\"]' }[item.name];
-    assert.ok(prefix);
-    for (const selector of Object.keys(item.css)) {
-      for (const part of selector.split(',')) assert.ok(part.trim().startsWith(prefix), selector);
+    // A library item with no styles (board-viewer) has no css to scope; its files are still checked below.
+    if (item.css) {
+      assert.ok(prefix);
+      for (const selector of Object.keys(item.css)) {
+        for (const part of selector.split(',')) assert.ok(part.trim().startsWith(prefix), selector);
+      }
     }
     for (const file of item.files) {
       const source = readFileSync(join(root, file.path), 'utf8');

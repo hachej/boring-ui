@@ -2,6 +2,10 @@
 
 - `pi-app` now renders `*.mockup.html` with the built-in `mockup-viewer` item. Re-add `pi-app` to install its dependency and pinned Tailwind compiler. `mockupKind` and `createMockupKind` are exported. Other HTML stays passive unless the host opts in. See the registry README for sandbox CSP requirements. `usePointComments` adds `pick`, `picking` and `reposition` for host-owned frame proxies; existing maquette comments are unchanged. `ArtifactKindViewProps.onReady` lets the asynchronous mock-up report its actual load before a presentation acknowledgement.
 
+- New `board-viewer` registry item (library code only, no viewer yet): the `board@1` format for `*.board.json` files, with a strict parser
+  (`parseBoard`), the planner (`planBoard`) and the edit round-trip (`applyCanvasEdits`, `serializeBoard`). Installed next to `maquette-viewer`,
+  which it reads. See [registry/README.md](registry/README.md#board-format-board-viewer).
+
 Non-breaking for files and props: older `*.maquette.json` files read unchanged, and a page that passes none of the new props renders as before.
 `maquette-viewer` now also needs the new `diagram-viewer` item and the `toggle` and `tooltip` shadcn components; `pi-app` installs `diagram-viewer`.
 
@@ -17,6 +21,7 @@ Non-breaking for files and props: older `*.maquette.json` files read unchanged, 
   `data-feedback-id="maquette:<path>#screen=<id>&block=<id>"` (blocks may carry an optional `id`), so the note sent with the next message names
   the maquette, screen and block; the screen is a `data-feedback-visible` region. `SessionNote.feedbackId` (`@hachej/boring-feedback/ui`) is new.
   Without a session nothing shows. See [registry/README.md](registry/README.md#diagram-viewer-diagram-viewer).
+- `ArtifactKindViewProps` (the props an app's artifact kind `renderer` receives) gains `revision`, the revision the panel shows (the one a conditional save is made against), and `pinned`, true when the panel shows a pinned historical version, read-only. Renderers that ignore them need no change.
 
 # Migrating to 0.4.2
 

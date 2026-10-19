@@ -38,11 +38,15 @@ export const artifactKey = (artifact: Pick<ArtifactDescriptor, 'id' | 'target'>)
 /**
  * What an artifact kind's renderer receives: the artifact and its text at the revision shown, the page's URL fragment without `#`
  * (a link such as `#screen=2` can open a place inside the artifact; the panel follows its changes), and `read`: another file of the same
- * workspace as text (its latest revision; undefined when it is missing or not text), for an artifact that links to a file.
+ * workspace as text (its latest revision; undefined when it is missing or not text), for an artifact that links to a file. `revision` is
+ * the shown revision, the one a conditional save is made against; `pinned` is true when the panel shows a pinned historical version,
+ * which is read-only.
  */
 export interface ArtifactKindViewProps {
   readonly artifact: ArtifactDescriptor;
   readonly text: string;
+  readonly revision: string;
+  readonly pinned: boolean;
   /** Async built-in viewers call this only once their document is loaded. */
   readonly onReady?: (() => void) | undefined;
   readonly fragment?: string | undefined;
