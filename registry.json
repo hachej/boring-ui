@@ -113,6 +113,11 @@
           "path": "registry/utils/utils.ts",
           "type": "registry:lib",
           "target": "components/utils/utils.ts"
+        },
+        {
+          "path": "registry/utils/screen-header-slot.ts",
+          "type": "registry:lib",
+          "target": "components/utils/screen-header-slot.ts"
         }
       ]
     },
@@ -759,7 +764,9 @@
         "dropdown-menu",
         "scroll-area",
         "separator",
-        "table"
+        "table",
+        "popover",
+        "tooltip"
       ],
       "files": [
         {
@@ -776,6 +783,11 @@
           "path": "registry/pi-app/history-column.tsx",
           "type": "registry:component",
           "target": "components/pi-app/history-column.tsx"
+        },
+        {
+          "path": "registry/pi-app/workspace-bar.tsx",
+          "type": "registry:component",
+          "target": "components/pi-app/workspace-bar.tsx"
         },
         {
           "path": "registry/pi-app/artifact-panel.tsx",
