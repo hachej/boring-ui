@@ -293,8 +293,6 @@ export function AgentWorkspace({ layout = 'default', controller, conversationId,
   const historyEndpoint = resources?.history === undefined ? undefined : String(resources.history);
   const identity = revisionProvider?.identity ?? resources!.identity;
   const identityKey = JSON.stringify(identity);
-  const client = useMemo(() => revisionProvider ?? createResourceClient({ identity, endpoint: new URL(endpoint!, globalThis.location?.href), publication: true, reconciliation: true,
-    fetch: request => fetcher.current!(request) }), [revisionProvider, endpoint, identityKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const history = useMemo(() => revisionProvider ? revisionProvider.history : historyEndpoint === undefined ? undefined : async (path: string): Promise<readonly SavedRevision[]> => {
     const url = new URL(historyEndpoint, globalThis.location?.href);
     url.searchParams.set('path', path);
@@ -302,19 +300,6 @@ export function AgentWorkspace({ layout = 'default', controller, conversationId,
     if (!response.ok) throw new Error(`History: ${response.status}`);
     return (await response.json() as { saves: readonly SavedRevision[] }).saves;
   }, [revisionProvider, historyEndpoint]);
-  // ---- Presented files: the page confirms a `present` call only once its panel has mounted the revision (`onShown`, from the viewers).
-  // The bookkeeping is `createPresentAcks` (pi-chat/artifact.ts); the answer goes through the chat's own `answer` (the transport's
-  // `?op=answer`) and the server checks the path and revision.
-  const answerPresent = useRef(chat.actions?.answer); answerPresent.current = chat.actions?.answer;
-  const openForPresent = useRef<(path: string) => boolean>(() => false);
-  const presentAcks = useRef<PresentAcks | undefined>(undefined);
-  if (!presentAcks.current) presentAcks.current = createPresentAcks({ answer: (id, body) => answerPresent.current?.(id, body),
-    open: path => openForPresent.current(path), instanceId: randomUUID() });
-  const onShown = useCallback((view: { readonly path: string; readonly revision: string; readonly hidden?: true }) => {
-    if (view.hidden) presentAcks.current?.hidden(view); else presentAcks.current?.shown(view);
-  }, []);
-  const options: ViewerOptions = useMemo(() => ({ client, identity, history, viewers, kinds: artifactKinds, interactive, share, onShown, onUnsavedChange: noteUnsaved, onBeforeLeaveChange: registerBeforeLeave }), [client, identityKey, history, viewers, artifactKinds, interactive, share, onShown, noteUnsaved, registerBeforeLeave]); // eslint-disable-line react-hooks/exhaustive-deps
-  const locate = revisionProvider?.locate ?? resources?.locate ?? defaultLocate;
   // Resources only: a read-only Library over the endpoint's own listing, when it answers the revision protocol's discovery for the same
   // person (`createRevisionHandler` serves the resource calls and the listing on one route). A plain resource handler refuses: no Library.
   const [listing, setListing] = useState<{ readonly key: string; readonly provider: RevisionProvider }>();
@@ -331,6 +316,22 @@ export function AgentWorkspace({ layout = 'default', controller, conversationId,
   // The Library's binding: the host's revision provider, or the listing above with the versions of `resources.history`.
   const libraryProvider = useMemo(() => revisionProvider ?? (listing && listing.key === listingKey ? { ...listing.provider, history: history ?? listing.provider.history } : undefined),
     [revisionProvider, listing, listingKey, history]);
+  // The viewers' client: the Library's binding when there is one (its calls carry the binding the revision protocol checks), else the plain resource client.
+  const client = useMemo(() => libraryProvider ?? createResourceClient({ identity, endpoint: new URL(endpoint!, globalThis.location?.href), publication: true, reconciliation: true,
+    fetch: request => fetcher.current!(request) }), [libraryProvider, endpoint, identityKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // ---- Presented files: the page confirms a `present` call only once its panel has mounted the revision (`onShown`, from the viewers).
+  // The bookkeeping is `createPresentAcks` (pi-chat/artifact.ts); the answer goes through the chat's own `answer` (the transport's
+  // `?op=answer`) and the server checks the path and revision.
+  const answerPresent = useRef(chat.actions?.answer); answerPresent.current = chat.actions?.answer;
+  const openForPresent = useRef<(path: string) => boolean>(() => false);
+  const presentAcks = useRef<PresentAcks | undefined>(undefined);
+  if (!presentAcks.current) presentAcks.current = createPresentAcks({ answer: (id, body) => answerPresent.current?.(id, body),
+    open: path => openForPresent.current(path), instanceId: randomUUID() });
+  const onShown = useCallback((view: { readonly path: string; readonly revision: string; readonly hidden?: true }) => {
+    if (view.hidden) presentAcks.current?.hidden(view); else presentAcks.current?.shown(view);
+  }, []);
+  const options: ViewerOptions = useMemo(() => ({ client, identity, history, viewers, kinds: artifactKinds, interactive, share, onShown, onUnsavedChange: noteUnsaved, onBeforeLeaveChange: registerBeforeLeave }), [client, identityKey, history, viewers, artifactKinds, interactive, share, onShown, noteUnsaved, registerBeforeLeave]); // eslint-disable-line react-hooks/exhaustive-deps
+  const locate = revisionProvider?.locate ?? resources?.locate ?? defaultLocate;
   const readOnlyLibrary = !revisionProvider;
   const [fileBinding, setFileBinding] = useState<{ readonly provider: RevisionProvider; readonly tree: FileTreeController }>();
   useEffect(() => {
@@ -341,7 +342,7 @@ export function AgentWorkspace({ layout = 'default', controller, conversationId,
     return () => tree.dispose();
   }, [libraryProvider]);
   const libraryController = fileBinding?.provider === libraryProvider ? fileBinding?.tree : undefined;
-  // Uploads, the upload notice and the change feed belong to a revision provider only; the resources Library is read-only.
+  // Uploads and the upload notice belong to a revision provider only; the resources Library is read-only.
   const fileTree = revisionProvider ? libraryController : undefined;
   const embedded = layout === 'embedded';
   // Where the Library opens (`libraryPlacement`); embedded, it is the bar's Library button instead.
@@ -350,20 +351,20 @@ export function AgentWorkspace({ layout = 'default', controller, conversationId,
   const librarySide = placed && libraryPlacement === 'side';
   const libraryOpen = placed && libraryPlacement === 'center' && centerMode === 'library';
   // The workspace's change feed: every file view below reloads when its seq moves (agent writes, saves, shell changes).
-  const feed = useChangeFeed(revisionProvider);
+  const feed = useChangeFeed(libraryProvider);
   // The shared tree controller reloads, shown or not: the Library may be on its other tab when a file arrives, and mounting the tree
   // later must not show the listing from before. `fileTree.refreshKey` (deprecated) does the same for a provider without a feed.
   const { refreshKey, ...viewOptions } = treeOptions ?? {};
   const refreshedKey = useRef(refreshKey);
   const refreshedSeq = useRef(feed.seq);
   useEffect(() => {
-    if (!fileTree || (Object.is(refreshedKey.current, refreshKey) && refreshedSeq.current === feed.seq)) return;
+    if (!libraryController || (Object.is(refreshedKey.current, refreshKey) && refreshedSeq.current === feed.seq)) return;
     refreshedKey.current = refreshKey;
     refreshedSeq.current = feed.seq;
-    const { query, expanded } = fileTree.getSnapshot();
-    if (query) void fileTree.search(query);
-    else for (const directory of ['', ...expanded]) void fileTree.refresh(directory);
-  }, [fileTree, refreshKey, feed.seq]);
+    const { query, expanded } = libraryController.getSnapshot();
+    if (query) void libraryController.search(query);
+    else for (const directory of ['', ...expanded]) void libraryController.refresh(directory);
+  }, [libraryController, refreshKey, feed.seq]);
   const openFile = useCallback((path: string) => { setOpened({ kind: 'file', path }); }, [setOpened]);
   // @ search: results are reused while the feed reports nothing new (typing back and forth), and dropped at the next change event.
   // One cache per provider instance (one workspace binding), so another binding never sees these results.
@@ -475,7 +476,7 @@ export function AgentWorkspace({ layout = 'default', controller, conversationId,
   const toggleSide = useCallback(() => setSideOpen(!sideOpen), [setSideOpen, sideOpen]);
   // The Library tree, one view for the side column, the center and the pane; `onOpen` is what choosing a file does there.
   const libraryTree = (onOpen: (path: string) => void, onClose?: () => void) => libraryController
-    ? <FileTreeView variant="list" refresh={libraryPlacement !== 'panel' || readOnlyLibrary} title={text.labels.library} {...(onClose ? { onClose } : {})} key={JSON.stringify([libraryProvider?.workspace, libraryProvider?.identity])} {...(locale ? { locale } : {})} {...viewOptions}
+    ? <FileTreeView variant="list" refresh={libraryPlacement !== 'panel'} title={text.labels.library} {...(onClose ? { onClose } : {})} key={JSON.stringify([libraryProvider?.workspace, libraryProvider?.identity])} {...(locale ? { locale } : {})} {...viewOptions}
       {...(readOnlyLibrary ? { upload: false, history: history !== undefined } : {})} controller={libraryController} historyKey={feed.seq} onOpen={onOpen} {...(isFile(opened) ? { selectedPath: opened.path } : {})} />
     : <p role="status" className="m-0 p-3 text-sm text-muted-foreground">{treeOptions?.labels?.loading ?? text.labels.loading}</p>;
   // `history="popover"` keeps the conversations out of the pane. With an open panel the column steps aside unless column, panel and chat fit.

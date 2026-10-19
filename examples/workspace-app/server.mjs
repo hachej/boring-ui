@@ -66,6 +66,8 @@ export async function startWorkspaceApp({ directory, port = 0, token = randomUUI
     } }),
     // The workspace's revision protocol: the binding, the change feed, listing, search, saved history and the resource calls.
     '/api/resources': async request => { if (faults.resources > 0) { faults.resources--; return new Response(null, { status: 503 }); } return resources(request); },
+    // `resources.history` for the page's `?resources` variant (AgentWorkspace without a revision provider): a file's saves, newest first.
+    '/api/history': async request => allowed(request) ? Response.json({ saves: files.saves(new URL(request.url).searchParams.get('path') ?? '') }) : new Response(null, { status: 403 }),
   };
 
   // ---- The page: page.jsx bundled once, Tailwind over the registry blocks, the token and identity in the page.

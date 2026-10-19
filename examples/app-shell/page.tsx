@@ -2,7 +2,8 @@
 // fitness app with Jour, Progrès and Données, a coach with push-to-talk and a product manager; `&nav=6` adds three more screens (« Plus »);
 // `?app=empty` is the one-screen template (an agent without voice). `?agent=none` leaves the agent out (the product manager remains) and
 // `?send=draft` makes push-to-talk only fill the composer. `?app=redaction` is layout B: a fictional consultation list grouped by day with a
-// detail (`#12` deep-links to one); `?app=pm` is layout C: the workspace-app's AgentWorkspace, untouched, inside the shell.
+// detail (`#12` deep-links to one); `?app=pm` is layout C: the workspace-app's AgentWorkspace, untouched, inside the shell (`&embedded`:
+// its `layout="embedded"`, whose History, Library and New join the shell's header).
 // @ts-nocheck: an example page, bundled by esbuild and not part of the typechecked sources.
 import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
@@ -207,7 +208,7 @@ function PmApp() {
   const feedback = useManagerFeedback(manager.status === 'ready' && Boolean(revisionProvider));
   if (manager.status !== 'ready' || !revisionProvider) return <p role="status" data-testid="connecting" className="p-4 text-sm text-muted-foreground">Connexion…</p>;
   const nav = [{ id: 'atelier', label: 'Atelier', icon: MessagesSquareIcon, render: () => <main data-testid="app" data-conversation={active} className="flex h-full min-h-0">
-    <AgentWorkspace conversationId={active} controller={chat.status === 'ready' ? chat.controller : undefined} conversations={listed} revisionProvider={revisionProvider}
+    <AgentWorkspace conversationId={active} controller={chat.status === 'ready' ? chat.controller : undefined} conversations={listed} revisionProvider={revisionProvider} layout={query.has('embedded') ? 'embedded' : 'default'}
       chat={{ labels: { title: 'Writer' }, ...(chat.status === 'ready' ? { actions: chat.actions } : {}) }} connecting={<p role="status" className="p-4 text-sm text-muted-foreground">Connecting…</p>} />
   </main> }];
   const improve = { controller: manager.controller, ...(feedback ? { feedback } : {}), chatProps: { locale: 'fr', showHistory: false, showConnectionStatus: false, actions: manager.actions, labels: { title: 'Chef de produit' } } };
