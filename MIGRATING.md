@@ -3,6 +3,13 @@
 Non-breaking for files and props: older `*.maquette.json` files read unchanged, and a page that passes none of the new props renders as before.
 `maquette-viewer` now also needs the new `diagram-viewer` item and the `toggle` and `tooltip` shadcn components; `pi-app` installs `diagram-viewer`.
 
+- Large files (blob pointers): new `@hachej/boring-files/blob` (`parseBlobPointer`, `withBlobPointers`, `checkBlobBase`, `BLOB_POINTER_MEDIA_TYPE`, …)
+  and `FileEntry.blob`. `AgentWorkspace` takes `resources.blobBase` (default `/_files/`, same-origin path only; also allowed beside a `revisionProvider`)
+  and an optional `resources.uploadBlob`; `Documents` takes `blobBase`. Pointer files (`*.blob.json`) now list and open as the files they stand for.
+  The `file-tree` item needs the shadcn `progress` component. See [registry/README.md](registry/README.md#large-files-blob-pointers).
+- `uploads.maxBytes` now also caps Library uploads (refused with `attachmentTooLarge`, or sent to `resources.uploadBlob` when given), not only chat attachments.
+- `sniffMediaType` also names HEIC/HEIF, zip office documents and UTF-8 text (`text/plain`, a weak answer); new `SNIFF_BYTES` (8 KB) and
+  `delimitedTextType`. `@hachej/boring-agent/file-types` `SNIFF_BYTES` is now that 8 KB (was 16), and sniffed `text/plain` never overrides a name.
 - Built-in diagram viewer: the `pi-app` artifact panel draws `*.diagram.json` files (format v1: `nodes`, `edges`, optional `groups`, `path` and
   `note`) with the new `diagram-viewer` item. `diagramKind` / `createDiagramKind({ locale })` rename or translate it ("Diagram", « Diagramme »);
   an app kind for those files in `artifactKinds` still wins. `DiagramView` and `parseDiagram` are exported for other viewers.

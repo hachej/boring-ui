@@ -2224,6 +2224,7 @@
         "collapsible",
         "empty",
         "input",
+        "progress",
         "separator",
         "sidebar"
       ],
