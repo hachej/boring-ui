@@ -1,3 +1,7 @@
+# Unreleased (0.4.3)
+
+Non-breaking. `CanvasEditor` now loads `tldraw/tldraw.css` itself, lazily with the canvas, so a host may stop importing it globally. Self-hosting tldraw's fonts, icons and translations is a host recipe ([UI guide](packages/ui/README.md#optional-react-canvas-editor), `examples/canvas-assets`); hosts that already pass a complete `assetUrls` map need no change.
+
 # Migrating to 0.4.2
 
 0.4.2 is non-breaking: no export, option or type was removed, and a page that sets none of the new props renders as before. Upgrade the registry
