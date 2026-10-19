@@ -1,4 +1,28 @@
 /** Fictional byte fixtures for media sniffing and blob pointers, generated so no binary file is committed. */
+import { crc32, deflateSync } from 'node:zlib';
+
+/** A fictional PNG: a soft harbour-blue gradient with a sand band, `width` × `height`, RGB. */
+export function fictionalPng(width, height) {
+  const chunk = (type, data) => {
+    const out = Buffer.alloc(12 + data.length);
+    out.writeUInt32BE(data.length, 0); out.write(type, 4, 'ascii'); data.copy(out, 8);
+    out.writeUInt32BE(crc32(Buffer.concat([Buffer.from(type, 'ascii'), data])), 8 + data.length);
+    return out;
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0); header.writeUInt32BE(height, 4); header[8] = 8; header[9] = 2;
+  const rows = Buffer.alloc((width * 3 + 1) * height);
+  for (let y = 0; y < height; y++) {
+    const sand = y > height * 0.72;
+    for (let x = 0; x < width; x++) {
+      const at = y * (width * 3 + 1) + 1 + x * 3;
+      rows[at] = sand ? 222 : 70 + Math.round(60 * y / height);
+      rows[at + 1] = sand ? 196 : 130 + Math.round(50 * x / width);
+      rows[at + 2] = sand ? 150 : 190 + Math.round(40 * (1 - y / height));
+    }
+  }
+  return new Uint8Array(Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', header), chunk('IDAT', deflateSync(rows)), chunk('IEND', Buffer.alloc(0))]));
+}
 
 /** An ISO-BMFF head: a `ftyp` box with a major brand and compatible brands, then the start of a `meta` box. */
 export function ftypHead(major, compatible = []) {
