@@ -43,6 +43,14 @@ const readHash = () => (globalThis.location?.hash ?? '').replace(/^#/, '');
 const POLL_MS = 1500;
 const EXTENSION = /\.([A-Za-z0-9]{1,8})$/;
 
+/**
+ * The one place an artifact or a file is matched to its kind: the app's kinds first, then the built-in maquette and diagram kinds, so an
+ * app's kind for those files wins. The chat card (through the kinds `AgentWorkspace` hands it), the panel and a file opened from the Library,
+ * the file tree or a link all resolve here.
+ */
+export const withBuiltInKinds = (kinds: readonly ArtifactKind[] | undefined): readonly ArtifactKind[] => [...(kinds ?? []), maquetteKind, diagramKind];
+export const resolveKind = (artifact: ArtifactDescriptor, kinds: readonly ArtifactKind[] | undefined): ArtifactKind | undefined => artifactKind(artifact, withBuiltInKinds(kinds));
+
 /** One retained revision of a file with its save time (`files.saves(path)` of `@hachej/boring-files/workspace`). */
 export type SavedRevision = FileRevision;
 
@@ -173,15 +181,15 @@ function CsvTable({ text }: { readonly text: string }) {
 type DocumentController = MarkdownController | HtmlController;
 
 /** One artifact version's frame and body. Mounted per resource and revision, so switching version starts clean. */
-function Version({ artifact, pinned, menu, options, onSelect, onClose }: {
+function Version({ artifact, pinned, menu, options, onSelect, onClose, headerStart }: {
   readonly artifact: ArtifactDescriptor; readonly pinned: boolean; readonly menu: VersionMenu; readonly options: ViewerOptions;
-  readonly onSelect: (value: string) => void; readonly onClose: () => void;
+  readonly onSelect: (value: string) => void; readonly onClose: () => void; readonly headerStart?: ReactNode;
 }) {
   const { type } = artifact;
   const { client, identity } = options;
   const { labels } = useAppText();
   const path = artifact.target.resource.path;
-  const kinds = useMemo(() => [...(options.kinds ?? []), maquetteKind, diagramKind], [options.kinds]);
+  const kinds = useMemo(() => withBuiltInKinds(options.kinds), [options.kinds]);
   // A kind's file may link to another file of the same workspace (a maquette's diagram): read its latest revision as text.
   const read = useCallback(async (other: string) => {
     const result = await client.read({ target: { ...artifact.target, resource: { ...artifact.target.resource, path: other } }, revision: { kind: 'latest' } }).catch(() => undefined);
@@ -223,7 +231,7 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose }: {
   const versions = menu.items.length > 1 ? <ViewerVersions testId="artifact-versions" current={menu.current} onSelect={onSelect} versions={menu.items} /> : undefined;
   const target = { artifact: artifactKey(artifact), version: pinned ? artifact.revision : 'latest' };
   const frame = {
-    title: artifact.title, testId: 'artifact', titleTestId: 'artifact-panel-title', controls: versions, onClose, target, ...(revision === undefined ? {} : { revision }), ...(options.share ? { onShare: options.share } : {}),
+    title: artifact.title, testId: 'artifact', titleTestId: 'artifact-panel-title', controls: versions, onClose, target, ...(headerStart ? { headerStart } : {}), ...(revision === undefined ? {} : { revision }), ...(options.share ? { onShare: options.share } : {}),
     subtitle: <>
       <span title={path}>{path}</span><span aria-hidden="true">·</span>
       <span data-testid="artifact-panel-type">{typeLabel(artifact, kinds)}</span>
@@ -234,7 +242,7 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose }: {
   };
   const filename = `${artifact.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'artifact'}.${extension}`;
   const body = (children: ReactNode) => <div data-testid="artifact-body" data-state={saved.kind} className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">{children}</div>;
-  if (custom) return body(custom({ target: artifact.target, title: artifact.title, ...(pinned ? { revision: artifact.revision } : {}), frame: { testId: 'artifact', titleTestId: 'artifact-panel-title', controls: versions, onClose, target } }));
+  if (custom) return body(custom({ target: artifact.target, title: artifact.title, ...(pinned ? { revision: artifact.revision } : {}), frame: { testId: 'artifact', titleTestId: 'artifact-panel-title', controls: versions, onClose, target, ...(headerStart ? { headerStart } : {}) } }));
   // Until the version is open the bar offers no Share: the pane that shows it brings its own frame, so this one is replaced (remounted)
   // when it opens, and a Share pressed just then would copy the link with its "Link copied" notice lost with the old frame.
   if (saved.kind !== 'open') {
@@ -260,12 +268,14 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose }: {
  * this file the conversation presented or saved, newest first); otherwise the one revision in `active.descriptor` is pinned and read-only.
  * `onSelect` receives `latest` or a revision from the version menu.
  */
-export function ArtifactPanel({ active, versions, options, onSelect, onClose }: {
+export function ArtifactPanel({ active, versions, options, onSelect, onClose, headerStart }: {
   readonly active: { readonly descriptor: ArtifactDescriptor; readonly follow: boolean };
   readonly versions: readonly ArtifactDescriptor[];
   readonly options: ViewerOptions;
   readonly onSelect: (value: string) => void;
   readonly onClose: () => void;
+  /** A leading control in the bar, such as a back button (a file opened from a list). */
+  readonly headerStart?: ReactNode;
 }) {
   const { follow } = active;
   const artifact = follow ? versions[0] ?? active.descriptor : active.descriptor;
@@ -275,6 +285,6 @@ export function ArtifactPanel({ active, versions, options, onSelect, onClose }: 
   const menu = versionChoices(artifact, follow, revisions, labels.earlierVersion);
   return <div data-testid="artifact-panel" data-artifact-id={artifactKey(artifact)} data-artifact-type={artifact.type} data-follow={follow ? 'true' : 'false'} data-artifact-position={menu.number} data-artifact-revision={follow ? undefined : artifact.revision}
     className="pi-chat flex h-full min-h-0 flex-col">
-    <Version key={`${path}@${follow ? 'latest' : artifact.revision}`} artifact={artifact} pinned={!follow} menu={menu} options={options} onSelect={onSelect} onClose={onClose} />
+    <Version key={`${path}@${follow ? 'latest' : artifact.revision}`} artifact={artifact} pinned={!follow} menu={menu} options={options} onSelect={onSelect} onClose={onClose} {...(headerStart ? { headerStart } : {})} />
   </div>;
 }
