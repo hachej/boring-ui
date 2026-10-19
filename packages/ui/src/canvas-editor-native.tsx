@@ -1,4 +1,5 @@
 'use client';
+import 'tldraw/tldraw.css';
 
 import { useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { CSSProperties, RefObject } from 'react';
