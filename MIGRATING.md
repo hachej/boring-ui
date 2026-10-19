@@ -4,6 +4,8 @@
 - `PiChat` and `AgentWorkspace` accept the additive `ChatController` presentation contract. Existing concrete native controllers and single-user behavior are unchanged. Shared metadata adds author groups, request cards, member mentions, presence and live status. The host owns all policy and every agent's Pi conversation.
 - Copied `pi-chat` now also needs shadcn `tooltip` and the existing optional `zod` peer. Regenerate or update the registry copy to install `shared.tsx` and `use-shared-chat.ts`. See [Shared conversations](registry/README.md#shared-conversations) for source shapes, routes and idempotent `clientId` requirements.
 
+Non-breaking. `CanvasEditor` now loads `tldraw/tldraw.css` itself, lazily with the canvas, so a host may stop importing it globally. Self-hosting tldraw's fonts, icons and translations is a host recipe ([UI guide](packages/ui/README.md#optional-react-canvas-editor), `examples/canvas-assets`); hosts that already pass a complete `assetUrls` map need no change.
+
 - New `board-viewer` registry item (library code only, no viewer yet): the `board@1` format for `*.board.json` files, with a strict parser
   (`parseBoard`), the planner (`planBoard`) and the edit round-trip (`applyCanvasEdits`, `serializeBoard`). Installed next to `maquette-viewer`,
   which it reads. See [registry/README.md](registry/README.md#board-format-board-viewer).
