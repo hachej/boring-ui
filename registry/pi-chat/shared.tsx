@@ -93,35 +93,36 @@ function RequestCard({ card, action }: { readonly card: Request; readonly action
 }
 
 /** Both the composer chip and the timeline quote use this one parent reference. No thread or routing policy. */
-export function ReplyQuote({ targetId, quote, onRemove }: { readonly targetId: string; readonly quote: ReturnType<typeof sharedQuote>; readonly onRemove?: () => void }) {
+export function ReplyQuote({ targetId, quote, onRemove, onReveal }: { readonly targetId: string; readonly quote: ReturnType<typeof sharedQuote>; readonly onRemove?: () => void; readonly onReveal?: ((messageId: string) => void) | undefined }) {
   const { labels } = useChatText();
   const text = quote?.message.removed ? labels.sharedRemoved : quote?.message.card?.title ?? quote?.message.text?.split(/\r?\n/)[0] ?? labels.sharedEarlierMessage;
   return <div data-testid={onRemove ? 'composer-reply' : 'message-quote'} className="flex w-full min-w-0 items-center gap-1">
     <Button variant="ghost" className="min-w-0 max-w-full justify-start" onClick={event => {
       const chat = event.currentTarget.closest('[data-boring=pi-chat]');
       const parent = [...(chat?.querySelectorAll<HTMLElement>('[data-shared-message]') ?? [])].find(element => element.dataset.sharedMessage === targetId);
-      parent?.scrollIntoView({ block: 'center', behavior: 'instant' });
+      if (parent) parent.scrollIntoView({ block: 'center', behavior: 'instant' }); else onReveal?.(targetId);
     }}><ReplyIcon aria-hidden="true" /><span className="truncate text-muted-foreground">{quote ? `${quote.author.name}: ${text}` : text}</span></Button>
     {onRemove && <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon" data-testid="composer-reply-remove" aria-label={labels.sharedCancelReply} onClick={onRemove}><XIcon aria-hidden="true" /></Button>} /><TooltipContent>{labels.sharedCancelReply}</TooltipContent></Tooltip>}
   </div>;
 }
 
 /** Participant metadata surrounds the existing bubbles, Markdown, cards and tool trace. */
-export function SharedMessage({ shared, children, remove, canRemove, openFile, onReply }: {
+export function SharedMessage({ shared, children, remove, canRemove, openFile, onReply, onReveal }: {
   readonly shared: NonNullable<Row['shared']>; readonly children: ReactNode;
   readonly remove?: ((message: ChannelMessage) => Promise<void>) | undefined;
   readonly canRemove?: ((message: ChannelMessage) => boolean) | undefined;
   readonly openFile?: ((path: string) => void) | undefined;
   readonly onReply?: ((messageId: string) => void) | undefined;
+  readonly onReveal?: ((messageId: string) => void) | undefined;
 }) {
   const { labels } = useChatText();
   const [error, setError] = useState(false);
   const { message, author, first, own } = shared;
   return <div data-shared-message={message.id} className="flex min-w-0 flex-col gap-2">
     {!own && first && <div className="flex min-w-0 items-center gap-2"><MemberAvatar member={author} card={shared.latestCard} /><span data-testid="message-author" className="min-w-0 truncate">{author.name}</span><MemberBadge member={author} /></div>}
-    {message.replyTo && <ReplyQuote targetId={message.replyTo} quote={shared.quote} />}
+    {message.replyTo && <ReplyQuote targetId={message.replyTo} quote={shared.quote} onReveal={onReveal} />}
     {message.removed ? <p className="text-muted-foreground">{labels.sharedRemoved}</p> : children}
-    {!message.removed && (message.streaming || message.steps?.length) && author.kind === 'agent' && <ActivityBlock participant={author.name} steps={(message.steps ?? []).map((step, index) => ({ kind: 'host', key: `${message.id}:step:${index}`, step }))} state={message.streaming ? 'running' : 'done'} streaming={Boolean(message.streaming)} developer={false} />}
+    {!message.removed && (message.streaming || message.steps?.length) && author.kind === 'agent' && <ActivityBlock participant={author.name} steps={(message.steps ?? []).map((step, index) => ({ kind: 'host', key: `${message.id}:step:${index}`, step }))} state={message.streaming ? 'running' : message.steps?.some(step => step.status === 'failed') ? 'failed' : 'done'} streaming={Boolean(message.streaming)} developer={false} />}
     {!message.removed && message.attachments?.map(file => <Button key={file.path} variant="outline" disabled={!openFile} onClick={() => openFile?.(file.path)} className="max-w-full justify-start"><span className="truncate">{file.title ?? file.path}</span></Button>)}
     {!message.removed && <div className="flex items-center gap-1">
       {onReply && (author.kind === 'agent' || message.card) && <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon" data-testid="shared-reply" aria-label={labels.sharedReply} onClick={() => onReply(message.id)}><ReplyIcon aria-hidden="true" /></Button>} /><TooltipContent>{labels.sharedReply}</TooltipContent></Tooltip>}

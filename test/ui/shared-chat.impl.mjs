@@ -22,7 +22,7 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
     plugins: process.env.SHARED_CHAT_OLD_RENDERER ? [{ name: 'pre-shared-renderer', setup(builder) {
       builder.onLoad({ filter: /registry\/pi-chat\/.*\.(ts|tsx)$/ }, ({ path }) => {
         const relative = path.slice(new URL('../../', import.meta.url).pathname.length);
-        return { contents: execFileSync('git', ['show', `97bea0756:${relative}`], { encoding: 'utf8' }), loader: path.endsWith('.tsx') ? 'tsx' : 'ts' };
+        return { contents: execFileSync('git', ['show', `${process.env.SHARED_CHAT_BASE ?? '97bea0756'}:${relative}`], { encoding: 'utf8' }), loader: path.endsWith('.tsx') ? 'tsx' : 'ts' };
       });
     } }] : [] });
   const { PiChat } = await import(output.href);
@@ -139,6 +139,8 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
     assert.equal(pm(), existing); assert.match(pm().textContent, /Le plan est partagé/);
     assert.deepEqual([...pm().querySelectorAll('[data-testid=activity-step]')].map(step => step.dataset.status), ['completed', 'running']);
     assert.equal(builder().querySelectorAll('[data-testid=activity-step]').length, 1);
+    await act(async () => source.emit({ type: 'step', messageId: worker.id, conversationId: 'main', index: 0, step: { label: 'Vérification refusée', status: 'failed' } }));
+    assert.equal(builder().querySelector('[data-testid=host-step]').dataset.status, 'error');
     const complete = { ...controller.getSnapshot().shared.messages.find(message => message.id === plan.id), streaming: false };
     await act(async () => source.emit({ type: 'message', message: complete }));
     assert.equal(pm().querySelector('[data-testid=activity]').dataset.open, 'false');
@@ -189,6 +191,15 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
     assert.match(q('[data-slot=popover-content]').textContent, /Je prépare votre version/);
     await act(async () => q('[data-testid=agent-avatar-pm]').click());
     await act(async () => window.happyDOM.setWindowSize({ width: 1024, height: 768 }));
+  });
+  await t.test('a quote reveals an older parent through the existing transcript window', async () => {
+    await act(async () => {
+      for (let index = 0; index < 65; index++) source.emit({ type: 'message', message: { id: `later-${index}`, conversationId: 'main', author: 'leo', at: new Date(Date.UTC(2026, 9, 21, 10, index)).toISOString(), text: `Fictional line ${index}` } });
+      source.emit({ type: 'message', message: { id: 'distant-reply', conversationId: 'main', author: 'mira', at: '2026-10-22T10:00:00Z', text: 'Follow-up', replyTo: 'six' } });
+    });
+    assert.equal(q('[data-shared-message=six]'), null, 'the parent is outside the mounted transcript window');
+    await act(async () => q('[data-shared-message=distant-reply] [data-testid=message-quote] button').click());
+    await settle(() => q('[data-shared-message=six]'));
   });
   await t.test('History lists every supplied conversation and selects a direct conversation', async () => {
     await act(async () => q('[data-testid=history-open]').click());

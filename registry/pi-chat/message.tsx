@@ -36,6 +36,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 
 export interface RowContext {
   readonly developer: boolean;
+  readonly sharedReveal?: ((messageId: string) => void) | undefined;
   readonly sharedReply?: ((messageId: string) => void) | undefined;
   readonly sharedRemove?: import('@hachej/boring-ui-kit/shared-chat').ChatController['remove'];
   readonly sharedCanRemove?: import('@hachej/boring-ui-kit/shared-chat').ChatController['canRemove'];
@@ -165,7 +166,7 @@ function resultText(message: ToolResultMessage): string { return message.content
 
 export function RowView({ row, context }: { readonly row: Row; readonly context: RowContext }) {
   const content = <RowBody row={row} context={context} />;
-  return row.shared ? <SharedMessage shared={row.shared} remove={context.sharedRemove} canRemove={context.sharedCanRemove} openFile={context.openFile} onReply={context.sharedReply}>{content}</SharedMessage> : content;
+  return row.shared ? <SharedMessage shared={row.shared} remove={context.sharedRemove} canRemove={context.sharedCanRemove} openFile={context.openFile} onReply={context.sharedReply} onReveal={context.sharedReveal}>{content}</SharedMessage> : content;
 }
 
 function RowBody({ row, context: liveContext }: { readonly row: Row; readonly context: RowContext }) {

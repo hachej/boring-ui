@@ -143,13 +143,14 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
   useChatPlacement(controller, placement);
   const { title } = labels;
   const [pickingConversation, setPickingConversation] = useState(false);
+  const [revealingMessage, setRevealingMessage] = useState<string>();
   const scrollToBottom = useRef<() => void>(() => {});
   // A reply's Fork button calls the host's latest `fork`; the row context changes only when forking is switched on or off.
   const fork = useRef(conversations?.fork); fork.current = conversations?.fork;
   const canFork = Boolean(conversations?.fork);
   const rowExtras = useMemo(() => canFork ? { onFork: (entryId: string) => { void fork.current?.(entryId).catch(() => {}); } } : undefined, [canFork]);
   const session = useChatSession({ controller, activeController: active, mode, actions, renderEntry, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept,
-    slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => scrollToBottom.current(), feedback, rowExtras, onOpenFile, fileChanges, pasteToFile, composerChips });
+    slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, onRevealMessage: setRevealingMessage, afterSend: () => scrollToBottom.current(), feedback, rowExtras, onOpenFile, fileChanges, pasteToFile, composerChips });
   const { state, derived, rows, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, files, loading } = session;
   const empty = session.empty;
   const { pinned, retry } = derived;
@@ -162,6 +163,21 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
   const [renamingTitle, setRenamingTitle] = useState(false);
   const [titleError, setTitleError] = useState(false);
   const page = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!revealingMessage || !state.shared) return;
+    const key = `shared:${revealingMessage}`;
+    if (rows.some(row => row.key === key)) {
+      transcript.revealTo(key);
+      const frame = requestAnimationFrame(() => {
+        const parent = [...(page.current?.querySelectorAll<HTMLElement>('[data-shared-message]') ?? [])].find(element => element.dataset.sharedMessage === revealingMessage);
+        if (parent) { parent.scrollIntoView({ block: 'center', behavior: 'instant' }); setRevealingMessage(undefined); }
+      });
+      return () => cancelAnimationFrame(frame);
+    }
+    if (state.history.kind === 'loading') return;
+    if (state.history.kind === 'ready' && state.history.hasMore) act(controller.loadEarlier);
+    else setRevealingMessage(undefined);
+  }, [revealingMessage, rows, hidden, state.history]);
   useEffect(() => {
     const viewport = globalThis.visualViewport;
     if (!keyboardInset || !viewport) return;

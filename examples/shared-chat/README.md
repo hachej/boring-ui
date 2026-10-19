@@ -1,23 +1,25 @@
 # Shared conversation demo
 
-This fictional garden team uses the existing `AgentWorkspace` embedded layout, `PiChat`, composer, artifact panel and History. Mira and Leo share it with a PM agent, a worker agent and Julien as visible admin. Two request cards come from the fake host source. No agent or model runs in this demo.
+This fictional team uses the existing embedded `AgentWorkspace`, `PiChat`, composer and History. Mira and Leo share it with a PM agent, a worker agent and Julien as visible admin. No agent or model runs in the page. The fake host script illustrates the platform's responses.
 
-## Run the demo
+## Run the flow
 
 1. Run `npm ci` and `npm run build` from the repository root.
-2. Run `npm run shared-chat:demo`.
-3. Open the printed URL. Use History to select Main, Admin or Mira and Leo. Type `@` to choose a member.
+2. Run `npm run shared-chat:demo` and open the printed URL.
+3. Type `@`. Agents appear first. Choose PM and send `@pm ajoute un export PDF`.
+4. Watch the two-line plan stream in place. The PM says `Je regarde vos fichiers.` as an ordinary participant message. A worker has its own live trace.
+5. The single `Export PDF` card starts in `building`, then updates in place to `Une version à essayer`, with `Essayer cette version` as its one action.
+6. Click the card's Reply icon, type a follow-up and send it. The composer chip and sent message quote the same card. Click the quote to reveal its parent.
+7. Open Admin through History. Expand the finished trace to see its fictional detail. The fake host supplies no detail in Main.
+
+Agent avatars reflect the latest card's state. Working shows the default Spinner and a primary dot; waiting shows a muted dot. Hover an avatar for the card's line, or tap it on a phone. The registry guide owns the full [state and source contract](../../registry/README.md#shared-conversations).
 
 On the shared implementation VM, run every npm or Node command through the lane's capped wrapper with `TMPDIR=/var/tmp`. Exit 75 means wait and retry in the foreground.
 
 ## Run the browser journey
 
-Set `CHROMIUM` to a Chromium binary, then run `npm run shared-chat:journey`. The journey starts a disposable page and browser profile. It exercises authors, mentions, card actions and replacements, presence, History switching and streaming in the existing chat. It captures 390px phone screenshots first, then 1440px desktop screenshots, in light and dark. A final 360px check rejects horizontal overflow.
+Set `CHROMIUM` to a Chromium binary, then run `npm run shared-chat:journey`. The journey uses `?manual` to advance the fictional host deterministically. It drives the existing workspace, member picker, composer, cards, quotes, avatar disclosures and native activity rendering.
 
-Evidence goes to `.cache/evidence/shared-chat/`. `SHARED_CHAT_EVIDENCE` changes that directory. The page's `window.__SHARED__` exposes the fake source's demo controls only.
+Screenshots go to `.cache/evidence/shared-chat/`, phone 390 first, then desktop 1440, in light and dark. Files use `<width>-<theme>-<stage>.png`, including `mentions-agents`, `summon-plan`, `card-building`, `card-result`, `quote-composer`, `quote-sent`, `doing-answer`, `avatar-working`, `avatar-waiting`, `trace-live`, `trace-collapsed` and `admin-trace-expanded`. A final 360px check rejects horizontal overflow. `SHARED_CHAT_EVIDENCE` changes the directory.
 
-## Connect a real host
-
-Replace `createFakeChannelSource(seed)` with your `ChannelSource`, or await `createChannelSocket({ url, fetch })`. Keep `useSharedChat(source)` and the existing workspace. Supply the real workspace provider for attachment reads and the artifact panel.
-
-The host decides who can see each conversation, who can remove messages and when agents speak. It forwards work to each agent's own Pi conversation and writes permitted replies to its shared log. The kit only renders that log. See [Shared conversations](../../registry/README.md#shared-conversations) for the exported shapes, default routes and send-idempotency contract.
+The page's `window.__SHARED__` exposes fake host controls for this demo only. `pdf-flow.mjs` is not kit scheduling or speaking policy. A real host forwards to each agent's Pi conversation, enforces membership and roles, strips trace detail outside Admin, and posts permitted messages and replacements into its log. Replace the fake source with your `ChannelSource` or `createChannelSocket`, retain `useSharedChat(source)`, and supply the real workspace provider for attachment reads.

@@ -1,9 +1,8 @@
 import { createRoot } from 'react-dom/client';
-import { createFakeChannelSource } from '@hachej/boring-ui-kit/shared-chat';
 import { AgentWorkspace, useSharedChat } from '../../registry/pi-app/agent-workspace';
-import { sharedChatSeed } from './seed.mjs';
+import { createPdfDemo } from './pdf-flow.mjs';
 
-const source = createFakeChannelSource(sharedChatSeed);
+const source = createPdfDemo({ manual: new URLSearchParams(location.search).has('manual') });
 // Demo controls only. No agent runs in this page; a real host owns the shared log and each agent's Pi conversation.
 window.__SHARED__ = source;
 const revisionProvider = {
@@ -15,8 +14,8 @@ const revisionProvider = {
 };
 function App() {
   const shared = useSharedChat(source);
-  return <AgentWorkspace layout="embedded" history="popover" {...shared} revisionProvider={revisionProvider}
-    chat={{ labels: { title: 'Garden team', placeholder: 'Message the team…' }, draftKey: `fictional-shared:${shared.conversationId}` }}
+  return <AgentWorkspace layout="embedded" history="popover" locale="fr" {...shared} revisionProvider={revisionProvider}
+    chat={{ labels: { title: 'Équipe fictive', placeholder: 'Écrivez à l’équipe…' }, draftKey: `fictional-shared:${shared.conversationId}` }}
     connecting={<p>Opening the fictional shared conversation…</p>} />;
 }
 createRoot(document.getElementById('root')).render(<App />);

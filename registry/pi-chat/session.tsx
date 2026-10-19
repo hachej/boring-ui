@@ -89,6 +89,7 @@ export interface ChatSessionOptions extends Readonly<{ [Key in keyof ChatFeature
   readonly onFiles?: FilesHandler | undefined;
   /** Runs after a message was accepted for sending (for example to scroll to the bottom). */
   readonly afterSend?: (() => void) | undefined;
+  readonly onRevealMessage?: ((messageId: string) => void) | undefined;
   /** Extra attributes of the row context a surface needs (for example per-reply actions). */
   readonly rowExtras?: Partial<RowContext> | undefined;
   /** The optional annotate toggle: when notes are pending (`count` > 0), Send attaches them to the message first. */
@@ -334,6 +335,7 @@ export function useChatSession(options: ChatSessionOptions) {
   };
   const rowContext = useMemo<RowContext>(() => ({
     developer, groupTool, onOpenImage, onCopy, openFile: onOpenFile ?? mentions?.open, fileChanges,
+    sharedReveal: options.onRevealMessage,
     sharedRemove: controller.remove, sharedCanRemove: controller.canRemove,
     sharedReply: controller.setReplyTo ? id => { if (!current()) return; controller.setReplyTo?.(id); textarea.current?.focus(); } : undefined,
     commandMentions: commandMentions ? { commands: commandMentions.commands, onActivate: activateMention } : undefined,
@@ -344,7 +346,7 @@ export function useChatSession(options: ChatSessionOptions) {
     pieces: slash?.skills?.length || mentions || attachments ? { mentions: Boolean(mentions), uploads: Boolean(attachments), skills: (slash?.skills ?? []).map(skill => skill.name), openMention: mentions?.open, renderMention: mentions?.render, preview: mentions?.preview } : undefined,
     ...rowExtras,
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [controller, developer, groupTool, onOpenImage, onCopy, onOpenFile, fileChanges, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, mentions?.preview, attachments, artifacts?.open, artifacts?.isOpen, artifacts?.kinds, messageActions, replyFooter, rowExtras]);
+  }), [controller, options.onRevealMessage, developer, groupTool, onOpenImage, onCopy, onOpenFile, fileChanges, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, mentions?.preview, attachments, artifacts?.open, artifacts?.isOpen, artifacts?.kinds, messageActions, replyFooter, rowExtras]);
 
   /** The model-and-effort pill and the note that reports a refused change. */
   const pickers = () => {
@@ -372,7 +374,7 @@ export function useChatSession(options: ChatSessionOptions) {
     slash, onSlashError: report, mentions, mentionPaths: picked, onMentionPicked: (path: string) => setPicked(value => value.includes(path) ? value : [...value, path]),
     uploads: pending, onDismissUpload: (id: string) => setPending(items => items.filter(item => item.id !== id)),
     onPasteText: attachments ? pasteText : undefined, pasteToFile,
-    quote: state.shared?.replyTo ? <ReplyQuote targetId={state.shared.replyTo} quote={sharedQuote(state.shared, state.shared.replyTo)} onRemove={() => controller.setReplyTo?.(undefined)} /> : undefined,
+    quote: state.shared?.replyTo ? <ReplyQuote targetId={state.shared.replyTo} quote={sharedQuote(state.shared, state.shared.replyTo)} onReveal={options.onRevealMessage} onRemove={() => controller.setReplyTo?.(undefined)} /> : undefined,
     feedback, chips: state.shared ? <>{composerChips}{state.shared.files.map((file, index) => <Badge key={index} variant="secondary">{file.name}<Button variant="ghost" size="icon" aria-label={labels.remove(file.name)} onClick={() => controller.setFiles?.(state.shared!.files.filter((_, at) => at !== index))}><span aria-hidden="true">×</span></Button></Badge>)}</> : composerChips,
   };
 
@@ -421,5 +423,6 @@ export function useTranscript(rows: readonly Row[], page = 60, more = 40, histor
     observer.observe(sentinel);
     return () => observer.disconnect();
   }, [scroller, sentinel, reveal, scrollable.start, history?.state]);
-  return { stick, hidden, reveal, sentinelRef: setSentinel, loaded, visible: <T,>(items: readonly T[]): readonly T[] => hidden ? items.slice(hidden) : items, reset: () => { anchor.current = undefined; setLimit(page); } };
+  const revealTo = (key: string) => { const index = rows.findIndex(row => row.key === key); if (index >= 0) setLimit(value => Math.max(value, rows.length - index)); };
+  return { stick, hidden, reveal, revealTo, sentinelRef: setSentinel, loaded, visible: <T,>(items: readonly T[]): readonly T[] => hidden ? items.slice(hidden) : items, reset: () => { anchor.current = undefined; setLimit(page); } };
 }

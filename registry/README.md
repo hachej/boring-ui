@@ -113,11 +113,13 @@ The package exports these host data shapes:
 ```ts
 type Member = { id: string; name: string; kind: 'person' | 'agent' | 'admin'; role?: 'owner' | 'validator' | 'member' | 'admin' | `agent:${string}`; avatarUrl?: string; presence?: 'here' | 'away' };
 type Conversation = { id: string; title: string; kind: 'main' | 'admin' | 'direct' | string; members: string[] };
-type Card = { requestId: string; title: string; line: string; since?: string; action?: { id: string; label: string } };
-type ChannelMessage = { id: string; conversationId: string; author: string; at: string; text?: string; card?: Card; mentions?: string[]; replyTo?: string; attachments?: { path: string; title?: string }[]; streaming?: boolean; removed?: { by: string; at: string }; clientId?: string };
+type Card = { requestId: string; title: string; line: string; since?: string; state?: string; action?: { id: string; label: string } };
+type Step = { label: string; detail?: string; status: 'running' | 'done' | 'failed' };
+type ChannelMessage = { id: string; conversationId: string; author: string; at: string; text?: string; card?: Card; mentions?: string[]; replyTo?: string; attachments?: { path: string; title?: string }[]; steps?: Step[]; streaming?: boolean; removed?: { by: string; at: string }; clientId?: string };
 type ChannelEvent =
 	| { type: 'message'; message: ChannelMessage }
 	| { type: 'delta'; messageId: string; conversationId: string; text: string }
+	| { type: 'step'; messageId: string; conversationId: string; index: number; step: Step }
 	| { type: 'presence'; members: { id: string; presence: 'here' | 'away' }[] }
 	| { type: 'members'; conversationId: string; members: Member[] };
 interface ChannelSource {
@@ -135,7 +137,15 @@ interface ChannelSource {
 
 `at` and `since` are ISO timestamps. History pages are chronological, newest page first, with an opaque `before` cursor for the preceding page. A `message` event replaces the message with that ID. A `delta` appends text and marks an existing message as streaming. A subsequent complete `message` with `streaming: false` settles it. Reconnect reads history backward to the last known message, then deduplicates by message ID and `clientId`. Messages and pending sends remain local presentation state, not another durable transcript.
 
-The existing `@` composer picker lists members by name and inserts stable member-ID tokens. The adapter sends resolved IDs in `mentions`, including when names collide. Files selected in shared mode go to `send.attachments` as `File[]`. Received attachment paths open through the workspace's existing file opener. `replyTo` is retained but has no separate thread display. Delete appears only when both `remove` and `canRemove` exist and the host permits it. There is no copy-link action.
+The existing `@` composer picker lists agents first, then people, and matches names and IDs. It inserts stable member-ID tokens such as `@pm` or `@worker`. The adapter sends resolved IDs in `mentions`, including when names collide. Files selected in shared mode go to `send.attachments` as `File[]`. Received attachment paths open through the workspace's existing file opener. `replyTo` renders a compact muted quote with the author's name and first line, or the parent card title. Click it to reveal and scroll to the parent through the existing transcript and earlier-history controls. An agent message or card has an icon-only Reply action. It puts a removable quoted chip above the existing composer; Send passes the parent message ID in `replyTo`. The host routes it to the same request. There is no thread panel. Delete appears only when both `remove` and `canRemove` exist and the host permits it. There is no copy-link action.
+
+Agents are participants, with their avatar, name and a default secondary `Agent` Badge. Ordinary agent messages remain separate bubbles in one consecutive author group, including a short "what I'm doing" line and its answer. Plans use the existing streaming Markdown renderer without the native assistant Copy/Fork footer. One request card is replaced by subsequent messages with the same message ID. A completed card can change its line and action to the result, for example `Une version à essayer` and `Essayer cette version`; the Button still only calls `action()`.
+
+`Card.state` is the platform's lifecycle ID. The exported `channelAvatarStates` table maps `building`, `executing` and `checks` to `working`; `asked` to `thinking`; `question`, `answer`, `review` and `preview` to `waiting`; `platform` and `fixing` to `blocked`; and `live` to `done`. `declined`, unknown and missing states are neutral, with no indicator. Each agent avatar reflects its latest card in this conversation. Working, thinking and done use a primary dot; waiting uses muted-foreground; blocked uses destructive. Working and thinking also show the default Spinner. Hover shows the card's `line` in a Tooltip; a phone tap opens a Popover. No lifecycle state grants permission or starts work.
+
+`ChannelMessage.steps` uses the existing `ActivityBlock` and `ToolCard` Trace rendering, not a new trace component or fabricated Pi tool calls. A `step` event sets or replaces `steps[index]` on the specified message. While streaming, the participant's writing label and default spinner accompany the open step list. Running steps have a Spinner, completed steps a check, and failed steps a destructive icon. When streaming ends, the list collapses to a localized `N steps` label and can be expanded. Each agent message owns its own trace, so simultaneous agents stay separate.
+
+When `detail` is present, it appears beneath the label, smaller, monospace and muted. The kit displays whatever the source sends. Under CH-8, the **host strips `detail` outside the admin conversation** and keeps labels plain. Renderer mode is not an authorization or redaction boundary.
 
 Sends reuse remote chat's transport outbox helper. A failed acknowledgement retains the exact payload and `clientId`; reconnect resends it. The host must implement idempotent send by `clientId` and echo that same value in its response and message event. Disposing the adapter releases its own subscription, not the source or agent. Request-card actions call `action` once per button activation; the host decides their idempotency and posts replacement cards.
 
