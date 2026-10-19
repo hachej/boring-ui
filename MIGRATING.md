@@ -15,6 +15,16 @@ Non-breaking for files and props: older `*.maquette.json` files read unchanged, 
   `data-feedback-id="maquette:<path>#screen=<id>&block=<id>"` (blocks may carry an optional `id`), so the note sent with the next message names
   the maquette, screen and block; the screen is a `data-feedback-visible` region. `SessionNote.feedbackId` (`@hachej/boring-feedback/ui`) is new.
   Without a session nothing shows. See [registry/README.md](registry/README.md#diagram-viewer-diagram-viewer).
+- Kinds everywhere: a file opened from the Library, the file tree or a link resolves its artifact kind by path with the same function as the chat card
+  and the panel (`resolveKind`): the app's `artifactKinds` first, then the built-in maquette and diagram kinds. `*.maquette.json` and `*.diagram.json`
+  now open in their viewers there (they showed raw JSON); an app kind for them still wins. `FileViewer` shows such files in the artifact panel
+  (`data-kind="artifact"`), and `ArtifactPanel` takes an optional `headerStart` (a back button).
+- Fixed app title: `AgentWorkspace layout="embedded" title="My app"` keeps the app's name in the bar; the conversation title follows it in muted text
+  (left to History on a phone). Without `title` the bar shows the conversation title as before. `WorkspaceBar` takes `subtitle` for the same.
+- No live feed: a host route that serves no `?op=changes` should answer **501**; `RevisionProvider.changes` then ends with an `invalid` `RevisionError`
+  at once (the views keep their own refresh). **400** ends it the same way and keeps working. See [registry/README.md](registry/README.md).
+- `boring-ui-blocks update` and `add` keep your exact dependency pins: the shadcn CLI's package manager saved `^<version>` over them; the command now
+  restores the specifier of every dependency that was in `package.json` (and the lockfile's root entry) before it ran. Dependencies the CLI adds keep what it wrote.
 
 # Migrating to 0.4.2
 
