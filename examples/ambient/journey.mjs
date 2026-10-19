@@ -271,7 +271,7 @@ try {
     await browser.until('expanded with the question', `${STATE} === 'expanded' && !!document.querySelector('[data-testid=question-card][data-state=pending]')`, 10000);
     await shot('10-question-in-window');
     await browser.click(`[...document.querySelectorAll('[data-testid=question-option]')].find(b => /canary/i.test(b.dataset.option)) ?? document.querySelector('[data-testid=question-option]')`);
-    await browser.until('the run continues and finishes', `${idle} && /canary|staging|production/i.test(${TRANSCRIPT}.split('Your answer')[1] ?? '')`, 60000);
+    await browser.until('the run continues and finishes', `${idle} && /canary|staging|production/i.test(document.querySelector('[data-testid=question-answer]')?.textContent ?? '')`, 60000);
     assert.equal(await browser.evaluate(`!${toast('input')}`), true, 'the needs-input toast is gone once answered');
     await shot('11-answered');
     await browser.click(control('ambient-minimize'));

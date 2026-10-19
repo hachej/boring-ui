@@ -87,7 +87,10 @@ test('ask_user with questions is one form; Answer sends one text, a blank questi
   assert.equal(page.container.querySelector('[data-testid=question-text]').textContent, FORM.question);
   await answerForm(page);
   assert.deepEqual(sent, ['1. Where do we meet?\n→ Lake\n\n2. How many people?\n→ Twelve\n\n3. Anything to avoid?\n→ (no answer)']);
-  assert.match(page.container.querySelector('[data-testid=question-answer]').textContent, /→ Lake/);
+  const card = page.container.querySelector('[data-testid=question-card]');
+  assert.equal(card.dataset.state, 'sent');
+  assert.deepEqual([...card.querySelectorAll('[data-testid=question-answer-item]')].map(item => item.textContent), ['Where do we meet?Lake', 'How many people?Twelve', 'Anything to avoid?(no answer)'], 'every answer is listed under its question');
+  assert.deepEqual([...card.querySelectorAll('[data-testid=question-answer]')].map(answer => answer.dataset.skipped ?? ''), ['', '', 'true'], 'only the blank question is marked skipped');
 });
 
 test('the form speaks French with locale="fr": a skipped question is « (pas de réponse) »', async t => {
@@ -114,6 +117,40 @@ test('the question card stands alone (a host popover): free text by default, non
   await page.render(page.h('div'));
   await page.render(card({ question: 'Strict?', options: ['Yes', 'No'], allowFreeText: false }));
   assert.equal(page.container.querySelector('[data-testid=question-input]'), null);
+});
+
+const answeredResult = (id, answer) => ({ role: 'toolResult', toolCallId: id, toolName: 'ask_user', isError: false, content: [{ type: 'text', text: JSON.stringify({ kind: 'answered', answer }) }], timestamp: 2 });
+const OWNER_QUESTION = 'Pour la première version, sans accès automatique aux plateformes pour l’instant, quel périmètre valides-tu ?';
+const OWNER_ANSWER = 'Attendre les accès pour inclure la découverte automatique dès la première version';
+
+test('an answered question is a quiet recap: the answer outweighs the question, one answered signal, no badge', async t => {
+  const page = await chat(t, { locale: 'fr' });
+  await page.write([assistant([call('owner-1', 'ask_user', { question: OWNER_QUESTION, options: ['Commencer sans', OWNER_ANSWER] })]), answeredResult('owner-1', OWNER_ANSWER)]);
+  const card = page.container.querySelector('[data-testid=question-card]');
+  assert.equal(card.dataset.state, 'answered');
+  const question = card.querySelector('[data-testid=question-text]'), answer = card.querySelector('[data-testid=question-answer]');
+  assert.equal(question.textContent, OWNER_QUESTION);
+  assert.equal(answer.textContent, OWNER_ANSWER);
+  assert.equal(question.closest('[data-slot]').dataset.slot, 'item-description', 'the question is the muted description');
+  assert.equal(answer.closest('[data-slot]').dataset.slot, 'item-title', 'the answer is the title');
+  assert.equal(card.dataset.slot, 'item', 'a stock Item');
+  assert.equal(card.querySelector('[data-slot=item-media] svg')?.getAttribute('aria-label'), 'Répondu');
+  assert.equal(card.querySelectorAll('svg').length, 1, 'one answered signal');
+  assert.equal(card.querySelector('svg').getAttribute('aria-label'), 'Répondu');
+  assert.equal(card.querySelector('[data-slot=badge]'), null, 'no pill');
+  assert.equal(card.querySelectorAll('button, input').length, 0, 'nothing left to act on');
+});
+
+test('an answered form lists every answer tightly, the skipped one discreetly', async t => {
+  const page = await chat(t);
+  await page.write([assistant([call('form-3', 'ask_user', FORM)]), answeredResult('form-3', '1. Where do we meet?\n→ Park\n\n2. How many people?\n→ (no answer)\n\n3. Anything to avoid?\n→ Nuts')]);
+  const card = page.container.querySelector('[data-testid=question-card][data-state=answered]');
+  assert.deepEqual([...card.querySelectorAll('[data-testid=question-answer]')].map(answer => answer.textContent), ['Park', '(no answer)', 'Nuts']);
+  const skipped = card.querySelector('[data-testid=question-answer][data-skipped=true]');
+  assert.equal(skipped.textContent, '(no answer)');
+  assert.equal(skipped.dataset.slot, 'item-description', 'a skipped question is a description, quieter than an answer');
+  assert.deepEqual([...card.querySelectorAll('[data-testid=question-answer]:not([data-skipped])')].map(answer => answer.dataset.slot), ['item-title', 'item-title']);
+  assert.equal(card.querySelectorAll('svg').length, 1, 'one answered signal for the whole form');
 });
 
 const maquette = { schema: 'boring.artifact', version: 1, title: 'Onboarding', type: 'code', mediaType: 'application/json', language: 'json',

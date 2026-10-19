@@ -3,12 +3,13 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
-import { CheckIcon, MessageCircleQuestionIcon, SendIcon } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { CheckIcon, CircleSlashIcon, SendIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Toggle } from '@/components/ui/toggle';
-import { Item, ItemContent, ItemDescription, ItemFooter, ItemMedia, ItemTitle } from '@/components/ui/item';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@/components/ui/item';
+import { Spinner } from '@/components/ui/spinner';
 import { useChatText } from './labels';
 
 /** What the host answers when asked to resolve a pending question. */
@@ -42,6 +43,22 @@ export function parseQuestion(call: ToolCall): Question {
 /** The answers of a form as the one text the agent reads: each question, then its answer, or `skipped` when left blank. */
 export function formAnswer(items: readonly FormQuestion[], values: readonly string[], skipped: string): string {
   return items.map((item, i) => `${i + 1}. ${item.question}\n→ ${values[i]?.trim() || skipped}`).join('\n\n');
+}
+
+/** The answers of a `formAnswer` text, one per question; undefined when the text does not have that shape (then it is shown whole). */
+function splitFormAnswer(items: readonly FormQuestion[], text: string): readonly string[] | undefined {
+  const values: string[] = [];
+  let at = 0;
+  for (let i = 0; i < items.length; i++) {
+    const head = `${i + 1}. ${items[i]!.question}\n→ `;
+    if (!text.startsWith(head, at)) return undefined;
+    at += head.length;
+    const end = i + 1 < items.length ? text.indexOf(`\n\n${i + 2}. ${items[i + 1]!.question}\n→ `, at) : text.length;
+    if (end < 0) return undefined;
+    values.push(text.slice(at, end));
+    at = end + 2;
+  }
+  return values;
 }
 
 /** The answered text from a result such as `{"kind":"answered","answer":"..."}`; undefined when the call did not produce an answer. */
@@ -105,44 +122,63 @@ export function QuestionCard({ call, result, answer, questionId, live = false }:
   const busy = sending !== undefined || live;
 
   const unavailable = !answer || !questionId || busy;
+  // `m-0`: a host without a global preflight keeps the paragraph margin of ItemDescription.
+  const wrap = 'm-0 line-clamp-none [overflow-wrap:anywhere]';
 
-  return <Item variant="outline" size="sm" render={<section />} data-testid="question-card" data-state={state} data-call-id={call.id} aria-label={labels.question} className="my-2 text-start">
-    <ItemMedia variant="icon">
-      {state === 'answered' || state === 'sent' ? <CheckIcon aria-hidden="true" /> : <MessageCircleQuestionIcon aria-hidden="true" />}
-    </ItemMedia>
-    <ItemContent className="min-w-0 basis-0">
-      <ItemDescription className="line-clamp-none"><Badge variant={open ? 'outline' : 'secondary'}>{open ? labels.questionForYou : state === 'failed' ? labels.notAnswered : labels.answered}</Badge></ItemDescription>
-      <ItemTitle data-testid="question-text" className="line-clamp-none [overflow-wrap:anywhere]">{question.question || labels.askedQuestion}</ItemTitle>
-      {(state === 'answered' || state === 'sent') && current !== undefined && <ItemDescription className="line-clamp-none">{labels.yourAnswer} <span data-testid="question-answer" className="font-medium whitespace-pre-line text-foreground [overflow-wrap:anywhere]">{current}</span>
-        {state === 'sent' && <span className="ms-2 text-xs">{labels.waitingForAgent}</span>}</ItemDescription>}
-      {state === 'failed' && settled && 'failure' in settled && <p role="alert" className="m-0 text-sm text-destructive">{settled.failure}</p>}
-    </ItemContent>
-    {open && <ItemFooter className="flex-col items-stretch">
+  if (!open) {
+    const values = question.items.length > 0 && current !== undefined ? splitFormAnswer(question.items, current) : undefined;
+    return <Item role="group" data-testid="question-card" data-state={state} data-call-id={call.id} aria-label={labels.question}>
+      <ItemMedia variant="icon">
+        {state === 'answered' ? <CheckIcon role="img" aria-label={labels.answered} /> : state === 'sent' ? <Spinner aria-label={labels.waitingForAgent} /> : <CircleSlashIcon role="img" aria-label={labels.notAnswered} />}
+      </ItemMedia>
+      <ItemContent className="min-w-0">
+        <ItemDescription data-testid="question-text" className={wrap}>{question.question || labels.askedQuestion}</ItemDescription>
+        {values ? <div className="flex min-w-0 flex-col gap-2">{question.items.map((item, i) => <div key={i} data-testid="question-answer-item" className="flex min-w-0 flex-col gap-1">
+          <ItemDescription className={wrap}>{item.question}</ItemDescription>
+          {values[i] === labels.skipped
+            ? <ItemDescription data-testid="question-answer" data-skipped="true" className={wrap}>{values[i]}</ItemDescription>
+            : <ItemTitle data-testid="question-answer" className={wrap}>{values[i]}</ItemTitle>}
+        </div>)}</div>
+          : current !== undefined && <ItemTitle className={wrap}><span className="sr-only">{labels.yourAnswer} </span><span data-testid="question-answer" className="whitespace-pre-line">{current}</span></ItemTitle>}
+        {state === 'failed' && settled && 'failure' in settled && <ItemDescription role="alert" className={wrap}>{settled.failure}</ItemDescription>}
+      </ItemContent>
+    </Item>;
+  }
+
+  const option = (value: string, selected: boolean, onClick: () => void) => <Button key={value} variant={selected ? 'secondary' : 'outline'} data-testid="question-option" data-option={value}
+    aria-pressed={question.items.length > 0 ? selected : undefined} disabled={unavailable} onClick={onClick} className="h-auto min-h-8 w-full justify-start whitespace-normal text-start">
+    {selected && <CheckIcon data-icon="inline-start" aria-hidden="true" />}{value}
+  </Button>;
+
+  return <Card role="group" data-testid="question-card" data-state={state} data-call-id={call.id} aria-label={labels.question}>
+    <CardHeader>
+      <CardDescription>{labels.questionForYou}</CardDescription>
+      <CardTitle data-testid="question-text" className="[overflow-wrap:anywhere]">{question.question || labels.askedQuestion}</CardTitle>
+    </CardHeader>
+    <CardContent className="flex flex-col gap-4">
       {question.items.length > 0 ? <form data-testid="question-form" onSubmit={onSubmitForm} className="flex flex-col gap-4">
         {question.items.map((item, i) => <div key={i} role="group" aria-labelledby={`${formId}-${i}`} data-testid="question-item" className="flex min-w-0 flex-col gap-2">
-          <p id={`${formId}-${i}`} className="m-0 text-sm [overflow-wrap:anywhere]"><span className="me-1 text-muted-foreground">{i + 1}.</span>{item.question}</p>
-          {item.options.length > 0 && <div role="group" aria-label={labels.answerOptions} className="flex flex-wrap gap-2">
-            {item.options.map(option => <Toggle key={option} variant="outline" data-testid="question-option" data-option={option} disabled={unavailable}
-              pressed={values[i] === option} onPressedChange={pressed => setValue(i, pressed ? option : '')} className="h-auto min-h-11 max-w-full whitespace-normal py-2 text-start">{option}</Toggle>)}
+          <p id={`${formId}-${i}`} className="m-0 [overflow-wrap:anywhere]">{i + 1}. {item.question}</p>
+          {item.options.length > 0 && <div role="group" aria-label={labels.answerOptions} className="flex flex-col gap-2">
+            {item.options.map(value => option(value, values[i] === value, () => setValue(i, values[i] === value ? '' : value)))}
           </div>}
           <Input data-testid="question-input" value={item.options.includes(values[i] ?? '') ? '' : values[i] ?? ''} maxLength={2000} disabled={unavailable}
-            placeholder={item.options.length ? labels.ownAnswer : labels.typeAnswer} aria-label={`${labels.yourAnswerInput} ${i + 1}`} onChange={event => setValue(i, event.currentTarget.value)} className="min-w-0" />
+            placeholder={item.options.length ? labels.ownAnswer : labels.typeAnswer} aria-label={`${labels.yourAnswerInput} ${i + 1}`} onChange={event => setValue(i, event.currentTarget.value)} />
         </div>)}
-        <div><Button type="submit" variant="default" data-testid="question-submit" disabled={unavailable || !values.some(value => value.trim())}><SendIcon data-icon="inline-start" aria-hidden="true" />{labels.answer}</Button></div>
+        <div><Button type="submit" data-testid="question-submit" disabled={unavailable || !values.some(value => value.trim())}><SendIcon data-icon="inline-start" aria-hidden="true" />{labels.answer}</Button></div>
       </form> : <>
-        {question.options.length > 0 && <div role="group" aria-label={labels.answerOptions} className="flex flex-col items-stretch gap-2">
-          {question.options.map(option => <Button key={option} variant="outline" data-testid="question-option" data-option={option} disabled={unavailable}
-            onClick={() => { void submit(option); }} className="h-auto min-h-11 w-full justify-start whitespace-normal py-2 text-start">{option}</Button>)}
+        {question.options.length > 0 && <div role="group" aria-label={labels.answerOptions} className="flex flex-col gap-2">
+          {question.options.map(value => option(value, false, () => { void submit(value); }))}
         </div>}
         {question.allowFreeText && <form onSubmit={onSubmit} className="flex gap-2">
           <Input data-testid="question-input" value={text} maxLength={2000} disabled={unavailable} placeholder={question.options.length ? labels.ownAnswer : labels.typeAnswer}
-            aria-label={labels.yourAnswerInput} onChange={event => setText(event.currentTarget.value)} className="min-w-0 flex-1" />
-          <Button type="submit" variant="default" data-testid="question-submit" disabled={unavailable || !text.trim()}><SendIcon data-icon="inline-start" aria-hidden="true" />{labels.answer}</Button>
+            aria-label={labels.yourAnswerInput} onChange={event => setText(event.currentTarget.value)} />
+          <Button type="submit" data-testid="question-submit" disabled={unavailable || !text.trim()}><SendIcon data-icon="inline-start" aria-hidden="true" />{labels.answer}</Button>
         </form>}
       </>}
-      {live && <ItemDescription>{labels.stillWritingQuestion}</ItemDescription>}
-      {!answer && !live && <ItemDescription>{labels.answeringUnavailable}</ItemDescription>}
-      {refusal && <p role="alert" data-testid="question-refusal" className="m-0 text-sm text-destructive">{refusal}</p>}
-    </ItemFooter>}
-  </Item>;
+      {live && <CardDescription>{labels.stillWritingQuestion}</CardDescription>}
+      {!answer && !live && <CardDescription>{labels.answeringUnavailable}</CardDescription>}
+      {refusal && <Alert variant="destructive" data-testid="question-refusal"><AlertDescription>{refusal}</AlertDescription></Alert>}
+    </CardContent>
+  </Card>;
 }
