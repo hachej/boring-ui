@@ -9,6 +9,8 @@ import type { ResourceLocator } from '@hachej/boring-files';
 import { createResourceClient } from '@hachej/boring-files/remote';
 import { connectRevisionProvider } from '@hachej/boring-files/revision';
 import { mediaTypeOf, workspacePath } from '@hachej/boring-files/file-types';
+import { checkBlobBase, parseBlobPointer, withBlobPointers } from '@hachej/boring-files/blob';
+import type { BlobPointer } from '@hachej/boring-files/blob';
 import type { FileEntry, RevisionProvider } from '@hachej/boring-files/revision';
 import { createFileTreeController } from '@hachej/boring-ui-kit/file-tree';
 import { randomUUID } from '@hachej/boring-files/platform';
@@ -87,11 +89,28 @@ const showsPath = (view: OpenedView | null, path: string): boolean => isFile(vie
 const subscribeNothing = () => () => {};
 
 /**
+ * Large files (blob pointers): the workspace holds a small pointer file (`<name>.blob.json`, `@hachej/boring-files/blob`) for each
+ * large file, and the host serves its bytes at `GET <blobBase><encodeURIComponent(id)>`. The Library lists a pointer under the file's
+ * name, size and type, and the viewers show it from that URL (an image inline, a PDF in the PDF viewer, anything else as a download).
+ */
+export interface WorkspaceBlobs {
+  /** Where the host serves blob bytes: a same-origin path starting with `/` (default `/_files/`). Anything else is refused (a `TypeError`). */
+  readonly blobBase?: string | undefined;
+  /**
+   * The host's large-file upload, used by Library uploads above `uploads.maxBytes`: it stores the bytes and writes the pointer file
+   * itself, then resolves with the pointer it wrote (checked with `parseBlobPointer`); the Library reloads its listing and writes
+   * nothing. `onProgress` drives the row's progress bar, `signal` its cancel button; a refusal rejects with `{ error: { code, message } }`.
+   * Without it a file above the cap is refused as today.
+   */
+  readonly uploadBlob?: ((file: File, options: { readonly signal: AbortSignal; readonly onProgress: (progress: { readonly loaded: number; readonly total: number }) => void }) => Promise<BlobPointer>) | undefined;
+}
+
+/**
  * Where the viewers read and write: the host's resource handler (`createResourceHandler` of `@hachej/boring-files/remote`) and its file history.
  * When the endpoint also answers the revision protocol's discovery (`createRevisionHandler` serves both), the page shows a read-only
  * Library of its files (open, and version history with `history`); a plain resource handler has no listing, so there is no Library.
  */
-export interface WorkspaceResources {
+export interface WorkspaceResources extends WorkspaceBlobs {
   /** The resource handler endpoint. */
   readonly endpoint: string | URL;
   /** The host's authenticated fetch, also used for `history`. */
@@ -221,7 +240,7 @@ export interface WorkspaceUploads {
 const sizeLabel = (bytes: number) => bytes >= 1_000_000 ? `${Number((bytes / 1_000_000).toFixed(1))} MB` : bytes >= 1_000 ? `${Math.round(bytes / 1_000)} KB` : `${bytes} bytes`;
 
 export type AgentWorkspaceProps = AgentWorkspaceBaseProps & (
-  | { readonly revisionProvider: RevisionProvider; readonly resources?: never }
+  | { readonly revisionProvider: RevisionProvider; readonly resources?: WorkspaceBlobs | undefined }
   | { readonly resources: WorkspaceResources; readonly revisionProvider?: never }
 );
 
@@ -289,10 +308,21 @@ export function AgentWorkspace({ layout = 'default', controller, conversationId,
   // The sessions pane shows the chat's conversation list, so it reads the chat's labels too.
   const chatText = useMergedText(chat.labels, chat.icons, chatTextFor(locale));
 
-  const fetcher = useRef(resources?.fetch); fetcher.current = resources?.fetch;
-  const endpoint = resources ? String(resources.endpoint) : undefined;
-  const historyEndpoint = resources?.history === undefined ? undefined : String(resources.history);
-  const identity = revisionProvider?.identity ?? resources!.identity;
+  // With a revision provider, `resources` carries only the blob options; without one it is the resource handler too.
+  const remote = revisionProvider ? undefined : resources as WorkspaceResources;
+  const fetcher = useRef(remote?.fetch); fetcher.current = remote?.fetch;
+  const endpoint = remote ? String(remote.endpoint) : undefined;
+  const historyEndpoint = remote?.history === undefined ? undefined : String(remote.history);
+  const identity = revisionProvider?.identity ?? remote!.identity;
+  const blobBase = checkBlobBase(resources?.blobBase);
+  const hostUploadBlob = resources?.uploadBlob;
+  const appLabels = text.labels;
+  // The host's pointer is checked with the same validator the host uses; an invalid one is a refusal the Library shows.
+  const uploadBlob = useMemo(() => hostUploadBlob && (async (file: File, options: Parameters<NonNullable<WorkspaceBlobs['uploadBlob']>>[1]) => {
+    const pointer = parseBlobPointer(JSON.stringify(await hostUploadBlob(file, options) ?? null));
+    if (pointer === undefined || 'kind' in pointer) throw { error: { code: 'invalid_pointer', message: appLabels.invalidBlobPointer(file.name) } };
+    return pointer;
+  }), [hostUploadBlob, appLabels]);
   const identityKey = JSON.stringify(identity);
   const history = useMemo(() => revisionProvider ? revisionProvider.history : historyEndpoint === undefined ? undefined : async (path: string): Promise<readonly SavedRevision[]> => {
     const url = new URL(historyEndpoint, globalThis.location?.href);
@@ -333,17 +363,18 @@ export function AgentWorkspace({ layout = 'default', controller, conversationId,
   }, []);
   // The app's kinds first, then the built-in maquette kind in the workspace's language (a `.maquette.json` card and panel say « Maquette » in French).
   const kinds = useMemo(() => [...(artifactKinds ?? []), createMaquetteKind({ locale })], [artifactKinds, locale]);
-  const options: ViewerOptions = useMemo(() => ({ client, identity, history, viewers, kinds, interactive, share, onShown, onUnsavedChange: noteUnsaved, onBeforeLeaveChange: registerBeforeLeave }), [client, identityKey, history, viewers, kinds, interactive, share, onShown, noteUnsaved, registerBeforeLeave]); // eslint-disable-line react-hooks/exhaustive-deps
-  const locate = revisionProvider?.locate ?? resources?.locate ?? defaultLocate;
+  const options: ViewerOptions = useMemo(() => ({ client, identity, history, viewers, kinds, interactive, share, onShown, onUnsavedChange: noteUnsaved, onBeforeLeaveChange: registerBeforeLeave, blobBase }), [client, identityKey, history, viewers, kinds, interactive, share, onShown, noteUnsaved, registerBeforeLeave, blobBase]); // eslint-disable-line react-hooks/exhaustive-deps
+  const locate = revisionProvider?.locate ?? remote?.locate ?? defaultLocate;
   const readOnlyLibrary = !revisionProvider;
   const [fileBinding, setFileBinding] = useState<{ readonly provider: RevisionProvider; readonly tree: FileTreeController }>();
   useEffect(() => {
     if (!libraryProvider) return;
-    const tree = createFileTreeController({ revisionProvider: libraryProvider });
+    // The Library reads its listings through `withBlobPointers`: each pointer file is resolved there, once, to the file it stands for.
+    const tree = createFileTreeController({ revisionProvider: withBlobPointers(libraryProvider, blobBase) });
     setFileBinding({ provider: libraryProvider, tree });
     void tree.refresh();
     return () => tree.dispose();
-  }, [libraryProvider]);
+  }, [libraryProvider, blobBase]);
   const libraryController = fileBinding?.provider === libraryProvider ? fileBinding?.tree : undefined;
   // Uploads and the upload notice belong to a revision provider only; the resources Library is read-only.
   const fileTree = revisionProvider ? libraryController : undefined;
@@ -480,7 +511,7 @@ export function AgentWorkspace({ layout = 'default', controller, conversationId,
   // The Library tree, one view for the side column, the center and the pane; `onOpen` is what choosing a file does there.
   const libraryTree = (onOpen: (path: string) => void, onClose?: () => void) => libraryController
     ? <FileTreeView variant="list" refresh={libraryPlacement !== 'panel'} title={text.labels.library} {...(onClose ? { onClose } : {})} key={JSON.stringify([libraryProvider?.workspace, libraryProvider?.identity])} {...(locale ? { locale } : {})} {...viewOptions}
-      {...(readOnlyLibrary ? { upload: false, history: history !== undefined } : {})} controller={libraryController} historyKey={feed.seq} onOpen={onOpen} {...(isFile(opened) ? { selectedPath: opened.path } : {})} />
+      {...(readOnlyLibrary ? { upload: false, history: history !== undefined } : {})} {...(maxBytes !== undefined ? { maxBytes, ...(tooLarge ? { tooLarge } : {}) } : {})} {...(uploadBlob ? { uploadBlob } : {})} controller={libraryController} historyKey={feed.seq} onOpen={onOpen} {...(isFile(opened) ? { selectedPath: opened.path } : {})} />
     : <p role="status" className="m-0 p-3 text-sm text-muted-foreground">{treeOptions?.labels?.loading ?? text.labels.loading}</p>;
   // `history="popover"` keeps the conversations out of the pane. With an open panel the column steps aside unless column, panel and chat fit.
   const paneConversations = historyPlacement === 'column' ? conversations : undefined;

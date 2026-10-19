@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { Input } from '@/components/ui/input';
+import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { SidebarMenu, SidebarMenuItem, SidebarMenuSub } from '@/components/ui/sidebar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -52,6 +53,7 @@ export const fileTreeComponents = {
   Button: LibraryButton, Actions: FileActions, Versions: FileVersions,
   Menu: SidebarMenu, MenuItem: SidebarMenuItem, MenuSub: SidebarMenuSub, Input, Separator: () => <Separator />,
   Collapsible, CollapsibleTrigger, CollapsibleContent, Empty: FileTreeEmpty,
+  Progress: ({ value, 'aria-label': label }: { readonly value: number | null; readonly 'aria-label': string }) => <Progress value={value} aria-label={label} />,
 } satisfies FileTreeComponents;
 export type FileTreeProps = Omit<PackageFileTreeProps, 'components'>;
 export type FileTreeViewProps = Omit<PackageFileTreeViewProps, 'components'>;

@@ -46,6 +46,8 @@ export const defaultAppLabels = {
   binaryFile: (size: string) => `This is a binary file (${size}); it cannot be shown as text.`,
   fileViewer: (kind: string) => `${kind} viewer`,
   newVersion: 'A new version is available.',
+  newerBlobFormat: 'This file points to a large file in a newer format than this page reads. It is shown as it is saved.',
+  invalidBlobPointer: (name: string) => `${name}: the upload did not return a valid file pointer.`,
 };
 export type AppLabels = typeof defaultAppLabels;
 

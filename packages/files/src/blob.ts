@@ -8,7 +8,9 @@
  * read through the workspace's one provider like any other file. The host serves the bytes at `GET <blobBase><encodeURIComponent(id)>`
  * (same origin, access checked on every request). This module reads pointers and names that URL; it never fetches. Pure: no Node, no DOM.
  */
-import type { FilePage, RevisionProvider } from './revision-contracts.js';
+import type { BlobItem, FilePage, RevisionProvider, UnsupportedBlobPointer } from './revision-contracts.js';
+
+export type { BlobItem, UnsupportedBlobPointer } from './revision-contracts.js';
 
 /** The pointer file's media type. */
 export const BLOB_POINTER_MEDIA_TYPE = 'application/vnd.boring.blob+json';
@@ -33,18 +35,6 @@ export interface BlobPointer {
   readonly type: string;
   /** The file name shown for it (no path separators). */
   readonly name: string;
-}
-
-/** A pointer written in a newer format than this module reads: show it as its JSON file, and say it is a newer format. */
-export interface UnsupportedBlobPointer { readonly kind: 'unsupported-version'; readonly version: number }
-
-/** What a viewer or a listing shows for a pointer: never the pointer itself. */
-export interface BlobItem {
-  readonly name: string;
-  readonly size: number;
-  readonly type: string;
-  /** Same-origin URL of the bytes: `<blobBase><encodeURIComponent(id)>`. */
-  readonly url: string;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
