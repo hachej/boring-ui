@@ -70,10 +70,16 @@ test('a mockup.html file uses the built-in opaque sandbox and host theme', async
   assert.equal(page.$('#calendar'), null, 'artifact markup never enters the host document');
 });
 
-test('an app kind overrides the built-in, and ordinary HTML stays passive', async t => {
+test('an app kind overrides the built-in', async t => {
   const page = await panel(t, BOOKING, { kinds: [{ match: () => true, label: 'Host mock-up', renderer: () => 'Host renderer' }] });
   assert.equal(page.$('[data-testid=mockup-run-frame]'), null);
   assert.match(page.container.textContent, /Host renderer/);
+});
+
+test('ordinary HTML retains its passive default', async t => {
+  const page = await panel(t, BOOKING, { path: 'booking.html' });
+  assert.equal(page.$('[data-testid=mockup-run-frame]'), null);
+  assert.equal(page.$$('iframe').some(frame => frame.getAttribute('sandbox')?.includes('allow-scripts')), false);
 });
 
 test('presentation acknowledgement waits for the async frame load', async t => {

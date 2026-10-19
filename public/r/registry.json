@@ -746,10 +746,10 @@
       "title": "HTML mock-up viewer",
       "description": "Sandboxed *.mockup.html artifacts with host theme variables, lazy Tailwind compilation and feedback point comments. Host presentation only; artifact scripts run in an opaque-origin InteractiveFrame, never in the host.",
       "dependencies": [
-        "react@^19.3.0",
-        "lucide-react@^1.57.0",
+        "react@^19.0.0",
+        "lucide-react@^1.51.0",
         "tailwindcss@4.3.3",
-        "zod@4.6.7"
+        "zod@^4.6.5"
       ],
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.2/r/viewers.json",
