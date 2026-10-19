@@ -7,6 +7,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import type { ComponentProps, ReactNode } from 'react';
 import type { ResourceLocator } from '@hachej/boring-files';
 import { createResourceClient } from '@hachej/boring-files/remote';
+import { connectRevisionProvider } from '@hachej/boring-files/revision';
 import { mediaTypeOf, workspacePath } from '@hachej/boring-files/file-types';
 import type { FileEntry, RevisionProvider } from '@hachej/boring-files/revision';
 import { createFileTreeController } from '@hachej/boring-ui-kit/file-tree';
@@ -31,6 +32,7 @@ import type { ViewerShare } from '../viewers/viewer-frame';
 import type { InteractiveHtml } from '../viewers/interactive-html';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
+import { BlockActions } from '../button/actions';
 import type { BlockAction } from '../button/actions';
 import { ChatTextProvider, useMergedText } from '../pi-chat/labels';
 import { cn, withDefaults } from '../utils/utils';
@@ -45,6 +47,7 @@ import { SessionsPane, SessionsToggle } from './sessions';
 import { focusHistoryRow, historyColumnFits, useHistoryOpen } from './history-column';
 import type { HistoryPlacement } from './history-column';
 import type { SessionsView, WorkspaceAgents } from './sessions';
+import { WorkspaceBar } from './workspace-bar';
 
 export { ArtifactPanel, useArtifactVersions, useTurn } from './artifact-panel';
 export type { CustomViewerProps, CustomViewers, SavedRevision, ViewerOptions } from './artifact-panel';
@@ -52,6 +55,8 @@ export { FileViewer } from './file-viewer';
 export { SessionsPane, SessionsToggle } from './sessions';
 export { HistoryColumn, HistoryColumnToggle, historyColumnFits, useHistoryColumn } from './history-column';
 export type { HistoryPlacement } from './history-column';
+export { WorkspaceBar } from './workspace-bar';
+export type { WorkspaceBarProps } from './workspace-bar';
 export { ConversationList, ConversationHistory } from '../pi-chat/history';
 export { FileTree } from '../file-tree/file-tree';
 export type { SessionsView, WorkspaceAgent, WorkspaceAgents } from './sessions';
@@ -80,7 +85,11 @@ const isFile = (view: OpenedView | null): view is FileView => view?.kind === 'fi
 const showsPath = (view: OpenedView | null, path: string): boolean => isFile(view) ? view.path === path : isArtifact(view) ? view.descriptor.target.resource.path === path : false;
 const subscribeNothing = () => () => {};
 
-/** Where the viewers read and write: the host's resource handler (`createResourceHandler` of `@hachej/boring-files/remote`) and its file history. */
+/**
+ * Where the viewers read and write: the host's resource handler (`createResourceHandler` of `@hachej/boring-files/remote`) and its file history.
+ * When the endpoint also answers the revision protocol's discovery (`createRevisionHandler` serves both), the page shows a read-only
+ * Library of its files (open, and version history with `history`); a plain resource handler has no listing, so there is no Library.
+ */
 export interface WorkspaceResources {
   /** The resource handler endpoint. */
   readonly endpoint: string | URL;
@@ -95,6 +104,13 @@ export interface WorkspaceResources {
 }
 
 interface AgentWorkspaceBaseProps {
+  /**
+   * `default`: the sessions pane on the left, the chat in the center and the artifact panel on the right. `embedded`: for a page set
+   * inside a host's screen (an app-shell screen, a hub page): no left column at any width, and one compact top bar with the
+   * conversation title and History, Library and New as icon buttons (a popover on a wide workspace, a sheet on a phone) followed by
+   * `controls`. Inside an app-shell screen the bar's buttons go into the shell's header, so the page has one row.
+   */
+  readonly layout?: 'default' | 'embedded' | undefined;
   /**
    * Where the Library of a `revisionProvider` opens. `panel` (default): the artifact column, or a bottom drawer on phones.
    * `side`: a column to the right of the viewer (a `Dock`, resizable), opened
@@ -220,7 +236,7 @@ const defaultLocate = (path: string): ResourceLocator => ({ resource: { provider
  * its versions, the file viewer and the host's own views). Agent artifacts open the panel as they appear. Every prop is data or a callback:
  * the host owns the routes, authentication, the controller and what is open (when controlled).
  */
-export function AgentWorkspace({ controller, conversationId, chat = {}, labels, icons, panelActions, connecting, conversations, sessions, history: historyPlacement = 'column', resources, revisionProvider, libraryPlacement = 'panel', locale, fileTree: treeOptions, uploads, agents, detect, artifactKinds, viewers, interactive, share, opened: controlled,
+export function AgentWorkspace({ layout = 'default', controller, conversationId, chat = {}, labels, icons, panelActions, connecting, conversations, sessions, history: historyPlacement = 'column', resources, revisionProvider, libraryPlacement = 'panel', locale, fileTree: treeOptions, uploads, agents, detect, artifactKinds, viewers, interactive, share, opened: controlled,
   defaultOpened = null, onOpenedChange, onUnsavedChange, panels, autoOpen = true, fileBack, floatingChat, chatTop, controls, storageKey = 'boring.agent-workspace', sheetBelow = 641, drawerBelow = 641, floatBelow, className }: AgentWorkspaceProps) {
   const [own, setOwn] = useState<OpenedView | null>(defaultOpened);
   const [panelLibrary, setPanelLibrary] = useState(false);
@@ -256,14 +272,11 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   }, [guard, isControlled, noteUnsaved]);
   const [fullscreen, setFullscreen] = useState(false);
   const [centerMode, setCenterMode] = useState<'chat' | 'library'>('chat');
-  const libraryInPane = Boolean(revisionProvider) && libraryPlacement === 'pane';
-  const librarySide = Boolean(revisionProvider) && libraryPlacement === 'side';
   const [sideOpen, setSideOpenState] = useState(false);
   // The Library's real docked width, reported by its Dock: the room it needs beside the chat and the viewer.
   const [libraryWidth, setLibraryWidth] = useState(LIBRARY_WIDTH);
   // Opening the column leaves a full-screen viewer, whose overlay would otherwise cover it.
   const setSideOpen = useCallback((next: boolean) => { setSideOpenState(next); if (next) setFullscreen(false); }, []);
-  const libraryOpen = Boolean(revisionProvider) && libraryPlacement === 'center' && centerMode === 'library';
   const openLibrary = useCallback(async () => {
     if (libraryPlacement === 'panel') {
       if (!await guard()) return;
@@ -280,8 +293,6 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   const historyEndpoint = resources?.history === undefined ? undefined : String(resources.history);
   const identity = revisionProvider?.identity ?? resources!.identity;
   const identityKey = JSON.stringify(identity);
-  const client = useMemo(() => revisionProvider ?? createResourceClient({ identity, endpoint: new URL(endpoint!, globalThis.location?.href), publication: true, reconciliation: true,
-    fetch: request => fetcher.current!(request) }), [revisionProvider, endpoint, identityKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const history = useMemo(() => revisionProvider ? revisionProvider.history : historyEndpoint === undefined ? undefined : async (path: string): Promise<readonly SavedRevision[]> => {
     const url = new URL(historyEndpoint, globalThis.location?.href);
     url.searchParams.set('path', path);
@@ -289,6 +300,25 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
     if (!response.ok) throw new Error(`History: ${response.status}`);
     return (await response.json() as { saves: readonly SavedRevision[] }).saves;
   }, [revisionProvider, historyEndpoint]);
+  // Resources only: a read-only Library over the endpoint's own listing, when it answers the revision protocol's discovery for the same
+  // person (`createRevisionHandler` serves the resource calls and the listing on one route). A plain resource handler refuses: no Library.
+  const [listing, setListing] = useState<{ readonly key: string; readonly provider: RevisionProvider }>();
+  const listingKey = revisionProvider || endpoint === undefined ? undefined : JSON.stringify([endpoint, identity]);
+  useEffect(() => {
+    if (listingKey === undefined) return;
+    const abort = new AbortController();
+    connectRevisionProvider({ endpoint: new URL(endpoint!, globalThis.location?.href), fetch: request => fetcher.current!(request), signal: abort.signal }).then(provider => {
+      const { principalId, scopeId, initiatorId } = provider.identity;
+      if (!abort.signal.aborted && principalId === identity.principalId && scopeId === identity.scopeId && initiatorId === identity.initiatorId) setListing({ key: listingKey, provider });
+    }, () => { /* no listing on this endpoint */ });
+    return () => abort.abort();
+  }, [listingKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The Library's binding: the host's revision provider, or the listing above with the versions of `resources.history`.
+  const libraryProvider = useMemo(() => revisionProvider ?? (listing && listing.key === listingKey ? { ...listing.provider, history: history ?? listing.provider.history } : undefined),
+    [revisionProvider, listing, listingKey, history]);
+  // The viewers' client: the Library's binding when there is one (its calls carry the binding the revision protocol checks), else the plain resource client.
+  const client = useMemo(() => libraryProvider ?? createResourceClient({ identity, endpoint: new URL(endpoint!, globalThis.location?.href), publication: true, reconciliation: true,
+    fetch: request => fetcher.current!(request) }), [libraryProvider, endpoint, identityKey]); // eslint-disable-line react-hooks/exhaustive-deps
   // ---- Presented files: the page confirms a `present` call only once its panel has mounted the revision (`onShown`, from the viewers).
   // The bookkeeping is `createPresentAcks` (pi-chat/artifact.ts); the answer goes through the chat's own `answer` (the transport's
   // `?op=answer`) and the server checks the path and revision.
@@ -302,30 +332,39 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   }, []);
   const options: ViewerOptions = useMemo(() => ({ client, identity, history, viewers, kinds: artifactKinds, interactive, share, onShown, onUnsavedChange: noteUnsaved, onBeforeLeaveChange: registerBeforeLeave }), [client, identityKey, history, viewers, artifactKinds, interactive, share, onShown, noteUnsaved, registerBeforeLeave]); // eslint-disable-line react-hooks/exhaustive-deps
   const locate = revisionProvider?.locate ?? resources?.locate ?? defaultLocate;
+  const readOnlyLibrary = !revisionProvider;
   const [fileBinding, setFileBinding] = useState<{ readonly provider: RevisionProvider; readonly tree: FileTreeController }>();
   useEffect(() => {
-    if (!revisionProvider) return;
-    const tree = createFileTreeController({ revisionProvider });
-    setFileBinding({ provider: revisionProvider, tree });
+    if (!libraryProvider) return;
+    const tree = createFileTreeController({ revisionProvider: libraryProvider });
+    setFileBinding({ provider: libraryProvider, tree });
     void tree.refresh();
     return () => tree.dispose();
-  }, [revisionProvider]);
-  const fileTree = fileBinding?.provider === revisionProvider ? fileBinding?.tree : undefined;
+  }, [libraryProvider]);
+  const libraryController = fileBinding?.provider === libraryProvider ? fileBinding?.tree : undefined;
+  // Uploads and the upload notice belong to a revision provider only; the resources Library is read-only.
+  const fileTree = revisionProvider ? libraryController : undefined;
+  const embedded = layout === 'embedded';
+  // Where the Library opens (`libraryPlacement`); embedded, it is the bar's Library button instead.
+  const placed = Boolean(libraryProvider) && !embedded;
+  const libraryInPane = placed && libraryPlacement === 'pane';
+  const librarySide = placed && libraryPlacement === 'side';
+  const libraryOpen = placed && libraryPlacement === 'center' && centerMode === 'library';
   // The workspace's change feed: every file view below reloads when its seq moves (agent writes, saves, shell changes).
-  const feed = useChangeFeed(revisionProvider);
+  const feed = useChangeFeed(libraryProvider);
   // The shared tree controller reloads, shown or not: the Library may be on its other tab when a file arrives, and mounting the tree
   // later must not show the listing from before. `fileTree.refreshKey` (deprecated) does the same for a provider without a feed.
   const { refreshKey, ...viewOptions } = treeOptions ?? {};
   const refreshedKey = useRef(refreshKey);
   const refreshedSeq = useRef(feed.seq);
   useEffect(() => {
-    if (!fileTree || (Object.is(refreshedKey.current, refreshKey) && refreshedSeq.current === feed.seq)) return;
+    if (!libraryController || (Object.is(refreshedKey.current, refreshKey) && refreshedSeq.current === feed.seq)) return;
     refreshedKey.current = refreshKey;
     refreshedSeq.current = feed.seq;
-    const { query, expanded } = fileTree.getSnapshot();
-    if (query) void fileTree.search(query);
-    else for (const directory of ['', ...expanded]) void fileTree.refresh(directory);
-  }, [fileTree, refreshKey, feed.seq]);
+    const { query, expanded } = libraryController.getSnapshot();
+    if (query) void libraryController.search(query);
+    else for (const directory of ['', ...expanded]) void libraryController.refresh(directory);
+  }, [libraryController, refreshKey, feed.seq]);
   const openFile = useCallback((path: string) => { setOpened({ kind: 'file', path }); }, [setOpened]);
   // @ search: results are reused while the feed reports nothing new (typing back and forth), and dropped at the next change event.
   // One cache per provider instance (one workspace binding), so another binding never sees these results.
@@ -436,16 +475,17 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   useEffect(() => { if (!narrow) setDrawer(false); }, [narrow]);
   const toggleSide = useCallback(() => setSideOpen(!sideOpen), [setSideOpen, sideOpen]);
   // The Library tree, one view for the side column, the center and the pane; `onOpen` is what choosing a file does there.
-  const libraryTree = (onOpen: (path: string) => void, onClose?: () => void) => fileTree
-    ? <FileTreeView variant="list" refresh={libraryPlacement !== 'panel'} title={text.labels.library} {...(onClose ? { onClose } : {})} key={JSON.stringify([revisionProvider?.workspace, revisionProvider?.identity])} {...(locale ? { locale } : {})} {...viewOptions} controller={fileTree} historyKey={feed.seq} onOpen={onOpen} {...(isFile(opened) ? { selectedPath: opened.path } : {})} />
+  const libraryTree = (onOpen: (path: string) => void, onClose?: () => void) => libraryController
+    ? <FileTreeView variant="list" refresh={libraryPlacement !== 'panel'} title={text.labels.library} {...(onClose ? { onClose } : {})} key={JSON.stringify([libraryProvider?.workspace, libraryProvider?.identity])} {...(locale ? { locale } : {})} {...viewOptions}
+      {...(readOnlyLibrary ? { upload: false, history: history !== undefined } : {})} controller={libraryController} historyKey={feed.seq} onOpen={onOpen} {...(isFile(opened) ? { selectedPath: opened.path } : {})} />
     : <p role="status" className="m-0 p-3 text-sm text-muted-foreground">{treeOptions?.labels?.loading ?? text.labels.loading}</p>;
   // `history="popover"` keeps the conversations out of the pane. With an open panel the column steps aside unless column, panel and chat fit.
   const paneConversations = historyPlacement === 'column' ? conversations : undefined;
-  const hasNavigation = sessions !== false && Boolean(paneConversations || revisionProvider);
+  const hasNavigation = !embedded && sessions !== false && Boolean(paneConversations || placed);
   const stepAside = Boolean(paneConversations) && hasNavigation && !narrow && panelOpen && !historyColumnFits(width, VIEWER_MIN);
   const docked = hasNavigation && width > 0 && !narrow && paneOpen && !stepAside;
   const popoverHistory = historyPlacement === 'popover' || stepAside;
-  const toggle = hasNavigation && !docked && !drawer && !stepAside && <SessionsToggle navigation={Boolean(revisionProvider)} open={narrow ? drawer : paneOpen} drawer={narrow} controls={narrow ? undefined : paneId}
+  const toggle = hasNavigation && !docked && !drawer && !stepAside && <SessionsToggle navigation={placed} open={narrow ? drawer : paneOpen} drawer={narrow} controls={narrow ? undefined : paneId}
     onToggle={() => { if (narrow) setDrawer(value => !value); else { setPaneOpen(!paneOpen); if (!paneOpen) focusHistoryRow(paneId); } }} />;
 
   // ---- The docked chat's header is replaced on every switch and connect (the `connecting` row, then a new `PiChat`). The toggle is not
@@ -464,11 +504,18 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   const toggleSpace = toggle && <Button ref={headerSlot} variant="ghost" size="icon-sm" aria-hidden="true" tabIndex={-1} className="invisible min-[641px]:-ml-1" />;
 
   // ---- The chat in the center: docked PiChat, or the host's floating surface over the same controller (with the toggle in its header).
-  const header = <>{conversations?.onNew && <Button variant="ghost" size="icon-sm" data-testid="workspace-new-chat" aria-label={text.labels.newChat} title={text.labels.newChat} className="min-[641px]:hidden" onClick={conversations.onNew}><text.icons.newChat data-icon="inline-start" aria-hidden="true" /></Button>}{typeof controls === 'function' ? controls({ panelOpen }) : controls ?? chat.controls}</>;
+  const hostControls = typeof controls === 'function' ? controls({ panelOpen }) : controls ?? chat.controls;
+  const header = <>{conversations?.onNew && <Button variant="ghost" size="icon-sm" data-testid="workspace-new-chat" aria-label={text.labels.newChat} title={text.labels.newChat} className="min-[641px]:hidden" onClick={conversations.onNew}><text.icons.newChat data-icon="inline-start" aria-hidden="true" /></Button>}{hostControls}</>;
   const conversationTitle = conversations?.items.find(item => item.id === conversationId)?.title;
   const chatProps: PiChatProps | undefined = controller && { ...(mentionsForChat ? { mentions: mentionsForChat } : {}), ...(attachments ? { attachments } : {}), ...(locale ? { locale } : {}), ...chat, controller, artifacts, ...(conversations ? { conversations, historyList: popoverHistory, showHistory: chat.showHistory ?? popoverHistory, conversationTitle, onRenameTitle: conversations.rename && conversationId ? (title: string) => conversations.rename!(conversationId, title) : undefined } : {}),
-    headerStart: <>{toggle}{chat.headerStart}</>, ...(header === undefined ? {} : { controls: header }) };
+    headerStart: <>{toggle}{chat.headerStart}</>, ...(header === undefined ? {} : { controls: header }),
+    // Embedded: the bar above replaces the chat's header (History, New and the host's controls are in it); conversations stay for Fork.
+    ...(embedded ? { header: false, historyList: false, showHistory: false } : {}) };
+  const bar = embedded && <WorkspaceBar title={conversationTitle ?? chatText.labels.title} conversations={conversations} narrow={narrow}
+    library={libraryController ? onPicked => libraryTree(path => { openFile(path); onPicked(); }, onPicked) : undefined}
+    controls={<><BlockActions actions={chat.headerActions} testId="chat-action" menuLabel={chatText.labels.moreActions} />{hostControls}</>} />;
   const docked_chat = <div data-testid="workspace-center" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+    {bar}
     {attachmentFailure?.tree === fileTree && attachmentFailure?.reasons.map((reason, index) => <p key={index} role="alert" className="m-0 px-4 py-2 text-sm">{reason}</p>)}
     {fileTree && <UploadNotice controller={fileTree} onOpen={revealLibrary} />}
     {chatTop}
@@ -483,17 +530,17 @@ export function AgentWorkspace({ controller, conversationId, chat = {}, labels, 
   const kind = active ? 'artifact' : file ? 'file' : host?.kind;
   const shown = active ?? file ?? host;
   const actionsFor = (floatChat: (() => void) | undefined): readonly BlockAction[] => [
-    ...(revisionProvider && libraryPlacement === 'panel' ? [{ id: 'library', label: text.labels.library, icon: text.icons.library, placement: 'menu' as const, onSelect: openLibrary }] : []),
+    ...(placed && libraryPlacement === 'panel' ? [{ id: 'library', label: text.labels.library, icon: text.icons.library, placement: 'menu' as const, onSelect: openLibrary }] : []),
     ...(librarySide ? [{ id: 'library', label: text.labels.library, icon: text.icons.library, pressed: sideOpen, onSelect: toggleSide }] : []),
     ...(floatChat ? [{ id: 'float-chat', label: text.labels.floatChat, icon: text.icons.floatChat, placement: 'menu' as const, onSelect: floatChat }] : []),
     ...(shown ? typeof panelActions === 'function' ? panelActions(shown) : panelActions ?? [] : []),
   ];
   const sessionProps: ComponentProps<typeof SessionsPane> = { id: paneId, conversations: paneConversations, drawer: narrow, onClose: () => setDrawer(false), onChat: () => setCenterMode('chat'), onCollapse: () => setPaneOpen(false), title: labels?.sessionsTitle,
     agents, view: paneView, onViewChange: changePaneView,
-    ...(librarySide ? { library: { selected: sideOpen, onSelect: toggleSide, side: true } } : revisionProvider && !libraryInPane ? { library: { selected: libraryOpen || panelLibrary, onSelect: openLibrary } } : {}),
+    ...(librarySide ? { library: { selected: sideOpen, onSelect: toggleSide, side: true } } : placed && !libraryInPane ? { library: { selected: libraryOpen || panelLibrary, onSelect: openLibrary } } : {}),
     ...(libraryInPane ? { libraryContent: (onPicked: () => void) => libraryTree(path => { openFile(path); onPicked(); }) } : {}),
   };
-  return <AppTextProvider value={text}><ChatTextProvider value={chatText}><div ref={root} data-boring="agent-workspace" data-sessions={!hasNavigation ? undefined : narrow ? (drawer ? 'drawer' : 'closed') : docked ? 'docked' : 'hidden'}
+  return <AppTextProvider value={text}><ChatTextProvider value={chatText}><div ref={root} data-boring="agent-workspace" data-layout={layout} data-sessions={!hasNavigation ? undefined : narrow ? (drawer ? 'drawer' : 'closed') : docked ? 'docked' : 'hidden'}
     className={cn('pi-chat relative flex h-full min-h-0 min-w-0 flex-1 overflow-hidden', className)}>
     <DockLayout storageKey={`${storageKey}.dock`} minMain={SESSIONS_WIDTH + 480}>
     {hasNavigation && (docked || (narrow && drawer)) && (sessions ? sessions(sessionProps) : <SessionsPane {...sessionProps} />)}
