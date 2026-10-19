@@ -131,13 +131,13 @@ test('an answered question is a quiet recap: the answer outweighs the question, 
   const question = card.querySelector('[data-testid=question-text]'), answer = card.querySelector('[data-testid=question-answer]');
   assert.equal(question.textContent, OWNER_QUESTION);
   assert.equal(answer.textContent, OWNER_ANSWER);
-  const classes = element => { const list = []; for (let at = element; at && at !== card; at = at.parentElement) list.push(...at.classList); return list; };
-  assert.ok(classes(question).includes('text-muted-foreground') && classes(question).includes('text-xs/5'), 'the question is small and muted');
-  assert.ok(classes(answer).includes('text-foreground') && classes(answer).includes('font-medium') && classes(answer).includes('text-sm'), 'the answer is the prominent line');
+  assert.equal(question.closest('[data-slot]').dataset.slot, 'item-description', 'the question is the muted description');
+  assert.equal(answer.closest('[data-slot]').dataset.slot, 'item-title', 'the answer is the title');
+  assert.equal(card.dataset.slot, 'item', 'a stock Item');
+  assert.equal(card.querySelector('[data-slot=item-media] svg')?.getAttribute('aria-label'), 'Répondu');
   assert.equal(card.querySelectorAll('svg').length, 1, 'one answered signal');
   assert.equal(card.querySelector('svg').getAttribute('aria-label'), 'Répondu');
   assert.equal(card.querySelector('[data-slot=badge]'), null, 'no pill');
-  assert.ok(!classes(card.querySelector('[data-testid=question-text]')).includes('border'), 'no full-width border box');
   assert.equal(card.querySelectorAll('button, input').length, 0, 'nothing left to act on');
 });
 
@@ -148,7 +148,8 @@ test('an answered form lists every answer tightly, the skipped one discreetly', 
   assert.deepEqual([...card.querySelectorAll('[data-testid=question-answer]')].map(answer => answer.textContent), ['Park', '(no answer)', 'Nuts']);
   const skipped = card.querySelector('[data-testid=question-answer][data-skipped=true]');
   assert.equal(skipped.textContent, '(no answer)');
-  assert.ok(skipped.classList.contains('text-muted-foreground') && !skipped.classList.contains('font-medium'), 'a skipped question reads quieter than an answer');
+  assert.equal(skipped.dataset.slot, 'item-description', 'a skipped question is a description, quieter than an answer');
+  assert.deepEqual([...card.querySelectorAll('[data-testid=question-answer]:not([data-skipped])')].map(answer => answer.dataset.slot), ['item-title', 'item-title']);
   assert.equal(card.querySelectorAll('svg').length, 1, 'one answered signal for the whole form');
 });
 

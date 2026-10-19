@@ -3,13 +3,13 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
-import { CheckIcon, CircleSlashIcon, MessageCircleQuestionIcon, SendIcon } from 'lucide-react';
+import { CheckIcon, CircleSlashIcon, SendIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Toggle } from '@/components/ui/toggle';
-import { Item, ItemContent, ItemDescription, ItemTitle } from '@/components/ui/item';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@/components/ui/item';
 import { Spinner } from '@/components/ui/spinner';
-import { cn } from '../utils/utils';
 import { useChatText } from './labels';
 
 /** What the host answers when asked to resolve a pending question. */
@@ -122,64 +122,63 @@ export function QuestionCard({ call, result, answer, questionId, live = false }:
   const busy = sending !== undefined || live;
 
   const unavailable = !answer || !questionId || busy;
-  // Fade the recap in only when this card was just answered here, never for answers already in the history.
-  const wasOpen = useRef(open);
-  if (open) wasOpen.current = true;
-  const textClass = 'm-0 text-pretty [overflow-wrap:anywhere]';
+  // `m-0`: a host without a global preflight keeps the paragraph margin of ItemDescription.
+  const wrap = 'm-0 line-clamp-none [overflow-wrap:anywhere]';
 
   if (!open) {
     const values = question.items.length > 0 && current !== undefined ? splitFormAnswer(question.items, current) : undefined;
-    const signal = state === 'answered' ? <CheckIcon role="img" aria-label={labels.answered} className="size-3.5" />
-      : state === 'sent' ? <Spinner aria-label={labels.waitingForAgent} />
-      : <CircleSlashIcon role="img" aria-label={labels.notAnswered} className="size-3.5" />;
-    return <Item variant="muted" size="sm" render={<section />} data-testid="question-card" data-state={state} data-call-id={call.id} aria-label={labels.question}
-      className={cn('my-1 w-fit max-w-full min-w-0 flex-col items-stretch gap-1 text-start', wasOpen.current && 'transition-[opacity,translate] starting:translate-y-1 starting:opacity-0 motion-reduce:transition-none')}>
-      <p className={cn(textClass, 'flex items-start gap-1.5 text-xs/5 text-muted-foreground')}>
-        <span className="flex h-5 shrink-0 items-center [&_svg]:size-3.5">{signal}</span><span data-testid="question-text">{question.question || labels.askedQuestion}</span></p>
-      <div className="flex min-w-0 flex-col gap-1 ps-5">
-        {values ? <ol className="m-0 flex list-none flex-col gap-2 p-0">
-          {question.items.map((item, i) => <li key={i} data-testid="question-answer-item" className="flex min-w-0 flex-col">
-            <span className={cn(textClass, 'text-xs/5 text-muted-foreground')}>{item.question}</span>
-            <span data-testid="question-answer" data-skipped={values[i] === labels.skipped ? 'true' : undefined}
-              className={cn(textClass, values[i] === labels.skipped ? 'text-sm text-muted-foreground' : 'text-sm font-medium text-foreground')}>{values[i]}</span>
-          </li>)}
-        </ol> : current !== undefined && <p className={cn(textClass, 'text-sm font-medium text-foreground')}><span className="sr-only">{labels.yourAnswer} </span>
-          <span data-testid="question-answer" className="whitespace-pre-line">{current}</span></p>}
-        {state === 'failed' && settled && 'failure' in settled && <p role="alert" className={cn(textClass, 'text-sm text-muted-foreground')}>{settled.failure}</p>}
-      </div>
+    return <Item role="group" data-testid="question-card" data-state={state} data-call-id={call.id} aria-label={labels.question}>
+      <ItemMedia variant="icon">
+        {state === 'answered' ? <CheckIcon role="img" aria-label={labels.answered} /> : state === 'sent' ? <Spinner aria-label={labels.waitingForAgent} /> : <CircleSlashIcon role="img" aria-label={labels.notAnswered} />}
+      </ItemMedia>
+      <ItemContent className="min-w-0">
+        <ItemDescription data-testid="question-text" className={wrap}>{question.question || labels.askedQuestion}</ItemDescription>
+        {values ? <div className="flex min-w-0 flex-col gap-2">{question.items.map((item, i) => <div key={i} data-testid="question-answer-item" className="flex min-w-0 flex-col gap-1">
+          <ItemDescription className={wrap}>{item.question}</ItemDescription>
+          {values[i] === labels.skipped
+            ? <ItemDescription data-testid="question-answer" data-skipped="true" className={wrap}>{values[i]}</ItemDescription>
+            : <ItemTitle data-testid="question-answer" className={wrap}>{values[i]}</ItemTitle>}
+        </div>)}</div>
+          : current !== undefined && <ItemTitle className={wrap}><span className="sr-only">{labels.yourAnswer} </span><span data-testid="question-answer" className="whitespace-pre-line">{current}</span></ItemTitle>}
+        {state === 'failed' && settled && 'failure' in settled && <ItemDescription role="alert" className={wrap}>{settled.failure}</ItemDescription>}
+      </ItemContent>
     </Item>;
   }
 
-  return <Item variant="outline" size="sm" render={<section />} data-testid="question-card" data-state={state} data-call-id={call.id} aria-label={labels.question}
-    className="my-1 flex-col items-stretch gap-3 text-start">
-    <ItemContent className="min-w-0 gap-1">
-      <ItemDescription className="flex items-center gap-1.5"><MessageCircleQuestionIcon aria-hidden="true" className="size-3.5 shrink-0" />{labels.questionForYou}</ItemDescription>
-      <ItemTitle data-testid="question-text" className="w-full line-clamp-none [overflow-wrap:anywhere]">{question.question || labels.askedQuestion}</ItemTitle>
-    </ItemContent>
-    {question.items.length > 0 ? <form data-testid="question-form" onSubmit={onSubmitForm} className="flex flex-col gap-4">
-      {question.items.map((item, i) => <div key={i} role="group" aria-labelledby={`${formId}-${i}`} data-testid="question-item" className="flex min-w-0 flex-col gap-2">
-        <p id={`${formId}-${i}`} className={cn(textClass, 'text-sm')}><span className="me-1 text-muted-foreground">{i + 1}.</span>{item.question}</p>
-        {item.options.length > 0 && <div role="group" aria-label={labels.answerOptions} className="flex flex-wrap gap-2">
-          {item.options.map(option => <Toggle key={option} variant="outline" data-testid="question-option" data-option={option} disabled={unavailable}
-            pressed={values[i] === option} onPressedChange={pressed => setValue(i, pressed ? option : '')} className="h-auto min-h-11 max-w-full whitespace-normal py-2 text-start">{option}</Toggle>)}
+  const option = (value: string, selected: boolean, onClick: () => void) => <Button key={value} variant={selected ? 'secondary' : 'outline'} data-testid="question-option" data-option={value}
+    aria-pressed={question.items.length > 0 ? selected : undefined} disabled={unavailable} onClick={onClick} className="h-auto min-h-8 w-full justify-start whitespace-normal text-start">
+    {selected && <CheckIcon data-icon="inline-start" aria-hidden="true" />}{value}
+  </Button>;
+
+  return <Card role="group" data-testid="question-card" data-state={state} data-call-id={call.id} aria-label={labels.question}>
+    <CardHeader>
+      <CardDescription>{labels.questionForYou}</CardDescription>
+      <CardTitle data-testid="question-text" className="[overflow-wrap:anywhere]">{question.question || labels.askedQuestion}</CardTitle>
+    </CardHeader>
+    <CardContent className="flex flex-col gap-4">
+      {question.items.length > 0 ? <form data-testid="question-form" onSubmit={onSubmitForm} className="flex flex-col gap-4">
+        {question.items.map((item, i) => <div key={i} role="group" aria-labelledby={`${formId}-${i}`} data-testid="question-item" className="flex min-w-0 flex-col gap-2">
+          <p id={`${formId}-${i}`} className="m-0 [overflow-wrap:anywhere]">{i + 1}. {item.question}</p>
+          {item.options.length > 0 && <div role="group" aria-label={labels.answerOptions} className="flex flex-col gap-2">
+            {item.options.map(value => option(value, values[i] === value, () => setValue(i, values[i] === value ? '' : value)))}
+          </div>}
+          <Input data-testid="question-input" value={item.options.includes(values[i] ?? '') ? '' : values[i] ?? ''} maxLength={2000} disabled={unavailable}
+            placeholder={item.options.length ? labels.ownAnswer : labels.typeAnswer} aria-label={`${labels.yourAnswerInput} ${i + 1}`} onChange={event => setValue(i, event.currentTarget.value)} />
+        </div>)}
+        <div><Button type="submit" data-testid="question-submit" disabled={unavailable || !values.some(value => value.trim())}><SendIcon data-icon="inline-start" aria-hidden="true" />{labels.answer}</Button></div>
+      </form> : <>
+        {question.options.length > 0 && <div role="group" aria-label={labels.answerOptions} className="flex flex-col gap-2">
+          {question.options.map(value => option(value, false, () => { void submit(value); }))}
         </div>}
-        <Input data-testid="question-input" value={item.options.includes(values[i] ?? '') ? '' : values[i] ?? ''} maxLength={2000} disabled={unavailable}
-          placeholder={item.options.length ? labels.ownAnswer : labels.typeAnswer} aria-label={`${labels.yourAnswerInput} ${i + 1}`} onChange={event => setValue(i, event.currentTarget.value)} className="min-w-0 max-sm:h-11" />
-      </div>)}
-      <div><Button type="submit" variant="default" data-testid="question-submit" disabled={unavailable || !values.some(value => value.trim())}><SendIcon data-icon="inline-start" aria-hidden="true" />{labels.answer}</Button></div>
-    </form> : <>
-      {question.options.length > 0 && <div role="group" aria-label={labels.answerOptions} className="flex flex-col items-stretch gap-2">
-        {question.options.map(option => <Button key={option} variant="outline" data-testid="question-option" data-option={option} disabled={unavailable}
-          onClick={() => { void submit(option); }} className="h-auto min-h-11 w-full justify-start whitespace-normal py-2 text-start">{option}</Button>)}
-      </div>}
-      {question.allowFreeText && <form onSubmit={onSubmit} className="flex gap-2">
-        <Input data-testid="question-input" value={text} maxLength={2000} disabled={unavailable} placeholder={question.options.length ? labels.ownAnswer : labels.typeAnswer}
-          aria-label={labels.yourAnswerInput} onChange={event => setText(event.currentTarget.value)} className="min-w-0 flex-1 max-sm:h-11" />
-        <Button type="submit" variant="default" data-testid="question-submit" disabled={unavailable || !text.trim()}><SendIcon data-icon="inline-start" aria-hidden="true" />{labels.answer}</Button>
-      </form>}
-    </>}
-    {live && <ItemDescription>{labels.stillWritingQuestion}</ItemDescription>}
-    {!answer && !live && <ItemDescription>{labels.answeringUnavailable}</ItemDescription>}
-    {refusal && <p role="alert" data-testid="question-refusal" className="m-0 text-sm text-destructive">{refusal}</p>}
-  </Item>;
+        {question.allowFreeText && <form onSubmit={onSubmit} className="flex gap-2">
+          <Input data-testid="question-input" value={text} maxLength={2000} disabled={unavailable} placeholder={question.options.length ? labels.ownAnswer : labels.typeAnswer}
+            aria-label={labels.yourAnswerInput} onChange={event => setText(event.currentTarget.value)} />
+          <Button type="submit" data-testid="question-submit" disabled={unavailable || !text.trim()}><SendIcon data-icon="inline-start" aria-hidden="true" />{labels.answer}</Button>
+        </form>}
+      </>}
+      {live && <CardDescription>{labels.stillWritingQuestion}</CardDescription>}
+      {!answer && !live && <CardDescription>{labels.answeringUnavailable}</CardDescription>}
+      {refusal && <Alert variant="destructive" data-testid="question-refusal"><AlertDescription>{refusal}</AlertDescription></Alert>}
+    </CardContent>
+  </Card>;
 }

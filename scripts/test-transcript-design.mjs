@@ -55,9 +55,9 @@ try {
       await browser.click(q('[data-role=system] button'));
       await inspect(`${name}-system`);
     } else if (surface === 'questions') {
-      const recap = await browser.evaluate(`[...document.querySelectorAll('[data-testid=question-card][data-state=answered]')].map(card => ({ question: parseFloat(getComputedStyle(card.querySelector('[data-testid=question-text]')).fontSize), answer: parseFloat(getComputedStyle(card.querySelector('[data-testid=question-answer]')).fontSize), signals: card.querySelectorAll('svg').length, border: ['Top', 'Right', 'Bottom'].filter(edge => parseFloat(getComputedStyle(card)['border' + edge + 'Width']) > 0 && getComputedStyle(card)['border' + edge + 'Color'] !== 'rgba(0, 0, 0, 0)') }))`);
+      const recap = await browser.evaluate(`[...document.querySelectorAll('[data-testid=question-card][data-state=answered]')].map(card => ({ question: Number(getComputedStyle(card.querySelector('[data-testid=question-text]')).fontWeight), answer: Number(getComputedStyle(card.querySelector('[data-testid=question-answer]')).fontWeight), signals: card.querySelectorAll('svg').length, border: ['Top', 'Right', 'Bottom'].filter(edge => parseFloat(getComputedStyle(card)['border' + edge + 'Width']) > 0 && getComputedStyle(card)['border' + edge + 'Color'] !== 'rgba(0, 0, 0, 0)') }))`);
       assert.equal(recap.length, 2, `${name}: two answered recaps`);
-      for (const card of recap) assert.ok(card.answer > card.question && card.signals === 1 && card.border.length === 0, `${name}: answered recap must show the answer larger than the question, one signal and no box: ${JSON.stringify(card)}`);
+      for (const card of recap) assert.ok(card.answer > card.question && card.signals === 1 && card.border.length === 0, `${name}: answered recap must show the answer heavier than the question, one signal and no box: ${JSON.stringify(card)}`);
       await browser.click(q('[data-testid=question-card][data-call-id=pending-single] [data-testid=question-option]'));
       await browser.until('pending answer sent', `${q('[data-testid=question-card][data-call-id=pending-single]')}.dataset.state === 'sent'`, 5000);
       assert.match(await browser.evaluate(`${q('[data-testid=group-five-event]')}.textContent`), /^A complete release checklist/);
