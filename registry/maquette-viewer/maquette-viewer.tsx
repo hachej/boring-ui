@@ -184,7 +184,8 @@ function Walkthrough({ maquette, labels, fragment, path, comments, read }: {
   const caption = tour && walk.tour ? tour.steps[walk.tour.index]?.caption : undefined;
 
   return <div data-testid="maquette-walk" data-screen={current.id} data-tour={tour?.name} className="flex min-w-0 flex-col gap-2" onKeyDown={onKeyDown}>
-    <nav aria-label={labels.screens} data-testid="maquette-stepper" className="flex items-center gap-1">
+    {/* The viewer's own chrome is never pinned, and keeps working while pointing: walk to another screen and pin there too. */}
+    <nav aria-label={labels.screens} data-testid="maquette-stepper" data-feedback-ignore="" className="flex items-center gap-1">
       {walk.history.length > 1 && <Button type="button" variant="ghost" size="icon-sm" className={ICON} aria-label={labels.back} data-testid="maquette-back" onClick={back}><ArrowLeftIcon aria-hidden="true" /></Button>}
       <div className="flex flex-1 items-center justify-center gap-1">
         <Button type="button" variant="ghost" size="icon-sm" className={ICON} aria-label={labels.previous} data-testid="maquette-previous" disabled={index <= 0} onClick={() => step(-1)}><ChevronLeftIcon aria-hidden="true" /></Button>

@@ -1,6 +1,7 @@
 // Run by maquette-viewer.test.mjs in its own process. The built-in maquette kind driven through the real pi-app ArtifactPanel, as a
 // presented `*.maquette.json` opens in it: format v1 and its versioning, the stepper and arrow keys, goto links and their hint, Back and the
-// breadcrumb, guided tours, the device frame, `#screen=` deep links, the collapsed workflow, errors, and an app kind overriding the built-in.
+// breadcrumb, guided tours, the device frame, `#screen=` deep links, the collapsed workflow, errors, an app kind overriding the built-in, and
+// comment pins: the feedback item's point mode entered from the viewer, with the note sent to the conversation naming the screen and block.
 // Fictional data only (test/fixtures/maquette/booking.maquette.json).
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -12,7 +13,8 @@ import { build } from 'esbuild';
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const out = join(root, '.cache/maquette-viewer-test');
 mkdirSync(out, { recursive: true });
-writeFileSync(join(out, 'entry.tsx'), `export { ArtifactPanel } from '${root}registry/pi-app/artifact-panel.tsx'; export { createMaquetteKind, maquetteKind } from '${root}registry/maquette-viewer/maquette-viewer.tsx';`);
+writeFileSync(join(out, 'entry.tsx'), `export { ArtifactPanel } from '${root}registry/pi-app/artifact-panel.tsx'; export { createMaquetteKind, maquetteKind } from '${root}registry/maquette-viewer/maquette-viewer.tsx';
+export { useComposerFeedback, usePointComments } from '${root}registry/feedback/feedback-session.tsx';`);
 await build({ entryPoints: [join(out, 'entry.tsx')], outfile: join(out, 'kit.mjs'), bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
 // Imported once the first test's DOM globals exist: Base UI decides at load time whether it runs in a browser.
 let kit;
@@ -126,13 +128,13 @@ test('a case with steps is a guided tour from the menu: its screens in order, a 
 
 test('the workflow is hidden by default and opens from the menu; a legacy case path still highlights it', async t => {
   const page = await panel(t, BOOKING);
-  assert.equal(page.$('[data-testid=maquette-diagram]'), null, 'hidden: no diagram drawn');
+  assert.equal(page.$('[data-testid=diagram]'), null, 'hidden: no diagram drawn');
   await page.menu('[data-testid=maquette-how-open]');
-  assert.ok(page.$('[data-testid=maquette-how] [data-testid=maquette-diagram]'), 'in the How it works dialog');
-  assert.equal(page.$$('[data-testid=maquette-legend] li').length, 5, 'a numbered legend line per transition');
+  assert.ok(page.$('[data-testid=maquette-how] [data-testid=diagram]'), 'in the How it works dialog, drawn by the diagram viewer');
+  assert.equal(page.$$('[data-testid=diagram-legend] li').length, 5, 'a numbered legend line per transition');
   const cancellation = page.$$('[data-testid=maquette-case]').find(button => button.textContent === 'Cancellation');
   await page.click(cancellation);
-  assert.deepEqual(page.$$('[data-testid=maquette-diagram] g[data-state][data-lit]').map(state => state.dataset.state), ['browsing', 'requested', 'confirmed', 'cancelled']);
+  assert.deepEqual(page.$$('[data-testid=diagram] g[data-node][data-lit]').map(state => state.dataset.node), ['browsing', 'requested', 'confirmed', 'cancelled']);
 });
 
 test('device: phone draws the phone frame', async t => {
@@ -171,6 +173,12 @@ test('an unversioned file reads as v1 (legacy aliases included)', async t => {
   assert.equal(page.screen(), 'home');
   await page.click('[data-testid=maquette-goto]');
   assert.equal(page.screen(), 'next');
+  // How it works on the old file: bare-string states, `on` labels and the legacy case `path`, unchanged.
+  await page.menu('[data-testid=maquette-how-open]');
+  assert.deepEqual(page.$$('[data-testid=maquette-how] [data-testid=diagram] g[data-node]').map(node => node.dataset.node), ['a', 'b']);
+  assert.deepEqual(page.$$('[data-testid=diagram-legend] li').map(item => item.textContent), ['1a → b: starts']);
+  await page.click('[data-testid=maquette-case]');
+  assert.deepEqual(page.$$('[data-testid=diagram] g[data-lit]').map(node => node.dataset.node ?? node.dataset.edge), ['a→b', 'a', 'b'], 'the legacy path still highlights');
 });
 
 test('a future version shows a notice and still renders what it can', async t => {
@@ -200,4 +208,103 @@ test('createMaquetteKind gives the French kind: « Maquette » and French words'
   const french = await panel(t, BOOKING, { kinds: [kit.createMaquetteKind({ locale: 'fr' })] });
   assert.equal(french.$('[data-testid=artifact-panel-type]').textContent, 'Maquette');
   assert.equal(french.$('[data-testid=maquette-previous]').getAttribute('aria-label'), 'Écran précédent');
+});
+
+// ---- Comment pins: the feedback session's point mode, entered from the viewer's own icon.
+
+const pointerAt = (window, type, target) => target.dispatchEvent(new window.PointerEvent(type, { bubbles: true, cancelable: true, composed: true, clientX: 10, clientY: 10, pointerType: 'touch' }));
+const touchAt = (window, type, target) => { const event = new window.Event(type, { bubbles: true, cancelable: true, composed: true }); Object.defineProperty(event, 'changedTouches', { value: [{ clientX: 10, clientY: 10 }] }); return target.dispatchEvent(event); };
+
+/** The panel inside a host that has a feedback session over the page (`createFeedbackSession`), wired as the feedback item says. */
+async function commented(t, text = BOOKING) {
+  const page = await dom(t);
+  const { createFeedbackSession } = await import('@hachej/boring-feedback/ui');
+  const { createPrivacyPolicy } = await import('@hachej/boring-feedback/page');
+  const { useMemo } = await import('react');
+  const under = { current: [] };
+  const session = createFeedbackSession({ app: 'fictional-pm', root: page.container, policy: createPrivacyPolicy(), hitTest: () => under.current });
+  t.after(() => session.dispose());
+  const path = 'documents/booking.maquette.json';
+  const artifact = { schema: 'boring.artifact', version: 1, title: 'Booking', type: 'code', mediaType: 'application/json', language: 'json',
+    target: { resource: { providerId: 'workspace', path }, view: { kind: 'published' } }, revision: 'rev-1' };
+  const bytes = new TextEncoder().encode(text);
+  const client = { read: async () => ({ kind: 'available', snapshot: { bytes, ref: { revision: 'rev-1', providerId: 'workspace', path } } }), saves: async () => [], search: async () => [] };
+  const composer = { current: undefined };
+  function Host() {
+    const comments = kit.usePointComments(session);
+    composer.current = kit.useComposerFeedback(session);
+    const kinds = useMemo(() => [kit.createMaquetteKind({ comments })], [comments]);
+    return page.h(kit.ArtifactPanel, { active: { descriptor: artifact, follow: false }, versions: [artifact], options: { client, identity: { runtimeId: 'fixture' }, kinds }, onSelect: () => {}, onClose: () => {} });
+  }
+  await page.render(page.h(Host));
+  await page.settle();
+  /** A finger tap on `element` as the browser delivers it (the session's picker names it "under the finger"). */
+  const tap = async element => {
+    assert.ok(element, 'nothing to tap');
+    under.current = [element];
+    await page.act(async () => { pointerAt(page.window, 'pointerdown', element); touchAt(page.window, 'touchstart', element); pointerAt(page.window, 'pointerup', element); touchAt(page.window, 'touchend', element); });
+  };
+  /** Types a note in the open pin and keeps it (what NoteBubble's field and Enter do). */
+  const note = async words => { await page.act(async () => { session.setBubbleText(words); session.saveBubble(); }); };
+  const block = id => page.$(`[data-testid=maquette-screen] [data-testid=maquette-block][data-block="${id}"]`);
+  return { ...page, session, composer, tap, note, block };
+}
+
+test('the comment icon enters point mode on the screen; a tapped block pins a note naming the maquette path, screen id and block id', async t => {
+  const page = await commented(t);
+  const icon = page.$('[data-testid=maquette-comment]');
+  assert.equal(icon.getAttribute('aria-label'), 'Comment on this screen');
+  assert.equal(icon.getAttribute('aria-pressed'), 'false');
+  assert.equal(page.block('4').dataset.feedbackId, 'maquette:documents/booking.maquette.json#screen=classes&block=4', 'each block names itself');
+  await page.click(icon);
+  assert.equal(page.session.getSnapshot().phase, 'active');
+  assert.equal(page.session.getSnapshot().mode, 'point', 'point mode, on any device');
+  assert.equal(page.$('[data-testid=maquette-comment]').getAttribute('aria-pressed'), 'true');
+  await page.tap(page.block('4').querySelector('button span'));
+  await page.note('Make this button say "Book a place"');
+  await page.tap(page.block('0').querySelector('h4'));
+  await page.note('A friendlier heading, please');
+  assert.deepEqual(page.session.getSnapshot().notes.map(item => [item.number, item.feedbackId]), [
+    [1, 'maquette:documents/booking.maquette.json#screen=classes&block=4'],
+    [2, 'maquette:documents/booking.maquette.json#screen=classes&block=0'],
+  ], 'a pin on an element inside a block carries the block\'s id');
+  assert.equal(page.$$('[data-testid=maquette-pin]').length, 0, 'while pointing the session draws its own pins');
+  await page.click('[data-testid=maquette-comment]');
+  await page.settle();
+  assert.equal(page.session.getSnapshot().phase, 'review', 'the icon again is Done: the notes wait for Send in the existing review');
+  assert.deepEqual(page.$$('[data-testid=maquette-pin]').map(pin => [pin.closest('[data-testid=maquette-block]').dataset.block, pin.textContent]), [['0', '2'], ['4', '1']],
+    'small numbered markers on the pinned blocks of the current screen');
+  await page.click('[data-testid=maquette-next]');
+  assert.equal(page.$$('[data-testid=maquette-pin]').length, 0, 'another screen shows only its own pins');
+  // Send: the composer attaches the report to the message, as with the composer's own toggle.
+  const sent = await page.composer.current.attach('Two changes on the class list');
+  assert.equal(sent.kind, 'ok');
+  assert.match(sent.text, /^Two changes on the class list\n\n```markdown\n/);
+  assert.match(sent.text, /Make this button say \\?"Book a place\\?"/);
+  assert.match(sent.text, /A friendlier heading, please/);
+  assert.match(sent.text, /maquette:documents\/booking\.maquette\.json#screen=classes&block=4/, 'the sent note names the maquette path, screen and block');
+  assert.match(sent.text, /maquette:documents\/booking\.maquette\.json#screen=classes&block=0/);
+  assert.match(sent.text, /Wheel throwing, beginners/, 'and the block\'s words (the screen is a visible region)');
+});
+
+test('without a feedback session the comment icon is hidden', async t => {
+  const page = await panel(t, BOOKING);
+  assert.ok(page.$('[data-testid=maquette-walk]'));
+  assert.equal(page.$('[data-testid=maquette-comment]'), null, 'no comments prop: no icon');
+  assert.ok(page.$('[data-testid=maquette-block][data-feedback-id]'), 'blocks stay marked, so a host\'s own feedback toggle still names them');
+});
+
+test('usePointComments without a session gives nothing, so the icon stays hidden', async t => {
+  const page = await dom(t);
+  const artifact = { schema: 'boring.artifact', version: 1, title: 'Booking', type: 'code', mediaType: 'application/json', language: 'json',
+    target: { resource: { providerId: 'workspace', path: 'b.maquette.json' }, view: { kind: 'published' } }, revision: 'rev-1' };
+  const client = { read: async () => ({ kind: 'available', snapshot: { bytes: new TextEncoder().encode(BOOKING), ref: { revision: 'rev-1', providerId: 'workspace', path: 'b.maquette.json' } } }), saves: async () => [], search: async () => [] };
+  function Host() {
+    const comments = kit.usePointComments(undefined);
+    return page.h(kit.ArtifactPanel, { active: { descriptor: artifact, follow: false }, versions: [artifact], options: { client, identity: { runtimeId: 'fixture' }, kinds: [kit.createMaquetteKind({ comments })] }, onSelect: () => {}, onClose: () => {} });
+  }
+  await page.render(page.h(Host));
+  await page.settle();
+  assert.ok(page.$('[data-testid=maquette-walk]'));
+  assert.equal(page.$('[data-testid=maquette-comment]'), null);
 });
