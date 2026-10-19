@@ -88,6 +88,7 @@ test('a failing nested test makes the actual discovery runner fail', () => {
     mkdirSync(join(dir, 'scripts'));
     mkdirSync(join(dir, 'test/nested'), { recursive: true });
     cpSync(join(root, 'scripts/run-tests.mjs'), join(dir, 'scripts/run-tests.mjs'));
+    for (const name of ['css-stub-register.mjs', 'css-stub-hooks.mjs']) cpSync(join(root, 'scripts', name), join(dir, 'scripts', name));
     writeFileSync(join(dir, 'test/nested/fails.test.mjs'), 'import test from "node:test"; test("nested negative control", () => { throw new Error("nested sentinel"); });');
     const env = { ...process.env }; delete env.NODE_TEST_CONTEXT;
     const result = spawnSync(process.execPath, [join(dir, 'scripts/run-tests.mjs')], { encoding: 'utf8', env, timeout: 10000 });
