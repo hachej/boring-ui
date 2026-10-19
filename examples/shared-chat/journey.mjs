@@ -34,7 +34,7 @@ try {
           await browser.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] }); await pause(550);
           await browser.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
         } else await browser.hover(message(id));
-        await browser.until('the existing inline Reply action is visible', `(() => { const e = ${message(id)}.querySelector('[data-testid=shared-message-actions]'); return !e.hidden && getComputedStyle(e).opacity === '1'; })()`);
+        await browser.until('the existing inline Reply action is visible', `(() => { const e = ${message(id)}.querySelector('[data-testid=shared-message-actions]'); return !e.hidden && getComputedStyle(e).display !== 'none' && getComputedStyle(e).opacity === '1'; })()`);
       };
       const hint = async (state, line, name) => {
         await reveal('pdf-plan');
@@ -90,7 +90,7 @@ try {
       assert.match(await browser.evaluate(`${message('pdf-card')}.innerText`), /Essayer cette version/);
       await reveal('pdf-card'); await shot('card-result');
       const actions = `${message('pdf-card')}.querySelector('[data-testid=shared-message-actions]')`;
-      assert.equal(await browser.evaluate(device === 'phone' ? `${actions}.hidden` : `getComputedStyle(${actions}).opacity === '0'`), true, 'Reply does not sit visibly under every message');
+      assert.equal(await browser.evaluate(device === 'phone' ? `${actions}.hidden && getComputedStyle(${actions}).display === 'none'` : `getComputedStyle(${actions}).opacity === '0'`), true, 'Reply does not sit visibly under every message');
       await exposeActions('pdf-card');
       if (device === 'desktop') {
         await browser.hover(q('[data-testid=workspace-bar-title]'));
