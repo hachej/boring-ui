@@ -1,9 +1,14 @@
 // The whole browser side of the app: the pi-app block and its hooks over the host routes of ./server.mjs. Nothing else is needed:
 // sessions on the left, the chat in the center and the artifact viewers on the right come from `AgentWorkspace`.
 // `?configured` shows the same app rebranded through the blocks' props only (labels, one icon, host actions; see CONFIGURED below).
+// `?feedback` adds the feedback item over the page: the composer's annotate toggle, and the maquette viewer's comment icon (point mode).
 import { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { connectRevisionProvider } from '@hachej/boring-files/revision';
+import { createFeedbackSession } from '@hachej/boring-feedback/ui';
+import { createPrivacyPolicy } from '@hachej/boring-feedback/page';
+import { NoteBubble, useComposerFeedback, usePointComments } from '../../registry/feedback/feedback-session.tsx';
+import { PointBar } from '../../registry/feedback/point-mode.tsx';
 import { AgentWorkspace, useConversations, useRemoteChat } from '../../registry/pi-app/agent-workspace.tsx';
 import { AmbientChat } from '../../registry/pi-ambient/ambient.tsx';
 import { Button } from '@/components/ui/button';
@@ -20,6 +25,19 @@ const configured = new URLSearchParams(location.search).has('configured');
 // `resources` (the viewers' endpoint and file history): the Library is then read-only.
 const embedded = new URLSearchParams(location.search).has('embedded');
 const resourcesOnly = new URLSearchParams(location.search).has('resources');
+const withFeedback = new URLSearchParams(location.search).has('feedback');
+
+/** `?feedback`: one feedback session over the whole page (the chat and the artifact panel), created after mount. */
+function useFeedbackSession() {
+  const [session, setSession] = useState();
+  useEffect(() => {
+    if (!withFeedback) return undefined;
+    const created = createFeedbackSession({ app: 'workspace-app', build: 'dev', root: document.getElementById('root'), policy: createPrivacyPolicy({ routeOf: () => '/' }) });
+    setSession(created);
+    return () => created.dispose();
+  }, []);
+  return session;
+}
 
 /** A host icon: any component that takes `className` (here a fictional brand mark instead of lucide's arrow). */
 const SparkIcon = ({ className }) => <svg data-testid="custom-send-icon" className={className} viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0l2 6 6 2-6 2-2 6-2-6-6-2 6-2z" /></svg>;
@@ -61,6 +79,9 @@ function App() {
   useEffect(() => { if (items?.length && !items.some(item => item.id === selected)) setSelected(items[0].id); }, [items, selected]);
   const active = items?.some(item => item.id === selected) ? selected : undefined;
   const chat = useRemoteChat({ conversationId: active, endpoint: id => at(`/api/chat?conversation=${id}`), fetch: authorized, identity });
+  const session = useFeedbackSession();
+  const feedback = useComposerFeedback(session);
+  const comments = usePointComments(session);
   // Configured: the chat can float over the panel (its "…" menu offers "Pop out chat"); the floating bar carries the dock action.
   const floating = configured ? { floatBelow: 320, floatingChat: ({ headerStart, historyList, emptyState, decisions, controls, className, ...props }, dock) =>
     <AmbientChat {...props} headerActions={config.dockActions} variant="surface" defaultState="expanded" onDock={dock} /> } : {};
@@ -70,13 +91,15 @@ function App() {
       chat={{ labels: { title: 'Writer', emptyDescription: 'What can I help you write today?' }, suggestions: [
         { label: 'Draft a plan', text: 'Write a picnic plan and present it.' },
         { label: 'Write a short reply', text: 'Reply with exactly: AMBER-HARBOUR' },
-      ], ...config.chat, ...(chat.status === 'ready' ? { actions: chat.actions } : {}) }}
+      ], ...config.chat, ...(feedback ? { feedback } : {}), ...(chat.status === 'ready' ? { actions: chat.actions } : {}) }}
+      {...(comments ? { comments } : {})}
       labels={{ sessionsTitle: 'Writer', ...config.labels }} panelActions={config.panelActions} {...floating}
       connecting={<p role="status" className="p-4 text-sm text-muted-foreground">{chat.status === 'offline' ? 'Server unreachable. Retrying…' : 'Connecting…'}</p>} />
       : discovery.failed
         ? <p role="alert" className="p-4 text-sm text-muted-foreground">The workspace could not be reached. <Button variant="link" onClick={() => setDiscovery(current => ({ attempt: current.attempt + 1, failed: false }))}>Retry</Button></p>
         : <p role="status" className="p-4 text-sm text-muted-foreground">Connecting…</p>}
     {configured && <output data-testid="host-log" className="sr-only">{logged.join(' ')}</output>}
+    {session && <><NoteBubble session={session} /><PointBar session={session} /></>}
   </main>;
 }
 

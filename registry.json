@@ -741,16 +741,54 @@
       ]
     },
     {
-      "name": "maquette-viewer",
+      "name": "diagram-viewer",
       "type": "registry:component",
-      "title": "Maquette viewer",
-      "description": "MaquetteViewer and maquetteKind: a PM agent's *.maquette.json mock-up (format v1, versioned) one screen at a time, drawn from the host's shadcn components, under one thin icon bar: Back, previous and next (also arrow keys and swipe), and a menu with guided tours and How it works (the workflow diagram in a dialog). Optional phone or desktop frame and #screen=<id> deep links. The pi-app artifact panel shows .maquette.json files with it by default; app artifactKinds win.",
+      "title": "Diagram viewer",
+      "description": "DiagramViewer, DiagramView and diagramKind: an agent's *.diagram.json (format v1, versioned: nodes, edges, optional groups, highlighted path and note) as boxes and numbered arrows with a legend that says what happens and who acts. Layers run left to right while they fit and top to bottom on a phone, scrolling inside their own box; no layout library. A superset of a maquette's workflow, which the maquette viewer draws with DiagramView. The pi-app artifact panel shows .diagram.json files with it by default; app artifactKinds win.",
       "dependencies": [
         "react@^19.0.0",
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
         "@boring-ui/theme",
+        "alert",
+        "badge"
+      ],
+      "files": [
+        {
+          "path": "registry/diagram-viewer/diagram.ts",
+          "type": "registry:lib",
+          "target": "components/diagram-viewer/diagram.ts"
+        },
+        {
+          "path": "registry/diagram-viewer/diagram-labels.ts",
+          "type": "registry:lib",
+          "target": "components/diagram-viewer/diagram-labels.ts"
+        },
+        {
+          "path": "registry/diagram-viewer/diagram-view.tsx",
+          "type": "registry:component",
+          "target": "components/diagram-viewer/diagram-view.tsx"
+        },
+        {
+          "path": "registry/diagram-viewer/diagram-viewer.tsx",
+          "type": "registry:component",
+          "target": "components/diagram-viewer/diagram-viewer.tsx"
+        }
+      ]
+    },
+    {
+      "name": "maquette-viewer",
+      "type": "registry:component",
+      "title": "Maquette viewer",
+      "description": "MaquetteViewer and maquetteKind: a PM agent's *.maquette.json mock-up (format v1, versioned) one screen at a time, drawn from the host's shadcn components, under one thin icon bar: Back, previous and next (also arrow keys and swipe), an optional comment icon (point mode of the feedback item: a note pinned on a block names the maquette path, screen id and block id) and a menu with guided tours and How it works (the workflow, inline or a linked *.diagram.json, drawn by the diagram-viewer item in a dialog). Optional phone or desktop frame and #screen=<id> deep links. The pi-app artifact panel shows .maquette.json files with it by default; app artifactKinds win.",
+      "dependencies": [
+        "react@^19.0.0",
+        "lucide-react@^1.51.0"
+      ],
+      "registryDependencies": [
+        "@boring-ui/theme",
+        "@boring-ui/diagram-viewer",
         "alert",
         "badge",
         "bubble",
@@ -765,7 +803,9 @@
         "table",
         "dialog",
         "dropdown-menu",
-        "popover"
+        "popover",
+        "toggle",
+        "tooltip"
       ],
       "files": [
         {
@@ -782,11 +822,6 @@
           "path": "registry/maquette-viewer/maquette-blocks.tsx",
           "type": "registry:component",
           "target": "components/maquette-viewer/maquette-blocks.tsx"
-        },
-        {
-          "path": "registry/maquette-viewer/maquette-diagram.tsx",
-          "type": "registry:component",
-          "target": "components/maquette-viewer/maquette-diagram.tsx"
         },
         {
           "path": "registry/maquette-viewer/maquette-viewer.tsx",
@@ -859,6 +894,7 @@
         "@boring-ui/pi-workspace",
         "@boring-ui/viewers",
         "@boring-ui/maquette-viewer",
+        "@boring-ui/diagram-viewer",
         "@boring-ui/utils",
         "@boring-ui/button",
         "drawer",

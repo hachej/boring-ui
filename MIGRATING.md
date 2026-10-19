@@ -3,6 +3,21 @@
 - New `board-viewer` registry item (library code only, no viewer yet): the `board@1` format for `*.board.json` files, with a strict parser
   (`parseBoard`), the planner (`planBoard`) and the edit round-trip (`applyCanvasEdits`, `serializeBoard`). Installed next to `maquette-viewer`,
   which it reads. See [registry/README.md](registry/README.md#board-format-board-viewer).
+Non-breaking for files and props: older `*.maquette.json` files read unchanged, and a page that passes none of the new props renders as before.
+`maquette-viewer` now also needs the new `diagram-viewer` item and the `toggle` and `tooltip` shadcn components; `pi-app` installs `diagram-viewer`.
+
+- Built-in diagram viewer: the `pi-app` artifact panel draws `*.diagram.json` files (format v1: `nodes`, `edges`, optional `groups`, `path` and
+  `note`) with the new `diagram-viewer` item. `diagramKind` / `createDiagramKind({ locale })` rename or translate it ("Diagram", « Diagramme »);
+  an app kind for those files in `artifactKinds` still wins. `DiagramView` and `parseDiagram` are exported for other viewers.
+- Maquette "How it works" is drawn by `DiagramView`. A maquette's `workflow` may also be a relative `*.diagram.json` path, read through the
+  new optional `read` of kind renderers (`ArtifactKindViewProps.read`, passed by the artifact panel). Selectors changed: `[data-testid=maquette-diagram]`
+  is `[data-testid=diagram]`, `[data-testid=maquette-legend]` is `[data-testid=diagram-legend]`, states are `g[data-node]`; a case `path` now
+  highlights only the arrows between its consecutive states. The `maquette-diagram.tsx` file is gone.
+- Comment pins on mock-ups: `AgentWorkspace comments` (or `createMaquetteKind({ comments })`) takes the `feedback` item's new
+  `usePointComments(session)`; the maquette viewer then shows a comment icon that enters point mode on its screen. Each block is marked
+  `data-feedback-id="maquette:<path>#screen=<id>&block=<id>"` (blocks may carry an optional `id`), so the note sent with the next message names
+  the maquette, screen and block; the screen is a `data-feedback-visible` region. `SessionNote.feedbackId` (`@hachej/boring-feedback/ui`) is new.
+  Without a session nothing shows. See [registry/README.md](registry/README.md#diagram-viewer-diagram-viewer).
 
 # Migrating to 0.4.2
 
