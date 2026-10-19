@@ -5,7 +5,7 @@ import type { CSSProperties, RefObject } from 'react';
 import { useEditor, useValue, GeoShapeGeoStyle, LANGUAGES } from '@tldraw/editor';
 import type { Editor, TLOnMountHandler } from '@tldraw/editor';
 import { Tldraw, iconTypes, DEFAULT_EMBED_DEFINITIONS } from 'tldraw';
-import type { TLDefaultFonts, TLUiAssetUrls } from 'tldraw';
+import type { TLDefaultFonts, TLUiAssetUrls, TldrawProps } from 'tldraw';
 import type { ReadResult } from '@hachej/boring-files';
 import type { SaveResult } from './resources.js';
 import type { CanvasController } from './canvas.js';
@@ -30,6 +30,23 @@ export interface CanvasEditorProps {
   readonly onMountedTools?: (tools: CanvasMountedTools | null) => void;
   /** Host presentation for the canvas controls; without it the package renders unstyled native buttons. */
   readonly components?: ViewerComponents;
+}
+
+/** A borrowed native renderer for a host-owned document projection. It never saves the native store. */
+export type CanvasProjectionProps = Pick<TldrawProps, 'store' | 'shapeUtils' | 'hideUi' | 'children' | 'onMount' | 'onUiEvent'> & {
+  readonly assetUrls: CanvasAssetUrls;
+  readonly licenseKey?: string | undefined;
+};
+
+export function NativeCanvasProjection({ assetUrls, licenseKey, onMount, ...props }: CanvasProjectionProps) {
+  const signature = useMemo(() => assetSignature(assetUrls), [assetUrls]);
+  const assets = useMemo(() => ({ fonts: { ...assetUrls.fonts }, icons: { ...assetUrls.icons }, translations: { ...assetUrls.translations }, embedIcons: { ...assetUrls.embedIcons } }), [signature]);
+  return <Tldraw {...props} autoFocus={false} locale="en" assetUrls={assets} {...(licenseKey === undefined ? {} : { licenseKey })} onMount={editor => {
+    editor.registerExternalAssetHandler('file', null);
+    editor.registerExternalAssetHandler('url', null);
+    for (const type of externalContentTypes) editor.registerExternalContentHandler(type, null);
+    return onMount?.(editor);
+  }} />;
 }
 
 const fontKeys: readonly (keyof CanvasFontUrls)[] = [
@@ -58,8 +75,6 @@ export default function NativeCanvas({ controller, assetUrls, title = 'Canvas', 
   const mounted = useRef(true);
   const revokeTools = useRef<(() => void) | null>(null);
   useLayoutEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-  const signature = useMemo(() => assetSignature(assetUrls), [assetUrls]);
-  const assets = useMemo(() => ({ fonts: { ...assetUrls.fonts }, icons: { ...assetUrls.icons }, translations: { ...assetUrls.translations }, embedIcons: { ...assetUrls.embedIcons } }), [signature]);
   const outcome = state.save.kind === 'settled' ? state.save.result : undefined;
   const pending = state.save.kind === 'pending';
   const uncertain = outcome?.kind === 'unknown';
@@ -78,9 +93,6 @@ export default function NativeCanvas({ controller, assetUrls, title = 'Canvas', 
   const save = () => run(() => controller.flush(controller.actions.selection()));
   const attach = (editor: Editor) => {
     if (controller.getSnapshot().readOnly || controller.getSnapshot().lifecycle === 'disposed') editor.updateInstanceState({ isReadonly: true });
-    editor.registerExternalAssetHandler('file', null);
-    editor.registerExternalAssetHandler('url', null);
-    for (const type of externalContentTypes) editor.registerExternalContentHandler(type, null);
     const cleanup = onMount?.(editor);
     setNativeEditor(editor);
     return () => { revokeTools.current?.(); setNativeEditor(current => current === editor ? null : current); cleanup?.(); };
@@ -111,11 +123,10 @@ export default function NativeCanvas({ controller, assetUrls, title = 'Canvas', 
     {state.lifecycle === 'active' && <div data-boring="canvas-stage" style={{ position: 'relative', height }}
       onClickCapture={event => { if (event.target instanceof Element && event.target.closest('a')) event.preventDefault(); }}
       onAuxClickCapture={event => { if (event.target instanceof Element && event.target.closest('a')) event.preventDefault(); }}>
-      <Tldraw store={controller.store} hideUi locale="en"
-        autoFocus={false} assetUrls={assets} {...(licenseKey === undefined ? {} : { licenseKey })} onMount={attach}>
+      <NativeCanvasProjection store={controller.store} hideUi assetUrls={assetUrls} licenseKey={licenseKey} onMount={attach}>
         <CanvasTools components={components} controller={controller} />
         <MountedCommands controller={controller} revokeTools={revokeTools} {...(onMountedTools ? { onMountedTools } : {})} />
-      </Tldraw>
+      </NativeCanvasProjection>
     </div>}
   </section>;
 }

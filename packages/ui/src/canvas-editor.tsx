@@ -2,13 +2,19 @@
 
 import { lazy, Suspense, useState, useSyncExternalStore } from 'react';
 export type { CanvasMountedSubject, CanvasMountedInspection, CanvasMountedTools } from './canvas-mounted.js';
-import type { CanvasEditorProps } from './canvas-editor-native.js';
+import type { CanvasEditorProps, CanvasProjectionProps } from './canvas-editor-native.js';
 
-export type { CanvasAssetUrls, CanvasEditorProps, CanvasFontUrls } from './canvas-editor-native.js';
+export type { CanvasAssetUrls, CanvasEditorProps, CanvasFontUrls, CanvasProjectionProps } from './canvas-editor-native.js';
 
 import { TextDraftControls } from './text-draft-controls.js';
 
 const NativeCanvas = lazy(() => import('./canvas-editor-native.js'));
+const NativeProjection = lazy(() => import('./canvas-editor-native.js').then(module => ({ default: module.NativeCanvasProjection })));
+
+/** Native tldraw presentation for a host format such as board@1. No document controller or native persistence. */
+export function CanvasProjection(props: CanvasProjectionProps) {
+  return <Suspense fallback={<p role="status">Loading canvas</p>}><NativeProjection {...props} /></Suspense>;
+}
 
 /** Borrows one controller/store. The host supplies native CSS, fonts and any production license. */
 export function CanvasEditor(props: CanvasEditorProps) {
