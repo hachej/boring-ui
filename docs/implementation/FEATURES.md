@@ -1,5 +1,11 @@
 # Implemented behavior and evidence
 
+## Board artifact viewer
+
+The `board-viewer` registry block exports `createBoardKind` for `*.board.json`. This is host presentation over the native tldraw renderer, not a Pi execution extension. `CanvasProjection` from the optional canvas-editor entry renders frames without a native-document publication controller. The existing text buffer conditionally saves only `board@1`; conflicts and uncertain acknowledgements retain local edits and the original operation identity. Maquette screens and sandboxed `MockupViewer` frames share the workspace client.
+
+`test/contracts/board-viewer.test.mjs` drives the public artifact-kind entry, including invalid/newer files and failed linked reads. `npm run board:journey` drives the actual artifact panel, desktop pointer moves and panning, real provider revisions, lost acknowledgements, late saves, conflicts, external rewrites, pinned history and phone read-only input. Screenshots at 1440 and 390, light and dark, live under `.cache/evidence/feat-board-viewer/`. Structured board pin delivery, freehand record persistence and production host licensing/CSP remain separate qualifications.
+
 ## Document draft recovery
 
 The four document controllers expose optional checkpoint, discover, restore and

@@ -60,7 +60,7 @@ export async function startBoard({ port = 0, directory = mkdtempSync('/var/tmp/b
         if (publication) {
           faults.dispatched = true;
           if (faults.hold) { faults.hold = false; await new Promise(resolve => { faults.release = resolve; }); }
-          if (faults.lose) { faults.lose = false; outgoing.destroy(); return; }
+          if (faults.lose) { faults.lose = false; outgoing.writeHead(503).end(); return; }
         }
       }
       if (!response && url.pathname === '/api/history' && allowed(request)) response = Response.json({ saves: files.saves(url.searchParams.get('path') ?? '') });

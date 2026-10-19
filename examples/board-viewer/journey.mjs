@@ -152,6 +152,7 @@ try {
     assert.equal(history(), count);
     assert.equal(await ev('return scrollY;'), 0);
     assert.equal(await ev(`return document.querySelector('[data-testid=phone-sheet]').getBoundingClientRect().top;`), mode.sheetTop);
+    await ev(`window.__board.editor.setCamera(${JSON.stringify(camera)}); return true;`);
     await theme(true); await browser.screenshot('phone-390-dark-board.png');
   });
   await step('all requested resources stay on the host origin', async () => {

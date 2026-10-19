@@ -38,10 +38,10 @@ function FrameContent({ shape, editor }: { readonly shape: BoardFrame; readonly 
   const text = board.files.get(src) ?? '';
   const parsed = useMemo(() => kind === 'maquette' ? parseMaquette(text) : undefined, [kind, text]);
   const shown = parsed?.kind === 'ok' ? parsed.maquette.screens.find(item => item.id === screen) : undefined;
-  return <HTMLContainer style={{ width: shape.props.w, height: shape.props.h }}>
+  return <HTMLContainer className="flex flex-col" style={{ width: shape.props.w, height: shape.props.h }}>
     <div className="pointer-events-none absolute -top-8 left-0 whitespace-nowrap text-muted-foreground" data-testid="board-frame-title">{title}</div>
-    <Card className="h-full overflow-hidden" data-testid="board-frame" data-frame={id}>
-      <CardContent className="h-full min-h-0 overflow-hidden" style={{ pointerEvents: editing || board.comments?.active ? 'auto' : 'none' }}>
+    <Card className="min-h-0 flex-1 overflow-hidden" data-testid="board-frame" data-frame={id}>
+      <CardContent className="min-h-0 flex-1 overflow-hidden" style={{ pointerEvents: editing || board.comments?.active ? 'auto' : 'none' }}>
         {kind === 'html' ? <MockupViewer text={text} path={src} comments={board.comments} />
           : shown && parsed?.kind === 'ok' ? <MaquetteScreenView maquette={parsed.maquette} screen={shown} labels={defaultMaquetteLabels}
             links={{ go: target => board.go(id, target), hint: target => `Opens ${target}`,
