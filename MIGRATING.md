@@ -1,5 +1,8 @@
 # Unreleased (0.4.3)
 
+- New `board-viewer` registry item (library code only, no viewer yet): the `board@1` format for `*.board.json` files, with a strict parser
+  (`parseBoard`), the planner (`planBoard`) and the edit round-trip (`applyCanvasEdits`, `serializeBoard`). Installed next to `maquette-viewer`,
+  which it reads. See [registry/README.md](registry/README.md#board-format-board-viewer).
 Non-breaking for files and props: older `*.maquette.json` files read unchanged, and a page that passes none of the new props renders as before.
 `maquette-viewer` now also needs the new `diagram-viewer` item and the `toggle` and `tooltip` shadcn components; `pi-app` installs `diagram-viewer`.
 
@@ -25,6 +28,7 @@ Non-breaking for files and props: older `*.maquette.json` files read unchanged, 
   at once (the views keep their own refresh). **400** ends it the same way and keeps working. See [registry/README.md](registry/README.md).
 - `boring-ui-blocks update` and `add` keep your exact dependency pins: the shadcn CLI's package manager saved `^<version>` over them; the command now
   restores the specifier of every dependency that was in `package.json` (and the lockfile's root entry) before it ran. Dependencies the CLI adds keep what it wrote.
+- `ArtifactKindViewProps` (the props an app's artifact kind `renderer` receives) gains `revision`, the revision the panel shows (the one a conditional save is made against), and `pinned`, true when the panel shows a pinned historical version, read-only. Renderers that ignore them need no change.
 
 # Migrating to 0.4.2
 

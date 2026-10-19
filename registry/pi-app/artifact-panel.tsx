@@ -256,7 +256,7 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose, headerSta
   if (type === 'markdown' && controller) return body(document(<MarkdownPane controller={controller as MarkdownController} initialMode="rich" onAutosaveChange={registerAutosave} onBeforeLeaveChange={options.onBeforeLeaveChange} {...frame} />));
   if (type === 'html' && controller) return body(document(<HtmlPane controller={controller as HtmlController} {...(options.interactive ? { interactive: options.interactive } : {})} {...frame} />));
   const actions = { onCopy: () => copyText(text ?? ''), onDownload: () => downloadFile(filename, text ?? '', `${artifact.mediaType};charset=utf-8`) };
-  if (kind?.renderer) return body(<ViewerFrame {...frame} {...actions}><div data-testid="artifact-kind-view" className="min-h-0 flex-1 overflow-auto">{kind.renderer({ artifact, text: saved.text, fragment, read })}</div></ViewerFrame>);
+  if (kind?.renderer) return body(<ViewerFrame {...frame} {...actions}><div data-testid="artifact-kind-view" className="min-h-0 flex-1 overflow-auto">{kind.renderer({ artifact, text: saved.text, revision: saved.snapshot.ref.revision, pinned, fragment, read })}</div></ViewerFrame>);
   if (type === 'code' && artifact.language === 'csv') return body(<ViewerFrame {...frame} {...actions}><div className="min-h-0 flex-1 overflow-auto"><CsvTable text={saved.text} /></div></ViewerFrame>);
   if (type === 'svg') return body(<SvgView text={saved.text} title={artifact.title} frame={{ ...frame, ...actions }} />);
   if (type === 'canvas') return body(<ViewerFrame {...frame}><p className="m-0 p-4 text-sm text-muted-foreground" role="status">{labels.noCanvasViewer}</p></ViewerFrame>);
