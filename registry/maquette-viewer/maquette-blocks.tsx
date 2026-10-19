@@ -59,7 +59,7 @@ export function MaquetteBlockView({ block, links, labels }: { readonly block: Ma
     case 'input': return <Label className="flex-col items-stretch gap-1.5">{block.label}
       <Input className="pointer-coarse:min-h-11" placeholder={block.placeholder} defaultValue={block.value} /></Label>;
     case 'select': return <Label className="flex-col items-stretch gap-1.5">{block.label}
-      <NativeSelect className="w-full pointer-coarse:min-h-11" defaultValue={block.value}>
+      <NativeSelect className="w-full pointer-coarse:[&_select]:min-h-11" defaultValue={block.value}>
         {(block.items.length ? block.items : [block.value || block.placeholder || '…']).map((option, index) => <NativeSelectOption key={index} value={option}>{option}</NativeSelectOption>)}
       </NativeSelect></Label>;
     case 'badge': return <Badge variant="secondary">{block.label}</Badge>;

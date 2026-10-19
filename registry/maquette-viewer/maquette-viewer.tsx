@@ -127,7 +127,7 @@ function Walkthrough({ maquette, labels, fragment }: { readonly maquette: Maquet
     const dx = point.clientX - start.x, dy = point.clientY - start.y;
     if (Math.abs(dx) > 56 && Math.abs(dx) > Math.abs(dy) * 1.5) step(dx < 0 ? 1 : -1);
   };
-  const crumbs = walk.history.map((id, at) => ({ id, at })).slice(-4);
+  const crumbs = walk.history.map((id, at) => ({ id, at })).slice(-3);
 
   return <div data-testid="maquette-walk" data-screen={current.id} data-tour={tour?.name} className="flex min-w-0 flex-col gap-4" onKeyDown={onKeyDown}>
     {tours.length > 0 && !tour && <div role="group" aria-label={labels.tours} className="flex flex-wrap items-center gap-2">
@@ -146,7 +146,7 @@ function Walkthrough({ maquette, labels, fragment }: { readonly maquette: Maquet
       <Button type="button" variant="outline" size="sm" className="pointer-coarse:min-h-11" data-testid="maquette-previous" disabled={index <= 0} onClick={() => step(-1)}>
         <ChevronLeftIcon aria-hidden="true" /><span className="max-sm:sr-only">{labels.previous}</span></Button>
       <span data-testid="maquette-position" className="shrink-0 text-sm text-muted-foreground tabular-nums">{labels.position(index + 1, count)}</span>
-      <NativeSelect aria-label={labels.screen} data-testid="maquette-screen-select" className="min-w-0 flex-1 pointer-coarse:min-h-11" value={current.id} onChange={event => go(event.target.value)}>
+      <NativeSelect aria-label={labels.screen} data-testid="maquette-screen-select" className="min-w-0 flex-1 pointer-coarse:[&_select]:min-h-11" value={current.id} onChange={event => go(event.target.value)}>
         {screens.map(screen => <NativeSelectOption key={screen.id} value={screen.id}>{screen.title}</NativeSelectOption>)}
       </NativeSelect>
       <Button type="button" variant="outline" size="sm" className="pointer-coarse:min-h-11" data-testid="maquette-next" disabled={index >= count - 1} onClick={() => step(1)}>
@@ -156,18 +156,16 @@ function Walkthrough({ maquette, labels, fragment }: { readonly maquette: Maquet
     {walk.history.length > 1 && <div className="flex min-w-0 items-center gap-2">
       <Button type="button" variant="ghost" size="sm" className="pointer-coarse:min-h-11" data-testid="maquette-back" onClick={back}><ArrowLeftIcon aria-hidden="true" />{labels.back}</Button>
       <nav aria-label={labels.pathTaken} className="min-w-0 flex-1">
-        <ol data-testid="maquette-breadcrumb" className="m-0 flex min-w-0 list-none flex-wrap items-center gap-x-1 p-0 text-sm text-muted-foreground">
-          {crumbs.map(({ id, at }, i) => <li key={at} className="flex min-w-0 items-center gap-1">
+        <ol data-testid="maquette-breadcrumb" className="m-0 flex min-w-0 list-none items-center gap-1 overflow-hidden p-0 text-sm text-muted-foreground">
+          {crumbs.map(({ id, at }, i) => <li key={at} className={`flex min-w-0 items-center gap-1 ${at === walk.history.length - 1 ? 'shrink-0' : 'shrink'}`}>
             {i > 0 && <ChevronRightIcon className="size-3.5 shrink-0" aria-hidden="true" />}
-            {at === walk.history.length - 1 ? <span aria-current="page" className="truncate font-medium text-foreground">{titleOf(id)}</span>
-              : <Button type="button" variant="link" size="sm" className="pointer-coarse:min-h-11" data-testid="maquette-crumb"
-                onClick={() => move({ history: walk.history.slice(0, at + 1), tour: null })}>{titleOf(id)}</Button>}
+            <span aria-current={at === walk.history.length - 1 ? 'page' : undefined} className={`truncate ${at === walk.history.length - 1 ? 'max-w-[60vw] font-medium text-foreground' : ''}`}>{titleOf(id)}</span>
           </li>)}
         </ol>
       </nav>
     </div>}
 
-    <div className="grid min-w-0 gap-4 @3xl:grid-cols-[minmax(0,1fr)_16rem] @3xl:items-start">
+    <div className="grid min-w-0 gap-4 @2xl:grid-cols-[minmax(0,1fr)_16rem] @2xl:items-start">
       <div className="min-w-0" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
         <Frame device={maquette.device} title={current.title}>
           <MaquetteScreenView key={current.id} maquette={maquette} screen={current} links={links} labels={labels} headingRef={heading} />

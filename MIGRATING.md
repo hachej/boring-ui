@@ -1,3 +1,7 @@
+# Unreleased (0.4.2)
+
+- Built-in maquette viewer: the `pi-app` artifact panel now draws `*.maquette.json` files (a PM agent's mock-ups, format v1) with the new `maquette-viewer` item instead of showing their JSON. Nothing to change; an app kind for those files in `artifactKinds` still wins, and `maquetteKind` / `createMaquetteKind({ locale })` are exported to rename or translate it. Kind renderers also receive the page's URL `fragment`. See [registry/README.md](registry/README.md#maquette-viewer-maquette-viewer).
+
 # Migrating to 0.4.1
 
 0.4.1 is non-breaking: no export, option or type was removed. Upgrade the registry blocks with

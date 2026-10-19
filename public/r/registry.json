@@ -735,6 +735,69 @@
       ]
     },
     {
+      "name": "maquette-viewer",
+      "type": "registry:component",
+      "title": "Maquette viewer",
+      "description": "MaquetteViewer and maquetteKind: a PM agent's *.maquette.json mock-up (format v1, versioned) one screen at a time, drawn from the host's shadcn components: a stepper (Previous, Next, arrow keys, swipe), goto links with a hint, Back and a breadcrumb, guided tours with captions, an optional phone or desktop frame, #screen=<id> deep links and a collapsed How it works workflow diagram. The pi-app artifact panel shows .maquette.json files with it by default; app artifactKinds win.",
+      "dependencies": [
+        "react@^19.0.0",
+        "lucide-react@^1.51.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.1/r/theme.json",
+        "alert",
+        "badge",
+        "bubble",
+        "button",
+        "card",
+        "collapsible",
+        "empty",
+        "input",
+        "item",
+        "label",
+        "native-select",
+        "separator",
+        "table"
+      ],
+      "files": [
+        {
+          "path": "registry/maquette-viewer/maquette.ts",
+          "type": "registry:lib",
+          "target": "components/maquette-viewer/maquette.ts"
+        },
+        {
+          "path": "registry/maquette-viewer/maquette-labels.ts",
+          "type": "registry:lib",
+          "target": "components/maquette-viewer/maquette-labels.ts"
+        },
+        {
+          "path": "registry/maquette-viewer/maquette-blocks.tsx",
+          "type": "registry:component",
+          "target": "components/maquette-viewer/maquette-blocks.tsx"
+        },
+        {
+          "path": "registry/maquette-viewer/maquette-diagram.tsx",
+          "type": "registry:component",
+          "target": "components/maquette-viewer/maquette-diagram.tsx"
+        },
+        {
+          "path": "registry/maquette-viewer/maquette-viewer.tsx",
+          "type": "registry:component",
+          "target": "components/maquette-viewer/maquette-viewer.tsx"
+        }
+      ],
+      "css": {
+        "@layer components": {
+          "[data-boring=\"maquette-viewer\"] [data-maquette=\"placeholder\"]": {
+            "border-width": "var(--default-border-width, 1px)",
+            "border-style": "dashed",
+            "border-color": "var(--border)",
+            "background-color": "var(--muted)"
+          }
+        }
+      }
+    },
+    {
       "name": "pi-app",
       "type": "registry:block",
       "title": "Pi agent app",
@@ -751,6 +814,7 @@
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.1/r/pi-chat.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.1/r/pi-workspace.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.1/r/viewers.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.1/r/maquette-viewer.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.1/r/utils.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.1/r/button.json",
         "drawer",
