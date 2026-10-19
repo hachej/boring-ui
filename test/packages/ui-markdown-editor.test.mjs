@@ -100,6 +100,7 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
   await t.test('desktop formatting is pinned by default and selection formatting remains an option', async t => {
     const f = await fixture(t, 'original text\n');
     assert.ok(f.container.querySelector('.boring-markdown-toolbar [aria-label="Bold"]'), 'desktop toolbar is visible by default');
+    assert.equal(f.container.querySelector('[aria-label="Pin formatting toolbar"]'), null, 'the header has no pin button: the formattingToolbar prop decides');
     assert.equal(f.writes(), 0);
   });
 
@@ -250,7 +251,7 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
     assert.equal(readonly.writes(), 0);
   });
 
-  await t.test('selection formatting formats the native selection and can be pinned without a write', async t => {
+  await t.test('selection formatting formats the native selection without a write', async t => {
     let tools;
     const f = await fixture(t, 'original text\n', { props: { formattingToolbar: 'selection', onMountedTools: value => { tools = value; } } });
     assert.ok(f.container.querySelector('.boring-markdown-toolbar') === null, 'no permanent formatting row by default');
@@ -272,11 +273,7 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
     await act(async () => bold.click());
     assert.equal(f.controller.getSnapshot().text, '**original** text\n');
     assert.equal(f.writes(), 0, 'formatting does not publish');
-    await f.click('Pin formatting toolbar');
-    assert.ok(f.container.querySelector('.boring-markdown-toolbar [aria-label="Table"]'), 'pinning restores the complete toolbar');
-    assert.equal(f.button('Pin formatting toolbar').getAttribute('aria-pressed'), 'true');
-    await f.click('Pin formatting toolbar');
-    assert.equal(f.container.querySelector('.boring-markdown-toolbar'), null);
+    assert.equal(f.container.querySelector('[aria-label="Pin formatting toolbar"]'), null, 'no pin button: the host chose selection formatting');
     await f.click('Markdown source');
     assert.equal(document.querySelector('.boring-markdown-bubble'), null, 'source mode has no rich menu');
     assert.equal(f.writes(), 0);

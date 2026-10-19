@@ -455,7 +455,7 @@ One Tailwind item (owned source, shadcn tokens, light and dark, 44px targets on 
 
 | Part | File |
 | --- | --- |
-| Bar (`ViewerFrame`, `ViewerToggle` over the consumer's `ToggleGroup`, consumer-owned `Button`): always one row; title and facts, icon-only native mode toggle, Save only while there are edits, a native Badge for status (read-only is a word in the subtitle), then Share, full screen and Close; Reload, Copy, Download, Open in new tab and viewer extras sit in the "…" menu (a bottom sheet on a phone) | `viewer-frame.tsx` |
+| Bar (`ViewerFrame`, `ViewerToggle` over the consumer's `ToggleGroup`, consumer-owned `Button`): always one row; title and facts, icon-only mode toggle (an outlined native ToggleGroup: the pressed segment filled, the other muted), Save only while there are edits, a status dot in the default shadcn roles (primary saved, muted-foreground unsaved or saving, destructive with words when the save needs the person; read-only is a word in the subtitle), then Share, full screen and Close; Reload, Copy, Download, Open in new tab and viewer extras sit in the "…" menu (a bottom sheet on a phone) | `viewer-frame.tsx` |
 | Menu (`ViewerActions`, `ViewerVersions`): the consumer's shadcn Base UI dropdown through `ActionMenu`, with native keyboard navigation and dismissal. Version rows show relative time, provenance (You, Agent or External change when recorded), optional measured change summaries, day groups and a quiet Current marker with a check. Older versions are read-only; the viewer explicitly states that restoration is unavailable rather than inventing a write path | `menu.tsx` |
 | Words, icons, the window (`ViewerWindowProvider` `{ fullscreen, onFullscreenChange, actions, labels, icons }`, `defaultViewerLabels`, `defaultViewerIcons`): for example `<ViewerWindowProvider value={{ labels: { share: 'Partager' }, actions: [{ id: 'pin', label: 'Pin', icon: PinIcon, onSelect: pin }] }}>` around any viewer | `viewer-window.ts` |
 | Share: `createLinkShare(link)` uses the Web Share API, otherwise copies the link and the bar says "Link copied"; plain-HTTP origins lack `navigator.clipboard`, so `copyText` falls back to `execCommand('copy')`, and if the browser allows no copy at all the bar shows the link selected for a manual copy. A frame shown only while a file or artifact version loads offers no Share: the pane that shows it brings its own frame, which replaces (remounts) the loading one, and a notice set on the old frame would be lost | `share.ts`, `utils/utils.ts` of the `utils` item (`copyText`, `ManualCopyError`) |
@@ -602,9 +602,8 @@ to refuse a synchronous close; declining the file's discard prompt restores the 
 Reselecting the current file closes Library without changing the selected path or the chat draft.
 
 `MarkdownEditor` and `MarkdownPane` now default to `formattingToolbar="pinned"` on desktop.
-The toolbar stays on one row and scrolls when its controls do not fit. The header's Aa
-control switches to selection formatting; `formattingToolbar="selection"` starts with Tiptap's native
-bubble menu instead. Phones always use selection formatting, with no pinned row. Keyboard shortcuts
+The toolbar stays on one row and scrolls when its controls do not fit. There is no header control to
+switch it: `formattingToolbar="selection"` uses Tiptap's native bubble menu instead. Phones always use selection formatting, with no pinned row. Keyboard shortcuts
 and Markdown input rules remain available.
 
 Markdown autosave is on by default. It calls the existing `controller.flush` after 1200ms without an

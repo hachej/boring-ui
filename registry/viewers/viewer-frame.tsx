@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { ArrowLeftIcon, CheckIcon, CopyIcon, DownloadIcon, ExternalLinkIcon, RefreshCwIcon } from 'lucide-react';
+import { ArrowLeftIcon, CheckIcon, CircleIcon, CopyIcon, DownloadIcon, ExternalLinkIcon, RefreshCwIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Toggle } from '@/components/ui/toggle';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
@@ -24,7 +24,11 @@ export { ViewerWindowProvider, defaultViewerIcons, defaultViewerLabels, useViewe
 export type { ViewerIcons, ViewerLabels, ViewerWindow } from './viewer-window';
 
 export type ViewerTone = 'neutral' | 'success' | 'warning' | 'danger';
-/** `kind` says what the status is whatever its (translated) label: the bar hides a plain `saved` and shows `read-only` as a fact. */
+/**
+ * `kind` says what the status is whatever its (translated) label: the bar hides a plain `saved` (unless `showSavedStatus`) and shows
+ * `read-only` as a fact. The bar shows a dot in the default shadcn roles: `success` primary, `warning` and `neutral` muted-foreground, `danger` destructive. Only a
+ * `danger` status also shows its words, because the person must act on it; the others keep the label in the tooltip and for screen readers.
+ */
 export interface ViewerStatus { readonly label: string; readonly tone?: ViewerTone; readonly kind?: 'saved' | 'read-only' | undefined }
 
 export interface ViewerFrameProps {
@@ -80,17 +84,21 @@ const ViewerBarContext = createContext<ViewerBarSpace>({ tight: false });
 export const useViewerBar = (): ViewerBarSpace => useContext(ViewerBarContext);
 const NOTICE_MS = 2600;
 
-/** One choice of a mode toggle, for example Rich | Source. Icon only: `label` is the accessible name and the tooltip, `text` the short word for hosts that want it. */
-export interface ViewerToggleOption<T extends string> { readonly id: T; readonly label: string; readonly text: string; readonly icon?: ReactNode; readonly disabled?: boolean; readonly testId?: string }
+/**
+ * One choice of a mode toggle, for example Rich | Source. Icon only: `label` is the accessible name and the tooltip, `text` the short word
+ * for hosts that want it (shown when there is no icon). A disabled choice shows `reason` as its tooltip.
+ */
+export interface ViewerToggleOption<T extends string> { readonly id: T; readonly label: string; readonly text: string; readonly icon?: ReactNode; readonly disabled?: boolean; readonly reason?: string | undefined; readonly testId?: string }
 
+/** A segmented control over the consumer's outlined ToggleGroup: the pressed segment is filled with a full-contrast icon, the others muted. */
 export function ViewerToggle<T extends string>({ label, value, options, onChange }: { readonly label: string; readonly value: T; readonly options: readonly ViewerToggleOption<T>[]; readonly onChange: (id: T) => void }) {
-  return <ToggleGroup aria-label={label} size="sm" value={[value]} onValueChange={values => {
+  return <ToggleGroup aria-label={label} variant="outline" size="sm" spacing={1} value={[value]} onValueChange={values => {
     const selected = options.find(option => option.id === values[0] && !option.disabled);
     if (selected && selected.id !== value) onChange(selected.id);
   }}>
-    {options.map(option => <ToggleGroupItem key={option.id} value={option.id} aria-label={option.label} title={option.label} disabled={option.disabled}
-      data-testid={option.testId} data-mode={option.id}>
-      {option.icon ?? option.text}</ToggleGroupItem>)}
+    {options.map(option => <ToggleGroupItem key={option.id} value={option.id} aria-label={option.label} title={option.disabled && option.reason ? option.reason : option.label} disabled={option.disabled}
+      className="disabled:pointer-events-auto disabled:cursor-not-allowed" data-testid={option.testId} data-mode={option.id}>
+      <span className={cn('inline-flex items-center', value !== option.id && 'text-muted-foreground')}>{option.icon ?? option.text}</span></ToggleGroupItem>)}
   </ToggleGroup>;
 }
 
@@ -109,9 +117,22 @@ function ManualCopy({ testId, link, text, onClose, labels }: { readonly testId: 
   </Dialog>;
 }
 
-/** Status uses the consumer's Badge; the frame decides whether a saved acknowledgement is shown. */
+/** Dot colours: default shadcn roles only. */
+const DOTS: Record<ViewerTone, string> = {
+  neutral: 'fill-muted-foreground',
+  success: 'fill-primary',
+  warning: 'fill-muted-foreground',
+  danger: 'fill-destructive',
+};
+
+/** The save status as a coloured dot; the label is the tooltip and the screen-reader text, and is shown only when the person must act (`danger`). */
 function StatusMark({ status, testId }: { readonly status: ViewerStatus; readonly testId: string }) {
-  return <Badge role="status" title={status.label} data-testid={`${testId}-status`} data-tone={status.tone ?? 'neutral'} variant={status.tone === 'danger' ? 'destructive' : 'secondary'}>{status.label}</Badge>;
+  const tone = status.tone ?? 'neutral';
+  return <span role="status" aria-label={status.label} title={status.label} data-testid={`${testId}-status`} data-tone={tone} data-kind={status.kind}
+    className="inline-flex h-6 min-w-6 shrink-0 cursor-default items-center justify-center gap-1.5 text-xs">
+    <CircleIcon aria-hidden="true" strokeWidth={0} className={cn('size-2 shrink-0', DOTS[tone])} />
+    <span data-testid={`${testId}-status-text`} className={tone === 'danger' ? 'max-w-48 truncate text-destructive' : 'sr-only'}>{status.label}</span>
+  </span>;
 }
 
 /** The one top bar of every viewer, always a single row: title and facts, viewer controls, a status dot when something needs attention, Share, full screen, Close and the "…" menu. */
