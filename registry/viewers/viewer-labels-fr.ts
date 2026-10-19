@@ -45,6 +45,7 @@ export const frenchViewerLabels: ViewerLabels = {
   rich: 'Mise en forme',
   richText: 'Texte mis en forme',
   markdownSource: 'Source Markdown',
+  richUnavailable: reasons => `Texte mis en forme indisponible : ce document contient ${reasons}, qu’il ne pourrait pas conserver à l’identique`,
   document: 'Document',
   zoom: 'Zoom',
   zoomIn: 'Agrandir',

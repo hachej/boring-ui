@@ -11,6 +11,11 @@ Non-breaking: no export, option or type is removed, and a page that sets none of
 - `pi-app` now also needs the shadcn `popover` and `tooltip` components (installed with the item).
 - The `ask_user` question card is built from stock shadcn components only: a default `Card` while it asks, then a default `Item` recap (lucide check, the question as `ItemDescription`, the answer as `ItemTitle`; each answer of a form listed, a skipped one as a description). Props, behaviour and the answer sent to the agent are unchanged. Tests or journeys reading the old markup should select `[data-testid=question-answer]` (one per answer of a form, a skipped one with `data-skipped="true"`) instead of the "Your answer:" text or the `Badge`.
 - Built-in maquette viewer: the `pi-app` artifact panel now draws `*.maquette.json` files (a PM agent's mock-ups, format v1) with the new `maquette-viewer` item instead of showing their JSON. Nothing to change; an app kind for those files in `artifactKinds` still wins, and `maquetteKind` / `createMaquetteKind({ locale })` are exported to rename or translate it. Kind renderers also receive the page's URL `fragment`. See [registry/README.md](registry/README.md#maquette-viewer-maquette-viewer).
+- **Viewer header (Markdown editor and every viewer).** The save status is a dot in the default shadcn roles (primary saved, muted-foreground unsaved
+  or saving, destructive for a refused, conflicting or unconfirmed save); its words are the tooltip and the screen-reader label, and only a destructive status also shows its words. The Rich/Source
+  switch is an outlined icon-only segmented `ToggleGroup` whose pressed segment is filled and the other muted. The "Aa" pin-formatting-toolbar button is
+  removed: `formattingToolbar` (default `pinned`) decides. Selectors: `[data-testid=<id>-status]` keeps its `role=status`
+  and text content, now in `[data-testid=<id>-status-text]`; `ViewerToggleOption` adds `reason`.
 
 # Migrating to 0.4.1
 
