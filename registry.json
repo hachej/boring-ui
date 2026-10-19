@@ -804,6 +804,7 @@
         "dialog",
         "dropdown-menu",
         "popover",
+        "toggle",
         "tooltip"
       ],
       "files": [

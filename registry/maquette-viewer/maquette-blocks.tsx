@@ -63,7 +63,7 @@ export function MaquetteBlockView({ block, links, labels }: { readonly block: Ma
   const pins = links.pins(block);
   return <div data-testid="maquette-block" data-block={block.id} data-feedback-id={links.target(block)} className="relative min-w-0">
     <BlockBody block={block} links={links} labels={labels} />
-    {pins.length > 0 && <Badge data-testid="maquette-pin" data-feedback-ignore="" aria-hidden="true" className="absolute -top-2 -right-2 tabular-nums">{pins.join(' ')}</Badge>}
+    {pins.length > 0 && <Badge data-testid="maquette-pin" data-feedback-ignore="" aria-hidden="true" className="absolute -top-2 -left-2 tabular-nums">{pins.join(' ')}</Badge>}
   </div>;
 }
 

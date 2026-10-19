@@ -16,6 +16,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Toggle } from '@/components/ui/toggle';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { parseDiagram } from '../diagram-viewer/diagram';
 import type { Diagram } from '../diagram-viewer/diagram';
@@ -193,8 +194,8 @@ function Walkthrough({ maquette, labels, fragment, path, comments, read }: {
           : <span data-testid="maquette-position" className="min-w-10 text-center text-sm text-muted-foreground tabular-nums">{index + 1} / {count}</span>}
         <Button type="button" variant="ghost" size="icon-sm" className={ICON} aria-label={labels.next} data-testid="maquette-next" disabled={index >= count - 1} onClick={() => step(1)}><ChevronRightIcon aria-hidden="true" /></Button>
       </div>
-      {comments && <Tooltip><TooltipTrigger render={<Button type="button" variant="ghost" size="icon-sm" className={ICON} aria-label={labels.comment} aria-pressed={comments.active}
-        data-testid="maquette-comment" onClick={() => comments.point()} />}><MessageSquarePlusIcon aria-hidden="true" /></TooltipTrigger><TooltipContent>{labels.comment}</TooltipContent></Tooltip>}
+      {comments && <Tooltip><TooltipTrigger render={<Toggle className={ICON} aria-label={labels.comment} pressed={comments.active}
+        data-testid="maquette-comment" onPressedChange={() => comments.point()} />}><MessageSquarePlusIcon aria-hidden="true" /></TooltipTrigger><TooltipContent>{labels.comment}</TooltipContent></Tooltip>}
       {tour ? <Button type="button" variant="ghost" size="icon-sm" className={ICON} aria-label={labels.endTour} data-testid="maquette-end-tour" onClick={() => setWalk(previous => ({ ...previous, tour: null }))}><XIcon aria-hidden="true" /></Button>
         : (tours.length > 0 || workflow) && <DropdownMenu>
           <DropdownMenuTrigger render={<Button type="button" variant="ghost" size="icon-sm" className={ICON} aria-label={labels.more} data-testid="maquette-menu" />}><EllipsisIcon aria-hidden="true" /></DropdownMenuTrigger>
