@@ -509,9 +509,47 @@ A PM agent writes a mock-up as `<name>.maquette.json` and presents it. The `pi-a
 }
 ```
 
-Block types: `heading`, `text`, `button`, `link`, `input`, `select` (`items`), `badge`, `list` (`items`), `table` (`columns`, `rows`), `card`, `row`, `stack` (`children`), `chat` (`messages: [{ from, text }]`, `from: "user"` is the person), `document` (`lines`), `placeholder`; any other type is a grey dashed placeholder named by its `label` (or type) with its `note`. Words come from `label` (`text` and `title` are aliases); `children`/`blocks`, `items`/`options` and a transition's `on`/`label` are aliases too, and a state may be a bare string. Lists and strings are bounded (30 screens, 60 blocks per screen, nesting depth 6). Invalid JSON, or a file without screens, shows an inline error.
+Blocks may carry an optional `id` (named by comment pins). Block types: `heading`, `text`, `button`, `link`, `input`, `select` (`items`), `badge`, `list` (`items`), `table` (`columns`, `rows`), `card`, `row`, `stack` (`children`), `chat` (`messages: [{ from, text }]`, `from: "user"` is the person), `document` (`lines`), `placeholder`; any other type is a grey dashed placeholder named by its `label` (or type) with its `note`. Words come from `label` (`text` and `title` are aliases); `children`/`blocks`, `items`/`options` and a transition's `on`/`label` are aliases too, and a state may be a bare string. Lists and strings are bounded (30 screens, 60 blocks per screen, nesting depth 6). Invalid JSON, or a file without screens, shows an inline error.
 
 Differences from the PM skill (`boring-pm`): its `maquettes.md` describes no JSON format (it asks for Markdown scenarios and no static HTML). The format above is the one the PM's `present` tool validates (`maquetteProblem`: `{ title, start, screens: { <id>: { title, blocks } }, workflow?, cases?, nav? }`) and the Factory attaches, plus what v1 adds: `version`, a screen's `note`, `device`, and `cases[].steps`. A case's `path` keeps highlighting the workflow diagram. A block's `height` is no longer read.
+
+### Comment pins (with the `feedback` item)
+
+Pass the `feedback` item's `usePointComments(session)` as `AgentWorkspace comments` (or `createMaquetteKind({ comments })`) and the bar shows a
+comment icon (a `Toggle` with a tooltip). It enters the session's point mode on the current screen (the viewer's own bar stays usable, so the
+person can walk to another screen and pin there too); a tap on a block pins a note, the icon again is Done, and the notes wait in the
+composer's existing chip for Send. Each block sits in a box marked `data-feedback-id="maquette:<path>#screen=<screen id>&block=<block id>"`
+(the block's optional `id`, else its position: `2`, `2.0` for a child) and the screen is a `data-feedback-visible` region, so the report sent
+with the message names the maquette path, screen, block and the block's words. Pins of the current screen show as small numbered `Badge`s
+once point mode ends. Without a session `usePointComments` returns undefined and no icon shows. The privacy policy drops a marked id with three
+digits in a row or an `@`, so keep maquette paths and ids free of those for the pins to name them. `usePointComments` returns
+`{ active, point, pins: [{ number, target }] }`, built on the new `SessionNote.feedbackId`.
+
+## Diagram viewer (`diagram-viewer`)
+
+An agent writes boxes and arrows as `<name>.diagram.json` and presents it; the `pi-app` artifact panel draws it with `DiagramViewer` by default.
+Nodes sit in layers by distance from the first node, one numbered arrow per edge, with a legend under it that says what happens and who acts.
+Layers run left to right while they fit and top to bottom in a narrow box (a phone); a diagram still wider than its box scrolls inside it,
+never the page. No layout library: the layered layout is a breadth-first pass, so no dependency was added. `diagramKind` ("Diagram") and
+`createDiagramKind({ locale: 'fr' })` (« Diagramme ») follow the maquette kind; app kinds win. `DiagramView({ diagram, highlight, labels })`
+and `parseDiagram(textOrValue)` are exported: the maquette viewer draws its workflow with them.
+
+```jsonc
+{
+  "version": 1,                       // absent: read as 1; higher: a notice, and what can be read is drawn
+  "title": "Booking a class",
+  "nodes": [{ "id": "browse", "label": "Browse classes", "group": "find" }, "done"],   // a bare string is id and label
+  "edges": [{ "from": "browse", "to": "done", "label": "books", "by": "student" }],     // `on` is an alias of `label`
+  "groups": [{ "id": "find", "label": "Find" }],      // optional; a node's group is a muted second line in its box
+  "path": ["browse", "done"],                          // optional: drawn stronger, with the arrows between consecutive nodes
+  "note": "One short paragraph under the diagram."     // optional
+}
+```
+
+`states` and `transitions` are aliases of `nodes` and `edges`, so a maquette's `workflow` is a valid diagram. Lists and strings are bounded
+(40 nodes, 80 edges, 12 groups); an edge to an unknown node is dropped. Invalid JSON, or a file without nodes, shows an inline error. A maquette's
+`workflow` may instead be a relative `*.diagram.json` path: the viewer reads it from the maquette's folder through the kind renderer's `read`
+(`ArtifactKindViewProps.read`, passed by the artifact panel) when How it works opens.
 
 ## Task-list viewer
 

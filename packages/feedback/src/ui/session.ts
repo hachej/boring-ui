@@ -98,6 +98,8 @@ export interface SessionNote {
   readonly fallback?: string;
   /** The anchor's development source location (`src/settings/SaveBar.tsx:42`), when it has one. */
   readonly source?: string;
+  /** The `data-feedback-id` of the element, or else of its nearest marked ancestor, when the policy kept it: what a host viewer matches pins on. */
+  readonly feedbackId?: string;
   readonly from?: 'voice';
   /** Pinned while recording: its note is what was said there (empty until transcribed, or when nothing was). */
   readonly recorded?: true;
@@ -218,6 +220,16 @@ const MAX_TRAIL = 5000;
 interface NoteRecord { id: number; element?: Element; target?: number; label?: string; text: string; t: number; from?: 'voice'; recorded?: true }
 type TimedStep = { readonly t: number; readonly step: FeedbackStep } | { readonly t: number; readonly noteId: number };
 
+/** The anchor's own `data-feedback-id`, or the one its path starts from (`[data-feedback-id="…"]`: its nearest marked ancestor). */
+function markedId(signals: unknown): string | undefined {
+  if (signals === null || typeof signals !== 'object' || Array.isArray(signals)) return undefined;
+  const { feedbackId, path } = signals as { readonly feedbackId?: unknown; readonly path?: unknown };
+  if (typeof feedbackId === 'string') return feedbackId;
+  const base = Array.isArray(path) && typeof path[0] === 'string' ? /^\[data-feedback-id=(".*")\]$/.exec(path[0])?.[1] : undefined;
+  if (base === undefined) return undefined;
+  try { const value: unknown = JSON.parse(base); return typeof value === 'string' ? value : undefined; } catch { return undefined; }
+}
+
 /** Point mode is on (or finishing): the host hides its panel while this is true and shows it again when it turns false. */
 export function isPointing(state: Pick<FeedbackSessionSnapshot, 'mode' | 'phase'>): boolean {
   return state.mode === 'point' && (state.phase === 'active' || state.phase === 'processing');
@@ -299,8 +311,9 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
       const signals = anchor?.['signals'];
       const found = signals !== null && typeof signals === 'object' && !Array.isArray(signals) ? (signals as { readonly source?: unknown }).source : undefined;
       const source = typeof found === 'string' ? found : undefined;
+      const feedbackId = markedId(signals);
       return Object.freeze({ id: note.id, number: index + 1, text: note.text, label: labelOf(note), ...(anchor ? { fallback: String(anchor['fallback']) } : {}),
-        ...(source !== undefined ? { source } : {}), ...(note.from ? { from: note.from } : {}), ...(note.recorded ? { recorded: true as const } : {}) });
+        ...(source !== undefined ? { source } : {}), ...(feedbackId !== undefined ? { feedbackId } : {}), ...(note.from ? { from: note.from } : {}), ...(note.recorded ? { recorded: true as const } : {}) });
     });
     const open = bubble ? list.find(note => note.id === bubble!.noteId) : undefined;
     const { bubble: _bubble, problem: _problem, hover: _hover, ...base } = { ...state.getSnapshot(), ...change };
