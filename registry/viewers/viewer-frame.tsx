@@ -92,7 +92,7 @@ export interface ViewerToggleOption<T extends string> { readonly id: T; readonly
 
 /** A segmented control over the consumer's outlined ToggleGroup: the pressed segment is filled with a full-contrast icon, the others muted. */
 export function ViewerToggle<T extends string>({ label, value, options, onChange }: { readonly label: string; readonly value: T; readonly options: readonly ViewerToggleOption<T>[]; readonly onChange: (id: T) => void }) {
-  return <ToggleGroup aria-label={label} variant="outline" size="sm" spacing={0} value={[value]} onValueChange={values => {
+  return <ToggleGroup aria-label={label} variant="outline" size="sm" spacing={1} value={[value]} onValueChange={values => {
     const selected = options.find(option => option.id === values[0] && !option.disabled);
     if (selected && selected.id !== value) onChange(selected.id);
   }}>
