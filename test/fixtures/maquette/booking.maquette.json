@@ -1,80 +1,286 @@
 {
   "version": 1,
   "title": "Tidewater Studio: class booking",
+  "device": "phone",
   "start": "classes",
   "nav": [
-    { "label": "Classes", "goto": "classes" },
-    { "label": "My bookings", "goto": "confirmed" }
+    {
+      "label": "Classes",
+      "goto": "classes"
+    },
+    {
+      "label": "My bookings",
+      "goto": "confirmed"
+    }
   ],
   "screens": {
     "classes": {
       "title": "This week's classes",
+      "note": "Where a student lands: this week's classes and how many places are left, so nobody books a full class.",
       "blocks": [
-        { "type": "heading", "label": "Book a class" },
-        { "type": "text", "label": "Fictional pottery and drawing classes at the invented Tidewater Studio. Pick one to see its places." },
-        { "type": "row", "children": [
-          { "type": "select", "label": "Day", "items": ["Any day", "Tuesday", "Thursday", "Saturday"] },
-          { "type": "input", "label": "Search", "placeholder": "Wheel, glaze, sketch…" }
-        ] },
-        { "type": "table", "columns": ["Class", "When", "Places"], "rows": [
-          ["Wheel throwing, beginners", "Tue 18:30", "3 left"],
-          ["Glazing workshop", "Thu 19:00", "Full"],
-          ["Life drawing", "Sat 10:00", "6 left"]
-        ] },
-        { "type": "button", "label": "Wheel throwing, beginners", "goto": "class", "primary": true }
+        {
+          "type": "heading",
+          "label": "Book a class"
+        },
+        {
+          "type": "text",
+          "label": "Fictional pottery and drawing classes at the invented Tidewater Studio. Pick one to see its places."
+        },
+        {
+          "type": "row",
+          "children": [
+            {
+              "type": "select",
+              "label": "Day",
+              "items": [
+                "Any day",
+                "Tuesday",
+                "Thursday",
+                "Saturday"
+              ]
+            },
+            {
+              "type": "input",
+              "label": "Search",
+              "placeholder": "Wheel, glaze, sketch…"
+            }
+          ]
+        },
+        {
+          "type": "table",
+          "columns": [
+            "Class",
+            "When",
+            "Places"
+          ],
+          "rows": [
+            [
+              "Wheel throwing, beginners",
+              "Tue 18:30",
+              "3 left"
+            ],
+            [
+              "Glazing workshop",
+              "Thu 19:00",
+              "Full"
+            ],
+            [
+              "Life drawing",
+              "Sat 10:00",
+              "6 left"
+            ]
+          ]
+        },
+        {
+          "type": "button",
+          "label": "Wheel throwing, beginners",
+          "goto": "class",
+          "primary": true
+        }
       ]
     },
     "class": {
       "title": "Wheel throwing, beginners",
+      "note": "The student checks the time and books a place with a name and an email; no account is needed.",
       "blocks": [
-        { "type": "row", "children": [
-          { "type": "card", "label": "Tuesday 18:30 to 20:30", "children": [
-            { "type": "text", "label": "Two hours at the wheel with Mira, the fictional teacher. Clay and aprons included." },
-            { "type": "badge", "label": "3 places left" }
-          ] },
-          { "type": "studio map", "label": "Studio map", "note": "Where the wheel room is, from the street door" }
-        ] },
-        { "type": "input", "label": "Your name", "placeholder": "Alex Example" },
-        { "type": "input", "label": "Email", "placeholder": "alex@example.invalid" },
-        { "type": "select", "label": "Places", "items": ["1", "2", "3"] },
-        { "type": "row", "children": [
-          { "type": "button", "label": "Back to classes", "goto": "classes" },
-          { "type": "button", "label": "Book my place", "goto": "confirmed", "primary": true }
-        ] }
+        {
+          "type": "row",
+          "children": [
+            {
+              "type": "card",
+              "label": "Tuesday 18:30 to 20:30",
+              "children": [
+                {
+                  "type": "text",
+                  "label": "Two hours at the wheel with Mira, the fictional teacher. Clay and aprons included."
+                },
+                {
+                  "type": "badge",
+                  "label": "3 places left"
+                }
+              ]
+            },
+            {
+              "type": "studio map",
+              "label": "Studio map",
+              "note": "Where the wheel room is, from the street door"
+            }
+          ]
+        },
+        {
+          "type": "input",
+          "label": "Your name",
+          "placeholder": "Alex Example"
+        },
+        {
+          "type": "input",
+          "label": "Email",
+          "placeholder": "alex@example.invalid"
+        },
+        {
+          "type": "select",
+          "label": "Places",
+          "items": [
+            "1",
+            "2",
+            "3"
+          ]
+        },
+        {
+          "type": "row",
+          "children": [
+            {
+              "type": "button",
+              "label": "Back to classes",
+              "goto": "classes"
+            },
+            {
+              "type": "button",
+              "label": "Book my place",
+              "goto": "confirmed",
+              "primary": true
+            }
+          ]
+        }
       ]
     },
     "confirmed": {
       "title": "Booking confirmed",
+      "note": "The proof of booking, the practical reminders and a way to ask the studio a question.",
       "blocks": [
-        { "type": "heading", "label": "You are booked" },
-        { "type": "document", "label": "Confirmation TS-0417", "lines": ["Wheel throwing, beginners", "Tuesday 18:30, wheel room", "1 place, paid at the studio"] },
-        { "type": "list", "label": "Before you come", "items": ["Short nails help at the wheel", "Bring a towel", "Cancel up to 24 hours before"] },
-        { "type": "chat", "label": "Questions for the studio", "messages": [
-          { "from": "user", "text": "Can I come ten minutes late?" },
-          { "from": "studio", "text": "Yes, the wheel waits for you." }
-        ], "placeholder": "Write to the studio…" },
-        { "type": "link", "label": "Book another class", "goto": "classes" }
+        {
+          "type": "heading",
+          "label": "You are booked"
+        },
+        {
+          "type": "document",
+          "label": "Confirmation TS-0417",
+          "lines": [
+            "Wheel throwing, beginners",
+            "Tuesday 18:30, wheel room",
+            "1 place, paid at the studio"
+          ]
+        },
+        {
+          "type": "list",
+          "label": "Before you come",
+          "items": [
+            "Short nails help at the wheel",
+            "Bring a towel",
+            "Cancel up to 24 hours before"
+          ]
+        },
+        {
+          "type": "chat",
+          "label": "Questions for the studio",
+          "messages": [
+            {
+              "from": "user",
+              "text": "Can I come ten minutes late?"
+            },
+            {
+              "from": "studio",
+              "text": "Yes, the wheel waits for you."
+            }
+          ],
+          "placeholder": "Write to the studio…"
+        },
+        {
+          "type": "link",
+          "label": "Book another class",
+          "goto": "classes"
+        }
       ]
     }
   },
   "workflow": {
     "states": [
-      { "id": "browsing", "label": "Browsing" },
-      { "id": "requested", "label": "Place held" },
-      { "id": "confirmed", "label": "Confirmed" },
-      { "id": "attended", "label": "Attended" },
-      { "id": "cancelled", "label": "Cancelled" }
+      {
+        "id": "browsing",
+        "label": "Browsing"
+      },
+      {
+        "id": "requested",
+        "label": "Place held"
+      },
+      {
+        "id": "confirmed",
+        "label": "Confirmed"
+      },
+      {
+        "id": "attended",
+        "label": "Attended"
+      },
+      {
+        "id": "cancelled",
+        "label": "Cancelled"
+      }
     ],
     "transitions": [
-      { "from": "browsing", "to": "requested", "label": "picks a class and books", "by": "student" },
-      { "from": "requested", "to": "confirmed", "label": "email confirmation sent", "by": "app" },
-      { "from": "confirmed", "to": "attended", "label": "checks in at the door", "by": "teacher" },
-      { "from": "confirmed", "to": "cancelled", "label": "cancels 24 h before", "by": "student" },
-      { "from": "cancelled", "to": "browsing", "label": "books another class", "by": "student" }
+      {
+        "from": "browsing",
+        "to": "requested",
+        "label": "picks a class and books",
+        "by": "student"
+      },
+      {
+        "from": "requested",
+        "to": "confirmed",
+        "label": "email confirmation sent",
+        "by": "app"
+      },
+      {
+        "from": "confirmed",
+        "to": "attended",
+        "label": "checks in at the door",
+        "by": "teacher"
+      },
+      {
+        "from": "confirmed",
+        "to": "cancelled",
+        "label": "cancels 24 h before",
+        "by": "student"
+      },
+      {
+        "from": "cancelled",
+        "to": "browsing",
+        "label": "books another class",
+        "by": "student"
+      }
     ]
   },
   "cases": [
-    { "name": "Happy path", "path": ["browsing", "requested", "confirmed", "attended"] },
-    { "name": "Cancellation", "path": ["browsing", "requested", "confirmed", "cancelled"] }
+    {
+      "name": "First booking",
+      "steps": [
+        {
+          "screen": "classes",
+          "caption": "Alex, a fictional student, opens the studio's page and looks for a beginners' class."
+        },
+        {
+          "screen": "class",
+          "caption": "Alex picks Tuesday's wheel throwing, types a name and an email, and books one place."
+        },
+        {
+          "screen": "confirmed",
+          "caption": "Alex gets the confirmation and asks the studio whether arriving late is fine."
+        }
+      ],
+      "path": [
+        "browsing",
+        "requested",
+        "confirmed",
+        "attended"
+      ]
+    },
+    {
+      "name": "Cancellation",
+      "path": [
+        "browsing",
+        "requested",
+        "confirmed",
+        "cancelled"
+      ]
+    }
   ]
 }

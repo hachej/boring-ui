@@ -36,6 +36,9 @@ import { savedLabel, useSaved } from './use-saved';
 import { useAppText } from './app-labels';
 
 const NOOP = () => () => {};
+/** The page's URL fragment without `#`, followed through `hashchange`: artifact kinds read a place inside the artifact from it. */
+const subscribeHash = (change: () => void) => { globalThis.addEventListener?.('hashchange', change); return () => globalThis.removeEventListener?.('hashchange', change); };
+const readHash = () => (globalThis.location?.hash ?? '').replace(/^#/, '');
 const POLL_MS = 1500;
 const EXTENSION = /\.([A-Za-z0-9]{1,8})$/;
 
@@ -178,6 +181,7 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose }: {
   const path = artifact.target.resource.path;
   const kinds = useMemo(() => [...(options.kinds ?? []), maquetteKind], [options.kinds]);
   const kind = artifactKind(artifact, kinds);
+  const fragment = useSyncExternalStore(subscribeHash, readHash, () => '');
   const custom = kind?.renderer ? undefined : options.viewers?.[type];
   const create = useMemo(() => {
     const base = (snapshot: ResourceSnapshot) => ({ identity, client, instanceId: randomUUID(), epoch: 'workspace', source: { kind: 'saved' as const, snapshot } });
@@ -237,7 +241,7 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose }: {
   if (type === 'markdown' && controller) return body(document(<MarkdownPane controller={controller as MarkdownController} initialMode="rich" onAutosaveChange={registerAutosave} onBeforeLeaveChange={options.onBeforeLeaveChange} {...frame} />));
   if (type === 'html' && controller) return body(document(<HtmlPane controller={controller as HtmlController} {...(options.interactive ? { interactive: options.interactive } : {})} {...frame} />));
   const actions = { onCopy: () => copyText(text ?? ''), onDownload: () => downloadFile(filename, text ?? '', `${artifact.mediaType};charset=utf-8`) };
-  if (kind?.renderer) return body(<ViewerFrame {...frame} {...actions}><div data-testid="artifact-kind-view" className="min-h-0 flex-1 overflow-auto">{kind.renderer({ artifact, text: saved.text })}</div></ViewerFrame>);
+  if (kind?.renderer) return body(<ViewerFrame {...frame} {...actions}><div data-testid="artifact-kind-view" className="min-h-0 flex-1 overflow-auto">{kind.renderer({ artifact, text: saved.text, fragment })}</div></ViewerFrame>);
   if (type === 'code' && artifact.language === 'csv') return body(<ViewerFrame {...frame} {...actions}><div className="min-h-0 flex-1 overflow-auto"><CsvTable text={saved.text} /></div></ViewerFrame>);
   if (type === 'svg') return body(<SvgView text={saved.text} title={artifact.title} frame={{ ...frame, ...actions }} />);
   if (type === 'canvas') return body(<ViewerFrame {...frame}><p className="m-0 p-4 text-sm text-muted-foreground" role="status">{labels.noCanvasViewer}</p></ViewerFrame>);

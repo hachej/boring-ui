@@ -738,7 +738,7 @@
       "name": "maquette-viewer",
       "type": "registry:component",
       "title": "Maquette viewer",
-      "description": "MaquetteViewer and maquetteKind: a PM agent's *.maquette.json mock-up (format v1, versioned) as an overview (workflow diagram, every screen and where it leads) and a play mode that walks the screens through their goto links, drawn from the host's shadcn components. The pi-app artifact panel shows .maquette.json files with it by default; app artifactKinds win.",
+      "description": "MaquetteViewer and maquetteKind: a PM agent's *.maquette.json mock-up (format v1, versioned) one screen at a time, drawn from the host's shadcn components: a stepper (Previous, Next, arrow keys, swipe), goto links with a hint, Back and a breadcrumb, guided tours with captions, an optional phone or desktop frame, #screen=<id> deep links and a collapsed How it works workflow diagram. The pi-app artifact panel shows .maquette.json files with it by default; app artifactKinds win.",
       "dependencies": [
         "react@^19.0.0",
         "lucide-react@^1.51.0"
@@ -750,14 +750,14 @@
         "bubble",
         "button",
         "card",
+        "collapsible",
         "empty",
         "input",
         "item",
         "label",
         "native-select",
         "separator",
-        "table",
-        "toggle-group"
+        "table"
       ],
       "files": [
         {
@@ -785,7 +785,17 @@
           "type": "registry:component",
           "target": "components/maquette-viewer/maquette-viewer.tsx"
         }
-      ]
+      ],
+      "css": {
+        "@layer components": {
+          "[data-boring=\"maquette-viewer\"] [data-maquette=\"placeholder\"]": {
+            "border-width": "var(--default-border-width, 1px)",
+            "border-style": "dashed",
+            "border-color": "var(--border)",
+            "background-color": "var(--muted)"
+          }
+        }
+      }
     },
     {
       "name": "pi-app",

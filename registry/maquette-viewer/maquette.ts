@@ -46,8 +46,10 @@ export interface MaquetteFileV1 {
   readonly title?: string;
   /** The screen id play mode opens first; the first screen otherwise. */
   readonly start?: string;
-  /** Screens by id, in the order they are shown. */
-  readonly screens: Readonly<Record<string, { readonly title?: string; readonly blocks: readonly MaquetteBlockV1[] }>>;
+  /** The frame screens are drawn in: a light phone or desktop frame. Absent: the panel's width. */
+  readonly device?: 'phone' | 'desktop';
+  /** Screens by id, in the order the stepper walks them. `note` says why the screen exists and what the person does there. */
+  readonly screens: Readonly<Record<string, { readonly title?: string; readonly note?: string; readonly blocks: readonly MaquetteBlockV1[] }>>;
   /** The app's navigation bar, shown above every screen. */
   readonly nav?: readonly { readonly label: string; readonly goto: string }[];
   /** The workflow understood: states and the transitions between them (`on` is accepted as an alias of `label`). */
@@ -55,8 +57,11 @@ export interface MaquetteFileV1 {
     readonly states: readonly ({ readonly id: string; readonly label?: string } | string)[];
     readonly transitions: readonly { readonly from: string; readonly to: string; readonly label?: string; readonly on?: string; readonly by?: string }[];
   };
-  /** Named paths through the workflow's states, highlighted on demand. */
-  readonly cases?: readonly { readonly name: string; readonly path: readonly string[] }[];
+  /**
+   * Cases. `steps` makes a guided tour: its screens in order, each with a caption ("Camille receives the invoice and approves it").
+   * `path` (workflow state ids) highlights the case in the workflow diagram. A case may carry both.
+   */
+  readonly cases?: readonly { readonly name: string; readonly steps?: readonly { readonly screen: string; readonly caption?: string }[]; readonly path?: readonly string[] }[];
 }
 
 /** A block as the viewer draws it: every field read, bounded and defaulted. */
@@ -75,18 +80,20 @@ export interface MaquetteBlock {
   readonly value: string;
   readonly note: string;
 }
-export interface MaquetteScreen { readonly id: string; readonly title: string; readonly blocks: readonly MaquetteBlock[] }
+export interface MaquetteScreen { readonly id: string; readonly title: string; readonly note: string; readonly blocks: readonly MaquetteBlock[] }
 export interface MaquetteState { readonly id: string; readonly label: string }
 export interface MaquetteTransition { readonly from: string; readonly to: string; readonly label: string; readonly by: string }
 export interface MaquetteWorkflow { readonly states: readonly MaquetteState[]; readonly transitions: readonly MaquetteTransition[] }
+export interface MaquetteCase { readonly name: string; readonly steps: readonly { readonly screen: string; readonly caption: string }[]; readonly path: readonly string[] }
 /** A maquette ready to draw. */
 export interface Maquette {
   readonly title: string;
   readonly start: string;
+  readonly device: 'phone' | 'desktop' | undefined;
   readonly screens: readonly MaquetteScreen[];
   readonly nav: readonly { readonly label: string; readonly goto: string }[];
   readonly workflow: MaquetteWorkflow | null;
-  readonly cases: readonly { readonly name: string; readonly path: readonly string[] }[];
+  readonly cases: readonly MaquetteCase[];
 }
 
 /**
@@ -132,7 +139,7 @@ export function parseMaquette(input: unknown): MaquetteParse {
   if (version === undefined) return { kind: 'invalid', reason: 'shape', version: undefined };
   const screens = Object.entries(obj(spec['screens'])).slice(0, 30).map(([id, value]): MaquetteScreen => {
     const screen = obj(value);
-    return { id: id.slice(0, 60), title: str(screen['title'], 120) || id.slice(0, 60),
+    return { id: id.slice(0, 60), title: str(screen['title'], 120) || id.slice(0, 60), note: str(screen['note'], 300),
       blocks: arr(screen['blocks'] ?? screen['children']).map(item => block(item, 0)).filter((item): item is MaquetteBlock => item !== null) };
   });
   if (!screens.length) return { kind: 'invalid', reason: 'shape', version };
@@ -147,12 +154,16 @@ export function parseMaquette(input: unknown): MaquetteParse {
     const transition = obj(value);
     return { from: str(transition['from'], 60), to: str(transition['to'], 60), label: str(transition['label'] ?? transition['on'], 80), by: str(transition['by'], 40) };
   }).filter(transition => known.has(transition.from) && known.has(transition.to));
-  const start = str(spec['start'], 60);
+  const start = str(spec['start'], 60), device = spec['device'];
   return { kind: 'ok', version, maquette: {
-    title: str(spec['title'], 120), start: ids.has(start) ? start : screens[0]!.id, screens,
+    title: str(spec['title'], 120), start: ids.has(start) ? start : screens[0]!.id, device: device === 'phone' || device === 'desktop' ? device : undefined, screens,
     nav: arr(spec['nav'], 8).map(value => { const item = obj(value); return { label: str(item['label'], 40), goto: str(item['goto'], 60) }; }).filter(item => item.label && ids.has(item.goto)),
     workflow: states.length ? { states, transitions } : null,
-    cases: arr(spec['cases'], 10).map(value => { const item = obj(value); return { name: str(item['name'], 80), path: strings(item['path'], 20, 60).filter(id => known.has(id)) }; }).filter(item => item.name),
+    cases: arr(spec['cases'], 10).map((value): MaquetteCase => {
+      const item = obj(value);
+      const steps = arr(item['steps'], 20).map(step => { const raw = obj(step); return { screen: str(raw['screen'], 60), caption: str(raw['caption'], 300) }; }).filter(step => ids.has(step.screen));
+      return { name: str(item['name'], 80), steps, path: strings(item['path'], 20, 60).filter(id => known.has(id)) };
+    }).filter(item => item.name && (item.steps.length > 0 || item.path.length > 0)),
   } };
 }
 
@@ -166,3 +177,9 @@ export function linksOf(blocks: readonly MaquetteBlock[]): string[] {
 
 /** True for a path the built-in maquette kind draws: a `.maquette.json` file. */
 export const isMaquettePath = (path: string): boolean => /\.maquette\.json$/i.test(path);
+
+/** The screen id a URL fragment names (`#screen=<id>`, alone or among other `&`-separated keys), or undefined. */
+export function screenFromFragment(fragment: string | undefined): string | undefined {
+  if (!fragment) return undefined;
+  try { return new URLSearchParams(fragment.replace(/^#/, '')).get('screen') ?? undefined; } catch { return undefined; }
+}
