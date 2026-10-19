@@ -2,11 +2,14 @@ import type { ResourceClient } from './client.js';
 import type { ResourceAccess, ResourceLocator } from './contracts.js';
 import type { ResourceIdentity } from './remote-protocol.js';
 import type { WorkspaceKey } from './workspace-identity.js';
+import type { BlobItem, UnsupportedBlobPointer } from './blob.js';
 
 export interface FileEntry {
   readonly path: string;
   readonly kind: 'file' | 'directory';
   readonly size: number;
+  /** A pointer file (`*.blob.json`) as a listing shows it: the item it stands for, or its unsupported version. Set by `withBlobPointers` (`./blob`), never by the protocol. */
+  readonly blob?: BlobItem | UnsupportedBlobPointer;
 }
 
 export interface FilePage {
