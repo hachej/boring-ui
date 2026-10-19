@@ -35,6 +35,8 @@
     "dock-app": "node examples/dock-app/server.mjs",
     "dock-app:journey": "node examples/dock-app/journey.mjs",
     "app-shell": "node examples/app-shell/server.mjs",
+    "canvas-board": "node examples/canvas-board/server.mjs",
+    "canvas-board:journey": "node examples/canvas-board/journey.mjs",
     "app-shell:journey": "node examples/app-shell/journey.mjs",
     "app-shell:journey:workspace": "node examples/app-shell/journey-workspace.mjs",
     "app-shell:journey:documents": "node examples/app-shell/journey-documents.mjs",
