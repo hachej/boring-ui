@@ -37,9 +37,10 @@ export const artifactKey = (artifact: Pick<ArtifactDescriptor, 'id' | 'target'>)
 
 /**
  * What an artifact kind's renderer receives: the artifact and its text at the revision shown, and the page's URL fragment without `#`
- * (a link such as `#screen=2` can open a place inside the artifact; the panel follows its changes).
+ * (a link such as `#screen=2` can open a place inside the artifact; the panel follows its changes). `revision` is that shown revision, the
+ * one a conditional save is made against; `pinned` is true when the panel shows a pinned historical version, which is read-only.
  */
-export interface ArtifactKindViewProps { readonly artifact: ArtifactDescriptor; readonly text: string; readonly fragment?: string | undefined }
+export interface ArtifactKindViewProps { readonly artifact: ArtifactDescriptor; readonly text: string; readonly revision: string; readonly pinned: boolean; readonly fragment?: string | undefined }
 
 /**
  * An app's own kind of artifact (for example `.maquette.json` files): how its card and the panel name it, its icon, and optionally

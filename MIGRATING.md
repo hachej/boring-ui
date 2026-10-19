@@ -1,5 +1,9 @@
 # Migrating to 0.4.2
 
+## Unreleased (0.4.3)
+
+- `ArtifactKindViewProps` (the props an app's artifact kind `renderer` receives) gains `revision`, the revision the panel shows (the one a conditional save is made against), and `pinned`, true when the panel shows a pinned historical version, read-only. Renderers that ignore them need no change.
+
 0.4.2 is non-breaking: no export, option or type was removed, and a page that sets none of the new props renders as before. Upgrade the registry
 blocks with `npx boring-ui-blocks update --version 0.4.2` (`npx boring-ui-blocks check` first lists the copies you edited; see
 [registry/README.md](registry/README.md#updating-installed-blocks)), and bump the npm pins to `0.4.2`.
