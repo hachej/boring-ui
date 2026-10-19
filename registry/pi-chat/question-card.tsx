@@ -129,12 +129,13 @@ export function QuestionCard({ call, result, answer, questionId, live = false }:
 
   if (!open) {
     const values = question.items.length > 0 && current !== undefined ? splitFormAnswer(question.items, current) : undefined;
-    const signal = state === 'answered' ? <CheckIcon role="img" aria-label={labels.answered} className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
-      : state === 'sent' ? <Spinner aria-label={labels.waitingForAgent} className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
-      : <CircleSlashIcon role="img" aria-label={labels.notAnswered} className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />;
-    return <section data-testid="question-card" data-state={state} data-call-id={call.id} aria-label={labels.question}
-      className={cn('my-1 flex min-w-0 flex-col gap-1 border-s ps-3 text-start', wasOpen.current && 'transition-[opacity,translate] duration-200 ease-out starting:translate-y-1 starting:opacity-0 motion-reduce:transition-none')}>
-      <p className={cn(textClass, 'flex items-start gap-1.5 text-xs/5 text-muted-foreground')}>{signal}<span data-testid="question-text">{question.question || labels.askedQuestion}</span></p>
+    const signal = state === 'answered' ? <CheckIcon role="img" aria-label={labels.answered} className="size-3.5" />
+      : state === 'sent' ? <Spinner aria-label={labels.waitingForAgent} />
+      : <CircleSlashIcon role="img" aria-label={labels.notAnswered} className="size-3.5" />;
+    return <Item variant="muted" size="sm" render={<section />} data-testid="question-card" data-state={state} data-call-id={call.id} aria-label={labels.question}
+      className={cn('my-1 w-fit max-w-full min-w-0 flex-col items-stretch gap-1 text-start', wasOpen.current && 'transition-[opacity,translate] ease-out starting:translate-y-1 starting:opacity-0 motion-reduce:transition-none')}>
+      <p className={cn(textClass, 'flex items-start gap-1.5 text-xs/5 text-muted-foreground')}>
+        <span className="flex h-5 shrink-0 items-center [&_svg]:size-3.5">{signal}</span><span data-testid="question-text">{question.question || labels.askedQuestion}</span></p>
       <div className="flex min-w-0 flex-col gap-1 ps-5">
         {values ? <ol className="m-0 flex list-none flex-col gap-2 p-0">
           {question.items.map((item, i) => <li key={i} data-testid="question-answer-item" className="flex min-w-0 flex-col">
@@ -146,14 +147,14 @@ export function QuestionCard({ call, result, answer, questionId, live = false }:
           <span data-testid="question-answer" className="whitespace-pre-line">{current}</span></p>}
         {state === 'failed' && settled && 'failure' in settled && <p role="alert" className={cn(textClass, 'text-sm text-muted-foreground')}>{settled.failure}</p>}
       </div>
-    </section>;
+    </Item>;
   }
 
   return <Item variant="outline" size="sm" render={<section />} data-testid="question-card" data-state={state} data-call-id={call.id} aria-label={labels.question}
     className="my-1 flex-col items-stretch gap-3 text-start">
     <ItemContent className="min-w-0 gap-1">
-      <ItemDescription className="flex items-center gap-1.5 text-xs"><MessageCircleQuestionIcon aria-hidden="true" className="size-3.5 shrink-0" />{labels.questionForYou}</ItemDescription>
-      <ItemTitle data-testid="question-text" className="w-full line-clamp-none text-pretty [overflow-wrap:anywhere]">{question.question || labels.askedQuestion}</ItemTitle>
+      <ItemDescription className="flex items-center gap-1.5"><MessageCircleQuestionIcon aria-hidden="true" className="size-3.5 shrink-0" />{labels.questionForYou}</ItemDescription>
+      <ItemTitle data-testid="question-text" className="w-full line-clamp-none [overflow-wrap:anywhere]">{question.question || labels.askedQuestion}</ItemTitle>
     </ItemContent>
     {question.items.length > 0 ? <form data-testid="question-form" onSubmit={onSubmitForm} className="flex flex-col gap-4">
       {question.items.map((item, i) => <div key={i} role="group" aria-labelledby={`${formId}-${i}`} data-testid="question-item" className="flex min-w-0 flex-col gap-2">
