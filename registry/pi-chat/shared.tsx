@@ -2,58 +2,81 @@
 
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
+import { channelAvatarStates } from '@hachej/boring-ui-kit/shared-chat';
 import type { Card as Request, ChannelMessage, ChatController, Member, SharedChatState } from '@hachej/boring-ui-kit/shared-chat';
-import { CircleIcon, Trash2Icon, XIcon } from 'lucide-react';
+import { CircleIcon, ReplyIcon, Trash2Icon, XIcon } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarGroup, AvatarGroupCount, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Spinner } from '@/components/ui/spinner';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { ActivityBlock } from './activity';
 import type { Row } from './rows';
 import { relativeTime } from './history';
 import { useChatText } from './labels';
 
-export function MemberAvatar({ member }: { readonly member: Member }) {
-  return <Avatar data-testid="member-avatar" aria-label={member.name}>
+function usePhone() {
+  const [phone, setPhone] = useState(() => globalThis.matchMedia?.('(max-width: 640px)').matches === true);
+  useEffect(() => { const media = globalThis.matchMedia?.('(max-width: 640px)'); if (!media) return; const change = () => setPhone(media.matches); media.addEventListener('change', change); return () => media.removeEventListener('change', change); }, []);
+  return phone;
+}
+const latestCard = (shared: SharedChatState, id: string) => shared.messages.findLast(message => message.author === id && message.card)?.card;
+const memberOf = (shared: SharedChatState, id: string): Member => shared.members.find(member => member.id === id) ?? { id, name: id, kind: 'person' };
+export function sharedQuote(shared: SharedChatState, id: string | undefined) {
+  const message = shared.messages.find(message => message.id === id);
+  return message ? { message, author: memberOf(shared, message.author) } : undefined;
+}
+
+export function MemberAvatar({ member, card, interactive = true }: { readonly member: Member; readonly card?: Request | undefined; readonly interactive?: boolean }) {
+  const phone = usePhone();
+  const state = member.kind === 'agent' && card?.state && Object.hasOwn(channelAvatarStates, card.state) ? channelAvatarStates[card.state] ?? 'neutral' : 'neutral';
+  const working = state === 'working' || state === 'thinking';
+  const tone = state === 'blocked' ? 'text-destructive' : state === 'waiting' ? 'text-muted-foreground' : 'text-primary';
+  const avatar = <Avatar data-testid="member-avatar" aria-label={member.name} data-state={state}>
     {member.avatarUrl && <AvatarImage src={member.avatarUrl} alt={member.name} />}
     <AvatarFallback>{member.name.replace(/[()]/g, '').split(/\s+/).slice(0, 2).map(word => word[0]).join('').toUpperCase()}</AvatarFallback>
+    {state !== 'neutral' && <span data-testid="avatar-indicator" data-state={state} className={`absolute right-0 bottom-0 flex items-center gap-0.5 ${tone}`}>
+      {working && <Spinner />}<CircleIcon className="size-2 fill-current" aria-hidden="true" />
+    </span>}
   </Avatar>;
+  if (member.kind !== 'agent' || !card || !interactive) return avatar;
+  const trigger = <Button variant="ghost" size="icon" data-testid={`agent-avatar-${member.id}`} data-state={state} aria-label={`${member.name}: ${card.line}`}>{avatar}</Button>;
+  return phone
+    ? <Popover><PopoverTrigger render={trigger} /><PopoverContent className="max-w-[calc(100vw-1rem)]">{card.line}</PopoverContent></Popover>
+    : <Tooltip><TooltipTrigger render={trigger} /><TooltipContent>{card.line}</TooltipContent></Tooltip>;
 }
 function MemberBadge({ member }: { readonly member: Member }) {
   const { labels } = useChatText();
-  return member.kind === 'person' ? null : <Badge data-testid="author-badge" variant={member.kind === 'admin' ? 'secondary' : 'default'}>{member.kind === 'admin' ? labels.sharedAdmin : labels.sharedAgent}</Badge>;
+  return member.kind === 'person' ? null : <Badge data-testid="author-badge" variant="secondary">{member.kind === 'admin' ? labels.sharedAdmin : labels.sharedAgent}</Badge>;
 }
 function Dot({ value }: { readonly value: SharedChatState['status'] | Member['presence'] }) {
   return <CircleIcon aria-hidden="true" className={`size-2 fill-current ${value === 'live' || value === 'here' ? 'text-primary' : value === 'offline' ? 'text-destructive' : 'text-muted-foreground'}`} />;
 }
 
-/** Mounted in PiChat's header or AgentWorkspace's existing embedded bar, never a new navigation panel. */
+/** Mounted in the existing bar. The source owns membership and visibility, including the admin. */
 export function SharedMembers({ controller }: { readonly controller: ChatController }) {
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const { labels } = useChatText();
   const [open, setOpen] = useState(false);
-  const [phone, setPhone] = useState(() => globalThis.matchMedia?.('(max-width: 640px)').matches === true);
-  useEffect(() => { const media = globalThis.matchMedia?.('(max-width: 640px)'); if (!media) return; const change = () => setPhone(media.matches); media.addEventListener('change', change); return () => media.removeEventListener('change', change); }, []);
+  const phone = usePhone();
   const shared = state.shared;
   if (!shared) return null;
   const name = shared.status === 'live' ? labels.live : shared.status === 'reconnecting' ? labels.reconnecting : labels.sharedOffline;
   const content = <ul data-testid="member-list" className="m-0 flex min-w-0 list-none flex-col gap-3 p-4">
     {shared.members.map(member => <li key={member.id} data-member-id={member.id} className="flex min-w-0 items-center gap-2">
-      <MemberAvatar member={member} /><span className="min-w-0 flex-1 truncate">{member.name}</span>
+      <MemberAvatar member={member} card={latestCard(shared, member.id)} /><span className="min-w-0 flex-1 truncate">{member.name}</span>
       <Badge variant="secondary">{member.role ?? member.kind}</Badge>
       <span data-testid="presence" data-presence={member.presence ?? 'away'} role="img" aria-label={member.presence === 'here' ? labels.sharedHere : labels.sharedAway}><Dot value={member.presence} /></span>
     </li>)}
   </ul>;
-  const trigger = <Button variant="ghost" data-testid="shared-members" aria-label={labels.sharedMemberCount(shared.members.length)} aria-haspopup="dialog" aria-expanded={open}>
-    <AvatarGroup>{shared.members.slice(0, phone ? 1 : 3).map(member => <MemberAvatar key={member.id} member={member} />)}<AvatarGroupCount>{shared.members.length}</AvatarGroupCount></AvatarGroup>
-  </Button>;
+  const stack = <AvatarGroup>{shared.members.slice(0, phone ? 1 : 3).map(member => <MemberAvatar key={member.id} member={member} card={latestCard(shared, member.id)} interactive={false} />)}<AvatarGroupCount>{shared.members.length}</AvatarGroupCount></AvatarGroup>;
+  const trigger = <Button variant="ghost" data-testid="shared-members" aria-label={labels.sharedMemberCount(shared.members.length)} aria-haspopup="dialog" aria-expanded={open}>{stack}</Button>;
   return <div className="flex shrink-0 items-center gap-2">
     <Tooltip><TooltipTrigger render={<span tabIndex={0} data-testid="shared-status" data-status={shared.status} role="img" aria-label={name}><Dot value={shared.status} /></span>} /><TooltipContent>{name}</TooltipContent></Tooltip>
-    {phone ? <>{<Button variant="ghost" data-testid="shared-members" aria-label={labels.sharedMemberCount(shared.members.length)} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}>
-      <AvatarGroup>{shared.members.slice(0, 1).map(member => <MemberAvatar key={member.id} member={member} />)}<AvatarGroupCount>{shared.members.length}</AvatarGroupCount></AvatarGroup>
-    </Button>}
+    {phone ? <><Button variant="ghost" data-testid="shared-members" aria-label={labels.sharedMemberCount(shared.members.length)} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}>{stack}</Button>
       {open && <Drawer open onOpenChange={setOpen} showSwipeHandle><DrawerContent className="pi-chat max-h-[80dvh]"><div className="flex shrink-0 items-center justify-between p-4"><DrawerTitle>{labels.sharedMembers}</DrawerTitle><Button variant="ghost" size="icon" data-testid="shared-members-close" aria-label={labels.close} onClick={() => setOpen(false)}><XIcon aria-hidden="true" /></Button></div><div className="min-h-0 overflow-y-auto">{content}</div></DrawerContent></Drawer>}</>
       : <Popover open={open} onOpenChange={setOpen}><PopoverTrigger render={trigger} /><PopoverContent role="dialog" aria-label={labels.sharedMembers} align="end" className="max-w-[calc(100vw-1rem)]">{content}</PopoverContent></Popover>}
   </div>;
@@ -69,21 +92,41 @@ function RequestCard({ card, action }: { readonly card: Request; readonly action
   </Card>;
 }
 
-/** Shared metadata wraps the same user bubble or assistant Markdown/streaming row. No author means the native path is untouched. */
-export function SharedMessage({ shared, children, remove, canRemove, openFile }: {
+/** Both the composer chip and the timeline quote use this one parent reference. No thread or routing policy. */
+export function ReplyQuote({ targetId, quote, onRemove }: { readonly targetId: string; readonly quote: ReturnType<typeof sharedQuote>; readonly onRemove?: () => void }) {
+  const { labels } = useChatText();
+  const text = quote?.message.removed ? labels.sharedRemoved : quote?.message.card?.title ?? quote?.message.text?.split(/\r?\n/)[0] ?? labels.sharedEarlierMessage;
+  return <div data-testid={onRemove ? 'composer-reply' : 'message-quote'} className="flex w-full min-w-0 items-center gap-1">
+    <Button variant="ghost" className="min-w-0 max-w-full justify-start" onClick={event => {
+      const chat = event.currentTarget.closest('[data-boring=pi-chat]');
+      const parent = [...(chat?.querySelectorAll<HTMLElement>('[data-shared-message]') ?? [])].find(element => element.dataset.sharedMessage === targetId);
+      parent?.scrollIntoView({ block: 'center', behavior: 'instant' });
+    }}><ReplyIcon aria-hidden="true" /><span className="truncate text-muted-foreground">{quote ? `${quote.author.name}: ${text}` : text}</span></Button>
+    {onRemove && <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon" data-testid="composer-reply-remove" aria-label={labels.sharedCancelReply} onClick={onRemove}><XIcon aria-hidden="true" /></Button>} /><TooltipContent>{labels.sharedCancelReply}</TooltipContent></Tooltip>}
+  </div>;
+}
+
+/** Participant metadata surrounds the existing bubbles, Markdown, cards and tool trace. */
+export function SharedMessage({ shared, children, remove, canRemove, openFile, onReply }: {
   readonly shared: NonNullable<Row['shared']>; readonly children: ReactNode;
   readonly remove?: ((message: ChannelMessage) => Promise<void>) | undefined;
   readonly canRemove?: ((message: ChannelMessage) => boolean) | undefined;
   readonly openFile?: ((path: string) => void) | undefined;
+  readonly onReply?: ((messageId: string) => void) | undefined;
 }) {
   const { labels } = useChatText();
   const [error, setError] = useState(false);
   const { message, author, first, own } = shared;
   return <div data-shared-message={message.id} className="flex min-w-0 flex-col gap-2">
-    {!own && first && <div className="flex min-w-0 items-center gap-2"><MemberAvatar member={author} /><span data-testid="message-author" className="min-w-0 truncate">{author.name}</span><MemberBadge member={author} /></div>}
+    {!own && first && <div className="flex min-w-0 items-center gap-2"><MemberAvatar member={author} card={shared.latestCard} /><span data-testid="message-author" className="min-w-0 truncate">{author.name}</span><MemberBadge member={author} /></div>}
+    {message.replyTo && <ReplyQuote targetId={message.replyTo} quote={shared.quote} />}
     {message.removed ? <p className="text-muted-foreground">{labels.sharedRemoved}</p> : children}
+    {!message.removed && (message.streaming || message.steps?.length) && author.kind === 'agent' && <ActivityBlock participant={author.name} steps={(message.steps ?? []).map((step, index) => ({ kind: 'host', key: `${message.id}:step:${index}`, step }))} state={message.streaming ? 'running' : 'done'} streaming={Boolean(message.streaming)} developer={false} />}
     {!message.removed && message.attachments?.map(file => <Button key={file.path} variant="outline" disabled={!openFile} onClick={() => openFile?.(file.path)} className="max-w-full justify-start"><span className="truncate">{file.title ?? file.path}</span></Button>)}
-    {!message.removed && remove && canRemove?.(message) && <Button variant="ghost" size="icon" aria-label={labels.delete} onClick={() => { void remove(message).catch(() => setError(true)); }}><Trash2Icon aria-hidden="true" /></Button>}
+    {!message.removed && <div className="flex items-center gap-1">
+      {onReply && (author.kind === 'agent' || message.card) && <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon" data-testid="shared-reply" aria-label={labels.sharedReply} onClick={() => onReply(message.id)}><ReplyIcon aria-hidden="true" /></Button>} /><TooltipContent>{labels.sharedReply}</TooltipContent></Tooltip>}
+      {remove && canRemove?.(message) && <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon" aria-label={labels.delete} onClick={() => { void remove(message).catch(() => setError(true)); }}><Trash2Icon aria-hidden="true" /></Button>} /><TooltipContent>{labels.delete}</TooltipContent></Tooltip>}
+    </div>}
     {error && <p role="alert">{labels.actionFailedShort}</p>}
   </div>;
 }
@@ -91,8 +134,8 @@ export function SharedMessage({ shared, children, remove, canRemove, openFile }:
 export function sharedRows(shared: SharedChatState, action: (card: Request) => Promise<void>): Row[] {
   return shared.messages.map((message, index): Row => {
     const key = `shared:${message.id}`, own = message.author === shared.me.id;
-    const author = shared.members.find(member => member.id === message.author) ?? { id: message.author, name: message.author, kind: 'person' };
-    const metadata = { message, author, own, first: index === 0 || shared.messages[index - 1]?.author !== message.author };
+    const author = memberOf(shared, message.author);
+    const metadata = { message, author, own, first: index === 0 || shared.messages[index - 1]?.author !== message.author, latestCard: latestCard(shared, message.author), quote: sharedQuote(shared, message.replyTo) };
     if (message.card) return { key, type: 'card', card: { content: <RequestCard card={message.card} action={action} /> }, shared: metadata };
     if (own) return { key, type: 'user', message: { role: 'user', content: message.text ?? '', timestamp: Date.parse(message.at) }, shared: metadata };
     return { key, type: 'assistant', text: message.text ?? '', streaming: Boolean(message.streaming), parts: message.text ? [{ kind: 'text', key: `${key}:text`, text: message.text }] : [], shared: metadata };

@@ -3,6 +3,7 @@ import { randomUUID } from '@hachej/boring-files/platform';
 import { createChatOutbox } from './chat-outbox.js';
 import type { Card, ChannelEvent, ChannelMessage, ChannelSource, Member, SharedChatState } from './channel-source.js';
 export type * from './channel-source.js';
+export { channelAvatarStates } from './channel-source.js';
 
 export type SharedChatSnapshot = Omit<NativeChatSnapshot, 'conversationId' | 'send' | 'shared'> & {
   readonly conversationId: string;
@@ -17,6 +18,7 @@ export type ChatController = Pick<NativeChatController, 'subscribe' | 'setText' 
   readonly reconcile: () => Promise<unknown>;
   readonly retrySameRequest: () => Promise<unknown>;
   readonly setFiles?: (files: readonly File[]) => void;
+  readonly setReplyTo?: (messageId: string | undefined) => void;
   readonly action?: (card: Card) => Promise<void>;
   readonly remove?: ((message: ChannelMessage) => Promise<void>) | undefined;
   readonly canRemove?: (message: ChannelMessage) => boolean;
@@ -27,7 +29,7 @@ export function createSharedChat(source: ChannelSource, options: { readonly conv
   const id = options.conversationId, limit = options.limit ?? 60;
   let snapshot: SharedChatSnapshot = Object.freeze<SharedChatSnapshot>({ identity: { runtimeId: 'shared-chat', scopeId: id, principalId: source.me.id }, conversationId: id,
     connection: { kind: 'idle' }, draft: { text: '', attachments: [], version: 0 }, outbox: [], history: { kind: 'idle' }, send: { kind: 'idle' }, stop: 'idle', disposed: false,
-    shared: { me: structuredClone(source.me), members: [], messages: [], files: [], status: 'reconnecting' } });
+    shared: { me: structuredClone(source.me), members: [], messages: [], files: [], replyTo: undefined, status: 'reconnecting' } });
   const listeners = new Set<() => void>();
   const outbox = createChatOutbox<Parameters<ChannelSource['send']>[0], ChannelMessage>();
   let unsubscribe: (() => void) | undefined, opening: Promise<void> | undefined, paging: Promise<void> | undefined, before: string | undefined;
@@ -92,6 +94,12 @@ export function createSharedChat(source: ChannelSource, options: { readonly conv
     else if (event.type === 'delta' && event.conversationId === id) {
       const message = snapshot.shared.messages.find(message => message.id === event.messageId);
       if (message) { changed.set(message.id, revision); merge([{ ...message, text: (message.text ?? '') + event.text, streaming: true }]); }
+    } else if (event.type === 'step' && event.conversationId === id && Number.isSafeInteger(event.index) && event.index >= 0) {
+      const message = snapshot.shared.messages.find(message => message.id === event.messageId);
+      if (message) {
+        const steps = [...(message.steps ?? [])]; steps[event.index] = { ...event.step };
+        changed.set(message.id, revision); merge([{ ...message, steps }]);
+      }
     } else if (event.type === 'presence') {
       publish({ shared: { ...snapshot.shared, members: snapshot.shared.members.map(member => {
         const update = event.members.find(update => update.id === member.id);
@@ -113,6 +121,7 @@ export function createSharedChat(source: ChannelSource, options: { readonly conv
     setText: (text: string) => { active(); publish({ draft: { ...snapshot.draft, text, version: snapshot.draft.version + 1 } }); },
     setAttachments: (attachments: ChatDraft['attachments']) => { active(); publish({ draft: { ...snapshot.draft, attachments, version: snapshot.draft.version + 1 } }); },
     setFiles: (files: readonly File[]) => { active(); publish({ shared: { ...snapshot.shared, files: [...files] } }); },
+    setReplyTo: (messageId: string | undefined) => { active(); publish({ shared: { ...snapshot.shared, replyTo: messageId } }); },
     clearHistory: () => { active(); },
     loadEarlier: (): Promise<void> => {
       active();
@@ -152,9 +161,9 @@ export function createSharedChat(source: ChannelSource, options: { readonly conv
       if (selected.attachments?.length) throw new Error('Use shared file attachments, not native image payloads');
       const clientId = randomUUID();
       const mentions = snapshot.shared.members.filter(member => hasMemberMention(selected.text, member)).map(member => member.id);
-      const payload = { conversationId: id, text: selected.text, mentions, clientId, ...(files.length ? { attachments: files } : {}) };
+      const payload = { conversationId: id, text: selected.text, mentions, clientId, ...(snapshot.shared.replyTo ? { replyTo: snapshot.shared.replyTo } : {}), ...(files.length ? { attachments: files } : {}) };
       const result = outbox.enqueue(clientId, payload);
-      publish({ shared: { ...snapshot.shared, files: [] }, ...(!input ? { draft: { text: '', attachments: [], version: snapshot.draft.version + 1 } } : {}), send: { kind: 'submitting' } });
+      publish({ shared: { ...snapshot.shared, files: [], replyTo: undefined }, ...(!input ? { draft: { text: '', attachments: [], version: snapshot.draft.version + 1 } } : {}), send: { kind: 'submitting' } });
       sendOne(clientId, payload);
       try { const message = await result; publish({ send: { kind: 'admitted' } }); return message; }
       catch { return undefined; }

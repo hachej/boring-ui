@@ -43,12 +43,12 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
     assert.ok(q('[data-shared-message="one"] [data-testid=member-avatar]'));
     assert.equal(q('[data-shared-message="two"] [data-testid=message-author]'), null);
     assert.equal(q('[data-shared-message="four"] [data-testid=author-badge]')?.textContent, 'Admin');
-    assert.equal(q('[data-shared-message="five"] [data-testid=author-badge]')?.textContent, 'App');
+    assert.equal(q('[data-shared-message="five"] [data-testid=author-badge]')?.textContent, 'Agent');
     assert.ok(q('[data-shared-message="three"] [data-testid=user-text]'));
     assert.equal(q('[data-shared-message="three"] [data-testid=message-author]'), null);
   });
   await t.test('request action and replacement through the timeline', async () => {
-    await act(async () => q('[data-shared-message="six"] button').click());
+    await act(async () => q('[data-shared-message="six"] [data-testid=request-card] button').click());
     assert.deepEqual(source.actions, [{ conversationId: 'main', requestId: 'review-plan', actionId: 'review' }]);
     await act(async () => source.emit({ type: 'message', message: { ...sharedChatSeed.messages.find(message => message.id === 'six'), card: { requestId: 'review-plan', title: 'Review complete', line: 'Accepted by the host.' } } }));
     assert.match(q('[data-shared-message="six"]').textContent, /Review complete/);
@@ -103,6 +103,92 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
     assert.equal(source.sends.at(-1).clientId, first.clientId);
     assert.equal(controller.getSnapshot().shared.messages.filter(message => message.clientId === first.clientId).length, 1);
     assert.match(q('[data-shared-message=gap]').textContent, /Written while disconnected/);
+  });
+  await t.test('agents lead the existing mention picker', async () => {
+    const textarea = q('textarea');
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(textarea, '@');
+      textarea.setSelectionRange(1, 1); textarea.dispatchEvent(new window.Event('input', { bubbles: true }));
+    });
+    await settle(() => document.querySelectorAll('[data-testid=mention-item]').length === 5);
+    assert.deepEqual([...document.querySelectorAll('[data-testid=mention-item]')].map(item => item.dataset.path).slice(0, 2), ['pm', 'worker']);
+    await act(async () => textarea.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+  });
+  await t.test('agent messages are participant bubbles; traces replace indexed steps and stay per-agent', async () => {
+    const at = '2026-10-20T12:00:00Z';
+    const plan = { id: 'pm-plan', conversationId: 'main', author: 'pm', at, text: 'Je vais ajouter un export PDF.\nJe vérifierai le document.', streaming: true, steps: [] };
+    const worker = { id: 'worker-plan', conversationId: 'main', author: 'worker', at, text: 'Je regarde vos fichiers.', streaming: true, steps: [] };
+    await act(async () => {
+      source.emit({ type: 'message', message: plan }); source.emit({ type: 'message', message: worker });
+      source.emit({ type: 'step', messageId: plan.id, conversationId: 'main', index: 0, step: { label: 'Lire les fichiers', status: 'running', detail: 'read docs/fictional.md' } });
+      source.emit({ type: 'step', messageId: worker.id, conversationId: 'main', index: 0, step: { label: 'Préparer les données', status: 'running' } });
+    });
+    const pm = () => q('[data-shared-message=pm-plan]'); const builder = () => q('[data-shared-message=worker-plan]');
+    assert.match(pm().textContent, /PM is writing/);
+    assert.equal(pm().querySelector('[data-testid=activity-step]').dataset.status, 'running');
+    assert.match(pm().querySelector('[data-testid=activity-steps]').textContent, /read docs\/fictional.md/);
+    assert.match(builder().textContent, /Préparer les données/);
+    assert.doesNotMatch(builder().textContent, /Lire les fichiers/);
+    assert.equal(pm().querySelector('button[aria-label="Copy response"]'), null, 'no assistant-panel actions on a participant');
+    const existing = pm();
+    await act(async () => {
+      source.emit({ type: 'delta', messageId: plan.id, conversationId: 'main', text: '\nLe plan est partagé.' });
+      source.emit({ type: 'step', messageId: plan.id, conversationId: 'main', index: 0, step: { label: 'Fichiers lus', status: 'done', detail: 'read docs/fictional.md' } });
+      source.emit({ type: 'step', messageId: plan.id, conversationId: 'main', index: 1, step: { label: 'Vérifier le PDF', status: 'running' } });
+    });
+    assert.equal(pm(), existing); assert.match(pm().textContent, /Le plan est partagé/);
+    assert.deepEqual([...pm().querySelectorAll('[data-testid=activity-step]')].map(step => step.dataset.status), ['completed', 'running']);
+    assert.equal(builder().querySelectorAll('[data-testid=activity-step]').length, 1);
+    const complete = { ...controller.getSnapshot().shared.messages.find(message => message.id === plan.id), streaming: false };
+    await act(async () => source.emit({ type: 'message', message: complete }));
+    assert.equal(pm().querySelector('[data-testid=activity]').dataset.open, 'false');
+    assert.equal(pm().querySelector('[data-testid=activity-label]').textContent, '2 steps');
+    await act(async () => pm().querySelector('[data-testid=activity] button').click());
+    assert.equal(pm().querySelector('[data-testid=activity]').dataset.open, 'true');
+    assert.match(pm().querySelector('[data-testid=activity-steps]').textContent, /read docs\/fictional.md/);
+  });
+  await t.test('one card becomes the result, quoted Reply is sent and the parent quote scrolls to the same card', async () => {
+    const card = { ...sharedChatSeed.messages.find(message => message.id === 'six'), at: '2026-10-20T12:02:00Z', card: { requestId: 'review-plan', title: 'Export PDF', line: 'Construction en cours', state: 'building', action: { id: 'progress', label: 'Voir la demande' } } };
+    await act(async () => source.emit({ type: 'message', message: card }));
+    const old = q('[data-shared-message=six]');
+    const ready = { ...card, card: { ...card.card, state: 'preview', line: 'Une version à essayer', action: { id: 'try', label: 'Essayer cette version' } } };
+    await act(async () => source.emit({ type: 'message', message: ready }));
+    assert.equal(q('[data-shared-message=six]'), old);
+    assert.equal(document.querySelectorAll('[data-shared-message=six] [data-testid=request-card]').length, 1);
+    assert.match(old.textContent, /Une version à essayer/); assert.match(old.textContent, /Essayer cette version/);
+    await act(async () => old.querySelector('[data-testid=shared-reply]').click());
+    assert.match(q('[data-testid=composer-reply]').textContent, /PM.*Export PDF/);
+    await act(async () => controller.setText('Ajoute la date, merci.'));
+    await act(async () => q('[data-testid=composer-submit]').click());
+    await settle(() => source.sends.at(-1)?.replyTo === 'six');
+    const sent = controller.getSnapshot().shared.messages.find(message => message.clientId === source.sends.at(-1).clientId);
+    const row = q(`[data-shared-message="${sent.id}"]`);
+    assert.match(row.querySelector('[data-testid=message-quote]').textContent, /PM.*Export PDF/);
+    let scrolled = false; old.scrollIntoView = () => { scrolled = true; };
+    await act(async () => row.querySelector('[data-testid=message-quote] button').click());
+    assert.equal(scrolled, true);
+    assert.equal(q('[data-testid=composer-reply]'), null);
+    await act(async () => old.querySelector('[data-testid=shared-reply]').click());
+    await act(async () => q('[data-testid=composer-reply-remove]').click());
+    assert.equal(controller.getSnapshot().shared.replyTo, undefined);
+  });
+  await t.test('the latest card drives the agent avatar and tooltip; missing state is neutral', async () => {
+    const latest = controller.getSnapshot().shared.messages.find(message => message.id === 'six');
+    for (const [state, expected] of [['building', 'working'], ['asked', 'thinking'], ['review', 'waiting'], ['fixing', 'blocked'], ['live', 'done'], ['unrecognized', 'neutral'], [undefined, 'neutral']]) {
+      const card = { ...latest.card, state, line: 'Je prépare votre version.' };
+      await act(async () => source.emit({ type: 'message', message: { ...latest, card } }));
+      const avatar = q('[data-testid=agent-avatar-pm]');
+      assert.equal(avatar.dataset.state, expected);
+      assert.equal(Boolean(avatar.querySelector('[data-testid=avatar-indicator]')), expected !== 'neutral');
+      assert.equal(Boolean(avatar.querySelector('[data-slot=spinner]')), expected === 'working' || expected === 'thinking');
+    }
+    // Real hover/focus visibility belongs to the Chromium journey. The DOM realm drives the phone's native tap disclosure.
+    await act(async () => window.happyDOM.setWindowSize({ width: 390, height: 844 }));
+    await act(async () => q('[data-testid=agent-avatar-pm]').click());
+    await settle(() => q('[data-slot=popover-content]'));
+    assert.match(q('[data-slot=popover-content]').textContent, /Je prépare votre version/);
+    await act(async () => q('[data-testid=agent-avatar-pm]').click());
+    await act(async () => window.happyDOM.setWindowSize({ width: 1024, height: 768 }));
   });
   await t.test('History lists every supplied conversation and selects a direct conversation', async () => {
     await act(async () => q('[data-testid=history-open]').click());

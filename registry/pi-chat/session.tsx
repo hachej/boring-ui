@@ -9,7 +9,7 @@ import type { ChatController } from '@hachej/boring-ui-kit/shared-chat';
 import { useMessageScroller, useMessageScrollerScrollable } from '@/components/ui/message-scroller';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { sharedRows } from './shared';
+import { ReplyQuote, sharedQuote, sharedRows } from './shared';
 import type { ComposerFeedback, ComposerProps, PendingUpload } from './composer';
 import type { ConversationFile } from './conversation-files';
 import type { AttachmentsConfig, EffortConfig, MentionsConfig, ModelConfig, ModelRef, PastedText, PasteToFile, SlashConfig } from './config';
@@ -104,7 +104,8 @@ export function useChatSession(options: ChatSessionOptions) {
   const mentions = useMemo<MentionsConfig | undefined>(() => members ? {
     kind: 'member',
     label: id => members.find(member => member.id === id)?.name ?? id,
-    search: async query => members.filter(member => member.name.toLowerCase().includes(query.toLowerCase())).map(member => ({ path: member.id, label: member.name, kind: 'member' as const })),
+    search: async query => members.filter(member => `${member.name} ${member.id}`.toLowerCase().includes(query.toLowerCase()))
+      .sort((a, b) => Number(b.kind === 'agent') - Number(a.kind === 'agent')).map(member => ({ path: member.id, label: member.name, kind: 'member' as const })),
     render: id => <Badge variant="secondary">@{members.find(member => member.id === id)?.name ?? id}</Badge>,
   } : hostMentions, [hostMentions, members]);
   const [error, setError] = useState<string | null>(null);
@@ -334,6 +335,7 @@ export function useChatSession(options: ChatSessionOptions) {
   const rowContext = useMemo<RowContext>(() => ({
     developer, groupTool, onOpenImage, onCopy, openFile: onOpenFile ?? mentions?.open, fileChanges,
     sharedRemove: controller.remove, sharedCanRemove: controller.canRemove,
+    sharedReply: controller.setReplyTo ? id => { if (!current()) return; controller.setReplyTo?.(id); textarea.current?.focus(); } : undefined,
     commandMentions: commandMentions ? { commands: commandMentions.commands, onActivate: activateMention } : undefined,
     answer: actions?.answer,
     artifacts: artifacts ? { open: artifacts.open, isOpen: artifacts.isOpen, kinds: artifacts.kinds } : undefined,
@@ -370,6 +372,7 @@ export function useChatSession(options: ChatSessionOptions) {
     slash, onSlashError: report, mentions, mentionPaths: picked, onMentionPicked: (path: string) => setPicked(value => value.includes(path) ? value : [...value, path]),
     uploads: pending, onDismissUpload: (id: string) => setPending(items => items.filter(item => item.id !== id)),
     onPasteText: attachments ? pasteText : undefined, pasteToFile,
+    quote: state.shared?.replyTo ? <ReplyQuote targetId={state.shared.replyTo} quote={sharedQuote(state.shared, state.shared.replyTo)} onRemove={() => controller.setReplyTo?.(undefined)} /> : undefined,
     feedback, chips: state.shared ? <>{composerChips}{state.shared.files.map((file, index) => <Badge key={index} variant="secondary">{file.name}<Button variant="ghost" size="icon" aria-label={labels.remove(file.name)} onClick={() => controller.setFiles?.(state.shared!.files.filter((_, at) => at !== index))}><span aria-hidden="true">×</span></Button></Badge>)}</> : composerChips,
   };
 

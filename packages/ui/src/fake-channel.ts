@@ -19,6 +19,9 @@ export function createFakeChannelSource(seed: FakeChannelSeed) {
     } else if (event.type === 'delta') {
       const message = data.messages.find(message => message.id === event.messageId && message.conversationId === event.conversationId);
       if (message) { message.text = (message.text ?? '') + event.text; message.streaming = true; }
+    } else if (event.type === 'step') {
+      const message = data.messages.find(message => message.id === event.messageId && message.conversationId === event.conversationId);
+      if (message && Number.isSafeInteger(event.index) && event.index >= 0) { const steps = [...(message.steps ?? [])]; steps[event.index] = { ...event.step }; message.steps = steps; }
     } else if (event.type === 'presence') for (const update of event.members) {
       const member = data.members.find(member => member.id === update.id); if (member) member.presence = update.presence;
     }
@@ -51,7 +54,7 @@ export function createFakeChannelSource(seed: FakeChannelSeed) {
       if (!online) throw new Error('Offline');
       const duplicate = data.messages.find(message => message.clientId === input.clientId && message.conversationId === input.conversationId);
       if (duplicate) return structuredClone(duplicate);
-      const message: ChannelMessage = { id: `sent-${input.clientId}`, conversationId: input.conversationId, author: data.me.id, at: new Date().toISOString(), text: input.text, mentions: [...input.mentions], clientId: input.clientId };
+      const message: ChannelMessage = { id: `sent-${input.clientId}`, conversationId: input.conversationId, author: data.me.id, at: new Date().toISOString(), text: input.text, mentions: [...input.mentions], clientId: input.clientId, ...(input.replyTo ? { replyTo: input.replyTo } : {}) };
       emit({ type: 'message', message }); return structuredClone(message);
     },
     action: async (input: Parameters<ChannelSource['action']>[0]) => { actions.push(structuredClone(input)); },

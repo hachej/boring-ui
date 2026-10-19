@@ -14,7 +14,7 @@ import type { ChatLabels } from './labels';
 type Image = Extract<ToolResultMessage['content'][number], { type: 'image' }>;
 export type ActivityState = 'running' | 'done' | 'failed' | 'stopped';
 
-const stepStatus = (step: Step): ToolStatus => step.kind === 'tool' ? step.entry.status : step.streaming ? 'running' : 'completed';
+const stepStatus = (step: Step): ToolStatus => step.kind === 'tool' ? step.entry.status : step.kind === 'host' ? step.step.status === 'done' ? 'completed' : step.step.status : step.streaming ? 'running' : 'completed';
 
 function summary(steps: readonly Step[], labels: ChatLabels): string | undefined {
   const counts = new Map<string, number>();
@@ -53,26 +53,28 @@ function Thinking({ text, streaming, details }: { readonly text: string; readonl
 }
 
 /** Presentation only: native Pi steps and host cards keep their existing ownership and order. */
-export function ActivityBlock({ steps, state, streaming, developer, onOpenImage }: {
+export function ActivityBlock({ steps, state, streaming, developer, onOpenImage, participant }: {
+  /** A shared participant uses the same trace with a writing label and a live, then collapsed, list. */
+  readonly participant?: string;
   readonly steps: readonly Step[]; readonly state: ActivityState; readonly streaming: boolean; readonly developer: boolean; readonly onOpenImage?: (image: Image) => void;
 }) {
   const { labels } = useChatText();
   const [chosen, setChosen] = useState<boolean | undefined>();
-  const open = chosen ?? state === 'failed';
+  const open = participant ? streaming || (chosen ?? false) : chosen ?? state === 'failed';
   const Icon = state === 'running' ? Spinner : state === 'failed' ? AlertCircleIcon : state === 'stopped' ? CircleSlashIcon : CheckIcon;
   return <Trace data-testid="activity" data-boring="activity" data-state={state} data-open={open ? 'true' : 'false'} className="my-1.5">
     <TraceCollapsible open={open} onOpenChange={setChosen}>
       <TraceCollapsibleTrigger className="min-h-8 max-sm:min-h-11 pointer-coarse:min-h-11">
         <TraceLine {...(state === 'running' ? { status: 'running' } : state === 'failed' ? { status: 'error' } : {})}>
           <TraceIcon><Icon aria-hidden="true" /></TraceIcon>
-          <TraceTitle data-testid="activity-label">{header(steps, state, streaming, labels)}</TraceTitle>
-          <TraceDescription data-testid="activity-count">{labels.steps(steps.length)}</TraceDescription>
+          <TraceTitle data-testid="activity-label">{participant ? streaming ? labels.sharedWriting(participant) : labels.steps(steps.length) : header(steps, state, streaming, labels)}</TraceTitle>
+          {!participant && <TraceDescription data-testid="activity-count">{labels.steps(steps.length)}</TraceDescription>}
         </TraceLine>
       </TraceCollapsibleTrigger>
       <TraceCollapsibleContent>
         <Trace data-testid="activity-steps">
           {steps.map(step => <div key={step.key} data-testid="activity-step" data-kind={step.kind} data-status={stepStatus(step)}>
-            {step.kind === 'tool'
+            {step.kind === 'host' ? <ToolCard entry={{ key: step.key, step: step.step }} details={false} /> : step.kind === 'tool'
               ? <ToolCard entry={step.entry} details={developer || step.entry.status === 'failed'} {...(onOpenImage ? { onOpenImage } : {})} />
               : <Thinking text={step.text} streaming={step.streaming} details={developer} />}
           </div>)}

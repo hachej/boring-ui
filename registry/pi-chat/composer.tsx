@@ -74,6 +74,8 @@ export interface ComposerProps {
   readonly barNote?: ReactNode;
   /** Optional host mode/model chips beside the attach control. */
   readonly chips?: ReactNode;
+  /** The shared conversation's removable parent quote above the input. */
+  readonly quote?: ReactNode;
   readonly text: string;
   readonly onText: (text: string) => void;
   readonly attachments: readonly ComposerAttachment[];
@@ -253,7 +255,8 @@ export function Composer(props: ComposerProps) {
   const drag = (event: DragEvent) => { if (canAttach) { event.preventDefault(); setDragging(event.type === 'dragover'); } };
   const drop = (event: DragEvent) => { if (!canAttach) return; event.preventDefault(); setDragging(false); props.onPickFiles(Array.from(event.dataTransfer.files)); };
 
-  const chipList = (chips.length > 0 || (props.uploads?.length ?? 0) > 0 || (feedback?.count ?? 0) > 0 || attachments.length > 0) && <>
+  const chipList = (props.quote || chips.length > 0 || (props.uploads?.length ?? 0) > 0 || (feedback?.count ?? 0) > 0 || attachments.length > 0) && <>
+    {props.quote}
     {feedback && feedback.count > 0 && <div role="list" className="contents"><NotesChip feedback={feedback} /></div>}
     {chips.length > 0 && <div role="list" data-testid="mention-chips" aria-label={labels.mentionedFiles} className="contents">
       {chips.map(path => <Chip key={path} data-testid="mention-chip" data-path={path} title={path} className="max-w-full sm:max-w-[16rem]"

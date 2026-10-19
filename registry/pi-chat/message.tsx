@@ -36,6 +36,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 
 export interface RowContext {
   readonly developer: boolean;
+  readonly sharedReply?: ((messageId: string) => void) | undefined;
   readonly sharedRemove?: import('@hachej/boring-ui-kit/shared-chat').ChatController['remove'];
   readonly sharedCanRemove?: import('@hachej/boring-ui-kit/shared-chat').ChatController['canRemove'];
   readonly groupTool: DeriveOptions['groupTool'];
@@ -164,7 +165,7 @@ function resultText(message: ToolResultMessage): string { return message.content
 
 export function RowView({ row, context }: { readonly row: Row; readonly context: RowContext }) {
   const content = <RowBody row={row} context={context} />;
-  return row.shared ? <SharedMessage shared={row.shared} remove={context.sharedRemove} canRemove={context.sharedCanRemove} openFile={context.openFile}>{content}</SharedMessage> : content;
+  return row.shared ? <SharedMessage shared={row.shared} remove={context.sharedRemove} canRemove={context.sharedCanRemove} openFile={context.openFile} onReply={context.sharedReply}>{content}</SharedMessage> : content;
 }
 
 function RowBody({ row, context: liveContext }: { readonly row: Row; readonly context: RowContext }) {
@@ -182,6 +183,7 @@ function RowBody({ row, context: liveContext }: { readonly row: Row; readonly co
       <strong className="font-semibold">{labels.toolFailed(row.message.toolName)}</strong><span className="mt-1 block font-mono text-xs whitespace-pre-wrap">{resultText(row.message)}</span></Notice></article>;
     case 'assistant': {
       const settled = !row.streaming;
+      const nativeActions = settled && !row.shared;
       const files = new Map<string, 'created' | 'edited'>();
       if (context.fileChanges) for (const part of row.parts) {
         if (part.kind !== 'tool' || part.entry.status !== 'completed') continue;
@@ -194,7 +196,7 @@ function RowBody({ row, context: liveContext }: { readonly row: Row; readonly co
       const chunks = segments(row.parts, context.groupTool);
       const active = row.active === true || row.streaming;
       const lastText = [...row.parts].reverse().find(part => part.kind === 'text');
-      const host = settled && row.text && context.messageActions
+      const host = nativeActions && row.text && context.messageActions
         ? <BlockActions iconOnly actions={context.messageActions(replyRef(row))} testId="reply-action" menuLabel={labels.moreActions} />
         : null;
       return <article data-row-id={row.key} data-role="assistant" aria-live={row.historical ? 'off' : undefined} data-streaming={row.streaming ? 'true' : undefined} className="group/message">
@@ -221,17 +223,17 @@ function RowBody({ row, context: liveContext }: { readonly row: Row; readonly co
           {files.size > 0 && <ul data-testid="reply-files" className="m-0 flex list-none flex-wrap gap-2 p-0">
             {[...files].map(([path, change]) => <li key={path} data-testid="message-file"><FileCard path={path} change={change} open={context.openFile} preview={context.pieces?.preview} /></li>)}
           </ul>}
-          {row.streaming && row.parts.length === 0 && <p data-testid="working" className="m-0 text-sm"><Shimmer>{labels.thinking}</Shimmer></p>}
+          {row.streaming && !row.shared && row.parts.length === 0 && <p data-testid="working" className="m-0 text-sm"><Shimmer>{labels.thinking}</Shimmer></p>}
         </div>
         {row.stopReason === 'error' && <Notice tone="error" testid="response-error" icon={<AlertCircleIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />}>{row.errorMessage ?? labels.responseFailed}</Notice>}
         {row.stopReason === 'aborted' && <Notice tone="muted" testid="interrupted" icon={<CircleSlashIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />}>{labels.interrupted}</Notice>}
-        {settled && row.text && context.replyActions?.({ key: row.key, text: row.text, timestamp: row.timestamp }, host)}
-        {settled && row.text && !context.replyActions && <div className="mt-1 -ml-2 flex opacity-0 transition-opacity group-focus-within/message:opacity-100 group-hover/message:opacity-100 pointer-coarse:opacity-100 max-sm:opacity-100 motion-reduce:transition-none">
+        {nativeActions && row.text && context.replyActions?.({ key: row.key, text: row.text, timestamp: row.timestamp }, host)}
+        {nativeActions && row.text && !context.replyActions && <div className="mt-1 -ml-2 flex opacity-0 transition-opacity group-focus-within/message:opacity-100 group-hover/message:opacity-100 pointer-coarse:opacity-100 max-sm:opacity-100 motion-reduce:transition-none">
           <CopyButton iconOnly text={row.text} label={labels.copyResponse} {...(context.onCopy ? { onCopy: context.onCopy } : {})} />
           {context.onFork && row.entryId && <Button size="icon-sm" variant="ghost" aria-label={labels.fork} title={labels.forkHint} data-testid="fork-reply"
             onClick={() => context.onFork!(row.entryId!)}><icons.fork data-icon="inline-start" aria-hidden="true" /></Button>}
           {host}</div>}
-        {settled && !row.active && row.text && context.replyFooter && <MessageFooter>{context.replyFooter(replyRef(row))}</MessageFooter>}
+        {nativeActions && !row.active && row.text && context.replyFooter && <MessageFooter>{context.replyFooter(replyRef(row))}</MessageFooter>}
         </MessageContent></Message>
       </article>;
     }
