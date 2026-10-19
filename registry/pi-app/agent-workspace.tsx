@@ -30,6 +30,7 @@ import type { WorkspacePanelApi } from '../pi-workspace/workspace';
 import { ViewerWindowProvider } from '../viewers/viewer-frame';
 import type { ViewerShare } from '../viewers/viewer-frame';
 import type { InteractiveHtml } from '../viewers/interactive-html';
+import { createMaquetteKind } from '../maquette-viewer/maquette-viewer';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { BlockActions } from '../button/actions';
@@ -169,7 +170,7 @@ interface AgentWorkspaceBaseProps {
   readonly history?: HistoryPlacement | undefined;
   /** Recognise artifacts in tool results that carry no descriptor (`ArtifactsConfig.detect`). */
   readonly detect?: ArtifactsConfig['detect'] | undefined;
-  /** The app's own artifact kinds (`ArtifactKind`: match, label, icon, renderer): the chat's cards and the artifact panel consult them before the built-in types. */
+  /** The app's own artifact kinds (`ArtifactKind`: match, label, icon, renderer): the chat's cards and the artifact panel consult them before the built-in types and before the built-in maquette kind (`*.maquette.json`, `maquette-viewer`), so an app kind for those files wins. */
   readonly artifactKinds?: ArtifactsConfig['kinds'] | undefined;
   /** Host viewers by artifact type or file kind, for example `{ canvas: props => <MyCanvas {...props} /> }`. */
   readonly viewers?: CustomViewers | undefined;
@@ -330,7 +331,9 @@ export function AgentWorkspace({ layout = 'default', controller, conversationId,
   const onShown = useCallback((view: { readonly path: string; readonly revision: string; readonly hidden?: true }) => {
     if (view.hidden) presentAcks.current?.hidden(view); else presentAcks.current?.shown(view);
   }, []);
-  const options: ViewerOptions = useMemo(() => ({ client, identity, history, viewers, kinds: artifactKinds, interactive, share, onShown, onUnsavedChange: noteUnsaved, onBeforeLeaveChange: registerBeforeLeave }), [client, identityKey, history, viewers, artifactKinds, interactive, share, onShown, noteUnsaved, registerBeforeLeave]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The app's kinds first, then the built-in maquette kind in the workspace's language (a `.maquette.json` card and panel say « Maquette » in French).
+  const kinds = useMemo(() => [...(artifactKinds ?? []), createMaquetteKind({ locale })], [artifactKinds, locale]);
+  const options: ViewerOptions = useMemo(() => ({ client, identity, history, viewers, kinds, interactive, share, onShown, onUnsavedChange: noteUnsaved, onBeforeLeaveChange: registerBeforeLeave }), [client, identityKey, history, viewers, kinds, interactive, share, onShown, noteUnsaved, registerBeforeLeave]); // eslint-disable-line react-hooks/exhaustive-deps
   const locate = revisionProvider?.locate ?? resources?.locate ?? defaultLocate;
   const readOnlyLibrary = !revisionProvider;
   const [fileBinding, setFileBinding] = useState<{ readonly provider: RevisionProvider; readonly tree: FileTreeController }>();
@@ -443,8 +446,8 @@ export function AgentWorkspace({ layout = 'default', controller, conversationId,
     open: descriptor => { if (conversationId !== undefined) setOpened({ kind: 'artifact', conversation: conversationId, descriptor, follow: descriptor.revision === newestOf(artifactKey(descriptor))[0]?.revision }); },
     isOpen: descriptor => Boolean(active && artifactKey(active.descriptor) === artifactKey(descriptor) && (active.follow ? descriptor.revision === newestOf(artifactKey(descriptor))[0]?.revision : descriptor.revision === active.descriptor.revision)),
     ...(detect ? { detect } : {}),
-    ...(artifactKinds ? { kinds: artifactKinds } : {}),
-  }), [conversationId, active, versions, detect, artifactKinds, setOpened]); // eslint-disable-line react-hooks/exhaustive-deps
+    kinds,
+  }), [conversationId, active, versions, detect, kinds, setOpened]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- Sessions: docked on a wide workspace (collapsible, remembered for the session), a drawer on a narrow one.
   const root = useRef<HTMLDivElement>(null);

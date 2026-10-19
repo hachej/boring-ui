@@ -741,6 +741,90 @@
       ]
     },
     {
+      "name": "maquette-viewer",
+      "type": "registry:component",
+      "title": "Maquette viewer",
+      "description": "MaquetteViewer and maquetteKind: a PM agent's *.maquette.json mock-up (format v1, versioned) one screen at a time, drawn from the host's shadcn components, under one thin icon bar: Back, previous and next (also arrow keys and swipe), and a menu with guided tours and How it works (the workflow diagram in a dialog). Optional phone or desktop frame and #screen=<id> deep links. The pi-app artifact panel shows .maquette.json files with it by default; app artifactKinds win.",
+      "dependencies": [
+        "react@^19.0.0",
+        "lucide-react@^1.51.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.1/r/theme.json",
+        "alert",
+        "badge",
+        "bubble",
+        "button",
+        "card",
+        "empty",
+        "input",
+        "item",
+        "label",
+        "native-select",
+        "separator",
+        "table",
+        "dialog",
+        "dropdown-menu",
+        "popover"
+      ],
+      "files": [
+        {
+          "path": "registry/maquette-viewer/maquette.ts",
+          "type": "registry:lib",
+          "target": "components/maquette-viewer/maquette.ts"
+        },
+        {
+          "path": "registry/maquette-viewer/maquette-labels.ts",
+          "type": "registry:lib",
+          "target": "components/maquette-viewer/maquette-labels.ts"
+        },
+        {
+          "path": "registry/maquette-viewer/maquette-blocks.tsx",
+          "type": "registry:component",
+          "target": "components/maquette-viewer/maquette-blocks.tsx"
+        },
+        {
+          "path": "registry/maquette-viewer/maquette-diagram.tsx",
+          "type": "registry:component",
+          "target": "components/maquette-viewer/maquette-diagram.tsx"
+        },
+        {
+          "path": "registry/maquette-viewer/maquette-viewer.tsx",
+          "type": "registry:component",
+          "target": "components/maquette-viewer/maquette-viewer.tsx"
+        }
+      ],
+      "css": {
+        "@layer components": {
+          "[data-boring=\"maquette-viewer\"] [data-maquette=\"placeholder\"]": {
+            "border-width": "var(--default-border-width, 1px)",
+            "border-style": "dashed",
+            "border-color": "var(--border)",
+            "background-color": "var(--muted)"
+          },
+          "[data-boring=\"maquette-viewer\"] [data-hint=\"pulse\"] [data-goto]": {
+            "animation": "var(--animate-pulse)",
+            "animation-iteration-count": "1"
+          },
+          "[data-boring=\"maquette-viewer\"] [data-goto]:focus-visible": {
+            "outline": "2px solid color-mix(in oklch, var(--ring) 55%, transparent)",
+            "outline-offset": "2px"
+          },
+          "@media (hover: hover) and (pointer: fine)": {
+            "[data-boring=\"maquette-viewer\"] [data-goto]:hover": {
+              "outline": "2px solid color-mix(in oklch, var(--ring) 55%, transparent)",
+              "outline-offset": "2px"
+            }
+          },
+          "@media (prefers-reduced-motion: reduce)": {
+            "[data-boring=\"maquette-viewer\"] [data-hint=\"pulse\"] [data-goto]": {
+              "animation": "none"
+            }
+          }
+        }
+      }
+    },
+    {
       "name": "pi-app",
       "type": "registry:block",
       "title": "Pi agent app",
@@ -757,6 +841,7 @@
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.1/r/pi-chat.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.1/r/pi-workspace.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.1/r/viewers.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.1/r/maquette-viewer.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.1/r/utils.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.1/r/button.json",
         "drawer",
@@ -1099,10 +1184,6 @@
           }
         },
         "@layer components": {
-          ".boring-viewer": {
-            "--viewer-success": "var(--success, var(--primary))",
-            "--viewer-warning": "var(--warning, var(--muted-foreground))"
-          },
           ".boring-viewer .boring-markdown-editor, .boring-viewer .boring-html-pane": {
             "display": "flex",
             "flex-direction": "column",
