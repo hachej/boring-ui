@@ -191,7 +191,7 @@ test('registry dependency pins and scoped styles preserve the declared source di
       continue;
     }
     const prefix = { 'markdown-editor': '.boring-markdown-recipe[data-boring=\"markdown-editor\"]', chat: '.boring-chat-recipe[data-boring=\"chat\"]', 'html-viewer': '.boring-html-recipe[data-boring=\"html-viewer\"]', 'file-tree': '[data-boring=\"file-tree\"]', 'task-list-viewer': '.boring-task-list-recipe[data-boring=\"task-list-viewer\"]' }[item.name];
-    // A library item with no styles (board-viewer) has no css to scope; its files are still checked below.
+    // Items without CSS still validate every shipped source and dependency.
     if (item.css) {
       assert.ok(prefix);
       for (const selector of Object.keys(item.css)) {
@@ -209,6 +209,14 @@ test('registry dependency pins and scoped styles preserve the declared source di
         if (sibling) {
           const dependency = manifest.items.find(entry => entry.name === sibling[1]);
           assert.ok(dependency && item.registryDependencies?.includes('@boring-ui/' + dependency.name) && dependency.files.some(entry => entry.path.replace(/\.tsx?$/, '') === `registry/${dependency.name}/${sibling[2]}`), `${file.path} imports unshipped or undeclared ${imported}`);
+          continue;
+        }
+        if (item.name === 'board-viewer' || item.name === 'mockup-viewer') {
+          if (imported.startsWith('./')) assert.ok(item.files.some(entry => entry.path.replace(/\.tsx?$/, '').endsWith('/' + imported.slice(2))), `${file.path} imports unshipped ${imported}`);
+          else {
+            const pkg = imported.startsWith('@') ? imported.split('/').slice(0, 2).join('/') : imported.split('/')[0];
+            assert.ok(declared.has(pkg) || architecture.sourceDistribution.runtimeImports.includes(imported), `${file.path} imports undeclared ${imported}`);
+          }
           continue;
         }
         if (item.name !== 'task-list-viewer') { assert.ok(architecture.sourceDistribution.runtimeImports.includes(imported), imported); continue; }

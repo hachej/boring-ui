@@ -583,6 +583,8 @@
     "chatActivity": "shadcn built-in trace, resolved by the consumer style; host presentation over native Pi views, no execution state",
     "runtimeImports": [
       "@hachej/boring-ui-kit/markdown-editor",
+      "@hachej/boring-ui-kit/canvas-editor",
+      "@hachej/boring-ui-kit/text-buffer",
       "@hachej/boring-ui-kit/native-chat",
       "@hachej/boring-ui-kit/remote-chat",
       "@hachej/boring-ui-kit/html-viewer",

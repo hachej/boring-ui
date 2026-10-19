@@ -4,32 +4,17 @@ import { lazy, Suspense, useEffect, useMemo, useState, useSyncExternalStore } fr
 import { LayoutDashboardIcon } from 'lucide-react';
 import type { ResourceClient, ResourceLocator } from '@hachej/boring-files';
 import { createTextBuffer } from '@hachej/boring-ui-kit/text-buffer';
-import type { TextBuffer, TextBufferState } from '@hachej/boring-ui-kit/text-buffer';
-import type { CanvasAssetUrls } from '@hachej/boring-ui-kit/canvas-editor';
-import type { Editor } from 'tldraw';
+import type { TextBuffer } from '@hachej/boring-ui-kit/text-buffer';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import type { ArtifactKind } from '../pi-chat/artifact';
+import type { BoardHostProps, BoardViewerProps } from './board-props';
+export type { BoardHostProps, BoardViewerProps } from './board-props';
 import { parseBoard } from './board';
 
 export { parseBoard, planBoard, applyCanvasEdits, serializeBoard } from './board';
 export type { Board, BoardPlan } from './board';
 const Canvas = lazy(() => import('./board-canvas'));
-
-export interface BoardHostProps {
-  readonly client: ResourceClient;
-  readonly identity: TextBufferState['identity'];
-  readonly assetUrls: CanvasAssetUrls;
-  readonly licenseKey?: string | undefined;
-  /** Host observation only. The editor and its store are a disposable projection, never the saved document. */
-  readonly onEditor?: ((editor: Editor | null) => void) | undefined;
-}
-export interface BoardViewerProps extends BoardHostProps {
-  readonly target: ResourceLocator;
-  readonly text: string;
-  readonly revision: string;
-  readonly pinned: boolean;
-}
 
 const readText = (snapshot: Parameters<Parameters<typeof createTextBuffer>[0]['readText']>[0]) => {
   const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(snapshot.bytes);
