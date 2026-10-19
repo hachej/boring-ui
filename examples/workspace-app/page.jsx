@@ -24,6 +24,8 @@ const configured = new URLSearchParams(location.search).has('configured');
 // `?embedded`: the same page as a host would embed it (no left column, one compact top bar). `?resources`: no revision provider, only
 // `resources` (the viewers' endpoint and file history): the Library is then read-only.
 const embedded = new URLSearchParams(location.search).has('embedded');
+// `?title=`: the embedded bar's fixed app title (the conversation title then follows it).
+const appTitle = new URLSearchParams(location.search).get('title');
 const resourcesOnly = new URLSearchParams(location.search).has('resources');
 const withFeedback = new URLSearchParams(location.search).has('feedback');
 
@@ -87,7 +89,7 @@ function App() {
     <AmbientChat {...props} headerActions={config.dockActions} variant="surface" defaultState="expanded" onDock={dock} /> } : {};
   return <main data-testid="app" data-conversation={active} data-configured={configured || undefined} className="flex h-full min-h-0">
     {revisionProvider ? <AgentWorkspace conversationId={active} controller={chat.status === 'ready' ? chat.controller : undefined} conversations={conversations}
-      {...(resourcesOnly ? { resources: { endpoint: at('/api/resources'), fetch: authorized, identity, history: at('/api/history') } } : { revisionProvider })} {...(embedded ? { layout: 'embedded' } : {})}
+      {...(resourcesOnly ? { resources: { endpoint: at('/api/resources'), fetch: authorized, identity, history: at('/api/history') } } : { revisionProvider })} {...(embedded ? { layout: 'embedded', ...(appTitle ? { title: appTitle } : {}) } : {})}
       chat={{ labels: { title: 'Writer', emptyDescription: 'What can I help you write today?' }, suggestions: [
         { label: 'Draft a plan', text: 'Write a picnic plan and present it.' },
         { label: 'Write a short reply', text: 'Reply with exactly: AMBER-HARBOUR' },
