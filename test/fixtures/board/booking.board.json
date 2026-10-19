@@ -1,0 +1,15 @@
+{
+  "format": "board@1",
+  "title": "Session booking, v1",
+  "items": [
+    { "id": "booking", "maquette": "booking.maquette.json" },
+    { "id": "confirm-html", "html": "confirm.mockup.html", "title": "Confirmation, HTML draft", "device": "phone" },
+    { "id": "note-1", "note": "Is the reminder opt-in or opt-out?", "near": "confirm-html" }
+  ],
+  "links": [
+    { "from": "booking/confirmed", "to": "confirm-html", "label": "richer version" }
+  ],
+  "layout": {
+    "booking/sessions": { "x": 0, "y": 267 }
+  }
+}

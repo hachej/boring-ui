@@ -1,3 +1,9 @@
+# Unreleased (0.4.3)
+
+- New `board-viewer` registry item (library code only, no viewer yet): the `board@1` format for `*.board.json` files, with a strict parser
+  (`parseBoard`), the planner (`planBoard`) and the edit round-trip (`applyCanvasEdits`, `serializeBoard`). Installed next to `maquette-viewer`,
+  which it reads. See [registry/README.md](registry/README.md#board-format-board-viewer).
+
 # Migrating to 0.4.2
 
 0.4.2 is non-breaking: no export, option or type was removed, and a page that sets none of the new props renders as before. Upgrade the registry

@@ -825,6 +825,23 @@
       }
     },
     {
+      "name": "board-viewer",
+      "type": "registry:lib",
+      "title": "Board format (board@1)",
+      "description": "The board@1 format a PM agent writes as *.board.json: a strict parser that reports every problem (unversioned, newer or invalid files included), the planner that lays maquette screens and HTML mock-ups out left to right with goto arrows and notes, and the edit round-trip that writes frame moves and notes back into the board file. Plain data and pure functions: no canvas, no rendering, no storage.",
+      "dependencies": [],
+      "registryDependencies": [
+        "@boring-ui/maquette-viewer"
+      ],
+      "files": [
+        {
+          "path": "registry/board-viewer/board.ts",
+          "type": "registry:lib",
+          "target": "components/board-viewer/board.ts"
+        }
+      ]
+    },
+    {
       "name": "pi-app",
       "type": "registry:block",
       "title": "Pi agent app",
