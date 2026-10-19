@@ -515,7 +515,7 @@ Differences from the PM skill (`boring-pm`): its `maquettes.md` describes no JSO
 
 ## Board format (`board-viewer`)
 
-A PM agent writes a board as `<name>.board.json` to lay its mock-ups out side by side: each maquette screen and each HTML mock-up becomes a frame, left to right, with an arrow for every `goto` link and a sticky note where it helps. The file is plain data; it names other files in the same folder and embeds nothing. The board file is the only authority: a canvas (none ships in this item) is a projection of it, and people's moves and notes come back as a new `board@1` file. An agent can write and check a board without any canvas runtime: the functions below are pure.
+A PM agent writes a board as `<name>.board.json` to lay its mock-ups out side by side: each maquette screen and each HTML mock-up becomes a frame, left to right, with an arrow for every `goto` link and a sticky note where it helps. The file is plain data; it names other files in the same folder and embeds nothing. The board file is the only authority: the viewer projects it into a disposable native canvas, and people's moves and notes come back as a new `board@1` file. An agent can write and check a board without any canvas runtime: the functions below are pure.
 
 ```jsonc
 {
@@ -543,6 +543,25 @@ The functions live in `registry/board-viewer/board.ts` (`components/board-viewer
 - `applyCanvasEdits(board, { positions, notes })` writes frame positions and the remaining notes back into the board (a note keeps its `near`); maquette, HTML and link entries never change. It returns `ok` or `invalid` with reasons. `serializeBoard(board)` gives the file text.
 
 Fictional fixtures for this format are in `test/fixtures/board/` (a three-screen booking maquette, one mock-up, one board).
+
+### Installing the board viewer
+
+Install `board-viewer` and pass its kind to the artifact panel or workspace:
+
+```tsx
+import { createBoardKind } from '@/components/board-viewer/board-viewer';
+
+const board = createBoardKind({ client, identity, assetUrls, licenseKey });
+<AgentWorkspace {...workspace} artifactKinds={[board]} />;
+```
+
+Use the same resource `client` and authenticated receipt `identity` as the workspace. The host supplies the complete tldraw `assetUrls` map and its license key as props. The [self-hosted assets recipe](../examples/canvas-assets/self-hosted.mjs) serves fonts, icons and translations from the host origin. The key never belongs in a board file. The current owner-approved key expires on 2027-01-01; hosts own renewal and the SDK's licensing and egress obligations.
+
+The block lazy-loads `CanvasProjection` from `@hachej/boring-ui-kit/canvas-editor`, including native CSS. Desktop controls move frames, pan, edit notes, undo and fit. Double-click a frame to interact with its contents; Escape returns to the canvas. Freehand/native drawing records are not part of `board@1`. Phone and coarse-pointer sessions start with the hand tool, hide drawing controls and fit the first frame. Native read-only mode also blocks accidental edits; a pinned historical board is always read-only. Optional `comments` accepts the existing host point-comments binding. Structured board pin delivery is a separate feature.
+
+Autosave waits 600 ms and conditionally replaces the board file at its observed revision. The shared text buffer retains dirty edits on conflict and requires explicit discard to reload. Lost acknowledgements retain their operation identity for lookup, never an automatic second publication. External board rewrites refresh clean projections and preserve dirty ones. Closing a viewer releases only its buffer and native editor, never the borrowed client or workspace. The native store, camera and selection are never persisted.
+
+HTML frames use `MockupViewer` and its sandbox, not host imports. A host that forbids inline scripts must serve mock-ups from a separate sandbox origin. Keep the parent frame navigation policy restricted; the frame's CSP alone cannot prevent a page from navigating itself. Run `npm run board:journey` for real desktop and phone pointer input, revision/receipt races and screenshots under `.cache/evidence/feat-board-viewer/`.
 ### Comment pins (with the `feedback` item)
 
 Pass the `feedback` item's `usePointComments(session)` as `AgentWorkspace comments` (or `createMaquetteKind({ comments })`) and the bar shows a
