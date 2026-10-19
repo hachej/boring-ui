@@ -119,13 +119,17 @@ export function SharedMessage({ shared, children, remove, canRemove, openFile, o
   const [error, setError] = useState(false);
   const { message, author, first, own } = shared;
   return <div data-shared-message={message.id} className="flex min-w-0 flex-col gap-2">
-    {!own && first && <div className="flex min-w-0 items-center gap-2"><MemberAvatar member={author} card={shared.latestCard} /><span data-testid="message-author" className="min-w-0 truncate">{author.name}</span><MemberBadge member={author} /></div>}
+    {first && (!own || message.via) && <div className={`flex min-w-0 items-center gap-2${own ? ' justify-end' : ''}`}>
+      <MemberAvatar member={author} card={message.via ? undefined : shared.latestCard} /><span data-testid="message-author" className="min-w-0 truncate">{author.name}</span>
+      {message.via && <span data-testid="message-via" className="min-w-0 truncate text-muted-foreground">{labels.sharedVia(message.via)}</span>}
+      {!(message.via && author.kind === 'agent') && <MemberBadge member={author} />}
+    </div>}
     {message.replyTo && <ReplyQuote targetId={message.replyTo} quote={shared.quote} onReveal={onReveal} />}
     {message.removed ? <p className="text-muted-foreground">{labels.sharedRemoved}</p> : children}
-    {!message.removed && (message.streaming || message.steps?.length) && author.kind === 'agent' && <ActivityBlock participant={author.name} steps={(message.steps ?? []).map((step, index) => ({ kind: 'host', key: `${message.id}:step:${index}`, step }))} state={message.streaming ? 'running' : message.steps?.some(step => step.status === 'failed') ? 'failed' : 'done'} streaming={Boolean(message.streaming)} developer={false} />}
+    {!message.removed && !message.via && (message.streaming || message.steps?.length) && author.kind === 'agent' && <ActivityBlock participant={author.name} steps={(message.steps ?? []).map((step, index) => ({ kind: 'host', key: `${message.id}:step:${index}`, step }))} state={message.streaming ? 'running' : message.steps?.some(step => step.status === 'failed') ? 'failed' : 'done'} streaming={Boolean(message.streaming)} developer={false} />}
     {!message.removed && message.attachments?.map(file => <Button key={file.path} variant="outline" disabled={!openFile} onClick={() => openFile?.(file.path)} className="max-w-full justify-start"><span className="truncate">{file.title ?? file.path}</span></Button>)}
     {!message.removed && <div className="flex items-center gap-1">
-      {onReply && (author.kind === 'agent' || message.card) && <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon" data-testid="shared-reply" aria-label={labels.sharedReply} onClick={() => onReply(message.id)}><ReplyIcon aria-hidden="true" /></Button>} /><TooltipContent>{labels.sharedReply}</TooltipContent></Tooltip>}
+      {onReply && ((author.kind === 'agent' && !message.via) || message.card) && <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon" data-testid="shared-reply" aria-label={labels.sharedReply} onClick={() => onReply(message.id)}><ReplyIcon aria-hidden="true" /></Button>} /><TooltipContent>{labels.sharedReply}</TooltipContent></Tooltip>}
       {remove && canRemove?.(message) && <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon" aria-label={labels.delete} onClick={() => { void remove(message).catch(() => setError(true)); }}><Trash2Icon aria-hidden="true" /></Button>} /><TooltipContent>{labels.delete}</TooltipContent></Tooltip>}
     </div>}
     {error && <p role="alert">{labels.actionFailedShort}</p>}
@@ -136,7 +140,7 @@ export function sharedRows(shared: SharedChatState, action: (card: Request) => P
   return shared.messages.map((message, index): Row => {
     const key = `shared:${message.id}`, own = message.author === shared.me.id;
     const author = memberOf(shared, message.author);
-    const metadata = { message, author, own, first: index === 0 || shared.messages[index - 1]?.author !== message.author, latestCard: latestCard(shared, message.author), quote: sharedQuote(shared, message.replyTo) };
+    const metadata = { message, author, own, first: index === 0 || shared.messages[index - 1]?.author !== message.author || shared.messages[index - 1]?.via !== message.via, latestCard: latestCard(shared, message.author), quote: sharedQuote(shared, message.replyTo) };
     if (message.card) return { key, type: 'card', card: { content: <RequestCard card={message.card} action={action} /> }, shared: metadata };
     if (own) return { key, type: 'user', message: { role: 'user', content: message.text ?? '', timestamp: Date.parse(message.at) }, shared: metadata };
     return { key, type: 'assistant', text: message.text ?? '', streaming: Boolean(message.streaming), parts: message.text ? [{ kind: 'text', key: `${key}:text`, text: message.text }] : [], shared: metadata };

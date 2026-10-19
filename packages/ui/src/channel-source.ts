@@ -9,7 +9,7 @@ export const channelAvatarStates: Readonly<Record<string, AvatarState | undefine
   question: 'waiting', answer: 'waiting', review: 'waiting', preview: 'waiting',
   platform: 'blocked', fixing: 'blocked', live: 'done', declined: 'neutral',
 });
-export type ChannelMessage = { id: string; conversationId: string; author: string; at: string; text?: string; card?: Card; mentions?: string[]; replyTo?: string; attachments?: { path: string; title?: string }[]; steps?: Step[]; streaming?: boolean; removed?: { by: string; at: string }; clientId?: string };
+export type ChannelMessage = { id: string; conversationId: string; author: string; at: string; via?: string; text?: string; card?: Card; mentions?: string[]; replyTo?: string; attachments?: { path: string; title?: string }[]; steps?: Step[]; streaming?: boolean; removed?: { by: string; at: string }; clientId?: string };
 export type ChannelEvent =
   | { type: 'message'; message: ChannelMessage }
   | { type: 'delta'; messageId: string; conversationId: string; text: string }

@@ -34,6 +34,12 @@ try {
         if (device === 'phone') await browser.tap(avatar); else { await browser.press('Escape'); await browser.hover(q('[data-testid=workspace-bar-title]')); }
       };
       assert.equal(await browser.evaluate(`!!${q('[data-testid=sessions-toggle]')}`), false);
+      await browser.until('personal-agent message keeps its person author', `!!${message('via-person')}?.querySelector('[data-testid=message-via]')`);
+      assert.equal(await browser.evaluate(`${message('via-person')}.querySelector('[data-testid=message-author]').textContent`), 'Leo');
+      assert.equal(await browser.evaluate(`${message('via-person')}.querySelector('[data-testid=message-via]').textContent`), 'via Claude');
+      assert.equal(await browser.evaluate(`${message('via-person')}.querySelector('[data-testid=message-via]').classList.contains('text-muted-foreground')`), true);
+      assert.equal(await browser.evaluate(`!!${message('via-person')}.querySelector('[data-testid=author-badge], [data-testid=avatar-indicator]')`), false);
+      if (scheme === 'light') { await reveal('via-person'); await shot('via'); }
       await browser.type(input, '@');
       await browser.until('agents-first mention popover', `${qa('[data-testid=mention-item]')}.length === 5`);
       assert.deepEqual(await browser.evaluate(`${qa('[data-testid=mention-item]')}.map(item => item.dataset.path).slice(0, 2)`), ['pm', 'worker']);

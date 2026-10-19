@@ -4,6 +4,7 @@ import { sharedChatSeed } from './seed.mjs';
 /** Fictional host script, not kit policy or an agent runtime. The real platform forwards to each agent's own Pi conversation. */
 export function createPdfDemo({ manual = false } = {}) {
   const source = createFakeChannelSource({ ...sharedChatSeed, conversations: sharedChatSeed.conversations.map(conversation => conversation.id === 'admin' ? { ...conversation, members: [...conversation.members, 'worker'] } : conversation), messages: [
+    { id: 'via-person', conversationId: 'main', author: 'leo', at: '2026-10-19T10:00:00Z', via: 'Claude', text: 'Je propose de dater les exports PDF.' },
     { id: 'admin-trace', conversationId: 'admin', author: 'worker', at: '2026-10-19T10:00:00Z', text: 'Vérification de l’export PDF terminée.', streaming: false, steps: [
       { label: 'Lire les fichiers', detail: 'read src/fictional-export.ts', status: 'done' },
       { label: 'Préparer le PDF', detail: 'write output/fictional-export.pdf', status: 'done' },

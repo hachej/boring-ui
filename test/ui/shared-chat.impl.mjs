@@ -192,6 +192,27 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
     await act(async () => q('[data-testid=agent-avatar-pm]').click());
     await act(async () => window.happyDOM.setWindowSize({ width: 1024, height: 768 }));
   });
+  await t.test('personal-agent attribution stays on the person, including my own user bubble', async () => {
+    await act(async () => {
+      source.emit({ type: 'message', message: { id: 'before-via', conversationId: 'main', author: 'leo', at: '2026-10-20T12:03:00Z', text: 'A manual message.' } });
+      source.emit({ type: 'message', message: { id: 'via-person', conversationId: 'main', author: 'leo', at: '2026-10-20T12:04:00Z', via: 'Claude', text: 'A fictional suggestion from my personal agent.' } });
+      source.emit({ type: 'message', message: { id: 'via-me', conversationId: 'main', author: 'mira', at: '2026-10-20T12:05:00Z', via: 'ChatGPT', text: 'My fictional message.' } });
+      source.emit({ type: 'message', message: { id: 'after-via', conversationId: 'main', author: 'mira', at: '2026-10-20T12:06:00Z', text: 'My manual message.' } });
+    });
+    for (const [id, name, via] of [['via-person', 'Leo', 'Claude'], ['via-me', 'Mira', 'ChatGPT']]) {
+      const row = q(`[data-shared-message="${id}"]`);
+      assert.equal(row.querySelector('[data-testid=message-author]')?.textContent, name);
+      assert.ok(row.querySelector('[data-testid=member-avatar]'));
+      assert.equal(row.querySelector('[data-testid=message-via]')?.textContent, `via ${via}`);
+      assert.ok(row.querySelector('[data-testid=message-via]')?.classList.contains('text-muted-foreground'));
+      assert.equal(row.querySelector('[data-testid=author-badge]'), null);
+      assert.equal(row.querySelector('[data-testid=avatar-indicator]'), null);
+      assert.equal(row.querySelector('[data-slot=spinner]'), null);
+    }
+    assert.equal(q('[data-shared-message=via-me] [data-testid=user-text]')?.textContent, 'My fictional message.');
+    assert.equal(q('[data-shared-message=after-via] [data-testid=message-author]'), null, 'my manual message keeps the existing bubble-only presentation');
+    assert.equal(q('[data-shared-message=before-via] [data-testid=message-via]'), null);
+  });
   await t.test('a quote reveals an older parent through the existing transcript window', async () => {
     await act(async () => {
       for (let index = 0; index < 65; index++) source.emit({ type: 'message', message: { id: `later-${index}`, conversationId: 'main', author: 'leo', at: new Date(Date.UTC(2026, 9, 21, 10, index)).toISOString(), text: `Fictional line ${index}` } });

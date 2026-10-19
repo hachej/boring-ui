@@ -81,7 +81,7 @@ test('shared file bytes are retained until the exact send; member ids do not dep
 
 test('channel socket default routes, validated events, overrides and owned reconnect lifecycle', async () => {
   const requests = [], sockets = [], events = [], statuses = [];
-  const msg = { id: 'posted', conversationId: 'main', author: 'mira', at: '2026-10-20T12:00:00Z', text: 'Hello', clientId: 'c1', replyTo: 'parent', card: { requestId: 'pdf', title: 'Export PDF', line: 'Une version à essayer', state: 'preview' }, steps: [{ label: 'Vérifier le PDF', detail: 'fictional admin detail', status: 'done' }] };
+  const msg = { id: 'posted', conversationId: 'main', author: 'mira', at: '2026-10-20T12:00:00Z', text: 'Hello', clientId: 'c1', via: 'Claude', replyTo: 'parent', card: { requestId: 'pdf', title: 'Export PDF', line: 'Une version à essayer', state: 'preview' }, steps: [{ label: 'Vérifier le PDF', detail: 'fictional admin detail', status: 'done' }] };
   const source = await createChannelSocket({ url: 'https://fictional.invalid/spaces/garden', reconnectMs: 1,
     fetch: async request => {
       requests.push(request);
@@ -97,7 +97,7 @@ test('channel socket default routes, validated events, overrides and owned recon
   assert.equal(source.me.id, 'mira'); assert.equal((await source.conversations()).length, 3);
   assert.equal((await source.members('main')).length, 5);
   assert.equal((await source.history('main', { before: 'last', limit: 20 })).before, 'old');
-  const posted = await source.send({ conversationId: 'main', text: 'Hello', mentions: ['leo'], clientId: 'c1' }); assert.equal(posted.id, 'posted'); assert.equal(posted.card.state, 'preview'); assert.deepEqual(posted.steps, msg.steps);
+  const posted = await source.send({ conversationId: 'main', text: 'Hello', mentions: ['leo'], clientId: 'c1' }); assert.equal(posted.id, 'posted'); assert.equal(posted.via, 'Claude'); assert.equal(posted.card.state, 'preview'); assert.deepEqual(posted.steps, msg.steps);
   await source.action({ conversationId: 'main', requestId: 'review-plan', actionId: 'review' });
   assert.deepEqual(requests.map(request => [request.method, new URL(request.url).pathname]), [
     ['GET', '/spaces/garden/me'], ['GET', '/spaces/garden/conversations'], ['GET', '/spaces/garden/conversations/main/members'],
@@ -108,7 +108,7 @@ test('channel socket default routes, validated events, overrides and owned recon
   const stop = source.subscribe('main', event => events.push(event), status => statuses.push(status));
   assert.equal(sockets[0].url.href, 'wss://fictional.invalid/spaces/garden/live?conversationId=main');
   sockets[0].onopen(); sockets[0].onmessage({ data: JSON.stringify({ type: 'message', message: msg }) });
-  assert.equal(events[0].message.id, 'posted');
+  assert.equal(events[0].message.id, 'posted'); assert.equal(events[0].message.via, 'Claude');
   sockets[0].onmessage({ data: JSON.stringify({ type: 'step', messageId: 'posted', conversationId: 'main', index: 0, step: { label: 'Relire', status: 'running' } }) });
   assert.deepEqual(events[1], { type: 'step', messageId: 'posted', conversationId: 'main', index: 0, step: { label: 'Relire', status: 'running' } });
   sockets[0].onclose(); await until(() => sockets.length === 2); sockets[1].onopen();

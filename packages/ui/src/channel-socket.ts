@@ -4,7 +4,7 @@ import type { ChannelEvent, ChannelMessage, ChannelSource, Member } from './chan
 const member = z.object({ id: z.string(), name: z.string(), kind: z.enum(['person', 'agent', 'admin']), role: z.union([z.enum(['owner', 'validator', 'member', 'admin']), z.templateLiteral(['agent:', z.string()])]).optional(), avatarUrl: z.string().optional(), presence: z.enum(['here', 'away']).optional() });
 const conversation = z.object({ id: z.string(), title: z.string(), kind: z.string(), members: z.array(z.string()) });
 const step = z.object({ label: z.string(), detail: z.string().optional(), status: z.enum(['running', 'done', 'failed']) });
-const message = z.object({ id: z.string(), conversationId: z.string(), author: z.string(), at: z.string(), text: z.string().optional(),
+const message = z.object({ id: z.string(), conversationId: z.string(), author: z.string(), at: z.string(), via: z.string().optional(), text: z.string().optional(),
   card: z.object({ requestId: z.string(), title: z.string(), line: z.string(), since: z.string().optional(), state: z.string().optional(), action: z.object({ id: z.string(), label: z.string() }).optional() }).optional(),
   mentions: z.array(z.string()).optional(), replyTo: z.string().optional(), attachments: z.array(z.object({ path: z.string(), title: z.string().optional() })).optional(), steps: z.array(step).optional(), streaming: z.boolean().optional(),
   removed: z.object({ by: z.string(), at: z.string() }).optional(), clientId: z.string().optional() });
