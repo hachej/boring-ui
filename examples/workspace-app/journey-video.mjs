@@ -30,6 +30,9 @@ try {
     assert.match(await browser.evaluate(`${video}.getAttribute('src')`), /^\/_files\/blob-/);
     assert.deepEqual(await browser.evaluate(`[${video}.controls, ${video}.playsInline, ${video}.preload, ${video}.autoplay]`), [true, true, 'metadata', false]);
     await browser.until('the generated video decodes', `${video}.readyState >= 2 && ${video}.videoWidth === 640`, 10000);
+    await browser.send('Runtime.evaluate', { expression: `${video}.play()`, userGesture: true, awaitPromise: true });
+    await browser.until('native playback advances', `${video}.currentTime > 0.2`, 10000);
+    await browser.evaluate(`${video}.pause()`);
     await browser.click(q('[data-testid=viewer-more]'));
     await browser.until('the bar download', `!!${q('[data-testid=viewer-download]')}`);
     await browser.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
