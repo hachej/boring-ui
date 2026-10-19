@@ -31,6 +31,8 @@ import { ViewerWindowProvider } from '../viewers/viewer-frame';
 import type { ViewerShare } from '../viewers/viewer-frame';
 import type { InteractiveHtml } from '../viewers/interactive-html';
 import { createMaquetteKind } from '../maquette-viewer/maquette-viewer';
+import { createMockupKind } from '../mockup-viewer/mockup-viewer';
+import type { MockupComments } from '../mockup-viewer/mockup-viewer';
 import type { MaquetteComments } from '../maquette-viewer/maquette-viewer';
 import { createDiagramKind } from '../diagram-viewer/diagram-viewer';
 import { Button } from '@/components/ui/button';
@@ -175,7 +177,7 @@ interface AgentWorkspaceBaseProps {
   /** The app's own artifact kinds (`ArtifactKind`: match, label, icon, renderer): the chat's cards and the artifact panel consult them before the built-in types and before the built-in maquette and diagram kinds (`*.maquette.json`, `maquette-viewer`; `*.diagram.json`, `diagram-viewer`), so an app kind for those files wins. */
   readonly artifactKinds?: ArtifactsConfig['kinds'] | undefined;
   /** Comment pins on mock-ups: the registry `feedback` item's `usePointComments(session)`. The maquette viewer then shows a comment icon that enters point mode on its screen. Omit it (no feedback session) and no icon shows. */
-  readonly comments?: MaquetteComments | undefined;
+  readonly comments?: (MaquetteComments & Pick<MockupComments, 'pick' | 'picking' | 'reposition'>) | undefined;
   /** Host viewers by artifact type or file kind, for example `{ canvas: props => <MyCanvas {...props} /> }`. */
   readonly viewers?: CustomViewers | undefined;
   /** Run HTML pages in the viewers' sandboxed preview, loading scripts only from these origins. Off without it. */
@@ -336,7 +338,7 @@ export function AgentWorkspace({ layout = 'default', controller, conversationId,
     if (view.hidden) presentAcks.current?.hidden(view); else presentAcks.current?.shown(view);
   }, []);
   // The app's kinds first, then the built-in maquette and diagram kinds in the workspace's language (a `.maquette.json` card and panel say « Maquette » in French).
-  const kinds = useMemo(() => [...(artifactKinds ?? []), createMaquetteKind({ locale, comments }), createDiagramKind({ locale })], [artifactKinds, locale, comments]);
+  const kinds = useMemo(() => [...(artifactKinds ?? []), createMaquetteKind({ locale, comments }), createDiagramKind({ locale }), createMockupKind({ locale, comments })], [artifactKinds, locale, comments]);
   const options: ViewerOptions = useMemo(() => ({ client, identity, history, viewers, kinds, interactive, share, onShown, onUnsavedChange: noteUnsaved, onBeforeLeaveChange: registerBeforeLeave }), [client, identityKey, history, viewers, kinds, interactive, share, onShown, noteUnsaved, registerBeforeLeave]); // eslint-disable-line react-hooks/exhaustive-deps
   const locate = revisionProvider?.locate ?? resources?.locate ?? defaultLocate;
   const readOnlyLibrary = !revisionProvider;

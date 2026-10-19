@@ -67,6 +67,10 @@ jobs:
         run: npm run workspace-app:journey
         env:
           APP_EVIDENCE: ${{ runner.temp }}/evidence/workspace-app
+      - name: Sandboxed HTML mock-ups, theme and element comments
+        run: npm run mockup:journey
+        env:
+          APP_EVIDENCE: ${{ runner.temp }}/evidence/mockup-html
       - name: Document draft recovery with IndexedDB
         run: npm run draft-recovery:journey
       - name: File tree, mentions, uploads and revision history

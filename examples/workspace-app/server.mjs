@@ -4,7 +4,7 @@
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { Harness, createRegistry } from '@earendil-works/pi-durable';
@@ -71,7 +71,7 @@ export async function startWorkspaceApp({ directory, port = 0, token = randomUUI
   };
 
   // ---- The page: page.jsx bundled once, Tailwind over the registry blocks, the token and identity in the page.
-  const bundle = await build({ entryPoints: [here('./page.jsx')], bundle: true, write: false, outdir: here('./out'), format: 'esm', platform: 'browser', jsx: 'automatic',
+  const bundle = await build({ entryPoints: [here('./page.jsx')], bundle: true, write: false, outdir: here('./out'), entryNames: 'app', chunkNames: 'chunk-[hash]', splitting: true, format: 'esm', platform: 'browser', jsx: 'automatic',
     alias: { '@': here('../app-shell') }, define: { 'process.env.NODE_ENV': '"production"' }, logLevel: 'silent' });
   const css = [await buildTailwind({ extraDirectories: ['examples/workspace-app', 'test/fixtures/themes'] }), ...bundle.outputFiles.filter(file => file.path.endsWith('.css')).map(file => file.text),
     readFileSync(here('../../registry/feedback/feedback.css'), 'utf8'),
@@ -80,6 +80,7 @@ export async function startWorkspaceApp({ directory, port = 0, token = randomUUI
 <link rel="stylesheet" href="/app.css">${themePreviewHead}</head><body><div id="root"></div><script>window.__APP__=${JSON.stringify({ token, identity: { runtimeId: 'app', ...person } })}</script>
 <script type="module" src="/app.js"></script></body></html>`;
   const statics = { ...themePreviewStatics, '/': ['text/html; charset=utf-8', page], '/app.js': ['text/javascript; charset=utf-8', bundle.outputFiles.find(file => file.path.endsWith('.js')).text], '/app.css': ['text/css; charset=utf-8', css],
+    ...Object.fromEntries(bundle.outputFiles.filter(file => file.path.endsWith('.js')).map(file => [`/${basename(file.path)}`, ['text/javascript; charset=utf-8', file.text]])),
     // pdf.js's worker at the URL the bundle resolves (esbuild leaves `new URL(<package path>, import.meta.url)` as is), for browsers without a PDF viewer.
     '/pdfjs-dist/build/pdf.worker.min.mjs': ['text/javascript; charset=utf-8', readFileSync(fileURLToPath(import.meta.resolve('pdfjs-dist/build/pdf.worker.min.mjs')))] };
 
@@ -89,7 +90,9 @@ export async function startWorkspaceApp({ directory, port = 0, token = randomUUI
     outgoing.on('close', () => closed.abort());
     try {
       const fixed = incoming.method === 'GET' && statics[url.pathname];
-      if (fixed) return void outgoing.writeHead(200, { 'content-type': fixed[0], 'cache-control': 'no-store' }).end(fixed[1]);
+      if (fixed) return void outgoing.writeHead(200, { 'content-type': fixed[0], 'cache-control': 'no-store',
+        // An opaque srcdoc frame may run scripts but cannot navigate to an external origin.
+        'content-security-policy': "frame-src 'none'" }).end(fixed[1]);
       const handler = handlers[url.pathname];
       const request = handler && await webRequest(incoming, url, { signal: closed.signal });
       await sendWebResponse(request ? await handler(request) : new Response(null, { status: handler ? 413 : 404 }), outgoing, { signal: closed.signal });

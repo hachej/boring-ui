@@ -47,6 +47,8 @@ export interface ArtifactKindViewProps {
   readonly text: string;
   readonly revision: string;
   readonly pinned: boolean;
+  /** Async built-in viewers call this only once their document is loaded. */
+  readonly onReady?: (() => void) | undefined;
   readonly fragment?: string | undefined;
   readonly read?: ((path: string) => Promise<string | undefined>) | undefined;
 }
