@@ -21,6 +21,7 @@ import { AppSidebar, TabBar } from './nav';
 import type { NavItem } from './nav';
 import { AppSheet } from './app-sheet';
 import { appShellText } from './text';
+import { ScreenHeaderSlotContext } from '../utils/screen-header-slot';
 import type { AppShellLocale, AppShellText } from './text';
 
 export interface AppShellProps {
@@ -47,17 +48,19 @@ function ShellContext({ name }: { readonly name: string }): null {
 function ScreenBody({ item }: { readonly item: NavItem }): ReactNode { return item.render(); }
 
 /** Every screen stays mounted; the ones not on show are `hidden` and do not register a header or a context. */
-function Screens({ items, activeId, scrolls }: { readonly items: readonly NavItem[]; readonly activeId: string; readonly scrolls: boolean }) {
+function Screens({ items, activeId, scrolls, slot }: { readonly items: readonly NavItem[]; readonly activeId: string; readonly scrolls: boolean; readonly slot: HTMLElement | null }) {
   return <div className="relative min-h-0 flex-1">
-    {items.map(item => <ScreenActiveContext.Provider key={item.id} value={item.id === activeId}>
+    {items.map(item => <ScreenActiveContext.Provider key={item.id} value={item.id === activeId}><ScreenHeaderSlotContext.Provider value={item.id === activeId ? slot : null}>
       <div hidden={item.id !== activeId} data-testid={`screen-${item.id}`} className={scrolls ? 'h-full overflow-y-auto overscroll-contain' : 'h-full overflow-hidden'}><ScreenBody item={item} /></div>
-    </ScreenActiveContext.Provider>)}
+    </ScreenHeaderSlotContext.Provider></ScreenActiveContext.Provider>)}
   </div>;
 }
 
 function Shell({ layout, title, nav, agent, improve, account, route, text }: { readonly layout: AppShellProps['layout']; readonly title: string; readonly nav: readonly NavItem[]; readonly agent: AgentSpec | undefined; readonly improve: boolean; readonly account: AccountSpec | undefined; readonly route: AppShellProps['route']; readonly text: AppShellText }) {
   const compact = useIsCompact();
   const [accountOpen, setAccountOpen] = useState(false);
+  // The header's slot for the screen on show (an embedded AgentWorkspace puts its bar's controls there).
+  const [slot, setSlot] = useState<HTMLElement | null>(null);
   const active = nav.find(item => item.id === route.id) ?? nav[0];
   if (!active) return null;
   const hasAccount = Boolean(account) || improve;
@@ -73,8 +76,8 @@ function Shell({ layout, title, nav, agent, improve, account, route, text }: { r
     <AgentDockLayout>
       <div data-slot="sidebar-inset" className="relative flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden bg-background">
       <ShellContext name={active.label} />
-      <ScreenHeader fallbackTitle={active.label} compact={compact} avatar={avatar} text={text} />
-      <Screens items={nav} activeId={active.id} scrolls={layout === 'screen'} />
+      <ScreenHeader fallbackTitle={active.label} compact={compact} avatar={avatar} text={text} slotRef={setSlot} />
+      <Screens items={nav} activeId={active.id} scrolls={layout === 'screen'} slot={slot} />
       {compact && <TabBar items={nav} activeId={active.id} onChange={route.onChange} text={text} />}
       </div>
     </AgentDockLayout>
