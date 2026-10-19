@@ -1,5 +1,7 @@
 # Unreleased (0.4.3)
 
+- Video blob pointers open in the panel and Library with native controls and Download; MP4, WebM, MOV, M4V and Ogg video extensions are recognised. Direct workspace videos without a streaming URL keep the cannot-preview state and are never buffered.
+
 - New `board-viewer` registry item (library code only, no viewer yet): the `board@1` format for `*.board.json` files, with a strict parser
   (`parseBoard`), the planner (`planBoard`) and the edit round-trip (`applyCanvasEdits`, `serializeBoard`). Installed next to `maquette-viewer`,
   which it reads. See [registry/README.md](registry/README.md#board-format-board-viewer).

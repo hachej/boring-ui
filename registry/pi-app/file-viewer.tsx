@@ -88,15 +88,31 @@ function FileDocument({ path, kind, locator, options, onClose, back, onUnsavedCh
   </div>;
 }
 
+/** Native controls only. A failed codec leaves a download instead of a broken video box. */
+function VideoPreview({ item }: { readonly item: BlobItem }) {
+  const [failed, setFailed] = useState(false);
+  const { labels } = useAppText();
+  return <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center">
+    {failed ? <div className="flex flex-col items-center gap-3 p-4">
+      <p role="status" data-testid="video-unplayable" className="text-muted-foreground">{labels.videoUnreadable}</p>
+      <Button nativeButton={false} render={<a href={item.url} download={item.name} />} data-testid="video-download">{labels.download}</Button>
+    </div> : <video src={item.url} aria-label={item.name} controls playsInline preload="metadata" onError={() => setFailed(true)} className="h-full max-h-full w-full min-w-0 object-contain" />}
+  </div>;
+}
+
 /**
- * A large file behind a pointer, from the host's URL: an image inline, a PDF in the PDF viewer (which loads the URL itself, never the
- * bytes into the page), anything else as a download named after the file. The viewers get a URL; none reads the pointer.
+ * A large file behind a pointer, from the host's URL: images, PDFs and videos inline, anything else as a download.
+ * The viewers get a URL; none reads the media bytes into the page.
  */
 function BlobFile({ item, subtitle, ...common }: { readonly item: BlobItem; readonly subtitle: ReactNode; readonly onClose: () => void; readonly onRefresh: () => unknown; readonly target: unknown; readonly titleTestId: string; readonly headerStart: ReactNode; readonly onShare?: NonNullable<ViewerOptions['share']> }) {
   const { labels } = useAppText();
   const details = <>{subtitle}<span aria-hidden="true">·</span><span>{formatBytes(item.size)}</span></>;
   if (item.type in IMAGE_TYPES) return <ImagePane name={item.name} mediaType={item.type} url={item.url} subtitle={details} {...common} />;
   if (item.type === 'application/pdf') return <PdfPane name={item.name} url={item.url} subtitle={subtitle} {...common} />;
+  if (item.type.startsWith('video/')) return <ViewerFrame title={item.name} subtitle={details} {...common} onDownload={() => {
+    const link = Object.assign(document.createElement('a'), { href: item.url, download: item.name });
+    document.body.append(link); link.click(); link.remove();
+  }}><VideoPreview key={item.url} item={item} /></ViewerFrame>;
   return <ViewerFrame title={item.name} subtitle={details} {...common}>
     <div data-testid="blob-file" data-blob-type={item.type} className="m-auto flex flex-col items-center gap-3 p-6 text-center">
       <p className="m-0 text-sm text-muted-foreground">{item.type}</p>
@@ -184,6 +200,8 @@ export function FileViewer({ path, locator, options, onClose, onBack, backLabel,
   return <div data-testid="file-viewer" data-kind={kind} data-path={path} aria-label={labels.fileViewer(KIND_LABEL[kind])} className="flex h-full min-h-0 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1">
     {custom ? custom({ target: locator, title: nameOf(path), frame: { titleTestId: 'file-title', onClose, target: { file: path }, headerStart: back } })
       : kind === 'markdown' || kind === 'html' ? <FileDocument {...common} />
+      // The resource client supplies bytes, not a streaming URL. Unlike images, videos must not be buffered to make an object URL.
+      : kind === 'video' ? <ViewerFrame title={nameOf(path)} subtitle={subtitleOf(locator)} onClose={onClose} headerStart={back}><p role="status" className="m-0 p-4 text-sm text-muted-foreground">{labels.fileNotText}</p></ViewerFrame>
       : kind === 'canvas' ? <ViewerFrame title={nameOf(path)} subtitle={subtitleOf(locator)} onClose={onClose} headerStart={back}><p role="status" className="m-0 p-4 text-sm text-muted-foreground">{labels.noCanvasViewer}</p></ViewerFrame>
       : <FileBytes {...common} />}
   </div>;

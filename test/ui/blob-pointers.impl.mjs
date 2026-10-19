@@ -35,6 +35,7 @@ test('blob pointers: Library rows, viewers from the blob URL, refused bases and 
   const identity = { scopeId: 'fictional', principalId: 'alice', initiatorId: 'alice' };
   const store = openSqliteWorkspaces({ filename: ':memory:', providerId: 'fictional', authorize: () => true }); t.after(() => store.close());
   const sizes = new Map();
+  const reads = [];
   let publishes = 0, lists = 0;
   /** The host's own write (what POST /_files does after storing the bytes): straight into the store, not through the page. */
   const hostWrite = async (path, text) => {
@@ -43,7 +44,7 @@ test('blob pointers: Library rows, viewers from the blob URL, refused bases and 
     sizes.set(path, bytes.length);
   };
   const binding = { identity, workspace: { providerId: 'fictional', instanceId: 'one', incarnation: 'one', viewId: 'one' }, locate,
-    read: request => store.read(request, identity), publish: request => { publishes++; return store.publication.publish(request, identity); }, lookup: id => store.reconciliation.lookup(id, identity),
+    read: request => { reads.push(request.target.resource.path); return store.read(request, identity); }, publish: request => { publishes++; return store.publication.publish(request, identity); }, lookup: id => store.reconciliation.lookup(id, identity),
     list: async ({ directory = '' }) => { lists++; return { entries: directory ? [] : [...sizes].map(([path, size]) => ({ path, kind: 'file', size })) }; }, search: async () => ({ entries: [] }), history: async () => [],
   };
   await hostWrite('harbour.png.blob.json', JSON.stringify(pointer({ id: 'img-01', type: 'image/png', name: 'harbour.png', size: 3_456_789 })));
@@ -51,6 +52,9 @@ test('blob pointers: Library rows, viewers from the blob URL, refused bases and 
   await hostWrite('budget.xlsx.blob.json', JSON.stringify(pointer({ id: 'xlsx-03', type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', name: 'budget.xlsx', size: 81_920 })));
   await hostWrite('future.blob.json', JSON.stringify({ 'boring:blob': 2, id: 'future-04' }));
   await hostWrite('broken.blob.json', JSON.stringify({ 'boring:blob': 1, id: 'broken-05' }));
+  await hostWrite('colour.mp4.blob.json', JSON.stringify(pointer({ id: 'video 07', type: 'video/mp4', name: 'colour.mp4', size: 52_000_000 })));
+  await hostWrite('unknown.blob.json', JSON.stringify(pointer({ id: 'video-08', type: 'video/webm', name: 'unknown', size: 4096 })));
+  await hostWrite('direct.mp4', 'fictional unsupported video bytes');
 
   const q = selector => window.document.querySelector(selector);
   const settle = async ready => { for (let n = 0; n < 200 && !ready(); n++) await act(async () => new Promise(r => setTimeout(r, 10))); };
@@ -82,6 +86,52 @@ test('blob pointers: Library rows, viewers from the blob URL, refused bases and 
     await open('report.pdf.blob.json');
     await settle(() => q('[data-testid=viewer-frame-pdf]'));
     assert.equal(q('[data-testid=viewer-frame-pdf]').getAttribute('src'), '/_files/pdf%2002#view=FitH', 'the browser loads the URL itself: no bytes in the page');
+  });
+
+  await t.test('an mp4 pointer streams in the public panel with native controls and a bar download', async () => {
+    await render({ key: 'video-panel', opened: { kind: 'file', path: 'colour.mp4.blob.json' } });
+    await settle(() => q('[data-testid=viewer-panel] video'));
+    const video = q('[data-testid=viewer-panel] video');
+    assert.ok(video, 'the artifact panel renders a video, not the generic download state');
+    assert.equal(video.getAttribute('src'), '/_files/video%2007');
+    assert.equal(video.controls, true);
+    assert.equal(video.hasAttribute('playsinline'), true);
+    assert.equal(video.getAttribute('preload'), 'metadata');
+    assert.equal(video.hasAttribute('autoplay'), false);
+    await act(async () => q('[data-testid=viewer-more]').click());
+    assert.ok(q('[data-testid=viewer-download]'), 'the ViewerFrame keeps Download');
+    await act(async () => window.document.body.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+  });
+
+  await t.test('the Library routes video by MIME even without a video extension; error replaces the box with a download', async () => {
+    await render({ key: 'video-library' });
+    await openLibrary();
+    await open('unknown.blob.json');
+    await settle(() => q('[data-testid=file-viewer] video'));
+    const video = q('[data-testid=file-viewer] video');
+    assert.ok(video, 'video/* routes by pointer type');
+    assert.equal(video.getAttribute('src'), '/_files/video-08');
+    await act(async () => video.dispatchEvent(new window.Event('error')));
+    assert.equal(q('[data-testid=file-viewer] video'), null, 'no broken video box remains');
+    assert.equal(q('[data-testid=video-unplayable]').textContent, "This video can't be played here");
+    const download = q('[data-testid=video-download]');
+    assert.equal(download.getAttribute('href'), '/_files/video-08');
+    assert.equal(download.getAttribute('download'), 'unknown');
+    await act(async () => q('[data-testid=viewer-more]').click());
+    assert.ok(q('[data-testid=viewer-download]'), 'the bar download also survives an error');
+    await act(async () => window.document.body.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    await open('colour.mp4.blob.json');
+    await settle(() => q('[data-testid=file-viewer] video'));
+    assert.ok(q('[data-testid=file-viewer] video'), 'another source does not inherit the error');
+  });
+
+  await t.test('direct workspace video without a URL is not read as bytes or text', async () => {
+    const before = reads.length;
+    await open('direct.mp4');
+    await settle(() => q('[data-testid=file-viewer] [role=status]'));
+    assert.equal(q('[data-testid=file-viewer] video'), null);
+    assert.match(q('[data-testid=file-viewer] [role=status]').textContent, /cannot be shown/);
+    assert.ok(!reads.slice(before).includes('direct.mp4'), 'the byte-only resource client must not buffer video');
   });
 
   await t.test('another type shows a download action named after the file', async () => {
