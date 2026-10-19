@@ -27,6 +27,7 @@
     "workspace-app:journey": "node examples/workspace-app/journey.mjs",
     "maquette:journey": "node examples/workspace-app/journey-maquette.mjs",
     "blobs:journey": "node examples/workspace-app/journey-blobs.mjs",
+    "diagram:journey": "node examples/workspace-app/journey-diagram.mjs",
     "workspace-demo": "node demos/workspace/server.mjs",
     "workspace-demo:journey": "node demos/workspace/journey.mjs",
     "workspace-demo:journey:trace": "node demos/workspace/journey-trace.mjs",

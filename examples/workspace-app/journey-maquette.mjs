@@ -79,13 +79,13 @@ try {
   });
 
   await step('phone: How it works opens from the menu in a dialog; the diagram scrolls inside its box', async () => {
-    assert.equal(await browser.evaluate(`!!${q('[data-testid=maquette-diagram]')}`), false, 'hidden by default');
+    assert.equal(await browser.evaluate(`!!${q('[data-testid=diagram]')}`), false, 'hidden by default');
     await openMenu(true);
     await browser.tap(q('[data-testid=maquette-how-open]'));
-    await browser.until('diagram', `!!${q('[data-testid=maquette-how] [data-testid=maquette-diagram]')}`, 5000);
+    await browser.until('diagram', `!!${q('[data-testid=maquette-how] [data-testid=diagram]')}`, 5000);
     await browser.tap(qa('[data-testid=maquette-case]') + `.find(e => e.textContent === 'Cancellation')`);
-    await browser.until('highlighted', `${qa('[data-testid=maquette-diagram] g[data-state][data-lit]')}.length === 4`, 5000);
-    assert.equal(await browser.evaluate(`${q('[data-testid=maquette-diagram]')}.dataset.layout`), 'vertical', 'steps run top to bottom on a phone');
+    await browser.until('highlighted', `${qa('[data-testid=diagram] g[data-node][data-lit]')}.length === 4`, 5000);
+    assert.equal(await browser.evaluate(`${q('[data-testid=diagram]')}.dataset.layout`), 'vertical', 'steps run top to bottom on a phone');
     assert.ok(await browser.evaluate(noOverflow), 'the diagram never scrolls the page');
     await shoot('phone-how-it-works');
     await browser.press('Escape');
@@ -113,7 +113,7 @@ try {
     await browser.click(q('[data-testid=maquette-end-tour]'));
     await openMenu(false);
     await browser.click(q('[data-testid=maquette-how-open]'));
-    await browser.until('diagram', `!!${q('[data-testid=maquette-how] [data-testid=maquette-diagram]')}`, 5000);
+    await browser.until('diagram', `!!${q('[data-testid=maquette-how] [data-testid=diagram]')}`, 5000);
     await shoot('desktop-how-it-works');
     await browser.press('Escape');
     await browser.evaluate(`location.hash = 'screen=confirmed'`);
