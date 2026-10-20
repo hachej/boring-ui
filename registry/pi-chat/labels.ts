@@ -24,7 +24,7 @@ export const defaultChatLabels = {
   sharedMemberCount: (count: number) => `${count} members`,
   sharedAgent: 'Agent',
   sharedVia: (name: string) => `via ${name}`,
-  sharedWriting: (name: string) => `${name} is writing…`,
+  sharedWorking: (name: string) => `${name} is working…`,
   sharedReply: 'Reply',
   sharedCancelReply: 'Cancel reply',
   sharedEarlierMessage: 'Earlier message',

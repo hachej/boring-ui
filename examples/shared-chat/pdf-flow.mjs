@@ -22,23 +22,21 @@ export function createPdfDemo({ manual = false } = {}) {
   ];
   function planReady() {
     if (!plan || planned) return; planned = true;
-    const text = '  \nJe vérifierai le document avant de proposer une version.';
-    plan = { ...plan, text: plan.text + text };
+    const text = '  \nJe confie la mise en page au Builder et je vous propose une version.';
+    plan = { ...plan, text: plan.text + text, streaming: false };
     source.emit({ type: 'delta', messageId: plan.id, conversationId: plan.conversationId, text });
+    post(plan);
   }
   function build() {
     if (!plan || built) return; built = true; planReady();
-    steps.forEach((step, index) => source.emit({ type: 'step', messageId: plan.id, conversationId: plan.conversationId, index, step }));
-    worker = { id: 'pdf-worker', conversationId: plan.conversationId, author: 'worker', at: at(1), text: 'Je vérifie la mise en page.', streaming: true, steps: [{ label: 'Relire le document', status: 'running' }] };
-    post(worker);
-    post({ id: 'pdf-doing', conversationId: plan.conversationId, author: 'pm', at: at(2), text: 'Je regarde vos fichiers.' });
-    card = { id: 'pdf-card', conversationId: plan.conversationId, author: 'pm', at: at(3), card: { requestId: 'export-pdf', title: 'Export PDF', line: 'Je prépare l’export PDF.', since: at(0), state: 'building', action: { id: 'progress', label: 'Voir la demande' } } };
+    card = { id: 'pdf-card', conversationId: plan.conversationId, author: 'pm', at: at(2), card: { requestId: 'export-pdf', title: 'Export PDF', line: 'Je prépare l’export PDF.', since: at(0), state: 'building', action: { id: 'progress', label: 'Voir la demande' } } };
     post(card);
+    worker = { id: 'pdf-worker', conversationId: plan.conversationId, author: 'worker', at: at(3), text: 'Je prépare la mise en page du PDF.', streaming: true, steps };
+    post(worker);
   }
   function finish() {
     if (!plan) return; build();
-    plan = { ...plan, streaming: false, steps: steps.map(step => ({ ...step, status: 'done' })) }; post(plan);
-    worker = { ...worker, streaming: false, steps: [{ label: 'Document relu', status: 'done' }] }; post(worker);
+    worker = { ...worker, streaming: false, steps: steps.map(step => ({ ...step, status: 'done' })) }; post(worker);
     card = { ...card, card: { ...card.card, state: 'preview', line: 'On attend votre essai', action: { id: 'try', label: 'Essayer cette version' } } }; post(card);
   }
   return {
@@ -47,7 +45,8 @@ export function createPdfDemo({ manual = false } = {}) {
       const message = await source.send(input);
       if (input.mentions.includes('pm') && !input.replyTo) {
         for (const timer of timers) clearTimeout(timer); timers.clear(); planned = false; built = false;
-        plan = { id: 'pdf-plan', conversationId: input.conversationId, author: 'pm', at: at(0), text: 'Je vais ajouter un export PDF.', streaming: true, steps: [{ label: 'Lire les fichiers', status: 'running' }] };
+        post({ id: 'pdf-doing', conversationId: input.conversationId, author: 'pm', at: at(0), text: 'Je regarde vos fichiers.' });
+        plan = { id: 'pdf-plan', conversationId: input.conversationId, author: 'pm', at: at(1), text: 'Je vais ajouter un export PDF.', streaming: true };
         post(plan);
         if (!manual) for (const [delay, advance] of [[250, planReady], [1200, build], [6500, finish]]) timers.add(setTimeout(advance, delay));
       }

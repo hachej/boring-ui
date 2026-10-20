@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import { Marked } from 'marked';
 import { decodeHTML } from 'entities';
 import { CodeBlock } from './code-block';
+import { pieces } from './config';
 import { useChatText } from './labels';
 import type { ChatLabels } from './labels';
 import { Button } from '@/components/ui/button';
@@ -39,7 +40,7 @@ function containsHtml(value: unknown): boolean {
 }
 function literal(value: string): ReactNode { return <span className="whitespace-pre-wrap">{value}</span>; }
 
-interface Context { readonly mentions: CommandMentions | undefined; readonly onCopy: ((text: string) => Promise<void>) | undefined; readonly labels: ChatLabels }
+interface Context { readonly renderMention: ((path: string, text: string) => ReactNode) | undefined; readonly mentions: CommandMentions | undefined; readonly onCopy: ((text: string) => Promise<void>) | undefined; readonly labels: ChatLabels }
 
 function children(value: unknown, context: Context, before = '', after = '', inline = false): ReactNode {
   if (!Array.isArray(value)) return null;
@@ -124,7 +125,10 @@ function renderToken(value: unknown, context: Context, before = '', after = ''):
         ? createElement(`h${depth}`, { className: `${HEADINGS[depth]} first:mt-0` }, children(value['tokens'], context, '', '', true)) : literal(raw);
     }
     case 'text': return Array.isArray(value['tokens']) ? children(value['tokens'], context, before, after, true)
-      : value['escaped'] === true ? literal(content) : mentionText(decodeHTML(content), mentions, before, after, context.labels);
+      : value['escaped'] === true ? literal(content) : context.renderMention
+        ? pieces(decodeHTML(content), { mentions: true, skills: [] }).map((piece, index) => <Fragment key={index}>{piece.kind === 'mention' && piece.value !== undefined
+          ? context.renderMention?.(piece.value, piece.text) : mentionText(piece.text, mentions, before, after, context.labels)}</Fragment>)
+        : mentionText(decodeHTML(content), mentions, before, after, context.labels);
     case 'escape': return content;
     case 'strong': return <strong className="font-semibold text-foreground">{children(value['tokens'], context, before, after, true)}</strong>;
     case 'em': return <em>{children(value['tokens'], context, before, after, true)}</em>;
@@ -159,15 +163,15 @@ function renderToken(value: unknown, context: Context, before = '', after = ''):
 /** One top-level block; unchanged blocks skip re-rendering while a long answer streams. */
 const Block = memo(function Block({ token, context }: { readonly token: unknown; readonly context: Context }) {
   return <>{renderToken(token, context)}</>;
-}, (a, b) => isRecord(a.token) && isRecord(b.token) && a.token['raw'] === b.token['raw'] && a.token['type'] === b.token['type'] && a.context.mentions === b.context.mentions && a.context.onCopy === b.context.onCopy && a.context.labels === b.context.labels);
+}, (a, b) => isRecord(a.token) && isRecord(b.token) && a.token['raw'] === b.token['raw'] && a.token['type'] === b.token['type'] && a.context.mentions === b.context.mentions && a.context.renderMention === b.context.renderMention && a.context.onCopy === b.context.onCopy && a.context.labels === b.context.labels);
 
-export const Markdown = memo(function Markdown({ text: source, commandMentions, onCopy, streaming = false }: {
-  readonly text: string; readonly commandMentions?: CommandMentions; readonly onCopy?: (text: string) => Promise<void>; readonly streaming?: boolean;
+export const Markdown = memo(function Markdown({ text: source, commandMentions, renderMention, onCopy, streaming = false }: {
+  readonly text: string; readonly renderMention?: ((path: string, text: string) => ReactNode) | undefined; readonly commandMentions?: CommandMentions; readonly onCopy?: (text: string) => Promise<void>; readonly streaming?: boolean;
 }) {
   const tokens = useMemo(() => { try { return markdown.lexer(source); } catch { return null; } }, [source]);
   const mentions = source.includes('/') && commandMentions?.commands.length ? commandMentions : undefined;
   const { labels } = useChatText();
-  const context = useMemo<Context>(() => ({ mentions, onCopy, labels }), [mentions, onCopy, labels]);
+  const context = useMemo<Context>(() => ({ mentions, renderMention, onCopy, labels }), [mentions, renderMention, onCopy, labels]);
   const body = useMemo(() => {
     if (!tokens) return literal(source);
     // With mentions enabled, positions are relative to the whole text, so render the token list as one unit.

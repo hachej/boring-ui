@@ -13,7 +13,7 @@ export const frenchChatLabels: ChatLabels = {
   sharedMemberCount: (count: number) => `${count} membres`,
   sharedAgent: 'Agent',
   sharedVia: (name: string) => `via ${name}`,
-  sharedWriting: (name: string) => `${name} écrit…`,
+  sharedWorking: (name: string) => `${name} travaille…`,
   sharedReply: 'Répondre',
   sharedCancelReply: 'Annuler la réponse',
   sharedEarlierMessage: 'Message précédent',

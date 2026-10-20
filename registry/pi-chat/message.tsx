@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { ImageContent, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai';
 import { AlertCircleIcon, CircleSlashIcon, FileIcon, FileSpreadsheetIcon, FileTextIcon, ImageIcon, PresentationIcon } from 'lucide-react';
@@ -74,13 +74,13 @@ function Image({ image, onOpenImage }: { readonly image: ImageContent; readonly 
   </Attachment>;
 }
 
-/** A `@path` mention in a sent message: the host's own look when its `render` returns one, else the default chip (a button when it can be opened). */
+/** Inline sent mention; workspace openers and host renderers keep their existing authority. */
 function UserMention({ path, text, open, render }: { readonly path: string; readonly text: string; readonly open: ((path: string) => void) | undefined; readonly render: ((path: string) => ReactNode | undefined) | undefined }) {
   const custom = render?.(path);
   if (custom !== undefined) return <>{custom}</>;
   return open
-    ? <Button variant="secondary" size="sm" data-testid="message-mention" data-path={path} aria-label={`Open ${path}`} onClick={() => open(path)}>{text}</Button>
-    : <Badge variant="secondary" data-testid="message-mention" data-path={path}>{text}</Badge>;
+    ? <span role="link" tabIndex={0} className="font-medium text-primary" data-testid="message-mention" data-path={path} aria-label={`Open ${path}`} onClick={() => open(path)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); open(path); } }}>{text}</span>
+    : <span className="font-medium text-primary" data-testid="message-mention" data-path={path}>{text}</span>;
 }
 
 /** The icon a file card shows for its kind. */
@@ -130,10 +130,10 @@ function FileCards({ paths, open, preview }: { readonly paths: readonly string[]
  * A text part of a sent message. Its `uploads/` mentions become file cards above the bubble and leave the text; the message content keeps
  * them (only what is drawn changes).
  */
-function UserText({ text, context }: { readonly text: string; readonly context: RowContext }) {
+function UserText({ text, context, align = 'end' }: { readonly text: string; readonly context: RowContext; readonly align?: 'start' | 'end' }) {
   const open = context.pieces?.openMention;
   const render = context.pieces?.renderMention;
-  if (!context.pieces) return <Bubble variant="muted" align="end"><BubbleContent data-testid="user-text"><span className="whitespace-pre-wrap">{text}</span></BubbleContent></Bubble>;
+  if (!context.pieces) return <Bubble variant="muted" align={align}><BubbleContent data-testid="user-text"><span className="whitespace-pre-wrap">{text}</span></BubbleContent></Bubble>;
   const all = pieces(text, context.pieces);
   const isFile = (piece: Piece) => piece.kind === 'mention' && isUploadPath(piece.value!);
   const files = all.filter(isFile).map(piece => piece.value!);
@@ -141,17 +141,17 @@ function UserText({ text, context }: { readonly text: string; readonly context: 
   const empty = shown.every(piece => piece.kind === undefined && piece.text === '');
   return <>
     {files.length > 0 && <FileCards paths={files} open={context.openFile ?? open} preview={context.pieces.preview} />}
-    {!(files.length > 0 && empty) && <Bubble variant="muted" align="end"><BubbleContent data-testid="user-text"><span className="whitespace-pre-wrap">{shown.map((piece, at) => piece.kind === 'mention'
+    {!(files.length > 0 && empty) && <Bubble variant="muted" align={align}><BubbleContent data-testid="user-text"><span className="whitespace-pre-wrap">{shown.map((piece, at) => piece.kind === 'mention'
       ? <UserMention key={at} path={piece.value!} text={piece.text} open={open} render={render} />
       : piece.kind === 'skill' ? <Badge key={at} variant="secondary" data-testid="message-skill" data-skill={piece.value}>{piece.text}</Badge>
       : piece.text)}</span></BubbleContent></Bubble>}
   </>;
 }
 
-function UserBubble({ message, context }: { readonly message: UserMessage; readonly context: RowContext }) {
+function UserBubble({ message, context, align = 'end' }: { readonly message: UserMessage; readonly context: RowContext; readonly align?: 'start' | 'end' }) {
   const parts = typeof message.content === 'string' ? [{ type: 'text' as const, text: message.content }] : message.content;
-  return <Message align="end"><MessageContent>
-    {parts.map((part, index) => part.type === 'text' ? (isFileBlock(part.text) ? null : <UserText key={index} text={part.text} context={context} />)
+  return <Message align={align}><MessageContent>
+    {parts.map((part, index) => part.type === 'text' ? (isFileBlock(part.text) ? null : <UserText key={index} text={part.text} context={context} align={align} />)
       : <Image key={index} image={part} onOpenImage={context.onOpenImage} />)}
   </MessageContent></Message>;
 }
@@ -172,8 +172,9 @@ export function RowView({ row, context }: { readonly row: Row; readonly context:
 function RowBody({ row, context: liveContext }: { readonly row: Row; readonly context: RowContext }) {
   const context: RowContext = row.historical ? { ...liveContext, answer: undefined, onFork: undefined, messageActions: undefined, replyActions: undefined, commandMentions: undefined } : liveContext;
   const { labels, icons } = useChatText();
+  const renderMention = useMemo(() => context.pieces?.mentions ? (path: string, text: string) => <UserMention path={path} text={text} open={context.pieces?.openMention} render={context.pieces?.renderMention} /> : undefined, [context.pieces]);
   switch (row.type) {
-    case 'user': return <article data-row-id={row.key} data-role="user" aria-live={row.historical ? 'off' : undefined}><UserBubble message={row.message} context={context} /></article>;
+    case 'user': return <article data-row-id={row.key} data-role="user" aria-live={row.historical ? 'off' : undefined}><UserBubble message={row.message} context={context} align={row.shared && !row.shared.own ? 'start' : 'end'} /></article>;
     case 'card': return <article data-row-id={row.key} data-role="event">{row.card.content}</article>;
     case 'event': return <article data-row-id={row.key} data-role="event" className="text-center text-xs text-muted-foreground">{labels.event(row.label)}</article>;
     case 'system': return <article data-row-id={row.key} data-role="system"><Collapsible>
@@ -211,7 +212,7 @@ function RowBody({ row, context: liveContext }: { readonly row: Row; readonly co
               return <ActivityBlock key={chunk.key} steps={chunk.steps} state={state} streaming={row.streaming} developer={context.developer} {...(context.onOpenImage ? { onOpenImage: context.onOpenImage } : {})} />;
             }
             const part = chunk.part;
-            if (part.kind === 'text') return <Bubble key={part.key} variant="ghost"><BubbleContent><Markdown text={part.text} streaming={row.streaming && part === lastText && row.parts[row.parts.length - 1] === part}
+            if (part.kind === 'text') return <Bubble key={part.key} variant="ghost"><BubbleContent><Markdown text={part.text} renderMention={renderMention} streaming={row.streaming && part === lastText && row.parts[row.parts.length - 1] === part}
               {...(settled && context.commandMentions ? { commandMentions: context.commandMentions } : {})} {...(context.onCopy ? { onCopy: context.onCopy } : {})} /></BubbleContent></Bubble>;
             if (part.kind === 'thinking') return null; // reasoning is a step of an activity block
             if (part.kind === 'approval') return <ApprovalCard key={part.key} call={part.call} result={part.result} questionId={part.questionId} answer={context.answer} summary={part.summary} decision={part.decision} live={part.live} />;

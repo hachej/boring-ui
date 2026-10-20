@@ -37,12 +37,12 @@ export function liveLabel(call: ToolCall, labels: Pick<ChatLabels, 'toolActivity
 }
 
 /** One Trace step. Failures open by default; quiet successful steps have no disclosure. */
-export function ToolCard({ entry, onOpenImage, details = true }: { readonly entry: ToolEntry | { readonly key: string; readonly step: ChannelStep }; readonly details?: boolean; readonly onOpenImage?: (image: Extract<ToolResultMessage['content'][number], { type: 'image' }>) => void }) {
+export function ToolCard({ entry, onOpenImage, details = true, active = true }: { readonly active?: boolean; readonly entry: ToolEntry | { readonly key: string; readonly step: ChannelStep }; readonly details?: boolean; readonly onOpenImage?: (image: Extract<ToolResultMessage['content'][number], { type: 'image' }>) => void }) {
   const { labels } = useChatText();
   const [chosen, setChosen] = useState<boolean | undefined>();
   if ('step' in entry) {
     const { step } = entry;
-    const Icon = step.status === 'running' ? Spinner : step.status === 'done' ? CheckIcon : AlertCircleIcon;
+    const Icon = step.status === 'running' ? active ? Spinner : WrenchIcon : step.status === 'done' ? CheckIcon : AlertCircleIcon;
     return <TraceLine data-testid="host-step" {...(step.status === 'running' ? { status: 'running' } : step.status === 'failed' ? { status: 'error' } : {})}>
       <TraceIcon><Icon aria-hidden="true" /></TraceIcon><TraceTitle><div className="flex min-w-0 flex-col"><span>{step.label}</span>{step.detail && <pre data-testid="step-detail" className="m-0 text-xs font-mono whitespace-pre-wrap text-muted-foreground [overflow-wrap:anywhere]">{step.detail}</pre>}</div></TraceTitle>
     </TraceLine>;

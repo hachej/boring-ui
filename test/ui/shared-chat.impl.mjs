@@ -40,11 +40,21 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
 
   await t.test('author grouping, avatars, agent and admin badges; own bubble stays unchanged', async () => {
     assert.equal(q('[data-shared-message="one"] [data-testid=message-author]')?.textContent, 'Leo');
-    assert.ok(q('[data-shared-message="one"] [data-testid=member-avatar]'));
+    assert.equal(q('[data-shared-message="one"] [data-testid=member-avatar]')?.dataset.size, 'sm');
+    for (const id of ['one', 'two']) {
+      const bubble = q(`[data-shared-message="${id}"] [data-slot=bubble]`);
+      assert.equal(bubble?.dataset.variant, 'muted'); assert.equal(bubble?.dataset.align, 'start');
+      assert.equal(q(`[data-shared-message="${id}"] [data-slot=message]`)?.dataset.align, 'start');
+    }
+    assert.ok(q('[data-shared-message="one"] [data-testid=message-author]')?.classList.contains('text-sm'));
+    assert.ok(q('[data-shared-message="one"] [data-testid=message-author]')?.classList.contains('font-medium'));
+    assert.equal(q('[data-shared-message="two"] [data-testid=member-avatar]'), null);
     assert.equal(q('[data-shared-message="two"] [data-testid=message-author]'), null);
     assert.equal(q('[data-shared-message="four"] [data-testid=author-badge]')?.textContent, 'Admin');
     assert.equal(q('[data-shared-message="five"] [data-testid=author-badge]')?.textContent, 'Agent');
     assert.ok(q('[data-shared-message="three"] [data-testid=user-text]'));
+    assert.equal(q('[data-shared-message="three"] [data-slot=bubble]')?.dataset.align, 'end');
+    assert.equal(q('[data-shared-message="five"] [data-slot=bubble]')?.dataset.variant, 'ghost');
     assert.equal(q('[data-shared-message="three"] [data-testid=message-author]'), null);
   });
   await t.test('request action and replacement through the timeline', async () => {
@@ -63,6 +73,8 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
     assert.match(row.textContent, /Checking the plan\./);
   });
   await t.test('member presence and live connection status', async () => {
+    assert.equal(q('[data-testid=shared-status]'), null, 'live has no status dot');
+    assert.equal(q('[data-testid=shared-connection-announcement]')?.getAttribute('aria-live'), 'polite');
     await act(async () => q('[data-testid=shared-members]').click());
     await settle(() => q('[data-testid=member-list]'));
     assert.match(q('[data-testid=member-list]').textContent, /Julien \(admin\)/);
@@ -71,9 +83,12 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
     assert.equal(q('[data-member-id=leo] [data-testid=presence]')?.dataset.presence, 'away');
     await act(async () => source.setStatus('reconnecting'));
     assert.equal(q('[data-testid=shared-status]')?.dataset.status, 'reconnecting');
+    assert.ok(q('[data-testid=shared-status] svg')?.classList.contains('text-muted-foreground'));
     await act(async () => source.setStatus('offline'));
     assert.equal(q('[data-testid=shared-status]')?.dataset.status, 'offline');
+    assert.ok(q('[data-testid=shared-status] svg')?.classList.contains('text-destructive'));
     await act(async () => { source.setStatus('live'); q('[data-testid=shared-members]').click(); });
+    assert.equal(q('[data-testid=shared-status]'), null);
   });
   await t.test('existing composer mention picker sends member ids', async () => {
     const textarea = q('textarea');
@@ -90,6 +105,17 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
     await act(async () => q('[data-testid=composer-submit]').click());
     await settle(() => source.sends.length > 0);
     assert.deepEqual(source.sends.at(-1).mentions, ['leo']);
+  });
+  await t.test('sent mentions are inline in own, colleague and agent messages', async () => {
+    await act(async () => {
+      for (const [id, author] of [['mention-own', 'mira'], ['mention-other', 'leo'], ['mention-agent', 'pm']]) source.emit({ type: 'message', message: { id, author, conversationId: 'main', at: new Date().toISOString(), text: '@leo hi?' } });
+    });
+    for (const id of ['mention-own', 'mention-other', 'mention-agent']) {
+      const mention = q(`[data-shared-message="${id}"] [data-testid=message-mention]`);
+      assert.equal(mention?.textContent, '@Leo');
+      assert.equal(mention.className, 'font-medium text-primary');
+      assert.equal(mention.getAttribute('data-slot'), null, 'not a Badge or padded Button');
+    }
   });
   await t.test('outbox retries exact clientId after reconnect and deduplicates the echo', async () => {
     await act(async () => { source.setStatus('offline'); controller.setText('Retained request'); });
@@ -114,6 +140,23 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
     assert.deepEqual([...document.querySelectorAll('[data-testid=mention-item]')].map(item => item.dataset.path).slice(0, 2), ['pm', 'worker']);
     await act(async () => textarea.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
   });
+  await t.test('one working-agent spinner moves from the collapsed summary to the expanded running step', async () => {
+    const work = { id: 'one-spinner', conversationId: 'main', author: 'worker', at: '2026-10-20T11:59:00Z', text: 'Je prépare le PDF.', streaming: true, steps: [{ label: 'Lire', status: 'done' }, { label: 'Mise en page', status: 'running' }, { label: 'Vérifier', status: 'failed' }] };
+    await act(async () => source.emit({ type: 'message', message: work }));
+    const row = () => q('[data-shared-message=one-spinner]');
+    assert.equal(row().querySelector('[data-testid=activity]').dataset.open, 'false');
+    assert.equal(row().querySelectorAll('[data-slot=spinner]').length, 1);
+    assert.match(row().querySelector('[data-testid=activity-label]').textContent, /Mise en page.*2\/3/);
+    await act(async () => row().querySelector('[data-testid=activity] button').click());
+    assert.equal(row().querySelectorAll('[data-slot=spinner]').length, 1);
+    assert.ok(row().querySelector('[data-testid=activity-step][data-status=running] [data-slot=spinner]'));
+    assert.equal(row().querySelector('[data-testid=activity] button [data-slot=spinner]'), null);
+    assert.equal(q('[data-testid=request-card] [data-slot=spinner]'), null);
+    await act(async () => source.emit({ type: 'message', message: { ...work, streaming: false, steps: work.steps.map(step => ({ ...step, status: 'done' })) } }));
+    assert.equal(row().querySelector('[data-testid=activity]').dataset.open, 'false');
+    assert.equal(row().querySelectorAll('[data-slot=spinner]').length, 0);
+    assert.equal(row().querySelector('[data-testid=activity-label]').textContent, '3 steps');
+  });
   await t.test('agent messages are participant bubbles; traces replace indexed steps and stay per-agent', async () => {
     const at = '2026-10-20T12:00:00Z';
     const plan = { id: 'pm-plan', conversationId: 'main', author: 'pm', at, text: 'Je vais ajouter un export PDF.\nJe vérifierai le document.', streaming: true, steps: [] };
@@ -124,7 +167,19 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
       source.emit({ type: 'step', messageId: worker.id, conversationId: 'main', index: 0, step: { label: 'Préparer les données', status: 'running' } });
     });
     const pm = () => q('[data-shared-message=pm-plan]'); const builder = () => q('[data-shared-message=worker-plan]');
-    assert.match(pm().textContent, /PM is writing/);
+    assert.match(pm().textContent, /PM is working/);
+    for (const message of [pm(), builder()]) {
+      assert.equal(message.querySelector('[data-testid=activity]').dataset.open, 'false');
+      assert.equal(message.querySelectorAll('[data-slot=spinner]').length, 1, 'one collapsed summary spinner per working agent');
+      assert.equal(message.querySelector('[data-testid=activity-step]'), null);
+      assert.equal(message.querySelector('[data-testid=member-avatar] [data-slot=spinner]'), null);
+      assert.equal(message.querySelector('[data-testid=request-card] [data-slot=spinner]'), null);
+    }
+    await act(async () => { pm().querySelector('[data-testid=activity] button').click(); builder().querySelector('[data-testid=activity] button').click(); });
+    for (const message of [pm(), builder()]) {
+      assert.equal(message.querySelectorAll('[data-slot=spinner]').length, 1, 'the expanded running step owns the only spinner');
+      assert.ok(message.querySelector('[data-testid=activity-step] [data-slot=spinner]'));
+    }
     assert.equal(pm().querySelector('[data-testid=activity-step]').dataset.status, 'running');
     assert.match(pm().querySelector('[data-testid=activity-steps]').textContent, /read docs\/fictional.md/);
     assert.match(builder().textContent, /Préparer les données/);
@@ -144,6 +199,7 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
     const complete = { ...controller.getSnapshot().shared.messages.find(message => message.id === plan.id), streaming: false };
     await act(async () => source.emit({ type: 'message', message: complete }));
     assert.equal(pm().querySelector('[data-testid=activity]').dataset.open, 'false');
+    assert.equal(pm().querySelectorAll('[data-slot=spinner]').length, 0);
     assert.equal(pm().querySelector('[data-testid=activity-label]').textContent, '2 steps');
     await act(async () => pm().querySelector('[data-testid=activity] button').click());
     assert.equal(pm().querySelector('[data-testid=activity]').dataset.open, 'true');
