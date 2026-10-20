@@ -7,6 +7,7 @@
 - `ChannelMessage.via?: string` displays personal-agent attribution after the person's name through the optional item's `sharedVia` label. It keeps the person author and own-user bubble, with no Agent badge or agent avatar state. The host sets it for hub MCP posts; the browser send shape is unchanged.
 - Shared data adds optional `Card.state`, `ChannelMessage.steps` and the indexed `step` event. `Step` and `channelAvatarStates` are exported. Avatar indicators reflect the latest card; the optional host trace reuses Trace primitives for live and collapsed steps. The host strips `detail` outside Admin; the renderer shows whatever arrives.
 - Shared EN/FR label overrides move out of PiChat labels into `useSharedChat(source, { labels })` or `SharedChat.participantLabels`. Shared visuals, host policy boundaries, source shapes and idempotent `clientId` requirements are unchanged.
+- `pi-chat` and `pi-ambient` add the opt-in `presentation="natural"` prop and the labels `preparing` and `sendUnavailable` (EN and FR). Defaults are unchanged: without the prop the output is identical. See [Natural presentation](registry/README.md#natural-presentation-in-pi-chat).
 
 # Migrating to 0.4.3
 

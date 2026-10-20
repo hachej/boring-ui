@@ -186,20 +186,78 @@ async function oneLayerAt(t, width) {
 }
 
 // The layer's header actions: one layer open (its header is the drawer's on a phone, the dock's on a wide screen), the probe reads the layer's API.
-async function openedLayer(t, width, specs) {
-  const { createElement: h, useLayoutEffect, act } = await import('react');
+async function openedLayer(t, width, specs, { search = '', state = null, strict = false } = {}) {
+  const { createElement: h, useLayoutEffect, act, StrictMode } = await import('react');
   const shell = await bundle('shell-entry.tsx', `export { AppShell } from '${root}${folder}/app-shell.tsx';\nexport { useAgentLayer } from '${root}${folder}/agent-layer.tsx';\n`);
   let latest;
   const Probe = () => { const api = shell.useAgentLayer(); useLayoutEffect(() => { latest = api; }); return null; };
   const window = dom(t, width);
+  window.history.replaceState(state, '', `/${search}`);
+  const replaced = [];
+  const replace = window.history.replaceState.bind(window.history);
+  window.history.replaceState = (...args) => { replaced.push(args); return replace(...args); };
   const { createRoot } = await import('react-dom/client');
   const container = window.document.createElement('div');
   window.document.body.append(container);
   const reactRoot = createRoot(container);
   const nav = [{ id: 'Jour', label: 'Jour', icon: Icon, render: () => h(Probe) }];
-  await act(async () => reactRoot.render(h(shell.AppShell, { layout: 'screen', title: 'Forme', nav, route: { id: 'Jour', onChange() {} }, ...specs, locale: 'fr' })));
-  return { window, latest: () => latest, act, unmount: () => act(async () => reactRoot.unmount()) };
+  const app = h(shell.AppShell, { layout: 'screen', title: 'Forme', nav, route: { id: 'Jour', onChange() {} }, ...specs, locale: 'fr' });
+  await act(async () => reactRoot.render(strict ? h(StrictMode, null, app) : app));
+  t.after(() => act(async () => reactRoot.unmount()));
+  return { window, replaced, latest: () => latest, act, unmount: () => act(async () => reactRoot.unmount()) };
 }
+
+for (const [width, agent, input] of [[390, 'coach', 'text'], [1280, 'agent', 'text'], [390, 'coach', 'voice'], [390, 'improve', 'text']]) {
+  test(`agent URL at ${width}: ${agent}/${input} opens once, preserves other URL data and state, and never starts the microphone`, async t => {
+    const spec = { ...agentWith(), voice: { transcribe: async () => 'Fictional dictation' } };
+    const opened = await openedLayer(t, width, { agent: spec, improve: agentWith() }, { search: `?keep=hello%20world&agent=${agent}&open=half&input=${input}#jour`, state: { router: { fictional: 7 } }, strict: true });
+    assert.equal(opened.latest().showing, agent === 'improve' ? 'improve' : 'agent');
+    assert.equal(opened.latest().state, width === 1280 ? 'open' : input === 'voice' ? 'full' : 'half');
+    assert.equal(opened.window.location.search, '?keep=hello+world');
+    assert.equal(opened.window.location.hash, '#jour');
+    assert.equal(opened.replaced.length, 1, 'StrictMode consumes the URL once');
+    assert.deepEqual(opened.replaced[0][0], { router: { fictional: 7 } }, 'replaceState keeps the host state');
+    await opened.act(async () => new Promise(done => setTimeout(done, 800)));
+    const find = selector => opened.window.document.querySelector(selector);
+    const composer = find(`[data-spec=${agent === 'improve' ? 'improve' : 'agent'}] [data-testid=composer-input]`);
+    assert.ok(composer?.isConnected, 'the selected composer is mounted in the visible layer');
+    if (input === 'text') {
+      assert.equal(opened.window.document.activeElement, composer, 'focus remains on the composer after the drawer settles');
+      assert.equal(opened.latest().state, width === 1280 ? 'open' : 'full', 'composer focus promotes half to full');
+    } else {
+      assert.notEqual(opened.window.document.activeElement, composer, 'voice does not raise the keyboard');
+      assert.equal(find('[data-testid=agent-talk]')?.dataset.state, 'idle', 'the microphone waits for a press');
+    }
+    await opened.act(async () => opened.latest().close());
+    await opened.act(async () => new Promise(done => setTimeout(done, 600)));
+    assert.equal(opened.latest().state, 'closed', 'a rerender never reopens the consumed URL');
+    await opened.unmount();
+  });
+}
+
+for (const [name, specs, search, clean] of [
+  ['unknown', { agent: agentWith() }, '?agent=unknown&open=full&input=text&keep=1#jour', '?keep=1'],
+  ['missing spec', {}, '?agent=coach&input=text&keep=1#jour', '?keep=1'],
+  ['opt-out', { agent: agentWith(), agentLink: false }, '?agent=coach&input=text#jour', '?agent=coach&input=text'],
+]) test(`agent URL: ${name} stays closed`, async t => {
+  const opened = await openedLayer(t, 390, specs, { search, state: { fictional: true }, strict: true });
+  await opened.act(async () => new Promise(done => setTimeout(done, 650)));
+  assert.equal(opened.latest().state, 'closed');
+  assert.equal(opened.window.location.search, clean);
+  assert.equal(opened.window.location.hash, '#jour');
+  assert.deepEqual(opened.window.history.state, { fictional: true });
+  await opened.unmount();
+});
+
+test('agent URL: closing before the drawer settles cancels composer focus', async t => {
+  const opened = await openedLayer(t, 390, { agent: agentWith() }, { search: '?agent=coach&input=text', strict: true });
+  assert.equal(opened.latest().state, 'full', 'the URL opened the layer');
+  await opened.act(async () => opened.latest().close());
+  await opened.act(async () => new Promise(done => setTimeout(done, 800)));
+  assert.equal(opened.latest().state, 'closed');
+  assert.notEqual(opened.window.document.activeElement?.getAttribute('data-testid'), 'composer-input');
+  await opened.unmount();
+});
 
 async function headerOf(opened, which) {
   await opened.act(async () => opened.latest().open(which, 'half'));
@@ -290,6 +348,82 @@ test('the screen header follows an action whose href, target or rel changes alon
   assert.equal(link()?.getAttribute('target'), '_blank');
   assert.equal(link()?.getAttribute('rel'), 'noopener');
   await act(async () => reactRoot.unmount());
+});
+
+// The composer microphone on a phone: a fake microphone and recorder (the pattern of test/ui/voice-input.test.mjs), the layer open at half.
+async function talking(t, snap = 'half') {
+  const tracks = [], transcribed = [];
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'MediaRecorder');
+  class FakeRecorder extends EventTarget {
+    static isTypeSupported() { return true; }
+    constructor() { super(); this.state = 'inactive'; this.mimeType = 'audio/webm'; }
+    start() { this.state = 'recording'; }
+    stop() { this.state = 'inactive'; const chunk = new Event('dataavailable'); chunk.data = new Blob(['fictional audio'], { type: 'audio/webm' }); this.dispatchEvent(chunk); this.dispatchEvent(new Event('stop')); }
+  }
+  globalThis.MediaRecorder = FakeRecorder;
+  t.after(() => { previous ? Object.defineProperty(globalThis, 'MediaRecorder', previous) : delete globalThis.MediaRecorder; });
+  const transcribe = async audio => { transcribed.push(audio); return 'fictional words'; };
+  const opened = await openedLayer(t, 390, { agent: { ...agentWith(), voice: { transcribe, send: 'draft' } } });
+  Object.defineProperty(opened.window.navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: async () => {
+    const track = { stopped: false, stop() { this.stopped = true; } }; tracks.push(track);
+    return { getTracks: () => [track], getAudioTracks: () => [track] };
+  } } });
+  await opened.act(async () => opened.latest().open('agent', snap));
+  const find = selector => opened.window.document.querySelector(selector);
+  for (let tries = 0; tries < 200 && !(find('[data-testid=agent-talk]') && find('[data-testid=composer-input]')); tries++) await opened.act(async () => new Promise(done => setTimeout(done, 25)));
+  const talk = find('[data-testid=agent-talk]');
+  assert.ok(talk && find('[data-testid=composer-input]'), 'the microphone and the composer render');
+  const fire = async (node, type, init = {}) => {
+    const Pointer = opened.window.PointerEvent ?? opened.window.MouseEvent;
+    const event = new Pointer(type, { bubbles: true, cancelable: true, pointerId: 1, ...init });
+    await opened.act(async () => { node.dispatchEvent(event); });
+    return event;
+  };
+  const until = async (condition, label) => { for (let tries = 0; tries < 60 && !condition(); tries++) await opened.act(async () => new Promise(done => setTimeout(done, 25))); assert.ok(condition(), label); };
+  return { opened, find, talk, fire, until, tracks, transcribed };
+}
+
+for (const snap of ['half', 'full']) test(`the composer microphone at ${snap}: a press keeps focus where it was, a browser pointercancel while recording keeps the audio, the composer takes no focus and the snap holds`, async t => {
+  const ui = await talking(t, snap);
+  const input = ui.find('[data-testid=composer-input]');
+  const down = await ui.fire(ui.talk, 'pointerdown', { button: 0 });
+  assert.equal(down.defaultPrevented, true, 'pressing the microphone cannot move focus (no keyboard opens or closes)');
+  assert.equal((await ui.fire(ui.talk, 'mousedown', { button: 0 })).defaultPrevented, true, 'nor does the compatibility mousedown');
+  await ui.until(() => ui.talk.dataset.state === 'recording', 'recording');
+  assert.equal(input.readOnly, true, 'the composer is read-only while recording');
+  assert.equal(input.getAttribute('inputmode'), 'none', 'and asks for no keyboard');
+  const before = ui.find('[data-testid=agent-layer]').dataset.state;
+  await ui.opened.act(async () => input.focus());
+  await ui.fire(input, 'focusin');
+  assert.equal(ui.find('[data-testid=agent-layer]').dataset.state, before, 'focusing the composer while recording does not change the snap');
+  await ui.fire(ui.talk, 'pointercancel');
+  await ui.until(() => ui.transcribed.length === 1, 'a browser pointercancel finishes the recording: the audio is transcribed');
+  assert.equal(ui.tracks[0].stopped, true, 'the microphone is released');
+  await ui.until(() => ui.talk.dataset.state === 'idle', 'back to idle');
+  assert.equal(input.readOnly, false, 'the composer is editable again');
+  assert.equal(input.hasAttribute('inputmode'), false, 'with its own inputmode back');
+  await ui.opened.unmount();
+});
+
+test('the composer microphone: sliding more than 24px off the button still cancels (nothing is transcribed)', async t => {
+  const ui = await talking(t);
+  await ui.fire(ui.talk, 'pointerdown', { button: 0, clientX: 0, clientY: 0 });
+  await ui.until(() => ui.talk.dataset.state === 'recording', 'recording');
+  await ui.fire(ui.talk, 'pointermove', { clientX: 400, clientY: 400 });
+  await ui.until(() => ui.talk.dataset.state === 'idle', 'the slide off cancelled');
+  await ui.fire(ui.talk, 'pointerup');
+  assert.equal(ui.transcribed.length, 0, 'a cancelled recording is not transcribed');
+  assert.equal(ui.tracks[0].stopped, true, 'the microphone is released');
+  await ui.opened.unmount();
+});
+
+test('the composer microphone: a release (pointerup) still sends the audio for transcription', async t => {
+  const ui = await talking(t);
+  await ui.fire(ui.talk, 'pointerdown', { button: 0 });
+  await ui.until(() => ui.talk.dataset.state === 'recording', 'recording');
+  await ui.fire(ui.talk, 'pointerup');
+  await ui.until(() => ui.transcribed.length === 1, 'transcribed');
+  await ui.opened.unmount();
 });
 
 test('one layer at a time on a phone: opening the agent closes the product manager and back', t => oneLayerAt(t, 390));

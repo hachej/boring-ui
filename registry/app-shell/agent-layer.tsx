@@ -31,6 +31,7 @@ import { feedbackLabelsFr } from '../feedback/feedback-labels';
 import { PointBar, usePointing } from '../feedback/point-mode';
 import { cn } from '../utils/utils';
 import { useBackLayer } from './back';
+import { parseAgentLink } from './agent-link';
 import { closeShellLayer, registerAgentLayerCloser } from './shell-layer';
 import { appShellText } from './text';
 import type { AppShellLocale, AppShellText } from './text';
@@ -249,7 +250,7 @@ function useMeasuredPeek(probe: RefObject<HTMLDivElement | null>): { readonly pe
 }
 
 /** Places the layer in the app. `agent` is the one assistant; `improve` is the product manager. Either may be absent. */
-export function AgentLayerProvider({ agent, improve, locale, children }: { readonly agent?: AgentSpec | undefined; readonly improve?: AgentSpec | undefined; readonly locale?: AppShellLocale | undefined; readonly children: ReactNode }): ReactElement {
+export function AgentLayerProvider({ agent, improve, locale, agentLink, children }: { readonly agent?: AgentSpec | undefined; readonly improve?: AgentSpec | undefined; readonly locale?: AppShellLocale | undefined; readonly agentLink?: false | undefined; readonly children: ReactNode }): ReactElement {
   const compact = useIsMobile();
   const expanded = !compact;
   const [snap, setSnapState] = useState<Snap>('closed');
@@ -263,8 +264,8 @@ export function AgentLayerProvider({ agent, improve, locale, children }: { reado
   // The side is the viewer's, remembered beside the Dock's own placement; read after mount so server and client markup agree.
   useLayoutEffect(() => { try { const saved = globalThis.localStorage?.getItem(SIDE_KEY); if (saved === 'left' || saved === 'right') setSideState(saved); } catch { /* a convenience */ } }, []);
   const setSide = useCallback((next: DockSide) => { setSideState(next); try { globalThis.localStorage?.setItem(SIDE_KEY, next); } catch { /* a convenience */ } }, []);
-  const specs = useRef({ agent, improve });
-  specs.current = { agent, improve };
+  const specs = useRef({ agent, improve, snap, shown });
+  specs.current = { agent, improve, snap, shown };
 
   const setSnap = useCallback((next: Snap) => setSnapState(next), []);
   const close = useCallback(() => setSnapState('closed'), []);
@@ -289,6 +290,35 @@ export function AgentLayerProvider({ agent, improve, locale, children }: { reado
   const [host] = useState(() => typeof document === 'undefined' ? null : Object.assign(document.createElement('div'), { className: 'flex min-h-0 flex-1 flex-col [&_[data-boring=pi-chat]>header]:hidden' }));
   const opened = useRef(false);
   if (snap !== 'closed') opened.current = true;
+
+  // Consume the launch URL before an open layer pushes its Back entry. Keep the parsed request through StrictMode's effect replay.
+  const launch = useRef<ReturnType<typeof parseAgentLink> | undefined>(undefined);
+  useEffect(() => {
+    if (launch.current === undefined) {
+      launch.current = agentLink === false ? null : parseAgentLink(window.location.search);
+      if (agentLink !== false) {
+        const url = new URL(window.location.href);
+        if (['agent', 'open', 'input'].some(key => url.searchParams.has(key))) {
+          for (const key of ['agent', 'open', 'input']) url.searchParams.delete(key);
+          history.replaceState(history.state, '', `${url.pathname}${url.search}${url.hash}`);
+        }
+      }
+    }
+    const link = launch.current;
+    if (!link) return;
+    const which = link.agent === 'improve' ? 'improve' : 'agent';
+    open(which, link.open);
+    const spec = specs.current[which];
+    if (link.input !== 'text' || !spec) return;
+    // The drawer's slide and initial focus finish first. Voice deliberately leaves focus off the composer and never calls start().
+    const timer = setTimeout(() => {
+      const current = specs.current;
+      if (current.snap !== 'closed' && current.shown === which && current[which]?.controller === spec.controller) {
+        host?.querySelector<HTMLElement>(`[data-spec=${which}] [data-testid=composer-input]`)?.focus({ preventScroll: true });
+      }
+    }, 520);
+    return () => clearTimeout(timer);
+  }, [host, open]);
 
   const voice = useVoice(agent, locale, outcome => {
     if (outcome === 'drafted') { setShown('agent'); setSnapState('half'); }
@@ -369,20 +399,31 @@ export function AgentTrigger({ className, children }: { readonly className?: str
 
 const clock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 
-/** Push-to-talk in the composer row (PiChat's `tools` slot): press and hold, release to send or fill; a slide off cancels. */
+/**
+ * Push-to-talk in the composer row (PiChat's `tools` slot): press and hold, release to send or fill; a slide off cancels. Pressing never moves
+ * focus (no keyboard opens or closes under the finger), and a browser `pointercancel` once recording keeps the audio like a release: only the slide off cancels.
+ */
 function TalkButton({ text }: { readonly text: AppShellText }) {
   const { voice } = useInternal();
   const recording = voice.phase === 'recording' || voice.phase === 'starting';
   const busy = voice.phase === 'transcribing';
-  const down = (event: ReactPointerEvent<HTMLButtonElement>) => { event.currentTarget.setPointerCapture?.(event.pointerId); voice.start(); };
-  const up = (event: ReactPointerEvent<HTMLButtonElement>) => { if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); if (event.type === 'pointerup') voice.finish(); else voice.cancel(); };
+  const button = useRef<HTMLButtonElement>(null);
+  // A native, non-passive listener (React's touchstart is passive): a touch press must not focus anything either.
+  useEffect(() => {
+    const node = button.current;
+    const keep = (event: Event) => { if (event.cancelable) event.preventDefault(); };
+    node?.addEventListener('touchstart', keep, { passive: false });
+    return () => node?.removeEventListener('touchstart', keep);
+  }, []);
+  const down = (event: ReactPointerEvent<HTMLButtonElement>) => { event.preventDefault(); event.currentTarget.setPointerCapture?.(event.pointerId); voice.start(); };
+  const up = (event: ReactPointerEvent<HTMLButtonElement>) => { if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); voice.finish(); };
   const move = (event: ReactPointerEvent<HTMLButtonElement>) => {
     if (!recording) return;
     const box = event.currentTarget.getBoundingClientRect(), slack = 24;
     if (event.clientX < box.left - slack || event.clientX > box.right + slack || event.clientY < box.top - slack || event.clientY > box.bottom + slack) voice.cancel();
   };
-  return <Button variant="ghost" size="icon" data-testid="agent-talk" data-state={voice.phase} disabled={busy} aria-label={text.holdToTalk} title={text.holdToTalk}
-    onPointerDown={down} onPointerUp={up} onPointerCancel={up} onPointerMove={move} onContextMenu={event => event.preventDefault()}
+  return <Button ref={button} variant="ghost" size="icon" data-testid="agent-talk" data-state={voice.phase} disabled={busy} aria-label={text.holdToTalk} title={text.holdToTalk}
+    onPointerDown={down} onMouseDown={event => event.preventDefault()} onPointerUp={up} onPointerCancel={up} onPointerMove={move} onContextMenu={event => event.preventDefault()}
     className="touch-none">
     {busy ? <Loader2Icon data-icon="inline-start" className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <MicIcon data-icon="inline-start" aria-hidden="true" />}
   </Button>;
@@ -465,7 +506,7 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
   const { snap, agent, voice } = layer;
   const hasPeek = Boolean(agent);
   const { text, title } = useTitle();
-  const vv = useVisualViewport();
+  const liveViewport = useVisualViewport();
   const closeRef = useRef<HTMLButtonElement>(null);
   const vetoed = useRef(false);
   // Set while the layer closes; cleared when it opens again (a close is final until the trigger or a choice opens the layer).
@@ -476,6 +517,24 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
   const points = useMemo(() => hasPeek ? [layer.peekPoint, HALF, FULL] : [HALF, FULL], [hasPeek, layer.peekPoint]);
   const value = peek ? layer.peekPoint : snap === 'full' ? FULL : HALF;
   const recording = voice.phase !== 'idle';
+  // While the person talks the sheet holds still: the viewport height and the keyboard inset are pinned at what they were when the recording
+  // began, the composer takes no focus and no keyboard, so nothing moves under the finger on the microphone.
+  const sheet = useRef<HTMLDivElement>(null);
+  const idleViewport = useRef(liveViewport);
+  if (!recording) idleViewport.current = liveViewport;
+  const vv = recording ? idleViewport.current : liveViewport;
+  const [pinnedBottom, setPinnedBottom] = useState<string | undefined>();
+  useLayoutEffect(() => {
+    const popup = sheet.current?.closest('[data-slot=drawer-popup]');
+    if (!recording || !sheet.current) return;
+    if (popup) setPinnedBottom(getComputedStyle(popup).bottom);
+    const inputs = [...sheet.current.querySelectorAll<HTMLTextAreaElement>('[data-testid=composer-input]')].map(input => ({ input, mode: input.getAttribute('inputmode'), readOnly: input.readOnly }));
+    for (const { input } of inputs) { input.readOnly = true; input.setAttribute('inputmode', 'none'); }
+    return () => {
+      setPinnedBottom(undefined);
+      for (const { input, mode, readOnly } of inputs) { input.readOnly = readOnly; if (mode === null) input.removeAttribute('inputmode'); else input.setAttribute('inputmode', mode); }
+    };
+  }, [recording]);
 
   useBackLayer(snap === 'half' || snap === 'full', layer.close, 'agent');
 
@@ -483,7 +542,8 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
   // popup itself can read it): padding the popup by that offset makes its content box exactly the visible part. At peek the tab bar below is left out too.
   // The popup is portalled to the body, outside the shell root: it is given the measured tab bar height and the z-values explicitly.
   const style = { '--app-shell-vv-height': vv ? `${vv.height}px` : '100dvh', '--app-shell-tabbar': `${layer.tabbar}px`, '--app-shell-z-layer': Z.layer,
-    paddingBottom: peek ? 'calc(var(--drawer-snap-point-offset, 0px) + var(--app-shell-tabbar, 0px))' : 'var(--drawer-snap-point-offset, 0px)' } as CSSProperties;
+    paddingBottom: peek ? 'calc(var(--drawer-snap-point-offset, 0px) + var(--app-shell-tabbar, 0px))' : 'var(--drawer-snap-point-offset, 0px)',
+    ...(pinnedBottom ? { bottom: pinnedBottom } : {}) } as CSSProperties;
   // Entering the modal half or full from the non-modal peek does not rerun Base UI's initial focus: if focus is still on the page, take it to Close.
   const wasPeek = useRef(false);
   useEffect(() => {
@@ -527,7 +587,7 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
         // The peek is the top PEEK_REM of the popup; the part that overlaps the tab bar is clipped away, so the tabs stay visible and tappable.
         'data-[peek=true]:not-data-swiping:[clip-path:inset(0_0_calc(100%_-_6rem)_0)]')}>
       <BaseDrawerParts.Drawer.VirtualKeyboardProvider>
-        <div data-testid="agent-layer-sheet" onFocusCapture={event => { if ((event.target as HTMLElement).matches('[data-testid=composer-input]')) layer.setSnap('full'); }}
+        <div ref={sheet} data-testid="agent-layer-sheet" onFocusCapture={event => { if (!recording && (event.target as HTMLElement).matches('[data-testid=composer-input]')) layer.setSnap('full'); }}
           className={cn('relative flex min-h-0 flex-1 flex-col overflow-hidden overscroll-contain',
             // The layer's own header carries the title and Close, so the chat's is hidden. At peek: one line of the last reply above the
             // composer, no empty-state overlay, room for Close.

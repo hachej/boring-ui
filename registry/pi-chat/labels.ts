@@ -38,6 +38,10 @@ export const defaultChatLabels = {
   waitingForAnswer: 'Waiting for your answer',
   retryPending: 'Native retry pending',
   compacting: 'Native context compaction in progress',
+  /** The one status of `presentation="natural"` while the agent works (any tool, retry or compaction), instead of the activity wording above. */
+  preparing: 'Preparing…',
+  /** In `presentation="natural"`, replaces the controller's own reason when a send is blocked. */
+  sendUnavailable: 'Sending is not available right now.',
   /** The "…" menu of host actions (header, replies). */
   moreActions: 'More actions',
   // Notices
