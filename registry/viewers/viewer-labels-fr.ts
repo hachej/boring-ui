@@ -53,6 +53,7 @@ export const frenchViewerLabels: ViewerLabels = {
   zoomLevel: percent => `Zoom ${percent}, ajuster à la vue`,
   fitToView: 'Ajuster à la vue',
   actualSize: 'Taille réelle',
+  noPreview: 'Aucun aperçu disponible. Vous pouvez toujours télécharger ce fichier.',
   imageUnreadable: 'Ce fichier n’a pas pu être lu comme une image.',
   imageUnsupported: mediaType => `Ce type d’image (${mediaType || 'inconnu'}) ne peut pas être affiché ici. Vous pouvez toujours le télécharger.`,
   imageStage: name => `Image ${name}`,

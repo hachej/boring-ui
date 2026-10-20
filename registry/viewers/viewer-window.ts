@@ -66,6 +66,7 @@ export const defaultViewerLabels = {
   zoomLevel: (percent: string) => `Zoom ${percent}, fit to view`,
   fitToView: 'Fit to view',
   actualSize: 'Actual size',
+  noPreview: 'No preview available. You can still download this file.',
   imageUnreadable: 'This file could not be read as an image.',
   imageUnsupported: (mediaType: string) => `This image type (${mediaType || 'unknown'}) cannot be shown here. You can still download it.`,
   imageStage: (name: string) => `${name} image`,
