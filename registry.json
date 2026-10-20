@@ -1084,6 +1084,31 @@
       ]
     },
     {
+      "name": "placed-agent",
+      "type": "registry:block",
+      "title": "Placed agent",
+      "description": "PlacedAgentWorkspace: AgentWorkspace over ONE controller, as a page (the app's Agent tab) or collapsed beside the app. Collapsed on a wide screen it is a floating AmbientChat; on a phone inside an app shell the same controller is lent to the shell's bottom drawer (useAgentLoan of app-shell), so one chat drawer serves the app. Outside a shell on a phone it stays the page. Placement is remembered (usePlacedAgentState) or controlled; usePlacedAgent gives collapse and expand to buttons inside it. The page stays mounted while collapsed, so its open file survives. Layout only: Pi owns the conversation.",
+      "dependencies": [
+        "react@^19.0.0",
+        "react-dom@^19.0.0",
+        "lucide-react@^1.51.0"
+      ],
+      "registryDependencies": [
+        "@boring-ui/pi-app",
+        "@boring-ui/pi-ambient",
+        "@boring-ui/app-shell",
+        "@boring-ui/utils",
+        "button"
+      ],
+      "files": [
+        {
+          "path": "registry/placed-agent/placed-agent-workspace.tsx",
+          "type": "registry:component",
+          "target": "components/placed-agent/placed-agent-workspace.tsx"
+        }
+      ]
+    },
+    {
       "name": "app-shell",
       "type": "registry:block",
       "title": "App shell: layouts, list/detail and agent layer",

@@ -2,6 +2,9 @@ import { clsx } from 'clsx';
 import type { ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
+/** The one phone breakpoint of the agent blocks: a viewport narrower than this many px is a phone (AgentWorkspace's sheets and drawers, AmbientChat's full-height window). */
+export const PHONE_BELOW = 641;
+
 export function cn(...inputs: ClassValue[]): string { return twMerge(clsx(inputs)); }
 
 /** Thrown when no automatic copy worked; `text` is what the person must copy by hand (a viewer shows it selected). */

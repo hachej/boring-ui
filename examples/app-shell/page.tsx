@@ -3,7 +3,8 @@
 // `?app=empty` is the one-screen template (an agent without voice). `?agent=none` leaves the agent out (the product manager remains) and
 // `?send=draft` makes push-to-talk only fill the composer. `?app=redaction` is layout B: a fictional consultation list grouped by day with a
 // detail (`#12` deep-links to one); `?app=pm` is layout C: the workspace-app's AgentWorkspace, untouched, inside the shell (`&embedded`:
-// its `layout="embedded"`, whose History, Library and New join the shell's header).
+// its `layout="embedded"`, whose History, Library and New join the shell's header). `?app=placed` is PlacedAgentWorkspace: the same writer as the
+// Agent tab, or collapsed (a floating chat on a wide screen, the shell's own drawer on a phone) while another screen is on show.
 // @ts-nocheck: an example page, bundled by esbuild and not part of the typechecked sources.
 import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
@@ -18,11 +19,12 @@ import type { RevisionProvider } from '@hachej/boring-files/revision';
 import { Documents } from '../../registry/documents/documents.tsx';
 import { DocumentSheet } from '../../registry/documents/document-sheet.tsx';
 import { AgentWorkspace, useConversations } from '../../registry/pi-app/agent-workspace.tsx';
+import { PlacedAgentWorkspace, usePlacedAgentState } from '../../registry/placed-agent/placed-agent-workspace.tsx';
 import { useRemoteChat } from '../../registry/pi-chat/use-remote-chat.ts';
 
 const { token, identity, conversations } = window.__APP__;
 const query = new URLSearchParams(location.search);
-const app = ['empty', 'redaction', 'pm'].includes(query.get('app')) ? query.get('app') : 'fitness';
+const app = ['empty', 'redaction', 'pm', 'placed'].includes(query.get('app')) ? query.get('app') : 'fitness';
 const six = query.get('nav') === '6';
 // `?documents=1`: the workspace's Documents screen (the Library, a file and its revisions) and the product manager's « Voir la fiche » sheet.
 const documents = query.get('documents') === '1';
@@ -218,4 +220,39 @@ function PmApp() {
   </div>;
 }
 
-createRoot(document.getElementById('root')).render(app === 'redaction' ? <RedactionApp /> : app === 'pm' ? <PmApp /> : <App />);
+// ---- PlacedAgentWorkspace: « Agent » is a tab; any other screen collapses it (floating chat wide, the shell's drawer on a phone). The route is the placement.
+const APPROVALS = ['Fournisseur Alpha : 1 240 €', 'Fournisseur Bêta : 310 €', 'Fournisseur Gamma : 2 075 €'];
+function PlacedApp() {
+  const [revisionProvider, setRevisionProvider] = useState();
+  const [selected, setSelected] = useState();
+  useEffect(() => { let off = false; connectRevisionProvider({ endpoint: new URL('/api/resources', location.href), fetch: authorized }).then(value => { if (!off) setRevisionProvider(value); }); return () => { off = true; }; }, []);
+  const listed = useConversations({ endpoint: new URL('/api/conversations', location.href), fetch: authorized, activeId: selected, onSelect: setSelected });
+  const items = listed?.items;
+  useEffect(() => { if (items?.length && !items.some(item => item.id === selected)) setSelected(items[0].id); }, [items, selected]);
+  const active = items?.some(item => item.id === selected) ? selected : undefined;
+  const chat = useRemoteChat({ conversationId: active, endpoint: id => new URL(`/api/chat?agent=writer&conversation=${id}`, location.href), fetch: authorized, identity });
+  const [remembered, remember] = usePlacedAgentState('forme.placed');
+  const [route, setRoute] = useState(() => location.hash.slice(1) || (remembered ? 'approvals' : 'agent'));
+  const collapsed = route !== 'agent';
+  useEffect(() => { remember(collapsed); }, [collapsed, remember]);
+  if (!revisionProvider || !listed) return <p role="status" data-testid="connecting" className="p-4 text-sm text-muted-foreground">Connexion…</p>;
+  const go = (id: string) => { history.replaceState(history.state, '', `#${id}`); setRoute(id); };
+  const nav = [
+    { id: 'agent', label: 'Agent', icon: MessagesSquareIcon, render: () => <main data-testid="app" data-conversation={active} className="flex h-full min-h-0">
+      <PlacedAgentWorkspace conversationId={active} controller={chat.status === 'ready' ? chat.controller : undefined} conversations={listed} revisionProvider={revisionProvider} layout="embedded" title="Agent" locale="fr" storageKey="forme.placed"
+        collapsed={collapsed} onCollapsedChange={next => go(next ? 'approvals' : 'agent')}
+        chat={{ labels: { title: 'Agent' }, ...(chat.status === 'ready' ? { actions: chat.actions } : {}) }} connecting={<p role="status" className="p-4 text-sm text-muted-foreground">Connexion…</p>} />
+    </main> },
+    { id: 'approvals', label: 'Approbations', icon: ClipboardListIcon, render: () => <Approvals /> },
+    { id: 'suppliers', label: 'Fournisseurs', icon: UsersIcon, render: () => <Plain label="Vos fournisseurs" /> },
+  ];
+  return <div id="app-root" className="contents">
+    <AppShell layout="chat" title="Factures" nav={nav} locale="fr" route={{ id: route, onChange: go }} />
+  </div>;
+}
+function Approvals() {
+  useScreenHeader({ title: 'Approbations', subtitle: 'cette semaine' });
+  return <ul data-testid="approvals" className="m-0 list-none divide-y divide-border p-0">{APPROVALS.map(row => <li key={row} className="px-4 py-3 text-sm">{row}</li>)}</ul>;
+}
+
+createRoot(document.getElementById('root')).render(app === 'redaction' ? <RedactionApp /> : app === 'pm' ? <PmApp /> : app === 'placed' ? <PlacedApp /> : <App />);

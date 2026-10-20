@@ -42,7 +42,7 @@ import { Separator } from '@/components/ui/separator';
 import { BlockActions } from '../button/actions';
 import type { BlockAction } from '../button/actions';
 import { ChatTextProvider, useMergedText } from '../pi-chat/labels';
-import { cn, withDefaults } from '../utils/utils';
+import { cn, PHONE_BELOW, withDefaults } from '../utils/utils';
 import { AppTextProvider, defaultAppIcons, defaultAppLabels } from './app-labels';
 import type { AppIcons, AppLabels } from './app-labels';
 import { ArtifactPanel, useArtifactVersions, useTurn } from './artifact-panel';
@@ -269,7 +269,7 @@ const defaultLocate = (path: string): ResourceLocator => ({ resource: { provider
  * the host owns the routes, authentication, the controller and what is open (when controlled).
  */
 export function AgentWorkspace({ layout = 'default', title, controller, conversationId, chat = {}, labels, icons, panelActions, connecting, conversations, sessions, history: historyPlacement = 'column', resources, revisionProvider, libraryPlacement = 'panel', locale, fileTree: treeOptions, uploads, agents, detect, artifactKinds, comments, viewers, interactive, share, opened: controlled,
-  defaultOpened = null, onOpenedChange, onUnsavedChange, panels, autoOpen = true, fileBack, floatingChat, chatTop, controls, storageKey = 'boring.agent-workspace', sheetBelow = 641, drawerBelow = 641, floatBelow, className }: AgentWorkspaceProps) {
+  defaultOpened = null, onOpenedChange, onUnsavedChange, panels, autoOpen = true, fileBack, floatingChat, chatTop, controls, storageKey = 'boring.agent-workspace', sheetBelow = PHONE_BELOW, drawerBelow = PHONE_BELOW, floatBelow, className }: AgentWorkspaceProps) {
   const [own, setOwn] = useState<OpenedView | null>(defaultOpened);
   const [panelLibrary, setPanelLibrary] = useState(false);
   const opened = controlled !== undefined ? controlled : own;

@@ -40,7 +40,7 @@ import { useChatSession, useTranscript } from '../pi-chat/session';
 import type { ChatFeatureProps, ChatSession } from '../pi-chat/session';
 import { ArtifactWorkspace } from '../pi-workspace/workspace';
 import type { WorkspacePanelApi } from '../pi-workspace/workspace';
-import { cn } from '../utils/utils';
+import { cn, PHONE_BELOW } from '../utils/utils';
 
 export { AgentNotifications, createNotificationStore, defaultNotificationLabels, summaryOf, useNotifications, watchConversation } from './notifications';
 export type { AgentNotification, AgentNotificationsProps, NewNotification, NotificationKind, NotificationLabels, NotificationStore } from './notifications';
@@ -187,8 +187,8 @@ const clamp = (position: Position, size: { w: number; h: number }, viewport: { w
 
 // The layout viewport that fixed positioning uses (without scrollbars), not the window's outer size.
 const viewportSize = () => { const root = globalThis.document?.documentElement; return { w: root?.clientWidth || globalThis.innerWidth || 1024, h: root?.clientHeight || globalThis.innerHeight || 768 }; };
-function usePhone(): boolean {
-  const query = '(max-width: 639px)';
+export function usePhone(): boolean {
+  const query = `(max-width: ${PHONE_BELOW - 1}px)`;
   const [phone, setPhone] = useState(() => globalThis.matchMedia?.(query).matches === true);
   useEffect(() => {
     const list = globalThis.matchMedia?.(query);
