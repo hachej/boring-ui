@@ -44,6 +44,7 @@ export function RequestsBoard(props: RequestsBoardProps) {
   const observed = useRef({ token: changeToken, views: views.map(view => ({ number: view.number, state: view.state, line: view.line, since: view.since })) });
   const rows = useRef(new Map<string, HTMLButtonElement>());
   const heading = useRef<HTMLHeadingElement>(null);
+  const returning = useRef<string | undefined>(undefined);
   const detail = views.find(view => view.number === selected);
   const shown = mode === 'compact' ? compactRows(views) : filterViews(views, filter, query, repo);
   const counts = requestCounts(views, query, repo);
@@ -57,9 +58,15 @@ export function RequestsBoard(props: RequestsBoardProps) {
     setAnnouncement(moved.map(view => labels.changed(view.number, labels.states[view.state])).join('; '));
     observed.current = { token: changeToken, views: views.map(view => ({ number: view.number, state: view.state, line: view.line, since: view.since })) };
   }, [changeToken, views, labels]);
-  useEffect(() => { if (detail) heading.current?.focus(); }, [detail?.number]);
+  useEffect(() => {
+    if (detail) heading.current?.focus();
+    else if (returning.current !== undefined) {
+      (rows.current.get(returning.current) ?? rows.current.values().next().value)?.focus();
+      returning.current = undefined;
+    }
+  }, [detail?.number]);
   const open = (number: string) => { if (mode === 'full') setSelected(number); onOpen(number); };
-  const back = () => { setSelected(undefined); rows.current.get(selected ?? '')?.focus(); };
+  const back = () => { returning.current = selected; setSelected(undefined); };
   const navigate = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     const next = event.key === 'ArrowDown' ? Math.min(shown.length - 1, index + 1) : event.key === 'ArrowUp' ? Math.max(0, index - 1) : event.key === 'Home' ? 0 : event.key === 'End' ? shown.length - 1 : undefined;
     if (next === undefined) return;

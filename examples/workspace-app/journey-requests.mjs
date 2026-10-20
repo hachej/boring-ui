@@ -69,6 +69,7 @@ try {
   assert.ok(await browser.evaluate(noOverflow));
   await shoot('phone-detail');
   await click('Retour');
+  assert.equal(await browser.evaluate('document.activeElement.dataset.request'), 'D-906', 'Back restores keyboard focus after the list is visible');
   assert.equal(await browser.evaluate(isVisible('[data-testid=requests-list-pane]')), true);
   assert.equal(await browser.evaluate(isVisible('[data-testid=requests-detail-pane]')), false);
   await browser.evaluate(`${qa('[data-request]')}[0].focus()`);
