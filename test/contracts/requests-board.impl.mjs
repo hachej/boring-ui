@@ -55,6 +55,31 @@ test('full filters two questions, searches devis, opens timeline, links, preview
   await click(button(element, 'Essayer cette version'));
   assert.deepEqual(actions.at(-1), ['try', 'D-904', inboxViews[3].action]);
 });
+test('detail dates follow the board locale and host formatter while retaining ISO time attributes', async t => {
+  const { element, render } = await mount(t);
+  await click(element.querySelector('[data-request="D-905"]'));
+  const iso = [inboxViews[4].since, ...inboxViews[4].history.map(event => event.at)];
+  const times = () => [...element.querySelectorAll('[data-testid=requests-detail-pane] time')];
+  const expected = locale => iso.map(value => new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(value)));
+  assert.deepEqual(times().map(time => time.textContent), expected('fr'));
+  assert.deepEqual(times().map(time => time.getAttribute('datetime')), iso);
+  await render({ locale: 'en' });
+  assert.deepEqual(times().map(time => time.textContent), expected('en'));
+  const formatted = [];
+  await render({ labels: { formatDate: value => { formatted.push(value); return `Atelier date ${value.slice(0, 10)}`; } } });
+  assert.deepEqual(formatted, iso, 'the host formatter receives each original ISO value');
+  assert.deepEqual(times().map(time => time.textContent), iso.map(value => `Atelier date ${value.slice(0, 10)}`));
+  assert.deepEqual(times().map(time => time.getAttribute('datetime')), iso);
+});
+test('detail shows the repository once, retaining it when the status line does not name it', async t => {
+  const { element, render } = await mount(t);
+  await click(element.querySelector('[data-request="D-905"]'));
+  const detail = element.querySelector('[data-testid=requests-detail-pane]');
+  assert.equal(detail.textContent.split('Atelier Exemple').length - 1, 1);
+  await render({ views: inboxViews.map(view => view.number === 'D-905' ? { ...view, line: 'Vérification du devis' } : view) });
+  assert.match(detail.textContent, /Vérification du devis/);
+  assert.equal(detail.textContent.split('Atelier Exemple').length - 1, 1);
+});
 test('answers use the selected request and host updates alone settle the open question', async t => {
   const { element, actions, render } = await mount(t);
   await click(element.querySelector('[data-request="D-901"]'));

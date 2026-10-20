@@ -119,14 +119,14 @@ function RequestDetail({ view, labels, canApproveRelease, onOpen, onAnswer, onDe
   const question = view.question && (view.question.kind !== 'release' || canApproveRelease) ? view.question : undefined;
   return <div className="flex min-w-0 flex-col gap-4">
     <Item variant="outline"><ItemContent className="min-w-0"><ItemTitle><Badge variant="secondary">{labels.states[view.state]}</Badge></ItemTitle>
-      <ItemDescription>{view.line}</ItemDescription><ItemDescription>{labels.since} <time dateTime={view.since}>{view.since}</time>{view.waitsOn && ` · ${labels.waitsOn} ${view.waitsOn}`}</ItemDescription>
-      {view.repo && <ItemDescription>{view.repo}</ItemDescription>}
+      <ItemDescription>{view.line}</ItemDescription><ItemDescription>{labels.since} <time dateTime={view.since}>{labels.formatDate(view.since)}</time>{view.waitsOn && ` · ${labels.waitsOn} ${view.waitsOn}`}</ItemDescription>
+      {view.repo && !view.line.includes(view.repo) && <ItemDescription>{view.repo}</ItemDescription>}
       {view.master && <ItemDescription>{labels.master} · {view.master}</ItemDescription>}
     </ItemContent></Item>
     {view.action && <div><Button disabled={!onTry} onClick={() => { if (view.action) onTry?.(view.number, view.action); }}>{labels.tryVersion}</Button></div>}
     {question && <Question key={`${question.kind}:${question.text}`} view={view} labels={labels} onAnswer={onAnswer} onDecide={onDecide} />}
     <Card><CardHeader><CardTitle>{labels.history}</CardTitle></CardHeader><CardContent>
-      <ItemGroup>{view.history.map((event, index) => <Item key={index} role="listitem"><ItemContent><ItemTitle>{event.text}</ItemTitle><ItemDescription><time dateTime={event.at}>{event.at}</time></ItemDescription></ItemContent></Item>)}</ItemGroup>
+      <ItemGroup>{view.history.map((event, index) => <Item key={index} role="listitem"><ItemContent><ItemTitle>{event.text}</ItemTitle><ItemDescription><time dateTime={event.at}>{labels.formatDate(event.at)}</time></ItemDescription></ItemContent></Item>)}</ItemGroup>
     </CardContent></Card>
     {view.links.length > 0 && <Card><CardHeader><CardTitle>{labels.related}</CardTitle></CardHeader><CardContent className="flex flex-wrap gap-2">
       {view.links.map(link => <Button variant="link" key={`${link.kind}:${link.number}`} onClick={() => onOpen(link.number)}>{labels.links[link.kind]} · {link.number}</Button>)}
