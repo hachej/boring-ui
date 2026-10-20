@@ -11,7 +11,9 @@
     "dist/**/*.d.ts",
     "README.md",
     "LICENSE",
-    "THIRD_PARTY_NOTICES.md"
+    "THIRD_PARTY_NOTICES.md",
+    "NOTICE",
+    "licenses/Apache-2.0.txt"
   ],
   "types": "./dist/index.d.ts",
   "exports": {

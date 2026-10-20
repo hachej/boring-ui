@@ -1,0 +1,8 @@
+OptChat memory includes prompt wording and algorithm adaptations from
+VictorTaelin/uniichat, https://github.com/VictorTaelin/uniichat
+Reference revision: 0500bf6a8ea4bf0ce047488562022b1b6532cc30
+Copyright 2026 Higher Order Company
+Licensed under the Apache License, Version 2.0. See licenses/Apache-2.0.txt.
+
+Changed in Boring UI: Pi-native tasks and documents, Pi message kinds,
+bounded views, host-configured retries and concurrency, and memory-only forgetting.
