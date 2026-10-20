@@ -155,6 +155,30 @@ test('nextSnapOnClose: a swipe, an outside press, a lost focus and Escape step d
   }
 });
 
+test('isOverlayEvent: a tap or focus inside a data-boring-overlay (the camera) is cancelled and changes no snap; anything else is the drawer\'s own', async t => {
+  const { isOverlayEvent } = await bundle('agent-layer.tsx');
+  const window = new Window({ url: 'https://fictional.invalid/' });
+  const names = ['window', 'document', 'Element'];
+  const saved = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
+  for (const name of names) Object.defineProperty(globalThis, name, { configurable: true, writable: true, value: name === 'window' ? window : window[name] });
+  t.after(async () => { await window.happyDOM.close(); for (const [name, descriptor] of saved) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else delete globalThis[name]; } });
+  window.document.body.innerHTML = '<div data-boring-overlay><button id="shutter" tabindex="0">Shoot</button></div><button id="page" tabindex="0">Page</button>';
+  const shutter = window.document.getElementById('shutter'); const page = window.document.getElementById('page');
+  page.focus();
+  assert.equal(isOverlayEvent({ reason: 'outside-press', event: { target: shutter } }), true, 'a tap on the camera is an outside press of the drawer');
+  assert.equal(isOverlayEvent({ reason: 'escape-key', event: { target: shutter } }), true);
+  assert.equal(isOverlayEvent({ reason: 'focus-out', event: { target: page, relatedTarget: shutter } }), true, 'focus moving into the camera');
+  assert.equal(isOverlayEvent({ reason: 'outside-press', event: { target: page } }), false, 'a tap on the page steps down as before');
+  assert.equal(isOverlayEvent({ reason: 'focus-out', event: { target: shutter, relatedTarget: page } }), true, 'focus leaving the camera');
+  assert.equal(isOverlayEvent({ reason: 'outside-press', event: undefined }), false, 'no event, focus elsewhere');
+  shutter.focus();
+  assert.equal(isOverlayEvent({ reason: 'focus-out', event: { target: page } }), true, 'the focused element is in the overlay');
+  assert.equal(isOverlayEvent({ reason: 'swipe', event: { target: shutter } }), false, 'a swipe is not looked at');
+  assert.equal(isOverlayEvent({ reason: 'close-press', event: { target: shutter } }), false, 'Close is never vetoed');
+  page.focus();
+  assert.equal(isOverlayEvent({ reason: 'escape-key', event: { target: page } }), false);
+});
+
 test('useAgentContext: the most recently mounted screen wins and unmounting restores the previous one', async t => {
   const window = new Window({ url: 'https://fictional.invalid/' });
   const names = ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node', 'IS_REACT_ACT_ENVIRONMENT'];
@@ -192,11 +216,17 @@ function dom(t) {
   return window;
 }
 
-test('AppShellProps has the shell props, locale and URL opt-out, and no label or theme prop', () => {
+test('AppShellProps has the shell props, optional rail, locale and URL opt-out, and no label or theme prop', () => {
   const program = ts.createProgram([`${root}${folder}/app-shell.tsx`], { allowImportingTsExtensions: true, jsx: ts.JsxEmit.ReactJSX, noEmit: true, skipLibCheck: true });
   const file = program.getSourceFile(`${root}${folder}/app-shell.tsx`);
   const props = file.statements.find(node => ts.isInterfaceDeclaration(node) && node.name.text === 'AppShellProps');
-  assert.deepEqual(props.members.map(member => member.name.text).sort(), ['account', 'agent', 'agentLink', 'improve', 'layout', 'locale', 'nav', 'route', 'title']);
+  assert.deepEqual(props.members.map(member => member.name.text).sort(), ['account', 'agent', 'agentLink', 'improve', 'layout', 'locale', 'nav', 'rail', 'route', 'title']);
+  const rail = props.members.find(member => member.name.text === 'rail');
+  assert.ok(rail.questionToken, 'rail is optional');
+  assert.equal(rail.type.getText(file), "'icon' | 'hover'");
+  const agentLink = props.members.find(member => member.name.text === 'agentLink');
+  assert.ok(agentLink.questionToken, 'agentLink is optional');
+  assert.equal(agentLink.type.getText(file), 'false');
 });
 
 test('splitNav: up to four screens are all tabs; more give three tabs plus « Plus »', async () => {

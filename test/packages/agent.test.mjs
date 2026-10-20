@@ -154,7 +154,9 @@ test('OptChat memory is opt-in per conversation: the request carries the view an
   // A second, separate model is the summarizer: the first words of what it summarizes, marked, so the view is visibly not the original text. Each call reports usage.
   const SUMMARIZER = { ...MODEL, id: 'summ', name: 'Summ', provider: 'summ', api: 'summ-api' };
   let summarizerCalls = 0;
+  const summaryRequests = [];
   const summarize = (_model, request) => {
+    summaryRequests.push(structuredClone(request));
     summarizerCalls++;
     const events = createAssistantMessageEventStream();
     const lines = textOf(request.messages.findLast(item => item.role === "user")).split(/(?:Compress this message into one line|Merge these two lines into one), in at most \d+ bytes:\n/)[1].split('\n');
@@ -203,6 +205,20 @@ test('OptChat memory is opt-in per conversation: the request carries the view an
   const log = await conversation.context(context);
   assert.deepEqual(system(answered), system(log.messages), 'every positional system message is kept');
   assert.ok(system(answered).some(message => /zoom\(id, n\)/.test(JSON.stringify(message.sections ?? {}))), 'the view is explained in a system section');
+  const viewInstructions = JSON.stringify(system(answered));
+  assert.match(viewInstructions, /latest mention in the view and zoom/);
+  assert.match(viewInstructions, /until you have it whole/);
+  assert.match(viewInstructions, /Never grep or search memories manually/);
+  assert.match(viewInstructions, /zoom is your only allowed mechanism/);
+  assert.ok(summaryRequests.length > 0);
+  for (const request of summaryRequests) {
+    const instructions = JSON.stringify(request.messages.filter(item => item.role === 'system'));
+    assert.match(instructions, /Copy names, numbers, ids, paths and errors exactly/);
+    assert.match(instructions, /credit quoted text to its real author/);
+    assert.match(instructions, /Be fast and spend few tokens/);
+    assert.match(instructions, /note \(memories from before this chat\)/);
+    assert.match(instructions, /work \(.*report/);
+  }
   assert.ok(log.messages.filter(message => message.role !== 'system').every(message => !JSON.stringify(message).includes('<chat>')), 'the stored transcript is never rewritten');
   const reply = log.messages.findLast(message => message.role === 'assistant');
   assert.equal(textOf(reply), 'Your dog is Biscuit.', 'a fact from outside the current turn came back through the view');
@@ -282,13 +298,14 @@ test('OptChat summary tasks are Pi\'s: pending ones survive a reopen and are fin
 });
 
 /** Models whose one provider always answers `Noted.`, so a conversation can run without a real model. */
-async function answeringModels() {
+async function answeringModels(capture = () => {}, answer = 'Noted.') {
   const { createProvider } = await import('@earendil-works/pi-ai/models');
   const { createAssistantMessageEventStream } = await import('@earendil-works/pi-ai/utils/event-stream');
   const MODEL = { id: 'scripted', name: 'Scripted', provider: 'scripted', api: 'scripted-api', baseUrl: 'https://fixture.invalid', input: ['text'], reasoning: false, contextWindow: 200000, maxTokens: 1024, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
-  const stream = () => {
+  const stream = (_model, request) => {
+    capture(structuredClone(request));
     const events = createAssistantMessageEventStream();
-    const message = { role: 'assistant', content: [{ type: 'text', text: 'Noted.' }], api: MODEL.api, provider: MODEL.provider, model: MODEL.id, timestamp: Date.now(), stopReason: 'stop', usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
+    const message = { role: 'assistant', content: [{ type: 'text', text: answer }], api: MODEL.api, provider: MODEL.provider, model: MODEL.id, timestamp: Date.now(), stopReason: 'stop', usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
     setTimeout(() => { events.push({ type: 'start', partial: message }); events.push({ type: 'done', reason: 'stop', message }); events.end(message); }, 5);
     return events;
   };
@@ -297,12 +314,13 @@ async function answeringModels() {
   return models;
 }
 
-test('OptChat: a failed summary is a failed native task; the next trigger after retryMs creates it again, the failure time lives in a document and no timer retries', { timeout: 20000 }, async t => {
+test('OptChat patient retries: six native task failures back off and recover without a new turn', { timeout: 20000 }, async t => {
   const { createOptChatMemory } = await import('@hachej/boring-agent/memory/optchat');
   const reported = [];
   let attempts = 0, harness;
-  const memory = createOptChatMemory({ harness: () => harness, context, nodeBytes: 100, viewBytes: 4000, retryMs: 400, onError: (error, node) => reported.push([error.message, node.index]),
-    summarizer: { summarize: async () => { if (++attempts === 1) throw new Error('flaky model'); return '~ short'; } } });
+  const times = [];
+  const memory = createOptChatMemory({ harness: () => harness, context, nodeBytes: 100, viewBytes: 4000, retryMs: 20, onError: (error, node) => reported.push([error.message, node.index]),
+    summarizer: { summarize: async job => { if (job.level === 0 && job.index === 0) { times.push(Date.now()); if (++attempts <= 6) throw new Error('flaky model'); } return '~ short'; } } });
   const registry = createRegistry();
   registry.install(memory.extension);
   harness = await Harness.open(new MemoryStorage(), { registry, models: await answeringModels() }, context);
@@ -313,16 +331,370 @@ test('OptChat: a failed summary is a failed native task; the next trigger after 
   const failedOnce = async () => (await memory.stats(conversation.id)).compactor;
   for (let i = 0; i < 200 && (await failedOnce()).failed === 0; i++) await new Promise(resolve => setTimeout(resolve, 20));
   const failed = await failedOnce();
-  assert.deepEqual([failed.failed, failed.error, failed.retrying], [1, 'flaky model', 1]);
+  assert.deepEqual([failed.failed, failed.error], [1, 'flaky model']);
   assert.deepEqual(reported, [['flaky model', 0]], 'reported once');
-  const before = attempts;
-  await memory.nap(conversation.id); // inside the retry window: the node is left alone
-  assert.equal(attempts, before, 'no retry inside retryMs');
-  await new Promise(resolve => setTimeout(resolve, 450));
-  assert.equal(attempts, before, 'and nothing retries by itself afterwards: no timer');
-  await memory.nap(conversation.id); // the next trigger
+  for (let i = 0; i < 300 && attempts < 7; i++) await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(attempts, 7, 'the idle loop retried without a new turn or nap');
+  await memory.nap(conversation.id);
+  const gaps = times.slice(1).map((time, index) => time - times[index]);
+  for (let i = 0; i < gaps.length; i++) assert.ok(gaps[i] >= 20 * 2 ** i - 3, JSON.stringify(gaps));
   const done = await memory.stats(conversation.id);
-  assert.ok(attempts > before && done.summaries >= 1 && done.compactor.failed === 0 && done.compactor.idle, JSON.stringify(done.compactor));
+  assert.ok(done.summaries >= 1 && done.compactor.failed === 0 && done.compactor.idle, JSON.stringify(done.compactor));
+  assert.equal(reported.length, 1, 'the whole outage is one reported failure streak');
+});
+
+test('OptChat patient retry also covers an unavailable summarizer model resolver', { timeout: 5000 }, async t => {
+  const { createOptChatMemory } = await import('@hachej/boring-agent/memory/optchat');
+  const { UserEntry } = await import('@earendil-works/pi-durable');
+  let harness, resolutions = 0;
+  const times = [];
+  const memory = createOptChatMemory({ harness: () => harness, context, nodeBytes: 100, retryMs: 20,
+    summarizer: { model: async () => { times.push(Date.now()); if (++resolutions < 3) throw new Error('fictional resolver outage'); return { provider: 'scripted', modelId: 'scripted' }; } } });
+  const registry = createRegistry(); registry.install(memory.extension);
+  harness = await Harness.open(new MemoryStorage(), { registry, models: await answeringModels() }, context);
+  t.after(async () => { await memory.dispose(); await harness.close(context); });
+  const conversation = await harness.root(context);
+  await conversation.commit(tx => tx.appendEntry(UserEntry, conversation.id, { model: [{ role: 'user', content: 'Fictional '.repeat(30), timestamp: 1 }] }), context);
+  harness.resume(); await memory.nap(conversation.id);
+  assert.equal(resolutions, 3);
+  assert.ok(times[1] - times[0] >= 17 && times[2] - times[1] >= 37, JSON.stringify(times));
+  const stats = await memory.stats(conversation.id);
+  assert.equal(stats.view.open, 0);
+  assert.equal(stats.compactor.failed, 0);
+  assert.equal(stats.compactor.calls, 1, 'resolver failures did not send a model request');
+});
+
+test('OptChat concurrency admits more than eight parallel nodes by default and respects a lower jobs cap', { timeout: 15000 }, async t => {
+  const { createOptChatMemory, OPTCHAT_DEFAULTS } = await import('@hachej/boring-agent/memory/optchat');
+  const { UserEntry } = await import('@earendil-works/pi-durable');
+  for (const jobs of [undefined, 3]) {
+    let harness, active = 0, peak = 0;
+    const gate = Promise.withResolvers();
+    const memory = createOptChatMemory({ harness: () => harness, context, nodeBytes: 100, viewBytes: 4000, ...(jobs ? { jobs } : {}),
+      summarizer: { summarize: async () => { active++; peak = Math.max(peak, active); await gate.promise; active--; return '~ short'; } } });
+    const registry = createRegistry(); registry.install(memory.extension);
+    harness = await Harness.open(new MemoryStorage(), { registry, models: createModels() }, context);
+    t.after(async () => { gate.resolve(); await memory.dispose(); await harness.close(context); });
+    const conversation = await harness.root(context, { agent: { extensions: [memory.extension] } });
+    await conversation.commit(async tx => { for (let i = 0; i < 32; i++) await tx.appendEntry(UserEntry, conversation.id, { model: [{ role: 'user', content: `${i}: ${'Fictional '.repeat(7)}`, timestamp: i }] }); }, context);
+    harness.resume();
+    const napping = memory.nap(conversation.id);
+    for (let i = 0; i < 200 && peak < (jobs ?? 16); i++) await new Promise(resolve => setTimeout(resolve, 10));
+    gate.resolve(); await napping;
+    assert.equal(OPTCHAT_DEFAULTS.jobs, 64);
+    assert.equal(peak, jobs ?? 16, 'ready pair summaries run concurrently, within host admission');
+    await memory.dispose(); await harness.close(context);
+  }
+});
+
+test('OptChat compactor has its own bounded view and stable four-line text blocks in compactions and turns', { timeout: 15000 }, async t => {
+  const { createOptChatMemory, OPTCHAT_DEFAULTS } = await import('@hachej/boring-agent/memory/optchat');
+  const { UserEntry } = await import('@earendil-works/pi-durable');
+  const requests = [];
+  let harness;
+  const compactBytes = 1200;
+  const memory = createOptChatMemory({ harness: () => harness, context, nodeBytes: 100, compactBytes, jobs: 1,
+    summarizer: { model: { provider: 'scripted', modelId: 'scripted' } } });
+  const registry = createRegistry(); registry.install(memory.extension);
+  harness = await Harness.open(new MemoryStorage(), { registry, models: await answeringModels(request => requests.push(request), 'Summary '.repeat(12).trim()) }, context);
+  t.after(async () => { await memory.dispose(); await harness.close(context); });
+  const conversation = await harness.root(context, { agent: { model: { provider: 'scripted', modelId: 'scripted' }, extensions: [memory.extension] } });
+  await conversation.commit(async tx => { for (let i = 0; i < 96; i++) await tx.appendEntry(UserEntry, conversation.id, { model: [{ role: 'user', content: `${i}: ${'Fictional '.repeat(7)}`, timestamp: i }] }); }, context);
+  harness.resume(); await memory.nap(conversation.id);
+  const compactions = requests.filter(request => JSON.stringify(request).includes('For scale, this line'));
+  assert.ok(compactions.length > 30);
+  const contexts = compactions.map(request => request.messages.find(item => item.role === 'user').content.slice(0, -1).map(part => part.text));
+  const largest = Math.max(...contexts.map(blocks => Buffer.byteLength(blocks.join(''))));
+  assert.ok(largest <= compactBytes + 20, `${largest} exceeds compactor budget`);
+  for (const blocks of contexts) {
+    assert.equal(blocks[0], '<chat>\n');
+    for (const block of blocks.slice(1, -1)) assert.equal(block.split('\n').length - 1, 4);
+  }
+  assert.ok(contexts.some((blocks, i) => i > 0 && blocks.length > 2 && blocks[1] === contexts[i - 1][1]), 'successive nodes share a byte-identical four-line prefix beyond the opening tag');
+  assert.equal(OPTCHAT_DEFAULTS.compactBytes, 32000);
+  const count = requests.length;
+  await (await conversation.submit({ type: 'input', content: 'Next fictional turn.' }, context)).wait(context);
+  const chat = requests.slice(count).find(request => !JSON.stringify(request).includes('For scale, this line'));
+  const body = chat.messages.findLast(item => item.role === 'user').content;
+  assert.equal(body[0].text, '<chat>\n');
+  assert.equal(body[1].text.split('\n').length - 1, 4);
+  assert.equal(body.at(-1).text, 'Next fictional turn.');
+});
+
+test('OptChat forgetMessage tombstones every leaf, atomically removes ancestors and fences in-flight summaries', { timeout: 15000 }, async t => {
+  const { createOptChatMemory, OptChatNodes, leavesOf, OptChatLog } = await import('@hachej/boring-agent/memory/optchat');
+  const { UserEntry, AssistantEntry } = await import('@earendil-works/pi-durable');
+  const secret = 'FICTIONAL_SECRET_D131';
+  let harness, hold = false;
+  const entered = Promise.withResolvers(), release = Promise.withResolvers();
+  const memory = createOptChatMemory({ harness: () => harness, context, nodeBytes: 100, viewBytes: 4000,
+    summarizer: { summarize: async job => {
+      if (hold && job.source.join('').includes(secret)) { entered.resolve(); await release.promise; }
+      return job.source.join('').includes(secret) ? `~ ${secret}` : '~ safe fictional summary';
+    } } });
+  const registry = createRegistry(); registry.install(memory.extension);
+  harness = await Harness.open(new MemoryStorage(), { registry, models: createModels() }, context);
+  t.after(async () => { release.resolve(); await memory.dispose(); await harness.close(context); });
+  const conversation = await harness.root(context, { agent: { extensions: [memory.extension] } });
+  const assistant = { role: 'assistant', content: [{ type: 'text', text: `${secret} ${'fictional '.repeat(20)}` }, { type: 'toolCall', id: 'secret-call', name: 'fictional', arguments: { value: secret } }], api: 'scripted-api', provider: 'scripted', model: 'scripted', timestamp: 1, stopReason: 'toolUse', usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
+  await conversation.commit(async tx => {
+    await tx.appendEntry(AssistantEntry, conversation.id, { model: [assistant] });
+    for (let i = 0; i < 14; i++) await tx.appendEntry(UserEntry, conversation.id, { model: [{ role: 'user', content: `Safe later ${i} ${'fictional '.repeat(6)}`, timestamp: i + 2 }] });
+  }, context);
+  harness.resume(); await memory.nap(conversation.id);
+  const original = (await conversation.context(context)).messages;
+  const messageIndex = original.findIndex(item => item.role === 'assistant');
+  const oldLeaves = leavesOf(original).leaves;
+  const beforeLog = new OptChatLog(); beforeLog.set(oldLeaves);
+  const oldParts = (await memory.stats(conversation.id)).view.parts;
+  assert.match(await memory.zoom(conversation.id, 0, 1), new RegExp(secret));
+  const docs = async () => {
+    const nodes = {};
+    for (let level = 0; 2 ** level <= oldLeaves.length; level++) {
+      const doc = await harness.snapshot(OptChatNodes, conversation.id, `${level}.0`, context);
+      for (const [index, node] of Object.entries(doc?.nodes ?? {})) nodes[`${level}:${index}`] = node;
+    }
+    return nodes;
+  };
+  const oldNodes = await docs();
+  assert.ok(JSON.stringify(oldNodes).includes(secret), 'the planted secret reached real persisted summaries');
+  await memory.forgetMessage(conversation.id, messageIndex);
+  assert.equal(JSON.stringify(await docs()).includes(secret), false, 'stale ancestors are removed before the method returns');
+  for (const id of [0, 1]) assert.match(await memory.zoom(conversation.id, id, 1), /forgotten/);
+  await memory.nap(conversation.id);
+  const current = await memory.stats(conversation.id);
+  assert.equal(current.leaves, oldLeaves.length);
+  assert.equal(current.view.open, 0);
+  assert.equal(current.compactor.failed, 0);
+  assert.equal(JSON.stringify(current).includes(secret), false);
+  const nodes = await docs();
+  assert.equal(JSON.stringify(nodes).includes(secret), false);
+  for (const [key, node] of Object.entries(oldNodes)) if (Number(key.split(':')[1]) * 2 ** Number(key.split(':')[0]) >= 2) assert.deepEqual(nodes[key], node, `unrelated node ${key} was not rewritten`);
+  assert.deepEqual(current.view.parts.filter(part => part.id >= 2), oldParts.filter(part => part.id >= 2), 'later view lines and positions stay unchanged');
+  assert.deepEqual((await conversation.context(context)).messages, original, 'the Pi session is untouched');
+  memory.forget(conversation.id);
+  assert.match(await memory.zoom(conversation.id, 0, 1), /forgotten/, 'tombstones survive cache eviction');
+  await memory.forgetMessage(conversation.id, messageIndex); // idempotent
+  await assert.rejects(memory.forgetMessage(conversation.id, -1), /message/i);
+  await assert.rejects(memory.forgetMessage(conversation.id, original.length), /message/i);
+
+  // A second conversation forgets while a model request is in flight.
+  const second = await harness.createConversation({ ownership: { kind: 'root' } }, context);
+  await second.commit(tx => tx.appendEntry(UserEntry, second.id, { model: [{ role: 'user', content: `${secret} ${'fictional '.repeat(20)}`, timestamp: 1 }] }), context);
+  hold = true;
+  const napping = memory.nap(second.id);
+  await entered.promise;
+  const secondMessages = (await second.context(context)).messages;
+  await memory.forgetMessage(second.id, secondMessages.findIndex(item => item.role === 'user'));
+  release.resolve(); await napping;
+  await memory.nap(second.id);
+  assert.match(await memory.zoom(second.id, 0, 1), /forgotten/);
+  assert.equal(JSON.stringify(await harness.snapshot(OptChatNodes, second.id, '0.0', context)).includes(secret), false, 'late model output cannot restore forgotten memory');
+});
+
+test('OptChat forget commit fences unrelated in-flight nodes whose context contained the forgotten message', { timeout: 5000 }, async t => {
+  const { createOptChatMemory, OptChatNodes } = await import('@hachej/boring-agent/memory/optchat');
+  const { UserEntry } = await import('@earendil-works/pi-durable');
+  const secret = 'FICTIONAL_CONTEXT_SECRET';
+  const entered = Promise.withResolvers(), release = Promise.withResolvers();
+  let harness;
+  const memory = createOptChatMemory({ harness: () => harness, context, nodeBytes: 100,
+    summarizer: { summarize: async job => {
+      if (job.level === 0 && job.index === 1 && job.context.includes(secret)) { entered.resolve(); await release.promise; return `~ ${secret}`; }
+      return '~ safe';
+    } } });
+  const registry = createRegistry(); registry.install(memory.extension);
+  harness = await Harness.open(new MemoryStorage(), { registry, models: createModels() }, context);
+  t.after(async () => { release.resolve(); await memory.dispose(); await harness.close(context); });
+  const conversation = await harness.root(context);
+  await conversation.commit(async tx => {
+    await tx.appendEntry(UserEntry, conversation.id, { model: [{ role: 'user', content: secret, timestamp: 1 }] });
+    await tx.appendEntry(UserEntry, conversation.id, { model: [{ role: 'user', content: 'Fictional later message '.repeat(12), timestamp: 2 }] });
+  }, context);
+  harness.resume();
+  const napping = memory.nap(conversation.id);
+  await entered.promise;
+  const messages = (await conversation.context(context)).messages;
+  await memory.forgetMessage(conversation.id, messages.findIndex(item => item.role === 'user'));
+  release.resolve(); await napping;
+  const nodes = await harness.snapshot(OptChatNodes, conversation.id, '0.0', context);
+  assert.equal(JSON.stringify(nodes).includes(secret), false, 'unchanged source fingerprints do not authorize a result based on pre-forget context');
+  assert.equal(nodes.nodes['1'].text, '~ safe', 'the node was rebuilt with the new context');
+});
+
+test('OptChat forget removes already-committed copies resolved from earlier context', { timeout: 5000 }, async t => {
+  const { createOptChatMemory, OptChatNodes } = await import('@hachej/boring-agent/memory/optchat');
+  const { UserEntry } = await import('@earendil-works/pi-durable');
+  const secret = 'FICTIONAL_COMMITTED_CONTEXT_SECRET';
+  let harness;
+  const memory = createOptChatMemory({ harness: () => harness, context, nodeBytes: 100,
+    summarizer: { summarize: async job => job.context.includes(secret) ? `~ resolved ${secret}` : '~ safe' } });
+  const registry = createRegistry(); registry.install(memory.extension);
+  harness = await Harness.open(new MemoryStorage(), { registry, models: createModels() }, context);
+  t.after(async () => { await memory.dispose(); await harness.close(context); });
+  const conversation = await harness.root(context);
+  await conversation.commit(async tx => {
+    await tx.appendEntry(UserEntry, conversation.id, { model: [{ role: 'user', content: secret, timestamp: 1 }] });
+    await tx.appendEntry(UserEntry, conversation.id, { model: [{ role: 'user', content: 'Remember that fictional code. '.repeat(12), timestamp: 2 }] });
+  }, context);
+  harness.resume(); await memory.nap(conversation.id);
+  assert.match(JSON.stringify(await harness.snapshot(OptChatNodes, conversation.id, '0.0', context)), new RegExp(secret));
+  const messages = (await conversation.context(context)).messages;
+  await memory.forgetMessage(conversation.id, messages.findIndex(item => item.role === 'user'));
+  assert.equal(JSON.stringify(await harness.snapshot(OptChatNodes, conversation.id, '0.0', context)).includes(secret), false, 'no context-derived copy remains when forget returns');
+  await memory.nap(conversation.id);
+  assert.equal(JSON.stringify(await harness.snapshot(OptChatNodes, conversation.id, '0.0', context)).includes(secret), false);
+  assert.equal(JSON.stringify(await memory.stats(conversation.id)).includes(secret), false);
+});
+
+test('OptChat forget during request settling rechecks both the historical view and current message', { timeout: 10000 }, async t => {
+  const { createOptChatMemory } = await import('@hachej/boring-agent/memory/optchat');
+  const { UserEntry } = await import('@earendil-works/pi-durable');
+  for (const historical of [false, true]) {
+    const secret = 'FICTIONAL_SETTLING_SECRET';
+    const entered = Promise.withResolvers(), release = Promise.withResolvers();
+    const requests = [];
+    let harness;
+    const memory = createOptChatMemory({ harness: () => harness, context, nodeBytes: 100,
+      summarizer: { summarize: async () => { entered.resolve(); await release.promise; return '~ safe'; } } });
+    const registry = createRegistry(); registry.install(memory.extension);
+    harness = await Harness.open(new MemoryStorage(), { registry, models: await answeringModels(request => requests.push(request)) }, context);
+    t.after(async () => { release.resolve(); await memory.dispose(); await harness.close(context); });
+    const conversation = await harness.root(context, { agent: { model: { provider: 'scripted', modelId: 'scripted' }, extensions: [memory.extension] } });
+    await conversation.commit(async tx => {
+      if (historical) await tx.appendEntry(UserEntry, conversation.id, { model: [{ role: 'user', content: secret, timestamp: 1 }] });
+      await tx.appendEntry(UserEntry, conversation.id, { model: [{ role: 'user', content: 'Fictional long history '.repeat(20), timestamp: 2 }] });
+    }, context);
+    harness.resume();
+    const submitted = await conversation.submit({ type: 'input', content: historical ? 'Next fictional turn.' : secret }, context);
+    await entered.promise;
+    const messages = (await conversation.context(context)).messages;
+    await memory.forgetMessage(conversation.id, messages.findIndex(item => item.role === 'user' && item.content === secret));
+    release.resolve(); await submitted.wait(context);
+    assert.ok(requests.length > 0);
+    assert.equal(JSON.stringify(requests).includes(secret), false, 'a forget completed before dispatch must affect the waiting request');
+    await memory.dispose(); await harness.close(context);
+  }
+});
+
+test('OptChat disposal interrupts a long retry wait without starting another native task', { timeout: 5000 }, async t => {
+  const { createOptChatMemory } = await import('@hachej/boring-agent/memory/optchat');
+  const { UserEntry } = await import('@earendil-works/pi-durable');
+  let harness, attempts = 0;
+  const memory = createOptChatMemory({ harness: () => harness, context, nodeBytes: 100, retryMs: 60000,
+    summarizer: { summarize: async () => { attempts++; throw new Error('fictional provider outage'); } } });
+  const registry = createRegistry(); registry.install(memory.extension);
+  harness = await Harness.open(new MemoryStorage(), { registry, models: createModels() }, context);
+  t.after(async () => { await memory.dispose(); await harness.close(context); });
+  const conversation = await harness.root(context);
+  await conversation.commit(tx => tx.appendEntry(UserEntry, conversation.id, { model: [{ role: 'user', content: 'Fictional '.repeat(30), timestamp: 1 }] }), context);
+  harness.resume();
+  const napping = memory.nap(conversation.id);
+  for (let i = 0; i < 100 && (await memory.stats(conversation.id)).compactor.failed === 0; i++) await new Promise(resolve => setTimeout(resolve, 5));
+  assert.equal((await memory.stats(conversation.id)).compactor.retrying, 1);
+  await memory.dispose(); await napping;
+  assert.equal(attempts, 1);
+});
+
+test('OptChat tombstones and seed notes survive SQLite reopen; a forgotten current message never reaches the next model request', { timeout: 15000 }, async t => {
+  const { createOptChatMemory, OptChatNotes } = await import('@hachej/boring-agent/memory/optchat');
+  const { UserEntry, GenerationTask } = await import('@earendil-works/pi-durable');
+  const directory = mkdtempSync(join(tmpdir(), 'optchat-forget-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const requests = [];
+  const open = async notes => {
+    let harness;
+    const memory = createOptChatMemory({ harness: () => harness, context, notes, summarizer: { summarize: async () => '~ safe' } });
+    const registry = createRegistry(); registry.install(memory.extension);
+    harness = await Harness.open(await openNodeSqliteStorage(join(directory, 'session.sqlite')), { registry, models: await answeringModels(request => requests.push(request)) }, context);
+    return { harness, memory };
+  };
+  const first = await open(['Fictional original brief.']);
+  t.after(async () => { await first.memory.dispose(); await first.harness.close(context); });
+  const conversation = await first.harness.root(context, { agent: { model: { provider: 'scripted', modelId: 'scripted' }, extensions: [first.memory.extension] } });
+  await conversation.commit(tx => tx.appendEntry(UserEntry, conversation.id, { model: [{ role: 'user', content: 'FICTIONAL_LATEST_SECRET', timestamp: 1 }] }), context);
+  const messages = (await conversation.context(context)).messages;
+  await first.memory.forgetMessage(conversation.id, messages.findIndex(item => item.role === 'user'));
+  await first.memory.dispose(); await first.harness.close(context);
+  const second = await open(['A changed brief must not overwrite existing notes.']);
+  t.after(async () => { await second.memory.dispose(); await second.harness.close(context); });
+  const reopened = await second.harness.conversation(conversation.id, context);
+  assert.equal(await second.memory.zoom(conversation.id, 0, 1), '0+0|note: Fictional original brief.');
+  assert.equal(await second.memory.zoom(conversation.id, 1, 1), '1+0|note: (forgotten)');
+  assert.deepEqual((await second.harness.snapshot(OptChatNotes, conversation.id, context)).notes, ['Fictional original brief.']);
+  second.harness.resume();
+  const generation = await reopened.commit(tx => tx.createTask(GenerationTask, {}, { ownership: { kind: 'conversation' } }), context);
+  assert.equal((await second.harness.waitForTask(generation, context)).state.outcome.status, 'completed');
+  assert.equal(requests.length, 1);
+  assert.equal(JSON.stringify(requests).includes('FICTIONAL_LATEST_SECRET'), false, JSON.stringify(requests));
+  assert.ok(JSON.stringify((await reopened.context(context)).messages).includes('FICTIONAL_LATEST_SECRET'), 'Pi session retention is deliberate');
+});
+
+test('OptChat notes seed once before the transcript; work reports are whole leaves and start a turn', async t => {
+  const { createOptChatMemory, OptChatNotes } = await import('@hachej/boring-agent/memory/optchat');
+  const { UserEntry, AssistantEntry, defineEntry, GenerationTask } = await import('@earendil-works/pi-durable');
+  const requests = [];
+  let harness;
+  const memory = createOptChatMemory({ harness: () => harness, context, notes: ['Fictional PM decision: use blue.'],
+    workOf: message => message.role === 'toolResult' && message.toolName === 'job_report',
+    summarizer: { summarize: async () => '~ report' } });
+  const registry = createRegistry(); registry.install(memory.extension);
+  harness = await Harness.open(new MemoryStorage(), { registry, models: await answeringModels(request => requests.push(request)) }, context);
+  t.after(async () => { await memory.dispose(); await harness.close(context); });
+  const conversation = await harness.root(context, { agent: { model: { provider: 'scripted', modelId: 'scripted' }, extensions: [memory.extension] } });
+  await conversation.commit(async tx => {
+    await tx.appendEntry(UserEntry, conversation.id, { model: [{ role: 'user', content: 'Original task', timestamp: 1 }] });
+    await tx.appendEntry(AssistantEntry, conversation.id, { model: [{ role: 'assistant', content: [{ type: 'toolCall', id: 'job-1', name: 'job_report', arguments: {} }], api: 'scripted-api', provider: 'scripted', model: 'scripted', timestamp: 1, stopReason: 'toolUse', usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } }] });
+    await tx.appendEntry(defineEntry('fixture.work'), conversation.id, { model: [{ role: 'toolResult', toolCallId: 'job-1', toolName: 'job_report', content: [{ type: 'text', text: '[Builder] Fictional job complete.' }], isError: false, timestamp: 2 }] });
+  }, context);
+  await memory.nap(conversation.id); // these short leaves need no model or scheduler
+  assert.equal(await memory.zoom(conversation.id, 0, 1), '0+0|note: Fictional PM decision: use blue.');
+  assert.equal(await memory.zoom(conversation.id, 3, 1), '3+0|work: [Builder] Fictional job complete.');
+  assert.deepEqual((await harness.snapshot(OptChatNotes, conversation.id, context)).notes, ['Fictional PM decision: use blue.']);
+  memory.forget(conversation.id);
+  assert.equal((await memory.stats(conversation.id)).leaves, 4, 'seeding is durable, not repeated on cache eviction');
+  harness.resume();
+  const generation = await conversation.commit(tx => tx.createTask(GenerationTask, {}, { ownership: { kind: 'conversation' } }), context);
+  await harness.waitForTask(generation, context);
+  const messages = requests[0].messages.filter(item => item.role !== 'system');
+  assert.equal(messages.length, 1, 'the report starts the current turn, not the old user task');
+  assert.equal(messages[0].role, 'user', 'a work report is ordinary input, never an orphan tool result');
+  const blocks = messages[0].content.map(part => part.text).join('');
+  assert.match(blocks, /0\+1\|note: Fictional PM decision: use blue\./);
+  assert.match(blocks, /1\+1\|user: Original task/);
+  assert.match(blocks, /<\/chat>.*\[Builder\] Fictional job complete\./s);
+  assert.ok(!(await conversation.context(context)).messages.some(item => JSON.stringify(item).includes('Fictional PM decision')));
+});
+
+test('OptChat work boundaries keep whole reports and normalize sibling orphan results', async t => {
+  const { createOptChatMemory } = await import('@hachej/boring-agent/memory/optchat');
+  const { UserEntry, GenerationTask } = await import('@earendil-works/pi-durable');
+  const report = 'Fictional complete report. '.repeat(20), requests = [];
+  let harness;
+  const memory = createOptChatMemory({ harness: () => harness, context, cap: 40,
+    workOf: item => item.role === 'toolResult' && item.toolName === 'job_report',
+    summarizer: { summarize: async () => '~ safe' } });
+  const registry = createRegistry(); registry.install(memory.extension);
+  harness = await Harness.open(new MemoryStorage(), { registry, models: await answeringModels(request => requests.push(request)) }, context);
+  t.after(async () => { await memory.dispose(); await harness.close(context); });
+  const conversation = await harness.root(context, { agent: { model: { provider: 'scripted', modelId: 'scripted' }, extensions: [memory.extension] } });
+  await conversation.commit(tx => tx.appendEntry(UserEntry, conversation.id, { model: [
+    { role: 'user', content: 'Fictional task', timestamp: 1 },
+    { role: 'assistant', content: [{ type: 'toolCall', id: 'job', name: 'job_report', arguments: {} }, { type: 'toolCall', id: 'other', name: 'other_result', arguments: {} }], api: 'scripted-api', provider: 'scripted', model: 'scripted', timestamp: 2, stopReason: 'toolUse', usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } },
+    { role: 'toolResult', toolCallId: 'job', toolName: 'job_report', content: [{ type: 'text', text: report }], isError: false, timestamp: 3 },
+    { role: 'toolResult', toolCallId: 'other', toolName: 'other_result', content: [{ type: 'text', text: 'Fictional sibling result.' }], isError: false, timestamp: 4 },
+  ] }), context);
+  harness.resume();
+  const generation = await conversation.commit(tx => tx.createTask(GenerationTask, {}, { ownership: { kind: 'conversation' } }), context);
+  await harness.waitForTask(generation, context);
+  const messages = requests[0].messages;
+  assert.ok(JSON.stringify(messages).includes(report), 'the current report is not capped like a memory leaf');
+  assert.ok(JSON.stringify(messages).includes('Fictional sibling result.'));
+  const calls = new Set();
+  for (const item of messages) {
+    if (item.role === 'assistant') for (const part of item.content) if (part.type === 'toolCall') calls.add(part.id);
+    if (item.role === 'toolResult') assert.ok(calls.has(item.toolCallId), `orphan result ${item.toolCallId}`);
+  }
 });
 
 test('the file guard wraps Pi\'s read, write and edit: stale and unread changes are refused, creating is allowed, baselines survive a restart', { timeout: 30000 }, async t => {

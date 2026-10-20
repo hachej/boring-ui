@@ -24,11 +24,15 @@ function fixture(t) {
       name: `@hachej/boring-${name}`, version: main.version, private: name === 'browser', license: 'MIT', type: 'module',
       repository: { url: 'git+https://github.com/hachej/boring-ui.git', directory: `packages/${name}` },
       engines: { node: '>=22.19.0' }, publishConfig: { access: 'public', registry: 'https://registry.npmjs.org/' },
-      files: ['dist', 'README.md', 'LICENSE'], exports: { '.': './dist/index.js' },
+      files: ['dist', 'README.md', 'LICENSE', ...(name === 'agent' ? ['NOTICE', 'licenses/Apache-2.0.txt'] : [])], exports: { '.': './dist/index.js' },
       ...(name === 'agent' ? { peerDependencies: { '@hachej/boring-files': '^1.0.0', external: '1.0.0' } } : {}),
     };
     write(`packages/${name}/package.json`, manifest);
     write(`packages/${name}/LICENSE`, 'MIT fixture license\n'); write(`packages/${name}/README.md`, '# Fixture\n'); write(`packages/${name}/dist/index.js`, 'export const value = 42;\n');
+    if (name === 'agent') {
+      write('packages/agent/NOTICE', 'Fictional upstream attribution\n');
+      write('packages/agent/licenses/Apache-2.0.txt', 'Fictional license fixture\n');
+    }
     lock.packages[`packages/${name}`] = structuredClone(manifest);
   }
   write('package-lock.json', lock);
