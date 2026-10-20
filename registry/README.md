@@ -617,7 +617,9 @@ Artifacts: with `artifactPanel` (a render function the host writes with the view
 
 `AgentNotifications` is a polite live region of toasts (status icon, title, a one-line summary of the final reply, close). `AmbientChat` feeds its store when its own run finishes, fails (toast kind `error`) or waits for an answer (`input`, never auto-dismissed, taken back when answered); a toast is not raised while the window is open on that conversation. A host pushes events for anything else with `store.push({ kind, title, summary, conversationId })`, or lets `watchConversation` do it. `autoDismissMs` (default 8000, 0 keeps them), `maxToasts`, hover and focus pause the timer, Escape closes the focused toast; a click opens that conversation (`conversations.onSelect`, then the window expands). With `systemNotifications`, a bell in the header asks for browser notification permission only when the person clicks it, and a system notification is shown only while the page is hidden, so a host whose connection feeds the store passes `pauseWhenHidden: false` to `createRemoteChat` (by default the stream pauses while hidden and nothing would arrive); `browser-notify.ts` is the one file that touches `Notification`, feature-detects it and never asks on load.
 
-Secure-context capabilities are the host's: the voice button in the screenshots needs `getUserMedia`, which exists only on HTTPS or localhost, so it is a `tools` slot and not part of the component. `examples/ambient/mic.mjs` shows the guarded pattern (no button where it is missing); `npm run check` fails any other use of `Notification`, `getUserMedia` or `navigator.mediaDevices` in browser-reachable code.
+Secure-context capabilities are the host's: the voice button in the screenshots needs `getUserMedia`, which exists only on HTTPS or localhost, so a host's own button is a `tools` slot and not part of the component. `examples/ambient/mic.mjs` shows the guarded pattern (no button where it is missing); `npm run check` fails any other use of `Notification`, `getUserMedia` or `navigator.mediaDevices` in browser-reachable code, except the two kit-shipped, feature-detecting exceptions: the feedback microphone below and the pi-chat camera.
+
+The `pi-chat` item ships the camera: on a touch device (`(pointer: coarse)`) with `canAttach` and an `accept` that admits images, the "+" menu has "Take a photo" (`camera-sheet.tsx`). It opens a full-screen in-page camera (`role="dialog"`, `data-boring-overlay`, one layer above the app shell's point layer) only when tapped; the shutter hands a JPEG scaled to at most 1600px to the same path as a picked file. Close, Escape and unmounting stop the camera; where it cannot open (refused, no media devices, insecure page) the sheet offers the phone's own camera through a file input. Inside the app shell's agent layer, `data-boring-overlay` keeps taps and focus in the overlay from stepping the layer down.
 
 The `feedback` item ships the microphone button: `VoiceInput` (`feedback/voice-input.tsx`) is the `tools` slot of `PiChat` or `AmbientChat` (`tools={<VoiceInput controller={controller} transcribe={transcribe} />}`). The first click asks for the microphone (`createVoiceCapture` of `@hachej/boring-feedback/page`, opened only from that click), the second stops and calls `transcribe(audio: Blob, signal)`, and the trimmed text is appended to the composer draft. It is never sent: the person reads it and presses Send. A cancel control shows while recording; cancel, a stop that fails, or unmounting releases the microphone and drops any transcription in flight. A refused microphone says what to do (blocked, none found, busy, insecure page) in the chat's own words (`voiceDenied`, `voiceNoMicrophone` and the rest in `labels.ts` and `labels-fr.ts`). Speech-to-text is the host's: `transcribe` posts the Blob to the host's own endpoint.
 
@@ -842,6 +844,50 @@ and `parseDiagram(textOrValue)` are exported: the maquette viewer draws its work
 (40 nodes, 80 edges, 12 groups); an edge to an unknown node is dropped. Invalid JSON, or a file without nodes, shows an inline error. A maquette's
 `workflow` may instead be a relative `*.diagram.json` path: the viewer reads it from the maquette's folder through the kind renderer's `read`
 (`ArtifactKindViewProps.read`, passed by the artifact panel) when How it works opens.
+
+## Typed records (`record-viewer`)
+
+`record-viewer` exports `RecordTable`, `RecordList`, `RecordsViewer` and `createRecordsKind` from `components/record-viewer/record-viewer`. It composes the host's shadcn table, badge, item, button, alert and empty components. `AgentWorkspace` opens `*.records.json` by default; app `artifactKinds` win. This is host presentation, not a Pi execution extension.
+
+```json
+{
+  "kind": "records@1",
+  "columns": [
+    { "key": "name", "label": "Article", "type": "text" },
+    { "key": "aisle", "label": "Rayon", "type": "text" },
+    { "key": "quantity", "label": "Quantité", "type": "number" },
+    { "key": "checked", "label": "Vérifié", "type": "date" },
+    { "key": "status", "label": "État", "type": "status" }
+  ],
+  "groupBy": "aisle",
+  "rows": [{
+    "id": "fictional-brush",
+    "values": {
+      "name": "Pinceau fictif", "aisle": "Finition", "quantity": 2,
+      "checked": "2026-10-01", "status": { "label": "À commander", "tone": "warn" }
+    },
+    "actions": [{ "id": "order", "label": "Commander" }]
+  }]
+}
+```
+
+Column keys and row IDs must be unique. Missing or null values display `—`. Numbers use `Intl.NumberFormat`; dates accept real ISO calendar dates or timestamps with an explicit timezone and display in UTC. `locale="en"` (default) or `locale="fr"` selects formatting and kit labels; `labels` overrides words. Column, action and status labels are app data, not translated by the block.
+
+The app decides status meaning. Tones map to host Badge variants: `ok → default`, `warn → secondary`, `error → destructive`, `info → outline`, `neutral → secondary`.
+
+```tsx
+const records = createRecordsKind({ locale: 'fr',
+  onAction: (action, row) => requestOrder(row.id, action.id) });
+<AgentWorkspace artifactKinds={[records]} {...workspaceProps} />
+<RecordTable columns={columns} rows={rows} groupBy="aisle" onAction={onAction} />
+<RecordList items={[{ id: 'brush', title: 'Pinceau fictif', detail: 'Rayon Finition',
+  status: { label: 'À commander', tone: 'warn' }, action: { id: 'order', label: 'Commander' } }]}
+  onAction={(action, item) => requestOrder(item.id, action.id)} />
+```
+
+`RecordTable` always draws a table. The file viewer uses it from 640px viewport width and `RecordList` below that. When grouped, the group heading carries its column: it is omitted from table headers, row cells and phone cards. Phone status columns appear only as badges, with accessible names retaining their column labels. Other fields, first-seen groups and actions are preserved. A list item accepts an optional `action` and an `actions` array; `statuses: [{ label, value }]` supplies multiple labelled badges alongside the optional standalone `status`. Buttons without `onAction` are disabled; callbacks must enforce host policy. Files never execute action metadata. Invalid JSON, cell types/dates, duplicate keys/IDs or invalid groups show exact raw text with a localized note instead of hiding invalid rows.
+
+Evidence: `test/contracts/record-viewer.test.mjs` and `npm run records:journey` (fictional inventory, desktop/phone, English/French, light/dark). Screenshots belong under `.cache/evidence/D77/`. No live domain-service or real-model qualification is claimed.
 
 ## Task-list viewer
 

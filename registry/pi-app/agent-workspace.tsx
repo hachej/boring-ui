@@ -37,6 +37,7 @@ import { createMockupKind } from '../mockup-viewer/mockup-viewer';
 import type { MockupComments } from '../mockup-viewer/mockup-viewer';
 import type { MaquetteComments } from '../maquette-viewer/maquette-viewer';
 import { createDiagramKind } from '../diagram-viewer/diagram-viewer';
+import { createRecordsKind } from '../record-viewer/record-viewer';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { BlockActions } from '../button/actions';
@@ -374,7 +375,7 @@ export function AgentWorkspace({ layout = 'default', title, controller, conversa
     if (view.hidden) presentAcks.current?.hidden(view); else presentAcks.current?.shown(view);
   }, []);
   // The app's kinds first, then the built-in maquette and diagram kinds in the workspace's language (a `.maquette.json` card and panel say « Maquette » in French).
-  const kinds = useMemo(() => [...(artifactKinds ?? []), createMaquetteKind({ locale, comments }), createDiagramKind({ locale }), createMockupKind({ locale, comments })], [artifactKinds, locale, comments]);
+  const kinds = useMemo(() => [...(artifactKinds ?? []), createMaquetteKind({ locale, comments }), createDiagramKind({ locale }), createMockupKind({ locale, comments }), createRecordsKind({ locale })], [artifactKinds, locale, comments]);
   const options: ViewerOptions = useMemo(() => ({ client, identity, history, viewers, kinds, interactive, share, onShown, onUnsavedChange: noteUnsaved, onBeforeLeaveChange: registerBeforeLeave, blobBase }), [client, identityKey, history, viewers, kinds, interactive, share, onShown, noteUnsaved, registerBeforeLeave, blobBase]); // eslint-disable-line react-hooks/exhaustive-deps
   const locate = revisionProvider?.locate ?? remote?.locate ?? defaultLocate;
   const readOnlyLibrary = !revisionProvider;

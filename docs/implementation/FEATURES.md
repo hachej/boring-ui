@@ -1,5 +1,11 @@
 # Implemented behavior and evidence
 
+## Typed record viewer
+
+The `record-viewer` registry item exports `RecordTable`, `RecordList`, `RecordsViewer` and `createRecordsKind` for `*.records.json` (`records@1`). This is host presentation, not a Pi execution extension. Tables group typed rows; app-provided status labels/tones select host Badge variants without domain interpretation. English/French labels and locale number/date formatting are supported. The file viewer uses a full-field list below 640px and exact raw-text fallback for invalid files. Host callbacks own row actions; absent handlers leave buttons disabled.
+
+`test/contracts/record-viewer.test.mjs` drives the real ArtifactPanel, precedence, grouping, statuses, actions, localization and malformed input. `npm run records:journey` drives native write/present through the workspace app with 30 fictional workshop rows, desktop/phone actions, overflow checks and light/dark screenshots under `.cache/evidence/D77/`. [The registry guide](../../registry/README.md#typed-records-record-viewer) owns the data shape and composition examples. No live domain-service, real-model, npm publication or global proof qualification is claimed.
+
 ## Board artifact viewer
 
 The `board-viewer` registry block exports `createBoardKind` for `*.board.json`. This is host presentation over the native tldraw renderer, not a Pi execution extension. `CanvasProjection` from the optional canvas-editor entry renders frames without a native-document publication controller. The existing text buffer conditionally saves only `board@1`; conflicts and uncertain acknowledgements retain local edits and the original operation identity. Maquette screens and sandboxed `MockupViewer` frames share the workspace client.
