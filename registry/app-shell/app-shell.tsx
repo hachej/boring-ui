@@ -30,6 +30,8 @@ export interface AppShellProps {
   readonly title: string;
   readonly nav: readonly NavItem[];
   readonly agent?: AgentSpec;
+  /** Consume agent/open/input launch parameters on mount (default). `false` leaves the URL and layer untouched. */
+  readonly agentLink?: false;
   /** The product manager: adds « Améliorer l’app » to the account menu. */
   readonly improve?: AgentSpec;
   readonly account?: AccountSpec;
@@ -89,7 +91,7 @@ export function AppShell(props: AppShellProps) {
   const { layout, agent, improve, title, nav, account, route } = props;
   if (layout === 'chat' && agent) throw new Error('AppShell layout "chat" takes no `agent`: the page is the chat (use `improve` for the product manager)');
   const text = appShellText((agent ?? improve)?.chatProps?.locale ?? props.locale);
-  return <AgentLayerProvider agent={agent} improve={improve} locale={props.locale}>
+  return <AgentLayerProvider agent={agent} improve={improve} locale={props.locale} agentLink={props.agentLink}>
     <HeaderProvider><Shell layout={layout} title={title} nav={nav} agent={agent} account={account} route={route} improve={Boolean(improve)} text={text} /></HeaderProvider>
   </AgentLayerProvider>;
 }

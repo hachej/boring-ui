@@ -186,20 +186,78 @@ async function oneLayerAt(t, width) {
 }
 
 // The layer's header actions: one layer open (its header is the drawer's on a phone, the dock's on a wide screen), the probe reads the layer's API.
-async function openedLayer(t, width, specs) {
-  const { createElement: h, useLayoutEffect, act } = await import('react');
+async function openedLayer(t, width, specs, { search = '', state = null, strict = false } = {}) {
+  const { createElement: h, useLayoutEffect, act, StrictMode } = await import('react');
   const shell = await bundle('shell-entry.tsx', `export { AppShell } from '${root}${folder}/app-shell.tsx';\nexport { useAgentLayer } from '${root}${folder}/agent-layer.tsx';\n`);
   let latest;
   const Probe = () => { const api = shell.useAgentLayer(); useLayoutEffect(() => { latest = api; }); return null; };
   const window = dom(t, width);
+  window.history.replaceState(state, '', `/${search}`);
+  const replaced = [];
+  const replace = window.history.replaceState.bind(window.history);
+  window.history.replaceState = (...args) => { replaced.push(args); return replace(...args); };
   const { createRoot } = await import('react-dom/client');
   const container = window.document.createElement('div');
   window.document.body.append(container);
   const reactRoot = createRoot(container);
   const nav = [{ id: 'Jour', label: 'Jour', icon: Icon, render: () => h(Probe) }];
-  await act(async () => reactRoot.render(h(shell.AppShell, { layout: 'screen', title: 'Forme', nav, route: { id: 'Jour', onChange() {} }, ...specs, locale: 'fr' })));
-  return { window, latest: () => latest, act, unmount: () => act(async () => reactRoot.unmount()) };
+  const app = h(shell.AppShell, { layout: 'screen', title: 'Forme', nav, route: { id: 'Jour', onChange() {} }, ...specs, locale: 'fr' });
+  await act(async () => reactRoot.render(strict ? h(StrictMode, null, app) : app));
+  t.after(() => act(async () => reactRoot.unmount()));
+  return { window, replaced, latest: () => latest, act, unmount: () => act(async () => reactRoot.unmount()) };
 }
+
+for (const [width, agent, input] of [[390, 'coach', 'text'], [1280, 'agent', 'text'], [390, 'coach', 'voice'], [390, 'improve', 'text']]) {
+  test(`agent URL at ${width}: ${agent}/${input} opens once, preserves other URL data and state, and never starts the microphone`, async t => {
+    const spec = { ...agentWith(), voice: { transcribe: async () => 'Fictional dictation' } };
+    const opened = await openedLayer(t, width, { agent: spec, improve: agentWith() }, { search: `?keep=hello%20world&agent=${agent}&open=half&input=${input}#jour`, state: { router: { fictional: 7 } }, strict: true });
+    assert.equal(opened.latest().showing, agent === 'improve' ? 'improve' : 'agent');
+    assert.equal(opened.latest().state, width === 1280 ? 'open' : input === 'voice' ? 'full' : 'half');
+    assert.equal(opened.window.location.search, '?keep=hello+world');
+    assert.equal(opened.window.location.hash, '#jour');
+    assert.equal(opened.replaced.length, 1, 'StrictMode consumes the URL once');
+    assert.deepEqual(opened.replaced[0][0], { router: { fictional: 7 } }, 'replaceState keeps the host state');
+    await opened.act(async () => new Promise(done => setTimeout(done, 800)));
+    const find = selector => opened.window.document.querySelector(selector);
+    const composer = find(`[data-spec=${agent === 'improve' ? 'improve' : 'agent'}] [data-testid=composer-input]`);
+    assert.ok(composer?.isConnected, 'the selected composer is mounted in the visible layer');
+    if (input === 'text') {
+      assert.equal(opened.window.document.activeElement, composer, 'focus remains on the composer after the drawer settles');
+      assert.equal(opened.latest().state, width === 1280 ? 'open' : 'full', 'composer focus promotes half to full');
+    } else {
+      assert.notEqual(opened.window.document.activeElement, composer, 'voice does not raise the keyboard');
+      assert.equal(find('[data-testid=agent-talk]')?.dataset.state, 'idle', 'the microphone waits for a press');
+    }
+    await opened.act(async () => opened.latest().close());
+    await opened.act(async () => new Promise(done => setTimeout(done, 600)));
+    assert.equal(opened.latest().state, 'closed', 'a rerender never reopens the consumed URL');
+    await opened.unmount();
+  });
+}
+
+for (const [name, specs, search, clean] of [
+  ['unknown', { agent: agentWith() }, '?agent=unknown&open=full&input=text&keep=1#jour', '?keep=1'],
+  ['missing spec', {}, '?agent=coach&input=text&keep=1#jour', '?keep=1'],
+  ['opt-out', { agent: agentWith(), agentLink: false }, '?agent=coach&input=text#jour', '?agent=coach&input=text'],
+]) test(`agent URL: ${name} stays closed`, async t => {
+  const opened = await openedLayer(t, 390, specs, { search, state: { fictional: true }, strict: true });
+  await opened.act(async () => new Promise(done => setTimeout(done, 650)));
+  assert.equal(opened.latest().state, 'closed');
+  assert.equal(opened.window.location.search, clean);
+  assert.equal(opened.window.location.hash, '#jour');
+  assert.deepEqual(opened.window.history.state, { fictional: true });
+  await opened.unmount();
+});
+
+test('agent URL: closing before the drawer settles cancels composer focus', async t => {
+  const opened = await openedLayer(t, 390, { agent: agentWith() }, { search: '?agent=coach&input=text', strict: true });
+  assert.equal(opened.latest().state, 'full', 'the URL opened the layer');
+  await opened.act(async () => opened.latest().close());
+  await opened.act(async () => new Promise(done => setTimeout(done, 800)));
+  assert.equal(opened.latest().state, 'closed');
+  assert.notEqual(opened.window.document.activeElement?.getAttribute('data-testid'), 'composer-input');
+  await opened.unmount();
+});
 
 async function headerOf(opened, which) {
   await opened.act(async () => opened.latest().open(which, 'half'));

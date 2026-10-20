@@ -337,6 +337,27 @@ Headless runs: `RunCard` (`pi-chat/run-card.tsx`) shows a run of `POST _agent/<n
 
 `useShellLayer(id)` (`app-shell/shell-layer.ts`) lets a full-screen view of the app (a document sheet, a pushed view) take part in the same one-layer-at-a-time rule: `const { open, close, isOpen } = useShellLayer('documents')`. Opening it closes the agent and product manager layers, and opening either of those closes it; the browser's Back closes it first (the Back manager's `sheet` layer). No `AppShell` prop is added. Any component may call `open`, so a host's handler can open the view; the view's component renders from `isOpen`.
 
+### Open the agent from a URL
+
+Launch links are enabled by default. `/?agent=coach&open=full&input=text` opens the app's agent and focuses its composer after the drawer settles. On desktop it opens the existing dock. `coach` and `agent` select the app's one assistant; `improve` selects its product manager. Unknown or unavailable agents open nothing. This selects a view, not an agent id or a permission.
+
+`open` accepts `half` or `full`; `input` accepts `text` or `voice`. Missing or invalid options default to `full` and `text`. Voice always opens full with the microphone ready, leaves the composer unfocused, and never starts recording. The microphone starts only on the person's press, as iOS and Android require. On iOS, a cold home-screen launch focuses the text composer but cannot raise the keyboard automatically. One tap raises it.
+
+The shell consumes `agent`, `open`, and `input` once on mount with `history.replaceState`. Other query parameters, the path, hash, and host history state remain. Back closes the phone layer without restoring the launch query; reload stays closed. `<AppShell agentLink={false} ... />` opts out of both opening and URL cleanup.
+
+Use the pure helpers exported by `app-shell/index.ts` to build app-owned manifest shortcuts or `start_url` values:
+
+```ts
+import { agentLink, parseAgentLink } from '@/components/app-shell';
+
+const start_url = '/' + agentLink({ agent: 'coach', open: 'full', input: 'text' });
+// /?agent=coach&open=full&input=text
+const launch = parseAgentLink('?agent=coach&input=voice');
+// { agent: 'coach', open: 'full', input: 'voice' }
+```
+
+The app owns its manifest, shortcut icons, and install flow. Real iPhone and Android home-screen launches require consumer testing; the browser journey checks URL consumption, focus, Back, reload, and the idle microphone.
+
 ### Changes
 
 - `AppShell` gained the optional `locale` prop, and the account sheet's title is the generic « Compte » instead of the person's name. Hosts that relied on the name as the sheet title will see « Compte » there.
