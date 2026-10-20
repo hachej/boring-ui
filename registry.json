@@ -1149,6 +1149,11 @@
           "target": "components/app-shell/agent-context.ts"
         },
         {
+          "path": "registry/app-shell/agent-link.ts",
+          "type": "registry:lib",
+          "target": "components/app-shell/agent-link.ts"
+        },
+        {
           "path": "registry/app-shell/back.ts",
           "type": "registry:lib",
           "target": "components/app-shell/back.ts"
