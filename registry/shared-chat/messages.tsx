@@ -151,6 +151,12 @@ export function SharedMessage({ shared, children, remove, canRemove, openFile, o
     {message.removed ? <p className="text-muted-foreground">{labels.sharedRemoved}</p> : children}
   </>;
   return <div ref={element} data-shared-message={message.id} className="group/shared-message relative flex min-w-0 flex-col gap-1"
+    tabIndex={phone && actionable ? 0 : undefined} aria-keyshortcuts={phone && actionable ? 'Shift+F10' : undefined}
+    onKeyDown={event => {
+      if (!phone || !actionable) return;
+      if (event.key === 'ContextMenu' || event.key === 'F10' && event.shiftKey) { event.preventDefault(); setActionsOpen(true); }
+      if (event.key === 'Escape') { setActionsOpen(false); element.current?.focus(); }
+    }}
     onPointerDown={event => {
       if (!phone || !actionable || event.pointerType !== 'touch' || event.target instanceof Element && event.target.closest('button, a, input, textarea, [role=button], [role=link]')) return;
       cancelPress(); start.current = { x: event.clientX, y: event.clientY };

@@ -115,6 +115,14 @@ try {
       await reveal('pdf-card'); await shot('card-result');
       const actions = `${message('pdf-card')}.querySelector('[data-testid=shared-message-actions]')`;
       assert.equal(await browser.evaluate(device === 'phone' ? `${actions}.hidden` : `getComputedStyle(${actions}).opacity === '0'`), true);
+      if (device === 'phone') {
+        await browser.evaluate(`${message('pdf-card')}.focus()`);
+        await browser.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'F10', code: 'F10', modifiers: 8 });
+        await browser.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'F10', code: 'F10', modifiers: 8 });
+        await browser.until('keyboard exposes phone Reply', `!${actions}.hidden`);
+        await browser.press('Escape');
+        await browser.until('Escape closes phone actions', `${actions}.hidden`);
+      }
       await exposeActions('pdf-card');
       if (device === 'desktop') {
         await browser.hover(q('[data-testid=workspace-bar-title]'));

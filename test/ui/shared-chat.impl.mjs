@@ -323,6 +323,16 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
     await act(async () => controller.setReplyTo(undefined));
     await act(async () => window.happyDOM.setWindowSize({ width: 1024, height: 768 }));
   });
+  await t.test('narrow-screen keyboard users can reach Reply without a long-press', async () => {
+    const row = q('[data-shared-message=six]');
+    await act(async () => window.happyDOM.setWindowSize({ width: 390, height: 844 }));
+    assert.equal(row.tabIndex, 0);
+    await act(async () => { row.focus(); row.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true, cancelable: true })); });
+    assert.equal(row.querySelector('[data-testid=shared-message-actions]').hidden, false);
+    await act(async () => row.querySelector('[data-testid=shared-reply]').click());
+    assert.equal(controller.getSnapshot().shared.replyTo, 'six');
+    await act(async () => { controller.setReplyTo(undefined); window.happyDOM.setWindowSize({ width: 1024, height: 768 }); });
+  });
   await t.test('localized separators precede the first message and gaps over fifteen minutes, not two minutes', async () => {
     await act(async () => {
       for (const [id, at] of [['timed-first', '2026-10-20T13:00:00Z'], ['timed-close', '2026-10-20T13:02:00Z'], ['timed-boundary', '2026-10-20T13:17:00Z'], ['timed-late', '2026-10-20T13:33:00Z']]) source.emit({ type: 'message', message: { id, at, conversationId: 'main', author: 'pm', text: id } });

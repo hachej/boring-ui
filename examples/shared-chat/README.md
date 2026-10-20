@@ -11,7 +11,7 @@ Mira and Leo share the room with PM and Julien as visible admin. PM is the only 
 3. Type `@`, choose PM and send `@pm ajoute un export PDF`.
 4. PM says `Je regarde vos fichiers.`, then posts its plan. Its own message carries the three-step work trace. No Builder member, mention or message appears.
 5. The trace defaults collapsed with one working Spinner. Expanding moves that Spinner to the current running step. The PM's single `Export PDF` card updates in place from `building` to `On attend votre essai`, with `Essayer cette version` as its action.
-6. Hover or focus a PM message/card on desktop, or long-press on a phone, to expose Reply. Send a follow-up through the existing composer. Its quote reveals the same parent card.
+6. Hover or focus a PM message/card on desktop, or long-press on a phone, to expose Reply. On a narrow screen, keyboard users can focus the message and press Shift+F10. Send a follow-up through the existing composer. Its quote reveals the same parent card.
 7. Open Admin through History and expand PM's finished trace to see its fictional detail. The fake host supplies no detail in Équipe.
 
 Other people and agents use the same left-aligned muted bubbles. A small muted name heads each group. One avatar sits bottom-left beside its last text bubble, with initials for people and a Bot fallback for agents. Own messages stay right-aligned, without a name or avatar. Consecutive bubbles have an 8px gap; author groups have a 24px gap. Sent mentions show a small default Avatar and a medium-weight name, without `@` or a pill.
