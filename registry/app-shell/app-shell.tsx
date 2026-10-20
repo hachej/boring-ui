@@ -32,6 +32,8 @@ export interface AppShellProps {
   /** Wide-screen navigation: `hover` reveals labels over the page on hover or keyboard focus. Default: `icon` (the native sidebar toggle). */
   readonly rail?: 'icon' | 'hover';
   readonly agent?: AgentSpec;
+  /** Consume agent/open/input launch parameters on mount (default). `false` leaves the URL and layer untouched. */
+  readonly agentLink?: false;
   /** The product manager: adds « Améliorer l’app » to the account menu. */
   readonly improve?: AgentSpec;
   readonly account?: AccountSpec;
@@ -91,7 +93,7 @@ export function AppShell(props: AppShellProps) {
   const { layout, rail = 'icon', agent, improve, title, nav, account, route } = props;
   if (layout === 'chat' && agent) throw new Error('AppShell layout "chat" takes no `agent`: the page is the chat (use `improve` for the product manager)');
   const text = appShellText((agent ?? improve)?.chatProps?.locale ?? props.locale);
-  return <AgentLayerProvider agent={agent} improve={improve} locale={props.locale}>
+  return <AgentLayerProvider agent={agent} improve={improve} locale={props.locale} agentLink={props.agentLink}>
     <HeaderProvider><Shell layout={layout} rail={rail} title={title} nav={nav} agent={agent} account={account} route={route} improve={Boolean(improve)} text={text} /></HeaderProvider>
   </AgentLayerProvider>;
 }

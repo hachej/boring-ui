@@ -93,6 +93,28 @@ async function bundleEntry(entry, outfile, extra) {
   return import(`${pathToFileURL(outfile).href}?${freshModule++}`);
 }
 
+test('parseAgentLink: known agents, defaults, invalid values and voice always full', async () => {
+  const { parseAgentLink } = await bundle('index.ts');
+  assert.equal(typeof parseAgentLink, 'function', 'the app-shell exports its URL parser');
+  for (const agent of ['coach', 'agent', 'improve']) {
+    assert.deepEqual(parseAgentLink(`?agent=${agent}&open=half&input=text`), { agent, open: 'half', input: 'text' });
+    assert.deepEqual(parseAgentLink(`?agent=${agent}`), { agent, open: 'full', input: 'text' });
+    assert.deepEqual(parseAgentLink(`?agent=${agent}&open=half&input=voice`), { agent, open: 'full', input: 'voice' });
+  }
+  for (const search of ['', '?open=full&input=text', '?agent=', '?agent=unknown', '?agent=COACH']) assert.equal(parseAgentLink(search), null, search);
+  assert.deepEqual(parseAgentLink('?other=kept&agent=%63oach&open=unknown&input=unknown'), { agent: 'coach', open: 'full', input: 'text' });
+});
+
+test('agentLink: canonical shortcut query and parse/build round trips', async () => {
+  const { agentLink, parseAgentLink } = await bundle('index.ts');
+  assert.equal(typeof agentLink, 'function', 'the app-shell exports its shortcut builder');
+  assert.equal(agentLink({ agent: 'coach', open: 'full', input: 'text' }), '?agent=coach&open=full&input=text');
+  assert.equal(agentLink({ agent: 'agent' }), '?agent=agent&open=full&input=text');
+  for (const agent of ['coach', 'agent', 'improve']) for (const open of ['half', 'full']) for (const input of ['text', 'voice']) {
+    assert.deepEqual(parseAgentLink(agentLink({ agent, open, input })), { agent, open: input === 'voice' ? 'full' : open, input });
+  }
+});
+
 test('text.ts has the same keys in English and French, and every word is filled', async () => {
   const { appShellText } = await bundle('text.ts');
   const en = appShellText('en'), fr = appShellText('fr');
@@ -170,14 +192,17 @@ function dom(t) {
   return window;
 }
 
-test('AppShellProps keeps the original props, adds optional rail and locale, and has no label or theme prop', () => {
+test('AppShellProps has the shell props, optional rail, locale and URL opt-out, and no label or theme prop', () => {
   const program = ts.createProgram([`${root}${folder}/app-shell.tsx`], { allowImportingTsExtensions: true, jsx: ts.JsxEmit.ReactJSX, noEmit: true, skipLibCheck: true });
   const file = program.getSourceFile(`${root}${folder}/app-shell.tsx`);
   const props = file.statements.find(node => ts.isInterfaceDeclaration(node) && node.name.text === 'AppShellProps');
-  assert.deepEqual(props.members.map(member => member.name.text).sort(), ['account', 'agent', 'improve', 'layout', 'locale', 'nav', 'rail', 'route', 'title']);
+  assert.deepEqual(props.members.map(member => member.name.text).sort(), ['account', 'agent', 'agentLink', 'improve', 'layout', 'locale', 'nav', 'rail', 'route', 'title']);
   const rail = props.members.find(member => member.name.text === 'rail');
   assert.ok(rail.questionToken, 'rail is optional');
   assert.equal(rail.type.getText(file), "'icon' | 'hover'");
+  const agentLink = props.members.find(member => member.name.text === 'agentLink');
+  assert.ok(agentLink.questionToken, 'agentLink is optional');
+  assert.equal(agentLink.type.getText(file), 'false');
 });
 
 test('splitNav: up to four screens are all tabs; more give three tabs plus « Plus »', async () => {

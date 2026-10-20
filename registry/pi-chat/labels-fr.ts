@@ -27,6 +27,8 @@ export const frenchChatLabels: ChatLabels = {
   waitingForAnswer: 'En attente de votre réponse',
   retryPending: 'Nouvelle tentative en attente',
   compacting: 'Résumé du contexte en cours',
+  preparing: 'En préparation…',
+  sendUnavailable: 'L’envoi n’est pas disponible pour le moment.',
   moreActions: 'Plus d’actions',
   sendUnknown: 'L’envoi n’est pas confirmé. Le message est conservé jusqu’à ce que vous le vérifiiez ou le renvoyiez.',
   checkSubmission: 'Vérifier l’envoi',
