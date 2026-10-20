@@ -31,6 +31,7 @@ import { feedbackLabelsFr } from '../feedback/feedback-labels';
 import { PointBar, usePointing } from '../feedback/point-mode';
 import { cn } from '../utils/utils';
 import { useBackLayer } from './back';
+import { parseAgentLink } from './agent-link';
 import { closeShellLayer, registerAgentLayerCloser } from './shell-layer';
 import { appShellText } from './text';
 import type { AppShellLocale, AppShellText } from './text';
@@ -262,7 +263,7 @@ function useMeasuredPeek(probe: RefObject<HTMLDivElement | null>): { readonly pe
 }
 
 /** Places the layer in the app. `agent` is the one assistant; `improve` is the product manager. Either may be absent. */
-export function AgentLayerProvider({ agent, improve, locale, children }: { readonly agent?: AgentSpec | undefined; readonly improve?: AgentSpec | undefined; readonly locale?: AppShellLocale | undefined; readonly children: ReactNode }): ReactElement {
+export function AgentLayerProvider({ agent, improve, locale, agentLink, children }: { readonly agent?: AgentSpec | undefined; readonly improve?: AgentSpec | undefined; readonly locale?: AppShellLocale | undefined; readonly agentLink?: false | undefined; readonly children: ReactNode }): ReactElement {
   const compact = useIsMobile();
   const expanded = !compact;
   const [snap, setSnapState] = useState<Snap>('closed');
@@ -276,8 +277,8 @@ export function AgentLayerProvider({ agent, improve, locale, children }: { reado
   // The side is the viewer's, remembered beside the Dock's own placement; read after mount so server and client markup agree.
   useLayoutEffect(() => { try { const saved = globalThis.localStorage?.getItem(SIDE_KEY); if (saved === 'left' || saved === 'right') setSideState(saved); } catch { /* a convenience */ } }, []);
   const setSide = useCallback((next: DockSide) => { setSideState(next); try { globalThis.localStorage?.setItem(SIDE_KEY, next); } catch { /* a convenience */ } }, []);
-  const specs = useRef({ agent, improve });
-  specs.current = { agent, improve };
+  const specs = useRef({ agent, improve, snap, shown });
+  specs.current = { agent, improve, snap, shown };
 
   const setSnap = useCallback((next: Snap) => setSnapState(next), []);
   const close = useCallback(() => setSnapState('closed'), []);
@@ -302,6 +303,35 @@ export function AgentLayerProvider({ agent, improve, locale, children }: { reado
   const [host] = useState(() => typeof document === 'undefined' ? null : Object.assign(document.createElement('div'), { className: 'flex min-h-0 flex-1 flex-col [&_[data-boring=pi-chat]>header]:hidden' }));
   const opened = useRef(false);
   if (snap !== 'closed') opened.current = true;
+
+  // Consume the launch URL before an open layer pushes its Back entry. Keep the parsed request through StrictMode's effect replay.
+  const launch = useRef<ReturnType<typeof parseAgentLink> | undefined>(undefined);
+  useEffect(() => {
+    if (launch.current === undefined) {
+      launch.current = agentLink === false ? null : parseAgentLink(window.location.search);
+      if (agentLink !== false) {
+        const url = new URL(window.location.href);
+        if (['agent', 'open', 'input'].some(key => url.searchParams.has(key))) {
+          for (const key of ['agent', 'open', 'input']) url.searchParams.delete(key);
+          history.replaceState(history.state, '', `${url.pathname}${url.search}${url.hash}`);
+        }
+      }
+    }
+    const link = launch.current;
+    if (!link) return;
+    const which = link.agent === 'improve' ? 'improve' : 'agent';
+    open(which, link.open);
+    const spec = specs.current[which];
+    if (link.input !== 'text' || !spec) return;
+    // The drawer's slide and initial focus finish first. Voice deliberately leaves focus off the composer and never calls start().
+    const timer = setTimeout(() => {
+      const current = specs.current;
+      if (current.snap !== 'closed' && current.shown === which && current[which]?.controller === spec.controller) {
+        host?.querySelector<HTMLElement>(`[data-spec=${which}] [data-testid=composer-input]`)?.focus({ preventScroll: true });
+      }
+    }, 520);
+    return () => clearTimeout(timer);
+  }, [host, open]);
 
   const voice = useVoice(agent, locale, outcome => {
     if (outcome === 'drafted') { setShown('agent'); setSnapState('half'); }

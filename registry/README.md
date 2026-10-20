@@ -100,6 +100,14 @@ A sent message that mentions an upload (`@uploads/<path>`, what `attachments` sa
 
 `fileChanges` on `PiChat` or `AmbientChat` opts into the same file-card renderer for successful native `write` and `edit` calls with a `path`. One card per path appears below the reply, outside collapsed activity, labelled Created for `write` or Edited for `edit`. A write followed by edits stays Created. Failed, pending and unrelated calls show no file card. Clicking uses `onOpenFile`, falling back to `mentions.open`; without either, the card is not clickable. This is a view of native tool results, not publication evidence or a pinned revision. It is off by default because a host's tools named `write` or `edit` need not operate on workspace files. The workspace demo enables it.
 
+## Natural presentation in `pi-chat`
+
+`presentation="natural"` on `PiChat` or `AmbientChat` is for people who should read a conversation, not a trace. It changes rendering only: the controller, the native entries and the stored history are untouched, and without the prop the output is unchanged. The chat then shows the person's messages (text, images, attachments), the assistant's text, question, approval and artifact cards and the interrupted notice. It hides tool steps (including `renderTool` and `groupTool` output, unless a card is `required`), reasoning, system and event rows, unmatched tool failures and the working shimmer, and it derives as a non-developer whatever `mode` says. Raw error text is replaced by the `responseFailed` label, and a blocked send shows `sendUnavailable` instead of the controller's reason. File discovery for the "files" list skips `read`, `write` and `edit` calls and keeps artifacts, mentions, drafts and images.
+
+One status, `<p role="status" data-testid="preparing">` with the `preparing` label (default "Preparing…", FR « En préparation… », customisable through `labels`), replaces the agent status, compaction and "working" lines while the agent works, retries or compacts. It is absent once the work ends (also after a confirmed stop) and while a question or approval waits for the person. An unconfirmed stop keeps it next to the existing stop notice; a lost connection keeps its own notice.
+
+Limits: assistant prose that narrates technical work is kept (nothing is stripped by pattern), and a host `renderTool` card is hidden unless it is `required`; a running `present` card is its own status. Use `mode="developer"` without the prop to see everything.
+
 ## Regular chat or shared chat
 
 Choose the copied item explicitly. The headless package root stays lean; channel data is available only from the existing `@hachej/boring-ui-kit/shared-chat` subpath.
@@ -328,6 +336,27 @@ Conversations: the agent's chat in the layer takes the same `conversations` as a
 Headless runs: `RunCard` (`pi-chat/run-card.tsx`) shows a run of `POST _agent/<name>/runs { input, idempotencyKey }` → `GET _agent/<name>/runs/<id>` (`{ id, status: queued | running | completed | failed, output?, text?, error?, agent?, startedAt?, finishedAt? }`): the agent's title, a status Badge, a Spinner and the elapsed time while queued or running, the duration once finished, the output (or text) as Markdown (structured output as JSON), and the error in an Alert. The host fetches: `<RunCard run={record} fetchRun={(id, signal) => fetch('_agent/coach/runs/' + id, { signal }).then(r => r.json())} />` polls every `pollMs` (2 s) until the run settles and offers Refresh; `parseRun` reads a record defensively. Render it from `renderTool` or `renderEntry` for a run in the thread, or anywhere in the page.
 
 `useShellLayer(id)` (`app-shell/shell-layer.ts`) lets a full-screen view of the app (a document sheet, a pushed view) take part in the same one-layer-at-a-time rule: `const { open, close, isOpen } = useShellLayer('documents')`. Opening it closes the agent and product manager layers, and opening either of those closes it; the browser's Back closes it first (the Back manager's `sheet` layer). No `AppShell` prop is added. Any component may call `open`, so a host's handler can open the view; the view's component renders from `isOpen`.
+
+### Open the agent from a URL
+
+Launch links are enabled by default. `/?agent=coach&open=full&input=text` opens the app's agent and focuses its composer after the drawer settles. On desktop it opens the existing dock. `coach` and `agent` select the app's one assistant; `improve` selects its product manager. Unknown or unavailable agents open nothing. This selects a view, not an agent id or a permission.
+
+`open` accepts `half` or `full`; `input` accepts `text` or `voice`. Missing or invalid options default to `full` and `text`. Voice always opens full with the microphone ready, leaves the composer unfocused, and never starts recording. The microphone starts only on the person's press, as iOS and Android require. On iOS, a cold home-screen launch focuses the text composer but cannot raise the keyboard automatically. One tap raises it.
+
+The shell consumes `agent`, `open`, and `input` once on mount with `history.replaceState`. Other query parameters, the path, hash, and host history state remain. Back closes the phone layer without restoring the launch query; reload stays closed. `<AppShell agentLink={false} ... />` opts out of both opening and URL cleanup.
+
+Use the pure helpers exported by `app-shell/index.ts` to build app-owned manifest shortcuts or `start_url` values:
+
+```ts
+import { agentLink, parseAgentLink } from '@/components/app-shell';
+
+const start_url = '/' + agentLink({ agent: 'coach', open: 'full', input: 'text' });
+// /?agent=coach&open=full&input=text
+const launch = parseAgentLink('?agent=coach&input=voice');
+// { agent: 'coach', open: 'full', input: 'voice' }
+```
+
+The app owns its manifest, shortcut icons, and install flow. Real iPhone and Android home-screen launches require consumer testing; the browser journey checks URL consumption, focus, Back, reload, and the idle microphone.
 
 ### Changes
 
@@ -601,8 +630,58 @@ One Tailwind item (owned source, shadcn tokens, light and dark, 44px targets on 
 | HTML preview and source; passive preview by default, optional interactive preview (below) | `html-pane.tsx` (over `@hachej/boring-ui-kit/html-viewer`), `interactive-html.tsx` |
 | Image viewer: fit, zoom, pan, checkerboard; every type through an `<img>` from an object URL | `image-pane.tsx` |
 | PDF viewer: the browser's own viewer in a frame over an object URL, a Download fallback where there is none | `pdf-pane.tsx` |
+| `LocalFileViewer({ name, blob, onClose?, ... })`: read-only image, PDF or literal text from a browser File or Blob, without a locator | `local-file-viewer.tsx` |
 
 Refresh runs the controller's own refresh for editable panes, so unsaved edits are kept and shown as "Changed elsewhere". Rich Markdown editing is offered only when the document survives a parse and serialise round trip unchanged; otherwise it opens as source with a notice. The canvas is not a pane: wrap tldraw's editor in `ViewerFrame` (see `lab/studio/panels/canvas.jsx`). `viewers.css` is the source of the item's `css`; run `node registry/viewers/build-css.mjs` after editing it.
+
+### Open a browser-only file
+
+```tsx
+import { LocalFileViewer } from '@/components/viewers/local-file-viewer';
+
+// A File from an input or drop event is already a Blob.
+<LocalFileViewer name={file.name} blob={file} onClose={closePreview} />
+```
+
+`LocalFileViewer` uploads nothing and writes no workspace file or browser storage. The file is lost on reload unless your app saves it separately. This is host presentation, not a Pi execution extension. It needs no resource client, `ResourceLocator` or agent. Preview object URLs are revoked when replaced or unmounted; Download uses a temporary URL that is also revoked.
+
+A specific `blob.type` wins. An empty type or `application/octet-stream` falls back to the name through `mediaTypeOf`. Supported images use `ImagePane`, PDFs use `PdfPane`, and text types, JSON and XML use read-only literal UTF-8 text. HTML never runs. Unknown types, NUL bytes, invalid UTF-8 and failed text reads show "No preview" with Download of the original bytes. The standard viewer bar supplies the title and Download; `onClose` adds Close. `subtitle`, `headerStart`, `controls`, `testId`, `titleTestId` and `className` customize the same bar. Words come from `ViewerWindowProvider`.
+
+#### Custom artifacts and a dropped PDF in one app
+
+`artifactKinds` customizes saved artifacts with resource descriptors. A browser-only File has no descriptor or revision. Use a host `panels` entry for it, rather than inventing a locator. This example keeps a dropped fictional PDF in memory alongside a custom saved report viewer:
+
+```tsx
+import { useState } from 'react';
+import type { ComponentProps } from 'react';
+import { AgentWorkspace } from '@/components/pi-app/agent-workspace';
+import type { OpenedView } from '@/components/pi-app/agent-workspace';
+import { LocalFileViewer } from '@/components/viewers/local-file-viewer';
+
+export function ReportWorkspace(host: ComponentProps<typeof AgentWorkspace>) {
+	const [local, setLocal] = useState<File>();
+	const [opened, setOpened] = useState<OpenedView | null>(null);
+	return <div className="h-full" onDragOver={event => event.preventDefault()}
+		onDrop={event => {
+			event.preventDefault();
+			const file = event.dataTransfer.files[0]; // e.g. compte-rendu-fictif.pdf
+			if (file) { setLocal(file); setOpened({ kind: 'local-file' }); }
+		}}>
+		<AgentWorkspace {...host} opened={opened} onOpenedChange={setOpened}
+			artifactKinds={[{
+				match: target => target.resource.path.endsWith('.report.json'),
+				label: 'Report',
+				renderer: ({ text }) => <pre>{text}</pre>,
+			}]}
+			panels={{ 'local-file': (_view, panel) => local
+				? <LocalFileViewer name={local.name} blob={local}
+					onClose={() => { setLocal(undefined); panel.close(); }} />
+				: null }} />
+	</div>;
+}
+```
+
+Drop only opens the preview. It does not send an attachment to chat, upload the PDF or make its bytes available to the agent.
 
 ### Interactive HTML preview (host opt-in)
 

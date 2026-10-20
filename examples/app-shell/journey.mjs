@@ -85,6 +85,44 @@ try {
   await browser.reload();
   await live();
 
+  await step('agent URL: full text focuses after settling, Back and reload stay closed; voice waits for a press; unknown is cleaned', async () => {
+    await browser.send('Page.navigate', { url: `${app.url}?agent=coach&open=full&input=text&keep=fictional#jour` });
+    await live();
+    await browser.until('the linked coach full and focused', `${snap} === 'full' && document.activeElement === ${q(INPUT)}`);
+    await settle();
+    assert.equal(await browser.evaluate(`document.activeElement === ${q(INPUT)}`), true, 'drawer focus guards do not retake focus');
+    assert.equal(await browser.evaluate('location.search + location.hash'), '?keep=fictional#jour', 'only the agent parameters were removed');
+    assert.equal(await browser.evaluate('history.state?.appShell'), 'agent');
+    await browser.reload();
+    await live();
+    await settle();
+    assert.equal(await browser.evaluate(snap), null, 'reloading an open linked layer stays closed');
+    await browser.send('Page.navigate', { url: `${app.url}?agent=coach&open=full&input=text&keep=fictional#jour` });
+    await live();
+    await browser.until('the linked coach full again', `${snap} === 'full' && document.activeElement === ${q(INPUT)}`);
+    await browser.evaluate('history.back()');
+    await browser.until('Back closed the linked layer', `!${q(LAYER)}`);
+    assert.equal(await browser.evaluate('location.search + location.hash'), '?keep=fictional#jour', 'Back cannot restore the launch query');
+    await browser.reload();
+    await live();
+    await settle();
+    assert.equal(await browser.evaluate(snap), null, 'reload does not reopen');
+    await browser.send('Page.navigate', { url: `${app.url}?agent=coach&open=half&input=voice` });
+    await live();
+    await browser.until('voice opens full with an idle mic', `${snap} === 'full' && ${q('[data-testid=agent-talk]')}?.dataset.state === 'idle'`);
+    await settle();
+    assert.equal(await browser.evaluate(`document.activeElement === ${q(INPUT)}`), false, 'voice leaves the keyboard closed');
+    assert.equal(await browser.evaluate(`${q('[data-testid=agent-talk]')}?.dataset.state`), 'idle', 'no recording starts without a press');
+    assert.equal(await browser.evaluate('location.search'), '');
+    await browser.send('Page.navigate', { url: `${app.url}?agent=unknown&open=full&input=text&keep=fictional` });
+    await live();
+    await settle();
+    assert.equal(await browser.evaluate(snap), null, 'an unknown agent never opens');
+    assert.equal(await browser.evaluate('location.search'), '?keep=fictional');
+    await browser.send('Page.navigate', { url: app.url });
+    await live();
+  });
+
   const historyLength = await browser.evaluate(`history.length`);
   await step('A fitness: three tabs keep their screens mounted: the scroll survives and a tab switch adds no history entry', async () => {
     assert.equal(await browser.evaluate(`document.querySelectorAll('[data-testid=tabbar] [role=tab]').length`), 3);

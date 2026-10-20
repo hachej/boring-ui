@@ -79,6 +79,8 @@ export interface DeriveOptions {
   readonly groupTool: ((call: ToolCall, result: ToolResultMessage) => boolean) | undefined;
   /** Turn artifact tool results into cards (`detect` recognises descriptors the tool result does not carry itself). */
   readonly artifacts?: { readonly detect?: ArtifactsConfig['detect'] | undefined } | undefined;
+  /** `natural` shows only what a non-developer reads: their messages, the assistant's prose and the question, approval and artifact cards. Tool steps, reasoning, system rows and raw error text are left out of the rows (the entries stay as they are). */
+  readonly presentation?: 'natural' | undefined;
 }
 
 /** Key of `{ summary, decision? }` in a gated call's details: `APPROVAL_DETAILS` of `@hachej/boring-agent/approval` (a contract test keeps them equal). */
@@ -96,7 +98,8 @@ const textOf = (message: Message): string => message.role === 'assistant' ? mess
 
 export function derive(view: ConversationView | undefined, options: DeriveOptions): Derived {
   const { mode, renderEntry, renderTool } = options;
-  const developer = mode === 'developer';
+  const natural = options.presentation === 'natural';
+  const developer = mode === 'developer' && !natural;
   const live = object(view?.docs['pi.live']);
   const run = object(live?.['run']), generation = object(live?.['generation']);
   const liveMessage = object(generation?.['message']), retry = object(generation?.['retry']);
@@ -151,6 +154,7 @@ export function derive(view: ConversationView | undefined, options: DeriveOption
     }
     const custom = committed ? renderTool?.(call, result) : undefined;
     if (custom?.required) { pinned.push({ key, content: custom.content }); return undefined; }
+    if (natural) return undefined;
     if (custom && (developer || result?.isError || custom.inline)) return { kind: 'tool', key, entry: { key, call, result, status: status(result), custom: custom.content } };
     // A host that folds only some calls (`groupTool`) keeps the rest as cards, which expert mode hides unless they failed.
     if (!developer && !result?.isError && options.groupTool && !(result && safe(options.groupTool, { key, call, result, status: status(result) }))) return undefined;
@@ -161,7 +165,7 @@ export function derive(view: ConversationView | undefined, options: DeriveOption
     for (const [index, part] of content.entries()) {
       if (part.type === 'text') { if (part.text.length) parts.push({ kind: 'text', key: `${rowKey}:text:${index}`, text: part.text }); }
       else if (part.type === 'thinking') { if (developer && part.thinking.length) parts.push({ kind: 'thinking', key: `${rowKey}:thinking:${index}`, text: part.thinking, streaming: streaming && index === content.length - 1 }); }
-      else { const made = toolPart(part, `${rowKey}:tool:${index}`, committed); if ((made?.kind === 'artifact' || made?.kind === 'approval') && made.entry) parts.push({ kind: 'tool', key: `${made.key}:step`, entry: made.entry }); if (made) parts.push(made); }
+      else { const made = toolPart(part, `${rowKey}:tool:${index}`, committed); if (!natural && (made?.kind === 'artifact' || made?.kind === 'approval') && made.entry) parts.push({ kind: 'tool', key: `${made.key}:step`, entry: made.entry }); if (made) parts.push(made); }
     }
     return parts;
   }
@@ -176,12 +180,12 @@ export function derive(view: ConversationView | undefined, options: DeriveOption
       if (developer) rows.push({ key: item.key, type: 'system', text: typeof message.content === 'string' ? message.content : message.content.map(part => part.text).join('\n') });
     } else if (message.role === 'toolResult') {
       // A result with its call is shown on the call's card. Only an unmatched failure gets its own row.
-      if (message.isError && !matched.has(message)) rows.push({ key: item.key, type: 'orphan-result', message });
+      if (!natural && message.isError && !matched.has(message)) rows.push({ key: item.key, type: 'orphan-result', message });
     } else if (message.role === 'user') rows.push({ key: item.key, type: 'user', message });
     else {
       const parts = partsOf(message.content, item.key, false, true);
       const interrupted = message.stopReason === 'error' || message.stopReason === 'aborted';
-      if (parts.length || interrupted) rows.push({ key: item.key, type: 'assistant', parts, streaming: false, stopReason: message.stopReason, ...(message.errorMessage ? { errorMessage: message.errorMessage } : {}), text: textOf(message), ...replyMeta(message), entryId: String(item.entry.id) });
+      if (parts.length || interrupted) rows.push({ key: item.key, type: 'assistant', parts, streaming: false, stopReason: message.stopReason, ...(message.errorMessage && !natural ? { errorMessage: message.errorMessage } : {}), text: textOf(message), ...replyMeta(message), entryId: String(item.entry.id) });
       else {
         // A final round with nothing to show adds no content, but it is still the round that ended the reply: its model, time and entry replace the earlier round's.
         const previous = rows[rows.length - 1];
@@ -194,7 +198,8 @@ export function derive(view: ConversationView | undefined, options: DeriveOption
   }
   if (typeof taskId === 'number' && liveMessage) {
     const key = `assistant:${taskId}:${counts.get(taskId) ?? 0}`, content = streamParts(liveMessage['content']);
-    rows.push({ key, type: 'assistant', parts: partsOf(content, key, true, false), streaming: true, text: '' });
+    const parts = partsOf(content, key, true, false);
+    if (!natural || parts.length) rows.push({ key, type: 'assistant', parts, streaming: true, text: '' });
   }
   const merged = mergeTurns(rows).map(row => row.type === 'assistant' && options.artifacts ? { ...row, parts: oneCardPerArtifact(row.parts) } : row);
   const last = merged[merged.length - 1];
