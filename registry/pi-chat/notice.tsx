@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import type { ChatSnapshot } from '@hachej/boring-ui-kit/shared-chat';
+import type { ChatSnapshot } from '@hachej/boring-ui-kit/native-chat';
 import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/alert';
 import { useChatText } from './labels';

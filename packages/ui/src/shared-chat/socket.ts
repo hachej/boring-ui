@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { randomUUID } from '@hachej/boring-files/platform';
-import { ChannelRequestError } from './channel-error.js';
-import type { ChannelEvent, ChannelMessage, ChannelSource, Member } from './channel-source.js';
+import { ChannelRequestError } from './error.js';
+import type { ChannelEvent, ChannelMessage, ChannelSource, Member } from './source.js';
 
 const member = z.object({ id: z.string(), name: z.string(), kind: z.enum(['person', 'agent', 'admin']), role: z.union([z.enum(['owner', 'validator', 'member', 'admin']), z.templateLiteral(['agent:', z.string()])]).optional(), avatarUrl: z.string().optional(), presence: z.enum(['here', 'away']).optional() });
 const conversation = z.object({ id: z.string(), title: z.string(), kind: z.string(), members: z.array(z.string()) });

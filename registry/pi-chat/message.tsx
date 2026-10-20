@@ -5,7 +5,6 @@ import type { ReactNode } from 'react';
 import type { ImageContent, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai';
 import { AlertCircleIcon, CircleSlashIcon, FileIcon, FileSpreadsheetIcon, FileTextIcon, ImageIcon, PresentationIcon } from 'lucide-react';
 import { CopyButton } from './code-block';
-import { SharedMessage } from './shared';
 import { Markdown } from './markdown';
 import type { CommandMentions } from './markdown';
 import { ArtifactCard } from './artifact-card';
@@ -36,10 +35,6 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 
 export interface RowContext {
   readonly developer: boolean;
-  readonly sharedReveal?: ((messageId: string) => void) | undefined;
-  readonly sharedReply?: ((messageId: string) => void) | undefined;
-  readonly sharedRemove?: import('@hachej/boring-ui-kit/shared-chat').ChatController['remove'];
-  readonly sharedCanRemove?: import('@hachej/boring-ui-kit/shared-chat').ChatController['canRemove'];
   readonly groupTool: DeriveOptions['groupTool'];
   readonly commandMentions: CommandMentions | undefined;
   readonly onOpenImage: ((image: ImageContent) => void) | undefined;
@@ -130,7 +125,7 @@ function FileCards({ paths, open, preview }: { readonly paths: readonly string[]
  * A text part of a sent message. Its `uploads/` mentions become file cards above the bubble and leave the text; the message content keeps
  * them (only what is drawn changes).
  */
-function UserText({ text, context, align = 'end' }: { readonly text: string; readonly context: RowContext; readonly align?: 'start' | 'end' }) {
+export function MessageText({ text, context, align = 'end' }: { readonly text: string; readonly context: Pick<RowContext, 'pieces' | 'openFile'>; readonly align?: 'start' | 'end' }) {
   const open = context.pieces?.openMention;
   const render = context.pieces?.renderMention;
   if (!context.pieces) return <Bubble variant="muted" align={align}><BubbleContent data-testid="user-text"><span className="whitespace-pre-wrap">{text}</span></BubbleContent></Bubble>;
@@ -151,7 +146,7 @@ function UserText({ text, context, align = 'end' }: { readonly text: string; rea
 function UserBubble({ message, context, align = 'end' }: { readonly message: UserMessage; readonly context: RowContext; readonly align?: 'start' | 'end' }) {
   const parts = typeof message.content === 'string' ? [{ type: 'text' as const, text: message.content }] : message.content;
   return <Message align={align}><MessageContent>
-    {parts.map((part, index) => part.type === 'text' ? (isFileBlock(part.text) ? null : <UserText key={index} text={part.text} context={context} align={align} />)
+    {parts.map((part, index) => part.type === 'text' ? (isFileBlock(part.text) ? null : <MessageText key={index} text={part.text} context={context} align={align} />)
       : <Image key={index} image={part} onOpenImage={context.onOpenImage} />)}
   </MessageContent></Message>;
 }
@@ -165,8 +160,7 @@ function Notice({ tone, icon, children, testid }: { readonly tone: 'error' | 'mu
 function resultText(message: ToolResultMessage): string { return message.content.map(part => part.type === 'text' ? part.text : '').join('\n'); }
 
 export function RowView({ row, context }: { readonly row: Row; readonly context: RowContext }) {
-  const content = <RowBody row={row} context={context} />;
-  return row.shared ? <SharedMessage shared={row.shared} remove={context.sharedRemove} canRemove={context.sharedCanRemove} openFile={context.openFile} onReply={context.sharedReply} onReveal={context.sharedReveal}>{content}</SharedMessage> : content;
+  return <RowBody row={row} context={context} />;
 }
 
 function RowBody({ row, context: liveContext }: { readonly row: Row; readonly context: RowContext }) {
@@ -174,7 +168,7 @@ function RowBody({ row, context: liveContext }: { readonly row: Row; readonly co
   const { labels, icons } = useChatText();
   const renderMention = useMemo(() => context.pieces?.mentions ? (path: string, text: string) => <UserMention path={path} text={text} open={context.pieces?.openMention} render={context.pieces?.renderMention} /> : undefined, [context.pieces]);
   switch (row.type) {
-    case 'user': return <article data-row-id={row.key} data-role="user" aria-live={row.historical ? 'off' : undefined}><UserBubble message={row.message} context={context} align={row.shared && !row.shared.own ? 'start' : 'end'} /></article>;
+    case 'user': return <article data-row-id={row.key} data-role="user" aria-live={row.historical ? 'off' : undefined}><UserBubble message={row.message} context={context} /></article>;
     case 'card': return <article data-row-id={row.key} data-role="event">{row.card.content}</article>;
     case 'event': return <article data-row-id={row.key} data-role="event" className="text-center text-xs text-muted-foreground">{labels.event(row.label)}</article>;
     case 'system': return <article data-row-id={row.key} data-role="system"><Collapsible>
@@ -185,7 +179,7 @@ function RowBody({ row, context: liveContext }: { readonly row: Row; readonly co
       <strong className="font-semibold">{labels.toolFailed(row.message.toolName)}</strong><span className="mt-1 block font-mono text-xs whitespace-pre-wrap">{resultText(row.message)}</span></Notice></article>;
     case 'assistant': {
       const settled = !row.streaming;
-      const nativeActions = settled && !row.shared;
+      const nativeActions = settled;
       const files = new Map<string, 'created' | 'edited'>();
       if (context.fileChanges) for (const part of row.parts) {
         if (part.kind !== 'tool' || part.entry.status !== 'completed') continue;
@@ -225,7 +219,7 @@ function RowBody({ row, context: liveContext }: { readonly row: Row; readonly co
           {files.size > 0 && <ul data-testid="reply-files" className="m-0 flex list-none flex-wrap gap-2 p-0">
             {[...files].map(([path, change]) => <li key={path} data-testid="message-file"><FileCard path={path} change={change} open={context.openFile} preview={context.pieces?.preview} /></li>)}
           </ul>}
-          {row.streaming && !row.shared && row.parts.length === 0 && <p data-testid="working" className="m-0 text-sm"><Shimmer>{labels.thinking}</Shimmer></p>}
+          {row.streaming && row.parts.length === 0 && <p data-testid="working" className="m-0 text-sm"><Shimmer>{labels.thinking}</Shimmer></p>}
         </div>
         {row.stopReason === 'error' && <Notice tone="error" testid="response-error" icon={<AlertCircleIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />}>{row.errorMessage ?? labels.responseFailed}</Notice>}
         {row.stopReason === 'aborted' && <Notice tone="muted" testid="interrupted" icon={<CircleSlashIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />}>{labels.interrupted}</Notice>}

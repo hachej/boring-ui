@@ -18,14 +18,14 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
   const { createElement, act } = await import('react'); const { createRoot } = await import('react-dom/client');
   mkdirSync(new URL('../../.cache/shared-chat-test/', import.meta.url), { recursive: true });
   const output = new URL('../../.cache/shared-chat-test/chat.mjs', import.meta.url);
-  await build({ entryPoints: [new URL('../../registry/pi-chat/pi-chat.tsx', import.meta.url).pathname], outfile: output.pathname, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', tsconfig: new URL('../../tsconfig.json', import.meta.url).pathname,
+  await build({ entryPoints: [new URL('../../registry/shared-chat/shared-chat.tsx', import.meta.url).pathname], outfile: output.pathname, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', tsconfig: new URL('../../tsconfig.json', import.meta.url).pathname,
     plugins: process.env.SHARED_CHAT_OLD_RENDERER ? [{ name: 'pre-shared-renderer', setup(builder) {
-      builder.onLoad({ filter: /registry\/pi-chat\/.*\.(ts|tsx)$/ }, ({ path }) => {
+      builder.onLoad({ filter: /registry\/(?:pi-chat|shared-chat)\/.*\.(ts|tsx)$/ }, ({ path }) => {
         const relative = path.slice(new URL('../../', import.meta.url).pathname.length);
         return { contents: execFileSync('git', ['show', `${process.env.SHARED_CHAT_BASE ?? '97bea0756'}:${relative}`], { encoding: 'utf8' }), loader: path.endsWith('.tsx') ? 'tsx' : 'ts' };
       });
     } }] : [] });
-  const { PiChat } = await import(output.href);
+  const { SharedChat: PiChat } = await import(output.href);
   const source = createFakeChannelSource(sharedChatSeed);
   let controller = createSharedChat(source, { conversationId: 'main' });
   const controllers = [controller];

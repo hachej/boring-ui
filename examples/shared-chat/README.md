@@ -1,6 +1,6 @@
 # Shared conversation demo
 
-This fictional team uses the existing embedded `AgentWorkspace`, `PiChat`, composer and History. Mira and Leo share it with a PM agent, a worker agent and Julien as visible admin. No agent or model runs in the page. The fake host script illustrates the platform's responses. Leo's initial message is attributed to Leo with muted `via Claude`, not an Agent badge.
+This fictional team installs the optional `shared-chat` item over the existing embedded `AgentWorkspace`, `PiChat`, composer and History. It imports `useSharedChat` from `registry/shared-chat/shared-chat`, spreads `shared.workspaceProps` and merges its chat options; regular chat does not load this item. Mira and Leo share it with a PM agent, a worker agent and Julien as visible admin. No agent or model runs in the page. The fake host script illustrates the platform's responses. Leo's initial message is attributed to Leo with muted `via Claude`, not an Agent badge.
 
 ## Run the flow
 
@@ -20,8 +20,10 @@ On the shared implementation VM, run every npm or Node command through the lane'
 
 ## Run the browser journey
 
-Set `CHROMIUM` to a Chromium binary, then run `npm run shared-chat:journey`. The journey uses `?manual` to advance the fictional host deterministically. It drives the existing workspace, member picker, composer, cards, quotes, avatar disclosures and native activity rendering.
+Set `CHROMIUM` to a Chromium binary, then run `npm run shared-chat:journey`. The journey uses `?manual` to advance the fictional host deterministically. It drives the existing workspace, member picker, composer, cards, quotes, avatar disclosures and optional host traces over the existing Trace primitives.
+
+For architectural parity only, run `npm run shared-chat:journey -- --parity`: all flow assertions still run, but it captures only `{390,1440}-light-{conversation,trace-live,card-result}.png`.
 
 Screenshots go to `.cache/evidence/shared-chat/`, phone 390 first, then desktop 1440, in light and dark. Files use `<width>-<theme>-<stage>.png`, including `mentions-agents`, `summon-plan`, `card-building`, `card-result`, `quote-composer`, `quote-sent`, `doing-answer`, `avatar-working`, `avatar-waiting`, `trace-live` (collapsed), `trace-live-expanded`, `trace-collapsed`, `conversation` and `admin-trace-expanded`. The CH-10 attribution captures are `390-light-via.png` and `1440-light-via.png`; both show Leo as a person with `via Claude`. A final 360px check rejects horizontal overflow. `SHARED_CHAT_EVIDENCE` changes the directory.
 
-The page's `window.__SHARED__` exposes fake host controls for this demo only. `pdf-flow.mjs` is not kit scheduling or speaking policy. This demo is sequential; the kit's separate per-agent traces still support parallel work, covered by the public PiChat test. A real host forwards to each agent's Pi conversation, enforces membership and roles, strips trace detail outside Admin, and posts permitted messages and replacements into its log. Replace the fake source with your `ChannelSource` or `createChannelSocket`, retain `useSharedChat(source)`, and supply the real workspace provider for attachment reads.
+The page's `window.__SHARED__` exposes fake host controls for this demo only. `pdf-flow.mjs` is not kit scheduling or speaking policy. This demo is sequential; the kit's separate per-agent traces still support parallel work, covered by the optional item's public SharedChat test. A real host forwards to each agent's Pi conversation, enforces membership and roles, strips trace detail outside Admin, and posts permitted messages and replacements into its log. Replace the fake source with your `ChannelSource` or `createChannelSocket`, retain `useSharedChat(source)`, and supply the real workspace provider for attachment reads.

@@ -581,6 +581,12 @@
     "fileTreeControls": "required host presentation binding; registry supplies the consumer shadcn Button, dropdown-menu and shared version-history rows, never a package-owned control skin",
     "versionHistory": "shared registry version-history presentation owns relative time, provenance and Current rows for viewer menus and Library panels; no publication or execution authority",
     "chatActivity": "shadcn built-in trace, resolved by the consumer style; host presentation over native Pi views, no execution state",
+    "chatComposition": {
+      "pi-chat": "regular native renderer; optional generic transcript, composer-content, file-pick and mention-option seams; no dependency on shared-chat",
+      "shared-chat": "optional registry item depending on pi-chat; owns multi-party headers, cards, quotes, member mentions, host traces and localized labels; AgentWorkspace is composed through its existing chat and controls props",
+      "controllerTypes": "native-chat exports the structural presentation contract; concrete native controller APIs and recovery are unchanged",
+      "dataEntry": "@hachej/boring-ui-kit/shared-chat -> src/shared-chat/index.ts; host log/source/socket/fake/errors only, never exported by the headless root; imports the existing transport outbox"
+    },
     "runtimeImports": [
       "@hachej/boring-ui-kit/markdown-editor",
       "@hachej/boring-ui-kit/canvas-editor",

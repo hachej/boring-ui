@@ -21,9 +21,8 @@ import { chatTextFor } from '../pi-chat/locale';
 import type { ChatLocale } from '../pi-chat/locale';
 import type { FileTreeViewProps } from '../file-tree/file-tree';
 import type { ResourceIdentity } from '@hachej/boring-files/remote';
-import type { ChatController } from '@hachej/boring-ui-kit/shared-chat';
+import type { ChatController } from '@hachej/boring-ui-kit/native-chat';
 import { PiChat, artifactKey } from '../pi-chat/pi-chat';
-import { SharedMembers } from '../pi-chat/shared';
 import { createPresentAcks, pendingPresents } from '../pi-chat/artifact';
 import type { PresentAcks } from '../pi-chat/artifact';
 import type { ArtifactDescriptor, ArtifactsConfig, ConversationsConfig, PiChatProps } from '../pi-chat/pi-chat';
@@ -69,7 +68,6 @@ export { ConversationList, ConversationHistory } from '../pi-chat/history';
 export { FileTree } from '../file-tree/file-tree';
 export type { SessionsView, WorkspaceAgent, WorkspaceAgents } from './sessions';
 export { useConversations } from '../pi-chat/use-conversations';
-export { useSharedChat } from '../pi-chat/use-shared-chat';
 export { useRemoteChat } from '../pi-chat/use-remote-chat';
 export type { RemoteChatState } from '../pi-chat/use-remote-chat';
 export { savedLabel, useSaved } from './use-saved';
@@ -555,13 +553,13 @@ export function AgentWorkspace({ layout = 'default', title, controller, conversa
   const hostControls = typeof controls === 'function' ? controls({ panelOpen }) : controls ?? chat.controls;
   const header = <>{conversations?.onNew && <Button variant="ghost" size="icon-sm" data-testid="workspace-new-chat" aria-label={text.labels.newChat} title={text.labels.newChat} className="min-[641px]:hidden" onClick={conversations.onNew}><text.icons.newChat data-icon="inline-start" aria-hidden="true" /></Button>}{hostControls}</>;
   const conversationTitle = conversations?.items.find(item => item.id === conversationId)?.title;
-  const chatProps: PiChatProps | undefined = controller && { ...(mentionsForChat ? { mentions: mentionsForChat } : {}), ...(attachments ? { attachments } : {}), ...(locale ? { locale } : {}), ...chat, controller, artifacts, ...(conversations ? { conversations, historyList: popoverHistory, showHistory: chat.showHistory ?? popoverHistory, conversationTitle, onRenameTitle: conversations.rename && conversationId ? (title: string) => conversations.rename!(conversationId, title) : undefined } : {}),
+  const chatProps: PiChatProps | undefined = controller && { ...(mentionsForChat ? { mentions: mentionsForChat } : {}), ...(attachments ? { attachments } : {}), ...(locale ? { locale } : {}), ...chat, controller, artifacts, onOpenFile: chat.onOpenFile ?? openFile, ...(conversations ? { conversations, historyList: popoverHistory, showHistory: chat.showHistory ?? popoverHistory, conversationTitle, onRenameTitle: conversations.rename && conversationId ? (title: string) => conversations.rename!(conversationId, title) : undefined } : {}),
     headerStart: <>{toggle}{chat.headerStart}</>, ...(header === undefined ? {} : { controls: header }),
     // Embedded: the bar above replaces the chat's header (History, New and the host's controls are in it); conversations stay for Fork.
     ...(embedded ? { header: false, historyList: false, showHistory: false } : {}) };
   const bar = embedded && <WorkspaceBar title={title ?? conversationTitle ?? chatText.labels.title} {...(title && conversationTitle ? { subtitle: conversationTitle } : {})} conversations={conversations} narrow={narrow}
     library={libraryController ? onPicked => libraryTree(path => { openFile(path); onPicked(); }, onPicked) : undefined}
-    controls={<>{controller && <SharedMembers controller={controller} />}<BlockActions actions={chat.headerActions} testId="chat-action" menuLabel={chatText.labels.moreActions} />{hostControls}</>} />;
+    controls={<><BlockActions actions={chat.headerActions} testId="chat-action" menuLabel={chatText.labels.moreActions} />{hostControls}</>} />;
   const docked_chat = <div data-testid="workspace-center" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
     {bar}
     {attachmentFailure?.tree === fileTree && attachmentFailure?.reasons.map((reason, index) => <p key={index} role="alert" className="m-0 px-4 py-2 text-sm">{reason}</p>)}

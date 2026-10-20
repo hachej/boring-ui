@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-import type { Card, ChannelMessage, Member, Step as ChannelStep } from '@hachej/boring-ui-kit/shared-chat';
 import type { ConversationView, EntryRecord, InboxItem, JsonObject } from '@earendil-works/pi-durable';
 import type { JsonValue } from '@earendil-works/chord';
 import type { AssistantMessage, Message, ToolCall, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai';
@@ -39,7 +38,7 @@ export type Row = (
   | { readonly key: string; readonly type: 'orphan-result'; readonly message: ToolResultMessage }
   | { readonly key: string; readonly type: 'system'; readonly text: string }
   | { readonly key: string; readonly type: 'event'; readonly label: string }
-  | { readonly key: string; readonly type: 'card'; readonly card: ChatCard }) & { readonly historical?: boolean; readonly shared?: { readonly message: ChannelMessage; readonly author: Member; readonly own: boolean; readonly first: boolean; readonly showSpinner?: boolean | undefined; readonly latestCard?: Card | undefined; readonly quote?: { readonly message: ChannelMessage; readonly author: Member } | undefined } };
+  | { readonly key: string; readonly type: 'card'; readonly card: ChatCard }) & { readonly historical?: boolean };
 
 export function object(value: JsonValue | undefined): JsonObject | undefined {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value : undefined;
@@ -255,8 +254,7 @@ function oneCardPerArtifact(parts: readonly Part[]): Part[] {
 
 /** One step of an activity block: a default tool call or a stretch of reasoning. */
 export type Step = { readonly kind: 'tool'; readonly key: string; readonly entry: ToolEntry }
-  | { readonly kind: 'thinking'; readonly key: string; readonly text: string; readonly streaming: boolean }
-  | { readonly kind: 'host'; readonly key: string; readonly step: ChannelStep };
+  | { readonly kind: 'thinking'; readonly key: string; readonly text: string; readonly streaming: boolean };
 /** An assistant turn is text parts and activity blocks: one block per uninterrupted run of steps. */
 export type Segment = { readonly kind: 'part'; readonly part: Part } | { readonly kind: 'activity'; readonly key: string; readonly steps: readonly Step[] };
 export function segments(parts: readonly Part[], groupTool: DeriveOptions['groupTool']): Segment[] {

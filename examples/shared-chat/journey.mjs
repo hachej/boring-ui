@@ -6,6 +6,7 @@ import { startSharedChat } from './server.mjs';
 const evidence = process.env.SHARED_CHAT_EVIDENCE ?? '.cache/evidence/shared-chat';
 mkdirSync(evidence, { recursive: true });
 const app = await startSharedChat();
+const parity = process.argv.includes('--parity');
 let browser;
 const input = q('[data-testid=composer-input]');
 const noOverflow = 'document.documentElement.scrollWidth <= innerWidth && document.body.scrollWidth <= innerWidth';
@@ -20,12 +21,12 @@ try {
     if (device === 'phone') await browser.emulate(device);
     assert.equal(await browser.evaluate("matchMedia('(hover: hover)').matches"), device === 'desktop');
     await browser.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: device === 'phone' });
-    for (const scheme of ['light', 'dark']) {
+    for (const scheme of parity ? ['light'] : ['light', 'dark']) {
       await browser.reload();
       await browser.until('the shared composer', `!!${input} && !!${q('[data-testid=shared-members]')} && !!${message('via-person')}`);
       await browser.evaluate(`document.documentElement.classList.toggle('dark', ${scheme === 'dark'})`);
       await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] });
-      const shot = async name => { await pause(250); await browser.screenshot(`${width}-${scheme}-${name}.png`); };
+      const shot = async name => { if (parity && !['conversation', 'trace-live', 'card-result'].includes(name)) return; await pause(250); await browser.screenshot(`${width}-${scheme}-${name}.png`); };
       const reveal = async id => { await browser.evaluate(`${message(id)}.scrollIntoView({ block: 'start', behavior: 'instant' })`); await pause(200); };
       const inlineMention = async selector => {
         assert.equal(await browser.evaluate(`${selector}.className`), 'font-medium text-primary');
@@ -188,7 +189,7 @@ try {
   await pause(200);
   assert.equal(await browser.evaluate(noOverflow), true, 'no horizontal overflow at 360px');
   assert.equal(await browser.evaluate(`(() => { const e = ${q('[data-testid=transcript-scroll]')}; return e.scrollWidth <= e.clientWidth; })()`), true);
-  await browser.screenshot('360-no-overflow.png');
+  if (!parity) await browser.screenshot('360-no-overflow.png');
   assert.deepEqual(browser.problems, []);
   writeFileSync(`${evidence}/browser-result.json`, JSON.stringify({ passed: true, scenario: 'colleagues-and-sequential-handoff', widths: [390, 1440, 360], themes: ['light', 'dark'], fictional: true }, null, 2));
 } catch (error) {

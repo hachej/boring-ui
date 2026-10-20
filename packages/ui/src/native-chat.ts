@@ -71,8 +71,6 @@ export type ChatHistoryState = { readonly kind: 'disabled' | 'idle' }
   | { readonly kind: 'loading' | 'ready'; readonly entries: readonly EntryRecord[]; readonly hasMore: boolean }
   | { readonly kind: 'error'; readonly entries: readonly EntryRecord[]; readonly hasMore: boolean; readonly error: unknown };
 export interface NativeChatSnapshot {
-  /** Absent for native single-user conversations. Shared host logs use the additive renderer contract in `shared-chat`. */
-  readonly shared?: never;
   readonly identity: ChatIdentity;
   readonly conversationId: Conversation['id'];
   readonly connection: ChatConnection;
@@ -85,6 +83,19 @@ export interface NativeChatSnapshot {
   readonly stop: 'idle' | 'requested' | 'confirmed' | 'unconfirmed';
   readonly disposed: boolean;
 }
+/** Structural presentation seam. Native controllers retain their concrete IDs, methods and recovery return values. */
+export type ChatSnapshot = Omit<NativeChatSnapshot, 'conversationId' | 'send'> & {
+  readonly conversationId: NativeChatSnapshot['conversationId'] | string;
+  readonly send: ChatSendState | { readonly kind: 'idle' | 'submitting' | 'admitted' }
+    | { readonly kind: 'unknown'; readonly reason: string; readonly retryable: boolean };
+};
+export type ChatController = Pick<NativeChatController, 'subscribe' | 'setText' | 'setAttachments' | 'clearHistory' | 'loadEarlier' | 'connect' | 'stop' | 'dispose'> & {
+  readonly getSnapshot: () => ChatSnapshot;
+  readonly send: (whenBusy?: ChatAttempt['whenBusy'], input?: ChatSendInput) => Promise<unknown>;
+  readonly reconcile: () => Promise<unknown>;
+  readonly retrySameRequest: () => Promise<unknown>;
+};
+
 export interface NativeChatOptions {
   readonly identity: ChatIdentity;
   readonly conversation: ChatConversation;

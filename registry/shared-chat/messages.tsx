@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import { channelAvatarStates } from '@hachej/boring-ui-kit/shared-chat';
-import type { Card as Request, ChannelMessage, ChatController, Member, SharedChatState } from '@hachej/boring-ui-kit/shared-chat';
+import type { Card as Request, ChannelMessage, SharedChatController, Member, SharedChatState } from '@hachej/boring-ui-kit/shared-chat';
 import { CircleIcon, ReplyIcon, Trash2Icon, XIcon } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarGroup, AvatarGroupCount, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -12,10 +12,9 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/componen
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { ActivityBlock } from './activity';
-import type { Row } from './rows';
-import { relativeTime } from './history';
-import { useChatText } from './labels';
+import { HostTrace } from './host-trace';
+import { relativeTime } from '../pi-chat/history';
+import { useChatText } from './text';
 
 function usePhone() {
   const [phone, setPhone] = useState(() => globalThis.matchMedia?.('(max-width: 640px)').matches === true);
@@ -62,7 +61,7 @@ function Dot({ value }: { readonly value: SharedChatState['status'] | Member['pr
 }
 
 /** Mounted in the existing bar. The source owns membership and visibility, including the admin. */
-export function SharedMembers({ controller }: { readonly controller: ChatController }) {
+export function SharedMembers({ controller }: { readonly controller: SharedChatController }) {
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const { labels } = useChatText();
   const [open, setOpen] = useState(false);
@@ -88,7 +87,7 @@ export function SharedMembers({ controller }: { readonly controller: ChatControl
   </div>;
 }
 
-function RequestCard({ card, action }: { readonly card: Request; readonly action: (card: Request) => Promise<void> }) {
+export function RequestCard({ card, action }: { readonly card: Request; readonly action: (card: Request) => Promise<void> }) {
   const { labels } = useChatText();
   const [busy, setBusy] = useState(false), [error, setError] = useState<string>();
   return <Card data-testid="request-card">
@@ -114,7 +113,7 @@ export function ReplyQuote({ targetId, quote, onRemove, onReveal }: { readonly t
 
 /** Participant metadata surrounds the existing bubbles, Markdown, cards and tool trace. */
 export function SharedMessage({ shared, children, remove, canRemove, openFile, onReply, onReveal }: {
-  readonly shared: NonNullable<Row['shared']>; readonly children: ReactNode;
+  readonly shared: SharedItem; readonly children: ReactNode;
   readonly remove?: ((message: ChannelMessage) => Promise<void>) | undefined;
   readonly canRemove?: ((message: ChannelMessage) => boolean) | undefined;
   readonly openFile?: ((path: string) => void) | undefined;
@@ -164,7 +163,7 @@ export function SharedMessage({ shared, children, remove, canRemove, openFile, o
     {heading}
     <div data-testid="shared-message-content" className={`flex min-w-0 flex-col gap-1${own ? '' : ' ml-8'}`}>
     {body}
-    {!message.removed && !message.via && (message.streaming || message.steps?.length) && author.kind === 'agent' && <ActivityBlock participant={author.name} steps={(message.steps ?? []).map((step, index) => ({ kind: 'host', key: `${message.id}:step:${index}`, step }))} state={message.streaming ? 'running' : message.steps?.some(step => step.status === 'failed') ? 'failed' : 'done'} streaming={Boolean(message.streaming)} developer={false} active={shared.showSpinner !== false} />}
+    {!message.removed && !message.via && (message.streaming || message.steps?.length) && author.kind === 'agent' && <HostTrace participant={author.name} steps={message.steps ?? []} streaming={Boolean(message.streaming)} active={shared.showSpinner !== false} />}
     {!message.removed && message.attachments?.map(file => <Button key={file.path} variant="outline" disabled={!openFile} onClick={() => openFile?.(file.path)} className="max-w-full justify-start"><span className="truncate">{file.title ?? file.path}</span></Button>)}
     {error && <p role="alert">{error}</p>}
     </div>
@@ -175,17 +174,18 @@ export function SharedMessage({ shared, children, remove, canRemove, openFile, o
   </div>;
 }
 
-export function sharedRows(shared: SharedChatState, action: (card: Request) => Promise<void>): Row[] {
+export interface SharedItem {
+  readonly key: string; readonly message: ChannelMessage; readonly author: Member; readonly own: boolean; readonly first: boolean;
+  readonly showSpinner: boolean; readonly latestCard: Request | undefined; readonly quote: ReturnType<typeof sharedQuote>;
+}
+export function sharedItems(shared: SharedChatState): SharedItem[] {
   const working = new Map(shared.messages.filter(message => message.streaming).map(message => [message.author, message.id]));
-  return shared.messages.map((message, index): Row => {
+  return shared.messages.map((message, index): SharedItem => {
     const key = `shared:${message.id}`, own = message.author === shared.me.id;
     const author = memberOf(shared, message.author);
     const previous = shared.messages[index - 1];
     const elapsed = previous ? Date.parse(message.at) - Date.parse(previous.at) : NaN;
     const first = previous?.author !== message.author || previous?.via !== message.via || !(elapsed >= 0 && elapsed <= 60_000);
-    const metadata = { message, author, own, first, showSpinner: working.get(message.author) === message.id, latestCard: latestCard(shared, message.author), quote: sharedQuote(shared, message.replyTo) };
-    if (message.card) return { key, type: 'card', card: { content: <RequestCard card={message.card} action={action} /> }, shared: metadata };
-    if (own || author.kind !== 'agent' || message.via !== undefined) return { key, type: 'user', message: { role: 'user', content: message.text ?? '', timestamp: Date.parse(message.at) }, shared: metadata };
-    return { key, type: 'assistant', text: message.text ?? '', streaming: Boolean(message.streaming), parts: message.text ? [{ kind: 'text', key: `${key}:text`, text: message.text }] : [], shared: metadata };
+    return { key, message, author, own, first, showSpinner: working.get(message.author) === message.id, latestCard: latestCard(shared, message.author), quote: sharedQuote(shared, message.replyTo) };
   });
 }

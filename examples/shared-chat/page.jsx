@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client';
-import { AgentWorkspace, useSharedChat } from '../../registry/pi-app/agent-workspace';
+import { AgentWorkspace } from '../../registry/pi-app/agent-workspace';
+import { useSharedChat } from '../../registry/shared-chat/shared-chat';
 import { createPdfDemo } from './pdf-flow.mjs';
 
 const source = createPdfDemo({ manual: new URLSearchParams(location.search).has('manual') });
@@ -13,9 +14,9 @@ const revisionProvider = {
   list: async () => ({ entries: [] }), search: async () => ({ entries: [] }), history: async () => [],
 };
 function App() {
-  const shared = useSharedChat(source);
-  return <AgentWorkspace layout="embedded" history="popover" locale="fr" {...shared} revisionProvider={revisionProvider}
-    chat={{ labels: { title: 'Équipe fictive', placeholder: 'Écrivez à l’équipe…' }, draftKey: `fictional-shared:${shared.conversationId}` }}
+  const shared = useSharedChat(source, { locale: 'fr' });
+  return <AgentWorkspace layout="embedded" history="popover" locale="fr" {...shared.workspaceProps} revisionProvider={revisionProvider}
+    chat={{ ...shared.workspaceProps.chat, labels: { title: 'Équipe fictive', placeholder: 'Écrivez à l’équipe…' }, draftKey: `fictional-shared:${shared.conversationId}` }}
     connecting={<p>Opening the fictional shared conversation…</p>} />;
 }
 createRoot(document.getElementById('root')).render(<App />);

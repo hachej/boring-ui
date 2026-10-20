@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { createNativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import type { ChatIdentity, NativeChatController } from '@hachej/boring-ui-kit/native-chat';
-import type { ChatController } from '@hachej/boring-ui-kit/shared-chat';
+import type { ChatController } from '@hachej/boring-ui-kit/native-chat';
 import { createRemoteChat } from '@hachej/boring-ui-kit/remote-chat';
 import type { RemoteChat, RemoteChatOptions } from '@hachej/boring-ui-kit/remote-chat';
 import type { PiChatActions } from './session';

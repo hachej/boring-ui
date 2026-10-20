@@ -1,11 +1,11 @@
-import type { ChatAttempt, ChatDraft, ChatSendInput, NativeChatController, NativeChatSnapshot } from './native-chat.js';
+import type { ChatAttempt, ChatController, ChatDraft, ChatSendInput, NativeChatSnapshot } from '../native-chat.js';
 import { randomUUID } from '@hachej/boring-files/platform';
-import { createChatOutbox } from './chat-outbox.js';
-import { ChannelRequestError } from './channel-error.js';
-export { ChannelRequestError } from './channel-error.js';
-import type { Card, ChannelEvent, ChannelMessage, ChannelSource, Member, SharedChatState } from './channel-source.js';
-export type * from './channel-source.js';
-export { channelAvatarStates } from './channel-source.js';
+import { createChatOutbox } from '../chat-outbox.js';
+import { ChannelRequestError } from './error.js';
+export { ChannelRequestError } from './error.js';
+import type { Card, ChannelEvent, ChannelMessage, ChannelSource, Member, SharedChatState } from './source.js';
+export type * from './source.js';
+export { channelAvatarStates } from './source.js';
 
 export type SharedChatSnapshot = Omit<NativeChatSnapshot, 'conversationId' | 'send' | 'shared'> & {
   readonly conversationId: string;
@@ -14,19 +14,7 @@ export type SharedChatSnapshot = Omit<NativeChatSnapshot, 'conversationId' | 'se
     | { readonly kind: 'unknown'; readonly reason: string; readonly retryable: boolean }
     | { readonly kind: 'blocked'; readonly reason: string };
 };
-export type ChatSnapshot = NativeChatSnapshot | SharedChatSnapshot;
-/** The renderer's existing draft/lifecycle contract. Native controllers retain their concrete conversation and native return values. */
-export type ChatController = Pick<NativeChatController, 'subscribe' | 'setText' | 'setAttachments' | 'clearHistory' | 'loadEarlier' | 'connect' | 'stop' | 'dispose'> & {
-  readonly getSnapshot: () => ChatSnapshot;
-  readonly send: (whenBusy?: ChatAttempt['whenBusy'], input?: ChatSendInput) => Promise<unknown>;
-  readonly reconcile: () => Promise<unknown>;
-  readonly retrySameRequest: () => Promise<unknown>;
-  readonly setFiles?: (files: readonly File[]) => void;
-  readonly setReplyTo?: (messageId: string | undefined) => void;
-  readonly action?: (card: Card) => Promise<void>;
-  readonly remove?: ((message: ChannelMessage) => Promise<void>) | undefined;
-  readonly canRemove?: (message: ChannelMessage) => boolean;
-};
+export type { ChatController, ChatSnapshot } from '../native-chat.js';
 
 /** Host-owned multi-party log, not a Pi conversation or an agent runtime. One adapter per selected conversation. */
 export function createSharedChat(source: ChannelSource, options: { readonly conversationId: string; readonly limit?: number }) {
@@ -207,7 +195,7 @@ export function createSharedChat(source: ChannelSource, options: { readonly conv
     action: (card: Card) => card.action ? source.action({ conversationId: id, requestId: card.requestId, actionId: card.action.id }) : Promise.resolve(),
     remove: source.remove && source.canRemove ? (message: ChannelMessage) => source.canRemove?.(message) === true ? source.remove!(message.id) : Promise.reject(new Error('Removal refused')) : undefined,
     canRemove: (message: ChannelMessage) => Boolean(source.remove && source.canRemove?.(message)),
-  } satisfies ChatController & { action: (card: Card) => Promise<void>; remove: ((message: ChannelMessage) => Promise<void>) | undefined; canRemove: (message: ChannelMessage) => boolean };
+  } satisfies ChatController & { setFiles: (files: readonly File[]) => void; setReplyTo: (id: string | undefined) => void; action: (card: Card) => Promise<void>; remove: ((message: ChannelMessage) => Promise<void>) | undefined; canRemove: (message: ChannelMessage) => boolean };
   return controller;
 }
 export type SharedChatController = ReturnType<typeof createSharedChat>;
@@ -221,7 +209,7 @@ function hasMemberMention(text: string, member: Member): boolean {
   return [...text.matchAll(/(^|\s)(@"(?:[^"\\]|\\.)*"|@[^\s]+)/g)].some(match => match[2] === token);
 }
 
-export { createFakeChannelSource } from './fake-channel.js';
-export type { FakeChannelSeed } from './fake-channel.js';
-export { createChannelSocket } from './channel-socket.js';
-export type { ChannelSocketOptions, ChannelSocketSource } from './channel-socket.js';
+export { createFakeChannelSource } from './fake.js';
+export type { FakeChannelSeed } from './fake.js';
+export { createChannelSocket } from './socket.js';
+export type { ChannelSocketOptions, ChannelSocketSource } from './socket.js';

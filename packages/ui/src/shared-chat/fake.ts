@@ -1,5 +1,5 @@
-import { ChannelRequestError } from './channel-error.js';
-import type { ChannelEvent, ChannelMessage, ChannelSource, Conversation, Member, SharedChatState } from './channel-source.js';
+import { ChannelRequestError } from './error.js';
+import type { ChannelEvent, ChannelMessage, ChannelSource, Conversation, Member, SharedChatState } from './source.js';
 
 export interface FakeChannelSeed {
   readonly me: Member;

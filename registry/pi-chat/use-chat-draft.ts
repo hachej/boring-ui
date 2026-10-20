@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import type { ChatController } from '@hachej/boring-ui-kit/shared-chat';
+import type { ChatController } from '@hachej/boring-ui-kit/native-chat';
 
 const PREFIX = 'pi-chat:draft:';
 

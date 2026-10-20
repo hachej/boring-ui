@@ -489,16 +489,6 @@
           "target": "components/pi-chat/markdown.tsx"
         },
         {
-          "path": "registry/pi-chat/shared.tsx",
-          "type": "registry:component",
-          "target": "components/pi-chat/shared.tsx"
-        },
-        {
-          "path": "registry/pi-chat/use-shared-chat.ts",
-          "type": "registry:hook",
-          "target": "components/pi-chat/use-shared-chat.ts"
-        },
-        {
           "path": "registry/pi-chat/mention-menu.tsx",
           "type": "registry:component",
           "target": "components/pi-chat/mention-menu.tsx"
@@ -953,6 +943,24 @@
           "type": "registry:lib",
           "target": "components/board-viewer/board-props.ts"
         }
+      ]
+    },
+    {
+      "name": "shared-chat",
+      "type": "registry:block",
+      "title": "Shared chat",
+      "description": "Optional multi-party host log presentation over PiChat's generic composition seams. No agent runtime or speaking policy.",
+      "dependencies": ["@hachej/boring-ui-kit@^0.4.3", "react@^19.0.0", "lucide-react@^1.51.0"],
+      "registryDependencies": ["@boring-ui/pi-chat", "avatar", "badge", "button", "card", "drawer", "popover", "tooltip", "trace", "spinner", "item", "message", "bubble", "message-scroller"],
+      "files": [
+        { "path": "registry/shared-chat/shared-chat.tsx", "type": "registry:component", "target": "components/shared-chat/shared-chat.tsx" },
+        { "path": "registry/shared-chat/use-shared-chat.tsx", "type": "registry:component", "target": "components/shared-chat/use-shared-chat.tsx" },
+        { "path": "registry/shared-chat/messages.tsx", "type": "registry:component", "target": "components/shared-chat/messages.tsx" },
+        { "path": "registry/shared-chat/timeline.tsx", "type": "registry:component", "target": "components/shared-chat/timeline.tsx" },
+        { "path": "registry/shared-chat/host-trace.tsx", "type": "registry:component", "target": "components/shared-chat/host-trace.tsx" },
+        { "path": "registry/shared-chat/text.tsx", "type": "registry:component", "target": "components/shared-chat/text.tsx" },
+        { "path": "registry/shared-chat/shared-labels.ts", "type": "registry:lib", "target": "components/shared-chat/shared-labels.ts" },
+        { "path": "registry/shared-chat/shared-labels-fr.ts", "type": "registry:lib", "target": "components/shared-chat/shared-labels-fr.ts" }
       ]
     },
     {

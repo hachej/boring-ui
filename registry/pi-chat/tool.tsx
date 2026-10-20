@@ -3,9 +3,7 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import type { ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
-import { AlertCircleIcon, CheckIcon, WrenchIcon } from 'lucide-react';
-import type { Step as ChannelStep } from '@hachej/boring-ui-kit/shared-chat';
-import { Spinner } from '@/components/ui/spinner';
+import { WrenchIcon } from 'lucide-react';
 import { TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceDescription, TraceIcon, TraceLine, TraceTitle } from '@/components/ui/trace';
 import { Card, CardContent } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -37,16 +35,9 @@ export function liveLabel(call: ToolCall, labels: Pick<ChatLabels, 'toolActivity
 }
 
 /** One Trace step. Failures open by default; quiet successful steps have no disclosure. */
-export function ToolCard({ entry, onOpenImage, details = true, active = true }: { readonly active?: boolean; readonly entry: ToolEntry | { readonly key: string; readonly step: ChannelStep }; readonly details?: boolean; readonly onOpenImage?: (image: Extract<ToolResultMessage['content'][number], { type: 'image' }>) => void }) {
+export function ToolCard({ entry, onOpenImage, details = true }: { readonly entry: ToolEntry; readonly details?: boolean; readonly onOpenImage?: (image: Extract<ToolResultMessage['content'][number], { type: 'image' }>) => void }) {
   const { labels } = useChatText();
   const [chosen, setChosen] = useState<boolean | undefined>();
-  if ('step' in entry) {
-    const { step } = entry;
-    const Icon = step.status === 'running' ? active ? Spinner : WrenchIcon : step.status === 'done' ? CheckIcon : AlertCircleIcon;
-    return <TraceLine data-testid="host-step" {...(step.status === 'running' ? { status: 'running' } : step.status === 'failed' ? { status: 'error' } : {})}>
-      <TraceIcon><Icon aria-hidden="true" /></TraceIcon><TraceTitle><div className="flex min-w-0 flex-col"><span>{step.label}</span>{step.detail && <pre data-testid="step-detail" className="m-0 text-xs font-mono whitespace-pre-wrap text-muted-foreground [overflow-wrap:anywhere]">{step.detail}</pre>}</div></TraceTitle>
-    </TraceLine>;
-  }
   const { call, result, status } = entry;
   const open = details && (chosen ?? status === 'failed');
   const hint = preview(call.arguments);

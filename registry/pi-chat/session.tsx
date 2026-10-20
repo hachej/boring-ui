@@ -5,11 +5,9 @@ import type { KeyboardEvent, ReactNode } from 'react';
 import type { EntryRecord } from '@earendil-works/pi-durable';
 import type { ImageContent, ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
 import type { ChatAttachment, ChatHistoryState } from '@hachej/boring-ui-kit/native-chat';
-import type { ChatController } from '@hachej/boring-ui-kit/shared-chat';
+import type { ChatController } from '@hachej/boring-ui-kit/native-chat';
 import { useMessageScroller, useMessageScrollerScrollable } from '@/components/ui/message-scroller';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { ReplyQuote, sharedQuote, sharedRows } from './shared';
 import type { ComposerFeedback, ComposerProps, PendingUpload } from './composer';
 import type { ConversationFile } from './conversation-files';
 import type { AttachmentsConfig, EffortConfig, MentionsConfig, ModelConfig, ModelRef, PastedText, PasteToFile, SlashConfig } from './config';
@@ -49,6 +47,12 @@ export interface ChatFeatureProps {
   readonly fileAccept?: string;
   /** Optional pills at the left of the composer's controls row. */
   readonly composerChips?: ComposerProps['chips'];
+  /** Contextual host content above the input, for example a removable quote. */
+  readonly composerHeader?: ReactNode;
+  /** Host-owned content participates in send readiness without native image attachments. */
+  readonly composerHasContent?: boolean;
+  /** Retain files for the host's send operation instead of uploading immediately. */
+  readonly onPickFiles?: (files: readonly File[]) => void;
   /** `/` menu of host commands and skills. Omit it and `/` is just text. */
   readonly slash?: SlashConfig;
   /** Show successful native write/edit paths as file cards under each reply. Off by default: only hosts with workspace file tools should opt in. */
@@ -89,7 +93,6 @@ export interface ChatSessionOptions extends Readonly<{ [Key in keyof ChatFeature
   readonly onFiles?: FilesHandler | undefined;
   /** Runs after a message was accepted for sending (for example to scroll to the bottom). */
   readonly afterSend?: (() => void) | undefined;
-  readonly onRevealMessage?: ((messageId: string) => void) | undefined;
   /** Extra attributes of the row context a surface needs (for example per-reply actions). */
   readonly rowExtras?: Partial<RowContext> | undefined;
   /** The optional annotate toggle: when notes are pending (`count` > 0), Send attaches them to the message first. */
@@ -98,17 +101,9 @@ export interface ChatSessionOptions extends Readonly<{ [Key in keyof ChatFeature
 
 export function useChatSession(options: ChatSessionOptions) {
   const { controller, activeController: active, mode, actions, renderEntry, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept,
-    slash, mentions: hostMentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend, rowExtras, feedback, onOpenFile, fileChanges, pasteToFile, composerChips } = options;
+    slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend, rowExtras, feedback, onOpenFile, fileChanges, pasteToFile, composerChips, composerHeader, composerHasContent, onPickFiles } = options;
   const { labels } = useChatText();
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
-  const members = state.shared?.members;
-  const mentions = useMemo<MentionsConfig | undefined>(() => members ? {
-    kind: 'member',
-    label: id => members.find(member => member.id === id)?.name ?? id,
-    search: async query => members.filter(member => `${member.name} ${member.id}`.toLowerCase().includes(query.toLowerCase()))
-      .sort((a, b) => Number(b.kind === 'agent') - Number(a.kind === 'agent')).map(member => ({ path: member.id, label: member.name, kind: 'member' as const })),
-    render: id => <Badge variant="secondary">@{members.find(member => member.id === id)?.name ?? id}</Badge>,
-  } : hostMentions, [hostMentions, members]);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(0);
   const [picked, setPicked] = useState<readonly string[]>([]);
@@ -130,10 +125,7 @@ export function useChatSession(options: ChatSessionOptions) {
   const developer = mode === 'developer';
   // Only the recogniser takes part in deriving rows; which card is open changes without rebuilding them.
   const artifactDetect = useMemo(() => artifacts ? { detect: artifacts.detect } : undefined, [Boolean(artifacts), artifacts?.detect]); // eslint-disable-line react-hooks/exhaustive-deps
-  const derived = useMemo(() => {
-    const native = derive(state.view, { mode, renderEntry, renderTool, groupTool, artifacts: artifactDetect });
-    return state.shared ? { ...native, rows: sharedRows(state.shared, card => controller.action?.(card) ?? Promise.resolve()) } : native;
-  }, [state.view, state.shared, controller, mode, renderEntry, renderTool, groupTool, artifactDetect]);
+  const derived = useMemo(() => derive(state.view, { mode, renderEntry, renderTool, groupTool, artifacts: artifactDetect }), [state.view, mode, renderEntry, renderTool, groupTool, artifactDetect]);
   const queued = useMemo(() => queuedMessages(state.view), [state.view]);
   const { run } = derived;
   const earlier = useMemo<readonly Row[]>(() => {
@@ -155,7 +147,7 @@ export function useChatSession(options: ChatSessionOptions) {
     for (const path of picked) add(path);
     for (const item of state.draft.attachments) found.set(`draft:${item.id}`, { id: `draft:${item.id}`, name: item.name, open: onOpenImage ? () => onOpenImage(item.content) : undefined });
     for (const row of derived.rows) {
-      if (row.type === 'user' && !row.shared) {
+      if (row.type === 'user') {
         const content = typeof row.message.content === 'string' ? [{ type: 'text' as const, text: row.message.content }] : row.message.content;
         for (const [index, part] of content.entries()) {
           if (part.type === 'text' && !isFileBlock(part.text)) for (const piece of pieces(part.text, { mentions: true, skills: [] })) { if (piece.kind === 'mention' && piece.value) add(piece.value); }
@@ -262,7 +254,7 @@ export function useChatSession(options: ChatSessionOptions) {
   /** Uploads files; `restore` (a pasted text) is what their pending cards undo: it abandons the upload and puts the text back. */
   async function upload(files: readonly File[], paste?: { readonly restore: () => void; readonly after: string }) {
     if (!files.length || !current()) return;
-    if (state.shared && controller.setFiles) { controller.setFiles([...state.shared.files, ...files]); return; }
+    if (onPickFiles) { onPickFiles(files); return; }
     if (!onFiles && !attachments) return;
     const abort = new AbortController(); uploads.current.add(abort); setUploading(value => value + 1);
     const ids = files.map(() => `upload-${++uploadIds.current}`);
@@ -335,18 +327,15 @@ export function useChatSession(options: ChatSessionOptions) {
   };
   const rowContext = useMemo<RowContext>(() => ({
     developer, groupTool, onOpenImage, onCopy, openFile: onOpenFile ?? mentions?.open, fileChanges,
-    sharedReveal: options.onRevealMessage,
-    sharedRemove: controller.remove, sharedCanRemove: controller.canRemove,
-    sharedReply: controller.setReplyTo ? id => { if (!current()) return; controller.setReplyTo?.(id); textarea.current?.focus(); } : undefined,
     commandMentions: commandMentions ? { commands: commandMentions.commands, onActivate: activateMention } : undefined,
     answer: actions?.answer,
     artifacts: artifacts ? { open: artifacts.open, isOpen: artifacts.isOpen, kinds: artifacts.kinds } : undefined,
     messageActions,
     replyFooter,
-    pieces: slash?.skills?.length || mentions || attachments ? { mentions: Boolean(mentions), uploads: Boolean(attachments), skills: (slash?.skills ?? []).map(skill => skill.name), openMention: mentions?.open, renderMention: members ? id => <span data-testid="message-mention" data-path={id} className="font-medium text-primary">@{members.find(member => member.id === id)?.name ?? id}</span> : mentions?.render, preview: mentions?.preview } : undefined,
+    pieces: slash?.skills?.length || mentions || attachments ? { mentions: Boolean(mentions), uploads: Boolean(attachments), skills: (slash?.skills ?? []).map(skill => skill.name), openMention: mentions?.open, renderMention: mentions?.renderSent ?? mentions?.render, preview: mentions?.preview } : undefined,
     ...rowExtras,
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [controller, options.onRevealMessage, developer, groupTool, onOpenImage, onCopy, onOpenFile, fileChanges, members, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, mentions?.preview, attachments, artifacts?.open, artifacts?.isOpen, artifacts?.kinds, messageActions, replyFooter, rowExtras]);
+  }), [controller, developer, groupTool, onOpenImage, onCopy, onOpenFile, fileChanges, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, mentions?.renderSent, mentions?.preview, attachments, artifacts?.open, artifacts?.isOpen, artifacts?.kinds, messageActions, replyFooter, rowExtras]);
 
   /** The model-and-effort pill and the note that reports a refused change. */
   const pickers = () => {
@@ -369,13 +358,13 @@ export function useChatSession(options: ChatSessionOptions) {
     onRemoveAttachment: (id: string) => controller.setAttachments(controller.getSnapshot().draft.attachments.filter(item => item.id !== id)),
     working, sendBlocked, disabled: state.disposed, stopRequested: state.stop === 'requested',
     onSend: send, onStop: () => act(controller.stop),
-    hasFiles: Boolean(state.shared?.files.length),
-    uploading: uploading > 0, canAttach: Boolean(state.shared || onFiles || attachments), fileAccept: attachments ? attachments.accept ?? '' : fileAccept, onPickFiles: (files: readonly File[]) => { void upload(files); },
+    hasFiles: Boolean(composerHasContent),
+    uploading: uploading > 0, canAttach: Boolean(onPickFiles || onFiles || attachments), fileAccept: attachments ? attachments.accept ?? '' : fileAccept, onPickFiles: (files: readonly File[]) => { void upload(files); },
     slash, onSlashError: report, mentions, mentionPaths: picked, onMentionPicked: (path: string) => setPicked(value => value.includes(path) ? value : [...value, path]),
     uploads: pending, onDismissUpload: (id: string) => setPending(items => items.filter(item => item.id !== id)),
     onPasteText: attachments ? pasteText : undefined, pasteToFile,
-    quote: state.shared?.replyTo ? <ReplyQuote targetId={state.shared.replyTo} quote={sharedQuote(state.shared, state.shared.replyTo)} onReveal={options.onRevealMessage} onRemove={() => controller.setReplyTo?.(undefined)} /> : undefined,
-    feedback, chips: state.shared ? <>{composerChips}{state.shared.files.map((file, index) => <Badge key={index} variant="secondary">{file.name}<Button variant="ghost" size="icon" aria-label={labels.remove(file.name)} onClick={() => controller.setFiles?.(state.shared!.files.filter((_, at) => at !== index))}><span aria-hidden="true">×</span></Button></Badge>)}</> : composerChips,
+    quote: composerHeader,
+    feedback, chips: composerChips,
   };
 
   return { state, derived, rows, queued, queueActions, working, waitingForAnswer, connected, sendBlocked, error, setError, report, act, current, textarea, rowContext, composer, files, pickers, empty, loading, developer };
@@ -384,7 +373,7 @@ export function useChatSession(options: ChatSessionOptions) {
 export type ChatSession = ReturnType<typeof useChatSession>;
 
 /** One scroll root for current and archived rows. Native paging stays in the borrowed controller. */
-export function useTranscript(rows: readonly Row[], page = 60, more = 40, history?: { readonly state: ChatHistoryState; readonly connected: boolean; readonly load: () => Promise<void> }) {
+export function useTranscript(rows: readonly { readonly key: string }[], page = 60, more = 40, history?: { readonly state: ChatHistoryState; readonly connected: boolean; readonly load: () => Promise<void> }) {
   const [limit, setLimit] = useState(page);
   const [sentinel, setSentinel] = useState<HTMLDivElement | null>(null);
   const [loaded, setLoaded] = useState(0);

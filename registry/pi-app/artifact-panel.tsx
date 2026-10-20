@@ -15,7 +15,7 @@ import { createMarkdownController } from '@hachej/boring-ui-kit/markdown';
 import type { MarkdownController } from '@hachej/boring-ui-kit/markdown';
 import { createHtmlController } from '@hachej/boring-ui-kit/html';
 import type { HtmlController } from '@hachej/boring-ui-kit/html';
-import type { ChatController } from '@hachej/boring-ui-kit/shared-chat';
+import type { ChatController } from '@hachej/boring-ui-kit/native-chat';
 import { artifactKey, collectArtifacts } from '../pi-chat/pi-chat';
 import type { ArtifactDescriptor, ArtifactKind, ArtifactTarget, ArtifactsConfig } from '../pi-chat/pi-chat';
 import { CodeBlock } from '../pi-chat/code-block';

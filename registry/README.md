@@ -100,13 +100,62 @@ A sent message that mentions an upload (`@uploads/<path>`, what `attachments` sa
 
 `fileChanges` on `PiChat` or `AmbientChat` opts into the same file-card renderer for successful native `write` and `edit` calls with a `path`. One card per path appears below the reply, outside collapsed activity, labelled Created for `write` or Edited for `edit`. A write followed by edits stays Created. Failed, pending and unrelated calls show no file card. Clicking uses `onOpenFile`, falling back to `mentions.open`; without either, the card is not clickable. This is a view of native tool results, not publication evidence or a pinned revision. It is off by default because a host's tools named `write` or `edit` need not operate on workspace files. The workspace demo enables it.
 
+## Regular chat or shared chat
+
+Choose the copied item explicitly. The headless package root stays lean; channel data is available only from the existing `@hachej/boring-ui-kit/shared-chat` subpath.
+
+**Regular chat** installs no shared-chat files or imports:
+
+```sh
+npx shadcn@4.21.5 add <registry>/pi-chat.json
+```
+
+```tsx
+import { PiChat } from '@/components/pi-chat/pi-chat';
+// Keep your existing native or useRemoteChat controller.
+<PiChat controller={nativeController} />
+```
+
+**Shared chat** adds the optional presentation item and its `pi-chat` dependency, not `pi-app`:
+
+```sh
+npx shadcn@4.21.5 add <registry>/shared-chat.json
+```
+
+```tsx
+import { PiChat } from '@/components/pi-chat/pi-chat';
+import { useSharedChat } from '@/components/shared-chat/shared-chat';
+const shared = useSharedChat(source, { locale: 'fr' });
+return shared.chatProps ? <PiChat {...shared.chatProps} /> : null;
+```
+
+For a page that already installs `pi-app`, use its existing workspace provider and controls:
+
+```tsx
+const shared = useSharedChat(source, { locale: 'fr' });
+return <AgentWorkspace {...hostProps} {...shared.workspaceProps} />;
+```
+
+If adding native chat options, merge rather than replace the composition: `chat={{ ...shared.workspaceProps.chat, draftKey: 'team' }}`. A host that owns a fixed shared controller can render `<SharedChat controller={controller} locale="fr" />` instead. Shared EN/FR label overrides belong to `useSharedChat(source, { labels })`, or `SharedChat.participantLabels`; ordinary PiChat labels remain separate.
+
+### Generic PiChat composition seams
+
+- `timeline: { count, render({ focusComposer, openFile }), afterSend? }` replaces only the transcript. Without it, native rows, paging and scrolling are unchanged. It does not manufacture native messages or IDs.
+- `composerHeader`, `composerHasContent` and `onPickFiles` let a host supply draft context and defer files. Existing `composerChips` and `controls` remain ordinary slots.
+- `mentions.listLabel`, `icon`, `renderOption` and `renderSent` customize the existing catalog and sent-token rendering, without participant policy in the picker.
+- `renderConnectionError` lets a host render an authorized error. `MessageText`, `Markdown` and `useTranscript` are reusable presentation helpers.
+
+The neutral `ChatController`/`ChatSnapshot` structural types live at `/native-chat`. Concrete native controller APIs and return types are unchanged. Optional `shared-chat` owns its own messages, grouping, cards, quotes, traces, membership and mention catalog. Its transcript uses the same scrolling and UI primitives, without projecting host messages into Pi rows.
+
+`npm run test:pi-chat-consumer` checks a real isolated regular install and a browser bundle with no shared files or data module. `npm run test:shared-chat-consumer` installs the optional item, checks its declarations and mounts a fictional send/card-action flow. Both run `boring-ui-blocks check` on the installed files.
+
 ## Shared conversations
 
-`createSharedChat(source, { conversationId })` from `@hachej/boring-ui-kit/shared-chat` adapts a host-owned multi-party log to the existing `PiChat`. `useSharedChat(source)`, exported by the `pi-chat` and `pi-app` registry items, returns `{ controller, conversationId, conversations, error }`. Pass those to `AgentWorkspace layout="embedded" history="popover"`, together with its usual workspace resource provider. The conversations appear in the existing History, without kit-side filtering or another sidebar.
+`createSharedChat(source, { conversationId })` from `@hachej/boring-ui-kit/shared-chat` adapts a host-owned multi-party log to the generic renderer contract. The optional `shared-chat` registry item exports `useSharedChat(source)`, returning the controller, conversations, error, `chatProps` and `workspaceProps`. The conversations appear in the existing History, without kit-side filtering or another sidebar.
 
 Multi-party conversation policy is a host concern Pi does not cover. Pi owns each agent's single conversation. The host forwards to the PM's Pi conversation and posts permitted replies into its shared log. The kit runs no agent and enforces no visibility, role or speaking rules.
 
-The additive `ChatController` renderer contract accepts concrete native controllers and shared controllers. Native controllers keep their numeric Pi IDs and full native APIs. A shared snapshot adds authors, request cards, members and live status without inventing native entries. Without shared metadata, the existing single-user rendering path is unchanged. Other authors show an avatar and name at the start of a consecutive group. A group continues only when the same author and `via` follow their previous message within one minute. Agent replies use the existing unboxed assistant Markdown and streaming renderer. Every other author uses the same small-Avatar header with their name and `via` attribution or default Agent Badge. All content, including cards and traces, begins in the name column below that header. Continuations keep the same indent without a header. Shared author groups have a 24px gap; continuations have an 8px gap. Colleagues use the same muted user bubble, left-aligned. Your own bubble stays right-aligned. Sent mentions use inline `font-medium text-primary` text, not pills; the composer's mentions retain their existing rendering. The bar has no live-status dot. Reconnecting and offline show a localized Tooltip and muted or destructive dot, with an `aria-live` announcement.
+The additive `ChatController` renderer contract accepts concrete native controllers and shared controllers. Native controllers keep their numeric Pi IDs and full native APIs. The optional item renders authors, request cards, members and live status through composition, without inventing native entries. Regular PiChat never inspects shared metadata. Other authors show an avatar and name at the start of a consecutive group. A group continues only when the same author and `via` follow their previous message within one minute. Agent replies use the existing unboxed assistant Markdown and streaming renderer. Every other author uses the same small-Avatar header with their name and `via` attribution or default Agent Badge. All content, including cards and traces, begins in the name column below that header. Continuations keep the same indent without a header. Shared author groups have a 24px gap; continuations have an 8px gap. Colleagues use the same muted user bubble, left-aligned. Your own bubble stays right-aligned. Sent mentions use inline `font-medium text-primary` text, not pills; the composer's mentions retain their existing rendering. The bar has no live-status dot. Reconnecting and offline show a localized Tooltip and muted or destructive dot, with an `aria-live` announcement.
 
 The package exports these host data shapes:
 
@@ -145,7 +194,7 @@ Agents are participants, with their avatar, name and a default secondary `Agent`
 
 `Card.state` is the platform's lifecycle ID. The exported `channelAvatarStates` table maps `building`, `executing` and `checks` to `working`; `asked` to `thinking`; `question`, `answer`, `review` and `preview` to `waiting`; `platform` and `fixing` to `blocked`; and `live` to `done`. `declined`, unknown and missing states are neutral, with no indicator. Each agent avatar reflects its latest card in this conversation. Working, thinking and done use a primary dot; waiting uses muted-foreground; blocked uses destructive. Avatar indicators are static corner dots, with no spinner. Hover shows the card's `line` in a Tooltip; a phone tap opens a bottom/start Popover below the avatar/name row, dismissed on scroll. No lifecycle state grants permission or starts work.
 
-`ChannelMessage.steps` uses the existing `ActivityBlock` and `ToolCard` Trace rendering, not a new trace component or fabricated Pi tool calls. A `step` event sets or replaces `steps[index]` on the specified message. While streaming, the list defaults collapsed. Its working line shows one Spinner, the current step label and progress. Expanding removes the summary Spinner and shows the step icons, with only the current running step spinning. Completed steps show a check and failed steps a destructive icon. When streaming ends, the list collapses to a localized `N steps` label with no Spinner and can be expanded. Each agent message owns its own trace, so simultaneous agents stay separate. If an agent has multiple streaming messages, only its latest message owns a loading indicator.
+`ChannelMessage.steps` is rendered by the optional item's host trace using the same Trace primitives, not native `ActivityBlock`/`ToolCard` branches or fabricated Pi tool calls. A `step` event sets or replaces `steps[index]` on the specified message. While streaming, the list defaults collapsed. Its working line shows one Spinner, the current step label and progress. Expanding removes the summary Spinner and shows the step icons, with only the current running step spinning. Completed steps show a check and failed steps a destructive icon. When streaming ends, the list collapses to a localized `N steps` label with no Spinner and can be expanded. Each agent message owns its own trace, so simultaneous agents stay separate. If an agent has multiple streaming messages, only its latest message owns a loading indicator.
 
 When `detail` is present, it appears beneath the label, smaller, monospace and muted. The kit displays whatever the source sends. Under CH-8, the **host strips `detail` outside the admin conversation** and keeps labels plain. Renderer mode is not an authorization or redaction boundary.
 
