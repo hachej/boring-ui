@@ -35,6 +35,8 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 
 export interface RowContext {
   readonly developer: boolean;
+  /** `presentation="natural"`: no "working" shimmer in a reply (the chat shows one status instead). */
+  readonly natural?: boolean | undefined;
   readonly groupTool: DeriveOptions['groupTool'];
   readonly commandMentions: CommandMentions | undefined;
   readonly onOpenImage: ((image: ImageContent) => void) | undefined;
@@ -219,7 +221,7 @@ function RowBody({ row, context: liveContext }: { readonly row: Row; readonly co
           {files.size > 0 && <ul data-testid="reply-files" className="m-0 flex list-none flex-wrap gap-2 p-0">
             {[...files].map(([path, change]) => <li key={path} data-testid="message-file"><FileCard path={path} change={change} open={context.openFile} preview={context.pieces?.preview} /></li>)}
           </ul>}
-          {row.streaming && row.parts.length === 0 && <p data-testid="working" className="m-0 text-sm"><Shimmer>{labels.thinking}</Shimmer></p>}
+          {row.streaming && row.parts.length === 0 && !context.natural && <p data-testid="working" className="m-0 text-sm"><Shimmer>{labels.thinking}</Shimmer></p>}
         </div>
         {row.stopReason === 'error' && <Notice tone="error" testid="response-error" icon={<AlertCircleIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />}>{row.errorMessage ?? labels.responseFailed}</Notice>}
         {row.stopReason === 'aborted' && <Notice tone="muted" testid="interrupted" icon={<CircleSlashIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />}>{labels.interrupted}</Notice>}
