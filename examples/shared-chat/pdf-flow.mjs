@@ -3,15 +3,15 @@ import { sharedChatSeed } from './seed.mjs';
 
 /** Fictional host script, not kit policy or an agent runtime. The real platform forwards to each agent's own Pi conversation. */
 export function createPdfDemo({ manual = false } = {}) {
-  const source = createFakeChannelSource({ ...sharedChatSeed, conversations: sharedChatSeed.conversations.map(conversation => conversation.id === 'admin' ? { ...conversation, members: [...conversation.members, 'worker'] } : conversation), messages: [
-    { id: 'via-person', conversationId: 'main', author: 'leo', at: '2026-10-19T10:00:00Z', via: 'Claude', text: 'Je propose de dater les exports PDF.' },
-    { id: 'admin-trace', conversationId: 'admin', author: 'worker', at: '2026-10-19T10:00:00Z', text: 'Vérification de l’export PDF terminée.', streaming: false, steps: [
+  const source = createFakeChannelSource({ ...sharedChatSeed, messages: [
+    { id: 'via-person', conversationId: 'main', author: 'leo', at: '2026-09-10T16:06:00Z', via: 'Claude', text: 'Je propose de dater les exports PDF.' },
+    { id: 'admin-trace', conversationId: 'admin', author: 'pm', at: '2026-10-19T10:00:00Z', text: 'Vérification de l’export PDF terminée.', streaming: false, steps: [
       { label: 'Lire les fichiers', detail: 'read src/fictional-export.ts', status: 'done' },
       { label: 'Préparer le PDF', detail: 'write output/fictional-export.pdf', status: 'done' },
       { label: 'Vérifier le document', detail: 'check output/fictional-export.pdf', status: 'done' },
     ] },
   ] });
-  let plan, card, worker, planned = false, built = false;
+  let plan, card, planned = false, built = false;
   const timers = new Set();
   const at = offset => new Date(Date.now() + offset).toISOString();
   const post = message => source.emit({ type: 'message', message });
@@ -22,21 +22,20 @@ export function createPdfDemo({ manual = false } = {}) {
   ];
   function planReady() {
     if (!plan || planned) return; planned = true;
-    const text = '  \nJe confie la mise en page au Builder et je vous propose une version.';
+    const text = '  \nJe prépare une version que vous pourrez essayer.';
     plan = { ...plan, text: plan.text + text, streaming: false };
     source.emit({ type: 'delta', messageId: plan.id, conversationId: plan.conversationId, text });
     post(plan);
   }
   function build() {
     if (!plan || built) return; built = true; planReady();
+    plan = { ...plan, streaming: true, steps }; post(plan);
     card = { id: 'pdf-card', conversationId: plan.conversationId, author: 'pm', at: at(2), card: { requestId: 'export-pdf', title: 'Export PDF', line: 'Je prépare l’export PDF.', since: at(0), state: 'building', action: { id: 'progress', label: 'Voir la demande' } } };
     post(card);
-    worker = { id: 'pdf-worker', conversationId: plan.conversationId, author: 'worker', at: at(3), text: 'Je prépare la mise en page du PDF.', streaming: true, steps };
-    post(worker);
   }
   function finish() {
     if (!plan) return; build();
-    worker = { ...worker, streaming: false, steps: steps.map(step => ({ ...step, status: 'done' })) }; post(worker);
+    plan = { ...plan, streaming: false, steps: steps.map(step => ({ ...step, status: 'done' })) }; post(plan);
     card = { ...card, card: { ...card.card, state: 'preview', line: 'On attend votre essai', action: { id: 'try', label: 'Essayer cette version' } } }; post(card);
   }
   return {

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import { channelAvatarStates } from '@hachej/boring-ui-kit/shared-chat';
 import type { Card as Request, ChannelMessage, SharedChatController, Member, SharedChatState } from '@hachej/boring-ui-kit/shared-chat';
-import { CircleIcon, ReplyIcon, Trash2Icon, XIcon } from 'lucide-react';
+import { BotIcon, CircleIcon, ReplyIcon, Trash2Icon, XIcon } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarGroup, AvatarGroupCount, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -12,7 +12,6 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/componen
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { HostTrace } from './host-trace';
 import { relativeTime } from '../pi-chat/history';
 import { useChatText } from './text';
 
@@ -28,7 +27,8 @@ export function sharedQuote(shared: SharedChatState, id: string | undefined) {
   return message ? { message, author: memberOf(shared, message.author) } : undefined;
 }
 
-export function MemberAvatar({ member, card, interactive = true, size = 'default' }: { readonly member: Member; readonly card?: Request | undefined; readonly interactive?: boolean; readonly size?: ComponentProps<typeof Avatar>['size'] }) {
+export function MemberAvatar({ member, card, interactive = true, size = 'default', compact = false }: { readonly member: Member; readonly card?: Request | undefined; readonly interactive?: boolean; readonly size?: ComponentProps<typeof Avatar>['size']; readonly compact?: boolean }) {
+  const { labels } = useChatText();
   const phone = usePhone();
   const [open, setOpen] = useState(false);
   useEffect(() => {
@@ -39,9 +39,9 @@ export function MemberAvatar({ member, card, interactive = true, size = 'default
   }, [open]);
   const state = member.kind === 'agent' && card?.state && Object.hasOwn(channelAvatarStates, card.state) ? channelAvatarStates[card.state] ?? 'neutral' : 'neutral';
   const tone = state === 'blocked' ? 'text-destructive' : state === 'waiting' ? 'text-muted-foreground' : 'text-primary';
-  const avatar = <Avatar size={size} data-testid="member-avatar" aria-label={member.name} data-state={state}>
+  const avatar = <Avatar size={compact ? 'sm' : size} data-testid="member-avatar" role="img" aria-label={member.kind === 'agent' ? `${member.name}, ${labels.sharedAgent}` : member.name} data-state={state}>
     {member.avatarUrl && <AvatarImage src={member.avatarUrl} alt={member.name} />}
-    <AvatarFallback>{member.name.replace(/[()]/g, '').split(/\s+/).slice(0, 2).map(word => word[0]).join('').toUpperCase()}</AvatarFallback>
+    <AvatarFallback>{member.kind === 'agent' ? <BotIcon data-lucide="bot" className={compact ? 'size-3' : 'size-4'} aria-hidden="true" /> : member.name.replace(/[()]/g, '').split(/\s+/).slice(0, 2).map(word => word[0]).join('').toUpperCase()}</AvatarFallback>
     {state !== 'neutral' && <span data-testid="avatar-indicator" data-state={state} className={`absolute right-0 bottom-0 ${tone}`}>
       <CircleIcon className="size-2 fill-current" aria-hidden="true" />
     </span>}
@@ -54,7 +54,7 @@ export function MemberAvatar({ member, card, interactive = true, size = 'default
 }
 function MemberBadge({ member }: { readonly member: Member }) {
   const { labels } = useChatText();
-  return member.kind === 'person' ? null : <Badge data-testid="author-badge" variant="secondary">{member.kind === 'admin' ? labels.sharedAdmin : labels.sharedAgent}</Badge>;
+  return member.kind === 'admin' ? <Badge data-testid="author-badge" variant="secondary">{labels.sharedAdmin}</Badge> : null;
 }
 function Dot({ value }: { readonly value: SharedChatState['status'] | Member['presence'] }) {
   return <CircleIcon aria-hidden="true" className={`size-2 fill-current ${value === 'live' || value === 'here' ? 'text-primary' : value === 'offline' ? 'text-destructive' : 'text-muted-foreground'}`} />;
@@ -135,14 +135,13 @@ export function SharedMessage({ shared, children, remove, canRemove, openFile, o
     document.addEventListener('pointerdown', outside);
     return () => document.removeEventListener('pointerdown', outside);
   }, [actionsOpen]);
-  const { message, author, first, own } = shared;
+  const { message, author, first, own, lastBubble } = shared;
   const replyable = Boolean(onReply && ((author.kind === 'agent' && !message.via) || message.card));
   const removable = Boolean(remove && canRemove?.(message));
   const actionable = !message.removed && (replyable || removable);
-  const heading = first && (!own || message.via) && <div data-testid="message-author-row" className={`flex min-w-0 items-center gap-2${own ? ' justify-end' : ''}`}>
-    <MemberAvatar member={author} card={message.via ? undefined : shared.latestCard} size={own ? 'default' : 'sm'} />
+  const heading = first && !own && <div data-testid="message-author-row" className="ml-8 flex min-w-0 items-center gap-2">
     <div className="flex min-w-0 items-center gap-2">
-      <span data-testid="message-author" className={`min-w-0 truncate${own ? '' : ' text-sm font-medium'}`}>{author.name}</span>
+      <span data-testid="message-author" className="min-w-0 truncate text-sm text-muted-foreground">{author.name}</span>
       {message.via && <span data-testid="message-via" className={`min-w-0 truncate text-muted-foreground${own ? '' : ' text-sm'}`}>{labels.sharedVia(message.via)}</span>}
       {!(message.via && author.kind === 'agent') && <MemberBadge member={author} />}
     </div>
@@ -161,13 +160,14 @@ export function SharedMessage({ shared, children, remove, canRemove, openFile, o
     onPointerUp={cancelPress} onPointerCancel={cancelPress}
     onContextMenu={event => { if (phone && actionable && event.target instanceof Element && !event.target.closest('button, a, input, textarea, [role=button], [role=link]')) { event.preventDefault(); setActionsOpen(true); } }}>
     {heading}
-    <div data-testid="shared-message-content" className={`flex min-w-0 flex-col gap-1${own ? '' : ' ml-8'}`}>
+    <div className="flex min-w-0 items-end gap-2">
+    {!own && <div data-testid="message-avatar" className="flex w-6 shrink-0 items-end">{lastBubble && <MemberAvatar member={author} card={message.via ? undefined : shared.latestCard} size="sm" />}</div>}
+    <div data-testid="shared-message-content" className="flex min-w-0 flex-1 flex-col gap-1">
     {body}
-    {!message.removed && !message.via && (message.streaming || message.steps?.length) && author.kind === 'agent' && <HostTrace participant={author.name} steps={message.steps ?? []} streaming={Boolean(message.streaming)} active={shared.showSpinner !== false} />}
     {!message.removed && message.attachments?.map(file => <Button key={file.path} variant="outline" disabled={!openFile} onClick={() => openFile?.(file.path)} className="max-w-full justify-start"><span className="truncate">{file.title ?? file.path}</span></Button>)}
     {error && <p role="alert">{error}</p>}
-    </div>
-    {actionable && <div data-testid="shared-message-actions" hidden={phone && !actionsOpen} className={`${phone && !actionsOpen ? 'hidden' : 'flex'} items-center gap-1${own ? '' : ' ml-8'}${phone ? '' : ' absolute inset-x-0 top-full opacity-0 group-hover/shared-message:opacity-100 group-focus-within/shared-message:opacity-100'}`}>
+    </div></div>
+    {actionable && <div data-testid="shared-message-actions" hidden={phone && !actionsOpen} className={`absolute right-0 top-0 ${phone && !actionsOpen ? 'hidden' : 'flex'} items-center gap-1${phone ? '' : ' opacity-0 group-hover/shared-message:opacity-100 group-focus-within/shared-message:opacity-100'}`}>
       {replyable && onReply && <Tooltip><TooltipTrigger render={<Button variant="ghost" size={phone ? 'icon' : 'icon-xs'} data-testid="shared-reply" aria-label={labels.sharedReply} onClick={() => { setActionsOpen(false); onReply(message.id); }}><ReplyIcon aria-hidden="true" /></Button>} /><TooltipContent>{labels.sharedReply}</TooltipContent></Tooltip>}
       {removable && remove && <Tooltip><TooltipTrigger render={<Button variant="ghost" size={phone ? 'icon' : 'icon-xs'} aria-label={labels.delete} onClick={() => { void remove(message).catch(error => setError(error instanceof Error ? error.message : labels.actionFailedShort)); }}><Trash2Icon aria-hidden="true" /></Button>} /><TooltipContent>{labels.delete}</TooltipContent></Tooltip>}
     </div>}
@@ -175,17 +175,27 @@ export function SharedMessage({ shared, children, remove, canRemove, openFile, o
 }
 
 export interface SharedItem {
-  readonly key: string; readonly message: ChannelMessage; readonly author: Member; readonly own: boolean; readonly first: boolean;
+  readonly key: string; readonly message: ChannelMessage; readonly author: Member; readonly own: boolean; readonly first: boolean; readonly lastBubble: boolean; readonly separator: boolean;
   readonly showSpinner: boolean; readonly latestCard: Request | undefined; readonly quote: ReturnType<typeof sharedQuote>;
 }
 export function sharedItems(shared: SharedChatState): SharedItem[] {
   const working = new Map(shared.messages.filter(message => message.streaming).map(message => [message.author, message.id]));
-  return shared.messages.map((message, index): SharedItem => {
-    const key = `shared:${message.id}`, own = message.author === shared.me.id;
-    const author = memberOf(shared, message.author);
-    const previous = shared.messages[index - 1];
+  const groups: ChannelMessage[][] = [];
+  for (const message of shared.messages) {
+    const group = groups.at(-1), previous = group?.at(-1);
     const elapsed = previous ? Date.parse(message.at) - Date.parse(previous.at) : NaN;
-    const first = previous?.author !== message.author || previous?.via !== message.via || !(elapsed >= 0 && elapsed <= 60_000);
-    return { key, message, author, own, first, showSpinner: working.get(message.author) === message.id, latestCard: latestCard(shared, message.author), quote: sharedQuote(shared, message.replyTo) };
+    if (group && previous?.author === message.author && previous.via === message.via && elapsed >= 0 && elapsed <= 15 * 60_000) group.push(message);
+    else groups.push([message]);
+  }
+  return groups.flatMap((group, groupIndex) => {
+    // Trailing request cards attach beneath the group; the avatar stays beside its last text bubble.
+    const lastBubble = group.findLast(message => !message.card) ?? group.at(-1);
+    return group.map((message, index): SharedItem => {
+      const previous = index > 0 ? group[index - 1] : groups[groupIndex - 1]?.at(-1);
+      return { key: `shared:${message.id}`, message, author: memberOf(shared, message.author), own: message.author === shared.me.id,
+        first: index === 0, lastBubble: message === lastBubble,
+        separator: !previous || Date.parse(message.at) - Date.parse(previous.at) > 15 * 60_000,
+        showSpinner: working.get(message.author) === message.id, latestCard: latestCard(shared, message.author), quote: sharedQuote(shared, message.replyTo) };
+    });
   });
 }

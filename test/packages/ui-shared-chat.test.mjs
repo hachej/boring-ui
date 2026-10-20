@@ -95,7 +95,7 @@ test('channel socket RPC, validated events, overrides and owned reconnect lifecy
     open: url => { const socket = { url, close() { this.onclose?.(); } }; sockets.push(socket); return socket; },
   });
   assert.equal(source.me.id, 'mira'); assert.equal((await source.conversations()).length, 3);
-  assert.equal((await source.members('main')).length, 5);
+  assert.equal((await source.members('main')).length, 4);
   assert.equal((await source.history('main', { before: 'last', limit: 20 })).before, 'old');
   const posted = await source.send({ conversationId: 'main', text: 'Hello', mentions: ['leo'], clientId: 'c1' }); assert.equal(posted.id, 'posted'); assert.equal(posted.via, 'Claude'); assert.equal(posted.card.state, 'preview'); assert.deepEqual(posted.steps, msg.steps);
   await source.action({ conversationId: 'main', requestId: 'review-plan', actionId: 'review' });

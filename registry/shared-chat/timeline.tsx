@@ -11,6 +11,7 @@ import { Message, MessageContent } from '@/components/ui/message';
 import { Bubble, BubbleContent } from '@/components/ui/bubble';
 import { MessageScroller, MessageScrollerViewport, MessageScrollerContent, MessageScrollerItem, MessageScrollerButton } from '@/components/ui/message-scroller';
 import { SharedMessage, RequestCard, sharedItems } from './messages';
+import { HostTrace } from './host-trace';
 import { useChatText } from './text';
 
 export interface TimelineApi { readonly reset: () => void; readonly reveal: (id: string) => void }
@@ -50,19 +51,22 @@ export function SharedTimeline({ controller, api, focusComposer, openFile, menti
   const renderMention = (path: string, text: string) => mentions.renderSent?.(path) ?? text;
   return <MessageScroller>
     <MessageScrollerViewport ref={node => { root.current = node; stick.scrollRef(node); }} data-testid="transcript-scroll" aria-label={labels.messages} className="scrollbar-thumb-border scrollbar-track-transparent">
-      {items.length > 0 && <TranscriptHistory history={state.history} connected={!state.disposed && connected} onLoad={transcript.reveal} sentinelRef={transcript.sentinelRef} hidden={hidden} loaded={transcript.loaded} />}
+      {items.length > 0 && (hidden > 0 || state.history.kind === 'loading' || state.history.kind === 'error' || state.history.kind === 'ready' && state.history.hasMore) && <TranscriptHistory history={state.history} connected={!state.disposed && connected} onLoad={transcript.reveal} sentinelRef={transcript.sentinelRef} hidden={hidden} loaded={transcript.loaded} />}
       <div className="mx-auto w-full max-w-[720px] px-4 pt-6 pb-8 sm:px-6">
         <MessageScrollerContent aria-label={labels.messages} aria-live="polite" data-testid="transcript" className="gap-0">
           {transcript.visible(items).map((item, index) => {
             const { message, author, own } = item;
             const person = own || author.kind !== 'agent' || message.via !== undefined;
             return <MessageScrollerItem key={item.key} messageId={item.key} className={`[content-visibility:visible]${index > 0 ? item.first ? ' mt-6' : ' mt-2' : ''}`}>
+              {item.separator && <div data-testid="time-separator" className="mb-6 flex justify-center text-xs text-muted-foreground"><time dateTime={message.at}>{labels.sharedTimestamp(message.at)}</time></div>}
               <SharedMessage shared={item} remove={controller.remove} canRemove={controller.canRemove} openFile={openFile} onReply={id => { controller.setReplyTo(id); focusComposer(); }} onReveal={setRevealing}>
-                {message.card ? <article data-row-id={item.key} data-role="event"><RequestCard card={message.card} action={controller.action} /></article>
-                  : person ? <article data-row-id={item.key} data-role="user"><Message align={own ? 'end' : 'start'}><MessageContent><MessageText text={message.text ?? ''} context={context} align={own ? 'end' : 'start'} /></MessageContent></Message></article>
-                    : <article data-row-id={item.key} data-role="assistant" data-streaming={message.streaming ? 'true' : undefined} className="group/message"><Message><MessageContent><div className="flex flex-col gap-3">
-                      {message.text && <Bubble variant="ghost"><BubbleContent><Markdown text={message.text} streaming={Boolean(message.streaming)} renderMention={renderMention} /></BubbleContent></Bubble>}
-                    </div></MessageContent></Message></article>}
+                {message.card ? <article data-row-id={item.key} data-role="event" className="max-w-[80%]"><RequestCard card={message.card} action={controller.action} /></article>
+                  : <article data-row-id={item.key} data-role={person ? 'user' : 'assistant'} data-streaming={message.streaming ? 'true' : undefined} className="group/message"><Message align={own ? 'end' : 'start'}><MessageContent>
+                    {own ? <MessageText text={message.text ?? ''} context={context} /> : <Bubble variant="muted"><BubbleContent>
+                      {message.text && <Markdown text={message.text} streaming={Boolean(message.streaming)} renderMention={renderMention} />}
+                      {!message.via && author.kind === 'agent' && (message.streaming || message.steps?.length) && <HostTrace participant={author.name} steps={message.steps ?? []} streaming={Boolean(message.streaming)} active={item.showSpinner} />}
+                    </BubbleContent></Bubble>}
+                  </MessageContent></Message></article>}
               </SharedMessage>
             </MessageScrollerItem>;
           })}

@@ -39,7 +39,7 @@ test('replyTo is captured with the outbox payload, not a later composer selectio
   assert.equal(chat.getSnapshot().shared.messages.find(message => message.clientId === source.sends[0].clientId).replyTo, 'six');
 });
 
-test('the fictional PDF story hands off from PM to one Builder message and replaces one card', async t => {
+test('the fictional PM proxies the work trace and replaces its one request card', async t => {
   const source = createPdfDemo({ manual: true });
   const chat = createSharedChat(source, { conversationId: 'main' }); t.after(() => chat.dispose()); await chat.connect();
   chat.setText('@pm ajoute un export PDF'); await chat.send();
@@ -47,19 +47,20 @@ test('the fictional PDF story hands off from PM to one Builder message and repla
   assert.deepEqual(messages().filter(message => message.author === 'pm').map(message => message.id), ['pdf-doing', 'pdf-plan']);
   assert.equal(messages().find(message => message.id === 'pdf-doing').text, 'Je regarde vos fichiers.');
   source.planReady();
-  assert.equal(messages().find(message => message.id === 'pdf-plan').text, 'Je vais ajouter un export PDF.  \nJe confie la mise en page au Builder et je vous propose une version.');
-  assert.equal(messages().filter(message => message.streaming).length, 0, 'PM finishes before the handoff');
+  assert.equal(messages().find(message => message.id === 'pdf-plan').text, 'Je vais ajouter un export PDF.  \nJe prépare une version que vous pourrez essayer.');
+  assert.equal(messages().filter(message => message.streaming).length, 0, 'the plan settles before work begins');
   source.build();
-  assert.deepEqual(messages().filter(message => message.id.startsWith('pdf-')).map(message => message.id), ['pdf-doing', 'pdf-plan', 'pdf-card', 'pdf-worker']);
-  const worker = messages().find(message => message.id === 'pdf-worker');
-  assert.equal(worker.text, 'Je prépare la mise en page du PDF.'); assert.equal(worker.steps.length, 3);
-  assert.deepEqual(messages().filter(message => message.streaming).map(message => message.author), ['worker']);
+  assert.deepEqual(messages().filter(message => message.id.startsWith('pdf-')).map(message => message.id), ['pdf-doing', 'pdf-plan', 'pdf-card']);
+  const work = messages().find(message => message.id === 'pdf-plan');
+  assert.equal(work.author, 'pm'); assert.equal(work.steps.length, 3);
+  assert.deepEqual(messages().filter(message => message.streaming).map(message => message.author), ['pm']);
+  assert.deepEqual(chat.getSnapshot().shared.members.filter(member => member.kind === 'agent').map(member => member.id), ['pm']);
   const id = messages().find(message => message.card).id;
   source.finish();
   assert.equal(messages().filter(message => message.card).length, 1);
   assert.equal(messages().find(message => message.card).id, id);
   assert.equal(messages().find(message => message.card).card.line, 'On attend votre essai');
-  assert.equal(messages().filter(message => message.author === 'worker').length, 1);
+  assert.equal(messages().some(message => message.author === 'worker'), false);
   assert.equal(messages().filter(message => message.streaming).length, 0);
   assert.equal(messages().find(message => message.id === 'pdf-answer'), undefined);
 });

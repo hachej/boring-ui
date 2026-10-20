@@ -9,7 +9,7 @@ import type { ConversationsConfig, MentionsConfig } from '../pi-chat/config';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@/components/ui/item';
-import { SharedMembers, ReplyQuote, sharedQuote } from './messages';
+import { MemberAvatar, SharedMembers, ReplyQuote, sharedQuote } from './messages';
 import { SharedTimeline } from './timeline';
 import type { TimelineApi } from './timeline';
 import { SharedTextProvider } from './text';
@@ -30,7 +30,10 @@ export function useSharedChatProps(controller: SharedChatController | undefined,
     search: async query => members.filter(member => `${member.name} ${member.id}`.toLowerCase().includes(query.toLowerCase()))
       .sort((a, b) => Number(b.kind === 'agent') - Number(a.kind === 'agent')).map(member => ({ path: member.id, label: member.name })),
     render: id => <Badge variant="secondary">@{members.find(member => member.id === id)?.name ?? id}</Badge>,
-    renderSent: id => <span data-testid="message-mention" data-path={id} className="font-medium text-primary">@{members.find(member => member.id === id)?.name ?? id}</span>,
+    renderSent: id => {
+      const member = members.find(member => member.id === id) ?? { id, name: id, kind: 'person' };
+      return <span data-testid="message-mention" data-path={id} className="inline-flex items-center gap-1 align-baseline font-medium"><span aria-hidden="true"><MemberAvatar member={member} compact interactive={false} /></span><span data-testid="mention-name">{member.name}</span></span>;
+    },
     renderOption: item => <><ItemMedia variant="icon"><UserIcon aria-hidden="true" /></ItemMedia><ItemContent className="min-w-0"><ItemTitle>{item.label}</ItemTitle><ItemDescription className="m-0 truncate">{item.path}</ItemDescription></ItemContent></>,
   }), [members, labels.sharedMembers]);
   const wrap = (children: ReactNode) => <SharedTextProvider {...options}>{children}</SharedTextProvider>;
