@@ -42,11 +42,11 @@ try {
     if (release) await touch('touchEnd', []);
   };
   const center = async selector => { const r = await browser.evaluate(rect(selector)); return { ...r, x: r.x + r.w / 2, y: r.y + r.h / 2 }; };
-  /** A finger tap at the element's centre, without scrolling it into view first (that would move the sheet's own overflow). */
+  const tapAt = async selector => { const r = await center(selector); await touch('touchStart', [[r.x, r.y]]); await touch('touchEnd', []); };
+  /** A finger tap at the element's centre once it receives hits, without scrolling it into view (that would move the sheet's own overflow). */
   const tap = async selector => {
-    await browser.until(`tappable ${selector}`, `(() => { const r = ${q(selector)}?.getBoundingClientRect(); return r && r.width > 0 && r.bottom > 0 && r.top < innerHeight; })()`);
-    const r = await center(selector);
-    await touch('touchStart', [[r.x, r.y]]); await touch('touchEnd', []);
+    await browser.until(`tappable ${selector}`, `(() => { const e = ${q(selector)}, r = e?.getBoundingClientRect(); return r && r.width > 0 && r.height > 0 && e.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)); })()`);
+    await tapAt(selector);
   };
   const live = () => browser.until('the chats are live', `${q('[data-testid=agent-trigger]')} && !${q('[data-testid=connecting]')}`, 30000);
   /** Every visible control of the layer is at least 44x44px (touch) and inside the viewport; fails with the selector. */
@@ -281,7 +281,7 @@ try {
     assert.ok(layer.y > 200 && layer.y < 600 && Math.round(layer.bottom) >= 844, JSON.stringify(layer));
     assert.ok(await browser.evaluate(`!!document.querySelector('[data-slot=drawer-overlay]')`), 'modal backdrop');
     const before = await browser.evaluate(taps);
-    await tap(TAB).catch(() => {});
+    await tapAt(TAB);
     await pause(300);
     assert.equal(await browser.evaluate(taps), before, 'the tab bar behind a modal layer does not receive the tap');
     await browser.screenshot('phone-half.png');
@@ -496,6 +496,10 @@ try {
     const layer = await browser.evaluate(rect(LAYER));
     await touch('touchStart', [[195, layer.y / 2]]); await touch('touchEnd', []);
     await browser.until('peek again', `${snap} === 'peek'`);
+    // Keep the slide at its start briefly: peek is already non-modal, but the moving handle can still cover the header trigger.
+    // The next tap must wait for the actual hit target, not just the snap state (the race seen on a faster CI runner).
+    assert.equal(await browser.evaluate(`(() => { const slide = ${q(LAYER)}.getAnimations().find(animation => animation.transitionProperty === 'transform');
+      if (!slide) return false; slide.pause(); slide.currentTime = 0; setTimeout(() => slide.play(), 600); return true; })()`), true, 'the full-to-peek slide is running');
   });
 
   await step('10 the product manager swaps in with « ← », each chat keeps its own draft', async () => {
