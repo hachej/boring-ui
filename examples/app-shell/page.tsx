@@ -120,7 +120,14 @@ function App() {
       { id: 'share', label: 'Partager ma semaine', icon: Share2Icon, onSelect: () => window.__did.push('share') },
       { id: 'invite', label: 'Inviter un ami', icon: UsersIcon, href: '/invite?app=fitness', onSelect: () => window.__did.push('invite') },
     ],
-    chatProps: { ...common, actions: coach.actions, labels: { title: 'Coach', placeholder: 'Parle au coach…' }, tools: <span data-testid="host-tool" className="sr-only">outil</span>, suggestions: [{ label: 'Résumé de la semaine', text: 'Fais le résumé de ma semaine' }] },
+    chatProps: { ...common, actions: coach.actions, labels: { title: 'Coach', placeholder: 'Parle au coach…' },
+      // Photos and picked images become draft attachments (the phone camera and the "+" menu both land here).
+      onFiles: async files => Promise.all(files.map(async (file, index) => {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        let binary = '';
+        for (const byte of bytes) binary += String.fromCharCode(byte);
+        return { id: `photo-${Date.now()}-${index}`, name: file.name, content: { type: 'image' as const, data: btoa(binary), mimeType: file.type || 'image/jpeg' } };
+      })), tools: <span data-testid="host-tool" className="sr-only">outil</span>, suggestions: [{ label: 'Résumé de la semaine', text: 'Fais le résumé de ma semaine' }] },
     ...(app === 'empty' ? {} : { voice: { transcribe: async () => window.__transcript ?? 'Combien de pas hier ?', send } }),
   };
   // The product manager's « Voir la fiche » opens the product sheet over the app (`DocumentSheet`); the host decides which document.

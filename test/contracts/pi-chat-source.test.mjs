@@ -556,3 +556,67 @@ test('the expanded ambient window shows the host reply footer under a settled re
   assert.equal(seen[0].text, 'all done');
   assert.ok(!renderToStaticMarkup(createElement(AmbientChat, { controller, state: 'expanded' })).includes('data-testid="footer"'));
 });
+
+test('the "Take a photo" item shows only for attachments that admit images on a coarse pointer', async t => {
+  const { Window } = await import('happy-dom');
+  const { act } = await import('react'); const { createRoot } = await import('react-dom/client');
+  // The menu opens through pointer sequences happy-dom does not run; the test swaps the dropdown for one that always shows its items.
+  const stub = `import { createElement as h } from 'react';
+    export const DropdownMenu = ({ children }) => h('div', null, children);
+    export const DropdownMenuTrigger = ({ children, render, ...props }) => h('button', props, children);
+    export const DropdownMenuContent = ({ children }) => h('div', { role: 'menu' }, children);
+    export const DropdownMenuItem = ({ children, onClick, ...props }) => h('div', { role: 'menuitem', onClick, ...props }, children);`;
+  await build({ entryPoints: [`${root}registry/pi-chat/composer.tsx`], outfile: `${out}/composer-menu-stub.mjs`, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent',
+    plugins: [{ name: 'stub-menu', setup(builder) { builder.onResolve({ filter: /components\/ui\/dropdown-menu$/ }, () => ({ path: 'stub-menu', namespace: 'stub' })); builder.onLoad({ filter: /.*/, namespace: 'stub' }, () => ({ contents: stub, loader: 'js', resolveDir: root })); } }] });
+  const { Composer, acceptsPhotos } = await import(pathToFileURL(`${out}/composer-menu-stub.mjs`).href);
+  assert.deepEqual(['', 'image/*', 'image/png, image/jpeg', '.jpg', '*/*'].map(acceptsPhotos), [true, true, true, true, true]);
+  assert.deepEqual(['application/pdf', 'image/png,.pdf', 'text/*'].map(acceptsPhotos), [false, false, false]);
+
+  const noop = () => {};
+  const base = { text: '', onText: noop, attachments: [], onRemoveAttachment: noop, working: false, sendBlocked: false, disabled: false, stopRequested: false,
+    onSend: noop, onStop: noop, uploading: false, canAttach: true, fileAccept: 'image/*', onPickFiles: noop, textareaRef: { current: null } };
+  const names = ['window', 'document', 'navigator', 'HTMLElement', 'HTMLButtonElement', 'Element', 'Node', 'Text', 'Event', 'KeyboardEvent', 'MouseEvent', 'PointerEvent', 'FocusEvent', 'MutationObserver', 'ResizeObserver', 'requestAnimationFrame', 'cancelAnimationFrame', 'getComputedStyle', 'matchMedia', 'IS_REACT_ACT_ENVIRONMENT'];
+  const showsItem = async (props, coarse) => {
+    const window = new Window({ url: 'https://fictional.invalid/', settings: { disableIframePageLoading: true } });
+    const saved = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
+    const matchMedia = query => ({ matches: coarse && query === '(pointer: coarse)', addEventListener() {}, removeEventListener() {} });
+    for (const name of names) {
+      const value = name === 'window' ? window : name === 'IS_REACT_ACT_ENVIRONMENT' ? true : name === 'matchMedia' ? matchMedia : window[name];
+      Object.defineProperty(globalThis, name, { configurable: true, writable: true, value: typeof value === 'function' && /^[a-z]/.test(name) && name !== 'matchMedia' ? value.bind(window) : value });
+    }
+    const container = window.document.createElement('div'); window.document.body.append(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => root.render(createElement(Composer, { ...base, ...props })));
+      assert.ok(window.document.querySelector('[data-testid=composer-plus]'), 'the composer rendered its menu');
+      return window.document.querySelector('[data-testid=composer-take-photo]') !== null;
+    } finally {
+      await act(async () => root.unmount()); await window.happyDOM.close();
+      for (const [name, descriptor] of saved) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else delete globalThis[name]; }
+    }
+  };
+  assert.equal(await showsItem({}, true), true, 'coarse pointer, images admitted');
+  assert.equal(await showsItem({ fileAccept: '' }, true), true, 'an empty accept admits everything');
+  assert.equal(await showsItem({}, false), false, 'a fine pointer has no camera item');
+  assert.equal(await showsItem({ fileAccept: 'application/pdf' }, true), false, 'a PDF-only accept');
+  assert.equal(await showsItem({ canAttach: false, onCommands: undefined, slash: { commands: [{ name: 'help', description: 'Fictional help' }] } }, true), false, 'without attachments');
+  t.diagnostic('menu item gating checked in five states');
+});
+
+test('the camera words exist in English and French, and the English composer baseline markup has no camera', async () => {
+  const { defaultChatLabels, defaultChatIcons } = await load('labels', 'labels.ts');
+  const { frChatLabels } = await load('labels-fr', 'labels-fr.ts').then(module => ({ frChatLabels: Object.values(module).find(value => value && typeof value === 'object' && 'attachFiles' in value) }));
+  for (const key of ['takePhoto', 'cameraShoot', 'cameraClose', 'cameraUnavailable', 'cameraFallback']) {
+    assert.equal(typeof defaultChatLabels[key], 'string', `${key} in English`);
+    assert.equal(typeof frChatLabels[key], 'string', `${key} in French`);
+    assert.notEqual(frChatLabels[key], defaultChatLabels[key], `${key} is translated`);
+  }
+  assert.equal(defaultChatLabels.takePhoto, 'Take a photo');
+  assert.equal(frChatLabels.takePhoto, 'Prendre une photo');
+  assert.equal(defaultChatLabels.cameraFallback, "Use the phone's camera");
+  assert.equal(frChatLabels.cameraFallback, 'Utiliser l’appareil photo du téléphone');
+  assert.ok(defaultChatIcons.camera, 'a camera icon');
+  const { Composer } = await load('composer', 'composer.tsx');
+  const html = renderToStaticMarkup(createElement(Composer, { text: '', onText() {}, attachments: [], onRemoveAttachment() {}, working: false, sendBlocked: false, disabled: false, stopRequested: false, onSend() {}, onStop() {}, uploading: false, canAttach: true, fileAccept: 'image/*', onPickFiles() {}, textareaRef: { current: null } }));
+  assert.doesNotMatch(html, /take-photo|camera-sheet/, 'server markup is unchanged: the item needs a coarse pointer and an open menu');
+});

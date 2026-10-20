@@ -257,3 +257,13 @@ regexes = ['''^eyJhbGciOiJIUzI1NiJ9\.\.\.$''']
 paths = [
   '''^\.beads/notes/bd\-sprites\-provider\.md$''',
 ]
+
+[[allowlists]]
+description = "Historical false positive H25: Fictional secret marker in the OptChat forget test (D-131), proving the value is removed from stored summaries."
+condition = "AND"
+ruleIDs = ["generic-api-key"]
+regexTarget = "secret"
+regexes = ['''^FICTIONAL_SECRET_D131$''']
+paths = [
+  '''^test/packages/agent\.test\.mjs$''',
+]

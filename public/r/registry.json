@@ -469,6 +469,11 @@
           "target": "components/pi-chat/artifact.ts"
         },
         {
+          "path": "registry/pi-chat/camera-sheet.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat/camera-sheet.tsx"
+        },
+        {
           "path": "registry/pi-chat/code-block.tsx",
           "type": "registry:component",
           "target": "components/pi-chat/code-block.tsx"
@@ -798,6 +803,42 @@
       ]
     },
     {
+      "name": "record-viewer",
+      "type": "registry:component",
+      "title": "Record viewer",
+      "description": "Typed RecordTable and RecordList, with grouping, app-defined status badges and host row actions. createRecordsKind renders *.records.json (records@1), with a phone list and exact raw-text fallback for invalid files. English and French labels and locale formatting.",
+      "dependencies": [
+        "react@^19.0.0",
+        "lucide-react@^1.51.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.3/r/theme.json",
+        "table",
+        "badge",
+        "item",
+        "button",
+        "alert",
+        "empty"
+      ],
+      "files": [
+        {
+          "path": "registry/record-viewer/records.ts",
+          "type": "registry:lib",
+          "target": "components/record-viewer/records.ts"
+        },
+        {
+          "path": "registry/record-viewer/records-labels.ts",
+          "type": "registry:lib",
+          "target": "components/record-viewer/records-labels.ts"
+        },
+        {
+          "path": "registry/record-viewer/record-viewer.tsx",
+          "type": "registry:component",
+          "target": "components/record-viewer/record-viewer.tsx"
+        }
+      ]
+    },
+    {
       "name": "diagram-viewer",
       "type": "registry:component",
       "title": "Diagram viewer",
@@ -1050,6 +1091,7 @@
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.3/r/maquette-viewer.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.3/r/diagram-viewer.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.3/r/mockup-viewer.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.3/r/record-viewer.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.3/r/utils.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.3/r/button.json",
         "drawer",

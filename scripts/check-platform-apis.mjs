@@ -36,6 +36,8 @@ export const ALLOWLIST = {
   'examples/ambient/mic.mjs': { rules: ['navigator.secure', 'getUserMedia'], requires: [/typeof globalThis\.navigator\?\.mediaDevices\?\.getUserMedia === 'function'/] },
   // Feedback voice: opens the microphone only from start() (the person's click), through an injectable getUserMedia whose default feature-detects.
   'packages/feedback/src/page/voice/capture.ts': { rules: ['navigator.secure', 'getUserMedia'], requires: [/typeof globalThis\.navigator\?\.mediaDevices\?\.getUserMedia !== 'function'/, /options\.getUserMedia \?\? browserGetUserMedia\(\)/] },
+  // The composer's camera ("Take a photo" on phones): opens only when the sheet mounts (the person's tap), through an injectable getUserMedia whose default feature-detects.
+  'registry/pi-chat/camera-sheet.tsx': { rules: ['navigator.secure', 'getUserMedia'], requires: [/typeof globalThis\.navigator\?\.mediaDevices\?\.getUserMedia !== 'function'/, /latest\.current\.getUserMedia \?\? browserGetUserMedia\(\)/] },
   'registry/viewers/share.ts': { rules: ['navigator.share'], requires: [/typeof nav\?\.share === 'function'/, /copyText/] },
 };
 
@@ -49,7 +51,7 @@ const HOW = {
   isSecureContext: 'branching on isSecureContext hides the insecure-origin path; feature-detect the capability instead',
   'node:crypto': 'node:crypto does not exist in the browser; use "@hachej/boring-files/platform"',
   Notification: 'the browser Notification API depends on permission and a secure context; go through registry/pi-ambient/browser-notify.ts, which feature-detects and never asks on load',
-  getUserMedia: 'getUserMedia (microphone, camera) is secure-context only and needs permission; it is host-provided, never built into a shared component',
+  getUserMedia: 'getUserMedia (microphone, camera) is secure-context only and needs permission; it is host-provided, never built into a shared component, except the feedback microphone and the pi-chat camera sheet',
   storage: 'localStorage/sessionStorage throw in private mode and with blocked cookies; wrap every access in try/catch',
   observer: 'ResizeObserver/IntersectionObserver/BroadcastChannel may be absent; guard with typeof X !== "undefined"',
   localhost: 'hard-coded localhost/127.0.0.1 breaks on any other origin; derive from location or take it from the host',

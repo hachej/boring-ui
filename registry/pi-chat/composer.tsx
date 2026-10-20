@@ -11,6 +11,7 @@ import { InputGroup, InputGroupAddon, InputGroupTextarea } from '@/components/ui
 import { Toggle } from '@/components/ui/toggle';
 import { hasMention, isLongPaste, mentionToken, mentionTrigger, removeMention, slashItems, slashQuery } from './config';
 import type { MentionsConfig, PastedText, PasteToFile, SlashConfig, SlashItem } from './config';
+import { CameraSheet } from './camera-sheet';
 import { MentionPicker } from './mention-menu';
 import { SlashPicker } from './slash-menu';
 import { useChatText } from './labels';
@@ -138,8 +139,28 @@ function NotesChip({ feedback }: { readonly feedback: ComposerFeedback }) {
     actions={<AttachmentAction data-testid="feedback-count-clear" aria-label={labels.annotateClear} title={labels.annotateClear} onClick={() => feedback.clear()}><XIcon aria-hidden="true" /></AttachmentAction>} />;
 }
 
-/** The "+" button and the host's shadcn dropdown menu (Attach files, Commands). */
-function PlusActions({ disabled, onAttach, onCommands, textarea }: { readonly disabled: boolean; readonly onAttach?: (() => void) | undefined; readonly onCommands?: (() => void) | undefined; readonly textarea: { readonly current: HTMLTextAreaElement | null } }) {
+/** Whether a file input's `accept` admits a JPEG photo (empty admits everything). */
+export function acceptsPhotos(accept: string): boolean {
+  const tokens = accept.split(',').map(token => token.trim().toLowerCase()).filter(Boolean);
+  return tokens.length === 0 || tokens.some(token => token === 'image/*' || token === '*/*' || token === 'image/jpeg' || token === '.jpg' || token === '.jpeg');
+}
+
+/** True on a touch-first device (a phone or tablet); false on the server, so the menu renders the same there. */
+function useCoarsePointer(): boolean {
+  const [coarse, setCoarse] = useState(() => globalThis.matchMedia?.('(pointer: coarse)').matches ?? false);
+  useEffect(() => {
+    const query = globalThis.matchMedia?.('(pointer: coarse)');
+    if (!query) return;
+    const update = () => setCoarse(query.matches);
+    update();
+    query.addEventListener?.('change', update);
+    return () => query.removeEventListener?.('change', update);
+  }, []);
+  return coarse;
+}
+
+/** The "+" button and the host's shadcn dropdown menu (Attach files, Take a photo, Commands). */
+function PlusActions({ disabled, onAttach, onTakePhoto, onCommands, textarea }: { readonly disabled: boolean; readonly onAttach?: (() => void) | undefined; readonly onTakePhoto?: (() => void) | undefined; readonly onCommands?: (() => void) | undefined; readonly textarea: { readonly current: HTMLTextAreaElement | null } }) {
   const { labels, icons } = useChatText();
   const [open, setOpen] = useState(false);
   // Commands puts `/` in the message: focus goes back to the text, not to the "+" button.
@@ -152,6 +173,8 @@ function PlusActions({ disabled, onAttach, onCommands, textarea }: { readonly di
       finalFocus={() => { const text = toText.current; toText.current = false; return text ? textarea.current : true; }}>
       {onAttach && <DropdownMenuItem data-testid="composer-attach" onClick={onAttach} className="max-sm:min-h-11 pointer-coarse:min-h-11">
         <icons.attach aria-hidden="true" />{labels.attachFiles}</DropdownMenuItem>}
+      {onTakePhoto && <DropdownMenuItem data-testid="composer-take-photo" onClick={onTakePhoto} className="max-sm:min-h-11 pointer-coarse:min-h-11">
+        <icons.camera aria-hidden="true" />{labels.takePhoto}</DropdownMenuItem>}
       {onCommands && <DropdownMenuItem data-testid="composer-commands" onClick={() => { toText.current = true; onCommands(); }} className="max-sm:min-h-11 pointer-coarse:min-h-11">
         <SlashIcon aria-hidden="true" />{labels.commands}</DropdownMenuItem>}
     </DropdownMenuContent>
@@ -173,6 +196,10 @@ export function Composer(props: ComposerProps) {
   useEffect(() => { setDismissed(value => value === null || value === text ? value : null); }, [text]);
   const pendingCaret = useRef<number | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  // The camera sheet lives here, not in the menu: the menu content unmounts as soon as it closes.
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const coarse = useCoarsePointer();
+  const canPhoto = canAttach && coarse && acceptsPhotos(props.fileAccept);
   const { slash, mentions } = props;
   const items = useMemo<SlashItem[]>(() => slash ? slashItems(slash) : [], [slash]);
   const setRef = (element: HTMLTextAreaElement | null) => {
@@ -287,7 +314,7 @@ export function Composer(props: ComposerProps) {
       onChange={onChange} onKeyDown={onKeyDown} onPaste={onPaste} onKeyUp={event => trackCaret(event.currentTarget)} onClick={event => trackCaret(event.currentTarget)}
       onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }}
       className={pill ? 'max-h-52 min-h-0 min-w-0' : 'max-h-52 min-h-11'} />;
-  const plus = (canAttach || items.length > 0) && <PlusActions disabled={disabled} textarea={inner} onAttach={canAttach ? () => fileInput.current?.click() : undefined} onCommands={items.length > 0 ? openCommands : undefined} />;
+  const plus = (canAttach || items.length > 0) && <PlusActions disabled={disabled} textarea={inner} onAttach={canAttach ? () => fileInput.current?.click() : undefined} onTakePhoto={canPhoto ? () => setCameraOpen(true) : undefined} onCommands={items.length > 0 ? openCommands : undefined} />;
   const fileEl = canAttach && <Input ref={fileInput} type="file" multiple accept={props.fileAccept} disabled={disabled} tabIndex={-1} aria-hidden="true" className="sr-only" data-testid="composer-file" data-attach="true"
     onChange={event => { const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ''; props.onPickFiles(files); }} />;
   const send = working
@@ -328,5 +355,6 @@ export function Composer(props: ComposerProps) {
         {end}
       </InputGroupAddon>
     </InputGroup>}
+    {cameraOpen && <CameraSheet onClose={() => setCameraOpen(false)} onCapture={file => { setCameraOpen(false); props.onPickFiles([file]); }} />}
   </form>;
 }

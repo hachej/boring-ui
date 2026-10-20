@@ -10,6 +10,7 @@ import { createPrivacyPolicy } from '@hachej/boring-feedback/page';
 import { NoteBubble, useComposerFeedback, usePointComments } from '../../registry/feedback/feedback-session.tsx';
 import { PointBar } from '../../registry/feedback/point-mode.tsx';
 import { AgentWorkspace, useConversations, useRemoteChat } from '../../registry/pi-app/agent-workspace.tsx';
+import { createRecordsKind } from '../../registry/record-viewer/record-viewer.tsx';
 import { AmbientChat } from '../../registry/pi-ambient/ambient.tsx';
 import { Button } from '@/components/ui/button';
 import { RequestsDemo } from './requests-demo.jsx';
@@ -89,6 +90,8 @@ function App() {
   const [logged, setLogged] = useState([]);
   const log = useMemo(() => id => setLogged(current => [...current, id]), []);
   const config = useConfiguration(log);
+  const recordKinds = useMemo(() => new URLSearchParams(location.search).get('records') === 'fr'
+    ? [createRecordsKind({ locale: 'fr', onAction: (action, row) => log(`${action.id}:${row.id}`) })] : undefined, [log]);
   // The workspace's revision provider (identity, listing, search, history, change feed) is bound by the server's binding of /api/resources.
   const [revisionProvider, setRevisionProvider] = useState();
   const [discovery, setDiscovery] = useState({ attempt: 0, failed: false });
@@ -107,7 +110,7 @@ function App() {
   const floating = configured ? { floatBelow: 320, floatingChat: ({ headerStart, historyList, emptyState, decisions, controls, className, ...props }, dock) =>
     <AmbientChat {...props} headerActions={config.dockActions} variant="surface" defaultState="expanded" onDock={dock} /> } : {};
   return <main data-testid="app" data-conversation={active} data-configured={configured || undefined} className="flex h-full min-h-0">
-    {revisionProvider ? <AgentWorkspace conversationId={active} controller={chat.status === 'ready' ? chat.controller : undefined} conversations={conversations}
+    {revisionProvider ? <AgentWorkspace artifactKinds={recordKinds} conversationId={active} controller={chat.status === 'ready' ? chat.controller : undefined} conversations={conversations}
       {...(resourcesOnly ? { resources: { endpoint: at('/api/resources'), fetch: authorized, identity, history: at('/api/history') } } : { revisionProvider })} {...(embedded ? { layout: 'embedded', ...(appTitle ? { title: appTitle } : {}) } : {})}
       {...(blobs && !resourcesOnly ? { resources: { uploadBlob }, uploads: { maxBytes: 256 * 1024 } } : {})}
       chat={{ labels: { title: 'Writer', emptyDescription: 'What can I help you write today?' }, suggestions: [
@@ -120,7 +123,7 @@ function App() {
       : discovery.failed
         ? <p role="alert" className="p-4 text-sm text-muted-foreground">The workspace could not be reached. <Button variant="link" onClick={() => setDiscovery(current => ({ attempt: current.attempt + 1, failed: false }))}>Retry</Button></p>
         : <p role="status" className="p-4 text-sm text-muted-foreground">Connecting…</p>}
-    {configured && <output data-testid="host-log" className="sr-only">{logged.join(' ')}</output>}
+    {(configured || recordKinds) && <output data-testid="host-log" className="sr-only">{logged.join(' ')}</output>}
     {session && <><NoteBubble session={session} /><PointBar session={session} /></>}
   </main>;
 }
