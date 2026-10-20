@@ -1,5 +1,29 @@
 # Implemented behavior and evidence
 
+## Anchored Markdown highlights (D-78)
+
+`@hachej/boring-ui-kit/markdown-quote` resolves `markdown.quote@1` literally over
+canonical source. `@hachej/boring-ui-kit/mark-store` uses the document's workspace
+client and existing conditional text buffer to save `<doc>.marks.json`.
+The `highlights` registry block borrows the editor, decorates without text edits,
+offers context actions/comments, and keeps missing/ambiguous marks in a candidate
+tray. [FEEDBACK](../architecture/FEEDBACK.md#markdown-quotes-and-document-marks)
+owns the semantics and conservative projection limits.
+
+Evidence: `test/packages/ui-markdown-quote.test.mjs` runs the named exact-only
+corpus through `runAnchorConformance`, including an offset-guesser negative
+control; `test/packages/ui-mark-store.test.mjs` covers add/edit/remove, two-tab CAS,
+lost replies, malformed sidecars, immutable capture and reentrant subscribers;
+`test/contracts/highlights.test.mjs` drives the public registry block with real
+React/Tiptap and SQLite. `test:document-consumer` includes headless marks and
+quotes without React, plus strict declarations and a browser bundle. The actual
+`highlights:journey` drives candidate persistence, comment editing, stale second-tab
+refusal, source capture/removal and unchanged document bytes through HTTP.
+Screenshots cover desktop/390px, FR/EN and light/dark under `.cache/evidence/D78/`.
+
+No agent, D-76 conflict UI, general rich source map, real-device or production
+identity-provider qualification is claimed. Existing global deferrals remain.
+
 ## Board artifact viewer
 
 The `board-viewer` registry block exports `createBoardKind` for `*.board.json`. This is host presentation over the native tldraw renderer, not a Pi execution extension. `CanvasProjection` from the optional canvas-editor entry renders frames without a native-document publication controller. The existing text buffer conditionally saves only `board@1`; conflicts and uncertain acknowledgements retain local edits and the original operation identity. Maquette screens and sandboxed `MockupViewer` frames share the workspace client.

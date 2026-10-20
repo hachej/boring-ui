@@ -6,6 +6,7 @@ The `markdown-editor` and `html-viewer` items copy thin React wrappers and scope
 | --- | --- | --- |
 | `markdown-editor` | `@hachej/boring-ui-kit/markdown-editor` | `MarkdownController` from `@hachej/boring-ui-kit/markdown` |
 | `html-viewer` | `@hachej/boring-ui-kit/html-viewer` | `HtmlController` from `@hachej/boring-ui-kit/html` |
+| `highlights` | copied `Highlights` over the Markdown editor | borrowed `MarkdownController`, default workspace `MarkStore` or supplied store |
 | `pi-chat` | copied source in `components/pi-chat/` | `NativeChatController` from `@hachej/boring-ui-kit/native-chat` |
 | `pi-ambient` | copied source in `components/pi-ambient/` | the same `NativeChatController` as `pi-chat` |
 | `pi-workspace` | copied source in `components/pi-workspace/` | none: layout driven by props |
@@ -36,6 +37,30 @@ Registry blocks support the shadcn **Base UI style only**. Only the `base-nova` 
 Tokens: `pi-ambient`, `pi-workspace`, `pi-app`, `viewers`, `provider-setup` and `file-tree` depend on `theme` (directly or through a block), so `shadcn add` merges the tokens into the app's CSS file. `pi-chat`, `button`, `dock`, `feedback` and `app-shell` do not: they use the host's shadcn tokens (`background`, `foreground`, `muted`, `primary`, `border`, `ring`, `destructive` and the rest) and their own layout, and they install no global tokens. A host that has those tokens changes nothing. A host without them must also install `theme.json` (`npx shadcn@4.21.5 add <registry>/theme.json <registry>/<block>.json`), or those items render with semantic colours and focus styling missing (dock's resize indicator loses its colour). The blocks import `cn` from `utils` and controls directly from the consumer's `components/ui/`; the CLI installs each dependency once. `registry.json` owns the current file lists. Theme-carrying installs merge the theme tokens into CSS and keep tokens the host already defines.
 
 `<registry>` is wherever `public/r/` is served. Items name their registry dependencies as absolute URLs of their own release (`<registry>/pi-chat.json`, `<registry>/pi-workspace.json`), so no `registries` line is needed in `components.json`. `pi-ambient` needs `pi-workspace` because the ambient window opens artifacts in the same panel layout; `pi-workspace` never needs `pi-ambient` (the host chooses to render `AmbientChat` when the chat floats). Examples: [`lab/studio`](../lab/studio/README.md) assembles every block; [`examples/ambient`](../examples/ambient/README.md) uses `pi-chat` and `pi-ambient` only.
+
+## Anchored Markdown highlights
+
+Install `<registry>/highlights.json`. It composes `markdown-editor` and the host's
+Base UI Button, Textarea, Label and DropdownMenu; it adds no Sheet or owned
+primitive. Pass `<Highlights controller={controller} resource={{ client, identity }}
+locator={locator} locale="fr" />`, where `client` is the same workspace resource
+client used by the document. Opening creates no file; add/comment/remove saves
+`<doc>.marks.json` conditionally. `locale="en"` is the default for new controls;
+the existing editor keeps its current labels.
+
+An app can borrow a `store={store}` implementing `MarkStore` instead, or render
+`marks={[{ id, anchor, colour: 'accent', actions: [{ id, label, run }] }]}` without
+storage. `actions` are trusted host callbacks, not sidecar data. Theme colours are
+`accent`, `primary` and `muted`; decorations never write Markdown formatting.
+Unplaced marks have a missing/ambiguous tray. Choosing a candidate captures fresh
+context and saves it through the store; indistinguishable contexts remain a
+version-local confirmation rather than guessed persistent identity.
+
+See [the owning anchor/storage semantics](../docs/architecture/FEEDBACK.md#markdown-quotes-and-document-marks)
+and the [UI store API](../packages/ui/README.md#document-marks).
+`npm run highlights:journey` drives the fictional SQLite workspace through HTTP,
+including a stale second tab and phone/desktop FR/EN light/dark screenshots under
+`.cache/evidence/D78/`. No agent, model credentials or D-76 conflict UI is needed.
 
 ## Updating installed blocks
 

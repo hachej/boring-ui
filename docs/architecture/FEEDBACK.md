@@ -429,12 +429,70 @@ required.
 | Subject | Kind | Must be settled first |
 | --- | --- | --- |
 | **HTML artifact (Release 1b)** | `html.node@1` | A source-location parser (the current preview rebuild keeps no positions), with outcomes for implicit, repaired and unmapped nodes. An **opt-in instrumented frame mode**: the passive frame (`sandbox=""`) cannot run a picker, so the mode needs host-composed picker injection and a browser security qualification (A12 is unqualified today). In interactive mode, stamps are untrusted until checked against the host's map |
-| Markdown | `markdown.quote@1` | The canonical source text; a rich-to-source projection spike (refuse rather than guess); exact-only matching |
+| Markdown | `markdown.quote@1` | Implemented exact-only source resolution and conservative rich projection; see [Markdown quotes and document marks](#markdown-quotes-and-document-marks) |
 | Canvas | `canvas.shapes@1` | Snapshot and coordinates across pages and geometry changes; inspection tools kept separate from editing tools |
 | Image | `image.rect@1` | Pure resolution: a changed image is `missing` or `ambiguous` |
 | PDF | `pdf.rect@1` | A feasibility package: the PDF pane exposes no page text or selection |
 
 Comments are never written into the subject.
+
+### Markdown quotes and document marks
+
+D-78 supplies `@hachej/boring-ui-kit/markdown-quote`. The canonical snapshot is
+one exact Markdown source string. `captureMarkdownQuote` records a nonempty
+UTF-16 range as `exact`, up to 32 source characters of `prefix` and `suffix`,
+the original `start` and a nonempty `fallback`. Split-surrogate selections are
+refused. `markdownQuoteResolution` enumerates every literal occurrence, including
+overlapping ones. If any occurrence matches both contexts exactly, only those
+are candidates; otherwise all exact quote occurrences remain candidates. One
+candidate is `exact` at the original offset or `moved` elsewhere, several are
+`ambiguous`, none is `missing`. Case folding, Unicode normalization, fuzzy search
+and nearest-offset choice are never used. A unique quote can survive changed
+context; context is not a durable identity for indistinguishable copied text.
+`runAnchorConformance` qualifies only the named fictional corpus in
+`test/packages/ui-markdown-quote.test.mjs`.
+
+The existing Markdown editor accepts optional `highlights`, `onQuoteSelection`
+and `onHighlightActivate`. Rich-to-source projection uses the native serializer
+with two temporary sentinels around each text leaf in detached JSON. It accepts
+a mapping only if removing the sentinels reproduces the complete canonical
+source byte-for-character and the enclosed string is literal leaf text. A rich
+selection must fit inside one proven leaf. Escaped, normalized or cross-syntax
+selections refuse and direct the person to source selection. Decorations use
+native ProseMirror plugins, not document marks; they never dirty the buffer or
+publish text. The annotated-source view covers source ranges that rich mode
+cannot project. This conservative projection is not general Markdown source-map
+support and can cost one serialization per text leaf.
+
+`@hachej/boring-ui-kit/mark-store` ships
+`createMarkStore({ client, identity }, locator)`. The host supplies the same
+workspace's authenticated `ResourceClient` used for the document, plus expected
+receipt identity (not authentication authority). It reads and conditionally
+writes `<doc>.marks.json` in the same view, using the existing text buffer and
+provider receipts/lookup. No sidecar is created merely by opening a viewer.
+The `document.marks@1` file holds `id`, the quote anchor, `colour` (`accent`,
+`primary` or `muted`, host theme tokens), `note`, `author` and a parseable
+`time` timestamp. Authors/times supplied by a client are metadata, not trusted attribution;
+the host must enforce its own policy when that distinction matters.
+
+Add/edit/remove publishes one whole sidecar against its loaded revision or
+expected absence. A stale tab conflicts, retains its local marks and requires
+explicit reload before another mutation; there is no automatic merge. A lost
+acknowledgement blocks writes until lookup validates the original receipt.
+`not-found` stays unknown: dispose/reopen is an explicit host recovery choice,
+never a claim that the old save failed. Invalid/newer formats refuse opening.
+The store owns neither its client nor the workspace provider.
+
+The `highlights` registry block creates that store by default when given
+`resource` and `locator`, or borrows a supplied `MarkStore`. It can also render
+`{ id, anchor, colour, actions }[]` without storage. New controls have French and
+English labels; the existing editor retains its existing labels. Missing and
+ambiguous marks stay in a tray until a person picks a candidate or attaches the
+mark to a new selection. Candidate selection captures fresh exact context and,
+with a store, conditionally saves it. If identical contexts remain ambiguous,
+confirmation applies only to the exact current source string and does not
+pretend to create lasting identity. Browser presentation and comments are host
+concerns outside Pi execution; this installs no agent feature or permission.
 
 ## Storage
 

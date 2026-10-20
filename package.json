@@ -33,6 +33,7 @@
     "diagram:journey": "node examples/workspace-app/journey-diagram.mjs",
     "gaps:journey": "node examples/workspace-app/journey-gaps.mjs",
     "board:journey": "node examples/board-viewer/journey.mjs",
+    "highlights:journey": "node examples/highlights/journey.mjs",
     "workspace-demo": "node demos/workspace/server.mjs",
     "workspace-demo:journey": "node demos/workspace/journey.mjs",
     "workspace-demo:journey:trace": "node demos/workspace/journey-trace.mjs",
