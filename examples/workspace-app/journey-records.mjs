@@ -1,6 +1,6 @@
 // Fictional workshop records through the real workspace, native write/present tools and ArtifactPanel. No model key.
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { insecureUrl, launch, pause, q, qa } from '@hachej/boring-testing/browser';
@@ -16,12 +16,22 @@ const input = q('[data-testid=composer-input]');
 const viewer = q('[data-boring=records-viewer]');
 const noOverflow = 'document.documentElement.scrollWidth <= innerWidth && document.body.scrollWidth <= innerWidth';
 let browser;
+const buttonStates = [];
 try {
   browser = await launch(insecureUrl(app.url), { evidence });
   const shoot = async name => {
     for (const value of ['light', 'dark']) {
       await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value }] });
-      await pause(250); await browser.screenshot(`${name}-${value}.png`);
+      await pause(250);
+      if (name.startsWith('phone-records')) {
+        const state = await browser.evaluate(`(() => { const button = ${q('[data-boring=record-list] button')}; const style = getComputedStyle(button); return { disabled: button.disabled, opacity: style.opacity, color: style.color, foreground: getComputedStyle(document.body).color, background: style.backgroundColor, outline: button.classList.contains('bg-background') && button.classList.contains('dark:bg-input/30') }; })()`);
+        assert.equal(state.disabled, name.endsWith('-en'));
+        assert.equal(state.opacity, state.disabled ? '0.5' : '1');
+        assert.ok(state.outline, 'the host shadcn outline variant supplies the background tokens');
+        assert.equal(state.color, state.foreground, 'outline text inherits the normal foreground');
+        buttonStates.push({ screenshot: `${name}-${value}.png`, ...state });
+      }
+      await browser.screenshot(`${name}-${value}.png`);
     }
     await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] });
   };
@@ -38,6 +48,8 @@ try {
     assert.equal(await browser.evaluate(`${q('[data-testid=artifact-panel-type]')}.textContent`), 'Records');
     assert.equal(await browser.evaluate(`${qa('[data-boring=record-table] [data-record-row]')}.length`), 30);
     assert.deepEqual(await browser.evaluate(`${qa('[data-record-group]')}.map(e => e.textContent)`), ['Rayon: Bois', 'Rayon: Métal', 'Rayon: Finition']);
+    assert.deepEqual(await browser.evaluate(`${qa('[data-boring=record-table] thead th')}.map(e => e.textContent)`), ['Article', 'Quantité', 'Vérifié', 'État', 'Actions']);
+    assert.ok(await browser.evaluate(`${qa('[data-record-row]')}.every(e => !/Bois|Métal|Finition/.test(e.textContent))`));
     assert.deepEqual(await browser.evaluate(`[...new Set(${qa('[data-boring=record-table] [data-record-status]')}.map(e => e.dataset.recordStatus))]`), ['ok', 'warn', 'error']);
     assert.ok(await browser.evaluate(noOverflow)); await shoot('desktop-records-en');
   });
@@ -45,7 +57,9 @@ try {
     await browser.emulate('phone'); await pause(400); await open();
     assert.equal(await browser.evaluate(`${q('[data-boring=record-table]')}.checkVisibility()`), false);
     assert.equal(await browser.evaluate(`${qa('[data-boring=record-list] [data-record-item]')}.length`), 30);
-    assert.match(await browser.evaluate(`${q('[data-boring=record-list] [data-record-item]')}.textContent`), /Article 01.*Rayon: Bois.*Quantité: 1,234.5.*Vérifié: Oct 1, 2026/s);
+    assert.match(await browser.evaluate(`${q('[data-boring=record-list] [data-record-item]')}.textContent`), /Article 01.*Quantité: 1,234.5.*Vérifié: Oct 1, 2026.*Disponible/s);
+    assert.ok(await browser.evaluate(`${qa('[data-record-item]')}.every(e => !/Rayon:|État:/.test(e.textContent))`));
+    assert.equal(await browser.evaluate(`${q('[data-boring=record-list] [data-record-status]')}.getAttribute('aria-label')`), 'État: Disponible');
     assert.equal(await browser.evaluate(`${qa('[data-record-list-group]')}.length`), 3);
     assert.ok(await browser.evaluate(noOverflow)); await shoot('phone-records-en');
     await browser.send('Emulation.setDeviceMetricsOverride', { width: 360, height: 780, deviceScaleFactor: 2, mobile: true });
@@ -78,6 +92,7 @@ try {
   });
   assert.deepEqual(misses, []);
   assert.deepEqual(browser.problems, []);
+  writeFileSync(join(evidence, 'phone-button-states.json'), JSON.stringify(buttonStates, null, 2) + '\n');
   console.log(`PASS records journey; screenshots in ${evidence}`);
 } finally {
   await browser?.screenshot('records-last-state.png');

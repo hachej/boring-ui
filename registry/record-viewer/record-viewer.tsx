@@ -20,8 +20,8 @@ export { defaultRecordsLabels, frenchRecordsLabels, recordsLabelsFor } from './r
 export type { RecordsLabels, RecordsLocale } from './records-labels';
 
 const variants = { ok: 'default', warn: 'secondary', error: 'destructive', info: 'outline', neutral: 'secondary' } as const satisfies Record<RecordTone, string>;
-function Status({ status }: { readonly status: RecordStatus }) {
-  return <Badge data-record-status={status.tone} variant={variants[status.tone]}>{status.label}</Badge>;
+function Status({ status, label }: { readonly status: RecordStatus; readonly label?: string | undefined }) {
+  return <Badge data-record-status={status.tone} variant={variants[status.tone]} role={label ? 'img' : undefined} aria-label={label ? `${label}: ${status.label}` : undefined}>{status.label}</Badge>;
 }
 function NoRecords({ label }: { readonly label: string }) {
   return <Empty><EmptyHeader><EmptyTitle>{label}</EmptyTitle></EmptyHeader></Empty>;
@@ -55,13 +55,14 @@ function groupsOf(rows: readonly RecordRow[], columns: readonly RecordColumn[], 
 export function RecordTable({ columns, rows, groupBy, onAction, locale, labels: given }: RecordTableProps) {
   const labels = recordsLabelsFor(locale, given);
   const groups = groupsOf(rows, columns, groupBy, locale, labels);
+  const fields = columns.filter(column => column.key !== groupBy);
   const actions = rows.some(row => row.actions?.length);
   if (!rows.length) return <NoRecords label={labels.empty} />;
   return <div data-boring="record-table" className="min-w-0 overflow-auto"><Table aria-label={labels.kind}>
-    <TableHeader><TableRow>{columns.map(column => <TableHead key={column.key} scope="col" className={column.type === 'number' ? 'text-right' : undefined}>{column.label}</TableHead>)}{actions && <TableHead scope="col">{labels.actions}</TableHead>}</TableRow></TableHeader>
+    <TableHeader><TableRow>{fields.map(column => <TableHead key={column.key} scope="col" className={column.type === 'number' ? 'text-right' : undefined}>{column.label}</TableHead>)}{actions && <TableHead scope="col">{labels.actions}</TableHead>}</TableRow></TableHeader>
     {groups.map(group => <TableBody key={group.key}>
-      {group.label !== undefined && <TableRow><TableHead data-record-group={group.key} scope="rowgroup" colSpan={columns.length + Number(actions)}>{group.label}</TableHead></TableRow>}
-      {group.rows.map(row => <TableRow key={row.id} data-record-row={row.id}>{columns.map(column => {
+      {group.label !== undefined && <TableRow><TableHead data-record-group={group.key} scope="rowgroup" colSpan={Math.max(1, fields.length + Number(actions))}>{group.label}</TableHead></TableRow>}
+      {group.rows.map(row => <TableRow key={row.id} data-record-row={row.id}>{fields.map(column => {
         const value = recordValue(row, column.key);
         return <TableCell key={column.key} className={column.type === 'number' ? 'text-right' : undefined}>{column.type === 'status' && value !== null && typeof value === 'object' ? <Status status={value} /> : formatRecordValue(value, column.type, locale, labels.missing)}</TableCell>;
       })}{actions && <TableCell><div className="flex flex-wrap gap-2">{row.actions?.map(action => <Button key={action.id} variant="outline" className="min-h-11" disabled={!onAction} onClick={() => onAction?.(action, row)}>{action.label}</Button>)}</div></TableCell>}</TableRow>)}
@@ -74,6 +75,8 @@ export interface RecordListItem {
   readonly title: string;
   readonly detail?: string | undefined;
   readonly status?: RecordStatus | undefined;
+  /** Labelled status columns when projecting typed rows. */
+  readonly statuses?: readonly { readonly label: string; readonly value: RecordStatus }[] | undefined;
   readonly action?: RecordAction | undefined;
   /** Extra actions when projecting a row with more than one action into a list. */
   readonly actions?: readonly RecordAction[] | undefined;
@@ -93,6 +96,7 @@ export function RecordList({ items, onAction, locale, labels: given }: RecordLis
       <ItemContent className="min-w-0"><div className="whitespace-normal wrap-anywhere">{item.title}</div>
         {item.detail && <div className="whitespace-pre-wrap wrap-anywhere">{item.detail}</div>}
         {item.status && <div className="max-w-full overflow-auto"><Status status={item.status} /></div>}
+        {item.statuses?.map((status, index) => <div key={index} className="max-w-full overflow-auto"><Status status={status.value} label={status.label} /></div>)}
       </ItemContent>
       {!!actions.length && <ItemActions className="max-w-full flex-wrap overflow-auto">{actions.map(action => <Button key={action.id} variant="outline" className="min-h-11" disabled={!onAction} onClick={() => onAction?.(action, item)}>{action.label}</Button>)}</ItemActions>}
     </Item>;
@@ -114,13 +118,17 @@ export function RecordsViewer({ text, onAction, locale, labels: given }: Records
   </section>;
   const { columns, rows, groupBy } = parsed.records;
   const groups = groupsOf(rows, columns, groupBy, locale, labels);
-  const first = columns[0]!;
+  const fields = columns.filter(column => column.key !== groupBy);
+  const first = fields.find(column => column.type !== 'status');
   return <section data-boring="records-viewer" data-state="ok" aria-label={labels.kind} className="min-w-0 p-3">
     <div className="hidden sm:block"><RecordTable columns={columns} rows={rows} groupBy={groupBy} onAction={onAction} locale={locale} labels={given} /></div>
     <div data-testid="records-phone" className="flex flex-col gap-4 sm:hidden">{!rows.length ? <NoRecords label={labels.empty} /> : groups.map(group => {
-      const items = group.rows.map(row => ({ id: row.id, title: formatRecordValue(recordValue(row, first.key), first.type, locale, labels.missing),
-        detail: columns.slice(1).map(column => `${column.label}: ${formatRecordValue(recordValue(row, column.key), column.type, locale, labels.missing)}`).join('\n'),
-        status: columns.filter(column => column.type === 'status').map(column => recordValue(row, column.key)).find((value): value is RecordStatus => value !== null && typeof value === 'object'), actions: row.actions }));
+      const items = group.rows.map(row => ({ id: row.id, title: first ? formatRecordValue(recordValue(row, first.key), first.type, locale, labels.missing) : row.id,
+        detail: fields.filter(column => column.key !== first?.key && column.type !== 'status').map(column => `${column.label}: ${formatRecordValue(recordValue(row, column.key), column.type, locale, labels.missing)}`).join('\n'),
+        statuses: fields.filter(column => column.type === 'status').map(column => {
+          const value = recordValue(row, column.key);
+          return { label: column.label, value: value !== null && typeof value === 'object' ? value : { label: labels.missing, tone: 'neutral' as const } };
+        }), actions: row.actions }));
       return <div key={group.key} className="flex min-w-0 flex-col gap-2">{group.label !== undefined && <h3 data-record-list-group={group.key}>{group.label}</h3>}
         <RecordList items={items} locale={locale} labels={given} onAction={onAction ? (action, item) => { const row = group.rows.find(row => row.id === item.id); if (row) onAction(action, row); } : undefined} />
       </div>;

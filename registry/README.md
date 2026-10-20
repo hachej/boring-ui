@@ -871,7 +871,7 @@ const records = createRecordsKind({ locale: 'fr',
   onAction={(action, item) => requestOrder(item.id, action.id)} />
 ```
 
-`RecordTable` always draws a table. The file viewer uses it from 640px viewport width and `RecordList` below that, preserving all columns, first-seen groups and actions. A list item accepts an optional `action` and an `actions` array. Buttons without `onAction` are disabled; callbacks must enforce host policy. Files never execute action metadata. Invalid JSON, cell types/dates, duplicate keys/IDs or invalid groups show exact raw text with a localized note instead of hiding invalid rows.
+`RecordTable` always draws a table. The file viewer uses it from 640px viewport width and `RecordList` below that. When grouped, the group heading carries its column: it is omitted from table headers, row cells and phone cards. Phone status columns appear only as badges, with accessible names retaining their column labels. Other fields, first-seen groups and actions are preserved. A list item accepts an optional `action` and an `actions` array; `statuses: [{ label, value }]` supplies multiple labelled badges alongside the optional standalone `status`. Buttons without `onAction` are disabled; callbacks must enforce host policy. Files never execute action metadata. Invalid JSON, cell types/dates, duplicate keys/IDs or invalid groups show exact raw text with a localized note instead of hiding invalid rows.
 
 Evidence: `test/contracts/record-viewer.test.mjs` and `npm run records:journey` (fictional inventory, desktop/phone, English/French, light/dark). Screenshots belong under `.cache/evidence/D77/`. No live domain-service or real-model qualification is claimed.
 

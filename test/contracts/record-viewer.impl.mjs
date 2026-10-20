@@ -143,14 +143,51 @@ test('an app kind for records wins over the built-in', async t => {
   assert.match(page.container.textContent, /Host stock/);
 });
 
-test('the phone list projection retains all fields, first-seen groups and multiple row actions', async t => {
+test('phone status columns render once as labelled badges, including a leading status column', async t => {
+  const value = JSON.parse(WORKSHOP);
+  value.rows = [value.rows[0]];
+  value.columns = [value.columns[4], ...value.columns.slice(0, 4), { key: 'review', label: 'Contrôle', type: 'status' }];
+  value.rows[0].values.review = { label: 'À vérifier', tone: 'info' };
+  const page = await panel(t, JSON.stringify(value), { path: 'workshop.records.json' });
+  const item = page.$('[data-boring=record-list] [data-record-item]');
+  assert.equal(item.textContent.split('Disponible').length - 1, 1);
+  assert.equal(item.textContent.split('À vérifier').length - 1, 1);
+  assert.deepEqual([...item.querySelectorAll('[data-record-status]')].map(e => [e.textContent, e.getAttribute('aria-label')]),
+    [['Disponible', 'État: Disponible'], ['À vérifier', 'Contrôle: À vérifier']]);
+  assert.match(item.textContent, /Article 01/);
+});
+
+test('grouping omits its column from table headers, row cells and phone cards, even when first', async t => {
+  const value = JSON.parse(WORKSHOP);
+  value.columns = [value.columns[1], value.columns[0], ...value.columns.slice(2)];
+  const page = await panel(t, JSON.stringify(value), { path: 'workshop.records.json' });
+  assert.deepEqual(page.$$('[data-boring=record-table] thead th').map(e => e.textContent), ['Article', 'Quantité', 'Vérifié', 'État', 'Actions']);
+  assert.ok(page.$$('[data-record-group]').every(e => e.colSpan === 5));
+  for (const row of page.$$('[data-record-row]')) {
+    assert.equal(row.querySelectorAll('td').length, 5);
+    assert.doesNotMatch(row.textContent, /Bois|Métal|Finition/);
+  }
+  for (const item of page.$$('[data-record-item]')) assert.doesNotMatch(item.textContent, /Rayon|Bois|Métal|Finition/);
+  assert.equal(page.$('[data-record-item]').firstElementChild.firstElementChild.textContent, 'Article 01');
+  assert.deepEqual(page.$$('[data-record-list-group]').map(e => e.textContent), ['Rayon: Bois', 'Rayon: Métal', 'Rayon: Finition']);
+  delete value.groupBy;
+  await page.render(page.h(kit.RecordsViewer, { text: JSON.stringify(value) }));
+  assert.deepEqual(page.$$('[data-boring=record-table] thead th').map(e => e.textContent), ['Rayon', 'Article', 'Quantité', 'Vérifié', 'État', 'Actions']);
+  assert.match(page.$('[data-record-row]').textContent, /Bois/);
+  assert.match(page.$('[data-record-item]').textContent, /Bois/);
+  assert.equal(page.$('[data-record-group]'), null);
+});
+
+test('the phone list projection retains fields through group headings and badges and preserves multiple row actions', async t => {
   const value = JSON.parse(WORKSHOP), calls = [];
   value.rows = [value.rows[0]];
   value.rows[0].actions = [{ id: 'inspect', label: 'Inspect' }, { id: 'order', label: 'Order' }];
   const page = await dom(t);
   await page.render(page.h(kit.RecordsViewer, { text: JSON.stringify(value), onAction: (action, row) => calls.push([action.id, row.id, row.values.name]) }));
   const item = page.$('[data-boring=record-list] [data-record-item]');
-  for (const word of ['Article 01', 'Rayon: Bois', 'Quantité: 1,234.5', 'Vérifié: Oct 1, 2026', 'État: Disponible']) assert.ok(item.textContent.includes(word), word);
+  for (const word of ['Article 01', 'Quantité: 1,234.5', 'Vérifié: Oct 1, 2026', 'Disponible']) assert.ok(item.textContent.includes(word), word);
+  assert.doesNotMatch(item.textContent, /Rayon: Bois|État: Disponible/);
+  assert.equal(item.querySelector('[data-record-status]').getAttribute('aria-label'), 'État: Disponible');
   for (const button of item.querySelectorAll('button')) await page.click(button);
   assert.deepEqual(calls, [['inspect', 'stock-1', 'Article 01'], ['order', 'stock-1', 'Article 01']]);
   assert.equal(page.$('[data-record-list-group]').textContent, 'Rayon: Bois');
