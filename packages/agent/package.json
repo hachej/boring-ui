@@ -10,7 +10,9 @@
     "dist/**/*.js",
     "dist/**/*.d.ts",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "NOTICE",
+    "licenses/Apache-2.0.txt"
   ],
   "types": "./dist/index.d.ts",
   "exports": {
