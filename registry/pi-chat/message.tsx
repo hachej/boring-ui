@@ -19,7 +19,7 @@ import { ToolCard } from './tool';
 import { thumbnail } from './composer';
 import { displayName, fileKind, isUploadPath, pieces, visibleParts } from './config';
 import type { FileKind, Piece, PreviewRead } from './config';
-import { isFileBlock, segments } from './rows';
+import { isFileBlock, segments, targetContent } from './rows';
 import type { DeriveOptions, Row } from './rows';
 import { Button } from '@/components/ui/button';
 import { BlockActions } from '../button/actions';
@@ -128,6 +128,11 @@ function FileCards({ paths, open, preview }: { readonly paths: readonly string[]
  * them (only what is drawn changes).
  */
 export function MessageText({ text, context, align = 'end' }: { readonly text: string; readonly context: Pick<RowContext, 'pieces' | 'openFile'>; readonly align?: 'start' | 'end' }) {
+  const target = targetContent(text);
+  if (target) return <>
+    <Badge variant="secondary" data-testid="message-target" title={JSON.stringify(target.target)} className="max-w-full truncate">{target.label}</Badge>
+    <MessageText text={target.speech} context={context} align={align} />
+  </>;
   const open = context.pieces?.openMention;
   const render = context.pieces?.renderMention;
   if (!context.pieces) return <Bubble variant="muted" align={align}><BubbleContent data-testid="user-text"><span className="whitespace-pre-wrap">{text}</span></BubbleContent></Bubble>;

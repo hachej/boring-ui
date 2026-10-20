@@ -17,3 +17,5 @@ export { AgentDockLayout, AgentLayer, AgentTrigger, useAgentLayer } from './agen
 export { readAgentContext, useAgentContext } from './agent-context';
 export { agentLink, parseAgentLink } from './agent-link';
 export type { AgentLink } from './agent-link';
+export { useDictation } from './use-dictation';
+export type { Dictation, DictationOptions, DictationPhase } from './use-dictation';

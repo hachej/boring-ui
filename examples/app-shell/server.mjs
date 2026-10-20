@@ -77,6 +77,7 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
 
   /** Submit bodies as the browser sent them, and the contexts the transport handed to `requestContext`. */
   const submits = [], contexts = [];
+  let mealReads = 0;
   const allowed = request => request.headers.get('authorization') === `Bearer ${token}`;
   const resources = createRevisionHandler({ resolve: async request => allowed(request) ? { provider: files, access: person } : null });
   const writerStart = init => agents.writer.createConversation(harness, context, { init });
@@ -93,7 +94,7 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
 
   const bundle = await build({ entryPoints: [here('./page.tsx')], bundle: true, write: false, outdir: here('./out'), format: 'esm', platform: 'browser', jsx: 'automatic',
     alias: { '@': here('.') }, define: { 'process.env.NODE_ENV': '"production"' }, logLevel: 'silent' });
-  const css = [await buildTailwind({ extraDirectories: ['examples/app-shell', 'registry/app-shell', 'registry/documents'], extraCss: SIDEBAR_TOKENS }), BASE, ...bundle.outputFiles.filter(file => file.path.endsWith('.css')).map(file => file.text),
+  const css = [await buildTailwind({ extraDirectories: ['examples/app-shell', 'registry/app-shell', 'registry/agent-target', 'registry/documents'], extraCss: SIDEBAR_TOKENS }), BASE, ...bundle.outputFiles.filter(file => file.path.endsWith('.css')).map(file => file.text),
     readFileSync(here('../../registry/feedback/feedback.css'), 'utf8'),
     'html,body,#root{min-height:100%;margin:0}body{background:var(--background);color:var(--foreground);font:15px/1.5 ui-sans-serif,system-ui,sans-serif}'].join('\n');
   const page = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Forme (fictional)</title>
@@ -108,6 +109,11 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
     const closed = new AbortController();
     outgoing.on('close', () => closed.abort());
     try {
+      if (incoming.method === 'GET' && url.pathname === '/api/meals') {
+        if (incoming.headers.authorization !== `Bearer ${token}`) return void outgoing.writeHead(401).end();
+        mealReads++;
+        return void outgoing.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify([{ id: 'm-42', slot: 'lunch', label: 'Déjeuner fictif · riz et légumes' }]));
+      }
       const fixed = incoming.method === 'GET' && statics[url.pathname];
       if (fixed) return void outgoing.writeHead(200, { 'content-type': fixed[0], 'cache-control': 'no-store' }).end(fixed[1]);
       const handler = handlers[url.pathname];
@@ -122,7 +128,7 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
   });
   await new Promise(resolve => server.listen(port, '127.0.0.1', resolve));
   return {
-    url: `http://127.0.0.1:${server.address().port}/`, token, harness, conversations, submits, contexts,
+    url: `http://127.0.0.1:${server.address().port}/`, token, harness, conversations, submits, contexts, mealReads: () => mealReads,
     close: async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await conversations.dispose(); await harness.close(context); files.close(); db.close(); },
   };
 }

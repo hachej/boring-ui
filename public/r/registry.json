@@ -1274,6 +1274,11 @@
           "path": "registry/app-shell/index.ts",
           "type": "registry:lib",
           "target": "components/app-shell/index.ts"
+        },
+        {
+          "path": "registry/app-shell/use-dictation.ts",
+          "type": "registry:hook",
+          "target": "components/app-shell/use-dictation.ts"
         }
       ]
     },
@@ -2469,6 +2474,34 @@
           "path": "registry/documents/documents-labels.ts",
           "type": "registry:lib",
           "target": "components/documents/documents-labels.ts"
+        }
+      ]
+    },
+    {
+      "name": "agent-target",
+      "type": "registry:component",
+      "title": "Point and dictate on app data",
+      "description": "Tap explicitly marked JSON app context, dictate once and show the same app agent’s native reply without opening chat. Host-controlled presentation; no feedback report or second controller.",
+      "dependencies": [
+        "@hachej/boring-ui-kit@^0.4.3",
+        "@hachej/boring-feedback@^0.4.3",
+        "@earendil-works/pi-durable@~1.2.0",
+        "react@^19.0.0",
+        "react-dom@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.3/r/app-shell.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.3/r/pi-chat.json",
+        "button",
+        "card",
+        "message",
+        "bubble"
+      ],
+      "files": [
+        {
+          "path": "registry/agent-target/agent-target.tsx",
+          "type": "registry:component",
+          "target": "components/agent-target/agent-target.tsx"
         }
       ]
     }

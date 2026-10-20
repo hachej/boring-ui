@@ -472,3 +472,13 @@ for (const width of [390, 1280]) test(`the agent layer's chat at ${width} lists 
   assert.deepEqual(requests.filter(request => request.method === 'POST').at(-1), { url: 'https://fictional.invalid/_agent/coach/conversations?op=rename', method: 'POST', body: { conversationId: '3', title: 'Fictional dinner' } });
   await act(async () => reactRoot.unmount());
 });
+
+test('useAgentLayer exposes the same app controller while closed, never the product manager controller', async t => {
+  const improve = new Proxy(idleController, {});
+  const opened = await openedLayer(t, 390, { agent: agentWith(), improve: { controller: improve } });
+  assert.equal(opened.latest().agent, idleController, 'page content borrows the app controller without opening chat');
+  assert.equal(opened.latest().state, 'closed');
+  await opened.act(async () => opened.latest().open('improve'));
+  assert.equal(opened.latest().agent, idleController, 'the product manager never replaces the app agent');
+  await opened.unmount();
+});

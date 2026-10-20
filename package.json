@@ -44,6 +44,7 @@
     "app-shell": "node examples/app-shell/server.mjs",
     "app-shell:journey": "node examples/app-shell/journey.mjs",
     "app-shell:journey:workspace": "node examples/app-shell/journey-workspace.mjs",
+    "app-shell:journey:target": "node examples/app-shell/journey-target.mjs",
     "app-shell:journey:documents": "node examples/app-shell/journey-documents.mjs",
     "feedback": "node examples/feedback/server.mjs",
     "feedback:journey": "node examples/feedback/journey-composer.mjs",
