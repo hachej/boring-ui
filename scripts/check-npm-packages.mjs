@@ -14,12 +14,14 @@ export function checkPackage(manifest, paths, versions, { release = false } = {}
     if (!files.has(path)) errors.push(`Missing ${path}`);
   }
   if (manifest.name === '@hachej/boring-ui-kit' && !files.has('THIRD_PARTY_NOTICES.md')) errors.push('Missing embedded icon license notices');
+  const agentNotices = manifest.name === '@hachej/boring-agent' ? ['NOTICE', 'licenses/Apache-2.0.txt'] : [];
+  for (const path of agentNotices) if (!files.has(path)) errors.push(`Missing ${path}`);
   const isTreeStyles = path => manifest.name === '@hachej/boring-ui-kit' && path === 'styles/file-tree.css';
   const isRegistryFile = path => manifest.name === '@hachej/boring-ui-kit' && /^r\/[\w.-]+\.json$/.test(path);
   // The kit's one command (`boring-ui-blocks`: installed blocks, design rule and generated shadcn ui checks; update).
   const isKitBin = path => manifest.name === '@hachej/boring-ui-kit' && path === 'bin/boring-ui-blocks.mjs';
   for (const path of files) {
-    if (isTreeStyles(path) || isRegistryFile(path) || isKitBin(path)) continue;
+    if (isTreeStyles(path) || isRegistryFile(path) || isKitBin(path) || agentNotices.includes(path)) continue;
     if (!/^(package\.json|README\.md|LICENSE|INVARIANTS\.md|THIRD_PARTY_NOTICES\.md|dist\/(?:[\w.-]+\/)*[\w.-]+\.(?:js|d\.ts))$/.test(path)) errors.push(`Unexpected packed file: ${path}`);
   }
   function target(value) {
@@ -133,6 +135,9 @@ export function checkPackages(root, { release = false, outputDirectory, commit }
         errors.push(...checkShippedRegistry(manifest, paths, { items, read }).map(error => `${manifest.name}: ${error}`));
       }
       if (paths.includes('LICENSE') && run('tar', ['-xOzf', archive, 'package/LICENSE']) !== readFileSync(join(root, 'LICENSE'), 'utf8')) errors.push(`${manifest.name}: packed license differs from repository license`);
+      if (manifest.name === '@hachej/boring-agent') for (const path of ['NOTICE', 'licenses/Apache-2.0.txt']) {
+        if (paths.includes(path) && run('tar', ['-xOzf', archive, `package/${path}`]) !== readFileSync(join(pkg.directory, path), 'utf8')) errors.push(`${manifest.name}: packed ${path} differs from source`);
+      }
       const integrity = `sha512-${createHash('sha512').update(readFileSync(archive)).digest('base64')}`;
       if (integrity !== pack.integrity) errors.push(`${manifest.name}: archive integrity differs from npm pack`);
       packs.push({ name: pack.name, version: pack.version, filename: pack.filename, integrity, size: pack.size, files: paths.length });
