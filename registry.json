@@ -951,7 +951,7 @@
       "title": "Shared chat",
       "description": "Optional multi-party host log presentation over PiChat's generic composition seams. No agent runtime or speaking policy.",
       "dependencies": ["@hachej/boring-ui-kit@^0.4.3", "react@^19.0.0", "lucide-react@^1.51.0"],
-      "registryDependencies": ["@boring-ui/pi-chat", "avatar", "badge", "button", "card", "drawer", "popover", "tooltip", "trace", "spinner", "item", "message", "bubble", "message-scroller"],
+      "registryDependencies": ["@boring-ui/pi-chat", "@boring-ui/theme", "avatar", "badge", "button", "card", "drawer", "popover", "tooltip", "trace", "spinner", "item", "message", "bubble", "message-scroller"],
       "files": [
         { "path": "registry/shared-chat/shared-chat.tsx", "type": "registry:component", "target": "components/shared-chat/shared-chat.tsx" },
         { "path": "registry/shared-chat/use-shared-chat.tsx", "type": "registry:component", "target": "components/shared-chat/use-shared-chat.tsx" },

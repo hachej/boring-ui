@@ -957,6 +957,7 @@
       ],
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.3/r/pi-chat.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.3/r/theme.json",
         "avatar",
         "badge",
         "button",

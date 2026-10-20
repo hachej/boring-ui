@@ -116,7 +116,7 @@ import { PiChat } from '@/components/pi-chat/pi-chat';
 <PiChat controller={nativeController} />
 ```
 
-**Shared chat** adds the optional presentation item and its `pi-chat` dependency, not `pi-app`:
+**Shared chat** adds the optional presentation item, its `pi-chat` dependency and missing existing theme tokens, not `pi-app`:
 
 ```sh
 npx shadcn@4.21.5 add <registry>/shared-chat.json
