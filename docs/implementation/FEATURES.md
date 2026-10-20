@@ -24,6 +24,12 @@ Screenshots cover desktop/390px, FR/EN and light/dark under `.cache/evidence/D78
 No agent, D-76 conflict UI, general rich source map, real-device or production
 identity-provider qualification is claimed. Existing global deferrals remain.
 
+## Shared document readers
+
+`@hachej/boring-agent/documents` adds optional native `read_pdf` and `read_spreadsheet` registrations and the `sniff`/`readStored` helpers. The [agent guide](../../packages/agent/README.md#shared-document-readers) owns their result shapes, limits and host callback contract. The Pi seam is `defineTool`; the stored-file helper returns native tool content without changing Pi's `read`.
+
+`node --test test/packages/agent-documents.test.mjs` exercises public output through a real Harness: generated fictional PDFs, selected scanned-page OCR, missing/failed OCR, page/text caps, xlsx/xls/ods/CSV sheet/range limits, native image content, typed binary refusals, host read failures and lazy dependency imports. The complete-JSON regression fails under Pi's default 50 KiB output cap and passes with the readers' explicit native byte limit. These are local parser/native-tool tests, not live OCR/provider qualification or an input-memory/CPU budget. Global release deferrals are unchanged.
+
 ## Typed record viewer
 
 The `record-viewer` registry item exports `RecordTable`, `RecordList`, `RecordsViewer` and `createRecordsKind` for `*.records.json` (`records@1`). This is host presentation, not a Pi execution extension. Tables group typed rows; app-provided status labels/tones select host Badge variants without domain interpretation. English/French labels and locale number/date formatting are supported. The file viewer uses a full-field list below 640px and exact raw-text fallback for invalid files. Host callbacks own row actions; absent handlers leave buttons disabled.

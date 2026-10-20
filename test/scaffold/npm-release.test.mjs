@@ -24,7 +24,7 @@ function fixture(t) {
       name: `@hachej/boring-${name}`, version: main.version, private: name === 'browser', license: 'MIT', type: 'module',
       repository: { url: 'git+https://github.com/hachej/boring-ui.git', directory: `packages/${name}` },
       engines: { node: '>=22.19.0' }, publishConfig: { access: 'public', registry: 'https://registry.npmjs.org/' },
-      files: ['dist', 'README.md', 'LICENSE', ...(name === 'agent' ? ['NOTICE', 'licenses/Apache-2.0.txt'] : [])], exports: { '.': './dist/index.js' },
+      files: ['dist', 'README.md', 'LICENSE', ...(name === 'agent' ? ['NOTICE', 'licenses/Apache-2.0.txt', 'THIRD_PARTY_NOTICES.md'] : [])], exports: { '.': './dist/index.js' },
       ...(name === 'agent' ? { peerDependencies: { '@hachej/boring-files': '^1.0.0', external: '1.0.0' } } : {}),
     };
     write(`packages/${name}/package.json`, manifest);
@@ -32,6 +32,7 @@ function fixture(t) {
     if (name === 'agent') {
       write('packages/agent/NOTICE', 'Fictional upstream attribution\n');
       write('packages/agent/licenses/Apache-2.0.txt', 'Fictional license fixture\n');
+      write('packages/agent/THIRD_PARTY_NOTICES.md', 'Fictional document-reader attribution\n');
     }
     lock.packages[`packages/${name}`] = structuredClone(manifest);
   }
@@ -163,6 +164,28 @@ test('publish waits for the registry to confirm each package before failing', as
   await t.test('never visible fails with the same error after the timeout', async () => {
     await assert.rejects(publish(0, { never: true }), /Registry has not confirmed package\/version\/tag for /);
   });
+});
+
+test('the real pack audit rejects document-reader notices whose packed bytes differ from source', t => {
+  const f = fixture(t), bin = join(f.root, 'bin'), originalPath = process.env.PATH;
+  mkdirSync(bin);
+  writeFileSync(join(bin, 'tar'), `#!${process.execPath}
+const { spawnSync } = require('node:child_process');
+if (process.argv[2] === '-xOzf' && process.argv[4] === 'package/THIRD_PARTY_NOTICES.md') {
+  process.stdout.write('Fictional mismatched packed notice\\n');
+} else {
+  const result = spawnSync('tar', process.argv.slice(2), { stdio: 'inherit', env: { ...process.env, PATH: ${JSON.stringify(originalPath)} } });
+  if (result.error) throw result.error;
+  process.exitCode = result.status ?? 1;
+}
+`);
+  chmodSync(join(bin, 'tar'), 0o755);
+  try {
+    process.env.PATH = `${bin}:${originalPath}`;
+    const result = checkPackages(f.root, { release: true, outputDirectory: f.directory, commit });
+    assert.deepEqual(result.errors, ['@hachej/boring-agent: packed THIRD_PARTY_NOTICES.md differs from source']);
+    assert.equal(existsSync(join(f.directory, 'release.json')), false);
+  } finally { process.env.PATH = originalPath; }
 });
 
 test('private release candidates produce no retained publishable artifact', t => {
