@@ -33,8 +33,13 @@ export interface SlashConfig {
   readonly skills?: readonly SlashSkill[];
 }
 
-export interface MentionResult { readonly path: string; readonly kind?: 'file' | 'directory' }
+export interface MentionResult { readonly path: string; readonly kind?: 'file' | 'directory'; readonly label?: string }
 export interface MentionsConfig {
+  /** Accessible name and optional option/media presentation for a host catalog. */
+  readonly listLabel?: string;
+  readonly icon?: ReactNode;
+  readonly renderOption?: (item: MentionResult, query: string) => ReactNode;
+  readonly label?: (id: string) => string;
   /** Workspace search for the `@` picker. Empty `query` asks for a default listing. Abort `signal` when the query changes. */
   readonly search: (query: string, signal: AbortSignal) => Promise<readonly MentionResult[]>;
   /** Open a mentioned workspace file (for example in the right panel). When given, a mention in a sent message is a button. */
@@ -43,6 +48,8 @@ export interface MentionsConfig {
   readonly generation?: string | number | undefined;
   /** Host-supplied look for a mention in a sent message (a plug-in such as feedback). Return undefined to keep the default mention. */
   readonly render?: ((path: string) => ReactNode | undefined) | undefined;
+  /** Sent-message rendering, independent of the composer's token presentation. */
+  readonly renderSent?: ((path: string) => ReactNode | undefined) | undefined;
   /**
    * The bytes of an image upload, for its card's thumbnail: the host reads them through its own provider. Absent: the card shows its icon.
    * Only png, jpeg, gif and webp are shown (`thumbnail`); anything else, or a refusal, leaves the icon.

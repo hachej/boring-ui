@@ -29,8 +29,10 @@ function highlight(text: string, query: string) {
 }
 
 /** The `@` file picker, ported from v2's `MentionPicker`: debounced search, one highlighted row, name over path. */
-export function MentionPicker({ query, search, generation, onSelect, onDismiss }: {
+export function MentionPicker({ query, search, generation, listLabel, renderOption, onSelect, onDismiss }: {
   readonly query: string;
+  readonly listLabel?: MentionsConfig['listLabel'];
+  readonly renderOption?: MentionsConfig['renderOption'];
   readonly generation?: MentionsConfig['generation'];
   readonly search: MentionsConfig['search'];
   readonly onSelect: (path: string) => void;
@@ -59,16 +61,16 @@ export function MentionPicker({ query, search, generation, onSelect, onDismiss }
   if (results.length === 0 && !failure) return null;
   return <ComposerSuggestions testId="mention-menu" onDismiss={onDismiss}>
     {failure ? <div role="alert" data-testid="mention-error" className="text-xs text-destructive">{failure}</div>
-      : <ul ref={list} role="listbox" aria-label={labels.workspaceFiles} className="m-0 flex max-h-[min(14rem,40dvh)] list-none flex-col overflow-y-auto p-0">
+      : <ul ref={list} role="listbox" aria-label={listLabel ?? labels.workspaceFiles} className="m-0 flex max-h-[min(14rem,40dvh)] list-none flex-col overflow-y-auto p-0">
         {results.map((item, index) => {
-          const name = item.path.split('/').pop() ?? item.path;
+          const name = item.label ?? item.path.split('/').pop() ?? item.path;
           const Icon = item.kind === 'directory' ? FolderIcon : FileTextIcon;
           return <Item key={item.path} render={<li />} size="xs" variant={index === active ? 'muted' : 'default'} role="option" aria-selected={index === active} data-testid="mention-item" data-path={item.path} title={item.path}
             onMouseEnter={() => setActive(index)} onMouseDown={event => { event.preventDefault(); onSelect(item.path); }}
             className="cursor-pointer flex-nowrap max-sm:min-h-11 pointer-coarse:min-h-11">
-            <ItemMedia variant="icon"><Icon aria-hidden="true" /></ItemMedia>
+            {renderOption ? renderOption(item, query) : <><ItemMedia variant="icon"><Icon aria-hidden="true" /></ItemMedia>
             <ItemContent className="min-w-0"><ItemTitle>{highlight(name, query)}</ItemTitle>
-              <ItemDescription className="m-0 truncate">{item.path}</ItemDescription></ItemContent>
+              <ItemDescription className="m-0 truncate">{item.path}</ItemDescription></ItemContent></>}
           </Item>;
         })}
       </ul>}

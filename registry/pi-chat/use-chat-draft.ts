@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
+import type { ChatController } from '@hachej/boring-ui-kit/native-chat';
 
 const PREFIX = 'pi-chat:draft:';
 
@@ -24,7 +24,7 @@ function write(storageKey: string, text: string): void {
  * On mount the conversation's saved draft replaces the composer's text; text already in the composer and not yet saved is written at once.
  * On a change of `key` (same controller) the composer shows the new conversation's saved draft, or an empty one, so no text moves across.
  */
-export function useChatDraft(controller: NativeChatController, key: string | undefined): void {
+export function useChatDraft(controller: ChatController, key: string | undefined): void {
   // The key the hook last loaded; a different key on a later run is a conversation switch, not a first mount.
   const loaded = useRef<string | undefined>(undefined);
   useEffect(() => {

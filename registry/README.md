@@ -100,6 +100,129 @@ A sent message that mentions an upload (`@uploads/<path>`, what `attachments` sa
 
 `fileChanges` on `PiChat` or `AmbientChat` opts into the same file-card renderer for successful native `write` and `edit` calls with a `path`. One card per path appears below the reply, outside collapsed activity, labelled Created for `write` or Edited for `edit`. A write followed by edits stays Created. Failed, pending and unrelated calls show no file card. Clicking uses `onOpenFile`, falling back to `mentions.open`; without either, the card is not clickable. This is a view of native tool results, not publication evidence or a pinned revision. It is off by default because a host's tools named `write` or `edit` need not operate on workspace files. The workspace demo enables it.
 
+## Regular chat or shared chat
+
+Choose the copied item explicitly. The headless package root stays lean; channel data is available only from the existing `@hachej/boring-ui-kit/shared-chat` subpath.
+
+**Regular chat** installs no shared-chat files or imports:
+
+```sh
+npx shadcn@4.21.5 add <registry>/pi-chat.json
+```
+
+```tsx
+import { PiChat } from '@/components/pi-chat/pi-chat';
+// Keep your existing native or useRemoteChat controller.
+<PiChat controller={nativeController} />
+```
+
+**Shared chat** adds the optional presentation item, its `pi-chat` dependency and missing existing theme tokens, not `pi-app`:
+
+```sh
+npx shadcn@4.21.5 add <registry>/shared-chat.json
+```
+
+```tsx
+import { PiChat } from '@/components/pi-chat/pi-chat';
+import { useSharedChat } from '@/components/shared-chat/shared-chat';
+const shared = useSharedChat(source, { locale: 'fr' });
+return shared.chatProps ? <PiChat {...shared.chatProps} /> : null;
+```
+
+For a page that already installs `pi-app`, use its existing workspace provider and controls:
+
+```tsx
+const shared = useSharedChat(source, { locale: 'fr' });
+return <AgentWorkspace {...hostProps} {...shared.workspaceProps} />;
+```
+
+If adding native chat options, merge rather than replace the composition: `chat={{ ...shared.workspaceProps.chat, draftKey: 'team' }}`. A host that owns a fixed shared controller can render `<SharedChat controller={controller} locale="fr" />` instead. Shared EN/FR label overrides belong to `useSharedChat(source, { labels })`, or `SharedChat.participantLabels`; ordinary PiChat labels remain separate.
+
+### Generic PiChat composition seams
+
+- `timeline: { count, render({ focusComposer, openFile }), afterSend? }` replaces only the transcript. Without it, native rows, paging and scrolling are unchanged. It does not manufacture native messages or IDs.
+- `composerHeader`, `composerHasContent` and `onPickFiles` let a host supply draft context and defer files. Existing `composerChips` and `controls` remain ordinary slots.
+- `mentions.listLabel`, `icon`, `renderOption` and `renderSent` customize the existing catalog and sent-token rendering, without participant policy in the picker.
+- `renderConnectionError` lets a host render an authorized error. `MessageText`, `Markdown` and `useTranscript` are reusable presentation helpers.
+
+The neutral `ChatController`/`ChatSnapshot` structural types live at `/native-chat`. Concrete native controller APIs and return types are unchanged. Optional `shared-chat` owns its own messages, grouping, cards, quotes, traces, membership and mention catalog. Its transcript uses the same scrolling and UI primitives, without projecting host messages into Pi rows.
+
+`npm run test:pi-chat-consumer` checks a real isolated regular install and a browser bundle with no shared files or data module. `npm run test:shared-chat-consumer` installs the optional item, checks its declarations and mounts a fictional send/card-action flow. Both run `boring-ui-blocks check` on the installed files.
+
+## Shared conversations
+
+`createSharedChat(source, { conversationId })` from `@hachej/boring-ui-kit/shared-chat` adapts a host-owned multi-party log to the generic renderer contract. The optional `shared-chat` registry item exports `useSharedChat(source)`, returning the controller, conversations, error, `chatProps` and `workspaceProps`. The conversations appear in the existing History, without kit-side filtering or another sidebar.
+
+Multi-party conversation policy is a host concern Pi does not cover. Pi owns each agent's single conversation. The host forwards to the PM's Pi conversation and posts permitted replies into its shared log. The kit runs no agent and enforces no visibility, role or speaking rules. Delegation to internal agents is the host's business and stays out of the channel.
+
+The additive `ChatController` renderer contract accepts concrete native controllers and shared controllers. Native controllers keep their numeric Pi IDs and full native APIs. The optional item renders authors, request cards, members and live status through composition, without inventing native entries. Regular PiChat never inspects shared metadata. Other people and agents use the same left-aligned muted bubbles, with a small muted name above each consecutive author group. One small Avatar sits bottom-left beside the group's last item, including a final request card. People use initials; agents use a Bot fallback with an accessible Agent label instead of a badge. A change of author or `via`, or a gap over fifteen minutes, starts a new group. Group gaps are 24px and continuation gaps 8px. Own messages remain right-aligned bubbles, without a name or avatar. A centered localized timestamp appears before the first message and after gaps over fifteen minutes, replacing the beginning-of-conversation line. Sent mentions show an inline small Avatar and medium-weight name aligned on the surrounding text baseline, without `@` or a pill. The composer still inserts stable member-ID tokens. The bar has no live-status dot. Reconnecting and offline show a localized Tooltip and muted or destructive dot, with an `aria-live` announcement.
+
+The package exports these host data shapes:
+
+```ts
+type Member = { id: string; name: string; kind: 'person' | 'agent' | 'admin'; role?: 'owner' | 'validator' | 'member' | 'admin' | `agent:${string}`; avatarUrl?: string; presence?: 'here' | 'away' };
+type Conversation = { id: string; title: string; kind: 'main' | 'admin' | 'direct' | string; members: string[] };
+type Card = { requestId: string; title: string; line: string; since?: string; state?: string; action?: { id: string; label: string } };
+type Step = { label: string; detail?: string; status: 'running' | 'done' | 'failed' };
+type ChannelMessage = { id: string; conversationId: string; author: string; at: string; via?: string; text?: string; card?: Card; mentions?: string[]; replyTo?: string; attachments?: { path: string; title?: string }[]; steps?: Step[]; streaming?: boolean; removed?: { by: string; at: string }; clientId?: string };
+type ChannelEvent =
+	| { type: 'message'; message: ChannelMessage }
+	| { type: 'delta'; messageId: string; conversationId: string; text: string }
+	| { type: 'step'; messageId: string; conversationId: string; index: number; step: Step }
+	| { type: 'presence'; members: { id: string; presence: 'here' | 'away' }[] }
+	| { type: 'members'; conversationId: string; members: Member[] };
+interface ChannelSource {
+	me: Member;
+	conversations(): Promise<Conversation[]>;
+	members(conversationId: string): Promise<Member[]>;
+	history(conversationId: string, opts: { before?: string; limit: number }): Promise<{ messages: ChannelMessage[]; before?: string }>;
+	send(input: { conversationId: string; text: string; mentions: string[]; replyTo?: string; clientId: string; attachments?: File[] }): Promise<ChannelMessage>;
+	action(input: { conversationId: string; requestId: string; actionId: string }): Promise<void>;
+	remove?(messageId: string): Promise<void>;
+	canRemove?(message: ChannelMessage): boolean;
+	subscribe(conversationId: string, onEvent: (event: ChannelEvent) => void, onStatus?: (status: 'live' | 'reconnecting' | 'offline') => void): () => void;
+}
+```
+
+`at` and `since` are ISO timestamps. History pages are chronological, newest page first, with an opaque `before` cursor for the preceding page. A `message` event replaces the message with that ID. A `delta` appends text and marks an existing message as streaming. A subsequent complete `message` with `streaming: false` settles it. Reconnect reads history backward to the last known message, then deduplicates by message ID and `clientId`. Messages and pending sends remain local presentation state, not another durable transcript.
+
+The existing `@` composer picker lists agents first, then people, and matches names and IDs. It inserts stable member-ID tokens such as `@pm` or `@worker`. The adapter sends resolved IDs in `mentions`, including when names collide. Files selected in shared mode go to `send.attachments` as `File[]`. Received attachment paths open through the workspace's existing file opener. `replyTo` renders a compact muted quote with the author's name and first line, or the parent card title. Click it to reveal and scroll to the parent through the existing transcript and earlier-history controls. An agent message or card has an icon-only Reply action. It puts a removable quoted chip above the existing composer; Send passes the parent message ID in `replyTo`. The host routes it to the same request. There is no thread panel. Delete appears only when both `remove` and `canRemove` exist and the host permits it. There is no copy-link action.
+
+Under CH-10, optional `ChannelMessage.via` names the person's personal agent, for example `Claude` or `ChatGPT`, that posted their message through the hub MCP. The author remains the person, with their name and avatar; my own message keeps the existing user bubble. The `sharedVia(name)` label adds muted `via Claude` after the name, with no Agent badge or agent avatar state. A change of `via` starts a new author group so the attribution is not hidden by a preceding manual message. The host supplies and validates this attribution; browser `send` inputs do not claim it.
+
+Agents remain participants, with a Bot avatar and the same muted bubble as people. Plans reuse streaming Markdown inside the bubble without the native assistant Copy/Fork footer. The fictional demo exposes PM and Data; PM proxies product work and carries its own trace. The kit does not impose that membership policy on other hosts. Agent IDs use a stable unsigned 31-based string hash modulo five to select the existing standard chart tokens. Their Bot icons use that token; names and mentions use only AA-qualified default-palette text colours, otherwise foreground. People stay neutral. No host colour field was added. The theme fills in previously missing standard shadcn chart values and Tailwind bindings, not a new feature palette. Hosts overriding those values must recheck contrast. One request card is replaced by subsequent messages with the same message ID. A completed card can change its line and action to the result, for example `On attend votre essai` and `Essayer cette version`; the Button still only calls `action()`. The request card attaches beneath the PM's group at the bubble maximum width. The demo does not repeat its result as another status message. Reply is positioned beside the message, visible on desktop hover or keyboard focus, or after phone long-press. On narrow screens a focusable message also exposes Reply through Shift+F10 or the Context Menu key. It never occupies a separate footer under the trace.
+
+`Card.state` is the platform's lifecycle ID. The exported `channelAvatarStates` table maps `building`, `executing` and `checks` to `working`; `asked` to `thinking`; `question`, `answer`, `review` and `preview` to `waiting`; `platform` and `fixing` to `blocked`; and `live` to `done`. `declined`, unknown and missing states are neutral, with no indicator. Each agent avatar reflects its latest card in this conversation. Working, thinking and done use a primary dot; waiting uses muted-foreground; blocked uses destructive. Avatar indicators are static corner dots, with no spinner. Hover shows the card's `line` in a Tooltip; a phone tap opens a bottom/start Popover below the avatar, dismissed on scroll. No lifecycle state grants permission or starts work.
+
+`ChannelMessage.steps` is rendered by the optional item's host trace using the same Trace primitives, not native `ActivityBlock`/`ToolCard` branches or fabricated Pi tool calls. A `step` event sets or replaces `steps[index]` on the specified message. While streaming, the list defaults collapsed. Its working line shows one Spinner, the current step label and progress. Expanding removes the summary Spinner and shows the step icons, with only the current running step spinning. Completed steps show a check and failed steps a destructive icon. When streaming ends, the list collapses to a localized `N steps` label with no Spinner and can be expanded. Each agent message owns its own trace, so simultaneous agents stay separate. If an agent has multiple streaming messages, only its latest message owns a loading indicator.
+
+When `detail` is present, it appears beneath the label, smaller, monospace and muted. The kit displays whatever the source sends. Under CH-8, the **host strips `detail` outside the admin conversation** and keeps labels plain. Renderer mode is not an authorization or redaction boundary.
+
+Sends reuse remote chat's transport outbox helper. An unconfirmed acknowledgement retains the exact payload and `clientId`. Only an explicitly retryable failure permits replay after reconnect or a manual retry. A permanent host refusal restores the draft and shows the host's message. An opaque or malformed reply stays unconfirmed without replay; Check the original submission can reconcile it from history. The host must implement idempotent send by `clientId` and echo that same value in its response and message event. Disposing the adapter releases its own subscription, not the source or agent. Request-card actions call `action` once per button activation; the host decides their effect and posts replacement cards.
+
+`createChannelSocket({ url, fetch?, routes?, open?, reconnectMs? })` resolves a `ChannelSocketSource`, extending `ChannelSource` with `space` and `join()`. `url` is the **app URL**, for example `https://app.example/`, not a space URL. The default follows the platform's [app host](https://github.com/hachej/boring-factory/blob/14fda52003d361dd8022d74656bb8886384e4a59/services/channel/host.mjs). `fetch` adds host credentials. Bootstrap `POST _channel/me` returns `{ space, me }`; that `space` supplies the live URL. `open(url)` supplies WebSocket authentication, such as host subprotocols. The default reconnect backoff starts at one second and stops at 30 seconds.
+
+Every HTTP operation is `POST <app>/_channel/<op>`, with `Content-Type: application/json`:
+
+| Operation | JSON body | Result |
+| --- | --- | --- |
+| `me` | `{}` | `{ space: string, me: Member }` |
+| `conversations` | `{}` | `Conversation[]` |
+| `members` | `{ conversationId }` | `Member[]` |
+| `history` | `{ conversationId, before?, limit }` | `{ messages, before? }` |
+| `send` | `{ conversationId, text, mentions, replyTo?, clientId, idempotencyKey: clientId }` | `ChannelMessage` |
+| `action` | `{ conversationId, requestId, actionId, idempotencyKey }` | Host result; the adapter generates a fresh key for this activation. |
+| `remove` | `{ messageId }` | Host result |
+| `join` | `{}` | `{ space }`; `join()` resolves after validation. |
+
+Live uses WebSocket `GET <app>/spaces/<space>/live`, with no conversation query. It carries one JSON `ChannelEvent` per frame. The host authorizes the feed; the source forwards the selected conversation's events and presence updates.
+
+Errors are `{ error: { code, message, retryable } }`. Exported `ChannelRequestError` preserves these fields, and the UI shows `message` for sends and card actions. Reads and actions do not blindly retry. Send transport loss is explicitly retryable uncertainty; outbox replay reuses the original key. For custom sources, throw `ChannelRequestError(code, message, retryable)` to declare retryability; `{ refused: true }` as its fourth argument declares a confirmed refusal rather than an unknown outcome.
+
+`routes` still overrides `conversations`, `members`, `history`, `send`, `action`, `remove` and `canRemove` independently. There is no built-in REST fallback. Delete stays hidden unless the host supplies `canRemove`. JSON cannot upload `File[]`: the default rejects files before sending; supply a host `send` override that uploads through the workspace provider, or a custom source. HTTP data and socket events are schema-validated. The host must authorize every read, subscription, send, attachment and action; the renderer grants no authority.
+
+`createFakeChannelSource(seed)` uses the same source contract for fictional demos and tests. Its `emit`, `setStatus`, `sends` and `actions` controls drive live updates and inspect host calls. See the [shared conversation demo](../examples/shared-chat/README.md) and run `npm run shared-chat:journey` for phone-first browser evidence.
+
 ## Shared chat and file header
 
 `PiChat header={false}` omits its built-in header so a host can render its own row. The default remains `true`. `ViewerWindowProvider value={{ renderHeader: header => createPortal(header, target) }}` moves the existing viewer bar into a host row, including its menu, status and editor controls. Without `renderHeader`, each viewer keeps its bar above its body.

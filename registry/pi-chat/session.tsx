@@ -4,7 +4,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import type { KeyboardEvent, ReactNode } from 'react';
 import type { EntryRecord } from '@earendil-works/pi-durable';
 import type { ImageContent, ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
-import type { ChatAttachment, ChatHistoryState, NativeChatController } from '@hachej/boring-ui-kit/native-chat';
+import type { ChatAttachment, ChatHistoryState } from '@hachej/boring-ui-kit/native-chat';
+import type { ChatController } from '@hachej/boring-ui-kit/native-chat';
 import { useMessageScroller, useMessageScrollerScrollable } from '@/components/ui/message-scroller';
 import { Button } from '@/components/ui/button';
 import type { ComposerFeedback, ComposerProps, PendingUpload } from './composer';
@@ -46,6 +47,12 @@ export interface ChatFeatureProps {
   readonly fileAccept?: string;
   /** Optional pills at the left of the composer's controls row. */
   readonly composerChips?: ComposerProps['chips'];
+  /** Contextual host content above the input, for example a removable quote. */
+  readonly composerHeader?: ReactNode;
+  /** Host-owned content participates in send readiness without native image attachments. */
+  readonly composerHasContent?: boolean;
+  /** Retain files for the host's send operation instead of uploading immediately. */
+  readonly onPickFiles?: (files: readonly File[]) => void;
   /** `/` menu of host commands and skills. Omit it and `/` is just text. */
   readonly slash?: SlashConfig;
   /** Show successful native write/edit paths as file cards under each reply. Off by default: only hosts with workspace file tools should opt in. */
@@ -74,13 +81,13 @@ export interface ChatFeatureProps {
 }
 
 
-export type FilesHandler = (files: readonly File[], target: Pick<ReturnType<NativeChatController['getSnapshot']>, 'identity' | 'conversationId'> & { readonly signal: AbortSignal }) => Promise<readonly ChatAttachment[]>;
+export type FilesHandler = (files: readonly File[], target: Pick<ReturnType<ChatController['getSnapshot']>, 'identity' | 'conversationId'> & { readonly signal: AbortSignal }) => Promise<readonly ChatAttachment[]>;
 
 /** The chat behaviour every surface over a `NativeChatController` shares (`PiChat`, `AmbientChat`): sending, queue actions, uploads, pickers, rows. */
 export interface ChatSessionOptions extends Readonly<{ [Key in keyof ChatFeatureProps]: ChatFeatureProps[Key] | undefined }> {
-  readonly controller: NativeChatController;
+  readonly controller: ChatController;
   /** The controller the host currently passes; a surface that outlives its controller stops acting on the old one. */
-  readonly activeController: { readonly current: NativeChatController };
+  readonly activeController: { readonly current: ChatController };
   readonly mode: Mode;
   readonly fileAccept: string;
   readonly onFiles?: FilesHandler | undefined;
@@ -94,7 +101,7 @@ export interface ChatSessionOptions extends Readonly<{ [Key in keyof ChatFeature
 
 export function useChatSession(options: ChatSessionOptions) {
   const { controller, activeController: active, mode, actions, renderEntry, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept,
-    slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend, rowExtras, feedback, onOpenFile, fileChanges, pasteToFile, composerChips } = options;
+    slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend, rowExtras, feedback, onOpenFile, fileChanges, pasteToFile, composerChips, composerHeader, composerHasContent, onPickFiles } = options;
   const { labels } = useChatText();
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const [error, setError] = useState<string | null>(null);
@@ -246,7 +253,9 @@ export function useChatSession(options: ChatSessionOptions) {
   };
   /** Uploads files; `restore` (a pasted text) is what their pending cards undo: it abandons the upload and puts the text back. */
   async function upload(files: readonly File[], paste?: { readonly restore: () => void; readonly after: string }) {
-    if ((!onFiles && !attachments) || !files.length || !current()) return;
+    if (!files.length || !current()) return;
+    if (onPickFiles) { onPickFiles(files); return; }
+    if (!onFiles && !attachments) return;
     const abort = new AbortController(); uploads.current.add(abort); setUploading(value => value + 1);
     const ids = files.map(() => `upload-${++uploadIds.current}`);
     const settle = (failure?: string) => setPending(items => failure === undefined ? items.filter(item => !ids.includes(item.id))
@@ -323,10 +332,10 @@ export function useChatSession(options: ChatSessionOptions) {
     artifacts: artifacts ? { open: artifacts.open, isOpen: artifacts.isOpen, kinds: artifacts.kinds } : undefined,
     messageActions,
     replyFooter,
-    pieces: slash?.skills?.length || mentions || attachments ? { mentions: Boolean(mentions), uploads: Boolean(attachments), skills: (slash?.skills ?? []).map(skill => skill.name), openMention: mentions?.open, renderMention: mentions?.render, preview: mentions?.preview } : undefined,
+    pieces: slash?.skills?.length || mentions || attachments ? { mentions: Boolean(mentions), uploads: Boolean(attachments), skills: (slash?.skills ?? []).map(skill => skill.name), openMention: mentions?.open, renderMention: mentions?.renderSent ?? mentions?.render, preview: mentions?.preview } : undefined,
     ...rowExtras,
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [developer, groupTool, onOpenImage, onCopy, onOpenFile, fileChanges, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, mentions?.preview, attachments, artifacts?.open, artifacts?.isOpen, artifacts?.kinds, messageActions, replyFooter, rowExtras]);
+  }), [controller, developer, groupTool, onOpenImage, onCopy, onOpenFile, fileChanges, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, mentions?.renderSent, mentions?.preview, attachments, artifacts?.open, artifacts?.isOpen, artifacts?.kinds, messageActions, replyFooter, rowExtras]);
 
   /** The model-and-effort pill and the note that reports a refused change. */
   const pickers = () => {
@@ -349,10 +358,12 @@ export function useChatSession(options: ChatSessionOptions) {
     onRemoveAttachment: (id: string) => controller.setAttachments(controller.getSnapshot().draft.attachments.filter(item => item.id !== id)),
     working, sendBlocked, disabled: state.disposed, stopRequested: state.stop === 'requested',
     onSend: send, onStop: () => act(controller.stop),
-    uploading: uploading > 0, canAttach: Boolean(onFiles || attachments), fileAccept: attachments ? attachments.accept ?? '' : fileAccept, onPickFiles: (files: readonly File[]) => { void upload(files); },
+    hasFiles: Boolean(composerHasContent),
+    uploading: uploading > 0, canAttach: Boolean(onPickFiles || onFiles || attachments), fileAccept: attachments ? attachments.accept ?? '' : fileAccept, onPickFiles: (files: readonly File[]) => { void upload(files); },
     slash, onSlashError: report, mentions, mentionPaths: picked, onMentionPicked: (path: string) => setPicked(value => value.includes(path) ? value : [...value, path]),
     uploads: pending, onDismissUpload: (id: string) => setPending(items => items.filter(item => item.id !== id)),
     onPasteText: attachments ? pasteText : undefined, pasteToFile,
+    quote: composerHeader,
     feedback, chips: composerChips,
   };
 
@@ -362,7 +373,7 @@ export function useChatSession(options: ChatSessionOptions) {
 export type ChatSession = ReturnType<typeof useChatSession>;
 
 /** One scroll root for current and archived rows. Native paging stays in the borrowed controller. */
-export function useTranscript(rows: readonly Row[], page = 60, more = 40, history?: { readonly state: ChatHistoryState; readonly connected: boolean; readonly load: () => Promise<void> }) {
+export function useTranscript(rows: readonly { readonly key: string }[], page = 60, more = 40, history?: { readonly state: ChatHistoryState; readonly connected: boolean; readonly load: () => Promise<void> }) {
   const [limit, setLimit] = useState(page);
   const [sentinel, setSentinel] = useState<HTMLDivElement | null>(null);
   const [loaded, setLoaded] = useState(0);
@@ -401,5 +412,6 @@ export function useTranscript(rows: readonly Row[], page = 60, more = 40, histor
     observer.observe(sentinel);
     return () => observer.disconnect();
   }, [scroller, sentinel, reveal, scrollable.start, history?.state]);
-  return { stick, hidden, reveal, sentinelRef: setSentinel, loaded, visible: <T,>(items: readonly T[]): readonly T[] => hidden ? items.slice(hidden) : items, reset: () => { anchor.current = undefined; setLimit(page); } };
+  const revealTo = (key: string) => { const index = rows.findIndex(row => row.key === key); if (index >= 0) setLimit(value => Math.max(value, rows.length - index)); };
+  return { stick, hidden, reveal, revealTo, sentinelRef: setSentinel, loaded, visible: <T,>(items: readonly T[]): readonly T[] => hidden ? items.slice(hidden) : items, reset: () => { anchor.current = undefined; setLimit(page); } };
 }

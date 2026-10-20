@@ -37,8 +37,8 @@ export function liveLabel(call: ToolCall, labels: Pick<ChatLabels, 'toolActivity
 /** One Trace step. Failures open by default; quiet successful steps have no disclosure. */
 export function ToolCard({ entry, onOpenImage, details = true }: { readonly entry: ToolEntry; readonly details?: boolean; readonly onOpenImage?: (image: Extract<ToolResultMessage['content'][number], { type: 'image' }>) => void }) {
   const { labels } = useChatText();
-  const { call, result, status } = entry;
   const [chosen, setChosen] = useState<boolean | undefined>();
+  const { call, result, status } = entry;
   const open = details && (chosen ?? status === 'failed');
   const hint = preview(call.arguments);
   const line = <TraceLine {...(status === 'running' ? { status: 'running' } : status === 'failed' ? { status: 'error' } : {})}>

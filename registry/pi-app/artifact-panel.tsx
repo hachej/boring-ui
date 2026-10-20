@@ -15,7 +15,7 @@ import { createMarkdownController } from '@hachej/boring-ui-kit/markdown';
 import type { MarkdownController } from '@hachej/boring-ui-kit/markdown';
 import { createHtmlController } from '@hachej/boring-ui-kit/html';
 import type { HtmlController } from '@hachej/boring-ui-kit/html';
-import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
+import type { ChatController } from '@hachej/boring-ui-kit/native-chat';
 import { artifactKey, collectArtifacts } from '../pi-chat/pi-chat';
 import type { ArtifactDescriptor, ArtifactKind, ArtifactTarget, ArtifactsConfig } from '../pi-chat/pi-chat';
 import { CodeBlock } from '../pi-chat/code-block';
@@ -99,13 +99,13 @@ export function useReportShown(onShown: ViewerOptions['onShown'], path: string, 
 }
 
 /** Every artifact version the conversation's tool results produced (the version switcher's source), oldest first. */
-export function useArtifactVersions(controller: NativeChatController | undefined, detect?: ArtifactsConfig['detect']): ArtifactDescriptor[] {
+export function useArtifactVersions(controller: ChatController | undefined, detect?: ArtifactsConfig['detect']): ArtifactDescriptor[] {
   const view = useSyncExternalStore(controller ? controller.subscribe : NOOP, () => controller?.getSnapshot().view, () => undefined);
   return useMemo(() => collectArtifacts(view, detect), [view, detect]);
 }
 
 /** How many messages the person has sent in the conversation: it changes when a new turn starts. */
-export function useTurn(controller: NativeChatController | undefined): number {
+export function useTurn(controller: ChatController | undefined): number {
   const view = useSyncExternalStore(controller ? controller.subscribe : NOOP, () => controller?.getSnapshot().view, () => undefined);
   return useMemo(() => (view?.entries ?? []).reduce((count, entry) => count + (entry.model ?? []).filter(message => message.role === 'user').length, 0), [view]);
 }

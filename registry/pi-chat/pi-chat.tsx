@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
+import type { ChatController } from '@hachej/boring-ui-kit/native-chat';
 import { Loader2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -53,13 +53,27 @@ export type { ChatLocale } from './locale';
 export { BlockActions } from '../button/actions';
 export { useChatDraft } from './use-chat-draft';
 export { useConversations } from './use-conversations';
+export type { ChatController, ChatSnapshot } from '@hachej/boring-ui-kit/native-chat';
+export { MessageText } from './message';
+export { Markdown } from './markdown';
+export { useTranscript } from './session';
 export { RunCard, parseRun } from './run-card';
 export type { RunRecord, RunStatus } from './run-card';
 export type { BlockAction, BlockIcon } from '../button/actions';
 export type { AttachmentsConfig, ConversationItem, ConversationsConfig, EffortConfig, FileKind, MentionResult, MentionsConfig, ModelConfig, ModelRef, PasteToFile, PreviewRead, ReplyRef, SlashApi, SlashCommand, SlashConfig, SlashSkill, UploadResult } from './config';
 
+export interface ChatTimeline {
+  readonly count: number;
+  readonly render: (context: { readonly focusComposer: () => void; readonly openFile?: ((path: string) => void) | undefined }) => ReactNode;
+  readonly afterSend?: () => void;
+}
+
 export interface PiChatProps extends ChatFeatureProps {
-  readonly controller: NativeChatController;
+  /** Optional host transcript. Absent: native rows, history and scroll behavior are unchanged. */
+  readonly timeline?: ChatTimeline | undefined;
+  /** Authorized host errors may provide their own message. */
+  readonly renderConnectionError?: ((error: unknown) => ReactNode) | undefined;
+  readonly controller: ChatController;
   /** Where this chat is shown, reported with each submit (advisory, never authority). `docked` by default; a host that floats or tucks the same chat in a drawer says `floating`. */
   readonly placement?: ChatPlacement | undefined;
   /** Every word the chat shows (title, placeholder, buttons, notices, empty states): a partial object over `defaultChatLabels`. */
@@ -132,8 +146,8 @@ function ConnectionBadge({ kind }: { readonly kind: string }) {
   </Badge>;
 }
 
-function PiChatSession({ controller, placement = 'docked', mode = 'expert', className, keyboardInset = true, actions, avatar, headerActions, header = true, decisions, controls, tools, belowComposer, composerChips, headerStart, renderEntry, renderTool, groupTool, commandMentions,
-  onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = false, emptyLayout = 'centered', composerLayout = 'card', conversationTitle, onRenameTitle, feedback, draftKey, onOpenFile, fileChanges, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: NativeChatController } }) {
+function PiChatSession({ controller, placement = 'docked', mode = 'expert', className, keyboardInset = true, actions, avatar, headerActions, header = true, decisions, controls, tools, belowComposer, composerChips, composerHeader, composerHasContent, onPickFiles, timeline, renderConnectionError, headerStart, renderEntry, renderTool, groupTool, commandMentions,
+  onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = false, emptyLayout = 'centered', composerLayout = 'card', conversationTitle, onRenameTitle, feedback, draftKey, onOpenFile, fileChanges, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: ChatController } }) {
   const { labels, icons } = useChatText();
   useChatDraft(controller, draftKey);
   useChatPlacement(controller, placement);
@@ -145,9 +159,9 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
   const canFork = Boolean(conversations?.fork);
   const rowExtras = useMemo(() => canFork ? { onFork: (entryId: string) => { void fork.current?.(entryId).catch(() => {}); } } : undefined, [canFork]);
   const session = useChatSession({ controller, activeController: active, mode, actions, renderEntry, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept,
-    slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => scrollToBottom.current(), feedback, rowExtras, onOpenFile, fileChanges, pasteToFile, composerChips });
+    slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => timeline ? timeline.afterSend?.() : scrollToBottom.current(), feedback, rowExtras, onOpenFile, fileChanges, pasteToFile, composerChips, composerHeader, composerHasContent, onPickFiles });
   const { state, derived, rows, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, files, loading } = session;
-  const empty = session.empty;
+  const empty = timeline ? timeline.count === 0 : session.empty;
   const { pinned, retry } = derived;
   const transcript = useTranscript(rows, PAGE, MORE, { state: state.history, connected: !state.disposed && connected, load: controller.loadEarlier });
   const { stick, hidden } = transcript;
@@ -189,13 +203,13 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
     {pinned.length > 0 && <><aside aria-label={labels.requiredActions} className="shrink-0 space-y-2 px-4 py-2">{pinned.map(card => <div key={card.key}>{card.content}</div>)}</aside><Separator /></>}
     {(connectionKind === 'error' || connectionKind === 'closed') && <div className="shrink-0 px-4 pt-2">
       <Notice tone={connectionKind === 'error' ? 'error' : 'info'} testid="connection-notice">
-        <span className="flex-1">{connectionKind === 'error' ? labels.loadFailed : labels.disconnected}</span>
+        <span className="flex-1">{connectionKind === 'error' ? state.connection.kind === 'error' && renderConnectionError ? renderConnectionError(state.connection.error) : labels.loadFailed : labels.disconnected}</span>
         {!state.disposed && <Button size="sm" variant="outline" onClick={() => act(controller.connect)}><icons.reconnect data-icon="inline-start" aria-hidden="true" />{labels.reconnect}</Button>}
       </Notice></div>}
     {pickingConversation && conversations && historyList && <ConversationHistory conversations={conversations} onClose={() => setPickingConversation(false)} />}
 
     <div data-testid="conversation-content" className={cn('relative min-h-0 flex-1', empty && emptyLayout === 'centered' && 'min-[641px]:min-h-60 min-[641px]:flex-none')}>
-      <MessageScroller>
+      {timeline ? timeline.render({ focusComposer: () => textarea.current?.focus(), openFile: onOpenFile ?? mentions?.open }) : <MessageScroller>
         <MessageScrollerViewport ref={stick.scrollRef} data-testid="transcript-scroll" aria-label={labels.messages} className="scrollbar-thumb-border scrollbar-track-transparent">
           {!empty && <TranscriptHistory history={state.history} connected={!state.disposed && connected} onLoad={transcript.reveal} sentinelRef={transcript.sentinelRef} hidden={hidden} loaded={transcript.loaded} />}
           <div className="mx-auto w-full max-w-[720px] px-4 pt-6 pb-8 sm:px-6">
@@ -205,7 +219,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
           </div>
         </MessageScrollerViewport>
         {!empty && !stick.isAtBottom && <MessageScrollerButton data-testid="jump-latest" aria-label={labels.jumpToLatest} title={labels.jumpToLatest} onClick={transcript.reset}><icons.jumpToLatest aria-hidden="true" /></MessageScrollerButton>}
-      </MessageScroller>
+      </MessageScroller>}
       {(empty || loading) && <div className="pointer-events-none absolute inset-0">
         <div className="pointer-events-auto h-full">
           {loading ? <p role="status" data-testid="loading" className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2Icon className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />{labels.loading}</p>

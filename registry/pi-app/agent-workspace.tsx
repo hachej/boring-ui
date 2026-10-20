@@ -21,7 +21,7 @@ import { chatTextFor } from '../pi-chat/locale';
 import type { ChatLocale } from '../pi-chat/locale';
 import type { FileTreeViewProps } from '../file-tree/file-tree';
 import type { ResourceIdentity } from '@hachej/boring-files/remote';
-import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
+import type { ChatController } from '@hachej/boring-ui-kit/native-chat';
 import { PiChat, artifactKey } from '../pi-chat/pi-chat';
 import { createPresentAcks, pendingPresents } from '../pi-chat/artifact';
 import type { PresentAcks } from '../pi-chat/artifact';
@@ -170,7 +170,7 @@ interface AgentWorkspaceBaseProps {
    */
   readonly agents?: WorkspaceAgents | undefined;
   /** The open conversation's controller (`useRemoteChat`); `undefined` while connecting, when `connecting` is shown instead. */
-  readonly controller: NativeChatController | undefined;
+  readonly controller: ChatController | undefined;
   /** The open conversation: auto-opened artifacts and the artifact view belong to it. */
   readonly conversationId: string | undefined;
   /** Everything else `PiChat` takes (labels, icons, headerActions, messageActions, mode, actions, slash, mentions, attachments, model, effort, emptyState, ...). */
@@ -553,7 +553,7 @@ export function AgentWorkspace({ layout = 'default', title, controller, conversa
   const hostControls = typeof controls === 'function' ? controls({ panelOpen }) : controls ?? chat.controls;
   const header = <>{conversations?.onNew && <Button variant="ghost" size="icon-sm" data-testid="workspace-new-chat" aria-label={text.labels.newChat} title={text.labels.newChat} className="min-[641px]:hidden" onClick={conversations.onNew}><text.icons.newChat data-icon="inline-start" aria-hidden="true" /></Button>}{hostControls}</>;
   const conversationTitle = conversations?.items.find(item => item.id === conversationId)?.title;
-  const chatProps: PiChatProps | undefined = controller && { ...(mentionsForChat ? { mentions: mentionsForChat } : {}), ...(attachments ? { attachments } : {}), ...(locale ? { locale } : {}), ...chat, controller, artifacts, ...(conversations ? { conversations, historyList: popoverHistory, showHistory: chat.showHistory ?? popoverHistory, conversationTitle, onRenameTitle: conversations.rename && conversationId ? (title: string) => conversations.rename!(conversationId, title) : undefined } : {}),
+  const chatProps: PiChatProps | undefined = controller && { ...(mentionsForChat ? { mentions: mentionsForChat } : {}), ...(attachments ? { attachments } : {}), ...(locale ? { locale } : {}), ...chat, controller, artifacts, onOpenFile: chat.onOpenFile ?? chat.mentions?.open ?? openFile, ...(conversations ? { conversations, historyList: popoverHistory, showHistory: chat.showHistory ?? popoverHistory, conversationTitle, onRenameTitle: conversations.rename && conversationId ? (title: string) => conversations.rename!(conversationId, title) : undefined } : {}),
     headerStart: <>{toggle}{chat.headerStart}</>, ...(header === undefined ? {} : { controls: header }),
     // Embedded: the bar above replaces the chat's header (History, New and the host's controls are in it); conversations stay for Fork.
     ...(embedded ? { header: false, historyList: false, showHistory: false } : {}) };

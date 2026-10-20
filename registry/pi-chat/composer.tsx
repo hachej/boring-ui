@@ -74,9 +74,13 @@ export interface ComposerProps {
   readonly barNote?: ReactNode;
   /** Optional host mode/model chips beside the attach control. */
   readonly chips?: ReactNode;
+  /** Optional host context above the input. */
+  readonly quote?: ReactNode;
   readonly text: string;
   readonly onText: (text: string) => void;
   readonly attachments: readonly ComposerAttachment[];
+  /** Host-owned content contributes to send readiness. */
+  readonly hasFiles?: boolean;
   readonly onRemoveAttachment: (id: string) => void;
   /** The agent is working: the primary button stops it and Enter queues the message (steering is chosen on the queued message). */
   readonly working: boolean;
@@ -224,7 +228,7 @@ export function Composer(props: ComposerProps) {
   const onChange = (event: ChangeEvent<HTMLTextAreaElement>) => { trackCaret(event.currentTarget); props.onText(event.currentTarget.value); };
 
   const { feedback } = props;
-  const hasContent = text.trim().length > 0 || attachments.length > 0 || (feedback?.count ?? 0) > 0;
+  const hasContent = text.trim().length > 0 || attachments.length > 0 || props.hasFiles || (feedback?.count ?? 0) > 0;
   const canSubmit = hasContent && !sendBlocked && !disabled;
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     props.onKeyDown?.(event);
@@ -251,11 +255,12 @@ export function Composer(props: ComposerProps) {
   const drag = (event: DragEvent) => { if (canAttach) { event.preventDefault(); setDragging(event.type === 'dragover'); } };
   const drop = (event: DragEvent) => { if (!canAttach) return; event.preventDefault(); setDragging(false); props.onPickFiles(Array.from(event.dataTransfer.files)); };
 
-  const chipList = (chips.length > 0 || (props.uploads?.length ?? 0) > 0 || (feedback?.count ?? 0) > 0 || attachments.length > 0) && <>
+  const chipList = (props.quote || chips.length > 0 || (props.uploads?.length ?? 0) > 0 || (feedback?.count ?? 0) > 0 || attachments.length > 0) && <>
+    {props.quote}
     {feedback && feedback.count > 0 && <div role="list" className="contents"><NotesChip feedback={feedback} /></div>}
     {chips.length > 0 && <div role="list" data-testid="mention-chips" aria-label={labels.mentionedFiles} className="contents">
       {chips.map(path => <Chip key={path} data-testid="mention-chip" data-path={path} title={path} className="max-w-full sm:max-w-[16rem]"
-        media={<FileTextIcon aria-hidden="true" />} label={path} actions={<RemoveChip label={labels.remove(path)} onClick={() => props.onText(removeMention(text, path))} />} />)}
+        media={mentions?.icon ?? <FileTextIcon aria-hidden="true" />}  label={mentions?.label?.(path) ?? path} actions={<RemoveChip label={labels.remove(mentions?.label?.(path) ?? path)} onClick={() => props.onText(removeMention(text, path))} />} />)}
     </div>}
     {(props.uploads?.length ?? 0) > 0 && <div role="list" data-testid="uploads" aria-label={labels.uploads} className="contents">
       {props.uploads!.map(item => <Chip key={item.id} data-testid="upload-chip" state={item.state === 'failed' ? 'error' : 'uploading'} data-state={item.state} title={item.error ?? item.name} className="max-w-full sm:max-w-[20rem]"
@@ -308,7 +313,7 @@ export function Composer(props: ComposerProps) {
     className={cn('relative flex flex-col gap-2', pill && '@container/composer')}>
     {fileEl}
     {slashOpen && <SlashPicker query={query!} items={items} onSelect={pickSlash} onDismiss={dismiss} />}
-    {mentionOpen && mentions && <MentionPicker query={trigger!.query} search={mentions.search} generation={mentions.generation} onSelect={pickMention} onDismiss={dismiss} />}
+    {mentionOpen && mentions && <MentionPicker query={trigger!.query} listLabel={mentions.listLabel} renderOption={mentions.renderOption} search={mentions.search} generation={mentions.generation} onSelect={pickMention} onDismiss={dismiss} />}
     {pill && chipList && <div className="flex flex-wrap gap-2">{chipList}</div>}
     {pill ? <InputGroup>
       <InputGroupAddon>{plus}{feedback && <AnnotateButton feedback={feedback} disabled={disabled} />}</InputGroupAddon>
