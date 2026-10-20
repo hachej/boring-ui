@@ -77,7 +77,7 @@ export async function startWorkspaceApp({ directory, port = 0, token = randomUUI
   // ---- The page: page.jsx bundled once, Tailwind over the registry blocks, the token and identity in the page.
   const bundle = await build({ entryPoints: [here('./page.jsx')], bundle: true, write: false, outdir: here('./out'), entryNames: 'app', chunkNames: 'chunk-[hash]', splitting: true, format: 'esm', platform: 'browser', jsx: 'automatic',
     alias: { '@': here('../app-shell') }, define: { 'process.env.NODE_ENV': '"production"' }, logLevel: 'silent' });
-  const css = [await buildTailwind({ extraDirectories: ['examples/workspace-app', 'test/fixtures/themes'] }), ...bundle.outputFiles.filter(file => file.path.endsWith('.css')).map(file => file.text),
+  const css = [await buildTailwind({ extraDirectories: ['examples/workspace-app', 'registry/requests-board', 'test/fixtures/themes'] }), ...bundle.outputFiles.filter(file => file.path.endsWith('.css')).map(file => file.text),
     readFileSync(here('../../registry/feedback/feedback.css'), 'utf8'),
     'html,body,#root{height:100%;margin:0}body{background:var(--background);color:var(--foreground);font:15px/1.5 var(--font-sans,ui-sans-serif,system-ui,sans-serif)}', stockShadowTokens].join('\n');
   const page = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Workspace app (fictional)</title>

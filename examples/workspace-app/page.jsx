@@ -12,6 +12,7 @@ import { PointBar } from '../../registry/feedback/point-mode.tsx';
 import { AgentWorkspace, useConversations, useRemoteChat } from '../../registry/pi-app/agent-workspace.tsx';
 import { AmbientChat } from '../../registry/pi-ambient/ambient.tsx';
 import { Button } from '@/components/ui/button';
+import { RequestsDemo } from './requests-demo.jsx';
 import { GroupOneControls } from '../../test/fixtures/themes/group-one.jsx';
 import { ViewerChromeControls } from '../../test/fixtures/themes/viewer-chrome.jsx';
 import { GroupFiveControls } from '../../test/fixtures/themes/group-five.jsx';
@@ -126,4 +127,4 @@ function App() {
 
 const controls = new URLSearchParams(location.search).get('controls');
 const viewer = new URLSearchParams(location.search).get('viewer');
-createRoot(document.getElementById('root')).render(viewer ? <ViewerChromeControls surface={viewer} fetch={authorized} /> : controls?.startsWith('composer-') ? <GroupThreeControls surface={controls.slice('composer-'.length)} /> : controls?.startsWith('transcript-') ? <GroupFiveControls surface={controls.slice('transcript-'.length)} /> : controls ? <GroupOneControls surface={controls} /> : <App />);
+createRoot(document.getElementById('root')).render(new URLSearchParams(location.search).has('requests') ? <RequestsDemo /> : viewer ? <ViewerChromeControls surface={viewer} fetch={authorized} /> : controls?.startsWith('composer-') ? <GroupThreeControls surface={controls.slice('composer-'.length)} /> : controls?.startsWith('transcript-') ? <GroupFiveControls surface={controls.slice('transcript-'.length)} /> : controls ? <GroupOneControls surface={controls} /> : <App />);

@@ -1,5 +1,11 @@
 # Implemented behavior and evidence
 
+## Requests board
+
+The `requests-board` registry item is host presentation (no Pi extension): `RequestsBoard`, pure `compactRows`/`filterViews`/`requestCounts` and EN/FR labels. Compact prioritizes five requests; full mode provides scoped filters/search, responsive list/detail, history, related links and host-owned answer/decision/try callbacks. The host re-renders views and bumps a change token for polite announcements; the block never polls or subscribes. Release approval visibility is not authorization. See [the recipe](../../registry/README.md#requests-board-requests-board).
+
+`test/contracts/requests.test.mjs` tests transforms; `test/contracts/requests-board.test.mjs` isolates real shadcn Happy DOM rendering and callbacks through `RequestsBoard`. `npm run requests:journey` drives the fictional `examples/workspace-app?requests` demo, including phone Back, keyboard, both languages, release gating and host-token updates, with light/dark screenshots under `.cache/evidence/D141/`. No backend, durable mutation, consumer D-140 integration or release qualification is claimed.
+
 ## Board artifact viewer
 
 The `board-viewer` registry block exports `createBoardKind` for `*.board.json`. This is host presentation over the native tldraw renderer, not a Pi execution extension. `CanvasProjection` from the optional canvas-editor entry renders frames without a native-document publication controller. The existing text buffer conditionally saves only `board@1`; conflicts and uncertain acknowledgements retain local edits and the original operation identity. Maquette screens and sandboxed `MockupViewer` frames share the workspace client.
