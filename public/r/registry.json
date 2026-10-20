@@ -2488,6 +2488,7 @@
         "button",
         "textarea",
         "label",
+        "item",
         "dropdown-menu"
       ],
       "files": [

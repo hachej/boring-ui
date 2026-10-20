@@ -3,6 +3,7 @@
 import { captureMarkdownQuote } from './markdown-quote.js';
 import { captureRichMarkdownQuote, installMarkdownHighlights, type MarkdownDecoration, type MarkdownQuoteCapture } from './markdown-highlight-layer.js';
 export type { MarkdownDecoration, MarkdownQuoteCapture } from './markdown-highlight-layer.js';
+export { markdownMarkerBackground } from './markdown-highlight-layer.js';
 import { TextDraftControls } from './text-draft-controls.js';
 import type { ViewerComponents } from './viewer-components.js';
 export type { ViewerComponents } from './viewer-components.js';

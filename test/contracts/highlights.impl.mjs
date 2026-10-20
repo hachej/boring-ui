@@ -75,6 +75,62 @@ test('missing and ambiguous marks stay in the tray until a person chooses an exa
   await until(() => f.store.getSnapshot().marks.length === 1, 'removed');
 });
 
+test('the tray explains unplaced quotes and selection hints in plain English and French', async t => {
+  const f = await fixture(t, 'echo echo\n');
+  await f.store.add(mark('duplicate', anchor('echo'))); await f.store.add(mark('gone', anchor('vanished')));
+  for (const [locale, title, repeated, missing, hint] of [
+    ['en', '2 highlights could not be placed', 'This passage appears several times — pick the right one', 'This passage is no longer in the document', 'Select a passage in the document first.'],
+    ['fr', "2 surlignages n'ont pas pu être placés", 'Ce passage apparaît plusieurs fois — choisissez le bon.', "Ce passage n'est plus dans le document.", "Sélectionnez d'abord un passage dans le document."],
+  ]) {
+    await f.render({ locale });
+    const tray = f.host.querySelector('aside');
+    assert.equal(tray.querySelector('h3').textContent, title);
+    assert.deepEqual([...tray.querySelectorAll('q')].map(q => q.textContent), ['echo', 'vanished']);
+    assert.ok(tray.textContent.includes(repeated)); assert.ok(tray.textContent.includes(missing));
+    assert.doesNotMatch(f.host.textContent, /uncertain projections|rich view refuses|projections incertaines/);
+    const attach = [...tray.querySelectorAll('button')].find(b => /Attach to selection|Rattacher à la sélection/.test(b.textContent));
+    assert.equal(attach.disabled, true);
+    assert.equal(document.getElementById(attach.getAttribute('aria-describedby')).textContent, hint);
+    const add = f.button(locale === 'en' ? 'Highlight selection' : 'Surligner la sélection');
+    assert.equal(document.getElementById(add.getAttribute('aria-describedby')).textContent, hint);
+  }
+});
+
+test('a selection enables compact highlight and reattach buttons without disabled hints', async t => {
+  const f = await fixture(t, 'echo echo\n'); await f.store.add(mark('gone', anchor('vanished'))); await f.render();
+  await f.click('Markdown source');
+  const input = f.host.querySelector('textarea.boring-markdown-source');
+  await act(async () => { input.focus(); input.setSelectionRange(0, 4); input.dispatchEvent(new window.KeyboardEvent('keyup', { key: 'ArrowRight', bubbles: true })); document.dispatchEvent(new window.Event('selectionchange')); });
+  await until(() => !f.button('Highlight selection').disabled, 'selection enables highlighting');
+  for (const button of [f.button('Highlight selection'), f.button('Attach to selection')]) {
+    assert.equal(button.disabled, false); assert.equal(button.getAttribute('aria-describedby'), null);
+    assert.match(button.className, /\bh-7\b/); assert.doesNotMatch(button.className, /\bw-full\b|min-h-11/);
+  }
+});
+
+test('candidate excerpts trim whole words, disclose omissions and mark the matching text', async t => {
+  const source = 'A fictional kite rises above the orchard. echo beside a narrow stream and a wooden bridge.\nA fictional kite turns above the meadow. echo beside a winding path and a small gate.\n';
+  const f = await fixture(t, source); await f.store.add(mark('duplicate', anchor('echo'))); await f.render();
+  const buttons = [...f.host.querySelectorAll('button')].filter(b => b.textContent.startsWith('Choose passage'));
+  assert.equal(buttons.length, 2);
+  const preview = buttons[0].closest('[data-testid=highlight-candidate]') ?? buttons[0];
+  assert.match(preview.textContent, /… kite rises above the orchard\./);
+  assert.match(preview.textContent, /beside a narrow stream and …/);
+  assert.equal(preview.querySelector('mark').textContent, 'echo');
+  assert.doesNotMatch(preview.textContent, /… e the orchard|… ises above/);
+});
+
+test('commented marks use soft theme markers and a separate comment indicator', async t => {
+  const f = await fixture(t); await f.store.add({ ...mark('commented', anchor('A fictional kite.\n', 2, 11)), note: 'A fictional note.', colour: 'primary' }); await f.render();
+  await until(() => f.host.querySelector('[data-mark-id=commented]'), 'commented decoration');
+  const decoration = f.host.querySelector('[data-mark-id=commented]');
+  assert.match(decoration.getAttribute('style'), /color:\s*var\(--foreground\)/);
+  assert.ok(f.host.querySelector('[data-mark-comment=commented][aria-label="Has a comment"]'));
+  await act(async () => decoration.click());
+  assert.equal(f.host.querySelector('[data-mark-id=commented]').getAttribute('data-mark-active'), 'true');
+  assert.equal(f.controller.getSnapshot().text, 'A fictional kite.\n'); assert.equal(f.controller.getSnapshot().dirty, false);
+});
+
 test('default store captures source selections, writes the sidecar, and never writes document text', async t => {
   const f = await fixture(t, 'A fictional kite.\n');
   await f.render({ store: undefined, resource: { client: f.client, identity }, locator: target });
