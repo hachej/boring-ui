@@ -216,11 +216,17 @@ function dom(t) {
   return window;
 }
 
-test('AppShellProps has the shell props, locale and URL opt-out, and no label or theme prop', () => {
+test('AppShellProps has the shell props, optional rail, locale and URL opt-out, and no label or theme prop', () => {
   const program = ts.createProgram([`${root}${folder}/app-shell.tsx`], { allowImportingTsExtensions: true, jsx: ts.JsxEmit.ReactJSX, noEmit: true, skipLibCheck: true });
   const file = program.getSourceFile(`${root}${folder}/app-shell.tsx`);
   const props = file.statements.find(node => ts.isInterfaceDeclaration(node) && node.name.text === 'AppShellProps');
-  assert.deepEqual(props.members.map(member => member.name.text).sort(), ['account', 'agent', 'agentLink', 'improve', 'layout', 'locale', 'nav', 'route', 'title']);
+  assert.deepEqual(props.members.map(member => member.name.text).sort(), ['account', 'agent', 'agentLink', 'improve', 'layout', 'locale', 'nav', 'rail', 'route', 'title']);
+  const rail = props.members.find(member => member.name.text === 'rail');
+  assert.ok(rail.questionToken, 'rail is optional');
+  assert.equal(rail.type.getText(file), "'icon' | 'hover'");
+  const agentLink = props.members.find(member => member.name.text === 'agentLink');
+  assert.ok(agentLink.questionToken, 'agentLink is optional');
+  assert.equal(agentLink.type.getText(file), 'false');
 });
 
 test('splitNav: up to four screens are all tabs; more give three tabs plus « Plus »', async () => {

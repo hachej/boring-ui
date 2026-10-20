@@ -24,6 +24,7 @@ const { token, identity, conversations } = window.__APP__;
 const query = new URLSearchParams(location.search);
 const app = ['empty', 'redaction', 'pm'].includes(query.get('app')) ? query.get('app') : 'fitness';
 const six = query.get('nav') === '6';
+const rail = query.get('rail') === 'hover' ? { rail: 'hover' } : {};
 // `?documents=1`: the workspace's Documents screen (the Library, a file and its revisions) and the product manager's « Voir la fiche » sheet.
 const documents = query.get('documents') === '1';
 const send = query.get('send') === 'draft' ? 'draft' : 'auto';
@@ -74,6 +75,10 @@ const FITNESS = [
     { id: 'sommeil', label: 'Sommeil', icon: MoonStarIcon, badge: true, render: () => <Plain label="Votre sommeil" /> },
     { id: 'amis', label: 'Amis', icon: UsersIcon, render: () => <Plain label="Vos amis" /> },
   ] : []),
+];
+const DASHBOARD = [
+  { id: 'dashboard', label: 'Tableau de bord', icon: HomeIcon, render: () => <Plain label="Votre tableau de bord" /> },
+  { id: 'repas', label: 'Repas', icon: ClipboardListIcon, render: () => <Plain label="Vos repas" /> },
 ];
 const EMPTY = [{ id: 'accueil', label: 'Accueil', icon: HomeIcon, render: () => <p className="m-0 p-4">Bienvenue</p> }];
 
@@ -128,7 +133,7 @@ function App() {
   // The product manager's « Voir la fiche » opens the product sheet over the app (`DocumentSheet`); the host decides which document.
   const seeSheet = docs ? [{ id: 'spec', label: 'Voir la fiche', icon: ClipboardListIcon, onSelect: () => setSpec('fiche-produit.md') }] : [];
   const improve = { controller: manager.controller, ...(feedback ? { feedback } : {}), ...(seeSheet.length ? { headerActions: seeSheet } : {}), chatProps: { ...common, actions: manager.actions, labels: { title: 'Chef de produit' } } };
-  const nav = [...(app === 'empty' ? EMPTY : FITNESS), ...(docs ? [{ id: 'fiches', label: 'Fiches', icon: ClipboardListIcon, render: () => <Documents provider={docs} locale="fr" /> }] : [])];
+  const nav = [...(app === 'empty' ? EMPTY : query.get('nav') === 'dashboard' ? DASHBOARD : FITNESS), ...(docs ? [{ id: 'fiches', label: 'Fiches', icon: ClipboardListIcon, render: () => <Documents provider={docs} locale="fr" /> }] : [])];
   const account = {
     name: 'Camille Martin', email: 'camille@example.invalid',
     menu: app === 'empty' ? [{ label: 'Réglages', onSelect: () => window.__did.push('settings') }]
@@ -138,7 +143,7 @@ function App() {
   // The app's router: a tab switch replaces the URL (a hash here) and adds no history entry.
   const onChange = (id: string) => { window.__routes.push(id); history.replaceState(history.state, '', `#${id}`); setRoute(id); };
   return <div id="app-root" className="contents">
-    <AppShell layout="screen" title="Forme" nav={nav} agent={agent} improve={improve} account={account} route={{ id: route, onChange }} />
+    <AppShell {...rail} layout="screen" title="Forme" nav={nav} agent={agent} improve={improve} account={account} route={{ id: route, onChange }} />
     {docs && <DocumentSheet provider={docs} path={spec} onClose={() => setSpec(undefined)} onShowAll={() => onChange('fiches')} locale="fr" />}
   </div>;
 }
@@ -197,7 +202,7 @@ function RedactionApp() {
   const improve = { controller: manager.controller, ...(feedback ? { feedback } : {}), chatProps: { locale: 'fr', showHistory: false, showConnectionStatus: false, actions: manager.actions, labels: { title: 'Chef de produit' } } };
   const account = { name: 'Camille Martin', email: 'camille@example.invalid', menu: [{ label: 'Réglages', onSelect: () => window.__did.push('settings') }, { label: 'Nouveautés', onSelect: () => window.__did.push('news') }] };
   return <div id="app-root" className="contents">
-    <AppShell layout="workspace" title="Cabinet" nav={nav} improve={improve} account={account} route={{ id: NAV_IDS.includes(hash) ? hash : 'consultations', onChange }} />
+    <AppShell {...rail} layout="workspace" title="Cabinet" nav={nav} improve={improve} account={account} route={{ id: NAV_IDS.includes(hash) ? hash : 'consultations', onChange }} />
   </div>;
 }
 
@@ -221,7 +226,7 @@ function PmApp() {
   const improve = { controller: manager.controller, ...(feedback ? { feedback } : {}), chatProps: { locale: 'fr', showHistory: false, showConnectionStatus: false, actions: manager.actions, labels: { title: 'Chef de produit' } } };
   const account = { name: 'Camille Martin', email: 'camille@example.invalid', menu: [{ label: 'Réglages', onSelect: () => window.__did.push('settings') }] };
   return <div id="app-root" className="contents">
-    <AppShell layout="chat" title="Atelier" nav={nav} improve={improve} account={account} route={{ id: 'atelier', onChange: () => {} }} />
+    <AppShell {...rail} layout="chat" title="Atelier" nav={nav} improve={improve} account={account} route={{ id: 'atelier', onChange: () => {} }} />
   </div>;
 }
 

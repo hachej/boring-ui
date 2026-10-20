@@ -29,6 +29,8 @@ export interface AppShellProps {
   readonly layout: 'screen' | 'workspace' | 'chat';
   readonly title: string;
   readonly nav: readonly NavItem[];
+  /** Wide-screen navigation: `hover` reveals labels over the page on hover or keyboard focus. Default: `icon` (the native sidebar toggle). */
+  readonly rail?: 'icon' | 'hover';
   readonly agent?: AgentSpec;
   /** Consume agent/open/input launch parameters on mount (default). `false` leaves the URL and layer untouched. */
   readonly agentLink?: false;
@@ -58,7 +60,7 @@ function Screens({ items, activeId, scrolls, slot }: { readonly items: readonly 
   </div>;
 }
 
-function Shell({ layout, title, nav, agent, improve, account, route, text }: { readonly layout: AppShellProps['layout']; readonly title: string; readonly nav: readonly NavItem[]; readonly agent: AgentSpec | undefined; readonly improve: boolean; readonly account: AccountSpec | undefined; readonly route: AppShellProps['route']; readonly text: AppShellText }) {
+function Shell({ layout, rail, title, nav, agent, improve, account, route, text }: { readonly rail: NonNullable<AppShellProps['rail']>; readonly layout: AppShellProps['layout']; readonly title: string; readonly nav: readonly NavItem[]; readonly agent: AgentSpec | undefined; readonly improve: boolean; readonly account: AccountSpec | undefined; readonly route: AppShellProps['route']; readonly text: AppShellText }) {
   const compact = useIsCompact();
   const [accountOpen, setAccountOpen] = useState(false);
   // The header's slot for the screen on show (an embedded AgentWorkspace puts its bar's controls there).
@@ -73,8 +75,8 @@ function Shell({ layout, title, nav, agent, improve, account, route, text }: { r
     </AppSheet>
   </> : null;
   // The structure is the same compact or expanded, so a resize never remounts a screen.
-  return <SidebarProvider data-testid="app-shell" defaultOpen={layout === 'screen'} className="app-shell h-dvh min-h-0 overflow-hidden">
-    {!compact && <AppSidebar title={title} items={nav} activeId={active.id} onChange={route.onChange} agent={agent} account={account} improve={improve} text={text} />}
+  return <SidebarProvider data-testid="app-shell" defaultOpen={rail !== 'hover' && layout === 'screen'} className="app-shell h-dvh min-h-0 overflow-hidden">
+    {!compact && <AppSidebar rail={rail} title={title} items={nav} activeId={active.id} onChange={route.onChange} agent={agent} account={account} improve={improve} text={text} />}
     <AgentDockLayout>
       <div data-slot="sidebar-inset" className="relative flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden bg-background">
       <ShellContext name={active.label} />
@@ -88,10 +90,10 @@ function Shell({ layout, title, nav, agent, improve, account, route, text }: { r
 }
 
 export function AppShell(props: AppShellProps) {
-  const { layout, agent, improve, title, nav, account, route } = props;
+  const { layout, rail = 'icon', agent, improve, title, nav, account, route } = props;
   if (layout === 'chat' && agent) throw new Error('AppShell layout "chat" takes no `agent`: the page is the chat (use `improve` for the product manager)');
   const text = appShellText((agent ?? improve)?.chatProps?.locale ?? props.locale);
   return <AgentLayerProvider agent={agent} improve={improve} locale={props.locale} agentLink={props.agentLink}>
-    <HeaderProvider><Shell layout={layout} title={title} nav={nav} agent={agent} account={account} route={route} improve={Boolean(improve)} text={text} /></HeaderProvider>
+    <HeaderProvider><Shell layout={layout} rail={rail} title={title} nav={nav} agent={agent} account={account} route={route} improve={Boolean(improve)} text={text} /></HeaderProvider>
   </AgentLayerProvider>;
 }
