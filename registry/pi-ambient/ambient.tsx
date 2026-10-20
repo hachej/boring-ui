@@ -258,7 +258,7 @@ type SessionProps = Omit<AmbientChatProps, 'labels' | 'icons'> & { readonly labe
 
 function AmbientSession({ controller, embedded = false, labels, icons, avatar, headerActions, headerTools, messageActions, variant = 'contrast', mode = 'expert', presentation, actions,
   windowState, onWindowState, store, storageKey = 'boring.ambient.position', storage = 'session', tools, belowComposer, composerChips, composerLayout = 'card', onOpenFull, onFeedback, notifications, autoDismissMs, maxToasts, systemNotifications = false,
-  renderEntry, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept = 'image/*', slash, mentions, attachments, onOpenFile, fileChanges, pasteToFile, model, effort, replyFooter, artifacts: hostArtifacts, artifactPanel, artifactTarget, conversations, onDock, feedback: composerFeedback, className,
+  renderEntry, hideLine, displayLimit, historicalMessageActions, unread: replyUnread, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept = 'image/*', slash, mentions, attachments, onOpenFile, fileChanges, pasteToFile, model, effort, replyFooter, artifacts: hostArtifacts, artifactPanel, artifactTarget, conversations, onDock, feedback: composerFeedback, className,
   activeController }: SessionProps) {
   const { title } = labels;
   useChatPlacement(controller, embedded ? 'docked' : 'floating');
@@ -306,11 +306,11 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
     ...(hostArtifacts?.kinds ? { kinds: hostArtifacts.kinds } : {}),
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inWindow, hostArtifacts, opened, detect]);
-  const session = useChatSession({ controller, activeController, mode, presentation, actions, renderEntry, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept,
+  const session = useChatSession({ controller, activeController, mode, presentation, actions, renderEntry, hideLine, historicalMessageActions, unread: replyUnread, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept,
     slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => scrollToBottom.current(), rowExtras, feedback: composerFeedback, onOpenFile, fileChanges, pasteToFile, composerChips });
   const { state, derived, rows, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, files, loading } = session;
   const empty = session.empty;
-  const transcript = useTranscript(rows, 60, 40, { state: state.history, connected: !state.disposed && connected, load: controller.loadEarlier });
+  const transcript = useTranscript(rows, displayLimit ?? 60, 40, { state: state.history, connected: !state.disposed && connected, load: controller.loadEarlier }, displayLimit === undefined);
   const versions = useMemo(() => inWindow ? collectArtifacts(state.view, detect).sort((a, b) => (b.ordinal ?? 0) - (a.ordinal ?? 0)) : [], [inWindow, state.view, detect]);
   versionsRef.current = versions;
   const known = opened ? versions.filter(version => artifactKey(version) === artifactKey(opened.descriptor)) : [];
@@ -490,7 +490,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
       {(expanded || !embedded) && <Separator />}
       <div className={cn('shrink-0', phone && 'pb-[env(safe-area-inset-bottom)]')}>
         <div className="space-y-2 px-3 empty:hidden [&:has(*)]:pt-2">
-          {preparing({ natural: session.natural, waitingForAnswer, run: derived.run, retry: derived.retry, compacting: derived.compacting, stop: state.stop }) && <PreparingStatus />}
+          {preparing({ natural: session.natural, waitingForAnswer, run: derived.run, retry: derived.retry, compacting: derived.compacting, stop: state.stop }) && <PreparingStatus>{derived.stageStatus}</PreparingStatus>}
           <ChatNotices natural={session.natural} state={state} error={error} onReconcile={() => act(controller.reconcile)} onRetry={() => act(controller.retrySameRequest)} />
           {!expanded && (connectionKind === 'error' || connectionKind === 'closed') && <Notice tone="info" testid="connection-notice">
             <span className="flex-1">{connectionKind === 'error' ? labels.loadFailedShort : labels.disconnectedShort}</span>

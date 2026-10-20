@@ -40,6 +40,14 @@ export interface ChatFeatureProps {
   readonly presentation?: 'natural';
   readonly actions?: PiChatActions;
   readonly renderEntry?: (entry: EntryRecord) => ChatCard | undefined;
+  /** Omit complete assistant lines from display, copy and actions. Live trailing fragments wait for a newline or settlement. Not transport redaction. */
+  readonly hideLine?: (line: string) => boolean;
+  /** Initial number of displayed rows (default 60). An explicit limit uses Show earlier, not automatic paging; nothing is deleted. */
+  readonly displayLimit?: number;
+  /** Explicitly enable messageActions for paged history too; other historical controls remain inert. */
+  readonly historicalMessageActions?: boolean;
+  /** Host-rendered unread indicator, keyed by the reply. The host owns seen state and its persistence. */
+  readonly unread?: (reply: ReplyRef) => ReactNode;
   readonly renderTool?: (call: ToolCall, result: ToolResultMessage | undefined) => ChatCard | undefined;
   readonly groupTool?: (call: ToolCall, result: ToolResultMessage) => boolean;
   readonly commandMentions?: CommandMentions;
@@ -102,7 +110,7 @@ export interface ChatSessionOptions extends Readonly<{ [Key in keyof ChatFeature
 }
 
 export function useChatSession(options: ChatSessionOptions) {
-  const { controller, activeController: active, mode, presentation, actions, renderEntry, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept,
+  const { controller, activeController: active, mode, presentation, actions, renderEntry, hideLine, historicalMessageActions, unread, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept,
     slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend, rowExtras, feedback, onOpenFile, fileChanges, pasteToFile, composerChips, composerHeader, composerHasContent, onPickFiles } = options;
   const { labels } = useChatText();
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
@@ -128,16 +136,16 @@ export function useChatSession(options: ChatSessionOptions) {
   const developer = mode === 'developer' && !natural;
   // Only the recogniser takes part in deriving rows; which card is open changes without rebuilding them.
   const artifactDetect = useMemo(() => artifacts ? { detect: artifacts.detect } : undefined, [Boolean(artifacts), artifacts?.detect]); // eslint-disable-line react-hooks/exhaustive-deps
-  const derived = useMemo(() => derive(state.view, { mode, presentation, renderEntry, renderTool, groupTool, artifacts: artifactDetect }), [state.view, mode, presentation, renderEntry, renderTool, groupTool, artifactDetect]);
+  const derived = useMemo(() => derive(state.view, { mode, presentation, hideLine, renderEntry, renderTool, groupTool, artifacts: artifactDetect }), [state.view, mode, presentation, hideLine, renderEntry, renderTool, groupTool, artifactDetect]);
   const queued = useMemo(() => queuedMessages(state.view), [state.view]);
   const { run } = derived;
   const earlier = useMemo<readonly Row[]>(() => {
     if (!state.view || !('entries' in state.history)) return [];
     const activeIds = new Set(state.view.entries.map(entry => entry.id));
     const entries = state.history.entries.filter(entry => !activeIds.has(entry.id));
-    return derive({ ...state.view, entries, docs: {} }, { mode, presentation, renderEntry: undefined, renderTool: undefined, groupTool: undefined, artifacts: artifactDetect }).rows
+    return derive({ ...state.view, entries, docs: {} }, { mode, presentation, hideLine, renderEntry: undefined, renderTool: undefined, groupTool: undefined, artifacts: artifactDetect }).rows
       .map(row => ({ ...row, key: `history:${row.key}`, historical: true }));
-  }, [state.view, state.history, mode, presentation, artifactDetect]);
+  }, [state.view, state.history, mode, presentation, hideLine, artifactDetect]);
   const rows = useMemo(() => [...earlier, ...derived.rows], [earlier, derived.rows]);
   const files = useMemo(() => {
     const found = new Map<string, ConversationFile>();
@@ -333,12 +341,12 @@ export function useChatSession(options: ChatSessionOptions) {
     commandMentions: commandMentions ? { commands: commandMentions.commands, onActivate: activateMention } : undefined,
     answer: actions?.answer,
     artifacts: artifacts ? { open: artifacts.open, isOpen: artifacts.isOpen, kinds: artifacts.kinds } : undefined,
-    messageActions,
+    messageActions, historicalMessageActions, unread,
     replyFooter,
     pieces: slash?.skills?.length || mentions || attachments ? { mentions: Boolean(mentions), uploads: Boolean(attachments), skills: (slash?.skills ?? []).map(skill => skill.name), openMention: mentions?.open, renderMention: mentions?.renderSent ?? mentions?.render, preview: mentions?.preview } : undefined,
     ...rowExtras,
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [controller, developer, natural, groupTool, onOpenImage, onCopy, onOpenFile, fileChanges, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, mentions?.renderSent, mentions?.preview, attachments, artifacts?.open, artifacts?.isOpen, artifacts?.kinds, messageActions, replyFooter, rowExtras]);
+  }), [controller, developer, natural, groupTool, onOpenImage, onCopy, onOpenFile, fileChanges, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, mentions?.renderSent, mentions?.preview, attachments, artifacts?.open, artifacts?.isOpen, artifacts?.kinds, messageActions, historicalMessageActions, unread, replyFooter, rowExtras]);
 
   /** The model-and-effort pill and the note that reports a refused change. */
   const pickers = () => {
@@ -376,7 +384,8 @@ export function useChatSession(options: ChatSessionOptions) {
 export type ChatSession = ReturnType<typeof useChatSession>;
 
 /** One scroll root for current and archived rows. Native paging stays in the borrowed controller. */
-export function useTranscript(rows: readonly { readonly key: string }[], page = 60, more = 40, history?: { readonly state: ChatHistoryState; readonly connected: boolean; readonly load: () => Promise<void> }) {
+export function useTranscript(rows: readonly { readonly key: string }[], page = 60, more = 40, history?: { readonly state: ChatHistoryState; readonly connected: boolean; readonly load: () => Promise<void> }, automatic = true) {
+  if (!Number.isSafeInteger(page) || page < 1) throw new TypeError('Chat displayLimit must be a positive integer');
   const [limit, setLimit] = useState(page);
   const [sentinel, setSentinel] = useState<HTMLDivElement | null>(null);
   const [loaded, setLoaded] = useState(0);
@@ -408,13 +417,13 @@ export function useTranscript(rows: readonly { readonly key: string }[], page = 
     setLoaded(count => count + Math.max(0, Math.min(rows.length, limit) - Math.min(saved.length, saved.limit)));
   }, [rows, limit, scroller, history?.state]);
   useEffect(() => {
-    if (!scroller || !sentinel || typeof IntersectionObserver === 'undefined' || history?.state.kind === 'loading' || history?.state.kind === 'error') return;
+    if (!automatic || !scroller || !sentinel || typeof IntersectionObserver === 'undefined' || history?.state.kind === 'loading' || history?.state.kind === 'error') return;
     const observer = new IntersectionObserver(entries => {
       if (entries.some(entry => entry.isIntersecting) && (scroller.scrollHeight <= scroller.clientHeight || scrollable.start)) reveal();
     }, { root: scroller, rootMargin: '240px 0px 0px' });
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [scroller, sentinel, reveal, scrollable.start, history?.state]);
+  }, [automatic, scroller, sentinel, reveal, scrollable.start, history?.state]);
   const revealTo = (key: string) => { const index = rows.findIndex(row => row.key === key); if (index >= 0) setLimit(value => Math.max(value, rows.length - index)); };
   return { stick, hidden, reveal, revealTo, sentinelRef: setSentinel, loaded, visible: <T,>(items: readonly T[]): readonly T[] => hidden ? items.slice(hidden) : items, reset: () => { anchor.current = undefined; setLimit(page); } };
 }
