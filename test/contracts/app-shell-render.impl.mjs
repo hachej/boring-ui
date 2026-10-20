@@ -81,6 +81,65 @@ test('no agent: the nav and the header render at once, with the locale prop and 
   await unmount();
 });
 
+test('the hover rail starts collapsed, reveals on pointer hover or focus within, and collapses on leave, blur or Escape', async t => {
+  const items = ['Tableau de bord', 'Repas'].map(label => ({ id: label, label, icon: Icon, render: () => null }));
+  const chosen = [];
+  const ui = await render(t, { rail: 'hover', nav: items, route: { id: 'Tableau de bord', onChange: id => chosen.push(id) } }, { width: 1440 });
+  const { act } = await import('react');
+  const panel = ui.container.querySelector('[data-testid=app-sidebar]');
+  const sidebar = panel.closest('[data-slot=sidebar]');
+  const first = panel.querySelector('[data-testid="nav-Tableau de bord"]');
+  const second = panel.querySelector('[data-testid=nav-Repas]');
+  const state = () => sidebar.getAttribute('data-state');
+  assert.equal(state(), 'collapsed', 'hover mode reserves only an icon rail');
+  assert.equal(ui.container.querySelector('[role=tablist]'), null);
+  await act(async () => panel.dispatchEvent(new ui.window.PointerEvent('pointerover', { bubbles: true, pointerType: 'mouse' })));
+  assert.equal(state(), 'expanded', 'hover reveals the labels');
+  assert.equal(first.textContent, 'Tableau de bord');
+  assert.equal(second.textContent, 'Repas');
+  await act(async () => panel.dispatchEvent(new ui.window.PointerEvent('pointerout', { bubbles: true, pointerType: 'mouse', relatedTarget: ui.window.document.body })));
+  assert.equal(state(), 'collapsed', 'leaving collapses');
+  await act(async () => panel.dispatchEvent(new ui.window.PointerEvent('pointerover', { bubbles: true, pointerType: 'touch' })));
+  assert.equal(state(), 'collapsed', 'touch does not reveal an overlay');
+  await act(async () => first.focus());
+  assert.equal(state(), 'expanded', 'keyboard focus reveals');
+  await act(async () => second.focus());
+  assert.equal(state(), 'expanded', 'focus within keeps the labels visible');
+  await act(async () => second.dispatchEvent(new ui.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+  assert.equal(state(), 'collapsed', 'Escape collapses even with focus inside');
+  assert.equal(ui.window.document.activeElement, second, 'Escape does not discard focus');
+  await act(async () => first.focus());
+  assert.equal(state(), 'expanded', 'the next focus reveals again');
+  await act(async () => first.blur());
+  assert.equal(state(), 'collapsed', 'focus leaving collapses');
+  await act(async () => second.click());
+  assert.deepEqual(chosen, ['Repas'], 'the router still owns selection');
+  await ui.unmount();
+});
+
+for (const rail of [undefined, 'icon']) for (const layout of ['screen', 'workspace']) test(`${layout}, rail ${rail ?? 'unset'}: the native sidebar default and hover/focus behaviour stay unchanged`, async t => {
+  const ui = await render(t, { layout, ...(rail ? { rail } : {}) }, { width: 1440 });
+  const { act } = await import('react');
+  const panel = ui.container.querySelector('[data-testid=app-sidebar]');
+  const sidebar = panel.closest('[data-slot=sidebar]');
+  const expected = layout === 'screen' ? 'expanded' : 'collapsed';
+  assert.equal(sidebar.getAttribute('data-state'), expected);
+  assert.equal(ui.container.querySelector('[data-rail=hover]'), null, 'no overlay wrapper in default mode');
+  await act(async () => panel.dispatchEvent(new ui.window.PointerEvent('pointerover', { bubbles: true, pointerType: 'mouse' })));
+  await act(async () => panel.querySelector('[data-testid=nav-Jour]').focus());
+  assert.equal(sidebar.getAttribute('data-state'), expected, 'hover and focus do not change the default sidebar');
+  await act(async () => panel.dispatchEvent(new ui.window.PointerEvent('pointerout', { bubbles: true, pointerType: 'mouse', relatedTarget: ui.window.document.body })));
+  assert.equal(sidebar.getAttribute('data-state'), expected);
+  await ui.unmount();
+});
+
+test('hover rail on a phone keeps the same tab bar and no sidebar', async t => {
+  const ui = await render(t, { rail: 'hover', locale: 'fr' });
+  assert.equal(ui.container.querySelector('[data-testid=app-sidebar]'), null);
+  assert.deepEqual([...ui.container.querySelectorAll('[role=tab]')].map(tab => tab.textContent), ['Jour', 'Semaine', 'Mois', 'Plus']);
+  await ui.unmount();
+});
+
 test('the layer\'s own words follow the shell locale when the agent sets none; the agent\'s own locale wins', async t => {
   const trigger = async (agentChatProps, locale) => {
     const { container, unmount } = await render(t, { agent: agentWith(agentChatProps), locale });
