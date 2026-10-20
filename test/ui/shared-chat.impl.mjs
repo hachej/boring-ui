@@ -129,6 +129,9 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
     await act(async () => source.emit({ type: 'delta', messageId: 'stream', conversationId: 'main', text: ' the plan.' }));
     assert.equal(q('[data-shared-message="stream"] [data-role=assistant]'), row);
     assert.match(row.textContent, /Checking the plan\./);
+    // Complete this turn so later per-agent spinner fixtures do not inherit a wall-clock-dependent working message.
+    await act(async () => source.emit({ type: 'message', message: { ...controller.getSnapshot().shared.messages.find(message => message.id === 'stream'), streaming: false } }));
+    assert.equal(row.querySelectorAll('[data-slot=spinner]').length, 0);
   });
   await t.test('member presence and live connection status', async () => {
     assert.equal(q('[data-testid=shared-status]'), null, 'live has no status dot');
