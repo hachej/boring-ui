@@ -100,6 +100,14 @@ A sent message that mentions an upload (`@uploads/<path>`, what `attachments` sa
 
 `fileChanges` on `PiChat` or `AmbientChat` opts into the same file-card renderer for successful native `write` and `edit` calls with a `path`. One card per path appears below the reply, outside collapsed activity, labelled Created for `write` or Edited for `edit`. A write followed by edits stays Created. Failed, pending and unrelated calls show no file card. Clicking uses `onOpenFile`, falling back to `mentions.open`; without either, the card is not clickable. This is a view of native tool results, not publication evidence or a pinned revision. It is off by default because a host's tools named `write` or `edit` need not operate on workspace files. The workspace demo enables it.
 
+## Natural presentation in `pi-chat`
+
+`presentation="natural"` on `PiChat` or `AmbientChat` is for people who should read a conversation, not a trace. It changes rendering only: the controller, the native entries and the stored history are untouched, and without the prop the output is unchanged. The chat then shows the person's messages (text, images, attachments), the assistant's text, question, approval and artifact cards and the interrupted notice. It hides tool steps (including `renderTool` and `groupTool` output, unless a card is `required`), reasoning, system and event rows, unmatched tool failures and the working shimmer, and it derives as a non-developer whatever `mode` says. Raw error text is replaced by the `responseFailed` label, and a blocked send shows `sendUnavailable` instead of the controller's reason. File discovery for the "files" list skips `read`, `write` and `edit` calls and keeps artifacts, mentions, drafts and images.
+
+One status, `<p role="status" data-testid="preparing">` with the `preparing` label (default "Preparing…", FR « En préparation… », customisable through `labels`), replaces the agent status, compaction and "working" lines while the agent works, retries or compacts. It is absent once the work ends (also after a confirmed stop) and while a question or approval waits for the person. An unconfirmed stop keeps it next to the existing stop notice; a lost connection keeps its own notice.
+
+Limits: assistant prose that narrates technical work is kept (nothing is stripped by pattern), and a host `renderTool` card is hidden unless it is `required`; a running `present` card is its own status. Use `mode="developer"` without the prop to see everything.
+
 ## Regular chat or shared chat
 
 Choose the copied item explicitly. The headless package root stays lean; channel data is available only from the existing `@hachej/boring-ui-kit/shared-chat` subpath.
