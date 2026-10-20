@@ -29,7 +29,7 @@ export function sharedQuote(shared: SharedChatState, id: string | undefined) {
   return message ? { message, author: memberOf(shared, message.author) } : undefined;
 }
 
-export function MemberAvatar({ member, card, interactive = true, size = 'default', className }: { readonly member: Member; readonly card?: Request | undefined; readonly interactive?: boolean; readonly size?: ComponentProps<typeof Avatar>['size']; readonly className?: string | undefined }) {
+export function MemberAvatar({ member, card, interactive = true, size = 'default' }: { readonly member: Member; readonly card?: Request | undefined; readonly interactive?: boolean; readonly size?: ComponentProps<typeof Avatar>['size'] }) {
   const phone = usePhone();
   const [open, setOpen] = useState(false);
   useEffect(() => {
@@ -40,7 +40,7 @@ export function MemberAvatar({ member, card, interactive = true, size = 'default
   }, [open]);
   const state = member.kind === 'agent' && card?.state && Object.hasOwn(channelAvatarStates, card.state) ? channelAvatarStates[card.state] ?? 'neutral' : 'neutral';
   const tone = state === 'blocked' ? 'text-destructive' : state === 'waiting' ? 'text-muted-foreground' : 'text-primary';
-  const avatar = <Avatar size={size} className={className} data-testid="member-avatar" aria-label={member.name} data-state={state}>
+  const avatar = <Avatar size={size} data-testid="member-avatar" aria-label={member.name} data-state={state}>
     {member.avatarUrl && <AvatarImage src={member.avatarUrl} alt={member.name} />}
     <AvatarFallback>{member.name.replace(/[()]/g, '').split(/\s+/).slice(0, 2).map(word => word[0]).join('').toUpperCase()}</AvatarFallback>
     {state !== 'neutral' && <span data-testid="avatar-indicator" data-state={state} className={`absolute right-0 bottom-0 ${tone}`}>
@@ -48,9 +48,9 @@ export function MemberAvatar({ member, card, interactive = true, size = 'default
     </span>}
   </Avatar>;
   if (member.kind !== 'agent' || !card || !interactive) return avatar;
-  const trigger = <Button variant="ghost" size="icon" data-testid={`agent-avatar-${member.id}`} data-state={state} aria-label={`${member.name}: ${card.line}`}>{avatar}</Button>;
+  const trigger = <span role="button" tabIndex={0} className="inline-flex shrink-0" data-testid={`agent-avatar-${member.id}`} data-state={state} aria-label={`${member.name}: ${card.line}`}>{avatar}</span>;
   return phone
-    ? <Popover open={open} onOpenChange={setOpen}><PopoverTrigger render={trigger} /><PopoverContent data-testid="agent-state-popover" side="bottom" align="start" className="max-w-[calc(100vw-1rem)]">{card.line}</PopoverContent></Popover>
+    ? <Popover open={open} onOpenChange={setOpen}><PopoverTrigger nativeButton={false} render={trigger} /><PopoverContent data-testid="agent-state-popover" side="bottom" align="start" className="max-w-[calc(100vw-1rem)]">{card.line}</PopoverContent></Popover>
     : <Tooltip><TooltipTrigger render={trigger} /><TooltipContent>{card.line}</TooltipContent></Tooltip>;
 }
 function MemberBadge({ member }: { readonly member: Member }) {
@@ -140,10 +140,9 @@ export function SharedMessage({ shared, children, remove, canRemove, openFile, o
   const replyable = Boolean(onReply && ((author.kind === 'agent' && !message.via) || message.card));
   const removable = Boolean(remove && canRemove?.(message));
   const actionable = !message.removed && (replyable || removable);
-  const colleague = !own && (author.kind !== 'agent' || message.via !== undefined);
-  const heading = first && (!own || message.via) && <div data-testid="message-author-row" className={`flex min-w-0 items-center gap-2${colleague ? ' sm:contents' : own ? ' justify-end' : ''}`}>
-    <MemberAvatar member={author} card={message.via ? undefined : shared.latestCard} size={colleague ? 'sm' : 'default'} className={colleague ? 'sm:col-start-1 sm:row-start-2' : undefined} />
-    <div className={`flex min-w-0 items-center gap-2${colleague ? ' sm:col-start-2 sm:row-start-1' : ''}`}>
+  const heading = first && (!own || message.via) && <div data-testid="message-author-row" className={`flex min-w-0 items-center gap-2${own ? ' justify-end' : ''}`}>
+    <MemberAvatar member={author} card={message.via ? undefined : shared.latestCard} size={own ? 'default' : 'sm'} />
+    <div className="flex min-w-0 items-center gap-2">
       <span data-testid="message-author" className={`min-w-0 truncate${own ? '' : ' text-sm font-medium'}`}>{author.name}</span>
       {message.via && <span data-testid="message-via" className={`min-w-0 truncate text-muted-foreground${own ? '' : ' text-sm'}`}>{labels.sharedVia(message.via)}</span>}
       {!(message.via && author.kind === 'agent') && <MemberBadge member={author} />}
@@ -155,23 +154,24 @@ export function SharedMessage({ shared, children, remove, canRemove, openFile, o
   </>;
   return <div ref={element} data-shared-message={message.id} className="group/shared-message relative flex min-w-0 flex-col gap-1"
     onPointerDown={event => {
-      if (!phone || !actionable || event.pointerType !== 'touch' || event.target instanceof Element && event.target.closest('button, a, input, textarea')) return;
+      if (!phone || !actionable || event.pointerType !== 'touch' || event.target instanceof Element && event.target.closest('button, a, input, textarea, [role=button], [role=link]')) return;
       cancelPress(); start.current = { x: event.clientX, y: event.clientY };
       press.current = setTimeout(() => setActionsOpen(true), 400);
     }}
     onPointerMove={event => { if (start.current && (Math.abs(event.clientX - start.current.x) > 8 || Math.abs(event.clientY - start.current.y) > 8)) cancelPress(); }}
     onPointerUp={cancelPress} onPointerCancel={cancelPress}
-    onContextMenu={event => { if (phone && actionable && event.target instanceof Element && !event.target.closest('button, a, input, textarea')) { event.preventDefault(); setActionsOpen(true); } }}>
-    {colleague ? <div className="flex min-w-0 flex-col gap-1 sm:grid sm:grid-cols-[1.5rem_1fr] sm:gap-x-2">
-      {heading}<div className="min-w-0 sm:col-start-2">{body}</div>
-    </div> : <>{heading}{body}</>}
+    onContextMenu={event => { if (phone && actionable && event.target instanceof Element && !event.target.closest('button, a, input, textarea, [role=button], [role=link]')) { event.preventDefault(); setActionsOpen(true); } }}>
+    {heading}
+    <div data-testid="shared-message-content" className={`flex min-w-0 flex-col gap-1${own ? '' : ' ml-8'}`}>
+    {body}
     {!message.removed && !message.via && (message.streaming || message.steps?.length) && author.kind === 'agent' && <ActivityBlock participant={author.name} steps={(message.steps ?? []).map((step, index) => ({ kind: 'host', key: `${message.id}:step:${index}`, step }))} state={message.streaming ? 'running' : message.steps?.some(step => step.status === 'failed') ? 'failed' : 'done'} streaming={Boolean(message.streaming)} developer={false} active={shared.showSpinner !== false} />}
     {!message.removed && message.attachments?.map(file => <Button key={file.path} variant="outline" disabled={!openFile} onClick={() => openFile?.(file.path)} className="max-w-full justify-start"><span className="truncate">{file.title ?? file.path}</span></Button>)}
-    {actionable && <div data-testid="shared-message-actions" hidden={phone && !actionsOpen} className={`${phone && !actionsOpen ? 'hidden' : 'flex'} items-center gap-1${phone ? '' : ' absolute inset-x-0 top-full opacity-0 group-hover/shared-message:opacity-100 group-focus-within/shared-message:opacity-100'}`}>
+    {error && <p role="alert">{error}</p>}
+    </div>
+    {actionable && <div data-testid="shared-message-actions" hidden={phone && !actionsOpen} className={`${phone && !actionsOpen ? 'hidden' : 'flex'} items-center gap-1${own ? '' : ' ml-8'}${phone ? '' : ' absolute inset-x-0 top-full opacity-0 group-hover/shared-message:opacity-100 group-focus-within/shared-message:opacity-100'}`}>
       {replyable && onReply && <Tooltip><TooltipTrigger render={<Button variant="ghost" size={phone ? 'icon' : 'icon-xs'} data-testid="shared-reply" aria-label={labels.sharedReply} onClick={() => { setActionsOpen(false); onReply(message.id); }}><ReplyIcon aria-hidden="true" /></Button>} /><TooltipContent>{labels.sharedReply}</TooltipContent></Tooltip>}
       {removable && remove && <Tooltip><TooltipTrigger render={<Button variant="ghost" size={phone ? 'icon' : 'icon-xs'} aria-label={labels.delete} onClick={() => { void remove(message).catch(error => setError(error instanceof Error ? error.message : labels.actionFailedShort)); }}><Trash2Icon aria-hidden="true" /></Button>} /><TooltipContent>{labels.delete}</TooltipContent></Tooltip>}
     </div>}
-    {error && <p role="alert">{error}</p>}
   </div>;
 }
 

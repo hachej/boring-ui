@@ -57,6 +57,21 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
     assert.equal(q('[data-shared-message="five"] [data-slot=bubble]')?.dataset.variant, 'ghost');
     assert.equal(q('[data-shared-message="three"] [data-testid=message-author]'), null);
   });
+  await t.test('all other authors share one small-avatar header and indented content column', async () => {
+    const person = q('[data-shared-message=one]'); const agent = q('[data-shared-message=five]');
+    assert.equal(person.querySelector('[data-testid=message-author-row]').className, agent.querySelector('[data-testid=message-author-row]').className);
+    assert.equal(person.querySelector('[data-testid=member-avatar]').className, agent.querySelector('[data-testid=member-avatar]').className);
+    assert.equal(person.querySelector('[data-testid=member-avatar]').dataset.size, 'sm');
+    assert.equal(agent.querySelector('[data-testid=member-avatar]').dataset.size, 'sm');
+    for (const id of ['one', 'two', 'five', 'six']) assert.ok(q(`[data-shared-message="${id}"] [data-testid=shared-message-content]`)?.classList.contains('ml-8'));
+    assert.equal(q('[data-shared-message=two] [data-testid=message-author-row]'), null);
+    assert.equal(q('[data-shared-message=three] [data-testid=message-author-row]'), null);
+    assert.equal(q('[data-shared-message=three] [data-testid=shared-message-content]')?.classList.contains('ml-8'), false);
+    assert.equal(q('[data-shared-message=three] [data-slot=bubble]')?.dataset.align, 'end');
+    assert.ok(q('[data-testid=transcript]').classList.contains('gap-0'));
+    assert.ok(q('[data-shared-message=two]').closest('[data-slot=message-scroller-item]').classList.contains('mt-2'));
+    assert.ok(q('[data-shared-message=three]').closest('[data-slot=message-scroller-item]').classList.contains('mt-6'));
+  });
   await t.test('request action and replacement through the timeline', async () => {
     await act(async () => q('[data-shared-message="six"] [data-testid=request-card] button').click());
     assert.deepEqual(source.actions, [{ conversationId: 'main', requestId: 'review-plan', actionId: 'review' }]);

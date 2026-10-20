@@ -220,8 +220,8 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', clas
         <MessageScrollerViewport ref={stick.scrollRef} data-testid="transcript-scroll" aria-label={labels.messages} className="scrollbar-thumb-border scrollbar-track-transparent">
           {!empty && <TranscriptHistory history={state.history} connected={!state.disposed && connected} onLoad={transcript.reveal} sentinelRef={transcript.sentinelRef} hidden={hidden} loaded={transcript.loaded} />}
           <div className="mx-auto w-full max-w-[720px] px-4 pt-6 pb-8 sm:px-6">
-          <MessageScrollerContent aria-label={labels.messages} aria-live="polite" data-testid="transcript">
-            {visible.map(row => <MessageScrollerItem key={row.key} messageId={row.key} className="[content-visibility:visible]"><RowView row={row} context={rowContext} /></MessageScrollerItem>)}
+          <MessageScrollerContent aria-label={labels.messages} aria-live="polite" data-testid="transcript" className={state.shared ? 'gap-0' : undefined}>
+            {visible.map((row, index) => <MessageScrollerItem key={row.key} messageId={row.key} className={cn('[content-visibility:visible]', row.shared && index > 0 && (row.shared.first ? 'mt-6' : 'mt-2'))}><RowView row={row} context={rowContext} /></MessageScrollerItem>)}
           </MessageScrollerContent>
           </div>
         </MessageScrollerViewport>

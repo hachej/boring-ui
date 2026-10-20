@@ -71,7 +71,7 @@ try {
       assert.equal(await browser.evaluate(`${person}.querySelector('[data-slot=bubble]').dataset.variant`), 'muted');
       assert.equal(await browser.evaluate(`${person}.querySelector('[data-slot=bubble]').dataset.align`), 'start');
       assert.equal(await browser.evaluate(`!!${person}.querySelector('[data-testid=author-badge], [data-testid=avatar-indicator]')`), false);
-      assert.equal(await browser.evaluate(`(() => { const row = ${person}, a = row.querySelector('[data-testid=member-avatar]').getBoundingClientRect(), b = row.querySelector('[data-slot=bubble]').getBoundingClientRect(), n = row.querySelector('[data-testid=message-author]').getBoundingClientRect(); return a.width === 24 && ${device === 'desktop' ? 'Math.abs(a.top - b.top) <= 1' : 'Math.abs(a.top + a.height / 2 - n.top - n.height / 2) <= 1'}; })()`), true, 'compact avatar/header alignment');
+      assert.equal(await browser.evaluate(`(() => { const row = ${person}, a = row.querySelector('[data-testid=member-avatar]').getBoundingClientRect(), b = row.querySelector('[data-slot=bubble]').getBoundingClientRect(), n = row.querySelector('[data-testid=message-author]').getBoundingClientRect(); return a.width === 24 && Math.abs(a.top + a.height / 2 - n.top - n.height / 2) <= 1; })()`), true, 'compact avatar/header alignment');
       if (scheme === 'light') { await reveal('via-person'); await shot('via'); }
 
       await browser.type(input, '@');
@@ -93,6 +93,26 @@ try {
       const ownId = await browser.evaluate(`'sent-' + window.__SHARED__.sends.at(-1).clientId`);
       await inlineMention(`${message(ownId)}.querySelector('[data-testid=message-mention]')`);
       assert.equal(await browser.evaluate(`(() => { const other = ${person}.querySelector('[data-slot=bubble-content]'), own = ${message(ownId)}.querySelector('[data-slot=bubble-content]'); return other.className === own.className && getComputedStyle(other).backgroundColor === getComputedStyle(own).backgroundColor && getComputedStyle(other).color === getComputedStyle(own).color; })()`), true, 'colleagues reuse the own-user bubble, not a second skin');
+      const geometry = await browser.evaluate(`(() => {
+        const person = ${person}, own = ${message(ownId)}, agent = ${message('pdf-doing')}, continuation = ${message('pdf-plan')};
+        const rect = e => e.getBoundingClientRect();
+        const info = row => { const a = row.querySelector('[data-testid=member-avatar]'), h = row.querySelector('[data-testid=message-author-row]'), n = row.querySelector('[data-testid=message-author]'), c = row.querySelector('[data-testid=shared-message-content]'); return { header: h.className, avatar: a.className, size: rect(a).width, name: rect(n).left, content: rect(c).left, topGap: rect(c).top - rect(h).bottom, center: Math.abs(rect(a).top + rect(a).height / 2 - rect(n).top - rect(n).height / 2) }; };
+        return { person: info(person), agent: info(agent), continuation: rect(continuation.querySelector('[data-testid=shared-message-content]')).left,
+          groups: [rect(own).top - rect(person).bottom, rect(agent).top - rect(own).bottom], continuationGap: rect(continuation).top - rect(agent).bottom };
+      })()`);
+      assert.equal(geometry.person.header, geometry.agent.header);
+      assert.equal(geometry.person.avatar, geometry.agent.avatar);
+      for (const author of [geometry.person, geometry.agent]) {
+        assert.equal(author.size, 24); assert.ok(author.center <= 1);
+        assert.ok(Math.abs(author.name - author.content) <= 1);
+        assert.ok(author.topGap >= 0 && author.topGap <= 8);
+      }
+      assert.ok(Math.abs(geometry.person.content - geometry.agent.content) <= 1);
+      assert.ok(Math.abs(geometry.continuation - geometry.agent.content) <= 1);
+      assert.ok(geometry.groups.every(gap => gap > 0 && gap <= 24.5));
+      assert.ok(Math.abs(geometry.groups[0] - geometry.groups[1]) <= 1, 'author-group gaps are equal');
+      assert.ok(geometry.continuationGap > 0 && geometry.continuationGap < Math.min(...geometry.groups), 'continuations are tighter than groups');
+      writeFileSync(`${evidence}/${width}-${scheme}-header-geometry.json`, JSON.stringify(geometry, null, 2));
       await reveal('pdf-doing'); await shot('summon-plan'); await shot('doing-answer');
       await reveal('via-person'); await shot('conversation');
 
@@ -103,6 +123,7 @@ try {
       assert.equal(await browser.evaluate(`${trace('pdf-worker')}.dataset.open`), 'false');
       assert.equal(await browser.evaluate(`${qa('[data-slot=spinner]')}.length`), 1, 'only the working Builder has a spinner');
       assert.equal(await browser.evaluate(`!!${q('[data-testid=request-card]')}.querySelector('[data-slot=spinner]') || !!${avatar}.querySelector('[data-slot=spinner]')`), false);
+      assert.equal(await browser.evaluate(`(() => { const left = ${message('pdf-doing')}.querySelector('[data-testid=shared-message-content]').getBoundingClientRect().left; return ['pdf-card', 'pdf-worker'].every(id => { const row = document.querySelector('[data-shared-message="' + id + '"]'); return Math.abs(row.querySelector('[data-testid=shared-message-content]').getBoundingClientRect().left - left) <= 1; }); })()`), true, 'cards and traces use the author content column');
       await reveal('pdf-card'); await shot('trace-live'); await shot('card-building');
       await browser.click(`${trace('pdf-worker')}.querySelector('button')`);
       await browser.until('expanded Builder trace', `${message('pdf-worker')}.querySelectorAll('[data-testid=activity-step]').length === 3`);
