@@ -42,11 +42,11 @@ try {
     if (release) await touch('touchEnd', []);
   };
   const center = async selector => { const r = await browser.evaluate(rect(selector)); return { ...r, x: r.x + r.w / 2, y: r.y + r.h / 2 }; };
-  /** A finger tap at the element's centre, without scrolling it into view first (that would move the sheet's own overflow). */
+  const tapAt = async selector => { const r = await center(selector); await touch('touchStart', [[r.x, r.y]]); await touch('touchEnd', []); };
+  /** A finger tap at the element's centre once it receives hits, without scrolling it into view (that would move the sheet's own overflow). */
   const tap = async selector => {
-    await browser.until(`tappable ${selector}`, `(() => { const r = ${q(selector)}?.getBoundingClientRect(); return r && r.width > 0 && r.bottom > 0 && r.top < innerHeight; })()`);
-    const r = await center(selector);
-    await touch('touchStart', [[r.x, r.y]]); await touch('touchEnd', []);
+    await browser.until(`tappable ${selector}`, `(() => { const e = ${q(selector)}, r = e?.getBoundingClientRect(); return r && r.width > 0 && r.height > 0 && e.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)); })()`);
+    await tapAt(selector);
   };
   const live = () => browser.until('the chats are live', `${q('[data-testid=agent-trigger]')} && !${q('[data-testid=connecting]')}`, 30000);
   /** Every visible control of the layer is at least 44x44px (touch) and inside the viewport; fails with the selector. */
@@ -319,7 +319,7 @@ try {
     assert.ok(layer.y > 200 && layer.y < 600 && Math.round(layer.bottom) >= 844, JSON.stringify(layer));
     assert.ok(await browser.evaluate(`!!document.querySelector('[data-slot=drawer-overlay]')`), 'modal backdrop');
     const before = await browser.evaluate(taps);
-    await tap(TAB).catch(() => {});
+    await tapAt(TAB);
     await pause(300);
     assert.equal(await browser.evaluate(taps), before, 'the tab bar behind a modal layer does not receive the tap');
     await browser.screenshot('phone-half.png');
@@ -488,6 +488,56 @@ try {
     await touch('touchEnd', []);
     await pause(800);
     assert.equal(app.submits.length, before);
+  });
+
+  await step('9c the composer microphone at peek, half and full: a hold survives the keyboard, the viewport shrinking and a pointercancel; only a slide off cancels', async () => {
+    const MIC = '[data-testid=agent-talk]', state = `${q(MIC)}?.dataset.state`;
+    const active = `document.activeElement?.getAttribute('data-testid') ?? document.activeElement?.tagName`;
+    /** Hold the microphone, shrink the visual viewport mid-hold (the keyboard), and check nothing moved under the finger. */
+    const hold = async (where, finish) => {
+      const mic = await browser.evaluate(rect(MIC)), focus = await browser.evaluate(active), sheet = await browser.evaluate(snap);
+      const r = await center(MIC);
+      await touch('touchStart', [[r.x, r.y]]);
+      await browser.until(`${where}: recording`, `${state} === 'recording'`, 8000);
+      assert.equal(await browser.evaluate(`${q(INPUT)}.readOnly`), true, `${where}: the composer is read-only while recording`);
+      await browser.evaluate(`window.__vv.set(500)`);
+      await pause(700);
+      assert.equal(await browser.evaluate(state), 'recording', `${where}: still recording after the viewport shrank`);
+      assert.deepEqual(await browser.evaluate(rect(MIC)), mic, `${where}: the microphone did not move under the finger`);
+      assert.equal(await browser.evaluate(snap), sheet, `${where}: the snap holds`);
+      assert.equal(await browser.evaluate(active), focus, `${where}: pressing the microphone moved no focus`);
+      await finish(r);
+      await browser.evaluate(`window.__vv.set(844)`);
+      await browser.until(`${where}: the composer is editable again`, `${q(INPUT)}.readOnly === false`, 5000);
+      await settle();
+    };
+    const away = async r => { await touch('touchMove', [[r.x - 150, r.y - 200]]); await browser.until('cancelled', `${state} === 'idle'`, 5000); await touch('touchEnd', []); };
+    const submits = app.submits.length;
+    // Peek: the browser takes the touch back (pointercancel): the recording is kept and sent.
+    assert.equal(await browser.evaluate(snap), 'peek');
+    await hold('peek', async () => { await pause(600); await touch('touchCancel', []); });
+    for (let i = 0; i < 100 && app.submits.length === submits; i++) await pause(100);
+    assert.equal(app.submits.length, submits + 1, 'a pointercancel while recording keeps the audio');
+    await browser.until('idle', `${state} === 'idle'`, 20000);
+    // Half, then full with the composer focused: a slide off the button cancels, nothing is sent.
+    const sent = app.submits.length;
+    await tap(TRIGGER); await browser.until('half', `${snap} === 'half'`); await settle();
+    await hold('half', away);
+    await tap(INPUT); await browser.until('full', `${snap} === 'full'`); await settle();
+    assert.equal(await browser.evaluate(active), 'composer-input', 'the composer is focused');
+    await hold('full', away);
+    await browser.evaluate(`document.activeElement.blur()`);
+    await pause(400);
+    assert.equal(app.submits.length, sent, 'a slide off sent nothing');
+    assert.equal(await browser.evaluate(`${q(INPUT)}.readOnly`), false, 'the composer is editable again');
+    // Back to peek, where the next step starts.
+    const layer = await browser.evaluate(rect(LAYER));
+    await touch('touchStart', [[195, layer.y / 2]]); await touch('touchEnd', []);
+    await browser.until('peek again', `${snap} === 'peek'`);
+    // Keep the slide at its start briefly: peek is already non-modal, but the moving handle can still cover the header trigger.
+    // The next tap must wait for the actual hit target, not just the snap state (the race seen on a faster CI runner).
+    assert.equal(await browser.evaluate(`(() => { const slide = ${q(LAYER)}.getAnimations().find(animation => animation.transitionProperty === 'transform');
+      if (!slide) return false; slide.pause(); slide.currentTime = 0; setTimeout(() => slide.play(), 600); return true; })()`), true, 'the full-to-peek slide is running');
   });
 
   await step('10 the product manager swaps in with « ← », each chat keeps its own draft', async () => {
