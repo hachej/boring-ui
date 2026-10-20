@@ -292,6 +292,82 @@ test('the screen header follows an action whose href, target or rel changes alon
   await act(async () => reactRoot.unmount());
 });
 
+// The composer microphone on a phone: a fake microphone and recorder (the pattern of test/ui/voice-input.test.mjs), the layer open at half.
+async function talking(t, snap = 'half') {
+  const tracks = [], transcribed = [];
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'MediaRecorder');
+  class FakeRecorder extends EventTarget {
+    static isTypeSupported() { return true; }
+    constructor() { super(); this.state = 'inactive'; this.mimeType = 'audio/webm'; }
+    start() { this.state = 'recording'; }
+    stop() { this.state = 'inactive'; const chunk = new Event('dataavailable'); chunk.data = new Blob(['fictional audio'], { type: 'audio/webm' }); this.dispatchEvent(chunk); this.dispatchEvent(new Event('stop')); }
+  }
+  globalThis.MediaRecorder = FakeRecorder;
+  t.after(() => { previous ? Object.defineProperty(globalThis, 'MediaRecorder', previous) : delete globalThis.MediaRecorder; });
+  const transcribe = async audio => { transcribed.push(audio); return 'fictional words'; };
+  const opened = await openedLayer(t, 390, { agent: { ...agentWith(), voice: { transcribe, send: 'draft' } } });
+  Object.defineProperty(opened.window.navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: async () => {
+    const track = { stopped: false, stop() { this.stopped = true; } }; tracks.push(track);
+    return { getTracks: () => [track], getAudioTracks: () => [track] };
+  } } });
+  await opened.act(async () => opened.latest().open('agent', snap));
+  const find = selector => opened.window.document.querySelector(selector);
+  for (let tries = 0; tries < 200 && !(find('[data-testid=agent-talk]') && find('[data-testid=composer-input]')); tries++) await opened.act(async () => new Promise(done => setTimeout(done, 25)));
+  const talk = find('[data-testid=agent-talk]');
+  assert.ok(talk && find('[data-testid=composer-input]'), 'the microphone and the composer render');
+  const fire = async (node, type, init = {}) => {
+    const Pointer = opened.window.PointerEvent ?? opened.window.MouseEvent;
+    const event = new Pointer(type, { bubbles: true, cancelable: true, pointerId: 1, ...init });
+    await opened.act(async () => { node.dispatchEvent(event); });
+    return event;
+  };
+  const until = async (condition, label) => { for (let tries = 0; tries < 60 && !condition(); tries++) await opened.act(async () => new Promise(done => setTimeout(done, 25))); assert.ok(condition(), label); };
+  return { opened, find, talk, fire, until, tracks, transcribed };
+}
+
+for (const snap of ['half', 'full']) test(`the composer microphone at ${snap}: a press keeps focus where it was, a browser pointercancel while recording keeps the audio, the composer takes no focus and the snap holds`, async t => {
+  const ui = await talking(t, snap);
+  const input = ui.find('[data-testid=composer-input]');
+  const down = await ui.fire(ui.talk, 'pointerdown', { button: 0 });
+  assert.equal(down.defaultPrevented, true, 'pressing the microphone cannot move focus (no keyboard opens or closes)');
+  assert.equal((await ui.fire(ui.talk, 'mousedown', { button: 0 })).defaultPrevented, true, 'nor does the compatibility mousedown');
+  await ui.until(() => ui.talk.dataset.state === 'recording', 'recording');
+  assert.equal(input.readOnly, true, 'the composer is read-only while recording');
+  assert.equal(input.getAttribute('inputmode'), 'none', 'and asks for no keyboard');
+  const before = ui.find('[data-testid=agent-layer]').dataset.state;
+  await ui.opened.act(async () => input.focus());
+  await ui.fire(input, 'focusin');
+  assert.equal(ui.find('[data-testid=agent-layer]').dataset.state, before, 'focusing the composer while recording does not change the snap');
+  await ui.fire(ui.talk, 'pointercancel');
+  await ui.until(() => ui.transcribed.length === 1, 'a browser pointercancel finishes the recording: the audio is transcribed');
+  assert.equal(ui.tracks[0].stopped, true, 'the microphone is released');
+  await ui.until(() => ui.talk.dataset.state === 'idle', 'back to idle');
+  assert.equal(input.readOnly, false, 'the composer is editable again');
+  assert.equal(input.hasAttribute('inputmode'), false, 'with its own inputmode back');
+  await ui.opened.unmount();
+});
+
+test('the composer microphone: sliding more than 24px off the button still cancels (nothing is transcribed)', async t => {
+  const ui = await talking(t);
+  await ui.fire(ui.talk, 'pointerdown', { button: 0, clientX: 0, clientY: 0 });
+  await ui.until(() => ui.talk.dataset.state === 'recording', 'recording');
+  await ui.fire(ui.talk, 'pointermove', { clientX: 400, clientY: 400 });
+  await ui.until(() => ui.talk.dataset.state === 'idle', 'the slide off cancelled');
+  await ui.fire(ui.talk, 'pointerup');
+  assert.equal(ui.transcribed.length, 0, 'a cancelled recording is not transcribed');
+  assert.equal(ui.tracks[0].stopped, true, 'the microphone is released');
+  await ui.opened.unmount();
+});
+
+test('the composer microphone: a release (pointerup) still sends the audio for transcription', async t => {
+  const ui = await talking(t);
+  await ui.fire(ui.talk, 'pointerdown', { button: 0 });
+  await ui.until(() => ui.talk.dataset.state === 'recording', 'recording');
+  await ui.fire(ui.talk, 'pointerup');
+  await ui.until(() => ui.transcribed.length === 1, 'transcribed');
+  await ui.opened.unmount();
+});
+
 test('one layer at a time on a phone: opening the agent closes the product manager and back', t => oneLayerAt(t, 390));
 test('one layer at a time on a wide screen: opening the agent closes the product manager and back', t => oneLayerAt(t, 1280));
 
