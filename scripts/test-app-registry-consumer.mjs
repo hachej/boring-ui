@@ -65,7 +65,7 @@ async function testStyle(style) {
       iconLibrary: 'lucide', aliases: { components: '@/components', utils: '@/lib/utils', ui: '@/components/ui', lib: '@/lib', hooks: '@/hooks' } }));
     writeFileSync(join(directory, 'src/index.css'), '@import "tailwindcss";\n');
     writeFileSync(join(directory, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'ESNext', moduleResolution: 'Bundler', jsx: 'react-jsx', strict: true, noUnusedLocals: true, noUnusedParameters: true, verbatimModuleSyntax: true, erasableSyntaxOnly: true, noUncheckedIndexedAccess: true, skipLibCheck: false,
-      noEmit: true, types: [], lib: ['ES2023', 'DOM', 'DOM.Iterable'], baseUrl: '.', paths: { '@/*': ['./src/*'] } }, include: ['src/components/pi-app/**/*.tsx', 'src/components/pi-app/**/*.ts', 'src/components/app-shell/**/*.tsx', 'src/components/app-shell/**/*.ts', 'src/components/documents/**/*.tsx', 'src/components/documents/**/*.ts', 'src/page.tsx', 'src/pdf-check.tsx'] }));
+      noEmit: true, types: [], lib: ['ES2023', 'DOM', 'DOM.Iterable'], baseUrl: '.', paths: { '@/*': ['./src/*'] } }, include: ['src/components/pi-app/**/*.tsx', 'src/components/pi-app/**/*.ts', 'src/components/app-shell/**/*.tsx', 'src/components/app-shell/**/*.ts', 'src/components/documents/**/*.tsx', 'src/components/documents/**/*.ts', 'src/page.tsx', 'src/pdf-check.tsx', 'src/local-file-check.tsx'] }));
     const installer = { ...process.env, npm_config_cache: cache, npm_config_offline: 'true', npm_config_ignore_scripts: 'true', npm_config_audit: 'false', npm_config_fund: 'false' };
     delete installer.NODE_OPTIONS;
     run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', `${registry}/pi-app.json`, `${registry}/file-tree.json`, `${registry}/app-shell.json`, `${registry}/documents.json`, `${registry}/theme.json`, '--cwd', directory, '--yes'], installer);
@@ -73,8 +73,13 @@ async function testStyle(style) {
     const css = readFileSync(join(directory, 'src/index.css'), 'utf8');
     assert.ok(css.includes('--background') && css.includes('.pi-chat'), 'theme tokens and the chat\'s scoped css merged into the host stylesheet');
 
+    // Check the documented browser-only panel against the actual installed blocks, not monorepo aliases.
+    const localExample = readFileSync(join(root, 'registry/README.md'), 'utf8').split('#### Custom artifacts and a dropped PDF in one app')[1]?.match(/```tsx\n([\s\S]*?)\n```/)?.[1];
+    assert.ok(localExample, 'the LocalFileViewer workspace example exists');
+    writeFileSync(join(directory, 'src/local-file-check.tsx'), localExample);
     // A consumer page: only the block, its hooks and the host's own routes.
-    writeFileSync(join(directory, 'src/page.tsx'), `import { useEffect, useState } from 'react';
+    writeFileSync(join(directory, 'src/page.tsx'), `export { ReportWorkspace } from './local-file-check';
+  import { useEffect, useState } from 'react';
   import { createRoot } from 'react-dom/client';
   import { AgentWorkspace, useConversations, useRemoteChat } from './components/pi-app/agent-workspace';
   import type { OpenedView } from './components/pi-app/agent-workspace';
@@ -131,8 +136,12 @@ async function testStyle(style) {
     const pdfBase64 = Buffer.from(fictionalPdf([['Cedar Works', 'A fictional picnic plan.'], ['Page two', 'Pack some sandwiches.']])).toString('base64');
     writeFileSync(join(directory, 'src/pdf-check.tsx'), `import { createRoot } from 'react-dom/client';
   import { PdfPane } from './components/viewers/pdf-pane';
+  import { LocalFileViewer } from './components/viewers/local-file-viewer';
   const bytes = Uint8Array.from(atob('${pdfBase64}'), character => character.charCodeAt(0));
-  createRoot(document.getElementById('root')!).render(<div className="boring-viewer" style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}><PdfPane name="Cedar Works.pdf" bytes={bytes} inline={false} /></div>);
+  const local = location.search === '?local';
+  if (local) Object.defineProperty(navigator, 'pdfViewerEnabled', { value: false });
+  const file = new File([bytes], 'compte-rendu-fictif.pdf', { type: 'application/pdf' });
+  createRoot(document.getElementById('root')!).render(<div className="boring-viewer" style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>{local ? <LocalFileViewer name={file.name} blob={file} /> : <PdfPane name="Cedar Works.pdf" bytes={bytes} inline={false} />}</div>);
   `);
     assertConsumerTypeFiles(run(process.execPath, ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.json', '--listFiles'], isolated), directory);
     run(process.execPath, ['node_modules/esbuild/bin/esbuild', 'src/page.tsx', '--bundle', '--platform=browser', '--format=esm', '--jsx=automatic', '--outfile=dist/page.js', '--metafile=dist/meta.json',
@@ -141,7 +150,7 @@ async function testStyle(style) {
     assert.ok(bundledCss.includes('file-tree-row-button') && bundledCss.includes('file-tree'), 'portable tree styles ship without scanning package internals');
     const inputs = Object.keys(JSON.parse(readFileSync(join(directory, 'dist/meta.json'), 'utf8')).inputs);
     assertConsumerTypeFiles(inputs.map(path => resolve(directory, path)).join('\n'), directory);
-    for (const file of ['file-tree/file-tree.tsx', 'pi-app/agent-workspace.tsx', 'pi-app/artifact-panel.tsx', 'pi-app/file-viewer.tsx', 'pi-app/sessions.tsx', 'pi-chat/pi-chat.tsx', 'pi-workspace/workspace.tsx', 'viewers/viewer-frame.tsx', 'documents/documents.tsx', 'documents/document-sheet.tsx'])
+    for (const file of ['file-tree/file-tree.tsx', 'pi-app/agent-workspace.tsx', 'pi-app/artifact-panel.tsx', 'pi-app/file-viewer.tsx', 'pi-app/sessions.tsx', 'pi-chat/pi-chat.tsx', 'pi-workspace/workspace.tsx', 'viewers/viewer-frame.tsx', 'viewers/local-file-viewer.tsx', 'documents/documents.tsx', 'documents/document-sheet.tsx'])
       assert.ok(inputs.some(path => path.endsWith(`src/components/${file}`)), `the bundle uses the CLI-installed ${file}`);
     assert.deepEqual(inputs.filter(path => /@hachej\/boring-agent|pi-durable\/dist\/(storage|env)|sqlite|node:|tldraw/.test(path)), [], 'browser bundle holds no agent, storage, Node or canvas code');
     run(process.execPath, ['node_modules/esbuild/bin/esbuild', 'src/pdf-check.tsx', '--bundle', '--platform=browser', '--format=esm', '--jsx=automatic', '--outfile=dist/pdf-check.js',
@@ -189,6 +198,11 @@ async function assertInstalledPdfWorker(directory) {
     assert.ok(sizes.every(([width, height]) => width > 0 && height > width), JSON.stringify(sizes));
     assert.equal(await browser.evaluate(`${q('[data-testid=viewer-pdf-page-indicator]')}.textContent`), '1 / 2');
     assert.equal(workerLoads, 1, 'pdf.js ran in its own worker from the consumer install');
+    await browser.send('Page.navigate', { url: `http://127.0.0.1:${server.address().port}/?local` });
+    await browser.until('the installed LocalFileViewer draws a browser-only File', `${q('[data-testid=viewer-title]')}?.textContent === 'compte-rendu-fictif.pdf' && ${pages}.length === 2 && ${pages}.every(page => page.dataset.rendered)`, 30000);
+    const localSizes = await browser.evaluate(`${pages}.map(page => [page.querySelector('canvas').width, page.querySelector('canvas').height])`);
+    assert.ok(localSizes.every(([width, height]) => width > 0 && height > width), JSON.stringify(localSizes));
+    assert.equal(workerLoads, 2, 'the local File also uses the installed PDF worker');
     assert.deepEqual(browser.problems, [], 'no browser console errors');
   } finally { await browser?.close(); server.close(); }
 }

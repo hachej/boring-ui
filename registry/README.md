@@ -628,8 +628,58 @@ One Tailwind item (owned source, shadcn tokens, light and dark, 44px targets on 
 | HTML preview and source; passive preview by default, optional interactive preview (below) | `html-pane.tsx` (over `@hachej/boring-ui-kit/html-viewer`), `interactive-html.tsx` |
 | Image viewer: fit, zoom, pan, checkerboard; every type through an `<img>` from an object URL | `image-pane.tsx` |
 | PDF viewer: the browser's own viewer in a frame over an object URL, a Download fallback where there is none | `pdf-pane.tsx` |
+| `LocalFileViewer({ name, blob, onClose?, ... })`: read-only image, PDF or literal text from a browser File or Blob, without a locator | `local-file-viewer.tsx` |
 
 Refresh runs the controller's own refresh for editable panes, so unsaved edits are kept and shown as "Changed elsewhere". Rich Markdown editing is offered only when the document survives a parse and serialise round trip unchanged; otherwise it opens as source with a notice. The canvas is not a pane: wrap tldraw's editor in `ViewerFrame` (see `lab/studio/panels/canvas.jsx`). `viewers.css` is the source of the item's `css`; run `node registry/viewers/build-css.mjs` after editing it.
+
+### Open a browser-only file
+
+```tsx
+import { LocalFileViewer } from '@/components/viewers/local-file-viewer';
+
+// A File from an input or drop event is already a Blob.
+<LocalFileViewer name={file.name} blob={file} onClose={closePreview} />
+```
+
+`LocalFileViewer` uploads nothing and writes no workspace file or browser storage. The file is lost on reload unless your app saves it separately. This is host presentation, not a Pi execution extension. It needs no resource client, `ResourceLocator` or agent. Preview object URLs are revoked when replaced or unmounted; Download uses a temporary URL that is also revoked.
+
+A specific `blob.type` wins. An empty type or `application/octet-stream` falls back to the name through `mediaTypeOf`. Supported images use `ImagePane`, PDFs use `PdfPane`, and text types, JSON and XML use read-only literal UTF-8 text. HTML never runs. Unknown types, NUL bytes, invalid UTF-8 and failed text reads show "No preview" with Download of the original bytes. The standard viewer bar supplies the title and Download; `onClose` adds Close. `subtitle`, `headerStart`, `controls`, `testId`, `titleTestId` and `className` customize the same bar. Words come from `ViewerWindowProvider`.
+
+#### Custom artifacts and a dropped PDF in one app
+
+`artifactKinds` customizes saved artifacts with resource descriptors. A browser-only File has no descriptor or revision. Use a host `panels` entry for it, rather than inventing a locator. This example keeps a dropped fictional PDF in memory alongside a custom saved report viewer:
+
+```tsx
+import { useState } from 'react';
+import type { ComponentProps } from 'react';
+import { AgentWorkspace } from '@/components/pi-app/agent-workspace';
+import type { OpenedView } from '@/components/pi-app/agent-workspace';
+import { LocalFileViewer } from '@/components/viewers/local-file-viewer';
+
+export function ReportWorkspace(host: ComponentProps<typeof AgentWorkspace>) {
+	const [local, setLocal] = useState<File>();
+	const [opened, setOpened] = useState<OpenedView | null>(null);
+	return <div className="h-full" onDragOver={event => event.preventDefault()}
+		onDrop={event => {
+			event.preventDefault();
+			const file = event.dataTransfer.files[0]; // e.g. compte-rendu-fictif.pdf
+			if (file) { setLocal(file); setOpened({ kind: 'local-file' }); }
+		}}>
+		<AgentWorkspace {...host} opened={opened} onOpenedChange={setOpened}
+			artifactKinds={[{
+				match: target => target.resource.path.endsWith('.report.json'),
+				label: 'Report',
+				renderer: ({ text }) => <pre>{text}</pre>,
+			}]}
+			panels={{ 'local-file': (_view, panel) => local
+				? <LocalFileViewer name={local.name} blob={local}
+					onClose={() => { setLocal(undefined); panel.close(); }} />
+				: null }} />
+	</div>;
+}
+```
+
+Drop only opens the preview. It does not send an attachment to chat, upload the PDF or make its bytes available to the agent.
 
 ### Interactive HTML preview (host opt-in)
 

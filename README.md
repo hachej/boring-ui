@@ -14,7 +14,7 @@ Apps live in Cloudflare Artifacts git repos and ship through the [Factory](https
 - **A coding workspace.** Give an agent files, optional Bash and Git, chat and editors over a shared workspace.
 - **A background assistant.** Run native tasks with questions, validation and delivery without mounting a chat interface.
 
-Editors and viewers also work without an agent. Choose the packages and entry points your application needs.
+Editors and viewers also work without an agent. Choose the packages and entry points your application needs. [`LocalFileViewer`](registry/README.md#open-a-browser-only-file) previews a browser-only PDF, image or text File without a locator or upload. It is lost on reload.
 
 ## Packages
 
