@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ComponentType, KeyboardEvent, ReactNode } from 'react';
 import { EllipsisIcon, SparklesIcon } from 'lucide-react';
-import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarRail, SidebarSeparator } from '@/components/ui/sidebar';
+import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarRail, SidebarSeparator, useSidebar } from '@/components/ui/sidebar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -97,15 +97,16 @@ export function TabBar({ items, activeId, onChange, text }: { readonly items: re
 }
 
 /** The expanded sidebar: the app title, the nav items (none with one item) and the account in the footer. */
-export function AppSidebar({ title, items, activeId, onChange, agent, account, improve, text }: {
-  readonly title: string; readonly items: readonly NavItem[]; readonly activeId: string; readonly onChange: (id: string) => void;
+export function AppSidebar({ rail = 'icon', title, items, activeId, onChange, agent, account, improve, text }: {
+  readonly rail?: 'icon' | 'hover'; readonly title: string; readonly items: readonly NavItem[]; readonly activeId: string; readonly onChange: (id: string) => void;
   readonly agent: AgentSpec | undefined; readonly account: AccountSpec | undefined; readonly improve: boolean; readonly text: AppShellText;
 }) {
+  const { setOpen } = useSidebar();
   const layer = useAgentLayer();
   const pressed = layer.state !== 'closed' && layer.showing === 'agent';
   const AgentIcon = agent?.icon ?? SparklesIcon;
   const agentLabel = agent?.label ?? agent?.chatProps?.labels?.title ?? text.assistant;
-  return <Sidebar collapsible="icon" variant="inset" data-testid="app-sidebar">
+  const sidebar = <Sidebar collapsible="icon" variant="inset" data-testid="app-sidebar">
     <SidebarHeader><p data-testid="sidebar-title" className="m-0 truncate px-2 py-1 text-base font-semibold group-data-[collapsible=icon]:hidden">{title}</p></SidebarHeader>
     <SidebarContent>
       {items.length > 1 && <SidebarGroup><SidebarGroupContent><SidebarMenu>
@@ -131,4 +132,14 @@ export function AppSidebar({ title, items, activeId, onChange, agent, account, i
     <SidebarFooter><NavUser account={account} improve={improve} text={text} /></SidebarFooter>
     <SidebarRail />
   </Sidebar>;
+  if (rail !== 'hover') return sidebar;
+  // Reserve the native inset icon gap even while the fixed sidebar reveals its labels over the page.
+  return <div data-rail="hover" className="relative z-20 w-[calc(var(--sidebar-width-icon)+(--spacing(4)))] shrink-0"
+    onPointerEnter={event => { if (event.pointerType === 'mouse' || event.pointerType === 'pen') setOpen(true); }}
+    onPointerLeave={() => setOpen(false)}
+    onFocusCapture={event => { if (event.target.matches(':focus-visible')) setOpen(true); }}
+    onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }}
+    onKeyDownCapture={event => { if (event.key === 'Escape' && event.target instanceof Node && event.currentTarget.contains(event.target)) { event.preventDefault(); event.stopPropagation(); setOpen(false); } }}>
+    {sidebar}
+  </div>;
 }

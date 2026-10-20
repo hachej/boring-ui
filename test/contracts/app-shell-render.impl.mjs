@@ -81,6 +81,65 @@ test('no agent: the nav and the header render at once, with the locale prop and 
   await unmount();
 });
 
+test('the hover rail starts collapsed, reveals on pointer hover or focus within, and collapses on leave, blur or Escape', async t => {
+  const items = ['Tableau de bord', 'Repas'].map(label => ({ id: label, label, icon: Icon, render: () => null }));
+  const chosen = [];
+  const ui = await render(t, { rail: 'hover', nav: items, route: { id: 'Tableau de bord', onChange: id => chosen.push(id) } }, { width: 1440 });
+  const { act } = await import('react');
+  const panel = ui.container.querySelector('[data-testid=app-sidebar]');
+  const sidebar = panel.closest('[data-slot=sidebar]');
+  const first = panel.querySelector('[data-testid="nav-Tableau de bord"]');
+  const second = panel.querySelector('[data-testid=nav-Repas]');
+  const state = () => sidebar.getAttribute('data-state');
+  assert.equal(state(), 'collapsed', 'hover mode reserves only an icon rail');
+  assert.equal(ui.container.querySelector('[role=tablist]'), null);
+  await act(async () => panel.dispatchEvent(new ui.window.PointerEvent('pointerover', { bubbles: true, pointerType: 'mouse' })));
+  assert.equal(state(), 'expanded', 'hover reveals the labels');
+  assert.equal(first.textContent, 'Tableau de bord');
+  assert.equal(second.textContent, 'Repas');
+  await act(async () => panel.dispatchEvent(new ui.window.PointerEvent('pointerout', { bubbles: true, pointerType: 'mouse', relatedTarget: ui.window.document.body })));
+  assert.equal(state(), 'collapsed', 'leaving collapses');
+  await act(async () => panel.dispatchEvent(new ui.window.PointerEvent('pointerover', { bubbles: true, pointerType: 'touch' })));
+  assert.equal(state(), 'collapsed', 'touch does not reveal an overlay');
+  await act(async () => first.focus());
+  assert.equal(state(), 'expanded', 'keyboard focus reveals');
+  await act(async () => second.focus());
+  assert.equal(state(), 'expanded', 'focus within keeps the labels visible');
+  await act(async () => second.dispatchEvent(new ui.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+  assert.equal(state(), 'collapsed', 'Escape collapses even with focus inside');
+  assert.equal(ui.window.document.activeElement, second, 'Escape does not discard focus');
+  await act(async () => first.focus());
+  assert.equal(state(), 'expanded', 'the next focus reveals again');
+  await act(async () => first.blur());
+  assert.equal(state(), 'collapsed', 'focus leaving collapses');
+  await act(async () => second.click());
+  assert.deepEqual(chosen, ['Repas'], 'the router still owns selection');
+  await ui.unmount();
+});
+
+for (const rail of [undefined, 'icon']) for (const layout of ['screen', 'workspace']) test(`${layout}, rail ${rail ?? 'unset'}: the native sidebar default and hover/focus behaviour stay unchanged`, async t => {
+  const ui = await render(t, { layout, ...(rail ? { rail } : {}) }, { width: 1440 });
+  const { act } = await import('react');
+  const panel = ui.container.querySelector('[data-testid=app-sidebar]');
+  const sidebar = panel.closest('[data-slot=sidebar]');
+  const expected = layout === 'screen' ? 'expanded' : 'collapsed';
+  assert.equal(sidebar.getAttribute('data-state'), expected);
+  assert.equal(ui.container.querySelector('[data-rail=hover]'), null, 'no overlay wrapper in default mode');
+  await act(async () => panel.dispatchEvent(new ui.window.PointerEvent('pointerover', { bubbles: true, pointerType: 'mouse' })));
+  await act(async () => panel.querySelector('[data-testid=nav-Jour]').focus());
+  assert.equal(sidebar.getAttribute('data-state'), expected, 'hover and focus do not change the default sidebar');
+  await act(async () => panel.dispatchEvent(new ui.window.PointerEvent('pointerout', { bubbles: true, pointerType: 'mouse', relatedTarget: ui.window.document.body })));
+  assert.equal(sidebar.getAttribute('data-state'), expected);
+  await ui.unmount();
+});
+
+test('hover rail on a phone keeps the same tab bar and no sidebar', async t => {
+  const ui = await render(t, { rail: 'hover', locale: 'fr' });
+  assert.equal(ui.container.querySelector('[data-testid=app-sidebar]'), null);
+  assert.deepEqual([...ui.container.querySelectorAll('[role=tab]')].map(tab => tab.textContent), ['Jour', 'Semaine', 'Mois', 'Plus']);
+  await ui.unmount();
+});
+
 test('the layer\'s own words follow the shell locale when the agent sets none; the agent\'s own locale wins', async t => {
   const trigger = async (agentChatProps, locale) => {
     const { container, unmount } = await render(t, { agent: agentWith(agentChatProps), locale });
@@ -348,6 +407,82 @@ test('the screen header follows an action whose href, target or rel changes alon
   assert.equal(link()?.getAttribute('target'), '_blank');
   assert.equal(link()?.getAttribute('rel'), 'noopener');
   await act(async () => reactRoot.unmount());
+});
+
+// The composer microphone on a phone: a fake microphone and recorder (the pattern of test/ui/voice-input.test.mjs), the layer open at half.
+async function talking(t, snap = 'half') {
+  const tracks = [], transcribed = [];
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'MediaRecorder');
+  class FakeRecorder extends EventTarget {
+    static isTypeSupported() { return true; }
+    constructor() { super(); this.state = 'inactive'; this.mimeType = 'audio/webm'; }
+    start() { this.state = 'recording'; }
+    stop() { this.state = 'inactive'; const chunk = new Event('dataavailable'); chunk.data = new Blob(['fictional audio'], { type: 'audio/webm' }); this.dispatchEvent(chunk); this.dispatchEvent(new Event('stop')); }
+  }
+  globalThis.MediaRecorder = FakeRecorder;
+  t.after(() => { previous ? Object.defineProperty(globalThis, 'MediaRecorder', previous) : delete globalThis.MediaRecorder; });
+  const transcribe = async audio => { transcribed.push(audio); return 'fictional words'; };
+  const opened = await openedLayer(t, 390, { agent: { ...agentWith(), voice: { transcribe, send: 'draft' } } });
+  Object.defineProperty(opened.window.navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: async () => {
+    const track = { stopped: false, stop() { this.stopped = true; } }; tracks.push(track);
+    return { getTracks: () => [track], getAudioTracks: () => [track] };
+  } } });
+  await opened.act(async () => opened.latest().open('agent', snap));
+  const find = selector => opened.window.document.querySelector(selector);
+  for (let tries = 0; tries < 200 && !(find('[data-testid=agent-talk]') && find('[data-testid=composer-input]')); tries++) await opened.act(async () => new Promise(done => setTimeout(done, 25)));
+  const talk = find('[data-testid=agent-talk]');
+  assert.ok(talk && find('[data-testid=composer-input]'), 'the microphone and the composer render');
+  const fire = async (node, type, init = {}) => {
+    const Pointer = opened.window.PointerEvent ?? opened.window.MouseEvent;
+    const event = new Pointer(type, { bubbles: true, cancelable: true, pointerId: 1, ...init });
+    await opened.act(async () => { node.dispatchEvent(event); });
+    return event;
+  };
+  const until = async (condition, label) => { for (let tries = 0; tries < 60 && !condition(); tries++) await opened.act(async () => new Promise(done => setTimeout(done, 25))); assert.ok(condition(), label); };
+  return { opened, find, talk, fire, until, tracks, transcribed };
+}
+
+for (const snap of ['half', 'full']) test(`the composer microphone at ${snap}: a press keeps focus where it was, a browser pointercancel while recording keeps the audio, the composer takes no focus and the snap holds`, async t => {
+  const ui = await talking(t, snap);
+  const input = ui.find('[data-testid=composer-input]');
+  const down = await ui.fire(ui.talk, 'pointerdown', { button: 0 });
+  assert.equal(down.defaultPrevented, true, 'pressing the microphone cannot move focus (no keyboard opens or closes)');
+  assert.equal((await ui.fire(ui.talk, 'mousedown', { button: 0 })).defaultPrevented, true, 'nor does the compatibility mousedown');
+  await ui.until(() => ui.talk.dataset.state === 'recording', 'recording');
+  assert.equal(input.readOnly, true, 'the composer is read-only while recording');
+  assert.equal(input.getAttribute('inputmode'), 'none', 'and asks for no keyboard');
+  const before = ui.find('[data-testid=agent-layer]').dataset.state;
+  await ui.opened.act(async () => input.focus());
+  await ui.fire(input, 'focusin');
+  assert.equal(ui.find('[data-testid=agent-layer]').dataset.state, before, 'focusing the composer while recording does not change the snap');
+  await ui.fire(ui.talk, 'pointercancel');
+  await ui.until(() => ui.transcribed.length === 1, 'a browser pointercancel finishes the recording: the audio is transcribed');
+  assert.equal(ui.tracks[0].stopped, true, 'the microphone is released');
+  await ui.until(() => ui.talk.dataset.state === 'idle', 'back to idle');
+  assert.equal(input.readOnly, false, 'the composer is editable again');
+  assert.equal(input.hasAttribute('inputmode'), false, 'with its own inputmode back');
+  await ui.opened.unmount();
+});
+
+test('the composer microphone: sliding more than 24px off the button still cancels (nothing is transcribed)', async t => {
+  const ui = await talking(t);
+  await ui.fire(ui.talk, 'pointerdown', { button: 0, clientX: 0, clientY: 0 });
+  await ui.until(() => ui.talk.dataset.state === 'recording', 'recording');
+  await ui.fire(ui.talk, 'pointermove', { clientX: 400, clientY: 400 });
+  await ui.until(() => ui.talk.dataset.state === 'idle', 'the slide off cancelled');
+  await ui.fire(ui.talk, 'pointerup');
+  assert.equal(ui.transcribed.length, 0, 'a cancelled recording is not transcribed');
+  assert.equal(ui.tracks[0].stopped, true, 'the microphone is released');
+  await ui.opened.unmount();
+});
+
+test('the composer microphone: a release (pointerup) still sends the audio for transcription', async t => {
+  const ui = await talking(t);
+  await ui.fire(ui.talk, 'pointerdown', { button: 0 });
+  await ui.until(() => ui.talk.dataset.state === 'recording', 'recording');
+  await ui.fire(ui.talk, 'pointerup');
+  await ui.until(() => ui.transcribed.length === 1, 'transcribed');
+  await ui.opened.unmount();
 });
 
 test('one layer at a time on a phone: opening the agent closes the product manager and back', t => oneLayerAt(t, 390));
