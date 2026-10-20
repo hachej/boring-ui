@@ -4,10 +4,11 @@ export const sharedChatSeed = {
     { id: 'mira', name: 'Mira', kind: 'person', role: 'owner', presence: 'here' },
     { id: 'leo', name: 'Leo', kind: 'person', role: 'validator', presence: 'here' },
     { id: 'pm', name: 'PM', kind: 'agent', role: 'agent:pm', presence: 'here' },
+    { id: 'data', name: 'Data', kind: 'agent', role: 'agent:data', presence: 'here' },
     { id: 'julien', name: 'Julien (admin)', kind: 'admin', role: 'admin', presence: 'here' },
   ],
   conversations: [
-    { id: 'main', title: 'Équipe', kind: 'main', members: ['mira', 'leo', 'pm', 'julien'] },
+    { id: 'main', title: 'Équipe', kind: 'main', members: ['mira', 'leo', 'pm', 'data', 'julien'] },
     { id: 'admin', title: 'Admin', kind: 'admin', members: ['mira', 'pm', 'julien'] },
     { id: 'direct', title: 'Mira and Leo', kind: 'direct', members: ['mira', 'leo'] },
   ],

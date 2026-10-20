@@ -54,7 +54,7 @@ test('the fictional PM proxies the work trace and replaces its one request card'
   const work = messages().find(message => message.id === 'pdf-plan');
   assert.equal(work.author, 'pm'); assert.equal(work.steps.length, 3);
   assert.deepEqual(messages().filter(message => message.streaming).map(message => message.author), ['pm']);
-  assert.deepEqual(chat.getSnapshot().shared.members.filter(member => member.kind === 'agent').map(member => member.id), ['pm']);
+  assert.deepEqual(chat.getSnapshot().shared.members.filter(member => member.kind === 'agent').map(member => member.id), ['pm', 'data']);
   const id = messages().find(message => message.card).id;
   source.finish();
   assert.equal(messages().filter(message => message.card).length, 1);

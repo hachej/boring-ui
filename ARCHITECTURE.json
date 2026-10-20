@@ -584,6 +584,7 @@
     "chatComposition": {
       "pi-chat": "regular native renderer; optional generic transcript, composer-content, file-pick and mention-option seams; no dependency on shared-chat",
       "shared-chat": "optional registry item depending on pi-chat and the existing theme tokens; owns multi-party headers, cards, quotes, member mentions, host traces and localized labels; AgentWorkspace is composed through its existing chat and controls props",
+      "agentColour": "shared-chat hashes agent IDs into the five standard shadcn chart tokens; icons use the token and text uses only default-theme AA-qualified palette entries. The theme owns the missing standard chart defaults/bindings, not a feature palette; no host override or new semantic token.",
       "controllerTypes": "native-chat exports the structural presentation contract; concrete native controller APIs and recovery are unchanged",
       "dataEntry": "@hachej/boring-ui-kit/shared-chat -> src/shared-chat/index.ts; host log/source/socket/fake/errors only, never exported by the headless root; imports the existing transport outbox"
     },

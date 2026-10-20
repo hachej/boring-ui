@@ -2,15 +2,16 @@ import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { launch, pause, q, qa } from '@hachej/boring-testing/browser';
 import { startSharedChat } from './server.mjs';
+import { auditAgentContrast } from './colour-audit.mjs';
 
-const evidence = process.env.SHARED_CHAT_EVIDENCE ?? '.cache/evidence/shared-chat/r8';
+const evidence = process.env.SHARED_CHAT_EVIDENCE ?? '.cache/evidence/shared-chat/r9';
 mkdirSync(evidence, { recursive: true });
 const app = await startSharedChat();
 let browser;
 const input = q('[data-testid=composer-input]');
 const message = id => q(`[data-shared-message="${id}"]`);
 const trace = `${message('pdf-plan')}.querySelector('[data-testid=activity]')`;
-const avatar = `${message('pdf-plan')}.querySelector('[data-testid=agent-avatar-pm]')`;
+const avatar = `${message('pdf-card')}.querySelector('[data-testid=agent-avatar-pm]')`;
 const noOverflow = 'document.documentElement.scrollWidth <= innerWidth && document.body.scrollWidth <= innerWidth';
 try {
   for (const [device, width, height] of [['phone', 390, 844], ['desktop', 1440, 1000]]) {
@@ -25,13 +26,14 @@ try {
       await browser.evaluate(`document.documentElement.classList.toggle('dark', ${scheme === 'dark'})`);
       await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] });
       const shot = async name => {
+        if (name !== 'room-overview') return;
         await browser.evaluate('document.activeElement?.blur()');
         if (device === 'desktop') await browser.hover(q('[data-testid=workspace-bar-title]'));
         await pause(250); await browser.screenshot(`${width}-${scheme}-${name}.png`);
       };
       const reveal = async id => { await browser.evaluate(`${message(id)}.scrollIntoView({ block: 'nearest', behavior: 'instant' })`); await pause(150); };
-      const inlineMention = async selector => {
-        assert.equal(await browser.evaluate(`${selector}.querySelector('[data-testid=mention-name]').textContent`), 'PM');
+      const inlineMention = async (selector, name = 'PM') => {
+        assert.equal(await browser.evaluate(`${selector}.querySelector('[data-testid=mention-name]').textContent`), name);
         assert.equal(await browser.evaluate(`${selector}.textContent.includes('@')`), false);
         assert.equal(await browser.evaluate(`!!${selector}.querySelector('[data-slot=avatar]')`), true);
         assert.equal(await browser.evaluate(`(() => { const s = getComputedStyle(${selector}); return s.fontWeight === '500' && s.paddingTop === '0px' && s.paddingLeft === '0px' && s.backgroundColor === 'rgba(0, 0, 0, 0)'; })()`), true);
@@ -59,17 +61,30 @@ try {
       assert.equal(await browser.evaluate(`document.body.innerText.includes('Début de la conversation')`), false);
 
       await browser.type(input, '@');
-      await browser.until('host membership picker', `${qa('[data-testid=mention-item]')}.length === 4`);
-      assert.deepEqual(await browser.evaluate(`${qa('[data-testid=mention-item]')}.map(e => e.dataset.path)`), ['pm', 'mira', 'leo', 'julien']);
+      await browser.until('host membership picker', `${qa('[data-testid=mention-item]')}.length === 5`);
+      assert.deepEqual(await browser.evaluate(`${qa('[data-testid=mention-item]')}.map(e => e.dataset.path)`), ['pm', 'data', 'mira', 'leo', 'julien']);
       assert.equal(await browser.evaluate(`document.body.innerText.includes('Builder')`), false);
-      await browser.press('Enter'); await browser.type(input, 'ajoute un export PDF');
+      await browser.press('Enter'); await browser.type(input, '@data ajoute un export PDF');
       await browser.click(q('[data-testid=composer-submit]'));
       await browser.until('PM replies', `!!${message('pdf-plan')} && window.__SHARED__.sends.at(-1)?.mentions.includes('pm')`);
       await browser.evaluate('window.__SHARED__.planReady()');
       await browser.until('PM plan', `${message('pdf-plan')}.innerText.includes('une version que vous pourrez essayer')`);
       const ownId = await browser.evaluate(`'sent-' + window.__SHARED__.sends.at(-1).clientId`);
-      await inlineMention(`${message(ownId)}.querySelector('[data-testid=message-mention]')`);
-      for (const id of ['via-person', 'pdf-doing', 'pdf-plan']) {
+      await inlineMention(`${message(ownId)}.querySelector('[data-testid=message-mention][data-path=pm]')`);
+      await inlineMention(`${message(ownId)}.querySelector('[data-testid=message-mention][data-path=data]')`, 'Data');
+      const baselines = await browser.evaluate(`(() => {
+        const row = ${message(ownId)}, mentions = [...row.querySelectorAll('[data-testid=message-mention]')];
+        const text = [...row.querySelector('[data-testid=user-text] > span').childNodes].findLast(node => node.nodeType === Node.TEXT_NODE && node.textContent.trim());
+        const rect = node => { const range = document.createRange(); range.selectNodeContents(node); return range.getBoundingClientRect(); };
+        const gap = e => Math.abs(rect(e.querySelector('[data-testid=mention-name]')).bottom - rect(text).bottom);
+        const corrected = mentions.map(gap);
+        mentions[0].classList.replace('items-baseline', 'items-center'); const oldGap = gap(mentions[0]); mentions[0].classList.replace('items-center', 'items-baseline');
+        return { corrected, oldGap };
+      })()`);
+      assert.ok(baselines.corrected.every(gap => gap <= 1), JSON.stringify(baselines));
+      assert.ok(baselines.oldGap > 1, `the previous center alignment fails the same baseline measurement: ${JSON.stringify(baselines)}`);
+      writeFileSync(`${evidence}/${width}-${scheme}-baselines.json`, JSON.stringify(baselines, null, 2));
+      for (const id of ['via-person', 'data-ready', 'pdf-doing', 'pdf-plan']) {
         assert.equal(await browser.evaluate(`${message(id)}.querySelector('[data-slot=bubble]').dataset.variant`), 'muted');
         assert.equal(await browser.evaluate(`${message(id)}.querySelector('[data-slot=bubble]').dataset.align`), 'start');
       }
@@ -97,6 +112,7 @@ try {
       assert.equal(await browser.evaluate(`${trace}.dataset.open`), 'false');
       assert.equal(await browser.evaluate(`${qa('[data-slot=spinner]')}.length`), 1);
       assert.equal(await browser.evaluate(`!!${avatar}.querySelector('[data-slot=spinner]')`), false);
+      assert.equal(await browser.evaluate(`(() => { const a = ${avatar}.getBoundingClientRect(), c = ${message('pdf-card')}.querySelector('[data-slot=card]').getBoundingClientRect(); return Math.abs(a.bottom - c.bottom) <= 1; })()`), true, 'avatar aligns with the final request card');
       await reveal('pdf-card'); await shot('pm-working');
       await browser.click(`${trace}.querySelector('button')`);
       await browser.until('expanded steps', `${trace}.querySelectorAll('[data-testid=activity-step]').length === 3`);
@@ -146,9 +162,11 @@ try {
       await browser.until('admin host trace', `!!${message('admin-trace')}`);
       await browser.click(`${message('admin-trace')}.querySelector('[data-testid=activity] button')`);
       await browser.until('admin details', `${message('admin-trace')}.querySelectorAll('[data-testid=step-detail]').length === 3`);
+      const contrast = await auditAgentContrast(browser);
+      writeFileSync(`${evidence}/${width}-${scheme}-contrast.json`, JSON.stringify(contrast, null, 2));
       assert.equal(await browser.evaluate(noOverflow), true);
       assert.deepEqual(browser.problems, []);
-      console.log(`PASS ${width}px ${scheme}: PM-only room, messenger bubbles, bottom avatars, inline mentions, time separators, one spinner, cards and quotes`);
+      console.log(`PASS ${width}px ${scheme}: PM/Data chart identity, baseline-aligned mentions, final-card avatars, one spinner, cards and quotes`);
     }
   }
   await browser.emulate('phone');

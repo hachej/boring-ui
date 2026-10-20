@@ -5,6 +5,7 @@ import { sharedChatSeed } from './seed.mjs';
 export function createPdfDemo({ manual = false } = {}) {
   const source = createFakeChannelSource({ ...sharedChatSeed, messages: [
     { id: 'via-person', conversationId: 'main', author: 'leo', at: '2026-09-10T16:06:00Z', via: 'Claude', text: 'Je propose de dater les exports PDF.' },
+    { id: 'data-ready', conversationId: 'main', author: 'data', at: '2026-09-10T16:08:00Z', text: 'Les dates sont prêtes pour @pm.' },
     { id: 'admin-trace', conversationId: 'admin', author: 'pm', at: '2026-10-19T10:00:00Z', text: 'Vérification de l’export PDF terminée.', streaming: false, steps: [
       { label: 'Lire les fichiers', detail: 'read src/fictional-export.ts', status: 'done' },
       { label: 'Préparer le PDF', detail: 'write output/fictional-export.pdf', status: 'done' },

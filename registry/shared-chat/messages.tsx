@@ -15,6 +15,21 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { relativeTime } from '../pi-chat/history';
 import { useChatText } from './text';
 
+// Text shares one treatment across headings and muted bubbles; only AA-qualified default palette entries colour it.
+const agentTones = [
+  { token: 'chart-1', icon: 'text-chart-1', text: 'text-foreground' },
+  { token: 'chart-2', icon: 'text-chart-2', text: 'text-foreground dark:text-chart-2' },
+  { token: 'chart-3', icon: 'text-chart-3', text: 'text-chart-3' },
+  { token: 'chart-4', icon: 'text-chart-4', text: 'text-foreground' },
+  { token: 'chart-5', icon: 'text-chart-5', text: 'text-foreground' },
+];
+export function agentTone(member: Pick<Member, 'id' | 'kind'>) {
+  if (member.kind !== 'agent') return undefined;
+  let hash = 0;
+  for (const character of member.id) hash = (Math.imul(hash, 31) + character.charCodeAt(0)) >>> 0;
+  return agentTones[hash % agentTones.length];
+}
+
 function usePhone() {
   const [phone, setPhone] = useState(() => globalThis.matchMedia?.('(max-width: 640px)').matches === true);
   useEffect(() => { const media = globalThis.matchMedia?.('(max-width: 640px)'); if (!media) return; const change = () => setPhone(media.matches); media.addEventListener('change', change); return () => media.removeEventListener('change', change); }, []);
@@ -39,9 +54,10 @@ export function MemberAvatar({ member, card, interactive = true, size = 'default
   }, [open]);
   const state = member.kind === 'agent' && card?.state && Object.hasOwn(channelAvatarStates, card.state) ? channelAvatarStates[card.state] ?? 'neutral' : 'neutral';
   const tone = state === 'blocked' ? 'text-destructive' : state === 'waiting' ? 'text-muted-foreground' : 'text-primary';
-  const avatar = <Avatar size={compact ? 'sm' : size} data-testid="member-avatar" role="img" aria-label={member.kind === 'agent' ? `${member.name}, ${labels.sharedAgent}` : member.name} data-state={state}>
+  const agent = agentTone(member);
+  const avatar = <Avatar size={compact ? 'sm' : size} data-agent-color={agent?.token} data-testid="member-avatar" role="img" aria-label={member.kind === 'agent' ? `${member.name}, ${labels.sharedAgent}` : member.name} data-state={state}>
     {member.avatarUrl && <AvatarImage src={member.avatarUrl} alt={member.name} />}
-    <AvatarFallback>{member.kind === 'agent' ? <BotIcon data-lucide="bot" className={compact ? 'size-3' : 'size-4'} aria-hidden="true" /> : member.name.replace(/[()]/g, '').split(/\s+/).slice(0, 2).map(word => word[0]).join('').toUpperCase()}</AvatarFallback>
+    <AvatarFallback>{member.kind === 'agent' ? <BotIcon data-lucide="bot" className={`${compact ? 'size-3' : 'size-4'} ${agent?.icon ?? ''}`} aria-hidden="true" /> : member.name.replace(/[()]/g, '').split(/\s+/).slice(0, 2).map(word => word[0]).join('').toUpperCase()}</AvatarFallback>
     {state !== 'neutral' && <span data-testid="avatar-indicator" data-state={state} className={`absolute right-0 bottom-0 ${tone}`}>
       <CircleIcon className="size-2 fill-current" aria-hidden="true" />
     </span>}
@@ -135,13 +151,13 @@ export function SharedMessage({ shared, children, remove, canRemove, openFile, o
     document.addEventListener('pointerdown', outside);
     return () => document.removeEventListener('pointerdown', outside);
   }, [actionsOpen]);
-  const { message, author, first, own, lastBubble } = shared;
+  const { message, author, first, own, lastItem } = shared;
   const replyable = Boolean(onReply && ((author.kind === 'agent' && !message.via) || message.card));
   const removable = Boolean(remove && canRemove?.(message));
   const actionable = !message.removed && (replyable || removable);
   const heading = first && !own && <div data-testid="message-author-row" className="ml-8 flex min-w-0 items-center gap-2">
     <div className="flex min-w-0 items-center gap-2">
-      <span data-testid="message-author" className="min-w-0 truncate text-sm text-muted-foreground">{author.name}</span>
+      <span data-testid="message-author" data-agent-color={agentTone(author)?.token} className={`min-w-0 truncate text-sm ${agentTone(author)?.text ?? 'text-muted-foreground'}`}>{author.name}</span>
       {message.via && <span data-testid="message-via" className={`min-w-0 truncate text-muted-foreground${own ? '' : ' text-sm'}`}>{labels.sharedVia(message.via)}</span>}
       {!(message.via && author.kind === 'agent') && <MemberBadge member={author} />}
     </div>
@@ -167,7 +183,7 @@ export function SharedMessage({ shared, children, remove, canRemove, openFile, o
     onContextMenu={event => { if (phone && actionable && event.target instanceof Element && !event.target.closest('button, a, input, textarea, [role=button], [role=link]')) { event.preventDefault(); setActionsOpen(true); } }}>
     {heading}
     <div className="flex min-w-0 items-end gap-2">
-    {!own && <div data-testid="message-avatar" className="flex w-6 shrink-0 items-end">{lastBubble && <MemberAvatar member={author} card={message.via ? undefined : shared.latestCard} size="sm" />}</div>}
+    {!own && <div data-testid="message-avatar" className="flex w-6 shrink-0 items-end">{lastItem && <MemberAvatar member={author} card={message.via ? undefined : shared.latestCard} size="sm" />}</div>}
     <div data-testid="shared-message-content" className="flex min-w-0 flex-1 flex-col gap-1">
     {body}
     {!message.removed && message.attachments?.map(file => <Button key={file.path} variant="outline" disabled={!openFile} onClick={() => openFile?.(file.path)} className="max-w-full justify-start"><span className="truncate">{file.title ?? file.path}</span></Button>)}
@@ -181,7 +197,7 @@ export function SharedMessage({ shared, children, remove, canRemove, openFile, o
 }
 
 export interface SharedItem {
-  readonly key: string; readonly message: ChannelMessage; readonly author: Member; readonly own: boolean; readonly first: boolean; readonly lastBubble: boolean; readonly separator: boolean;
+  readonly key: string; readonly message: ChannelMessage; readonly author: Member; readonly own: boolean; readonly first: boolean; readonly lastItem: boolean; readonly separator: boolean;
   readonly showSpinner: boolean; readonly latestCard: Request | undefined; readonly quote: ReturnType<typeof sharedQuote>;
 }
 export function sharedItems(shared: SharedChatState): SharedItem[] {
@@ -194,12 +210,11 @@ export function sharedItems(shared: SharedChatState): SharedItem[] {
     else groups.push([message]);
   }
   return groups.flatMap((group, groupIndex) => {
-    // Trailing request cards attach beneath the group; the avatar stays beside its last text bubble.
-    const lastBubble = group.findLast(message => !message.card) ?? group.at(-1);
+    const lastItem = group.at(-1);
     return group.map((message, index): SharedItem => {
       const previous = index > 0 ? group[index - 1] : groups[groupIndex - 1]?.at(-1);
       return { key: `shared:${message.id}`, message, author: memberOf(shared, message.author), own: message.author === shared.me.id,
-        first: index === 0, lastBubble: message === lastBubble,
+        first: index === 0, lastItem: message === lastItem,
         separator: !previous || Date.parse(message.at) - Date.parse(previous.at) > 15 * 60_000,
         showSpinner: working.get(message.author) === message.id, latestCard: latestCard(shared, message.author), quote: sharedQuote(shared, message.replyTo) };
     });
