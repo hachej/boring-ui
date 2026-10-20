@@ -354,3 +354,7 @@ publication and retained history without separate file callbacks. Its built-in
 text editor navigation asks before discarding unsaved content. The legacy
 `resources` binding remains available for existing hosts; use one binding at a
 time. History previews never replace the editable document.
+
+## Staged answers in native chat
+
+The [fictional triage-note recipe](../../examples/staged-chat/README.md) composes three sequential native Pi tasks with validation and inline stage entries, two independent chat controllers, error restoration, historical offers, host-owned unread indicators and a 24-row initial display window. It owns the exact API semantics and limitations for `hideLine`, `historicalMessageActions`, `unread`, `displayLimit`, stage-card `status` and `createNativeChatController({ restoreOnError: true })`. These are optional presentation/draft seams, not a kit workflow, retention service or additional transcript store.

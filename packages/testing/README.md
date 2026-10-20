@@ -44,12 +44,13 @@ try {
 
 ## Scripted model (`@hachej/boring-testing/model`)
 
-`createScriptedModel({ script?, sources?, generic?, fallback?, models?, provider?, api?, misses? })` returns `{ models, model, definitions, misses }`:
+`createScriptedModel({ script?, sources?, generic?, fallback?, models?, provider?, api?, misses?, timed? })` returns `{ models, model, definitions, misses }`:
 a pi-ai `Models` collection with one keyless provider (pass `models` to `Harness.open`, `model` to `defineAgent`). Its messages are built
 with pi-ai's faux builders and `createFauxCore` normalizes the model definitions (`FauxModelDefinition`; `cost` prices usage). For a fixed
 queue of answers use pi-ai's `fauxProvider` directly; this adds answers chosen by the prompt they reply to, explicit chunks and pacing,
 abortable delays, priced usage, failures and turns a test drives by hand.
 
+- `timed: true` uses current message timestamps so Pi's public event stream records native per-round `durationMs`. The default keeps deterministic timestamp `1` and leaves these historical fixture messages untimed.
 - `script: { 'text in the user message': turns }`, or `sources: [{ name, entries: [{ match, turns }] }]` when several scripts share one
   model (the source answering most of the conversation's user messages is chosen; the earliest, then longest, match in the last user
   message picks the entry).
