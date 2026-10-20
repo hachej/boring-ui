@@ -831,6 +831,50 @@ and `parseDiagram(textOrValue)` are exported: the maquette viewer draws its work
 `workflow` may instead be a relative `*.diagram.json` path: the viewer reads it from the maquette's folder through the kind renderer's `read`
 (`ArtifactKindViewProps.read`, passed by the artifact panel) when How it works opens.
 
+## Typed records (`record-viewer`)
+
+`record-viewer` exports `RecordTable`, `RecordList`, `RecordsViewer` and `createRecordsKind` from `components/record-viewer/record-viewer`. It composes the host's shadcn table, badge, item, button, alert and empty components. `AgentWorkspace` opens `*.records.json` by default; app `artifactKinds` win. This is host presentation, not a Pi execution extension.
+
+```json
+{
+  "kind": "records@1",
+  "columns": [
+    { "key": "name", "label": "Article", "type": "text" },
+    { "key": "aisle", "label": "Rayon", "type": "text" },
+    { "key": "quantity", "label": "Quantité", "type": "number" },
+    { "key": "checked", "label": "Vérifié", "type": "date" },
+    { "key": "status", "label": "État", "type": "status" }
+  ],
+  "groupBy": "aisle",
+  "rows": [{
+    "id": "fictional-brush",
+    "values": {
+      "name": "Pinceau fictif", "aisle": "Finition", "quantity": 2,
+      "checked": "2026-10-01", "status": { "label": "À commander", "tone": "warn" }
+    },
+    "actions": [{ "id": "order", "label": "Commander" }]
+  }]
+}
+```
+
+Column keys and row IDs must be unique. Missing or null values display `—`. Numbers use `Intl.NumberFormat`; dates accept real ISO calendar dates or timestamps with an explicit timezone and display in UTC. `locale="en"` (default) or `locale="fr"` selects formatting and kit labels; `labels` overrides words. Column, action and status labels are app data, not translated by the block.
+
+The app decides status meaning. Tones map to host Badge variants: `ok → default`, `warn → secondary`, `error → destructive`, `info → outline`, `neutral → secondary`.
+
+```tsx
+const records = createRecordsKind({ locale: 'fr',
+  onAction: (action, row) => requestOrder(row.id, action.id) });
+<AgentWorkspace artifactKinds={[records]} {...workspaceProps} />
+<RecordTable columns={columns} rows={rows} groupBy="aisle" onAction={onAction} />
+<RecordList items={[{ id: 'brush', title: 'Pinceau fictif', detail: 'Rayon Finition',
+  status: { label: 'À commander', tone: 'warn' }, action: { id: 'order', label: 'Commander' } }]}
+  onAction={(action, item) => requestOrder(item.id, action.id)} />
+```
+
+`RecordTable` always draws a table. The file viewer uses it from 640px viewport width and `RecordList` below that, preserving all columns, first-seen groups and actions. A list item accepts an optional `action` and an `actions` array. Buttons without `onAction` are disabled; callbacks must enforce host policy. Files never execute action metadata. Invalid JSON, cell types/dates, duplicate keys/IDs or invalid groups show exact raw text with a localized note instead of hiding invalid rows.
+
+Evidence: `test/contracts/record-viewer.test.mjs` and `npm run records:journey` (fictional inventory, desktop/phone, English/French, light/dark). Screenshots belong under `.cache/evidence/D77/`. No live domain-service or real-model qualification is claimed.
+
 ## Task-list viewer
 
 `task-list-viewer` installs the consumer-owned domain, controller and React renderer. It uses `@hachej/boring-ui-kit/text-buffer` and public resource contracts. The host parses the `fictional.task-list` version 1 descriptor with `createTaskListFeature(options)`, then passes its concrete controller to `TaskListViewer`. Descriptors select the already-bound source and carry no access credentials. No core file-type switch changes are required for this direct host composition.

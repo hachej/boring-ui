@@ -1,0 +1,429 @@
+{
+  "kind": "records@1",
+  "columns": [
+    {
+      "key": "name",
+      "label": "Article",
+      "type": "text"
+    },
+    {
+      "key": "aisle",
+      "label": "Rayon",
+      "type": "text"
+    },
+    {
+      "key": "quantity",
+      "label": "Quantité",
+      "type": "number"
+    },
+    {
+      "key": "checked",
+      "label": "Vérifié",
+      "type": "date"
+    },
+    {
+      "key": "status",
+      "label": "État",
+      "type": "status"
+    }
+  ],
+  "rows": [
+    {
+      "id": "stock-1",
+      "values": {
+        "name": "Article 01",
+        "aisle": "Bois",
+        "quantity": 1234.5,
+        "checked": "2026-10-01",
+        "status": {
+          "tone": "ok",
+          "label": "Disponible"
+        }
+      }
+    },
+    {
+      "id": "stock-2",
+      "values": {
+        "name": "Article 02",
+        "aisle": "Bois",
+        "quantity": 2,
+        "checked": "2026-10-01",
+        "status": {
+          "tone": "warn",
+          "label": "À commander"
+        }
+      },
+      "actions": [
+        {
+          "id": "order",
+          "label": "Commander"
+        }
+      ]
+    },
+    {
+      "id": "stock-3",
+      "values": {
+        "name": "Article 03",
+        "aisle": "Bois",
+        "quantity": 3,
+        "checked": "2026-10-01",
+        "status": {
+          "tone": "error",
+          "label": "Rupture"
+        }
+      }
+    },
+    {
+      "id": "stock-4",
+      "values": {
+        "name": "Article 04",
+        "aisle": "Bois",
+        "quantity": 4,
+        "checked": "2026-10-01",
+        "status": {
+          "tone": "ok",
+          "label": "Disponible"
+        }
+      }
+    },
+    {
+      "id": "stock-5",
+      "values": {
+        "name": "Article 05",
+        "aisle": "Bois",
+        "quantity": 5,
+        "checked": "2026-10-01",
+        "status": {
+          "tone": "warn",
+          "label": "À commander"
+        }
+      }
+    },
+    {
+      "id": "stock-6",
+      "values": {
+        "name": "Article 06",
+        "aisle": "Bois",
+        "quantity": 6,
+        "checked": "2026-10-01",
+        "status": {
+          "tone": "error",
+          "label": "Rupture"
+        }
+      }
+    },
+    {
+      "id": "stock-7",
+      "values": {
+        "name": "Article 07",
+        "aisle": "Bois",
+        "quantity": 7,
+        "checked": "2026-10-01",
+        "status": {
+          "tone": "ok",
+          "label": "Disponible"
+        }
+      }
+    },
+    {
+      "id": "stock-8",
+      "values": {
+        "name": "Article 08",
+        "aisle": "Bois",
+        "quantity": 8,
+        "checked": "2026-10-01",
+        "status": {
+          "tone": "warn",
+          "label": "À commander"
+        }
+      }
+    },
+    {
+      "id": "stock-9",
+      "values": {
+        "name": "Article 09",
+        "aisle": "Bois",
+        "quantity": 9,
+        "checked": "2026-10-01",
+        "status": {
+          "tone": "error",
+          "label": "Rupture"
+        }
+      }
+    },
+    {
+      "id": "stock-10",
+      "values": {
+        "name": "Article 10",
+        "aisle": "Bois",
+        "quantity": 10,
+        "checked": "2026-10-01",
+        "status": {
+          "tone": "ok",
+          "label": "Disponible"
+        }
+      }
+    },
+    {
+      "id": "stock-11",
+      "values": {
+        "name": "Article 11",
+        "aisle": "Métal",
+        "quantity": 11,
+        "checked": "2026-10-01",
+        "status": {
+          "tone": "warn",
+          "label": "À commander"
+        }
+      }
+    },
+    {
+      "id": "stock-12",
+      "values": {
+        "name": "Article 12",
+        "aisle": "Métal",
+        "quantity": 12,
+        "checked": "2026-10-01",
+        "status": {
+          "tone": "error",
+          "label": "Rupture"
+        }
+      }
+    },
+    {
+      "id": "stock-13",
+      "values": {
+        "name": "Article 13",
+        "aisle": "Métal",
+        "quantity": 13,
+        "checked": "2026-10-01",
+        "status": {
+          "tone": "ok",
+          "label": "Disponible"
+        }
+      }
+    },
+    {
+      "id": "stock-14",
+      "values": {
+        "name": "Article 14",
+        "aisle": "Métal",
+        "quantity": 14,
+        "checked": "2026-10-01",
+        "status": {
+          "tone": "warn",
+          "label": "À commander"
+        }
+      }
+    },
+    {
+      "id": "stock-15",
+      "values": {
+        "name": "Article 15",
+        "aisle": "Métal",
+        "quantity": 15,
+        "checked": "2026-10-01",
+        "status": {
+          "tone": "error",
+          "label": "Rupture"
+        }
+      }
+    },
+    {
+      "id": "stock-16",
+      "values": {
+        "name": "Article 16",
+        "aisle": "Métal",
+        "quantity": 16,
+        "checked": "2026-10-01",
+        "status": {
+          "tone": "ok",
+          "label": "Disponible"
+        }
+      }
+    },
+    {
+      "id": "stock-17",
+      "values": {
+        "name": "Article 17",
+        "aisle": "Métal",
+        "quantity": 17,
+        "checked": "2026-10-01",
+        "status": {
+          "tone": "warn",
+          "label": "À commander"
+        }
+      }
+    },
+    {
+      "id": "stock-18",
+      "values": {
+        "name": "Article 18",
+        "aisle": "Métal",
+        "quantity": 18,
+        "checked": "2026-10-01",
+        "status": {
+          "tone": "error",
+          "label": "Rupture"
+        }
+      }
+    },
+    {
+      "id": "stock-19",
+      "values": {
+        "name": "Article 19",
+        "aisle": "Métal",
+        "quantity": 19,
+        "checked": "2026-10-01",
+        "status": {
+          "tone": "ok",
+          "label": "Disponible"
+        }
+      }
+    },
+    {
+      "id": "stock-20",
+      "values": {
+        "name": "Article 20",
+        "aisle": "Métal",
+        "quantity": 20,
+        "checked": "2026-10-01",
+        "status": {
+          "tone": "warn",
+          "label": "À commander"
+        }
+      }
+    },
+    {
+      "id": "stock-21",
+      "values": {
+        "name": "Article 21",
+        "aisle": "Finition",
+        "quantity": 21,
+        "checked": "2026-10-01",
+        "status": {
+          "tone": "error",
+          "label": "Rupture"
+        }
+      }
+    },
+    {
+      "id": "stock-22",
+      "values": {
+        "name": "Article 22",
+        "aisle": "Finition",
+        "quantity": 22,
+        "checked": "2026-10-01",
+        "status": {
+          "tone": "ok",
+          "label": "Disponible"
+        }
+      }
+    },
+    {
+      "id": "stock-23",
+      "values": {
+        "name": "Article 23",
+        "aisle": "Finition",
+        "quantity": 23,
+        "checked": "2026-10-01",
+        "status": {
+          "tone": "warn",
+          "label": "À commander"
+        }
+      }
+    },
+    {
+      "id": "stock-24",
+      "values": {
+        "name": "Article 24",
+        "aisle": "Finition",
+        "quantity": 24,
+        "checked": "2026-10-01",
+        "status": {
+          "tone": "error",
+          "label": "Rupture"
+        }
+      }
+    },
+    {
+      "id": "stock-25",
+      "values": {
+        "name": "Article 25",
+        "aisle": "Finition",
+        "quantity": 25,
+        "checked": "2026-10-01",
+        "status": {
+          "tone": "ok",
+          "label": "Disponible"
+        }
+      }
+    },
+    {
+      "id": "stock-26",
+      "values": {
+        "name": "Article 26",
+        "aisle": "Finition",
+        "quantity": 26,
+        "checked": "2026-10-01",
+        "status": {
+          "tone": "warn",
+          "label": "À commander"
+        }
+      }
+    },
+    {
+      "id": "stock-27",
+      "values": {
+        "name": "Article 27",
+        "aisle": "Finition",
+        "quantity": 27,
+        "checked": "2026-10-01",
+        "status": {
+          "tone": "error",
+          "label": "Rupture"
+        }
+      }
+    },
+    {
+      "id": "stock-28",
+      "values": {
+        "name": "Article 28",
+        "aisle": "Finition",
+        "quantity": 28,
+        "checked": "2026-10-01",
+        "status": {
+          "tone": "ok",
+          "label": "Disponible"
+        }
+      }
+    },
+    {
+      "id": "stock-29",
+      "values": {
+        "name": "Article 29",
+        "aisle": "Finition",
+        "quantity": 29,
+        "checked": "2026-10-01",
+        "status": {
+          "tone": "warn",
+          "label": "À commander"
+        }
+      }
+    },
+    {
+      "id": "stock-30",
+      "values": {
+        "name": "Article 30",
+        "aisle": "Finition",
+        "quantity": 30,
+        "checked": "2026-10-01",
+        "status": {
+          "tone": "error",
+          "label": "Rupture"
+        }
+      }
+    }
+  ],
+  "groupBy": "aisle"
+}

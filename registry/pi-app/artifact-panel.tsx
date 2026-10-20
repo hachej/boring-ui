@@ -31,6 +31,7 @@ import type { InteractiveHtml } from '../viewers/interactive-html';
 import { downloadFile } from '../viewers/download';
 import { MaquetteMenuContext, maquetteKind } from '../maquette-viewer/maquette-viewer';
 import { diagramKind } from '../diagram-viewer/diagram-viewer';
+import { recordsKind } from '../record-viewer/record-viewer';
 import { isMockupPath, mockupKind } from '../mockup-viewer/mockup-viewer';
 import { copyText } from '../utils/utils';
 import { Separator } from '@/components/ui/separator';
@@ -50,7 +51,7 @@ const EXTENSION = /\.([A-Za-z0-9]{1,8})$/;
  * app's kind for those files wins. The chat card (through the kinds `AgentWorkspace` hands it), the panel and a file opened from the Library,
  * the file tree or a link all resolve here.
  */
-export const withBuiltInKinds = (kinds: readonly ArtifactKind[] | undefined): readonly ArtifactKind[] => [...(kinds ?? []), maquetteKind, diagramKind, mockupKind];
+export const withBuiltInKinds = (kinds: readonly ArtifactKind[] | undefined): readonly ArtifactKind[] => [...(kinds ?? []), maquetteKind, diagramKind, mockupKind, recordsKind];
 export const resolveKind = (artifact: ArtifactDescriptor, kinds: readonly ArtifactKind[] | undefined): ArtifactKind | undefined => artifactKind(artifact, withBuiltInKinds(kinds));
 
 /** One retained revision of a file with its save time (`files.saves(path)` of `@hachej/boring-files/workspace`). */
