@@ -1,5 +1,11 @@
 # Implemented behavior and evidence
 
+## Shared document readers
+
+`@hachej/boring-agent/documents` adds optional native `read_pdf` and `read_spreadsheet` registrations and the `sniff`/`readStored` helpers. The [agent guide](../../packages/agent/README.md#shared-document-readers) owns their result shapes, limits and host callback contract. The Pi seam is `defineTool`; the stored-file helper returns native tool content without changing Pi's `read`.
+
+`node --test test/packages/agent-documents.test.mjs` exercises public output through a real Harness: generated fictional PDFs, selected scanned-page OCR, missing/failed OCR, page/text caps, xlsx/xls/ods/CSV sheet/range limits, native image content, typed binary refusals, host read failures and lazy dependency imports. The complete-JSON regression fails under Pi's default 50 KiB output cap and passes with the readers' explicit native byte limit. These are local parser/native-tool tests, not live OCR/provider qualification or an input-memory/CPU budget. Global release deferrals are unchanged.
+
 ## Board artifact viewer
 
 The `board-viewer` registry block exports `createBoardKind` for `*.board.json`. This is host presentation over the native tldraw renderer, not a Pi execution extension. `CanvasProjection` from the optional canvas-editor entry renders frames without a native-document publication controller. The existing text buffer conditionally saves only `board@1`; conflicts and uncertain acknowledgements retain local edits and the original operation identity. Maquette screens and sandboxed `MockupViewer` frames share the workspace client.
