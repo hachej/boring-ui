@@ -469,6 +469,11 @@
           "target": "components/pi-chat/artifact.ts"
         },
         {
+          "path": "registry/pi-chat/camera-sheet.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat/camera-sheet.tsx"
+        },
+        {
           "path": "registry/pi-chat/code-block.tsx",
           "type": "registry:component",
           "target": "components/pi-chat/code-block.tsx"
