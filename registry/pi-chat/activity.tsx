@@ -53,7 +53,8 @@ function Thinking({ text, streaming, details }: { readonly text: string; readonl
 }
 
 /** Presentation only: native Pi steps and host cards keep their existing ownership and order. */
-export function ActivityBlock({ steps, state, streaming, developer, onOpenImage, participant }: {
+export function ActivityBlock({ steps, state, streaming, developer, onOpenImage, participant, active = true }: {
+  readonly active?: boolean;
   /** Shared traces default closed and show one working indicator, in the summary or the active step. */
   readonly participant?: string;
   readonly steps: readonly Step[]; readonly state: ActivityState; readonly streaming: boolean; readonly developer: boolean; readonly onOpenImage?: (image: Image) => void;
@@ -62,7 +63,7 @@ export function ActivityBlock({ steps, state, streaming, developer, onOpenImage,
   const [chosen, setChosen] = useState<boolean | undefined>();
   useEffect(() => { if (participant) setChosen(undefined); }, [participant, streaming]);
   const open = chosen ?? (!participant && state === 'failed');
-  const runningIndex = steps.findIndex(step => stepStatus(step) === 'running');
+  const runningIndex = steps.reduce((found, step, index) => found === -1 && stepStatus(step) === 'running' ? index : found, -1);
   const current = steps[runningIndex];
   const progress = current?.kind === 'host' ? ` · ${current.step.label} (${runningIndex + 1}/${steps.length})` : '';
   const Icon = state === 'running' ? Spinner : state === 'failed' ? AlertCircleIcon : state === 'stopped' ? CircleSlashIcon : CheckIcon;
@@ -70,7 +71,7 @@ export function ActivityBlock({ steps, state, streaming, developer, onOpenImage,
     <TraceCollapsible open={open} onOpenChange={setChosen}>
       <TraceCollapsibleTrigger className="min-h-8 max-sm:min-h-11 pointer-coarse:min-h-11">
         <TraceLine {...(state === 'running' ? { status: 'running' } : state === 'failed' ? { status: 'error' } : {})}>
-          {!(participant && open) && <TraceIcon><Icon aria-hidden="true" /></TraceIcon>}
+          {!(participant && (open || state === 'running' && !active)) && <TraceIcon><Icon aria-hidden="true" /></TraceIcon>}
           <TraceTitle data-testid="activity-label">{participant ? streaming ? `${labels.sharedWorking(participant)}${progress}` : labels.steps(steps.length) : header(steps, state, streaming, labels)}</TraceTitle>
           {!participant && <TraceDescription data-testid="activity-count">{labels.steps(steps.length)}</TraceDescription>}
         </TraceLine>
@@ -78,7 +79,7 @@ export function ActivityBlock({ steps, state, streaming, developer, onOpenImage,
       <TraceCollapsibleContent>
         <Trace data-testid="activity-steps">
           {steps.map((step, index) => <div key={step.key} data-testid="activity-step" data-kind={step.kind} data-status={stepStatus(step)}>
-            {step.kind === 'host' ? <ToolCard entry={{ key: step.key, step: step.step }} details={false} active={!participant || streaming && index === runningIndex} /> : step.kind === 'tool'
+            {step.kind === 'host' ? <ToolCard entry={{ key: step.key, step: step.step }} details={false} active={!participant || open && active && streaming && index === runningIndex} /> : step.kind === 'tool'
               ? <ToolCard entry={step.entry} details={developer || step.entry.status === 'failed'} {...(onOpenImage ? { onOpenImage } : {})} />
               : <Thinking text={step.text} streaming={step.streaming} details={developer} />}
           </div>)}

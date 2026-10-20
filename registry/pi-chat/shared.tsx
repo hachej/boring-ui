@@ -165,7 +165,7 @@ export function SharedMessage({ shared, children, remove, canRemove, openFile, o
     {colleague ? <div className="flex min-w-0 flex-col gap-1 sm:grid sm:grid-cols-[1.5rem_1fr] sm:gap-x-2">
       {heading}<div className="min-w-0 sm:col-start-2">{body}</div>
     </div> : <>{heading}{body}</>}
-    {!message.removed && !message.via && (message.streaming || message.steps?.length) && author.kind === 'agent' && <ActivityBlock participant={author.name} steps={(message.steps ?? []).map((step, index) => ({ kind: 'host', key: `${message.id}:step:${index}`, step }))} state={message.streaming ? 'running' : message.steps?.some(step => step.status === 'failed') ? 'failed' : 'done'} streaming={Boolean(message.streaming)} developer={false} />}
+    {!message.removed && !message.via && (message.streaming || message.steps?.length) && author.kind === 'agent' && <ActivityBlock participant={author.name} steps={(message.steps ?? []).map((step, index) => ({ kind: 'host', key: `${message.id}:step:${index}`, step }))} state={message.streaming ? 'running' : message.steps?.some(step => step.status === 'failed') ? 'failed' : 'done'} streaming={Boolean(message.streaming)} developer={false} active={shared.showSpinner !== false} />}
     {!message.removed && message.attachments?.map(file => <Button key={file.path} variant="outline" disabled={!openFile} onClick={() => openFile?.(file.path)} className="max-w-full justify-start"><span className="truncate">{file.title ?? file.path}</span></Button>)}
     {actionable && <div data-testid="shared-message-actions" hidden={phone && !actionsOpen} className={`${phone && !actionsOpen ? 'hidden' : 'flex'} items-center gap-1${phone ? '' : ' absolute inset-x-0 top-full opacity-0 group-hover/shared-message:opacity-100 group-focus-within/shared-message:opacity-100'}`}>
       {replyable && onReply && <Tooltip><TooltipTrigger render={<Button variant="ghost" size={phone ? 'icon' : 'icon-xs'} data-testid="shared-reply" aria-label={labels.sharedReply} onClick={() => { setActionsOpen(false); onReply(message.id); }}><ReplyIcon aria-hidden="true" /></Button>} /><TooltipContent>{labels.sharedReply}</TooltipContent></Tooltip>}
@@ -176,13 +176,14 @@ export function SharedMessage({ shared, children, remove, canRemove, openFile, o
 }
 
 export function sharedRows(shared: SharedChatState, action: (card: Request) => Promise<void>): Row[] {
+  const working = new Map(shared.messages.filter(message => message.streaming).map(message => [message.author, message.id]));
   return shared.messages.map((message, index): Row => {
     const key = `shared:${message.id}`, own = message.author === shared.me.id;
     const author = memberOf(shared, message.author);
     const previous = shared.messages[index - 1];
     const elapsed = previous ? Date.parse(message.at) - Date.parse(previous.at) : NaN;
     const first = previous?.author !== message.author || previous?.via !== message.via || !(elapsed >= 0 && elapsed <= 60_000);
-    const metadata = { message, author, own, first, latestCard: latestCard(shared, message.author), quote: sharedQuote(shared, message.replyTo) };
+    const metadata = { message, author, own, first, showSpinner: working.get(message.author) === message.id, latestCard: latestCard(shared, message.author), quote: sharedQuote(shared, message.replyTo) };
     if (message.card) return { key, type: 'card', card: { content: <RequestCard card={message.card} action={action} /> }, shared: metadata };
     if (own || author.kind !== 'agent' || message.via !== undefined) return { key, type: 'user', message: { role: 'user', content: message.text ?? '', timestamp: Date.parse(message.at) }, shared: metadata };
     return { key, type: 'assistant', text: message.text ?? '', streaming: Boolean(message.streaming), parts: message.text ? [{ kind: 'text', key: `${key}:text`, text: message.text }] : [], shared: metadata };

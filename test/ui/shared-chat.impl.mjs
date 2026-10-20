@@ -152,9 +152,16 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
     assert.ok(row().querySelector('[data-testid=activity-step][data-status=running] [data-slot=spinner]'));
     assert.equal(row().querySelector('[data-testid=activity] button [data-slot=spinner]'), null);
     assert.equal(q('[data-testid=request-card] [data-slot=spinner]'), null);
-    await act(async () => source.emit({ type: 'message', message: { ...work, streaming: false, steps: work.steps.map(step => ({ ...step, status: 'done' })) } }));
+    await act(async () => source.emit({ type: 'step', conversationId: 'main', messageId: work.id, index: 4, step: { label: 'Nouvelle vérification', status: 'running' } }));
+    assert.equal(row().querySelectorAll('[data-slot=spinner]').length, 1, 'sparse or overlapping step events still have one active icon');
+    const newer = { ...work, id: 'newer-spinner', at: '2026-10-20T11:59:01Z' };
+    await act(async () => source.emit({ type: 'message', message: newer }));
+    assert.equal(row().querySelectorAll('[data-slot=spinner]').length, 0, 'one agent cannot acquire another loading indicator through a second message');
+    assert.equal(q('[data-shared-message=newer-spinner]').querySelectorAll('[data-slot=spinner]').length, 1);
+    await act(async () => { for (const message of [work, newer]) source.emit({ type: 'message', message: { ...message, streaming: false, steps: message.steps.map(step => ({ ...step, status: 'done' })) } }); });
     assert.equal(row().querySelector('[data-testid=activity]').dataset.open, 'false');
     assert.equal(row().querySelectorAll('[data-slot=spinner]').length, 0);
+    assert.equal(q('[data-shared-message=newer-spinner]').querySelectorAll('[data-slot=spinner]').length, 0);
     assert.equal(row().querySelector('[data-testid=activity-label]').textContent, '3 steps');
   });
   await t.test('agent messages are participant bubbles; traces replace indexed steps and stay per-agent', async () => {
