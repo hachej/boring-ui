@@ -36,6 +36,8 @@ export interface PiChatActions {
 export interface ChatFeatureProps {
   /** `expert` hides successful tool details and reasoning; `developer` shows everything. */
   readonly mode?: Mode;
+  /** `natural` shows only messages, replies and question, approval and artifact cards, with one "Preparing…" status while the agent works: no tool steps, reasoning, file discovery or raw error text. Omit it and nothing changes. */
+  readonly presentation?: 'natural';
   readonly actions?: PiChatActions;
   readonly renderEntry?: (entry: EntryRecord) => ChatCard | undefined;
   readonly renderTool?: (call: ToolCall, result: ToolResultMessage | undefined) => ChatCard | undefined;
@@ -100,7 +102,7 @@ export interface ChatSessionOptions extends Readonly<{ [Key in keyof ChatFeature
 }
 
 export function useChatSession(options: ChatSessionOptions) {
-  const { controller, activeController: active, mode, actions, renderEntry, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept,
+  const { controller, activeController: active, mode, presentation, actions, renderEntry, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept,
     slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend, rowExtras, feedback, onOpenFile, fileChanges, pasteToFile, composerChips, composerHeader, composerHasContent, onPickFiles } = options;
   const { labels } = useChatText();
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
@@ -122,19 +124,20 @@ export function useChatSession(options: ChatSessionOptions) {
     return () => { mounted.current = false; for (const upload of uploads.current) upload.abort(); uploads.current.clear(); };
   }, [controller]);
 
-  const developer = mode === 'developer';
+  const natural = presentation === 'natural';
+  const developer = mode === 'developer' && !natural;
   // Only the recogniser takes part in deriving rows; which card is open changes without rebuilding them.
   const artifactDetect = useMemo(() => artifacts ? { detect: artifacts.detect } : undefined, [Boolean(artifacts), artifacts?.detect]); // eslint-disable-line react-hooks/exhaustive-deps
-  const derived = useMemo(() => derive(state.view, { mode, renderEntry, renderTool, groupTool, artifacts: artifactDetect }), [state.view, mode, renderEntry, renderTool, groupTool, artifactDetect]);
+  const derived = useMemo(() => derive(state.view, { mode, presentation, renderEntry, renderTool, groupTool, artifacts: artifactDetect }), [state.view, mode, presentation, renderEntry, renderTool, groupTool, artifactDetect]);
   const queued = useMemo(() => queuedMessages(state.view), [state.view]);
   const { run } = derived;
   const earlier = useMemo<readonly Row[]>(() => {
     if (!state.view || !('entries' in state.history)) return [];
     const activeIds = new Set(state.view.entries.map(entry => entry.id));
     const entries = state.history.entries.filter(entry => !activeIds.has(entry.id));
-    return derive({ ...state.view, entries, docs: {} }, { mode, renderEntry: undefined, renderTool: undefined, groupTool: undefined, artifacts: artifactDetect }).rows
+    return derive({ ...state.view, entries, docs: {} }, { mode, presentation, renderEntry: undefined, renderTool: undefined, groupTool: undefined, artifacts: artifactDetect }).rows
       .map(row => ({ ...row, key: `history:${row.key}`, historical: true }));
-  }, [state.view, state.history, mode, artifactDetect]);
+  }, [state.view, state.history, mode, presentation, artifactDetect]);
   const rows = useMemo(() => [...earlier, ...derived.rows], [earlier, derived.rows]);
   const files = useMemo(() => {
     const found = new Map<string, ConversationFile>();
@@ -160,7 +163,7 @@ export function useChatSession(options: ChatSessionOptions) {
           const artifact = part.artifact, id = `file:${artifact.target.resource.path.replace(/^\.\//, '')}`;
           found.set(id, { id, name: displayName(artifact.target.resource.path), open: artifacts ? () => artifacts.open(artifact) : undefined });
         }
-        if (part.kind === 'tool' && part.entry.result && !part.entry.result.isError && ['read', 'write', 'edit'].includes(part.entry.call.name)) {
+        if (!natural && part.kind === 'tool' && part.entry.result && !part.entry.result.isError && ['read', 'write', 'edit'].includes(part.entry.call.name)) {
           const path = part.entry.call.arguments['path'];
           if (typeof path === 'string') add(path);
         }
@@ -326,7 +329,7 @@ export function useChatSession(options: ChatSessionOptions) {
     if (catalog && selected) act(async () => catalog.onActivate({ name: selected.name, behavior: selected.behavior }));
   };
   const rowContext = useMemo<RowContext>(() => ({
-    developer, groupTool, onOpenImage, onCopy, openFile: onOpenFile ?? mentions?.open, fileChanges,
+    developer, natural, groupTool, onOpenImage, onCopy, openFile: onOpenFile ?? mentions?.open, fileChanges,
     commandMentions: commandMentions ? { commands: commandMentions.commands, onActivate: activateMention } : undefined,
     answer: actions?.answer,
     artifacts: artifacts ? { open: artifacts.open, isOpen: artifacts.isOpen, kinds: artifacts.kinds } : undefined,
@@ -335,7 +338,7 @@ export function useChatSession(options: ChatSessionOptions) {
     pieces: slash?.skills?.length || mentions || attachments ? { mentions: Boolean(mentions), uploads: Boolean(attachments), skills: (slash?.skills ?? []).map(skill => skill.name), openMention: mentions?.open, renderMention: mentions?.renderSent ?? mentions?.render, preview: mentions?.preview } : undefined,
     ...rowExtras,
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [controller, developer, groupTool, onOpenImage, onCopy, onOpenFile, fileChanges, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, mentions?.renderSent, mentions?.preview, attachments, artifacts?.open, artifacts?.isOpen, artifacts?.kinds, messageActions, replyFooter, rowExtras]);
+  }), [controller, developer, natural, groupTool, onOpenImage, onCopy, onOpenFile, fileChanges, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, mentions?.renderSent, mentions?.preview, attachments, artifacts?.open, artifacts?.isOpen, artifacts?.kinds, messageActions, replyFooter, rowExtras]);
 
   /** The model-and-effort pill and the note that reports a refused change. */
   const pickers = () => {
@@ -367,7 +370,7 @@ export function useChatSession(options: ChatSessionOptions) {
     feedback, chips: composerChips,
   };
 
-  return { state, derived, rows, queued, queueActions, working, waitingForAnswer, connected, sendBlocked, error, setError, report, act, current, textarea, rowContext, composer, files, pickers, empty, loading, developer };
+  return { state, derived, rows, queued, queueActions, working, waitingForAnswer, connected, sendBlocked, error, setError, report, act, current, textarea, rowContext, composer, files, pickers, empty, loading, developer, natural };
 }
 
 export type ChatSession = ReturnType<typeof useChatSession>;

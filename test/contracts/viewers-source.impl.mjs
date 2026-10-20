@@ -5,6 +5,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 import { Window } from 'happy-dom';
 import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
+import { fictionalPdf } from '../fixtures/fictional-pdf.mjs';
+import { fictionalPng } from '../fixtures/blob-bytes.mjs';
 
 // Compiles the viewers registry source as a consumer would and drives it in a DOM environment (structure and behaviour, not browser
 // geometry: the studio scenarios `docs-*` are the browser evidence).
@@ -244,6 +246,82 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     window.navigator.pdfViewerEnabled = false;
     assert.equal(pdfPane.browserShowsPdf(), false);
     delete window.navigator.pdfViewerEnabled;
+  });
+
+  await t.test('LocalFileViewer opens browser-only File PDFs and PNGs by type or name and revokes replaced and unmounted URLs', async t => {
+    const { LocalFileViewer } = await load('local-file-viewer.tsx');
+    const created = [], revoked = [];
+    const create = URL.createObjectURL, revoke = URL.revokeObjectURL;
+    URL.createObjectURL = blob => { const url = create(blob); created.push({ url, blob }); return url; };
+    URL.revokeObjectURL = url => { revoked.push(url); revoke(url); };
+    t.after(() => { URL.createObjectURL = create; URL.revokeObjectURL = revoke; });
+    const pdfBytes = fictionalPdf([['Compte rendu fictif']]);
+    const file = new File([pdfBytes], 'compte-rendu-fictif.pdf', { type: 'application/pdf' });
+    let closed = 0;
+    const view = await mount(t, h(LocalFileViewer, { name: file.name, blob: file, onClose: () => { closed++; } }));
+    assert.equal(view.q('[data-testid="viewer-title"]').textContent, file.name);
+    assert.ok(view.q('[data-testid="viewer-frame-pdf"]').getAttribute('src').startsWith(created[0].url));
+    assert.deepEqual(new Uint8Array(await created[0].blob.arrayBuffer()), pdfBytes);
+    await view.click('[data-testid="viewer-close"]'); assert.equal(closed, 1);
+    for (const [name, type] of [['unnamed', 'image/png'], ['fictional.PNG', 'application/octet-stream']]) {
+      const png = fictionalPng(2, 2);
+      await view.render(h(LocalFileViewer, { name, blob: new Blob([png], { type }) }));
+      assert.equal(view.q('[data-testid="viewer-frame-pdf"]'), null);
+      assert.equal(view.q('[data-testid="viewer-image"]').getAttribute('src'), created.at(-1).url);
+      assert.equal(created.at(-1).blob.type, 'image/png');
+      assert.deepEqual(new Uint8Array(await created.at(-1).blob.arrayBuffer()), png);
+      assert.equal(view.q('[data-testid="viewer-close"]'), null, 'Close requires a handler');
+    }
+    await view.render(h(LocalFileViewer, { name: 'extension-only.PDF', blob: new Blob([pdfBytes]) }));
+    assert.ok(view.q('[data-testid="viewer-frame-pdf"]'));
+    assert.equal(created.at(-1).blob.type, 'application/pdf');
+    await view.render(null);
+    assert.deepEqual(revoked, created.map(entry => entry.url), 'every preview URL is revoked exactly once');
+  });
+
+  await t.test('LocalFileViewer renders UTF-8 text literally and never displays a late previous Blob read', async t => {
+    const { LocalFileViewer } = await load('local-file-viewer.tsx');
+    const text = '\uFEFFCompte rendu fictif\r\n<script>fictional()</script>';
+    const view = await mount(t, h(LocalFileViewer, { name: 'notes.txt', blob: new File([text], 'notes.txt') }));
+    assert.equal(view.q('[data-testid="viewer-text"]').textContent, text);
+    assert.equal(view.q('script'), null);
+    let finish;
+    class SlowBlob extends Blob { arrayBuffer() { return new Promise(resolve => { finish = resolve; }); } }
+    await view.render(h(LocalFileViewer, { name: 'old.txt', blob: new SlowBlob(['old']) }));
+    assert.equal(view.q('[data-testid="viewer-text"]'), null, 'old text is hidden while the next file loads');
+    await view.render(h(LocalFileViewer, { name: 'new', blob: new Blob(['new fictional text'], { type: 'text/plain' }) }));
+    await act(async () => finish(new TextEncoder().encode('old fictional text').buffer));
+    assert.equal(view.q('[data-testid="viewer-text"]').textContent, 'new fictional text');
+  });
+
+  await t.test('LocalFileViewer offers no preview for unknown, invalid or unreadable files and downloads the original bytes', async t => {
+    const { LocalFileViewer } = await load('local-file-viewer.tsx');
+    const created = [], revoked = [], downloads = [];
+    const create = URL.createObjectURL, revoke = URL.revokeObjectURL, click = window.HTMLAnchorElement.prototype.click;
+    URL.createObjectURL = blob => { const url = create(blob); created.push({ url, blob }); return url; };
+    URL.revokeObjectURL = url => { revoked.push(url); revoke(url); };
+    window.HTMLAnchorElement.prototype.click = function () { downloads.push({ name: this.download, url: this.href }); };
+    t.after(() => { URL.createObjectURL = create; URL.revokeObjectURL = revoke; window.HTMLAnchorElement.prototype.click = click; });
+    class UnreadableBlob extends Blob { arrayBuffer() { return Promise.reject(new Error('fictional read failure')); } }
+    for (const [name, blob] of [
+      ['unknown.bin', new Blob(['printable but unknown'], { type: 'application/x-fictional' })],
+      ['invalid.txt', new Blob([new Uint8Array([0xff])])],
+      ['binary.txt', new Blob([new Uint8Array([65, 0, 66])])],
+      ['unreadable.txt', new UnreadableBlob(['unreadable'])],
+    ]) {
+      const view = await mount(t, h(LocalFileViewer, { name, blob }));
+      assert.match(view.q('[role="status"]').textContent, /No preview/);
+      assert.equal(view.q('[data-testid="viewer-text"]'), null);
+      assert.equal(view.q('iframe, img, textarea'), null);
+      await view.click('[data-testid="viewer-more"]'); await view.click('[data-testid="viewer-download"]');
+      assert.equal(downloads.at(-1).name, name);
+      assert.equal(downloads.at(-1).url, created.at(-1).url);
+      assert.equal(created.at(-1).blob.size, blob.size);
+      if (!(blob instanceof UnreadableBlob)) assert.deepEqual(await created.at(-1).blob.arrayBuffer(), await blob.arrayBuffer());
+      await view.render(null);
+    }
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 1100)); });
+    assert.deepEqual(revoked, created.map(entry => entry.url), 'download URLs are also released');
   });
 
   async function documents(t, mediaType, initial) {
