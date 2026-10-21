@@ -12,5 +12,6 @@ export const SOURCES = [{ name: 'app-shell', entries: Object.entries({
   'picnic plan': [call('write', { path: 'picnic-plan.md', content: NOTES }), call('present', { path: 'picnic-plan.md' }), 'The picnic plan is ready.'],
   'Dis bonjour': ['Bonjour ! Que veux-tu écrire ?'],
   'Combien de pas hier': ['Hier : 8 200 pas, soit 94 % de ton objectif.'],
+  'Je mange une salade': ['Tu as choisi une salade. Une réponse fictive au texte transcrit.'],
   'Dis-moi ce qui manque': ['Il manque un graphique de la semaine sur l\'écran Progrès.'],
 }).map(([match, turns]) => ({ match, turns })) }];

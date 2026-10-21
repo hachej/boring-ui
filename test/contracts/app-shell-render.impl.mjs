@@ -351,8 +351,8 @@ test('the screen header follows an action whose href, target or rel changes alon
 });
 
 // The composer microphone on a phone: a fake microphone and recorder (the pattern of test/ui/voice-input.test.mjs), the layer open at half.
-async function talking(t, snap = 'half') {
-  const tracks = [], transcribed = [];
+async function talking(t, snap = 'half', options = {}) {
+  const tracks = [], transcribed = [], uploads = [], sends = [];
   const previous = Object.getOwnPropertyDescriptor(globalThis, 'MediaRecorder');
   class FakeRecorder extends EventTarget {
     static isTypeSupported() { return true; }
@@ -362,9 +362,13 @@ async function talking(t, snap = 'half') {
   }
   globalThis.MediaRecorder = FakeRecorder;
   t.after(() => { previous ? Object.defineProperty(globalThis, 'MediaRecorder', previous) : delete globalThis.MediaRecorder; });
-  const transcribe = async audio => { transcribed.push(audio); return 'fictional words'; };
-  const opened = await openedLayer(t, 390, { agent: { ...agentWith(), voice: { transcribe, send: 'draft' } } });
+  const transcribe = async audio => { transcribed.push(audio); if (options.failTranscribe) throw new Error('Fictional transcription failure'); return 'fictional words'; };
+  const controller = Object.create(idleController);
+  controller.send = async (...args) => { sends.push(args); return { id: 1 }; };
+  const attachments = { upload: async files => { uploads.push(files); return [{ path: `uploads/${files[0].name}`, name: files[0].name }]; } };
+  const opened = await openedLayer(t, 390, { agent: { ...agentWith(options.send === 'message' ? { attachments } : undefined), controller, voice: { transcribe, send: options.send ?? 'draft' } } });
   Object.defineProperty(opened.window.navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: async () => {
+    if (options.refuseCapture) throw Object.assign(new Error('Fictional microphone refusal'), { name: 'NotAllowedError' });
     const track = { stopped: false, stop() { this.stopped = true; } }; tracks.push(track);
     return { getTracks: () => [track], getAudioTracks: () => [track] };
   } } });
@@ -380,11 +384,12 @@ async function talking(t, snap = 'half') {
     return event;
   };
   const until = async (condition, label) => { for (let tries = 0; tries < 60 && !condition(); tries++) await opened.act(async () => new Promise(done => setTimeout(done, 25))); assert.ok(condition(), label); };
-  return { opened, find, talk, fire, until, tracks, transcribed };
+  return { opened, find, talk, fire, until, tracks, transcribed, uploads, sends };
 }
 
 for (const snap of ['half', 'full']) test(`the composer microphone at ${snap}: a press keeps focus where it was, a browser pointercancel while recording keeps the audio, the composer takes no focus and the snap holds`, async t => {
   const ui = await talking(t, snap);
+  assert.equal(ui.find('[data-testid=below-composer]'), null, 'legacy dictation adds no empty footer row');
   const input = ui.find('[data-testid=composer-input]');
   const down = await ui.fire(ui.talk, 'pointerdown', { button: 0 });
   assert.equal(down.defaultPrevented, true, 'pressing the microphone cannot move focus (no keyboard opens or closes)');
@@ -471,4 +476,71 @@ for (const width of [390, 1280]) test(`the agent layer's chat at ${width} lists 
   await act(async () => listed.rename('3', 'Fictional dinner'));
   assert.deepEqual(requests.filter(request => request.method === 'POST').at(-1), { url: 'https://fictional.invalid/_agent/coach/conversations?op=rename', method: 'POST', body: { conversationId: '3', title: 'Fictional dinner' } });
   await act(async () => reactRoot.unmount());
+});
+
+test('agent message mode uses one composer microphone and sends one retained upload with the transcript', async t => {
+  const ui = await talking(t, 'half', { send: 'message' });
+  assert.equal(ui.find('[data-testid=voice-message-record]'), null, 'no second PiChat microphone');
+  const input = ui.find('[data-testid=composer-input]');
+  await ui.opened.act(async () => input.focus());
+  await ui.fire(ui.talk, 'pointerdown', { button: 0 });
+  assert.equal(ui.opened.window.document.activeElement, input, 'the recording press keeps focus');
+  await ui.until(() => ui.talk.dataset.state === 'recording', 'recording');
+  await ui.fire(ui.talk, 'pointercancel');
+  await ui.until(() => ui.sends.length === 1, 'one message admitted');
+  assert.equal(ui.uploads.length, 1);
+  assert.match(ui.sends[0][1].text, /^@uploads\/voice-.*\.webm fictional words$/);
+  assert.deepEqual(ui.sends[0][1].restore, { text: 'fictional words' });
+  await ui.opened.unmount();
+});
+
+test('a message-mode failure from the phone trigger reveals half with explicit actions, never the composer keyboard', async t => {
+  const ui = await talking(t, 'half', { send: 'message', failTranscribe: true });
+  await ui.opened.act(async () => ui.opened.latest().close());
+  const trigger = ui.find('[data-testid=agent-trigger]');
+  await ui.fire(trigger, 'pointerdown', { button: 0 });
+  await ui.until(() => ui.find('[data-testid=agent-listening]')?.dataset.phase === 'recording', 'recording at peek');
+  await ui.fire(trigger, 'pointerup');
+  await ui.until(() => ui.find('[data-testid=agent-layer]')?.dataset.state === 'half' && ui.find('[data-testid=voice-retry]'), 'actionable failure reveals half');
+  assert.equal(ui.sends.length, 0); assert.equal(ui.uploads.length, 1);
+  assert.ok(ui.find('[data-testid=voice-audio-only]')); assert.ok(ui.find('[data-testid=voice-discard]'));
+  assert.notEqual(ui.opened.window.document.activeElement, ui.find('[data-testid=composer-input]'));
+  await ui.opened.act(async () => ui.opened.window.document.dispatchEvent(new ui.opened.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+  await ui.until(() => ui.find('[data-testid=agent-layer]')?.dataset.state === 'peek', 'failure can still be collapsed');
+  assert.ok(ui.find('[data-testid=voice-retry]'), 'collapsing does not discard the recording');
+  await ui.opened.unmount();
+});
+
+for (const loss of ['Escape', 'blur', 'hidden']) for (const started of [false, true]) test(`message-mode trigger ${started ? 'hold' : 'delay'} cancels on ${loss}`, async t => {
+  const ui = await talking(t, 'half', { send: 'message' });
+  await ui.opened.act(async () => ui.opened.latest().close());
+  const trigger = ui.find('[data-testid=agent-trigger]');
+  await ui.fire(trigger, 'pointerdown', { button: 0 });
+  if (started) await ui.until(() => ui.tracks.length === 1 && ui.find('[data-testid=agent-talk]')?.dataset.state === 'recording', 'the trigger starts its own recording');
+  await ui.opened.act(async () => {
+    if (loss === 'Escape') trigger.dispatchEvent(new ui.opened.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    else if (loss === 'blur') ui.opened.window.dispatchEvent(new ui.opened.window.Event('blur'));
+    else { Object.defineProperty(ui.opened.window.document, 'hidden', { configurable: true, value: true }); ui.opened.window.document.dispatchEvent(new ui.opened.window.Event('visibilitychange')); }
+  });
+  if (started) await ui.until(() => ui.tracks.every(track => track.stopped), 'loss of the trigger gesture releases its microphone');
+  else await ui.opened.act(async () => new Promise(resolve => setTimeout(resolve, 420)));
+  await ui.fire(trigger, 'pointerup');
+  await ui.opened.act(async () => new Promise(resolve => setTimeout(resolve, 30)));
+  assert.equal(ui.uploads.length, 0); assert.equal(ui.transcribed.length, 0); assert.equal(ui.sends.length, 0);
+  if (!started) assert.equal(ui.tracks.length, 0, 'a cancelled long-press timer cannot open the microphone later');
+  if (loss === 'hidden') Object.defineProperty(ui.opened.window.document, 'hidden', { configurable: true, value: false });
+  await ui.opened.unmount();
+});
+
+test('a message-mode microphone refusal at peek reveals its problem and survives the ending pointer cancellation', async t => {
+  const ui = await talking(t, 'half', { send: 'message', refuseCapture: true });
+  await ui.opened.act(async () => ui.opened.latest().close());
+  const trigger = ui.find('[data-testid=agent-trigger]');
+  await ui.fire(trigger, 'pointerdown', { button: 0 });
+  await ui.until(() => ui.find('[data-testid=agent-layer]')?.dataset.state === 'half' && ui.find('[data-testid=agent-voice-problem]'), 'refusal is visible at half');
+  await ui.fire(trigger, 'pointercancel');
+  assert.match(ui.find('[data-testid=agent-voice-problem]').textContent, /Microphone bloqué/);
+  assert.equal(ui.tracks.length, 0); assert.equal(ui.uploads.length, 0); assert.equal(ui.sends.length, 0);
+  assert.notEqual(ui.opened.window.document.activeElement, ui.find('[data-testid=composer-input]'));
+  await ui.opened.unmount();
 });

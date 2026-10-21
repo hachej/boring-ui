@@ -87,7 +87,7 @@ export const defaultChatLabels = {
   uploads: 'Uploads',
   attachments: 'Attachments',
   /** The type line of a file card in a sent message. */
-  fileKind: { document: 'Document', image: 'Image', pdf: 'PDF', sheet: 'Spreadsheet', slides: 'Presentation', file: 'File' },
+  fileKind: { document: 'Document', image: 'Image', pdf: 'PDF', sheet: 'Spreadsheet', slides: 'Presentation', audio: 'Audio', file: 'File' },
   openFile: (name: string) => `Open ${name}`,
   fileChange: { created: 'Created', edited: 'Edited' },
   /** The name of a pasted text file: the words and the time it was pasted. */
@@ -112,6 +112,16 @@ export const defaultChatLabels = {
   effortDetail: (level: string): string | undefined => EFFORT_DETAILS[level],
   // Voice input (the microphone button beside the composer)
   voiceRecord: 'Record a message',
+  voiceHold: 'Hold to record, release to send',
+  voiceRecording: 'Recording',
+  voicePreparing: 'Preparing voice message…',
+  voiceAudioOnly: 'Send audio only',
+  voiceDiscard: 'Discard',
+  voicePlay: 'Play voice message',
+  voicePause: 'Pause voice message',
+  voicePlayFailed: 'The audio could not be played. Try again.',
+  voiceBlocked: 'Not sent. Review the chat notice before trying again.',
+  voiceUnconfirmed: 'Message admission is unconfirmed. Use the chat notice to reconcile.',
   voiceStop: 'Stop recording',
   voiceCancel: 'Cancel recording',
   voiceTranscribing: 'Transcribing…',

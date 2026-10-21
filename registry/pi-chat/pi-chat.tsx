@@ -15,7 +15,9 @@ import type { BlockAction } from '../button/actions';
 import { Composer } from './composer';
 import type { ComposerFeedback, ComposerProps } from './composer';
 import { ConversationFiles } from './conversation-files';
-import type { ConversationsConfig } from './config';
+import type { ConversationsConfig, VoiceMessageConfig } from './config';
+import { useVoiceMessage } from './use-voice-message';
+import { PendingVoiceBubble, VoiceMessageButton } from './voice-message';
 import { EmptyState } from './empty-state';
 import type { Suggestion } from './empty-state';
 import { ConversationHistory, TranscriptHistory } from './history';
@@ -54,13 +56,13 @@ export { BlockActions } from '../button/actions';
 export { useChatDraft } from './use-chat-draft';
 export { useConversations } from './use-conversations';
 export type { ChatController, ChatSnapshot } from '@hachej/boring-ui-kit/native-chat';
-export { MessageText } from './message';
+export { MessageText, VoiceBubble } from './message';
 export { Markdown } from './markdown';
 export { useTranscript } from './session';
 export { RunCard, parseRun } from './run-card';
 export type { RunRecord, RunStatus } from './run-card';
 export type { BlockAction, BlockIcon } from '../button/actions';
-export type { AttachmentsConfig, ConversationItem, ConversationsConfig, EffortConfig, FileKind, MentionResult, MentionsConfig, ModelConfig, ModelRef, PasteToFile, PreviewRead, ReplyRef, SlashApi, SlashCommand, SlashConfig, SlashSkill, UploadResult } from './config';
+export type { AudioUrlRead, VoiceMessageConfig, AttachmentsConfig, ConversationItem, ConversationsConfig, EffortConfig, FileKind, MentionResult, MentionsConfig, ModelConfig, ModelRef, PasteToFile, PreviewRead, ReplyRef, SlashApi, SlashCommand, SlashConfig, SlashSkill, UploadResult } from './config';
 
 export interface ChatTimeline {
   readonly count: number;
@@ -95,6 +97,8 @@ export interface PiChatProps extends ChatFeatureProps {
   readonly controls?: ReactNode;
   /** Host controls at the end of the composer bar (for example a microphone), like AmbientChat's tools slot. */
   readonly tools?: ReactNode;
+  /** Hold-to-send one retained audio upload plus transcript. Omit to keep the existing composer unchanged. */
+  readonly voiceMessage?: VoiceMessageConfig | undefined;
   /** Host content under the composer (for example a collapsed list of the person's requests). Absent: nothing is shown. */
   readonly belowComposer?: ReactNode;
   /** Rendered before the title in the header (for example a menu button on narrow screens). */
@@ -146,7 +150,7 @@ function ConnectionBadge({ kind }: { readonly kind: string }) {
   </Badge>;
 }
 
-function PiChatSession({ controller, placement = 'docked', mode = 'expert', presentation, className, keyboardInset = true, actions, avatar, headerActions, header = true, decisions, controls, tools, belowComposer, composerChips, composerHeader, composerHasContent, onPickFiles, timeline, renderConnectionError, headerStart, renderEntry, renderTool, groupTool, commandMentions,
+function PiChatSession({ controller, placement = 'docked', mode = 'expert', presentation, className, keyboardInset = true, actions, avatar, headerActions, header = true, decisions, controls, tools, voiceMessage, belowComposer, composerChips, composerHeader, composerHasContent, onPickFiles, timeline, renderConnectionError, headerStart, renderEntry, renderTool, groupTool, commandMentions,
   onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = false, emptyLayout = 'centered', composerLayout = 'card', conversationTitle, onRenameTitle, feedback, draftKey, onOpenFile, fileChanges, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: ChatController } }) {
   const { labels, icons } = useChatText();
   useChatDraft(controller, draftKey);
@@ -154,6 +158,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
   const { title } = labels;
   const [pickingConversation, setPickingConversation] = useState(false);
   const scrollToBottom = useRef<() => void>(() => {});
+  const voice = useVoiceMessage({ controller, config: voiceMessage, attachments, labels, activeController: active, admitted: () => timeline ? timeline.afterSend?.() : scrollToBottom.current() });
   // A reply's Fork button calls the host's latest `fork`; the row context changes only when forking is switched on or off.
   const fork = useRef(conversations?.fork); fork.current = conversations?.fork;
   const canFork = Boolean(conversations?.fork);
@@ -239,7 +244,9 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
         <div>
           <ConversationFiles files={files} />
           <MessageQueue items={queued} sending={state.outbox} withdraw={actions?.withdraw} actions={queueActions} />
-          <Composer {...composer} layout={composerLayout} placeholder={labels.placeholder === 'Message the agent…' ? `Message ${title}…` : labels.placeholder} barStart={barStart} barNote={barNote} barEnd={tools} />
+          <PendingVoiceBubble pending={voice.pending} />
+          {voice.problem && <p role="alert" data-testid="voice-message-problem">{voice.problem}</p>}
+          <Composer {...composer} layout={composerLayout} placeholder={labels.placeholder === 'Message the agent…' ? `Message ${title}…` : labels.placeholder} barStart={barStart} barNote={barNote} barEnd={voiceMessage ? <>{tools}<VoiceMessageButton voice={voice} disabled={state.disposed || !connected || state.send.kind === 'unknown'} /></> : tools} />
           {belowComposer !== undefined && <div data-testid="below-composer" className="pt-2">{belowComposer}</div>}
         </div>
       </div>

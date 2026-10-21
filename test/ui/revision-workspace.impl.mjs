@@ -272,4 +272,17 @@ test('revision workspace preserves file drafts, docked and floating chat mounts,
   assert.equal(element.querySelector('[data-testid=sessions-tab-library]'), null);
   assert.match(element.querySelector('[data-testid=conversations] h2').textContent, /Library/);
   assert.ok(element.querySelector('[data-testid=sessions-library]'));
+  await t.test('voice previews preserve the stored audio MIME rather than the video extension default', async () => {
+    let preview;
+    await act(async () => root.render(workspace({ key: 'voice-preview', floatingChat: props => { preview = props.mentions?.preview; return null; } })));
+    assert.equal(typeof preview, 'function');
+    for (const extension of ['webm', 'mp4']) {
+      const path = `uploads/voice-20261020-101500.${extension}`;
+      const mimeType = `audio/${extension}`;
+      await binding.publish({ operationId: path, atomicity: 'all-or-nothing', changes: [{ kind: 'create', target: locate(path), expected: { kind: 'absent' }, bytes: new TextEncoder().encode('fictional audio'), mediaType: mimeType }] });
+      const read = await preview(path, new AbortController().signal);
+      assert.equal(read.mimeType, mimeType);
+      assert.equal(atob(read.data), 'fictional audio');
+    }
+  });
 });
