@@ -46,6 +46,19 @@ test('scripted model: prompt rules answer with tool calls, streamed chunks, pric
   assert.equal(misses.length, 1);
 });
 
+test('scripted model: opt-in native timing leaves deterministic fixtures unchanged', async () => {
+  for (const timed of [false, true]) {
+    const before = Date.now();
+    const { models, definitions } = createScriptedModel({ timed, script: { 'Time the fictional note': [{ text: 'Fictional note', delay: 20 }] } });
+    const message = await models.complete(definitions[0], { messages: [user('Time the fictional note')] });
+    if (timed) {
+      assert.ok(message.timestamp >= before);
+      assert.equal(typeof message.durationMs, 'number');
+      assert.ok(message.durationMs >= 0);
+    } else { assert.equal(message.timestamp, 1); assert.equal(message.durationMs, undefined); }
+  }
+});
+
 test('scripted model: a request-context message is not the person\'s message, so a script keeps its turns across tool results', async () => {
   const context = text => user(`<request-context>\n${text}\n</request-context>`);
   const { models, definitions } = createScriptedModel({ script: { 'Open the queue': [{ tools: [{ name: 'show', args: {} }] }, ctx => `Opened; ${ctx.last.json.ok}, ${ctx.messages.some(message => JSON.stringify(message).includes('Placement: docked'))}`] } });

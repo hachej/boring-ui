@@ -66,6 +66,8 @@ try {
   writeFileSync(join(directory, 'src/page.tsx'), `import { createRoot } from 'react-dom/client';
 import { PiChat } from './components/pi-chat/pi-chat';
 import { useRemoteChat } from './components/pi-chat/use-remote-chat';
+import type { NativeChatOptions } from '@hachej/boring-ui-kit/native-chat';
+export const restoreOption = { restoreOnError: true } satisfies Pick<NativeChatOptions, 'restoreOnError'>;
 // @ts-expect-error ChannelSource belongs only to the optional data entry.
 import type { ChannelSource } from '@hachej/boring-ui-kit';
 // @ts-expect-error The headless root has no channel factory.
@@ -75,7 +77,12 @@ const identity = { runtimeId: 'app', scopeId: 'fictional-team', principalId: 'fi
 
 export function App() {
   const chat = useRemoteChat({ conversationId: 'fictional', endpoint: id => new URL('/api/chat?conversation=' + id, location.href), fetch: request => fetch(request), identity });
-  return chat.status === 'ready' ? <PiChat controller={chat.controller} actions={chat.actions} /> : <p>{chat.status}</p>;
+  return chat.status === 'ready' ? <PiChat controller={chat.controller} actions={chat.actions} displayLimit={24} historicalMessageActions
+    hideLine={line => line.startsWith('::meta ')} unread={reply => <span>{reply.entryId}</span>}
+    replyError={reply => <span>Failed reply {reply.entryId}</span>}
+    renderEntry={entry => entry.kind === 'fictional.stage' ? { inline: true, content: <span>Validated</span>, status: 'Validating…' } : undefined}
+    messageActions={reply => [{ id: 'offer', label: 'Use fictional note', onSelect: () => { void reply.text; } }]}
+    replyFooter={reply => <span>{reply.durationMs}</span>} /> : <p>{chat.status}</p>;
 }
 createRoot(document.getElementById('root')!).render(<App />);
 `);

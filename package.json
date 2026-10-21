@@ -25,6 +25,8 @@
     "ambient:journey:scripted": "node examples/ambient/journey.mjs --scripted",
     "workspace-app": "node examples/workspace-app/server.mjs",
     "workspace-app:journey": "node examples/workspace-app/journey.mjs",
+    "staged-chat": "node examples/staged-chat/server.mjs",
+    "staged-chat:journey": "node examples/staged-chat/journey.mjs",
     "shared-chat:demo": "node examples/shared-chat/server.mjs",
     "shared-chat:journey": "node examples/shared-chat/journey.mjs",
     "mockup:journey": "node examples/workspace-app/journey-mockup.mjs",
