@@ -39,6 +39,7 @@ interface WindowsContext {
 const Windows = createContext<WindowsContext | null>(null);
 const DEFAULT_RECT: WindowRect = { x: 48, y: 64, width: 400, height: 320 };
 const MIN_WIDTH = 240, MIN_HEIGHT = 160;
+const windowRecord = (records: WindowState['records'], id: string): WindowRecord | undefined => Object.hasOwn(records, id) ? records[id] : undefined;
 const useWindows = () => { const value = useContext(Windows); if (!value) throw new Error('Windows need a WindowLayer'); return value; };
 const storage = (persist: 'session' | 'local') => { try { return persist === 'local' ? window.localStorage : window.sessionStorage; } catch { return undefined; } };
 const clamp = (rect: WindowRect): WindowRect => {
@@ -58,7 +59,7 @@ export function WindowLayer({ children, storageKey = 'boring.windows', persist =
   const register = useCallback((id: string, rect: WindowRect, open: boolean) => {
     if (mounted.current.has(id)) throw new Error(`Duplicate floating window id: ${id}`);
     mounted.current.add(id);
-    let record = current.current.records[id] ?? { rect, status: open ? 'open' : 'closed' } as WindowRecord;
+    let record = windowRecord(current.current.records, id) ?? { rect, status: open ? 'open' : 'closed' } as WindowRecord;
     try {
       const saved = JSON.parse(storage(persist)?.getItem(`${storageKey}.${id}`) ?? 'null');
       if (saved && validRect(saved.rect) && ['closed', 'open', 'minimized'].includes(saved.status)) record = saved;
@@ -74,18 +75,18 @@ export function WindowLayer({ children, storageKey = 'boring.windows', persist =
     };
   }, [commit, persist, storageKey]);
   const change = useCallback((id: string, status: WindowStatus) => {
-    const previous = current.current, record = previous.records[id]; if (!record || !mounted.current.has(id)) return;
+    const previous = current.current, record = windowRecord(previous.records, id); if (!record || !mounted.current.has(id)) return;
     const order = previous.order.filter(key => key !== id); if (status === 'open') order.push(id);
     const next = { ...record, status }; save(id, next);
     commit({ records: { ...previous.records, [id]: next }, order, focus: status === 'open' ? id : order.at(-1) ?? null, request: previous.request + 1 });
   }, [commit, save]);
   const raise = useCallback((id: string) => {
     const previous = current.current;
-    if (previous.records[id]?.status !== 'open' || previous.order.at(-1) === id) return;
+    if (windowRecord(previous.records, id)?.status !== 'open' || previous.order.at(-1) === id) return;
     commit({ ...previous, order: [...previous.order.filter(key => key !== id), id] });
   }, [commit]);
   const resize = useCallback((id: string, rect: WindowRect) => {
-    const previous = current.current, record = previous.records[id]; if (!record || !validRect(rect)) return;
+    const previous = current.current, record = windowRecord(previous.records, id); if (!record || !validRect(rect)) return;
     const next = { ...record, rect: clamp(rect) }; save(id, next); commit({ ...previous, records: { ...previous.records, [id]: next } });
   }, [commit, save]);
   useLayoutEffect(() => {
@@ -102,7 +103,7 @@ export function WindowLayer({ children, storageKey = 'boring.windows', persist =
 
 /** Reach a window from controls anywhere inside its layer (undefined until the FloatingWindow registers). */
 export function useWindow(id: string): WindowApi | undefined {
-  const { state, change } = useWindows(), record = state.records[id];
+  const { state, change } = useWindows(), record = windowRecord(state.records, id);
   return useMemo(() => record ? { id, ...record, open: () => change(id, 'open'), close: () => change(id, 'closed'), minimize: () => change(id, 'minimized') } : undefined, [id, record, change]);
 }
 
@@ -113,7 +114,7 @@ export function FloatingWindow({ id, title, children, defaultRect = DEFAULT_RECT
   const { state, phone, host, launcher, register, change, raise, resize } = useWindows();
   const initial = useRef({ defaultRect, defaultOpen });
   useLayoutEffect(() => register(id, initial.current.defaultRect, initial.current.defaultOpen), [id, register]);
-  const record = state.records[id], rect = record?.rect ?? defaultRect, visible = record?.status === 'open';
+  const record = windowRecord(state.records, id), rect = record?.rect ?? defaultRect, visible = record?.status === 'open';
   const box = useRef<HTMLDivElement>(null), titleId = useId();
   const front = state.order.at(-1) === id;
   const position = useMemo(() => ({ left: rect.x, top: rect.y }), [rect.x, rect.y]);
@@ -165,10 +166,13 @@ export function WindowLauncher({ windows, label = 'Windows' }: { readonly window
   return <DropdownMenu onOpenChange={open => { if (open) selected.current = false; }}>
     <DropdownMenuTrigger render={<Button ref={launcher} variant="outline" data-window-launcher="" />}><PanelsTopLeftIcon data-icon="inline-start" aria-hidden="true" />{label}</DropdownMenuTrigger>
     <DropdownMenuContent finalFocus={() => selected.current ? false : true}>
-      <DropdownMenuGroup>{windows.map(item => <DropdownMenuItem key={item.id} disabled={!state.records[item.id]} data-window-open={state.records[item.id]?.status !== 'closed' && !!state.records[item.id] ? 'true' : undefined}
-        onClick={() => { selected.current = true; change(item.id, 'open'); }}>
-        <span className="flex-1">{item.title}</span>{state.records[item.id]?.status !== 'closed' && !!state.records[item.id] && <Badge variant="secondary">{state.records[item.id]?.status === 'minimized' ? 'Minimized' : 'Open'}</Badge>}
-      </DropdownMenuItem>)}</DropdownMenuGroup>
+      <DropdownMenuGroup>{windows.map(item => {
+        const record = windowRecord(state.records, item.id);
+        return <DropdownMenuItem key={item.id} disabled={!record} data-window-open={record && record.status !== 'closed' ? 'true' : undefined}
+          onClick={() => { selected.current = true; change(item.id, 'open'); }}>
+          <span className="flex-1">{item.title}</span>{record && record.status !== 'closed' && <Badge variant="secondary">{record.status === 'minimized' ? 'Minimized' : 'Open'}</Badge>}
+        </DropdownMenuItem>;
+      })}</DropdownMenuGroup>
     </DropdownMenuContent>
   </DropdownMenu>;
 }

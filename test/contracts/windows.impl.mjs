@@ -8,7 +8,7 @@ import { Window } from 'happy-dom';
 
 const out = resolve('.cache/windows-test'); mkdirSync(out, { recursive: true });
 let sequence = 0;
-async function fixture(t, { width = 1440, persist = 'session', saved, storageKey = 'fictional.windows' } = {}) {
+async function fixture(t, { width = 1440, persist = 'session', saved, storageKey = 'fictional.windows', ids = ['notes', 'calculator', 'planning'] } = {}) {
   const outfile = `${out}/windows-${++sequence}.mjs`;
   await build({ entryPoints: ['registry/windows/windows.tsx'], outfile, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', alias: { '@': resolve('examples/app-shell') }, logLevel: 'silent' });
   const window = new Window({ url: 'https://fictional.invalid/' });
@@ -20,9 +20,10 @@ async function fixture(t, { width = 1440, persist = 'session', saved, storageKey
   const { createElement: h, act } = await import('react'); const { createRoot } = await import('react-dom/client');
   const { WindowLayer, FloatingWindow, WindowLauncher, useWindow } = await import(pathToFileURL(outfile));
   const host = document.createElement('div'); document.body.append(host); const root = createRoot(host);
-  const apis = {};
+  const apis = Object.create(null);
   function Controls({ id }) { apis[id] = useWindow(id); return null; }
-  const windows = [{ id: 'notes', title: 'Notes' }, { id: 'calculator', title: 'Calculatrice' }, { id: 'planning', title: 'Planning' }];
+  const titles = ['Notes', 'Calculatrice', 'Planning'];
+  const windows = ids.map((id, index) => ({ id, title: titles[index] }));
   await act(async () => root.render(h(WindowLayer, { storageKey, persist }, h(WindowLauncher, { windows }), ...windows.map(item => h(Controls, { id: item.id, key: `api-${item.id}` })), ...windows.map((item, index) => h(FloatingWindow, { ...item, key: item.id, defaultRect: { x: 60 + index * 70, y: 80 + index * 50, width: 400, height: 300 } }, h('input', { 'aria-label': `${item.id} content` }))))));
   const panel = id => document.querySelector(`[data-window="${id}"]`);
   const click = async selector => { const element = typeof selector === 'string' ? document.querySelector(selector) : selector; assert.ok(element, `Missing ${selector}`); await act(async () => element.click()); };
@@ -89,6 +90,20 @@ test('phone windows fill the viewport while preserving desktop rectangles throug
   const phone = f.panel('notes'); assert.equal(phone.getAttribute('data-placement'), 'fullscreen'); assert.equal(parseFloat(phone.style.inset), 0); assert.ok(phone.contains(document.activeElement));
   await f.run(() => { f.window.innerWidth = 641; f.window.dispatchEvent(new f.window.Event('resize')); });
   const desktop = f.panel('notes'); assert.equal(desktop.getAttribute('data-placement'), 'floating'); assert.equal(desktop.style.left, '60px'); assert.equal(desktop.style.width, '400px');
+});
+
+test('window ids that match Object prototype names remain independent windows', async t => {
+  const f = await fixture(t, { ids: ['__proto__', 'constructor', 'toString'] });
+  for (const id of ['__proto__', 'constructor', 'toString']) {
+    await f.open(id);
+    assert.equal(f.apis[id].status, 'open');
+    assert.equal(f.panel(id).hidden, false);
+    assert.ok(f.panel(id).contains(document.activeElement));
+  }
+  await f.run(() => f.apis.constructor.close());
+  assert.equal(f.apis.constructor.status, 'closed');
+  assert.equal(f.apis.__proto__.status, 'open');
+  assert.equal(f.apis.toString.status, 'open');
 });
 
 test('launcher lists available windows, indicates open status and focuses an already open window', async t => {
