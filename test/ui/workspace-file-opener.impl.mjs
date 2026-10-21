@@ -10,7 +10,7 @@ import { createNativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { createResourceHandler } from '@hachej/boring-files/remote';
 import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 
-test('AgentWorkspace preserves host file-opener precedence through the real native message', async t => {
+test('AgentWorkspace opens conversation files and preserves host opener precedence', async t => {
   const window = new Window({ url: 'https://fictional.invalid/' });
   const names = ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node', 'Text', 'DOMParser', 'MutationObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'ResizeObserver', 'sessionStorage', 'matchMedia', 'IS_REACT_ACT_ENVIRONMENT'];
   const globals = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
@@ -48,7 +48,7 @@ test('AgentWorkspace preserves host file-opener precedence through the real nati
   const image = { type: 'image', mimeType: 'image/png', data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a/OQAAAAASUVORK5CYII=' };
   for (const draft of [true, false]) await t.test(`workspace previews a ${draft ? 'draft' : 'sent'} image by default`, async () => {
     await act(async () => controller.setAttachments(draft ? [{ id: 'fictional-image', name: 'fictional.png', content: image }] : []));
-    if (!draft) await conversation.submit({ type: 'write', entry: { kind: 'fictional.note', model: [{ role: 'user', content: [image], timestamp: 1 }] } }, context);
+    if (!draft) await act(async () => conversation.submit({ type: 'write', entry: { kind: 'fictional.note', model: [{ role: 'user', content: [image], timestamp: 1 }] } }, context));
     const props = { key: `preview-${draft}`, controller, conversationId: String(conversation.id), layout: 'embedded', storageKey: false,
       resources: { identity: { scopeId: 'fictional', principalId: 'alice', initiatorId: 'alice' }, endpoint: 'https://fictional.invalid/resources', fetch: async () => new Response(null, { status: 404 }) } };
     await act(async () => root.render(createElement(AgentWorkspace, props)));
@@ -60,7 +60,7 @@ test('AgentWorkspace preserves host file-opener precedence through the real nati
     assert.ok(preview, 'the workspace supplies an image viewer, not only an enabled row');
     assert.equal(preview.getAttribute('src'), `data:image/png;base64,${image.data}`);
     await act(async () => root.render(createElement(AgentWorkspace, { ...props, conversationId: 'another-fictional-conversation' })));
-    assert.equal(document.querySelector('[data-testid=conversation-image-image]'), null, 'a preview never follows a conversation switch');
+    assert.equal(Boolean(document.querySelector('[data-testid=conversation-image-image]')), false, 'a preview never follows a conversation switch');
   });
   await t.test('resources, uploads and chat attachments open uploaded Markdown, JSON and inline images through the file viewer', async () => {
     const identity = { scopeId: 'fictional', principalId: 'alice', initiatorId: 'alice' };
@@ -107,6 +107,6 @@ test('AgentWorkspace preserves host file-opener precedence through the real nati
     await act(async () => element.querySelector('[data-testid=conversation-files]').click());
     await act(async () => document.querySelector('[data-file^="image:"]').click());
     assert.deepEqual(opened, [image]);
-    assert.equal(document.querySelector('[data-testid=conversation-image-image]'), null);
+    assert.equal(Boolean(document.querySelector('[data-testid=conversation-image-image]')), false);
   });
 });

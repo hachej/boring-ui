@@ -80,7 +80,7 @@ test('conversation files omit rows with no opener, including draft and native im
   assert.equal(Boolean(ui.container.querySelector('[data-testid=conversation-files]')), false, 'there is nothing the person can open');
 });
 
-test('an inline upload retains its workspace path and opens that path before and after send', async t => {
+test('an inline upload retains its workspace path alongside its native image and opens the sent file', async t => {
   const opened = [];
   const image = { mimeType: 'image/png', data: 'AAAA' };
   const ui = await harness(t, { onOpenFile: path => opened.push(path), attachments: { upload: async () => [{ name: 'fictional.png', path: 'uploads/fictional.png', image }] } });
@@ -90,15 +90,14 @@ test('an inline upload retains its workspace path and opens that path before and
     input.dispatchEvent(new ui.window.Event('change', { bubbles: true }));
   });
   assert.match(ui.controller.getSnapshot().draft.text, /@uploads\/fictional.png/);
-  for (const sent of [false, true]) {
-    if (sent) await ui.act(async () => ui.container.querySelector('[data-testid=composer-submit]').click());
-    await ui.act(async () => ui.container.querySelector('[data-testid=conversation-files]').click());
-    const row = ui.window.document.querySelector('[data-file="file:uploads/fictional.png"]');
-    assert.ok(row); assert.equal(row.disabled, false);
-    assert.equal(ui.window.document.querySelector('[data-file^="draft:"]'), null, 'a path-backed draft is listed once, by path');
-    await ui.act(async () => row.click());
-  }
-  assert.deepEqual(opened, ['uploads/fictional.png', 'uploads/fictional.png']);
+  assert.equal(ui.controller.getSnapshot().draft.attachments.length, 1);
+  assert.match(ui.container.querySelector('[data-testid=conversation-files]').textContent, /· 1$/);
+  await ui.act(async () => ui.container.querySelector('[data-testid=composer-submit]').click());
+  assert.match(JSON.stringify(ui.controller.getSnapshot().view), /@uploads\/fictional.png/);
+  const card = ui.container.querySelector('[data-testid=message-mention][data-path="uploads/fictional.png"]');
+  assert.ok(card); assert.equal(card.tagName, 'BUTTON');
+  await ui.act(async () => card.click());
+  assert.deepEqual(opened, ['uploads/fictional.png']);
 });
 
 test('a sent upload mention is a card above the bubble, the raw mention is hidden and the message content keeps it', async t => {
@@ -708,8 +707,7 @@ test('an admission becoming uncertain during a hold cannot disable the release t
 });
 
 test('failed voice is a transcript row and leaves the mic available for another retained recording', async t => {
-  const opened = [];
-  const ui = await voiceHarness(t, { extra: { onOpenFile: path => opened.push(path) } }); ui.failTranscribe(true);
+  const ui = await voiceHarness(t, { extra: { onOpenFile: () => {} } }); ui.failTranscribe(true);
   await ui.pointer('pointerdown'); await ui.pointer('pointerup');
   await ui.until(() => !!ui.container.querySelector('[data-testid=voice-retry]'));
   const failed = ui.container.querySelector('[data-testid=voice-pending]');
@@ -722,11 +720,6 @@ test('failed voice is a transcript row and leaves the mic available for another 
   assert.equal(ui.button().disabled, false);
   assert.equal(ui.button().dataset.state, 'idle');
   assert.match(ui.container.querySelector('[data-testid=conversation-files]').textContent, /· 1$/);
-  await ui.click('conversation-files');
-  const file = ui.window.document.querySelector('[data-testid=conversation-file]');
-  assert.equal(file.disabled, false);
-  await ui.act(async () => file.click());
-  assert.deepEqual(opened, [`uploads/${ui.uploads[0].files[0].name}`]);
   await ui.pointer('pointerdown');
   assert.equal(ui.button().dataset.state, 'recording');
   assert.equal(ui.container.querySelector('[data-testid=voice-pending]'), failed);

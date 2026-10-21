@@ -1110,6 +1110,7 @@
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.4/r/utils.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.4/r/button.json",
         "drawer",
+        "dialog",
         "button",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.4/r/file-tree.json",
         "dropdown-menu",

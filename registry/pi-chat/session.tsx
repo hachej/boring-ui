@@ -282,7 +282,7 @@ export function useChatSession(options: ChatSessionOptions) {
       if (attachments) {
         for (const result of await attachments.upload([...files], abort.signal)) {
           if (result.image) added = [...added, { id: `image-${Date.now()}-${++uploadIds.current}`, name: result.name, content: { type: 'image', data: result.image.data, mimeType: result.image.mimeType } }];
-          else if (result.path) paths = [...paths, result.path];
+          if (result.path) paths = [...paths, result.path];
         }
       } else added = await onFiles!(files, { identity: state.identity, conversationId: state.conversationId, signal: abort.signal });
       if (current() && !abort.signal.aborted) {

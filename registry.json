@@ -1110,6 +1110,7 @@
         "@boring-ui/utils",
         "@boring-ui/button",
         "drawer",
+        "dialog",
         "button",
         "@boring-ui/file-tree",
         "dropdown-menu",
