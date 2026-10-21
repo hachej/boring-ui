@@ -54,7 +54,7 @@ test('AgentWorkspace opens conversation files and preserves host opener preceden
     await act(async () => root.render(createElement(AgentWorkspace, props)));
     await act(async () => element.querySelector('[data-testid=conversation-files]').click());
     const row = document.querySelector(`[data-file^="${draft ? 'draft:' : 'image:'}"]`);
-    assert.ok(row); assert.equal(row.disabled, false, `${row.dataset.file} must open`);
+    assert.ok(row); assert.equal(row.hasAttribute('disabled') || row.getAttribute('aria-disabled') === 'true', false, `${row.dataset.file} must open`);
     await act(async () => row.click());
     const preview = document.querySelector('[data-testid=conversation-image-image]');
     assert.ok(preview, 'the workspace supplies an image viewer, not only an enabled row');
@@ -89,7 +89,7 @@ test('AgentWorkspace opens conversation files and preserves host opener preceden
         for (const path of paths) {
           await act(async () => element.querySelector('[data-testid=conversation-files]').click());
           const row = document.querySelector(`[data-file="file:${path}"]`);
-          assert.ok(row, `${sent ? 'sent' : 'draft'}: ${path} is a workspace file`); assert.equal(row.disabled, false);
+          assert.ok(row, `${sent ? 'sent' : 'draft'}: ${path} is a workspace file`); assert.equal(row.hasAttribute('disabled') || row.getAttribute('aria-disabled') === 'true', false);
           await act(async () => row.click());
           for (let n = 0; n < 100 && !element.querySelector('[data-testid=viewer-image], [data-testid=file-viewer] .tiptap, [data-testid=file-viewer] pre'); n++) await act(async () => new Promise(resolve => setTimeout(resolve, 10)));
           assert.equal(element.querySelector('[data-testid=file-viewer]').dataset.path, path);

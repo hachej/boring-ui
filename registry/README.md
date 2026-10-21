@@ -1016,8 +1016,9 @@ row with "+" (a shadcn `DropdownMenu`) on the left and Send on the right. The `@
 `Popover`s of `Item` rows, and the model pill opens a `DropdownMenu` with radio groups; the block adds layout
 only. `composerLayout="pill"` puts the text between the controls on one row; `stacked` and `inline` are
 accepted and render as `card`. `AmbientChat` uses the same default and compatibility prop. An `Artifacts · n`
-chip appears above it for observed conversation files and uploads, opening a desktop popover or
-phone drawer through the existing file/artifact callbacks. Only rows with an opener are listed. `AgentWorkspace`
+chip appears above it for observed conversation files and uploads, opening a compact native desktop menu or
+phone drawer through the existing file/artifact callbacks. Its title and rows share a left edge; desktop menus keep
+a 6px anchor gap, and phone/coarse-pointer rows have 48px touch targets. Only rows with an opener are listed. `AgentWorkspace`
 opens workspace paths in its file viewer by default and supplies an image preview for native images without a path;
 `chat.onOpenFile`, `chat.mentions.open` and `chat.onOpenImage` keep their host overrides. An upload returning both
 `path` and `image` retains the workspace reference as well as its native image. `ConversationList` defaults to

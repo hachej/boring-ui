@@ -90,7 +90,7 @@ try {
           const press = selector => device === 'phone' ? browser.tap(selector) : browser.click(selector);
           await press(q('[data-testid=conversation-files]'));
           await browser.until('Fichiers list', `!!${q('[data-testid=conversation-files-list]')}`, 5000);
-          const rows = await browser.evaluate(`${qa('[data-testid=conversation-file]')}.map(e => ({ id: e.dataset.file, name: e.innerText, disabled: e.disabled }))`);
+          const rows = await browser.evaluate(`${qa('[data-testid=conversation-file]')}.map(e => ({ id: e.dataset.file, name: e.innerText, disabled: e.hasAttribute('disabled') || e.getAttribute('aria-disabled') === 'true' }))`);
           writeFileSync(join(evidence, `files-${mode}-${device}-${phase}.json`), JSON.stringify(rows, null, 2));
           await browser.screenshot(`files-${mode}-${device}-${phase}.png`);
           assert.deepEqual(rows.filter(row => row.disabled), [], JSON.stringify(rows));
@@ -144,7 +144,8 @@ try {
       const metrics = await browser.evaluate(`(() => {
         const list = ${q('[data-testid=conversation-files-list]')}, rows = [...list.querySelectorAll('[data-testid=conversation-file]')], title = list.querySelector('[data-slot=popover-title], [data-slot=drawer-title], [data-slot=dropdown-menu-label]');
         const box = list.getBoundingClientRect(), trigger = ${q('[data-testid=conversation-files]')}.getBoundingClientRect(), first = rows[0].getBoundingClientRect();
-        return { slot: list.dataset.slot, coarse: matchMedia('(pointer: coarse)').matches, width: innerWidth, padding: parseFloat(getComputedStyle(list).paddingLeft), titleLeft: title.getBoundingClientRect().left,
+        const range = document.createRange(); range.selectNodeContents(title); const titleText = range.getBoundingClientRect();
+        return { slot: list.dataset.slot, coarse: matchMedia('(pointer: coarse)').matches, width: innerWidth, padding: parseFloat(getComputedStyle(list).paddingLeft), titleLeft: titleText.left,
           iconLeft: rows[0].querySelector('svg').getBoundingClientRect().left, titleGap: first.top - title.getBoundingClientRect().bottom, rowGap: rows[1].getBoundingClientRect().top - first.bottom,
           heights: rows.map(row => row.getBoundingClientRect().height), triggerGap: trigger.top - box.bottom, overflow: document.documentElement.scrollWidth > innerWidth };
       })()`);
