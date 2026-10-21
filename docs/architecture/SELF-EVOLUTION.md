@@ -19,7 +19,9 @@ host process never imports agent-written code. Off by default: without the optio
 ```
 .agent/
   AGENTS.md        standing instructions the agent writes for itself
-  skills/*.md      skills, in the existing skill format (parseSkill), loadable with load_skill or /<skill>
+  skills/*.md      flat skills, in the existing skill format (parseSkill), loadable with load_skill or /<skill>
+  skills/<name>/SKILL.md  folder skills, in the same format
+  skills/<name>/...       companion files, named by relative path in SKILL.md (not parsed as skills)
   tools/<name>.json  a tool description: { name, description, parameters (JSON Schema), run } where `run` is the command
                      executed in the workspace (for example `node .agent/tools/csv-stats.mjs`), arguments passed as JSON on stdin
 ```
@@ -28,7 +30,7 @@ host process never imports agent-written code. Off by default: without the optio
 
 - **Instructions**: a native prompt section renders `.agent/AGENTS.md` on every request, after the host's base prompt and
   clearly labelled as agent-written. The host's base prompt stays first and is never replaced.
-- **Skills**: the existing skills extension also reads `.agent/skills/`.
+- **Skills**: the existing skills extension reads flat `.agent/skills/*.md` files and `SKILL.md` in immediate child folders. It does not recursively parse other Markdown as skills. `load_skill` returns the body and its source folder, so a skill can name `portions.md` or `tables/2026.csv` relative to that folder. The agent reads companions on demand with Pi's native `read` through the same workspace provider; scanning and loading a skill do not read them. No companion-folder convention, new tool or host setting is added. Host-given skills are data without a source folder and their returned bodies are unchanged.
 - **One extension per workspace.** Instructions, skills, tools and `reload` live in one native extension named per workspace
   (`self-evolving:<workspace instance id>`), so two workspaces in one host never replace each other's tools.
 - **Tools**: each description becomes a native `ToolRegistration` in that extension; its `execute`

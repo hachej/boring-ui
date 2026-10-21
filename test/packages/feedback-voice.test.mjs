@@ -13,6 +13,11 @@ import { checkPlatformApis } from '../../scripts/check-platform-apis.mjs';
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const targets = aligned => aligned.map(a => [a.text, a.target, a.confidence]);
 
+test('feedback preserves the shared public voice-capture function identity', async () => {
+  const neutral = await import('@hachej/boring-ui-kit/voice-capture');
+  assert.equal(createVoiceCapture, neutral.createVoiceCapture);
+});
+
 // ---------------------------------------------------------------- alignSpeech
 // Audio starts at page time 1000. Pointer: nothing, then element 0 at 1500, element 1 at 3000, nothing at 4500.
 const POINTER = [{ t: 900, target: null }, { t: 1500, target: 0 }, { t: 3000, target: 1 }, { t: 4500, target: null }];
@@ -229,6 +234,7 @@ test('the page and ui browser bundle holds the voice capture and no server code'
   const inputs = Object.keys(result.metafile.inputs);
   assert.ok(inputs.some(path => path.includes('feedback/dist/page/voice/')), 'the voice capture is in the page bundle');
   assert.deepEqual(inputs.filter(path => /feedback\/dist\/(store|agent|tickets|source)\/|examples\/|node:/.test(path)), []);
-  // The capture is the only feedback file allowed to reach getUserMedia, and it feature-detects (npm run check).
+  assert.ok(inputs.some(path => path.endsWith('/dist/voice-capture.js')), 'feedback uses the neutral capture implementation');
+  // Only the shared capture reaches getUserMedia; the platform guard preserves its feature-detection contract.
   assert.deepEqual(checkPlatformApis(root).errors, []);
 });

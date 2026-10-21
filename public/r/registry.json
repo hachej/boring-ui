@@ -612,6 +612,21 @@
           "path": "registry/pi-chat/run-card.tsx",
           "type": "registry:component",
           "target": "components/pi-chat/run-card.tsx"
+        },
+        {
+          "path": "registry/pi-chat/use-hold-to-record.ts",
+          "type": "registry:hook",
+          "target": "components/pi-chat/use-hold-to-record.ts"
+        },
+        {
+          "path": "registry/pi-chat/use-voice-message.ts",
+          "type": "registry:hook",
+          "target": "components/pi-chat/use-voice-message.ts"
+        },
+        {
+          "path": "registry/pi-chat/voice-message.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat/voice-message.tsx"
         }
       ],
       "css": {

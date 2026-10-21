@@ -7,7 +7,7 @@ Import the capability you need. There is no root export.
 
 - `@hachej/boring-feedback/format` defines report data.
 - `@hachej/boring-feedback/store` reads and conditionally publishes reports.
-- `@hachej/boring-feedback/page` captures page observations.
+- `@hachej/boring-feedback/page` captures page observations. Its microphone API remains available and re-exports the [shared UI capture implementation](../ui/README.md#optional-microphone-capture).
 - `@hachej/boring-feedback/ui` supplies React controls.
 - `@hachej/boring-feedback/agent` supplies the optional native Pi adapter.
 - `@hachej/boring-feedback/preview` and `@hachej/boring-feedback/tickets` supply integrations.

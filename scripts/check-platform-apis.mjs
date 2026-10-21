@@ -34,8 +34,8 @@ export const ALLOWLIST = {
   'registry/utils/utils.ts': { rules: ['navigator.clipboard'], requires: [/globalThis\.navigator\?\.clipboard/, /execCommand/] },
   'registry/pi-ambient/browser-notify.ts': { rules: ['Notification'], requires: [/typeof candidate === 'function'/, /permission/, /requestPermission/] },
   'examples/ambient/mic.mjs': { rules: ['navigator.secure', 'getUserMedia'], requires: [/typeof globalThis\.navigator\?\.mediaDevices\?\.getUserMedia === 'function'/] },
-  // Feedback voice: opens the microphone only from start() (the person's click), through an injectable getUserMedia whose default feature-detects.
-  'packages/feedback/src/page/voice/capture.ts': { rules: ['navigator.secure', 'getUserMedia'], requires: [/typeof globalThis\.navigator\?\.mediaDevices\?\.getUserMedia !== 'function'/, /options\.getUserMedia \?\? browserGetUserMedia\(\)/] },
+  // Shared voice capture opens the microphone only from start() (the person's gesture), through a feature-detecting default.
+  'packages/ui/src/voice-capture.ts': { rules: ['navigator.secure', 'getUserMedia'], requires: [/typeof globalThis\.navigator\?\.mediaDevices\?\.getUserMedia !== 'function'/, /options\.getUserMedia \?\? browserGetUserMedia\(\)/] },
   // The composer's camera ("Take a photo" on phones): opens only when the sheet mounts (the person's tap), through an injectable getUserMedia whose default feature-detects.
   'registry/pi-chat/camera-sheet.tsx': { rules: ['navigator.secure', 'getUserMedia'], requires: [/typeof globalThis\.navigator\?\.mediaDevices\?\.getUserMedia !== 'function'/, /latest\.current\.getUserMedia \?\? browserGetUserMedia\(\)/] },
   'registry/viewers/share.ts': { rules: ['navigator.share'], requires: [/typeof nav\?\.share === 'function'/, /copyText/] },
