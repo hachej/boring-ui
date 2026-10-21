@@ -31,7 +31,6 @@ const embedded = new URLSearchParams(location.search).has('embedded');
 // `?title=`: the embedded bar's fixed app title (the conversation title then follows it).
 const appTitle = new URLSearchParams(location.search).get('title');
 const resourcesOnly = new URLSearchParams(location.search).has('resources');
-const locale = new URLSearchParams(location.search).get('locale') === 'fr' ? 'fr' : undefined;
 const inlineImages = new URLSearchParams(location.search).has('inlineImages');
 const hostUploads = resourcesOnly && new URLSearchParams(location.search).has('uploads');
 // `?blobs` (server started with `blobs: true`): Library uploads above 256 KB go to the host's /_files (./blobs.mjs), which stores the
