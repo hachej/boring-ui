@@ -77,7 +77,18 @@ try {
     await activate(`${rows('Questions')}.at(-1).querySelector('[data-testid="reply-action-offer"]')`);
     await browser.until('old offer works after reload', `${thread('Questions')}.querySelector('[data-testid="offer-count"]').textContent !== ${JSON.stringify(count)}`);
     assert.equal(await browser.evaluate(`${thread('Questions')}.querySelector('[data-testid="offer-count"]').textContent`), demoLabels('fr').offers((await app.host.readerState('Questions')).offers));
+    // Lose the first POST before admission: retry must preserve the selected demo control and the native request ID.
+    await browser.evaluate(`(() => { const send = window.fetch.bind(window); window.fetch = async (request, options) => { if (new URL(request.url ?? request, location.href).searchParams.get('op') === 'submit') { window.fetch = send; throw new TypeError('Fictional pre-admission connection loss'); } return send(request, options); }; })()`);
     await activate(`${thread('Questions')}.querySelector('[data-testid="fail-first"]')`);
+    await browser.until('demo input has unknown admission', `window.__STAGED__.controllers.Questions.getSnapshot().send.kind === 'unknown' && !!${thread('Questions')}.querySelector('[data-testid="send-unknown"]')`);
+    const failedRequestId = await browser.evaluate('window.__STAGED__.controllers.Questions.getSnapshot().send.attempt.requestId');
+    await activate(`${thread('Questions')}.querySelector('[data-testid="send-unknown"] button:last-child')`);
+    await browser.until('retried input admitted', `window.__STAGED__.controllers.Questions.getSnapshot().send.kind === 'admitted'`);
+    assert.equal(await browser.evaluate('window.__STAGED__.controllers.Questions.getSnapshot().send.attempt.requestId'), failedRequestId, 'retry keeps the original native request ID');
+    await app.host.threads.Questions.waitForIdle(app.host.context);
+    await browser.until('retried native run settled', `!window.__STAGED__.controllers.Questions.getSnapshot().view.docs['pi.live']?.run`);
+    await pause(250);
+    assert.equal(await browser.evaluate(`${input('Questions')}.value`), 'Quelle dose pour un adulte ?', 'retry retains the first-stage failure choice and restores the real question');
     await browser.until('first-stage failure restores unadorned question', `${input('Questions')}.value === 'Quelle dose pour un adulte ?'`, 20000);
     await browser.until('first failure settled', `!window.__STAGED__.controllers.Questions.getSnapshot().view.docs['pi.live']?.run`);
     assert.equal(await browser.evaluate(`${last}.querySelectorAll('[role="alert"]').length`), 1);
@@ -101,7 +112,7 @@ try {
     const controls = accessibility.nodes.filter(node => !node.ignored && ['button', 'textbox'].includes(node.role?.value));
     assert.ok(controls.length > 0);
     assert.deepEqual(controls.filter(node => !String(node.name?.value ?? '').trim()).map(node => node.role.value), [], 'visible controls have accessible names');
-    steps.push({ device, width, height, geometry, displayLimit: 24, retainedRowsRevealed: true, scrollBefore: before, readingAnchor: anchor, finalAnchorOffset: anchorOffset, independentSeniorScroll: seniorScroll, nativeDurationMs: nativeDuration, stageStates: stages, unreadGeometry, namedControls: controls.length, result: 'passed' });
+    steps.push({ device, width, height, geometry, displayLimit: 24, retainedRowsRevealed: true, scrollBefore: before, readingAnchor: anchor, finalAnchorOffset: anchorOffset, independentSeniorScroll: seniorScroll, nativeDurationMs: nativeDuration, stageStates: stages, unreadGeometry, retriedDemoFailure: true, nativeRequestIdPreserved: true, namedControls: controls.length, result: 'passed' });
     assert.equal(await browser.evaluate('document.documentElement.scrollWidth <= innerWidth'), true, 'no horizontal overflow');
     assert.deepEqual(browser.problems, []);
     await browser.close(); browser = undefined;

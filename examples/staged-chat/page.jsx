@@ -16,9 +16,14 @@ function Thread({ name }) {
   const failure = useRef(0);
   useEffect(() => {
     let disposed = false, remote, owned;
+    const failures = new WeakMap();
     void (async () => {
-      remote = await createRemoteChat({ endpoint: new URL(`/chat?thread=${name}`, location.href), fetch: request => fetch(request), pollMs: 100, requestContext: () => ({ failAt: failure.current }) });
-      owned = createNativeChatController({ ...remote, identity: { runtimeId: 'fictional-triage', scopeId: name, principalId: 'fictional-reader' }, restoreOnError: true });
+      remote = await createRemoteChat({ endpoint: new URL(`/chat?thread=${name}`, location.href), fetch: request => fetch(request), pollMs: 100, requestContext: () => {
+        const send = owned?.getSnapshot().send;
+        return { failAt: send?.kind === 'submitting' ? failures.get(send.attempt.draft) ?? 0 : 0 };
+      } });
+      owned = createNativeChatController({ ...remote, identity: { runtimeId: 'fictional-triage', scopeId: name, principalId: 'fictional-reader' }, restoreOnError: true,
+        beforeSubmit: draft => { failures.set(draft, failure.current); } });
       if (disposed) { await owned.dispose(); await remote.close(); return; }
       setReader(await (await fetch(`/state?thread=${name}`)).json());
       window.__STAGED__.controllers[name] = owned; setController(owned);
@@ -39,7 +44,7 @@ function Conversation({ name, controller, reader, act, fail }) {
   const snapshot = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const entries = [...(snapshot.history.kind === 'ready' ? snapshot.history.entries : []), ...(snapshot.view?.entries ?? [])];
   const projection = stageProjection(entries);
-  const busy = Boolean(snapshot.view?.docs['pi.live']?.run) || snapshot.send.kind === 'submitting';
+  const busy = Boolean(snapshot.view?.docs['pi.live']?.run) || ['validating', 'submitting', 'unknown'].includes(snapshot.send.kind);
   return <>
     <div className="flex flex-wrap items-center gap-2 pb-2"><Badge variant="secondary" data-testid="offer-count">{labels.offers(reader.offers)}</Badge>
       <Button variant="outline" size="sm" disabled={busy} data-testid="fail-first" onClick={() => { void fail(1); }}>{labels.failButton(1)}</Button>
