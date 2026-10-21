@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import type { ChatDraft } from '@hachej/boring-ui-kit/native-chat';
 import { CornerDownRightIcon, EllipsisIcon, ListEndIcon, PencilIcon, RouteIcon, Trash2Icon } from 'lucide-react';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Card, CardContent } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Spinner } from '@/components/ui/spinner';
@@ -41,7 +41,7 @@ function QueueEditAction({ disabled, onEdit }: { readonly disabled: boolean; rea
       <EllipsisIcon data-icon="inline-start" aria-hidden="true" />
     </DropdownMenuTrigger>
     <DropdownMenuContent side="top" align="end" data-testid="queue-menu">
-      <DropdownMenuItem data-testid="queue-edit" onClick={onEdit}><PencilIcon aria-hidden="true" />{labels.edit}</DropdownMenuItem>
+      <DropdownMenuGroup><DropdownMenuItem data-testid="queue-edit" onClick={onEdit}><PencilIcon aria-hidden="true" />{labels.edit}</DropdownMenuItem></DropdownMenuGroup>
     </DropdownMenuContent>
   </DropdownMenu>;
 }
@@ -74,25 +74,24 @@ export function MessageQueue({ items, sending = [], withdraw, actions }: {
     if (outcome === 'already_placed' || outcome === 'settled') throw new Error(labels.tooLateToRemove);
   });
   return <section data-testid="queue" aria-label={labels.queuedMessages} className="relative mx-3 -mb-3 pb-3">
-    <Card><CardContent><ul className="m-0 flex list-none flex-col gap-2 p-0">
+    <Card size="sm"><CardContent><ul className="m-0 flex list-none flex-col p-0">
       {items.map(item => {
         const working = busy.has(String(item.id));
         const steering = item.mode === 'steer';
         return <li key={String(item.id)} data-testid="queue-item" data-mode={item.mode} className="flex min-h-10 items-center gap-1.5">
-          <TraceLine status="pending" className="flex-1">
+          <TraceLine status="pending" className="min-w-0 flex-1">
             <TraceIcon>{steering ? <RouteIcon /> : <ListEndIcon />}</TraceIcon>
             <TraceTitle><span className="sr-only">{steering ? labels.steering : labels.queued}: </span><span data-testid="queue-text">{queuedText(item, labels.images)}</span></TraceTitle>
           </TraceLine>
-          {!steering && actions?.steer && <Button variant="ghost" size="sm" data-testid="queue-steer" title={labels.steerHint} disabled={working} onClick={() => { void run(item, () => actions.steer!(item)); }}>
-            <CornerDownRightIcon data-icon="inline-start" aria-hidden="true" />{labels.steer}</Button>}
-          {steering && <span className="shrink-0 px-1 text-xs text-muted-foreground">{labels.steering}</span>}
+          {!steering && actions?.steer && <Button variant="ghost" size="icon" data-testid="queue-steer" aria-label={labels.steer} title={labels.steerHint} disabled={working} onClick={() => { void run(item, () => actions.steer!(item)); }}>
+            <CornerDownRightIcon data-icon="inline-start" aria-hidden="true" /></Button>}
           <Button variant="ghost" size="icon" data-testid="queue-cancel" aria-label={labels.removeQueued} title={labels.removeHint} disabled={!withdraw || working} onClick={() => { void remove(item); }}>
             <Trash2Icon data-icon="inline-start" aria-hidden="true" /></Button>
           {actions?.edit && <QueueEditAction disabled={working} onEdit={() => { void run(item, () => actions.edit!(item)); }} />}
         </li>;
       })}
       {sending.map((draft, index) => <li key={`sending-${index}`} data-testid="queue-sending" className="flex min-h-10 items-center gap-1.5">
-        <TraceLine status="running" className="flex-1">
+        <TraceLine status="running" className="min-w-0 flex-1">
           <TraceIcon><Spinner aria-hidden="true" /></TraceIcon>
           <TraceTitle data-testid="queue-text">{draft.text}{draft.attachments.length ? `${draft.text ? '\n' : ''}${labels.images(draft.attachments.length)}` : ''}</TraceTitle>
         </TraceLine>

@@ -662,6 +662,10 @@
             ".pi-chat :is([data-slot=\"button\"], [data-slot=\"toggle\"], [class~=\"group/button\"], [class~=\"group/toggle\"])": {
               "min-height": "2.75rem",
               "min-width": "2.75rem"
+            },
+            ".pi-chat [data-testid=\"queue\"] button, .pi-chat button[data-testid=\"composer-queue\"]": {
+              "min-height": "3rem",
+              "min-width": "3rem"
             }
           }
         },
