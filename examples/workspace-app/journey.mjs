@@ -120,7 +120,55 @@ try {
       console.log(`ok  conversation files: ${mode}, draft/sent, desktop/390px`);
     }
   };
+  const conversationFilesLayout = async () => {
+    await browser.emulate('desktop');
+    await browser.send('Page.navigate', { url: `${insecureUrl(app.url)}?locale=fr` }); await live();
+    const previous = await browser.evaluate(ACTIVE);
+    await browser.click(q('[data-testid=conversation-new]'));
+    await browser.until('new layout conversation', `${ACTIVE} && ${ACTIVE} !== ${JSON.stringify(previous)}`, 10000); await live();
+    const directory = mkdtempSync(join(tmpdir(), 'fictional-menu-files-'));
+    writeFileSync(join(directory, 'fictional-plan.md'), '# Fictional menu plan\n');
+    writeFileSync(join(directory, 'fictional-image.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a/OQAAAAASUVORK5CYII=', 'base64'));
+    await browser.until('layout uploads available', `!!${q('[data-testid=composer-file]')}`, 10000);
+    await browser.attachFiles(q('[data-testid=composer-file]'), ['fictional-plan.md', 'fictional-image.png'].map(name => join(directory, name)));
+    await browser.until('two files attached', `${q('[data-testid=conversation-files]')}?.innerText.includes('2') && !${q('[data-testid=composer-submit]')}.disabled`, 15000);
+    await browser.type(INPUT, 'Reply with exactly: FICTIONAL-MENU-READY'); await browser.click(q('[data-testid=composer-submit]'));
+    await browser.until('layout message sent', `${REPLIES}.includes('FICTIONAL-MENU-READY') && ${idle}`, 20000);
+    const layouts = [];
+    for (const device of ['desktop', 'phone', 'coarse-desktop']) for (const scheme of ['light', 'dark']) {
+      await browser.emulate(device === 'phone' ? 'phone' : 'desktop');
+      if (device === 'coarse-desktop') await browser.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+      await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] });
+      await browser.click(q('[data-testid=conversation-files]'));
+      await browser.until('layout menu settled', `!!${q('[data-testid=conversation-files-list]')} && ${q('[data-testid=conversation-files-list]')}.getAnimations({ subtree: true }).every(animation => animation.playState !== 'running')`, 5000);
+      const metrics = await browser.evaluate(`(() => {
+        const list = ${q('[data-testid=conversation-files-list]')}, rows = [...list.querySelectorAll('[data-testid=conversation-file]')], title = list.querySelector('[data-slot=popover-title], [data-slot=drawer-title], [data-slot=dropdown-menu-label]');
+        const box = list.getBoundingClientRect(), trigger = ${q('[data-testid=conversation-files]')}.getBoundingClientRect(), first = rows[0].getBoundingClientRect();
+        return { slot: list.dataset.slot, coarse: matchMedia('(pointer: coarse)').matches, width: innerWidth, padding: parseFloat(getComputedStyle(list).paddingLeft), titleLeft: title.getBoundingClientRect().left,
+          iconLeft: rows[0].querySelector('svg').getBoundingClientRect().left, titleGap: first.top - title.getBoundingClientRect().bottom, rowGap: rows[1].getBoundingClientRect().top - first.bottom,
+          heights: rows.map(row => row.getBoundingClientRect().height), triggerGap: trigger.top - box.bottom, overflow: document.documentElement.scrollWidth > innerWidth };
+      })()`);
+      layouts.push({ device, scheme, ...metrics });
+      await browser.screenshot(`files-layout-${device}-${scheme}.png`);
+      await browser.press('Escape'); await browser.until('layout menu closed', `!${q('[data-testid=conversation-files-list]')}`, 5000);
+    }
+    writeFileSync(join(evidence, 'files-layout.json'), JSON.stringify(layouts, null, 2));
+    for (const layout of layouts) {
+      const detail = JSON.stringify(layout);
+      assert.equal(layout.overflow, false, detail);
+      assert.ok(Math.abs(layout.titleLeft - layout.iconLeft) <= 1, detail);
+      assert.ok(layout.titleGap <= 4 && layout.rowGap <= 1, detail);
+      if (layout.device === 'phone' || layout.coarse) assert.ok(layout.heights.every(height => height >= 48), detail);
+      else assert.ok(layout.heights.every(height => height <= 36), detail);
+      if (layout.device !== 'phone') {
+        assert.equal(layout.slot, 'dropdown-menu-content', detail);
+        assert.ok(layout.padding <= 8 && Math.abs(layout.triggerGap - 6) <= 1, detail);
+      }
+    }
+    console.log('ok  conversation file menu: aligned, compact, 48px touch rows; desktop/390px/coarse, light/dark');
+  };
   if (process.env.APP_ONLY === 'conversation-files') await conversationFiles();
+  else if (process.env.APP_ONLY === 'conversation-files-layout') await conversationFilesLayout();
   else {
   await step('a failed discovery shows an alert, and Retry opens the workspace', async () => {
     await live();
@@ -780,6 +828,7 @@ try {
   });
 
   await conversationFiles();
+  await conversationFilesLayout();
   }
   assert.deepEqual(misses, [], 'every prompt had a scripted answer');
   assert.deepEqual(browser.problems, [], 'no page errors');
