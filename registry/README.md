@@ -10,12 +10,13 @@ The `markdown-editor` and `html-viewer` items copy thin React wrappers and scope
 | `pi-chat` | copied source in `components/pi-chat/` | `NativeChatController` from `@hachej/boring-ui-kit/native-chat` |
 | `pi-ambient` | copied source in `components/pi-ambient/` | the same `NativeChatController` as `pi-chat` |
 | `pi-workspace` | copied source in `components/pi-workspace/` | none: layout driven by props |
+| `windows` | copied source in `components/windows/` | none: floating utilities, launcher and shared `useDraggable` |
 | `dock` | copied source in `components/dock/` | none: `Dock`, `DockLayout`, `DockMain` (re-exported by `pi-workspace/dock`; the app shell installs it) |
 | `pi-app` | copied source in `components/pi-app/` | the agent page; viewers over one resource client (`useRemoteChat` lives in `pi-chat` and is re-exported) |
 | `documents` | copied source in `components/documents/` | none: the Library, a file and its revisions over one `revisionProvider`; `DocumentSheet` for one document over the app |
 | `provider-setup` | copied source in `components/provider-setup/` | none: props and callbacks only |
 | `theme` | the shadcn tokens (light, dark) and their `@theme inline` bindings, merged into the host's CSS | none |
-| `utils`, `button` | `cn`/`copyText` and the host-action adapters in `components/button/actions.tsx`; controls come from the consumer's `components/ui/` | none |
+| `utils`, `button` | `cn`/`copyText`/`useDraggable` and the host-action adapters in `components/button/actions.tsx`; controls come from the consumer's `components/ui/` | none |
 
 ## Blocks: what to install
 
@@ -31,13 +32,72 @@ Item and file types follow the shadcn schema: the multi-file chat items are `reg
 | `pi-app` | `... add <registry>/pi-app.json` (also installs `pi-chat`, `pi-workspace` and `viewers`) | the page is a whole agent app: sessions, chat and artifact viewers in one `AgentWorkspace` (see [below](#whole-agent-app-pi-app-agentworkspace)) |
 | `maquette-viewer` | `... add <registry>/maquette-viewer.json` (installed with `pi-app`) | you show a PM agent's `*.maquette.json` mock-ups outside `AgentWorkspace` (`MaquetteViewer`, `maquetteKind`; see [below](#maquette-viewer-maquette-viewer)) |
 | `app-shell` | `... add <registry>/app-shell.json` (also installs `pi-chat`, `feedback` and pinned `drawer` and `dropdown-menu` recipes plus the shadcn `sidebar` and `avatar` of your own style; add `<registry>/theme.json` too when the host has no shadcn tokens) | one agent above any app: a bottom drawer with peek, half and full on a phone, a right panel on a wide screen (see [below](#agent-layer-app-shell)) |
+| `windows` | `... add <registry>/windows.json` (host Base UI controls only; add `theme.json` if needed) | independent floating utilities and a keyboard launcher (see [below](#floating-windows-windows)) |
 | `agent-target` | `... add <registry>/agent-target.json` (also installs `app-shell`; requires the coordinated kit patch, not the older published 0.4.3) | point and dictate on explicitly marked app JSON without opening chat (see [below](#point-and-dictate-on-app-data-agent-target)) |
 
 Registry blocks support the shadcn **Base UI style only**. Only the `base-nova` style is supported. Viewer, Library and shared chat menus use the consumer's real `@/components/ui/dropdown-menu`, declared as the bare `dropdown-menu` registry dependency. `ActionMenu` only maps actions and metadata to that component; it owns no menu positioning, focus loop or visual primitive. The consumer's shadcn components supply appearance and interaction. `npm run test:app-registry-consumer` installs and strictly checks Base UI, including Library controls, portalled viewer/version menus and the phone files drawer. Ordinary buttons and icon actions import the consumer's `@/components/ui/button` directly. Pressed actions use `@/components/ui/toggle`; the compact account theme uses `@/components/ui/switch`. Their bare registry dependencies install the consumer's components. `button/actions.tsx` adapts host actions, not visual primitives. Lists (conversation history, sessions, Library tree, documents' revisions, empty states) compose the consumer's `sidebar` menu, `input-group`, `popover`, `scroll-area`, `collapsible`, `empty` and `separator`; the packaged tree (`@hachej/boring-ui-kit/file-tree-view`) takes them through its `components` prop and ships layout CSS only. Other component groups remain tracked in `scripts/design-groups.json`. The cards (approval, question, artifact, code block, feedback) use the consumer's `@/components/ui/item` and `badge` with layout classes only; `pi-chat` and `feedback` declare those bare dependencies. The approval card follows shadcn's Confirmation recipe (an outline Item with Approve and Deny buttons). shadcn's Code Block is not used because installing it adds the `shiki` highlighter this block never calls, and its Questionnaire is a multi-step wizard on a new `@shadcn/react` dependency that does not fit the one-form `ask_user` card.
 
-Tokens: `pi-ambient`, `pi-workspace`, `pi-app`, `viewers`, `provider-setup` and `file-tree` depend on `theme` (directly or through a block), so `shadcn add` merges the tokens into the app's CSS file. `pi-chat`, `button`, `dock`, `feedback`, `app-shell` and `agent-target` do not: they use the host's shadcn tokens (`background`, `foreground`, `muted`, `primary`, `border`, `ring`, `destructive` and the rest) and their own layout, and they install no global tokens. A host that has those tokens changes nothing. A host without them must also install `theme.json` (`npx shadcn@4.21.5 add <registry>/theme.json <registry>/<block>.json`), or those items render with semantic colours and focus styling missing (dock's resize indicator loses its colour). The blocks import `cn` from `utils` and controls directly from the consumer's `components/ui/`; the CLI installs each dependency once. `registry.json` owns the current file lists. Theme-carrying installs merge the theme tokens into CSS and keep tokens the host already defines.
+Tokens: `pi-ambient`, `pi-workspace`, `pi-app`, `viewers`, `provider-setup` and `file-tree` depend on `theme` (directly or through a block), so `shadcn add` merges the tokens into the app's CSS file. `pi-chat`, `button`, `dock`, `feedback`, `app-shell`, `windows` and `agent-target` do not: they use the host's shadcn tokens (`background`, `foreground`, `muted`, `primary`, `border`, `ring`, `destructive` and the rest) and their own layout, and they install no global tokens. A host that has those tokens changes nothing. A host without them must also install `theme.json` (`npx shadcn@4.21.5 add <registry>/theme.json <registry>/<block>.json`), or those items render with semantic colours and focus styling missing (dock's resize indicator loses its colour). The blocks import `cn` from `utils` and controls directly from the consumer's `components/ui/`; the CLI installs each dependency once. `registry.json` owns the current file lists. Theme-carrying installs merge the theme tokens into CSS and keep tokens the host already defines.
 
 `<registry>` is wherever `public/r/` is served. Items name their registry dependencies as absolute URLs of their own release (`<registry>/pi-chat.json`, `<registry>/pi-workspace.json`), so no `registries` line is needed in `components.json`. `pi-ambient` needs `pi-workspace` because the ambient window opens artifacts in the same panel layout; `pi-workspace` never needs `pi-ambient` (the host chooses to render `AmbientChat` when the chat floats). Examples: [`lab/studio`](../lab/studio/README.md) assembles every block; [`examples/ambient`](../examples/ambient/README.md) uses `pi-chat` and `pi-ambient` only.
+
+## Floating windows (`windows`)
+
+Install `<registry>/windows.json` for host-owned utilities independent of an agent.
+It uses your Base UI Button, Card, Badge, Drawer and DropdownMenu, with no theme
+replacement or Sheet dependency. The app shell and windows share the
+`useDraggable` hook from `utils` (also re-exported by `windows/windows`); the
+agent's existing dock/float behavior is unchanged.
+
+```tsx
+import { FloatingWindow, WindowLayer, WindowLauncher } from '@/components/windows/windows';
+
+const windows = [
+  { id: 'notes', title: 'Notes' },
+  { id: 'calculator', title: 'Calculatrice' },
+  { id: 'planning', title: 'Planning' },
+];
+
+<WindowLayer storageKey="workshop.windows" persist="local">
+  <WindowLauncher windows={windows} />
+  <FloatingWindow id="notes" title="Notes"><Notes /></FloatingWindow>
+  <FloatingWindow id="calculator" title="Calculatrice"><Calculator /></FloatingWindow>
+  <FloatingWindow id="planning" title="Planning"><Planning /></FloatingWindow>
+</WindowLayer>
+```
+
+- `WindowLayer` owns one viewport stack. IDs must be unique within the layer.
+  `storageKey` defaults to `boring.windows`; `persist="session"` is the default,
+  and `local` remembers across visits, like the docks. Each `<key>.<id>` stores
+  `{ rect: { x, y, width, height }, status: 'open' | 'minimized' | 'closed' }`.
+  No content is stored. Malformed or unavailable storage falls back to defaults.
+- `FloatingWindow` accepts `id`, `title`, `children`, `defaultOpen` (false) and
+  `defaultRect` (48, 64, 400, 320 pixels). Remembered choices take precedence.
+  Drag its title row, resize its corner, click or focus its content to raise it.
+  The resize control also accepts arrow keys (24 pixels, Shift: 96). Desktop
+  rectangles stay within the viewport on drag, resize, restore and viewport resize;
+  the minimum is 240 by 160 pixels, capped by the viewport.
+- `WindowLauncher windows={[{ id, title }]}` lists the host's available windows,
+  marks open/minimized ones and opens or focuses a choice. `label` changes the
+  trigger's text. The native menu supplies arrow keys, typeahead and Escape.
+  `useWindow(id)` returns `{ id, rect, status, open, close, minimize }` after the
+  corresponding window registers, or `undefined` before then.
+- Opening moves focus inside. Escape closes the focused desktop window; nested
+  controls that prevent Escape retain their native behavior. Closing or minimizing
+  focuses the next open window, then the launcher when none remain. Below 641px,
+  only the front window is shown, as the host's full-screen Drawer; the launcher
+  remains a list. Returning to desktop restores the desktop rectangle.
+
+These are presentation surfaces, not document storage or task lifecycle owners.
+Keep durable content and drafts in host state/controllers, especially across the
+phone/desktop presentation change. Z-order is local to the window stack and is
+not persisted; native menus and drawers remain above desktop windows.
+
+`npm run windows:journey` drives the fictional Notes, Calculatrice and Planning
+fixture at 1440px and 390px, including drag, raise, resize, keyboard launch,
+minimize, Escape and reload. Screenshots live under `.cache/evidence/D79/`.
+The generated registry is a candidate for the next kit release; publication is a
+separate owner-controlled release step.
 
 ## Anchored Markdown highlights
 

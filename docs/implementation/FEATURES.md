@@ -1,5 +1,23 @@
 # Implemented behavior and evidence
 
+## Floating utility windows (D-79)
+
+The `windows` registry item is host presentation, independent of Pi: `WindowLayer`,
+`FloatingWindow`, `WindowLauncher`, `useWindow` and the shared `useDraggable` hook.
+Window rectangles and open/minimized/closed status are remembered in session or
+local storage; desktop windows drag, resize and raise on pointer or keyboard focus.
+Below 641px the front window uses the host's full-screen Drawer. The app shell
+uses the same extracted drag hook without changing its dock/float contract.
+See [the recipe](../../registry/README.md#floating-windows-windows).
+
+`test/contracts/windows.test.mjs` drives public React/shadcn interactions, focus,
+resize, persistence and breakpoint behavior; `windows.source.test.mjs` checks
+strict types, the shared hook dependency and generated registry source.
+`npm run windows:journey` drives fictional Notes, Calculatrice and Planning at
+1440px and 390px, with screenshots under `.cache/evidence/D79/`. The existing
+app-shell tests and journey remain unchanged. Browser layout is not document
+persistence, real-device qualification or npm publication. Global deferrals remain.
+
 ## Requests board
 
 The `requests-board` registry item is host presentation (no Pi extension): `RequestsBoard`, pure `compactRows`/`filterViews`/`requestCounts` and EN/FR labels. Compact prioritizes five requests; full mode provides scoped filters/search, responsive list/detail, history, related links and host-owned answer/decision/try callbacks. The host re-renders views and bumps a change token for polite announcements; the block never polls or subscribes. Release approval visibility is not authorization. See [the recipe](../../registry/README.md#requests-board-requests-board).
