@@ -8,7 +8,7 @@ import type { ComponentProps, ReactNode } from 'react';
 import type { ResourceLocator } from '@hachej/boring-files';
 import { createResourceClient } from '@hachej/boring-files/remote';
 import { connectRevisionProvider } from '@hachej/boring-files/revision';
-import { mediaTypeOf, workspacePath } from '@hachej/boring-files/file-types';
+import { workspacePath } from '@hachej/boring-files/file-types';
 import { checkBlobBase, parseBlobPointer, withBlobPointers } from '@hachej/boring-files/blob';
 import type { BlobPointer } from '@hachej/boring-files/blob';
 import type { FileEntry, RevisionProvider } from '@hachej/boring-files/revision';
