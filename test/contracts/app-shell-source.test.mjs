@@ -61,7 +61,7 @@ test('the item pins no shadcn style: bare built-in names, tokens and classes onl
 });
 
 test('the item imports only React, its declared packages and the declared shadcn built-ins', () => {
-  const allowed = new Set(['react', 'react-dom', 'lucide-react', '@base-ui/react/drawer', '@hachej/boring-feedback/page', '@hachej/boring-feedback/ui', '@hachej/boring-ui-kit/native-chat']);
+  const allowed = new Set(['react', 'react-dom', 'lucide-react', '@base-ui/react/drawer', '@hachej/boring-feedback/page', '@hachej/boring-feedback/ui', '@hachej/boring-ui-kit/native-chat', '@hachej/boring-ui-kit/voice-capture']);
   for (const name of files) {
     for (const [, imported] of source(name).matchAll(/\bfrom\s+['"]([^'"]+)['"]/g)) {
       if (imported.startsWith('./')) { assert.ok(files.some(file => file.replace(/\.tsx?$/, '') === imported.slice(2)), `${name} imports missing ${imported}`); continue; }
@@ -72,7 +72,7 @@ test('the item imports only React, its declared packages and the declared shadcn
       assert.ok(allowed.has(imported), `${name} imports ${imported}`);
     }
   }
-  // Microphone capture is the feedback item's (`createVoiceCapture`): no other file touches getUserMedia.
+  // The neutral capture entry owns microphone access (feedback re-exports it); no shell file touches getUserMedia.
   for (const name of files) assert.doesNotMatch(source(name), /getUserMedia/, name);
 });
 

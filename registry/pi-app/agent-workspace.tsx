@@ -8,7 +8,7 @@ import type { ComponentProps, ReactNode } from 'react';
 import type { ResourceLocator } from '@hachej/boring-files';
 import { createResourceClient } from '@hachej/boring-files/remote';
 import { connectRevisionProvider } from '@hachej/boring-files/revision';
-import { mediaTypeOf, workspacePath } from '@hachej/boring-files/file-types';
+import { workspacePath } from '@hachej/boring-files/file-types';
 import { checkBlobBase, parseBlobPointer, withBlobPointers } from '@hachej/boring-files/blob';
 import type { BlobPointer } from '@hachej/boring-files/blob';
 import type { FileEntry, RevisionProvider } from '@hachej/boring-files/revision';
@@ -431,10 +431,10 @@ export function AgentWorkspace({ layout = 'default', title, controller, conversa
       return entries;
     },
     open: openFile,
-    // A card's thumbnail: the chat's image upload read through this provider, the same read the file viewer makes.
+    // Thumbnails and voice playback read the original upload and MIME through the same provider as the file viewer.
     preview: async (path: string, signal: AbortSignal) => {
       const read = await revisionProvider.read({ target: revisionProvider.locate(path), revision: { kind: 'latest' } }, signal);
-      return read.kind === 'available' ? { mimeType: mediaTypeOf(path), data: imageData(read.snapshot.bytes) } : undefined;
+      return read.kind === 'available' ? { mimeType: read.snapshot.mediaType, data: imageData(read.snapshot.bytes) } : undefined;
     },
   } : undefined, [revisionProvider, openFile, mentionResults]);
   // The search function changes only with the binding; the feed's seq rides along as the picker's generation.

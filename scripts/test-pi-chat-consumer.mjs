@@ -78,6 +78,7 @@ const identity = { runtimeId: 'app', scopeId: 'fictional-team', principalId: 'fi
 export function App() {
   const chat = useRemoteChat({ conversationId: 'fictional', endpoint: id => new URL('/api/chat?conversation=' + id, location.href), fetch: request => fetch(request), identity });
   return chat.status === 'ready' ? <PiChat controller={chat.controller} actions={chat.actions} displayLimit={24} historicalMessageActions
+    voiceMessage={{ transcribe: async () => 'Fictional transcript' }} mentions={{ search: async () => [], audioUrl: async () => undefined }}
     hideLine={line => line.startsWith('::meta ')} unread={reply => <span>{reply.entryId}</span>}
     replyError={reply => <span>Failed reply {reply.entryId}</span>}
     renderEntry={entry => entry.kind === 'fictional.stage' ? { inline: true, content: <span>Validated</span>, status: 'Validating…' } : undefined}
@@ -106,6 +107,8 @@ export const view = createRoot(document.getElementById('root')!); view.render(<A
     assert.ok(inputs.some(path => path.endsWith('src/components/pi-chat/use-remote-chat.ts')), 'the bundle uses the CLI-installed hook');
     assert.deepEqual(inputs.filter(path => /shared-chat|channel-source|channel-socket|channel-error|fake-channel/.test(path)), [], 'regular bundle excludes the optional feature and data entry');
   }
+  assert.ok(inputs.some(path => path.endsWith('@hachej/boring-ui-kit/dist/voice-capture.js')), 'the installed chat reuses the neutral public capture');
+  assert.deepEqual(inputs.filter(path => /@hachej\/boring-feedback/.test(path)), [], 'recording does not couple regular chat to feedback');
   assertConsumerTypeFiles(inputs.map(path => resolve(directory, path)).join('\n'), directory);
   assert.deepEqual(inputs.filter(path => /@hachej\/boring-agent|pi-durable\/dist\/(storage|env)|sqlite|node:/.test(path)), [], 'browser bundle holds no agent, storage or Node code');
   console.log(`PASS: real pinned shadcn installation of ${itemName} alone over HTTP with its ${closure.size - 1} registry dependencies, strict declarations of the copied chat and the moved hook, and a browser bundle; ${shared ? 'fictional DOM flow also executed (not live-service qualification)' : 'type and bundle evidence only'}`);

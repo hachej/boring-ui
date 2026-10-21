@@ -557,6 +557,14 @@ test('the expanded ambient window shows the host reply footer under a settled re
   assert.ok(!renderToStaticMarkup(createElement(AmbientChat, { controller, state: 'expanded' })).includes('data-testid="footer"'));
 });
 
+test('audio extensions use the audio kind without changing ordinary file classification', async () => {
+  const { fileKind, isVoicePath } = await load('voice-config', 'config.ts');
+  for (const extension of ['webm', 'ogg', 'm4a', 'mp4', 'mp3', 'wav']) assert.equal(fileKind(`uploads/voice-20261020-101500.${extension}`), 'audio');
+  assert.equal(isVoicePath('uploads/voice-20261020-101500.webm'), true);
+  assert.equal(isVoicePath('uploads/song.mp3'), false);
+  assert.equal(fileKind('uploads/fictional.pdf'), 'pdf');
+});
+
 test('a user target context renders as a chip, leaving only speech in the message bubble', async () => {
   const { RowView } = await load('target-chip', 'message.tsx');
   const row = { key: 'target', type: 'user', message: { role: 'user', content: '<target>{"meal":"m-42","slot":"lunch"}</target>\n\nremplace le riz par 150 g de pâtes', timestamp: 1 } };

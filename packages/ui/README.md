@@ -68,6 +68,14 @@ The default schema includes headings, lists, task lists, quotes, code and text m
 
 `test/packages/ui-markdown-editor.test.mjs`, `test/packages/ui-markdown-navigation.test.mjs` and `test/packages/ui-markdown-mounted.test.mjs` and `test/packages/ui-markdown-proposals.test.mjs` drive the real React/Tiptap renderer, DOM selections and SQLite provider. `npm run test:editor-consumer` requires `npm_config_cache` pointing to a writable cache with the pinned archives; it installs actual package tarballs, checks declarations with `skipLibCheck: false`, drives the controls and bundles for browsers without Pi or server filesystem imports. These checks do not establish browser layout, caret, IME or accessibility qualification. Chromium journeys remain pending.
 
+## Optional microphone capture
+
+`createVoiceCapture` from `@hachej/boring-ui-kit/voice-capture` records browser audio without React, files or Pi. Call `start()` from a person's gesture. It feature-detects microphone access and returns a recording or a typed refusal. `stop()` returns the Blob, recorded MIME type, page-clock sample times and `truncated`; `cancel()` discards audio and releases only this capture's microphone tracks, including a permission request that finishes late.
+
+`maxMs` caps capture at five minutes by default. Reaching the cap stops the microphone; callers still choose when to consume the recording through `stop()`. Transcription and persistence remain host capabilities. The existing `@hachej/boring-feedback/page` capture API re-exports this implementation unchanged. The headless root imports neither entry.
+
+The [registry voice-message guide](../../registry/README.md#voice-messages-in-pi-chat) describes PiChat's optional hold-to-send composition. Public capture behavior runs in `test/packages/ui.test.mjs`, compatibility in `test/packages/feedback-voice.test.mjs`, and dependency-free installation in `test/scaffold/isolated-ui.test.mjs`.
+
 ## Document marks
 
 `@hachej/boring-ui-kit/markdown-quote` exports `captureMarkdownQuote` and

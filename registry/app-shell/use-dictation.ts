@@ -1,8 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createVoiceCapture } from '@hachej/boring-feedback/page';
-import type { VoiceCapture, VoiceRefusal } from '@hachej/boring-feedback/page';
+import { createVoiceCapture } from '@hachej/boring-ui-kit/voice-capture';
+import type { VoiceCapture, VoiceRefusal } from '@hachej/boring-ui-kit/voice-capture';
 import { chatTextFor } from '../pi-chat/locale';
 import type { ChatLocale } from '../pi-chat/locale';
 

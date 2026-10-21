@@ -46,7 +46,11 @@ for (const withResources of [false, true]) test(`actual packed UI installs/typec
       target: 'ES2023', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true,
       exactOptionalPropertyTypes: true, noEmit: true, types: [], skipLibCheck: false,
     }, include: ['consumer.ts'] }));
-    const fixture = `import type { ViewerDescriptor, ViewerFeature, ViewerController, ViewerRenderer, PresentationCommand } from '@hachej/boring-ui-kit';
+    writeFileSync(join(consumer, 'voice.mjs'), `import assert from 'node:assert/strict';\nimport { createVoiceCapture } from '@hachej/boring-ui-kit/voice-capture';\nassert.deepEqual(await createVoiceCapture().start(), { kind: 'refused', code: 'unsupported', reason: 'This browser cannot record audio here.' });\n`);
+    run(process.execPath, ['voice.mjs'], consumer);
+    const fixture = `import { createVoiceCapture } from '@hachej/boring-ui-kit/voice-capture';
+const capture = createVoiceCapture({ maxMs: 1000 }); void capture;
+import type { ViewerDescriptor, ViewerFeature, ViewerController, ViewerRenderer, PresentationCommand } from '@hachej/boring-ui-kit';
 interface Descriptor extends ViewerDescriptor { readonly kind: 'inline'; readonly version: 1; readonly value: string }
 declare const feature: ViewerFeature<Descriptor, ViewerController<string, {}, {}>>;
 const controller = feature.createController({ kind: 'inline', version: 1, value: 'hello' });

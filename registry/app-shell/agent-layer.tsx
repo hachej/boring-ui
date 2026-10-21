@@ -23,6 +23,12 @@ import { Dock, DockLayout, DockMain } from '../dock/dock';
 import type { DockApi } from '../dock/dock';
 import { PiChat } from '../pi-chat/pi-chat';
 import type { PiChatProps } from '../pi-chat/pi-chat';
+import type { VoiceMessageConfig } from '../pi-chat/config';
+import { useHoldToRecord, useRecordingCancellation } from '../pi-chat/use-hold-to-record';
+import { useVoiceMessage } from '../pi-chat/use-voice-message';
+import type { PendingVoice } from '../pi-chat/use-voice-message';
+import { voiceClock } from '../pi-chat/voice-message';
+import { chatTextFor } from '../pi-chat/locale';
 import { NoteBubble, useComposerFeedback } from '../feedback/feedback-session';
 import { feedbackLabelsFr } from '../feedback/feedback-labels';
 import { PointBar, usePointing } from '../feedback/point-mode';
@@ -37,7 +43,7 @@ import { AgentContextProvider } from './agent-context';
 import { HeaderActions } from './header-actions';
 import type { ScreenHeaderAction } from './header-actions';
 import { useDictation } from './use-dictation';
-import type { Dictation as Voice } from './use-dictation';
+import type { Dictation } from './use-dictation';
 
 export interface AgentSpec {
   readonly controller: NativeChatController;
@@ -46,8 +52,8 @@ export interface AgentSpec {
   /** The agent's icon in the sidebar (default: the sparkles of the header trigger). */
   readonly icon?: ComponentType<{ className?: string }>;
   readonly chatProps?: Omit<PiChatProps, 'controller'>;
-  /** Push-to-talk. `send` 'auto' submits the transcript; 'draft' (default) only fills the composer. */
-  readonly voice?: { readonly transcribe: (audio: Blob, signal: AbortSignal) => Promise<string>; readonly send?: 'auto' | 'draft' };
+  /** Push-to-talk. `message` retains audio plus transcript; `auto` sends text only; `draft` (default) fills the composer. */
+  readonly voice?: VoiceMessageConfig & { readonly send?: 'auto' | 'draft' | 'message' };
   /** Point mode (the product manager, in practice). */
   readonly feedback?: FeedbackSession;
   /** Host actions in the layer's title row (before the dock controls, or the snap and close controls when compact), as the screen header's. Two shown, the rest in « … ». Not at peek. */
@@ -85,6 +91,12 @@ const HOLD_MS = 350;
  */
 export function nextSnapOnClose(reason: string, hasPeek: boolean): 'peek' | 'half' | 'close' {
   return reason === 'swipe' || reason === 'outside-press' || reason === 'focus-out' || reason === 'escape-key' ? (hasPeek ? 'peek' : 'half') : 'close';
+}
+
+interface Voice extends Dictation {
+  readonly pending?: readonly PendingVoice[] | undefined;
+  readonly captureSequence?: number;
+  readonly canStart?: boolean;
 }
 
 /**
@@ -166,8 +178,9 @@ export function useAgentLayer(): AgentLayerApi {
 
 /** Push-to-talk uses the same dictation lifecycle as page targeting, over the existing composer/controller. */
 function useVoice(agent: AgentSpec | undefined, locale: AppShellLocale | undefined, done: (outcome: 'sent' | 'drafted') => void): Voice {
+  const message = useVoiceMessage({ controller: agent?.controller, config: agent?.voice?.send === 'message' ? agent.voice : undefined, attachments: agent?.chatProps?.attachments, labels: chatTextFor(agent?.chatProps?.locale ?? locale).labels, admitted: () => done('sent') });
   const voice = useDictation({
-    transcribe: agent?.voice?.transcribe,
+    transcribe: agent?.voice?.send === 'message' ? undefined : agent?.voice?.transcribe,
     locale: agent?.chatProps?.locale ?? locale,
     onText: async (spoken, signal) => {
       if (!agent || signal.aborted) return;
@@ -185,8 +198,9 @@ function useVoice(agent: AgentSpec | undefined, locale: AppShellLocale | undefin
     },
   });
   const { cancel } = voice;
-  useEffect(() => () => cancel(), [agent?.controller, cancel]);
-  return voice;
+  useEffect(() => () => cancel(), [agent?.controller, agent?.voice?.send, Boolean(agent?.voice), cancel]);
+  const phase: Dictation['phase'] = message.phase === 'starting' || message.phase === 'recording' ? message.phase : message.phase === 'processing' || message.phase === 'sending' ? 'transcribing' : 'idle';
+  return agent?.voice?.send === 'message' ? { ...message, phase } : voice;
 }
 
 /** The height in px of the tab bar the peek sits above (`--app-shell-tabbar` on the shell root), and one rem. */
@@ -294,6 +308,16 @@ export function AgentLayerProvider({ agent: own, improve, locale, agentLink, chi
   const voice = useVoice(agent, locale, outcome => {
     if (outcome === 'drafted') { setShown('agent'); setSnapState('half'); }
   });
+  const revealedFailures = useRef(new Set<number>());
+  useEffect(() => {
+    const failure = voice.pending?.findLast(item => item.phase === 'transcribe-failed' || item.phase === 'upload-failed' || item.phase === 'blocked' || item.phase === 'unconfirmed');
+    const captureProblem = agent?.voice?.send === 'message' && voice.problem;
+    const failureId = captureProblem ? voice.captureSequence : failure?.id;
+    if (failureId === undefined) { revealedFailures.current.clear(); return; }
+    if (revealedFailures.current.has(failureId)) return;
+    revealedFailures.current.add(failureId);
+    if (!expanded && shown === 'agent' && snap === 'peek') setSnapState('half');
+  }, [expanded, shown, snap, agent?.voice?.send, voice.captureSequence, voice.problem, voice.pending?.map(item => `${item.id}:${item.phase}`).join(',')]);
 
   const state: AgentLayerState = snap === 'closed' ? 'closed' : expanded ? 'open' : snap;
   const value = useMemo<Internal>(() => ({
@@ -319,6 +343,15 @@ export function AgentTrigger({ className, children }: { readonly className?: str
   const { agent, voice } = layer;
   const text = appShellText(agent?.chatProps?.locale ?? layer.locale);
   const hold = useRef<{ timer: ReturnType<typeof setTimeout> | undefined; held: boolean; id: number } | null>(null);
+  const cancelHold = () => {
+    const current = hold.current;
+    hold.current = null;
+    if (!current) return;
+    clearTimeout(current.timer);
+    if (current.held) voice.cancel();
+  };
+  useRecordingCancellation(cancelHold);
+  useEffect(() => () => cancelHold(), [agent?.controller]);
   if (!agent) return null;
 
   const toggle = () => {
@@ -368,33 +401,16 @@ export function AgentTrigger({ className, children }: { readonly className?: str
   </Button>;
 }
 
-const clock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
-
 /**
  * Push-to-talk in the composer row (PiChat's `tools` slot): press and hold, release to send or fill; a slide off cancels. Pressing never moves
  * focus (no keyboard opens or closes under the finger), and a browser `pointercancel` once recording keeps the audio like a release: only the slide off cancels.
  */
 function TalkButton({ text }: { readonly text: AppShellText }) {
   const { voice } = useInternal();
-  const recording = voice.phase === 'recording' || voice.phase === 'starting';
   const busy = voice.phase === 'transcribing';
-  const button = useRef<HTMLButtonElement>(null);
-  // A native, non-passive listener (React's touchstart is passive): a touch press must not focus anything either.
-  useEffect(() => {
-    const node = button.current;
-    const keep = (event: Event) => { if (event.cancelable) event.preventDefault(); };
-    node?.addEventListener('touchstart', keep, { passive: false });
-    return () => node?.removeEventListener('touchstart', keep);
-  }, []);
-  const down = (event: ReactPointerEvent<HTMLButtonElement>) => { event.preventDefault(); event.currentTarget.setPointerCapture?.(event.pointerId); voice.start(); };
-  const up = (event: ReactPointerEvent<HTMLButtonElement>) => { if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); voice.finish(); };
-  const move = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    if (!recording) return;
-    const box = event.currentTarget.getBoundingClientRect(), slack = 24;
-    if (event.clientX < box.left - slack || event.clientX > box.right + slack || event.clientY < box.top - slack || event.clientY > box.bottom + slack) voice.cancel();
-  };
-  return <Button ref={button} variant="ghost" size="icon" data-testid="agent-talk" data-state={voice.phase} disabled={busy} aria-label={text.holdToTalk} title={text.holdToTalk}
-    onPointerDown={down} onMouseDown={event => event.preventDefault()} onPointerUp={up} onPointerCancel={up} onPointerMove={move} onContextMenu={event => event.preventDefault()}
+  const disabled = busy || (voice.phase === 'idle' && voice.canStart === false);
+  const hold = useHoldToRecord(voice, disabled);
+  return <Button {...hold} variant="ghost" size="icon" data-testid="agent-talk" data-state={voice.phase} disabled={disabled} aria-label={text.holdToTalk} title={text.holdToTalk}
     className="touch-none">
     {busy ? <Loader2Icon data-icon="inline-start" className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <MicIcon data-icon="inline-start" aria-hidden="true" />}
   </Button>;
@@ -418,7 +434,7 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const fr = locale === 'fr';
   return <div data-spec={role} hidden={!visible} className={cn('min-h-0 min-w-0 flex-1', visible ? 'flex flex-col' : 'hidden')}>
     <PiChat {...spec.chatProps} {...(locale ? { locale } : {})} controller={spec.controller} keyboardInset={false} placement={layer.expanded && !layer.dockFloating ? 'docked' : 'floating'} {...(feedback ? { feedback } : {})}
-      {...(role === 'agent' && spec.voice ? { tools: <>{spec.chatProps?.tools}<TalkButton text={appShellText(locale)} /></> } : {})} />
+      {...(role === 'agent' && spec.voice ? { voiceMessage: undefined, tools: <>{spec.chatProps?.tools}<TalkButton text={appShellText(locale)} /></>, pendingVoice: layer.voice.pending } : {})} />
     {/* The note editor of ordinary feedback lives inside the layer, in the modal's focus tree; while pointing the layer steps aside and AgentLayer renders it. */}
     {/* In the flow, inside the visible content box: the popup is transformed (a fixed element would be placed against its off-screen bottom). */}
     {spec.feedback && visible && !pointing && <div className="shrink-0 px-2 pb-2 empty:hidden">
@@ -576,7 +592,7 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
           {!peek && <Header text={text} title={title} compactSnap={snap} closeRef={closeRef} />}
           {!peek && <VoiceProblem />}
           {peek && recording && <div role="status" data-testid="agent-listening" data-phase={voice.phase} className="absolute inset-0 z-20 flex items-center justify-center gap-2 bg-popover text-sm font-medium">
-            <MicIcon className="size-4 text-destructive" aria-hidden="true" />{voice.phase === 'transcribing' ? <Loader2Icon className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : `${text.listening} ${clock(voice.seconds)}`}
+            <MicIcon className="size-4 text-destructive" aria-hidden="true" />{voice.phase === 'transcribing' ? <><Loader2Icon className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />{voiceClock(voice.seconds)}</> : `${text.listening} ${voiceClock(voice.seconds)}`}
           </div>}
           {/* The transcript scrolls and never drags the sheet: only the handle and the title row swipe. */}
           <div data-base-ui-swipe-ignore="" className="flex min-h-0 flex-1 flex-col"><ChatSlot /></div>

@@ -459,3 +459,27 @@ test('read-only Markdown refuses edits, proposals and publication despite a writ
 
 await import('../ui/file-tree.mjs');
 await import('../ui/revision-workspace.mjs');
+
+test('the optional voice-capture entry records and cancels through its public API', async t => {
+  const { createVoiceCapture } = await import('@hachej/boring-ui-kit/voice-capture');
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'MediaRecorder');
+  class Recorder extends EventTarget {
+    static isTypeSupported(type) { return type === 'audio/mp4'; }
+    constructor(_stream, options) { super(); this.mimeType = options.mimeType; this.state = 'inactive'; }
+    start() { this.state = 'recording'; }
+    stop() { this.state = 'inactive'; const event = new Event('dataavailable'); event.data = new Blob(['fictional audio'], { type: this.mimeType }); this.dispatchEvent(event); this.dispatchEvent(new Event('stop')); }
+  }
+  Object.defineProperty(globalThis, 'MediaRecorder', { configurable: true, writable: true, value: Recorder });
+  t.after(() => { if (previous) Object.defineProperty(globalThis, 'MediaRecorder', previous); else delete globalThis.MediaRecorder; });
+  const track = { stopped: false, stop() { this.stopped = true; } };
+  let now = 100;
+  const capture = createVoiceCapture({ getUserMedia: async () => ({ getTracks: () => [track] }), now: () => now });
+  assert.deepEqual(await capture.start(), { kind: 'recording' });
+  now = 4100;
+  const recording = await capture.stop();
+  assert.equal(recording.mimeType, 'audio/mp4'); assert.equal(await recording.audio.text(), 'fictional audio');
+  assert.equal(recording.startedAt, 100); assert.equal(recording.endedAt, 4100); assert.equal(track.stopped, true);
+  track.stopped = false;
+  assert.deepEqual(await capture.start(), { kind: 'recording' }); capture.cancel();
+  assert.equal(track.stopped, true); assert.equal(await capture.stop(), null);
+});

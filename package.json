@@ -51,6 +51,7 @@
     "app-shell:journey:placed": "node examples/app-shell/journey-placed.mjs",
     "app-shell:journey:target": "node examples/app-shell/journey-target.mjs",
     "app-shell:journey:documents": "node examples/app-shell/journey-documents.mjs",
+    "app-shell:journey:voice": "node examples/app-shell/journey-voice.mjs",
     "feedback": "node examples/feedback/server.mjs",
     "feedback:journey": "node examples/feedback/journey-composer.mjs",
     "feedback:journey:picker": "node examples/feedback/journey.mjs",
