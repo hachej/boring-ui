@@ -33,8 +33,10 @@
     "maquette:journey": "node examples/workspace-app/journey-maquette.mjs",
     "blobs:journey": "node examples/workspace-app/journey-blobs.mjs",
     "diagram:journey": "node examples/workspace-app/journey-diagram.mjs",
+    "records:journey": "node examples/workspace-app/journey-records.mjs",
     "gaps:journey": "node examples/workspace-app/journey-gaps.mjs",
     "board:journey": "node examples/board-viewer/journey.mjs",
+    "highlights:journey": "node examples/highlights/journey.mjs",
     "workspace-demo": "node demos/workspace/server.mjs",
     "workspace-demo:journey": "node demos/workspace/journey.mjs",
     "workspace-demo:journey:trace": "node demos/workspace/journey-trace.mjs",
@@ -109,7 +111,8 @@
     "draft-recovery:journey": "node examples/draft-recovery/journey.mjs",
     "release:preflight": "npm run verify:release && node scripts/check-npm-packages.mjs --release",
     "release:version": "node scripts/release-version.mjs",
-    "file-tree:journey": "node examples/file-tree/journey.mjs && node examples/file-tree/journey-library.mjs"
+    "file-tree:journey": "node examples/file-tree/journey.mjs && node examples/file-tree/journey-library.mjs",
+    "requests:journey": "node examples/workspace-app/journey-requests.mjs"
   },
   "devDependencies": {
     "@aws-sdk/client-bedrock-agentcore": "3.1151.0",

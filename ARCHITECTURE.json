@@ -96,7 +96,9 @@
         "@earendil-works/pi-ai/*",
         "@earendil-works/chord",
         "@earendil-works/chord/*",
-        "node:crypto"
+        "node:crypto",
+        "unpdf",
+        "xlsx"
       ],
       "typeOnlyExternal": [],
       "pathRules": [
@@ -185,6 +187,7 @@
         "@tiptap/extension-highlight",
         "@tiptap/pm",
         "@tiptap/pm/state",
+        "@tiptap/pm/view",
         "@tiptap/extension-bubble-menu",
         "@tiptap/extension-floating-menu",
         "marked",
