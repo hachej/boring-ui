@@ -12,6 +12,9 @@ export const DEFAULTS = {
   viewBytes: 128_000,
   /** Independent view budget for summary requests. */
   compactBytes: 32_000,
+  /** Checkpoint thresholds, as fractions of each view budget. */
+  foldHighWater: 1.25,
+  foldLowWater: 0.75,
   /** Summarizer calls running at once. */
   jobs: 64,
   /** Attempts per node to get a line under `nodeBytes`. */
@@ -93,8 +96,9 @@ export function capText(text: string, cap: number): string {
   return `${text.slice(0, head)}\n[… ${text.length - cap} characters cut …]\n${text.slice(text.length - tail)}`;
 }
 
-function leafOf(kind: LeafKind, text: string, at: number | undefined, cap: number): Leaf {
+function leafOf(kind: LeafKind, text: string, at: number | undefined, cap: number, previous?: Leaf): Leaf {
   const capped = capText(text, cap);
+  if (previous?.kind === kind && previous.text === capped && previous.at === at) return previous;
   const line = `${kind}: ${capped}`;
   return { kind, text: capped, line, bytes: byteLength(line), hash: hashText(line), ...(at === undefined ? {} : { at }) };
 }
@@ -111,25 +115,27 @@ export interface LeafOptions {
   readonly forgotten?: Readonly<Record<string, number>>;
 }
 
-export function leavesOf(messages: readonly Message[], cap: number = DEFAULTS.cap, options: LeafOptions = {}): { leaves: Leaf[]; before: number[] } {
-  const leaves: Leaf[] = (options.notes ?? []).map(text => leafOf('note', text, undefined, cap)), before: number[] = [];
+/** Reuse prior leaves only after exact kind, capped-text and timestamp comparison; native contexts may contain fresh message objects. */
+export function leavesOf(messages: readonly Message[], cap: number = DEFAULTS.cap, options: LeafOptions = {}, previous: readonly Leaf[] = []): { leaves: Leaf[]; before: number[] } {
+  const leaves: Leaf[] = (options.notes ?? []).map((text, index) => leafOf('note', text, undefined, cap, previous[index])), before: number[] = [];
+  const append = (kind: LeafKind, text: string, at: number | undefined) => leaves.push(leafOf(kind, text, at, cap, previous[leaves.length]));
   let messageIndex = 0;
   for (const message of messages) {
     before.push(leaves.length);
     if (message.role === 'system') continue;
     const forgotten = options.forgotten?.[String(messageIndex++)];
     if (forgotten !== undefined) {
-      for (let i = 0; i < forgotten; i++) leaves.push(leafOf('note', '(forgotten)', undefined, cap));
+      for (let i = 0; i < forgotten; i++) append('note', '(forgotten)', undefined);
       continue;
     }
     const at = typeof (message as { timestamp?: unknown }).timestamp === 'number' ? (message as { timestamp: number }).timestamp : undefined;
-    if (options.workOf?.(message)) leaves.push(leafOf('work', textOf(message.content), at, cap));
-    else if (message.role === 'user') leaves.push(leafOf('user', textOf(message.content), at, cap));
+    if (options.workOf?.(message)) append('work', textOf(message.content), at);
+    else if (message.role === 'user') append('user', textOf(message.content), at);
     else if (message.role === 'assistant') {
       const talk = message.content.filter(part => part.type === 'text').map(part => part.text).join('\n');
-      if (talk.trim()) leaves.push(leafOf('talk', talk, at, cap));
-      for (const part of message.content) if (part.type === 'toolCall') leaves.push(leafOf('tool', `${part.name} ${JSON.stringify(part.arguments)}`, at, cap));
-    } else if (message.role === 'toolResult') leaves.push(leafOf('echo', `${message.toolName}${message.isError ? ' (error)' : ''}: ${textOf(message.content)}`, at, cap));
+      if (talk.trim()) append('talk', talk, at);
+      for (const part of message.content) if (part.type === 'toolCall') append('tool', `${part.name} ${JSON.stringify(part.arguments)}`, at);
+    } else if (message.role === 'toolResult') append('echo', `${message.toolName}${message.isError ? ' (error)' : ''}: ${textOf(message.content)}`, at);
   }
   before.push(leaves.length);
   return { leaves, before };
@@ -225,6 +231,11 @@ export interface ViewFold {
   T: number;
   size: number;
   parts: Part[];
+  /** Leaves already sent: interior placeholders stay frozen until a checkpoint. */
+  stableThrough?: number;
+  /** A checkpoint waiting for its required summaries; its due priorities keep the original leaf count. */
+  checkpoint?: boolean;
+  checkpointAt?: number;
 }
 
 export const emptyFold = (): ViewFold => ({ T: 0, size: 0, parts: [] });
@@ -234,7 +245,7 @@ const lineBytes = (part: Pick<Part, 'level' | 'index'>, text: string): number =>
 
 function settleOpen(fold: ViewFold, tree: OptChatTree): void {
   for (const part of fold.parts) {
-    if (!part.open) continue;
+    if (!part.open || (!fold.checkpoint && partStart(part) < (fold.stableThrough ?? 0) && part !== fold.parts.at(-1))) continue;
     const text = tree.text(part.level, part.index);
     if (text === undefined) continue;
     const bytes = lineBytes(part, text);
@@ -242,41 +253,44 @@ function settleOpen(fold: ViewFold, tree: OptChatTree): void {
   }
 }
 
-/** Merge the most due adjacent pair until the view fits, never splitting; stop when no parent is built (§5.2). */
-function fit(fold: ViewFold, tree: OptChatTree, viewBytes: number): void {
-  while (fold.size > viewBytes) {
+/** Merge by due priority fixed at the checkpoint; never skip an unbuilt preferred parent. */
+function fit(fold: ViewFold, tree: OptChatTree, high: number, low: number): void {
+  if (fold.size > high && !fold.checkpoint) { fold.checkpoint = true; fold.checkpointAt = fold.T; }
+  if (!fold.checkpoint) return;
+  settleOpen(fold, tree);
+  while (fold.size > low) {
     let best = -1, bestDue = -Infinity;
     for (let p = 0; p + 1 < fold.parts.length; p++) {
       const a = fold.parts[p]!, b = fold.parts[p + 1]!;
       if (a.level !== b.level || a.index % 2 !== 0 || b.index !== a.index + 1) continue;
-      if (tree.text(a.level + 1, a.index / 2) === undefined) continue;
-      const due = (fold.T - partStart(a)) / 2 ** (a.level + 2);
+      const due = ((fold.checkpointAt ?? fold.T) - partStart(a)) / 2 ** (a.level + 2);
       if (due > bestDue) { best = p; bestDue = due; }
     }
-    if (best < 0) return;
+    if (best < 0) break;
     const a = fold.parts[best]!, b = fold.parts[best + 1]!;
+    const text = tree.text(a.level + 1, a.index / 2);
+    if (text === undefined) return;
     const merged: Part = { level: a.level + 1, index: a.index / 2, bytes: 0, open: false };
-    merged.bytes = lineBytes(merged, tree.text(merged.level, merged.index)!);
+    merged.bytes = lineBytes(merged, text);
     fold.size += merged.bytes - a.bytes - b.bytes;
     fold.parts.splice(best, 2, merged);
   }
+  fold.checkpoint = false;
+  delete fold.checkpointAt;
 }
 
-/**
- * Append leaves up to `to` (one part each, fitting after every append) and refit with what has been built since. The view
- * only ever appends at its end and coarsens, so its start stays the same from one request to the next (§5.2).
- */
-export function advanceFold(fold: ViewFold, tree: OptChatTree, to: number, viewBytes: number): ViewFold {
+/** Append one leaf at a time; coarsen from the high mark to the low mark in a single checkpoint. */
+export function advanceFold(fold: ViewFold, tree: OptChatTree, to: number, viewBytes: number, highWater = 1, lowWater = 1): ViewFold {
   settleOpen(fold, tree);
+  fit(fold, tree, viewBytes * highWater, viewBytes * lowWater);
   while (fold.T < to) {
     const index = fold.T++;
     const text = tree.text(0, index);
     const part: Part = { level: 0, index, bytes: 0, open: text === undefined };
     part.bytes = lineBytes(part, text ?? PLACEHOLDER);
     fold.parts.push(part); fold.size += part.bytes;
-    fit(fold, tree, viewBytes);
+    fit(fold, tree, viewBytes * highWater, viewBytes * lowWater);
   }
-  fit(fold, tree, viewBytes);
   return fold;
 }
 
@@ -285,14 +299,14 @@ export const openParts = (fold: ViewFold): Part[] => fold.parts.filter(part => p
 
 /** One line per part, `id+n|text`, newlines as spaces, wrapped in `<chat>` (§5.1). */
 export function renderView(fold: ViewFold, tree: OptChatTree): string {
-  const lines = fold.parts.map(part => `${label(part)}|${flat(tree.text(part.level, part.index) ?? PLACEHOLDER)}`);
+  const lines = fold.parts.map(part => `${label(part)}|${flat(part.open ? PLACEHOLDER : tree.text(part.level, part.index) ?? PLACEHOLDER)}`);
   return `<chat>\n${lines.join('\n')}\n</chat>`;
 }
 
 /** The view's lines before `end` as bare text, one per line, with no ids: what a summarizer sees as context (§4.2). */
 export function bareLines(fold: ViewFold, tree: OptChatTree, end: number): string {
   return fold.parts.filter(part => partStart(part) + span(part.level) <= end)
-    .map(part => flat(tree.text(part.level, part.index) ?? PLACEHOLDER)).join('\n');
+    .map(part => flat(part.open ? PLACEHOLDER : tree.text(part.level, part.index) ?? PLACEHOLDER)).join('\n');
 }
 
 /** zoom(id, n): line `id+n` opened into its two children, or message `id` whole when n is 1 (§7.1). */

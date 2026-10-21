@@ -42,8 +42,8 @@ test('PiChat composes nested Trace lines without changing native input or host t
   });
   let snapshot;
   const controller = new Proxy({ getSnapshot: () => snapshot, subscribe: () => () => {} }, { get: (target, key) => key in target ? target[key] : async () => {} });
-  const render = async (native, props = {}) => {
-    snapshot = { identity: {}, conversationId: 'fictional', connection: { kind: 'connected' }, view: native, draft: { text: '', attachments: [], version: 0 }, outbox: [], history: { kind: 'disabled' }, send: { kind: 'idle' }, stop: 'idle', disposed: false };
+  const render = async (native, props = {}, draft = { text: '', attachments: [], version: 0 }) => {
+    snapshot = { identity: {}, conversationId: 'fictional', connection: { kind: 'connected' }, view: native, draft, outbox: [], history: { kind: 'disabled' }, send: { kind: 'idle' }, stop: 'idle', disposed: false };
     await act(async () => ui.render(createElement(PiChat, { controller, mode: 'developer', ...props })));
   };
   const get = id => container.querySelector(`[data-testid="${id}"]`);
@@ -90,4 +90,34 @@ test('PiChat composes nested Trace lines without changing native input or host t
   assert.equal(get('queue-item').querySelector('[data-slot="trace-line"]').getAttribute('data-status'), 'pending');
   assert.equal(get('queue-text').textContent, 'Read another fictional file', 'the queued message selector keeps its original text without the screen-reader status prefix');
   assert.equal(get('queue-cancel').disabled, true, 'a read-only native queue cannot manufacture withdrawal permission');
+
+  await t.test('queued message actions are icon-only with accessible names and hints', async () => {
+    await render(queued, { actions: { withdraw: async () => 'withdrawn' } });
+    for (const [id, label] of [['queue-steer', 'Steer'], ['queue-cancel', 'Remove queued message'], ['queue-more', 'More actions']]) {
+      assert.equal(get(id).textContent, '', `${id} has no visible label`);
+      assert.equal(get(id).getAttribute('aria-label'), label);
+      assert.ok(get(id).getAttribute('title'), `${id} has a tooltip`);
+    }
+    assert.equal(get('queue').querySelector('[data-slot="card"]').dataset.size, 'sm', 'the queue uses the host compact surface');
+  });
+  await t.test('steering is an icon with screen-reader status, not a visible badge', async () => {
+    queued.docs['pi.inbox'].items[0].mode = 'steer';
+    await render(queued);
+    assert.equal(get('queue-steer'), null);
+    const row = get('queue-item');
+    assert.ok(row.querySelector('[data-slot="trace-icon"] svg'));
+    assert.match(row.querySelector('.sr-only').textContent, /Steering/);
+    const visible = row.cloneNode(true); visible.querySelectorAll('.sr-only').forEach(node => node.remove());
+    assert.equal(visible.textContent, 'Read another fictional file');
+  });
+  await t.test('typing while working exposes a named icon queue control in both composer layouts', async () => {
+    for (const composerLayout of ['card', 'pill']) {
+      await render(view(false, true), { composerLayout }, { text: 'A fictional follow-up', attachments: [], version: 1 });
+      assert.equal(get('composer-queue').textContent, '');
+      assert.equal(get('composer-queue').getAttribute('aria-label'), 'Queue');
+      assert.equal(get('composer-queue').getAttribute('title'), 'Queue');
+      assert.equal(get('composer-queue').disabled, false);
+      assert.equal(get('composer-submit').dataset.state, 'stop');
+    }
+  });
 });

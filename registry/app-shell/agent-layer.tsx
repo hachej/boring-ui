@@ -20,6 +20,7 @@ import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { Drawer, DrawerContent } from '@/components/ui/drawer';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Dock, DockLayout, DockMain } from '../dock/dock';
+import { useDraggable } from '../utils/use-draggable';
 import type { DockApi } from '../dock/dock';
 import { PiChat } from '../pi-chat/pi-chat';
 import type { PiChatProps } from '../pi-chat/pi-chat';
@@ -584,7 +585,6 @@ function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSi
   const { setDockFloating } = layer;
   useLayoutEffect(() => { setDockFloating(floating); return () => setDockFloating(false); }, [floating, setDockFloating]);
   const box = useRef<HTMLDivElement>(null);
-  const drag = useRef<{ dx: number; dy: number } | null>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   useEffect(() => {
     if (!open) return;
@@ -599,15 +599,7 @@ function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSi
     layer.restoreFocus.current = false;
     if (wanted) box.current?.querySelector<HTMLElement>('[data-dock-control]')?.focus({ preventScroll: true });
   }, [api.placement, side, layer.restoreFocus]);
-  // A dragged window stays reachable: its remembered position is clamped to the viewport on open, on placement change and on every resize.
-  const [viewport, setViewport] = useState(0);
-  useEffect(() => { const resize = () => setViewport(count => count + 1); window.addEventListener('resize', resize); return () => window.removeEventListener('resize', resize); }, []);
-  useLayoutEffect(() => {
-    const rect = box.current?.getBoundingClientRect();
-    if (!pos || !floating || !open || !rect || !rect.width) return;
-    const left = Math.min(Math.max(pos.left, 0), Math.max(0, innerWidth - rect.width)), top = Math.min(Math.max(pos.top, 0), Math.max(0, innerHeight - rect.height));
-    if (left !== pos.left || top !== pos.top) setPos({ left, top });
-  }, [pos, floating, open, viewport]);
+  const drag = useDraggable({ box, position: open ? pos : null, onPositionChange: setPos, enabled: floating });
   const act = (run: () => void) => () => { layer.restoreFocus.current = true; run(); };
   const control = (id: string, label: string, Icon: ComponentType<{ className?: string }>, run: () => void) =>
     <Button variant="ghost" size="icon" key={id} data-testid={`agent-layer-${id}`} data-dock-control="" aria-label={label} title={label} onClick={act(run)}><Icon data-icon="inline-start" aria-hidden="true" /></Button>;
@@ -616,18 +608,6 @@ function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSi
     {(floating || side === 'right') && control('dock-left', text.dockLeft, PanelLeftIcon, () => { layer.setSide('left'); api.dock(); })}
     {(floating || side === 'left') && control('dock-right', text.dockRight, PanelRightIcon, () => { layer.setSide('right'); api.dock(); })}
   </>;
-  const down = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const rect = box.current?.getBoundingClientRect();
-    if (!floating || !rect || event.button !== 0 || (event.target as HTMLElement).closest('button, a[href]')) return;
-    drag.current = { dx: event.clientX - rect.left, dy: event.clientY - rect.top };
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-  };
-  const move = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const grab = drag.current, rect = box.current?.getBoundingClientRect();
-    if (!grab || !rect) return;
-    setPos({ left: Math.min(Math.max(event.clientX - grab.dx, 0), Math.max(0, innerWidth - rect.width)), top: Math.min(Math.max(event.clientY - grab.dy, 0), Math.max(0, innerHeight - rect.height)) });
-  };
-  const end = () => { drag.current = null; };
   // Floating, the host's Card is drawn behind the layer (a sibling layer, so docking or floating never remounts the chat).
   return <div ref={box} data-testid="agent-layer" data-state={open ? 'open' : 'closed'} data-placement={api.placement} data-side={side} role={floating ? 'dialog' : 'complementary'} aria-label={title}
     style={floating ? pos ?? { right: 16, bottom: 16 } : undefined}
@@ -636,7 +616,7 @@ function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSi
         : 'h-full min-w-0 flex-1 bg-background text-foreground')}>
     {floating && <Card aria-hidden="true" data-boring="chrome" className="pointer-events-none absolute inset-0 -z-10" />}
     {!floating && <Separator orientation="vertical" className={cn('absolute inset-y-0', side === 'right' ? 'left-0' : 'right-0')} />}
-    <Header text={text} title={title} controls={controls} className={cn('pt-2', floating && 'cursor-move touch-none select-none')} onPointerDown={down} onPointerMove={move} onPointerUp={end} onPointerCancel={end} />
+    <Header text={text} title={title} controls={controls} className={cn('pt-2', floating && 'cursor-move touch-none select-none')} {...drag} />
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden"><VoiceProblem /><ChatSlot /></div>
   </div>;
 }

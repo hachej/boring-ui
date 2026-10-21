@@ -128,14 +128,14 @@ export async function launch(url: string, { chromium = process.env.CHROMIUM, evi
     await tabSend('Page.navigate', { url });
     return { ...inspect(tabSend), send: tabSend, setVisible: visible => inspect(tabSend).evaluate(`window.__setVisibility(${visible ? "'visible'" : "'hidden'"})`), close: () => sendTo(undefined, 'Target.closeTarget', { targetId: created.targetId }) };
   };
-  // Measure across two painted frames: a breakpoint can move or replace a control after the viewport itself has changed.
+  // Wait for visible, non-inert targets across two painted frames: a breakpoint can move or replace a control after the viewport changes.
   const centre = (what: string, selector: string, { enabled = false, scroll = false } = {}): Promise<{ x: number; y: number }> =>
     until(`${what} ${selector}`, `(async () => {
-      const e = (${selector}); if (!e${enabled ? ' || e.disabled' : ''}) return null;
+      const e = (${selector}); if (!e${enabled ? ' || e.disabled' : ''} || (e instanceof Element && (!e.checkVisibility({ visibilityProperty: true }) || e.closest('[inert]')))) return null;
       ${scroll ? "e.scrollIntoView({ block: 'center', behavior: 'instant' });" : ''}
       const before = e.getBoundingClientRect();
       await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame);
-      const current = (${selector}); if (!current${enabled ? ' || current.disabled' : ''} || (e instanceof Element && current !== e)) return null;
+      const current = (${selector}); if (!current${enabled ? ' || current.disabled' : ''} || (e instanceof Element && current !== e) || (current instanceof Element && (!current.checkVisibility({ visibilityProperty: true }) || current.closest('[inert]')))) return null;
       const r = current.getBoundingClientRect();
       return r.width > 0 && r.height > 0 && ['x', 'y', 'width', 'height'].every(key => Math.abs(r[key] - before[key]) < 0.5)
         ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null;

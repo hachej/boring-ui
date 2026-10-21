@@ -40,13 +40,13 @@ async function dom(t) {
 }
 
 /** The real PiChat over a native controller; `write` appends a model message to the conversation. */
-async function chat(t, props = {}, Component = kit.PiChat) {
+async function chat(t, props = {}, Component = kit.PiChat, model) {
   const page = await dom(t);
   const { Harness, MemoryStorage, createRegistry } = await import('@earendil-works/pi-durable');
   const { BACKGROUND_CONTEXT: context } = await import('@earendil-works/chord/context');
   const { createNativeChatController } = await import('@hachej/boring-ui-kit/native-chat');
   const { createFakeChatModel } = await import('@hachej/boring-testing/model');
-  const fake = createFakeChatModel();
+  const fake = model ?? createFakeChatModel();
   const native = await Harness.open(new MemoryStorage(), { registry: createRegistry(), models: fake.models }, context);
   const conversation = await native.createConversation({ ownership: { kind: 'ownerless' }, agent: { model: fake.model } }, context);
   const controller = createNativeChatController({ identity: { runtimeId: 'fixture', scopeId: 'fixture', principalId: 'person' }, context, conversation });
@@ -158,6 +158,87 @@ const maquette = { schema: 'boring.artifact', version: 1, title: 'Onboarding', t
 const presented = (id, artifact) => [assistant([call(id, 'present', { path: artifact.target.resource.path })]),
   { role: 'toolResult', toolCallId: id, toolName: 'present', content: [{ type: 'text', text: JSON.stringify({ artifact }) }], isError: false, timestamp: 2 }];
 
+for (const [locale, names] of [['en', ['Document', 'HTML page', 'SVG image', 'Code · json', 'Canvas']], ['fr', ['Document', 'Page HTML', 'Image SVG', 'Code · json', 'Canevas']]]) {
+  test(`artifact cards use ${locale} type labels, a media square and no action text`, async t => {
+    const opened = [];
+    const page = await chat(t, { locale, artifacts: { open: artifact => opened.push(artifact) } });
+    const artifacts = ['markdown', 'html', 'svg', 'code', 'canvas'].map(type => ({ ...maquette, type, title: `Fictional ${type} guide`, ordinal: 3,
+      target: { ...maquette.target, resource: { providerId: 'workspace', path: `guides/${type}.txt` } } }));
+    await page.write(artifacts.flatMap((artifact, at) => presented(`show-${at}`, artifact)));
+    const cards = [...page.container.querySelectorAll('[data-testid=artifact-card]')];
+    assert.deepEqual(cards.map(card => card.querySelector('[data-testid=artifact-type]').textContent), names);
+    for (const [at, card] of cards.entries()) {
+      assert.equal(card.querySelector('[data-testid=artifact-title]').textContent, artifacts[at].title);
+      assert.equal(card.querySelector('[data-testid=artifact-version]').textContent, 'Version 3');
+      assert.equal(card.getAttribute('aria-label'), `${locale === 'fr' ? 'Ouvrir' : 'Open'} ${artifacts[at].title}, version 3`);
+      assert.equal(card.getAttribute('aria-pressed'), 'false');
+      assert.doesNotMatch(card.textContent, /Open|Ouvrir/);
+      assert.equal(card.querySelector('[data-testid=artifact-hint]'), null, 'no duplicate action hint');
+      assert.ok(card.querySelector('[data-slot=item-media][data-variant=image] [data-slot=item][data-variant=muted] svg[aria-hidden=true]'), 'the icon sits in stock tinted square media');
+      assert.equal(card.querySelectorAll('svg').length, 2, 'type icon and one action cue');
+      assert.ok(card.querySelector('svg.lucide-chevron-right[aria-hidden=true]'));
+      assert.equal(card.querySelector('svg.lucide-check'), null);
+    }
+    await page.act(async () => cards[1].click());
+    assert.deepEqual(opened, [artifacts[1]], 'clicking the card sends the exact descriptor to the host');
+  });
+}
+
+test('an open artifact has a check and pressed state; a disabled card has no action and unversioned names stay concise', async t => {
+  const opened = [];
+  const artifact = { ...maquette, title: 'Fictional HTML guide', type: 'html', ordinal: 2 };
+  const page = await chat(t, { artifacts: { open: artifact => opened.push(artifact), isOpen: () => true } });
+  await page.write(presented('show-open', artifact));
+  const card = () => page.container.querySelector('[data-testid=artifact-card]');
+  assert.equal(card().getAttribute('aria-pressed'), 'true');
+  assert.equal(card().dataset.open, 'true');
+  assert.equal(card().getAttribute('aria-label'), 'Open Fictional HTML guide, version 2');
+  assert.ok(card().querySelector('svg.lucide-check[aria-hidden=true]'));
+  assert.equal(card().querySelector('svg.lucide-chevron-right'), null);
+  assert.doesNotMatch(card().textContent, /Open|Ouvrir/);
+  assert.ok(card().classList.contains('bg-secondary'), 'the open card uses the host secondary variant');
+  await page.act(async () => card().click());
+  assert.deepEqual(opened, [artifact]);
+  await page.rerender({ artifacts: { open: artifact => opened.push(artifact), isOpen: () => false } });
+  assert.equal(card().getAttribute('aria-pressed'), 'false');
+  assert.equal(card().hasAttribute('data-open'), false);
+  assert.ok(card().querySelector('svg.lucide-chevron-right'));
+  assert.equal(card().querySelector('svg.lucide-check'), null);
+  await page.rerender({ artifacts: {} });
+  assert.equal(card().disabled, true);
+  assert.equal(card().hasAttribute('aria-pressed'), false);
+  await page.act(async () => card().click());
+  assert.equal(opened.length, 1, 'a card without a host action cannot open');
+  await page.write(presented('show-unversioned', { ...artifact, ordinal: undefined }));
+  assert.equal(card().querySelector('[data-testid=artifact-version]'), null);
+  assert.equal(card().getAttribute('aria-label'), 'Open Fictional HTML guide');
+});
+
+test('artifact type labels accept host wording while a matching kind still wins', async t => {
+  const page = await chat(t, { locale: 'fr', labels: { artifactTypes: { ...kit.frenchChatLabels.artifactTypes, code: 'Extrait' } }, artifacts: { open: () => {} } });
+  await page.write(presented('show-custom-word', maquette));
+  assert.equal(page.container.querySelector('[data-testid=artifact-type]').textContent, 'Extrait · json');
+  await page.rerender({ artifacts: { open: () => {}, kinds: [{ match: () => true, label: 'Maquette' }] } });
+  assert.equal(page.container.querySelector('[data-testid=artifact-type]').textContent, 'Maquette');
+});
+
+test('a running present remains a French noninteractive busy card until its native result arrives', { timeout: 10000 }, async t => {
+  const { createScriptedModel } = await import('@hachej/boring-testing/model');
+  const model = createScriptedModel({ script: { 'Prepare a fictional guide': [{ tools: [{ name: 'present', args: { path: 'guides/guide.html' } }], hold: 60000 }] } });
+  const page = await chat(t, { locale: 'fr', artifacts: { open: () => assert.fail('a pending card cannot open') } }, kit.PiChat, model);
+  await page.act(async () => { page.controller.setText('Prepare a fictional guide'); await page.controller.send(); });
+  const card = () => page.container.querySelector('[data-testid=artifact-card][data-state=presenting]');
+  for (let at = 0; at < 100 && !card(); at++) await page.act(async () => new Promise(resolve => setTimeout(resolve, 10)));
+  assert.ok(card());
+  assert.equal(card().getAttribute('role'), 'status');
+  assert.equal(card().getAttribute('aria-busy'), 'true');
+  assert.equal(card().querySelector('[data-testid=artifact-title]').textContent, 'guide.html');
+  assert.match(card().textContent, /Ouverture…/);
+  assert.equal(card().querySelector('button'), null);
+  assert.equal(card().tagName, 'DIV');
+  assert.equal(card().hasAttribute('aria-pressed'), false);
+});
+
 test('an artifact kind names and draws an app file type without editing artifact.ts', async t => {
   const page = await chat(t, { artifacts: { open: () => {} } });
   await page.write(presented('show-1', maquette));
@@ -182,6 +263,16 @@ test('an artifact kind names and draws an app file type without editing artifact
   assert.equal(page.container.querySelector('[data-testid=maquette-view]')?.textContent, 'Onboarding: 3 screens');
   assert.equal(page.container.querySelector('[data-testid=artifact-panel-type]').textContent, 'Maquette');
   assert.deepEqual(shown[0], { path: maquette.target.resource.path, revision: 'rev-1' }, 'a kind renderer confirms the presented revision like a built-in viewer');
+});
+
+test('the artifact panel uses the surrounding chat language for built-in types', async t => {
+  const page = await dom(t);
+  const artifact = { ...maquette, type: 'html', mediaType: 'text/html', target: { ...maquette.target, resource: { providerId: 'workspace', path: 'guide.html' } } };
+  const bytes = new TextEncoder().encode('<p>A fictional guide.</p>');
+  const client = { read: async () => ({ kind: 'available', snapshot: { bytes, ref: { revision: 'rev-1', providerId: 'workspace', path: 'guide.html' } } }), saves: async () => [], search: async () => [] };
+  await page.render(page.h(kit.ChatTextProvider, { value: kit.chatTextFor('fr') }, page.h(kit.ArtifactPanel, { active: { descriptor: artifact, follow: false }, versions: [artifact], options: { client, identity: { runtimeId: 'fixture' } }, onSelect: () => {}, onClose: () => {} })));
+  for (let i = 0; i < 10; i++) await page.act(async () => new Promise(resolve => setTimeout(resolve, 5)));
+  assert.equal(page.container.querySelector('[data-testid=artifact-panel-type]').textContent, 'Page HTML');
 });
 
 test('a CSV artifact opens as a table', async t => {

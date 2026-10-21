@@ -1,5 +1,6 @@
 // Real-browser journey of the 0.4.3 gaps (scripted model, no key), embedded layout: the bar keeps a fixed app title with the conversation
-// title after it (hidden on a phone), and a maquette opened from the Library draws its viewer instead of raw JSON.
+// title after it (hidden on a phone), a maquette opened from the Library draws its viewer instead of raw JSON, and French artifact cards
+// use translated types and one icon-only action cue, with their open state exposed on desktop and phone.
 // Screenshots at 1440 and 390, light and dark, go to .cache/evidence/gaps/.
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync } from 'node:fs';
@@ -84,6 +85,56 @@ try {
     await shoot('phone-library-maquette');
     await oneMenuAndSelectedCase(true, 'phone-library-maquette');
   });
+
+  await step('French artifact cards: quiet type labels, one action cue and accessible open state at 1440 and 390', async () => {
+    await desktop();
+    await browser.send('Page.navigate', { url: `${insecureUrl(app.url)}?embedded&locale=fr` });
+    await browser.until('the French chat is live', `!!${INPUT} && !${INPUT}.disabled && /Écrivez/.test(${INPUT}.placeholder)`, 20000);
+    await browser.type(INPUT, 'Prépare le guide HTML fictif et présente-le.'); await browser.press('Enter');
+    const card = q('[data-testid=artifact-card][data-artifact-type=html][data-state=ready]');
+    await browser.until('the French HTML card', `!!${card} && ${card}.getAttribute('aria-pressed') === 'true'`, 30000);
+    const check = async open => {
+      const state = await browser.evaluate(`(() => { const e = ${card}; return { text: e.textContent, type: e.querySelector('[data-testid=artifact-type]').textContent,
+        name: e.getAttribute('aria-label'), pressed: e.getAttribute('aria-pressed'), hint: !!e.querySelector('[data-testid=artifact-hint]'),
+        check: !!e.querySelector('svg.lucide-check'), chevron: !!e.querySelector('svg.lucide-chevron-right'), icons: e.querySelectorAll('svg').length,
+        width: e.getBoundingClientRect().width, height: e.getBoundingClientRect().height }; })()`);
+      assert.equal(state.type, 'Page HTML');
+      assert.equal(state.name, 'Ouvrir Dossier — Écritures et documents fictifs.html');
+      assert.equal(state.pressed, String(open));
+      assert.doesNotMatch(state.text, /Ouvrir|Open|HTML page/);
+      assert.equal(state.hint, false);
+      assert.equal(state.check, open); assert.equal(state.chevron, !open); assert.equal(state.icons, 2);
+      assert.ok(state.height >= 48 && state.width >= 48, `48px target: ${JSON.stringify(state)}`);
+      assert.ok(await browser.evaluate(noOverflow), 'no horizontal page scroll');
+    };
+    await check(true);
+    assert.equal(await browser.evaluate(`${q('[data-testid=artifact-panel-type]')}.textContent`), 'Page HTML');
+    await shoot('artifact-card-desktop-open');
+    await browser.click(q('[data-testid=artifact-close]'));
+    await browser.until('closed card', `${card}.getAttribute('aria-pressed') === 'false'`, 5000);
+    await check(false); await shoot('artifact-card-desktop-closed');
+    await browser.evaluate(`${card}.focus()`); await browser.press('Enter');
+    await browser.until('keyboard opens the same artifact', `${card}.getAttribute('aria-pressed') === 'true' && !!${q('[data-testid=artifact-panel]')}`, 5000);
+    await browser.click(q('[data-testid=artifact-close]'));
+    await browser.emulate('phone'); await pause(400);
+    await check(false); await shoot('artifact-card-phone-closed');
+    await browser.tap(card);
+    await browser.until('phone opens the card in its sheet', `${q('[data-testid=workspace-panel]')}?.dataset.sheet === 'true' && ${card}.getAttribute('aria-pressed') === 'true'`, 10000);
+    await check(true); await shoot('artifact-card-phone-open');
+    await browser.tap(q('[data-testid=artifact-close]'));
+    await browser.until('phone returns to its closed card', `${card}.getAttribute('aria-pressed') === 'false'`, 5000);
+    await check(false);
+
+    // The workspace sheet covers its open card on a phone. The existing component showcase also records that card's selected styling unobscured.
+    await browser.send('Page.navigate', { url: `${insecureUrl(app.url)}?controls=artifacts` });
+    const preview = q('[data-testid=artifact-card]');
+    await browser.until('standalone French card', `${preview}?.getAttribute('aria-pressed') === 'false'`, 10000);
+    await shoot('artifact-card-phone-closed-detail');
+    await browser.tap(preview);
+    await browser.until('standalone selected card', `${preview}.getAttribute('aria-pressed') === 'true' && !!${preview}.querySelector('svg.lucide-check')`, 5000);
+    await shoot('artifact-card-phone-open-detail');
+  });
+  assert.deepEqual(browser.problems, [], 'no page errors');
 } finally {
   await browser?.close();
   await app.close();

@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-ui-kit",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "license": "MIT",
   "private": false,
   "type": "module",
@@ -83,6 +83,10 @@
       "types": "./dist/html-viewer.d.ts",
       "import": "./dist/html-viewer.js"
     },
+    "./artifact-viewer": {
+      "types": "./dist/artifact-viewer.d.ts",
+      "import": "./dist/artifact-viewer.js"
+    },
     "./experience": {
       "types": "./dist/experience.d.ts",
       "import": "./dist/experience.js"
@@ -130,7 +134,7 @@
     }
   },
   "peerDependencies": {
-    "@hachej/boring-files": "^0.4.4",
+    "@hachej/boring-files": "^0.4.5",
     "@earendil-works/pi-durable": "~1.2.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

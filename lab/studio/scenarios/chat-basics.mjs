@@ -30,13 +30,16 @@ export default [
       assert.equal(await browser.evaluate(`!${q('[data-testid=when-busy]')} && !${q('[data-testid=queue]')}`), true, 'while busy the composer has no toggle and nothing is queued yet');
       await say('Second message: reply with exactly: QUEUE-ONE');
       await browser.until('first queued message is visible', `${queued}.length === 1`, 15000);
-      await say('Third message: reply with exactly: QUEUE-TWO');
+      await browser.type(MESSAGE, 'Third message: reply with exactly: QUEUE-TWO');
+      assert.deepEqual(await browser.evaluate(`(() => { const e = ${q('[data-testid=composer-queue]')}; return [e.textContent, e.getAttribute('aria-label'), e.getAttribute('title')]; })()`), ['', 'Queue', 'Queue'], 'typing shows only a named queue icon');
+      await browser.click(q('[data-testid=composer-queue]'));
       await browser.until('both queued messages are visible', `${queued}.length === 2`, 15000);
       assert.deepEqual(await browser.evaluate(queued), [['followUp', 'Second message: reply with exactly: QUEUE-ONE'], ['followUp', 'Third message: reply with exactly: QUEUE-TWO']]);
       await browser.until('focus stays in the composer', `${MESSAGE}.value === '' && document.activeElement === ${MESSAGE}`, 5000);
       // The choice is made on the queued message itself: steer now, edit or remove. The composer still has no toggle.
       assert.deepEqual(await browser.evaluate(`${qa('[data-testid=queue-item]')}.map(e => ['queue-steer', 'queue-more', 'queue-cancel'].map(id => !!e.querySelector('[data-testid=' + id + ']')))`), [[true, true, true], [true, true, true]]);
       assert.equal(await browser.evaluate(`!${q('[data-testid=when-busy]')}`), true, 'no toggle in the composer');
+      assert.deepEqual(await browser.evaluate(`${qa('[data-testid=queue-item]')}.map(row => ['queue-steer', 'queue-cancel', 'queue-more'].map(id => { const e = row.querySelector('[data-testid=' + id + ']'); return [e.innerText, !!e.getAttribute('aria-label'), !!e.getAttribute('title')]; }))`), Array.from({ length: 2 }, () => [['', true, true], ['', true, true], ['', true, true]]), 'all queue actions are named icons');
       // The queue is a slim tab tucked behind the composer's top edge: inset from its sides, the composer overlapping its bottom, edit inside the "…" menu.
       assert.equal(await browser.evaluate(`(() => { const t = ${q('[data-testid=queue]')}.getBoundingClientRect(), c = ${q('[data-testid=composer]')}.getBoundingClientRect(); return t.bottom > c.top && t.bottom - c.top < 20 && t.left > c.left && t.right < c.right && !${q('[data-testid=queue-edit]')}; })()`), true, 'the queue is a tab behind the composer');
       await t.shots('chatui-queue');

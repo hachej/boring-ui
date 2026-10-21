@@ -24,6 +24,7 @@ const { token, identity } = window.__APP__;
 const authorized = request => { const headers = new Headers(request.headers); headers.set('authorization', `Bearer ${token}`); return fetch(new Request(request, { headers })); };
 const at = path => new URL(path, location.href);
 const configured = new URLSearchParams(location.search).has('configured');
+const locale = new URLSearchParams(location.search).get('locale') === 'fr' ? 'fr' : undefined;
 // `?embedded`: the same page as a host would embed it (no left column, one compact top bar). `?resources`: no revision provider, only
 // `resources` (the viewers' endpoint and file history): the Library is then read-only.
 const embedded = new URLSearchParams(location.search).has('embedded');

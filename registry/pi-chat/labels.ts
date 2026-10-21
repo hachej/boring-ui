@@ -278,6 +278,7 @@ export const defaultChatLabels = {
   runNotLoaded: 'The run could not be loaded.',
   // Artifact cards
   artifact: 'Artifact',
+  artifactTypes: { markdown: 'Document', html: 'HTML page', svg: 'SVG image', code: 'Code', canvas: 'Canvas' },
   opening: 'Opening…',
   viewing: 'Viewing',
   version: (ordinal: number) => `Version ${ordinal}`,

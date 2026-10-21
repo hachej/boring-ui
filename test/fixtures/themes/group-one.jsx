@@ -3,6 +3,8 @@ import { PinIcon, WorkflowIcon } from 'lucide-react';
 import { EmptyState } from '../../../registry/pi-chat/empty-state';
 import { QuestionCard } from '../../../registry/pi-chat/question-card';
 import { ArtifactCard } from '../../../registry/pi-chat/artifact-card';
+import { ChatTextProvider } from '../../../registry/pi-chat/labels';
+import { chatTextFor } from '../../../registry/pi-chat/locale';
 
 const MAQUETTE = [{ match: target => target.resource.path.endsWith('.maquette.json'), label: 'Maquette', icon: WorkflowIcon }];
 const onboarding = { schema: 'boring.artifact', version: 1, title: 'Fictional onboarding', type: 'code', mediaType: 'application/json', language: 'json',
@@ -19,6 +21,7 @@ import { appShellText } from '../../../registry/app-shell/text';
 export function GroupOneControls({ surface }) {
   const [event, setEvent] = useState('');
   const [pinned, setPinned] = useState(false);
+  const [artifactOpen, setArtifactOpen] = useState(false);
   const [dark, setDark] = useState(false);
   const [notifications] = useState(() => {
     const store = createNotificationStore();
@@ -37,6 +40,7 @@ export function GroupOneControls({ surface }) {
         questionId="fictional-form" answer={async (_, answer) => { setEvent(answer); return { kind: 'answered' }; }} />
       <ArtifactCard artifact={onboarding} kinds={MAQUETTE} onOpen={() => setEvent('maquette opened')} />
     </>}
+    {surface === 'artifacts' && <ChatTextProvider value={chatTextFor('fr')}><ArtifactCard artifact={{ ...onboarding, title: 'Dossier — Écritures et documents fictifs.html', type: 'html', mediaType: 'text/html', ordinal: 3 }} open={artifactOpen} onOpen={() => setArtifactOpen(true)} /></ChatTextProvider>}
     {surface === 'notification' && <AgentNotifications store={notifications} variant="surface" placement="inline" autoDismissMs={0} onActivate={() => setEvent('notification opened')} className="static w-full" />}
     {surface === 'provider' && <ProviderSetup defaultOpen providers={[{ id: 'fictional', name: 'Fictional provider', models: [{ id: 'fictional-model', name: 'Fictional model' }], auth: ['api_key'], configured: true }]} value={{ provider: 'fictional', modelId: 'fictional-model' }} onSave={async () => { setEvent('provider saved'); }} />}
     {surface === 'toggles' && <>
