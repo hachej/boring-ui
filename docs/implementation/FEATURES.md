@@ -1,5 +1,11 @@
 # Implemented behavior and evidence
 
+## Placed workspace phone peek
+
+`PlacedAgentWorkspace` lends its existing controller to the app shell's native Base UI drawer on phones. The 8rem peek above the measured tab bar fits the conversation file chip, input and Send; its snap point and clipping boundary share one height. This is host layout, not a Pi execution extension.
+
+`npm run app-shell:journey:placed` checks the composer, input and Send bounding boxes against the viewport and tab bar, and hit-tests the input and Send edges for clipping or occlusion. The journey retains the draft/conversation and page-node checks, with screenshots and geometry under `.cache/evidence/placed-agent/`. Headless Chromium emulation does not qualify physical soft keyboards or real-device behavior.
+
 ## Requests board
 
 The `requests-board` registry item is host presentation (no Pi extension): `RequestsBoard`, pure `compactRows`/`filterViews`/`requestCounts` and EN/FR labels. Compact prioritizes five requests; full mode provides scoped filters/search, responsive list/detail, history, related links and host-owned answer/decision/try callbacks. The host re-renders views and bumps a change token for polite announcements; the block never polls or subscribes. Release approval visibility is not authorization. See [the recipe](../../registry/README.md#requests-board-requests-board).

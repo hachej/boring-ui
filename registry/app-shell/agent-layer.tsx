@@ -68,8 +68,8 @@ export interface AgentLayerApi {
   readonly expanded: boolean;
 }
 
-// The three fixed snap points: a peek (one composer row and a line of the last reply, `PEEK_REM` above the tab bar), 55% and the full height.
-const PEEK_REM = 6;
+// The three fixed snap points: a peek (the file chip, one composer row and a line of the last reply, `PEEK_REM` above the tab bar), 55% and the full height.
+const PEEK_REM = 8;
 /** The shell's z-scale (tabs 20, peek 30, drawer and panel 40, other sheets 50, point bar 60). */
 const Z = { tabs: 20, peek: 30, layer: 40, sheet: 50, point: 60 } as const;
 const HALF = 0.55;
@@ -512,7 +512,7 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
   // The popup is taller than what shows and slides down by `--drawer-snap-point-offset` (a registered, non-inheriting property, so only the
   // popup itself can read it): padding the popup by that offset makes its content box exactly the visible part. At peek the tab bar below is left out too.
   // The popup is portalled to the body, outside the shell root: it is given the measured tab bar height and the z-values explicitly.
-  const style = { '--app-shell-vv-height': vv ? `${vv.height}px` : '100dvh', '--app-shell-tabbar': `${layer.tabbar}px`, '--app-shell-z-layer': Z.layer,
+  const style = { '--app-shell-vv-height': vv ? `${vv.height}px` : '100dvh', '--app-shell-tabbar': `${layer.tabbar}px`, '--app-shell-peek-height': `${PEEK_REM}rem`, '--app-shell-z-layer': Z.layer,
     paddingBottom: peek ? 'calc(var(--drawer-snap-point-offset, 0px) + var(--app-shell-tabbar, 0px))' : 'var(--drawer-snap-point-offset, 0px)',
     ...(pinnedBottom ? { bottom: pinnedBottom } : {}) } as CSSProperties;
   // Entering the modal half or full from the non-modal peek does not rerun Base UI's initial focus: if focus is still on the page, take it to Close.
@@ -557,7 +557,7 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
     <DrawerContent data-testid="agent-layer" aria-label={title} data-state={snap} data-peek={peek} initialFocus={() => closeRef.current ?? false} style={style}
       className={cn('app-shell box-border z-(--app-shell-z-layer) data-[swipe-direction=down]:bottom-(--drawer-keyboard-inset,0px) data-[swipe-axis=y]:[--drawer-content-max-height:calc(var(--app-shell-vv-height,100dvh)-1.5rem)]',
         // The peek is the top PEEK_REM of the popup; the part that overlaps the tab bar is clipped away, so the tabs stay visible and tappable.
-        'data-[peek=true]:not-data-swiping:[clip-path:inset(0_0_calc(100%_-_6rem)_0)]')}>
+        'data-[peek=true]:not-data-swiping:[clip-path:inset(0_0_calc(100%_-_var(--app-shell-peek-height))_0)]')}>
       <BaseDrawerParts.Drawer.VirtualKeyboardProvider>
         <div ref={sheet} data-testid="agent-layer-sheet" onFocusCapture={event => { if (!recording && (event.target as HTMLElement).matches('[data-testid=composer-input]')) layer.setSnap('full'); }}
           className={cn('relative flex min-h-0 flex-1 flex-col overflow-hidden overscroll-contain',

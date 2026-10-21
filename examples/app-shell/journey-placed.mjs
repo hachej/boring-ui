@@ -5,7 +5,7 @@
 // above the tab bar (header and tabs not covered, exactly one chat drawer, never the ambient overlay), and expand from the drawer returns to
 // the tab. Screenshots go to .cache/evidence/placed-agent/. Run: npm run app-shell:journey:placed
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { launch, pause, q, qa } from '@hachej/boring-testing/browser';
@@ -96,6 +96,25 @@ try {
     const visible = await browser.evaluate(`(() => { const t = document.elementFromPoint(innerWidth / 2, ${tabs.y + tabs.h / 2}); const h = document.elementFromPoint(innerWidth / 2, ${header.y + header.h / 2}); return { tabs: !!t?.closest('[data-testid=tabbar]'), header: !!h?.closest('[data-testid=screen-header]') }; })()`);
     assert.deepEqual(visible, { tabs: true, header: true }, `header and tabs stay uncovered: ${JSON.stringify({ header, tabs, layer })}`);
     await shot('phone-2-drawer-peek.png');
+    const viewport = await browser.evaluate('({ width: innerWidth, height: innerHeight })');
+    const controls = {};
+    for (const [name, selector] of [['input', COMPOSER], ['send', '[data-testid=composer-submit]'], ['composer', '[data-testid=composer]']]) {
+      controls[name] = await browser.evaluate(rect(`${LAYER} ${selector}`));
+    }
+    writeFileSync(join(evidence, 'phone-peek-geometry.json'), JSON.stringify({ viewport, tabs, layer, controls }, null, 2));
+    for (const [name, box] of Object.entries(controls)) {
+      assert.ok(box && box.w > 0 && box.h > 0, `peek ${name} is mounted with visible dimensions`);
+      assert.ok(box.bottom <= tabs.y, `peek ${name} must fit above the tab bar: ${JSON.stringify({ box, tabs })}`);
+      assert.ok(box.x >= 0 && box.y >= 0 && box.right <= viewport.width && box.bottom <= viewport.height,
+        `peek ${name} must fit fully inside the viewport: ${JSON.stringify({ box, viewport })}`);
+      assert.ok(box.y >= layer.y, `peek ${name} stays inside the drawer`);
+    }
+    for (const selector of [COMPOSER, '[data-testid=composer-submit]']) {
+      const unobscured = await browser.evaluate(`(() => { const e = ${q(`${LAYER} ${selector}`)}, r = e.getBoundingClientRect();
+        return [[r.x + r.width / 2, r.y + 1], [r.x + r.width / 2, r.bottom - 1], [r.x + 1, r.y + r.height / 2], [r.right - 1, r.y + r.height / 2]]
+          .every(([x, y]) => e.contains(document.elementFromPoint(x, y))); })()`);
+      assert.ok(unobscured, `peek ${selector} is not clipped or covered at any edge`);
+    }
     await browser.tap(q(LAYER + ' ' + COMPOSER));
     await browser.until('the drawer is open with its title row', `!!${q('[data-testid=agent-layer-action-expand]')}`, 10000);
     await shot('phone-3-drawer-full.png');
