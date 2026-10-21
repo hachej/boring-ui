@@ -52,8 +52,8 @@ function candidates(paths) {
   return [...found];
 }
 
-/** `extraDirectories` are more folders (relative to the repository root) to scan for classes, such as other registry items; `extraCss` is more theme CSS (an example's own tokens). */
-export async function buildTailwind({ extraDirectories = [], extraCss = '' } = {}) {
+/** `extraDirectories` add typed component folders; `extraFiles` add individual sources (for example JSX pages). Paths are relative to the repository root. `extraCss` adds an example's theme CSS. */
+export async function buildTailwind({ extraDirectories = [], extraFiles = [], extraCss = '' } = {}) {
   const items = JSON.parse(readFileSync(join(root, 'registry.json'), 'utf8')).items.filter(entry => TAILWIND_ITEMS.includes(entry.name));
   const input = `@layer theme, base, components, utilities;
 @import "tailwindcss/theme.css" layer(theme);
@@ -76,5 +76,5 @@ ${extraCss}`;
     loadModule: async () => { throw new Error('Tailwind plugins and configs are not used in the studio'); },
   });
   const sources = [...files(join(root, 'examples/app-shell/components/ui'), /\.(tsx?|css)$/), ...[...TAILWIND_ITEMS.map(name => `registry/${name}`), ...extraDirectories].flatMap(directory => files(join(root, directory), /\.(tsx?|css)$/)), ...files(join(root, 'lab/studio'), /\.(jsx|mjs|css)$/).filter(path => !path.endsWith('tailwind.mjs'))];
-  return compiler.build(candidates(sources));
+  return compiler.build(candidates([...sources, ...extraFiles.map(path => join(root, path))]));
 }

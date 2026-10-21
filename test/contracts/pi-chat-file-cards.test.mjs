@@ -21,7 +21,7 @@ const { AmbientChat } = await load('pi-ambient', `export { AmbientChat } from '$
 const SENT = 'Read @uploads/report-1a2b3c4d.pdf please';
 const LONG = `# Notes\n\n${'Fictional paragraph line.\n'.repeat(120)}`;
 
-async function harness(t, { attachments, mentions, onOpenFile, pasteToFile, locale, component, beforeSubmit, lostAdmission = false, admissionGate, extra = {} } = {}) {
+async function harness(t, { attachments, mentions, onOpenFile, pasteToFile, locale, component, beforeSubmit, lostAdmission = false, admissionGate, stagedFailure, extra = {} } = {}) {
   const { Window } = await import('happy-dom');
   const window = new Window({ url: 'https://fictional.invalid/', settings: { disableIframePageLoading: true } });
   const names = ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node', 'Text', 'addEventListener', 'removeEventListener', 'MutationObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'IS_REACT_ACT_ENVIRONMENT', 'ResizeObserver', 'localStorage', 'sessionStorage'];
@@ -37,13 +37,16 @@ async function harness(t, { attachments, mentions, onOpenFile, pasteToFile, loca
   const { act, createElement } = await import('react');
   const { createRoot } = await import('react-dom/client');
   const fake = createFakeChatModel();
-  const native = await NativeHarness.open(new MemoryStorage(), { registry: createRegistry(), models: fake.models }, context);
+  const staged = stagedFailure === undefined ? undefined : await import('../../examples/staged-chat/host.mjs').then(async ({ createStagedHost, withDemoFailure }) => {
+    const host = await createStagedHost(); return { host, conversation: withDemoFailure(host.threads.Questions, () => stagedFailure) };
+  });
+  const native = staged?.host.harness ?? await NativeHarness.open(new MemoryStorage(), { registry: createRegistry(), models: fake.models }, context);
   const container = document.createElement('div'); document.body.append(container);
   const ui = createRoot(container);
-  const conversation = await native.createConversation({ ownership: { kind: 'ownerless' }, agent: { model: fake.model } }, context);
+  const conversation = staged?.conversation ?? await native.createConversation({ ownership: { kind: 'ownerless' }, agent: { model: fake.model } }, context);
   let submissions = 0;
   const selected = lostAdmission ? { id: conversation.id, watch: conversation.watch.bind(conversation), abort: conversation.abort.bind(conversation), entries: conversation.entries.bind(conversation), commit: conversation.commit.bind(conversation), submit: async (...args) => { if (admissionGate) await admissionGate; const result = await conversation.submit(...args); submissions++; if (lostAdmission === true || submissions === lostAdmission) throw new Error('Fictional lost admission response'); return result; } } : conversation;
-  const controller = createNativeChatController({ identity: { runtimeId: 'fixture', scopeId: 'fixture', principalId: 'person' }, context, conversation: selected, beforeSubmit });
+  const controller = createNativeChatController({ identity: { runtimeId: 'fixture', scopeId: 'fixture', principalId: 'person' }, context, conversation: selected, beforeSubmit, restoreOnError: Boolean(staged) });
   await controller.connect();
   t.after(async () => {
     await act(async () => ui.unmount()); container.remove();
@@ -56,7 +59,7 @@ async function harness(t, { attachments, mentions, onOpenFile, pasteToFile, loca
   const Component = component ?? PiChat;
   const renderWith = async next => { Object.assign(props, next); await act(async () => ui.render(createElement(Component, props))); };
   await renderWith({});
-  return { window, controller, container, act, rerender: renderWith, unmount: () => act(async () => ui.unmount()), write: async model => {
+  return { window, controller, container, act, context, rerender: renderWith, unmount: () => act(async () => ui.unmount()), write: async model => {
     await act(async () => { await conversation.submit({ type: 'write', entry: { kind: 'message', model } }, context); });
     await act(async () => new Promise(resolve => setTimeout(resolve, 30)));
   } };
@@ -362,7 +365,7 @@ async function voiceHarness(t, config = {}) {
     if (uploadError) throw new Error('fictional upload failure');
     return [{ path: `uploads/${files[0].name}`, name: files[0].name }];
   } };
-  const ui = await harness(t, { extra: { voiceMessage }, attachments, beforeSubmit: config.beforeSubmit, lostAdmission: config.lostAdmission, admissionGate: config.admissionGate });
+  const ui = await harness(t, { extra: { voiceMessage, ...config.extra }, attachments, beforeSubmit: config.beforeSubmit, lostAdmission: config.lostAdmission, admissionGate: config.admissionGate, stagedFailure: config.stagedFailure });
   const before = Object.getOwnPropertyDescriptor(globalThis, 'MediaRecorder');
   class Recorder extends EventTarget {
     static isTypeSupported(type) { return !config.mp4 || type === 'audio/mp4'; }
@@ -443,7 +446,7 @@ test('a failed transcription stays failed until Retry, reusing the uploaded audi
   await ui.until(() => !!ui.container.querySelector('[data-testid=voice-retry]'));
   assert.equal(ui.sends.length, 0); assert.ok(ui.container.querySelector('[data-testid=voice-audio-only]'));
   assert.doesNotMatch(ui.container.querySelector('[data-testid=voice-pending]').textContent, /0:00/, 'a zero-second failure never claims a known duration');
-  const pending = { id: 1, path: ui.uploads[0].files[0].name, phase: 'transcribe-failed', seconds: 10, retry() {}, audioOnly: undefined, discard() {} };
+  const pending = { id: 1, path: `uploads/${ui.uploads[0].files[0].name}`, phase: 'transcribe-failed', seconds: 10, retry() {}, audioOnly: undefined, discard() {} };
   await ui.rerender({ pendingVoice: [pending] });
   assert.equal(ui.container.querySelector('[data-testid=voice-pending-duration]')?.textContent, '0:10', 'a known positive duration stays visible');
   for (const seconds of [0, NaN, Infinity, -1]) {
@@ -699,4 +702,52 @@ test('failed voice is a transcript row and leaves the mic available for another 
   assert.equal(ui.container.querySelectorAll('[data-testid=voice-pending]').length, 1, 'discard affects only its own recording');
   ui.failTranscribe(false); await ui.click('voice-retry'); await ui.until(() => ui.sends.length === 1);
   assert.equal(ui.uploads.length, 2, 'retry reuses the surviving recording');
+});
+
+test('an explicit display limit counts pending voice rows and Show earlier retains hidden failures and native messages', async t => {
+  const ui = await voiceHarness(t, { extra: { displayLimit: 1 } });
+  await ui.write([{ role: 'user', content: 'An earlier fictional message', timestamp: 0 }]);
+  ui.failTranscribe(true);
+  await ui.pointer('pointerdown'); await ui.pointer('pointerup');
+  await ui.until(() => !!ui.container.querySelector('[data-testid=voice-retry]'));
+  assert.equal(ui.container.querySelectorAll('[data-row-id], [data-local-voice]').length, 1, 'the pending message uses the same display-row budget as native rows');
+  assert.doesNotMatch(ui.container.querySelector('[data-testid=transcript]').textContent, /An earlier fictional message/);
+  await ui.pointer('pointerdown'); await ui.pointer('pointerup');
+  await ui.until(() => ui.uploads.length === 2 && ui.container.querySelector('[data-testid=voice-pending]')?.dataset.state === 'transcribe-failed');
+  assert.equal(ui.container.querySelectorAll('[data-row-id], [data-local-voice]').length, 1);
+  assert.equal(ui.container.querySelector('[data-testid=voice-pending]').dataset.voiceId, '2', 'the newest pending row remains visible');
+  await ui.click('transcript-history-load');
+  assert.equal(ui.container.querySelectorAll('[data-testid=voice-pending]').length, 2, 'Show earlier restores the older failed row without dropping its actions');
+  assert.match(ui.container.querySelector('[data-testid=transcript]').textContent, /An earlier fictional message/);
+  assert.equal(ui.uploads.length, 2); assert.equal(ui.sends.length, 0);
+});
+
+for (const failure of [0, 1, 2]) test(`recorded voice composes with native staged answers and transcript-only restoration (stage failure ${failure})`, { timeout: 20000 }, async t => {
+  const ui = await voiceHarness(t, { stagedFailure: failure, extra: {
+    presentation: 'natural', displayLimit: 24, hideLine: line => line.startsWith('::meta '),
+    renderEntry: entry => entry.kind === 'fictional.triage.stage' ? { inline: true, content: `Stage ${entry.data.stage}: ${entry.data.state}`, status: entry.data.state === 'running' ? 'Validating fictional note' : null } : undefined,
+  } });
+  await ui.act(async () => ui.controller.setText('A later typed draft'));
+  await ui.pointer('pointerdown'); await ui.pointer('pointerup');
+  await ui.until(() => ui.sends.length === 1 && ui.controller.getSnapshot().send.kind === 'admitted');
+  await ui.act(async () => ui.controller.conversation.waitForIdle(ui.context));
+  await ui.until(() => failure ? !!ui.container.querySelector('[data-testid=response-error]') : ui.container.textContent.includes('Synthèse fictive'));
+  const input = ui.controller.getSnapshot().view.entries.find(entry => entry.kind === 'fictional.triage.question');
+  assert.equal(input.model[0].content, ui.sends[0][1].text, 'the native staged input retains the exact audio reference and transcript');
+  assert.match(input.model[0].content, /^@uploads\/voice-.*\.webm Je mange une salade$/);
+  assert.deepEqual(ui.sends[0][1].restore, { text: 'Je mange une salade' });
+  assert.equal(ui.uploads.length, 1); assert.equal(ui.transcriptions.length, 1); assert.equal(ui.sends.length, 1);
+  assert.ok(ui.container.querySelector('[data-testid=voice-bubble]'), 'staged rendering keeps the retained voice bubble');
+  assert.doesNotMatch(ui.container.textContent, /::meta/);
+  assert.equal(ui.container.querySelectorAll('[data-role=assistant]').length, 1, 'validated stages retain one native answer');
+  assert.equal(ui.container.querySelector('[data-testid=voice-pending]'), null);
+  if (failure === 1) {
+    await ui.until(() => ui.controller.getSnapshot().draft.text.includes('Je mange une salade'));
+    assert.equal(ui.controller.getSnapshot().draft.text, 'Je mange une salade\nA later typed draft', 'empty first-stage failure restores only the transcript ahead of later typing');
+  } else {
+    assert.equal(ui.controller.getSnapshot().draft.text, 'A later typed draft');
+    assert.match(ui.container.textContent, /Note de triage fictive/);
+  }
+  assert.equal(ui.controller.getSnapshot().draft.text.includes('@uploads/'), false);
+  assert.equal(ui.container.querySelectorAll('[data-testid=response-error]').length, failure ? 1 : 0);
 });

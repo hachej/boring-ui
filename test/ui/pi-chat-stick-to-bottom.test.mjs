@@ -212,3 +212,17 @@ test('a library clamp followed by growth, before its queued scroll event, does n
   await chat.frames(300);
   assert.ok(chat.distanceFromBottom() <= 2, `the reader was left ${chat.distanceFromBottom()}px above the latest row`);
 });
+
+test('a stage card appended while reading earlier text does not move the reader', async t => {
+  const chat = await harness(t);
+  const rows = [{ key: 'question' }, { key: 'answer' }];
+  chat.heights.question = 60; chat.heights.answer = 1000;
+  await chat.render(rows); chat.expose().scrollToBottom('instant'); await chat.frames(100);
+  chat.scrollTo(120); await chat.frames(100);
+  rows.push({ key: 'stage-two-card' }); chat.heights['stage-two-card'] = 140;
+  await chat.render(rows); await chat.frames(300);
+  assert.equal(chat.scroller().scrollTop, 120);
+  chat.heights.answer = 1400;
+  await chat.render(rows); await chat.frames(300);
+  assert.equal(chat.scroller().scrollTop, 120);
+});

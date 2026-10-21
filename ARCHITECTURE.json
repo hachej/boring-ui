@@ -196,6 +196,7 @@
         "@tldraw/store",
         "@json-render/react/schema",
         "@earendil-works/chord/delta",
+        "@earendil-works/chord/context",
         "@tldraw/tlschema",
         "lucide-react",
         "@base-ui/react",

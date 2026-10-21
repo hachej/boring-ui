@@ -132,8 +132,8 @@ export interface ReplyRef {
   /** The model that wrote the last round of the reply, as its message names it (`provider` and `model` ids). */
   readonly model?: { readonly provider: string; readonly modelId: string } | undefined;
   /**
-   * How long the model took to answer in the last round of the reply (ms): Pi's own `AssistantMessage.durationMs`, measured monotonically
-   * and kept in the transcript. It excludes queue time, earlier rounds, tool runs and retry delays, and is absent for a message written
+   * Sum of the model rounds that form the reply (ms): Pi's own `AssistantMessage.durationMs`, measured monotonically
+   * and kept in the transcript. It excludes queue time, tool runs and retry delays, and is absent for a message written
    * before Pi recorded it. It is never computed from the clock at render time.
    */
   readonly durationMs?: number | undefined;

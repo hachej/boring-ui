@@ -40,7 +40,7 @@ export function preparing(input: { readonly natural: boolean; readonly waitingFo
 }
 
 /** The one status line of natural presentation. */
-export function PreparingStatus() {
+export function PreparingStatus({ children }: { readonly children?: ReactNode }) {
   const { labels } = useChatText();
-  return <p role="status" data-testid="preparing" className="m-0 flex items-center gap-2 px-1 text-xs text-muted-foreground"><Shimmer>{labels.preparing}</Shimmer></p>;
+  return <p role="status" data-testid="preparing" className="m-0 flex items-center gap-2 px-1 text-xs text-muted-foreground"><Shimmer>{children ?? labels.preparing}</Shimmer></p>;
 }

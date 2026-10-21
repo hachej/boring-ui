@@ -55,6 +55,10 @@ export interface RowContext {
   readonly replyActions?: ((reply: { readonly key: string; readonly text: string; readonly timestamp?: number | undefined }, host: ReactNode) => ReactNode) | undefined;
   /** The host's actions for a settled reply (`messageActions`). */
   readonly messageActions?: ((reply: ReplyRef) => readonly BlockAction[]) | undefined;
+  readonly historicalMessageActions?: boolean | undefined;
+  /** Host-owned per-answer unread indicator; rendering never marks an answer seen. */
+  readonly unread?: ((reply: ReplyRef) => ReactNode) | undefined;
+  readonly replyError?: ((reply: ReplyRef) => ReactNode) | undefined;
   /** A line under a finished reply (not while it streams, runs a tool or waits to retry), after its actions (a host shows which model answered and how long it took). */
   readonly replyFooter?: ((reply: ReplyRef) => ReactNode) | undefined;
   /** Fork the conversation after a settled reply (its last native entry): adds a Fork button next to Copy. */
@@ -249,7 +253,7 @@ export function RowView({ row, context }: { readonly row: Row; readonly context:
 }
 
 function RowBody({ row, context: liveContext }: { readonly row: Row; readonly context: RowContext }) {
-  const context: RowContext = row.historical ? { ...liveContext, answer: undefined, onFork: undefined, messageActions: undefined, replyActions: undefined, commandMentions: undefined } : liveContext;
+  const context: RowContext = row.historical ? { ...liveContext, answer: undefined, onFork: undefined, messageActions: liveContext.historicalMessageActions ? liveContext.messageActions : undefined, replyActions: undefined, commandMentions: undefined } : liveContext;
   const { labels, icons } = useChatText();
   const renderMention = useMemo(() => context.pieces?.mentions ? (path: string, text: string) => <UserMention path={path} text={text} open={context.pieces?.openMention} render={context.pieces?.renderMention} /> : undefined, [context.pieces]);
   switch (row.type) {
@@ -280,6 +284,8 @@ function RowBody({ row, context: liveContext }: { readonly row: Row; readonly co
       const host = nativeActions && row.text && context.messageActions
         ? <BlockActions iconOnly actions={context.messageActions(replyRef(row))} testId="reply-action" menuLabel={labels.moreActions} />
         : null;
+      const unread = nativeActions && row.text ? context.unread?.(replyRef(row)) : null;
+      const footer = nativeActions && !row.active && row.text ? context.replyFooter?.(replyRef(row)) : null;
       return <article data-row-id={row.key} data-role="assistant" aria-live={row.historical ? 'off' : undefined} data-streaming={row.streaming ? 'true' : undefined} className="group/message">
         <Message><MessageContent>
         <div className="flex flex-col gap-3">
@@ -291,6 +297,7 @@ function RowBody({ row, context: liveContext }: { readonly row: Row; readonly co
               return <ActivityBlock key={chunk.key} steps={chunk.steps} state={state} streaming={row.streaming} developer={context.developer} {...(context.onOpenImage ? { onOpenImage: context.onOpenImage } : {})} />;
             }
             const part = chunk.part;
+            if (part.kind === 'card') return <div key={part.key}>{part.content}</div>;
             if (part.kind === 'text') return <Bubble key={part.key} variant="ghost"><BubbleContent><Markdown text={part.text} renderMention={renderMention} streaming={row.streaming && part === lastText && row.parts[row.parts.length - 1] === part}
               {...(settled && context.commandMentions ? { commandMentions: context.commandMentions } : {})} {...(context.onCopy ? { onCopy: context.onCopy } : {})} /></BubbleContent></Bubble>;
             if (part.kind === 'thinking') return null; // reasoning is a step of an activity block
@@ -306,15 +313,16 @@ function RowBody({ row, context: liveContext }: { readonly row: Row; readonly co
           </ul>}
           {row.streaming && row.parts.length === 0 && !context.natural && <p data-testid="working" className="m-0 text-sm"><Shimmer>{labels.thinking}</Shimmer></p>}
         </div>
-        {row.stopReason === 'error' && <Notice tone="error" testid="response-error" icon={<AlertCircleIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />}>{row.errorMessage ?? labels.responseFailed}</Notice>}
+        {row.stopReason === 'error' && <Notice tone="error" testid="response-error" icon={<AlertCircleIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />}>{context.replyError?.(replyRef(row)) ?? row.errorMessage ?? labels.responseFailed}</Notice>}
         {row.stopReason === 'aborted' && <Notice tone="muted" testid="interrupted" icon={<CircleSlashIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />}>{labels.interrupted}</Notice>}
+        {unread != null && unread !== false && <div data-testid="reply-unread" className="flex flex-col items-start">{unread}</div>}
         {nativeActions && row.text && context.replyActions?.({ key: row.key, text: row.text, timestamp: row.timestamp }, host)}
         {nativeActions && row.text && !context.replyActions && <div className="mt-1 -ml-2 flex opacity-0 transition-opacity group-focus-within/message:opacity-100 group-hover/message:opacity-100 pointer-coarse:opacity-100 max-sm:opacity-100 motion-reduce:transition-none">
           <CopyButton iconOnly text={row.text} label={labels.copyResponse} {...(context.onCopy ? { onCopy: context.onCopy } : {})} />
           {context.onFork && row.entryId && <Button size="icon-sm" variant="ghost" aria-label={labels.fork} title={labels.forkHint} data-testid="fork-reply"
             onClick={() => context.onFork!(row.entryId!)}><icons.fork data-icon="inline-start" aria-hidden="true" /></Button>}
           {host}</div>}
-        {nativeActions && !row.active && row.text && context.replyFooter && <MessageFooter>{context.replyFooter(replyRef(row))}</MessageFooter>}
+        {footer != null && footer !== false && <MessageFooter>{footer}</MessageFooter>}
         </MessageContent></Message>
       </article>;
     }

@@ -494,7 +494,7 @@ test('a host reply footer sees the model and timestamp of the last round of a se
 const footerContext = seen => ({ developer: false, groupTool: undefined, commandMentions: undefined, onOpenImage: undefined, onCopy: undefined, pieces: undefined, answer: undefined, artifacts: undefined,
   replyFooter: reply => { seen.push(reply); return createElement('small', { 'data-testid': 'footer' }, `${reply.model?.modelId} ${reply.durationMs}`); } });
 
-test('a reply footer waits for the whole turn: no footer while a tool runs or a retry waits, and the last round reports its own durationMs', async () => {
+test('a reply footer waits for the whole turn: no footer while a tool runs or a retry waits, and the answer sums the native rounds’ durationMs', async () => {
   const { derive } = await load('rows', 'rows.ts');
   const { RowView } = await load('message', 'message.tsx');
   const rounds = [assistant([{ type: 'text', text: 'let me look' }, call('1', 'read')], { model: 'a', timestamp: 100, durationMs: 700 }), assistant([{ type: 'text', text: 'done' }], { model: 'b', timestamp: 250, durationMs: 1200 })];
@@ -508,10 +508,10 @@ test('a reply footer waits for the whole turn: no footer while a tool runs or a 
   const retrying = html({ entries: entries([user('go')], [rounds[0]]), docs: { 'pi.live': { run: { taskId: 1 }, generation: { retry: { attempt: 1 } } } } });
   assert.equal(retrying.row.active, true);
   assert.ok(!retrying.html.includes('data-testid="footer"'));
-  // Finished: the footer shows the last round's model and Pi's own duration.
+  // Finished: the footer shows the last model and the sum of Pi’s round durations.
   const done = html(settledView);
-  assert.match(done.html, /data-testid="footer">b 1200</);
-  assert.equal(done.seen[0].durationMs, 1200);
+  assert.match(done.html, /data-testid="footer">b 1900</);
+  assert.equal(done.seen[0].durationMs, 1900);
   // A message Pi wrote before it recorded durations has none.
   const legacy = derive({ entries: entries([user('go')], [assistant([{ type: 'text', text: 'ok' }])]), docs: {} }, options('expert')).rows[1];
   assert.ok(!('durationMs' in legacy));
@@ -523,7 +523,7 @@ test('an empty final round still names the model, time and duration of the round
   const rows = derive(view, options('expert')).rows;
   assert.equal(rows.length, 2);
   assert.deepEqual(rows[1].model, { provider: 'x', modelId: 'b' });
-  assert.equal(rows[1].timestamp, 300); assert.equal(rows[1].durationMs, 9);
+  assert.equal(rows[1].timestamp, 300); assert.equal(rows[1].durationMs, 14);
   assert.equal(rows[1].entryId, '4');
   assert.equal(rows[1].text, 'checking');
 });
