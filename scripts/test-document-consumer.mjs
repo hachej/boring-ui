@@ -38,10 +38,10 @@ try {
   mkdirSync(join(directory, 'test/fixtures'), { recursive: true });
   mkdirSync(join(directory, 'shared'), { recursive: true });
   // files.test.mjs is not copied: it drives the workspace provider over Pi's environments, which this consumer must not install.
-  const publicTests = ['files-remote.test.mjs', 'ui.test.mjs', 'ui-html.test.mjs', 'ui-remote-save.test.mjs', 'ui-text-drafts.test.mjs'].map(name => 'test/packages/' + name);
+  const publicTests = ['files-remote.test.mjs', 'ui.test.mjs', 'ui-html.test.mjs', 'ui-remote-save.test.mjs', 'ui-text-drafts.test.mjs', 'ui-mark-store.test.mjs', 'ui-markdown-quote.test.mjs'].map(name => 'test/packages/' + name);
   for (const path of [...publicTests, 'shared/sqlite-workspaces.mjs', 'test/fixtures/text-draft-sqlite.mjs', 'test/fixtures/text-draft-sqlite-crash-child.mjs']) copyFileSync(join(root, path), join(directory, path));
   run(process.execPath, ['--test', '--experimental-test-isolation=none', ...publicTests], isolated);
-  writeFileSync(join(directory, 'browser.mjs'), "export { createResourceClient } from '@hachej/boring-files/remote';\n");
+  writeFileSync(join(directory, 'browser.mjs'), "export { createResourceClient } from '@hachej/boring-files/remote';\nexport { createMarkStore } from '@hachej/boring-ui-kit/mark-store';\nexport { captureMarkdownQuote } from '@hachej/boring-ui-kit/markdown-quote';\n");
   run(process.execPath, ['node_modules/esbuild/bin/esbuild', 'browser.mjs', '--bundle', '--platform=browser', '--format=esm', '--outfile=browser.js', '--metafile=browser-meta.json'], isolated);
   const inputs = Object.keys(JSON.parse(readFileSync(join(directory, 'browser-meta.json'), 'utf8')).inputs);
   assert.ok(inputs.some(path => path.endsWith('/remote.js')));

@@ -330,6 +330,74 @@ try {
     assert.ok(mic.y >= composer.y && mic.bottom <= composer.bottom, 'the microphone is in the composer row, not over the messages');
   });
 
+  await step('1b Take a photo (phone): the in-page camera sits above the layer, a shot lands in the draft and the snap is unchanged; Escape closes only the camera', async () => {
+    const CAMERA = '[data-testid=camera-sheet]', ATTACHMENT = '[data-testid=composer] [data-testid=attachment]';
+    const photo = async from => {
+      assert.equal(await browser.evaluate(snap), from, `starts at ${from}`);
+      // The finger that opened the layer can leave its compatibility mouse press on the "+" under it, which opens the menu: start from a closed menu.
+      if (await browser.evaluate(`${q('[data-testid=composer-plus]')}.getAttribute('aria-expanded') === 'true'`)) {
+        await browser.press('Escape');
+        await browser.until('the menu closed', `${q('[data-testid=composer-plus]')}.getAttribute('aria-expanded') === 'false'`);
+        await pause(500);
+        assert.equal(await browser.evaluate(snap), from, 'Escape closed only the menu');
+      }
+      await tap('[data-testid=composer-plus]');
+      await browser.until('the menu has Take a photo', `!!${q('[data-testid=composer-take-photo]')}`);
+      await pause(400);
+      await tap('[data-testid=composer-take-photo]');
+      await browser.until('the camera is open and ready', `!!${q(CAMERA)} && !${q('[data-testid=camera-shoot]')}?.disabled`, 15000);
+      const sheet = await browser.evaluate(`(() => { const e = ${q(CAMERA)}, r = e.getBoundingClientRect(), layer = ${q(LAYER)}, hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+        return { fills: r.width >= innerWidth - 1 && r.height >= innerHeight - 1, above: Number(getComputedStyle(e).zIndex) > Number(getComputedStyle(layer).zIndex), hit: !!hit?.closest('[data-testid=camera-sheet]') }; })()`);
+      assert.deepEqual(sheet, { fills: true, above: true, hit: true }, `the camera covers the screen above the layer (${from})`);
+      assert.equal(await browser.evaluate(snap), from, 'opening the camera does not move the sheet');
+      // A tap on the camera screen is an outside press for the drawer: it must change nothing.
+      await tap(CAMERA + ' video'); await pause(500);
+      assert.equal(await browser.evaluate(snap), from, `a tap on the camera leaves the snap at ${from}`);
+      assert.equal(await browser.evaluate(`!!${q(CAMERA)}`), true, 'and the camera stays open');
+    };
+    // From half: shoot.
+    await photo('half');
+    await tap('[data-testid=camera-shoot]');
+    await browser.until('the thumbnail is in the draft', `!${q(CAMERA)} && !!${q(ATTACHMENT + ' img')}`, 15000);
+    await pause(500);
+    assert.equal(await browser.evaluate(snap), 'half', 'a shot leaves the snap at half');
+    assert.equal(await browser.evaluate(`!!${q(LAYER)}`), true);
+    await browser.evaluate(`${q(ATTACHMENT + ' button')}.click()`);
+    await browser.until('the thumbnail removed', `!${q(ATTACHMENT)}`);
+    // From half: Escape closes only the camera.
+    await photo('half');
+    await browser.press('Escape');
+    await browser.until('the camera closed', `!${q(CAMERA)}`);
+    await pause(700);
+    assert.equal(await browser.evaluate(snap), 'half', 'Escape closed the camera and nothing else');
+    // From full.
+    await tap(INPUT);
+    await browser.until('full', `${snap} === 'full'`);
+    await settle();
+    await photo('full');
+    await tap('[data-testid=camera-shoot]');
+    await browser.until('the thumbnail is in the draft', `!${q(CAMERA)} && !!${q(ATTACHMENT + ' img')}`, 15000);
+    await pause(500);
+    assert.equal(await browser.evaluate(snap), 'full', 'a shot leaves the snap at full');
+    await browser.evaluate(`${q(ATTACHMENT + ' button')}.click()`);
+    await browser.until('the thumbnail removed', `!${q(ATTACHMENT)}`);
+    await photo('full');
+    await browser.press('Escape');
+    await browser.until('the camera closed', `!${q(CAMERA)}`);
+    await pause(700);
+    assert.equal(await browser.evaluate(snap), 'full', 'Escape closed the camera and nothing else');
+    await browser.screenshot('phone-camera-closed.png');
+    // Back to half for the next step: a tap above the sheet steps down to peek, the trigger opens half.
+    await browser.evaluate(`document.activeElement?.blur()`);
+    const layer = await browser.evaluate(rect(LAYER));
+    await touch('touchStart', [[195, layer.y / 2]]); await touch('touchEnd', []);
+    await browser.until('peek', `${snap} === 'peek'`);
+    await settle();
+    await tap(TRIGGER);
+    await browser.until('half', `${snap} === 'half'`);
+    await settle();
+  });
+
   await step('7 a suggestion chip fills the composer and sends nothing', async () => {
     const submits = app.submits.length;
     await browser.evaluate(`(() => { const chip = ${q('[data-testid=agent-layer-sheet] [data-testid=empty-suggestion]')} ?? [...document.querySelectorAll('${LAYER} button')].find(b => b.textContent.includes('Résumé de la semaine')); chip.click(); })()`);
@@ -1032,6 +1100,58 @@ try {
     await live();
     assert.equal(await browser.evaluate(`!!${q('[data-testid=tabbar]')} || !!document.querySelector('[data-testid^=nav-][data-testid$=accueil]')`), false, 'no tab bar and no nav list');
     assert.equal(await browser.evaluate(`!!${q('[data-testid=sidebar-title]')} && !!${q('[data-testid=nav-user]')}`), true, 'title and NavUser only');
+  });
+
+  await step('D75 hover rail at 1440: labels overlay the unchanged page, keyboard and Escape work, 390 keeps tabs', async () => {
+    await browser.emulate('desktop');
+    await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1000, y: 500 });
+    const url = `${app.url}?rail=hover&nav=dashboard`;
+    await send('Page.navigate', { url });
+    await live();
+    const sidebar = '[data-slot=sidebar][data-side=left]', panel = '[data-testid=app-sidebar]', page = '[data-slot=sidebar-inset]';
+    const state = `${q(sidebar)}.dataset.state`;
+    const labelsVisible = `['dashboard', 'repas'].every(id => { const b = document.querySelector('[data-testid=nav-' + id + ']'), s = b.querySelector('span'), r = s.getBoundingClientRect(), p = b.getBoundingClientRect(); return r.width > 0 && r.left >= p.left && r.right <= p.right && r.right > p.left + 40; })`;
+    await browser.until('the slim rail', `${state} === 'collapsed'`);
+    await pause(300);
+    const before = await browser.evaluate(rect(page));
+    const slim = await browser.evaluate(rect(panel));
+    assert.ok(slim.w < 100, `slim rail: ${slim.w}`);
+    assert.equal(await browser.evaluate(labelsVisible), false, 'the labels are clipped in the icon rail');
+    await browser.hover(q('[data-testid=nav-dashboard]'));
+    await browser.until('hover reveals', `${state} === 'expanded' && ${labelsVisible}`);
+    await pause(300);
+    assert.deepEqual(await browser.evaluate(rect(page)), before, 'hover does not move or resize the page');
+    const expanded = await browser.evaluate(rect(panel));
+    assert.ok(expanded.right > before.x + 100, 'the label panel overlays the page');
+    assert.deepEqual(await browser.evaluate(`['dashboard', 'repas'].map(id => document.querySelector('[data-testid=nav-' + id + '] span').textContent)`), ['Tableau de bord', 'Repas']);
+    assert.ok(await browser.evaluate(`(() => { const b = ${q('[data-testid=nav-dashboard]')}, r = b.getBoundingClientRect(); return b.contains(document.elementFromPoint(r.right - 20, r.y + r.height / 2)); })()`), 'the overlay is above the page');
+    await browser.screenshot('desktop-hover-1440.png');
+    await browser.hover(q('[data-testid=header-title]'));
+    await browser.until('leave collapses', `${state} === 'collapsed'`);
+    await pause(300);
+    assert.deepEqual(await browser.evaluate(rect(page)), before);
+    assert.equal(await browser.evaluate(labelsVisible), false);
+    await browser.press('Tab');
+    await browser.until('Tab enters the rail', `document.activeElement === ${q('[data-testid=nav-dashboard]')} && ${state} === 'expanded' && ${labelsVisible}`);
+    assert.deepEqual(await browser.evaluate(rect(page)), before, 'focus does not move or resize the page');
+    await browser.press('Escape');
+    await browser.until('Escape collapses', `${state} === 'collapsed'`);
+    assert.equal(await browser.evaluate(`document.activeElement === ${q('[data-testid=nav-dashboard]')}`), true);
+    await browser.press('Tab');
+    await browser.until('focus within reveals again', `document.activeElement === ${q('[data-testid=nav-repas]')} && ${state} === 'expanded' && ${labelsVisible}`);
+    await browser.press('Enter');
+    await browser.until('the route changes', `!${q('[data-testid=screen-repas]')}.hidden`);
+    assert.deepEqual(await browser.evaluate(rect(page)), before);
+    for (let i = 0; i < 6 && await browser.evaluate(`!!document.activeElement.closest('[data-rail=hover]')`); i++) await browser.press('Tab');
+    await browser.until('focus leaving collapses', `${state} === 'collapsed'`);
+    assert.deepEqual(await browser.evaluate(rect(page)), before);
+    await browser.emulate('phone');
+    await send('Page.navigate', { url });
+    await live();
+    assert.equal(await browser.evaluate(`!!${q(panel)}`), false, 'no sidebar at 390');
+    assert.deepEqual(await browser.evaluate(`[...document.querySelectorAll('[role=tab]')].map(tab => tab.textContent.trim())`), ['Tableau de bord', 'Repas']);
+    await browser.screenshot('phone-hover-option-390.png');
   });
 
   if (failed.length) console.log(`COLLECT: ${failed.length} failing step(s): ${failed.join(' | ')}`);

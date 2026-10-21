@@ -6,6 +6,7 @@ The `markdown-editor` and `html-viewer` items copy thin React wrappers and scope
 | --- | --- | --- |
 | `markdown-editor` | `@hachej/boring-ui-kit/markdown-editor` | `MarkdownController` from `@hachej/boring-ui-kit/markdown` |
 | `html-viewer` | `@hachej/boring-ui-kit/html-viewer` | `HtmlController` from `@hachej/boring-ui-kit/html` |
+| `highlights` | copied `Highlights` over the Markdown editor | borrowed `MarkdownController`, default workspace `MarkStore` or supplied store |
 | `pi-chat` | copied source in `components/pi-chat/` | `NativeChatController` from `@hachej/boring-ui-kit/native-chat` |
 | `pi-ambient` | copied source in `components/pi-ambient/` | the same `NativeChatController` as `pi-chat` |
 | `pi-workspace` | copied source in `components/pi-workspace/` | none: layout driven by props |
@@ -37,6 +38,30 @@ Registry blocks support the shadcn **Base UI style only**. Only the `base-nova` 
 Tokens: `pi-ambient`, `pi-workspace`, `pi-app`, `viewers`, `provider-setup` and `file-tree` depend on `theme` (directly or through a block), so `shadcn add` merges the tokens into the app's CSS file. `pi-chat`, `button`, `dock`, `feedback`, `app-shell` and `agent-target` do not: they use the host's shadcn tokens (`background`, `foreground`, `muted`, `primary`, `border`, `ring`, `destructive` and the rest) and their own layout, and they install no global tokens. A host that has those tokens changes nothing. A host without them must also install `theme.json` (`npx shadcn@4.21.5 add <registry>/theme.json <registry>/<block>.json`), or those items render with semantic colours and focus styling missing (dock's resize indicator loses its colour). The blocks import `cn` from `utils` and controls directly from the consumer's `components/ui/`; the CLI installs each dependency once. `registry.json` owns the current file lists. Theme-carrying installs merge the theme tokens into CSS and keep tokens the host already defines.
 
 `<registry>` is wherever `public/r/` is served. Items name their registry dependencies as absolute URLs of their own release (`<registry>/pi-chat.json`, `<registry>/pi-workspace.json`), so no `registries` line is needed in `components.json`. `pi-ambient` needs `pi-workspace` because the ambient window opens artifacts in the same panel layout; `pi-workspace` never needs `pi-ambient` (the host chooses to render `AmbientChat` when the chat floats). Examples: [`lab/studio`](../lab/studio/README.md) assembles every block; [`examples/ambient`](../examples/ambient/README.md) uses `pi-chat` and `pi-ambient` only.
+
+## Anchored Markdown highlights
+
+Install `<registry>/highlights.json`. It composes `markdown-editor` and the host's
+Base UI Button, Textarea, Label and DropdownMenu; it adds no Sheet or owned
+primitive. Pass `<Highlights controller={controller} resource={{ client, identity }}
+locator={locator} locale="fr" />`, where `client` is the same workspace resource
+client used by the document. Opening creates no file; add/comment/remove saves
+`<doc>.marks.json` conditionally. `locale="en"` is the default for new controls;
+the existing editor keeps its current labels.
+
+An app can borrow a `store={store}` implementing `MarkStore` instead, or render
+`marks={[{ id, anchor, colour: 'accent', actions: [{ id, label, run }] }]}` without
+storage. `actions` are trusted host callbacks, not sidecar data. Theme colours are
+`accent`, `primary` and `muted`; decorations never write Markdown formatting.
+Unplaced marks have a missing/ambiguous tray. Choosing a candidate captures fresh
+context and saves it through the store; indistinguishable contexts remain a
+version-local confirmation rather than guessed persistent identity.
+
+See [the owning anchor/storage semantics](../docs/architecture/FEEDBACK.md#markdown-quotes-and-document-marks)
+and the [UI store API](../packages/ui/README.md#document-marks).
+`npm run highlights:journey` drives the fictional SQLite workspace through HTTP,
+including a stale second tab and phone/desktop FR/EN light/dark screenshots under
+`.cache/evidence/D78/`. No agent, model credentials or D-76 conflict UI is needed.
 
 ## Updating installed blocks
 
@@ -348,6 +373,8 @@ Host actions: `headerActions` on the `agent` or `improve` spec are icon buttons 
 
 The screen layout (`AppShell`) takes an optional `locale` (`'en' | 'fr'`) for its own words (« Se déconnecter », « Plus », « Navigation »); the agent's `chatProps.locale` wins when it sets one; otherwise `locale`; otherwise English. The compact tab bar is `role="tablist"` (labelled « Navigation ») with `role="tab"` items (`data-testid="tab-<id>"`); the current one has `aria-selected="true"`, and « Plus » is one more tab when there are more than four screens. Tests locate tabs by these roles. The account sheet is titled « Compte » (the person's name is shown once, in the person block).
 
+`AppShell rail="hover"` keeps the wide-screen navigation at icon-rail width. Pointer hover or keyboard focus within reveals the native sidebar's labels over the page without changing the page width. Pointer leave, focus leaving the rail, or Escape collapses it. Escape keeps keyboard focus on the current control. Touch does not trigger hover expansion, and phones keep the same tab bar. The default `rail="icon"` preserves the existing sidebar toggle and initial state for each layout. Preview the option in `examples/app-shell` with `?rail=hover&nav=dashboard`.
+
 The account theme appears when the account gives `theme: { value, onChange }` (`value` is the resolved `'light' | 'dark'`: the host resolves `system`). The compact sheet uses the consumer's Switch. The expanded menu uses its registered DropdownMenuCheckboxItem, preserving arrow-key navigation and close-on-selection. Without `theme` there is no row. The shell's root carries the `app-shell` class in every layout, so the item's css reset (`.app-shell :where(button, [role=button])`) reaches its own header and nav buttons and the popups it portals to the body (the sheets, the account menu, the agent drawer and panel) even without preflight. No wrapper is needed. Vendoring by copying files must also copy the item's `css` into the app's global stylesheet; the files alone leave those buttons unstyled.
 
 Conversations: the agent's chat in the layer takes the same `conversations` as any `PiChat`, through `chatProps.conversations`. Build it with `useConversations` (now in `pi-chat/use-conversations.ts`, re-exported by `pi-app`, one implementation) over the host's `createConversationsHandler` of `@hachej/boring-agent/conversations`, at a relative per-agent endpoint: `chatProps: { conversations: useConversations({ endpoint: '_agent/coach/conversations', fetch, activeId, onSelect }) }`. The header's History then opens the searchable list with New, rename, archive and delete, and replies get Fork; `onSelect` (also called by New and fork) is where the host opens that conversation's controller. The layer is a drawer or a narrow right panel, so History is the popover or sheet: the side column of `pi-app` needs a pane at least 720px wide (`history-column.tsx`) and is not part of `app-shell`.
@@ -624,7 +651,9 @@ Artifacts: with `artifactPanel` (a render function the host writes with the view
 
 `AgentNotifications` is a polite live region of toasts (status icon, title, a one-line summary of the final reply, close). `AmbientChat` feeds its store when its own run finishes, fails (toast kind `error`) or waits for an answer (`input`, never auto-dismissed, taken back when answered); a toast is not raised while the window is open on that conversation. A host pushes events for anything else with `store.push({ kind, title, summary, conversationId })`, or lets `watchConversation` do it. `autoDismissMs` (default 8000, 0 keeps them), `maxToasts`, hover and focus pause the timer, Escape closes the focused toast; a click opens that conversation (`conversations.onSelect`, then the window expands). With `systemNotifications`, a bell in the header asks for browser notification permission only when the person clicks it, and a system notification is shown only while the page is hidden, so a host whose connection feeds the store passes `pauseWhenHidden: false` to `createRemoteChat` (by default the stream pauses while hidden and nothing would arrive); `browser-notify.ts` is the one file that touches `Notification`, feature-detects it and never asks on load.
 
-Secure-context capabilities are the host's: the voice button in the screenshots needs `getUserMedia`, which exists only on HTTPS or localhost, so it is a `tools` slot and not part of the component. `examples/ambient/mic.mjs` shows the guarded pattern (no button where it is missing); `npm run check` fails any other use of `Notification`, `getUserMedia` or `navigator.mediaDevices` in browser-reachable code.
+Secure-context capabilities are the host's: the voice button in the screenshots needs `getUserMedia`, which exists only on HTTPS or localhost, so a host's own button is a `tools` slot and not part of the component. `examples/ambient/mic.mjs` shows the guarded pattern (no button where it is missing); `npm run check` fails any other use of `Notification`, `getUserMedia` or `navigator.mediaDevices` in browser-reachable code, except the two kit-shipped, feature-detecting exceptions: the feedback microphone below and the pi-chat camera.
+
+The `pi-chat` item ships the camera: on a touch device (`(pointer: coarse)`) with `canAttach` and an `accept` that admits images, the "+" menu has "Take a photo" (`camera-sheet.tsx`). It opens a full-screen in-page camera (`role="dialog"`, `data-boring-overlay`, one layer above the app shell's point layer) only when tapped; the shutter hands a JPEG scaled to at most 1600px to the same path as a picked file. Close, Escape and unmounting stop the camera; where it cannot open (refused, no media devices, insecure page) the sheet offers the phone's own camera through a file input. Inside the app shell's agent layer, `data-boring-overlay` keeps taps and focus in the overlay from stepping the layer down.
 
 The `feedback` item ships the microphone button: `VoiceInput` (`feedback/voice-input.tsx`) is the `tools` slot of `PiChat` or `AmbientChat` (`tools={<VoiceInput controller={controller} transcribe={transcribe} />}`). The first click asks for the microphone (`createVoiceCapture` of `@hachej/boring-feedback/page`, opened only from that click), the second stops and calls `transcribe(audio: Blob, signal)`, and the trimmed text is appended to the composer draft. It is never sent: the person reads it and presses Send. A cancel control shows while recording; cancel, a stop that fails, or unmounting releases the microphone and drops any transcription in flight. A refused microphone says what to do (blocked, none found, busy, insecure page) in the chat's own words (`voiceDenied`, `voiceNoMicrophone` and the rest in `labels.ts` and `labels-fr.ts`). Speech-to-text is the host's: `transcribe` posts the Blob to the host's own endpoint.
 
@@ -849,6 +878,50 @@ and `parseDiagram(textOrValue)` are exported: the maquette viewer draws its work
 (40 nodes, 80 edges, 12 groups); an edge to an unknown node is dropped. Invalid JSON, or a file without nodes, shows an inline error. A maquette's
 `workflow` may instead be a relative `*.diagram.json` path: the viewer reads it from the maquette's folder through the kind renderer's `read`
 (`ArtifactKindViewProps.read`, passed by the artifact panel) when How it works opens.
+
+## Typed records (`record-viewer`)
+
+`record-viewer` exports `RecordTable`, `RecordList`, `RecordsViewer` and `createRecordsKind` from `components/record-viewer/record-viewer`. It composes the host's shadcn table, badge, item, button, alert and empty components. `AgentWorkspace` opens `*.records.json` by default; app `artifactKinds` win. This is host presentation, not a Pi execution extension.
+
+```json
+{
+  "kind": "records@1",
+  "columns": [
+    { "key": "name", "label": "Article", "type": "text" },
+    { "key": "aisle", "label": "Rayon", "type": "text" },
+    { "key": "quantity", "label": "Quantité", "type": "number" },
+    { "key": "checked", "label": "Vérifié", "type": "date" },
+    { "key": "status", "label": "État", "type": "status" }
+  ],
+  "groupBy": "aisle",
+  "rows": [{
+    "id": "fictional-brush",
+    "values": {
+      "name": "Pinceau fictif", "aisle": "Finition", "quantity": 2,
+      "checked": "2026-10-01", "status": { "label": "À commander", "tone": "warn" }
+    },
+    "actions": [{ "id": "order", "label": "Commander" }]
+  }]
+}
+```
+
+Column keys and row IDs must be unique. Missing or null values display `—`. Numbers use `Intl.NumberFormat`; dates accept real ISO calendar dates or timestamps with an explicit timezone and display in UTC. `locale="en"` (default) or `locale="fr"` selects formatting and kit labels; `labels` overrides words. Column, action and status labels are app data, not translated by the block.
+
+The app decides status meaning. Tones map to host Badge variants: `ok → default`, `warn → secondary`, `error → destructive`, `info → outline`, `neutral → secondary`.
+
+```tsx
+const records = createRecordsKind({ locale: 'fr',
+  onAction: (action, row) => requestOrder(row.id, action.id) });
+<AgentWorkspace artifactKinds={[records]} {...workspaceProps} />
+<RecordTable columns={columns} rows={rows} groupBy="aisle" onAction={onAction} />
+<RecordList items={[{ id: 'brush', title: 'Pinceau fictif', detail: 'Rayon Finition',
+  status: { label: 'À commander', tone: 'warn' }, action: { id: 'order', label: 'Commander' } }]}
+  onAction={(action, item) => requestOrder(item.id, action.id)} />
+```
+
+`RecordTable` always draws a table. The file viewer uses it from 640px viewport width and `RecordList` below that. When grouped, the group heading carries its column: it is omitted from table headers, row cells and phone cards. Phone status columns appear only as badges, with accessible names retaining their column labels. Other fields, first-seen groups and actions are preserved. A list item accepts an optional `action` and an `actions` array; `statuses: [{ label, value }]` supplies multiple labelled badges alongside the optional standalone `status`. Buttons without `onAction` are disabled; callbacks must enforce host policy. Files never execute action metadata. Invalid JSON, cell types/dates, duplicate keys/IDs or invalid groups show exact raw text with a localized note instead of hiding invalid rows.
+
+Evidence: `test/contracts/record-viewer.test.mjs` and `npm run records:journey` (fictional inventory, desktop/phone, English/French, light/dark). Screenshots belong under `.cache/evidence/D77/`. No live domain-service or real-model qualification is claimed.
 
 ## Task-list viewer
 

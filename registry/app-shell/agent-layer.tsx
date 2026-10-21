@@ -87,6 +87,19 @@ export function nextSnapOnClose(reason: string, hasPeek: boolean): 'peek' | 'hal
   return reason === 'swipe' || reason === 'outside-press' || reason === 'focus-out' || reason === 'escape-key' ? (hasPeek ? 'peek' : 'half') : 'close';
 }
 
+/**
+ * Whether a close request comes from something the layer does not own: a full-screen overlay portalled above it (`[data-boring-overlay]`,
+ * for example the composer's camera). Its taps count as outside presses and its focus as a focus-out of the drawer, but they must change
+ * nothing: the caller cancels the request and leaves the snap alone. Only those three reasons are looked at, and the event target, the
+ * related target (focus-out) or the focused element may be the overlay.
+ */
+export function isOverlayEvent(details: { readonly reason: string; readonly event?: Event | undefined }): boolean {
+  if (details.reason !== 'outside-press' && details.reason !== 'focus-out' && details.reason !== 'escape-key') return false;
+  const inside = (node: unknown) => node instanceof Element && node.closest('[data-boring-overlay]') !== null;
+  const event = details.event as (Event & { relatedTarget?: EventTarget | null }) | undefined;
+  return inside(event?.target) || inside(event?.relatedTarget) || inside(globalThis.document?.activeElement);
+}
+
 interface Internal extends Omit<AgentLayerApi, 'agent'> {
   readonly agent: AgentSpec | undefined;
   readonly improve: AgentSpec | undefined;
@@ -495,6 +508,7 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
   return <Drawer open={open} modal={!peek} showSwipeHandle swipeDirection="down" snapPoints={points} snapPoint={value}
     onOpenChange={(next, details) => {
       if (next) return;
+      if (isOverlayEvent(details)) { details.cancel(); return; }
       const outcome = nextSnapOnClose(details.reason, hasPeek);
       if (outcome === 'close') { closing.current = true; layer.close(); return; }
       details.cancel();

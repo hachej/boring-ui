@@ -115,7 +115,15 @@
       "types": "./dist/file-tree-view.d.ts",
       "import": "./dist/file-tree-view.js"
     },
-    "./file-tree.css": "./styles/file-tree.css"
+    "./file-tree.css": "./styles/file-tree.css",
+    "./markdown-quote": {
+      "types": "./dist/markdown-quote.d.ts",
+      "import": "./dist/markdown-quote.js"
+    },
+    "./mark-store": {
+      "types": "./dist/mark-store.d.ts",
+      "import": "./dist/mark-store.js"
+    }
   },
   "peerDependencies": {
     "@hachej/boring-files": "^0.4.3",

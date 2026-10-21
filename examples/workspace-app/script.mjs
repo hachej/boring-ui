@@ -9,9 +9,13 @@ const BOOKING = readFileSync(new URL('../../test/fixtures/maquette/booking.maque
 const FLOW = readFileSync(new URL('../../test/fixtures/diagram/booking.diagram.json', import.meta.url), 'utf8');
 const HTML_BOOKING = readFileSync(new URL('../../test/fixtures/booking.mockup.html', import.meta.url), 'utf8');
 const HOSTILE = readFileSync(new URL('../../test/fixtures/hostile.mockup.html', import.meta.url), 'utf8');
+const STOCK = readFileSync(new URL('../../test/fixtures/records/inventaire-atelier.records.json', import.meta.url), 'utf8');
+const BROKEN_STOCK = ' {"kind":"records@1", "rows": <fictional>\n';
 const NOTES = '# Picnic plan\n\nA fictional picnic by the invented Lake Placeholder.\n\n- Blanket and baskets\n- Lemonade\n';
 
 export const SOURCES = [{ name: 'workspace-app', entries: Object.entries({
+  'workshop stock': [call('write', { path: 'inventaire-atelier.records.json', content: STOCK }), call('present', { path: 'inventaire-atelier.records.json' }), 'The fictional workshop stock is ready.'],
+  'broken stock': [call('write', { path: 'broken.records.json', content: BROKEN_STOCK }), call('present', { path: 'broken.records.json' }), 'The malformed fictional stock is ready for inspection.'],
   'booking mock-up': [call('write', { path: 'booking.maquette.json', content: BOOKING }), call('present', { path: 'booking.maquette.json' }), 'The booking mock-up is ready.'],
   'booking HTML': [call('write', { path: 'booking.mockup.html', content: HTML_BOOKING }), call('present', { path: 'booking.mockup.html' }), 'The HTML booking mock-up is ready.'],
   'sandbox probe': [call('write', { path: 'hostile.mockup.html', content: HOSTILE }), call('present', { path: 'hostile.mockup.html' }), 'The sandbox probe is ready.'],

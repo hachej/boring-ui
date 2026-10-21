@@ -1,3 +1,6 @@
+import { createMarkStore, type MarkResource, type MarkStore } from '@hachej/boring-ui-kit/mark-store';
+import { captureMarkdownQuote, markdownQuoteResolution } from '@hachej/boring-ui-kit/markdown-quote';
+import type { ResourceLocator } from '@hachej/boring-files';
 import { PublicationNotDispatchedError } from '@hachej/boring-files/publication';
 import type { ViewerFeature } from '@hachej/boring-ui-kit';
 import { createMarkdownController } from '@hachej/boring-ui-kit/markdown';
@@ -44,3 +47,10 @@ const checkpoint: Promise<TextDraftCheckpointResult> = recoverable.actions.check
 void recoverable.actions.restoreDraft(choice);
 void concrete.actions.discardDraft(choice);
 void checkpoint;
+
+declare const markResource: MarkResource;
+declare const locator: ResourceLocator;
+const store: Promise<MarkStore> = createMarkStore(markResource, locator);
+const quote = captureMarkdownQuote('fictional', { start: 0, end: 9 });
+if (quote.kind === 'captured') markdownQuoteResolution.resolve(quote.anchor, 'fictional', 'revision');
+void store;
