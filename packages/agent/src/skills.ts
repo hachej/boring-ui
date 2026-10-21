@@ -12,6 +12,13 @@ export interface Skill {
   readonly body: string;
 }
 
+const skillFolders = new WeakMap<Skill, string>();
+
+export function skillInFolder(skill: Skill, folder: string): Skill {
+  skillFolders.set(skill, folder);
+  return skill;
+}
+
 /** Parse a `SKILL.md`-style document: `---` front matter with `name` and `description`, then the body. */
 export function parseSkill(markdown: string): Skill {
   const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(markdown);
@@ -29,7 +36,9 @@ export function parseSkill(markdown: string): Skill {
 export function validSkill(skill: Skill): Skill {
   if (!NAME.test(skill.name)) throw new TypeError(`Invalid skill name: ${skill.name}`);
   if (!skill.description.trim() || !skill.body.trim()) throw new TypeError(`Skill ${skill.name} needs a description and a body`);
-  return Object.freeze({ name: skill.name, description: skill.description.trim(), body: skill.body });
+  const valid = Object.freeze({ name: skill.name, description: skill.description.trim(), body: skill.body });
+  const folder = skillFolders.get(skill);
+  return folder === undefined ? valid : skillInFolder(valid, folder);
 }
 
 /** A prompt section listing the skills and a `load_skill` tool returning one body. Usable without `defineAgent`. */
@@ -50,7 +59,9 @@ export function createSkillsExtension(name: string, skills: readonly Skill[]): E
       replay: 'safe',
       execute: async args => {
         const skill = known.get(args.name);
-        return { output: [{ type: 'text', text: skill ? skill.body : `Unknown skill "${args.name}". Available: ${[...known.keys()].join(', ')}` }] };
+        const folder = skill && skillFolders.get(skill);
+        const location = folder === undefined ? '' : `\n\nThis skill's folder is \`${folder}\`; paths in it are relative to that folder.`;
+        return { output: [{ type: 'text', text: skill ? skill.body + location : `Unknown skill "${args.name}". Available: ${[...known.keys()].join(', ')}` }] };
       },
     })],
   });
