@@ -9,7 +9,7 @@ const reader = defineDoc({ kind: 'fictional.triage.reader', version: 1, scope: '
 const textOf = message => message?.content.filter(part => part.type === 'text').map(part => part.text).join('\n') ?? '';
 
 /** Host orchestration on public native tasks/tools. No kit workflow or duplicate transcript. */
-export async function createStagedHost() {
+export async function createStagedHost({ settings } = {}) {
   const scripted = createScriptedModel({ timed: true, fallback: turn => {
     if (turn.user.startsWith('STAGE ')) {
       const number = Number(turn.user.slice(6));
@@ -59,7 +59,7 @@ export async function createStagedHost() {
       return { isError: !ok, output: [{ type: 'text', text: ok ? `Étape ${args.stage} validée.` : 'La prochaine étape a échoué.' }] };
     } });
   registry.install(defineExtension({ name: 'fictional.triage', tasks: [stageTask], tools: [stageTool] }));
-  harness = await Harness.open(new MemoryStorage(), { registry, models: scripted.models }, context);
+  harness = await Harness.open(new MemoryStorage(), { registry, models: scripted.models, ...(settings ? { settings } : {}) }, context);
   const threads = {};
   for (const name of ['Questions', 'Senior']) threads[name] = await harness.createConversation({ ownership: { kind: 'ownerless' }, agent: { model: scripted.model, tools: [stageTool], instructions: 'Run stages 1, 2, 3 sequentially. Each stage validates its output. Stop on failure.' } }, context);
   const readerState = async name => threads[name].commit(async tx => JSON.parse(JSON.stringify(await tx.doc(reader, threads[name].id))), context);

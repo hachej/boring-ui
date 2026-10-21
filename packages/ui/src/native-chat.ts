@@ -227,21 +227,19 @@ export function createNativeChatController(options: NativeChatOptions) {
         if (snapshot.disposed || record.id !== item.submissionId || record.conversationId !== conversation.id || record.requestId !== attempt.requestId || record.type !== 'input'
           || record.status !== 'unanswered' || !['model_error', 'no_model', 'faulted'].includes(record.reason) || record.entry === undefined || item.textObserved) return;
         // The native transcript, not watch timing or connection loss, decides whether the failed input received any text.
+        const minEntryId = record.entry, detail = record.detail;
         const newest = await awaitWithContext(conversation.entries({}, 1, undefined, waiter.context), waiter.context);
         const maxEntryId = newest.items[0]?.id;
-        if (maxEntryId === undefined || maxEntryId < record.entry) return;
+        if (maxEntryId === undefined || maxEntryId < minEntryId) return;
         let cursor: Cursor | undefined, ended = false;
         do {
-          const page: Awaited<ReturnType<ChatConversation['entries']>> = await awaitWithContext(conversation.entries({ minEntryId: record.entry, maxEntryId, order: 'ascending' }, 40, cursor, waiter.context), waiter.context);
+          const page: Awaited<ReturnType<ChatConversation['entries']>> = await awaitWithContext(conversation.entries({ minEntryId, maxEntryId, order: 'ascending' }, 40, cursor, waiter.context), waiter.context);
           if (snapshot.disposed || item.textObserved) return;
           for (const entry of page.items) {
-            const nextInput = entry.id !== record.entry && entry.model?.some(message => message.role === 'user');
-            if (nextInput && (item.runTaskId === undefined || entry.byTaskId !== item.runTaskId)) {
-              if (item.runTaskId === undefined) return;
-              ended = true; break;
-            }
             if (hasText(entry.model)) return;
-            if (entry.model?.some(message => message.role === 'assistant' && (message.stopReason === 'error' || message.stopReason === 'aborted'))) { ended = true; break; }
+            // One run may consume several inputs and retain interrupted attempts. Neither is the final error boundary.
+            if (entry.model?.some(message => message.role === 'assistant' && message.stopReason === 'error'
+              && (item.runTaskId !== undefined ? entry.byTaskId === item.runTaskId : typeof detail === 'string' && message.errorMessage === detail))) { ended = true; break; }
           }
           cursor = page.next;
         } while (!ended && cursor !== undefined);

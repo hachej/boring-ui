@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { AssistantEntry } from '@earendil-works/pi-durable';
+import { fauxAssistantMessage } from '@earendil-works/pi-ai/providers/faux';
 const { createStagedHost } = await import(process.env.STAGED_HOST_MODULE ?? new URL('../../examples/staged-chat/host.mjs', import.meta.url).href);
 const { createNativeChatController } = await import(process.env.NATIVE_CHAT_MODULE ?? '@hachej/boring-ui-kit/native-chat');
 
@@ -29,4 +31,39 @@ for (const failAt of [0, 1, 2]) test(`fictional triage host runs native sequenti
     else assert.match(text, /Synthèse fictive/);
   }
   assert.equal((await host.threads.Senior.context(host.context)).entries.length, 0);
+});
+
+test('coalesced native inputs share retained staged text without restoring either question', { timeout: 20000 }, async t => {
+  const host = await createStagedHost({ settings: { followUpMode: 'all' } });
+  const conversation = host.threads.Questions;
+  const controller = createNativeChatController({ conversation, context: host.context, identity: { runtimeId: 'fictional-triage', scopeId: 'Questions', principalId: 'fictional-reader' }, restoreOnError: true });
+  t.after(async () => { await controller.dispose(); await host.close(); });
+  await controller.connect();
+  controller.setText('Initial fictional question'); const first = await controller.send();
+  controller.setText('Second fictional question'); const second = await controller.send();
+  const third = await controller.send('followUp', { text: 'Third fictional question\nÉCHEC 2', restore: { text: 'Third fictional question' } });
+  const outcomes = await Promise.all([first.wait(host.context), second.wait(host.context), third.wait(host.context)]);
+  await conversation.waitForIdle(host.context); await new Promise(resolve => setTimeout(resolve, 100));
+  assert.deepEqual(outcomes.map(item => item.status), ['done', 'unanswered', 'unanswered']);
+  const entries = (await conversation.context(host.context)).entries.filter(entry => entry.id > outcomes[1].entry);
+  assert.ok(entries.some(entry => entry.model?.some(message => message.role === 'assistant' && message.content.some(part => part.type === 'text' && part.text.includes('Note de triage fictive')))));
+  assert.equal(controller.getSnapshot().draft.text, '', 'a shared answer prevents restoration for every input of that run');
+});
+
+test('an empty interrupted-attempt entry is not the final native error boundary', { timeout: 20000 }, async t => {
+  const host = await createStagedHost(), conversation = host.threads.Questions;
+  const controller = createNativeChatController({ conversation, context: host.context, identity: { runtimeId: 'fictional-triage', scopeId: 'Questions', principalId: 'fictional-reader' }, restoreOnError: true });
+  t.after(async () => { await controller.dispose(); await host.close(); });
+  await controller.connect();
+  const submission = await controller.send('followUp', { text: 'Fictional later failure\nÉCHEC 2' });
+  const witness = await conversation.commit(async tx => {
+    const entry = await tx.appendEntry(AssistantEntry, conversation.id, { model: [fauxAssistantMessage([], { stopReason: 'aborted' })] });
+    await tx.appendEntry(conversation.id, { kind: 'fictional.interrupted-attempt', edits: [{ target: entry.id, action: 'omit' }] });
+    return entry.id;
+  }, host.context);
+  assert.equal((await submission.wait(host.context)).status, 'unanswered');
+  await conversation.waitForIdle(host.context); await new Promise(resolve => setTimeout(resolve, 100));
+  const text = (await conversation.context(host.context)).entries.find(entry => entry.model?.some(message => message.role === 'assistant' && message.content.some(part => part.type === 'text' && part.text.includes('Note de triage fictive'))));
+  assert.ok(text && text.id > witness, 'the public native transcript contains later answer text after the empty witness');
+  assert.equal(controller.getSnapshot().draft.text, '', 'an intermediate empty attempt cannot hide later answer text');
 });
