@@ -120,6 +120,22 @@ test('historical offers are opt-in, unread is host-owned, history is filtered an
   assert.equal(c.getSnapshot().view.entries.length, 32); assert.equal(c.getSnapshot().history.entries.length, 2);
 });
 
+test('PiChat and AmbientChat tailor one native error without losing duration metadata', async t => {
+  const f = await fixture(t), c = controller('Questions', { entries: [question, entry(2, assistant('Note conservée.', 1600)), entry(3, assistant(null, 15, { stopReason: 'error', errorMessage: 'Private traceback' }))], docs: {} });
+  for (const Surface of [PiChat, AmbientChat]) {
+    let received;
+    await f.render(f.h(Surface, { controller: c, state: 'expanded', presentation: 'natural', replyError: reply => { received = reply; return 'La note précédente reste disponible.'; }, unread: () => f.h('span', { 'data-testid': 'attached-unread' }, 'Non lu') }));
+    const row = f.element.querySelector('[data-role="assistant"]');
+    assert.equal(row.querySelectorAll('[role="alert"]').length, 1);
+    assert.equal(row.querySelector('[data-testid="response-error"]').textContent, 'La note précédente reste disponible.');
+    assert.equal(received.durationMs, 1615); assert.equal(received.entryId, '3');
+    assert.doesNotMatch(row.textContent, /traceback/);
+    const unread = row.querySelector('[data-testid="attached-unread"]');
+    assert.equal(unread.parentElement.dataset.testid, 'reply-unread');
+    assert.ok(unread.parentElement.classList.contains('items-start'));
+  }
+});
+
 test('AmbientChat forwards staged filtering, unread and duration seams', async t => {
   const f = await fixture(t), c = controller('Senior', { entries: [question, entry(2, assistant('Note\n::meta {}', 4)), stage(3), entry(4, assistant('Suite', 6))], docs: {} });
   await f.render(f.h(AmbientChat, { controller: c, state: 'expanded', hideLine: line => line.startsWith('::meta'), unread: () => f.h('span', { 'data-testid': 'ambient-unread' }, 'Non lu'), renderEntry: value => value.kind === 'fictional.stage' ? { inline: true, content: f.h('span', null, 'Validé') } : undefined, replyFooter: reply => f.h('span', { 'data-testid': 'ambient-duration' }, reply.durationMs) }));
