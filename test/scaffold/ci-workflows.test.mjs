@@ -115,6 +115,30 @@ test('verification jobs separate checks, unregistered tests and strict registere
   assert.match(release, /needs: \[prepare, verify, browser, secrets\]/);
 });
 
+test('all branch-protection check names remain exact, non-matrix job display names', () => {
+  const names = ['verify', 'studio-scripted', 'secrets'].flatMap(name => Object.values(jobs(workflow(name))).flatMap(job => /^    name: (.+)$/m.exec(job)?.[1] ?? []));
+  for (const required of ['verify', 'Isolated package consumers', 'Studio scripted journeys', 'Secret scan']) {
+    assert.equal(names.filter(name => name === required).length, 1, required);
+  }
+});
+
+test('the consumer aggregate reports every matrix outcome and remains required by ci-ok', () => {
+  const all = jobs(workflow('verify'));
+  const gate = all['isolated-consumers-ok'];
+  assert.ok(gate, 'consumer aggregate exists');
+  assert.match(gate, /^    name: Isolated package consumers$/m);
+  assert.match(gate, /if: always\(\)/);
+  assert.match(gate, /needs: \[isolated-consumers\]/);
+  assert.match(gate, /NEEDS_RESULTS: \$\{\{ join\(needs\.\*\.result, ' '\) \}\}/);
+  assert.ok(/needs: \[([^\]]+)\]/.exec(all['ci-ok'])[1].split(',').map(name => name.trim()).includes('isolated-consumers-ok'));
+  const body = script(gate, 'Require every job to succeed');
+  assert.equal(body, script(all['ci-ok'], 'Require every job to succeed'));
+  for (const [results, success] of [['success', true], ['failure', false], ['cancelled', false], ['skipped', false], ['', false]]) {
+    const ran = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', body], { encoding: 'utf8', env: { ...process.env, NEEDS_RESULTS: results } });
+    assert.equal(ran.status === 0, success, `${results}: ${ran.stderr}`);
+  }
+});
+
 for (const name of ['verify', 'studio-scripted']) test(`${name} ci-ok needs all jobs and rejects failed, cancelled, skipped or absent results`, () => {
   const all = jobs(workflow(name));
   const gate = all['ci-ok'];

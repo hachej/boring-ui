@@ -151,10 +151,24 @@ jobs:
       - run: npx wrangler deploy --dry-run --outdir "$RUNNER_TEMP/demo-worker" --config demos/workspace/cloudflare/wrangler.jsonc
         env:
           WRANGLER_SEND_METRICS: 'false'
+  isolated-consumers-ok:
+    name: Isolated package consumers
+    if: always()
+    needs: [isolated-consumers]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every job to succeed
+        env:
+          NEEDS_RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          test -n "$NEEDS_RESULTS"
+          for result in $NEEDS_RESULTS; do
+            test "$result" = success || exit 1
+          done
   ci-ok:
     name: verify
     if: always()
-    needs: [verify, tests, release-gate, isolated-consumers, demo-worker]
+    needs: [verify, tests, release-gate, isolated-consumers, isolated-consumers-ok, demo-worker]
     runs-on: ubuntu-latest
     steps:
       - name: Require every job to succeed
