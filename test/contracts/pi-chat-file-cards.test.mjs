@@ -442,6 +442,16 @@ test('a failed transcription stays failed until Retry, reusing the uploaded audi
   await ui.pointer('pointerdown'); await ui.pointer('pointerup');
   await ui.until(() => !!ui.container.querySelector('[data-testid=voice-retry]'));
   assert.equal(ui.sends.length, 0); assert.ok(ui.container.querySelector('[data-testid=voice-audio-only]'));
+  assert.doesNotMatch(ui.container.querySelector('[data-testid=voice-pending]').textContent, /0:00/, 'a zero-second failure never claims a known duration');
+  const pending = { id: 1, path: ui.uploads[0].files[0].name, phase: 'transcribe-failed', seconds: 10, retry() {}, audioOnly: undefined, discard() {} };
+  await ui.rerender({ pendingVoice: [pending] });
+  assert.equal(ui.container.querySelector('[data-testid=voice-pending-duration]')?.textContent, '0:10', 'a known positive duration stays visible');
+  for (const seconds of [0, NaN, Infinity, -1]) {
+    await ui.rerender({ pendingVoice: [{ ...pending, seconds }] });
+    assert.equal(ui.container.querySelector('[data-testid=voice-pending-duration]'), null, 'zero or unknown duration is hidden');
+    assert.doesNotMatch(ui.container.querySelector('[data-testid=voice-pending]').textContent, /0:00|NaN|Infinity/);
+  }
+  await ui.rerender({ pendingVoice: undefined });
   ui.failTranscribe(false); await ui.click('voice-retry'); await ui.until(() => ui.sends.length === 1);
   assert.equal(ui.uploads.length, 1); assert.equal(ui.transcriptions.length, 2);
 });

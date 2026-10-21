@@ -7,7 +7,7 @@ import { launch, pause, q } from '@hachej/boring-testing/browser';
 
 process.env.STUDIO_MODEL = 'scripted';
 const { startAppShell } = await import('./server.mjs');
-const evidence = process.env.VOICE_EVIDENCE ?? '.cache/evidence/D111/delta'; mkdirSync(evidence, { recursive: true });
+const evidence = process.env.VOICE_EVIDENCE ?? '.cache/evidence/D111'; mkdirSync(evidence, { recursive: true });
 let directory = mkdtempSync(join(tmpdir(), 'fictional-voice-'));
 let app = await startAppShell({ directory });
 const retainedAudio = () => readdirSync(join(directory, 'workspace', 'uploads')).filter(name => name.startsWith('voice-'));
@@ -25,6 +25,7 @@ try {
   const reviewPending = async () => {
     const layout = await browser.evaluate(`(() => { const p = ${q(pending)}, c = ${q('[data-testid=composer-dock]')}; return { inTranscript: !!p.closest('[data-testid=transcript]'), above: p.getBoundingClientRect().bottom <= c.getBoundingClientRect().top, empty: !!document.querySelector('[data-testid=empty-state]') }; })()`);
     check(layout.inTranscript && layout.above && !layout.empty, 'pending/failed voice is a transcript user row above composer, without empty-state overlay');
+    check(await browser.evaluate(`(() => { const p = ${q(pending)}, text = p.textContent; return !/0:00|NaN|Infinity/.test(text); })()`), 'pending/failed voice never claims zero or unknown duration');
   };
   const fresh = async () => {
     await app.close(); directory = mkdtempSync(join(tmpdir(), 'fictional-voice-scene-')); app = await startAppShell({ directory });
@@ -32,6 +33,7 @@ try {
   };
   for (const device of ['phone', 'desktop']) {
     await browser.emulate(device);
+    if (device === 'desktop') await fresh();
     const previous = await browser.evaluate('performance.timeOrigin');
     await browser.send('Page.navigate', { url: `${app.url}?send=message` });
     await mounted(previous);
@@ -46,6 +48,7 @@ try {
     if (device === 'phone') await touch('touchEnd'); else await mouse('mouseReleased', p, 0);
     await browser.until('one local pending bubble', `!!${q(pending)}`);
     await reviewPending();
+    check(await browser.evaluate(`${q(pending)}.textContent.includes('0:10')`), 'the known ten-second recording keeps its duration');
     await browser.screenshot(`${device}-pending.png`);
     await browser.until('transcript and replay bubble', `!!${q(bubble)} && !${q(pending)} && document.body.innerText.includes('Tu as choisi une salade')`, 30000);
     assert.equal(app.submits.length, before + 1, 'exactly one native message for the recording');
@@ -77,6 +80,7 @@ try {
     await browser.until('retained audio plays lazily', `${q(bubble)}.querySelector('audio').paused === false`, 15000);
     await browser.until('retained duration decoded', `!['--:--', '0:00'].includes(${q(bubble)}.querySelector('[data-testid=voice-duration]').textContent)`, 15000);
     check(await browser.evaluate(`${play}.getAttribute('aria-label') === 'Mettre en pause'`), 'playing audio has accessible Mettre en pause label');
+    await browser.screenshot(`${device}-playing.png`);
     await clickReplay();
     await browser.until('idle replay has a play label', `${q(bubble)}.querySelector('audio').paused`);
     await browser.evaluate(`${q('[data-testid=transcript-scroll]')}.scrollTop = ${q('[data-testid=transcript-scroll]')}.scrollHeight`);
