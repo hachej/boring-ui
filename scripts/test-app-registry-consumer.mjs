@@ -27,6 +27,7 @@ visit('app-shell');
 visit('file-tree');
 // The documents screen: its Library, revisions and sheet, installed and checked strictly with the rest of the closure.
 visit('documents');
+visit('highlights');
 const styles = [process.env.BORING_CONSUMER_STYLE ?? 'base-nova'];
 assert.ok(styles.every(style => style === 'base-nova'), 'Registry blocks require the shadcn Base UI style');
 const cache = process.env.npm_config_cache;
@@ -68,7 +69,7 @@ async function testStyle(style) {
       noEmit: true, types: [], lib: ['ES2023', 'DOM', 'DOM.Iterable'], baseUrl: '.', paths: { '@/*': ['./src/*'] } }, include: ['src/components/pi-app/**/*.tsx', 'src/components/pi-app/**/*.ts', 'src/components/app-shell/**/*.tsx', 'src/components/app-shell/**/*.ts', 'src/components/documents/**/*.tsx', 'src/components/documents/**/*.ts', 'src/page.tsx', 'src/pdf-check.tsx', 'src/local-file-check.tsx'] }));
     const installer = { ...process.env, npm_config_cache: cache, npm_config_offline: 'true', npm_config_ignore_scripts: 'true', npm_config_audit: 'false', npm_config_fund: 'false' };
     delete installer.NODE_OPTIONS;
-    run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', `${registry}/pi-app.json`, `${registry}/file-tree.json`, `${registry}/app-shell.json`, `${registry}/documents.json`, `${registry}/theme.json`, '--cwd', directory, '--yes'], installer);
+    run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', `${registry}/pi-app.json`, `${registry}/file-tree.json`, `${registry}/app-shell.json`, `${registry}/documents.json`, `${registry}/highlights.json`, `${registry}/theme.json`, '--cwd', directory, '--yes'], installer);
     for (const [name, item] of closure) for (const file of item.files ?? []) assert.ok(existsSync(join(directory, 'src', file.target)), `the CLI must create ${file.target} (${name})`);
     const css = readFileSync(join(directory, 'src/index.css'), 'utf8');
     assert.ok(css.includes('--background') && css.includes('.pi-chat'), 'theme tokens and the chat\'s scoped css merged into the host stylesheet');
@@ -79,6 +80,7 @@ async function testStyle(style) {
     writeFileSync(join(directory, 'src/local-file-check.tsx'), localExample);
     // A consumer page: only the block, its hooks and the host's own routes.
     writeFileSync(join(directory, 'src/page.tsx'), `export { ReportWorkspace } from './local-file-check';
+  export { Highlights } from './components/highlights/highlights';
   import { useEffect, useState } from 'react';
   import { createRoot } from 'react-dom/client';
   import { AgentWorkspace, useConversations, useRemoteChat } from './components/pi-app/agent-workspace';
@@ -150,7 +152,7 @@ async function testStyle(style) {
     assert.ok(bundledCss.includes('file-tree-row-button') && bundledCss.includes('file-tree'), 'portable tree styles ship without scanning package internals');
     const inputs = Object.keys(JSON.parse(readFileSync(join(directory, 'dist/meta.json'), 'utf8')).inputs);
     assertConsumerTypeFiles(inputs.map(path => resolve(directory, path)).join('\n'), directory);
-    for (const file of ['file-tree/file-tree.tsx', 'pi-app/agent-workspace.tsx', 'pi-app/artifact-panel.tsx', 'pi-app/file-viewer.tsx', 'pi-app/sessions.tsx', 'pi-chat/pi-chat.tsx', 'pi-workspace/workspace.tsx', 'viewers/viewer-frame.tsx', 'viewers/local-file-viewer.tsx', 'documents/documents.tsx', 'documents/document-sheet.tsx'])
+    for (const file of ['file-tree/file-tree.tsx', 'pi-app/agent-workspace.tsx', 'pi-app/artifact-panel.tsx', 'pi-app/file-viewer.tsx', 'pi-app/sessions.tsx', 'pi-chat/pi-chat.tsx', 'pi-workspace/workspace.tsx', 'viewers/viewer-frame.tsx', 'viewers/local-file-viewer.tsx', 'documents/documents.tsx', 'documents/document-sheet.tsx', 'highlights/highlights.tsx'])
       assert.ok(inputs.some(path => path.endsWith(`src/components/${file}`)), `the bundle uses the CLI-installed ${file}`);
     assert.deepEqual(inputs.filter(path => /@hachej\/boring-agent|pi-durable\/dist\/(storage|env)|sqlite|node:|tldraw/.test(path)), [], 'browser bundle holds no agent, storage, Node or canvas code');
     run(process.execPath, ['node_modules/esbuild/bin/esbuild', 'src/pdf-check.tsx', '--bundle', '--platform=browser', '--format=esm', '--jsx=automatic', '--outfile=dist/pdf-check.js',

@@ -6,6 +6,36 @@ The `requests-board` registry item is host presentation (no Pi extension): `Requ
 
 `test/contracts/requests.test.mjs` tests transforms; `test/contracts/requests-board.test.mjs` isolates real shadcn Happy DOM rendering and callbacks through `RequestsBoard`. `npm run requests:journey` drives the fictional `examples/workspace-app?requests` demo, including phone Back, keyboard, both languages, release gating and host-token updates, with light/dark screenshots under `.cache/evidence/D141/`. No backend, durable mutation, consumer D-140 integration or release qualification is claimed.
 
+## Anchored Markdown highlights (D-78)
+
+`@hachej/boring-ui-kit/markdown-quote` resolves `markdown.quote@1` literally over
+canonical source. `@hachej/boring-ui-kit/mark-store` uses the document's workspace
+client and existing conditional text buffer to save `<doc>.marks.json`.
+The `highlights` registry block borrows the editor, decorates without text edits,
+offers context actions/comments, and keeps missing/ambiguous marks in a candidate
+tray. [FEEDBACK](../architecture/FEEDBACK.md#markdown-quotes-and-document-marks)
+owns the semantics and conservative projection limits.
+
+Evidence: `test/packages/ui-markdown-quote.test.mjs` runs the named exact-only
+corpus through `runAnchorConformance`, including an offset-guesser negative
+control; `test/packages/ui-mark-store.test.mjs` covers add/edit/remove, two-tab CAS,
+lost replies, malformed sidecars, immutable capture and reentrant subscribers;
+`test/contracts/highlights.test.mjs` drives the public registry block with real
+React/Tiptap and SQLite. `test:document-consumer` includes headless marks and
+quotes without React, plus strict declarations and a browser bundle. The actual
+`highlights:journey` drives candidate persistence, comment editing, stale second-tab
+refusal, source capture/removal and unchanged document bytes through HTTP.
+Screenshots cover desktop/390px, FR/EN and light/dark under `.cache/evidence/D78/`.
+
+No agent, D-76 conflict UI, general rich source map, real-device or production
+identity-provider qualification is claimed. Existing global deferrals remain.
+
+## Shared document readers
+
+`@hachej/boring-agent/documents` adds optional native `read_pdf` and `read_spreadsheet` registrations and the `sniff`/`readStored` helpers. The [agent guide](../../packages/agent/README.md#shared-document-readers) owns their result shapes, limits and host callback contract. The Pi seam is `defineTool`; the stored-file helper returns native tool content without changing Pi's `read`.
+
+`node --test test/packages/agent-documents.test.mjs` exercises public output through a real Harness: generated fictional PDFs, selected scanned-page OCR, missing/failed OCR, page/text caps, xlsx/xls/ods/CSV sheet/range limits, native image content, typed binary refusals, host read failures and lazy dependency imports. The complete-JSON regression fails under Pi's default 50 KiB output cap and passes with the readers' explicit native byte limit. These are local parser/native-tool tests, not live OCR/provider qualification or an input-memory/CPU budget. Global release deferrals are unchanged.
+
 ## Typed record viewer
 
 The `record-viewer` registry item exports `RecordTable`, `RecordList`, `RecordsViewer` and `createRecordsKind` for `*.records.json` (`records@1`). This is host presentation, not a Pi execution extension. Tables group typed rows; app-provided status labels/tones select host Badge variants without domain interpretation. English/French labels and locale number/date formatting are supported. The file viewer uses a full-field list below 640px and exact raw-text fallback for invalid files. Host callbacks own row actions; absent handlers leave buttons disabled.

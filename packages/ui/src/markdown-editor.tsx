@@ -1,5 +1,9 @@
 'use client';
 
+import { captureMarkdownQuote } from './markdown-quote.js';
+import { captureRichMarkdownQuote, installMarkdownHighlights, type MarkdownDecoration, type MarkdownQuoteCapture } from './markdown-highlight-layer.js';
+export type { MarkdownDecoration, MarkdownQuoteCapture } from './markdown-highlight-layer.js';
+export { markdownMarkerBackground } from './markdown-highlight-layer.js';
 import { TextDraftControls } from './text-draft-controls.js';
 import type { ViewerComponents } from './viewer-components.js';
 export type { ViewerComponents } from './viewer-components.js';
@@ -25,6 +29,9 @@ export type { MarkdownImageResolver } from './markdown-extensions.js';
 export type { MarkdownMountedTools, MarkdownMountedSubject, MarkdownMountedSelection, MarkdownMountedInspection } from './markdown-mounted.js';
 
 export interface MarkdownEditorProps {
+  readonly highlights?: readonly MarkdownDecoration[];
+  readonly onQuoteSelection?: (capture: MarkdownQuoteCapture) => void;
+  readonly onHighlightActivate?: (id: string) => void;
   /** Installed recipes supply the host's shadcn controls. Omit only for unstyled native HTML rendering. */
   readonly components?: ViewerComponents;
   readonly controller: MarkdownController;
@@ -101,7 +108,7 @@ function useKeyboardInset(active: boolean): number {
   return inset;
 }
 
-function MarkdownEditorSession({ components, controller, title = 'Document', initialMode = 'rich', placeholder = 'Start writing', className, onMountedTools, header = true, showOutline = header, mode: controlledMode, onModeChange, onRichSafety, resolveImage, formattingToolbar = 'pinned', autosave = true, onAutosaveChange, onSaveResult, activeController: active }: MarkdownEditorProps & { readonly activeController: { readonly current: MarkdownController } }) {
+function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActivate, components, controller, title = 'Document', initialMode = 'rich', placeholder = 'Start writing', className, onMountedTools, header = true, showOutline = header, mode: controlledMode, onModeChange, onRichSafety, resolveImage, formattingToolbar = 'pinned', autosave = true, onAutosaveChange, onSaveResult, activeController: active }: MarkdownEditorProps & { readonly activeController: { readonly current: MarkdownController } }) {
   const Control = components?.button ?? 'button';
   const Bubble = components?.bubble ?? Fragment;
   const Source = components?.textarea ?? 'textarea';
@@ -187,6 +194,17 @@ function MarkdownEditorSession({ components, controller, title = 'Document', ini
     quote: current.isActive('blockquote'), codeBlock: current.isActive('codeBlock'), link: current.isActive('link'), table: current.isActive('table'),
     href: current.isActive('link') ? String(current.getAttributes('link')['href'] ?? '') : '',
   } : null });
+  useEffect(() => {
+    if (!editor || editor.isDestroyed || mode !== 'rich' || !highlights) return;
+    return installMarkdownHighlights(editor, state.text, highlights, onHighlightActivate);
+  }, [editor, state.text, mode, highlights, onHighlightActivate]);
+  useEffect(() => {
+    if (!editor || editor.isDestroyed || mode !== 'rich' || !onQuoteSelection) return;
+    const selected = () => onQuoteSelection(captureRichMarkdownQuote(editor, controller.getSnapshot().text));
+    editor.on('selectionUpdate', selected);
+    return () => { editor.off('selectionUpdate', selected); };
+  }, [editor, controller, mode, onQuoteSelection]);
+
   const outline = useEditorState({ editor, selector: ({ editor: current }) => {
     if (!current) return null;
     const headings: { position: number; level: number; text: string }[] = [];
@@ -366,7 +384,7 @@ function MarkdownEditorSession({ components, controller, title = 'Document', ini
       <Control type="button" onClick={() => controller.actions.reject(proposal.id)}>Dismiss proposal</Control>
     </article>)}
     {mode === 'source'
-      ? <Source ref={sourceInput} className="boring-markdown-source" aria-label={`${title} Markdown source`} value={state.text} readOnly={unavailable} spellCheck={false} onChange={event => controller.actions.edit(event.currentTarget.value)} />
+      ? <Source ref={sourceInput} className="boring-markdown-source" aria-label={`${title} Markdown source`} value={state.text} readOnly={unavailable} spellCheck={false} onSelect={event => onQuoteSelection?.(captureMarkdownQuote(state.text, { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd }))} onChange={event => controller.actions.edit(event.currentTarget.value)} />
       : <div className="boring-markdown-surface" onKeyDownCapture={markInteraction} onBeforeInputCapture={markInteraction} onInputCapture={markInteraction} onPasteCapture={markInteraction} onDropCapture={markInteraction}
         onChangeCapture={markInteraction}
         onClickCapture={event => { markInteraction(); if (event.target instanceof Element && event.target.closest('a')) event.preventDefault(); }}

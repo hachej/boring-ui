@@ -2550,6 +2550,33 @@
       "dependencies": [
         "react@^19.0.0"
       ]
+    },
+    {
+      "name": "highlights",
+      "type": "registry:block",
+      "title": "Anchored highlights",
+      "description": "Exact Markdown highlights and comments in a conditional workspace sidecar.",
+      "dependencies": [
+        "@hachej/boring-ui-kit@^0.4.3",
+        "@hachej/boring-files@^0.4.3",
+        "react@^19.0.0",
+        "react-dom@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.3/r/markdown-editor.json",
+        "button",
+        "textarea",
+        "label",
+        "item",
+        "dropdown-menu"
+      ],
+      "files": [
+        {
+          "path": "registry/highlights/highlights.tsx",
+          "type": "registry:component",
+          "target": "components/highlights/highlights.tsx"
+        }
+      ]
     }
   ]
 }

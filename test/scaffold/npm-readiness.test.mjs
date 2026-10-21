@@ -66,13 +66,13 @@ test('bare local dependency paths cannot pass release audit', () => {
   }
 });
 
-test('agent archive retains the OptChat Apache notice and license without admitting other assets', () => {
+test('agent archive retains document-reader and OptChat notices and license without admitting other assets', () => {
   const agent = { ...manifest, name: '@hachej/boring-agent' };
-  const notices = ['NOTICE', 'licenses/Apache-2.0.txt'];
+  const notices = ['NOTICE', 'licenses/Apache-2.0.txt', 'THIRD_PARTY_NOTICES.md'];
   assert.deepEqual(checkPackage(agent, [...files, ...notices], new Map()), []);
   for (const missing of notices) assert.deepEqual(checkPackage(agent, [...files, ...notices.filter(path => path !== missing)], new Map()), [`Missing ${missing}`]);
   assert.deepEqual(checkPackage(agent, [...files, ...notices, 'licenses/private.json'], new Map()), ['Unexpected packed file: licenses/private.json']);
-  for (const path of notices) assert.deepEqual(checkPackage(manifest, [...files, path], new Map()), [`Unexpected packed file: ${path}`]);
+  for (const path of ['NOTICE', 'licenses/Apache-2.0.txt']) assert.deepEqual(checkPackage(manifest, [...files, path], new Map()), [`Unexpected packed file: ${path}`]);
 });
 
 test('UI may ship its declared tree stylesheet without admitting arbitrary assets', () => {
