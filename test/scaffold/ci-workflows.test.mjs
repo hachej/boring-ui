@@ -76,6 +76,22 @@ test('the actual studio step partitions the auto-discovered scenarios and UI jou
   assert.notEqual(invalid.status, 0);
 });
 
+test('a phone scenario clears the previous desktop conversation before changing its viewport', async () => {
+  const { runScenario } = await import('../../lab/studio/journey-scenarios.mjs');
+  const events = [];
+  let viewport = 'desktop';
+  const t = {
+    step: async (_, run) => run(),
+    device: async next => { viewport = next; events.push(`device:${next}`); },
+    fresh: async () => { events.push(`fresh:${viewport}`); assert.equal(viewport, 'desktop', 'the previous desktop file must close while its Close control is visible'); },
+    reload: async () => events.push('reload'),
+    browser: { until: async () => {}, evaluate: async () => 'true', screenshot: async () => events.push('screenshot') },
+  };
+  const scenario = { id: 'fixture-phone', title: 'Phone setup', viewport: 'phone', steps: [{ prompt: 'fixture', run: async () => events.push(`run:${viewport}`) }] };
+  await runScenario(t, scenario, { id: 'local' }, () => {}, { retries: 0 });
+  assert.deepEqual(events, ['fresh:desktop', 'device:phone', 'run:phone', 'screenshot', 'device:desktop', 'reload']);
+});
+
 test('consumer kinds are disjoint and retain every original consumer plus the installed workspace recipes', t => {
   const job = jobs(workflow('verify'))['isolated-consumers'];
   assert.match(job, /fail-fast: false/);
