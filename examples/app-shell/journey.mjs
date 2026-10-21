@@ -9,7 +9,7 @@
 // least 44x44px and nothing overflows horizontally in light and dark; the Redaction and empty-template cases; and at 1280x800 the layer as a Dock
 // (docked right by default, floating or docked left, remembered across reloads). Point mode waits for #1661 (TODO in the item). Screenshots go to .cache/evidence/app-shell/.
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { launch, pause, q, qa } from '@hachej/boring-testing/browser';
@@ -423,7 +423,22 @@ try {
     await browser.until('the tab bar took the tap', `${taps} === ${before + 1}`);
     const peek = await browser.evaluate(rect(LAYER));
     const tab = await browser.evaluate(rect('[data-testid=tabbar]'));
-    assert.ok(Math.abs(peek.y + 96 - tab.y) <= 3, `the 6rem peek ends where the tab bar starts: ${JSON.stringify({ peek, tab })}`);
+    // Base UI translates a full-height popup; its bounding box includes the clipped, off-screen part. The visible strip is exactly 8rem.
+    const peekHeight = await browser.evaluate('8 * parseFloat(getComputedStyle(document.documentElement).fontSize)');
+    const clipHeight = await browser.evaluate(`getComputedStyle(${q(LAYER)}).getPropertyValue('--app-shell-peek-height').trim()`);
+    const boundary = await browser.evaluate(`({ above: !!document.elementFromPoint(innerWidth / 2, ${tab.y - 1})?.closest('${LAYER}'), at: !!document.elementFromPoint(innerWidth / 2, ${tab.y})?.closest('[data-testid=tabbar]') })`);
+    const viewport = await browser.evaluate('({ width: innerWidth, height: innerHeight })');
+    const boxes = {};
+    for (const id of ['composer', 'composer-input', 'composer-submit']) boxes[id] = await browser.evaluate(rect(`${LAYER} [data-testid=${id}]`));
+    writeFileSync(join(evidence, 'phone-peek-geometry.json'), JSON.stringify({ peek, tab, peekHeight, clipHeight, boundary, viewport, boxes }, null, 2));
+    assert.equal(clipHeight, '8rem', 'the popup clips to the 8rem peek contract');
+    assert.equal(peek.y + peekHeight, tab.y, `the visible 8rem peek ends exactly where the tab bar starts: ${JSON.stringify({ peek, tab })}`);
+    assert.deepEqual(boundary, { above: true, at: true }, 'the drawer receives hits immediately above the boundary, and the tab bar at it');
+    for (const [id, box] of Object.entries(boxes)) {
+      assert.ok(box && box.w > 0 && box.h > 0, `peek ${id} is mounted with visible dimensions`);
+      assert.ok(box.y >= peek.y && box.bottom <= tab.y, `peek ${id} fits fully above the tab bar: ${JSON.stringify({ box, tab })}`);
+      assert.ok(box.x >= 0 && box.y >= 0 && box.right <= viewport.width && box.bottom <= viewport.height, `peek ${id} fits fully inside the viewport`);
+    }
     await controls('peek');
     // Round c: the peek is ONE compact row (no Close, a one-line input with the coach's placeholder, the microphone and Send).
     const row = await browser.evaluate(rect('[data-testid=composer]'));

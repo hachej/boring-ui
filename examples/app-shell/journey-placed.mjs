@@ -101,7 +101,13 @@ try {
     for (const [name, selector] of [['input', COMPOSER], ['send', '[data-testid=composer-submit]'], ['composer', '[data-testid=composer]']]) {
       controls[name] = await browser.evaluate(rect(`${LAYER} ${selector}`));
     }
-    writeFileSync(join(evidence, 'phone-peek-geometry.json'), JSON.stringify({ viewport, tabs, layer, controls }, null, 2));
+    const peekHeight = await browser.evaluate('8 * parseFloat(getComputedStyle(document.documentElement).fontSize)');
+    const clipHeight = await browser.evaluate(`getComputedStyle(${q(LAYER)}).getPropertyValue('--app-shell-peek-height').trim()`);
+    const boundary = await browser.evaluate(`({ above: !!document.elementFromPoint(innerWidth / 2, ${tabs.y - 1})?.closest('${LAYER}'), at: !!document.elementFromPoint(innerWidth / 2, ${tabs.y})?.closest('[data-testid=tabbar]') })`);
+    writeFileSync(join(evidence, 'phone-peek-geometry.json'), JSON.stringify({ viewport, tabs, layer, peekHeight, clipHeight, boundary, controls }, null, 2));
+    assert.equal(clipHeight, '8rem', 'the popup clips to the 8rem peek contract');
+    assert.equal(layer.y + peekHeight, tabs.y, 'the visible 8rem peek ends exactly at the tab bar');
+    assert.deepEqual(boundary, { above: true, at: true }, 'the tab bar starts exactly where the visible drawer ends');
     for (const [name, box] of Object.entries(controls)) {
       assert.ok(box && box.w > 0 && box.h > 0, `peek ${name} is mounted with visible dimensions`);
       assert.ok(box.bottom <= tabs.y, `peek ${name} must fit above the tab bar: ${JSON.stringify({ box, tabs })}`);
