@@ -26,7 +26,9 @@ export function verifyInvariants(root, { release = false, run = runCaptured } = 
   const env = { ...process.env }; delete env.NODE_TEST_CONTEXT; // A new test process is not its parent's test worker.
   for (const { command, laws } of commands.values()) {
     logs.push(`Evidence for ${laws.join(', ')}: ${command.join(' ')}`);
-    const ran = run(process.execPath, ['--test', '--experimental-test-isolation=none', '--test-reporter=tap', ...command.slice(2)], { cwd: root, encoding: 'utf8', timeout: 60000, env });
+    // The agent entry includes the 600-message/100-turn native benchmark; other evidence keeps its one-minute cap.
+    const timeout = command.slice(2).includes('test/packages/agent.test.mjs') ? 300000 : 60000;
+    const ran = run(process.execPath, ['--test', '--experimental-test-isolation=none', '--test-reporter=tap', ...command.slice(2)], { cwd: root, encoding: 'utf8', timeout, env });
     if (ran.status !== 0 || ran.error || ran.signal || !/^# pass [1-9]\d*$/m.test(ran.stdout ?? '') || !/^# skipped 0$/m.test(ran.stdout ?? '') || !/^# todo 0$/m.test(ran.stdout ?? '')) {
       logs.push(`exit status: ${ran.status}; signal: ${ran.signal ?? 'none'}${ran.error ? `; error: ${ran.error.message}` : ''}`);
       if (ran.stdout) logs.push(ran.stdout);

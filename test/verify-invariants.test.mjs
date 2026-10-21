@@ -42,6 +42,21 @@ test('registered command is deduplicated across laws and executed as argv, not s
   assert.equal(result.logs.filter((line) => line.startsWith('DEFERRED')).length, 11); // six root and five feedback deferrals
   assert.ok(result.logs.some((line) => line.includes('INCOMPLETE')));
 });
+test('the seeded agent benchmark gets a bounded five-minute evidence window without widening other commands', t => {
+  const f = fixture(t);
+  const registry = JSON.parse(readFileSync(join(f.directory, 'VERIFY.json')));
+  registry.invariants['BORING-PI-1'].verifiers.push({ scope: 'structural', kind: 'command', command: ['node', '--test', 'test/packages/agent.test.mjs'], claim: 'Fictional long-chat runner fixture.' });
+  f.write('VERIFY.json', JSON.stringify(registry));
+  f.write('test/packages/agent.test.mjs', 'import test from "node:test"; test("fictional benchmark", () => {});');
+  const timeouts = [];
+  const result = verifyInvariants(f.directory, { run: (_command, args, options) => {
+    timeouts.push([args.at(-1), options.timeout]);
+    return { status: 0, stdout: passing };
+  } });
+  assert.equal(result.status, 0, result.logs.join('\n'));
+  assert.equal(timeouts.find(([file]) => file === 'test/packages/agent.test.mjs')[1], 300000);
+  assert.ok(timeouts.filter(([file]) => file !== 'test/packages/agent.test.mjs').every(([, timeout]) => timeout === 60000));
+});
 test('release lists deferred proofs as backlog without failing on them (owner ruling 2026-10-10)', (t) => {
   const f = fixture(t); const result = verifyInvariants(f.directory, { release: true, run: () => ({status:0, stdout:passing}) });
   assert.equal(result.status, 0, result.logs.join('\n')); assert.ok(!result.logs.some((line) => line.startsWith('Registered boundary evidence passed')));
