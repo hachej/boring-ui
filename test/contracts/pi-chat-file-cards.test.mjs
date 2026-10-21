@@ -664,3 +664,25 @@ test('an admission becoming uncertain during a hold cannot disable the release t
   assert.equal(ui.tracks[0].stopped, true); assert.equal(ui.sends.length, 1);
   assert.equal(ui.controller.getSnapshot().draft.text, 'Je mange une salade');
 });
+
+test('failed voice is a transcript row and leaves the mic available for another retained recording', async t => {
+  const ui = await voiceHarness(t); ui.failTranscribe(true);
+  await ui.pointer('pointerdown'); await ui.pointer('pointerup');
+  await ui.until(() => !!ui.container.querySelector('[data-testid=voice-retry]'));
+  const failed = ui.container.querySelector('[data-testid=voice-pending]');
+  assert.equal(failed.closest('[data-testid=transcript]')?.getAttribute('data-testid'), 'transcript');
+  assert.equal(failed.closest('[data-testid=composer-dock]'), null);
+  assert.equal(ui.button().disabled, false);
+  assert.equal(ui.button().dataset.state, 'idle');
+  assert.match(ui.container.querySelector('[data-testid=conversation-files]').textContent, /· 1$/);
+  await ui.pointer('pointerdown');
+  assert.equal(ui.button().dataset.state, 'recording');
+  assert.equal(ui.container.querySelector('[data-testid=voice-pending]'), failed);
+  await ui.pointer('pointerup');
+  await ui.until(() => ui.container.querySelectorAll('[data-testid=voice-retry]').length === 2);
+  assert.equal(ui.uploads.length, 2); assert.equal(ui.sends.length, 0);
+  await ui.click('voice-discard');
+  assert.equal(ui.container.querySelectorAll('[data-testid=voice-pending]').length, 1, 'discard affects only its own recording');
+  ui.failTranscribe(false); await ui.click('voice-retry'); await ui.until(() => ui.sends.length === 1);
+  assert.equal(ui.uploads.length, 2, 'retry reuses the surviving recording');
+});
