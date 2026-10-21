@@ -1,6 +1,6 @@
 name: Scripted browser journeys
 # The blocking browser layer: real Chromium against the studio and the ambient example with a scripted model (no key, no network model,
-# no retries). A failure here is a bug. Mark the job "Studio scripted journeys" as a required check in the repository settings.
+# no retries). A failure here is a bug. The required check "Studio scripted journeys" is the final ci-ok job.
 # The real-model layer is separate and never blocks: .github/workflows/studio-smoke.yml.
 on:
   workflow_call:
@@ -11,7 +11,11 @@ permissions:
   contents: read
 jobs:
   scripted-journeys:
-    name: Studio scripted journeys
+    name: Studio scripted journeys (${{ matrix.shard }})
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [studio-1, studio-2, design, workspace, documents]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -42,121 +46,156 @@ jobs:
       - name: Allow the Chromium sandbox (user namespaces)
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Stock and brand token conformance, light and dark, desktop and phone
+        if: matrix.shard == 'design'
         run: npm run test:design
       - name: Viewer chrome on stock and brand, light and dark, desktop and phone
+        if: matrix.shard == 'design'
         run: npm run test:viewer-chrome
         env:
           DESIGN_EVIDENCE: .cache/evidence/shadcn-first/viewer-chrome
       - name: Design evidence
-        if: always()
+        if: always() && matrix.shard == 'design'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: shadcn-first-design-evidence
+          name: shadcn-first-design-evidence-${{ matrix.shard }}
           path: .cache/evidence/shadcn-first
           retention-days: 7
           if-no-files-found: error
       - name: App shell agent layer on a phone and a desktop
+        if: matrix.shard == 'design'
         run: npm run app-shell:journey
         env:
           APP_EVIDENCE: ${{ runner.temp }}/evidence/app-shell
       - name: App shell layouts workspace and chat on a phone and a desktop
+        if: matrix.shard == 'workspace'
         run: npm run app-shell:journey:workspace
         env:
           APP_EVIDENCE: ${{ runner.temp }}/evidence/app-shell
       - name: Workspace app autosave and scrolling during slow history loads
+        if: matrix.shard == 'workspace'
         run: npm run workspace-app:journey
         env:
           APP_EVIDENCE: ${{ runner.temp }}/evidence/workspace-app
       - name: Shared conversation in the existing embedded workspace
+        if: matrix.shard == 'workspace'
         run: npm run shared-chat:journey
         env:
           SHARED_CHAT_EVIDENCE: ${{ runner.temp }}/evidence/shared-chat
       - name: Sandboxed HTML mock-ups, theme and element comments
+        if: matrix.shard == 'documents'
         run: npm run mockup:journey
         env:
           APP_EVIDENCE: ${{ runner.temp }}/evidence/mockup-html
       - name: Document draft recovery with IndexedDB
+        if: matrix.shard == 'documents'
         run: npm run draft-recovery:journey
       - name: File tree, mentions, uploads and revision history
+        if: matrix.shard == 'documents'
         run: npm run file-tree:journey
       - name: Mounted canvas command geometry
+        if: matrix.shard == 'documents'
         run: npm run canvas:journey:commands
       - name: Canvas proposal review and persistence
+        if: matrix.shard == 'documents'
         run: npm run canvas:journey:proposals
       - name: Authenticated remote canvas commands
+        if: matrix.shard == 'documents'
         run: npm run canvas:journey:remote
       - name: Board artifact projection, conditional saves and phone read-only input
+        if: matrix.shard == 'documents'
         run: npm run board:journey
       - name: Board viewer evidence
-        if: always()
+        if: always() && matrix.shard == 'documents'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: board-viewer-evidence
+          name: board-viewer-evidence-${{ matrix.shard }}
           path: .cache/evidence/feat-board-viewer
           if-no-files-found: ignore
           retention-days: 7
       - name: Consumer task-list viewer
+        if: matrix.shard == 'documents'
         run: npm run task-list:journey
       - name: Fictional morning experience
+        if: matrix.shard == 'documents'
         run: npm run morning:journey
       - name: Fake-model correctness journey
+        if: matrix.shard == 'documents'
         run: npm run studio:journey:correctness
       - name: Studio journeys with the scripted model
-        run: npm run studio:journey:scripted
+        if: startsWith(matrix.shard, 'studio-')
+        shell: bash
+        run: |
+          STUDIO_ONLY=$(node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { loadScenarios } from './lab/studio/scenarios/index.mjs';
+          import { JOURNEYS } from './lab/studio/journeys/index.mjs';
+          assert.ok(['0', '1'].includes(process.env.STUDIO_PART), 'STUDIO_PART must be 0 or 1');
+          const ids = [...Object.keys(JOURNEYS), ...(await loadScenarios()).map(scenario => scenario.id)];
+          assert.equal(new Set(ids).size, ids.length);
+          const selected = ids.filter((_, index) => index % 2 === Number(process.env.STUDIO_PART));
+          assert.ok(selected.length > 0);
+          console.log(selected.join(','));
+          NODE
+          )
+          export STUDIO_ONLY
+          npm run studio:journey:scripted
         env:
+          STUDIO_PART: ${{ matrix.shard == 'studio-1' && '0' || '1' }}
           STUDIO_EVIDENCE: ${{ runner.temp }}/evidence/studio
       - name: Workspace demo journey (accounts payable)
+        if: matrix.shard == 'workspace'
         run: npm run workspace-demo:journey
         env:
           APP_EVIDENCE: ${{ runner.temp }}/evidence/workspace-demo
       - name: Ambient journey with the scripted model
+        if: matrix.shard == 'workspace'
         run: npm run ambient:journey:scripted
         env:
           AMBIENT_EVIDENCE: ${{ runner.temp }}/evidence/ambient
       - name: Canvas command evidence
-        if: always()
+        if: always() && matrix.shard == 'documents'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: canvas-command-evidence
+          name: canvas-command-evidence-${{ matrix.shard }}
           path: .cache/evidence/canvas-browser
           if-no-files-found: ignore
           retention-days: 7
       - name: Canvas proposal evidence
-        if: always()
+        if: always() && matrix.shard == 'documents'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: canvas-proposal-evidence
+          name: canvas-proposal-evidence-${{ matrix.shard }}
           path: .cache/evidence/canvas-proposals-browser
           if-no-files-found: ignore
           retention-days: 7
       - name: Remote canvas evidence
-        if: always()
+        if: always() && matrix.shard == 'documents'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: canvas-remote-evidence
+          name: canvas-remote-evidence-${{ matrix.shard }}
           path: .cache/evidence/canvas-remote-browser
           if-no-files-found: ignore
           retention-days: 7
       - name: Task-list evidence
-        if: always()
+        if: always() && matrix.shard == 'documents'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: task-list-evidence
+          name: task-list-evidence-${{ matrix.shard }}
           path: .cache/evidence/task-list-browser
           if-no-files-found: ignore
           retention-days: 7
       - name: Morning experience evidence
-        if: always()
+        if: always() && matrix.shard == 'documents'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: morning-evidence
+          name: morning-evidence-${{ matrix.shard }}
           path: .cache/evidence/morning-browser
           retention-days: 7
       - name: Evidence of a failed run
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: journey-evidence
+          name: journey-evidence-${{ matrix.shard }}
           path: |
             ${{ runner.temp }}/evidence
             .cache/evidence
@@ -164,20 +203,34 @@ jobs:
           retention-days: 7
 
       - name: Draft recovery evidence
-        if: always()
+        if: always() && matrix.shard == 'documents'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: draft-recovery-evidence
+          name: draft-recovery-evidence-${{ matrix.shard }}
           path: .cache/evidence/draft-recovery-browser
           retention-days: 7
           if-no-files-found: ignore
       - name: File tree evidence
-        if: always()
+        if: always() && matrix.shard == 'documents'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: file-tree-evidence
+          name: file-tree-evidence-${{ matrix.shard }}
           path: |
             .cache/evidence/file-tree-browser
             .cache/evidence/library
           retention-days: 7
           if-no-files-found: ignore
+  ci-ok:
+    name: Studio scripted journeys
+    if: always()
+    needs: [scripted-journeys]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every job to succeed
+        env:
+          NEEDS_RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          test -n "$NEEDS_RESULTS"
+          for result in $NEEDS_RESULTS; do
+            test "$result" = success || exit 1
+          done

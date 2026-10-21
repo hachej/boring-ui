@@ -153,10 +153,11 @@ export async function runScenario(t, scenario, variant, expectations, { retries 
 
 async function runOnce(t, scenario, variant, expectations) {
   await t.step(`${scenario.id} (${variant.id}): ${scenario.title}`, async () => {
-    if (scenario.viewport) await t.device(scenario.viewport);
     t.answered = [];
     try {
+      // Clear the previous scenario in its own layout before a phone hides its desktop Close control.
       await t.fresh();
+      if (scenario.viewport) await t.device(scenario.viewport);
       await t.browser.until('the scenario list', `!!${q('[data-testid=scenario-list]')}`, 20000);
       const listed = await t.browser.evaluate(`(${qa(`[data-testid=scenario][data-scenario=${scenario.id}]`)})[0]?.dataset.available`);
       assert.equal(listed, 'true', `${scenario.id} is listed as available on ${variant.id}`);

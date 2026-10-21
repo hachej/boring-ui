@@ -126,6 +126,11 @@
       ],
       "files": [
         {
+          "path": "registry/utils/use-draggable.ts",
+          "type": "registry:hook",
+          "target": "components/utils/use-draggable.ts"
+        },
+        {
           "path": "registry/utils/utils.ts",
           "type": "registry:lib",
           "target": "components/utils/utils.ts"
@@ -662,6 +667,10 @@
             ".pi-chat :is([data-slot=\"button\"], [data-slot=\"toggle\"], [class~=\"group/button\"], [class~=\"group/toggle\"])": {
               "min-height": "2.75rem",
               "min-width": "2.75rem"
+            },
+            ".pi-chat [data-testid=\"queue\"] button, .pi-chat button[data-testid=\"composer-queue\"]": {
+              "min-height": "3rem",
+              "min-width": "3rem"
             }
           }
         },
@@ -2631,6 +2640,32 @@
           "path": "registry/highlights/highlights.tsx",
           "type": "registry:component",
           "target": "components/highlights/highlights.tsx"
+        }
+      ]
+    },
+    {
+      "name": "windows",
+      "type": "registry:block",
+      "title": "Floating windows and launcher",
+      "description": "Host utility windows with shared pointer-capture drag, resize, focus stacking, minimize/close, remembered rectangles and a keyboard launcher; full-screen Drawer below 641px. No agent or content persistence.",
+      "dependencies": [
+        "react@^19.0.0",
+        "react-dom@^19.0.0",
+        "lucide-react@^1.51.0"
+      ],
+      "registryDependencies": [
+        "@boring-ui/utils",
+        "button",
+        "card",
+        "badge",
+        "drawer",
+        "dropdown-menu"
+      ],
+      "files": [
+        {
+          "path": "registry/windows/windows.tsx",
+          "type": "registry:component",
+          "target": "components/windows/windows.tsx"
         }
       ]
     }
