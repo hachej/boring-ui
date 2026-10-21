@@ -29,7 +29,7 @@ import type { VoiceMessageConfig } from '../pi-chat/config';
 import { useHoldToRecord, useRecordingCancellation } from '../pi-chat/use-hold-to-record';
 import { useVoiceMessage } from '../pi-chat/use-voice-message';
 import type { PendingVoice } from '../pi-chat/use-voice-message';
-import { PendingVoiceBubble, voiceClock } from '../pi-chat/voice-message';
+import { voiceClock } from '../pi-chat/voice-message';
 import { chatTextFor } from '../pi-chat/locale';
 import { NoteBubble, useComposerFeedback } from '../feedback/feedback-session';
 import { feedbackLabelsFr } from '../feedback/feedback-labels';
@@ -97,7 +97,7 @@ interface Voice {
   readonly phase: VoicePhase;
   readonly seconds: number;
   readonly problem: string | undefined;
-  readonly pending?: PendingVoice | undefined;
+  readonly pending?: readonly PendingVoice[] | undefined;
   readonly captureSequence?: number;
   readonly start: () => void;
   readonly finish: () => void;
@@ -337,14 +337,15 @@ export function AgentLayerProvider({ agent, improve, locale, agentLink, children
   });
   const revealedFailure = useRef<number | undefined>(undefined);
   useEffect(() => {
-    const phase = voice.pending?.phase;
+    const failure = voice.pending?.findLast(item => item.phase === 'transcribe-failed' || item.phase === 'upload-failed' || item.phase === 'blocked' || item.phase === 'unconfirmed');
+    const failureId = failure?.id ?? voice.captureSequence;
     const captureProblem = agent?.voice?.send === 'message' && voice.problem;
-    const failed = captureProblem || phase === 'transcribe-failed' || phase === 'upload-failed' || phase === 'blocked' || phase === 'unconfirmed';
+    const failed = captureProblem || failure;
     if (!failed) { revealedFailure.current = undefined; return; }
-    if (revealedFailure.current === voice.captureSequence) return;
-    revealedFailure.current = voice.captureSequence;
+    if (revealedFailure.current === failureId) return;
+    revealedFailure.current = failureId;
     if (!expanded && shown === 'agent' && snap === 'peek') setSnapState('half');
-  }, [expanded, shown, snap, agent?.voice?.send, voice.captureSequence, voice.problem, voice.pending?.phase]);
+  }, [expanded, shown, snap, agent?.voice?.send, voice.captureSequence, voice.problem, voice.pending?.map(item => `${item.id}:${item.phase}`).join(',')]);
 
   const state: AgentLayerState = snap === 'closed' ? 'closed' : expanded ? 'open' : snap;
   const value = useMemo<Internal>(() => ({
@@ -434,7 +435,7 @@ export function AgentTrigger({ className, children }: { readonly className?: str
  */
 function TalkButton({ text }: { readonly text: AppShellText }) {
   const { voice } = useInternal();
-  const busy = voice.phase === 'transcribing' || Boolean(voice.pending);
+  const busy = voice.phase === 'transcribing' || Boolean(voice.pending?.some(item => item.phase === 'unconfirmed'));
   const hold = useHoldToRecord(voice, busy);
   return <Button {...hold} variant="ghost" size="icon" data-testid="agent-talk" data-state={voice.phase} disabled={busy} aria-label={text.holdToTalk} title={text.holdToTalk}
     className="touch-none">
@@ -460,7 +461,7 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const fr = locale === 'fr';
   return <div data-spec={role} hidden={!visible} className={cn('min-h-0 min-w-0 flex-1', visible ? 'flex flex-col' : 'hidden')}>
     <PiChat {...spec.chatProps} {...(locale ? { locale } : {})} controller={spec.controller} keyboardInset={false} placement={layer.expanded && !layer.dockFloating ? 'docked' : 'floating'} {...(feedback ? { feedback } : {})}
-      {...(role === 'agent' && spec.voice ? { voiceMessage: undefined, tools: <>{spec.chatProps?.tools}<TalkButton text={appShellText(locale)} /></>, belowComposer: layer.voice.pending ? <>{spec.chatProps?.belowComposer}<PendingVoiceBubble pending={layer.voice.pending} /></> : spec.chatProps?.belowComposer } : {})} />
+      {...(role === 'agent' && spec.voice ? { voiceMessage: undefined, tools: <>{spec.chatProps?.tools}<TalkButton text={appShellText(locale)} /></>, pendingVoice: layer.voice.pending } : {})} />
     {/* The note editor of ordinary feedback lives inside the layer, in the modal's focus tree; while pointing the layer steps aside and AgentLayer renders it. */}
     {/* In the flow, inside the visible content box: the popup is transformed (a fixed element would be placed against its off-screen bottom). */}
     {spec.feedback && visible && !pointing && <div className="shrink-0 px-2 pb-2 empty:hidden">
@@ -617,7 +618,7 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
           {!peek && <Header text={text} title={title} compactSnap={snap} closeRef={closeRef} />}
           {!peek && <VoiceProblem />}
           {peek && recording && <div role="status" data-testid="agent-listening" data-phase={voice.phase} className="absolute inset-0 z-20 flex items-center justify-center gap-2 bg-popover text-sm font-medium">
-            <MicIcon className="size-4 text-destructive" aria-hidden="true" />{voice.phase === 'transcribing' ? <><Loader2Icon className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />{voice.pending && voiceClock(voice.pending.seconds)}</> : `${text.listening} ${voiceClock(voice.seconds)}`}
+            <MicIcon className="size-4 text-destructive" aria-hidden="true" />{voice.phase === 'transcribing' ? <><Loader2Icon className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />{voiceClock(voice.seconds)}</> : `${text.listening} ${voiceClock(voice.seconds)}`}
           </div>}
           {/* The transcript scrolls and never drags the sheet: only the handle and the title row swipe. */}
           <div data-base-ui-swipe-ignore="" className="flex min-h-0 flex-1 flex-col"><ChatSlot /></div>

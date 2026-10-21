@@ -26,16 +26,16 @@ export function PendingVoiceBubble({ pending }: { readonly pending: PendingVoice
   if (!pending) return null;
   const failed = pending.phase === 'transcribe-failed' || pending.phase === 'upload-failed';
   const blocked = pending.phase === 'blocked' || pending.phase === 'unconfirmed';
-  return <Message align="end" data-testid="voice-pending" data-state={pending.phase}><MessageContent><Bubble variant="muted" align="end"><BubbleContent>
+  return <Message align="end" data-testid="voice-pending" data-voice-id={pending.id} data-state={pending.phase}><MessageContent><Bubble variant="muted" align="end" className={failed || blocked ? 'w-full max-w-full' : undefined}><BubbleContent>
     <div role={failed ? 'alert' : 'status'} className="flex items-center gap-2">
       {!failed && !blocked && <Spinner aria-hidden="true" />}
       <span>{voiceClock(pending.seconds)}</span>
       <span>{pending.phase === 'upload-failed' ? labels.uploadFailedShort : pending.phase === 'transcribe-failed' ? labels.voiceTranscribeFailed : pending.phase === 'blocked' ? labels.voiceBlocked : pending.phase === 'unconfirmed' ? labels.voiceUnconfirmed : labels.voicePreparing}</span>
     </div>
-    {(failed || blocked) && <div className="mt-2 flex flex-wrap gap-2">
-      {failed && <Button size="sm" variant="outline" data-testid="voice-retry" onClick={pending.retry}>{labels.retry}</Button>}
-      {pending.audioOnly && <Button size="sm" variant="outline" data-testid="voice-audio-only" onClick={pending.audioOnly}>{labels.voiceAudioOnly}</Button>}
-      {pending.phase !== 'unconfirmed' && <Button size="sm" variant="ghost" data-testid="voice-discard" onClick={pending.discard}>{labels.voiceDiscard}</Button>}
+    {(failed || blocked) && <div className="mt-2 grid grid-cols-[auto_minmax(0,1fr)_auto] gap-2">
+      {failed && <Button size="sm" className="h-auto min-h-11 min-w-0 whitespace-normal" variant="outline" data-testid="voice-retry" onClick={pending.retry}>{labels.retry}</Button>}
+      {pending.audioOnly && <Button size="sm" className="h-auto min-h-11 min-w-0 whitespace-normal" variant="outline" data-testid="voice-audio-only" onClick={pending.audioOnly}>{labels.voiceAudioOnly}</Button>}
+      {pending.phase !== 'unconfirmed' && <Button size="sm" className="h-auto min-h-11 min-w-0 whitespace-normal" variant="ghost" data-testid="voice-discard" onClick={pending.discard}>{labels.voiceDiscard}</Button>}
     </div>}
   </BubbleContent></Bubble></MessageContent></Message>;
 }

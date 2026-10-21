@@ -55,21 +55,27 @@ try {
     await mounted(beforeReload);
     await browser.click(q('[data-testid=agent-trigger]')); await ready(); await pause(800);
     await browser.until('retained transcript after reload', `!!${q(bubble)} && ${q(bubble)}.textContent.includes('Je mange une salade')`);
-    const play = `${q(bubble)}.querySelector('[data-testid=voice-play]')`;
-    await browser.click(play);
-    await browser.until('retained audio plays lazily', `${q(bubble)}.querySelector('audio').paused === false`, 15000);
-    await browser.until('retained duration decoded', `!['--:--', '0:00'].includes(${q(bubble)}.querySelector('[data-testid=voice-duration]').textContent)`, 15000);
-    check(await browser.evaluate(`${play}.getAttribute('aria-label') === 'Mettre en pause'`), 'playing audio has accessible Mettre en pause label');
-    await browser.click(play);
-    await browser.until('idle replay has a play label', `${q(bubble)}.querySelector('audio').paused`);
     const automatic = await browser.evaluate(`(() => { const v = ${q('[data-testid=transcript-scroll]')}, b = ${q('[data-testid=jump-latest]')}; return { distance: v.scrollHeight - v.clientHeight - v.scrollTop, height: v.clientHeight, scrollHeight: v.scrollHeight, arrow: !!b && Number(getComputedStyle(b).opacity) > 0, native: v.dataset.scrollable }; })()`);
     console.log('review automatic bottom', device, JSON.stringify(automatic));
-    check(automatic.distance < 2 && !automatic.arrow, 'settled replay automatically stays at bottom without jump arrow');
+    check(automatic.distance < 2 && !automatic.arrow, 'reloaded transcript starts at the bottom without jump arrow');
     if (automatic.scrollHeight > automatic.height + 10) {
-      await browser.evaluate(`${q('[data-testid=transcript-scroll]')}.scrollTop = 0`); await pause(700);
+      const viewport = await browser.evaluate(`(() => { const r = ${q('[data-testid=transcript-scroll]')}.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+      await browser.wheel(viewport.x, viewport.y, -1000); await pause(700);
       check(await browser.evaluate(`(() => { const v = ${q('[data-testid=transcript-scroll]')}.getBoundingClientRect(), b = ${q('[data-testid=jump-latest]')}; if (!b) return false; const r = b.getBoundingClientRect(); return r.top >= v.bottom || r.bottom <= v.top; })()`), 'visible jump control has reserved space outside the message viewport');
       await browser.click(q('[data-testid=jump-latest]'));
     }
+    if (device === 'phone') { await browser.click(q('[data-testid=agent-layer-expand]')); await pause(800); }
+    const play = `${q(bubble)}.querySelector('[data-testid=voice-play]')`;
+    const clickReplay = async () => {
+      const p = await browser.evaluate(`(() => { const e = ${play}, r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+      await mouse('mousePressed', p, 1); await mouse('mouseReleased', p, 0);
+    };
+    await clickReplay();
+    await browser.until('retained audio plays lazily', `${q(bubble)}.querySelector('audio').paused === false`, 15000);
+    await browser.until('retained duration decoded', `!['--:--', '0:00'].includes(${q(bubble)}.querySelector('[data-testid=voice-duration]').textContent)`, 15000);
+    check(await browser.evaluate(`${play}.getAttribute('aria-label') === 'Mettre en pause'`), 'playing audio has accessible Mettre en pause label');
+    await clickReplay();
+    await browser.until('idle replay has a play label', `${q(bubble)}.querySelector('audio').paused`);
     await browser.evaluate(`${q('[data-testid=transcript-scroll]')}.scrollTop = ${q('[data-testid=transcript-scroll]')}.scrollHeight`);
     await pause(700);
     const position = await browser.evaluate(`(() => { const v = ${q('[data-testid=transcript-scroll]')}, b = ${q('[data-testid=jump-latest]')}; return { distance: v.scrollHeight - v.clientHeight - v.scrollTop, arrow: !!b && getComputedStyle(b).visibility !== 'hidden' && Number(getComputedStyle(b).opacity) > 0, native: v.dataset.scrollable }; })()`);
