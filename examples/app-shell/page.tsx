@@ -16,6 +16,7 @@ import { afterBack } from '../../registry/app-shell/back.ts';
 import { AppShell, ListDetail, useAgentContext, readAgentContext, useScreenHeader } from '../../registry/app-shell/index.ts';
 import type { RevisionProvider } from '@hachej/boring-files/revision';
 import { AgentTargetMode } from '../../registry/agent-target/agent-target.tsx';
+import { agentTargetLabelsFr } from '../../registry/agent-target/agent-target-labels.ts';
 import { Button } from './components/ui/button';
 import { Documents } from '../../registry/documents/documents.tsx';
 import { DocumentSheet } from '../../registry/documents/document-sheet.tsx';
@@ -61,7 +62,7 @@ function Meals() {
     <p>Activez « Pointer et dicter », puis touchez un repas.</p>
     {meals.map(meal => <Button key={meal.id} variant="outline" data-testid={`meal-${meal.id}`} data-agent-target={JSON.stringify({ meal: meal.id, slot: meal.slot })} data-private="not-sent" className="min-h-11 justify-start" onClick={() => { window.__mealTaps++; }}><span>{meal.label}</span></Button>)}
     <Button variant="ghost" data-testid="meal-outside" className="min-h-11" onClick={() => { window.__outsideTaps++; }}>Action ordinaire hors des repas</Button>
-    <AgentTargetMode enabled={enabled} transcribe={async () => 'remplace le riz par 150 g de pâtes'} onSettled={result => { window.__targetSettled.push(result); void refresh(); }} />
+    <AgentTargetMode enabled={enabled} labels={agentTargetLabelsFr} transcribe={async () => 'remplace le riz par 150 g de pâtes'} onSettled={result => { window.__targetSettled.push(result); void refresh(); }} />
   </section>;
 }
 function WalkingDay() {
@@ -86,7 +87,7 @@ function Plain({ label }: { label: string }) {
 const FITNESS = [
   { id: 'jour', label: 'Jour', icon: CalendarDaysIcon, render: () => <Day /> },
   { id: 'progres', label: 'Progrès', icon: ActivityIcon, render: () => <Progress /> },
-  { id: 'donnees', label: 'Données', icon: DatabaseIcon, badge: true, render: () => <Data /> },
+  { id: 'donnees', label: 'Données', icon: DatabaseIcon, render: () => <Data /> },
   ...(six ? [
     { id: 'objectifs', label: 'Objectifs', icon: TargetIcon, render: () => <Plain label="Vos objectifs" /> },
     { id: 'sommeil', label: 'Sommeil', icon: MoonStarIcon, badge: true, render: () => <Plain label="Votre sommeil" /> },

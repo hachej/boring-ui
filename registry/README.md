@@ -322,7 +322,7 @@ function Chat() {
 
 ## Point and dictate on app data (`agent-target`)
 
-Install `<registry>/agent-target.json` beside the app shell. It requires the kit patch that adds `NativeChatController.submissionStatus`; the already-published 0.4.3 kit does not provide it. Release versioning and Factory D-87 pins/vendor/fleet sync are a separate handoff. It uses the host's shadcn Button, Card, Message and Bubble, with the shell's existing controller; it never opens the chat drawer or creates a second chat. It installs no theme. See the [marking guide](../docs/guides/agent-target.md) for the data boundary and lifecycle.
+Install `<registry>/agent-target.json` beside the app shell. Pass `labels={agentTargetLabelsFr}` from `agent-target/agent-target-labels` for French, or override any `AgentTargetLabels` fields; omitted labels keep English defaults. It requires the kit patch that adds `NativeChatController.submissionStatus`; the already-published 0.4.3 kit does not provide it. Release versioning and Factory D-87 pins/vendor/fleet sync are a separate handoff. It uses the host's shadcn Button, Card, Message and Bubble, with the shell's existing controller; it never opens the chat drawer or creates a second chat. It installs no theme. See the [marking guide](../docs/guides/agent-target.md) for the data boundary and lifecycle.
 
 ```tsx
 <Button data-agent-target={JSON.stringify({ meal: 'm-42', slot: 'lunch' })}>
@@ -334,7 +334,7 @@ Install `<registry>/agent-target.json` beside the app shell. It requires the kit
 
 An enabled tap picks the nearest marked ancestor and starts recording. Stop transcribes and sends one `<target>{…}</target>` block followed by the spoken text **in the user message**, not hidden request context. The transcript shows the block as a chip. Refusal restores only the person's words to the same chat draft. Only a JSON object in the selected attribute is supported, capped at 1,024 UTF-8 bytes; invalid or oversized values are refused before the microphone opens. No sibling dataset attributes, page text or feedback snapshots are collected. `attribute` defaults to `data-agent-target`.
 
-Escape, an outside tap, disabling the mode and unmount release local microphone/transcription/observation work. They do not abort an already admitted native submission. `onSettled({ target, reply, ok })` fires once for an observed outcome; `ok` means an answered native submission, not proof of a domain mutation. The host still authorizes every tool and owns refetching. `useDictation({ transcribe, onText, locale? })`, exported by `app-shell`, supplies the same start/finish/cancel lifecycle to this bar and the shell's push-to-talk.
+Escape, an outside tap, disabling the mode and unmount release local microphone/transcription/observation work. They do not abort an already admitted native submission. `onSettled({ target, reply, ok })` fires once for an observed outcome; `ok` means an answered native submission, not proof of a domain mutation. The host still authorizes every tool and owns refetching. `useDictation({ transcribe, onText, locale?, labels? })`, exported by `app-shell`, supplies the same start/finish/cancel lifecycle to this bar and the shell's push-to-talk.
 
 The fictional [app-shell journey](../examples/app-shell/journey-target.mjs) drives fake microphone/transcription and a scripted native answer at 390px and desktop (`npm run app-shell:journey:target`). Its refresh calls a fixture list endpoint; it does not qualify a real meal-editing tool, speech service or physical phone keyboard.
 

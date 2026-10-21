@@ -17,6 +17,8 @@ import { ScreenActiveContext } from '../app-shell/agent-context';
 import { useDictation } from '../app-shell/use-dictation';
 import { useVisualViewport } from '../app-shell/use-visual-viewport';
 import { object } from '../pi-chat/rows';
+import { agentTargetLabels } from './agent-target-labels';
+import type { AgentTargetLabels } from './agent-target-labels';
 
 export interface AgentTargetResult { readonly target: JsonObject; readonly reply: string; readonly ok: boolean }
 export interface AgentTargetModeProps {
@@ -24,6 +26,7 @@ export interface AgentTargetModeProps {
   readonly transcribe: (audio: Blob, signal: AbortSignal) => Promise<string>;
   readonly onSettled: (result: AgentTargetResult) => void;
   readonly attribute?: string;
+  readonly labels?: Partial<AgentTargetLabels> | undefined;
 }
 type Stage = 'dictating' | 'sending' | 'observing' | 'settled' | 'cancelled';
 interface Session {
@@ -33,6 +36,7 @@ interface Session {
   readonly controller: NativeChatController;
   readonly abort: AbortController;
   readonly onSettled: AgentTargetModeProps['onSettled'];
+  readonly labels: AgentTargetLabels;
   stage: Stage;
 }
 interface Presentation { readonly element: Element; readonly stage: Stage; readonly reply: string; readonly problem?: string }
@@ -40,14 +44,14 @@ interface Presentation { readonly element: Element; readonly stage: Stage; reado
 function freeze(value: unknown): void {
   if (value && typeof value === 'object') { for (const child of Object.values(value)) freeze(child); Object.freeze(value); }
 }
-function contextOf(element: Element, attribute: string): { readonly target: JsonObject; readonly block: string } {
+function contextOf(element: Element, attribute: string, labels: AgentTargetLabels): { readonly target: JsonObject; readonly block: string } {
   const raw = element.getAttribute(attribute) ?? '';
-  if (new TextEncoder().encode(raw).length > 1024) throw new Error('Target context exceeds 1 KB.');
+  if (new TextEncoder().encode(raw).length > 1024) throw new Error(labels.contextTooLarge);
   let target: unknown;
-  try { target = JSON.parse(raw); } catch { throw new Error('Target context must be a JSON object.'); }
-  if (!target || typeof target !== 'object' || Array.isArray(target)) throw new Error('Target context must be a JSON object.');
+  try { target = JSON.parse(raw); } catch { throw new Error(labels.invalidContext); }
+  if (!target || typeof target !== 'object' || Array.isArray(target)) throw new Error(labels.invalidContext);
   const json = JSON.stringify(target).replace(/</g, '\\u003c');
-  if (new TextEncoder().encode(json).length > 1024) throw new Error('Target context exceeds 1 KB.');
+  if (new TextEncoder().encode(json).length > 1024) throw new Error(labels.contextTooLarge);
   freeze(target);
   return { target: target as JsonObject, block: `<target>${json}</target>` };
 }
@@ -75,7 +79,7 @@ function observe(session: Session, submission: Submission, show: (reply: string)
       const record = await controller.submissionStatus(submission);
       if (abort.signal.aborted) return;
       stream();
-      if (record.status === 'unanswered') { stop(); settle('', false, 'The agent did not answer this request.'); return; }
+      if (record.status === 'unanswered') { stop(); settle('', false, session.labels.unanswered); return; }
       if (record.status === 'done' && record.type === 'input') {
         const view = controller.getSnapshot().view;
         const answer = view?.entries.find(entry => entry.id === record.answer);
@@ -88,7 +92,7 @@ function observe(session: Session, submission: Submission, show: (reply: string)
       if (!abort.signal.aborted) timer = setTimeout(() => { void poll(); }, 150);
     } catch {
       stop();
-      if (!abort.signal.aborted) settle('', false, 'Could not confirm the reply. Open chat to check it.');
+      if (!abort.signal.aborted) settle('', false, session.labels.observationFailed);
     }
   };
   stream();
@@ -96,15 +100,16 @@ function observe(session: Session, submission: Submission, show: (reply: string)
 }
 
 /** Tap only explicitly marked app data, dictate once and show its native answer without opening the app's chat. */
-export function AgentTargetMode({ enabled, transcribe, onSettled, attribute = 'data-agent-target' }: AgentTargetModeProps) {
+export function AgentTargetMode({ enabled, transcribe, onSettled, labels, attribute = 'data-agent-target' }: AgentTargetModeProps) {
+  const words = { ...agentTargetLabels, ...labels };
   const { agent } = useAgentLayer();
   const active = useContext(ScreenActiveContext);
   const viewport = useVisualViewport();
   const session = useRef<Session | null>(null);
   const picker = useRef<Picker | null>(null);
   const box = useRef<HTMLDivElement>(null);
-  const latest = useRef({ onSettled });
-  latest.current = { onSettled };
+  const latest = useRef({ onSettled, words });
+  latest.current = { onSettled, words };
   const [shown, setShown] = useState<Presentation | null>(null);
   const [place, setPlace] = useState<CSSProperties>();
   const settle = (selected: Session, reply: string, ok: boolean, problem?: string) => {
@@ -113,7 +118,7 @@ export function AgentTargetMode({ enabled, transcribe, onSettled, attribute = 'd
     setShown({ element: selected.element, stage: 'settled', reply, ...(problem ? { problem } : {}) });
     selected.onSettled({ target: selected.target, reply, ok });
   };
-  const dictation = useDictation({ transcribe, onText: async spoken => {
+  const dictation = useDictation({ transcribe, labels: words, onText: async spoken => {
     const selected = session.current;
     if (!selected || selected.stage !== 'dictating') return;
     selected.stage = 'sending';
@@ -131,11 +136,11 @@ export function AgentTargetMode({ enabled, transcribe, onSettled, attribute = 'd
         const draft = snapshot.draft.text;
         selected.controller.setText(`${draft}${draft && !/\s$/.test(draft) ? ' ' : ''}${spoken}`);
       }
-      settle(selected, '', false, snapshot.disposed ? 'The chat is no longer available.' : 'The request could not be sent. Your words are in the chat draft.');
+      settle(selected, '', false, snapshot.disposed ? selected.labels.unavailable : selected.labels.sendFailed);
       return;
     }
     if (selected.abort.signal.aborted || session.current !== selected) return;
-    if (!submission) { settle(selected, '', false, 'The request was not confirmed. Check the chat before trying again.'); return; }
+    if (!submission) { settle(selected, '', false, selected.labels.unconfirmed); return; }
     selected.stage = 'observing';
     setShown({ element: selected.element, stage: 'observing', reply: '' });
     observe(selected, submission, reply => {
@@ -190,11 +195,11 @@ export function AgentTargetMode({ enabled, transcribe, onSettled, attribute = 'd
         pickedGesture = target;
         created.suspend(true);
         try {
-          const context = contextOf(target, attribute);
-          session.current = { ...context, element: target, controller: agent, abort: new AbortController(), onSettled: latest.current.onSettled, stage: 'dictating' };
+          const context = contextOf(target, attribute, latest.current.words);
+          session.current = { ...context, element: target, controller: agent, abort: new AbortController(), onSettled: latest.current.onSettled, labels: latest.current.words, stage: 'dictating' };
           setShown({ element: target, stage: 'dictating', reply: '' });
           start();
-        } catch (error) { setShown({ element: target, stage: 'settled', reply: '', problem: error instanceof Error ? error.message : 'Invalid target context.' }); }
+        } catch (error) { setShown({ element: target, stage: 'settled', reply: '', problem: error instanceof Error ? error.message : latest.current.words.invalidContext }); }
       },
     });
     picker.current = created;
@@ -224,7 +229,8 @@ export function AgentTargetMode({ enabled, transcribe, onSettled, attribute = 'd
       const height = Math.min(node.getBoundingClientRect().height, Math.max(0, bottom - topEdge));
       const lowest = Math.max(topEdge, bottom - height);
       const top = Math.max(topEdge, Math.min(rect.bottom + 8 + height <= bottom ? rect.bottom + 8 : rect.top - height - 8 >= topEdge ? rect.top - height - 8 : lowest, lowest));
-      const next = { position: 'fixed' as const, top, left: Math.min(Math.max(8, rect.left), Math.max(8, window.innerWidth - 328)), width: Math.min(320, window.innerWidth - 16), maxHeight: Math.max(0, bottom - top), overflowY: 'auto' as const };
+      const width = Math.min(Math.max(240, rect.width), window.innerWidth - 16);
+      const next = { position: 'fixed' as const, top, left: Math.min(Math.max(8, rect.left), Math.max(8, window.innerWidth - width - 8)), width, maxHeight: Math.max(0, bottom - top), overflowY: 'auto' as const };
       setPlace(previous => JSON.stringify(previous) === JSON.stringify(next) ? previous : next);
     };
     measure();
@@ -238,16 +244,16 @@ export function AgentTargetMode({ enabled, transcribe, onSettled, attribute = 'd
   if (!enabled || !active || !shown || typeof document === 'undefined') return null;
   const phase = shown.stage === 'dictating' ? dictation.phase : shown.stage;
   return createPortal(<Card ref={box} size="sm" data-feedback-ignore="" data-boring="agent-target" data-testid="agent-target-bar" data-phase={phase}
-    role="region" aria-label="Talk about this item" className="app-shell fixed z-50" style={place}>
-    <CardHeader><CardTitle>Talk about this item</CardTitle></CardHeader>
+    role="region" aria-label={words.title} className="app-shell fixed z-50" style={place}>
+    <CardHeader><CardTitle>{words.title}</CardTitle></CardHeader>
     <CardContent>
       {shown.problem ? <p role="alert" data-testid="agent-target-problem">{shown.problem}</p>
-        : shown.reply ? <Message align="start"><MessageContent><Bubble><BubbleContent data-testid="agent-target-reply" className="whitespace-pre-wrap">{shown.reply}</BubbleContent></Bubble></MessageContent></Message>
-          : <p role="status">{phase === 'starting' ? 'Opening microphone…' : phase === 'recording' ? `Listening… ${dictation.seconds}s` : phase === 'transcribing' ? 'Transcribing…' : phase === 'settled' ? 'Request answered.' : 'Waiting for the agent…'}</p>}
+        : shown.reply ? <Message align="start"><MessageContent><Bubble variant="secondary"><BubbleContent data-testid="agent-target-reply" className="whitespace-pre-wrap">{shown.reply}</BubbleContent></Bubble></MessageContent></Message>
+          : <p role="status">{phase === 'starting' ? words.opening : phase === 'recording' ? words.listening(dictation.seconds) : phase === 'transcribing' ? words.transcribing : phase === 'settled' ? words.answered : words.waiting}</p>}
     </CardContent>
     <CardFooter className="flex gap-2">
-      {shown.stage === 'dictating' && <Button data-testid="agent-target-stop" className="min-h-11 min-w-11" disabled={phase !== 'recording'} onClick={dictation.finish}>Stop and send</Button>}
-      <Button variant="ghost" data-testid="agent-target-close" className="min-h-11 min-w-11" onClick={cancel}>{shown.stage === 'settled' ? 'Close' : 'Cancel'}</Button>
+      {shown.stage === 'dictating' && <Button data-testid="agent-target-stop" className="min-h-11 min-w-11" disabled={phase !== 'recording'} onClick={dictation.finish}>{words.stop}</Button>}
+      <Button variant="ghost" data-testid="agent-target-close" className="min-h-11 min-w-11" onClick={cancel}>{shown.stage === 'settled' ? words.close : words.cancel}</Button>
     </CardFooter>
   </Card>, document.body);
 }

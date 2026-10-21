@@ -1114,6 +1114,9 @@
       ],
       "css": {
         "@layer base": {
+          ".app-shell :where(*, ::before, ::after)": {
+            "border-color": "var(--border)"
+          },
           ".app-shell :where(button, [role=button])": {
             "appearance": "none",
             "background-color": "transparent",
@@ -2450,6 +2453,11 @@
           "path": "registry/agent-target/agent-target.tsx",
           "type": "registry:component",
           "target": "components/agent-target/agent-target.tsx"
+        },
+        {
+          "path": "registry/agent-target/agent-target-labels.ts",
+          "type": "registry:lib",
+          "target": "components/agent-target/agent-target-labels.ts"
         }
       ]
     }

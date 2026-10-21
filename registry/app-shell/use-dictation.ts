@@ -15,10 +15,13 @@ export interface Dictation {
   readonly finish: () => void;
   readonly cancel: () => void;
 }
+export type DictationLabels = Pick<ReturnType<typeof chatTextFor>['labels'],
+  'voiceDenied' | 'voiceNoMicrophone' | 'voiceBusy' | 'voiceInsecure' | 'voiceUnsupported' | 'voiceStartFailed' | 'voiceNothingHeard' | 'voiceTranscribeFailed'>;
 export interface DictationOptions {
   readonly transcribe: ((audio: Blob, signal: AbortSignal) => Promise<string>) | undefined;
   readonly onText: (text: string, signal: AbortSignal) => void | Promise<void>;
   readonly locale?: ChatLocale | undefined;
+  readonly labels?: Partial<DictationLabels> | undefined;
 }
 
 const REFUSAL: Readonly<Record<VoiceRefusal, 'voiceDenied' | 'voiceNoMicrophone' | 'voiceBusy' | 'voiceInsecure' | 'voiceUnsupported' | 'voiceStartFailed'>> = {
@@ -66,7 +69,8 @@ export function useDictation(options: DictationOptions): Dictation {
       if (result.kind === 'refused') {
         current.current = null;
         set('idle');
-        setProblem(result.code ? chatTextFor(selected.locale).labels[REFUSAL[result.code]] : result.reason);
+        const words = { ...chatTextFor(selected.locale).labels, ...selected.labels };
+        setProblem(words[result.code ? REFUSAL[result.code] : 'voiceStartFailed']);
         return;
       }
       set('recording');
@@ -75,7 +79,7 @@ export function useDictation(options: DictationOptions): Dictation {
       current.current = null;
       attempt.capture.cancel();
       set('idle');
-      setProblem(chatTextFor(selected.locale).labels.voiceStartFailed);
+      setProblem(selected.labels?.voiceStartFailed ?? chatTextFor(selected.locale).labels.voiceStartFailed);
     });
   }, []);
   const finish = useCallback(() => {
@@ -83,7 +87,7 @@ export function useDictation(options: DictationOptions): Dictation {
     const attempt = current.current;
     if (!attempt || phaseRef.current !== 'recording') return;
     const selected = attempt.options;
-    const words = chatTextFor(selected.locale).labels;
+    const words = { ...chatTextFor(selected.locale).labels, ...selected.labels };
     set('transcribing');
     void (async () => {
       try {

@@ -4,16 +4,22 @@ Install the `agent-target` registry item and mount `AgentTargetMode` inside the 
 
 ```tsx
 import { AgentTargetMode } from '@/components/agent-target/agent-target';
+import { agentTargetLabelsFr } from '@/components/agent-target/agent-target-labels';
 
 <Button data-agent-target={JSON.stringify({ meal: 'm-42', slot: 'lunch' })}>
   <span>Fictional lunch</span>
 </Button>
 <AgentTargetMode
   enabled={pointing}
+  labels={agentTargetLabelsFr}
   transcribe={(audio, signal) => transcribeAudio(audio, signal)}
   onSettled={({ target }) => { if (typeof target.meal === 'string') void refetchMeal(target.meal); }}
 />
 ```
+
+## Labels and presentation
+
+All displayed words and the bar’s accessible name come from `labels?: Partial<AgentTargetLabels>`, with English defaults. Pass `agentTargetLabelsFr` for French or supply the host’s own labels, including `listening(seconds)` and microphone/error messages. The shared dictation hook also accepts label overrides. Replies use the host’s secondary Bubble variant; the bar follows the pointed item’s width and left edge, clamped to the visual viewport (a narrow target gets a readable minimum width).
 
 ## The data boundary
 

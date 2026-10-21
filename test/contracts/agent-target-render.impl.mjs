@@ -22,6 +22,7 @@ async function fixture(t, options = {}) {
   const tracks = [], opens = [];
   Object.defineProperty(window.navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: async () => {
     const gate = options.mediaGate;
+    if (options.mediaError) throw new window.DOMException('Fictional refusal', 'NotAllowedError');
     if (gate) await gate.promise;
     const track = { stopped: false, stop() { this.stopped = true; } }; tracks.push(track);
     return { getTracks: () => [track], getAudioTracks: () => [track] };
@@ -56,7 +57,7 @@ async function fixture(t, options = {}) {
     return h('main', null,
       h('button', { 'data-testid': 'outside', onClick: () => normal++ }, 'Normal page action'),
       h('button', { 'data-testid': 'meal', 'data-agent-target': options.attribute ?? JSON.stringify(TARGET), 'data-private': 'not-sent', onClick: () => normal++ }, h('span', { 'data-testid': 'meal-child' }, 'Fictional rice')),
-      h(AgentTargetMode, { enabled, transcribe, onSettled: result => settled.push(result) }));
+      h(AgentTargetMode, { enabled, transcribe, labels: options.labels, onSettled: result => settled.push(result) }));
   }
   const mount = document.createElement('div'); document.body.append(mount);
   const ui = createRoot(mount);
@@ -79,6 +80,84 @@ async function fixture(t, options = {}) {
   await render(true);
   return { replace, window, controller, conversation, context, native, fake, sent, settled, transcribed, tracks, opens, find, tap, fire, until, render, unmount, api: () => api, normal: () => normal, act };
 }
+
+const french = { title: 'Parler de cet élément', opening: 'Ouverture du microphone…', listening: seconds => `J’écoute… ${seconds} s`, transcribing: 'Transcription…', waiting: 'Réponse en cours…', answered: 'Demande traitée.', stop: 'Arrêter et envoyer', cancel: 'Annuler', close: 'Fermer', invalidContext: 'Contexte JSON invalide.', contextTooLarge: 'Contexte trop volumineux.', observationFailed: 'Réponse non confirmée.', unanswered: 'Aucune réponse.', unavailable: 'Discussion indisponible.', sendFailed: 'Envoi impossible.', unconfirmed: 'Envoi non confirmé.', voiceTranscribeFailed: 'Transcription impossible.', voiceDenied: 'Microphone refusé.' };
+
+test('host labels cover the title, accessible name, recording, transcription, waiting and close controls', async t => {
+  const mediaGate = deferred(), transcribeGate = deferred();
+  const f = await fixture(t, { labels: french, mediaGate, transcribeGate });
+  await f.tap('[data-testid=meal-child]');
+  const bar = () => f.find('[data-testid=agent-target-bar]');
+  assert.equal(bar().getAttribute('aria-label'), french.title);
+  assert.ok(bar().textContent.includes(french.opening));
+  assert.equal(f.find('[data-testid=agent-target-stop]').textContent, french.stop);
+  assert.equal(f.find('[data-testid=agent-target-close]').textContent, french.cancel);
+  await f.act(async () => mediaGate.resolve());
+  await f.until(() => bar()?.dataset.phase === 'recording', 'recording');
+  assert.ok(bar().textContent.includes(french.listening(0)));
+  await f.tap('[data-testid=agent-target-stop]');
+  await f.until(() => f.transcribed.length === 1, 'transcribing');
+  assert.ok(bar().textContent.includes(french.transcribing));
+  await f.act(async () => transcribeGate.resolve());
+  const call = await f.fake.nextCall();
+  assert.ok(bar().textContent.includes(french.waiting));
+  await f.act(async () => call.respond('Réponse fictive.'));
+  await f.until(() => f.settled.length === 1, 'settled');
+  assert.equal(f.find('[data-testid=agent-target-close]').textContent, french.close);
+  assert.equal(f.find('[data-testid=agent-target-reply]').closest('[data-slot=bubble]').dataset.variant, 'secondary');
+});
+
+for (const [name, options, expected] of [
+  ['invalid context', { attribute: 'not-json' }, french.invalidContext],
+  ['oversized context', { attribute: JSON.stringify({ note: 'x'.repeat(1100) }) }, french.contextTooLarge],
+  ['transcription failure', { transcribeError: true }, french.voiceTranscribeFailed],
+  ['microphone refusal', { mediaError: true }, french.voiceDenied],
+]) test(`host labels cover ${name}`, async t => {
+  const f = await fixture(t, { ...options, labels: french });
+  await f.tap('[data-testid=meal-child]');
+  if (options.transcribeError) {
+    await f.until(() => f.find('[data-testid=agent-target-bar]')?.dataset.phase === 'recording', 'recording');
+    await f.tap('[data-testid=agent-target-stop]');
+    await f.until(() => f.settled.length === 1, 'failure');
+  }
+  await f.until(() => !!f.find('[data-testid=agent-target-problem]'), 'localized error');
+  assert.equal(f.find('[data-testid=agent-target-problem]').textContent, expected);
+});
+
+test('English defaults remain available when the host supplies no labels', async t => {
+  const f = await fixture(t);
+  await f.tap('[data-testid=meal-child]');
+  await f.until(() => f.find('[data-testid=agent-target-bar]')?.dataset.phase === 'recording', 'recording');
+  assert.equal(f.find('[data-testid=agent-target-bar]').getAttribute('aria-label'), 'Talk about this item');
+  assert.equal(f.find('[data-testid=agent-target-stop]').textContent, 'Stop and send');
+  assert.equal(f.find('[data-testid=agent-target-close]').textContent, 'Cancel');
+});
+
+for (const outcome of ['unavailable', 'sendFailed', 'unconfirmed', 'unanswered', 'observationFailed']) test(`host labels cover ${outcome}`, async t => {
+  const f = await fixture(t, { labels: french });
+  if (outcome === 'sendFailed') f.controller.connect = async () => { throw new Error('Fictional connection failure'); };
+  if (outcome === 'unconfirmed') f.controller.send = async () => undefined;
+  if (outcome === 'unanswered' || outcome === 'observationFailed') f.controller.submissionStatus = async submission => {
+    if (outcome === 'observationFailed') throw new Error('Fictional status failure');
+    return { id: submission.id, conversationId: f.conversation.id, type: 'input', status: 'unanswered', reason: 'Fictional unanswered' };
+  };
+  await f.tap('[data-testid=meal-child]');
+  await f.until(() => f.find('[data-testid=agent-target-bar]')?.dataset.phase === 'recording', 'recording');
+  if (outcome === 'unavailable') await f.controller.dispose();
+  await f.tap('[data-testid=agent-target-stop]');
+  if (outcome === 'unanswered' || outcome === 'observationFailed') { const call = await f.fake.nextCall(); await f.act(async () => call.respond('Réponse fictive.')); }
+  await f.until(() => f.settled.length === 1, 'localized outcome');
+  assert.equal(f.find('[data-testid=agent-target-problem]').textContent, french[outcome]);
+});
+
+test('the target bar matches the pointed item width and left edge', async t => {
+  const f = await fixture(t);
+  f.find('[data-testid=meal]').getBoundingClientRect = () => ({ left: 16, right: 374, top: 100, bottom: 144, width: 358, height: 44 });
+  await f.tap('[data-testid=meal-child]');
+  const bar = f.find('[data-testid=agent-target-bar]');
+  assert.equal(bar.style.left, '16px');
+  assert.equal(bar.style.width, '358px');
+});
 
 test('nearest marked ancestor sends only captured JSON plus speech once, streams exact native reply, chat stays closed', { timeout: 20000 }, async t => {
   const f = await fixture(t);
@@ -104,6 +183,7 @@ test('nearest marked ancestor sends only captured JSON plus speech once, streams
   await f.until(() => f.settled.length === 1, 'settled once');
   assert.deepEqual(f.settled[0], { target: TARGET, reply: 'Fictional meal updated.', ok: true });
   assert.equal(f.api().state, 'closed');
+  assert.equal(f.find('[data-testid=agent-target-reply]').closest('[data-slot=bubble]').dataset.variant, 'secondary', 'the reply uses the host’s secondary bubble surface');
   assert.equal(f.tracks.every(track => track.stopped), true);
   assert.equal(f.sent.length, 1);
 });
