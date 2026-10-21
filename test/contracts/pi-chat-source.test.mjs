@@ -557,6 +557,15 @@ test('the expanded ambient window shows the host reply footer under a settled re
   assert.ok(!renderToStaticMarkup(createElement(AmbientChat, { controller, state: 'expanded' })).includes('data-testid="footer"'));
 });
 
+test('a user target context renders as a chip, leaving only speech in the message bubble', async () => {
+  const { RowView } = await load('target-chip', 'message.tsx');
+  const row = { key: 'target', type: 'user', message: { role: 'user', content: '<target>{"meal":"m-42","slot":"lunch"}</target>\n\nremplace le riz par 150 g de pâtes', timestamp: 1 } };
+  const html = renderToStaticMarkup(createElement(RowView, { row, context: {} }));
+  assert.match(html, /data-testid="message-target"/);
+  assert.match(html, /remplace le riz par 150 g de pâtes/);
+  assert.ok(!html.includes('&lt;target&gt;'), 'the context is not dumped into the text bubble');
+});
+
 test('the "Take a photo" item shows only for attachments that admit images on a coarse pointer', async t => {
   const { Window } = await import('happy-dom');
   const { act } = await import('react'); const { createRoot } = await import('react-dom/client');

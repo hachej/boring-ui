@@ -1,5 +1,41 @@
 # Implemented behavior and evidence
 
+## Requests board
+
+The `requests-board` registry item is host presentation (no Pi extension): `RequestsBoard`, pure `compactRows`/`filterViews`/`requestCounts` and EN/FR labels. Compact prioritizes five requests; full mode provides scoped filters/search, responsive list/detail, history, related links and host-owned answer/decision/try callbacks. The host re-renders views and bumps a change token for polite announcements; the block never polls or subscribes. Release approval visibility is not authorization. See [the recipe](../../registry/README.md#requests-board-requests-board).
+
+`test/contracts/requests.test.mjs` tests transforms; `test/contracts/requests-board.test.mjs` isolates real shadcn Happy DOM rendering and callbacks through `RequestsBoard`. `npm run requests:journey` drives the fictional `examples/workspace-app?requests` demo, including phone Back, keyboard, both languages, release gating and host-token updates, with light/dark screenshots under `.cache/evidence/D141/`. No backend, durable mutation, consumer D-140 integration or release qualification is claimed.
+
+## Anchored Markdown highlights (D-78)
+
+`@hachej/boring-ui-kit/markdown-quote` resolves `markdown.quote@1` literally over
+canonical source. `@hachej/boring-ui-kit/mark-store` uses the document's workspace
+client and existing conditional text buffer to save `<doc>.marks.json`.
+The `highlights` registry block borrows the editor, decorates without text edits,
+offers context actions/comments, and keeps missing/ambiguous marks in a candidate
+tray. [FEEDBACK](../architecture/FEEDBACK.md#markdown-quotes-and-document-marks)
+owns the semantics and conservative projection limits.
+
+Evidence: `test/packages/ui-markdown-quote.test.mjs` runs the named exact-only
+corpus through `runAnchorConformance`, including an offset-guesser negative
+control; `test/packages/ui-mark-store.test.mjs` covers add/edit/remove, two-tab CAS,
+lost replies, malformed sidecars, immutable capture and reentrant subscribers;
+`test/contracts/highlights.test.mjs` drives the public registry block with real
+React/Tiptap and SQLite. `test:document-consumer` includes headless marks and
+quotes without React, plus strict declarations and a browser bundle. The actual
+`highlights:journey` drives candidate persistence, comment editing, stale second-tab
+refusal, source capture/removal and unchanged document bytes through HTTP.
+Screenshots cover desktop/390px, FR/EN and light/dark under `.cache/evidence/D78/`.
+
+No agent, D-76 conflict UI, general rich source map, real-device or production
+identity-provider qualification is claimed. Existing global deferrals remain.
+
+## Shared document readers
+
+`@hachej/boring-agent/documents` adds optional native `read_pdf` and `read_spreadsheet` registrations and the `sniff`/`readStored` helpers. The [agent guide](../../packages/agent/README.md#shared-document-readers) owns their result shapes, limits and host callback contract. The Pi seam is `defineTool`; the stored-file helper returns native tool content without changing Pi's `read`.
+
+`node --test test/packages/agent-documents.test.mjs` exercises public output through a real Harness: generated fictional PDFs, selected scanned-page OCR, missing/failed OCR, page/text caps, xlsx/xls/ods/CSV sheet/range limits, native image content, typed binary refusals, host read failures and lazy dependency imports. The complete-JSON regression fails under Pi's default 50 KiB output cap and passes with the readers' explicit native byte limit. These are local parser/native-tool tests, not live OCR/provider qualification or an input-memory/CPU budget. Global release deferrals are unchanged.
+
 ## Typed record viewer
 
 The `record-viewer` registry item exports `RecordTable`, `RecordList`, `RecordsViewer` and `createRecordsKind` for `*.records.json` (`records@1`). This is host presentation, not a Pi execution extension. Tables group typed rows; app-provided status labels/tones select host Badge variants without domain interpretation. English/French labels and locale number/date formatting are supported. The file viewer uses a full-field list below 640px and exact raw-text fallback for invalid files. Host callbacks own row actions; absent handlers leave buttons disabled.
@@ -265,3 +301,9 @@ The shared blocks now default to a 260px navigation pane, search disclosure, con
 `workspace-app:journey` checks control alignment in the empty and one-line composer, the conversation-file popover and phone sheet, one sidebar toggle, title renaming, no default connection badge, disabled empty Send, composer placement before and after a message, width changes without clipping an existing draft, phone header geometry, source editing from overflow, retained scroll, focus restoration, Escape, and browser Back at 360px. `test/packages/ui-markdown-editor.test.mjs` drives the public editor's selection and pinned modes, including phone behavior. Viewer, Library, and acknowledgement DOM tests run in separate processes because Base UI retains document-scoped event state. Screenshots are under `.cache/evidence/chat-ux/`. The specified headless shell has no native PDF plug-in, so PDF evidence shows its download fallback. Physical soft keyboards and real-device swipe behavior remain unqualified. Retry/regeneration remains a host-provided message action; opening a new tab remains capability-gated rather than inventing a host route. The canvas journeys exercise content stacking beneath the portalled viewer menus.
 
 The isolated app consumer checks strict types and installed menu/version/drawer behavior in shadcn Base UI `base-nova` only. Viewer, Library and shared chat menus use the consumer's real dropdown-menu built-in; Library buttons use its real Button. Viewer menus and Library panels share version-history rows showing time, provenance and Current. Package renderer callers supply an explicit presentation binding; installed wrappers do so automatically. Radix styles are unsupported. `test/ui/chat-earlier-records.test.mjs` drives native persisted-record loading in headerless PiChat, default AgentWorkspace, floating AmbientChat and embedded AmbientChat without restoring records to model context. The workspace-app journey covers same-file Library reselect and repeated declined browser Back with a retained dirty draft; the app-shell journey checks that keyboard compensation is applied once.
+
+## Point and dictate on marked app data
+
+The `agent-target` registry component uses the feedback picker's public hit mapping, tap deduplication and suspension, the shell's shared `useDictation`, and `useAgentLayer().agent` (the same borrowed controller). It reads only the selected attribute's bounded JSON object. Target context remains in the native user message and renders as a transcript chip; refusal restores speech only. `NativeChatController.submissionStatus` delegates public native status using the controller-owned Context, so terminal replies bind to `done.answer` and streams bind to native run input IDs, including queued identical inputs. No second transcript or execution lifecycle is installed.
+
+Evidence: `test/contracts/agent-target-render.test.mjs` drives real native conversations, fake media/transcription, one-send/restore behavior, strict JSON limits, queued duplicate-message attribution and cancellation. Existing app-shell and pi-chat contract suites cover controller exposure, strict source types, push-to-talk and the context chip; `test/packages/ui-native-chat.test.mjs` covers native status conversation/disposal binding. `npm run app-shell:journey:target` drives the fictional fixture at phone and desktop widths with screenshots under `.cache/evidence/D108/`. The [marking guide](../guides/agent-target.md) owns integration details. Physical keyboards, production transcription, domain mutation and release/vendor/fleet rollout remain separate qualifications; global deferrals are unchanged.

@@ -30,7 +30,8 @@ test('the item compiles strictly against the pinned shadcn fixtures', () => {
   // The strict consumer settings (a copied item must compile in an app that sets them): unused locals and parameters, verbatim imports, erasable syntax only.
   const { options } = ts.parseJsonConfigFileContent({ ...base.config, compilerOptions: { ...base.config.compilerOptions, composite: false, declaration: false, declarationMap: false, noEmit: true,
     noUnusedLocals: true, noUnusedParameters: true, verbatimModuleSyntax: true, erasableSyntaxOnly: true, allowImportingTsExtensions: true, jsx: 'react-jsx', module: 'ESNext', moduleResolution: 'Bundler', lib: ['ES2023', 'DOM', 'DOM.Iterable'], baseUrl: root, paths: { '@/*': ['examples/app-shell/*'] } } }, ts.sys, root);
-  const program = ts.createProgram(files.map(name => `${root}${folder}/${name}`), options);
+  const targets = readdirSync(`${root}registry/agent-target`).map(name => `${root}registry/agent-target/${name}`);
+  const program = ts.createProgram([...files.map(name => `${root}${folder}/${name}`), ...targets], options);
   const diagnostics = ts.getPreEmitDiagnostics(program).filter(diagnostic => diagnostic.file && (diagnostic.file.fileName.startsWith(`${root}registry/`) || diagnostic.file.fileName.startsWith(`${root}examples/app-shell/`)));
   assert.deepEqual(diagnostics.map(diagnostic => `${diagnostic.file.fileName.replace(root, '')}: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')}`), []);
 });
@@ -446,4 +447,12 @@ test('useExclusiveSheet: opening a sheet closes every other open sheet', async t
   const open = () => [...container.querySelectorAll('i')].map(node => node.getAttribute('data-open'));
   assert.deepEqual(open(), ['false', 'true']);
   await act(async () => root.unmount());
+});
+
+test('agent-target registry source is listed and equals the shipped item', () => {
+  const target = manifest.items.find(entry => entry.name === 'agent-target');
+  const directory = 'registry/agent-target';
+  assert.deepEqual(target.files.map(entry => entry.path.slice(directory.length + 1)).sort(), readdirSync(`${root}${directory}`).sort());
+  const built = JSON.parse(readFileSync(`${root}public/r/agent-target.json`, 'utf8'));
+  for (const entry of target.files) assert.equal(built.files.find(file => file.path === entry.path)?.content, readFileSync(`${root}${entry.path}`, 'utf8'), `${entry.path}: run npm run registry:build`);
 });

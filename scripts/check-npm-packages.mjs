@@ -14,7 +14,7 @@ export function checkPackage(manifest, paths, versions, { release = false } = {}
     if (!files.has(path)) errors.push(`Missing ${path}`);
   }
   if (manifest.name === '@hachej/boring-ui-kit' && !files.has('THIRD_PARTY_NOTICES.md')) errors.push('Missing embedded icon license notices');
-  const agentNotices = manifest.name === '@hachej/boring-agent' ? ['NOTICE', 'licenses/Apache-2.0.txt'] : [];
+  const agentNotices = manifest.name === '@hachej/boring-agent' ? ['NOTICE', 'licenses/Apache-2.0.txt', 'THIRD_PARTY_NOTICES.md'] : [];
   for (const path of agentNotices) if (!files.has(path)) errors.push(`Missing ${path}`);
   const isTreeStyles = path => manifest.name === '@hachej/boring-ui-kit' && path === 'styles/file-tree.css';
   const isRegistryFile = path => manifest.name === '@hachej/boring-ui-kit' && /^r\/[\w.-]+\.json$/.test(path);
@@ -135,7 +135,7 @@ export function checkPackages(root, { release = false, outputDirectory, commit }
         errors.push(...checkShippedRegistry(manifest, paths, { items, read }).map(error => `${manifest.name}: ${error}`));
       }
       if (paths.includes('LICENSE') && run('tar', ['-xOzf', archive, 'package/LICENSE']) !== readFileSync(join(root, 'LICENSE'), 'utf8')) errors.push(`${manifest.name}: packed license differs from repository license`);
-      if (manifest.name === '@hachej/boring-agent') for (const path of ['NOTICE', 'licenses/Apache-2.0.txt']) {
+      if (manifest.name === '@hachej/boring-agent') for (const path of ['NOTICE', 'licenses/Apache-2.0.txt', 'THIRD_PARTY_NOTICES.md']) {
         if (paths.includes(path) && run('tar', ['-xOzf', archive, `package/${path}`]) !== readFileSync(join(pkg.directory, path), 'utf8')) errors.push(`${manifest.name}: packed ${path} differs from source`);
       }
       const integrity = `sha512-${createHash('sha512').update(readFileSync(archive)).digest('base64')}`;

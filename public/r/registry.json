@@ -1233,6 +1233,9 @@
       ],
       "css": {
         "@layer base": {
+          ".app-shell :where(*, ::before, ::after)": {
+            "border-color": "var(--border)"
+          },
           ".app-shell :where(button, [role=button])": {
             "appearance": "none",
             "background-color": "transparent",
@@ -1341,6 +1344,11 @@
           "path": "registry/app-shell/index.ts",
           "type": "registry:lib",
           "target": "components/app-shell/index.ts"
+        },
+        {
+          "path": "registry/app-shell/use-dictation.ts",
+          "type": "registry:hook",
+          "target": "components/app-shell/use-dictation.ts"
         }
       ]
     },
@@ -2536,6 +2544,103 @@
           "path": "registry/documents/documents-labels.ts",
           "type": "registry:lib",
           "target": "components/documents/documents-labels.ts"
+        }
+      ]
+    },
+    {
+      "name": "agent-target",
+      "type": "registry:component",
+      "title": "Point and dictate on app data",
+      "description": "Tap explicitly marked JSON app context, dictate once and show the same app agent’s native reply without opening chat. Host-controlled presentation; no feedback report or second controller.",
+      "dependencies": [
+        "@hachej/boring-ui-kit@^0.4.3",
+        "@hachej/boring-feedback@^0.4.3",
+        "@earendil-works/pi-durable@~1.2.0",
+        "react@^19.0.0",
+        "react-dom@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.3/r/app-shell.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.3/r/pi-chat.json",
+        "button",
+        "card",
+        "message",
+        "bubble"
+      ],
+      "files": [
+        {
+          "path": "registry/agent-target/agent-target.tsx",
+          "type": "registry:component",
+          "target": "components/agent-target/agent-target.tsx"
+        },
+        {
+          "path": "registry/agent-target/agent-target-labels.ts",
+          "type": "registry:lib",
+          "target": "components/agent-target/agent-target-labels.ts"
+        }
+      ]
+    },
+    {
+      "name": "requests-board",
+      "type": "registry:block",
+      "title": "Requests board",
+      "description": "Host-fed compact requests and responsive list/detail with questions and decisions.",
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.3/r/utils.json",
+        "badge",
+        "button",
+        "input",
+        "toggle-group",
+        "item",
+        "empty",
+        "textarea",
+        "card"
+      ],
+      "files": [
+        {
+          "path": "registry/requests-board/requests-board.tsx",
+          "type": "registry:component",
+          "target": "components/requests-board/requests-board.tsx"
+        },
+        {
+          "path": "registry/requests-board/requests.ts",
+          "type": "registry:lib",
+          "target": "components/requests-board/requests.ts"
+        },
+        {
+          "path": "registry/requests-board/requests-labels.ts",
+          "type": "registry:lib",
+          "target": "components/requests-board/requests-labels.ts"
+        }
+      ],
+      "dependencies": [
+        "react@^19.0.0"
+      ]
+    },
+    {
+      "name": "highlights",
+      "type": "registry:block",
+      "title": "Anchored highlights",
+      "description": "Exact Markdown highlights and comments in a conditional workspace sidecar.",
+      "dependencies": [
+        "@hachej/boring-ui-kit@^0.4.3",
+        "@hachej/boring-files@^0.4.3",
+        "react@^19.0.0",
+        "react-dom@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.3/r/markdown-editor.json",
+        "button",
+        "textarea",
+        "label",
+        "item",
+        "dropdown-menu"
+      ],
+      "files": [
+        {
+          "path": "registry/highlights/highlights.tsx",
+          "type": "registry:component",
+          "target": "components/highlights/highlights.tsx"
         }
       ]
     }

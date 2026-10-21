@@ -68,6 +68,46 @@ The default schema includes headings, lists, task lists, quotes, code and text m
 
 `test/packages/ui-markdown-editor.test.mjs`, `test/packages/ui-markdown-navigation.test.mjs` and `test/packages/ui-markdown-mounted.test.mjs` and `test/packages/ui-markdown-proposals.test.mjs` drive the real React/Tiptap renderer, DOM selections and SQLite provider. `npm run test:editor-consumer` requires `npm_config_cache` pointing to a writable cache with the pinned archives; it installs actual package tarballs, checks declarations with `skipLibCheck: false`, drives the controls and bundles for browsers without Pi or server filesystem imports. These checks do not establish browser layout, caret, IME or accessibility qualification. Chromium journeys remain pending.
 
+## Document marks
+
+`@hachej/boring-ui-kit/markdown-quote` exports `captureMarkdownQuote` and
+`markdownQuoteResolution`: pure exact-only anchors over canonical Markdown source.
+`@hachej/boring-ui-kit/mark-store` exports the kit's sidecar store, independently of
+React, Tiptap and Pi execution:
+
+```ts
+import { createMarkStore } from '@hachej/boring-ui-kit/mark-store';
+import { captureMarkdownQuote } from '@hachej/boring-ui-kit/markdown-quote';
+
+const store = await createMarkStore({ client, identity }, locator);
+const capture = captureMarkdownQuote(source, { start: 0, end: 12 });
+if (capture.kind === 'captured') {
+  await store.add({ id: 'mark-1', anchor: capture.anchor, colour: 'accent',
+    note: 'A fictional comment.', author: identity.principalId, time: new Date().toISOString() });
+}
+await store.edit('mark-1', { note: 'Revised fictional comment.' });
+await store.remove('mark-1');
+store.dispose(); // Does not close the borrowed resource client/provider.
+```
+
+Use the same workspace `client` as the document. `identity` is expected receipt
+metadata, never browser authentication. The store reads `<doc>.marks.json` in the
+same view and writes it only through the existing conditional publication path.
+`getSnapshot`/`subscribe` provide immutable marks, dirty/lifecycle and save state;
+mutations return the exact existing `SaveResult`. A stale tab retains its local
+marks and returns conflict; `reload()` explicitly discards them. Lost replies
+require `reconcile()` on the original operation. No auto-merge or blind retry is
+performed. The host owns policy, attribution and recovery after missing receipts.
+The [owner](../../docs/architecture/FEEDBACK.md#markdown-quotes-and-document-marks)
+defines quote/context matching and conservative rich-projection limits.
+
+The existing `MarkdownEditor` accepts `highlights`, `onQuoteSelection` and
+`onHighlightActivate`. Native decorations leave the document buffer clean. Rich
+capture refuses anything outside one proven literal text leaf; source selection
+remains available for syntax, escapes or normalization. The `highlights` registry
+block supplies context actions, comments and an unplaced-mark tray, creating a
+store by default or borrowing the same `MarkStore` interface from an app.
+
 ## Optional native chat
 
 The `/native-chat` entry also owns the neutral `ChatController`/`ChatSnapshot` renderer types. Concrete native controllers retain their full APIs. Optional multi-party data (`ChannelSource`, `createSharedChat`, socket/fake sources and state types) stays exclusively at `/shared-chat`, not the headless root. Its presentation is the optional [`shared-chat` registry item](../../registry/README.md#regular-chat-or-shared-chat); regular `pi-chat` has no imports from it.
@@ -81,6 +121,8 @@ The full native `ConversationView` stays available in memory. Remote hosts must 
 A submit the host refused before admission (status 402 `submission-refused`, for example a metering refusal from `@hachej/boring-agent/metering`) rejects with `SubmissionRefused` carrying the host's message; `remote.definitelyNotAdmitted` recognizes it, so a controller given the spread remote chat shows it as a blocked send (`send.kind === 'blocked'`) with the draft kept, instead of an unknown submission.
 
 `@hachej/boring-ui-kit/remote-chat` releases its watch stream while the page is hidden (`document.visibilityState`) and reopens it when the page is visible again, because browsers cap concurrent HTTP/1.1 connections per host and one idle stream per background tab starves every other request. The reopened watch starts with a complete view, so the controller keeps reading `connected`; submissions, answers and running turns are separate requests and are unaffected. The watch also survives the network: a stream that ends without an end frame (a proxy or load balancer closed it), or stays silent for 2.5 of the server's announced heartbeat intervals, is reopened with exponential backoff (`reconnect: { baseDelayMs: 1000, maxDelayMs: 30000 }`, with jitter) until the controller stops it. Meanwhile `remote.link` reports reconnecting and a controller given it (spreading the `RemoteChat` into its options does) reads `connection.kind === 'reconnecting'`; the reopened stream starts with a complete view, so nothing is duplicated. A refusal (4xx) or a final end (`retired`, `stopped`, revoked) ends the watch instead. Pass `pauseWhenHidden: false` to keep the stream open, and always call `close()` on a `RemoteChat` the controller never claimed. Node and workers have no `document` and are unaffected.
+
+`submissionStatus(submission)` reads that exact native handle using the controller's host-bound Context, verifies its conversation and rejects after disposal. It adds no lifecycle or retry: use native `done.answer` to attribute a response, rather than matching text or assuming the next assistant row belongs to a send. The optional [point-and-dictate block](../../docs/guides/agent-target.md) uses it while chat stays closed.
 
 `test/packages/ui-native-chat.test.mjs` uses a real native Harness and a fictional local streaming provider.
 

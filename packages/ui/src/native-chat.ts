@@ -230,6 +230,14 @@ export function createNativeChatController(options: NativeChatOptions) {
   const controller = {
     conversation,
     getSnapshot: (): NativeChatSnapshot => snapshot,
+    /** Reads the exact native submission with this controller's Context; observing never aborts or owns its execution. */
+    submissionStatus: async (submission: Submission): Promise<SubmissionRecord> => {
+      active();
+      const record = await submission.status(context);
+      active();
+      if (record.id !== submission.id || record.conversationId !== conversation.id) throw new Error('Submission belongs to a different conversation');
+      return record;
+    },
     subscribe: (listener: () => void): (() => void) => { if (snapshot.disposed) return () => {}; listeners.add(listener); return () => { listeners.delete(listener); }; },
     setText: (text: string): void => { const current = editable(); publish({ draft: draft(text, current.attachments, current.version + 1) }); },
     setAttachments: (attachments: readonly ChatAttachment[]): void => { const current = editable(); publish({ draft: draft(current.text, attachments, current.version + 1) }); },
