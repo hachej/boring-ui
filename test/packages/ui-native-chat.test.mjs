@@ -241,3 +241,24 @@ test('late validation refusal does not change a disposed presentation or admit n
     assert.deepEqual(userContent(await transcript(f.conversation)), []); assert.equal(f.fake.calls.length, 0);
   }
 });
+
+test('submissionStatus reads the exact native answer without owning execution or accepting another conversation', { timeout: 10000 }, async t => {
+  const f = await fixture(t), controller = f.controller();
+  const submission = await controller.send(undefined, { text: 'A fictional targeted meal' });
+  const call = await f.fake.nextCall();
+  const placed = await controller.submissionStatus(submission);
+  assert.equal(placed.id, submission.id);
+  assert.equal(placed.conversationId, f.conversation.id);
+  call.respond('The fictional meal was updated.');
+  await submission.wait(context);
+  const done = await controller.submissionStatus(submission);
+  assert.equal(done.status, 'done');
+  assert.ok((await f.conversation.context(context)).entries.some(entry => entry.id === done.answer));
+  const other = await f.harness.createConversation({ ownership: { kind: 'ownerless' }, agent: { model: f.fake.model } }, context);
+  const foreign = await other.submit({ type: 'input', content: 'A different fictional target' }, context);
+  await assert.rejects(controller.submissionStatus(foreign), /different conversation/);
+  (await f.fake.nextCall()).respond('Other reply');
+  await foreign.wait(context);
+  await controller.dispose();
+  await assert.rejects(controller.submissionStatus(submission), /disposed/);
+});

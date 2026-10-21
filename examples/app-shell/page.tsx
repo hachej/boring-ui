@@ -8,13 +8,16 @@
 import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
 import { useEffect, useState } from 'react';
-import { ActivityIcon, ArchiveIcon, CalendarDaysIcon, CalendarPlusIcon, ClipboardListIcon, DatabaseIcon, HomeIcon, MessageCircleIcon, MessagesSquareIcon, Share2Icon, MoonIcon, MoonStarIcon, PlusIcon, TargetIcon, UsersIcon, UploadIcon } from 'lucide-react';
+import { ActivityIcon, ArchiveIcon, CalendarDaysIcon, CalendarPlusIcon, ClipboardListIcon, DatabaseIcon, HomeIcon, MessageCircleIcon, MessagesSquareIcon, Share2Icon, MicIcon, MoonIcon, MoonStarIcon, PlusIcon, TargetIcon, UsersIcon, UploadIcon } from 'lucide-react';
 import { createFeedbackSession } from '@hachej/boring-feedback/ui';
 import { createPrivacyPolicy } from '@hachej/boring-feedback/page';
 import { connectRevisionProvider } from '@hachej/boring-files/revision';
 import { afterBack } from '../../registry/app-shell/back.ts';
 import { AppShell, ListDetail, useAgentContext, readAgentContext, useScreenHeader } from '../../registry/app-shell/index.ts';
 import type { RevisionProvider } from '@hachej/boring-files/revision';
+import { AgentTargetMode } from '../../registry/agent-target/agent-target.tsx';
+import { agentTargetLabelsFr } from '../../registry/agent-target/agent-target-labels.ts';
+import { Button } from './components/ui/button';
 import { Documents } from '../../registry/documents/documents.tsx';
 import { DocumentSheet } from '../../registry/documents/document-sheet.tsx';
 import { AgentWorkspace, useConversations } from '../../registry/pi-app/agent-workspace.tsx';
@@ -27,6 +30,7 @@ const six = query.get('nav') === '6';
 const rail = query.get('rail') === 'hover' ? { rail: 'hover' } : {};
 // `?documents=1`: the workspace's Documents screen (the Library, a file and its revisions) and the product manager's « Voir la fiche » sheet.
 const documents = query.get('documents') === '1';
+const targets = query.get('targets') === '1';
 const send = query.get('send') === 'draft' ? 'draft' : 'auto';
 const noAgent = query.get('agent') === 'none';
 const authorized = (request: Request) => { const headers = new Headers(request.headers); headers.set('authorization', `Bearer ${token}`); return fetch(new Request(request, { headers })); };
@@ -48,10 +52,25 @@ const List = () => <ul className="m-0 list-none divide-y divide-border p-0">
   {ROWS.map(row => <li key={row.day} className="flex items-center justify-between px-4 py-3"><span>{row.day}</span><span className="text-muted-foreground">{row.steps} pas</span></li>)}
 </ul>;
 
-function Day() {
+function Meals() {
+  const [enabled, setEnabled] = useState(false);
+  const [meals, setMeals] = useState([]);
+  const [refetches, setRefetches] = useState(0);
+  const refresh = async () => { const response = await authorized(new Request(new URL('/api/meals', location.href))); setMeals(await response.json()); setRefetches(count => count + 1); };
+  useEffect(() => { window.__mealTaps = 0; window.__outsideTaps = 0; window.__targetSettled = []; void refresh(); }, []);
+  useScreenHeader({ title: 'Mes repas fictifs', actions: [themeAction, { id: 'target', label: enabled ? 'Arrêter de dicter' : 'Pointer et dicter', icon: MicIcon, onSelect: () => setEnabled(value => !value) }] });
+  return <section data-testid="meals" data-refetches={refetches} className="flex flex-col gap-4 p-4">
+    <p>Activez « Pointer et dicter », puis touchez un repas.</p>
+    {meals.map(meal => <Button key={meal.id} variant="outline" data-testid={`meal-${meal.id}`} data-agent-target={JSON.stringify({ meal: meal.id, slot: meal.slot })} data-private="not-sent" className="min-h-11 justify-start" onClick={() => { window.__mealTaps++; }}><span>{meal.label}</span></Button>)}
+    <Button variant="ghost" data-testid="meal-outside" className="min-h-11" onClick={() => { window.__outsideTaps++; }}>Action ordinaire hors des repas</Button>
+    <AgentTargetMode enabled={enabled} labels={agentTargetLabelsFr} transcribe={async () => 'remplace le riz par 150 g de pâtes'} onSettled={result => { window.__targetSettled.push(result); void refresh(); }} />
+  </section>;
+}
+function WalkingDay() {
   useScreenHeader({ title: 'Ma journée', subtitle: 'mardi 13 octobre', actions: [themeAction] });
   return <List />;
 }
+function Day() { return targets ? <Meals /> : <WalkingDay />; }
 function Progress() {
   useAgentContext({ name: 'Progrès', params: { range: 30 } });
   useScreenHeader({ actions: [themeAction] });
@@ -69,7 +88,7 @@ function Plain({ label }: { label: string }) {
 const FITNESS = [
   { id: 'jour', label: 'Jour', icon: CalendarDaysIcon, render: () => <Day /> },
   { id: 'progres', label: 'Progrès', icon: ActivityIcon, render: () => <Progress /> },
-  { id: 'donnees', label: 'Données', icon: DatabaseIcon, badge: true, render: () => <Data /> },
+  { id: 'donnees', label: 'Données', icon: DatabaseIcon, render: () => <Data /> },
   ...(six ? [
     { id: 'objectifs', label: 'Objectifs', icon: TargetIcon, render: () => <Plain label="Vos objectifs" /> },
     { id: 'sommeil', label: 'Sommeil', icon: MoonStarIcon, badge: true, render: () => <Plain label="Votre sommeil" /> },
