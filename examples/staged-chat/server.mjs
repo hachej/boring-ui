@@ -6,7 +6,7 @@ import { sendWebResponse, webRequest } from '@hachej/boring-files/node-http';
 import { createChatTransportHandler } from '@hachej/boring-agent/chat-transport';
 import { buildTailwind } from '../../lab/studio/tailwind.mjs';
 import { stockShadowTokens, themePreviewHead, themePreviewStatics } from '../../test/fixtures/themes/preview.mjs';
-import { createStagedHost } from './host.mjs';
+import { createStagedHost, withDemoFailure } from './host.mjs';
 
 const here = name => fileURLToPath(new URL(name, import.meta.url));
 /** Loopback-only fictional fixture, not a production authentication/deployment recipe. Native state survives browser reload, not server restart. */
@@ -20,7 +20,10 @@ export async function startStagedChat({ port = 0 } = {}) {
   }, host.context);
   const chat = createChatTransportHandler({ authenticate: async request => {
     const name = new URL(request.url).searchParams.get('thread'), conversation = host.threads[name];
-    return conversation ? { conversation, context: host.context, abortSubmission: id => host.harness.abortSubmission(id, host.context, conversation.id) } : null;
+    let failAt = 0;
+    return conversation ? { conversation: withDemoFailure(conversation, () => failAt), context: host.context,
+      requestContext: value => { failAt = [1, 2].includes(value.failAt) ? value.failAt : 0; },
+      abortSubmission: id => host.harness.abortSubmission(id, host.context, conversation.id) } : null;
   } });
   const bundle = await build({ entryPoints: [here('./page.jsx')], bundle: true, write: false, outdir: here('./out'), format: 'esm', platform: 'browser', jsx: 'automatic', alias: { '@': here('../app-shell') }, define: { 'process.env.NODE_ENV': '"production"' }, logLevel: 'silent' });
   const css = [await buildTailwind({ extraDirectories: ['examples/staged-chat', 'test/fixtures/themes'], extraFiles: ['examples/staged-chat/page.jsx'] }), stockShadowTokens, 'html,body,#root{min-height:100%;margin:0}body{background:var(--background);color:var(--foreground);font-family:var(--font-sans,ui-sans-serif,system-ui,sans-serif)}'].join('\n');

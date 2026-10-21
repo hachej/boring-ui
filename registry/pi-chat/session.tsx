@@ -48,6 +48,8 @@ export interface ChatFeatureProps {
   readonly historicalMessageActions?: boolean;
   /** Host-rendered unread indicator, keyed by the reply. The host owns seen state and its persistence. */
   readonly unread?: (reply: ReplyRef) => ReactNode;
+  /** Message inside the single native response-error notice. Null/undefined keeps the default; native status and metadata stay unchanged. */
+  readonly replyError?: (reply: ReplyRef) => ReactNode;
   readonly renderTool?: (call: ToolCall, result: ToolResultMessage | undefined) => ChatCard | undefined;
   readonly groupTool?: (call: ToolCall, result: ToolResultMessage) => boolean;
   readonly commandMentions?: CommandMentions;
@@ -110,7 +112,7 @@ export interface ChatSessionOptions extends Readonly<{ [Key in keyof ChatFeature
 }
 
 export function useChatSession(options: ChatSessionOptions) {
-  const { controller, activeController: active, mode, presentation, actions, renderEntry, hideLine, historicalMessageActions, unread, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept,
+  const { controller, activeController: active, mode, presentation, actions, renderEntry, hideLine, historicalMessageActions, unread, replyError, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept,
     slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend, rowExtras, feedback, onOpenFile, fileChanges, pasteToFile, composerChips, composerHeader, composerHasContent, onPickFiles } = options;
   const { labels } = useChatText();
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
@@ -341,12 +343,12 @@ export function useChatSession(options: ChatSessionOptions) {
     commandMentions: commandMentions ? { commands: commandMentions.commands, onActivate: activateMention } : undefined,
     answer: actions?.answer,
     artifacts: artifacts ? { open: artifacts.open, isOpen: artifacts.isOpen, kinds: artifacts.kinds } : undefined,
-    messageActions, historicalMessageActions, unread,
+    messageActions, historicalMessageActions, unread, replyError,
     replyFooter,
     pieces: slash?.skills?.length || mentions || attachments ? { mentions: Boolean(mentions), uploads: Boolean(attachments), skills: (slash?.skills ?? []).map(skill => skill.name), openMention: mentions?.open, renderMention: mentions?.renderSent ?? mentions?.render, preview: mentions?.preview } : undefined,
     ...rowExtras,
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [controller, developer, natural, groupTool, onOpenImage, onCopy, onOpenFile, fileChanges, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, mentions?.renderSent, mentions?.preview, attachments, artifacts?.open, artifacts?.isOpen, artifacts?.kinds, messageActions, historicalMessageActions, unread, replyFooter, rowExtras]);
+  }), [controller, developer, natural, groupTool, onOpenImage, onCopy, onOpenFile, fileChanges, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, mentions?.renderSent, mentions?.preview, attachments, artifacts?.open, artifacts?.isOpen, artifacts?.kinds, messageActions, historicalMessageActions, unread, replyError, replyFooter, rowExtras]);
 
   /** The model-and-effort pill and the note that reports a refused change. */
   const pickers = () => {

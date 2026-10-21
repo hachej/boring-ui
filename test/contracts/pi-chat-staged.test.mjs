@@ -130,7 +130,15 @@ test('PiChat and AmbientChat tailor one native error without losing duration met
     assert.equal(row.querySelector('[data-testid="response-error"]').textContent, 'La note précédente reste disponible.');
     assert.equal(received.durationMs, 1615); assert.equal(received.entryId, '3');
     assert.doesNotMatch(row.textContent, /traceback/);
-    const unread = row.querySelector('[data-testid="attached-unread"]');
+    assert.ok(row.querySelector('[data-testid="attached-unread"]'));
+  }
+});
+
+test('unread is attached in a start-aligned reply slot on both chat surfaces', async t => {
+  const f = await fixture(t), c = controller('Questions', { entries: [question, entry(2, assistant('Note.', 8))], docs: {} });
+  for (const Surface of [PiChat, AmbientChat]) {
+    await f.render(f.h(Surface, { controller: c, state: 'expanded', unread: () => f.h('span', { 'data-testid': 'attached-unread' }, 'Non lu') }));
+    const unread = f.element.querySelector('[data-role="assistant"] [data-testid="attached-unread"]');
     assert.equal(unread.parentElement.dataset.testid, 'reply-unread');
     assert.ok(unread.parentElement.classList.contains('items-start'));
   }

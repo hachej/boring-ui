@@ -8,6 +8,15 @@ const binding = defineDoc({ kind: 'fictional.triage.binding', version: 1, scope:
 const reader = defineDoc({ kind: 'fictional.triage.reader', version: 1, scope: 'conversation', initial: () => ({ seen: [], offers: 0 }) });
 const textOf = message => message?.content.filter(part => part.type === 'text').map(part => part.text).join('\n') ?? '';
 
+/** Demo-only host input metadata on Pi's public InputSubmissionDraft.entry seam; model/user text stays untouched. */
+export function withDemoFailure(conversation, failure) {
+  return new Proxy(conversation, { get(target, key) {
+    if (key === 'submit') return (draft, ctx) => target.submit(draft.type === 'input' ? { ...draft, entry: { kind: 'fictional.triage.question', data: { failAt: failure() } } } : draft, ctx);
+    const value = Reflect.get(target, key, target);
+    return typeof value === 'function' ? value.bind(target) : value;
+  } });
+}
+
 /** Host orchestration on public native tasks/tools. No kit workflow or duplicate transcript. */
 export async function createStagedHost({ settings } = {}) {
   const scripted = createScriptedModel({ timed: true, fallback: turn => {
@@ -17,7 +26,7 @@ export async function createStagedHost({ settings } = {}) {
     }
     if (turn.last?.isError) return { error: 'La prochaine étape a échoué.' };
     if (turn.results.length === 3) return '';
-    return { tools: [{ name: 'triage_stage', args: { stage: turn.results.length + 1, failAt: turn.user.includes('ÉCHEC 1') ? 1 : turn.user.includes('ÉCHEC 2') ? 2 : 0 } }] };
+    return { tools: [{ name: 'triage_stage', args: { stage: turn.results.length + 1 } }] };
   } });
   const registry = createRegistry();
   let harness;
@@ -47,11 +56,14 @@ export async function createStagedHost({ settings } = {}) {
     },
   }, abort: async (_running, runtime, ctx) => runtime.commit(() => ({ status: 'terminal', outcome: { status: 'aborted' } }), ctx) });
   const stageTool = defineTool({ name: 'triage_stage', description: 'Generate and validate one fictional stage, in order.', replay: 'safe',
-    parameters: Type.Object({ stage: Type.Integer({ minimum: 1, maximum: 3 }), failAt: Type.Integer({ minimum: 0, maximum: 2 }) }, { additionalProperties: false }),
+    parameters: Type.Object({ stage: Type.Integer({ minimum: 1, maximum: 3 }) }, { additionalProperties: false }),
     execute: async (args, api, ctx) => {
+      const conversation = await harness.conversation(api.conversationId, ctx);
+      const input = (await conversation.context(ctx)).entries.findLast(entry => entry.model?.some(message => message.role === 'user'));
+      const failAt = [1, 2].includes(input?.data?.failAt) ? input.data.failAt : 0;
       const taskId = await api.commit(async tx => {
         const doc = await tx.doc(binding, api.taskId);
-        if (doc.stageTask === null) doc.stageTask = await tx.createTask(stageTask, args, { conversationId: api.conversationId, ownership: { kind: 'task', taskId: api.taskId } });
+        if (doc.stageTask === null) doc.stageTask = await tx.createTask(stageTask, { ...args, failAt }, { conversationId: api.conversationId, ownership: { kind: 'task', taskId: api.taskId } });
         return doc.stageTask;
       }, ctx);
       const task = await api.waitForTask(taskId, ctx);

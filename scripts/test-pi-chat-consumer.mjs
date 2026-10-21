@@ -79,6 +79,7 @@ export function App() {
   const chat = useRemoteChat({ conversationId: 'fictional', endpoint: id => new URL('/api/chat?conversation=' + id, location.href), fetch: request => fetch(request), identity });
   return chat.status === 'ready' ? <PiChat controller={chat.controller} actions={chat.actions} displayLimit={24} historicalMessageActions
     hideLine={line => line.startsWith('::meta ')} unread={reply => <span>{reply.entryId}</span>}
+    replyError={reply => <span>Failed reply {reply.entryId}</span>}
     renderEntry={entry => entry.kind === 'fictional.stage' ? { inline: true, content: <span>Validated</span>, status: 'Validating…' } : undefined}
     messageActions={reply => [{ id: 'offer', label: 'Use fictional note', onSelect: () => { void reply.text; } }]}
     replyFooter={reply => <span>{reply.durationMs}</span>} /> : <p>{chat.status}</p>;
