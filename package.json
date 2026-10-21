@@ -94,6 +94,7 @@
     "test:shared-chat-consumer": "node scripts/test-shared-chat-consumer.mjs",
     "test:app-registry-consumer": "node scripts/test-app-registry-consumer.mjs",
     "test:html-consumer": "node scripts/test-editor-consumer.mjs --html",
+    "test:artifact-viewer-consumer": "node scripts/test-artifact-viewer-consumer.mjs",
     "test:html-registry-consumer": "node scripts/test-registry-consumer.mjs --html",
     "test:feedback-registry-consumer": "node scripts/test-feedback-registry-consumer.mjs",
     "test:experience-consumer": "node scripts/test-experience-consumer.mjs",

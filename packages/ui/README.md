@@ -12,6 +12,8 @@ Lost or malformed acknowledgements stay unknown. `actions.reconcile()` uses reta
 
 Historical scaffold tests install/typecheck packed headless UI and UI+files in clean consumers without Pi or an agent package. Candidate runtime installation qualification is recorded separately in the [implementation checkpoint](../../docs/implementation/PARTIAL.md). Import interfaces with `import type`.
 
+For read-only content without a resource client or controller, select the lightweight [`artifact-viewer`](#read-only-artifactviewer) entry. It needs only React and Marked, not files, Pi, Tiptap, canvas or pdfjs.
+
 See [scaffold guide](../../docs/contracts/SCAFFOLD.md) and [audit](../../docs/contracts/ABSTRACTION-REVIEW.md).
 
 ## Exact proposals and commands
@@ -209,6 +211,24 @@ Pass `onMountedTools` to `CanvasEditor` to receive `CanvasMountedTools`, or `nul
 Mounted `tools.propose` accepts the same complete edits as the headless command and retains the selected page/mount target. It refuses native read-only mode and rechecks cancellation, expiry and targeting before returning a proposal. It never accepts or publishes on the agent's behalf.
 
 `test/compatibility/canvas-mounted-native.test.mjs` composes selection and proposals with real native ToolTasks. `npm run canvas:journey:commands` requires `CHROMIUM` and permitted loopback sockets; it checks real desktop/phone viewport geometry with fictional assets. Production fonts, licensing, egress and CSS isolation remain separate qualifications.
+
+## Read-only ArtifactViewer
+
+```tsx
+import { ArtifactViewer } from '@hachej/boring-ui-kit/artifact-viewer';
+
+<ArtifactViewer name="fictional-guide.md" mimeType="text/markdown" content="# Fictional guide" />;
+```
+
+`ArtifactViewerProps` accepts `name`, `mimeType`, optional `content: string | Uint8Array`, `url`, `className` and `renderPdf`. Install the existing optional React and Marked peers when selecting this entry. It has no ResourceClient, controller, editing, syntax highlighter or agent integration. The host supplies authorized content and owns URL access policy and layout; mounting grants no file or execution authority.
+
+Normalized MIME selects Markdown, HTML, images and PDF, with filename fallback. Other text/code is an escaped `<pre>` without highlighting. Byte text requires valid UTF-8 without NUL; leading U+FEFF is preserved. Binary audio/video does not become a text preview. Missing or unreadable content displays “Preview unavailable.” Replace byte arrays when changing content rather than mutating them in place.
+
+Markdown uses a private Marked parser, then the same passive HTML allowlist as `HtmlViewer`. Both HTML types render in an empty-sandbox, no-referrer iframe with the fixed restrictive CSP. Links become spans; scripts, attributes, styles, images and external resources are omitted, including Markdown images. The [HTML preview limits](#optional-html-source-and-preview) apply; Markdown input is also limited to 262,144 UTF-16 units before parsing. There is no raw HTML fallback. URL-only Markdown, HTML and text are unavailable: the entry never fetches or embeds them unsanitized.
+
+Images use `<img>` and PDFs use the browser's native sandboxed iframe. `content` takes precedence over `url`; content creates an owned Blob URL, revoked on replacement or unmount. Host URLs are borrowed and never revoked. Relative, HTTP(S), blob and matching image/PDF data URLs are supported; other URL schemes are refused. Supply `renderPdf: (props: ArtifactPdfProps) => ReactNode` to use a trusted host renderer instead, receiving the current `{ name, url }`. The entry does not load pdfjs. Browser-native PDF support and sandbox restrictions vary by browser; it provides no page controls or PDF text extraction.
+
+`test/packages/ui-artifact-viewer.test.mjs` renders fictional fixtures through the built public entry and checks its browser import graph. `npm run test:artifact-viewer-consumer` installs the kit tarball with only React/Marked and test tooling, checks strict declarations, repeats those DOM tests and bundles without files, controllers, Tiptap, canvas, pdfjs or agent code. DOM structure tests do not qualify browser CSP enforcement, parser inertness, egress or native PDF rendering.
 
 ## Optional HTML source and preview
 

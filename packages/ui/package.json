@@ -83,6 +83,10 @@
       "types": "./dist/html-viewer.d.ts",
       "import": "./dist/html-viewer.js"
     },
+    "./artifact-viewer": {
+      "types": "./dist/artifact-viewer.d.ts",
+      "import": "./dist/artifact-viewer.js"
+    },
     "./experience": {
       "types": "./dist/experience.d.ts",
       "import": "./dist/experience.js"

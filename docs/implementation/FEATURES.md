@@ -1,5 +1,11 @@
 # Implemented behavior and evidence
 
+## Read-only ArtifactViewer (D-194)
+
+`@hachej/boring-ui-kit/artifact-viewer` presents host-supplied Markdown, HTML, images, PDF and text without a resource controller, editor or agent. This is host presentation, not a Pi execution extension. It shares HtmlViewer's passive allowlist, uses native browser PDF by default and owns only Blob URLs made from its content. The [UI guide](../../packages/ui/README.md#read-only-artifactviewer) owns props, precedence and limits.
+
+`test/packages/ui-artifact-viewer.test.mjs` drives the built public entry with fictional DOM fixtures and audits its browser import graph. `npm run test:artifact-viewer-consumer` repeats that evidence from an isolated tarball with strict declarations and no files, controllers, Tiptap, canvas, pdfjs or agent dependency. Existing HtmlViewer tests protect the shared allowlist extraction. These tests do not qualify actual browser PDF support, CSP enforcement, inert parsing or egress. No registry wrapper, consumer migration, editing or global proof qualification is included.
+
 ## Floating utility windows (D-79)
 
 The `windows` registry item is host presentation, independent of Pi: `WindowLayer`,
