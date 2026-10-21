@@ -9,7 +9,7 @@
 // Idea, algorithm and prompts: Victor Taelin's OptChat, https://gist.github.com/VictorTaelin/91837951a5ce5b38f341ec1ba1df6449
 import { CompactionTask, GenerationTask, defineDoc, defineDocFamily, defineExtension, defineTask, defineTool, hook, section } from '@earendil-works/pi-durable';
 import type { Conversation, ConversationId, Extension, Harness, ModelRef, TaskId, Tx } from '@earendil-works/pi-durable';
-import type { Context } from '@earendil-works/chord';
+import type { Context, JsonRepresentation } from '@earendil-works/chord';
 import { withAbortSignal, withCancel } from '@earendil-works/chord/context';
 import { Type } from '@earendil-works/pi-ai';
 import type { Message, Models, Usage, UserMessage } from '@earendil-works/pi-ai';
@@ -40,6 +40,12 @@ type Edits = { revision: number; forgotten: Record<string, number> };
 export const OptChatEdits = defineDoc<Edits>({
   kind: 'boring.memory.optchat.edits', version: 1, scope: 'conversation', history: 'latest', fork: 'current',
   initial: () => ({ revision: 0, forgotten: {} }),
+});
+
+/** Only the emitted tiling and fingerprints are retained, never another copy of message or summary text. */
+const OptChatFold = defineDocFamily<{ configuration: string; revision: number; fingerprints: string[]; fold: JsonRepresentation<ViewFold> | null }, null>({
+  kind: 'boring.memory.optchat.fold', version: 1, family: true, scope: 'conversation', history: 'latest', fork: 'current',
+  initial: () => ({ configuration: '', revision: -1, fingerprints: [], fold: null }),
 });
 
 type Ledger = { input: number; output: number; cacheRead: number; cacheWrite: number; cost: number };
@@ -92,8 +98,11 @@ export interface OptChatOptions {
   readonly agentName?: string;
   readonly nodeBytes?: number;
   readonly viewBytes?: number;
-  /** Budget of the compactor's separate, incrementally folded view. Default 32 000 UTF-8 bytes. */
+  /** Target budget of the compactor's separate checkpoint-folded view. Default 32 000 UTF-8 bytes. */
   readonly compactBytes?: number;
+  /** Checkpoint high/low marks as fractions of both view budgets. Defaults 1.25 / 0.75; set both to 1 for strict budgets. */
+  readonly foldHighWater?: number;
+  readonly foldLowWater?: number;
   /** Seed memories from the app brief or PM decisions. Captured at creation, stored once before this conversation's messages. */
   readonly notes?: readonly string[];
   /** Host classification of agent, subagent or job reports. A work message starts a turn like a user message. */
@@ -115,7 +124,7 @@ export interface OptChatStats {
   /** Stored summaries whose fingerprint matches the log. */
   readonly summaries: number;
   readonly view: {
-    /** Bytes of the view's lines (what `budget` limits), without the `<chat>` wrapper. */
+    /** Bytes of the view's lines, without the `<chat>` wrapper; checkpoints start above budget × foldHighWater. */
     readonly bytes: number;
     readonly budget: number;
     /** Lines the next request would show, oldest first. `id` and `n` as in `id+n`. */
@@ -146,7 +155,7 @@ export interface OptChatStats {
     readonly logMessages: number;
     readonly viewBytes: number;
     readonly waitedMs: number;
-    /** False if the wait timed out and the view shows placeholders. */
+    /** False while the view still shows placeholders, including frozen ones from an earlier timeout. */
     readonly settled: boolean;
   };
 }
@@ -164,7 +173,7 @@ export interface OptChatMemory {
   date(conversationId: ConversationId, id: number): Promise<string>;
   /** Forget a Pi context message by its zero-based position, including system positions. Atomically tombstones its leaves and deletes summaries that could depend on them, including through context. Does not delete Pi's session entry. */
   forgetMessage(conversationId: ConversationId, messageIndex: number): Promise<void>;
-  /** Drop in-memory state of a conversation (stored summaries stay). */
+  /** Drop in-memory state of a conversation (stored summaries and the emitted tiling stay). */
   forget(conversationId: ConversationId): void;
   /** Stop this process's waits. Summary tasks belong to Pi, which keeps or recovers them; harmless to skip, and safe to call before closing the harness. */
   dispose(): Promise<void>;
@@ -189,6 +198,7 @@ class Session {
 }
 
 const message = (text: string[]): UserMessage => ({ role: 'user', content: text.map(part => ({ type: 'text' as const, text: part })), timestamp: Date.now() });
+const copyFold = (fold: ViewFold): ViewFold => ({ ...fold, parts: fold.parts.map(part => ({ ...part })) });
 const LIVE = ['pending', 'running', 'waiting'] as const;
 
 function redacted(item: Message): Message {
@@ -226,6 +236,11 @@ export function createOptChatMemory(options: OptChatOptions): OptChatMemory {
   const nodeBytes = options.nodeBytes ?? DEFAULTS.nodeBytes, viewBytes = options.viewBytes ?? DEFAULTS.viewBytes, jobs = options.jobs ?? DEFAULTS.jobs;
   const tries = options.tries ?? DEFAULTS.tries, cap = options.cap ?? DEFAULTS.cap, retryMs = options.retryMs ?? DEFAULTS.retryMs, settleMs = options.settleTimeoutMs ?? DEFAULTS.settleTimeoutMs;
   const compactBytes = options.compactBytes ?? DEFAULTS.compactBytes;
+  const highWater = options.foldHighWater ?? DEFAULTS.foldHighWater, lowWater = options.foldLowWater ?? DEFAULTS.foldLowWater;
+  if (!Number.isFinite(highWater) || !Number.isFinite(lowWater) || lowWater <= 0 || lowWater > highWater) throw new Error('Invalid OptChat fold watermarks');
+  const configuration = JSON.stringify([nodeBytes, viewBytes, compactBytes, highWater, lowWater, cap]);
+  const foldView = (fold: ViewFold, tree: OptChatTree, to: number, budget: number) => advanceFold(fold, tree, to, budget, highWater, lowWater);
+  const missingParts = (fold: ViewFold, tree: OptChatTree) => openParts(fold).filter(part => tree.text(part.level, part.index) === undefined);
   const agentName = options.agentName ?? 'OptChat';
   const extensionName = options.name ?? 'boring.memory.optchat';
   const taskKind = `${extensionName}.node`;
@@ -264,11 +279,26 @@ export function createOptChatMemory(options: OptChatOptions): OptChatMemory {
     return found;
   }
 
-  /** The compactor has an independent fold. Copy before advancing: native tasks and requests can overlap. */
+  /** Earlier summary jobs take a prefix of the same tiling, never unfolding an already-sent checkpoint. */
   function compactView(s: Session, to: number): ViewFold {
-    const cached = session(s.id).compactFold;
-    const fold = cached.T > to ? emptyFold() : { T: cached.T, size: cached.size, parts: cached.parts.map(part => ({ ...part })) };
-    return advanceFold(fold, s.tree, to, compactBytes);
+    return foldView(copyFold(s.compactFold), s.tree, to, compactBytes);
+  }
+
+  async function restoreFold(s: Session, revision: number, to: number, kind: 'turn' | 'compact' = 'turn'): Promise<void> {
+    const saved = await options.harness().snapshot(OptChatFold, s.id, kind, options.context);
+    if (saved?.fold && saved.configuration === configuration && saved.revision === revision && saved.fold.T <= to
+      && saved.fingerprints.every((fp, i) => { const part = saved.fold!.parts[i]!; return fp === s.log.fp(part.level, part.index); })) s[kind === 'turn' ? 'fold' : 'compactFold'] = copyFold(saved.fold);
+  }
+
+  async function saveFold(s: Session, revision: number, kind: 'turn' | 'compact', fold: ViewFold, context: Context): Promise<void> {
+    await (await conversationOf(s.id)).commit(async tx => {
+      if ((await tx.doc(OptChatEdits, s.id)).revision !== revision) return;
+      const doc = await tx.doc(OptChatFold, s.id, kind, null);
+      if (kind === 'compact' && doc.configuration === configuration && doc.revision === revision && doc.fold && doc.fold.T > fold.T) return;
+      doc.configuration = configuration; doc.revision = revision;
+      doc.fold = copyFold(fold);
+      doc.fingerprints = fold.parts.map(part => s.log.fp(part.level, part.index)!);
+    }, context);
   }
 
   /** Bring a session up to date with the committed context and its stored summaries. */
@@ -279,6 +309,8 @@ export function createOptChatMemory(options: OptChatOptions): OptChatMemory {
     const edits = await memoryEdits(id);
     s.sync(leavesOf(view.messages, cap, logOptions(seed, edits)).leaves);
     await loadStored(s, options.harness(), options.context);
+    await restoreFold(s, edits.revision, s.log.leaves.length);
+    await restoreFold(s, edits.revision, s.log.leaves.length, 'compact');
     return s;
   }
 
@@ -361,17 +393,16 @@ export function createOptChatMemory(options: OptChatOptions): OptChatMemory {
           const edits = await runtime.snapshot(OptChatEdits, id, context) ?? { revision: 0, forgotten: {} };
           s.sync(leavesOf((await runtime.context(id, context)).messages, cap, logOptions(seed, edits)).leaves);
           await loadStored(s, runtime, context);
+          await restoreFold(s, edits.revision, s.log.leaves.length, 'compact');
           return edits.revision;
         };
         const revision = await load();
         const ready = () => s.log.fp(level, index) === of && (level === 0 || (s.tree.text(level - 1, 2 * index) !== undefined && s.tree.text(level - 1, 2 * index + 1) !== undefined));
         if (!ready() || s.tree.text(level, index) !== undefined) return stale(); // the history changed, a child is missing, or the node needs no summary
         const to = Math.min(upTo, index * span(level));
-        const shared = session(id);
-        shared.sync(s.log.leaves);
         const fold = compactView(s, to);
-        if (fold.size > compactBytes) return stale(); // admission will build preceding parents before trying this node again
-        if (fold.T >= shared.compactFold.T) shared.compactFold = fold;
+        if (fold.size > compactBytes * highWater || fold.checkpoint) return stale(); // admission will build preceding parents before trying this node again
+        await saveFold(s, revision, 'compact', fold, context);
         const source = level === 0 ? [s.log.leaves[index]!.line] : [s.tree.text(level - 1, 2 * index)!, s.tree.text(level - 1, 2 * index + 1)!];
         const job: SummaryJob = { conversationId: id, level, index, range: [index * span(level), (index + 1) * span(level) - 1], source, context: bareLines(fold, s.tree, to), nodeBytes };
         let summary: Summary;
@@ -409,8 +440,8 @@ export function createOptChatMemory(options: OptChatOptions): OptChatMemory {
   /** Nodes that could be built now: sources exist and the whole preceding view is summarized (§4.1), oldest first. */
   function candidates(s: Session): { level: number; index: number }[] {
     const upTo = Math.min(s.upTo, s.log.leaves.length);
-    advanceFold(s.fold, s.tree, upTo, viewBytes);
-    const open = openParts(s.fold)[0];
+    foldView(s.fold, s.tree, upTo, viewBytes);
+    const open = missingParts(s.fold, s.tree)[0];
     const first = open ? partStart(open) : s.fold.T;
     const found: { level: number; index: number }[] = [];
     for (let level = 0; span(level) <= upTo; level++) {
@@ -419,7 +450,8 @@ export function createOptChatMemory(options: OptChatOptions): OptChatMemory {
         if (end > first) break;
         if (s.tree.text(level, index) !== undefined) continue;
         if (level > 0 && (s.tree.text(level - 1, 2 * index) === undefined || s.tree.text(level - 1, 2 * index + 1) === undefined)) continue;
-        if (compactView(s, index * span(level)).size > compactBytes) break;
+        const preceding = compactView(s, index * span(level));
+        if (preceding.size > compactBytes * highWater || preceding.checkpoint) break;
         found.push({ level, index });
       }
     }
@@ -516,9 +548,10 @@ export function createOptChatMemory(options: OptChatOptions): OptChatMemory {
     const deadline = Date.now() + settleMs, skip = new Set<string>();
     for (;;) {
       await loadStored(s, options.harness(), options.context);
-      advanceFold(s.fold, s.tree, covered, viewBytes);
-      const open = openParts(s.fold).length;
-      if (open === 0 && s.fold.size <= viewBytes) return true;
+      if (s.fold.stableThrough === undefined) s.fold = emptyFold();
+      foldView(s.fold, s.tree, covered, viewBytes);
+      const open = missingParts(s.fold, s.tree).length;
+      if (open === 0 && s.fold.size <= viewBytes * highWater && !s.fold.checkpoint) return openParts(s.fold).length === 0;
       const { live } = await admit(s, skip);
       if (open === 0 && live.size === 0) return true;
       if (live.size === 0) return false; // nothing to wait for: every missing node is inside its retry window
@@ -602,7 +635,7 @@ export function createOptChatMemory(options: OptChatOptions): OptChatMemory {
             const s = new Session(api.conversationId, nodeBytes);
             s.sync(leaves);
             s.upTo = covered;
-            if (cached.fold.T <= covered) s.fold = { T: cached.fold.T, size: cached.fold.size, parts: cached.fold.parts.map(part => ({ ...part })) };
+            await restoreFold(s, edits.revision, covered);
             const started = Date.now();
             const settled = await settle(s, covered, context);
             if ((await memoryEdits(api.conversationId)).revision !== edits.revision) continue;
@@ -625,6 +658,9 @@ export function createOptChatMemory(options: OptChatOptions): OptChatMemory {
               return [{ ...current, content: [...blocks, ...body] }];
             });
             cached.lastRequest = { at: new Date().toISOString(), covered, requestMessages: messages.length, logMessages: request.messages.length, viewBytes: byteLength(view), waitedMs: Date.now() - started, settled };
+            s.fold.stableThrough = s.fold.T;
+            await saveFold(s, edits.revision, 'turn', s.fold, context);
+            if ((await memoryEdits(api.conversationId)).revision !== edits.revision) continue;
             cached.fold = s.fold;
             return { messages };
           }
@@ -645,8 +681,8 @@ export function createOptChatMemory(options: OptChatOptions): OptChatMemory {
     nap: id => nap(id),
     async stats(id) {
       const s = await refresh(id);
-      const fold: ViewFold = { T: s.fold.T, size: s.fold.size, parts: s.fold.parts.map(part => ({ ...part })) };
-      advanceFold(fold, s.tree, s.log.leaves.length, viewBytes);
+      const fold = copyFold(s.fold);
+      foldView(fold, s.tree, s.log.leaves.length, viewBytes);
       let summaries = 0;
       for (const [key, node] of s.stored) { const [level, index] = key.split(':').map(Number); if (node.of === s.log.fp(level!, index!)) summaries++; }
       const state = await options.harness().snapshot(OptChatState, id, options.context);
@@ -657,7 +693,7 @@ export function createOptChatMemory(options: OptChatOptions): OptChatMemory {
       return {
         leaves: s.log.leaves.length, summaries,
         view: { bytes: fold.size, budget: viewBytes, open: openParts(fold).length,
-          parts: fold.parts.map(part => ({ id: partStart(part), n: span(part.level), level: part.level, text: s.tree.text(part.level, part.index) ?? '', open: part.open })) },
+          parts: fold.parts.map(part => ({ id: partStart(part), n: span(part.level), level: part.level, text: part.open ? '' : s.tree.text(part.level, part.index) ?? '', open: part.open })) },
         compactor: { busy, retrying, failed: failures.length, idle: busy === 0 && retrying === 0, ...(latest ? { error: latest.error } : {}), calls: state?.calls ?? 0, usage: { ...(state?.usage ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 }) } },
         ...(s.lastRequest ? { lastRequest: s.lastRequest } : {}),
       };
