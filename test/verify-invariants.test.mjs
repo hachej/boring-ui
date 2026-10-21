@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
+import { spawnSync } from 'node:child_process';
 import { verifyInvariants } from '../scripts/verify-invariants.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -56,6 +57,20 @@ test('release accepts promoted mandatory slots only after actual fixture command
   const f = fixture(t, true); const result = verifyInvariants(f.directory, { release: true });
   assert.equal(result.status, 0, result.logs.join('\n')); assert.ok(result.logs.some((line) => line.startsWith('Registered boundary evidence passed')));
 });
+test('the verifier CLI retains failed TAP assertions even when stderr contains only warnings', t => {
+  const f = fixture(t);
+  const source = new URL('../scripts/verify-invariants.mjs', import.meta.url);
+  const script = readFileSync(source, 'utf8').replace(/from '(\.\/[^']+)'/g, (_, path) => `from '${new URL(path, source).href}'`);
+  f.write('scripts/verify-invariants.mjs', script);
+  f.write('test/pi-boundary.test.mjs', 'import test from "node:test"; import assert from "node:assert/strict"; process.stderr.write("fixture warning\\n"); test("failed evidence sentinel", () => assert.fail("actual assertion sentinel"));');
+  const env = { ...process.env }; delete env.NODE_TEST_CONTEXT;
+  const ran = spawnSync(process.execPath, [join(f.directory, 'scripts/verify-invariants.mjs'), '--release'], { encoding: 'utf8', env, timeout: 20000 });
+  assert.equal(ran.status, 1, ran.stderr);
+  assert.match(ran.stdout, /fixture warning/);
+  assert.match(ran.stdout, /actual assertion sentinel/);
+  assert.match(ran.stdout, /exit status: 1/);
+});
+
 test('release cannot pass by deleting runtime proof slots', (t) => {
   const f = fixture(t); const registry = JSON.parse(readFileSync(join(f.directory, 'VERIFY.json')));
   for (const rule of Object.values(registry.invariants)) rule.verifiers = rule.verifiers.filter((v) => v.scope !== 'runtime');
