@@ -33,12 +33,30 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
   const host = document.createElement('div'); document.body.append(host); const root = createRoot(host);
   const q = selector => document.querySelector(selector);
   const settle = async ready => { for (let n = 0; n < 200 && !ready(); n++) await act(async () => new Promise(resolve => setTimeout(resolve, 10))); assert.ok(ready(), 'expected UI appeared'); };
-  const draw = () => root.render(createElement(PiChat, { controller, mentions: { search: async () => [] }, conversations: { items: sharedChatSeed.conversations, activeId: controller.getSnapshot().conversationId, onSelect(id) { controller = createSharedChat(source, { conversationId: id }); controllers.push(controller); draw(); } } }));
+  let pendingVoice;
+  const draw = () => root.render(createElement(PiChat, { controller, pendingVoice, mentions: { search: async () => [] }, conversations: { items: sharedChatSeed.conversations, activeId: controller.getSnapshot().conversationId, onSelect(id) { controller = createSharedChat(source, { conversationId: id }); controllers.push(controller); draw(); } } }));
   const render = () => act(async () => draw());
   t.after(async () => { await act(async () => { root.unmount(); for (const controller of controllers) await controller.dispose(); }); await window.happyDOM.close(); for (const [name, descriptor] of globals) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else delete globalThis[name]; } });
   await render();
   await settle(() => q('[data-shared-message="one"]'));
 
+  await t.test('local failed voice rows stay in the shared transcript, not in its composer', async () => {
+    pendingVoice = [{ id: 41, path: 'uploads/voice-20261021-100000.webm', phase: 'transcribe-failed', seconds: 2,
+      retry() {}, audioOnly() {}, discard: () => { pendingVoice = []; draw(); } }];
+    await render();
+    const pending = q('[data-testid=voice-pending]');
+    assert.equal(pending?.closest('[data-testid=transcript]')?.dataset.testid, 'transcript');
+    assert.equal(pending.closest('[data-testid=composer-dock]'), null);
+    assert.ok(q('[data-shared-message=one]'), 'existing shared messages remain in their host timeline');
+    await act(async () => pending.querySelector('[data-testid=voice-discard]').click());
+    assert.equal(q('[data-testid=voice-pending]'), null);
+    assert.ok(q('[data-shared-message=one]'));
+    const viewport = q('[data-testid=transcript-scroll]'), navigation = q('[data-testid=transcript-navigation]');
+    assert.ok(navigation, 'the shared transcript reserves nonoverlapping jump-control space');
+    assert.equal(navigation.parentElement, viewport.parentElement);
+    assert.equal(navigation.closest('[data-testid=transcript-scroll]'), null, 'navigation never overlays the message viewport');
+    assert.ok(viewport.compareDocumentPosition(navigation) & 4, 'navigation follows the viewport');
+  });
   await t.test('the fictional host exposes PM and Data, never Builder, including its mention catalog', async () => {
     assert.deepEqual((await source.members('main')).filter(member => member.kind === 'agent').map(member => member.id), ['pm', 'data']);
     assert.doesNotMatch(q('[data-testid=transcript]').textContent, /Builder/);

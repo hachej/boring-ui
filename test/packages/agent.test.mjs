@@ -900,6 +900,95 @@ test('harness pool: one harness per owner, never shared; a held lease or a strea
   assert.deepEqual(created, ['owner-a', 'owner-b', 'owner-a']);
 });
 
+test('workspace skills keep their folders for on-demand native reads; host skills stay data-only', { timeout: 30000 }, async t => {
+  const { defineAgent } = await import('@hachej/boring-agent/agents');
+  const { createVirtualWorkspace } = await import('@hachej/boring-execution/virtual');
+  const { createScriptedModel } = await import('@hachej/boring-testing/model');
+  const legacy = 'For a fictional overview see shared/summary.txt.';
+  const nutrition = 'For fictional portion sizes see portions.md; for the table see tables/2026.csv.';
+  const document = (name, body) => `---\nname: ${name}\ndescription: Fictional ${name} guidance\n---\n${body}\n`;
+  const workspace = createVirtualWorkspace({ providerId: 'fictional-skills', files: {
+    '/repo/.agent/skills/legacy.md': document('legacy', legacy),
+    '/repo/.agent/skills/shared/summary.txt': 'Fictional overview: keep it simple.\n',
+    '/repo/.agent/skills/nutrition/SKILL.md': document('nutrition', nutrition),
+    '/repo/.agent/skills/nutrition/portions.md': 'Fictional portion: two spoonfuls.\n',
+    '/repo/.agent/skills/nutrition/tables/2026.csv': 'portion,spoonfuls\nfictional,2\n',
+    '/repo/.agent/skills/nutrition/tables/SKILL.md': document('not-a-skill', 'Nested companion, not a skill.'),
+  } });
+  const lease = await workspace.acquire({ operationId: 'fictional-skills', input: { cwd: '/repo' } }, context);
+  const reads = [], loaded = [];
+  const env = new Proxy(lease.environment, { get: (target, key) => {
+    const value = Reflect.get(target, key);
+    return ['readTextFile', 'readBinaryFile', 'openBinaryReader'].includes(key) ? (path, ...args) => {
+      reads.push(path); return value(path, ...args);
+    } : value;
+  } });
+  const reference = (name, path) => [
+    { tools: [{ name: 'load_skill', args: { name } }] },
+    turn => {
+      loaded.push(turn.last.text);
+      assert.deepEqual(companionReads(), [], 'load_skill does not read companion files');
+      const folder = /This skill's folder is `([^`]+)`; paths in it are relative to that folder\./.exec(turn.last.text)?.[1];
+      return folder ? { tools: [{ name: 'read', args: { path: `${folder}/${path}` } }] } : 'No skill folder returned.';
+    },
+    turn => turn.last.text,
+  ];
+  const scripted = createScriptedModel({ script: {
+    'unrelated question': [turn => {
+      assert.ok(!turn.system.includes(nutrition) && !turn.system.includes(legacy), 'skill bodies stay out of unrelated requests');
+      return 'An unrelated fictional answer.';
+    }],
+    'legacy overview': reference('legacy', 'shared/summary.txt'),
+    'portion sizes': reference('nutrition', 'portions.md'),
+    'table values': reference('nutrition', 'tables/2026.csv'),
+    'host style': [{ tools: [{ name: 'load_skill', args: { name: 'house-style' } }] }, turn => { loaded.push(turn.last.text); return 'Done.'; }],
+  } });
+  const agent = defineAgent({ id: 'coach', model: scripted.model, selfEvolving: true, workspace: 'fictional-skills',
+    tools: [createReadTool()], skills: [{ name: 'house-style', description: 'Fictional house style.', body: 'Be brief.' }] });
+  const registry = createRegistry(); agent.install(registry);
+  const harness = await Harness.open(new MemoryStorage(), { registry, models: scripted.models, env: () => env }, context);
+  t.after(async () => { await harness.close(context); await lease.release(context); workspace.dispose(); });
+  const report = await agent.reload(env, context);
+  const companionReads = () => reads.filter(path => /(?:portions\.md|2026\.csv|summary\.txt|tables\/SKILL\.md)$/.test(path));
+  assert.deepEqual(companionReads(), [], 'scanning reads definitions, never their companions');
+  const conversation = await agent.createConversation(harness, context);
+  const ask = async content => {
+    const done = await (await conversation.submit({ type: 'input', content }, context)).wait(context);
+    assert.equal(done.status, 'done');
+  };
+  await ask('unrelated question');
+  assert.deepEqual(loaded, []);
+  assert.deepEqual(companionReads(), [], 'unrelated questions load neither skills nor companions');
+  reads.length = 0;
+  await ask('legacy overview');
+  assert.equal(loaded.at(-1), `${legacy}\n\nThis skill's folder is \`.agent/skills\`; paths in it are relative to that folder.`);
+  assert.ok(companionReads().some(path => path.endsWith('/shared/summary.txt')));
+  reads.length = 0;
+  await ask('portion sizes');
+  assert.equal(loaded.at(-1), `${nutrition}\n\nThis skill's folder is \`.agent/skills/nutrition\`; paths in it are relative to that folder.`);
+  assert.ok(companionReads().some(path => path.endsWith('/nutrition/portions.md')));
+  assert.ok(!companionReads().some(path => path.endsWith('/2026.csv')), 'only the requested companion is read');
+  reads.length = 0;
+  await ask('table values');
+  assert.ok(companionReads().some(path => path.endsWith('/nutrition/tables/2026.csv')));
+  reads.length = 0;
+  await ask('host style');
+  assert.equal(loaded.at(-1), 'Be brief.', 'a host-given skill has exactly its original body, without a folder');
+  assert.deepEqual(companionReads(), []);
+  assert.deepEqual(report.skills, ['legacy', 'nutrition']);
+  assert.deepEqual(report.errors, [], 'companion Markdown is not parsed as a skill');
+  assert.deepEqual(agent.skills.map(skill => skill.name), ['house-style', 'legacy', 'nutrition']);
+  assert.deepEqual(scripted.misses, []);
+  const watch = await conversation.watch(context);
+  t.after(() => watch.stop());
+  const results = watch.value.entries.flatMap(entry => entry.model ?? []).filter(message => message.role === 'toolResult');
+  assert.deepEqual(results.filter(result => result.toolName === 'read').map(result => ({ text: result.content[0].text, isError: result.isError })), [
+    { text: 'Fictional overview: keep it simple.\n', isError: false },
+    { text: 'Fictional portion: two spoonfuls.\n', isError: false },
+    { text: 'portion,spoonfuls\nfictional,2\n', isError: false },
+  ]);
+});
+
 test('self-evolution prompt assembly (SELF-3): the host instructions first and whole, the labelled and capped agent-written section last; a plain agent has none (SELF-1)', { timeout: 30000 }, async t => {
   const { defineAgent } = await import('@hachej/boring-agent/agents');
   const { createProvider } = await import('@earendil-works/pi-ai/models');

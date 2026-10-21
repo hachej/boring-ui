@@ -50,6 +50,7 @@
     "app-shell:journey:workspace": "node examples/app-shell/journey-workspace.mjs",
     "app-shell:journey:target": "node examples/app-shell/journey-target.mjs",
     "app-shell:journey:documents": "node examples/app-shell/journey-documents.mjs",
+    "app-shell:journey:voice": "node examples/app-shell/journey-voice.mjs",
     "feedback": "node examples/feedback/server.mjs",
     "feedback:journey": "node examples/feedback/journey-composer.mjs",
     "feedback:journey:picker": "node examples/feedback/journey.mjs",
@@ -113,7 +114,9 @@
     "release:preflight": "npm run verify:release && node scripts/check-npm-packages.mjs --release",
     "release:version": "node scripts/release-version.mjs",
     "file-tree:journey": "node examples/file-tree/journey.mjs && node examples/file-tree/journey-library.mjs",
-    "requests:journey": "node examples/workspace-app/journey-requests.mjs"
+    "requests:journey": "node examples/workspace-app/journey-requests.mjs",
+    "windows": "node examples/windows/server.mjs",
+    "windows:journey": "node examples/windows/journey.mjs"
   },
   "devDependencies": {
     "@aws-sdk/client-bedrock-agentcore": "3.1151.0",

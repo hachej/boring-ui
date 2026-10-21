@@ -73,7 +73,8 @@ other dependency. Expressions are page JavaScript: `q(selector)` and `qa(selecto
 expression, timeout?)` (waits for what the page shows, then fails with the page text and its errors), real input (`click`, `tap`, `type`,
 `press`, `drag`, `hover`, `wheel`, `attachFiles`), `emulate('phone' | 'tablet' | 'desktop')` (390x844 touch phone), `screenshot(name)` into
 `evidence`, `openTab(url, { hidden? })` (same profile, background-tab visibility), `frameEvaluate` for sandboxed iframes, `reload`,
-`problems` (uncaught exceptions and `console.error`) and `close`. `insecureUrl(url)` swaps `127.0.0.1` for `insecure.test`, which the
+`problems` (uncaught exceptions and `console.error`) and `close`. Pointer actions wait for stable geometry, CSS visibility and a non-inert
+target before sending input; they do not retry clicks. `insecureUrl(url)` swaps `127.0.0.1` for `insecure.test`, which the
 browser reaches but treats as an insecure context (no `crypto.randomUUID`, clipboard or share), like a plain-HTTP deployment.
 
 ## Network faults (`@hachej/boring-testing/network`)

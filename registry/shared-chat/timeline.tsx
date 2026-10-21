@@ -1,6 +1,6 @@
 'use client';
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import type { RefObject } from 'react';
+import { Children, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import type { ReactNode, RefObject } from 'react';
 import type { SharedChatController } from '@hachej/boring-ui-kit/shared-chat';
 import type { MentionsConfig } from '../pi-chat/config';
 import { MessageText } from '../pi-chat/message';
@@ -15,9 +15,9 @@ import { HostTrace } from './host-trace';
 import { useChatText } from './text';
 
 export interface TimelineApi { readonly reset: () => void; readonly reveal: (id: string) => void }
-export function SharedTimeline({ controller, api, focusComposer, openFile, mentions }: {
+export function SharedTimeline({ controller, api, focusComposer, openFile, mentions, pendingVoice }: {
   readonly controller: SharedChatController; readonly api: RefObject<TimelineApi | undefined>;
-  readonly focusComposer: () => void; readonly openFile?: ((path: string) => void) | undefined; readonly mentions: MentionsConfig;
+  readonly focusComposer: () => void; readonly openFile?: ((path: string) => void) | undefined; readonly mentions: MentionsConfig; readonly pendingVoice?: ReactNode;
 }) {
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const { labels, icons } = useChatText();
@@ -47,13 +47,14 @@ export function SharedTimeline({ controller, api, focusComposer, openFile, menti
     if (state.history.kind === 'ready' && state.history.hasMore) void controller.loadEarlier().catch(() => setRevealing(undefined));
     else setRevealing(undefined);
   }, [revealing, items, hidden, state.history]);
+  const hasContent = items.length > 0 || Children.count(pendingVoice) > 0;
   const context = { pieces: { mentions: true, skills: [], renderMention: mentions.renderSent }, openFile };
   const renderMention = (path: string, text: string) => mentions.renderSent?.(path) ?? text;
   return <MessageScroller>
-    <MessageScrollerViewport ref={node => { root.current = node; stick.scrollRef(node); }} data-testid="transcript-scroll" aria-label={labels.messages} className="scrollbar-thumb-border scrollbar-track-transparent">
+    <MessageScrollerViewport ref={node => { root.current = node; stick.scrollRef(node); }} data-testid="transcript-scroll" aria-label={labels.messages} className="min-h-0 flex-1 scrollbar-thumb-border scrollbar-track-transparent">
       {items.length > 0 && (hidden > 0 || state.history.kind === 'loading' || state.history.kind === 'error' || state.history.kind === 'ready' && state.history.hasMore) && <TranscriptHistory history={state.history} connected={!state.disposed && connected} onLoad={transcript.reveal} sentinelRef={transcript.sentinelRef} hidden={hidden} loaded={transcript.loaded} />}
       <div className="mx-auto w-full max-w-[720px] px-4 pt-6 pb-8 sm:px-6">
-        <MessageScrollerContent aria-label={labels.messages} aria-live="polite" data-testid="transcript" className="gap-0">
+        <MessageScrollerContent aria-label={labels.messages} aria-live="polite" data-testid="transcript" className="gap-0 [&>[data-local-voice]]:mt-6">
           {transcript.visible(items).map((item, index) => {
             const { message, author, own } = item;
             const person = own || author.kind !== 'agent' || message.via !== undefined;
@@ -70,9 +71,10 @@ export function SharedTimeline({ controller, api, focusComposer, openFile, menti
               </SharedMessage>
             </MessageScrollerItem>;
           })}
+          {pendingVoice}
         </MessageScrollerContent>
       </div>
     </MessageScrollerViewport>
-    {items.length > 0 && !stick.isAtBottom && <MessageScrollerButton data-testid="jump-latest" aria-label={labels.jumpToLatest} title={labels.jumpToLatest} onClick={() => api.current?.reset()}><icons.jumpToLatest aria-hidden="true" /></MessageScrollerButton>}
+    {hasContent && <div data-testid="transcript-navigation" className="flex h-12 shrink-0 items-center justify-center">{!stick.isAtBottom && <MessageScrollerButton className="static inset-auto translate-x-0" data-testid="jump-latest" aria-label={labels.jumpToLatest} title={labels.jumpToLatest} onClick={() => api.current?.reset()}><icons.jumpToLatest aria-hidden="true" /></MessageScrollerButton>}</div>}
   </MessageScroller>;
 }

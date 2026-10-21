@@ -3,6 +3,7 @@ import type { Extension, PromptSection, Registry, ToolExecutionResult, ToolRegis
 import type { ExecutionEnv } from '@earendil-works/pi-durable/env';
 import { Type } from '@earendil-works/pi-ai';
 import type { Context } from '@earendil-works/chord';
+import { skillInFolder } from './skills.js';
 import type { Skill } from './skills.js';
 import { jsonSchemaTool } from './json-schema-tool.js';
 
@@ -128,6 +129,23 @@ async function filesIn(env: ExecutionEnv, directory: string, suffix: string, con
   return listed.value.filter(entry => entry.kind === 'file' && entry.name.endsWith(suffix)).map(entry => `${directory}/${entry.name}`).sort();
 }
 
+/** Flat Markdown skills and `SKILL.md` in immediate child folders; companion files are not definitions. */
+async function skillFilesIn(env: ExecutionEnv, context: Context, errors: SelfEvolutionError[]): Promise<string[]> {
+  const listed = await env.listDir(SKILLS, context);
+  if (!listed.ok) {
+    if (listed.error.code !== 'not_found') errors.push({ path: SKILLS, message: listed.error.message });
+    return [];
+  }
+  const paths = listed.value.filter(entry => entry.kind === 'file' && entry.name.endsWith('.md')).map(entry => `${SKILLS}/${entry.name}`);
+  for (const entry of listed.value.filter(entry => entry.kind === 'directory')) {
+    const folder = `${SKILLS}/${entry.name}`;
+    const contents = await env.listDir(folder, context);
+    if (!contents.ok) { errors.push({ path: folder, message: contents.error.message }); continue; }
+    if (contents.value.some(file => file.kind === 'file' && file.name === 'SKILL.md')) paths.push(`${folder}/SKILL.md`);
+  }
+  return paths.sort();
+}
+
 export function createSelfEvolution(options: SelfEvolutionOptions): SelfEvolution {
   const { name, parseSkill, skillsExtension } = options;
   const hostSkills = [...options.skills];
@@ -140,7 +158,7 @@ export function createSelfEvolution(options: SelfEvolutionOptions): SelfEvolutio
     name: 'reload',
     description: `Apply the changes you made to your own ${AGENT_FOLDER}/ folder in the workspace, then return what was added, changed and removed and every load error. `
       + `${INSTRUCTIONS}: standing instructions for yourself, shown after the host's instructions on every request. `
-      + `${SKILLS}/<name>.md: skills (front matter with name and description between --- lines, then the instructions), loaded with load_skill. `
+      + `${SKILLS}/<name>.md or ${SKILLS}/<name>/SKILL.md: skills (front matter with name and description between --- lines, then the instructions), loaded with load_skill; paths in a skill are relative to its folder and read with read. `
       + `${TOOLS}/<name>.json: your own tools, {"name": "snake_case", "description": "...", "parameters": {a JSON Schema with "type": "object"}, "run": "a command run in the workspace, for example sh ${TOOLS}/<name>.sh"}; `
       + 'the arguments arrive as one line of JSON on standard input and the command output is the result. Restore or delete the files and reload to undo a change.',
     parameters: Type.Object({}, { additionalProperties: false }),
@@ -173,15 +191,14 @@ export function createSelfEvolution(options: SelfEvolutionOptions): SelfEvolutio
     else if (read.error.code !== 'not_found') errors.push({ path: INSTRUCTIONS, message: read.error.message });
 
     const skills: Skill[] = [];
-    const skillFiles = await filesIn(env, SKILLS, '.md', context);
-    if (typeof skillFiles === 'object' && !Array.isArray(skillFiles)) errors.push({ path: SKILLS, message: skillFiles.error });
-    for (const path of Array.isArray(skillFiles) ? skillFiles : []) {
+    const skillFiles = await skillFilesIn(env, context, errors);
+    for (const path of skillFiles) {
       const text = await env.readTextFile(path, context);
       if (!text.ok) { errors.push({ path, message: text.error.message }); continue; }
       let skill: Skill;
       try { skill = parseSkill(text.value); } catch (error) { errors.push({ path, message: reason(error) }); continue; }
       if ([...hostSkills, ...skills].some(other => other.name === skill.name)) { errors.push({ path, message: `a skill named ${skill.name} already exists` }); continue; }
-      skills.push(skill);
+      skills.push(skillInFolder(skill, path.slice(0, path.lastIndexOf('/'))));
     }
 
     const available = typeof env.exec === 'function';

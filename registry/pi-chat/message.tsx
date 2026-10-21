@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { ImageContent, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai';
-import { AlertCircleIcon, CircleSlashIcon, FileIcon, FileSpreadsheetIcon, FileTextIcon, ImageIcon, PresentationIcon } from 'lucide-react';
+import { AlertCircleIcon, CircleSlashIcon, FileAudioIcon, FileIcon, FileSpreadsheetIcon, FileTextIcon, ImageIcon, PauseIcon, PlayIcon, PresentationIcon } from 'lucide-react';
 import { CopyButton } from './code-block';
 import { Markdown } from './markdown';
 import type { CommandMentions } from './markdown';
@@ -17,8 +17,10 @@ import type { ActivityState } from './activity';
 import { Shimmer } from './shimmer';
 import { ToolCard } from './tool';
 import { thumbnail } from './composer';
-import { displayName, fileKind, isUploadPath, pieces, visibleParts } from './config';
-import type { FileKind, Piece, PreviewRead } from './config';
+import { displayName, fileKind, isUploadPath, isVoicePath, pieces, visibleParts } from './config';
+import type { AudioUrlRead, FileKind, Piece, PreviewRead } from './config';
+import { voiceClock } from './voice-message';
+import { Spinner } from '@/components/ui/spinner';
 import { isFileBlock, segments, targetContent } from './rows';
 import type { DeriveOptions, Row } from './rows';
 import { Button } from '@/components/ui/button';
@@ -43,7 +45,7 @@ export interface RowContext {
   readonly onCopy: ((text: string) => Promise<void>) | undefined;
   /** Which tokens of a sent message get a styled treatment (`@path` mentions, a leading `/skill`). */
   readonly pieces: { readonly mentions: boolean; readonly uploads?: boolean; readonly skills: readonly string[]; readonly openMention?: ((path: string) => void) | undefined; readonly renderMention?: ((path: string) => ReactNode | undefined) | undefined;
-    readonly preview?: PreviewRead | undefined } | undefined;
+    readonly preview?: PreviewRead | undefined; readonly audioUrl?: AudioUrlRead | undefined } | undefined;
   readonly fileChanges?: boolean | undefined;
   /** Opens a file card through the host's workspace opener. */
   readonly openFile?: ((path: string) => void) | undefined;
@@ -89,6 +91,7 @@ function FileGlyph({ kind }: { readonly kind: FileKind }) {
   switch (kind) {
     case 'image': return <ImageIcon aria-hidden="true" />;
     case 'sheet': return <FileSpreadsheetIcon aria-hidden="true" />;
+    case 'audio': return <FileAudioIcon aria-hidden="true" />;
     case 'slides': return <PresentationIcon aria-hidden="true" />;
     case 'document': return <FileTextIcon aria-hidden="true" />;
     default: return <FileIcon aria-hidden="true" />;
@@ -127,6 +130,76 @@ function FileCards({ paths, open, preview }: { readonly paths: readonly string[]
   </ul>;
 }
 
+/** Retained audio is read only on Play, through the same authorized workspace preview as file cards. */
+export function VoiceBubble({ path, transcript, preview, audioUrl, align = 'end' }: { readonly path: string; readonly transcript: ReactNode; readonly preview: PreviewRead | undefined; readonly audioUrl: AudioUrlRead | undefined; readonly align?: 'start' | 'end' }) {
+  const { labels } = useChatText();
+  const audio = useRef<HTMLAudioElement>(null), work = useRef<AbortController | null>(null), loadingRequest = useRef(false);
+  const [playing, setPlaying] = useState(false), [loading, setLoading] = useState(false), [failed, setFailed] = useState(false), [duration, setDuration] = useState<number>();
+  const source = useRef<string | undefined>(undefined), loader = useRef<() => Promise<boolean>>(async () => false);
+  useEffect(() => {
+    const element = audio.current;
+    let objectUrl: string | undefined;
+    source.current = undefined; loadingRequest.current = false; setPlaying(false); setLoading(false); setFailed(false); setDuration(undefined);
+    const release = () => { if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = undefined; } };
+    const abort = new AbortController(); work.current = abort;
+    const load = async () => {
+      release();
+      const signed = await audioUrl?.(path, abort.signal);
+      if (abort.signal.aborted) return;
+      if (signed) {
+        const url = new URL(signed, window.location.href);
+        if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new Error('Unsupported audio URL');
+        source.current = url.href;
+      } else {
+        const read = await preview?.(path, abort.signal);
+        if (abort.signal.aborted) return;
+        if (!read || !/^audio\/(?:webm|ogg|mp4|m4a|x-m4a|mpeg|mp3|wav|x-wav)(?:;|$)/i.test(read.mimeType)) throw new Error('Audio unavailable');
+        const bytes = Uint8Array.from(atob(read.data), character => character.charCodeAt(0));
+        // MediaRecorder WebM often has no finite metadata duration; decode only these already-requested bytes.
+        try {
+          if (typeof OfflineAudioContext === 'function') void new OfflineAudioContext(1, 1, 48_000).decodeAudioData(bytes.slice().buffer).then(buffer => {
+            if (!abort.signal.aborted && Number.isFinite(buffer.duration)) setDuration(Math.round(buffer.duration));
+          }).catch(() => {});
+        } catch { /* Optional duration decoding must not prevent native playback. */ }
+        objectUrl = URL.createObjectURL(new Blob([bytes], { type: read.mimeType })); source.current = objectUrl;
+      }
+      if (element && source.current) element.src = source.current;
+    };
+    // A loader belongs to this path/provider epoch, not to a later row with the same DOM node.
+    loader.current = async () => { await load(); return !abort.signal.aborted; };
+    return () => { abort.abort(); if (work.current === abort) work.current = null; element?.pause(); element?.removeAttribute('src'); element?.load(); source.current = undefined; release(); };
+  }, [path, preview, audioUrl]);
+  const toggle = async () => {
+    const element = audio.current, abort = work.current;
+    if (!element || !abort || loadingRequest.current) return;
+    if (!element.paused) { element.pause(); return; }
+    loadingRequest.current = true; setFailed(false); setLoading(true);
+    try {
+      if (!source.current && !await loader.current()) return;
+      if (!abort.signal.aborted) await element.play();
+    } catch { if (!abort.signal.aborted) setFailed(true); }
+    finally { if (work.current === abort && !abort.signal.aborted) { loadingRequest.current = false; setLoading(false); } }
+  };
+  return <Bubble variant="muted" align={align} data-testid="voice-bubble"><BubbleContent>
+    <div className="flex items-center gap-2">
+      <Button variant="ghost" size="icon" data-testid="voice-play" aria-label={playing ? labels.voicePause : labels.voicePlay} disabled={loading || (!preview && !audioUrl)} onClick={() => { void toggle(); }}>
+        {loading ? <Spinner data-icon="inline-start" aria-hidden="true" /> : playing ? <PauseIcon data-icon="inline-start" aria-hidden="true" /> : <PlayIcon data-icon="inline-start" aria-hidden="true" />}
+      </Button>
+      <span data-testid="voice-duration">{duration === undefined ? '--:--' : voiceClock(duration)}</span>
+      <audio ref={audio} preload="none" onPlay={() => { setPlaying(true); setFailed(false); }} onPause={() => setPlaying(false)} onEnded={() => {
+        setPlaying(false); const element = audio.current;
+        if (element && !Number.isFinite(element.duration) && Number.isFinite(element.currentTime)) setDuration(Math.round(element.currentTime));
+      }} onError={() => { setFailed(true); setPlaying(false); source.current = undefined; }} onDurationChange={() => {
+        const element = audio.current; if (element && Number.isFinite(element.duration)) setDuration(Math.round(element.duration));
+      }} onLoadedMetadata={() => {
+        const element = audio.current; if (element && Number.isFinite(element.duration)) setDuration(Math.round(element.duration));
+      }} />
+    </div>
+    {failed && <p role="alert">{labels.voicePlayFailed}</p>}
+    {transcript && <div data-testid="user-text" className="whitespace-pre-wrap">{transcript}</div>}
+  </BubbleContent></Bubble>;
+}
+
 /**
  * A text part of a sent message. Its `uploads/` mentions become file cards above the bubble and leave the text; the message content keeps
  * them (only what is drawn changes).
@@ -139,18 +212,23 @@ export function MessageText({ text, context, align = 'end' }: { readonly text: s
   </>;
   const open = context.pieces?.openMention;
   const render = context.pieces?.renderMention;
-  if (!context.pieces) return <Bubble variant="muted" align={align}><BubbleContent data-testid="user-text"><span className="whitespace-pre-wrap">{text}</span></BubbleContent></Bubble>;
-  const all = pieces(text, context.pieces);
+  const styledUploads = Boolean(context.pieces?.mentions || context.pieces?.uploads);
+  const all = pieces(text, { mentions: context.pieces?.mentions ?? false, uploads: true, skills: context.pieces?.skills ?? [] }).map((piece): Piece =>
+    !styledUploads && piece.kind === 'mention' && isUploadPath(piece.value!) && !isVoicePath(piece.value!) ? { text: piece.text } : piece);
   const isFile = (piece: Piece) => piece.kind === 'mention' && isUploadPath(piece.value!);
   const files = all.filter(isFile).map(piece => piece.value!);
+  const voice = files.find(isVoicePath), cards = files.filter(path => path !== voice);
+  if (!context.pieces && !voice) return <Bubble variant="muted" align={align}><BubbleContent data-testid="user-text"><span className="whitespace-pre-wrap">{text}</span></BubbleContent></Bubble>;
   const shown = files.length ? visibleParts(all, isFile) : all;
   const empty = shown.every(piece => piece.kind === undefined && piece.text === '');
+  const content = shown.map((piece, at) => piece.kind === 'mention'
+    ? <UserMention key={at} path={piece.value!} text={piece.text} open={open} render={render} />
+    : piece.kind === 'skill' ? <Badge key={at} variant="secondary" data-testid="message-skill" data-skill={piece.value}>{piece.text}</Badge>
+    : piece.text);
   return <>
-    {files.length > 0 && <FileCards paths={files} open={context.openFile ?? open} preview={context.pieces.preview} />}
-    {!(files.length > 0 && empty) && <Bubble variant="muted" align={align}><BubbleContent data-testid="user-text"><span className="whitespace-pre-wrap">{shown.map((piece, at) => piece.kind === 'mention'
-      ? <UserMention key={at} path={piece.value!} text={piece.text} open={open} render={render} />
-      : piece.kind === 'skill' ? <Badge key={at} variant="secondary" data-testid="message-skill" data-skill={piece.value}>{piece.text}</Badge>
-      : piece.text)}</span></BubbleContent></Bubble>}
+    {cards.length > 0 && <FileCards paths={cards} open={context.openFile ?? open} preview={context.pieces?.preview} />}
+    {voice ? <VoiceBubble path={voice} transcript={empty ? null : content} preview={context.pieces?.preview} audioUrl={context.pieces?.audioUrl} align={align} />
+      : !(files.length > 0 && empty) && <Bubble variant="muted" align={align}><BubbleContent data-testid="user-text"><span className="whitespace-pre-wrap">{content}</span></BubbleContent></Bubble>}
   </>;
 }
 

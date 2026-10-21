@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -40,17 +40,19 @@ const child = process.env.BORING_FEEDBACK_CRASH_CHILD;
 if (child) {
   const { store } = await open(join(child, 'feedback.sqlite'), { publish: async (resources, request, context) => {
     const result = await resources.publication.publish(request, context);
-    writeFileSync(join(child, 'committed.json'), JSON.stringify(result));
+    writeFileSync(join(child, 'committed.json.tmp'), JSON.stringify(result));
+    renameSync(join(child, 'committed.json.tmp'), join(child, 'committed.json'));
     setInterval(() => {}, 1000);
     return new Promise(() => {});
   } });
   await store.create(draft, access, { id: OPERATION_ID, key: store.operationKey('create', draft, access) });
   throw new Error('The acknowledgement must never arrive');
 } else {
-  for (const mode of ['recover', 'changed-binding', 'revoked']) test(`feedback create recovers after SIGKILL between commit and acknowledgement: ${mode}`, { timeout: 20000 }, async t => {
+  for (const mode of ['recover', 'changed-binding', 'revoked', 'slow-marker']) test(`feedback create recovers after SIGKILL between commit and acknowledgement: ${mode}`, { timeout: 20000 }, async t => {
     const directory = mkdtempSync(join(tmpdir(), 'boring-feedback-crash-'));
     const env = { ...process.env, BORING_FEEDBACK_CRASH_CHILD: directory }; delete env.NODE_TEST_CONTEXT;
-    const worker = spawn(process.execPath, [fileURLToPath(import.meta.url)], { env, stdio: ['ignore', 'inherit', 'inherit'] });
+    const imports = mode === 'slow-marker' ? ['--import', fileURLToPath(new URL('../fixtures/feedback-marker-delay.mjs', import.meta.url))] : [];
+    const worker = spawn(process.execPath, [...imports, fileURLToPath(import.meta.url)], { env, stdio: ['ignore', 'inherit', 'inherit'] });
     const terminal = new Promise((resolve, reject) => { worker.once('error', reject); worker.once('exit', (code, signal) => resolve({ code, signal })); });
     terminal.catch(() => {});
     t.after(async () => { worker.kill('SIGKILL'); await terminal.catch(() => {}); rmSync(directory, { recursive: true, force: true }); });
@@ -70,7 +72,7 @@ if (child) {
     const caller = mode === 'changed-binding' ? { ...access, initiatorId: 'p_fictional_agent' } : access;
     // The admitted key is the one computed when the operation was first admitted, under the original access.
     const result = await store.create(draft, caller, { id: OPERATION_ID, key: store.operationKey('create', draft, access) });
-    if (mode === 'recover') {
+    if (mode === 'recover' || mode === 'slow-marker') {
       assert.equal(result.kind, 'applied');
       assert.equal(result.operationId, committed.receipt.operationId);
       assert.equal(`${ROOT}${result.report.id}.md`, reportPath);

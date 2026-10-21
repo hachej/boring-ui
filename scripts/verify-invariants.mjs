@@ -30,7 +30,9 @@ export function verifyInvariants(root, { release = false, run = runCaptured } = 
     const timeout = command.slice(2).includes('test/packages/agent.test.mjs') ? 300000 : 60000;
     const ran = run(process.execPath, ['--test', '--experimental-test-isolation=none', '--test-reporter=tap', ...command.slice(2)], { cwd: root, encoding: 'utf8', timeout, env });
     if (ran.status !== 0 || ran.error || ran.signal || !/^# pass [1-9]\d*$/m.test(ran.stdout ?? '') || !/^# skipped 0$/m.test(ran.stdout ?? '') || !/^# todo 0$/m.test(ran.stdout ?? '')) {
-      logs.push(ran.stderr || ran.stdout || ran.error?.message || `signal: ${ran.signal}`);
+      logs.push(`exit status: ${ran.status}; signal: ${ran.signal ?? 'none'}${ran.error ? `; error: ${ran.error.message}` : ''}`);
+      if (ran.stdout) logs.push(ran.stdout);
+      if (ran.stderr) logs.push(ran.stderr);
       logs.push('Evidence failed: error, timeout, no passing tests or skipped/todo obligations.');
       status = 1;
     }

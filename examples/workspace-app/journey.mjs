@@ -305,6 +305,32 @@ try {
     await browser.screenshot('history-column-artifact-desktop.png');
   });
 
+  await step('History accepts one pointer press after hidden and inert layout transitions', async () => {
+    await browser.send('Emulation.setDeviceMetricsOverride', { width: 900, height: 800, deviceScaleFactor: 1, mobile: false });
+    await browser.until('column aside for transition checks', `${q('[data-boring=agent-workspace]')}.dataset.sessions === 'hidden' && !!${q('[data-testid=history-open]')}`, 5000);
+    for (const blocked of ['visibility', 'inert']) {
+      await browser.evaluate(`(() => {
+        const button = ${q('[data-testid=history-open]')};
+        window.__historyPresses = [];
+        window.__historyPress = () => window.__historyPresses.push(button.checkVisibility({ visibilityProperty: true }) && !button.closest('[inert]'));
+        button.addEventListener('pointerdown', window.__historyPress);
+        if (${JSON.stringify(blocked)} === 'visibility') button.style.visibility = 'hidden'; else button.inert = true;
+      })()`);
+      // The native Button transitions visibility, so setting the fault is not the same as observing it.
+      await browser.until(`${blocked} fault is active`, `${q('[data-testid=history-open]')}.${blocked === 'visibility' ? 'checkVisibility({ visibilityProperty: true }) === false' : 'inert === true'}`, 5000);
+      assert.equal(await browser.evaluate(`(() => { const box = ${q('[data-testid=history-open]')}.getBoundingClientRect(); return box.width > 0 && box.height > 0; })()`), true, 'layout geometry alone does not establish pointer readiness');
+      await browser.evaluate(`(() => { const button = ${q('[data-testid=history-open]')}; setTimeout(() => { button.style.removeProperty('visibility'); button.inert = false; }, 500); })()`);
+      await browser.click(q('[data-testid=history-open]'));
+      await browser.until('the popover lists the chats', `!!${q('[data-testid=conversations] [data-testid=conversation-row]')}`, 5000);
+      assert.deepEqual(await browser.evaluate('window.__historyPresses'), [true], 'one real press, only when visible and not inert');
+      await browser.evaluate(`${q('[data-testid=history-open]')}.removeEventListener('pointerdown', window.__historyPress); delete window.__historyPress;`);
+      await browser.press('Escape');
+      await browser.until('transition popover closed', `!${q('[data-testid=conversations]')}`, 5000);
+    }
+    await browser.emulate('desktop');
+    await browser.until('History column restored after transition checks', `${q('[data-boring=agent-workspace]')}.dataset.sessions === 'docked'`, 5000);
+  });
+
   await step('Library reselecting the current file closes Library and returns to that file', async () => {
     const draft = 'A fictional draft retained through Library';
     await browser.type(INPUT, draft);
