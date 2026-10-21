@@ -92,11 +92,13 @@ test('a clean app passes: blocks untouched, own code tokens-only, shadcn ui reco
 test('an edited block file fails with exit 1 and names the file and block', t => {
   const app = fixture(t);
   run(app, ['manifest']);
-  const edited = join(app, 'src/components/pi-chat/artifact.ts');
-  writeFileSync(edited, readFileSync(edited, 'utf8').replace("svg: 'SVG image'", "svg: 'SVG image', maquette: 'Maquette'"));
+  const edited = join(app, 'src/components/pi-chat/labels.ts');
+  const original = readFileSync(edited, 'utf8'), changed = original.replace("svg: 'SVG image'", "svg: 'SVG image', maquette: 'Maquette'");
+  assert.notEqual(changed, original, 'the negative control must actually edit a shipped block');
+  writeFileSync(edited, changed);
   const drift = run(app, ['check']);
   assert.equal(drift.status, 1, drift.stdout + drift.stderr);
-  assert.deepEqual(drift.stdout.split('\n').filter(line => /^(blocks|design|ui) /.test(line)), ['blocks edited src/components/pi-chat/artifact.ts pi-chat']);
+  assert.deepEqual(drift.stdout.split('\n').filter(line => /^(blocks|design|ui) /.test(line)), ['blocks edited src/components/pi-chat/labels.ts pi-chat']);
   assert.match(drift.stdout, /^fail @hachej\/boring-ui-kit@9\.9\.9: 1 violation\(s\) \(blocks 1, design 0, ui 0\)/m);
 });
 

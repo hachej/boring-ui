@@ -1,6 +1,7 @@
 import type { ConversationView } from '@earendil-works/pi-durable';
 import type { ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
 import type { ComponentType, ReactNode } from 'react';
+import { defaultChatLabels } from './labels';
 
 /*
  * Artifacts in the chat: substantial content (a document, an HTML page, an SVG, code, a canvas) that the transcript shows as a
@@ -148,12 +149,11 @@ export function parseArtifact(value: unknown): ArtifactDescriptor | undefined {
     target: { resource: { providerId, path }, view: parsedView }, revision, ...(ordinal === undefined ? {} : { ordinal }) };
 }
 
-const TYPE_LABEL: Record<ArtifactType, string> = { markdown: 'Document', html: 'HTML page', svg: 'SVG image', code: 'Code', canvas: 'Canvas' };
-/** The artifact's type name: the matching kind's label first, then the built-in name of its type. */
-export function typeLabel(artifact: ArtifactDescriptor, kinds?: readonly ArtifactKind[]): string {
+/** The artifact's type name: the matching kind's label first, then the chat's name of its type. */
+export function typeLabel(artifact: ArtifactDescriptor, kinds?: readonly ArtifactKind[], labels: Readonly<Record<ArtifactType, string>> = defaultChatLabels.artifactTypes): string {
   const kind = artifactKind(artifact, kinds);
   if (kind) return kind.label;
-  return artifact.type === 'code' && artifact.language ? `Code · ${artifact.language}` : TYPE_LABEL[artifact.type];
+  return artifact.type === 'code' && artifact.language ? `${labels.code} · ${artifact.language}` : labels[artifact.type];
 }
 
 const textOf = (result: ToolResultMessage): string => result.content.map(part => part.type === 'text' ? part.text : '').join('');

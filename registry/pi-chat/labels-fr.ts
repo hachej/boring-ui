@@ -248,6 +248,7 @@ export const frenchChatLabels: ChatLabels = {
   answerNotSent: 'La réponse n’a pas pu être envoyée.',
   yourAnswer: 'Votre réponse :',
   artifact: 'Document',
+  artifactTypes: { markdown: 'Document', html: 'Page HTML', svg: 'Image SVG', code: 'Code', canvas: 'Canevas' },
   opening: 'Ouverture…',
   viewing: 'Affiché',
   version: ordinal => `Version ${ordinal}`,

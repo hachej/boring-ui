@@ -18,6 +18,7 @@ export const SOURCES = [{ name: 'workspace-app', entries: Object.entries({
   'broken stock': [call('write', { path: 'broken.records.json', content: BROKEN_STOCK }), call('present', { path: 'broken.records.json' }), 'The malformed fictional stock is ready for inspection.'],
   'booking mock-up': [call('write', { path: 'booking.maquette.json', content: BOOKING }), call('present', { path: 'booking.maquette.json' }), 'The booking mock-up is ready.'],
   'booking HTML': [call('write', { path: 'booking.mockup.html', content: HTML_BOOKING }), call('present', { path: 'booking.mockup.html' }), 'The HTML booking mock-up is ready.'],
+  'guide HTML fictif': [call('write', { path: 'Dossier — Écritures et documents fictifs.html', content: '<h1>Guide fictif</h1><p>Un document de démonstration.</p>' }), call('present', { path: 'Dossier — Écritures et documents fictifs.html' }), 'Le guide fictif est prêt.'],
   'sandbox probe': [call('write', { path: 'hostile.mockup.html', content: HOSTILE }), call('present', { path: 'hostile.mockup.html' }), 'The sandbox probe is ready.'],
   'HTML calendar change': ['Noted: the calendar element in booking.mockup.html.'],
   'booking diagram': [call('write', { path: 'booking.diagram.json', content: FLOW }), call('present', { path: 'booking.diagram.json' }), 'The booking diagram is ready.'],
