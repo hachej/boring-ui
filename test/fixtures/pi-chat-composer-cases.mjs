@@ -10,6 +10,7 @@
 // stock/brand browser matrix; regenerate with scripts/update-composer-baseline.mjs. shadcn-controls.test.mjs covers behavior.
 // Group 3 refresh: the composer is the host shadcn InputGroup (Attachment chips, DropdownMenu "+" menu, host Input for files); `stacked` and
 // `inline` render as `card`. Approved against the group 3 browser matrix (scripts/test-composer-design.mjs).
+// D174 refresh: the two working cases replace the visible Queue label with a named icon; queue journeys cover keyboard and touch.
 export const composerCases = () => {
   const noop = () => {};
   const base = { text: '', onText: noop, attachments: [], onRemoveAttachment: noop, working: false, sendBlocked: false, disabled: false, stopRequested: false,
