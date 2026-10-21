@@ -114,6 +114,8 @@ export interface ScriptedModelOptions {
   readonly models?: readonly FauxModelDefinition[];
   readonly provider?: string;
   readonly api?: string;
+  /** Use current message timestamps so Pi's own event stream records durationMs. Default fixtures keep timestamp 1. */
+  readonly timed?: boolean;
   /** Where misses are recorded (default: a new array). */
   readonly misses?: string[];
 }
@@ -174,7 +176,7 @@ export function createScriptedModel(options: ScriptedModelOptions = {}): Scripte
 
   const stream = (chosen: Model<string>, context: TranscriptContext, streamOptions: SimpleStreamOptions = {}): AssistantMessageEventStream => {
     const events = createAssistantMessageEventStream();
-    const message: AssistantMessage = { ...fauxAssistantMessage([], { timestamp: 1 }), api: chosen.api, provider: chosen.provider, model: chosen.id };
+    const message: AssistantMessage = { ...fauxAssistantMessage([], { timestamp: options.timed ? Date.now() : 1 }), api: chosen.api, provider: chosen.provider, model: chosen.id };
     message.usage = structuredClone(message.usage);
     const content = message.content as Content[];
     const push = (event: AssistantMessageEvent) => events.push(event);

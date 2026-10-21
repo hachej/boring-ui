@@ -33,13 +33,14 @@ export type QueuedMessage = Extract<InboxItem, { readonly mode: 'steer' | 'follo
  * This module turns a view into display rows with these semantics: tool calls are matched with tool results, expert mode hides successful tool details, the live
  * generation is appended as a streaming row whose key matches the row its committed message will take.
  */
-/** `required` pins the card above the transcript. `inline` (tool cards) keeps it in place in expert mode too, like the
- * question and artifact cards; other custom tool cards show only in developer mode or on failure. */
-export interface ChatCard { readonly content: ReactNode; readonly required?: boolean; readonly inline?: boolean }
+/** `required` pins the card above the transcript. `inline` keeps an entry/tool card in place in expert mode too;
+ * inline entries remain part of the answer. Other custom tool cards show only in developer mode or on failure. */
+export interface ChatCard { readonly content: ReactNode; readonly required?: boolean; readonly inline?: boolean; /** Host stage wording for the single natural status; null clears it. */ readonly status?: ReactNode }
 export type Mode = 'expert' | 'developer';
 export type StreamPart = { readonly type: 'text'; readonly text: string } | { readonly type: 'thinking'; readonly thinking: string } | ToolCall;
 
 export type Part =
+  | { readonly kind: 'card'; readonly key: string; readonly content: ReactNode }
   | { readonly kind: 'text'; readonly key: string; readonly text: string }
   | { readonly kind: 'thinking'; readonly key: string; readonly text: string; readonly streaming: boolean }
   | { readonly kind: 'question'; readonly key: string; readonly call: ToolCall; readonly result: ToolResultMessage | undefined; readonly live: boolean; readonly questionId: string | undefined }
@@ -49,7 +50,7 @@ export type Part =
 
 export type Row = (
   | { readonly key: string; readonly type: 'user'; readonly message: UserMessage }
-  | { readonly key: string; readonly type: 'assistant'; readonly parts: readonly Part[]; readonly streaming: boolean; /** The turn is still running (the last row while a run is active). */ readonly active?: boolean; readonly stopReason?: AssistantMessage['stopReason']; readonly errorMessage?: string; readonly text: string; /** When the reply was written (the last round of a merged turn), in ms. Absent while it streams. */ readonly timestamp?: number; /** The model that wrote the last round of the reply. */ readonly model?: { readonly provider: string; readonly modelId: string }; /** How long the last round took to answer, in ms (Pi's `durationMs`). */ readonly durationMs?: number; /** The native entry of its last committed round: where a fork of the conversation after this reply starts. */ readonly entryId?: string }
+  | { readonly key: string; readonly type: 'assistant'; readonly parts: readonly Part[]; readonly streaming: boolean; /** The turn is still running (the last row while a run is active). */ readonly active?: boolean; readonly stopReason?: AssistantMessage['stopReason']; readonly errorMessage?: string; readonly text: string; /** When the reply was written (the last round of a merged turn), in ms. Absent while it streams. */ readonly timestamp?: number; /** The model that wrote the last round of the reply. */ readonly model?: { readonly provider: string; readonly modelId: string }; /** Sum of the merged rounds' native `durationMs`, when recorded. */ readonly durationMs?: number; /** The native entry of its last committed round: where a fork of the conversation after this reply starts. */ readonly entryId?: string }
   | { readonly key: string; readonly type: 'orphan-result'; readonly message: ToolResultMessage }
   | { readonly key: string; readonly type: 'system'; readonly text: string }
   | { readonly key: string; readonly type: 'event'; readonly label: string }
@@ -86,9 +87,12 @@ export interface Derived {
   readonly run: JsonObject | undefined;
   readonly retry: JsonObject | undefined;
   readonly compacting: boolean;
+  readonly stageStatus?: ReactNode;
 }
 export interface DeriveOptions {
   readonly mode: Mode;
+  /** Complete assistant lines to omit. With live text, the unfinished last line waits for its newline or settlement. */
+  readonly hideLine?: ((line: string) => boolean) | undefined;
   readonly renderEntry: ((entry: EntryRecord) => ChatCard | undefined) | undefined;
   readonly renderTool: ((call: ToolCall, result: ToolResultMessage | undefined) => ChatCard | undefined) | undefined;
   readonly groupTool: ((call: ToolCall, result: ToolResultMessage) => boolean) | undefined;
@@ -109,7 +113,12 @@ const approvalRecord = (details: unknown): { summary: string; decision?: Approva
   return { summary: summary.trim(), ...(decision === 'approved' || decision === 'denied' || decision === 'cancelled' ? { decision } : {}) };
 };
 
-const textOf = (message: Message): string => message.role === 'assistant' ? message.content.flatMap(part => part.type === 'text' ? [part.text] : []).join('\n') : '';
+function visibleText(text: string, streaming: boolean, hideLine: DeriveOptions['hideLine']): string {
+  if (!hideLine) return text;
+  const lines = text.match(/[^\n]*\n|[^\n]+$/g) ?? [];
+  return lines.filter(line => (!streaming || line.endsWith('\n')) && !hideLine(line.replace(/\r?\n$/, ''))).join('');
+}
+const textOf = (parts: readonly Part[]): string => parts.flatMap(part => part.kind === 'text' ? [part.text] : []).join('\n');
 
 export function derive(view: ConversationView | undefined, options: DeriveOptions): Derived {
   const { mode, renderEntry, renderTool } = options;
@@ -122,11 +131,13 @@ export function derive(view: ConversationView | undefined, options: DeriveOption
 
   // Pass 1: match each result to its preceding invocation. Model call IDs may be reused.
   type Item = { readonly key: string; readonly entry: EntryRecord; readonly message?: Message; readonly card?: ChatCard };
+  let stageStatus: ReactNode;
   const items: Item[] = [], results = new Map<ToolCall, ToolResultMessage>(), counts = new Map<number, number>(), questionIds = new Map<ToolCall, string>();
   const pendingCalls = new Map<string, ToolCall>();
   for (const entry of view?.entries ?? []) {
     const custom = renderEntry?.(entry);
-    const card = custom && (developer || custom.required) ? custom : undefined;
+    if (custom && 'status' in custom) stageStatus = custom.status;
+    const card = custom && (developer || custom.required || custom.inline) ? custom : undefined;
     if (card) items.push({ key: `entry:${entry.id}`, entry, card });
     if (!entry.model?.length) { if (!card && developer) items.push({ key: `entry:${entry.id}`, entry }); continue; }
     for (const [index, message] of entry.model.entries()) {
@@ -178,7 +189,7 @@ export function derive(view: ConversationView | undefined, options: DeriveOption
   function partsOf(content: readonly StreamPart[], rowKey: string, streaming: boolean, committed: boolean): Part[] {
     const parts: Part[] = [];
     for (const [index, part] of content.entries()) {
-      if (part.type === 'text') { if (part.text.length) parts.push({ kind: 'text', key: `${rowKey}:text:${index}`, text: part.text }); }
+      if (part.type === 'text') { const text = visibleText(part.text, streaming && index === content.length - 1, options.hideLine); if (text.length) parts.push({ kind: 'text', key: `${rowKey}:text:${index}`, text }); }
       else if (part.type === 'thinking') { if (developer && part.thinking.length) parts.push({ kind: 'thinking', key: `${rowKey}:thinking:${index}`, text: part.thinking, streaming: streaming && index === content.length - 1 }); }
       else { const made = toolPart(part, `${rowKey}:tool:${index}`, committed); if (!natural && (made?.kind === 'artifact' || made?.kind === 'approval') && made.entry) parts.push({ kind: 'tool', key: `${made.key}:step`, entry: made.entry }); if (made) parts.push(made); }
     }
@@ -199,27 +210,19 @@ export function derive(view: ConversationView | undefined, options: DeriveOption
     } else if (message.role === 'user') rows.push({ key: item.key, type: 'user', message });
     else {
       const parts = partsOf(message.content, item.key, false, true);
-      const interrupted = message.stopReason === 'error' || message.stopReason === 'aborted';
-      if (parts.length || interrupted) rows.push({ key: item.key, type: 'assistant', parts, streaming: false, stopReason: message.stopReason, ...(message.errorMessage && !natural ? { errorMessage: message.errorMessage } : {}), text: textOf(message), ...replyMeta(message), entryId: String(item.entry.id) });
-      else {
-        // A final round with nothing to show adds no content, but it is still the round that ended the reply: its model, time and entry replace the earlier round's.
-        const previous = rows[rows.length - 1];
-        if (previous?.type === 'assistant' && !previous.stopReason?.match(/^(error|aborted)$/)) {
-          const { timestamp: _t, model: _m, durationMs: _d, ...rest } = previous;
-          rows[rows.length - 1] = { ...rest, ...replyMeta(message), entryId: String(item.entry.id) };
-        }
-      }
+      // Empty/tool-only rounds still contribute their native metadata to the answer.
+      rows.push({ key: item.key, type: 'assistant', parts, streaming: false, stopReason: message.stopReason, ...(message.errorMessage && !natural ? { errorMessage: message.errorMessage } : {}), text: textOf(parts), ...replyMeta(message), entryId: String(item.entry.id) });
     }
   }
   if (typeof taskId === 'number' && liveMessage) {
     const key = `assistant:${taskId}:${counts.get(taskId) ?? 0}`, content = streamParts(liveMessage['content']);
     const parts = partsOf(content, key, true, false);
-    if (!natural || parts.length) rows.push({ key, type: 'assistant', parts, streaming: true, text: '' });
+    if (!natural || parts.length) rows.push({ key, type: 'assistant', parts, streaming: true, text: textOf(parts) });
   }
-  const merged = mergeTurns(rows).map(row => row.type === 'assistant' && options.artifacts ? { ...row, parts: oneCardPerArtifact(row.parts) } : row);
+  const merged = mergeTurns(rows).filter(row => row.type !== 'assistant' || row.parts.length || row.stopReason === 'error' || row.stopReason === 'aborted' || row.streaming && !natural).map(row => row.type === 'assistant' && options.artifacts ? { ...row, parts: oneCardPerArtifact(row.parts) } : row);
   const last = merged[merged.length - 1];
   if (run && last?.type === 'assistant') merged[merged.length - 1] = { ...last, active: true };
-  return { rows: merged, pinned, run, retry, compacting: Array.isArray(live?.['compactions']) && live['compactions'].length > 0 };
+  return { rows: merged, pinned, run, retry, stageStatus, compacting: Array.isArray(live?.['compactions']) && live['compactions'].length > 0 };
 }
 
 /** What a reply reports about the model round that wrote it, read from Pi's own message (each field only when it is there). */
@@ -240,10 +243,12 @@ function mergeTurns(rows: readonly Row[]): Row[] {
   const out: Row[] = [];
   for (const row of rows) {
     const last = out[out.length - 1];
-    if (last?.type === 'assistant' && row.type === 'assistant' && !last.stopReason?.match(/^(error|aborted)$/)) {
+    if (last?.type === 'assistant' && row.type === 'card' && row.card.inline) {
+      out[out.length - 1] = { ...last, parts: [...last.parts, { kind: 'card', key: row.key, content: row.card.content }] };
+    } else if (last?.type === 'assistant' && row.type === 'assistant' && !last.stopReason?.match(/^(error|aborted)$/)) {
       out[out.length - 1] = { key: last.key, type: 'assistant', parts: [...last.parts, ...row.parts], streaming: row.streaming,
         ...(row.stopReason ? { stopReason: row.stopReason } : {}), ...(row.errorMessage ? { errorMessage: row.errorMessage } : {}),
-        text: [last.text, row.text].filter(Boolean).join('\n\n'), ...(row.timestamp !== undefined ? { timestamp: row.timestamp } : {}), ...(row.model ? { model: row.model } : {}), ...(row.durationMs !== undefined ? { durationMs: row.durationMs } : {}),
+        text: [last.text, row.text].filter(Boolean).join('\n\n'), ...(row.timestamp !== undefined ? { timestamp: row.timestamp } : {}), ...(row.model ? { model: row.model } : {}), ...(last.durationMs !== undefined || row.durationMs !== undefined ? { durationMs: (last.durationMs ?? 0) + (row.durationMs ?? 0) } : {}),
         ...(row.entryId !== undefined ? { entryId: row.entryId } : last.entryId !== undefined ? { entryId: last.entryId } : {}) };
     } else out.push(row);
   }

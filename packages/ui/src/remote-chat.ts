@@ -1,4 +1,5 @@
 import type { Context } from '@earendil-works/chord';
+import { awaitWithContext, BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { applyImmutable } from '@earendil-works/chord/delta';
 import type { ConversationView, ConversationWatch, Cursor, InputSubmissionDraft, Page, EntryRecord, SettledSubmissionRecord, SubmissionRecord, WatchEnd } from '@earendil-works/pi-durable';
 import type { ChatConversation, ChatLink } from './native-chat.js';
@@ -369,7 +370,7 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
       const status = async () => { const record = await lookup(requestId); if (!record) throw new Error('Submission is unknown to the remote host'); return record; };
       return {
         id: submissionId, status,
-        wait: async () => { for (;;) { const record = await status(); if (record.status === 'done' || record.status === 'unanswered') return record as SettledSubmissionRecord; await new Promise(resolve => setTimeout(resolve, pollMs)); } },
+        wait: async context => { for (;;) { if (context.abortSignal?.aborted) throw context.abortSignal.reason; const record = await awaitWithContext(status(), context); if (record.status === 'done' || record.status === 'unanswered') return record as SettledSubmissionRecord; await awaitWithContext(new Promise(resolve => setTimeout(resolve, pollMs)), context); } },
         abort: () => withdraw(submissionId, requestId),
       };
     },
@@ -383,7 +384,7 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
         ...(query.order === undefined ? {} : { order: query.order }),
         ...(cursor === undefined ? {} : { cursor: JSON.stringify(cursor) }) })).page,
   };
-  const context = Object.freeze({}) as unknown as Context;
+  const context = BACKGROUND_CONTEXT;
   const close = async () => { const first = unclaimed; unclaimed = undefined; await first?.stop(); };
   return { conversation, context, close, link, withdraw: id => withdraw(id), definitelyNotAdmitted: error => error instanceof SubmissionRefused,
     answer: (callId, answer) => post('answer', { callId, answer }), configure: change => post('configure', change) };

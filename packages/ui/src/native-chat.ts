@@ -1,4 +1,5 @@
 import type { Context } from '@earendil-works/chord';
+import { awaitWithContext, withCancel } from '@earendil-works/chord/context';
 import type { Conversation, ConversationView, ConversationWatch, Cursor, EntryId, EntryRecord, InputSubmissionDraft, Submission, SubmissionRecord, Tx, WatchEnd } from '@earendil-works/pi-durable';
 import type { ImageContent } from '@earendil-works/pi-ai';
 import type { ChatSource } from './pi.js';
@@ -105,6 +106,8 @@ export interface NativeChatOptions {
   readonly history?: NativeChatHistorySource | false;
   /** Validate the exact selected draft before any native admission. */
   readonly beforeSubmit?: (draft: ChatDraft) => Promise<string | undefined>;
+  /** Restore a question after a native model/run error with no answer text. Opt-in, local to this controller; never replays work. */
+  readonly restoreOnError?: boolean;
   /** Only a qualified host boundary can prove a thrown submission was not admitted. */
   readonly definitelyNotAdmitted?: (error: unknown) => boolean;
   readonly onListenerError?: (error: unknown) => void;
@@ -131,6 +134,7 @@ export function createNativeChatController(options: NativeChatOptions) {
   const listeners = new Set<() => void>();
   let watch: ConversationWatch | undefined, opening: Promise<void> | undefined, disposing: Promise<WatchEnd | undefined> | undefined;
   const publish = (change: Partial<NativeChatSnapshot>) => {
+    if (snapshot.disposed) return;
     snapshot = Object.freeze({ ...snapshot, ...change, ...(change.send ? { send: Object.freeze(change.send) } : {}),
       ...(change.connection ? { connection: Object.freeze(change.connection) } : {}),
       ...(change.history ? { history: Object.freeze(change.history) } : {}), ...(change.outbox ? { outbox: Object.freeze(change.outbox) } : {}) });
@@ -154,7 +158,23 @@ export function createNativeChatController(options: NativeChatOptions) {
     historyGeneration++; historyPending = undefined; historyScan = undefined;
     return emptyHistory();
   };
+  interface Restoring { readonly submissionId: Submission['id']; readonly cancel: () => void; textObserved: boolean; runTaskId?: number }
+  const restoring = new Map<string, Restoring>();
+  const hasText = (messages: readonly { readonly role: string; readonly content: unknown }[] | undefined): boolean => messages?.some(message => message.role === 'assistant' && Array.isArray(message.content) && message.content.some(part => part?.type === 'text' && typeof part.text === 'string' && part.text.length > 0)) ?? false;
+  const observeText = (view: ConversationView): void => {
+    const live = view.docs['pi.live'], run = live?.['run'];
+    if (!run || typeof run !== 'object' || Array.isArray(run)) return;
+    const inputs = run['inputs'], taskId = run['taskId'], generation = live?.['generation'];
+    const message = generation && typeof generation === 'object' && !Array.isArray(generation) ? generation['message'] : undefined;
+    const streamed = message && typeof message === 'object' && !Array.isArray(message) && hasText([{ role: 'assistant', content: message['content'] }]);
+    if (!Array.isArray(inputs)) return;
+    for (const item of restoring.values()) if (inputs.includes(item.submissionId)) {
+      if (typeof taskId === 'number') item.runTaskId = taskId;
+      if (streamed || view.entries.some(entry => entry.byTaskId === taskId && hasText(entry.model))) item.textObserved = true;
+    }
+  };
   const acceptView = (view: ConversationView): void => {
+    observeText(view);
     const previous = snapshot.view?.entries;
     const appendOnly = !previous || previous.every((entry, index) => view.entries[index]?.id === entry.id);
     publish({ view, ...(!appendOnly ? { history: invalidateHistory() } : {}) });
@@ -164,8 +184,9 @@ export function createNativeChatController(options: NativeChatOptions) {
   const editable = () => { active(); return snapshot.draft; };
   // The composer is emptied when a message is sent, so a confirmation never has to clear it (text typed meanwhile is a new draft).
   const markAdmitted = (attempt: ChatAttempt, submissionId: Submission['id'], record?: SubmissionRecord) => {
-    if (!stillPending(attempt)) return;
+    if (snapshot.disposed || !stillPending(attempt)) return false;
     publish({ send: { kind: 'admitted', attempt, submissionId, ...(record ? { record } : {}) } });
+    return true;
   };
   interface Outgoing { readonly draft: ChatDraft; readonly whenBusy: ChatAttempt['whenBusy']; readonly resolve: (submission: Submission | undefined) => void }
   /** Messages taken from the composer that wait for the current send (`outbox` in the snapshot). */
@@ -181,14 +202,51 @@ export function createNativeChatController(options: NativeChatOptions) {
     const left = waiting.splice(0);
     for (const item of left) item.resolve(undefined);
     if (snapshot.disposed) return;
-    const current = snapshot.draft, back = [...drafts, ...left.map(item => item.draft)].map(item => restoreOf.get(item) ?? item);
+    putBack([...drafts, ...left.map(item => item.draft)], { ...change, ...(left.length || snapshot.outbox.length ? { outbox: Object.freeze([]) } : {}) });
+  };
+  function putBack(selected: readonly ChatDraft[], change: Partial<NativeChatSnapshot> = {}): void {
+    if (snapshot.disposed) return;
+    const current = snapshot.draft, back = selected.map(item => restoreOf.get(item) ?? item);
     const text = [...back.map(item => item.text), current.text].filter(value => value.trim()).join('\n');
     const attachments = [...back.flatMap(item => item.attachments), ...current.attachments].filter((item, index, all) => all.findIndex(other => other.id === item.id) === index);
-    publish({ ...change, ...(left.length || snapshot.outbox.length ? { outbox: Object.freeze([]) } : {}), ...(back.length ? { draft: draft(text, attachments, current.version + 1) } : {}) });
-  };
+    publish({ ...change, ...(back.length ? { draft: draft(text, attachments, current.version + 1) } : {}) });
+  }
   function definitelyNotAdmitted(error: unknown): boolean {
     try { return options.definitelyNotAdmitted?.(error) === true; }
     catch { return false; }
+  }
+  function monitor(attempt: ChatAttempt, submission: Pick<Submission, 'id' | 'wait'>): void {
+    if (!options.restoreOnError || snapshot.disposed || restoring.has(attempt.requestId)) return;
+    const waiter = withCancel(context);
+    const item: Restoring = { submissionId: submission.id, cancel: waiter.cancel, textObserved: false };
+    restoring.set(attempt.requestId, item);
+    if (snapshot.view) observeText(snapshot.view);
+    void (async () => {
+      try {
+        const record = await awaitWithContext(submission.wait(waiter.context), waiter.context);
+        if (snapshot.disposed || record.id !== item.submissionId || record.conversationId !== conversation.id || record.requestId !== attempt.requestId || record.type !== 'input'
+          || record.status !== 'unanswered' || !['model_error', 'no_model', 'faulted'].includes(record.reason) || record.entry === undefined || item.textObserved) return;
+        // The native transcript, not watch timing or connection loss, decides whether the failed input received any text.
+        const minEntryId = record.entry, detail = record.detail;
+        const newest = await awaitWithContext(conversation.entries({}, 1, undefined, waiter.context), waiter.context);
+        const maxEntryId = newest.items[0]?.id;
+        if (maxEntryId === undefined || maxEntryId < minEntryId) return;
+        let cursor: Cursor | undefined, ended = false;
+        do {
+          const page: Awaited<ReturnType<ChatConversation['entries']>> = await awaitWithContext(conversation.entries({ minEntryId, maxEntryId, order: 'ascending' }, 40, cursor, waiter.context), waiter.context);
+          if (snapshot.disposed || item.textObserved) return;
+          for (const entry of page.items) {
+            if (hasText(entry.model)) return;
+            // One run may consume several inputs and retain interrupted attempts. Neither is the final error boundary.
+            if (entry.model?.some(message => message.role === 'assistant' && message.stopReason === 'error'
+              && (item.runTaskId !== undefined ? entry.byTaskId === item.runTaskId : typeof detail === 'string' && message.errorMessage === detail))) { ended = true; break; }
+          }
+          cursor = page.next;
+        } while (!ended && cursor !== undefined);
+        if (!snapshot.disposed && !item.textObserved) putBack([attempt.draft]);
+      } catch { /* Missing settlement/history is unknown, never proof of an empty failed answer. */ }
+      finally { restoring.delete(attempt.requestId); waiter.cancel(); }
+    })();
   }
   async function submitAttempt(attempt: ChatAttempt): Promise<Submission | undefined> {
     publish({ send: { kind: 'submitting', attempt }, ...(!stopping && snapshot.stop !== 'idle' ? { stop: 'idle' as const } : {}) });
@@ -198,7 +256,7 @@ export function createNativeChatController(options: NativeChatOptions) {
         ? [{ type: 'text', text: attempt.draft.text }, ...attempt.draft.attachments.map(item => ({ ...item.content }))]
         : attempt.draft.text;
       const submission = await conversation.submit({ type: 'input', requestId: attempt.requestId, content, whenBusy: attempt.whenBusy }, context);
-      markAdmitted(attempt, submission.id);
+      if (markAdmitted(attempt, submission.id)) monitor(attempt, submission);
       return submission;
     } catch (error) {
       const denied = definitelyNotAdmitted(error);
@@ -357,7 +415,19 @@ export function createNativeChatController(options: NativeChatOptions) {
       const record = await conversation.commit(tx => tx.submissionByRequest(conversation.id, attempt.requestId), context);
       if (record) {
         if (record.conversationId !== conversation.id || record.requestId !== attempt.requestId || record.type !== 'input') throw new Error('Native submission lookup returned a different binding');
-        markAdmitted(attempt, record.id, record);
+        const admitted = markAdmitted(attempt, record.id, record);
+        if (admitted && options.restoreOnError) {
+          // Reconciliation observes the original request only; no duplicate submission is made to obtain a handle.
+          monitor(attempt, { id: record.id, wait: async waiter => {
+            for (;;) {
+              if (waiter.abortSignal?.aborted) throw waiter.abortSignal.reason;
+              const current = await awaitWithContext(conversation.commit(tx => tx.submissionByRequest(conversation.id, attempt.requestId), waiter), waiter);
+              if (!current || current.id !== record.id) throw new Error('Submission binding is unavailable');
+              if (current.status === 'done' || current.status === 'unanswered') return current;
+              await awaitWithContext(new Promise(resolve => setTimeout(resolve, 250)), waiter);
+            }
+          } });
+        }
       }
       return record;
     },
@@ -391,6 +461,7 @@ export function createNativeChatController(options: NativeChatOptions) {
       if (disposing) return disposing;
       disposing = Promise.resolve().then(async () => { await opening; const owned = watch; watch = undefined; return owned?.stop(); });
       unlink?.();
+      for (const item of restoring.values()) item.cancel(); restoring.clear();
       publish({ disposed: true, connection: { kind: 'closed' }, history: invalidateHistory() }); listeners.clear();
       return disposing;
     },
