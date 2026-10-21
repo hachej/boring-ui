@@ -1040,3 +1040,27 @@ when the browser terminates. `MarkdownEditor showOutline` controls heading navig
 `onUnsavedChange` reports an open file's unsaved changes, so a host can ask before
 it switches workspace or identity. Chat attachments are saved as
 `uploads/<name>-<8 hex>.<ext>`, so a second pasted `image.png` never collides.
+
+## Requests board (`requests-board`)
+
+Install `<registry>/requests-board.json` (and `theme.json` only if the host has no shadcn tokens). The block composes Base UI `base-nova` built-ins and works without app-shell, Pi or a controller:
+
+```tsx
+import { RequestsBoard } from '@/components/requests-board/requests-board';
+import type { RequestView } from '@/components/requests-board/requests';
+
+<RequestsBoard views={views} mode="full" locale="fr" changeToken={revision}
+  repos={['Atelier Exemple']} canApproveRelease={canApproveRelease}
+  onOpenAll={openRequests} onOpen={openRequest}
+  onAnswer={answerRequest} onDecide={decideRequest} onTry={tryVersion} />
+```
+
+The host passes `readonly RequestView[]`: `number`, `title`, `state`, `line`, `since` (ISO timestamp of the last move), `links` and `history`, plus optional `waitsOn`, `repo`, `master`, `question` and `action`. States are `question`, `try`, `validation`, `building`, `checking`, `live` and `abandoned`. Questions have `kind: 'answer' | 'approval' | 'release'` and `text`; actions have `kind: 'preview' | 'pr'` and `href`. Related links use `kind: 'parent' | 'child' | 'blocked_by'` and a request `number`. History entries contain `at` and `text`. Dates use `Intl.DateTimeFormat` in the board's locale and the viewer's time zone, retaining the original ISO value in `<time dateTime>`. Override `labels.formatDate(iso)` for a host-specific format or time zone. The detail shows the repository separately only when the status line does not already contain its name.
+
+`compactRows` takes at most five rows: questions, versions to try, then recent moves (newest first within each group). `filterViews` and `requestCounts` share search and repository scope. “For you” includes open questions; “In progress” excludes live and abandoned requests. Full mode keeps the list mounted while a phone shows only its selected detail; Return restores list focus. Arrows/Home/End move list focus and Enter opens the focused button.
+
+`onOpen(number)` handles row and related-link intent. The block selects local views when available; the host handles external navigation. `onAnswer(number, text)`, `onDecide(number, 'approve' | 'later')` and `onTry(number, action)` report intent only, never a successful mutation. Missing callbacks disable their controls. The host must authorize, handle errors and re-render authoritative views; `canApproveRelease` only hides the going-live question, not an authorization boundary. Drafts reset when switching request/question. No optimistic settlement, polling, subscription, automatic navigation or URL fetch occurs in the block.
+
+The host bumps `changeToken` alongside fresh views. A polite live region compares those views with the last announced snapshot and announces moved rows (number and localized state). Locale defaults to English; `locale="fr"` and `labels` overrides follow the diagram labels pattern. Colours and appearance come entirely from the host's shadcn components and tokens.
+
+Run `node --test test/contracts/requests.test.mjs test/contracts/requests-board.test.mjs` for pure transforms and real-shadcn Happy DOM callbacks. After `npm run build`, open `npm run workspace-app` with `?requests` for the fictional Atelier Exemple demo, or run `npm run requests:journey` with Chromium for desktop/phone light/dark screenshots under `.cache/evidence/D141/`. The demo logs intent; it does not call a production endpoint or persist approvals. D-140 endpoint wiring and release remain consumer/owner work.

@@ -110,7 +110,8 @@
     "draft-recovery:journey": "node examples/draft-recovery/journey.mjs",
     "release:preflight": "npm run verify:release && node scripts/check-npm-packages.mjs --release",
     "release:version": "node scripts/release-version.mjs",
-    "file-tree:journey": "node examples/file-tree/journey.mjs && node examples/file-tree/journey-library.mjs"
+    "file-tree:journey": "node examples/file-tree/journey.mjs && node examples/file-tree/journey-library.mjs",
+    "requests:journey": "node examples/workspace-app/journey-requests.mjs"
   },
   "devDependencies": {
     "@aws-sdk/client-bedrock-agentcore": "3.1151.0",
