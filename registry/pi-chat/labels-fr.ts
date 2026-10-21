@@ -56,6 +56,11 @@ export const frenchChatLabels: ChatLabels = {
   queue: 'Mettre en attente',
   add: 'Ajouter',
   attachFiles: 'Joindre des fichiers',
+  takePhoto: 'Prendre une photo',
+  cameraShoot: 'Prendre la photo',
+  cameraClose: 'Fermer l’appareil photo',
+  cameraUnavailable: 'L’appareil photo ne peut pas s’ouvrir sur cette page.',
+  cameraFallback: 'Utiliser l’appareil photo du téléphone',
   // Voice input (the microphone button beside the composer)
   voiceRecord: 'Enregistrer un message',
   voiceHold: 'Maintenir pour enregistrer, relâcher pour envoyer',

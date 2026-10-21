@@ -6,6 +6,7 @@ The `markdown-editor` and `html-viewer` items copy thin React wrappers and scope
 | --- | --- | --- |
 | `markdown-editor` | `@hachej/boring-ui-kit/markdown-editor` | `MarkdownController` from `@hachej/boring-ui-kit/markdown` |
 | `html-viewer` | `@hachej/boring-ui-kit/html-viewer` | `HtmlController` from `@hachej/boring-ui-kit/html` |
+| `highlights` | copied `Highlights` over the Markdown editor | borrowed `MarkdownController`, default workspace `MarkStore` or supplied store |
 | `pi-chat` | copied source in `components/pi-chat/` | `NativeChatController` from `@hachej/boring-ui-kit/native-chat` |
 | `pi-ambient` | copied source in `components/pi-ambient/` | the same `NativeChatController` as `pi-chat` |
 | `pi-workspace` | copied source in `components/pi-workspace/` | none: layout driven by props |
@@ -30,12 +31,37 @@ Item and file types follow the shadcn schema: the multi-file chat items are `reg
 | `pi-app` | `... add <registry>/pi-app.json` (also installs `pi-chat`, `pi-workspace` and `viewers`) | the page is a whole agent app: sessions, chat and artifact viewers in one `AgentWorkspace` (see [below](#whole-agent-app-pi-app-agentworkspace)) |
 | `maquette-viewer` | `... add <registry>/maquette-viewer.json` (installed with `pi-app`) | you show a PM agent's `*.maquette.json` mock-ups outside `AgentWorkspace` (`MaquetteViewer`, `maquetteKind`; see [below](#maquette-viewer-maquette-viewer)) |
 | `app-shell` | `... add <registry>/app-shell.json` (also installs `pi-chat`, `feedback` and pinned `drawer` and `dropdown-menu` recipes plus the shadcn `sidebar` and `avatar` of your own style; add `<registry>/theme.json` too when the host has no shadcn tokens) | one agent above any app: a bottom drawer with peek, half and full on a phone, a right panel on a wide screen (see [below](#agent-layer-app-shell)) |
+| `agent-target` | `... add <registry>/agent-target.json` (also installs `app-shell`; requires the coordinated kit patch, not the older published 0.4.3) | point and dictate on explicitly marked app JSON without opening chat (see [below](#point-and-dictate-on-app-data-agent-target)) |
 
 Registry blocks support the shadcn **Base UI style only**. Only the `base-nova` style is supported. Viewer, Library and shared chat menus use the consumer's real `@/components/ui/dropdown-menu`, declared as the bare `dropdown-menu` registry dependency. `ActionMenu` only maps actions and metadata to that component; it owns no menu positioning, focus loop or visual primitive. The consumer's shadcn components supply appearance and interaction. `npm run test:app-registry-consumer` installs and strictly checks Base UI, including Library controls, portalled viewer/version menus and the phone files drawer. Ordinary buttons and icon actions import the consumer's `@/components/ui/button` directly. Pressed actions use `@/components/ui/toggle`; the compact account theme uses `@/components/ui/switch`. Their bare registry dependencies install the consumer's components. `button/actions.tsx` adapts host actions, not visual primitives. Lists (conversation history, sessions, Library tree, documents' revisions, empty states) compose the consumer's `sidebar` menu, `input-group`, `popover`, `scroll-area`, `collapsible`, `empty` and `separator`; the packaged tree (`@hachej/boring-ui-kit/file-tree-view`) takes them through its `components` prop and ships layout CSS only. Other component groups remain tracked in `scripts/design-groups.json`. The cards (approval, question, artifact, code block, feedback) use the consumer's `@/components/ui/item` and `badge` with layout classes only; `pi-chat` and `feedback` declare those bare dependencies. The approval card follows shadcn's Confirmation recipe (an outline Item with Approve and Deny buttons). shadcn's Code Block is not used because installing it adds the `shiki` highlighter this block never calls, and its Questionnaire is a multi-step wizard on a new `@shadcn/react` dependency that does not fit the one-form `ask_user` card.
 
-Tokens: `pi-ambient`, `pi-workspace`, `pi-app`, `viewers`, `provider-setup` and `file-tree` depend on `theme` (directly or through a block), so `shadcn add` merges the tokens into the app's CSS file. `pi-chat`, `button`, `dock`, `feedback` and `app-shell` do not: they use the host's shadcn tokens (`background`, `foreground`, `muted`, `primary`, `border`, `ring`, `destructive` and the rest) and their own layout, and they install no global tokens. A host that has those tokens changes nothing. A host without them must also install `theme.json` (`npx shadcn@4.21.5 add <registry>/theme.json <registry>/<block>.json`), or those items render with semantic colours and focus styling missing (dock's resize indicator loses its colour). The blocks import `cn` from `utils` and controls directly from the consumer's `components/ui/`; the CLI installs each dependency once. `registry.json` owns the current file lists. Theme-carrying installs merge the theme tokens into CSS and keep tokens the host already defines.
+Tokens: `pi-ambient`, `pi-workspace`, `pi-app`, `viewers`, `provider-setup` and `file-tree` depend on `theme` (directly or through a block), so `shadcn add` merges the tokens into the app's CSS file. `pi-chat`, `button`, `dock`, `feedback`, `app-shell` and `agent-target` do not: they use the host's shadcn tokens (`background`, `foreground`, `muted`, `primary`, `border`, `ring`, `destructive` and the rest) and their own layout, and they install no global tokens. A host that has those tokens changes nothing. A host without them must also install `theme.json` (`npx shadcn@4.21.5 add <registry>/theme.json <registry>/<block>.json`), or those items render with semantic colours and focus styling missing (dock's resize indicator loses its colour). The blocks import `cn` from `utils` and controls directly from the consumer's `components/ui/`; the CLI installs each dependency once. `registry.json` owns the current file lists. Theme-carrying installs merge the theme tokens into CSS and keep tokens the host already defines.
 
 `<registry>` is wherever `public/r/` is served. Items name their registry dependencies as absolute URLs of their own release (`<registry>/pi-chat.json`, `<registry>/pi-workspace.json`), so no `registries` line is needed in `components.json`. `pi-ambient` needs `pi-workspace` because the ambient window opens artifacts in the same panel layout; `pi-workspace` never needs `pi-ambient` (the host chooses to render `AmbientChat` when the chat floats). Examples: [`lab/studio`](../lab/studio/README.md) assembles every block; [`examples/ambient`](../examples/ambient/README.md) uses `pi-chat` and `pi-ambient` only.
+
+## Anchored Markdown highlights
+
+Install `<registry>/highlights.json`. It composes `markdown-editor` and the host's
+Base UI Button, Textarea, Label and DropdownMenu; it adds no Sheet or owned
+primitive. Pass `<Highlights controller={controller} resource={{ client, identity }}
+locator={locator} locale="fr" />`, where `client` is the same workspace resource
+client used by the document. Opening creates no file; add/comment/remove saves
+`<doc>.marks.json` conditionally. `locale="en"` is the default for new controls;
+the existing editor keeps its current labels.
+
+An app can borrow a `store={store}` implementing `MarkStore` instead, or render
+`marks={[{ id, anchor, colour: 'accent', actions: [{ id, label, run }] }]}` without
+storage. `actions` are trusted host callbacks, not sidecar data. Theme colours are
+`accent`, `primary` and `muted`; decorations never write Markdown formatting.
+Unplaced marks have a missing/ambiguous tray. Choosing a candidate captures fresh
+context and saves it through the store; indistinguishable contexts remain a
+version-local confirmation rather than guessed persistent identity.
+
+See [the owning anchor/storage semantics](../docs/architecture/FEEDBACK.md#markdown-quotes-and-document-marks)
+and the [UI store API](../packages/ui/README.md#document-marks).
+`npm run highlights:journey` drives the fictional SQLite workspace through HTTP,
+including a stale second tab and phone/desktop FR/EN light/dark screenshots under
+`.cache/evidence/D78/`. No agent, model credentials or D-76 conflict UI is needed.
 
 ## Updating installed blocks
 
@@ -106,7 +132,7 @@ A sent message that mentions an upload (`@uploads/<path>`, what `attachments` sa
 
 Supply `transcribe(blob, signal)` and the normal `attachments.upload`, or override it with `voiceMessage.upload` of the same signature. Upload exactly one file and return its `uploads/voice-…` path with a supported audio extension. Keep the audio MIME from the Blob, including `audio/webm` and Safari's `audio/mp4`. `onFiles` returns native image attachments and is not an audio persistence API. The host owns authorization, budgets and upload policy.
 
-Local pending user rows in the transcript show duration and progress until admission. A failed recording stays there while the microphone becomes available for another recording; retry and discard always target their own row. Pending uploaded paths appear once in the conversation file list. Failed or empty transcription sends nothing and offers Retry, Send audio only and Discard. Upload failure offers Retry. Failure actions share one aligned row of native Buttons (Discard is ghost). Successful halves are retained, so retrying transcription does not upload again. Discard removes local preparation, not a file already stored by the host. Unconfirmed native admission uses the existing native reconciliation controls, never a fresh voice Retry.
+Local pending user rows in the transcript show duration and progress until admission. A failed recording stays there while the microphone becomes available for another recording; retry and discard always target their own row. Pending uploaded paths appear once in the conversation file list. Failed or empty transcription sends nothing and offers Retry, Send audio only and Discard. Upload failure offers Retry. Failure actions share one aligned row of native Buttons (Discard is ghost). Successful halves are retained, so retrying transcription does not upload again. Discard removes local preparation, not a file already stored by the host. Unconfirmed native admission uses the existing native reconciliation controls, never a fresh voice Retry. Custom `timeline.render(context)` hosts that enable voice must place `context.pendingVoice` in their own native transcript content, not in a footer. The shared-chat renderer already does so; no-voice timelines are unchanged.
 
 The native controller publishes this send's immutable `ChatDraft` synchronously in `send.validating.draft` or its `outbox`, and preserves that object in `attempt.draft`. Voice uncertainty binds to that exact draft and its native request ID, never equal text. Compatible custom controllers must preserve these public snapshot identities for voice admission/reconciliation.
 
@@ -337,15 +363,35 @@ function Chat() {
 
 [`examples/dock-app`](../examples/dock-app/README.md) is the first composition running (scripted model); its journey drives pointer and keyboard resize, the hint, floating, Dock, the files dock and a 390px phone in a real browser. `test/contracts/pi-workspace-dock-source.test.mjs` checks the item, strict types and the rendered structure; the behaviour above is proven by that journey, not by unit tests.
 
+## Point and dictate on app data (`agent-target`)
+
+Install `<registry>/agent-target.json` beside the app shell. Pass `labels={agentTargetLabelsFr}` from `agent-target/agent-target-labels` for French, or override any `AgentTargetLabels` fields; omitted labels keep English defaults. It requires the kit patch that adds `NativeChatController.submissionStatus`; the already-published 0.4.3 kit does not provide it. Release versioning and Factory D-87 pins/vendor/fleet sync are a separate handoff. It uses the host's shadcn Button, Card, Message and Bubble, with the shell's existing controller; it never opens the chat drawer or creates a second chat. It installs no theme. See the [marking guide](../docs/guides/agent-target.md) for the data boundary and lifecycle.
+
+```tsx
+<Button data-agent-target={JSON.stringify({ meal: 'm-42', slot: 'lunch' })}>
+  Fictional lunch
+</Button>
+<AgentTargetMode enabled={pointing} transcribe={transcribe}
+  onSettled={({ target }) => { if (typeof target.meal === 'string') void refetchMeals(target.meal); }} />
+```
+
+An enabled tap picks the nearest marked ancestor and starts recording. Stop transcribes and sends one `<target>{…}</target>` block followed by the spoken text **in the user message**, not hidden request context. The transcript shows the block as a chip. Refusal restores only the person's words to the same chat draft. Only a JSON object in the selected attribute is supported, capped at 1,024 UTF-8 bytes; invalid or oversized values are refused before the microphone opens. No sibling dataset attributes, page text or feedback snapshots are collected. `attribute` defaults to `data-agent-target`.
+
+Escape, an outside tap, disabling the mode and unmount release local microphone/transcription/observation work. They do not abort an already admitted native submission. `onSettled({ target, reply, ok })` fires once for an observed outcome; `ok` means an answered native submission, not proof of a domain mutation. The host still authorizes every tool and owns refetching. `useDictation({ transcribe, onText, locale?, labels? })`, exported by `app-shell`, supplies the same start/finish/cancel lifecycle to this bar and the shell's push-to-talk.
+
+The fictional [app-shell journey](../examples/app-shell/journey-target.mjs) drives fake microphone/transcription and a scripted native answer at 390px and desktop (`npm run app-shell:journey:target`). Its refresh calls a fixture list endpoint; it does not qualify a real meal-editing tool, speech service or physical phone keyboard.
+
 ## Agent layer (`app-shell`)
 
-`AgentLayerProvider` takes `agent` (one assistant) and `improve` (the product manager, shown from the account menu); each is `{ controller, chatProps?, voice?, feedback? }`, a borrowed `NativeChatController` rendered by `PiChat`. `AgentLayer` is placed once; `AgentTrigger` opens it; `useAgentLayer()` gives `{ state, showing, open(which?, at?), close(), expanded }`. Nothing else is configurable (the layer's words: the agent's `chatProps.locale`, then the shell's `locale`, then English). On a phone (below 768px, the shadcn `useIsMobile`) it is the explicitly installed `drawer` recipe (public Base UI) with three fixed snap points: a peek (8rem above the tab bar `--app-shell-tabbar`, one composer row and a line of the last reply, the page stays usable), half and full. A swipe, an outside tap and a lost focus never close it: they go to peek (half without an `agent`), so the coach stays reachable; only the handle and the title row drag, the transcript scrolls; the close button and Back close it; Escape steps it down to peek like a swipe (half without an `agent`), so the coach stays reachable, and at peek there is no close button, so it is closed from half or full; focusing the composer goes to full and keeps it above the soft keyboard. On a wide screen it is the `sidebar` on the right, not modal. `voice` adds push-to-talk (hold the trigger or the hero button; `send: 'auto'` submits the transcript, `'draft'` (default) fills the composer). `useAgentContext({ name, params })` registers the current screen; `useRemoteChat({ ..., requestContext: readAgentContext })` sends it as the submit's `context` (with a `placement` beside it: `PiChat` reports `docked` unless its `placement` prop says otherwise, `AmbientChat` `floating`, and the layer reports `floating` for the phone drawer and the floating panel; see [PAGE-TOOLS.md](../docs/architecture/PAGE-TOOLS.md)) and the host renders it with `createPromptContext` (see `packages/agent/README.md`). `useBackLayer` is the one Back manager (`point < sheet < agent < stack`). Point mode for `improve` is wired: « Montrer dans l’app » hides the sheet and the feedback item's `PointBar` sits above the tab bar. Example and journey: `examples/app-shell/` (`npm run app-shell:journey`); the shadcn components there are pinned fixtures for type-checking only. Reply actions use 44px touch targets.
+`AgentLayerProvider` takes `agent` (one assistant) and `improve` (the product manager, shown from the account menu); each is `{ controller, chatProps?, voice?, feedback? }`, a borrowed `NativeChatController` rendered by `PiChat`. `AgentLayer` is placed once; `AgentTrigger` opens it; `useAgentLayer()` gives `{ agent, state, showing, open(which?, at?), close(), expanded }` (`agent` is the app’s existing controller, even while the product manager is showing). Nothing else is configurable (the layer's words: the agent's `chatProps.locale`, then the shell's `locale`, then English). On a phone (below 768px, the shadcn `useIsMobile`) it is the explicitly installed `drawer` recipe (public Base UI) with three fixed snap points: a peek (8rem above the tab bar `--app-shell-tabbar`, one composer row and a line of the last reply, the page stays usable), half and full. A swipe, an outside tap and a lost focus never close it: they go to peek (half without an `agent`), so the coach stays reachable; only the handle and the title row drag, the transcript scrolls; the close button and Back close it; Escape steps it down to peek like a swipe (half without an `agent`), so the coach stays reachable, and at peek there is no close button, so it is closed from half or full; focusing the composer goes to full and keeps it above the soft keyboard. On a wide screen it is the `sidebar` on the right, not modal. `voice` adds push-to-talk (hold the trigger or the hero button; `send: 'auto'` submits the transcript, `'draft'` (default) fills the composer). `useAgentContext({ name, params })` registers the current screen; `useRemoteChat({ ..., requestContext: readAgentContext })` sends it as the submit's `context` (with a `placement` beside it: `PiChat` reports `docked` unless its `placement` prop says otherwise, `AmbientChat` `floating`, and the layer reports `floating` for the phone drawer and the floating panel; see [PAGE-TOOLS.md](../docs/architecture/PAGE-TOOLS.md)) and the host renders it with `createPromptContext` (see `packages/agent/README.md`). `useBackLayer` is the one Back manager (`point < sheet < agent < stack`). Point mode for `improve` is wired: « Montrer dans l’app » hides the sheet and the feedback item's `PointBar` sits above the tab bar. Example and journey: `examples/app-shell/` (`npm run app-shell:journey`); the shadcn components there are pinned fixtures for type-checking only. Reply actions use 44px touch targets.
 
 On phones, the peek strip is the persistent resting state when an `agent` is set: swipe-down, outside tap and Escape step down to peek, and there is no full close from peek (owner ruling 2026-10-14). Apps with only `improve` have no peek.
 
 Host actions: `headerActions` on the `agent` or `improve` spec are icon buttons in the layer's title row, typed as the screen header's `ScreenHeaderAction` (`{ id, label, icon, showLabel?, href?, target?, rel?, onSelect }`). `href` renders a link (`onSelect` still runs on click; `target` and `rel` only when given). Two are shown, the rest in « … » (a sheet on a phone, a menu on a wide screen). They sit before the dock controls on a wide screen, and before Expand and Close on a phone at half and full (none at peek). Test ids: `agent-layer-action-<id>`, `agent-layer-more`.
 
 The screen layout (`AppShell`) takes an optional `locale` (`'en' | 'fr'`) for its own words (« Se déconnecter », « Plus », « Navigation »); the agent's `chatProps.locale` wins when it sets one; otherwise `locale`; otherwise English. The compact tab bar is `role="tablist"` (labelled « Navigation ») with `role="tab"` items (`data-testid="tab-<id>"`); the current one has `aria-selected="true"`, and « Plus » is one more tab when there are more than four screens. Tests locate tabs by these roles. The account sheet is titled « Compte » (the person's name is shown once, in the person block).
+
+`AppShell rail="hover"` keeps the wide-screen navigation at icon-rail width. Pointer hover or keyboard focus within reveals the native sidebar's labels over the page without changing the page width. Pointer leave, focus leaving the rail, or Escape collapses it. Escape keeps keyboard focus on the current control. Touch does not trigger hover expansion, and phones keep the same tab bar. The default `rail="icon"` preserves the existing sidebar toggle and initial state for each layout. Preview the option in `examples/app-shell` with `?rail=hover&nav=dashboard`.
 
 The account theme appears when the account gives `theme: { value, onChange }` (`value` is the resolved `'light' | 'dark'`: the host resolves `system`). The compact sheet uses the consumer's Switch. The expanded menu uses its registered DropdownMenuCheckboxItem, preserving arrow-key navigation and close-on-selection. Without `theme` there is no row. The shell's root carries the `app-shell` class in every layout, so the item's css reset (`.app-shell :where(button, [role=button])`) reaches its own header and nav buttons and the popups it portals to the body (the sheets, the account menu, the agent drawer and panel) even without preflight. No wrapper is needed. Vendoring by copying files must also copy the item's `css` into the app's global stylesheet; the files alone leave those buttons unstyled.
 
@@ -623,7 +669,9 @@ Artifacts: with `artifactPanel` (a render function the host writes with the view
 
 `AgentNotifications` is a polite live region of toasts (status icon, title, a one-line summary of the final reply, close). `AmbientChat` feeds its store when its own run finishes, fails (toast kind `error`) or waits for an answer (`input`, never auto-dismissed, taken back when answered); a toast is not raised while the window is open on that conversation. A host pushes events for anything else with `store.push({ kind, title, summary, conversationId })`, or lets `watchConversation` do it. `autoDismissMs` (default 8000, 0 keeps them), `maxToasts`, hover and focus pause the timer, Escape closes the focused toast; a click opens that conversation (`conversations.onSelect`, then the window expands). With `systemNotifications`, a bell in the header asks for browser notification permission only when the person clicks it, and a system notification is shown only while the page is hidden, so a host whose connection feeds the store passes `pauseWhenHidden: false` to `createRemoteChat` (by default the stream pauses while hidden and nothing would arrive); `browser-notify.ts` is the one file that touches `Notification`, feature-detects it and never asks on load.
 
-Secure-context capabilities are the host's: the voice button in the screenshots needs `getUserMedia`, which exists only on HTTPS or localhost, so it is a `tools` slot and not part of the component. `examples/ambient/mic.mjs` shows the guarded pattern (no button where it is missing); `npm run check` fails any other use of `Notification`, `getUserMedia` or `navigator.mediaDevices` in browser-reachable code.
+Secure-context capabilities are the host's: the voice button in the screenshots needs `getUserMedia`, which exists only on HTTPS or localhost, so a host's own button is a `tools` slot and not part of the component. `examples/ambient/mic.mjs` shows the guarded pattern (no button where it is missing); `npm run check` fails any other use of `Notification`, `getUserMedia` or `navigator.mediaDevices` in browser-reachable code, except the two kit-shipped, feature-detecting exceptions: the feedback microphone below and the pi-chat camera.
+
+The `pi-chat` item ships the camera: on a touch device (`(pointer: coarse)`) with `canAttach` and an `accept` that admits images, the "+" menu has "Take a photo" (`camera-sheet.tsx`). It opens a full-screen in-page camera (`role="dialog"`, `data-boring-overlay`, one layer above the app shell's point layer) only when tapped; the shutter hands a JPEG scaled to at most 1600px to the same path as a picked file. Close, Escape and unmounting stop the camera; where it cannot open (refused, no media devices, insecure page) the sheet offers the phone's own camera through a file input. Inside the app shell's agent layer, `data-boring-overlay` keeps taps and focus in the overlay from stepping the layer down.
 
 The `feedback` item ships the microphone button: `VoiceInput` (`feedback/voice-input.tsx`) is the `tools` slot of `PiChat` or `AmbientChat` (`tools={<VoiceInput controller={controller} transcribe={transcribe} />}`). The first click asks for the microphone (`createVoiceCapture` of `@hachej/boring-feedback/page`, opened only from that click), the second stops and calls `transcribe(audio: Blob, signal)`, and the trimmed text is appended to the composer draft. It is never sent: the person reads it and presses Send. A cancel control shows while recording; cancel, a stop that fails, or unmounting releases the microphone and drops any transcription in flight. A refused microphone says what to do (blocked, none found, busy, insecure page) in the chat's own words (`voiceDenied`, `voiceNoMicrophone` and the rest in `labels.ts` and `labels-fr.ts`). Speech-to-text is the host's: `transcribe` posts the Blob to the host's own endpoint.
 
@@ -849,6 +897,50 @@ and `parseDiagram(textOrValue)` are exported: the maquette viewer draws its work
 `workflow` may instead be a relative `*.diagram.json` path: the viewer reads it from the maquette's folder through the kind renderer's `read`
 (`ArtifactKindViewProps.read`, passed by the artifact panel) when How it works opens.
 
+## Typed records (`record-viewer`)
+
+`record-viewer` exports `RecordTable`, `RecordList`, `RecordsViewer` and `createRecordsKind` from `components/record-viewer/record-viewer`. It composes the host's shadcn table, badge, item, button, alert and empty components. `AgentWorkspace` opens `*.records.json` by default; app `artifactKinds` win. This is host presentation, not a Pi execution extension.
+
+```json
+{
+  "kind": "records@1",
+  "columns": [
+    { "key": "name", "label": "Article", "type": "text" },
+    { "key": "aisle", "label": "Rayon", "type": "text" },
+    { "key": "quantity", "label": "Quantité", "type": "number" },
+    { "key": "checked", "label": "Vérifié", "type": "date" },
+    { "key": "status", "label": "État", "type": "status" }
+  ],
+  "groupBy": "aisle",
+  "rows": [{
+    "id": "fictional-brush",
+    "values": {
+      "name": "Pinceau fictif", "aisle": "Finition", "quantity": 2,
+      "checked": "2026-10-01", "status": { "label": "À commander", "tone": "warn" }
+    },
+    "actions": [{ "id": "order", "label": "Commander" }]
+  }]
+}
+```
+
+Column keys and row IDs must be unique. Missing or null values display `—`. Numbers use `Intl.NumberFormat`; dates accept real ISO calendar dates or timestamps with an explicit timezone and display in UTC. `locale="en"` (default) or `locale="fr"` selects formatting and kit labels; `labels` overrides words. Column, action and status labels are app data, not translated by the block.
+
+The app decides status meaning. Tones map to host Badge variants: `ok → default`, `warn → secondary`, `error → destructive`, `info → outline`, `neutral → secondary`.
+
+```tsx
+const records = createRecordsKind({ locale: 'fr',
+  onAction: (action, row) => requestOrder(row.id, action.id) });
+<AgentWorkspace artifactKinds={[records]} {...workspaceProps} />
+<RecordTable columns={columns} rows={rows} groupBy="aisle" onAction={onAction} />
+<RecordList items={[{ id: 'brush', title: 'Pinceau fictif', detail: 'Rayon Finition',
+  status: { label: 'À commander', tone: 'warn' }, action: { id: 'order', label: 'Commander' } }]}
+  onAction={(action, item) => requestOrder(item.id, action.id)} />
+```
+
+`RecordTable` always draws a table. The file viewer uses it from 640px viewport width and `RecordList` below that. When grouped, the group heading carries its column: it is omitted from table headers, row cells and phone cards. Phone status columns appear only as badges, with accessible names retaining their column labels. Other fields, first-seen groups and actions are preserved. A list item accepts an optional `action` and an `actions` array; `statuses: [{ label, value }]` supplies multiple labelled badges alongside the optional standalone `status`. Buttons without `onAction` are disabled; callbacks must enforce host policy. Files never execute action metadata. Invalid JSON, cell types/dates, duplicate keys/IDs or invalid groups show exact raw text with a localized note instead of hiding invalid rows.
+
+Evidence: `test/contracts/record-viewer.test.mjs` and `npm run records:journey` (fictional inventory, desktop/phone, English/French, light/dark). Screenshots belong under `.cache/evidence/D77/`. No live domain-service or real-model qualification is claimed.
+
 ## Task-list viewer
 
 `task-list-viewer` installs the consumer-owned domain, controller and React renderer. It uses `@hachej/boring-ui-kit/text-buffer` and public resource contracts. The host parses the `fictional.task-list` version 1 descriptor with `createTaskListFeature(options)`, then passes its concrete controller to `TaskListViewer`. Descriptors select the already-bound source and carry no access credentials. No core file-type switch changes are required for this direct host composition.
@@ -966,3 +1058,27 @@ when the browser terminates. `MarkdownEditor showOutline` controls heading navig
 `onUnsavedChange` reports an open file's unsaved changes, so a host can ask before
 it switches workspace or identity. Chat attachments are saved as
 `uploads/<name>-<8 hex>.<ext>`, so a second pasted `image.png` never collides.
+
+## Requests board (`requests-board`)
+
+Install `<registry>/requests-board.json` (and `theme.json` only if the host has no shadcn tokens). The block composes Base UI `base-nova` built-ins and works without app-shell, Pi or a controller:
+
+```tsx
+import { RequestsBoard } from '@/components/requests-board/requests-board';
+import type { RequestView } from '@/components/requests-board/requests';
+
+<RequestsBoard views={views} mode="full" locale="fr" changeToken={revision}
+  repos={['Atelier Exemple']} canApproveRelease={canApproveRelease}
+  onOpenAll={openRequests} onOpen={openRequest}
+  onAnswer={answerRequest} onDecide={decideRequest} onTry={tryVersion} />
+```
+
+The host passes `readonly RequestView[]`: `number`, `title`, `state`, `line`, `since` (ISO timestamp of the last move), `links` and `history`, plus optional `waitsOn`, `repo`, `master`, `question` and `action`. States are `question`, `try`, `validation`, `building`, `checking`, `live` and `abandoned`. Questions have `kind: 'answer' | 'approval' | 'release'` and `text`; actions have `kind: 'preview' | 'pr'` and `href`. Related links use `kind: 'parent' | 'child' | 'blocked_by'` and a request `number`. History entries contain `at` and `text`. Dates use `Intl.DateTimeFormat` in the board's locale and the viewer's time zone, retaining the original ISO value in `<time dateTime>`. Override `labels.formatDate(iso)` for a host-specific format or time zone. The detail shows the repository separately only when the status line does not already contain its name.
+
+`compactRows` takes at most five rows: questions, versions to try, then recent moves (newest first within each group). `filterViews` and `requestCounts` share search and repository scope. “For you” includes open questions; “In progress” excludes live and abandoned requests. Full mode keeps the list mounted while a phone shows only its selected detail; Return restores list focus. Arrows/Home/End move list focus and Enter opens the focused button.
+
+`onOpen(number)` handles row and related-link intent. The block selects local views when available; the host handles external navigation. `onAnswer(number, text)`, `onDecide(number, 'approve' | 'later')` and `onTry(number, action)` report intent only, never a successful mutation. Missing callbacks disable their controls. The host must authorize, handle errors and re-render authoritative views; `canApproveRelease` only hides the going-live question, not an authorization boundary. Drafts reset when switching request/question. No optimistic settlement, polling, subscription, automatic navigation or URL fetch occurs in the block.
+
+The host bumps `changeToken` alongside fresh views. A polite live region compares those views with the last announced snapshot and announces moved rows (number and localized state). Locale defaults to English; `locale="fr"` and `labels` overrides follow the diagram labels pattern. Colours and appearance come entirely from the host's shadcn components and tokens.
+
+Run `node --test test/contracts/requests.test.mjs test/contracts/requests-board.test.mjs` for pure transforms and real-shadcn Happy DOM callbacks. After `npm run build`, open `npm run workspace-app` with `?requests` for the fictional Atelier Exemple demo, or run `npm run requests:journey` with Chromium for desktop/phone light/dark screenshots under `.cache/evidence/D141/`. The demo logs intent; it does not call a production endpoint or persist approvals. D-140 endpoint wiring and release remain consumer/owner work.

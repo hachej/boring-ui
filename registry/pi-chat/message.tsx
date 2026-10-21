@@ -21,7 +21,7 @@ import { displayName, fileKind, isUploadPath, isVoicePath, pieces, visibleParts 
 import type { AudioUrlRead, FileKind, Piece, PreviewRead } from './config';
 import { voiceClock } from './voice-message';
 import { Spinner } from '@/components/ui/spinner';
-import { isFileBlock, segments } from './rows';
+import { isFileBlock, segments, targetContent } from './rows';
 import type { DeriveOptions, Row } from './rows';
 import { Button } from '@/components/ui/button';
 import { BlockActions } from '../button/actions';
@@ -201,6 +201,11 @@ export function VoiceBubble({ path, transcript, preview, audioUrl, align = 'end'
  * them (only what is drawn changes).
  */
 export function MessageText({ text, context, align = 'end' }: { readonly text: string; readonly context: Pick<RowContext, 'pieces' | 'openFile'>; readonly align?: 'start' | 'end' }) {
+  const target = targetContent(text);
+  if (target) return <>
+    <Badge variant="secondary" data-testid="message-target" title={JSON.stringify(target.target)} className="max-w-full truncate">{target.label}</Badge>
+    <MessageText text={target.speech} context={context} align={align} />
+  </>;
   const open = context.pieces?.openMention;
   const render = context.pieces?.renderMention;
   const styledUploads = Boolean(context.pieces?.mentions || context.pieces?.uploads);

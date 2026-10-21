@@ -16,7 +16,7 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 // Items written in Tailwind, installed into their own folder, rather than recipes over a headless @hachej/boring-ui-kit controller.
 const manifest = registrySchema.parse(JSON.parse(readFileSync(join(root, 'registry.json'), 'utf8')));
 // Tailwind items bring owned source with shadcn tokens: every rule is scoped to the item's root class and lives in the base or components layer.
-const TAILWIND = { 'mockup-viewer': { scope: '[data-boring="mockup-viewer"]', keyframes: /^$/, folder: 'mockup-viewer' }, 'version-history': { scope: '[data-boring="version-history"]', keyframes: /^$/, folder: 'version-history' }, 'file-tree': { scope: '[data-boring="file-tree"]', keyframes: /^$/, folder: 'file-tree' }, button: { scope: '.pi-chat', keyframes: /^$/, folder: 'button' }, utils: { scope: '.pi-chat', keyframes: /^$/, folder: 'utils' }, 'pi-chat': { scope: '.pi-chat', keyframes: /^@keyframes pi-chat-/, folder: 'pi-chat' }, 'shared-chat': { scope: '.pi-chat', keyframes: /^$/, folder: 'shared-chat' }, 'pi-ambient': { scope: '.pi-chat', keyframes: /^@keyframes pi-ambient-/, folder: 'pi-ambient' }, dock: { scope: '.pi-chat', keyframes: /^$/, folder: 'dock' }, 'pi-workspace': { scope: '.pi-chat', keyframes: /^@keyframes pi-workspace-/, folder: 'pi-workspace' }, 'pi-app': { scope: '.pi-chat', keyframes: /^@keyframes pi-app-/, folder: 'pi-app' }, viewers: { scope: '.boring-viewer', keyframes: /^@keyframes boring-viewer-/, folder: 'viewers' }, 'provider-setup': { scope: '.provider-setup', keyframes: /^@keyframes provider-setup-/, folder: 'provider-setup' }, 'app-shell': { scope: '.app-shell', keyframes: /^$/, folder: 'app-shell' }, documents: { scope: '.app-shell', keyframes: /^$/, folder: 'documents' }, 'maquette-viewer': { scope: '[data-boring="maquette-viewer"]', keyframes: /^$/, folder: 'maquette-viewer' }, 'diagram-viewer': { scope: '[data-boring="diagram-viewer"]', keyframes: /^$/, folder: 'diagram-viewer' } };
+const TAILWIND = { 'requests-board': { scope: '[data-boring="requests-board"]', keyframes: /^$/, folder: 'requests-board' }, 'record-viewer': { scope: '[data-boring="records-viewer"]', keyframes: /^$/, folder: 'record-viewer' }, 'agent-target': { scope: '[data-boring="agent-target"]', keyframes: /^$/, folder: 'agent-target' }, 'mockup-viewer': { scope: '[data-boring="mockup-viewer"]', keyframes: /^$/, folder: 'mockup-viewer' }, 'version-history': { scope: '[data-boring="version-history"]', keyframes: /^$/, folder: 'version-history' }, 'file-tree': { scope: '[data-boring="file-tree"]', keyframes: /^$/, folder: 'file-tree' }, button: { scope: '.pi-chat', keyframes: /^$/, folder: 'button' }, utils: { scope: '.pi-chat', keyframes: /^$/, folder: 'utils' }, 'pi-chat': { scope: '.pi-chat', keyframes: /^@keyframes pi-chat-/, folder: 'pi-chat' }, 'shared-chat': { scope: '.pi-chat', keyframes: /^$/, folder: 'shared-chat' }, 'pi-ambient': { scope: '.pi-chat', keyframes: /^@keyframes pi-ambient-/, folder: 'pi-ambient' }, dock: { scope: '.pi-chat', keyframes: /^$/, folder: 'dock' }, 'pi-workspace': { scope: '.pi-chat', keyframes: /^@keyframes pi-workspace-/, folder: 'pi-workspace' }, 'pi-app': { scope: '.pi-chat', keyframes: /^@keyframes pi-app-/, folder: 'pi-app' }, viewers: { scope: '.boring-viewer', keyframes: /^@keyframes boring-viewer-/, folder: 'viewers' }, 'provider-setup': { scope: '.provider-setup', keyframes: /^@keyframes provider-setup-/, folder: 'provider-setup' }, 'app-shell': { scope: '.app-shell', keyframes: /^$/, folder: 'app-shell' }, documents: { scope: '.app-shell', keyframes: /^$/, folder: 'documents' }, 'maquette-viewer': { scope: '[data-boring="maquette-viewer"]', keyframes: /^$/, folder: 'maquette-viewer' }, 'diagram-viewer': { scope: '[data-boring="diagram-viewer"]', keyframes: /^$/, folder: 'diagram-viewer' } };
 // The feedback item imports the package's browser entries directly (no copied validators), React and React DOM (a portal); nothing from store, agent or source.
 const FEEDBACK_IMPORTS = new Set(['react', 'react-dom', 'lucide-react', '@hachej/boring-feedback/format', '@hachej/boring-feedback/page', '@hachej/boring-feedback/ui', '@hachej/boring-feedback/preview']);
 // The feedback item is a plug-in of its host pi-chat (owner ruling 6): its card and voice button import pi-chat's rows and labels and utils
@@ -29,8 +29,9 @@ const closureOf = name => {
   visit(name);
   return closure;
 };
-/** The app shell and everything it installs. */
-const APP_SHELL_CLOSURE = () => new Set(['app-shell', ...closureOf('app-shell')]);
+/** The host-themed roots and everything they install, without global token defaults. */
+const TOKEN_FREE_ROOTS = ['app-shell', 'agent-target', 'requests-board'];
+const TOKEN_FREE_CLOSURE = () => new Set(TOKEN_FREE_ROOTS.flatMap(name => [name, ...closureOf(name)]));
 const TYPE_ONLY_IMPORTS = new Set(['@earendil-works/pi-ai', '@hachej/boring-ui-kit/native-chat']);
 /** The modules a source imports or re-exports, split into type-only and value (a runtime `export ... from` counts as a value). */
 const importKinds = source => ({
@@ -38,12 +39,14 @@ const importKinds = source => ({
   valued: new Set([...source.matchAll(/\b(?:import|export)\s+(?!type\s)[^'";]*?\bfrom\s+['"]([^'"]+)['"]/g)].map(match => match[1])),
 });
 
-test('the app-shell closure ships no global tokens: no cssVars, and the theme item is not in it', () => {
+test('app-shell, agent-target and requests-board closures ship no global tokens: no cssVars or theme item', () => {
   // `shadcn add` of the shell must not merge light and dark tokens or radius steps into the host's CSS: the theme is an optional item the host adds itself.
-  const closure = closureOf('app-shell');
-  assert.ok(closure.size > 0);
-  assert.ok(!closure.has('theme'), 'the theme item is optional for the shell');
-  for (const name of APP_SHELL_CLOSURE()) assert.equal(manifest.items.find(entry => entry.name === name).cssVars, undefined, `${name} ships cssVars`);
+  for (const root of TOKEN_FREE_ROOTS) {
+    const closure = closureOf(root);
+    assert.ok(closure.size > 0);
+    assert.ok(!closure.has('theme'), `the theme item is optional for ${root}`);
+  }
+  for (const name of TOKEN_FREE_CLOSURE()) assert.equal(manifest.items.find(entry => entry.name === name).cssVars, undefined, `${name} ships cssVars`);
 });
 
 test('pi-chat declares Trace as a style-resolved shadcn built-in, never a vendored item', () => {
@@ -103,8 +106,8 @@ test('registry dependency pins and scoped styles preserve the declared source di
     }
     // Every Tailwind item depends on the theme (directly or through pi-chat).
     if (item.name in TAILWIND && item.name !== 'utils') {
-      // The app shell's closure ships no global tokens (the host adds `theme` itself); every other Tailwind item still depends on the theme.
-      assert.equal(closureOf(item.name).has('theme'), !APP_SHELL_CLOSURE().has(item.name), `${item.name} depends on @boring-ui/theme`);
+      // The shell and targeting closures ship no global tokens; every other Tailwind item still depends on the theme.
+      assert.equal(closureOf(item.name).has('theme'), !TOKEN_FREE_CLOSURE().has(item.name), `${item.name} depends on @boring-ui/theme`);
     }
     const declared = new Set();
     for (const dependency of item.dependencies ?? []) {
@@ -217,7 +220,7 @@ test('registry dependency pins and scoped styles preserve the declared source di
           assert.ok(dependency && item.registryDependencies?.includes('@boring-ui/' + dependency.name) && dependency.files.some(entry => entry.path.replace(/\.tsx?$/, '') === `registry/${dependency.name}/${sibling[2]}`), `${file.path} imports unshipped or undeclared ${imported}`);
           continue;
         }
-        if (item.name === 'board-viewer' || item.name === 'mockup-viewer') {
+        if (item.name === 'board-viewer' || item.name === 'mockup-viewer' || item.name === 'highlights') {
           if (imported.startsWith('./')) assert.ok(item.files.some(entry => entry.path.replace(/\.tsx?$/, '').endsWith('/' + imported.slice(2))), `${file.path} imports unshipped ${imported}`);
           else {
             const pkg = imported.startsWith('@') ? imported.split('/').slice(0, 2).join('/') : imported.split('/')[0];

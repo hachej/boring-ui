@@ -81,6 +81,65 @@ test('no agent: the nav and the header render at once, with the locale prop and 
   await unmount();
 });
 
+test('the hover rail starts collapsed, reveals on pointer hover or focus within, and collapses on leave, blur or Escape', async t => {
+  const items = ['Tableau de bord', 'Repas'].map(label => ({ id: label, label, icon: Icon, render: () => null }));
+  const chosen = [];
+  const ui = await render(t, { rail: 'hover', nav: items, route: { id: 'Tableau de bord', onChange: id => chosen.push(id) } }, { width: 1440 });
+  const { act } = await import('react');
+  const panel = ui.container.querySelector('[data-testid=app-sidebar]');
+  const sidebar = panel.closest('[data-slot=sidebar]');
+  const first = panel.querySelector('[data-testid="nav-Tableau de bord"]');
+  const second = panel.querySelector('[data-testid=nav-Repas]');
+  const state = () => sidebar.getAttribute('data-state');
+  assert.equal(state(), 'collapsed', 'hover mode reserves only an icon rail');
+  assert.equal(ui.container.querySelector('[role=tablist]'), null);
+  await act(async () => panel.dispatchEvent(new ui.window.PointerEvent('pointerover', { bubbles: true, pointerType: 'mouse' })));
+  assert.equal(state(), 'expanded', 'hover reveals the labels');
+  assert.equal(first.textContent, 'Tableau de bord');
+  assert.equal(second.textContent, 'Repas');
+  await act(async () => panel.dispatchEvent(new ui.window.PointerEvent('pointerout', { bubbles: true, pointerType: 'mouse', relatedTarget: ui.window.document.body })));
+  assert.equal(state(), 'collapsed', 'leaving collapses');
+  await act(async () => panel.dispatchEvent(new ui.window.PointerEvent('pointerover', { bubbles: true, pointerType: 'touch' })));
+  assert.equal(state(), 'collapsed', 'touch does not reveal an overlay');
+  await act(async () => first.focus());
+  assert.equal(state(), 'expanded', 'keyboard focus reveals');
+  await act(async () => second.focus());
+  assert.equal(state(), 'expanded', 'focus within keeps the labels visible');
+  await act(async () => second.dispatchEvent(new ui.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+  assert.equal(state(), 'collapsed', 'Escape collapses even with focus inside');
+  assert.equal(ui.window.document.activeElement, second, 'Escape does not discard focus');
+  await act(async () => first.focus());
+  assert.equal(state(), 'expanded', 'the next focus reveals again');
+  await act(async () => first.blur());
+  assert.equal(state(), 'collapsed', 'focus leaving collapses');
+  await act(async () => second.click());
+  assert.deepEqual(chosen, ['Repas'], 'the router still owns selection');
+  await ui.unmount();
+});
+
+for (const rail of [undefined, 'icon']) for (const layout of ['screen', 'workspace']) test(`${layout}, rail ${rail ?? 'unset'}: the native sidebar default and hover/focus behaviour stay unchanged`, async t => {
+  const ui = await render(t, { layout, ...(rail ? { rail } : {}) }, { width: 1440 });
+  const { act } = await import('react');
+  const panel = ui.container.querySelector('[data-testid=app-sidebar]');
+  const sidebar = panel.closest('[data-slot=sidebar]');
+  const expected = layout === 'screen' ? 'expanded' : 'collapsed';
+  assert.equal(sidebar.getAttribute('data-state'), expected);
+  assert.equal(ui.container.querySelector('[data-rail=hover]'), null, 'no overlay wrapper in default mode');
+  await act(async () => panel.dispatchEvent(new ui.window.PointerEvent('pointerover', { bubbles: true, pointerType: 'mouse' })));
+  await act(async () => panel.querySelector('[data-testid=nav-Jour]').focus());
+  assert.equal(sidebar.getAttribute('data-state'), expected, 'hover and focus do not change the default sidebar');
+  await act(async () => panel.dispatchEvent(new ui.window.PointerEvent('pointerout', { bubbles: true, pointerType: 'mouse', relatedTarget: ui.window.document.body })));
+  assert.equal(sidebar.getAttribute('data-state'), expected);
+  await ui.unmount();
+});
+
+test('hover rail on a phone keeps the same tab bar and no sidebar', async t => {
+  const ui = await render(t, { rail: 'hover', locale: 'fr' });
+  assert.equal(ui.container.querySelector('[data-testid=app-sidebar]'), null);
+  assert.deepEqual([...ui.container.querySelectorAll('[role=tab]')].map(tab => tab.textContent), ['Jour', 'Semaine', 'Mois', 'Plus']);
+  await ui.unmount();
+});
+
 test('the layer\'s own words follow the shell locale when the agent sets none; the agent\'s own locale wins', async t => {
   const trigger = async (agentChatProps, locale) => {
     const { container, unmount } = await render(t, { agent: agentWith(agentChatProps), locale });
@@ -542,5 +601,41 @@ test('a message-mode microphone refusal at peek reveals its problem and survives
   assert.match(ui.find('[data-testid=agent-voice-problem]').textContent, /Microphone bloqué/);
   assert.equal(ui.tracks.length, 0); assert.equal(ui.uploads.length, 0); assert.equal(ui.sends.length, 0);
   assert.notEqual(ui.opened.window.document.activeElement, ui.find('[data-testid=composer-input]'));
+  await ui.opened.unmount();
+});
+
+test('useAgentLayer exposes the same app controller while closed, never the product manager controller', async t => {
+  const improve = new Proxy(idleController, {});
+  const opened = await openedLayer(t, 390, { agent: agentWith(), improve: { controller: improve } });
+  assert.equal(opened.latest().agent, idleController, 'page content borrows the app controller without opening chat');
+  assert.equal(opened.latest().state, 'closed');
+  await opened.act(async () => opened.latest().open('improve'));
+  assert.equal(opened.latest().agent, idleController, 'the product manager never replaces the app agent');
+  await opened.unmount();
+});
+
+test('a new microphone refusal reveals its error without replacing an older failed voice row', async t => {
+  const options = { send: 'message', failTranscribe: true };
+  const ui = await talking(t, 'half', options);
+  await ui.fire(ui.talk, 'pointerdown', { button: 0 }); await ui.fire(ui.talk, 'pointerup');
+  await ui.until(() => !!ui.find('[data-testid=voice-retry]'), 'the earlier failed recording is retained');
+  const old = ui.find('[data-testid=voice-pending]');
+  await ui.opened.act(async () => ui.opened.window.document.dispatchEvent(new ui.opened.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+  await ui.until(() => ui.find('[data-testid=agent-layer]')?.dataset.state === 'peek', 'the failure can be collapsed');
+  options.refuseCapture = true;
+  const trigger = ui.find('[data-testid=agent-trigger]'); await ui.fire(trigger, 'pointerdown', { button: 0 });
+  await ui.until(() => ui.find('[data-testid=agent-layer]')?.dataset.state === 'half' && ui.find('[data-testid=agent-voice-problem]'), 'the new capture refusal, not the old failed-row identity, reveals half');
+  await ui.fire(trigger, 'pointercancel');
+  assert.equal(ui.find('[data-testid=voice-pending]'), old);
+  assert.equal(ui.uploads.length, 1); assert.equal(ui.sends.length, 0);
+  await ui.opened.act(async () => ui.opened.window.document.dispatchEvent(new ui.opened.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+  await ui.until(() => ui.find('[data-testid=agent-layer]')?.dataset.state === 'peek', 'the refusal can also be collapsed');
+  options.refuseCapture = false;
+  await ui.fire(trigger, 'pointerdown', { button: 0 });
+  await ui.until(() => ui.tracks.length === 2 && ui.talk.dataset.state === 'recording', 'the microphone can start again');
+  assert.equal(ui.find('[data-testid=agent-layer]').dataset.state, 'peek', 'an already revealed older failure never interrupts a new hold');
+  await ui.fire(trigger, 'pointercancel');
+  assert.equal(ui.find('[data-testid=voice-pending]'), old);
+  assert.equal(ui.uploads.length, 1);
   await ui.opened.unmount();
 });

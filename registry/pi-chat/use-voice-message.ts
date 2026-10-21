@@ -184,5 +184,5 @@ export function useVoiceMessage({ controller, config, attachments, labels, admit
     audioOnly: item.phase === 'transcribe-failed' && item.path ? () => { if (item.phase === 'transcribe-failed') void send(item, true); } : undefined,
     discard: () => { if (valid(item)) remove(item); },
   }));
-  return { phase: item?.phase ?? 'idle', seconds: item?.seconds ?? 0, captureSequence: captureSequence.current, problem, pending, start, finish, cancel };
+  return { canStart: Boolean(controller && config && !item && !controller.getSnapshot().disposed && controller.getSnapshot().send.kind !== 'unknown'), phase: item?.phase ?? 'idle', seconds: item?.seconds ?? 0, captureSequence: captureSequence.current, problem, pending, start, finish, cancel };
 }

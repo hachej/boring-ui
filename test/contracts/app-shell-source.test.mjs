@@ -30,7 +30,8 @@ test('the item compiles strictly against the pinned shadcn fixtures', () => {
   // The strict consumer settings (a copied item must compile in an app that sets them): unused locals and parameters, verbatim imports, erasable syntax only.
   const { options } = ts.parseJsonConfigFileContent({ ...base.config, compilerOptions: { ...base.config.compilerOptions, composite: false, declaration: false, declarationMap: false, noEmit: true,
     noUnusedLocals: true, noUnusedParameters: true, verbatimModuleSyntax: true, erasableSyntaxOnly: true, allowImportingTsExtensions: true, jsx: 'react-jsx', module: 'ESNext', moduleResolution: 'Bundler', lib: ['ES2023', 'DOM', 'DOM.Iterable'], baseUrl: root, paths: { '@/*': ['examples/app-shell/*'] } } }, ts.sys, root);
-  const program = ts.createProgram(files.map(name => `${root}${folder}/${name}`), options);
+  const targets = readdirSync(`${root}registry/agent-target`).map(name => `${root}registry/agent-target/${name}`);
+  const program = ts.createProgram([...files.map(name => `${root}${folder}/${name}`), ...targets], options);
   const diagnostics = ts.getPreEmitDiagnostics(program).filter(diagnostic => diagnostic.file && (diagnostic.file.fileName.startsWith(`${root}registry/`) || diagnostic.file.fileName.startsWith(`${root}examples/app-shell/`)));
   assert.deepEqual(diagnostics.map(diagnostic => `${diagnostic.file.fileName.replace(root, '')}: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')}`), []);
 });
@@ -60,7 +61,7 @@ test('the item pins no shadcn style: bare built-in names, tokens and classes onl
 });
 
 test('the item imports only React, its declared packages and the declared shadcn built-ins', () => {
-  const allowed = new Set(['react', 'react-dom', 'lucide-react', '@base-ui/react/drawer', '@hachej/boring-feedback/page', '@hachej/boring-feedback/ui', '@hachej/boring-ui-kit/native-chat']);
+  const allowed = new Set(['react', 'react-dom', 'lucide-react', '@base-ui/react/drawer', '@hachej/boring-feedback/page', '@hachej/boring-feedback/ui', '@hachej/boring-ui-kit/native-chat', '@hachej/boring-ui-kit/voice-capture']);
   for (const name of files) {
     for (const [, imported] of source(name).matchAll(/\bfrom\s+['"]([^'"]+)['"]/g)) {
       if (imported.startsWith('./')) { assert.ok(files.some(file => file.replace(/\.tsx?$/, '') === imported.slice(2)), `${name} imports missing ${imported}`); continue; }
@@ -71,7 +72,7 @@ test('the item imports only React, its declared packages and the declared shadcn
       assert.ok(allowed.has(imported), `${name} imports ${imported}`);
     }
   }
-  // Microphone capture is the feedback item's (`createVoiceCapture`): no other file touches getUserMedia.
+  // The neutral capture entry owns microphone access (feedback re-exports it); no shell file touches getUserMedia.
   for (const name of files) assert.doesNotMatch(source(name), /getUserMedia/, name);
 });
 
@@ -155,6 +156,30 @@ test('nextSnapOnClose: a swipe, an outside press, a lost focus and Escape step d
   }
 });
 
+test('isOverlayEvent: a tap or focus inside a data-boring-overlay (the camera) is cancelled and changes no snap; anything else is the drawer\'s own', async t => {
+  const { isOverlayEvent } = await bundle('agent-layer.tsx');
+  const window = new Window({ url: 'https://fictional.invalid/' });
+  const names = ['window', 'document', 'Element'];
+  const saved = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
+  for (const name of names) Object.defineProperty(globalThis, name, { configurable: true, writable: true, value: name === 'window' ? window : window[name] });
+  t.after(async () => { await window.happyDOM.close(); for (const [name, descriptor] of saved) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else delete globalThis[name]; } });
+  window.document.body.innerHTML = '<div data-boring-overlay><button id="shutter" tabindex="0">Shoot</button></div><button id="page" tabindex="0">Page</button>';
+  const shutter = window.document.getElementById('shutter'); const page = window.document.getElementById('page');
+  page.focus();
+  assert.equal(isOverlayEvent({ reason: 'outside-press', event: { target: shutter } }), true, 'a tap on the camera is an outside press of the drawer');
+  assert.equal(isOverlayEvent({ reason: 'escape-key', event: { target: shutter } }), true);
+  assert.equal(isOverlayEvent({ reason: 'focus-out', event: { target: page, relatedTarget: shutter } }), true, 'focus moving into the camera');
+  assert.equal(isOverlayEvent({ reason: 'outside-press', event: { target: page } }), false, 'a tap on the page steps down as before');
+  assert.equal(isOverlayEvent({ reason: 'focus-out', event: { target: shutter, relatedTarget: page } }), true, 'focus leaving the camera');
+  assert.equal(isOverlayEvent({ reason: 'outside-press', event: undefined }), false, 'no event, focus elsewhere');
+  shutter.focus();
+  assert.equal(isOverlayEvent({ reason: 'focus-out', event: { target: page } }), true, 'the focused element is in the overlay');
+  assert.equal(isOverlayEvent({ reason: 'swipe', event: { target: shutter } }), false, 'a swipe is not looked at');
+  assert.equal(isOverlayEvent({ reason: 'close-press', event: { target: shutter } }), false, 'Close is never vetoed');
+  page.focus();
+  assert.equal(isOverlayEvent({ reason: 'escape-key', event: { target: page } }), false);
+});
+
 test('useAgentContext: the most recently mounted screen wins and unmounting restores the previous one', async t => {
   const window = new Window({ url: 'https://fictional.invalid/' });
   const names = ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node', 'IS_REACT_ACT_ENVIRONMENT'];
@@ -192,11 +217,17 @@ function dom(t) {
   return window;
 }
 
-test('AppShellProps has the shell props, locale and URL opt-out, and no label or theme prop', () => {
+test('AppShellProps has the shell props, optional rail, locale and URL opt-out, and no label or theme prop', () => {
   const program = ts.createProgram([`${root}${folder}/app-shell.tsx`], { allowImportingTsExtensions: true, jsx: ts.JsxEmit.ReactJSX, noEmit: true, skipLibCheck: true });
   const file = program.getSourceFile(`${root}${folder}/app-shell.tsx`);
   const props = file.statements.find(node => ts.isInterfaceDeclaration(node) && node.name.text === 'AppShellProps');
-  assert.deepEqual(props.members.map(member => member.name.text).sort(), ['account', 'agent', 'agentLink', 'improve', 'layout', 'locale', 'nav', 'route', 'title']);
+  assert.deepEqual(props.members.map(member => member.name.text).sort(), ['account', 'agent', 'agentLink', 'improve', 'layout', 'locale', 'nav', 'rail', 'route', 'title']);
+  const rail = props.members.find(member => member.name.text === 'rail');
+  assert.ok(rail.questionToken, 'rail is optional');
+  assert.equal(rail.type.getText(file), "'icon' | 'hover'");
+  const agentLink = props.members.find(member => member.name.text === 'agentLink');
+  assert.ok(agentLink.questionToken, 'agentLink is optional');
+  assert.equal(agentLink.type.getText(file), 'false');
 });
 
 test('splitNav: up to four screens are all tabs; more give three tabs plus « Plus »', async () => {
@@ -416,4 +447,12 @@ test('useExclusiveSheet: opening a sheet closes every other open sheet', async t
   const open = () => [...container.querySelectorAll('i')].map(node => node.getAttribute('data-open'));
   assert.deepEqual(open(), ['false', 'true']);
   await act(async () => root.unmount());
+});
+
+test('agent-target registry source is listed and equals the shipped item', () => {
+  const target = manifest.items.find(entry => entry.name === 'agent-target');
+  const directory = 'registry/agent-target';
+  assert.deepEqual(target.files.map(entry => entry.path.slice(directory.length + 1)).sort(), readdirSync(`${root}${directory}`).sort());
+  const built = JSON.parse(readFileSync(`${root}public/r/agent-target.json`, 'utf8'));
+  for (const entry of target.files) assert.equal(built.files.find(file => file.path === entry.path)?.content, readFileSync(`${root}${entry.path}`, 'utf8'), `${entry.path}: run npm run registry:build`);
 });

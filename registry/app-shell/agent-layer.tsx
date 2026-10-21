@@ -15,8 +15,6 @@ import * as BaseDrawerParts from '@base-ui/react/drawer';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { createVoiceCapture } from '@hachej/boring-feedback/page';
-import type { VoiceCapture, VoiceRefusal } from '@hachej/boring-feedback/page';
 import type { FeedbackSession } from '@hachej/boring-feedback/ui';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { Drawer, DrawerContent } from '@/components/ui/drawer';
@@ -44,6 +42,8 @@ import { useVisualViewport } from './use-visual-viewport';
 import { AgentContextProvider } from './agent-context';
 import { HeaderActions } from './header-actions';
 import type { ScreenHeaderAction } from './header-actions';
+import { useDictation } from './use-dictation';
+import type { Dictation } from './use-dictation';
 
 export interface AgentSpec {
   readonly controller: NativeChatController;
@@ -66,6 +66,7 @@ type Which = 'agent' | 'improve';
 type Snap = 'closed' | 'peek' | 'half' | 'full';
 
 export interface AgentLayerApi {
+  readonly agent: NativeChatController | undefined;
   readonly state: AgentLayerState;
   readonly showing: Which | null;
   open(which?: Which, at?: 'half' | 'full'): void;
@@ -92,19 +93,26 @@ export function nextSnapOnClose(reason: string, hasPeek: boolean): 'peek' | 'hal
   return reason === 'swipe' || reason === 'outside-press' || reason === 'focus-out' || reason === 'escape-key' ? (hasPeek ? 'peek' : 'half') : 'close';
 }
 
-type VoicePhase = 'idle' | 'starting' | 'recording' | 'transcribing';
-interface Voice {
-  readonly phase: VoicePhase;
-  readonly seconds: number;
-  readonly problem: string | undefined;
+interface Voice extends Dictation {
   readonly pending?: readonly PendingVoice[] | undefined;
   readonly captureSequence?: number;
-  readonly start: () => void;
-  readonly finish: () => void;
-  readonly cancel: () => void;
+  readonly canStart?: boolean;
 }
 
-interface Internal extends AgentLayerApi {
+/**
+ * Whether a close request comes from something the layer does not own: a full-screen overlay portalled above it (`[data-boring-overlay]`,
+ * for example the composer's camera). Its taps count as outside presses and its focus as a focus-out of the drawer, but they must change
+ * nothing: the caller cancels the request and leaves the snap alone. Only those three reasons are looked at, and the event target, the
+ * related target (focus-out) or the focused element may be the overlay.
+ */
+export function isOverlayEvent(details: { readonly reason: string; readonly event?: Event | undefined }): boolean {
+  if (details.reason !== 'outside-press' && details.reason !== 'focus-out' && details.reason !== 'escape-key') return false;
+  const inside = (node: unknown) => node instanceof Element && node.closest('[data-boring-overlay]') !== null;
+  const event = details.event as (Event & { relatedTarget?: EventTarget | null }) | undefined;
+  return inside(event?.target) || inside(event?.relatedTarget) || inside(globalThis.document?.activeElement);
+}
+
+interface Internal extends Omit<AgentLayerApi, 'agent'> {
   readonly agent: AgentSpec | undefined;
   readonly improve: AgentSpec | undefined;
   readonly snap: Snap;
@@ -146,99 +154,36 @@ function useInternal(): Internal {
 
 /** The layer's state and controls. */
 export function useAgentLayer(): AgentLayerApi {
-  const { state, showing, open, close, expanded } = useInternal();
-  return useMemo(() => ({ state, showing, open, close, expanded }), [state, showing, open, close, expanded]);
+  const { state, showing, open, close, expanded, agent: spec } = useInternal();
+  const agent = spec?.controller;
+  return useMemo(() => ({ state, showing, open, close, expanded, agent }), [state, showing, open, close, expanded, agent]);
 }
 
-const REFUSAL: Readonly<Record<VoiceRefusal, 'voiceDenied' | 'voiceNoMicrophone' | 'voiceBusy' | 'voiceInsecure' | 'voiceUnsupported' | 'voiceStartFailed'>> = {
-  denied: 'voiceDenied', 'no-microphone': 'voiceNoMicrophone', busy: 'voiceBusy', insecure: 'voiceInsecure', unsupported: 'voiceUnsupported', failed: 'voiceStartFailed',
-};
-
-/** The agent's push-to-talk: record on `start`, transcribe on `finish`, then submit or fill the composer. One microphone capture per mount. */
+/** Push-to-talk uses the same dictation lifecycle as page targeting, over the existing composer/controller. */
 function useVoice(agent: AgentSpec | undefined, locale: AppShellLocale | undefined, done: (outcome: 'sent' | 'drafted') => void): Voice {
-  const [phase, setPhase] = useState<VoicePhase>('idle');
-  const [seconds, setSeconds] = useState(0);
-  const [problem, setProblem] = useState<string | undefined>();
-  const capture = useRef<VoiceCapture | null>(null);
-  const run = useRef(0);
-  const work = useRef<AbortController | null>(null);
-  const phaseRef = useRef<VoicePhase>('idle');
-  const latest = useRef({ agent, done, locale });
-  latest.current = { agent, done, locale };
-  const set = (next: VoicePhase) => { phaseRef.current = next; setPhase(next); };
-  const words = () => chatTextFor(latest.current.agent?.chatProps?.locale ?? latest.current.locale).labels;
-  const message = useVoiceMessage({ controller: agent?.controller, config: agent?.voice?.send === 'message' ? agent.voice : undefined, attachments: agent?.chatProps?.attachments, labels: words(), admitted: () => latest.current.done('sent') });
-
-  useEffect(() => () => { run.current += 1; capture.current?.cancel(); work.current?.abort(); }, []);
-  useEffect(() => {
-    if (phase !== 'recording') return;
-    setSeconds(0);
-    const started = Date.now();
-    const timer = setInterval(() => setSeconds(Math.floor((Date.now() - started) / 1000)), 250);
-    return () => clearInterval(timer);
-  }, [phase]);
-
-  const start = useCallback(() => {
-    if (!latest.current.agent?.voice || phaseRef.current !== 'idle') return;
-    const attempt = ++run.current;
-    setProblem(undefined);
-    set('starting');
-    capture.current ??= createVoiceCapture();
-    // Called synchronously from the person's gesture, so the browser ties the permission prompt to it.
-    void capture.current.start().then(result => {
-      if (attempt !== run.current) { capture.current?.cancel(); return; }
-      if (result.kind === 'refused') { set('idle'); setProblem(result.code ? words()[REFUSAL[result.code]] : result.reason); return; }
-      set('recording');
-    });
-  }, []);
-
-  const cancel = useCallback(() => {
-    run.current += 1;
-    capture.current?.cancel();
-    work.current?.abort();
-    work.current = null;
-    setProblem(undefined);
-    set('idle');
-  }, []);
-
-  useEffect(() => { cancel(); }, [agent?.controller, agent?.voice?.send, cancel]);
-
-  const finish = useCallback(() => {
-    const current = latest.current.agent;
-    if (!current?.voice) return;
-    if (phaseRef.current === 'starting') { cancel(); return; }
-    if (phaseRef.current !== 'recording') return;
-    const attempt = run.current;
-    set('transcribing');
-    void (async () => {
-      const recording = await capture.current?.stop().catch(() => null);
-      if (attempt !== run.current) return;
-      if (!recording) { set('idle'); setProblem(words().voiceNothingHeard); return; }
-      const abort = new AbortController();
-      work.current = abort;
+  const message = useVoiceMessage({ controller: agent?.controller, config: agent?.voice?.send === 'message' ? agent.voice : undefined, attachments: agent?.chatProps?.attachments, labels: chatTextFor(agent?.chatProps?.locale ?? locale).labels, admitted: () => done('sent') });
+  const voice = useDictation({
+    transcribe: agent?.voice?.send === 'message' ? undefined : agent?.voice?.transcribe,
+    locale: agent?.chatProps?.locale ?? locale,
+    onText: async (spoken, signal) => {
+      if (!agent || signal.aborted) return;
+      const fill = () => {
+        if (signal.aborted) return;
+        const draft = agent.controller.getSnapshot().draft.text;
+        agent.controller.setText(`${draft}${draft === '' || /\s$/.test(draft) ? '' : ' '}${spoken}`);
+        done('drafted');
+      };
+      if (agent.voice?.send !== 'auto') { fill(); return; }
       try {
-        const spoken = (await current.voice!.transcribe(recording.audio, abort.signal)).trim();
-        if (attempt !== run.current) return;
-        if (!spoken) { setProblem(words().voiceNothingHeard); return; }
-        const fill = () => {
-          const draft = current.controller.getSnapshot().draft.text;
-          current.controller.setText(`${draft}${draft === '' || /\s$/.test(draft) ? '' : ' '}${spoken}`);
-          latest.current.done('drafted');
-        };
-        if (current.voice!.send === 'auto') {
-          // Admission is awaited: the text is reported as sent only when the submission was admitted. A refusal puts it back in the composer
-          // (the controller does that); a rejection (an earlier submission still unconfirmed) is caught here and the transcript is kept as a draft.
-          try { if (await current.controller.send(undefined, { text: spoken })) latest.current.done('sent'); else latest.current.done('drafted'); }
-          catch { fill(); }
-        } else fill();
-      } catch { if (attempt === run.current) setProblem(words().voiceTranscribeFailed); }
-      finally { if (work.current === abort) work.current = null; if (attempt === run.current) set('idle'); }
-    })();
-  }, [cancel]);
-
-  const legacy = useMemo(() => ({ phase, seconds, problem, start, finish, cancel }), [phase, seconds, problem, start, finish, cancel]);
-  const messagePhase: VoicePhase = message.phase === 'starting' || message.phase === 'recording' ? message.phase : message.phase === 'processing' || message.phase === 'sending' ? 'transcribing' : 'idle';
-  return agent?.voice?.send === 'message' ? { ...message, phase: messagePhase } : legacy;
+        const sent = await agent.controller.send(undefined, { text: spoken });
+        if (!signal.aborted) done(sent ? 'sent' : 'drafted');
+      } catch { fill(); }
+    },
+  });
+  const { cancel } = voice;
+  useEffect(() => () => cancel(), [agent?.controller, agent?.voice?.send, Boolean(agent?.voice), cancel]);
+  const phase: Dictation['phase'] = message.phase === 'starting' || message.phase === 'recording' ? message.phase : message.phase === 'processing' || message.phase === 'sending' ? 'transcribing' : 'idle';
+  return agent?.voice?.send === 'message' ? { ...message, phase } : voice;
 }
 
 /** The height in px of the tab bar the peek sits above (`--app-shell-tabbar` on the shell root), and one rem. */
@@ -335,15 +280,14 @@ export function AgentLayerProvider({ agent, improve, locale, agentLink, children
   const voice = useVoice(agent, locale, outcome => {
     if (outcome === 'drafted') { setShown('agent'); setSnapState('half'); }
   });
-  const revealedFailure = useRef<number | undefined>(undefined);
+  const revealedFailures = useRef(new Set<number>());
   useEffect(() => {
     const failure = voice.pending?.findLast(item => item.phase === 'transcribe-failed' || item.phase === 'upload-failed' || item.phase === 'blocked' || item.phase === 'unconfirmed');
-    const failureId = failure?.id ?? voice.captureSequence;
     const captureProblem = agent?.voice?.send === 'message' && voice.problem;
-    const failed = captureProblem || failure;
-    if (!failed) { revealedFailure.current = undefined; return; }
-    if (revealedFailure.current === failureId) return;
-    revealedFailure.current = failureId;
+    const failureId = captureProblem ? voice.captureSequence : failure?.id;
+    if (failureId === undefined) { revealedFailures.current.clear(); return; }
+    if (revealedFailures.current.has(failureId)) return;
+    revealedFailures.current.add(failureId);
     if (!expanded && shown === 'agent' && snap === 'peek') setSnapState('half');
   }, [expanded, shown, snap, agent?.voice?.send, voice.captureSequence, voice.problem, voice.pending?.map(item => `${item.id}:${item.phase}`).join(',')]);
 
@@ -435,9 +379,10 @@ export function AgentTrigger({ className, children }: { readonly className?: str
  */
 function TalkButton({ text }: { readonly text: AppShellText }) {
   const { voice } = useInternal();
-  const busy = voice.phase === 'transcribing' || Boolean(voice.pending?.some(item => item.phase === 'unconfirmed'));
-  const hold = useHoldToRecord(voice, busy);
-  return <Button {...hold} variant="ghost" size="icon" data-testid="agent-talk" data-state={voice.phase} disabled={busy} aria-label={text.holdToTalk} title={text.holdToTalk}
+  const busy = voice.phase === 'transcribing';
+  const disabled = busy || (voice.phase === 'idle' && voice.canStart === false);
+  const hold = useHoldToRecord(voice, disabled);
+  return <Button {...hold} variant="ghost" size="icon" data-testid="agent-talk" data-state={voice.phase} disabled={disabled} aria-label={text.holdToTalk} title={text.holdToTalk}
     className="touch-none">
     {busy ? <Loader2Icon data-icon="inline-start" className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <MicIcon data-icon="inline-start" aria-hidden="true" />}
   </Button>;
@@ -579,6 +524,7 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
   return <Drawer open={open} modal={!peek} showSwipeHandle swipeDirection="down" snapPoints={points} snapPoint={value}
     onOpenChange={(next, details) => {
       if (next) return;
+      if (isOverlayEvent(details)) { details.cancel(); return; }
       const outcome = nextSnapOnClose(details.reason, hasPeek);
       if (outcome === 'close') { closing.current = true; layer.close(); return; }
       details.cancel();

@@ -672,6 +672,10 @@ test('failed voice is a transcript row and leaves the mic available for another 
   const failed = ui.container.querySelector('[data-testid=voice-pending]');
   assert.equal(failed.closest('[data-testid=transcript]')?.getAttribute('data-testid'), 'transcript');
   assert.equal(failed.closest('[data-testid=composer-dock]'), null);
+  const discard = failed.querySelector('[data-testid=voice-discard]');
+  assert.equal(discard.tagName, 'BUTTON');
+  assert.equal(discard.dataset.slot, 'button');
+  assert.ok(discard.classList.contains('dark:hover:bg-muted/50'), 'the pinned native Button renders its actual ghost variant');
   assert.equal(ui.button().disabled, false);
   assert.equal(ui.button().dataset.state, 'idle');
   assert.match(ui.container.querySelector('[data-testid=conversation-files]').textContent, /· 1$/);

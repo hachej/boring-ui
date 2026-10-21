@@ -10,7 +10,10 @@
     "dist/**/*.js",
     "dist/**/*.d.ts",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
+    "NOTICE",
+    "licenses/Apache-2.0.txt"
   ],
   "types": "./dist/index.d.ts",
   "exports": {
@@ -49,6 +52,10 @@
     "./artifacts": {
       "types": "./dist/artifacts.d.ts",
       "import": "./dist/artifacts.js"
+    },
+    "./documents": {
+      "types": "./dist/documents.d.ts",
+      "import": "./dist/documents.js"
     },
     "./file-convert": {
       "types": "./dist/file-convert.d.ts",
@@ -138,6 +145,10 @@
       "types": "./dist/prompt-context.d.ts",
       "import": "./dist/prompt-context.js"
     }
+  },
+  "dependencies": {
+    "unpdf": "1.9.1",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "peerDependencies": {
     "@earendil-works/pi-durable": "~1.2.0",

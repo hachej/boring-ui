@@ -8,13 +8,16 @@
 import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIcon, ArchiveIcon, CalendarDaysIcon, CalendarPlusIcon, ClipboardListIcon, DatabaseIcon, HomeIcon, MessageCircleIcon, MessagesSquareIcon, Share2Icon, MoonIcon, MoonStarIcon, PlusIcon, TargetIcon, UsersIcon, UploadIcon } from 'lucide-react';
+import { ActivityIcon, ArchiveIcon, CalendarDaysIcon, CalendarPlusIcon, ClipboardListIcon, DatabaseIcon, HomeIcon, MessageCircleIcon, MessagesSquareIcon, Share2Icon, MicIcon, MoonIcon, MoonStarIcon, PlusIcon, TargetIcon, UsersIcon, UploadIcon } from 'lucide-react';
 import { createFeedbackSession } from '@hachej/boring-feedback/ui';
 import { createPrivacyPolicy } from '@hachej/boring-feedback/page';
 import { connectRevisionProvider } from '@hachej/boring-files/revision';
 import { afterBack } from '../../registry/app-shell/back.ts';
 import { AppShell, ListDetail, useAgentContext, readAgentContext, useScreenHeader } from '../../registry/app-shell/index.ts';
 import type { RevisionProvider } from '@hachej/boring-files/revision';
+import { AgentTargetMode } from '../../registry/agent-target/agent-target.tsx';
+import { agentTargetLabelsFr } from '../../registry/agent-target/agent-target-labels.ts';
+import { Button } from './components/ui/button';
 import { Documents } from '../../registry/documents/documents.tsx';
 import { DocumentSheet } from '../../registry/documents/document-sheet.tsx';
 import { AgentWorkspace, useConversations } from '../../registry/pi-app/agent-workspace.tsx';
@@ -26,9 +29,11 @@ const { token, identity, conversations } = window.__APP__;
 const query = new URLSearchParams(location.search);
 const app = ['empty', 'redaction', 'pm'].includes(query.get('app')) ? query.get('app') : 'fitness';
 const six = query.get('nav') === '6';
+const rail = query.get('rail') === 'hover' ? { rail: 'hover' } : {};
 // `?documents=1`: the workspace's Documents screen (the Library, a file and its revisions) and the product manager's « Voir la fiche » sheet.
 const send = query.get('send') === 'message' ? 'message' : query.get('send') === 'draft' ? 'draft' : 'auto';
 const documents = query.get('documents') === '1' || send === 'message';
+const targets = query.get('targets') === '1';
 const noAgent = query.get('agent') === 'none';
 const authorized = (request: Request) => { const headers = new Headers(request.headers); headers.set('authorization', `Bearer ${token}`); return fetch(new Request(request, { headers })); };
 const endpoint = (agent: string) => (id: string) => new URL(`/api/chat?agent=${agent}&conversation=${id}`, location.href);
@@ -49,10 +54,25 @@ const List = () => <ul className="m-0 list-none divide-y divide-border p-0">
   {ROWS.map(row => <li key={row.day} className="flex items-center justify-between px-4 py-3"><span>{row.day}</span><span className="text-muted-foreground">{row.steps} pas</span></li>)}
 </ul>;
 
-function Day() {
+function Meals() {
+  const [enabled, setEnabled] = useState(false);
+  const [meals, setMeals] = useState([]);
+  const [refetches, setRefetches] = useState(0);
+  const refresh = async () => { const response = await authorized(new Request(new URL('/api/meals', location.href))); setMeals(await response.json()); setRefetches(count => count + 1); };
+  useEffect(() => { window.__mealTaps = 0; window.__outsideTaps = 0; window.__targetSettled = []; void refresh(); }, []);
+  useScreenHeader({ title: 'Mes repas fictifs', actions: [themeAction, { id: 'target', label: enabled ? 'Arrêter de dicter' : 'Pointer et dicter', icon: MicIcon, onSelect: () => setEnabled(value => !value) }] });
+  return <section data-testid="meals" data-refetches={refetches} className="flex flex-col gap-4 p-4">
+    <p>Activez « Pointer et dicter », puis touchez un repas.</p>
+    {meals.map(meal => <Button key={meal.id} variant="outline" data-testid={`meal-${meal.id}`} data-agent-target={JSON.stringify({ meal: meal.id, slot: meal.slot })} data-private="not-sent" className="min-h-11 justify-start" onClick={() => { window.__mealTaps++; }}><span>{meal.label}</span></Button>)}
+    <Button variant="ghost" data-testid="meal-outside" className="min-h-11" onClick={() => { window.__outsideTaps++; }}>Action ordinaire hors des repas</Button>
+    <AgentTargetMode enabled={enabled} labels={agentTargetLabelsFr} transcribe={async () => 'remplace le riz par 150 g de pâtes'} onSettled={result => { window.__targetSettled.push(result); void refresh(); }} />
+  </section>;
+}
+function WalkingDay() {
   useScreenHeader({ title: 'Ma journée', subtitle: 'mardi 13 octobre', actions: [themeAction] });
   return <List />;
 }
+function Day() { return targets ? <Meals /> : <WalkingDay />; }
 function Progress() {
   useAgentContext({ name: 'Progrès', params: { range: 30 } });
   useScreenHeader({ actions: [themeAction] });
@@ -70,12 +90,16 @@ function Plain({ label }: { label: string }) {
 const FITNESS = [
   { id: 'jour', label: 'Jour', icon: CalendarDaysIcon, render: () => <Day /> },
   { id: 'progres', label: 'Progrès', icon: ActivityIcon, render: () => <Progress /> },
-  { id: 'donnees', label: 'Données', icon: DatabaseIcon, badge: true, render: () => <Data /> },
+  { id: 'donnees', label: 'Données', icon: DatabaseIcon, render: () => <Data /> },
   ...(six ? [
     { id: 'objectifs', label: 'Objectifs', icon: TargetIcon, render: () => <Plain label="Vos objectifs" /> },
     { id: 'sommeil', label: 'Sommeil', icon: MoonStarIcon, badge: true, render: () => <Plain label="Votre sommeil" /> },
     { id: 'amis', label: 'Amis', icon: UsersIcon, render: () => <Plain label="Vos amis" /> },
   ] : []),
+];
+const DASHBOARD = [
+  { id: 'dashboard', label: 'Tableau de bord', icon: HomeIcon, render: () => <Plain label="Votre tableau de bord" /> },
+  { id: 'repas', label: 'Repas', icon: ClipboardListIcon, render: () => <Plain label="Vos repas" /> },
 ];
 const EMPTY = [{ id: 'accueil', label: 'Accueil', icon: HomeIcon, render: () => <p className="m-0 p-4">Bienvenue</p> }];
 
@@ -135,7 +159,14 @@ function App() {
       { id: 'share', label: 'Partager ma semaine', icon: Share2Icon, onSelect: () => window.__did.push('share') },
       { id: 'invite', label: 'Inviter un ami', icon: UsersIcon, href: '/invite?app=fitness', onSelect: () => window.__did.push('invite') },
     ],
-    chatProps: { ...common, ...audioFiles, actions: coach.actions, labels: { title: 'Coach', placeholder: 'Parle au coach…' }, tools: <span data-testid="host-tool" className="sr-only">outil</span>, suggestions: [{ label: 'Résumé de la semaine', text: 'Fais le résumé de ma semaine' }] },
+    chatProps: { ...common, ...audioFiles, actions: coach.actions, labels: { title: 'Coach', placeholder: 'Parle au coach…' },
+      // Photos and picked images become draft attachments (the phone camera and the "+" menu both land here).
+      onFiles: async files => Promise.all(files.map(async (file, index) => {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        let binary = '';
+        for (const byte of bytes) binary += String.fromCharCode(byte);
+        return { id: `photo-${Date.now()}-${index}`, name: file.name, content: { type: 'image' as const, data: btoa(binary), mimeType: file.type || 'image/jpeg' } };
+      })),tools: <span data-testid="host-tool" className="sr-only">outil</span>, suggestions: [{ label: 'Résumé de la semaine', text: 'Fais le résumé de ma semaine' }] },
     ...(app === 'empty' ? {} : { voice: { transcribe: async () => {
       if (send === 'message') { await new Promise(resolve => setTimeout(resolve, 1500)); if (window.__voiceFail) throw new Error('Fictional transcription failure'); }
       return window.__transcript ?? (send === 'message' ? 'Je mange une salade' : 'Combien de pas hier ?');
@@ -144,7 +175,7 @@ function App() {
   // The product manager's « Voir la fiche » opens the product sheet over the app (`DocumentSheet`); the host decides which document.
   const seeSheet = docs ? [{ id: 'spec', label: 'Voir la fiche', icon: ClipboardListIcon, onSelect: () => setSpec('fiche-produit.md') }] : [];
   const improve = { controller: manager.controller, ...(feedback ? { feedback } : {}), ...(seeSheet.length ? { headerActions: seeSheet } : {}), chatProps: { ...common, actions: manager.actions, labels: { title: 'Chef de produit' } } };
-  const nav = [...(app === 'empty' ? EMPTY : FITNESS), ...(docs ? [{ id: 'fiches', label: 'Fiches', icon: ClipboardListIcon, render: () => <Documents provider={docs} locale="fr" /> }] : [])];
+  const nav = [...(app === 'empty' ? EMPTY : query.get('nav') === 'dashboard' ? DASHBOARD : FITNESS), ...(docs ? [{ id: 'fiches', label: 'Fiches', icon: ClipboardListIcon, render: () => <Documents provider={docs} locale="fr" /> }] : [])];
   const account = {
     name: 'Camille Martin', email: 'camille@example.invalid',
     menu: app === 'empty' ? [{ label: 'Réglages', onSelect: () => window.__did.push('settings') }]
@@ -154,7 +185,7 @@ function App() {
   // The app's router: a tab switch replaces the URL (a hash here) and adds no history entry.
   const onChange = (id: string) => { window.__routes.push(id); history.replaceState(history.state, '', `#${id}`); setRoute(id); };
   return <div id="app-root" className="contents">
-    <AppShell layout="screen" title="Forme" nav={nav} agent={agent} improve={improve} account={account} route={{ id: route, onChange }} />
+    <AppShell {...rail} layout="screen" title="Forme" nav={nav} agent={agent} improve={improve} account={account} route={{ id: route, onChange }} />
     {docs && <DocumentSheet provider={docs} path={spec} onClose={() => setSpec(undefined)} onShowAll={() => onChange('fiches')} locale="fr" />}
   </div>;
 }
@@ -213,7 +244,7 @@ function RedactionApp() {
   const improve = { controller: manager.controller, ...(feedback ? { feedback } : {}), chatProps: { locale: 'fr', showHistory: false, showConnectionStatus: false, actions: manager.actions, labels: { title: 'Chef de produit' } } };
   const account = { name: 'Camille Martin', email: 'camille@example.invalid', menu: [{ label: 'Réglages', onSelect: () => window.__did.push('settings') }, { label: 'Nouveautés', onSelect: () => window.__did.push('news') }] };
   return <div id="app-root" className="contents">
-    <AppShell layout="workspace" title="Cabinet" nav={nav} improve={improve} account={account} route={{ id: NAV_IDS.includes(hash) ? hash : 'consultations', onChange }} />
+    <AppShell {...rail} layout="workspace" title="Cabinet" nav={nav} improve={improve} account={account} route={{ id: NAV_IDS.includes(hash) ? hash : 'consultations', onChange }} />
   </div>;
 }
 
@@ -237,7 +268,7 @@ function PmApp() {
   const improve = { controller: manager.controller, ...(feedback ? { feedback } : {}), chatProps: { locale: 'fr', showHistory: false, showConnectionStatus: false, actions: manager.actions, labels: { title: 'Chef de produit' } } };
   const account = { name: 'Camille Martin', email: 'camille@example.invalid', menu: [{ label: 'Réglages', onSelect: () => window.__did.push('settings') }] };
   return <div id="app-root" className="contents">
-    <AppShell layout="chat" title="Atelier" nav={nav} improve={improve} account={account} route={{ id: 'atelier', onChange: () => {} }} />
+    <AppShell {...rail} layout="chat" title="Atelier" nav={nav} improve={improve} account={account} route={{ id: 'atelier', onChange: () => {} }} />
   </div>;
 }
 

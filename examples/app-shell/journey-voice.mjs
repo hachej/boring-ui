@@ -1,6 +1,6 @@
 // Fictional consumer: real native admission, workspace uploads and reload; Chromium's fake microphone, scripted transcript/model.
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { launch, pause, q } from '@hachej/boring-testing/browser';
@@ -8,7 +8,9 @@ import { launch, pause, q } from '@hachej/boring-testing/browser';
 process.env.STUDIO_MODEL = 'scripted';
 const { startAppShell } = await import('./server.mjs');
 const evidence = process.env.VOICE_EVIDENCE ?? '.cache/evidence/D111/delta'; mkdirSync(evidence, { recursive: true });
-let app = await startAppShell({ directory: mkdtempSync(join(tmpdir(), 'fictional-voice-')) });
+let directory = mkdtempSync(join(tmpdir(), 'fictional-voice-'));
+let app = await startAppShell({ directory });
+const retainedAudio = () => readdirSync(join(directory, 'workspace', 'uploads')).filter(name => name.startsWith('voice-'));
 let browser;
 const findings = [];
 const check = (value, label) => { if (process.env.VOICE_REVIEW_COLLECT) { console.log(`${value ? 'PASS' : 'FAIL'} review: ${label}`); if (!value) findings.push(label); } else assert.ok(value, label); };
@@ -25,7 +27,7 @@ try {
     check(layout.inTranscript && layout.above && !layout.empty, 'pending/failed voice is a transcript user row above composer, without empty-state overlay');
   };
   const fresh = async () => {
-    await app.close(); app = await startAppShell({ directory: mkdtempSync(join(tmpdir(), 'fictional-voice-scene-')) });
+    await app.close(); directory = mkdtempSync(join(tmpdir(), 'fictional-voice-scene-')); app = await startAppShell({ directory });
     const previous = await browser.evaluate('performance.timeOrigin'); await browser.send('Page.navigate', { url: `${app.url}?send=message` }); await mounted(previous);
   };
   for (const device of ['phone', 'desktop']) {
@@ -62,6 +64,7 @@ try {
       const viewport = await browser.evaluate(`(() => { const r = ${q('[data-testid=transcript-scroll]')}.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
       await browser.wheel(viewport.x, viewport.y, -1000); await pause(700);
       check(await browser.evaluate(`(() => { const v = ${q('[data-testid=transcript-scroll]')}.getBoundingClientRect(), b = ${q('[data-testid=jump-latest]')}; if (!b) return false; const r = b.getBoundingClientRect(); return r.top >= v.bottom || r.bottom <= v.top; })()`), 'visible jump control has reserved space outside the message viewport');
+      await browser.screenshot(`${device}-jump.png`);
       await browser.click(q('[data-testid=jump-latest]'));
     }
     if (device === 'phone') { await browser.click(q('[data-testid=agent-layer-expand]')); await pause(800); }
@@ -93,11 +96,13 @@ try {
   assert.equal(app.submits.length, beforeFailure);
   await reviewPending();
   await browser.screenshot('desktop-failed.png');
-  const uploads = await browser.evaluate('window.__voiceUploads');
+  const uploads = await browser.evaluate('window.__voiceUploads'), retained = retainedAudio();
+  assert.equal(retained.length, 1, 'clean desktop failure retained exactly one audio file');
   await browser.evaluate('window.__voiceFail = false'); await browser.click(q('[data-testid=voice-retry]'));
   await browser.until('retry admitted', `!${q(pending)}`, 30000);
   assert.equal(app.submits.length, beforeFailure + 1);
   assert.equal(await browser.evaluate('window.__voiceUploads'), uploads, 'transcription retry reuses uploaded bytes');
+  assert.deepEqual(retainedAudio(), retained, 'retry keeps the exact one persisted upload path');
   for (const reason of ['slide', 'Escape']) {
     const before = app.submits.length, uploads = await browser.evaluate('window.__voiceUploads'), p = await point();
     await mouse('mousePressed', p, 1); await pause(400);
@@ -119,10 +124,10 @@ try {
   assert.equal(await browser.evaluate(`document.activeElement === ${q('[data-testid=composer-input]')}`), false, 'failure never focuses the composer');
   assert.equal(await browser.evaluate(`(() => { const e = ${q('[data-testid=voice-retry]')}, r = e.getBoundingClientRect(); return r.top >= 0 && r.bottom <= visualViewport.height && e.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)); })()`), true, 'Retry is visible and tappable');
   await reviewPending();
-  const failure = await browser.evaluate(`(() => { const buttons = ['voice-retry', 'voice-audio-only', 'voice-discard'].map(id => document.querySelector('[data-testid=' + id + ']')); const mic = ${q(mic)}, files = ${q('[data-testid=conversation-files]')}; return { idle: !mic.disabled && !mic.querySelector('.animate-spin'), files: files?.textContent, uploads: window.__voiceUploads, buttons: buttons.map(b => ({ slot: b.dataset.slot, ghost: !b.classList.contains('border-border') && !b.classList.contains('underline-offset-4'), top: b.getBoundingClientRect().top, bottom: b.getBoundingClientRect().bottom })) }; })()`);
+  const failure = await browser.evaluate(`(() => { const buttons = ['voice-retry', 'voice-audio-only', 'voice-discard'].map(id => document.querySelector('[data-testid=' + id + ']')); const mic = ${q(mic)}, files = ${q('[data-testid=conversation-files]')}; return { idle: !mic.disabled && !mic.querySelector('.animate-spin'), files: files?.textContent, uploads: window.__voiceUploads, buttons: buttons.map(b => ({ slot: b.dataset.slot, ghost: b.classList.contains('dark:hover:bg-muted/50'), top: b.getBoundingClientRect().top, bottom: b.getBoundingClientRect().bottom })) }; })()`);
   console.log('review clean failure', JSON.stringify(failure));
   check(failure.idle, 'failed preparation leaves the mic idle and available');
-  check(failure.uploads === 1 && /· 1$/.test(failure.files ?? ''), 'clean failure scene contains exactly one uploaded file and file chip');
+  check(failure.uploads === 1 && retainedAudio().length === 1 && /· 1$/.test(failure.files ?? ''), 'clean failure scene contains exactly one uploaded file and file chip');
   check(failure.buttons.every(b => b.slot === 'button') && failure.buttons[2].ghost && Math.max(...failure.buttons.map(b => b.top)) - Math.min(...failure.buttons.map(b => b.top)) < 2, 'Discard is a real ghost Button aligned with Retry and Send audio only');
   await browser.screenshot('phone-failed.png');
   const next = await point(); await touch('touchStart', next); await pause(500);

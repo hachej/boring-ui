@@ -68,7 +68,7 @@ export type { AudioUrlRead, VoiceMessageConfig, AttachmentsConfig, ConversationI
 
 export interface ChatTimeline {
   readonly count: number;
-  readonly render: (context: { readonly focusComposer: () => void; readonly openFile?: ((path: string) => void) | undefined }) => ReactNode;
+  readonly render: (context: { readonly focusComposer: () => void; readonly openFile?: ((path: string) => void) | undefined; readonly pendingVoice?: ReactNode }) => ReactNode;
   readonly afterSend?: () => void;
 }
 
@@ -171,6 +171,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
     slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => timeline ? timeline.afterSend?.() : scrollToBottom.current(), feedback, rowExtras, onOpenFile, fileChanges, pasteToFile, composerChips, composerHeader, composerHasContent, onPickFiles });
   const { state, derived, rows, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, files, loading } = session;
   const voiceRows = pendingVoice ?? voice.pending;
+  const pendingRows = voiceRows.map(item => <MessageScrollerItem key={`voice:${item.id}`} messageId={`voice:${item.id}`} data-local-voice="" className="[content-visibility:visible]"><PendingVoiceBubble pending={item} /></MessageScrollerItem>);
   const empty = (timeline ? timeline.count === 0 : session.empty) && voiceRows.length === 0;
   const conversationFiles = new Map(files.map(file => [file.id, file]));
   for (const item of voiceRows) if (item.path && !conversationFiles.has(`file:${item.path}`)) {
@@ -225,13 +226,13 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
     {pickingConversation && conversations && historyList && <ConversationHistory conversations={conversations} onClose={() => setPickingConversation(false)} />}
 
     <div data-testid="conversation-content" className={cn('relative min-h-0 flex-1', empty && emptyLayout === 'centered' && 'min-[641px]:min-h-60 min-[641px]:flex-none')}>
-      {timeline ? timeline.render({ focusComposer: () => textarea.current?.focus(), openFile: onOpenFile ?? mentions?.open }) : <MessageScroller>
+      {timeline ? timeline.render({ focusComposer: () => textarea.current?.focus(), openFile: onOpenFile ?? mentions?.open, pendingVoice: pendingRows }) : <MessageScroller>
         <MessageScrollerViewport ref={stick.scrollRef} data-testid="transcript-scroll" aria-label={labels.messages} className="min-h-0 flex-1 scrollbar-thumb-border scrollbar-track-transparent">
           {!empty && <TranscriptHistory history={state.history} connected={!state.disposed && connected} onLoad={transcript.reveal} sentinelRef={transcript.sentinelRef} hidden={hidden} loaded={transcript.loaded} />}
           <div className="mx-auto w-full max-w-[720px] px-4 pt-6 pb-8 sm:px-6">
           <MessageScrollerContent aria-label={labels.messages} aria-live="polite" data-testid="transcript">
             {visible.map(row => <MessageScrollerItem key={row.key} messageId={row.key} className="[content-visibility:visible]"><RowView row={row} context={rowContext} /></MessageScrollerItem>)}
-            {voiceRows.map(item => <MessageScrollerItem key={`voice:${item.id}`} messageId={`voice:${item.id}`} className="[content-visibility:visible]"><PendingVoiceBubble pending={item} /></MessageScrollerItem>)}
+            {pendingRows}
           </MessageScrollerContent>
           </div>
         </MessageScrollerViewport>

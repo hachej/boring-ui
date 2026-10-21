@@ -5,7 +5,7 @@
  */
 import { createContext, createElement, useContext, useMemo } from 'react';
 import type { ReactNode } from 'react';
-import { ArrowDownIcon, ArrowUpIcon, GitForkIcon, HistoryIcon, ListEndIcon, MessagesSquareIcon, PaperclipIcon, PlusIcon, RefreshCwIcon, SquareIcon } from 'lucide-react';
+import { ArrowDownIcon, ArrowUpIcon, CameraIcon, GitForkIcon, HistoryIcon, ListEndIcon, MessagesSquareIcon, PaperclipIcon, PlusIcon, RefreshCwIcon, SquareIcon } from 'lucide-react';
 import type { BlockIcon } from '../button/actions';
 import { withDefaults } from '../utils/utils';
 
@@ -72,6 +72,11 @@ export const defaultChatLabels = {
   queue: 'Queue',
   add: 'Add',
   attachFiles: 'Attach files',
+  takePhoto: 'Take a photo',
+  cameraShoot: 'Take the photo',
+  cameraClose: 'Close the camera',
+  cameraUnavailable: 'The camera cannot open on this page.',
+  cameraFallback: "Use the phone's camera",
   commands: 'Commands',
   annotate: 'Annotate',
   annotateHint: 'Annotate: click what you want to comment on (Esc to stop)',
@@ -298,6 +303,7 @@ export const defaultChatIcons = {
   newChat: PlusIcon as BlockIcon,
   add: PlusIcon as BlockIcon,
   attach: PaperclipIcon as BlockIcon,
+  camera: CameraIcon as BlockIcon,
   queue: ListEndIcon as BlockIcon,
   jumpToLatest: ArrowDownIcon as BlockIcon,
   reconnect: RefreshCwIcon as BlockIcon,
