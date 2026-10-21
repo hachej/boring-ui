@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Shader UI spike</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><canvas class="brand-orb" id="brand-orb"></canvas><span>Shader UI <em>spike D-206</em></span></div>
+    <nav id="tabs">
+      <button data-tab="surfaces" class="on">Living surfaces</button>
+      <button data-tab="generate">Make your screen</button>
+      <button data-tab="ambient">Ambient agent</button>
+      <button data-tab="souffleur">Souffleur</button>
+      <button data-tab="artifacts">Artifacts in chat</button>
+    </nav>
+    <div class="badges"><span id="gpu-badge" class="badge">checking GPU…</span><span id="model-badge" class="badge">model…</span></div>
+  </header>
+
+  <main>
+    <section id="surfaces" class="tab on"></section>
+    <section id="generate" class="tab"></section>
+    <section id="ambient" class="tab"></section>
+    <section id="souffleur" class="tab"></section>
+    <section id="artifacts" class="tab"></section>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
