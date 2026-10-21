@@ -1483,6 +1483,34 @@ test('OptChat emitted placeholders and fold survive cache eviction and SQLite re
   assert.equal(await generate(), checkpoint, 'a fully folded checkpoint also survives cache eviction');
 });
 
+test('OptChat leaf rebuilding reuses exact prior leaves without retaining edited, reclassified or forgotten content', async () => {
+  const { leavesOf } = await import('@hachej/boring-agent/memory/optchat');
+  const messages = [
+    { role: 'user', content: 'Fictional amber note.', timestamp: 1 },
+    { role: 'assistant', content: [{ type: 'text', text: 'Fictional reply.' }, { type: 'toolCall', id: 'fixture', name: 'read', arguments: { path: 'fictional.txt' } }], timestamp: 2 },
+    { role: 'toolResult', toolName: 'read', toolCallId: 'fixture', content: [{ type: 'text', text: 'Fictional result. '.repeat(12) }], isError: false, timestamp: 3 },
+  ];
+  const options = { notes: ['Fictional seed.'] };
+  const original = leavesOf(messages, 80, options).leaves;
+  const reused = leavesOf(structuredClone(messages), 80, options, original).leaves;
+  assert.equal(reused.length, original.length);
+  for (let i = 0; i < original.length; i++) assert.equal(reused[i], original[i], 'unchanged content keeps its already-computed bytes and fingerprint');
+  const edited = structuredClone(messages);
+  edited[0].content = 'Fictional azure note.';
+  const changed = leavesOf(edited, 80, options, original).leaves;
+  assert.notEqual(changed[1].hash, original[1].hash, 'same-length edits are not mistaken for an unchanged message');
+  assert.equal(changed[2], original[2]);
+  edited[0].timestamp = 9;
+  assert.equal(leavesOf(edited, 80, options, changed).leaves[1].at, 9, 'date metadata is refreshed too');
+  assert.notEqual(leavesOf(messages, 40, options, original).leaves.at(-1).text, original.at(-1).text, 'a different cap rebuilds the capped leaf');
+  const work = leavesOf(messages, 80, { ...options, workOf: message => message.role === 'assistant' }, original).leaves;
+  assert.equal(work[2].kind, 'work');
+  assert.notEqual(work[2], original[2]);
+  const forgotten = leavesOf(messages, 80, { ...options, forgotten: { '0': 1 } }, original).leaves;
+  assert.equal(forgotten[1].line, 'note: (forgotten)');
+  assert.equal(original[1].line, 'user: Fictional amber note.', 'rebuilding never mutates the previous log');
+});
+
 test('OptChat checkpoint options preserve the exact under-budget view and reject invalid marks', { timeout: 5000 }, async t => {
   const { createOptChatMemory, OPTCHAT_DEFAULTS } = await import('@hachej/boring-agent/memory/optchat');
   const { UserEntry } = await import('@earendil-works/pi-durable');

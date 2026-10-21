@@ -307,7 +307,7 @@ export function createOptChatMemory(options: OptChatOptions): OptChatMemory {
     const view = await (await conversationOf(id)).context(options.context);
     const seed = await seedNotes(id);
     const edits = await memoryEdits(id);
-    s.sync(leavesOf(view.messages, cap, logOptions(seed, edits)).leaves);
+    s.sync(leavesOf(view.messages, cap, logOptions(seed, edits), s.log.leaves).leaves);
     await loadStored(s, options.harness(), options.context);
     await restoreFold(s, edits.revision, s.log.leaves.length);
     await restoreFold(s, edits.revision, s.log.leaves.length, 'compact');
@@ -391,7 +391,7 @@ export function createOptChatMemory(options: OptChatOptions): OptChatMemory {
         const load = async () => {
           const seed = (await runtime.snapshot(OptChatNotes, id, context))?.notes ?? [];
           const edits = await runtime.snapshot(OptChatEdits, id, context) ?? { revision: 0, forgotten: {} };
-          s.sync(leavesOf((await runtime.context(id, context)).messages, cap, logOptions(seed, edits)).leaves);
+          s.sync(leavesOf((await runtime.context(id, context)).messages, cap, logOptions(seed, edits), s.log.leaves.length ? s.log.leaves : session(id).log.leaves).leaves);
           await loadStored(s, runtime, context);
           await restoreFold(s, edits.revision, s.log.leaves.length, 'compact');
           return edits.revision;
@@ -626,11 +626,11 @@ export function createOptChatMemory(options: OptChatOptions): OptChatMemory {
           for (;;) {
             const seed = await seedNotes(api.conversationId);
             const edits = await memoryEdits(api.conversationId);
-            const { leaves, before } = leavesOf(request.messages, cap, logOptions(seed, edits));
+            const cached = session(api.conversationId);
+            const { leaves, before } = leavesOf(request.messages, cap, logOptions(seed, edits), cached.log.leaves);
             const last = request.messages.findLastIndex(item => item.role === 'user' || (item.role !== 'system' && options.workOf?.(item)));
             const covered = last < 0 ? 0 : before[last]!;
             if (covered === 0 && Object.keys(edits.forgotten).length === 0 && !request.messages.some(item => options.workOf?.(item))) return undefined;
-            const cached = session(api.conversationId);
             cached.sync(leaves);
             const s = new Session(api.conversationId, nodeBytes);
             s.sync(leaves);

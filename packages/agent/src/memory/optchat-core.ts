@@ -96,8 +96,9 @@ export function capText(text: string, cap: number): string {
   return `${text.slice(0, head)}\n[… ${text.length - cap} characters cut …]\n${text.slice(text.length - tail)}`;
 }
 
-function leafOf(kind: LeafKind, text: string, at: number | undefined, cap: number): Leaf {
+function leafOf(kind: LeafKind, text: string, at: number | undefined, cap: number, previous?: Leaf): Leaf {
   const capped = capText(text, cap);
+  if (previous?.kind === kind && previous.text === capped && previous.at === at) return previous;
   const line = `${kind}: ${capped}`;
   return { kind, text: capped, line, bytes: byteLength(line), hash: hashText(line), ...(at === undefined ? {} : { at }) };
 }
@@ -114,25 +115,27 @@ export interface LeafOptions {
   readonly forgotten?: Readonly<Record<string, number>>;
 }
 
-export function leavesOf(messages: readonly Message[], cap: number = DEFAULTS.cap, options: LeafOptions = {}): { leaves: Leaf[]; before: number[] } {
-  const leaves: Leaf[] = (options.notes ?? []).map(text => leafOf('note', text, undefined, cap)), before: number[] = [];
+/** Reuse prior leaves only after exact kind, capped-text and timestamp comparison; native contexts may contain fresh message objects. */
+export function leavesOf(messages: readonly Message[], cap: number = DEFAULTS.cap, options: LeafOptions = {}, previous: readonly Leaf[] = []): { leaves: Leaf[]; before: number[] } {
+  const leaves: Leaf[] = (options.notes ?? []).map((text, index) => leafOf('note', text, undefined, cap, previous[index])), before: number[] = [];
+  const append = (kind: LeafKind, text: string, at: number | undefined) => leaves.push(leafOf(kind, text, at, cap, previous[leaves.length]));
   let messageIndex = 0;
   for (const message of messages) {
     before.push(leaves.length);
     if (message.role === 'system') continue;
     const forgotten = options.forgotten?.[String(messageIndex++)];
     if (forgotten !== undefined) {
-      for (let i = 0; i < forgotten; i++) leaves.push(leafOf('note', '(forgotten)', undefined, cap));
+      for (let i = 0; i < forgotten; i++) append('note', '(forgotten)', undefined);
       continue;
     }
     const at = typeof (message as { timestamp?: unknown }).timestamp === 'number' ? (message as { timestamp: number }).timestamp : undefined;
-    if (options.workOf?.(message)) leaves.push(leafOf('work', textOf(message.content), at, cap));
-    else if (message.role === 'user') leaves.push(leafOf('user', textOf(message.content), at, cap));
+    if (options.workOf?.(message)) append('work', textOf(message.content), at);
+    else if (message.role === 'user') append('user', textOf(message.content), at);
     else if (message.role === 'assistant') {
       const talk = message.content.filter(part => part.type === 'text').map(part => part.text).join('\n');
-      if (talk.trim()) leaves.push(leafOf('talk', talk, at, cap));
-      for (const part of message.content) if (part.type === 'toolCall') leaves.push(leafOf('tool', `${part.name} ${JSON.stringify(part.arguments)}`, at, cap));
-    } else if (message.role === 'toolResult') leaves.push(leafOf('echo', `${message.toolName}${message.isError ? ' (error)' : ''}: ${textOf(message.content)}`, at, cap));
+      if (talk.trim()) append('talk', talk, at);
+      for (const part of message.content) if (part.type === 'toolCall') append('tool', `${part.name} ${JSON.stringify(part.arguments)}`, at);
+    } else if (message.role === 'toolResult') append('echo', `${message.toolName}${message.isError ? ' (error)' : ''}: ${textOf(message.content)}`, at);
   }
   before.push(leaves.length);
   return { leaves, before };
