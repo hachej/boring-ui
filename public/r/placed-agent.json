@@ -9,10 +9,10 @@
     "lucide-react@^1.51.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.3/r/pi-app.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.3/r/pi-ambient.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.3/r/app-shell.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.3/r/utils.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.4/r/pi-app.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.4/r/pi-ambient.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.4/r/app-shell.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.4/r/utils.json",
     "button"
   ],
   "files": [
