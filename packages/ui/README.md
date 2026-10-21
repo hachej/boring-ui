@@ -68,6 +68,46 @@ The default schema includes headings, lists, task lists, quotes, code and text m
 
 `test/packages/ui-markdown-editor.test.mjs`, `test/packages/ui-markdown-navigation.test.mjs` and `test/packages/ui-markdown-mounted.test.mjs` and `test/packages/ui-markdown-proposals.test.mjs` drive the real React/Tiptap renderer, DOM selections and SQLite provider. `npm run test:editor-consumer` requires `npm_config_cache` pointing to a writable cache with the pinned archives; it installs actual package tarballs, checks declarations with `skipLibCheck: false`, drives the controls and bundles for browsers without Pi or server filesystem imports. These checks do not establish browser layout, caret, IME or accessibility qualification. Chromium journeys remain pending.
 
+## Document marks
+
+`@hachej/boring-ui-kit/markdown-quote` exports `captureMarkdownQuote` and
+`markdownQuoteResolution`: pure exact-only anchors over canonical Markdown source.
+`@hachej/boring-ui-kit/mark-store` exports the kit's sidecar store, independently of
+React, Tiptap and Pi execution:
+
+```ts
+import { createMarkStore } from '@hachej/boring-ui-kit/mark-store';
+import { captureMarkdownQuote } from '@hachej/boring-ui-kit/markdown-quote';
+
+const store = await createMarkStore({ client, identity }, locator);
+const capture = captureMarkdownQuote(source, { start: 0, end: 12 });
+if (capture.kind === 'captured') {
+  await store.add({ id: 'mark-1', anchor: capture.anchor, colour: 'accent',
+    note: 'A fictional comment.', author: identity.principalId, time: new Date().toISOString() });
+}
+await store.edit('mark-1', { note: 'Revised fictional comment.' });
+await store.remove('mark-1');
+store.dispose(); // Does not close the borrowed resource client/provider.
+```
+
+Use the same workspace `client` as the document. `identity` is expected receipt
+metadata, never browser authentication. The store reads `<doc>.marks.json` in the
+same view and writes it only through the existing conditional publication path.
+`getSnapshot`/`subscribe` provide immutable marks, dirty/lifecycle and save state;
+mutations return the exact existing `SaveResult`. A stale tab retains its local
+marks and returns conflict; `reload()` explicitly discards them. Lost replies
+require `reconcile()` on the original operation. No auto-merge or blind retry is
+performed. The host owns policy, attribution and recovery after missing receipts.
+The [owner](../../docs/architecture/FEEDBACK.md#markdown-quotes-and-document-marks)
+defines quote/context matching and conservative rich-projection limits.
+
+The existing `MarkdownEditor` accepts `highlights`, `onQuoteSelection` and
+`onHighlightActivate`. Native decorations leave the document buffer clean. Rich
+capture refuses anything outside one proven literal text leaf; source selection
+remains available for syntax, escapes or normalization. The `highlights` registry
+block supplies context actions, comments and an unplaced-mark tray, creating a
+store by default or borrowing the same `MarkStore` interface from an app.
+
 ## Optional native chat
 
 The `/native-chat` entry also owns the neutral `ChatController`/`ChatSnapshot` renderer types. Concrete native controllers retain their full APIs. Optional multi-party data (`ChannelSource`, `createSharedChat`, socket/fake sources and state types) stays exclusively at `/shared-chat`, not the headless root. Its presentation is the optional [`shared-chat` registry item](../../registry/README.md#regular-chat-or-shared-chat); regular `pi-chat` has no imports from it.

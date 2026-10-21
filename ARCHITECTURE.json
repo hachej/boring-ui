@@ -187,6 +187,7 @@
         "@tiptap/extension-highlight",
         "@tiptap/pm",
         "@tiptap/pm/state",
+        "@tiptap/pm/view",
         "@tiptap/extension-bubble-menu",
         "@tiptap/extension-floating-menu",
         "marked",
