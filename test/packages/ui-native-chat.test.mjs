@@ -300,6 +300,45 @@ test('restoration bounds its transcript read before a later independent answer',
   assert.equal(f.controller.getSnapshot().draft.text, 'Restore only this question', 'a later answer cannot suppress restoration of the earlier empty failure');
 });
 
+test('concurrent recovery observes a failed native request only once', { timeout: 10000 }, async t => {
+  const lookupStarted = deferred(), releaseLookup = deferred(), retryStarted = deferred(), releaseAck = deferred();
+  let original, submits = 0, lookups = 0;
+  const f = await errorFixture(t, [{ error: 'Fictional empty failure' }], { restoreOnError: true,
+    wrap: conversation => boundary(conversation, {
+      submit: async (draft, ctx) => {
+        submits++; const submission = await conversation.submit(draft, ctx);
+        if (submits === 1) { original = submission; throw new Error('Fictional acknowledgement lost'); }
+        retryStarted.resolve(); await releaseAck.promise; return submission;
+      },
+      commit: async (change, ctx) => { if (++lookups === 1) { lookupStarted.resolve(); await releaseLookup.promise; } return conversation.commit(change, ctx); },
+    }) });
+  f.controller.setText('Restore this question once'); await f.controller.send(); await original.wait(context);
+  const reconciled = f.controller.reconcile(); await lookupStarted.promise;
+  const retried = f.controller.retrySameRequest(); await retryStarted.promise;
+  const restored = observe(f.controller, state => state.draft.text === 'Restore this question once');
+  releaseLookup.resolve(); await reconciled; await restored;
+  await new Promise(resolve => setTimeout(resolve, 30));
+  releaseAck.resolve(); await retried; await new Promise(resolve => setTimeout(resolve, 100));
+  assert.equal(f.controller.getSnapshot().draft.text, 'Restore this question once');
+  assert.equal(submits, 2); assert.equal(userContent(await transcript(f.conversation)).length, 1);
+});
+
+test('late acknowledgements cannot mutate a disposed controller or abort its native work', { timeout: 10000 }, async t => {
+  for (const lost of [false, true]) {
+    const f = await fixture(t), admitted = deferred(), release = deferred(); let original;
+    const controller = f.controller({ restoreOnError: true, conversation: boundary(f.conversation, { submit: async (draft, ctx) => {
+      original = await f.conversation.submit(draft, ctx); admitted.resolve(); await release.promise;
+      if (lost) throw new Error('Fictional acknowledgement lost after disposal');
+      return original;
+    } }) });
+    controller.setText('Fictional delayed acknowledgement'); const sending = controller.send(); await admitted.promise;
+    const call = await f.fake.nextCall(); await controller.dispose(); const disposed = controller.getSnapshot();
+    release.resolve(); await sending;
+    assert.equal(controller.getSnapshot(), disposed); assert.equal(call.signal.aborted, false);
+    call.respond('Native work still finishes'); await original.wait(context); await f.conversation.waitForIdle(context);
+  }
+});
+
 test('hidden marker text still prevents native restoration', { timeout: 10000 }, async t => {
   const f = await errorFixture(t, [{ text: '::meta {"fictional":true}', tools: [{ name: 'fictional_missing_tool', args: {} }] }, { error: 'Fictional later failure' }], { restoreOnError: true });
   f.controller.setText('Question with native text'); const submission = await f.controller.send(); await submission.wait(context); await f.conversation.waitForIdle(context);

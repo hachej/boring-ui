@@ -134,6 +134,7 @@ export function createNativeChatController(options: NativeChatOptions) {
   const listeners = new Set<() => void>();
   let watch: ConversationWatch | undefined, opening: Promise<void> | undefined, disposing: Promise<WatchEnd | undefined> | undefined;
   const publish = (change: Partial<NativeChatSnapshot>) => {
+    if (snapshot.disposed) return;
     snapshot = Object.freeze({ ...snapshot, ...change, ...(change.send ? { send: Object.freeze(change.send) } : {}),
       ...(change.connection ? { connection: Object.freeze(change.connection) } : {}),
       ...(change.history ? { history: Object.freeze(change.history) } : {}), ...(change.outbox ? { outbox: Object.freeze(change.outbox) } : {}) });
@@ -183,8 +184,9 @@ export function createNativeChatController(options: NativeChatOptions) {
   const editable = () => { active(); return snapshot.draft; };
   // The composer is emptied when a message is sent, so a confirmation never has to clear it (text typed meanwhile is a new draft).
   const markAdmitted = (attempt: ChatAttempt, submissionId: Submission['id'], record?: SubmissionRecord) => {
-    if (!stillPending(attempt)) return;
+    if (snapshot.disposed || !stillPending(attempt)) return false;
     publish({ send: { kind: 'admitted', attempt, submissionId, ...(record ? { record } : {}) } });
+    return true;
   };
   interface Outgoing { readonly draft: ChatDraft; readonly whenBusy: ChatAttempt['whenBusy']; readonly resolve: (submission: Submission | undefined) => void }
   /** Messages taken from the composer that wait for the current send (`outbox` in the snapshot). */
@@ -256,8 +258,7 @@ export function createNativeChatController(options: NativeChatOptions) {
         ? [{ type: 'text', text: attempt.draft.text }, ...attempt.draft.attachments.map(item => ({ ...item.content }))]
         : attempt.draft.text;
       const submission = await conversation.submit({ type: 'input', requestId: attempt.requestId, content, whenBusy: attempt.whenBusy }, context);
-      markAdmitted(attempt, submission.id);
-      monitor(attempt, submission);
+      if (markAdmitted(attempt, submission.id)) monitor(attempt, submission);
       return submission;
     } catch (error) {
       const denied = definitelyNotAdmitted(error);
@@ -408,8 +409,8 @@ export function createNativeChatController(options: NativeChatOptions) {
       const record = await conversation.commit(tx => tx.submissionByRequest(conversation.id, attempt.requestId), context);
       if (record) {
         if (record.conversationId !== conversation.id || record.requestId !== attempt.requestId || record.type !== 'input') throw new Error('Native submission lookup returned a different binding');
-        markAdmitted(attempt, record.id, record);
-        if (options.restoreOnError) {
+        const admitted = markAdmitted(attempt, record.id, record);
+        if (admitted && options.restoreOnError) {
           // Reconciliation observes the original request only; no duplicate submission is made to obtain a handle.
           monitor(attempt, { id: record.id, wait: async waiter => {
             for (;;) {
