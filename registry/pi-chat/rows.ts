@@ -10,6 +10,21 @@ import type { ArtifactDescriptor, ArtifactsConfig } from './artifact';
 /** The host adds file content for `@path` mentions as parts that start like this; the message already shows the mention itself. */
 export const isFileBlock = (text: string): boolean => text.startsWith('<file path="');
 
+/** A marked app context stays in the native message; presentation collapses only a valid leading target block to a chip. */
+export function targetContent(text: string): { readonly target: JsonObject; readonly speech: string; readonly label: string } | undefined {
+  if (!text.startsWith('<target>')) return;
+  const end = text.indexOf('</target>');
+  if (end < 0 || text.slice(end + 9, end + 11) !== '\n\n') return;
+  const json = text.slice(8, end);
+  if (new TextEncoder().encode(json).length > 1024) return;
+  try {
+    const target = object(JSON.parse(json));
+    if (!target) return;
+    const label = Object.entries(target).map(([key, value]) => typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ? `${key}: ${value}` : key).join(' · ') || 'Target';
+    return { target, speech: text.slice(end + 11), label };
+  } catch { return; }
+}
+
 /** A submission waiting in the native inbox (steer or follow-up); `queuedMessages` reads them from the view, the queue renders them. */
 export type QueuedMessage = Extract<InboxItem, { readonly mode: 'steer' | 'followUp' }>;
 

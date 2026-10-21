@@ -85,6 +85,10 @@ In either case the version in the URL must equal the installed `@hachej/boring-u
 
 The artifact panel also opens `*.mockup.html` as sandboxed HTML mock-ups with the app's theme and element comments. Hosts that forbid inline scripts need a separate sandbox origin. See the [mock-up viewer and CSP requirements](registry/README.md#html-mock-ups-mockup-viewer).
 
+## Point and dictate on your app's data
+
+The optional [`agent-target` registry block](registry/README.md#point-and-dictate-on-app-data-agent-target) lets a person tap a marked item and dictate to the app's existing agent, without opening chat. Mark only approved JSON context in `data-agent-target`; the nearest marked ancestor is captured, capped at 1 KB, and sent in the message with the spoken words. See the [marking guide](docs/guides/agent-target.md) and the fictional app-shell example (`?targets=1`).
+
 ## Theming
 
 Registry blocks support only shadcn Base UI `base-nova`. They compose your application's `@/components/ui/*` components without a separate control skin. Rebrand through your core theme tokens, following boring-stack's `boring-design-system` skill. Do not edit derived tokens or add per-block CSS overrides. `--shell` and `--overlay` are the documented kit-specific tokens.

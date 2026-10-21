@@ -8,3 +8,9 @@ npm run app-shell:journey   # real-browser journey at 390x844 with touch, plus t
 ```
 
 The server only serves the page and the chat transport (two agents); `STUDIO_MODEL=scripted` (set by the journey) answers from `script.mjs`. It records each submit body and the `context` the transport hands to `requestContext`.
+
+## Point and dictate (D108)
+
+Open `?targets=1#jour` for a fictional meal list. The header's microphone toggles targeting; touch the lunch to start recording, then Stop and send. The fake transcription is “remplace le riz par 150 g de pâtes”; a scripted native coach reply appears beside the meal while chat stays closed. `onSettled` refetches `/api/meals` once. The fixture list is static: this journey proves contextual submission, reply attribution and refresh wiring, not a real meal mutation or speech provider.
+
+Run `npm run app-shell:journey:target` with `CHROMIUM` set. The journey covers 390×844 and 1280×800, a shortened visual viewport, normal unmarked/disabled taps, one send, refresh and track cleanup. Screenshots go to `.cache/evidence/D108/`.
