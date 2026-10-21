@@ -23,7 +23,7 @@ function Thread({ name }) {
         return { failAt: send?.kind === 'submitting' ? failures.get(send.attempt.draft) ?? 0 : 0 };
       } });
       owned = createNativeChatController({ ...remote, identity: { runtimeId: 'fictional-triage', scopeId: name, principalId: 'fictional-reader' }, restoreOnError: true,
-        beforeSubmit: draft => { failures.set(draft, failure.current); } });
+        beforeSubmit: async draft => { if (!failures.has(draft)) failures.set(draft, failure.current); } });
       if (disposed) { await owned.dispose(); await remote.close(); return; }
       setReader(await (await fetch(`/state?thread=${name}`)).json());
       window.__STAGED__.controllers[name] = owned; setController(owned);
