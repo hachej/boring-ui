@@ -51,12 +51,15 @@ export interface MentionsConfig {
   /** Sent-message rendering, independent of the composer's token presentation. */
   readonly renderSent?: ((path: string) => ReactNode | undefined) | undefined;
   /**
-   * The bytes of an image upload, for its card's thumbnail: the host reads them through its own provider. Absent: the card shows its icon.
-   * Only png, jpeg, gif and webp are shown (`thumbnail`); anything else, or a refusal, leaves the icon.
+   * Upload bytes through the host's provider. Image cards read thumbnails; voice bubbles read audio only on Play.
+   * Thumbnails accept png, jpeg, gif and webp. Audio must retain its recorded audio MIME type.
    */
   readonly preview?: PreviewRead | undefined;
+  /** Optional authorized playback URL, requested only on Play; otherwise voice audio uses `preview`. */
+  readonly audioUrl?: AudioUrlRead | undefined;
 }
-/** Reads an image upload for its card's thumbnail: its media type and base64 data, or undefined. */
+export type AudioUrlRead = (path: string, signal: AbortSignal) => Promise<string | undefined>;
+/** Reads an upload for its thumbnail or lazy voice playback: its media type and base64 data, or undefined. */
 export type PreviewRead = (path: string, signal: AbortSignal) => Promise<{ readonly mimeType: string; readonly data: string } | undefined>;
 
 /** Paste-to-file thresholds: a paste with more characters or more lines than these becomes a file. Defaults 2000 and 40. */
@@ -71,6 +74,14 @@ export interface UploadResult {
   readonly image?: { readonly data: string; readonly mimeType: string };
   readonly name: string;
 }
+export interface VoiceMessageConfig {
+  readonly transcribe: (audio: Blob, signal: AbortSignal) => Promise<string>;
+  /** Capture limit (default five minutes). Upload and send still wait for release. */
+  readonly maxMs?: number;
+  /** Same workspace upload contract as `attachments.upload`, used instead when supplied. Preserve the voice- filename prefix. */
+  readonly upload?: AttachmentsConfig['upload'];
+}
+
 export interface AttachmentsConfig {
   /** The file input's `accept`. Any file when omitted. */
   readonly accept?: string;
@@ -202,10 +213,11 @@ export type Piece = { readonly text: string; readonly kind?: 'mention' | 'skill'
 /** Upload paths are `uploads/<name>`: the attachments of a message, shown as cards rather than as text. */
 export const isUploadPath = (path: string): boolean => path.startsWith('uploads/');
 
-export type FileKind = 'document' | 'image' | 'pdf' | 'sheet' | 'slides' | 'file';
+export type FileKind = 'document' | 'image' | 'pdf' | 'sheet' | 'slides' | 'audio' | 'file';
 const KIND_BY_EXTENSION: Readonly<Record<string, FileKind>> = {
   png: 'image', jpg: 'image', jpeg: 'image', gif: 'image', webp: 'image', svg: 'image', bmp: 'image', avif: 'image',
   pdf: 'pdf',
+  webm: 'audio', ogg: 'audio', m4a: 'audio', mp4: 'audio', mp3: 'audio', wav: 'audio',
   csv: 'sheet', tsv: 'sheet', xls: 'sheet', xlsx: 'sheet', xlsm: 'sheet', ods: 'sheet', numbers: 'sheet',
   ppt: 'slides', pptx: 'slides', odp: 'slides', key: 'slides',
   md: 'document', markdown: 'document', txt: 'document', doc: 'document', docx: 'document', odt: 'document', rtf: 'document',
@@ -215,6 +227,9 @@ export function fileKind(path: string): FileKind {
   const extension = /\.([^./]+)$/.exec(path)?.[1]?.toLowerCase() ?? '';
   return KIND_BY_EXTENSION[extension] ?? 'file';
 }
+/** Recorded voice uses a reserved upload filename prefix; other audio remains a plain file card. */
+export const isVoicePath = (path: string): boolean => /^uploads\/voice-[^/]+$/.test(path) && fileKind(path) === 'audio';
+
 /** The name a card shows: the upload's file name without the random suffix `uploadPath` adds (`report-1a2b3c4d.pdf` is `report.pdf`). */
 export function displayName(path: string): string {
   const name = path.slice(path.lastIndexOf('/') + 1);

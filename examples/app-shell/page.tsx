@@ -7,7 +7,7 @@
 // @ts-nocheck: an example page, bundled by esbuild and not part of the typechecked sources.
 import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ActivityIcon, ArchiveIcon, CalendarDaysIcon, CalendarPlusIcon, ClipboardListIcon, DatabaseIcon, HomeIcon, MessageCircleIcon, MessagesSquareIcon, Share2Icon, MicIcon, MoonIcon, MoonStarIcon, PlusIcon, TargetIcon, UsersIcon, UploadIcon } from 'lucide-react';
 import { createFeedbackSession } from '@hachej/boring-feedback/ui';
 import { createPrivacyPolicy } from '@hachej/boring-feedback/page';
@@ -22,6 +22,8 @@ import { Documents } from '../../registry/documents/documents.tsx';
 import { DocumentSheet } from '../../registry/documents/document-sheet.tsx';
 import { AgentWorkspace, useConversations } from '../../registry/pi-app/agent-workspace.tsx';
 import { useRemoteChat } from '../../registry/pi-chat/use-remote-chat.ts';
+import { attachmentPath, imageData } from '../../registry/pi-app/revision-files.ts';
+import { randomUUID } from '@hachej/boring-files/platform';
 
 const { token, identity, conversations } = window.__APP__;
 const query = new URLSearchParams(location.search);
@@ -29,9 +31,9 @@ const app = ['empty', 'redaction', 'pm'].includes(query.get('app')) ? query.get(
 const six = query.get('nav') === '6';
 const rail = query.get('rail') === 'hover' ? { rail: 'hover' } : {};
 // `?documents=1`: the workspace's Documents screen (the Library, a file and its revisions) and the product manager's « Voir la fiche » sheet.
-const documents = query.get('documents') === '1';
+const send = query.get('send') === 'message' ? 'message' : query.get('send') === 'draft' ? 'draft' : 'auto';
+const documents = query.get('documents') === '1' || send === 'message';
 const targets = query.get('targets') === '1';
-const send = query.get('send') === 'draft' ? 'draft' : 'auto';
 const noAgent = query.get('agent') === 'none';
 const authorized = (request: Request) => { const headers = new Headers(request.headers); headers.set('authorization', `Bearer ${token}`); return fetch(new Request(request, { headers })); };
 const endpoint = (agent: string) => (id: string) => new URL(`/api/chat?agent=${agent}&conversation=${id}`, location.href);
@@ -114,14 +116,31 @@ function useManagerFeedback(mounted: boolean) {
 }
 
 function App() {
-  // The workspace's revision provider, bound to the server's resources route (only for `?documents=1`).
+  // One workspace provider for Documents and retained voice uploads.
   const [docs, setDocs] = useState<RevisionProvider>();
   const [spec, setSpec] = useState<string>();
   useEffect(() => { if (documents) void connectRevisionProvider({ endpoint: new URL('/api/resources', location.href), fetch: authorized }).then(setDocs); }, []);
+  const audioFiles = useMemo(() => docs && send === 'message' ? {
+    attachments: { upload: async (files: File[], signal: AbortSignal) => {
+      window.__voiceUploads = (window.__voiceUploads ?? 0) + 1;
+      const saved = [];
+      for (const file of files) {
+        const path = attachmentPath(file.name);
+        const result = await docs.publish({ operationId: randomUUID(), atomicity: 'all-or-nothing', changes: [{ kind: 'create', target: docs.locate(path), expected: { kind: 'absent' }, bytes: new Uint8Array(await file.arrayBuffer()), mediaType: file.type }] }, signal);
+        if (result.kind !== 'committed') throw new Error('Fictional upload refused');
+        saved.push({ path, name: file.name });
+      }
+      return saved;
+    } },
+    mentions: { search: async () => [], preview: async (path: string, signal: AbortSignal) => {
+      const read = await docs.read({ target: docs.locate(path), revision: { kind: 'latest' } }, signal);
+      return read.kind === 'available' ? { mimeType: read.snapshot.mediaType, data: imageData(read.snapshot.bytes) } : undefined;
+    } },
+  } : {}, [docs]);
   const coach = useRemoteChat({ conversationId: noAgent ? undefined : conversations.coach, endpoint: endpoint('coach'), fetch: authorized, identity, requestContext: readAgentContext });
   const manager = useRemoteChat({ conversationId: conversations.pm, endpoint: endpoint('pm'), fetch: authorized, identity, requestContext: readAgentContext });
   const [route, setRoute] = useState(() => location.hash.slice(1));
-  const waiting = (!noAgent && coach.status !== 'ready') || manager.status !== 'ready';
+  const waiting = (!noAgent && coach.status !== 'ready') || manager.status !== 'ready' || (send === 'message' && !docs);
   const feedback = useManagerFeedback(!waiting);
   if (waiting) return <p role="status" data-testid="connecting" className="p-4 text-sm text-muted-foreground">Connexion…</p>;
   // A test seam: a send that fails the way an unconfirmed earlier submission does (the controller throws).
@@ -131,6 +150,7 @@ function App() {
     coach.controller.send = (...args) => window.__breakSend ? Promise.reject(new Error('Reconcile the existing submission before sending another')) : real(...args);
   }
   const common = { locale: 'fr', showHistory: false, showConnectionStatus: false };
+
   const agent = noAgent ? undefined : {
     controller: coach.controller,
     // Three actions: the first two in the title row, the third (a link) in « … ».
@@ -139,15 +159,18 @@ function App() {
       { id: 'share', label: 'Partager ma semaine', icon: Share2Icon, onSelect: () => window.__did.push('share') },
       { id: 'invite', label: 'Inviter un ami', icon: UsersIcon, href: '/invite?app=fitness', onSelect: () => window.__did.push('invite') },
     ],
-    chatProps: { ...common, actions: coach.actions, labels: { title: 'Coach', placeholder: 'Parle au coach…' },
+    chatProps: { ...common, ...audioFiles, actions: coach.actions, labels: { title: 'Coach', placeholder: 'Parle au coach…' },
       // Photos and picked images become draft attachments (the phone camera and the "+" menu both land here).
       onFiles: async files => Promise.all(files.map(async (file, index) => {
         const bytes = new Uint8Array(await file.arrayBuffer());
         let binary = '';
         for (const byte of bytes) binary += String.fromCharCode(byte);
         return { id: `photo-${Date.now()}-${index}`, name: file.name, content: { type: 'image' as const, data: btoa(binary), mimeType: file.type || 'image/jpeg' } };
-      })), tools: <span data-testid="host-tool" className="sr-only">outil</span>, suggestions: [{ label: 'Résumé de la semaine', text: 'Fais le résumé de ma semaine' }] },
-    ...(app === 'empty' ? {} : { voice: { transcribe: async () => window.__transcript ?? 'Combien de pas hier ?', send } }),
+      })),tools: <span data-testid="host-tool" className="sr-only">outil</span>, suggestions: [{ label: 'Résumé de la semaine', text: 'Fais le résumé de ma semaine' }] },
+    ...(app === 'empty' ? {} : { voice: { transcribe: async () => {
+      if (send === 'message') { await new Promise(resolve => setTimeout(resolve, 1500)); if (window.__voiceFail) throw new Error('Fictional transcription failure'); }
+      return window.__transcript ?? (send === 'message' ? 'Je mange une salade' : 'Combien de pas hier ?');
+    }, send } }),
   };
   // The product manager's « Voir la fiche » opens the product sheet over the app (`DocumentSheet`); the host decides which document.
   const seeSheet = docs ? [{ id: 'spec', label: 'Voir la fiche', icon: ClipboardListIcon, onSelect: () => setSpec('fiche-produit.md') }] : [];
