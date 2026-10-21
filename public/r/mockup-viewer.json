@@ -10,7 +10,7 @@
     "zod@^4.6.5"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.3/r/viewers.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.4/r/viewers.json",
     "badge",
     "toggle",
     "tooltip"

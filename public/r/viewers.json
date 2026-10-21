@@ -4,8 +4,8 @@
   "title": "Viewers",
   "description": "The standard viewer top bar (title, status, viewer controls, Refresh, Share, Copy, Download, Open in new tab, Close, overflow menu) with Tailwind panes over it: the Markdown editor with a formatting toolbar and prose styling, the passive HTML preview and source editor, an image viewer with zoom and pan, a PDF viewer, and LocalFileViewer for browser-only files. Owned, editable source over the borrowed controllers; no AI SDK.",
   "dependencies": [
-    "@hachej/boring-ui-kit@^0.4.3",
-    "@hachej/boring-files@^0.4.3",
+    "@hachej/boring-ui-kit@^0.4.4",
+    "@hachej/boring-files@^0.4.4",
     "react@^19.0.0",
     "react-dom@^19.0.0",
     "marked@^17.0.6",
@@ -25,12 +25,12 @@
     "pdfjs-dist@6.3.289"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.3/r/theme.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.3/r/utils.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.3/r/button.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.4/r/theme.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.4/r/utils.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.4/r/button.json",
     "button",
     "toggle",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.3/r/version-history.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.4/r/version-history.json",
     "toggle-group",
     "dialog",
     "textarea",
