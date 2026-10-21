@@ -29,7 +29,7 @@ export function PendingVoiceBubble({ pending }: { readonly pending: PendingVoice
   return <Message align="end" data-testid="voice-pending" data-voice-id={pending.id} data-state={pending.phase}><MessageContent><Bubble variant="muted" align="end" className={failed || blocked ? 'w-full max-w-full' : undefined}><BubbleContent>
     <div role={failed ? 'alert' : 'status'} className="flex items-center gap-2">
       {!failed && !blocked && <Spinner aria-hidden="true" />}
-      <span>{voiceClock(pending.seconds)}</span>
+      {Number.isFinite(pending.seconds) && pending.seconds > 0 && <span data-testid="voice-pending-duration">{voiceClock(pending.seconds)}</span>}
       <span>{pending.phase === 'upload-failed' ? labels.uploadFailedShort : pending.phase === 'transcribe-failed' ? labels.voiceTranscribeFailed : pending.phase === 'blocked' ? labels.voiceBlocked : pending.phase === 'unconfirmed' ? labels.voiceUnconfirmed : labels.voicePreparing}</span>
     </div>
     {(failed || blocked) && <div className="mt-2 grid grid-cols-[auto_minmax(0,1fr)_auto] gap-2">
