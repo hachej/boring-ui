@@ -1,3 +1,7 @@
+# Unreleased
+
+- **Faster release preparation (D-234).** Release tooling reuses exact-main green CI, prepares audited archives without another full suite, and waits for npm visibility once for all packages. Package-changing PRs now add their migration note here; `release:version` promotes these notes and refuses an empty section. Browser journeys get one logged retry; unit tests do not. No application API or stored-format migration.
+
 # Migrating to 0.4.7
 
 Upgrade the registry blocks with `npx boring-ui-blocks update --version 0.4.7` (`npx boring-ui-blocks check` first lists your edited copies), and bump the npm pins to `0.4.7`.
