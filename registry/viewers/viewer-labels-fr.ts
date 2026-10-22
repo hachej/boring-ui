@@ -47,7 +47,7 @@ export const frenchViewerLabels: ViewerLabels = {
   markdownSource: 'Source Markdown',
   formatted: 'Mis en forme',
   markdown: 'Markdown',
-  showFormattingBar: 'Afficher la barre de mise en forme',
+  formatting: 'Mise en forme',
   showOutline: 'Afficher le plan',
   richUnavailable: reasons => `Texte mis en forme indisponible : ce document contient ${reasons}, qu’il ne pourrait pas conserver à l’identique`,
   document: 'Document',

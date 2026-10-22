@@ -103,17 +103,23 @@ test('installed registry Markdown wrapper with real React/Tiptap/SQLite (DOM, no
 
   await t.test('installed standalone view menus use real radio and checkbox items in English and French', async t => {
     for (const [locale, more, formatted, markdown, pin, outline] of [
-      ['en', 'More actions', 'Formatted', 'Markdown', 'Show formatting bar', 'Show outline'],
-      ['fr', 'Plus d’actions', 'Mis en forme', 'Markdown', 'Afficher la barre de mise en forme', 'Afficher le plan'],
+      ['en', 'More actions', 'Formatted', 'Markdown', 'Formatting', 'Show outline'],
+      ['fr', 'Plus d’actions', 'Mis en forme', 'Markdown', 'Mise en forme', 'Afficher le plan'],
     ]) {
       const f = await fixture(t, '# Fictional guide\n\nUnchanged text.\n', { props: { locale } });
       assert.equal(f.container.querySelector('.boring-markdown-toolbar'), null);
+      assert.equal(f.button(pin).dataset.slot, 'button');
+      assert.equal(f.button(pin).getAttribute('aria-pressed'), 'false');
+      assert.equal(f.button(pin).getAttribute('title'), pin);
+      assert.ok(f.button(pin).querySelector('svg.lucide-type'));
+      await f.click(pin);
+      assert.equal(f.button(pin).getAttribute('aria-pressed'), 'true');
       await f.click(more);
       assert.equal(f.button(formatted).dataset.slot, 'dropdown-menu-radio-item');
-      assert.equal(f.button(pin).dataset.slot, 'dropdown-menu-checkbox-item');
-      await f.click(pin);
+      assert.equal(document.querySelector('[data-testid=markdown-formatting]'), null, 'no formatting menu item');
+      assert.equal(f.button(outline).dataset.slot, 'dropdown-menu-checkbox-item');
+      await f.click(outline);
       assert.ok(f.container.querySelector('.boring-markdown-toolbar'));
-      await f.click(more); await f.click(outline);
       assert.ok(f.container.querySelector('nav[aria-label="Document outline"]'));
       await f.click(more); await f.click(markdown);
       assert.equal(f.container.querySelector('textarea').value, '# Fictional guide\n\nUnchanged text.\n');

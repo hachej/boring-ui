@@ -111,12 +111,12 @@ function useKeyboardInset(active: boolean): number {
 }
 
 const menuLabels: Record<'en' | 'fr', MarkdownEditorMenuLabels> = {
-  en: { moreActions: 'More actions', editorMode: 'Editor mode', formatted: 'Formatted', markdown: 'Markdown', showFormattingBar: 'Show formatting bar', showOutline: 'Show outline' },
-  fr: { moreActions: 'Plus d’actions', editorMode: 'Mode d’édition', formatted: 'Mis en forme', markdown: 'Markdown', showFormattingBar: 'Afficher la barre de mise en forme', showOutline: 'Afficher le plan' },
+  en: { moreActions: 'More actions', editorMode: 'Editor mode', formatted: 'Formatted', markdown: 'Markdown', showOutline: 'Show outline' },
+  fr: { moreActions: 'Plus d’actions', editorMode: 'Mode d’édition', formatted: 'Mis en forme', markdown: 'Markdown', showOutline: 'Afficher le plan' },
 };
 
 /** Unstyled native fallback. Installed recipes bind the host's shadcn dropdown. */
-function NativeMarkdownViewOptions({ labels, mode, onModeChange, richDisabledReason, formattingToolbar, onFormattingToolbarChange, outline, input }: MarkdownEditorMenuProps & { readonly input?: ViewerComponents['input'] | undefined }) {
+function NativeMarkdownViewOptions({ labels, mode, onModeChange, richDisabledReason, outline, input }: MarkdownEditorMenuProps & { readonly input?: ViewerComponents['input'] | undefined }) {
   const InputControl = input ?? 'input';
   const group = useId();
   const menu = useRef<HTMLDetailsElement>(null);
@@ -126,13 +126,13 @@ function NativeMarkdownViewOptions({ labels, mode, onModeChange, richDisabledRea
       <label title={richDisabledReason}><InputControl type="radio" name={group} aria-label={labels.formatted} aria-describedby={richDisabledReason ? `${group}-reason` : undefined} checked={mode === 'rich'} disabled={!!richDisabledReason} onChange={() => choose(() => onModeChange('rich'))} /><MarkdownIcon name="Heading1" />{labels.formatted}{richDisabledReason && <span id={`${group}-reason`}>{richDisabledReason}</span>}</label>
       <label><InputControl type="radio" name={group} aria-label={labels.markdown} checked={mode === 'source'} onChange={() => choose(() => onModeChange('source'))} /><MarkdownIcon name="Code" />{labels.markdown}</label>
     </fieldset>
-    <label><InputControl type="checkbox" aria-label={labels.showFormattingBar} checked={formattingToolbar === 'pinned'} onChange={event => choose(() => onFormattingToolbarChange(event.currentTarget.checked ? 'pinned' : 'selection'))} /><MarkdownIcon name="Bold" />{labels.showFormattingBar}</label>
     {outline && <label><InputControl type="checkbox" aria-label={labels.showOutline} checked={outline.shown} onChange={event => choose(() => outline.onChange(event.currentTarget.checked))} /><MarkdownIcon name="BulletList" />{labels.showOutline}</label>}
   </details>;
 }
 
 function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActivate, components, controller, title = 'Document', initialMode = 'rich', placeholder = 'Start writing', className, onMountedTools, header = true, showOutline = header, mode: controlledMode, onModeChange, onRichSafety, resolveImage, formattingToolbar = 'selection', locale = 'en', autosave = true, onAutosaveChange, onSaveResult, activeController: active }: MarkdownEditorProps & { readonly activeController: { readonly current: MarkdownController } }) {
   const Control = components?.button ?? 'button';
+  const FormattingControl = components?.formattingControl ?? 'button';
   const Bubble = components?.bubble ?? Fragment;
   const Source = components?.textarea ?? 'textarea';
   const LinkInput = components?.input ?? 'input';
@@ -307,6 +307,11 @@ function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActiva
   const editing = useEditorFocus(editor);
   const dockVisible = phone && toolbar === 'pinned' && !unavailable && !!editor && (editing || linkDraft !== null);
   const keyboardInset = useKeyboardInset(dockVisible);
+  const previousToolbar = useRef(toolbar);
+  useEffect(() => {
+    if (previousToolbar.current !== toolbar && toolbar === 'pinned' && phone && mode === 'rich') editor?.commands.focus(undefined, { scrollIntoView: false });
+    previousToolbar.current = toolbar;
+  }, [toolbar, phone, mode, editor]);
   const command = (operation: () => unknown) => { interaction.current = true; try { operation(); } finally { interaction.current = false; } };
   const tool = (label: string, icon: MarkdownIconName, pressed: boolean | undefined, operation: () => unknown, extra: { disabled?: boolean } = {}) => (
     <Control type="button" className="boring-markdown-tool" aria-label={label} title={label} aria-pressed={pressed === true} data-active={pressed === true || undefined}
@@ -351,7 +356,6 @@ function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActiva
 
   const viewOptions: MarkdownEditorMenuProps = {
     labels: menuLabels[locale], mode, onModeChange: switchMode, richDisabledReason: richOffered ? undefined : describeUnsafe(safety),
-    formattingToolbar: toolbar, onFormattingToolbarChange: setToolbar,
     outline: showOutline ? { shown: outlineShown, onChange: setOutlineShown } : undefined,
   };
 
@@ -365,6 +369,7 @@ function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActiva
       {state.readOnly && <span>Read only</span>}
       <span role="status">{state.lifecycle === 'disposed' ? 'Closed' : pending ? 'Saving…' : uncertain ? 'Save unconfirmed' : conflict ? 'Changed elsewhere' : state.dirty ? 'Unsaved changes' : 'Saved'}</span>
       {ViewOptions ? <ViewOptions {...viewOptions} /> : <NativeMarkdownViewOptions {...viewOptions} input={components?.input} />}
+      {mode === 'rich' && <FormattingControl type="button" aria-label={locale === 'fr' ? 'Mise en forme' : 'Formatting'} title={locale === 'fr' ? 'Mise en forme' : 'Formatting'} aria-pressed={toolbar === 'pinned'} onClick={() => setToolbar(toolbar === 'pinned' ? 'selection' : 'pinned')}><MarkdownIcon name="Type" /></FormattingControl>}
       {!saving.enabled && <Control type="button" disabled={unavailable || !state.dirty || pending || uncertain} onClick={save}>Save</Control>}
     </header>}
     <TextDraftControls components={components} recovery={state.recovery} actions={controller.actions} readOnly={state.readOnly} blocked={state.lifecycle !== 'active' || state.save.kind === 'pending' || (state.save.kind === 'settled' && state.save.result.kind === 'unknown')} />

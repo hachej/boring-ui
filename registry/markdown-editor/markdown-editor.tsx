@@ -1,7 +1,8 @@
 'use client';
 
 import { useId } from 'react';
-import { BoldIcon, CodeXmlIcon, EllipsisIcon, ListIcon, PencilLineIcon } from 'lucide-react';
+import type { ComponentPropsWithRef } from 'react';
+import { TypeIcon, CodeXmlIcon, EllipsisIcon, ListIcon, PencilLineIcon } from 'lucide-react';
 import { MarkdownEditor as RuntimeMarkdownEditor } from '@hachej/boring-ui-kit/markdown-editor';
 import type { MarkdownEditorMenuProps, MarkdownEditorProps } from '@hachej/boring-ui-kit/markdown-editor';
 import { Button } from '@/components/ui/button';
@@ -12,7 +13,7 @@ import { editorControls } from '../button/editor-controls';
 export type { MarkdownEditorProps } from '@hachej/boring-ui-kit/markdown-editor';
 
 /** Shared by the standalone editor and the viewer's existing overflow menu. */
-export function MarkdownMenuItems({ labels, mode, onModeChange, richDisabledReason, formattingToolbar, onFormattingToolbarChange, outline, testId = 'markdown' }: MarkdownEditorMenuProps) {
+export function MarkdownMenuItems({ labels, mode, onModeChange, richDisabledReason, outline, testId = 'markdown' }: MarkdownEditorMenuProps) {
   const reasonId = useId();
   const row = 'min-h-8 max-sm:min-h-12 pointer-coarse:min-h-12';
   return <>
@@ -22,11 +23,9 @@ export function MarkdownMenuItems({ labels, mode, onModeChange, richDisabledReas
       </DropdownMenuRadioItem>
       <DropdownMenuRadioItem value="source" closeOnClick aria-label={labels.markdown} data-testid={`${testId}-mode-source`} className={row}><CodeXmlIcon aria-hidden="true" />{labels.markdown}</DropdownMenuRadioItem>
     </DropdownMenuRadioGroup></DropdownMenuGroup>
-    <DropdownMenuSeparator />
-    <DropdownMenuGroup>
-      <DropdownMenuCheckboxItem checked={formattingToolbar === 'pinned'} closeOnClick onCheckedChange={checked => onFormattingToolbarChange(checked ? 'pinned' : 'selection')} data-testid={`${testId}-formatting`} className={row}><BoldIcon aria-hidden="true" />{labels.showFormattingBar}</DropdownMenuCheckboxItem>
-      {outline && <DropdownMenuCheckboxItem checked={outline.shown} closeOnClick onCheckedChange={outline.onChange} data-testid={`${testId}-outline`} className={row}><ListIcon aria-hidden="true" />{labels.showOutline}</DropdownMenuCheckboxItem>}
-    </DropdownMenuGroup>
+    {outline && <><DropdownMenuSeparator /><DropdownMenuGroup>
+      <DropdownMenuCheckboxItem checked={outline.shown} closeOnClick onCheckedChange={outline.onChange} data-testid={`${testId}-outline`} className={row}><ListIcon aria-hidden="true" />{labels.showOutline}</DropdownMenuCheckboxItem>
+    </DropdownMenuGroup></>}
   </>;
 }
 
@@ -38,7 +37,12 @@ function MarkdownViewOptions(props: MarkdownEditorMenuProps) {
   </DropdownMenu>;
 }
 
-const markdownControls = { ...editorControls, markdownMenu: MarkdownViewOptions };
+/** The header uses Button presentation and native toggle-button semantics, not the toolbar Toggle skin. */
+export function MarkdownFormattingControl(props: ComponentPropsWithRef<'button'>) {
+  return <Button variant="ghost" size="icon-sm" {...props} className="max-sm:min-h-12! max-sm:min-w-12! pointer-coarse:min-h-12! pointer-coarse:min-w-12!"><TypeIcon data-icon="inline-start" aria-hidden="true" /></Button>;
+}
+
+const markdownControls = { ...editorControls, markdownMenu: MarkdownViewOptions, formattingControl: MarkdownFormattingControl };
 
 export function MarkdownEditor({ className, ...props }: MarkdownEditorProps) {
   return <RuntimeMarkdownEditor components={markdownControls} {...props} className={['boring-markdown-recipe', className].filter(Boolean).join(' ')} />;

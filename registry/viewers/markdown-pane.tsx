@@ -8,7 +8,7 @@ import type { MarkdownEditorProps, MarkdownImageResolver, MarkdownMountedTools, 
 import type { MarkdownController } from '@hachej/boring-ui-kit/markdown';
 import { Button } from '@/components/ui/button';
 import { editorControls } from '../button/editor-controls';
-import { MarkdownMenuItems } from '../markdown-editor/markdown-editor';
+import { MarkdownFormattingControl, MarkdownMenuItems } from '../markdown-editor/markdown-editor';
 import { downloadFile, fileNameFor } from './download';
 import { copyText } from '../utils/utils';
 import { ViewerFrame } from './viewer-frame';
@@ -33,7 +33,7 @@ export interface MarkdownPaneProps {
   readonly onAutosaveChange?: MarkdownEditorProps['onAutosaveChange'];
   /** Registers with a host navigation guard whose onClose handles refused saves and deliberate discard. */
   readonly onBeforeLeaveChange?: MarkdownEditorProps['onAutosaveChange'];
-  /** Selection formatting by default. The menu remembers the person's choice for this viewer session. */
+  /** Selection formatting by default. The header icon remembers the person's choice for this viewer session. */
   readonly formattingToolbar?: MarkdownEditorProps['formattingToolbar'];
   readonly onFormattingToolbarChange?: (toolbar: 'selection' | 'pinned') => void;
   /** Leading header content, before the title. */
@@ -105,7 +105,8 @@ export function MarkdownPane({ controller, title: givenTitle, labels: ownLabels,
   return <ViewerFrame showSavedStatus title={title} subtitle={subtitle} headerStart={headerStart} status={refused && refused.save === state.save && state.save.kind !== 'pending' ? { label: refused.label, tone: 'danger' } : markdownStatus(state, labels)} target={target} labels={labels} revision={revision} testId={testId} {...(titleTestId ? { titleTestId } : {})} className={className}
     onRefresh={onRefresh ?? (() => controller.actions.refresh())} onShare={onShare} onCopy={() => copyText(controller.getSnapshot().text)}
     onDownload={() => downloadFile(filename, controller.getSnapshot().text, 'text/markdown;charset=utf-8')} onOpenInNewTab={onOpenInNewTab} onClose={close}
-    menuContent={<MarkdownMenuItems labels={labels} mode={mode} onModeChange={setRequested} richDisabledReason={safety.safe ? undefined : labels.richUnavailable(safety.reasons.join(', '))} formattingToolbar={toolbar} onFormattingToolbarChange={setFormatting} testId={testId} />}
+    menuContent={<MarkdownMenuItems labels={labels} mode={mode} onModeChange={setRequested} richDisabledReason={safety.safe ? undefined : labels.richUnavailable(safety.reasons.join(', '))} testId={testId} />}
+    mainControl={mode === 'rich' && <MarkdownFormattingControl type="button" aria-label={labels.formatting} title={labels.formatting} aria-pressed={toolbar === 'pinned'} data-testid={`${testId}-formatting`} onClick={() => setFormatting(toolbar === 'pinned' ? 'selection' : 'pinned')} />}
     controls={autosave === false && !state.readOnly && state.dirty || controls ? <>
       {autosave === false && !state.readOnly && state.dirty && <Button variant="ghost" size="sm" aria-label={labels.save} title={labels.save} data-testid={`${testId}-save`} disabled={unavailable || pending || unconfirmed} onClick={save}><SaveIcon data-icon="inline-start" aria-hidden="true" /><span className="min-[641px]:hidden">{labels.save}</span></Button>}
       {controls}

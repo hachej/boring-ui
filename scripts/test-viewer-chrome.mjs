@@ -53,14 +53,16 @@ try {
       if (surface === 'menu' || surface === 'menu-fr' || surface === 'unsafe') {
         const open = async () => { await browser.click(q('[data-testid=fixture-viewer-more]')); await browser.until('view menu', `!!${q('[data-testid=fixture-viewer-mode-rich]')}`, 5000); };
         await open();
-        assert.equal(await browser.evaluate(`${q('[data-testid=fixture-viewer-formatting]')}.dataset.slot`), 'dropdown-menu-checkbox-item');
+        assert.equal(await browser.evaluate(`!!${q('[data-testid=fixture-viewer-more-list] [data-testid=fixture-viewer-formatting]')}`), false, 'formatting is not an overflow item');
         assert.equal(await browser.evaluate(`${q('[data-testid=fixture-viewer-mode-source]')}.dataset.slot`), 'dropdown-menu-radio-item');
         if (surface === 'unsafe') {
+          assert.equal(await browser.evaluate(`!!${q('[data-testid=fixture-viewer-formatting]')}`), false, 'unsafe source mode has no formatting icon');
           assert.equal(await browser.evaluate(`${q('[data-testid=fixture-viewer-mode-rich]')}.getAttribute('aria-disabled')`), 'true');
           assert.match(await browser.evaluate(`${q('[data-testid=fixture-viewer-mode-rich]')}.textContent`), /front matter, raw HTML/);
         } else {
           await browser.click(q('[data-testid=fixture-viewer-mode-source]'));
           await browser.until('Markdown selected and focused', `document.activeElement === ${q('textarea.boring-markdown-source')}`, 5000);
+          assert.equal(await browser.evaluate(`!!${q('[data-testid=fixture-viewer-formatting]')}`), false, 'Markdown hides the formatting icon');
           const text = await browser.evaluate(`${q('textarea.boring-markdown-source')}.value`);
           await browser.evaluate(`${q('textarea.boring-markdown-source')}.setSelectionRange(3, 9, 'backward')`);
           await open(); await browser.click(q('[data-testid=fixture-viewer-mode-rich]'));
@@ -76,6 +78,26 @@ try {
         if (width === 390) {
           const heights = await browser.evaluate(`[...${q('[data-testid=fixture-viewer-more-list]')}.querySelectorAll('[role=menuitemradio], [role=menuitemcheckbox]')].map(item => item.getBoundingClientRect().height)`);
           assert.ok(heights.every(height => height >= 48), `48px phone view choices: ${JSON.stringify(heights)}`);
+        }
+      }
+      if (['markdown', 'standalone-markdown', 'menu', 'menu-fr'].includes(surface)) {
+        if (await browser.evaluate(`!!${q('[data-slot=dropdown-menu-content]')}`)) await browser.press('Escape');
+        const label = surface === 'menu-fr' ? 'Mise en forme' : 'Formatting';
+        const toggle = q(`header button[aria-label="${label}"]`);
+        const state = await browser.evaluate(`(() => { const button = ${toggle}; const box = button.getBoundingClientRect(); return { visible: button.checkVisibility(), slot: button.dataset.slot, pressed: button.getAttribute('aria-pressed'), title: button.title, typeIcon: !!button.querySelector('svg.lucide-type'), width: box.width, height: box.height }; })()`);
+        assert.deepEqual({ visible: state.visible, slot: state.slot, pressed: state.pressed, title: state.title, typeIcon: state.typeIcon }, { visible: true, slot: 'button', pressed: 'false', title: label, typeIcon: true });
+        if (width === 390) assert.ok(state.width >= 48 && state.height >= 48, `48px header formatting target: ${JSON.stringify(state)}`);
+        const off = `viewer-${theme}-${mode}-${width}-${surface}-formatting-off.png`;
+        await browser.screenshot(off); screenshots.push(off);
+        await browser.click(toggle);
+        await browser.until('formatting pinned from the header icon', `${toggle}.getAttribute('aria-pressed') === 'true' && !!${q(width === 390 ? '[data-testid=markdown-dock]' : '.boring-markdown-toolbar')}`, 5000);
+        const on = `viewer-${theme}-${mode}-${width}-${surface}-formatting-on.png`;
+        await browser.screenshot(on); screenshots.push(on);
+        await browser.click(toggle);
+        await browser.until('formatting unpinned from the same icon', `${toggle}.getAttribute('aria-pressed') === 'false' && !${q('.boring-markdown-toolbar, [data-testid=markdown-dock]')}`, 5000);
+        if (surface === 'menu' || surface === 'menu-fr') {
+          await browser.click(q('[data-testid=fixture-viewer-more]'));
+          await browser.until('menu restored for screenshot', `!!${q('[data-testid=fixture-viewer-mode-source]')}`, 5000);
         }
       }
       if (surface === 'manual') {

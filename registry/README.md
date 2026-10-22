@@ -1119,8 +1119,9 @@ to refuse a synchronous close; declining the file's discard prompt restores the 
 Reselecting the current file closes Library without changing the selected path or the chat draft.
 
 `MarkdownEditor` and `MarkdownPane` default to `formattingToolbar="selection"` on desktop and phone.
-Selecting text opens Tiptap's native bubble. The **…** menu contains **Formatted** / **Markdown** and a
-**Show formatting bar** checkbox. The standalone editor also offers **Show outline** when allowed.
+Selecting text opens Tiptap's native bubble. The header’s **Formatting** (French: **Mise en forme**) Type icon
+toggles the full bar with `aria-pressed`; it stays visible on phones with a 48px target and hides in Markdown mode.
+The **…** menu contains **Formatted** / **Markdown**. The standalone editor also offers **Show outline** when allowed.
 Choices last for the viewer session; FileViewer retains formatting preferences across saved-revision remounts.
 Pass `formattingToolbar="pinned"` for the full desktop row, or the phone's keyboard dock while editing.
 A later host prop change takes precedence over the session choice. The menu uses the host's real

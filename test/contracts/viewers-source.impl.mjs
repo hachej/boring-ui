@@ -410,21 +410,24 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     const rich = () => view.q('[data-testid="viewer-mode-rich"]'), source = () => view.q('[data-testid="viewer-mode-source"]');
     assert.deepEqual([rich(), source()].map(item => [item.dataset.slot, item.textContent.trim(), item.getAttribute('aria-checked'), !!item.querySelector('svg[aria-hidden="true"]')]),
       [['dropdown-menu-radio-item', 'Formatted', 'true', true], ['dropdown-menu-radio-item', 'Markdown', 'false', true]], 'real shadcn radio items with icons and labels');
-    const pin = view.q('[data-testid="viewer-formatting"]');
-    assert.equal(pin.dataset.slot, 'dropdown-menu-checkbox-item');
-    assert.equal(pin.getAttribute('aria-checked'), 'false');
-    await view.click('[data-testid="viewer-formatting"]');
-    assert.ok(view.q('.boring-markdown-toolbar button[aria-label="Bold"] svg'), 'the menu pins the formatting row');
-    // Checkboxes may keep the menu open; dismiss it deliberately before the next action.
+    assert.equal(document.querySelector('[data-testid="viewer-more-list"] [data-testid="viewer-formatting"]'), null, 'no formatting item in the menu');
     await act(async () => document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
-    if (!view.q('[data-testid="viewer-mode-source"]')) await view.click('[data-testid="viewer-more"]');
+    const pin = view.q('[data-testid="viewer-bar"] [data-testid="viewer-formatting"]');
+    assert.equal(pin.dataset.slot, 'button');
+    assert.equal(pin.getAttribute('aria-pressed'), 'false');
+    assert.equal(pin.getAttribute('title'), 'Formatting');
+    assert.ok(pin.querySelector('svg.lucide-type'));
+    await view.click('[data-testid="viewer-formatting"]');
+    assert.ok(view.q('.boring-markdown-toolbar button[aria-label="Bold"] svg'), 'the header icon pins the formatting row');
+    await view.click('[data-testid="viewer-more"]');
     await view.click('[data-testid="viewer-mode-source"]');
     assert.equal(view.q('section[data-boring="markdown-editor"]').dataset.mode, 'source');
     assert.equal(document.activeElement === view.q('textarea'), true, 'choosing a mode hands focus to the editor, not back to the menu trigger');
     assert.equal(d.controller.getSnapshot().text, '# Plan\n\n- [x] done\n');
+    assert.equal(view.q('[data-testid="viewer-formatting"]'), null, 'source hides the header icon');
     await view.click('[data-testid="viewer-more"]');
-    assert.equal(view.q('[data-testid="viewer-formatting"]').getAttribute('aria-checked'), 'true', 'the viewer session remembers pinning');
     await view.click('[data-testid="viewer-mode-rich"]');
+    assert.equal(view.q('[data-testid="viewer-formatting"]').getAttribute('aria-pressed'), 'true', 'the viewer session remembers pinning');
     assert.equal(view.q('section[data-boring="markdown-editor"]').dataset.mode, 'rich');
     assert.ok(view.q('.boring-markdown-toolbar'));
     const inspected = await tools.inspect.invoke(tools.getTarget(), { expiresAt: Date.now() + 5000 });

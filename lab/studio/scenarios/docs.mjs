@@ -29,8 +29,8 @@ export default [
       await standardBar(scope, 'Markdown');
       assert.equal(await browser.evaluate(`${q(`${scope} [data-testid=file-title]`)}.textContent`), 'picnic-plan.md');
       assert.equal(await browser.evaluate(`${k.qa(`${scope} .boring-markdown-toolbar`)}.length`), 0, 'formatting waits for a selection by default');
-      await t.menu(scope, 'viewer', 'formatting');
-      assert.equal(await browser.evaluate(`${k.qa(`${scope} .boring-markdown-toolbar`)}.length`), 1, 'the menu pins formatting on demand');
+      await browser.click(q(`${scope} [data-testid=viewer-formatting]`));
+      assert.equal(await browser.evaluate(`${k.qa(`${scope} .boring-markdown-toolbar`)}.length`), 1, 'the header icon pins formatting on demand');
       const tools = await browser.evaluate(`${k.qa(`${scope} [role=toolbar] button`)}.map(b => ({ label: b.getAttribute('aria-label'), icon: !!b.querySelector('svg'), text: b.textContent.trim() }))`);
       assert.ok(tools.length >= 14, `a formatting toolbar: ${tools.length} buttons`);
       assert.deepEqual(tools.filter(tool => !tool.label || !tool.icon || tool.text), [], 'every toolbar button is an icon with an accessible name');

@@ -5,7 +5,6 @@ export interface MarkdownEditorMenuLabels {
   readonly editorMode: string;
   readonly formatted: string;
   readonly markdown: string;
-  readonly showFormattingBar: string;
   readonly showOutline: string;
 }
 
@@ -15,8 +14,6 @@ export interface MarkdownEditorMenuProps {
   readonly mode: 'rich' | 'source';
   readonly onModeChange: (mode: 'rich' | 'source') => void;
   readonly richDisabledReason?: string | undefined;
-  readonly formattingToolbar: 'selection' | 'pinned';
-  readonly onFormattingToolbarChange: (toolbar: 'selection' | 'pinned') => void;
   readonly outline?: { readonly shown: boolean; readonly onChange: (shown: boolean) => void } | undefined;
   readonly testId?: string | undefined;
 }
@@ -28,6 +25,8 @@ export interface ViewerComponents {
   readonly textarea: ComponentType<ComponentPropsWithRef<'textarea'>>;
   readonly bubble?: ComponentType<PropsWithChildren>;
   readonly markdownMenu?: ComponentType<MarkdownEditorMenuProps>;
+  /** Header formatting toggle: a ghost icon button with native aria-pressed semantics. */
+  readonly formattingControl?: ComponentType<ComponentPropsWithRef<'button'>>;
   /** The host's separator: vertical between toolbar groups, horizontal above the phone formatting bar. */
   readonly separator?: ComponentType<{ readonly orientation?: 'horizontal' | 'vertical'; readonly className?: string }>;
 }

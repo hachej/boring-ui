@@ -101,17 +101,34 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
     }
   });
 
-  await t.test('default formatting stays quiet and the menu pins the bar for this viewer session', async t => {
+  await t.test('the header Formatting icon toggles pinning and disappears in Markdown mode', async t => {
+    const f = await fixture(t, '# Notes\n\noriginal text\n');
+    const icon = f.container.querySelector('header button[aria-label="Formatting"]');
+    assert.ok(icon, 'Formatting is a header icon button');
+    assert.equal(icon.getAttribute('aria-pressed'), 'false');
+    assert.equal(icon.getAttribute('title'), 'Formatting');
+    assert.ok(icon.querySelector('svg'));
+    await act(async () => icon.click());
+    assert.equal(icon.getAttribute('aria-pressed'), 'true');
+    assert.ok(f.container.querySelector('.boring-markdown-toolbar'));
+    await f.switchMode();
+    assert.equal(f.container.querySelector('header button[aria-label="Formatting"]'), null, 'source hides the formatting icon');
+    await f.switchMode();
+    assert.equal(f.button('Formatting').getAttribute('aria-pressed'), 'true');
+    await f.click('Formatting');
+    assert.equal(f.container.querySelector('.boring-markdown-toolbar'), null);
+    assert.equal(f.writes(), 0);
+  });
+
+  await t.test('default formatting stays quiet and the header icon pins the bar for this viewer session', async t => {
     const f = await fixture(t, '# Notes\n\noriginal text\n');
     assert.equal(!!f.container.querySelector('.boring-markdown-toolbar'), false, 'no pinned row by default');
     assert.equal(f.container.querySelector('nav[aria-label="Document outline"]'), null, 'the outline waits in the menu');
-    assert.equal(f.container.querySelector('header > button[aria-pressed]'), null, 'no visible mode toggle');
+    assert.equal(f.container.querySelector('header > button[aria-label=Formatting]').getAttribute('aria-pressed'), 'false');
     const menu = f.container.querySelector('summary[aria-label="More actions"]');
     assert.ok(menu, 'the built-in header has its own menu');
-    await act(async () => menu.click());
-    const pin = f.container.querySelector('input[aria-label="Show formatting bar"]');
-    assert.ok(pin, 'formatting is a checkbox, not a mode radio');
-    assert.equal(pin.type, 'checkbox');
+    const pin = f.button('Formatting');
+    assert.equal(f.container.querySelector('input[aria-label="Show formatting bar"]'), null, 'formatting is no longer a menu item');
     await act(async () => pin.click());
     assert.ok(f.container.querySelector('.boring-markdown-toolbar [aria-label="Bold"]'));
     await f.render();
@@ -127,7 +144,8 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
     const f = await fixture(t, 'fictional text\n', { props: { locale: 'fr' } });
     const menu = f.container.querySelector('summary[aria-label="Plus d’actions"]'); assert.ok(menu);
     await act(async () => menu.click());
-    const pin = f.container.querySelector('input[aria-label="Afficher la barre de mise en forme"]'); assert.ok(pin);
+    const pin = f.button('Mise en forme'); assert.ok(pin);
+    assert.equal(pin.getAttribute('title'), 'Mise en forme');
     assert.ok(f.container.querySelector('input[aria-label="Mis en forme"]'));
     await act(async () => pin.click());
     assert.ok(f.container.querySelector('.boring-markdown-toolbar'));
@@ -179,7 +197,7 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 950)); });
     assert.equal(f.writes(), 0, 'the default does not save early');
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 400)); });
-    assert.equal(f.writes(), 1); assert.equal(await f.saved(), 'default delay');
+    assert.equal(f.writes(), 1); await f.settled(); assert.equal(await f.saved(), 'default delay');
     await f.input('saved when hidden');
     const descriptor = Object.getOwnPropertyDescriptor(document, 'visibilityState');
     try {

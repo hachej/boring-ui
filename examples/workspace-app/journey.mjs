@@ -385,14 +385,15 @@ try {
     await browser.screenshot('workspace-app-desktop.png');
   });
 
-  await step('markdown artifact stays quiet until the menu pins formatting; the desktop divider still resizes', async () => {
+  await step('markdown artifact stays quiet until its header icon pins formatting; the desktop divider still resizes', async () => {
     assert.equal(await browser.evaluate(`!!${q('[data-testid=artifact-more]')}?.checkVisibility()`), true);
     assert.equal(await browser.evaluate(`!!${q('[data-testid=artifact-panel] .boring-markdown-toolbar')}`), false, 'no pinned toolbar by default');
     assert.equal(await browser.evaluate(`!!${q('[data-testid=artifact-bar] [data-testid=artifact-mode-source]')}`), false, 'no mode toggle in the title row');
     await browser.click(q('[data-testid=artifact-more]'));
     assert.deepEqual(await browser.evaluate(`[...document.querySelectorAll('[data-testid=artifact-more-list] [role=menuitemradio]')].map(item => [item.getAttribute('aria-label'), item.getAttribute('aria-checked')])`), [['Formatted', 'true'], ['Markdown', 'false']], 'native radio menu choices');
-    await viewAction('artifact', 'formatting');
-    assert.equal(await browser.evaluate(`!!${q('[data-testid=artifact-panel] .boring-markdown-toolbar')}`), true, 'the checkbox pins the full toolbar');
+    await browser.press('Escape');
+    await browser.click(q('[data-testid=artifact-formatting]'));
+    assert.equal(await browser.evaluate(`!!${q('[data-testid=artifact-panel] .boring-markdown-toolbar')}`), true, 'the header icon pins the full toolbar');
     const divider = await browser.evaluate(`(() => { const e = ${q('[data-testid=workspace-divider]')}, r = e.getBoundingClientRect(), line = e.firstElementChild; return { x: r.x + r.width / 2, y: r.y + r.height / 2, hit: r.width, line: line.getBoundingClientRect().width, color: getComputedStyle(line).backgroundColor, before: Number(e.getAttribute('aria-valuenow')) }; })()`);
     assert.equal(divider.line, 1); assert.ok(divider.hit >= 8 && divider.hit <= 12);
     assert.doesNotMatch(divider.color, /transparent|rgba\(0, 0, 0, 0\)/);
@@ -677,12 +678,14 @@ try {
     await browser.emulate('desktop');
   });
 
-  await step('360px: artifact has only back, title and menu; Escape and Back restore chat focus; Library is a bottom sheet', async () => {
+  await step('360px: artifact keeps Back, Formatting, title and menu; Escape and Back restore chat focus; Library is a bottom sheet', async () => {
     await browser.emulate('phone');
     await browser.send('Emulation.setDeviceMetricsOverride', { width: 360, height: 780, deviceScaleFactor: 1, mobile: true });
     await browser.tap(q('[data-testid=artifact-card]'));
     await browser.until('artifact sheet at 360', `${q('[data-testid=workspace-panel]')}?.dataset.sheet === 'true'`, 5000);
-    assert.equal(await browser.evaluate(`${qa('[data-testid=artifact-bar] button')}.filter(e=>e.checkVisibility()).length`), 2, 'only Back and overflow beside title');
+    await browser.until('phone Markdown editor mounted', `!!${q('[data-testid=artifact-panel] [data-boring=markdown-editor]')}`, 5000);
+    const phoneRich = await browser.evaluate(`${q('[data-testid=artifact-panel] [data-boring=markdown-editor]')}.dataset.mode === 'rich'`);
+    assert.deepEqual(await browser.evaluate(`${qa('[data-testid=artifact-bar] button')}.filter(e=>e.checkVisibility()).map(button => button.dataset.testid)`), ['artifact-close', ...(phoneRich ? ['artifact-formatting'] : []), 'artifact-more'], 'Back and overflow, plus Formatting only in rich mode');
     assert.ok(await browser.evaluate(noOverflow));
     await browser.tap(q('[data-testid=artifact-more]'));
     await browser.until('phone artifact menu', `!!${q('[data-testid=artifact-more-list]')}`, 5000);
@@ -728,7 +731,7 @@ try {
     await browser.screenshot('mobile-toolbar-phone-reading.png');
     await browser.tap(surface);
     assert.equal(await browser.evaluate(`!!${dock}`), false, 'default focus alone does not request formatting');
-    await viewAction('viewer', 'formatting');
+    await browser.tap(q('[data-testid=viewer-formatting]'));
     await browser.tap(surface);
     await browser.until('formatting bar while editing', `!!${dock}`, 5000);
     const geometry = await browser.evaluate(`(() => { const box = ${dock}.getBoundingClientRect(); const tool = ${dock}.querySelector('[aria-label=Bold]').getBoundingClientRect(); const viewport = window.visualViewport; const cs = getComputedStyle(${dock}); return { pos: cs.position, bot: cs.bottom, cls: ${dock}.className, bottom: box.bottom, top: box.top, left: box.left, right: box.right, tool: Math.min(tool.width, tool.height), height: viewport.height + viewport.offsetTop, width: innerWidth }; })()`);

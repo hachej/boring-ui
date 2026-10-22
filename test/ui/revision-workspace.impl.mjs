@@ -75,8 +75,7 @@ test('revision workspace preserves file drafts, docked and floating chat mounts,
   await t.test('a file viewer keeps its formatting choice across a saved-revision remount', async () => {
     await act(async () => root.render(createElement(FileViewer, { key: 'formatting-revision', path: 'notes.md', locator: locate('notes.md'), options: { client: binding, identity }, onClose() {} })));
     for (let n = 0; n < 100 && !element.querySelector('[data-testid=viewer-more]'); n++) await act(async () => new Promise(resolve => setTimeout(resolve, 10)));
-    await act(async () => element.querySelector('[data-testid=viewer-more]').click());
-    await act(async () => document.querySelector('[data-testid=viewer-formatting]').click());
+    await act(async () => element.querySelector('[data-testid=viewer-formatting]').click());
     assert.ok(element.querySelector('.boring-markdown-toolbar'));
     const previous = element.querySelector('[data-testid=file-preview]').dataset.revision;
     const read = await binding.read({ target: locate('notes.md'), revision: { kind: 'latest' } });
@@ -84,9 +83,7 @@ test('revision workspace preserves file drafts, docked and floating chat mounts,
     for (let n = 0; n < 300 && element.querySelector('[data-testid=file-preview]')?.dataset.revision === previous; n++) await act(async () => new Promise(resolve => setTimeout(resolve, 10)));
     assert.notEqual(element.querySelector('[data-testid=file-preview]').dataset.revision, previous);
     assert.ok(element.querySelector('.boring-markdown-toolbar'), 'the owner retained the preference, not the remounted pane');
-    await act(async () => element.querySelector('[data-testid=viewer-more]').click());
-    assert.equal(document.querySelector('[data-testid=viewer-formatting]').getAttribute('aria-checked'), 'true');
-    await act(async () => document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    assert.equal(element.querySelector('[data-testid=viewer-formatting]').getAttribute('aria-pressed'), 'true');
   });
   await t.test('standalone file and artifact owners keep a refused Markdown draft mounted without a host guard', async () => {
     for (const artifact of [false, true]) {
