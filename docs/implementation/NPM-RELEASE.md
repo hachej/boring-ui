@@ -142,7 +142,7 @@ exists, the job does nothing, so reruns are safe. It uses only the job's `GITHUB
    (`unpkg.com` works too). `npm run registry:build` (`scripts/build-registry.mjs`) writes each item's
    `registryDependencies` as absolute URLs of that version, so consumers need no `registries` line.
    `release:version` rewrites those URLs with the version, and `check:pack` fails if one names another version or a
-   missing item. Consumer setup is in the [README](../../README.md#install-components).
+   missing item. Consumer setup is in the [README](../../README.md#install).
    After publication, verify the pinned URL serves `r/registry.json` and that
    `npx shadcn@latest add https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@<version>/r/pi-chat.json` installs from a fresh project.
 

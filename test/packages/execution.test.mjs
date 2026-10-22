@@ -647,6 +647,11 @@ test('Code Interpreter env: two users never see each other\'s folders (own acces
   getOrThrow(await b.exec('ln -s ../user-a/secret.md near && ln -s ../user-a/new.md dangling && ln -s ../user-a linked', {}, context));
   for (const path of ['near', 'linked/secret.md']) { const read = await b.readTextFile(path, context); assert.equal(read.ok ? 'read' : read.error.code, 'permission_denied', path); }
   for (const path of ['dangling', 'linked/new.md']) { const write = await b.writeFile(path, 'x', context); assert.equal(write.ok ? 'written' : write.error.code, 'permission_denied', path); }
+  for (const path of ['linked', 'near']) {
+    const watcher = await b.watch([{ path, recursive: true }], () => {}, context);
+    if (watcher.ok) await watcher.value.close(context);
+    assert.equal(watcher.ok ? 'watching' : watcher.error.code, 'permission_denied', `watch ${path}`);
+  }
   const canonical = await b.canonicalPath('near', context);
   assert.equal(canonical.ok ? canonical.value : canonical.error.code, 'permission_denied');
   assert.equal(getOrThrow(await b.fileInfo('near', context)).kind, 'symlink', 'the link itself is visible; its target is not');
