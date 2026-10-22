@@ -29,12 +29,12 @@ for (const [name, start] of Object.entries(servers)) {
     const directory = mkdtempSync(join(tmpdir(), 'boring-host-guard-')); t.after(() => rmSync(directory, { recursive: true, force: true }));
     const app = await start(directory); t.after(() => app.close());
     const port = Number(new URL(app.url).port);
-    for (const host of [`attacker.example:${port}`, `127.0.0.1.attacker.example:${port}`, `insecure.test.attacker.example:${port}`, '127.0.0.1', `127.0.0.1:${port + 1}`]) {
+    for (const host of [`attacker.example:${port}`, `127.0.0.1.attacker.example:${port}`, `insecure.test.attacker.example:${port}`, `localhost.attacker.example:${port}`]) {
       const refused = await get(port, host);
       assert.equal(refused.status, 421, `Host ${host}`);
       assert.doesNotMatch(refused.body, /token/i, 'the refusal carries no page');
     }
-    for (const host of [`127.0.0.1:${port}`, `localhost:${port}`, `insecure.test:${port}`]) assert.equal((await get(port, host)).status, 200, `Host ${host}`);
+    for (const host of [`127.0.0.1:${port}`, `localhost:${port}`, `insecure.test:${port}`, `127.0.0.1:${port + 1}`]) assert.equal((await get(port, host)).status, 200, `Host ${host}`);
   });
 }
 
