@@ -27,6 +27,8 @@ export const DEFAULTS = {
   settleTimeoutMs: 60_000,
 } as const;
 
+export const COMPACTOR_REQUEST_HISTORY_LIMIT = 256;
+
 /** What a view line shows for a message that has no summary yet. Only a fail-safe: requests wait for summaries. */
 export const PLACEHOLDER = '(not summarized yet: zoom it)';
 

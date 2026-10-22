@@ -298,14 +298,14 @@ test('OptChat summary tasks are Pi\'s: pending ones survive a reopen and are fin
 });
 
 /** A scripted provider (default `Noted.`), so a conversation can run without a real model. */
-async function answeringModels(capture = () => {}, answer = 'Noted.') {
+async function answeringModels(capture = () => {}, answer = 'Noted.', usage) {
   const { createProvider } = await import('@earendil-works/pi-ai/models');
   const { createAssistantMessageEventStream } = await import('@earendil-works/pi-ai/utils/event-stream');
   const MODEL = { id: 'scripted', name: 'Scripted', provider: 'scripted', api: 'scripted-api', baseUrl: 'https://fixture.invalid', input: ['text'], reasoning: false, contextWindow: 200000, maxTokens: 1024, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
   const stream = (_model, request) => {
     capture(structuredClone(request));
     const events = createAssistantMessageEventStream();
-    const message = { role: 'assistant', content: [{ type: 'text', text: typeof answer === 'function' ? answer(request) : answer }], api: MODEL.api, provider: MODEL.provider, model: MODEL.id, timestamp: Date.now(), stopReason: 'stop', usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
+    const message = { role: 'assistant', content: [{ type: 'text', text: typeof answer === 'function' ? answer(request) : answer }], api: MODEL.api, provider: MODEL.provider, model: MODEL.id, timestamp: Date.now(), stopReason: 'stop', usage: usage?.() ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
     setTimeout(() => { events.push({ type: 'start', partial: message }); events.push({ type: 'done', reason: 'stop', message }); events.end(message); }, 5);
     return events;
   };
@@ -1585,6 +1585,34 @@ test('OptChat forgetting a later leaf removes model summaries that could copy it
   assert.equal(JSON.stringify(await memory.stats(conversation.id)).includes(secret), false, 'rebuilding cannot resurrect the later forgotten fact');
 });
 
+test('OptChat stats retains only the latest 256 compactor responses without truncating lifetime totals', { timeout: 15000 }, async t => {
+  const { createOptChatMemory, OptChatState } = await import('@hachej/boring-agent/memory/optchat');
+  const { UserEntry } = await import('@earendil-works/pi-durable');
+  let harness, responses = 0;
+  const ledger = n => ({ input: n, output: 1, cacheRead: 2 * n, cacheWrite: 3 * n, cost: 6 * n + 1 });
+  const models = await answeringModels(() => { responses++; }, () => responses === 260 ? '~ fictional summary' : 'Fictional oversized summary. '.repeat(6), () => ({
+    ...ledger(responses), totalTokens: 6 * responses + 1,
+    cost: { input: responses, output: 1, cacheRead: 2 * responses, cacheWrite: 3 * responses, total: 6 * responses + 1 },
+  }));
+  const memory = createOptChatMemory({ harness: () => harness, context, nodeBytes: 100, tries: 260, summarizer: { model: { provider: 'scripted', modelId: 'scripted' } } });
+  const registry = createRegistry(); registry.install(memory.extension);
+  harness = await Harness.open(new MemoryStorage(), { registry, models }, context);
+  t.after(async () => { await memory.dispose(); await harness.close(context); });
+  const conversation = await harness.root(context);
+  await conversation.commit(tx => tx.appendEntry(UserEntry, conversation.id, { model: [{ role: 'user', content: 'Fictional long message. '.repeat(10), timestamp: 1 }] }), context);
+  harness.resume(); await memory.nap(conversation.id);
+  const stats = (await memory.stats(conversation.id)).compactor;
+  assert.equal(responses, 260, 'native summary retries exercise real bookkeeping beyond the history limit');
+  assert.equal(stats.requests.length, 256);
+  assert.deepEqual(stats.requests, Array.from({ length: 256 }, (_, i) => ledger(i + 5)), 'eviction drops the oldest responses, retaining ordered latest records');
+  assert.equal(stats.calls, 260, 'history eviction does not truncate lifetime calls');
+  const sum = 260 * 261 / 2;
+  assert.deepEqual(stats.usage, { input: sum, output: 260, cacheRead: 2 * sum, cacheWrite: 3 * sum, cost: 6 * sum + 260 });
+  assert.deepEqual((await harness.snapshot(OptChatState, conversation.id, context)).requests, stats.requests, 'the stored document is capped, not just its stats projection');
+  memory.forget(conversation.id);
+  assert.deepEqual((await memory.stats(conversation.id)).compactor, stats, 'evicting the process cache retains bounded records and lifetime totals');
+});
+
 test('OptChat D-80 replay caches at least 95% of compactor and turn input including cold starts at full and default folding', { timeout: 300000 }, async t => {
   const { createOptChatMemory, OptChatNodes, OptChatLog, leavesOf } = await import('@hachej/boring-agent/memory/optchat');
   const { UserEntry } = await import('@earendil-works/pi-durable');
@@ -1627,9 +1655,12 @@ test('OptChat D-80 replay caches at least 95% of compactor and turn input includ
     assert.ok(metrics[1].calls <= baseline.calls, 'no more summarizer requests than the pre-fix replay');
     assert.ok(metrics[1].uncached < baseline.uncached, 'uncached input decreases, not just its ratio');
     assert.equal(stats.compactor.usage.cacheRead, metrics[1].read, 'native task bookkeeping retains provider cache reads');
-    assert.equal(stats.compactor.requests.length, metrics[1].calls, 'every completed provider response has a request usage record');
-    assert.equal(stats.compactor.requests.reduce((sum, request) => sum + request.cacheRead, 0), metrics[1].read);
-    assert.equal(stats.compactor.requests.reduce((sum, request) => sum + request.input + request.cacheRead + request.cacheWrite, 0), metrics[1].total);
+    assert.equal(stats.compactor.requests.length, Math.min(256, metrics[1].calls), 'per-response usage retains at most the latest 256 records');
+    assert.equal(stats.compactor.usage.input + stats.compactor.usage.cacheRead + stats.compactor.usage.cacheWrite, metrics[1].total, 'lifetime input totals cover every response even when history is capped');
+    if (metrics[1].calls <= 256) {
+      assert.equal(stats.compactor.requests.reduce((sum, request) => sum + request.cacheRead, 0), metrics[1].read);
+      assert.equal(stats.compactor.requests.reduce((sum, request) => sum + request.input + request.cacheRead + request.cacheWrite, 0), metrics[1].total);
+    }
     let lastTurn;
     for (const call of fake.calls) {
       const chat = call.payload.messages.flatMap(message => message.content).filter(block => block.type === 'text').map(block => block.text).join('').match(/<chat>\n([\s\S]*?)<\/chat>/)?.[1];

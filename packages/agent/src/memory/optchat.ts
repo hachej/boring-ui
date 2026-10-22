@@ -14,7 +14,7 @@ import { withAbortSignal, withCancel } from '@earendil-works/chord/context';
 import { Type } from '@earendil-works/pi-ai';
 import type { Message, Models, Usage, UserMessage } from '@earendil-works/pi-ai';
 import {
-  DEFAULTS, OptChatLog, OptChatTree, advanceFold, bareLines, byteLength, compactPrompt, cutBytes, dateText, emptyFold, leavesOf,
+  COMPACTOR_REQUEST_HISTORY_LIMIT, DEFAULTS, OptChatLog, OptChatTree, advanceFold, bareLines, byteLength, compactPrompt, cutBytes, dateText, emptyFold, leavesOf,
   nodeKey, openParts, partStart, renderView, scaleLine, span, viewDoc, zoomText,
 } from './optchat-core.js';
 import type { Leaf, StoredNode, ViewFold } from './optchat-core.js';
@@ -143,7 +143,7 @@ export interface OptChatStats {
     readonly error?: string;
     /** Summarizer calls made for this conversation (from the state document, so it survives a restart). */
     readonly calls: number;
-    /** Provider-reported usage per response booked by a settled task, including retries; retained across restart. Interrupted tasks and callback summarizers have no usage record. */
+    /** Latest 256 provider response usage records booked by settled tasks, including retries; retained across restart. Lifetime calls/usage are not truncated. Interrupted tasks and callback summarizers have no usage record. */
     readonly requests: readonly Readonly<Ledger>[];
     /** Spend of those calls (kept by this extension; not in Pi's `pi.usage`). */
     readonly usage: { readonly input: number; readonly output: number; readonly cacheRead: number; readonly cacheWrite: number; readonly cost: number };
@@ -394,7 +394,7 @@ export function createOptChatMemory(options: OptChatOptions): OptChatMemory {
   async function bookkeeping(tx: Tx, id: ConversationId, summary: Summary): Promise<StateDoc> {
     const state = await tx.doc(OptChatState, id);
     state.calls += summary.calls;
-    if (summary.requests?.length) { state.requests = [...(state.requests ?? []), ...summary.requests]; state.sharedContext = true; }
+    if (summary.requests?.length) { state.requests = [...(state.requests ?? []), ...summary.requests].slice(-COMPACTOR_REQUEST_HISTORY_LIMIT); state.sharedContext = true; }
     if (summary.usage && summary.spender) {
       const u = summary.usage;
       state.usage.input += u.input; state.usage.output += u.output; state.usage.cacheRead += u.cacheRead; state.usage.cacheWrite += u.cacheWrite; state.usage.cost += u.cost.total;
@@ -744,7 +744,7 @@ export function createOptChatMemory(options: OptChatOptions): OptChatMemory {
         leaves: s.log.leaves.length, summaries,
         view: { bytes: fold.size, budget: viewBytes, open: openParts(fold).length,
           parts: fold.parts.map(part => ({ id: partStart(part), n: span(part.level), level: part.level, text: part.open ? '' : s.tree.text(part.level, part.index) ?? '', open: part.open })) },
-        compactor: { busy, retrying, failed: failures.length, idle: busy === 0 && retrying === 0, ...(latest ? { error: latest.error } : {}), calls: state?.calls ?? 0, requests: (state?.requests ?? []).map(request => ({ ...request })), usage: { ...(state?.usage ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 }) } },
+        compactor: { busy, retrying, failed: failures.length, idle: busy === 0 && retrying === 0, ...(latest ? { error: latest.error } : {}), calls: state?.calls ?? 0, requests: (state?.requests ?? []).slice(-COMPACTOR_REQUEST_HISTORY_LIMIT).map(request => ({ ...request })), usage: { ...(state?.usage ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 }) } },
         ...(s.lastRequest ? { lastRequest: s.lastRequest } : {}),
       };
     },
