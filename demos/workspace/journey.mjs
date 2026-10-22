@@ -27,6 +27,14 @@ try {
   browser = await launch(insecureUrl(app.url), { evidence });
   if (process.env.APP_SCHEME) await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: process.env.APP_SCHEME }] });
   const shot = name => browser.screenshot(name);
+  const viewAction = async (prefix, id) => {
+    const trigger = q(`[data-testid=library-document] [data-testid=${prefix}-more]`);
+    const open = `${trigger}?.getAttribute('aria-expanded') === 'true'`;
+    if (!await browser.evaluate(open)) await browser.click(trigger);
+    await browser.until('viewer menu is open, non-ending and has the requested item', `${open} && (() => { const popup = ${q(`[data-testid=${prefix}-more-list]`)}; return popup?.checkVisibility({ visibilityProperty: true }) && !popup.hasAttribute('data-ending-style') && !!${q(`[data-testid=${prefix}-more-list] [data-testid=${prefix}-${id}]`)}; })()`, 5000);
+    await browser.click(q(`[data-testid=${prefix}-more-list] [data-testid=${prefix}-${id}]`));
+    await browser.until('viewer menu dismissed', `!${q(`[data-testid=${prefix}-more-list]`)}`, 5000);
+  };
   const headerShots = async name => {
     await browser.evaluate('document.activeElement?.blur()');
     await pause(1200); // The browser PDF plug-in paints after the viewer frame mounts.
@@ -390,7 +398,7 @@ try {
     const tools = await browser.evaluate(`[...document.querySelectorAll('[data-testid=tool-name]')].map(item => item.textContent.trim()).join(' ')`);
     assert.ok(/read/.test(tools) && /get_invoice/.test(tools), `the agent read the document and the invoice: ${tools}`);
     await browser.screenshot('4-policy.png');
-    await browser.click(q('[data-testid=library-document] [data-testid$=-mode-source]'));
+    await viewAction('viewer', 'mode-source');
     await browser.type(q('[data-testid=library-document] textarea.boring-markdown-source'), '\n\nFictional autosaved policy note.\n');
     policyDraft = await browser.evaluate(`${q('[data-testid=library-document] textarea.boring-markdown-source')}.value`);
     await browser.until('the policy autosaved', `${q('[data-testid=library-document] [data-testid=viewer-status]')}?.textContent === 'Saved'`, 10000);
@@ -468,7 +476,7 @@ try {
     const versions = await reader.history('tt.md');
     assert.ok(versions.length >= 1 && versions.every(version => version.source === 'agent'), `history entries are the agent's: ${JSON.stringify(versions)}`);
     assert.equal((await app.ap.read('INV-2043')).status, 'pending', 'a file write is not an invoice decision');
-    await browser.click(q('[data-testid=library-document] [data-testid=viewer-mode-source]'));
+    await viewAction('viewer', 'mode-source');
     await browser.type(q('[data-testid=library-document] textarea'), '\n\nFictional human review.\n');
     createdDraft = await browser.evaluate(`${q('[data-testid=library-document] textarea')}.value`);
     await browser.until('the created file autosaved', `${q('[data-testid=library-document] [data-testid=viewer-status]')}?.textContent === 'Saved'`, 10000);
@@ -737,11 +745,11 @@ try {
     await browser.until('the reloaded chat is live', `!!${INPUT} && !${INPUT}.disabled`, 20000);
     for (const [path, persisted] of [['Policies/AP policy.md', policyDraft], ['tt.md', createdDraft]]) {
       await library(); await choosePolicyWithKeyboard(path);
-      await browser.until('reloaded markdown source is available', `!!${q('[data-testid=library-document] [data-testid=viewer-mode-source]')}`, 15000);
+      await browser.until('reloaded markdown viewer is available', `!!${q('[data-testid=library-document] [data-testid=viewer-more]')}`, 15000);
       assert.equal(await browser.evaluate(`!!${q('[data-testid=library-document] .boring-markdown-toolbar')}`), true, 'desktop toolbar starts pinned');
-      await browser.click(q('[data-testid=library-document] [data-testid=viewer-mode-source]'));
+      await viewAction('viewer', 'mode-source');
       await browser.until('the persisted text after reload', `${q('[data-testid=library-document] textarea')}?.value === ${JSON.stringify(persisted)}`, 10000);
-      await browser.click(q('[data-testid=library-document] [data-testid=viewer-mode-rich]'));
+      await viewAction('viewer', 'mode-rich');
       if (path === 'tt.md') {
         for (const scheme of ['light', 'dark']) { await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }); await pause(200); await shot(`markdown-demo-desktop-${scheme}.png`); }
       }
