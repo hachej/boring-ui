@@ -10,7 +10,7 @@ Blocks carry no visual value of their own: colour, font, shadow, radius, border 
 
 The exception reasons have one owner, [scripts/design-allowlist.json](scripts/design-allowlist.json): Markdown document content, the browser-rendered PDF document, pinned upstream compiler input used only inside opaque mock-up frames, and layout metrics including gaps, widths and 44px touch targets. None exempts editor or viewer controls. Its `allow` entries name exact files, rules and patterns; the optional registry theme alone may define default visual values.
 
-[Design verification](registry/README.md#design-verification) records the migration boundary. Unmigrated groups report violations; a migrated group fails both static and browser checks. REPORT is not conformance and does not discharge the remaining groups.
+Every design group fails both static and browser checks; [design verification](registry/README.md#design-verification) owns the groups and how to run them.
 
 ## BORING-PI-1 — Pi is the execution authority
 
@@ -22,7 +22,7 @@ One harness (owner ruling 2026-10-12): every turn of an agent (in-app chat, remo
 
 ## BORING-PI-2 — attachment borrows; setup owns
 
-Boring accepts a host-created Harness without opening another or taking its lifecycle. Detach stops only its own attachments; it does not close, reset, abort or reconfigure unrelated host work. An optional setup recipe may create a native Harness and close what it owns, with ownership explicit. Direct native API access remains available.
+Boring accepts a host-created Harness without opening another or taking its lifecycle. Detach stops only its own attachments; it does not close, reset, abort or reconfigure unrelated host work. Packages never open a Harness: the host (an app, example or fixture) creates and closes it. Direct native API access remains available.
 
 This ownership rule also applies to acquired workspaces, provider leases, watchers and shared transports. Attaching an unrelated viewer/provider leaves existing identities, grants and behavior unchanged. Partial attachment failure releases only acquisitions made by that attachment. Closing a viewer releases its subscription, not another viewer's observer or a running task's workspace. Shared resources have one explicit owner and safe release semantics; convenience composition cannot silently create competing owners. Restart reattaches to the recorded provider instance or reports expiry/missing state, not a silently substituted workspace.
 

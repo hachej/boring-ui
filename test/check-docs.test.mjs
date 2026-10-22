@@ -18,10 +18,30 @@ test('required documents cannot be missing', (t) => {
 
 test('valid relative links, external links and anchors resolve', (t) => {
   const root = fixture(t);
-  writeFileSync(join(root, 'README.md'), '[Spec](spec.md#heading) [Web](https://example.com) [Here](#here)');
+  writeFileSync(join(root, 'README.md'), '# Here\n[Spec](spec.md#heading) [Web](https://example.com) [Here](#here)');
   writeFileSync(join(root, 'spec.md'), '# Heading');
   assert.deepEqual(checkDocs(root, []).problems, []);
   assert.equal(checkDocs(root, []).documents, 2);
+});
+
+test('a link to a heading that does not exist is reported, in another file or the same one', (t) => {
+  const root = fixture(t);
+  writeFileSync(join(root, 'README.md'), '# Intro\n[Renamed](spec.md#old-name) [Self](#gone)');
+  writeFileSync(join(root, 'spec.md'), '# New name\n```\n# Old name\n```');
+  assert.deepEqual(checkDocs(root, []).problems, [
+    'README.md: missing heading anchor: spec.md#old-name',
+    'README.md: missing heading anchor: #gone',
+  ]);
+});
+
+test('heading anchors follow GitHub: code, punctuation, dashes, repeats and explicit ids', (t) => {
+  const root = fixture(t);
+  writeFileSync(join(root, 'spec.md'), [
+    '## LAW-1 — shadcn first; blocks', '## Scripted model (`@scope/pkg/model`)', '## Notes', '## Notes', '<a id="kept-id"></a>', '## Été [linked](x.md)',
+  ].join('\n'));
+  writeFileSync(join(root, 'x.md'), '');
+  writeFileSync(join(root, 'README.md'), ['law-1--shadcn-first-blocks', 'scripted-model-scopepkgmodel', 'notes', 'notes-1', 'kept-id', 'été-linked'].map((id) => `[a](spec.md#${id})`).join(' '));
+  assert.deepEqual(checkDocs(root, []).problems, []);
 });
 
 test('missing local links are reported', (t) => {

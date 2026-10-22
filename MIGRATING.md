@@ -1,6 +1,7 @@
 # Unreleased
 
 - **AWS Code Interpreter watch is confined (D-248).** `createCodeInterpreterEnv(...).watch` now refuses a path that escapes the user's folder through a symlink with `permission_denied`, like every other file method. No API or stored-format change.
+- **Invariants drift (D-249).** Docs only: the registry README now says every design group fails both static and browser checks, and packages never open a Harness (the host opens and closes it). No API, block or stored-format change.
 
 # Migrating to 0.4.8
 

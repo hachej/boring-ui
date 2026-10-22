@@ -72,7 +72,7 @@ Every package follows `AGENTS.md`:
   proved. The journey is manual evidence, not a gate.
 - **UX revised (after Release 1):** one entry point, **Feedback** in the chat
   composer, replaces Point, the annotate sheet, the Feedback list and Show
-  ([FEEDBACK.md, "UX"](../architecture/FEEDBACK.md#ux-one-entry-point-feedback)).
+  ([FEEDBACK.md, "UX"](../architecture/FEEDBACK.md#ux-one-annotate-toggle)).
   `feedback@1` gained optional `## Notes` and `## Steps`. The Chromium journey
   is `npm run feedback:journey` (`journey-composer.mjs`); the Release 1
   journeys run the classic surfaces with `?ui=classic`

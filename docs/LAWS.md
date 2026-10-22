@@ -4,7 +4,7 @@ This is an index, not a second definition. Project-wide Pi/composition boundarie
 
 | ID | Owner | Current evidence |
 | --- | --- | --- |
-| BORING-UI-1 | [Root INVARIANTS.md](../INVARIANTS.md#boring-ui-1--shadcn-first-blocks-carry-no-visual-value) | Static design checker and mutation tests; stock/brand Chromium audit through `test:design`. Groups 1–7 start in REPORT, not qualified. |
+| BORING-UI-1 | [Root INVARIANTS.md](../INVARIANTS.md#boring-ui-1--shadcn-first-blocks-carry-no-visual-value) | Static design checker and mutation tests; stock/brand Chromium audit through `test:design`. All seven groups fail on violations. |
 | BORING-PI-1 | Root INVARIANTS.md | Static namespace/class/import mutants; native authority, dynamic graphs and honest cancellation proof deferred. |
 | BORING-PI-2 | Root INVARIANTS.md | Static construction mutants; borrowed/owned Harness/workspace/observer lifecycle and composition-local cleanup deferred. |
 | BORING-PI-3 | Root INVARIANTS.md | Static replacement mutants; optional installation, locality and deliberate native-override parity deferred. |
@@ -17,11 +17,11 @@ This is an index, not a second definition. Project-wide Pi/composition boundarie
 | SELF-4 | [packages/agent/README.md](../packages/agent/README.md#self-evolution) | `npm run check` rule: only native `registry.install`/`uninstall`, with mutants; journey: write, reload, use, broken JSON, restart, rollback, `/reload`. |
 | FEEDBACK-1 | packages/feedback/INVARIANTS.md | Runtime proof pending until feedback WP4 and WP9. |
 | FEEDBACK-2 | packages/feedback/INVARIANTS.md | Runtime proof pending until feedback WP6 and WP9. |
-| FEEDBACK-3 | packages/feedback/INVARIANTS.md | Runtime proof pending until feedback WP1 and WP4. |
+| FEEDBACK-3 | packages/feedback/INVARIANTS.md | Runtime proof: `test/contracts/feedback-3.test.mjs` on the composed feedback app (WP9). |
 | FEEDBACK-4 | packages/feedback/INVARIANTS.md | Runtime proof pending until feedback WP2 and WP5. |
-| FEEDBACK-5 | packages/feedback/INVARIANTS.md | Runtime proof pending until feedback WP6 and WP9. Folder import rules and one-way edges by structural mutants; the WP7 agent-without-extension snapshot. |
+| FEEDBACK-5 | packages/feedback/INVARIANTS.md | Runtime proof: `test/contracts/feedback-5.test.mjs` on the composed feedback app (WP9). Folder import rules and one-way edges by structural mutants; the WP7 agent-without-extension snapshot. |
 | FEEDBACK-6 | packages/feedback/INVARIANTS.md | Runtime proof pending until feedback WP6 (host observations); late completions later. |
-| FEEDBACK-7 | packages/feedback/INVARIANTS.md | Runtime proof pending until feedback WP6 and WP9. WP1 escaping and the WP7 show offers and feedback card outcomes are structural. |
+| FEEDBACK-7 | packages/feedback/INVARIANTS.md | Runtime proof: `test/contracts/feedback-7.test.mjs` on the composed feedback app (WP9). WP1 escaping and the WP7 show offers and feedback card outcomes are structural. |
 | FEEDBACK-8 | packages/feedback/INVARIANTS.md | Runtime proof pending until feedback WP3, WP4 and WP9. |
 
 Feature laws such as SELF-1..4 register their structural commands and their journey in [VERIFY.json](../VERIFY.json) `features`; `verify` runs the commands and lists the journeys, which run with the journey gates. EXPERIENCE-1..8 and CELL-1..4 remain owned by [EXPERIENCE.md](architecture/EXPERIENCE.md#laws), with their own proposed journeys. FEEDBACK-1..8 are owned by `@hachej/boring-feedback` ([its INVARIANTS.md](../packages/feedback/INVARIANTS.md)), registered through `VERIFY.json.packageLaws`; the design is in [FEEDBACK.md](architecture/FEEDBACK.md). Layout composition is not native task scheduling or application dependency composition. Implementation moves feature laws beside the package owner while preserving IDs; no root law is duplicated.
