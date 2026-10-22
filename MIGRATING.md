@@ -1,6 +1,7 @@
 # Unreleased
 
 - **AWS Code Interpreter watch is confined (D-248).** `createCodeInterpreterEnv(...).watch` now refuses a path that escapes the user's folder through a symlink with `permission_denied`, like every other file method. No API or stored-format change.
+- **App shell — agent trigger (D-239).** The header's agent trigger now shows `AgentSpec.icon` and is named by `AgentSpec.label` when the agent sets them; without them it keeps the sparkles and « Open the assistant ». Update the `app-shell` block.
 - **Invariants drift (D-249).** Docs only: the registry README now says every design group fails both static and browser checks, and packages never open a Harness (the host opens and closes it). No API, block or stored-format change.
 
 # Migrating to 0.4.8
