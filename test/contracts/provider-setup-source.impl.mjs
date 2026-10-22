@@ -59,6 +59,12 @@ test('provider setup lists any registered provider with its models, key state, s
     assert.match(beta, /Sign in with Beta/);
     assert.match(beta, /ABCD-1234/);
     assert.match(beta, /https:\/\/login\.example\.invalid\/device/);
+    assert.match(beta, /<a [^>]*href="https:\/\/login\.example\.invalid\/device"/, 'an https address is a link');
+    for (const verificationUri of ['javascript:alert(1)', 'data:text/html,x', 'ftp://login.example.invalid/device', 'not a url']) {
+      const unsafe = await render({ provider: 'beta', modelId: 'b-1' }, { loginState: { state: 'pending', userCode: 'ABCD-1234', verificationUri } });
+      assert.match(unsafe, /data-testid="login-pending"/);
+      assert.doesNotMatch(unsafe, /<a [^>]*href=/, `${verificationUri} is plain text, not a link`);
+    }
     assert.match(beta, /data-testid="gateway-note"/);
     assert.doesNotMatch(beta, /type="password"/);
     assert.doesNotMatch(await render({ provider: 'beta', modelId: 'b-1' }, { onLogin: undefined }), /provider-login/);

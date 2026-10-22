@@ -71,6 +71,30 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
       assert.doesNotMatch(messages.map(message => message.text).join(' '), /Builder/);
     } finally { unsubscribe(); }
   });
+  await t.test('a member avatar loads only https, data:image, blob and same-origin addresses; others keep the initials', async () => {
+    const messages = new URL('../../.cache/shared-chat-test/messages.mjs', import.meta.url);
+    await build({ entryPoints: [new URL('../../registry/shared-chat/messages.tsx', import.meta.url).pathname], outfile: messages.pathname, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', tsconfig: new URL('../../tsconfig.json', import.meta.url).pathname });
+    const { MemberAvatar } = await import(messages.href);
+    const loaded = [];
+    window.Image = class { set src(value) { loaded.push(value); setTimeout(() => this.onload?.(), 0); } addEventListener(type, listener) { if (type === 'load') setTimeout(listener, 0); } removeEventListener() {} };
+    const shown = async avatarUrl => {
+      const box = document.createElement('div'); document.body.append(box); const mounted = createRoot(box);
+      await act(async () => mounted.render(createElement(MemberAvatar, { member: { id: 'x', name: 'Mira Fictional', kind: 'person', avatarUrl }, interactive: false })));
+      await act(async () => new Promise(resolve => setTimeout(resolve, 30)));
+      const img = box.querySelector('img')?.getAttribute('src') ?? null;
+      const initials = box.textContent;
+      await act(async () => mounted.unmount()); box.remove();
+      return { img, initials };
+    };
+    const ok = await shown('https://cdn.invalid/a.png');
+    assert.equal(ok.img, 'https://cdn.invalid/a.png', 'the stubbed image load shows an https avatar');
+    for (const url of ['data:image/png;base64,AAAA', 'blob:https://fictional.invalid/id', '/avatars/mira.png']) assert.equal((await shown(url)).img, url, url);
+    for (const url of ['http://tracker.invalid/p.png', '//tracker.invalid/p.png', 'javascript:alert(1)', 'data:text/html,x', 'ftp://x.invalid/a', 'avatar.png']) {
+      const blocked = await shown(url);
+      assert.equal(blocked.img, null, `${url} is not loaded`);
+      assert.match(blocked.initials, /MF/, `${url} falls back to initials`);
+    }
+  });
   await t.test('author grouping, avatars, agent bubbles; own bubble stays unchanged', async () => {
     assert.equal(q('[data-shared-message="one"] [data-testid=message-author]')?.textContent, 'Leo');
     assert.equal(Boolean(q('[data-shared-message="one"] [data-testid=member-avatar]')), false);

@@ -6,9 +6,19 @@ import type { ProjectInfo, Ticket, TicketSink, TicketSinkContext, TicketSinkResu
 export const GITHUB_API = 'https://api.github.com';
 const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 
+const isRepo = (repo: string): boolean => REPO.test(repo) && !repo.split('/').some(part => part === '.' || part === '..');
+
+/** The token is sent only over https; plain http is for a loopback test server. */
+function secureApi(apiUrl: string): boolean {
+  let url: URL;
+  try { url = new URL(apiUrl); } catch { return false; }
+  if (url.username || url.password) return false;
+  return url.protocol === 'https:' || (url.protocol === 'http:' && (url.hostname === 'localhost' || url.hostname === '[::1]' || /^127(?:\.\d{1,3}){3}$/.test(url.hostname)));
+}
+
 /** The repository a project's tickets go to: the one with role `app`, else the first; only `owner/name` entries count. */
 export function ticketRepoOf(project: ProjectInfo): string | undefined {
-  const repos = project.repos.filter(item => REPO.test(item.repo));
+  const repos = project.repos.filter(item => isRepo(item.repo));
   return (repos.find(item => item.role === 'app') ?? repos[0])?.repo;
 }
 
@@ -56,6 +66,7 @@ export function githubSink(options: GithubSinkOptions): TicketSink {
     publish: async (ticket: Ticket, context: TicketSinkContext): Promise<TicketSinkResult> => {
       const repo = ticketRepoOf(context.project);
       if (!repo) return { refused: `The project "${context.project.name}" names no GitHub repository.` };
+      if (!secureApi(api)) return { refused: 'The GitHub API address must be https (http only for localhost); the token was not sent.' };
       const labels = [...new Set([...ticket.labels, ...extra])];
       const body = `${ticket.body}\n\n<!-- boring-ticket: ${ticket.id} -->\n`;
       const signal = context.signal ? AbortSignal.any([context.signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs);
