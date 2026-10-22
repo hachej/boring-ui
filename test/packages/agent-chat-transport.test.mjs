@@ -427,3 +427,20 @@ test('revocation while host prepares mentions prevents native submission', async
   assert.equal(record, undefined);
   assert.equal(f.fake.calls.length, 0);
 });
+
+test('a submitter that is not allowed reads nothing: mentions are not prepared before the allow check (D-248)', async t => {
+  const prepared = [];
+  const f = await fixture(t, { allow: () => false, prepareInput: async value => { prepared.push(value); return value; } });
+  const response = await f.fetch(new Request(`${endpoint}?op=submit`, { method: 'POST', headers: json, body: JSON.stringify({ requestId: 'denied-1', content: '@fictional-private.md' }) }));
+  assert.equal(response.status, 403);
+  assert.deepEqual(prepared, [], 'prepareInput (file reads) never ran for a denied submitter');
+});
+
+test('an unexpected error reaches the client as a fixed reason, not its message (D-248)', async t => {
+  const f = await fixture(t, { allow: () => { throw new Error('fictional-secret connection string host=db.internal'); } });
+  const response = await f.fetch(new Request(`${endpoint}?op=abort`, { method: 'POST', headers: json, body: '{}' }));
+  assert.equal(response.status, 503);
+  const text = await response.text();
+  assert.doesNotMatch(text, /fictional-secret|db\.internal/);
+  assert.equal(JSON.parse(text).reason, 'source-unavailable');
+});

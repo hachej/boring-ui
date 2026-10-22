@@ -10,7 +10,7 @@ import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 const person = { scopeId: 'fictional-ap-team', principalId: 'fictional-approver', initiatorId: 'fictional-approver' };
 
 test('a decision needs the reviewed revision, refuses a stale one, and a retry returns the same receipt', async t => {
-  const store = openSqliteWorkspaces({ filename: join(mkdtempSync(join(tmpdir(), 'boring-ap-')), 'ap.sqlite'), providerId: 'ap-invoices' });
+  const store = openSqliteWorkspaces({ filename: join(mkdtempSync(join(tmpdir(), 'boring-ap-')), 'ap.sqlite'), providerId: 'ap-invoices', authorize: () => true });
   t.after(() => store.close());
   const ap = await openAccountsPayable({ files: store.workspace(person.scopeId), person });
   const reviewed = (await ap.read('INV-2041')).revision;

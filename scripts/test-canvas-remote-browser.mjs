@@ -26,7 +26,7 @@ const directory = mkdtempSync(join(tmpdir(), 'boring-canvas-remote-browser-'));
 const report = { status: 'running', steps: [], nativeResults: [] };
 const access = { scopeId: 'fictional', principalId: 'browser', initiatorId: 'journey' };
 const target = { resource: { providerId: 'fictional', path: 'board.canvas' }, view: { kind: 'published' } };
-const files = openSqliteWorkspaces({ filename: join(directory, 'canvas.sqlite'), providerId: 'fictional' });
+const files = openSqliteWorkspaces({ filename: join(directory, 'canvas.sqlite'), providerId: 'fictional', authorize: () => true });
 const registry = createRegistry(), activePolls = new Map(), bindings = new Map();
 let browser, server, harness, conversation, bridge, origin, revocation = new AbortController(), publications = 0, lastPublication;
 const step = async (name, action) => {

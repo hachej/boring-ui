@@ -2,6 +2,7 @@
 // The server is only what the chat needs: one agent on a durable native Harness (sessions in SQLite), one conversation and the chat
 // transport behind a bearer check. The docks are browser side (./page.tsx). Fictional content only.
 import { createServer } from 'node:http';
+import { rejectForeignHost, sameSecret } from '../../shared/local-host.mjs';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -36,7 +37,7 @@ export async function startDockApp({ directory, port = 0, token = randomUUID(), 
   const start = init => agent.createConversation(harness, context, { init });
   const first = await conversations.create(agent.id, { start });
 
-  const allowed = request => request.headers.get('authorization') === `Bearer ${token}`;
+  const allowed = request => sameSecret(request.headers.get('authorization'), `Bearer ${token}`);
   const handlers = {
     '/api/chat': createChatTransportHandler({ authenticate: async request => {
       const id = Number(new URL(request.url).searchParams.get('conversation'));
@@ -56,6 +57,7 @@ export async function startDockApp({ directory, port = 0, token = randomUUID(), 
   const statics = { '/': ['text/html; charset=utf-8', page], '/app.js': ['text/javascript; charset=utf-8', bundle.outputFiles.find(file => file.path.endsWith('.js')).text], '/app.css': ['text/css; charset=utf-8', css] };
 
   const server = createServer(async (incoming, outgoing) => {
+    if (rejectForeignHost(incoming, outgoing)) return;
     const url = new URL(incoming.url, `http://${incoming.headers.host}`);
     const closed = new AbortController();
     outgoing.on('close', () => closed.abort());

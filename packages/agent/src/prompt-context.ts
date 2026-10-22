@@ -35,7 +35,9 @@ const produced = new WeakSet<Message>();
  * assistant continuation) at the tail. Pure: the input array is not changed.
  */
 export function withRequestContext(messages: readonly Message[], text: string, tag = 'request-context'): Message[] {
-  const message: Message = { role: 'user', content: [{ type: 'text', text: `<${tag}>\n${text}\n</${tag}>` }], timestamp: Date.now() };
+  // The text may be browser-supplied: neutralise every opening or closing `tag` in it (any case, spaces allowed) so it cannot end the wrapper.
+  const inner = text.replace(new RegExp(`<(\\s*/?\\s*${tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})(?![\\w-])`, 'gi'), '<\\$1');
+  const message: Message = { role: 'user', content: [{ type: 'text', text: `<${tag}>\n${inner}\n</${tag}>` }], timestamp: Date.now() };
   produced.add(message);
   let end = messages.length;
   while (end > 0 && produced.has(messages[end - 1]!)) end--;

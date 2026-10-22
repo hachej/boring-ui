@@ -3,6 +3,9 @@ import type { Extension, ToolRegistration, Wrap } from '@earendil-works/pi-durab
 import type { JsonValue } from '@earendil-works/chord';
 
 /** Key under a recorded call's result details: `{ simulated: true, tool, arguments }`. A caller reads it back with `simulatedCalls`. */
+const GUARDS: WeakSet<object> = ((globalThis as Record<symbol, WeakSet<object>>)[Symbol.for('boring.agent.guards')] ??= new WeakSet()); // approval + sandbox extensions: a delegated child inherits them
+const markGuard = <T extends object>(extension: T): T => { GUARDS.add(extension); return extension; };
+
 export const SANDBOX_DETAILS = 'boring.sandbox';
 
 /** What the host declares about one tool. An unset field is not declared: a call is recorded unless the host declares it safe. */
@@ -73,13 +76,13 @@ export function createSandboxExtension(options: SandboxOptions): Extension {
   const recordOnly = new Set(options.tools.filter(name => sandboxDecision(options.flags?.[name]) === 'record'));
   const simulate = options.simulate ?? ((toolName: string) => defaultAck(toolName));
   const wraps: Wrap[] = [...recordOnly].map(name => ({ tool: name, wrap: (tool: ToolRegistration) => recorded(tool, simulate) }));
-  return defineExtension({
+  return markGuard(defineExtension({
     name: options.name ?? 'boring.sandbox',
     wraps,
     hooks: [hook(ToolTask, {
       beforeTool: call => covered.has(call.name) ? undefined : { block: `Not run: ${call.name} is not covered by the sandbox.` },
     })],
-  });
+  }));
 }
 
 /**

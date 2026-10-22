@@ -193,3 +193,17 @@ test('a tool added mid-run by addTools is offered to the next round and refused 
   assert.match(refused.content[0].text, /not covered by the sandbox/);
   assert.deepEqual(scripted.misses, []);
 });
+
+test('approval unlisted: "deny" blocks tools the rules do not name, except the allow list; the default still runs them (D-248)', async t => {
+  const gated = createApprovalExtension({ tools: { write_note: true }, unlisted: 'deny', allow: ['read_note'] });
+  const { ran, say, results } = await open(t, { extensions: [gated], scriptTools: ['read_note', 'undeclared_note'] });
+  assert.equal(await say('run the fictional tools'), 'done');
+  assert.deepEqual(ran, ['read_note'], 'the allow-listed tool runs; the unlisted one never does');
+  const blocked = (await results()).find(message => message.toolName === 'undeclared_note');
+  assert.equal(blocked?.isError, true);
+  assert.match(blocked.content[0].text, /not allowed in this conversation/);
+
+  const open2 = await open(t, { extensions: [createApprovalExtension({ tools: { write_note: true } })], scriptTools: ['undeclared_note'] });
+  assert.equal(await open2.say('run the fictional tools'), 'done');
+  assert.deepEqual(open2.ran, ['undeclared_note'], 'default: unlisted tools run ungated, as before');
+});
