@@ -51,8 +51,9 @@ try {
   const say = async text => { await browser.type(INPUT, text); await browser.press('Enter'); };
   const live = () => browser.until('the chat is live', `!!${INPUT} && !${INPUT}.disabled`, 20000);
   const viewAction = async (prefix, id) => {
-    if (!await browser.evaluate(`!!${q(`[data-testid=${prefix}-more-list]`)}`)) await browser.click(q(`[data-testid=${prefix}-more]`));
-    await browser.until('viewer menu item', `!!${q(`[data-testid=${prefix}-more-list] [data-testid=${prefix}-${id}]`)}`, 5000);
+    const open = `${q(`[data-testid=${prefix}-more]`)}?.getAttribute('aria-expanded') === 'true'`;
+    if (!await browser.evaluate(open)) await browser.click(q(`[data-testid=${prefix}-more]`));
+    await browser.until('viewer menu is open, non-ending and has the requested item', `${open} && (() => { const popup = ${q(`[data-testid=${prefix}-more-list]`)}; return popup?.checkVisibility({ visibilityProperty: true }) && !popup.hasAttribute('data-ending-style') && !!${q(`[data-testid=${prefix}-more-list] [data-testid=${prefix}-${id}]`)}; })()`, 5000);
     await browser.click(q(`[data-testid=${prefix}-more-list] [data-testid=${prefix}-${id}]`));
     await browser.until('viewer menu dismissed', `!${q(`[data-testid=${prefix}-more-list]`)}`, 5000);
   };
