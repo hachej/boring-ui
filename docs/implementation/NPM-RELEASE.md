@@ -105,8 +105,9 @@ explicit public npm destination. Release runs are serialized without cancelling 
 active publication. Neither job changes package versions or privacy flags.
 
 After a successful publish, a final `github-release` job creates the `v<version>` git
-tag and GitHub release at the reviewed commit, with the body of the merged release PR
-(generated notes if none is found). It marks the release Latest only for the `latest`
+tag and GitHub release at the reviewed commit. Its notes are the `# Migrating to <version>`
+section of `MIGRATING.md` at that commit (`scripts/release-notes.mjs`), followed by GitHub's
+generated list of merged pull requests; without that section, generated notes alone. It marks the release Latest only for the `latest`
 dist-tag; other tags become prereleases that are not Latest. If the release already
 exists, the job does nothing, so reruns are safe. It uses only the job's `GITHUB_TOKEN`.
 

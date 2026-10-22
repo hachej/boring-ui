@@ -164,7 +164,6 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
-      pull-requests: read
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
@@ -172,6 +171,10 @@ jobs:
       RELEASE_TAG: ${{ inputs.tag }}
       RELEASE_COMMIT: ${{ inputs.commit }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit }}
+          persist-credentials: false
       - name: Create the GitHub release once
         run: |
           set -euo pipefail
@@ -180,11 +183,12 @@ jobs:
             echo "GitHub release $tag already exists; nothing to create."
             exit 0
           fi
-          pr=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${RELEASE_COMMIT}/pulls" --jq ".[] | select(.merge_commit_sha == \"${RELEASE_COMMIT}\") | .number" | head -n 1) || pr=""
+          # The notes are the MIGRATING.md section this version promoted, then GitHub's list of merged pull requests.
           notes_file="${RUNNER_TEMP}/release-notes.md"
-          if [ -n "$pr" ] && gh pr view "$pr" --json body --jq .body > "$notes_file" && [ -s "$notes_file" ]; then
-            notes=(--notes-file "$notes_file")
+          if node scripts/release-notes.mjs "$RELEASE_VERSION" > "$notes_file"; then
+            notes=(--notes-file "$notes_file" --generate-notes)
           else
+            echo "::warning::No # Migrating to ${RELEASE_VERSION} section; using generated notes only."
             notes=(--generate-notes)
           fi
           if [ "$RELEASE_TAG" = latest ]; then
