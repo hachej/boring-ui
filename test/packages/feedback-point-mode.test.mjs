@@ -271,6 +271,31 @@ test('registry: with a mouse the banner sits at the top, useCommenting is true w
   await act(async () => ui.unmount());
 });
 
+test('registry: an inline banner stays where it is mounted (over one surface, such as a side panel), not portalled to the body', { timeout: 30000 }, async t => {
+  const { document, components, createElement, act, createRoot } = await registry(t);
+  const { CommentBanner, useComposerFeedback, feedbackLabels } = components;
+  document.body.innerHTML = PAGE;
+  const $ = id => document.getElementById(id);
+  const session = createFeedbackSession({ app: 'fictional-settings', build: 'dev-fixture', root: $('app'), policy, hitTest: () => [$('save')],
+    save: async () => ({ kind: 'saved', id: 'fb_7Q2mK9xRt4vW1cZp', revision: 'r1' }), mention: id => `feedback/${id}.md` });
+  t.after(() => session.dispose());
+  phone(t, false);
+  let composer;
+  function Host() {
+    composer = useComposerFeedback(session);
+    return createElement('div', { id: 'surface' }, createElement(CommentBanner, { session, labels: feedbackLabels, inline: true }));
+  }
+  const ui = createRoot($('ui'));
+  await act(async () => ui.render(createElement(Host)));
+  await act(async () => composer.annotate());
+  const bar = document.querySelector('[data-testid=feedback-point-bar]');
+  assert.equal(bar.parentElement, $('surface'), 'mounted in the surface it comments');
+  assert.equal(bar.dataset.feedbackPointBar, 'top');
+  await act(async () => { document.querySelector('[data-testid=feedback-point-done]').click(); await new Promise(resolve => setTimeout(resolve, 10)); });
+  assert.equal(document.querySelector('[data-testid=feedback-point-bar]'), null);
+  await act(async () => ui.unmount());
+});
+
 test('registry: useSendEachNote sends each note to the chat the moment it is added, keeps comment mode on, and the banner counts what was sent', { timeout: 30000 }, async t => {
   const { window, document, components, createElement, act, createRoot } = await registry(t);
   const { CommentBanner, NoteBubble, useComposerFeedback, useSendEachNote, feedbackLabelsFr } = components;

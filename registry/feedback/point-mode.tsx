@@ -39,6 +39,12 @@ export interface CommentBannerProps {
   readonly bottomOffset?: string;
   /** Words of the banner (`feedbackLabelsFr` for French); what is left out keeps the English default. */
   readonly labels?: Partial<FeedbackLabels>;
+  /**
+   * Rendered where it is mounted instead of over the whole window (the default, portalled to the body). For comments on one surface, such
+   * as a version open in a side panel: mounted in a positioned layer over that surface (a `transform` makes it the containing block), the
+   * banner sits over the surface and keeps clear of the panel's own bar and the rest of the app.
+   */
+  readonly inline?: boolean;
   readonly className?: string;
 }
 
@@ -50,7 +56,7 @@ export interface CommentBannerProps {
  * conversation with its reply); otherwise the notes wait for the next message. There is no Cancel here: a note is removed on its own.
  * It is `data-feedback-ignore`, so it is never picked, and the note bubble keeps clear of it (`data-feedback-point-bar`).
  */
-export function CommentBanner({ session, bottomOffset = '0px', labels, className }: CommentBannerProps) {
+export function CommentBanner({ session, bottomOffset = '0px', labels, inline = false, className }: CommentBannerProps) {
   const state = useExternal(session);
   const words = withLabels(labels);
   if ((state.phase !== 'active' && state.phase !== 'processing') || typeof document === 'undefined') return null;
@@ -61,7 +67,7 @@ export function CommentBanner({ session, bottomOffset = '0px', labels, className
   const hint = state.problem ?? (!on ? words.commentPaused : sent > 0 && !state.bubble ? words.commentSent(sent) : phone ? words.commentTap : words.commentClick);
   // Notes that say something: a pin still being typed is not one yet.
   const notes = noteCount(state);
-  return createPortal(<Card size="sm" data-boring="feedback" data-feedback-ignore="" data-feedback-point-bar={phone ? 'bottom' : 'top'} role="region" aria-label={words.commentMode}
+  const banner = <Card size="sm" data-boring="feedback" data-feedback-ignore="" data-feedback-point-bar={phone ? 'bottom' : 'top'} role="region" aria-label={words.commentMode}
     data-testid="feedback-point-bar" data-commenting={on ? 'true' : 'false'} className={cn('boring-feedback-banner', className)}
     style={phone ? { bottom: `calc(${bottomOffset} + env(safe-area-inset-bottom, 0px) + 8px)` } : { top: '8px' }}>
     <CircleIcon className={cn('size-2 shrink-0 fill-current', on ? 'text-primary' : 'text-muted-foreground')} aria-hidden="true" />
@@ -74,5 +80,6 @@ export function CommentBanner({ session, bottomOffset = '0px', labels, className
         onCheckedChange={checked => session.setUseToggle(!checked)} />
     </span>
     <Button className="min-h-11 shrink-0 sm:min-h-9" data-testid="feedback-point-done" disabled={processing} onClick={() => { void session.done(); }}>{words.pointDone}</Button>
-  </Card>, document.body);
+  </Card>;
+  return inline ? banner : createPortal(banner, document.body);
 }

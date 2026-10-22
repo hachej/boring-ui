@@ -164,7 +164,8 @@ is the same session, started by the same annotate toggle on touch or a compact s
   envoyée » once `useSendEachNote` sent it), an on/off switch (« Commenter »: off, the app works as usual and the notes stay) and
   Terminé. There is no Cancel: a note is removed on its own. Its targets are at least 44px and it uses the host's shadcn tokens. On a
   phone it sits above the safe area and above the app's tab bar, whose height the host passes as `bottomOffset`; on a wide screen
-  (hover targeting) it sits at the top. The tab bar is marked `data-feedback-ignore`, so it still navigates while the person points.
+  (hover targeting) it sits at the top. Comments on one surface (a version open in a side panel) pass `inline` and mount the banner in
+  a positioned layer over that surface, so it keeps clear of the panel's own bar. The tab bar is marked `data-feedback-ignore`, so it still navigates while the person points.
   The note bubble keeps clear of the banner and names the element in plain words (`plainElement`: « Bouton « Enregistrer » »).
 - **Touch first.** A tap picks at once with the same picker (`tap: 'pick'`: no Parent/Child toolbar, no hover, no long press). A
   finger that moved is a scroll, not a pick. Tapping the selection again, Esc or « Annuler la sélection » deselects, and several picks
