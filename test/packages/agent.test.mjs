@@ -1531,6 +1531,128 @@ test('OptChat checkpoint options preserve the exact under-budget view and reject
   assert.equal(body, '<chat>\n0+1|user: Fictional earlier message.\n</chat>\nFictional current message.');
 });
 
+test('OptChat model tasks warm one new prefix before parallel requests under the native admission cap', { timeout: 15000 }, async t => {
+  const { createOptChatMemory } = await import('@hachej/boring-agent/memory/optchat');
+  const { UserEntry } = await import('@earendil-works/pi-durable');
+  const { optchatCacheModel } = await import('../helpers/optchat-cache.mjs');
+  const first = Promise.withResolvers(), rest = Promise.withResolvers(), entered = Promise.withResolvers();
+  let harness, active = 0, peak = 0;
+  const fake = optchatCacheModel({ answer: () => '~ fictional summary', beforeReply: async () => {
+    active++; peak = Math.max(peak, active); entered.resolve();
+    await (fake.calls.length === 1 ? first.promise : rest.promise); active--;
+  } });
+  const memory = createOptChatMemory({ harness: () => harness, context, summarizer: { model: fake.ref }, nodeBytes: 100, jobs: 3 });
+  const registry = createRegistry(); registry.install(memory.extension);
+  harness = await Harness.open(new MemoryStorage(), { registry, models: fake.models }, context);
+  t.after(async () => { first.resolve(); rest.resolve(); await memory.dispose(); await harness.close(context); });
+  const conversation = await harness.root(context);
+  await conversation.commit(tx => tx.appendEntry(UserEntry, conversation.id, { model: Array.from({ length: 32 }, (_, i) => ({ role: 'user', content: `Fictional ${i}. ${'detail '.repeat(9)}`, timestamp: i })) }), context);
+  harness.resume();
+  const napping = memory.nap(conversation.id); await entered.promise;
+  assert.equal((await memory.stats(conversation.id)).compactor.busy, 3, 'waiting native tasks still occupy the host cap');
+  assert.equal(fake.calls.length, 1, 'followers cannot dispatch before the first response writes the new prefix');
+  const waiting = (await harness.inspect(context)).tasks.find(task => task.record.kind === 'boring.memory.optchat.node' && task.record.input.index === 1);
+  assert.ok(waiting);
+  await harness.abortTask(waiting.record.id, context);
+  assert.equal((await harness.waitForTask(waiting.record.id, context)).state.outcome.status, 'aborted', 'native cancellation releases a follower without waiting for the warming request');
+  assert.equal(fake.calls.length, 1, 'cancelling a follower cannot release the leader barrier');
+  first.resolve();
+  for (let i = 0; i < 200 && active < 3; i++) await new Promise(resolve => setTimeout(resolve, 5));
+  assert.equal(active, 3, 'a warm prefix permits parallel native requests');
+  rest.resolve(); await napping;
+  assert.equal(peak, 3, 'warmup does not introduce a second admission budget');
+});
+
+test('OptChat forgetting a later leaf removes model summaries that could copy it through the shared prefix', { timeout: 15000 }, async t => {
+  const { createOptChatMemory, OptChatNodes } = await import('@hachej/boring-agent/memory/optchat');
+  const { UserEntry } = await import('@earendil-works/pi-durable');
+  const { optchatCacheModel } = await import('../helpers/optchat-cache.mjs');
+  const secret = 'FICTIONAL_FUTURE_CONTEXT_SECRET';
+  let harness;
+  const fake = optchatCacheModel({ answer: payload => JSON.stringify(payload).includes(secret) ? `~ ${secret}` : '~ fictional safe summary' });
+  const memory = createOptChatMemory({ harness: () => harness, context, summarizer: { model: fake.ref }, nodeBytes: 100 });
+  const registry = createRegistry(); registry.install(memory.extension);
+  harness = await Harness.open(new MemoryStorage(), { registry, models: fake.models }, context);
+  t.after(async () => { await memory.dispose(); await harness.close(context); });
+  const conversation = await harness.root(context);
+  await conversation.commit(tx => tx.appendEntry(UserEntry, conversation.id, { model: ['Fictional older reference. '.repeat(10), 'Fictional second reference. '.repeat(10), 'Fictional safe tail.', secret].map((content, timestamp) => ({ role: 'user', content, timestamp })) }), context);
+  harness.resume(); await memory.nap(conversation.id);
+  assert.match(JSON.stringify(await harness.snapshot(OptChatNodes, conversation.id, '0.0', context)), new RegExp(secret), 'the model actually copied a later fact into an earlier summary');
+  const messages = (await conversation.context(context)).messages;
+  await memory.forgetMessage(conversation.id, messages.findIndex(message => message.role === 'user' && message.content === secret));
+  assert.equal(JSON.stringify(await harness.snapshot(OptChatNodes, conversation.id, '0.0', context)).includes(secret), false, 'forget clears context-derived copies in earlier nodes before returning');
+  await memory.nap(conversation.id);
+  assert.equal(JSON.stringify(await memory.stats(conversation.id)).includes(secret), false, 'rebuilding cannot resurrect the later forgotten fact');
+});
+
+test('OptChat D-80 replay caches at least 95% of compactor and turn input including cold starts at full and default folding', { timeout: 300000 }, async t => {
+  const { createOptChatMemory, OptChatNodes, OptChatLog, leavesOf } = await import('@hachej/boring-agent/memory/optchat');
+  const { UserEntry } = await import('@earendil-works/pi-durable');
+  const { optchatCacheModel } = await import('../helpers/optchat-cache.mjs');
+  const { fauxAssistantMessage } = await import('@earendil-works/pi-ai/providers/faux');
+  for (const seedMessages of [600, 400]) await t.test(`${seedMessages} fictional messages`, async t => {
+    const fake = optchatCacheModel();
+    const directory = mkdtempSync(join(tmpdir(), 'optchat-cache-'));
+    let current;
+    const open = async () => {
+      let harness;
+      const memory = createOptChatMemory({ harness: () => harness, context, summarizer: { model: fake.ref } });
+      const registry = createRegistry(); registry.install(memory.extension);
+      harness = await Harness.open(await openNodeSqliteStorage(join(directory, 'session.sqlite')), { registry, models: fake.models }, context);
+      harness.resume(); return { harness, memory };
+    };
+    current = await open();
+    t.after(async () => { await current.memory.dispose(); await current.harness.close(context); rmSync(directory, { recursive: true, force: true }); });
+    const conversation = await current.harness.root(context, { agent: { instructions: 'Fictional cooking diary.', model: fake.ref, extensions: [current.memory.extension] } });
+    const id = conversation.id;
+    await conversation.commit(tx => tx.appendEntry(UserEntry, id, { model: Array.from({ length: seedMessages }, (_, i) => i % 2
+      ? fauxAssistantMessage(`Fictional reply ${i}. ` + 'A new recipe for the imaginary kitchen. '.repeat(seedMessages === 600 ? 6 : 5), { timestamp: i })
+      : { role: 'user', content: `Fictional meal ${i}. ` + 'Lentils and carrots in an imaginary kitchen. '.repeat(seedMessages === 600 ? 6 : 5), timestamp: i }) }), context);
+    await current.memory.nap(id);
+    for (let i = 0; i < 100; i++) {
+      assert.equal((await (await conversation.submit({ type: 'input', content: `Fictional diary turn ${i}: a different lentil recipe today.` }, context)).wait(context)).status, 'done');
+      await current.memory.nap(id);
+    }
+    const stats = await current.memory.stats(id);
+    const metrics = [false, true].map(compaction => {
+      const calls = fake.calls.filter(c => c.compaction === compaction);
+      const total = calls.reduce((n, c) => n + c.total, 0), read = calls.reduce((n, c) => n + c.cacheRead, 0);
+      return { compaction, calls: calls.length, total, read, uncached: total - read, ratio: read / total };
+    });
+    t.diagnostic(JSON.stringify({ seedMessages, metrics, leaves: stats.leaves, viewBytes: stats.view.bytes, cold: fake.calls.filter(c => c.compaction && c.total - c.cacheRead > 1000).map(c => ({ total: c.total, read: c.cacheRead })) }));
+    if (seedMessages === 600) assert.ok(stats.view.parts.some(p => p.n > 1), 'the replay crosses the view budget');
+    assert.equal(fake.errors.length, 0);
+    for (const metric of metrics) { assert.ok(metric.calls > 20); assert.ok(metric.ratio >= 0.95, JSON.stringify(metric)); }
+    const baseline = seedMessages === 600 ? { calls: 356, uncached: 2726784 } : { calls: 126, uncached: 844859 };
+    assert.ok(metrics[1].calls <= baseline.calls, 'no more summarizer requests than the pre-fix replay');
+    assert.ok(metrics[1].uncached < baseline.uncached, 'uncached input decreases, not just its ratio');
+    assert.equal(stats.compactor.usage.cacheRead, metrics[1].read, 'native task bookkeeping retains provider cache reads');
+    assert.equal(stats.compactor.requests.length, metrics[1].calls, 'every completed provider response has a request usage record');
+    assert.equal(stats.compactor.requests.reduce((sum, request) => sum + request.cacheRead, 0), metrics[1].read);
+    assert.equal(stats.compactor.requests.reduce((sum, request) => sum + request.input + request.cacheRead + request.cacheWrite, 0), metrics[1].total);
+    let lastTurn;
+    for (const call of fake.calls) {
+      const chat = call.payload.messages.flatMap(message => message.content).filter(block => block.type === 'text').map(block => block.text).join('').match(/<chat>\n([\s\S]*?)<\/chat>/)?.[1];
+      if (!call.compaction) lastTurn = chat.replace(/^\d+\+\d+\|/gm, '');
+      else if (lastTurn !== undefined) assert.equal(chat, lastTurn, 'a historical summary job carries the entire last turn view, not a shorter upTo prefix');
+    }
+    const log = new OptChatLog(); log.set(leavesOf((await conversation.context(context)).messages).leaves);
+    const nodes = [];
+    for (let level = 0; 2 ** level <= stats.leaves; level++) for (let shard = 0; shard * 64 < Math.floor(stats.leaves / 2 ** level); shard++) {
+      const key = `${level}.${shard}`, doc = await current.harness.snapshot(OptChatNodes, id, key, context);
+      if (!doc) continue;
+      for (const [index, node] of Object.entries(doc.nodes)) assert.equal(node.of, log.fp(level, Number(index)));
+      nodes.push([key, structuredClone(doc)]);
+    }
+    await current.memory.dispose(); await current.harness.close(context);
+    current = await open(); await current.memory.nap(id);
+    assert.equal((await current.memory.stats(id)).summaries, stats.summaries);
+    assert.equal((await current.memory.stats(id)).compactor.calls, stats.compactor.calls, 'reopen makes no extra summarizer calls');
+    assert.deepEqual((await current.memory.stats(id)).compactor.requests, stats.compactor.requests, 'per-request cache reads survive SQLite reopen');
+    for (const [key, doc] of nodes) assert.deepEqual(await current.harness.snapshot(OptChatNodes, id, key, context), doc, 'summary fingerprints and text survive restart');
+  });
+});
+
 test('OptChat compactor replay is deterministic across failed-node SQLite reopen at full folding', { timeout: 30000 }, async t => {
   const { createOptChatMemory } = await import('@hachej/boring-agent/memory/optchat');
   const { UserEntry } = await import('@earendil-works/pi-durable');
