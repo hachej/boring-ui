@@ -55,6 +55,28 @@ test('githubSink: one POST to the app repository with the token, title, body and
   assert.throws(() => githubSink({ token: '' }), /token is required/);
 });
 
+test('githubSink: dot-segment repositories and non-https API addresses are refused before any request carries the token', async () => {
+  for (const repo of ['./studio-app', '../studio-app', 'fernhill-fictional/..', 'fernhill-fictional/.', '../..']) {
+    assert.equal(ticketRepoOf({ name: 'x', repos: [{ repo }] }), undefined, repo);
+    const github = fakeGithub();
+    const sink = githubSink({ token: TOKEN, fetch: github.fetch });
+    assert.equal(sink.accepts({ name: 'x', repos: [{ repo }] }), false, repo);
+    assert.match((await sink.publish(TICKET, { project: { name: 'x', repos: [{ repo }] } })).refused, /names no GitHub repository/);
+    assert.equal(github.calls.length, 0, `${repo}: no request`);
+  }
+  for (const apiUrl of ['http://github.invalid/api', 'ftp://github.invalid', 'not a url', 'https://user:pw@github.invalid/api', 'http://localhost.invalid/api']) {
+    const github = fakeGithub();
+    const result = await githubSink({ token: TOKEN, fetch: github.fetch, apiUrl }).publish(TICKET, { project: PROJECT });
+    assert.match(result.refused, /must be https/, apiUrl);
+    assert.equal(github.calls.length, 0, `${apiUrl}: the token is never attached`);
+  }
+  for (const apiUrl of ['https://github.invalid/api', 'http://127.0.0.1:8080/api', 'http://localhost:3000', 'http://[::1]:3000/api']) {
+    const github = fakeGithub();
+    assert.deepEqual(await githubSink({ token: TOKEN, fetch: github.fetch, apiUrl }).publish(TICKET, { project: PROJECT }), { url: 'https://github.invalid/fernhill-fictional/studio-app/issues/7' }, apiUrl);
+    assert.equal(github.calls.length, 1);
+  }
+});
+
 test('githubSink: 401, 403, 404, 422 and 500 are refusals with plain reasons, never retried, never naming the token', async () => {
   const cases = [[401, /refused the token \(401\)/], [403, /denied access \(403\).*fernhill-fictional\/studio-app/], [404, /cannot see fernhill-fictional\/studio-app \(404\)/],
     [422, /refused the issue \(422\): Validation Failed/], [500, /answered 500; nothing is known to be filed/]];

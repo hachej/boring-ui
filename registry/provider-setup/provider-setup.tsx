@@ -64,6 +64,11 @@ export interface ProviderSetupProps {
   readonly className?: string;
 }
 
+/** Only http(s) addresses become links; any other scheme is shown as text. */
+function isWebLink(uri: string): boolean {
+  try { return /^https?:$/.test(new URL(uri).protocol); } catch { return false; }
+}
+
 /** Popover for choosing a provider and model and giving access to it. Transport-agnostic: props in, callbacks out. */
 export function ProviderSetup({ providers, value, onSave, onLogin, loginState = { state: 'idle' }, gatewayPlaceholder = 'https://…/gateway', showGateway = true,
   trigger, label = 'Model', side = 'bottom', align = 'end', defaultOpen = false, className }: ProviderSetupProps) {
@@ -120,7 +125,7 @@ export function ProviderSetup({ providers, value, onSave, onLogin, loginState = 
         {canLogin && <div className="flex flex-col gap-2">
           <Button variant="outline" data-testid="provider-login" disabled={loginState.state === 'starting' || loginState.state === 'pending'} onClick={() => { void onLogin?.(chosen.id); }}>{chosen.loginLabel ?? `Sign in with ${chosen.name}`}{chosen.auth.includes('oauth') && chosen.configured && loginState.state === 'idle' ? ' again' : ''}</Button>
           {loginState.state === 'starting' && <p role="status" className="m-0 text-xs text-muted-foreground">Requesting a sign-in code…</p>}
-          {loginState.state === 'pending' && <p role="status" data-testid="login-pending" className="m-0 text-sm">Open <a href={loginState.verificationUri} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 [overflow-wrap:anywhere]">{loginState.verificationUri}</a> and enter
+          {loginState.state === 'pending' && <p role="status" data-testid="login-pending" className="m-0 text-sm">Open {isWebLink(loginState.verificationUri) ? <a href={loginState.verificationUri} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 [overflow-wrap:anywhere]">{loginState.verificationUri}</a> : <span data-testid="login-uri" className="[overflow-wrap:anywhere]">{loginState.verificationUri}</span>} and enter
             <code data-testid="device-code" className="ms-1 bg-muted px-1.5 py-0.5 font-mono tracking-wider">{loginState.userCode}</code>
             <span className="mt-1 block text-xs text-muted-foreground">Waiting for you to approve…</span></p>}
           {loginState.state === 'done' && <p role="status" data-testid="login-done" className="m-0 inline-flex items-center gap-1 text-xs text-muted-foreground"><CheckIcon className="size-3" aria-hidden="true" />Signed in</p>}

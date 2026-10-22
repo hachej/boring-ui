@@ -235,6 +235,12 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     assert.ok(inline.q('iframe[data-testid="viewer-frame-pdf"]').getAttribute('src').startsWith('blob:'));
     assert.equal(inline.q('[data-testid="viewer-pdf-fallback"]') === null, true);
     assert.equal(inline.q('iframe').hasAttribute('sandbox'), false, 'the browser PDF viewer does not run inside a sandboxed frame');
+    const page = await mount(t, h(pdfPane.PdfPane, { name: 'report.pdf', blob: new Blob(['<script>1</script>'], { type: 'text/html' }), inline: true }));
+    await settle();
+    assert.equal(page.q('iframe') === null, true, 'a blob that is not a PDF is never loaded into the unsandboxed frame');
+    assert.ok(page.q('[data-testid="viewer-pdf-fallback"]'), 'it offers Download instead');
+    const typed = await mount(t, h(pdfPane.PdfPane, { name: 'report.pdf', blob: new Blob([pdf], { type: 'application/pdf' }), inline: true }));
+    assert.ok(typed.q('iframe[data-testid="viewer-frame-pdf"]'), 'a PDF blob still uses the browser viewer');
     const fallback = await mount(t, h(pdfPane.PdfPane, { name: 'report.pdf', bytes: pdf, inline: false, onRefresh() {} }));
     assert.equal(fallback.q('iframe') === null, true);
     // No browser viewer: pdf.js is tried first. This DOM has no Worker, so the worker cannot start and the pane falls back to Download.

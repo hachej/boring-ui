@@ -54,7 +54,9 @@ const STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
 export function PdfPane({ name, bytes, blob, url: hostUrl, subtitle, status, target, revision, headerStart, controls, onRefresh, onShare, onOpenInNewTab, onClose, inline, fit = 'width', testId = 'viewer', titleTestId, className }: PdfPaneProps) {
   const source = useMemo<MediaSource>(() => ({ ...(bytes ? { bytes } : {}), ...(blob ? { blob } : {}), ...(hostUrl ? { url: hostUrl } : {}) }), [bytes, blob, hostUrl]);
   const { url, size, blob: made } = useMediaUrl(source, 'application/pdf');
-  const canShow = inline ?? browserShowsPdf();
+  // The browser's PDF viewer does not run in a sandboxed frame, so the frame is unsandboxed and loads only a blob typed application/pdf (a host `url` is the host's own).
+  const isPdf = !made || made.type === 'application/pdf';
+  const canShow = isPdf && (inline ?? browserShowsPdf());
   const { labels } = useViewerText();
   const downloadName = name.split('/').pop() || 'document.pdf';
   const download = () => { if (made) downloadFile(downloadName, made, 'application/pdf'); else if (url) { const link = Object.assign(document.createElement('a'), { href: url, download: downloadName }); document.body.append(link); link.click(); link.remove(); } };
@@ -64,7 +66,7 @@ export function PdfPane({ name, bytes, blob, url: hostUrl, subtitle, status, tar
   const [failed, setFailed] = useState(false);
   useEffect(() => { setPages(undefined); setFailed(false); }, [url]);
   const step = (direction: 1 | -1) => setZoom(now => (direction > 0 ? STEPS.find(value => value > now) : [...STEPS].reverse().find(value => value < now)) ?? now);
-  const drawn = Boolean(url) && !canShow && !failed;
+  const drawn = Boolean(url) && isPdf && !canShow && !failed;
   return <ViewerFrame title={downloadName} subtitle={<>{subtitle}{subtitle && size !== undefined && <span aria-hidden="true">·</span>}{['PDF', size !== undefined && formatBytes(size)].filter(Boolean).join(' · ')}</>} status={status} target={target} revision={revision} headerStart={headerStart} testId={testId} {...(titleTestId ? { titleTestId } : {})} className={className}
     onRefresh={onRefresh} onShare={onShare} onDownload={url ? download : undefined} onOpenInNewTab={open} onClose={onClose}
     controls={drawn && pages ? <><ZoomControls testId={testId} percent={`${Math.round(zoom * 100)}%`} ready onStep={step} onFit={() => setZoom(1)} />{controls}</> : controls}>

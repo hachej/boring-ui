@@ -1,5 +1,7 @@
 # Unreleased
 
+- **Hardening (D-248).** `githubSink` refuses `.`/`..` repository segments and an `apiUrl` that is not https (http only for localhost) before sending the token; reinstall `provider-setup` (non-http(s) `verificationUri` is plain text), `shared-chat` (`avatarUrl` loads only https, `data:image/`, `blob:` or same-origin paths) and `viewers` (`PdfPane` shows a `blob` only when typed `application/pdf`). `mockup-viewer` messages keep targetOrigin `'*'` (opaque-origin sandbox).
+
 # Migrating to 0.4.8
 
 - **Viewers — Quiet Markdown editor (D-227, #1795).** The formatting bar appears on selection and a header Formatting toggle pins it; pass `formattingToolbar="pinned"` for the old always-visible bar.

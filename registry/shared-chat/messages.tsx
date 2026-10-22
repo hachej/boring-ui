@@ -42,6 +42,12 @@ export function sharedQuote(shared: SharedChatState, id: string | undefined) {
   return message ? { message, author: memberOf(shared, message.author) } : undefined;
 }
 
+/** Only https, `data:image/`, `blob:` and same-origin relative addresses load; anything else falls back to the initials. */
+export function safeAvatarUrl(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  return /^(?:https:\/\/|data:image\/|blob:)/i.test(url) || /^\/(?![/\\])/.test(url) ? url : undefined;
+}
+
 export function MemberAvatar({ member, card, interactive = true, size = 'default', compact = false }: { readonly member: Member; readonly card?: Request | undefined; readonly interactive?: boolean; readonly size?: ComponentProps<typeof Avatar>['size']; readonly compact?: boolean }) {
   const { labels } = useChatText();
   const phone = usePhone();
@@ -55,8 +61,9 @@ export function MemberAvatar({ member, card, interactive = true, size = 'default
   const state = member.kind === 'agent' && card?.state && Object.hasOwn(channelAvatarStates, card.state) ? channelAvatarStates[card.state] ?? 'neutral' : 'neutral';
   const tone = state === 'blocked' ? 'text-destructive' : state === 'waiting' ? 'text-muted-foreground' : 'text-primary';
   const agent = agentTone(member);
+  const avatarSrc = safeAvatarUrl(member.avatarUrl);
   const avatar = <Avatar size={compact ? 'sm' : size} data-agent-color={agent?.token} data-testid="member-avatar" role="img" aria-label={member.kind === 'agent' ? `${member.name}, ${labels.sharedAgent}` : member.name} data-state={state}>
-    {member.avatarUrl && <AvatarImage src={member.avatarUrl} alt={member.name} />}
+    {avatarSrc && <AvatarImage src={avatarSrc} alt={member.name} />}
     <AvatarFallback>{member.kind === 'agent' ? <BotIcon data-lucide="bot" className={`${compact ? 'size-3' : 'size-4'} ${agent?.icon ?? ''}`} aria-hidden="true" /> : member.name.replace(/[()]/g, '').split(/\s+/).slice(0, 2).map(word => word[0]).join('').toUpperCase()}</AvatarFallback>
     {state !== 'neutral' && <span data-testid="avatar-indicator" data-state={state} className={`absolute right-0 bottom-0 ${tone}`}>
       <CircleIcon className="size-2 fill-current" aria-hidden="true" />
