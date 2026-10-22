@@ -422,6 +422,7 @@
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.6/r/utils.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.6/r/button.json",
+        "dialog",
         "tooltip",
         "trace",
         "message",
@@ -507,6 +508,11 @@
           "path": "registry/pi-chat/history.tsx",
           "type": "registry:component",
           "target": "components/pi-chat/history.tsx"
+        },
+        {
+          "path": "registry/pi-chat/image-viewer.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat/image-viewer.tsx"
         },
         {
           "path": "registry/pi-chat/markdown.tsx",

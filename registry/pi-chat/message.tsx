@@ -75,7 +75,7 @@ function ImageThumbnails({ images, onOpenImage }: { readonly images: readonly Im
   if (!images.length) return null;
   return <div data-testid="message-images" data-slot="message-images" className={cn('grid max-w-full gap-2', images.length === 1 ? 'w-60' : 'w-120 grid-cols-2')}>
     {images.map((image, at) => <div key={at} className="relative min-h-12 min-w-12 self-start">
-      <img src={thumbnail(image.mimeType, image.data)} alt={labels.imageAttachment} className="block h-auto w-full rounded-[var(--radius)]" />
+      <img src={thumbnail(image.mimeType, image.data)} alt={labels.imageAttachment} className="block h-auto w-full rounded-xl" />
       <Button variant="link" className="absolute inset-0 h-auto min-h-12 min-w-12 w-full" data-testid="message-image" aria-label={images.length > 1 ? `${labels.openImage}, ${labels.imagePosition(at + 1, images.length)}` : labels.openImage} onClick={() => onOpenImage?.(image, images)} />
     </div>)}
   </div>;

@@ -46,7 +46,12 @@ export function ImageViewer({ images, index, onIndexChange, onClose, labels: sup
           <Button variant="ghost" size="icon" className="min-h-12! min-w-12!" aria-label={labels.previousImage} onClick={() => move(-1)}><ChevronLeftIcon data-icon="inline-start" aria-hidden="true" /></Button>
           <Button variant="ghost" size="icon" className="min-h-12! min-w-12!" aria-label={labels.nextImage} onClick={() => move(1)}><ChevronRightIcon data-icon="inline-start" aria-hidden="true" /></Button>
         </>}
-        <Button variant="ghost" size="icon" className="min-h-12! min-w-12!" data-testid={`${testId}-close`} aria-label={labels.close} onClick={onClose}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>
+        <Button variant="ghost" size="icon" className="min-h-12! min-w-12!" data-testid={`${testId}-close`} aria-label={labels.close} onClick={onClose}
+          onTouchEnd={event => {
+            // Pinch can suppress clicks; cancel the compatibility click before exposing the page beneath the close target.
+            const point = event.changedTouches[0], box = event.currentTarget.getBoundingClientRect();
+            if (point && point.clientX >= box.left && point.clientX <= box.right && point.clientY >= box.top && point.clientY <= box.bottom) { event.preventDefault(); onClose(); }
+          }}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>
       </div>
     </div>
     <ImageSurface key={`${index}:${src}`} src={src} alt={labels.imagePosition(index + 1, images.length)} onClose={onClose} testId={testId} />
