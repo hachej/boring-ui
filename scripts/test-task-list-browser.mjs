@@ -24,7 +24,7 @@ const target = { resource: { providerId: 'tasks', path: 'tasks.json' }, view: { 
 const notesTarget = { resource: { providerId: 'notes', path: 'notes.md' }, view: { kind: 'published' } };
 let denied = false, writes = 0, notesWrites = 0, browser, server, origin, harness, conversation;
 const files = openSqliteWorkspaces({ filename: join(directory, 'tasks.sqlite'), providerId: 'tasks', authorize: action => !denied || action === 'read' || action === 'lookup' });
-const notes = openSqliteWorkspaces({ filename: join(directory, 'notes.sqlite'), providerId: 'notes' });
+const notes = openSqliteWorkspaces({ filename: join(directory, 'notes.sqlite'), providerId: 'notes', authorize: () => true });
 const read = async (provider = files, selected = target) => { const result = await provider.read({ target: selected, revision: { kind: 'latest' } }, identity); assert.equal(result.kind, 'available'); return result.snapshot; };
 const doc = async () => JSON.parse(new TextDecoder().decode((await read()).bytes));
 const run = body => browser.evaluate(`(async () => { const j = window.taskList; ${body} })()`);

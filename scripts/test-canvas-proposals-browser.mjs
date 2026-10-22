@@ -23,7 +23,7 @@ const git = args => {
 };
 const access = { scopeId: 'fictional', principalId: 'browser', initiatorId: 'journey' };
 const target = { resource: { providerId: 'fictional', path: 'board.canvas' }, view: { kind: 'published' } };
-const files = openSqliteWorkspaces({ filename: join(directory, 'canvas.sqlite'), providerId: 'fictional' });
+const files = openSqliteWorkspaces({ filename: join(directory, 'canvas.sqlite'), providerId: 'fictional', authorize: () => true });
 let server, browser, publications = 0, release, delayed = false, failPublication = false;
 const saved = async () => { const result = await files.read({ target, revision: { kind: 'latest' } }, access); assert.equal(result.kind, 'available'); return result.snapshot; };
 const document = async () => JSON.parse(new TextDecoder().decode((await saved()).bytes));

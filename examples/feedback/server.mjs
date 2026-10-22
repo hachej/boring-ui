@@ -16,6 +16,7 @@
 // tool and shares it with `present`. A new ticket is mirrored once to the first sink that accepts the project (the file sink by default,
 // whose link is `/tickets/<id>`; GitHub with `FEEDBACK_TICKET_REPO` and `GITHUB_TOKEN`) and the link is written back into its front matter.
 import { createServer } from 'node:http';
+import { rejectForeignHost, sameSecret } from '../../shared/local-host.mjs';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -138,7 +139,7 @@ export async function startFeedbackApp({ directory, port = 0, protection = 'prot
   } };
   const byToken = request => {
     const header = request.headers.get('authorization') ?? '';
-    return Object.values(people).find(person => header === `Bearer ${person.token}`);
+    return Object.values(people).find(person => sameSecret(header, `Bearer ${person.token}`));
   };
   const store = createFeedbackStore({
     providerId: PROVIDER, view, reader: files, publisher, lookup: files.reconciliation, listFolder: workspace.listFolder,
@@ -246,6 +247,7 @@ export async function startFeedbackApp({ directory, port = 0, protection = 'prot
 <script type="module" src="/app.js"></script></body></html>`;
 
   const server = createServer(async (incoming, outgoing) => {
+    if (rejectForeignHost(incoming, outgoing)) return;
     const url = new URL(incoming.url, `http://${incoming.headers.host}`);
     const closed = new AbortController();
     outgoing.on('close', () => closed.abort());

@@ -58,7 +58,7 @@ test('late storage acknowledgement cannot report an expired checkpoint as stored
 });
 async function fixture(t, initial = 'Saved fictional note') {
   const directory = await mkdtemp(join(tmpdir(), 'boring-text-drafts-'));
-  const provider = openSqliteWorkspaces({ filename: join(directory, 'resources.db'), providerId: 'documents' });
+  const provider = openSqliteWorkspaces({ filename: join(directory, 'resources.db'), providerId: 'documents', authorize: () => true });
   const sessions = [], buffers = [];
   const client = { read: value => provider.read(value, identity), publish: value => provider.publication.publish(value, identity), lookup: value => provider.reconciliation.lookup(value, identity) };
   const read = () => client.read({ target, revision: { kind: 'latest' } });

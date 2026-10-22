@@ -1,5 +1,6 @@
 // Ported from spike/canvas-board. One real workspace provider, fictional files and the actual ArtifactPanel.
 import { createServer } from 'node:http';
+import { rejectForeignHost, sameSecret } from '../../shared/local-host.mjs';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -34,7 +35,7 @@ export async function startBoard({ port = 0, directory = mkdtempSync('/var/tmp/b
     if (result.kind !== 'committed') throw new Error(`Seed failed: ${result.kind}`);
     seeded[path] = result.receipt.changes[0].after.revision;
   }
-  const allowed = request => request.headers.get('authorization') === `Bearer ${token}`;
+  const allowed = request => sameSecret(request.headers.get('authorization'), `Bearer ${token}`);
   const resources = createResourceHandler({ authenticate: async request => allowed(request) ? person : null, reader: files, publisher: files.publication, lookup: files.reconciliation });
   const bundle = await build({ entryPoints: [here('./page.tsx')], bundle: true, write: false, outdir: here('./out'), format: 'esm', splitting: true, platform: 'browser', jsx: 'automatic',
     alias: { '@': here('../app-shell') }, define: { 'process.env.NODE_ENV': '"production"' }, minify: true, plugins: [injectCss], metafile: true, logLevel: 'silent', chunkNames: 'chunk-[hash]' });
@@ -45,6 +46,7 @@ export async function startBoard({ port = 0, directory = mkdtempSync('/var/tmp/b
   const page = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Board viewer, fictional</title><link rel="stylesheet" href="/app.css"></head><body><div id="root"></div><script type="application/json" id="boot">${JSON.stringify(boot).replaceAll('<', '\\u003c')}</script><script type="module" src="/page.js"></script></body></html>`;
   const faults = { lose: false, hold: false, release: null, dispatched: false };
   const server = createServer(async (incoming, outgoing) => {
+    if (rejectForeignHost(incoming, outgoing)) return;
     const url = new URL(incoming.url, `http://${incoming.headers.host}`);
     const closed = new AbortController(); outgoing.on('close', () => closed.abort());
     try {

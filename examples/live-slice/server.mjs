@@ -1,6 +1,7 @@
 // One real vertical slice: native Harness + real model + SQLite documents behind a real HTTP socket.
 // Fictional content only. The bearer token is a per-process local fixture, not an identity provider.
 import { createServer } from 'node:http';
+import { rejectForeignHost, sameSecret } from '../../shared/local-host.mjs';
 import { randomUUID } from 'node:crypto';
 import { sendWebResponse, webRequest } from '@hachej/boring-files/node-http';
 import { fileURLToPath } from 'node:url';
@@ -65,7 +66,7 @@ export async function startLiveSlice({ port = 0, provider = process.env.SLICE_PR
   const conversation = await harness.createConversation({ ownership: { kind: 'ownerless' },
     agent: { model: { provider, modelId }, instructions: INSTRUCTIONS } }, context);
 
-  const authenticated = request => request.headers.get('authorization') === `Bearer ${token}`;
+  const authenticated = request => sameSecret(request.headers.get('authorization'), `Bearer ${token}`);
   const revoked = new AbortController();
   const resourceHandler = createResourceHandler({ authenticate: async request => authenticated(request) ? human : null,
     reader: resources, publisher: resources.publication, lookup: resources.reconciliation });
@@ -94,6 +95,7 @@ section{border:1px solid #ccc;border-radius:8px;padding:12px;min-height:80vh}tex
 <script type="module" src="/app.js"></script></body></html>`;
 
   const server = createServer(async (incoming, outgoing) => {
+    if (rejectForeignHost(incoming, outgoing)) return;
     const url = new URL(incoming.url, `http://${incoming.headers.host}`);
     const closed = new AbortController();
     outgoing.on('close', () => closed.abort());

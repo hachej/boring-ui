@@ -3,6 +3,7 @@
 // The agent has a small workspace (Pi's read, write and edit behind the file guard, plus `present`), ask_user and one deliberately slow tool so a run stays visible for a while.
 // Fictional content only; the bearer token is a local fixture, not an identity provider.
 import { createServer } from 'node:http';
+import { rejectForeignHost, sameSecret } from '../../shared/local-host.mjs';
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -102,7 +103,7 @@ export async function startAmbient({ directory, port = 0, provider = process.env
     return title;
   }
 
-  const authenticated = request => request.headers.get('authorization') === `Bearer ${token}`;
+  const authenticated = request => sameSecret(request.headers.get('authorization'), `Bearer ${token}`);
   const chat = createChatTransportHandler({ authenticate: async request => {
     const conversation = conversations.get(new URL(request.url).searchParams.get('conversation') ?? '');
     if (!authenticated(request) || !conversation) return null;
@@ -135,6 +136,7 @@ export async function startAmbient({ directory, port = 0, provider = process.env
   const statics = { '/': ['text/html; charset=utf-8', page], '/app.js': ['text/javascript; charset=utf-8', script], '/styles.css': ['text/css; charset=utf-8', styles] };
 
   const server = createServer(async (incoming, outgoing) => {
+    if (rejectForeignHost(incoming, outgoing)) return;
     const url = new URL(incoming.url, `http://${incoming.headers.host}`);
     const closed = new AbortController();
     outgoing.on('close', () => closed.abort());

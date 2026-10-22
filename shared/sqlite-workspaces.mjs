@@ -3,7 +3,7 @@
 // same database, keyed by each workspace's identity, so a multi-file save and its receipt commit in one transaction.
 //
 // Access control is at the workspace boundary and belongs to the host ([One place for files](../../docs/architecture/FILES-GIT-EXEC.md#one-place-for-files)):
-// `authorize(action, target, access)` is the host's policy, checked here before a request reaches the scope's workspace. A
+// `authorize(action, target, access)` is the host's policy, checked here before a request reaches the scope's workspace. It has no default: without one every request is refused. A
 // refused write whose operation already committed reads `unknown`, and a lookup the policy no longer permits reads `unknown`,
 // so a revoked caller never learns a receipt and never mistakes a committed operation for one that did not happen.
 import { openNodeConnection } from '@hachej/boring-files/sqlite';
@@ -13,7 +13,7 @@ import { createWorkspaceProvider } from '@hachej/boring-files/workspace';
 import { accessSnapshot, publicationSnapshot } from '@hachej/boring-files/publication';
 
 /** `sqlite`: the connection's settings (`sqliteSettings.networkFilesystem` from `@hachej/boring-files/sqlite` on EFS); local disk by default. */
-export function openSqliteWorkspaces({ filename, providerId, authorize = () => true, sqlite = {} }) {
+export function openSqliteWorkspaces({ filename, providerId, authorize = () => false, sqlite = {} }) {
   const connection = openNodeConnection(filename, sqlite);
   let journal;
   try { journal = createWorkspaceJournal(connection); } catch (error) { connection.close(); throw error; }
