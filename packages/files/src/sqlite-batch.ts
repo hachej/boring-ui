@@ -3,7 +3,7 @@ import type { SqliteConnection } from './sqlite.js';
 /**
  * Internal (not a package export): what the workspace provider needs from the SQLite file system to commit a multi-file batch in
  * one transaction. Registered by `openSqliteFileSystem` against the file system object it returns, so the provider keeps taking a
- * plain Pi `FileSystem`. Both functions are synchronous and run inside `connection.transaction`.
+ * plain Pi `FileSystem`. Its mutations are synchronous and run inside `connection.transaction`.
  */
 export interface SqliteBatch {
   readonly connection: SqliteConnection;
@@ -11,6 +11,8 @@ export interface SqliteBatch {
   readonly bytes: (path: string) => Uint8Array | null | undefined;
   /** Write a regular file at an absolute path, creating its missing parent directories. Throws a Pi `FileError` on failure. */
   readonly write: (path: string, bytes: Uint8Array) => void;
+  readonly rename: (from: string, to: string) => void;
+  readonly remove: (path: string) => void;
   /** The one byte limit of this file system: native writes and publications both enforce it. */
   readonly maxFileBytes: () => number;
   readonly setMaxFileBytes: (limit: number) => void;

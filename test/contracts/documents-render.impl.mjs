@@ -31,6 +31,8 @@ async function load() {
     `export { useAgentLayer } from '${root}registry/app-shell/agent-layer.tsx';`,
     `export { useShellLayer } from '${root}registry/app-shell/shell-layer.ts';`,
     `export { Documents } from '${root}registry/documents/documents.tsx';`,
+    `export { Revisions } from '${root}registry/documents/revisions.tsx';`,
+    `export { defaultDocumentsLabels } from '${root}registry/documents/documents-labels.ts';`,
     `export { DocumentSheet } from '${root}registry/documents/document-sheet.tsx';`,
   ].join('\n'));
   await build({ entryPoints: [entry], outfile, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', alias: { '@': `${root}examples/app-shell` }, plugins: [cssEmpty], logLevel: 'silent' });
@@ -94,7 +96,7 @@ async function fixture(t) {
     search: request => workspace.catalog.search(request, access),
     history: path => workspace.catalog.history(path, access),
   };
-  return { provider, notes, first, second, last, fiche: { first: fiche1, last: fiche2 }, logo: { first: logo1, last: logo2 } };
+  return { provider, workspace, notes, first, second, last, fiche: { first: fiche1, last: fiche2 }, logo: { first: logo1, last: logo2 } };
 }
 
 /**
@@ -155,6 +157,21 @@ test('Revisions at 1280: the history lists every saved revision, and an old one 
   assert.match(body, /Premier jet/, 'the old bytes are shown');
   assert.doesNotMatch(body, /Version finale/, 'not the latest bytes');
   assert.match(view.q('[data-testid=artifact-panel]')?.textContent ?? '', /Read-only/, 'marked read-only');
+});
+
+for (const source of ['rename', 'delete']) test(`Revisions names a conditional ${source} without losing retained bytes`, async t => {
+  const f = await fixture(t);
+  const request = { operationId: `history-${source}`, expectedRevision: f.last };
+  const result = source === 'rename'
+    ? await f.workspace.renaming.rename({ ...request, from: locate('brief.txt'), to: locate('moved.txt') }, access)
+    : await f.workspace.deletion.delete({ ...request, path: locate('brief.txt') }, access);
+  assert.equal(result.kind, 'committed');
+  const { createElement: h } = await import('react');
+  const view = await mount(t, { width: 1280, screen: shell => () => h(shell.Revisions, { provider: f.provider, path: 'brief.txt', version: 0, selected: undefined, locale: 'en', labels: shell.defaultDocumentsLabels, onOpen() {} }) });
+  await view.settle(() => view.q('[data-testid=revision-item]'));
+  assert.match(view.q('[data-testid=revision-item]').textContent, source === 'rename' ? /renamed/ : /deleted/);
+  const retained = await f.provider.read({ target: locate('brief.txt'), revision: { kind: 'exact', value: f.last } });
+  assert.equal(new TextDecoder().decode(retained.snapshot.bytes), 'Version finale\n');
 });
 
 test('DocumentSheet at 390: one document opens over the app, « Toutes les fiches » is offered, and Back closes it', async t => {

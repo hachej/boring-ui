@@ -135,8 +135,8 @@ export interface ProviderGuarantees {
 }
 
 export interface ResourceCapabilities {
-  readonly supported: readonly ('read' | 'create' | 'replace' | 'delete' | 'lookup')[];
-  readonly effective: readonly ('read' | 'create' | 'replace' | 'delete' | 'lookup')[];
+  readonly supported: readonly ('read' | 'create' | 'replace' | 'delete' | 'rename' | 'lookup')[];
+  readonly effective: readonly ('read' | 'create' | 'replace' | 'delete' | 'rename' | 'lookup')[];
   readonly availability: 'available' | 'unavailable' | 'unknown';
   readonly observedAt: string;
   readonly guarantees: ProviderGuarantees;
@@ -149,6 +149,28 @@ export interface ResourceReader {
 
 export interface ResourcePublisher {
   readonly publish: (request: PublicationRequest, access: ResourceAccess) => Promise<PublicationResult>;
+}
+
+export interface ResourceRenameRequest {
+  readonly from: ResourceLocator;
+  readonly to: ResourceLocator;
+  readonly expectedRevision: string;
+  readonly operationId: string;
+}
+
+export interface ResourceDeleteRequest {
+  readonly path: ResourceLocator;
+  readonly expectedRevision: string;
+  readonly operationId: string;
+}
+
+/** Conditional regular-file mutations; receipts and lookup use the publication journal. */
+export interface ResourceRenamer {
+  readonly rename: (request: ResourceRenameRequest, access: ResourceAccess) => Promise<PublicationResult>;
+}
+
+export interface ResourceDeleter {
+  readonly delete: (request: ResourceDeleteRequest, access: ResourceAccess) => Promise<PublicationResult>;
 }
 
 export type PublicationLookupResult = PublicationResult | { readonly kind: 'not-found' };
@@ -165,4 +187,6 @@ export interface ResourceProvider extends ResourceReader {
   readonly capabilities: (target: ResourceLocator, access: ResourceAccess) => Promise<ResourceCapabilities>;
   readonly publication?: ResourcePublisher;
   readonly reconciliation?: PublicationLookup;
+  readonly renaming?: ResourceRenamer;
+  readonly deletion?: ResourceDeleter;
 }

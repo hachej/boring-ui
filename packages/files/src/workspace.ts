@@ -1,6 +1,6 @@
 import type { Context } from '@earendil-works/chord';
 import type { FileSystem, FileWatcher, WatchChange } from '@earendil-works/pi-durable/env';
-import type { CommittedChange, PublicationLookupResult, PublicationReceipt, PublicationResult, ReadResult, ResourceAccess, ResourceCapabilities, ResourceExpectation, ResourceLocator, ResourceProvider, ResourceRead, ResourceRef, ResourceChange } from './contracts.js';
+import type { CommittedChange, PublicationLookupResult, PublicationReceipt, PublicationResult, ReadResult, ResourceAccess, ResourceCapabilities, ResourceExpectation, ResourceLocator, ResourceProvider, ResourceRead, ResourceRef, ResourceChange, PublicationRequest, ResourceRenameRequest, ResourceRenamer, ResourceDeleter } from './contracts.js';
 import { createWorkspaceCatalog } from './workspace-catalog.js';
 import type { WorkspaceCatalogOptions } from './workspace-catalog.js';
 import type { ChangeFeedRequest, WorkspaceCatalog, WorkspaceChangeEvent } from './revision-contracts.js';
@@ -9,7 +9,7 @@ export type { WorkspaceCatalogOptions } from './workspace-catalog.js';
 import { committedChanges } from './journal.js';
 import type { HistorySource, OperationKey, StoredOperation, WorkspaceJournal } from './journal.js';
 import { randomUUID, sha1 } from './platform.js';
-import { accessSnapshot, identifier, locator, publicationDigest, publicationSnapshot } from './publication-input.js';
+import { accessSnapshot, identifier, locator, publicationDigest, publicationSnapshot, renameSnapshot, renameDigest, deleteSnapshot, deletePublication } from './publication-input.js';
 import { assertLimit, fileTooLarge } from './file-limits.js';
 import { journalConnectionOf, sqliteBatchOf } from './sqlite-batch.js';
 import { isTemporary, mediaTypeOf, temporaryFileName } from './file-types.js';
@@ -50,6 +50,8 @@ export interface WorkspaceResourceProvider extends ResourceProvider {
   readonly catalog: WorkspaceCatalog;
   readonly publication: { readonly publish: (request: Parameters<NonNullable<ResourceProvider['publication']>['publish']>[0], access: ResourceAccess) => Promise<PublicationResult> };
   readonly reconciliation: { readonly lookup: (operationId: string, access: ResourceAccess) => Promise<PublicationLookupResult> };
+  readonly renaming: ResourceRenamer;
+  readonly deletion: ResourceDeleter;
   /** The workspace's mutation queue. Native tool calls that must not interleave with a conditional write run through it. */
   readonly queue: WorkspaceQueue;
   /**
@@ -310,20 +312,16 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
     };
   }
 
-  const publish: WorkspaceResourceProvider['publication']['publish'] = async (input, context) => {
-    const request = publicationSnapshot(input);
-    const access = accessSnapshot(context);
-    const digest = await publicationDigest(request);
-    if (request.atomicity !== 'all-or-nothing') return { kind: 'unavailable', reason: 'This provider accepts all-or-nothing publication only' };
-    if (request.changes.length !== 1 && !batch) return { kind: 'unavailable', reason: 'This provider cannot apply a multi-file batch atomically; only a single-file change is accepted' };
-    const changes: Exclude<ResourceChange, { kind: 'delete' }>[] = [];
-    for (const change of request.changes) {
-      if (change.kind === 'delete') return { kind: 'unavailable', reason: 'This provider does not delete files through publication' };
-      changes.push(change);
-    }
+  const mutate = async (request: PublicationRequest | ResourceRenameRequest, access: ResourceAccess): Promise<PublicationResult> => {
+    const moving = 'from' in request ? request : undefined;
+    const publication = 'changes' in request ? request : undefined;
+    const digest = moving ? await renameDigest(moving) : await publicationDigest(publication!);
+    if (publication && publication.atomicity !== 'all-or-nothing') return { kind: 'unavailable', reason: 'This provider accepts all-or-nothing publication only' };
+    if (publication && publication.changes.length !== 1 && !batch) return { kind: 'unavailable', reason: 'This provider cannot apply a multi-file batch atomically; only a single-file change is accepted' };
+    const changes: readonly ResourceChange[] = moving ? [{ kind: 'delete', target: { ...moving.from, revision: moving.expectedRevision } }] : publication!.changes;
     const expectations: ResourceExpectation[] = [
       ...changes.map((change): ResourceExpectation => change.kind === 'create' ? { kind: 'absent', target: change.target } : { kind: 'revision', target: change.target }),
-      ...(request.preconditions ?? []),
+      ...(moving ? [{ kind: 'absent' as const, target: moving.to }] : publication!.preconditions ?? []),
     ];
     if (expectations.some(item => !supported(item.target))) return { kind: 'unavailable', reason: 'This provider serves its published view only' };
     if (access.signal?.aborted) return { kind: 'unavailable', reason: 'The save was cancelled before it began' };
@@ -342,7 +340,7 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
       // After the receipt and intent checks, so a replay of a committed operation keeps its result under a lower limit.
       const limit = limitOf();
       if (limit !== undefined) {
-        const oversized = changes.find(change => change.bytes.length > limit);
+        const oversized = changes.find((change): change is Exclude<ResourceChange, { kind: 'delete' }> => change.kind !== 'delete' && change.bytes.length > limit);
         if (oversized) {
           const size = oversized.bytes.length, path = oversized.target.resource.path;
           return { kind: 'file_too_large', path, size, limit, reason: fileTooLarge(path, size, limit).message };
@@ -371,29 +369,41 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
         if (stale) { journal.cancel(operation); return { kind: 'conflict', current: conflicts, reason: 'Publication precondition failed' }; }
 
         if (expectations.some(item => isTemporary(item.target.resource.path))) return refuse('That name is reserved for the provider\'s temporary files');
-        const plans: { change: typeof changes[number]; path: string; before: Observed | undefined; after: string; unchanged: boolean; beforeSavedAt: number }[] = [];
+        const plans: { change: ResourceChange; path: string; before: Observed | undefined; after: string | null; unchanged: boolean; beforeSavedAt: number }[] = [];
         for (const change of changes) {
           const path = change.target.resource.path;
           const forbidden = await escape(path, true, access.signal);
           if (forbidden !== undefined) { journal.cancel(operation); return { kind: 'denied', reason: forbidden }; }
-          const after = await blobRevision(change.bytes);
+          const after = change.kind === 'delete' ? null : await blobRevision(change.bytes);
           const unchanged = change.kind === 'replace' && after === change.target.revision;
           // The replaced revision was saved when its file was last modified, before this write changes that.
-          plans.push({ change, path, before: observed.get(path), after, unchanged, beforeSavedAt: change.kind === 'replace' && !unchanged ? await savedAtOf(path, access.signal) : 0 });
+          plans.push({ change, path, before: observed.get(path), after, unchanged, beforeSavedAt: change.kind !== 'create' && !unchanged ? await savedAtOf(path, access.signal) : 0 });
+        }
+        if (moving) {
+          const path = moving.to.resource.path;
+          const forbidden = await escape(path, true, access.signal);
+          if (forbidden !== undefined) { journal.cancel(operation); return { kind: 'denied', reason: forbidden }; }
+          const before = observed.get(moving.from.resource.path);
+          if (before?.kind !== 'file') return refuse('Rename requires a regular file');
+          if (limit !== undefined && before.bytes.length > limit) {
+            journal.cancel(operation);
+            return { kind: 'file_too_large', path, size: before.bytes.length, limit, reason: fileTooLarge(path, before.bytes.length, limit).message };
+          }
+          plans.push({ change: { kind: 'create', target: moving.to, expected: { kind: 'absent' }, bytes: before.bytes, mediaType: journal.version(historyScope, moving.from.resource.path, before.revision)?.mediaType ?? mediaTypeOf(moving.from.resource.path) }, path, before: observed.get(path), after: before.revision, unchanged: false, beforeSavedAt: 0 });
         }
 
         const evidence = `${key.incarnation}:${randomUUID()}`;
         const versions = plans.flatMap(({ change, path, before, after, unchanged, beforeSavedAt }) => {
           const kept = (revision: string, bytes: Uint8Array, mediaType: string, savedAt: number, source: HistorySource) => ({ scope: historyScope, path, version: { revision, bytes, mediaType, savedAt, source } });
           return unchanged ? [] : [
-            ...(change.kind === 'replace' && before?.kind === 'file'
-              ? [kept(before.revision, before.bytes, journal.version(historyScope, path, before.revision)?.mediaType ?? mediaTypeOf(path), beforeSavedAt, 'observed')] : []),
-            kept(after, change.bytes, change.mediaType, Date.now(), 'publish'),
+            ...(change.kind !== 'create' && before?.kind === 'file'
+              ? [kept(before.revision, before.bytes, journal.version(historyScope, path, before.revision)?.mediaType ?? mediaTypeOf(path), beforeSavedAt, moving ? 'rename' : change.kind === 'delete' ? 'delete' : 'observed')] : []),
+            ...(change.kind !== 'delete' && after !== null ? [kept(after, change.bytes, change.mediaType, Date.now(), moving ? 'rename' : 'publish')] : []),
           ];
         });
         const record: StoredOperation = {
           digest, evidence,
-          changes: plans.map(({ change, path, after }) => change.kind === 'create' ? { kind: 'create', path, before: null, after } : { kind: 'replace', path, before: change.target.revision, after }),
+          changes: plans.map(({ change, path, after }) => change.kind === 'create' ? { kind: 'create', path, before: null, after } : { kind: change.kind, path, before: change.target.revision, after }),
         };
 
         if (access.signal?.aborted) return refuse('The save was cancelled before any change');
@@ -407,7 +417,11 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
               return seen.kind === 'missing' ? now !== null : seen.kind !== 'file' || !(now instanceof Uint8Array) || !sameBytes(now, seen.bytes);
             }).map(([path]) => path);
             if (changed.length) return changed;
-            for (const plan of plans) if (!plan.unchanged) batch.write(absolute(plan.path), plan.change.bytes);
+            if (moving) batch.rename(absolute(moving.from.resource.path), absolute(moving.to.resource.path));
+            else for (const plan of plans) if (!plan.unchanged) {
+              if (plan.change.kind === 'delete') batch.remove(absolute(plan.path));
+              else batch.write(absolute(plan.path), plan.change.bytes);
+            }
             if (together) journal.complete(operation, record, versions);
             return [];
           });
@@ -418,8 +432,19 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
           }
           applying = true;
           if (!together) journal.complete(operation, record, versions);
+        } else if (moving || plans[0]!.change.kind === 'delete') {
+          applying = true;
+          const result = moving
+            ? await fs.renameFile(absolute(moving.from.resource.path), absolute(moving.to.resource.path), fsContext(access.signal))
+            : await fs.remove(absolute(plans[0]!.path), { recursive: false }, fsContext(access.signal));
+          if (!result.ok) {
+            if (result.error.code === 'unknown' || result.error.code === 'aborted') throw result.error;
+            return refuse(result.error.message);
+          }
+          journal.complete(operation, record, versions);
         } else {
           const { change, path, unchanged } = plans[0]!;
+          if (change.kind === 'delete') return refuse('Invalid file replacement');
           if (!unchanged) {
             applying = true;
             const target = absolute(path);
@@ -449,6 +474,10 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
       }
     });
   };
+
+  const publish: WorkspaceResourceProvider['publication']['publish'] = async (input, context) => mutate(publicationSnapshot(input), accessSnapshot(context));
+  const rename: ResourceRenamer['rename'] = async (input, context) => mutate(renameSnapshot(input), accessSnapshot(context));
+  const remove: ResourceDeleter['delete'] = async (input, context) => mutate(deletePublication(deleteSnapshot(input)), accessSnapshot(context));
 
   const lookup = async (operationId: string, context: ResourceAccess): Promise<PublicationLookupResult> => {
     const id = identifier(operationId);
@@ -642,7 +671,7 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
   return {
     providerId, read, queue, keep, identity: Object.freeze(key),
     catalog: createWorkspaceCatalog({ fs, ...(options.catalog ? { config: options.catalog } : {}), saves: path => journal.saves(historyScope, path) }),
-    publication: { publish }, reconciliation: { lookup }, poll, record, changes, changeHead: () => head, changeIncarnation: incarnationOfFeed,
+    publication: { publish }, reconciliation: { lookup }, renaming: { rename }, deletion: { delete: remove }, poll, record, changes, changeHead: () => head, changeIncarnation: incarnationOfFeed,
     lifetime: lifetime.signal,
     close: () => {
       // Every change stream ends, the watcher closes and the listeners are dropped: nothing of this provider keeps running.
@@ -658,7 +687,7 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
     capabilities: async (input): Promise<ResourceCapabilities> => {
       const selected = locator(input);
       const ok = supported(selected);
-      const actions = ['read', 'create', 'replace', 'lookup'] as const;
+      const actions = ['read', 'create', 'replace', 'delete', 'rename', 'lookup'] as const;
       return {
         supported: ok ? actions : [], effective: ok ? actions : [], availability: ok ? 'available' : 'unavailable', observedAt: new Date().toISOString(),
         guarantees: { pinnedReads: true, conditionalPublication: true, atomicMutationAndReceipt: batch !== undefined && journalConnectionOf(journal) === batch.connection, atomicBatch: batch !== undefined, operationLookup: true, revocationFencing: false },

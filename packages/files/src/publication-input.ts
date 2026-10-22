@@ -1,4 +1,4 @@
-import type { CommittedChange, NonEmpty, PublicationOutcome, PublicationReceipt, PublicationRequest, PublicationResult, ResourceAccess, ResourceChange, ResourceExpectation, ResourceLocator, ResourceRef } from './contracts.js';
+import type { CommittedChange, NonEmpty, PublicationOutcome, PublicationReceipt, PublicationRequest, PublicationResult, ResourceAccess, ResourceChange, ResourceExpectation, ResourceLocator, ResourceRef, ResourceRenameRequest, ResourceDeleteRequest } from './contracts.js';
 import { sha256 } from './platform.js';
 
 /** This invocation did not dispatch. Earlier attempts with the same ID may still have effects. */
@@ -89,6 +89,28 @@ export function publicationSnapshot(value: unknown): PublicationRequest {
     operationId: identifier(input.operationId), changes, atomicity: input.atomicity,
     ...(input.preconditions === undefined ? {} : { preconditions: input.preconditions.map(expectation) }),
   };
+}
+
+export function renameSnapshot(value: unknown): ResourceRenameRequest {
+  const input = object(value), from = locator(input.from), to = locator(input.to);
+  if (from.resource.providerId !== to.resource.providerId || JSON.stringify(from.view) !== JSON.stringify(to.view)) throw new TypeError('Rename requires one provider and view');
+  if (from.resource.path === to.resource.path || from.resource.path.startsWith(`${to.resource.path}/`) || to.resource.path.startsWith(`${from.resource.path}/`)) throw new TypeError('Rename requires independent file paths');
+  return { from, to, expectedRevision: identifier(input.expectedRevision), operationId: identifier(input.operationId) };
+}
+
+export function deleteSnapshot(value: unknown): ResourceDeleteRequest {
+  const input = object(value);
+  return { path: locator(input.path), expectedRevision: identifier(input.expectedRevision), operationId: identifier(input.operationId) };
+}
+
+export function deletePublication(request: ResourceDeleteRequest): PublicationRequest {
+  return { operationId: request.operationId, atomicity: 'all-or-nothing', changes: [{ kind: 'delete', target: { ...request.path, revision: request.expectedRevision } }] };
+}
+
+export async function renameDigest(input: ResourceRenameRequest): Promise<string> {
+  const { from, to, expectedRevision } = renameSnapshot(input);
+  const digest = await sha256(new TextEncoder().encode(JSON.stringify({ format: 'boring-rename-v1', from, to, expectedRevision })));
+  return 'boring-rename-v1:sha256:' + Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
 export async function publicationDigest(input: PublicationRequest): Promise<string> {
