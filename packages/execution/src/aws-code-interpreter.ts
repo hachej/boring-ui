@@ -365,7 +365,19 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
     readTextLines: (path, lines, context) => guarded([[path, true]], file => local.readTextLines(file, lines, context)),
     openTextLineReader: (path, context) => guarded([[path, true]], file => local.openTextLineReader(file, context)),
     openBinaryReader: (path, readerOptions, context) => guarded([[path, !readerOptions?.noFollow]], file => local.openBinaryReader(file, readerOptions, context)),
-    openDirReader: (path, context) => guarded([[path, true]], directory => local.openDirReader(directory, context)),
+    // The reader's entries carry host paths; map them into the workspace namespace like `listDir`.
+    openDirReader: async (path, context) => {
+      const opened = await guarded([[path, true]], directory => local.openDirReader(directory, context));
+      if (!opened.ok) return opened;
+      const reader = opened.value;
+      return ok({
+        next: async (maxEntries, readContext) => {
+          const page = await reader.next(maxEntries, readContext);
+          return page.ok ? ok({ ...page.value, entries: page.value.entries.map(mapInfo) }) : err(mapError(page.error));
+        },
+        close: readContext => reader.close(readContext),
+      });
+    },
     // The mount's own watcher, confined like every file tool, with its paths reported in the workspace's namespace.
     watch: async (targets, onChange, context) => {
       const mapped: WatchTarget[] = [];

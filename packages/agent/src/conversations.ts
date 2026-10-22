@@ -419,7 +419,7 @@ export function createConversationsHandler(options: ConversationsHandlerOptions)
     } catch (error) {
       if (error instanceof RequestGuardError) return failure(error.status, error.status === 413 ? 'request-too-large' : 'invalid-request');
       if (error instanceof TypeError) return failure(400, 'invalid-request');
-      return failure(503, error instanceof Error && error.message ? `source-unavailable: ${error.message.slice(0, 200)}` : 'source-unavailable');
+      return failure(503, 'source-unavailable');
     }
     return failure(404, 'unknown-operation');
   };

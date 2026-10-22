@@ -2,6 +2,7 @@
 // Sessions live in SQLite and survive a restart; the bot's files are a sandboxed virtual workspace snapshotted to disk.
 // Fictional content only; the bearer token is a per-process local fixture, not an identity provider.
 import { createServer } from 'node:http';
+import { rejectForeignHost, sameSecret } from '../../shared/local-host.mjs';
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -78,7 +79,7 @@ export async function startBot({ directory, port = 0, provider = process.env.BOT
   harness.resume();
 
   const human = { runtimeId: 'bot', scopeId: 'fictional-home', principalId: 'fictional-person', initiatorId: 'fictional-person' };
-  const authenticated = request => request.headers.get('authorization') === `Bearer ${token}`;
+  const authenticated = request => sameSecret(request.headers.get('authorization'), `Bearer ${token}`);
   const chat = createChatTransportHandler({ authenticate: async request => authenticated(request) ? { conversation, context } : null });
 
   const bundle = await build({ entryPoints: [here('./browser.jsx')], bundle: true, write: false, outdir: here('./out'), format: 'esm', platform: 'browser', jsx: 'automatic',
@@ -97,6 +98,7 @@ export async function startBot({ directory, port = 0, provider = process.env.BOT
     return await bot.routes(request, url, conversation.id) ?? Response.json({ reason: 'not-found' }, { status: 404 });
   }
   const server = createServer(async (incoming, outgoing) => {
+    if (rejectForeignHost(incoming, outgoing)) return;
     const url = new URL(incoming.url, `http://${incoming.headers.host}`);
     const closed = new AbortController();
     outgoing.on('close', () => closed.abort());

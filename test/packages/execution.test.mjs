@@ -811,3 +811,13 @@ test('Code Interpreter env: a status poll that never answers returns within the 
   assert.equal(fake.calls.filter(call => call.name === 'stopTask').length, 0, 'an unknown poll stops nothing and replays nothing');
   hold.release();
 });
+
+test('Code Interpreter env: a directory reader reports workspace paths, never the host mount (D-248)', { timeout: 30000 }, async t => {
+  const { open } = await codeInterpreterFixture(t);
+  const env = open('user-a', 2001, undefined, { renew: 'manual' }).env;
+  getOrThrow(await env.writeFile('notes/plan.md', 'draft\n', context));
+  const reader = getOrThrow(await env.openDirReader('notes', context));
+  const page = getOrThrow(await reader.next(10, context));
+  await reader.close(context);
+  assert.deepEqual(page.entries.map(entry => entry.path), ['/mnt/workspace/notes/plan.md']);
+});

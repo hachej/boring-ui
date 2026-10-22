@@ -4,6 +4,7 @@
 // and the journey executes. Sessions live in SQLite and survive a restart. Fictional content only; the bearer token is a local
 // fixture, not an identity provider.
 import { createServer } from 'node:http';
+import { rejectForeignHost, sameSecret } from '../../shared/local-host.mjs';
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
@@ -90,8 +91,8 @@ export async function startStudio({ directory, port = 0, provider = process.env.
   /** The person a request authenticates as: the default token is the studio's person, the team tokens are the team's other people. */
   function principalOf(request) {
     const header = request.headers.get('authorization');
-    if (header === `Bearer ${token}`) return human.principalId;
-    return Object.entries(teamTokens).find(([, value]) => header === `Bearer ${value}`)?.[0] ?? null;
+    if (sameSecret(header, `Bearer ${token}`)) return human.principalId;
+    return Object.entries(teamTokens).find(([, value]) => sameSecret(header, `Bearer ${value}`))?.[0] ?? null;
   }
   /** A person of the team and their agent, as the workspace provider's principals (one scope per person). */
   // The studio person keeps their own identity (the page carries it); the other people get a scope each.
@@ -512,6 +513,7 @@ export async function startStudio({ directory, port = 0, provider = process.env.
   /** The chat transport behind the submit test hook (@hachej/boring-testing/network): a delayed confirmation, or a 402 `submission-refused` that never reaches the conversation. */
   const { handler: chatWithFaults, faults: submitFaults } = withSubmitFaults(chat, { delayMs: submitDelayMs, message: 'Fictional refusal (studio test hook)' });
   const server = createServer(async (incoming, outgoing) => {
+    if (!(channels && Object.hasOwn(channels.routes, incoming.url.split('?')[0])) && rejectForeignHost(incoming, outgoing)) return; // the signed channel webhook arrives through a tunnel with its own Host
     const url = new URL(incoming.url, `http://${incoming.headers.host}`);
     const closed = new AbortController();
     outgoing.on('close', () => closed.abort());

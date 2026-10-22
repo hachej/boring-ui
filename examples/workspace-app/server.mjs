@@ -2,6 +2,7 @@
 // One agent on a durable native Harness (sessions in SQLite) that writes files and presents them; the composition below is the one the
 // block's README documents: chat transport, conversations, resources and file history, behind one bearer check. Fictional content only.
 import { createServer } from 'node:http';
+import { rejectForeignHost, sameSecret } from '../../shared/local-host.mjs';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
@@ -53,7 +54,7 @@ export async function startWorkspaceApp({ directory, port = 0, token = randomUUI
   if (!(await conversations.list({ owner: agent.id })).items.length) await conversations.create(agent.id, { start });
 
   // ---- The host handlers the block talks to. Authentication (here one bearer token) and the owner key are the host's.
-  const allowed = request => request.headers.get('authorization') === `Bearer ${token}`;
+  const allowed = request => sameSecret(request.headers.get('authorization'), `Bearer ${token}`);
   // Journey fault: the next N discovery requests are refused with a 503 (the page then shows its Retry).
   const faults = { resources: 0 };
   const resources = createRevisionHandler({ resolve: async request => allowed(request) ? { provider: files, access: person } : null });
@@ -89,6 +90,7 @@ export async function startWorkspaceApp({ directory, port = 0, token = randomUUI
     '/pdfjs-dist/build/pdf.worker.min.mjs': ['text/javascript; charset=utf-8', readFileSync(fileURLToPath(import.meta.resolve('pdfjs-dist/build/pdf.worker.min.mjs')))] };
 
   const server = createServer(async (incoming, outgoing) => {
+    if (rejectForeignHost(incoming, outgoing)) return;
     const url = new URL(incoming.url, `http://${incoming.headers.host}`);
     const closed = new AbortController();
     outgoing.on('close', () => closed.abort());

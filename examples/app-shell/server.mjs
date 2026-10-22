@@ -3,6 +3,7 @@
 // (sessions in SQLite), one conversation each (plus the writer's workspace, resources and conversation list for layout C), and the chat transport behind a bearer check. It records every submit body and the screen context the transport
 // hands to the host (`requestContext`), so the journey can prove what travelled. Fictional content only.
 import { createServer } from 'node:http';
+import { rejectForeignHost, sameSecret } from '../../shared/local-host.mjs';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -78,7 +79,7 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
   /** Submit bodies as the browser sent them, and the contexts the transport handed to `requestContext`. */
   const submits = [], contexts = [];
   let mealReads = 0;
-  const allowed = request => request.headers.get('authorization') === `Bearer ${token}`;
+  const allowed = request => sameSecret(request.headers.get('authorization'), `Bearer ${token}`);
   const resources = createRevisionHandler({ resolve: async request => allowed(request) ? { provider: files, access: person } : null });
   const writerStart = init => agents.writer.createConversation(harness, context, { init });
   const handlers = {
@@ -105,12 +106,13 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
   const statics = { '/invite': destination, '/whatsapp/open': destination, '/': ['text/html; charset=utf-8', page], '/app.js': ['text/javascript; charset=utf-8', bundle.outputFiles.find(file => file.path.endsWith('.js')).text], '/app.css': ['text/css; charset=utf-8', css] };
 
   const server = createServer(async (incoming, outgoing) => {
+    if (rejectForeignHost(incoming, outgoing)) return;
     const url = new URL(incoming.url, `http://${incoming.headers.host}`);
     const closed = new AbortController();
     outgoing.on('close', () => closed.abort());
     try {
       if (incoming.method === 'GET' && url.pathname === '/api/meals') {
-        if (incoming.headers.authorization !== `Bearer ${token}`) return void outgoing.writeHead(401).end();
+        if (!sameSecret(incoming.headers.authorization, `Bearer ${token}`)) return void outgoing.writeHead(401).end();
         mealReads++;
         return void outgoing.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify([{ id: 'm-42', slot: 'lunch', label: 'Déjeuner fictif · riz et légumes' }]));
       }

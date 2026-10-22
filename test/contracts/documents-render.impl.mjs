@@ -65,7 +65,7 @@ const idleController = new Proxy({ getSnapshot: () => IDLE, subscribe: () => () 
 
 /** A fictional workspace with one file of three saves (brief.txt) and one Markdown file, read through the workspace's public seams. */
 async function fixture(t) {
-  const store = openSqliteWorkspaces({ filename: ':memory:', providerId });
+  const store = openSqliteWorkspaces({ filename: ':memory:', providerId, authorize: () => true });
   t.after(() => store.close());
   const workspace = store.workspace(scopeId);
   const write = async (operationId, change) => {
