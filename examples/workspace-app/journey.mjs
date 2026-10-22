@@ -390,9 +390,11 @@ try {
     assert.equal(await browser.evaluate(`!!${q('[data-testid=artifact-panel] .boring-markdown-toolbar')}`), false, 'no pinned toolbar by default');
     assert.equal(await browser.evaluate(`!!${q('[data-testid=artifact-bar] [data-testid=artifact-mode-source]')}`), false, 'no mode toggle in the title row');
     await browser.click(q('[data-testid=artifact-more]'));
+    await browser.until('artifact view-mode menu is open with both radio choices', `${q('[data-testid=artifact-more]')}?.getAttribute('aria-expanded') === 'true' && ${q('[data-testid=artifact-more-list]')}?.checkVisibility() && document.querySelectorAll('[data-testid=artifact-more-list] [role=menuitemradio]').length >= 2`, 5000);
     assert.deepEqual(await browser.evaluate(`[...document.querySelectorAll('[data-testid=artifact-more-list] [role=menuitemradio]')].map(item => [item.getAttribute('aria-label'), item.getAttribute('aria-checked')])`), [['Formatted', 'true'], ['Markdown', 'false']], 'native radio menu choices');
     await browser.press('Escape');
     await browser.click(q('[data-testid=artifact-formatting]'));
+    await browser.until('artifact Formatting toggle is pressed and the pinned toolbar is rendered', `${q('[data-testid=artifact-formatting]')}?.getAttribute('aria-pressed') === 'true' && !!${q('[data-testid=artifact-panel] .boring-markdown-toolbar')}`, 5000);
     assert.equal(await browser.evaluate(`!!${q('[data-testid=artifact-panel] .boring-markdown-toolbar')}`), true, 'the header icon pins the full toolbar');
     const divider = await browser.evaluate(`(() => { const e = ${q('[data-testid=workspace-divider]')}, r = e.getBoundingClientRect(), line = e.firstElementChild; return { x: r.x + r.width / 2, y: r.y + r.height / 2, hit: r.width, line: line.getBoundingClientRect().width, color: getComputedStyle(line).backgroundColor, before: Number(e.getAttribute('aria-valuenow')) }; })()`);
     assert.equal(divider.line, 1); assert.ok(divider.hit >= 8 && divider.hit <= 12);
