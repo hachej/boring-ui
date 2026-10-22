@@ -98,6 +98,78 @@ test('a failing nested test makes the actual discovery runner fail', () => {
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+function runnerFixture(t) {
+  mkdirSync(join(root, '.cache'), { recursive: true });
+  const dir = mkdtempSync(join(root, '.cache/boring-runner-fixture-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const write = (path, text) => { mkdirSync(dirname(join(dir, path)), { recursive: true }); writeFileSync(join(dir, path), text); };
+  for (const name of ['run-tests.mjs', 'verify-invariants.mjs', 'check-pi-boundary.mjs', 'pi-policy.mjs', 'is-contract-only.mjs', 'implementation-evidence.mjs', 'project-files.mjs', 'run-captured.mjs', 'css-stub-register.mjs', 'css-stub-hooks.mjs']) write(`scripts/${name}`, readFileSync(join(root, 'scripts', name)));
+  for (const path of ['ARCHITECTURE.json', 'VERIFY.json', 'INVARIANTS.md', 'docs/LAWS.md', 'package.json', 'packages/feedback/INVARIANTS.md']) write(path, readFileSync(join(root, path)));
+  const registry = JSON.parse(readFileSync(join(dir, 'VERIFY.json'), 'utf8'));
+  for (const feature of Object.values(registry.features ?? {})) write(feature.owner, readFileSync(join(root, feature.owner)));
+  registry.invariants['BORING-UI-1'].verifiers.find(proof => proof.kind === 'command').command.push('test/nested/registered.test.mjs');
+  write('VERIFY.json', JSON.stringify(registry));
+  const registered = new Set([...Object.values(registry.invariants), ...Object.values(registry.features ?? {})].flatMap(rule => rule.verifiers.filter(proof => proof.kind === 'command').flatMap(proof => proof.command.slice(2))));
+  const body = path => `import test from 'node:test'; import { appendFileSync } from 'node:fs'; test(${JSON.stringify(path)}, () => appendFileSync(process.env.TEST_RUNNER_TRACE, ${JSON.stringify(`${path}\n`)}));`;
+  for (const path of registered) write(path, body(path));
+  // A synthetic runtime package makes the real boundary loader supply an implementation proof too.
+  write('packages/files/src/fixture.ts', 'export const fixture = true;');
+  write('node_modules/@hachej/boring-files/package.json', JSON.stringify({ name: '@hachej/boring-files', type: 'module', exports: './index.mjs' }));
+  write('node_modules/@hachej/boring-files/index.mjs', 'export const fixture = true;');
+  registered.add('test/packages/files.test.mjs');
+  write('test/packages/files.test.mjs', `import { fixture } from '@hachej/boring-files';\n${body('test/packages/files.test.mjs')}`);
+  write('test/nested/unregistered.test.mjs', body('test/nested/unregistered.test.mjs'));
+  const pending = Object.values(registry.invariants).flatMap(rule => rule.verifiers).find(proof => proof.kind === 'pending').command[2];
+  write(pending, body(pending));
+  const trace = join(dir, 'trace');
+  const run = (script, args = []) => {
+    writeFileSync(trace, '');
+    const env = { ...process.env, TEST_RUNNER_TRACE: trace }; delete env.NODE_TEST_CONTEXT;
+    const result = spawnSync(process.execPath, [join(dir, 'scripts', script), ...args], { cwd: dir, encoding: 'utf8', env, timeout: 20000 });
+    return { ...result, ran: readFileSync(trace, 'utf8').trim().split('\n').filter(Boolean).sort() };
+  };
+  return { dir, write, pending, registered: [...registered].sort(), run };
+}
+
+test('the actual CI runner and release verifier partition every discovered test exactly once', t => {
+  const f = runnerFixture(t);
+  assert.deepEqual(loadBoundary(f.dir).errors, []);
+  const all = f.run('run-tests.mjs');
+  assert.equal(all.status, 0, all.stderr || all.stdout);
+  const remaining = f.run('run-tests.mjs', ['--exclude-registered']);
+  assert.equal(remaining.status, 0, remaining.stderr || remaining.stdout);
+  assert.deepEqual(remaining.ran, [f.pending, 'test/nested/unregistered.test.mjs'].sort());
+  const registered = f.run('verify-invariants.mjs', ['--release']);
+  assert.equal(registered.status, 0, registered.stderr || registered.stdout);
+  assert.deepEqual(registered.ran, f.registered);
+  assert.deepEqual([...remaining.ran, ...registered.ran].sort(), all.ran);
+  assert.equal(new Set([...remaining.ran, ...registered.ran]).size, all.ran.length);
+  assert.equal(all.ran.length, testFiles(join(f.dir, 'test')).length);
+});
+
+test('the CI runner refuses invalid boundary evidence rather than silently excluding it', t => {
+  const f = runnerFixture(t);
+  f.write('test/pi-boundary.test.mjs', 'export {};');
+  const result = f.run('run-tests.mjs', ['--exclude-registered']);
+  assert.equal(result.status, 1, result.stderr || result.stdout);
+  assert.match(result.stderr, /registered evidence declares no node:test tests/);
+  assert.deepEqual(result.ran, []);
+});
+
+test('the actual discovery runner rejects unknown arguments and empty partitions', t => {
+  const f = runnerFixture(t);
+  const unknown = f.run('run-tests.mjs', ['--exclude-registerd']);
+  assert.equal(unknown.status, 1, unknown.stderr || unknown.stdout);
+  assert.match(unknown.stderr, /Unknown test runner argument/);
+  assert.deepEqual(unknown.ran, []);
+  rmSync(join(f.dir, 'test/nested/unregistered.test.mjs'));
+  rmSync(join(f.dir, f.pending));
+  const empty = f.run('run-tests.mjs', ['--exclude-registered']);
+  assert.equal(empty.status, 1, empty.stderr || empty.stdout);
+  assert.match(empty.stderr, /No tests discovered/);
+  assert.deepEqual(empty.ran, []);
+});
+
 test('the scaffold retains every policy-required runtime proof slot', () => {
   const registry = JSON.parse(readFileSync(join(root, 'VERIFY.json'), 'utf8'));
   const policy = JSON.parse(readFileSync(join(root, 'ARCHITECTURE.json'), 'utf8'));

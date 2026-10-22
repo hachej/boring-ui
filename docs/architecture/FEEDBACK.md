@@ -102,7 +102,7 @@ and a count chip. This is a breaking change to the composer's `feedback` prop
    reuses the shell's `voice.transcribe`); without it the pin has no mic. Where the
    audio goes and which key it uses are the application's business
    (`examples/feedback/` shows one way: `transcribe-route.mjs`).
-4. **Holding ⌥/Alt** (desktop only; the pin says so in one line) passes clicks and
+4. **Holding ⌥/Alt** (desktop only; no hint, the comment banner's switch does the same) passes clicks and
    keys through to the app, so the person can open menus and navigate. Those
    interactions are recorded as **steps** between the notes: the element's label
    through the privacy policy, named keys only (never typed text), and route
@@ -156,18 +156,24 @@ is the same session, started by the same annotate toggle on touch or a compact s
 - **The host's panel gets out of the way.** The kit never owns the host's panel. The host binds `usePointing(session)` (headless:
   `isPointing(snapshot)`) to it, for example `<Sheet open={open && !pointing}>` or AmbientChat's `state={pointing ? 'minimized' : state}`.
   Because the host's own open state never changes, the panel comes back as it was when pointing ends. Navigation while pointing must
-  leave that state alone (a tab bar that usually closes the panel does not do so while pointing). The host mounts `PointBar` and
+  leave that state alone (a tab bar that usually closes the panel does not do so while pointing). The host mounts `CommentBanner` and
   the one `NoteBubble` outside the panel, because the panel may unmount while it is hidden. To keep the person's typed text, the panel
   stays mounted while it is hidden.
-- **The bar.** `PointBar` is a compact bottom bar: « Touchez un élément à commenter », the number of picks, « Utiliser l'app » (the
-  "Use app" toggle), Annuler and Terminé. Its targets are at least 44px and it uses the host's shadcn tokens. It sits above the safe
-  area and above the app's tab bar, whose height the host passes as `bottomOffset`. The tab bar is marked `data-feedback-ignore`, so
-  it still navigates while the person points. The note bubble keeps clear of the bar.
+- **The banner.** `CommentBanner` (it replaced `PointBar`) is a compact card: « Mode commentaire · 2 notes » (the count only once a
+  note says something), what to do now (« Touchez un élément pour le commenter », or « En pause » while switched off, or « Note
+  envoyée » once `useSendEachNote` sent it), an on/off switch (« Commenter »: off, the app works as usual and the notes stay) and
+  Terminé. There is no Cancel: a note is removed on its own. Its targets are at least 44px and it uses the host's shadcn tokens. On a
+  phone it sits above the safe area and above the app's tab bar, whose height the host passes as `bottomOffset`; on a wide screen
+  (hover targeting) it sits at the top. Comments on one surface (a version open in a side panel) pass `inline` and mount the banner in
+  a positioned layer over that surface, so it keeps clear of the panel's own bar. The tab bar is marked `data-feedback-ignore`, so it still navigates while the person points.
+  The note bubble keeps clear of the banner and names the element in plain words (`plainElement`: « Bouton « Enregistrer » »).
 - **Touch first.** A tap picks at once with the same picker (`tap: 'pick'`: no Parent/Child toolbar, no hover, no long press). A
   finger that moved is a scroll, not a pick. Tapping the selection again, Esc or « Annuler la sélection » deselects, and several picks
   are allowed.
-- **Done and Cancel.** « Terminé » is Done: the draft becomes the composer's chip and Send attaches it as above. « Annuler » discards:
-  the panel comes back with no picks. The pin keeps its mic when the host gives `transcribe`; there is no Alt hint on touch.
+- **Done.** « Terminé » is Done: the draft becomes the composer's chip and Send attaches it as above; with no note, the panel comes
+  back with nothing (Back does the same). With `useSendEachNote(session, send)` each saved note goes to the agent at once instead.
+  The pin keeps its mic when the host gives `transcribe`: it is held to record (`useHoldToRecord` from `pi-chat`), and on release the
+  transcript is appended to the typed text and the note is saved.
 
 The agent's feedback card has no Show button: hovering an element line
 highlights it in the page, leaving it clears, and clicking it resolves it,
@@ -507,8 +513,8 @@ application's workspace, served by its workspace provider
 - **The store refuses to start** unless the provider declares
   `conditionalPublication`, `operationLookup` and `atomicMutationAndReceipt`
   (the SQLite workspace commits a file and its receipt together).
-- **Deletion** is not a store operation: the workspace provider does not delete
-  through publication, so removing a report is a file operation of the host.
+- **Deletion** is not a store operation: removing a report is a host-controlled
+  [conditional workspace file operation](../../packages/files/README.md#frontend-revision-provider).
 
 **Listing rules:**
 

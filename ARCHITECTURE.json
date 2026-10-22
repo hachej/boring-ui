@@ -584,18 +584,21 @@
     "mockupViewer": "Host presentation for *.mockup.html, ported from spike/canvas-board at 3b838e3a5. Reuses viewers/InteractiveFrame and its opaque-origin policy. Lazy tailwindcss@4.3.3 compiler with generated upstream CSS sources and host-computed theme variables. Feedback uses host-owned proxy elements through the existing session picker/privacy boundary. No Pi execution or workspace authority.",
     "actionMenus": "thin host presentation adapters over the consumer's real shadcn Base UI dropdown-menu built-in; no home-made menu primitive or Pi lifecycle",
     "editorControls": "Markdown and HTML package renderers accept host component bindings; installed recipes supply consumer shadcn Button, Toggle, Input, Textarea and selection-bubble Card through the button item. No execution or resource authority.",
+    "artifactViewer": "@hachej/boring-ui-kit/artifact-viewer -> src/artifact-viewer.tsx; read-only host presentation of supplied content or media URLs. React and private Marked parsing over the shared passive HTML allowlist; no files, controllers, Tiptap, canvas, pdfjs or agent imports. Native browser PDF by default, with an optional trusted host renderer. No Pi execution or resource authority.",
     "fileTreeControls": "required host presentation binding; registry supplies the consumer shadcn Button, dropdown-menu and shared version-history rows, never a package-owned control skin",
     "versionHistory": "shared registry version-history presentation owns relative time, provenance and Current rows for viewer menus and Library panels; no publication or execution authority",
     "chatActivity": "shadcn built-in trace, resolved by the consumer style; host presentation over native Pi views, no execution state",
     "chatComposition": {
       "pi-chat": "regular native renderer; optional generic transcript, composer-content, file-pick and mention-option seams; no dependency on shared-chat",
-      "voiceMessages": "host microphone gestures and transient preparation over the neutral UI voice-capture entry; one workspace upload and transcript in one native submission, no feedback dependency or second transcript store",
+      "sentFeedback": "pi-chat -> @hachej/boring-feedback/format for strict page-report parsing and readable element labels; host presentation only, no feedback capture, store, agent or Pi execution authority",
+      "voiceMessages": "host microphone gestures and transient preparation over the neutral UI voice-capture entry; one workspace upload and transcript in one native submission, no feedback capture dependency or second transcript store",
       "shared-chat": "optional registry item depending on pi-chat and the existing theme tokens; owns multi-party headers, cards, quotes, member mentions, host traces and localized labels; AgentWorkspace is composed through its existing chat and controls props",
       "agentColour": "shared-chat hashes agent IDs into the five standard shadcn chart tokens; icons use the token and text uses only default-theme AA-qualified palette entries. The theme owns the missing standard chart defaults/bindings, not a feature palette; no host override or new semantic token.",
       "controllerTypes": "native-chat exports the structural presentation contract; concrete native controller APIs and recovery are unchanged",
       "dataEntry": "@hachej/boring-ui-kit/shared-chat -> src/shared-chat/index.ts; host log/source/socket/fake/errors only, never exported by the headless root; imports the existing transport outbox"
     },
     "runtimeImports": [
+      "@hachej/boring-feedback/format",
       "@hachej/boring-ui-kit/markdown-editor",
       "@hachej/boring-ui-kit/canvas-editor",
       "@hachej/boring-ui-kit/text-buffer",

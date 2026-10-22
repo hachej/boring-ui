@@ -1,6 +1,6 @@
 import { createMarkStore, type MarkResource, type MarkStore } from '@hachej/boring-ui-kit/mark-store';
 import { captureMarkdownQuote, markdownQuoteResolution } from '@hachej/boring-ui-kit/markdown-quote';
-import type { ResourceLocator } from '@hachej/boring-files';
+import type { ResourceLocator, ResourceRenameRequest, ResourceDeleteRequest, PublicationResult } from '@hachej/boring-files';
 import { PublicationNotDispatchedError } from '@hachej/boring-files/publication';
 import type { ViewerFeature } from '@hachej/boring-ui-kit';
 import { createMarkdownController } from '@hachej/boring-ui-kit/markdown';
@@ -18,6 +18,15 @@ const expectedIdentity: ResourceIdentity = remoteOptions.identity;
 void remote;
 void handle;
 void expectedIdentity;
+declare const renameRequest: ResourceRenameRequest;
+declare const deleteRequest: ResourceDeleteRequest;
+const renamed: Promise<PublicationResult> | undefined = remote.rename?.(renameRequest);
+const deleted: Promise<PublicationResult> | undefined = remote.delete?.(deleteRequest);
+void renamed;
+void deleted;
+// @ts-expect-error Conditional mutations need a locator, not an unbound path string.
+remote.delete?.({ path: 'fictional.md', expectedRevision: 'revision', operationId: 'delete' });
+void createResourceHandler({ ...handlerOptions, renamer: { rename: async () => ({ kind: 'unavailable', reason: 'fictional' }) }, deleter: { delete: async () => ({ kind: 'unavailable', reason: 'fictional' }) } });
 
 declare const options: MarkdownOptions;
 const editor = createMarkdownController(options);

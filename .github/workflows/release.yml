@@ -32,17 +32,35 @@ jobs:
       github.ref == 'refs/heads/main' &&
       github.actor == 'hachej' && github.triggering_actor == 'hachej'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+    outputs:
+      reuse-ci: ${{ steps.checks.outputs.reuse-ci }}
     steps:
       - name: Bind publication to the reviewed dispatch commit
         env:
           REVIEWED_COMMIT: ${{ inputs.commit }}
         run: test "$REVIEWED_COMMIT" = "$GITHUB_SHA"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Reuse only green checks of this exact main commit
+        id: checks
+        env:
+          REVIEWED_COMMIT: ${{ inputs.commit }}
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release-admission.mjs
 
   verify:
     needs: admit
+    if: needs.admit.outputs.reuse-ci != 'true'
     uses: ./.github/workflows/verify.yml
   browser:
     needs: admit
+    if: needs.admit.outputs.reuse-ci != 'true'
     uses: ./.github/workflows/studio-scripted.yml
   secrets:
     needs: admit
@@ -70,8 +88,8 @@ jobs:
       - name: Pin the npm CLI with trusted publishing support
         run: npm install --global npm@11.5.1 --ignore-scripts --no-audit --no-fund
       - run: npm ci
-      - name: Require full release qualification and public manifests
-        run: npm run release:preflight
+      - name: Build and typecheck the reviewed source
+        run: npm run typecheck
       - name: Retain the exact audited tarballs
         run: node scripts/check-npm-packages.mjs --release --out "$RUNNER_TEMP/npm-release"
       - name: Confirm intentionally private packages (boring-browser, boring-testing) are excluded
@@ -93,10 +111,15 @@ jobs:
 
   publish:
     if: >-
+      always() && !cancelled() &&
       github.repository == 'hachej/boring-ui' &&
       github.ref == 'refs/heads/main' &&
-      github.actor == 'hachej' && github.triggering_actor == 'hachej'
-    needs: [prepare, verify, browser, secrets]
+      github.actor == 'hachej' && github.triggering_actor == 'hachej' &&
+      needs.admit.result == 'success' && needs.prepare.result == 'success' &&
+      needs.secrets.result == 'success' &&
+      ((needs.admit.outputs.reuse-ci == 'true' && needs.verify.result == 'skipped' && needs.browser.result == 'skipped') ||
+       (needs.admit.outputs.reuse-ci == 'false' && needs.verify.result == 'success' && needs.browser.result == 'success'))
+    needs: [admit, prepare, verify, browser, secrets]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: release

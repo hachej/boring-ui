@@ -24,6 +24,7 @@ const INPUT = q('[data-testid=composer-input]');
 const LOG = `(${q('[data-testid=transcript]')}?.innerText ?? '')`;
 const REPLIES = `${qa('[data-testid=transcript] article[data-role=assistant]')}.map(e => e.innerText).join(' ')`;
 const ACTIVE = `${q('[data-testid=app]')}.dataset.conversation`;
+const FILES_READY = `(() => { const list = ${q('[data-testid=conversation-files-list]')}; return !!list && !list.hasAttribute('data-starting-style') && !list.hasAttribute('data-ending-style') && list.getAnimations({ subtree: true }).every(animation => animation.playState !== 'running'); })()`;
 const ROWS = qa('[data-testid=conversation-row]');
 const row = text => `${ROWS}.find(row => row.innerText.includes(${JSON.stringify(text)}))`;
 const idle = `${q('[data-testid=composer-submit]')}?.dataset.state === 'send'`;
@@ -60,6 +61,245 @@ try {
     assert.ok(layout.textBottom <= layout.controlsTop + 1, 'text occupies the full-width row above the controls');
   };
 
+  const conversationFiles = async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'fictional-conversation-files-'));
+    const fixtures = [
+      ['fictional-notes.md', '# Fictional picnic notes\n\nBring a fictional blanket.\n'],
+      ['fictional-plan.json', '{"fictional":"picnic"}\n'],
+      ['fictional-image.png', Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a/OQAAAAASUVORK5CYII=', 'base64')],
+    ];
+    for (const [name, bytes] of fixtures) writeFileSync(join(directory, name), bytes);
+    for (const [mode, query] of [['reference', ''], ['resources', '?resources&uploads'], ['inline', '?resources&uploads&inlineImages']]) {
+      await browser.emulate('desktop');
+      await browser.send('Page.navigate', { url: `${insecureUrl(app.url)}${query}` }); await live();
+      const previous = await browser.evaluate(ACTIVE);
+      await browser.click(q('[data-testid=conversation-new]'));
+      await browser.until('new conversation selected', `${ACTIVE} && ${ACTIVE} !== ${JSON.stringify(previous)}`, 10000);
+      await live();
+      await browser.until('empty new conversation', `${LOG}.trim() === ''`, 10000);
+      await browser.until('host uploads ready', `!!${q('[data-testid=composer-file]')}`, 10000);
+      await browser.attachFiles(q('[data-testid=composer-file]'), fixtures.map(([name]) => join(directory, name)));
+      await browser.until('uploads ready', `!${q('[data-testid=composer-submit]')}.disabled && !${q('[data-testid=upload-pending]')}`, 15000);
+      for (const phase of ['draft', 'sent']) {
+        if (phase === 'sent') {
+          await browser.emulate('desktop');
+          await browser.type(INPUT, 'Reply with exactly: FICTIONAL-FILES-READY'); await browser.click(q('[data-testid=composer-submit]'));
+          await browser.until('files sent', `${REPLIES}.includes('FICTIONAL-FILES-READY') && ${idle}`, 20000);
+        }
+        for (const device of ['desktop', 'phone']) {
+          await browser.emulate(device);
+          const press = selector => device === 'phone' ? browser.tap(selector) : browser.click(selector);
+          await press(q('[data-testid=conversation-files]'));
+          await browser.until('Fichiers list', `!!${q('[data-testid=conversation-files-list]')}`, 5000);
+          const rows = await browser.evaluate(`${qa('[data-testid=conversation-file]')}.map(e => ({ id: e.dataset.file, name: e.innerText, disabled: e.hasAttribute('disabled') || e.getAttribute('aria-disabled') === 'true' }))`);
+          writeFileSync(join(evidence, `files-${mode}-${device}-${phase}.json`), JSON.stringify(rows, null, 2));
+          await browser.screenshot(`files-${mode}-${device}-${phase}.png`);
+          assert.deepEqual(rows.filter(row => row.disabled), [], JSON.stringify(rows));
+          assert.equal(rows.length, fixtures.length, 'each upload has exactly one files-menu entry');
+          for (const [name] of fixtures) {
+            if (mode === 'inline' && name.endsWith('.png')) assert.equal(rows.filter(row => row.id.startsWith(phase === 'draft' ? 'draft:' : 'image:')).length, 1);
+            else assert.ok(rows.some(row => row.name.includes(name)), name);
+          }
+          if (phase === 'sent') {
+            assert.equal(await browser.evaluate(`${qa('[data-testid=message-image]')}.length`), mode === 'inline' ? 1 : 0);
+            assert.equal(await browser.evaluate(`${qa('[data-testid=message-file]')}.length`), mode === 'inline' ? 2 : fixtures.length);
+          }
+          await browser.press('Escape');
+          await browser.until('files list closed', `!${q('[data-testid=conversation-files-list]')}`, 5000);
+          for (const row of rows) {
+            const delayedDrawer = mode === 'reference' && phase === 'draft' && device === 'phone' && row === rows[0];
+            // A starting drawer can have no running transition yet; the first touch must wait for that native phase too.
+            if (delayedDrawer) await browser.evaluate(`(() => {
+              window.__filesDrawerPresses = [];
+              let held;
+              const observer = new MutationObserver(() => {
+                const drawer = ${q('[data-testid=conversation-files-list]')};
+                if (!drawer) return;
+                if (!held) {
+                  held = drawer; drawer.style.transition = 'none';
+                  drawer.addEventListener('pointerdown', () => window.__filesDrawerPresses.push(!drawer.hasAttribute('data-starting-style') && drawer.getBoundingClientRect().bottom <= innerHeight));
+                  setTimeout(() => { observer.disconnect(); drawer.style.removeProperty('transition'); drawer.removeAttribute('data-starting-style'); }, 600);
+                }
+                if (!drawer.hasAttribute('data-starting-style')) drawer.setAttribute('data-starting-style', '');
+              });
+              observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-starting-style'] });
+            })()`);
+            await press(q('[data-testid=conversation-files]'));
+            await browser.until('files list settled', FILES_READY, 5000);
+            await press(q(`[data-file=${JSON.stringify(row.id)}]`));
+            if (row.id.startsWith('file:')) {
+              await browser.until('workspace file viewer', `${q('[data-testid=file-viewer]')}?.dataset.path === ${JSON.stringify(row.id.slice(5))}`, 10000);
+              if (row.name.includes('.png')) await browser.until('workspace image rendered', `${q('[data-testid=viewer-image]')}?.naturalWidth > 0`, 5000);
+              else await browser.until('uploaded content rendered', `${q('[data-testid=file-viewer]')}?.innerText.includes(${JSON.stringify(row.name.includes('.md') ? 'Fictional picnic notes' : 'picnic')})`, 10000);
+              await browser.screenshot(`opened-${mode}-${device}-${phase}-${row.name.trim()}.png`);
+              await press(q('[data-testid=viewer-close]'));
+            } else {
+              await browser.until('inline image preview rendered', `${q('[data-testid=conversation-image-image]')}?.naturalWidth > 0`, 5000);
+              await browser.screenshot(`preview-${mode}-${device}-${phase}.png`);
+              await press(q('[data-testid=conversation-image-close]'));
+            }
+            await browser.until('viewer closed', `!${q('[data-testid=workspace-panel]')} && !${q('[data-testid=conversation-image-image]')}`, 5000);
+            if (delayedDrawer) {
+              assert.deepEqual(await browser.evaluate('window.__filesDrawerPresses'), [true], 'one real press after the native drawer finishes starting');
+              await browser.evaluate('delete window.__filesDrawerPresses');
+            }
+          }
+          assert.equal(await browser.evaluate(noOverflow), true);
+        }
+      }
+      console.log(`ok  conversation files: ${mode}, draft/sent, desktop/390px`);
+    }
+  };
+  const conversationFilesLayout = async () => {
+    await browser.emulate('desktop');
+    await browser.send('Page.navigate', { url: `${insecureUrl(app.url)}?locale=fr` }); await live();
+    const previous = await browser.evaluate(ACTIVE);
+    await browser.click(q('[data-testid=conversation-new]'));
+    await browser.until('new layout conversation', `${ACTIVE} && ${ACTIVE} !== ${JSON.stringify(previous)}`, 10000); await live();
+    const directory = mkdtempSync(join(tmpdir(), 'fictional-menu-files-'));
+    writeFileSync(join(directory, 'fictional-plan.md'), '# Fictional menu plan\n');
+    writeFileSync(join(directory, 'fictional-image.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a/OQAAAAASUVORK5CYII=', 'base64'));
+    await browser.until('layout uploads available', `!!${q('[data-testid=composer-file]')}`, 10000);
+    await browser.attachFiles(q('[data-testid=composer-file]'), ['fictional-plan.md', 'fictional-image.png'].map(name => join(directory, name)));
+    await browser.until('two files attached', `${q('[data-testid=conversation-files]')}?.innerText.includes('2') && !${q('[data-testid=composer-submit]')}.disabled`, 15000);
+    await browser.type(INPUT, 'Reply with exactly: FICTIONAL-MENU-READY'); await browser.click(q('[data-testid=composer-submit]'));
+    await browser.until('layout message sent', `${REPLIES}.includes('FICTIONAL-MENU-READY') && ${idle}`, 20000);
+    const layouts = [];
+    for (const device of ['desktop', 'phone', 'coarse-desktop']) for (const scheme of ['light', 'dark']) {
+      await browser.emulate(device === 'phone' ? 'phone' : 'desktop');
+      if (device === 'coarse-desktop') await browser.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+      await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] });
+      await browser.click(q('[data-testid=conversation-files]'));
+      await browser.until('layout menu settled', FILES_READY, 5000);
+      const metrics = await browser.evaluate(`(() => {
+        const list = ${q('[data-testid=conversation-files-list]')}, rows = [...list.querySelectorAll('[data-testid=conversation-file]')], title = list.querySelector('[data-slot=popover-title], [data-slot=drawer-title], [data-slot=dropdown-menu-label]');
+        const box = list.getBoundingClientRect(), trigger = ${q('[data-testid=conversation-files]')}.getBoundingClientRect(), first = rows[0].getBoundingClientRect();
+        const range = document.createRange(); range.selectNodeContents(title); const titleText = range.getBoundingClientRect();
+        return { slot: list.dataset.slot, coarse: matchMedia('(pointer: coarse)').matches, width: innerWidth, padding: parseFloat(getComputedStyle(list).paddingLeft), titleLeft: titleText.left,
+          iconLeft: rows[0].querySelector('svg').getBoundingClientRect().left, titleGap: first.top - title.getBoundingClientRect().bottom, rowGap: rows[1].getBoundingClientRect().top - first.bottom,
+          heights: rows.map(row => row.getBoundingClientRect().height), triggerGap: trigger.top - box.bottom, overflow: document.documentElement.scrollWidth > innerWidth };
+      })()`);
+      layouts.push({ device, scheme, ...metrics });
+      await browser.screenshot(`files-layout-${device}-${scheme}.png`);
+      await browser.press('Escape'); await browser.until('layout menu closed', `!${q('[data-testid=conversation-files-list]')}`, 5000);
+    }
+    writeFileSync(join(evidence, 'files-layout.json'), JSON.stringify(layouts, null, 2));
+    for (const layout of layouts) {
+      const detail = JSON.stringify(layout);
+      assert.equal(layout.overflow, false, detail);
+      assert.ok(Math.abs(layout.titleLeft - layout.iconLeft) <= 1, detail);
+      assert.ok(layout.titleGap <= 4 && layout.rowGap <= 1, detail);
+      if (layout.device === 'phone' || layout.coarse) assert.ok(layout.heights.every(height => height >= 48), detail);
+      else assert.ok(layout.heights.every(height => height <= 36), detail);
+      if (layout.device !== 'phone') {
+        assert.equal(layout.slot, 'dropdown-menu-content', detail);
+        assert.ok(layout.padding <= 8 && Math.abs(layout.triggerGap - 6) <= 1, detail);
+      }
+    }
+    console.log('ok  conversation file menu: aligned, compact, 48px touch rows; desktop/390px/coarse, light/dark');
+  };
+  const inlineImageViewer = async () => {
+    await live();
+    // Fictional screenshots drawn locally; no remote asset or reference screenshot enters the conversation.
+    const images = await browser.evaluate(`(() => {
+      const css = getComputedStyle(document.documentElement), color = token => css.getPropertyValue(token).trim();
+      return ['Picnic checklist', 'Trail sketch'].map((title, index) => {
+        const canvas = document.createElement('canvas'); canvas.width = 720; canvas.height = 600;
+        const pen = canvas.getContext('2d');
+        pen.fillStyle = color('--background'); pen.fillRect(0, 0, 720, 600);
+        pen.fillStyle = color('--foreground'); pen.font = 'bold 42px sans-serif'; pen.fillText(title, 48, 88);
+        pen.font = '24px sans-serif'; pen.fillText('Fictional screenshot · no real records', 48, 135);
+        ['Pack a blanket', 'Bring the map', 'Meet at the imaginary oak'].forEach((line, at) => {
+          pen.fillStyle = color('--muted'); pen.fillRect(40, 190 + at * 100, 640, 80);
+          pen.fillStyle = color('--primary'); pen.fillRect(60, 220 + at * 100, 18, 18);
+          pen.fillStyle = color('--foreground'); pen.font = '28px sans-serif'; pen.fillText(index ? line + ' ✓' : line, 100, 242 + at * 100);
+        });
+        return { type: 'image', mimeType: 'image/png', data: canvas.toDataURL('image/png').split(',')[1] };
+      });
+    })()`);
+    const conversationId = await browser.evaluate(ACTIVE);
+    const conversation = await app.conversations.open(app.owner, Number(conversationId));
+    assert.ok(conversation);
+    await conversation.submit({ type: 'write', entry: { kind: 'message', model: [
+      { role: 'user', content: [{ type: 'text', text: 'Look at this fictional screenshot.' }, images[0]], timestamp: 0 },
+      { role: 'assistant', content: [{ type: 'toolCall', id: 'fictional-screenshots', name: 'read', arguments: { path: 'fictional-screenshots.png' } }], api: 'fictional', provider: 'fictional', model: 'fictional', usage: {}, stopReason: 'toolUse', timestamp: 1 },
+      { role: 'toolResult', toolCallId: 'fictional-screenshots', toolName: 'read', content: [{ type: 'text', text: 'Two fictional screenshots.' }, ...images], isError: false, timestamp: 2 },
+      { role: 'assistant', content: [{ type: 'text', text: 'Here are the fictional screenshots, ready to inspect.' }], api: 'fictional', provider: 'fictional', model: 'fictional', usage: {}, stopReason: 'stop', timestamp: 3 },
+    ] } }, context);
+    const thumb = (role, at = 0) => `${qa(`[data-testid=transcript] [data-role=${role}] [data-testid=message-image]`)}[${at}]`;
+    const viewer = q('[data-testid=image-viewer], [data-testid=conversation-image]');
+    const viewed = q('[data-testid=image-viewer-image], [data-testid=conversation-image-image]');
+    const close = q('[data-testid=image-viewer-close], [data-testid=conversation-image-close]');
+    const open = async (role, at, device) => {
+      await (device === 'phone' ? browser.tap(thumb(role, at)) : browser.click(thumb(role, at)));
+      await browser.until('full image loaded', `${viewed}?.naturalWidth === 720`, 5000);
+      await browser.until('native image Dialog settled', `${viewer} && !${viewer}.hasAttribute('data-starting-style') && ${viewer}.getAnimations({ subtree: true }).every(animation => animation.playState !== 'running')`, 5000);
+    };
+    await browser.until('user and lifted tool thumbnails', `${qa('[data-role=user] [data-testid=message-image]')}.length === 1 && ${qa('[data-role=assistant] [data-testid=message-image]')}.filter(e => !e.closest('[data-slot=collapsible-content]')).length === 2`, 10000);
+    const layouts = [];
+    for (const [device, scheme] of [['desktop', 'light'], ['phone', 'dark']]) {
+      await browser.emulate(device);
+      await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] });
+      await browser.evaluate(`document.documentElement.classList.toggle('dark', ${scheme === 'dark'}); ${q('[data-testid=transcript-scroll]')}.scrollTop = 0`);
+      await browser.until('thumbnails loaded', `${qa('[data-testid=message-image]')}.every(button => { const img = button.parentElement.querySelector('img'); return img?.naturalWidth === 720; })`, 5000);
+      await browser.until('user thumbnail fully in the transcript', `(() => { const image = ${thumb('user')}.parentElement.querySelector('img').getBoundingClientRect(), viewport = ${q('[data-testid=transcript-scroll]')}.getBoundingClientRect(); return image.top >= viewport.top - 1 && image.bottom <= viewport.bottom + 1; })()`, 5000);
+      await browser.screenshot(`thumbnails-${device}-${scheme}.png`);
+      assert.equal(await browser.evaluate(noOverflow), true);
+      await open('user', 0, device);
+      const userSource = await browser.evaluate(`${viewed}.src`);
+      if (device === 'phone') {
+        const box = await browser.evaluate(`(() => { const r = ${viewer}.getBoundingClientRect(), b = ${close}.getBoundingClientRect(); return { w: r.width, h: r.height, closeW: b.width, closeH: b.height }; })()`);
+        assert.deepEqual([box.w, box.h], [390, 844], JSON.stringify(box));
+        assert.ok(box.closeW >= 48 && box.closeH >= 48, JSON.stringify(box));
+        layouts.push({ device, scheme, ...box });
+      }
+      await browser.screenshot(`viewer-${device}-${scheme}.png`);
+      await (device === 'phone' ? browser.tap(close) : browser.press('Escape'));
+      await browser.until('user viewer dismissed', `!${viewed}`, 5000);
+      assert.equal(await browser.evaluate(ACTIVE), conversationId, 'closing cannot click through to the host navigation');
+      await open('assistant', 0, device);
+      if (device === 'desktop') {
+        assert.equal(await browser.evaluate(`${viewed}.src`), userSource);
+        await browser.press('ArrowRight');
+        await browser.until('second image of the same reply', `${viewed}.src !== ${JSON.stringify(userSource)}`, 5000);
+        await browser.press('ArrowLeft');
+        await browser.until('first reply image again', `${viewed}.src === ${JSON.stringify(userSource)}`, 5000);
+        await browser.press('Escape');
+      } else {
+        const touch = (type, points) => browser.send('Input.dispatchTouchEvent', { type, touchPoints: points });
+        await touch('touchStart', [{ x: 130, y: 400, id: 1 }, { x: 260, y: 400, id: 2 }]);
+        await touch('touchMove', [{ x: 70, y: 400, id: 1 }, { x: 320, y: 400, id: 2 }]);
+        await touch('touchEnd', []);
+        await browser.until('pinch enlarges the image', `Number(${q('[data-testid=image-viewer-surface]')}.dataset.scale) > 1.5`, 5000);
+        await touch('touchStart', [{ x: 195, y: 350, id: 1 }]);
+        await touch('touchMove', [{ x: 195, y: 510, id: 1 }]);
+        await touch('touchEnd', []);
+        assert.equal(await browser.evaluate(`!!${viewed}`), true, 'a downward pan while zoomed never dismisses the viewer');
+        await browser.screenshot('viewer-phone-pinched.png');
+        await browser.evaluate(`(() => { window.__imageCloseEvents = []; for (const type of ['pointerdown', 'pointerup', 'pointercancel', 'click']) document.addEventListener(type, event => window.__imageCloseEvents.push({ type, target: event.target.dataset?.testid, x: event.clientX, y: event.clientY }), { capture: true }); })()`);
+        await browser.tap(close);
+        writeFileSync(join(evidence, 'image-close-touch.json'), JSON.stringify(await browser.evaluate(`({ events: window.__imageCloseEvents, viewport: { scale: visualViewport.scale, top: visualViewport.offsetTop }, close: ${close}?.getBoundingClientRect().toJSON() })`), null, 2));
+        await browser.until('zoomed viewer closed', `!${viewed}`, 5000);
+        assert.equal(await browser.evaluate(ACTIVE), conversationId, 'post-pinch close never reaches the host navigation');
+        await open('assistant', 1, device);
+        const surface = q('[data-testid=image-viewer-surface]');
+        await browser.tap(surface); await browser.tap(surface);
+        await browser.until('double-tap zooms', `Number(${surface}.dataset.scale) === 2`, 5000);
+        await browser.tap(surface); await browser.tap(surface);
+        await browser.until('double-tap resets zoom', `Number(${surface}.dataset.scale) === 1`, 5000);
+        await touch('touchStart', [{ x: 195, y: 350, id: 1 }]);
+        for (const y of [380, 420, 470, 530]) await touch('touchMove', [{ x: 195, y, id: 1 }]);
+        await touch('touchEnd', []);
+      }
+      await browser.until('reply viewer dismissed', `!${viewed}`, 5000);
+    }
+    writeFileSync(join(evidence, 'image-viewer-layout.json'), JSON.stringify(layouts, null, 2));
+    console.log('ok  inline native user/tool screenshots: desktop arrows/Esc and 390px full-screen touch/pinch/swipe, light/dark');
+  };
+  if (process.env.APP_ONLY === 'inline-images') await inlineImageViewer();
+  else if (process.env.APP_ONLY === 'conversation-files') await conversationFiles();
+  else if (process.env.APP_ONLY === 'conversation-files-layout') await conversationFilesLayout();
+  else {
   await step('a failed discovery shows an alert, and Retry opens the workspace', async () => {
     await live();
     app.faults.resources = 1;
@@ -303,6 +543,32 @@ try {
     await browser.click(q('[data-testid=artifact-card]'));
     await browser.until('artifact restored', `!!${q('[data-testid=artifact-panel]')} && ${SESSIONS} === 'docked'`, 5000);
     await browser.screenshot('history-column-artifact-desktop.png');
+  });
+
+  await step('History accepts one pointer press after hidden and inert layout transitions', async () => {
+    await browser.send('Emulation.setDeviceMetricsOverride', { width: 900, height: 800, deviceScaleFactor: 1, mobile: false });
+    await browser.until('column aside for transition checks', `${q('[data-boring=agent-workspace]')}.dataset.sessions === 'hidden' && !!${q('[data-testid=history-open]')}`, 5000);
+    for (const blocked of ['visibility', 'inert']) {
+      await browser.evaluate(`(() => {
+        const button = ${q('[data-testid=history-open]')};
+        window.__historyPresses = [];
+        window.__historyPress = () => window.__historyPresses.push(button.checkVisibility({ visibilityProperty: true }) && !button.closest('[inert]'));
+        button.addEventListener('pointerdown', window.__historyPress);
+        if (${JSON.stringify(blocked)} === 'visibility') button.style.visibility = 'hidden'; else button.inert = true;
+      })()`);
+      // The native Button transitions visibility, so setting the fault is not the same as observing it.
+      await browser.until(`${blocked} fault is active`, `${q('[data-testid=history-open]')}.${blocked === 'visibility' ? 'checkVisibility({ visibilityProperty: true }) === false' : 'inert === true'}`, 5000);
+      assert.equal(await browser.evaluate(`(() => { const box = ${q('[data-testid=history-open]')}.getBoundingClientRect(); return box.width > 0 && box.height > 0; })()`), true, 'layout geometry alone does not establish pointer readiness');
+      await browser.evaluate(`(() => { const button = ${q('[data-testid=history-open]')}; setTimeout(() => { button.style.removeProperty('visibility'); button.inert = false; }, 500); })()`);
+      await browser.click(q('[data-testid=history-open]'));
+      await browser.until('the popover lists the chats', `!!${q('[data-testid=conversations] [data-testid=conversation-row]')}`, 5000);
+      assert.deepEqual(await browser.evaluate('window.__historyPresses'), [true], 'one real press, only when visible and not inert');
+      await browser.evaluate(`${q('[data-testid=history-open]')}.removeEventListener('pointerdown', window.__historyPress); delete window.__historyPress;`);
+      await browser.press('Escape');
+      await browser.until('transition popover closed', `!${q('[data-testid=conversations]')}`, 5000);
+    }
+    await browser.emulate('desktop');
+    await browser.until('History column restored after transition checks', `${q('[data-boring=agent-workspace]')}.dataset.sessions === 'docked'`, 5000);
   });
 
   await step('Library reselecting the current file closes Library and returns to that file', async () => {
@@ -717,6 +983,9 @@ try {
     await browser.emulate('desktop');
   });
 
+  await conversationFiles();
+  await conversationFilesLayout();
+  }
   assert.deepEqual(misses, [], 'every prompt had a scripted answer');
   assert.deepEqual(browser.problems, [], 'no page errors');
   console.log(`PASS workspace-app journey; screenshots in ${evidence}`);

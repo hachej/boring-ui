@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-agent",
-  "version": "0.4.4",
+  "version": "0.4.7",
   "license": "MIT",
   "private": false,
   "type": "module",
@@ -147,21 +147,27 @@
     }
   },
   "dependencies": {
-    "unpdf": "1.9.1",
+    "unpdf": "1.9.1"
+  },
+  "devDependencies": {
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "peerDependencies": {
     "@earendil-works/pi-durable": "~1.2.0",
     "@earendil-works/pi-ai": "~1.2.0",
     "@earendil-works/chord": "~1.2.0",
-    "@hachej/boring-files": "^0.4.4",
-    "@hachej/boring-ui-kit": "^0.4.4"
+    "@hachej/boring-files": "^0.4.7",
+    "@hachej/boring-ui-kit": "^0.4.7",
+    "xlsx": "^0.20.3"
   },
   "peerDependenciesMeta": {
     "@hachej/boring-files": {
       "optional": true
     },
     "@hachej/boring-ui-kit": {
+      "optional": true
+    },
+    "xlsx": {
       "optional": true
     }
   },

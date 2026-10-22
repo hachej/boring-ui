@@ -8,11 +8,49 @@ permissions:
   contents: read
 jobs:
   verify:
+    name: Specification checks
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
       CHROMIUM: ${{ github.workspace }}/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.22.1
+          cache: npm
+      - run: npm ci
+      - name: Require migration notes for published package changes
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/check-release-notes.mjs
+      # These are the non-test parts of npm run verify. Registered tests run in release-gate, the rest in tests.
+      - run: npm run check
+      - run: npm run typecheck
+      - name: Install Chromium for the design audit included in verify
+        timeout-minutes: 8
+        # Ubuntu runners already have Chrome libraries; apt is only a fallback for missing ldd dependencies.
+        run: bash scripts/install-ci-chromium.sh 1.63.0
+      - name: Allow the Chromium sandbox
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - run: npm run test:design
+      - name: Design evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: verify-design-evidence
+          path: .cache/evidence/shadcn-first
+          retention-days: 7
+          if-no-files-found: ignore
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -22,21 +60,20 @@ jobs:
           node-version: 22.22.1
           cache: npm
       - run: npm ci
-      - run: npm run check
-      - run: npm test
-      - name: Install Chromium for the design audit included in verify
-        run: npx --yes playwright@1.63.0 install --with-deps chromium-headless-shell
-      - name: Allow the Chromium sandbox
-        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-      - run: npm run verify
-      - name: Design evidence
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - run: npm test -- --exclude-registered
+  release-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          name: verify-design-evidence
-          path: .cache/evidence/shadcn-first
-          retention-days: 7
-          if-no-files-found: ignore
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.22.1
+          cache: npm
+      - run: npm ci
+      - run: npm run build
       - name: Release gate lists deferrals as backlog but fails on real failures
         shell: bash
         run: |
@@ -51,10 +88,21 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/vfs-git" --ignore-scripts --no-audit --no-fund --save-exact just-bash@3.6.0 isomorphic-git@1.42.6
           node scripts/probe-vfs-git.mjs "$RUNNER_TEMP/vfs-git"
   isolated-consumers:
-    # Packs the packages and installs them into a temporary app offline from the npm cache, as a real consumer would
-    # (missing peer declarations, runtime imports of optional peers, strict declarations). About 5 minutes locally; the
-    # slower registry/projection/definitions/testing consumers stay manual (each 35-130 s, testing needs Chromium).
-    name: Isolated package consumers
+    # Each kind packs the packages and installs into temporary apps with the same physical dependency and declaration guards.
+    # The slower registry/projection/definitions/testing consumers stay manual, as before.
+    name: Isolated package consumers (${{ matrix.kind }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - kind: documents
+            consumers: document editor html
+          - kind: native
+            consumers: virtual remote-shell remote-files question presentation
+          - kind: canvas
+            consumers: canvas canvas-editor canvas-remote
+          - kind: composition
+            consumers: experience task-list-registry morning pi-chat shared-chat
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -71,19 +119,27 @@ jobs:
       - run: npm ci
       - run: npm run build
       - name: Audit actual npm tarballs
+        if: matrix.kind == 'documents'
         run: npm run check:pack
       - name: Consumers
+        env:
+          CONSUMERS: ${{ matrix.consumers }}
         run: |
-          for name in document editor html virtual remote-shell remote-files question presentation experience canvas canvas-editor canvas-remote task-list-registry morning pi-chat shared-chat; do
+          for name in $CONSUMERS; do
             echo "::group::test:$name-consumer"
             npm run "test:$name-consumer"
             echo "::endgroup::"
           done
       - name: Install Chromium for the installed PDF viewer check
-        run: npx --yes playwright@1.63.0 install --with-deps chromium-headless-shell
+        if: matrix.kind == 'documents'
+        timeout-minutes: 8
+        # Ubuntu runners already have Chrome libraries; apt is only a fallback for missing ldd dependencies.
+        run: bash scripts/install-ci-chromium.sh 1.63.0
       - name: Allow the Chromium sandbox
+        if: matrix.kind == 'documents'
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Install workspace and portable tree registry recipes
+        if: matrix.kind == 'documents'
         run: |
           npm run registry:build
           npm run test:app-registry-consumer
@@ -106,3 +162,31 @@ jobs:
       - run: npx wrangler deploy --dry-run --outdir "$RUNNER_TEMP/demo-worker" --config demos/workspace/cloudflare/wrangler.jsonc
         env:
           WRANGLER_SEND_METRICS: 'false'
+  isolated-consumers-ok:
+    name: Isolated package consumers
+    if: always()
+    needs: [isolated-consumers]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every job to succeed
+        env:
+          NEEDS_RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          test -n "$NEEDS_RESULTS"
+          for result in $NEEDS_RESULTS; do
+            test "$result" = success || exit 1
+          done
+  ci-ok:
+    name: verify
+    if: always()
+    needs: [verify, tests, release-gate, isolated-consumers, isolated-consumers-ok, demo-worker]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every job to succeed
+        env:
+          NEEDS_RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          test -n "$NEEDS_RESULTS"
+          for result in $NEEDS_RESULTS; do
+            test "$result" = success || exit 1
+          done

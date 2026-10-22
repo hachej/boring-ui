@@ -137,6 +137,8 @@ export function createRevisionHandler(options: RevisionHandlerOptions): (request
         reader: { read: (value, context) => hold(provider.read(value, context)) },
         publisher: { publish: (value, context) => hold(provider.publication.publish(value, context)) },
         lookup: { lookup: (value, context) => hold(provider.reconciliation.lookup(value, context)) },
+        ...(provider.renaming ? { renamer: { rename: (value, context) => hold(provider.renaming.rename(value, context)) } } : {}),
+        ...(provider.deletion ? { deleter: { delete: (value, context) => hold(provider.deletion.delete(value, context)) } } : {}),
       })(request);
       const input = record(await readJsonBody(request, 32_768, access.signal));
       const requestId = identifier(input.requestId);

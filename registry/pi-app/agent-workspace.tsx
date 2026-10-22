@@ -49,6 +49,8 @@ import type { AppIcons, AppLabels } from './app-labels';
 import { ArtifactPanel, useArtifactVersions, useTurn } from './artifact-panel';
 import type { CustomViewers, SavedRevision, ViewerOptions } from './artifact-panel';
 import { FileViewer } from './file-viewer';
+import { ImageViewer } from '../pi-chat/image-viewer';
+import { thumbnail } from '../pi-chat/composer';
 import { useRevisionAttachments } from './use-revision-attachments';
 import { imageData } from './revision-files';
 import { SessionsPane, SessionsToggle } from './sessions';
@@ -56,6 +58,7 @@ import { focusHistoryRow, historyColumnFits, useHistoryOpen } from './history-co
 import type { HistoryPlacement } from './history-column';
 import type { SessionsView, WorkspaceAgents } from './sessions';
 import { WorkspaceBar } from './workspace-bar';
+import type { WorkspaceBarPanel } from './workspace-bar';
 
 export { ArtifactPanel, useArtifactVersions, useTurn } from './artifact-panel';
 export type { CustomViewerProps, CustomViewers, SavedRevision, ViewerOptions } from './artifact-panel';
@@ -64,7 +67,7 @@ export { SessionsPane, SessionsToggle } from './sessions';
 export { HistoryColumn, HistoryColumnToggle, historyColumnFits, useHistoryColumn } from './history-column';
 export type { HistoryPlacement } from './history-column';
 export { WorkspaceBar } from './workspace-bar';
-export type { WorkspaceBarProps } from './workspace-bar';
+export type { WorkspaceBarPanel, WorkspaceBarProps } from './workspace-bar';
 export { ConversationList, ConversationHistory } from '../pi-chat/history';
 export { FileTree } from '../file-tree/file-tree';
 export type { SessionsView, WorkspaceAgent, WorkspaceAgents } from './sessions';
@@ -92,6 +95,7 @@ const isFile = (view: OpenedView | null): view is FileView => view?.kind === 'fi
 /** Whether the panel shows the file at `path` (a file view, or the artifact view of it). */
 const showsPath = (view: OpenedView | null, path: string): boolean => isFile(view) ? view.path === path : isArtifact(view) ? view.descriptor.target.resource.path === path : false;
 const subscribeNothing = () => () => {};
+type ImageContent = Parameters<NonNullable<PiChatProps['onOpenImage']>>[0];
 
 /**
  * Large files (blob pointers): the workspace holds a small pointer file (`<name>.blob.json`, `@hachej/boring-files/blob`) for each
@@ -136,6 +140,13 @@ interface AgentWorkspaceBaseProps {
    * `controls`. Inside an app-shell screen the bar's buttons go into the shell's header, so the page has one row.
    */
   readonly layout?: 'default' | 'embedded' | undefined;
+  /**
+   * The side panel's width when it first opens, before the person drags the divider (then the dragged width is kept for the session):
+   * pixels, or a fraction of the workspace's width when at most 1. Without it the panel leaves the chat 420px.
+   */
+  readonly panelWidth?: number | undefined;
+  /** `embedded` only: the host's own panels in the bar, after History and Library (a popover on a wide workspace, a sheet on a phone). */
+  readonly barPanels?: readonly WorkspaceBarPanel[] | undefined;
   /**
    * `embedded` only: a fixed leading title for the bar, normally the app's name. It stays whatever the conversation is called; the
    * conversation title then follows it as a muted second element (on a phone it is left to History). Without it the bar shows the
@@ -269,7 +280,7 @@ const defaultLocate = (path: string): ResourceLocator => ({ resource: { provider
  * its versions, the file viewer and the host's own views). Agent artifacts open the panel as they appear. Every prop is data or a callback:
  * the host owns the routes, authentication, the controller and what is open (when controlled).
  */
-export function AgentWorkspace({ layout = 'default', title, controller, conversationId, chat = {}, labels, icons, panelActions, connecting, conversations, sessions, history: historyPlacement = 'column', resources, revisionProvider, libraryPlacement = 'panel', locale, fileTree: treeOptions, uploads, agents, detect, artifactKinds, comments, viewers, interactive, share, opened: controlled,
+export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, title, controller, conversationId, chat = {}, labels, icons, panelActions, connecting, conversations, sessions, history: historyPlacement = 'column', resources, revisionProvider, libraryPlacement = 'panel', locale, fileTree: treeOptions, uploads, agents, detect, artifactKinds, comments, viewers, interactive, share, opened: controlled,
   defaultOpened = null, onOpenedChange, onUnsavedChange, panels, autoOpen = true, fileBack, floatingChat, chatTop, controls, storageKey = 'boring.agent-workspace', sheetBelow = PHONE_BELOW, drawerBelow = PHONE_BELOW, floatBelow, className }: AgentWorkspaceProps) {
   const [own, setOwn] = useState<OpenedView | null>(defaultOpened);
   const [panelLibrary, setPanelLibrary] = useState(false);
@@ -363,6 +374,13 @@ export function AgentWorkspace({ layout = 'default', title, controller, conversa
   // The viewers' client: the Library's binding when there is one (its calls carry the binding the revision protocol checks), else the plain resource client.
   const client = useMemo(() => libraryProvider ?? createResourceClient({ identity, endpoint: new URL(endpoint!, globalThis.location?.href), publication: true, reconciliation: true,
     fetch: request => fetcher.current!(request) }), [libraryProvider, endpoint, identityKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [imagePreview, setImagePreview] = useState<{ readonly images: readonly ImageContent[]; readonly index: number; readonly controller: typeof controller; readonly client: typeof client; readonly conversationId: typeof conversationId }>();
+  const openImage = useCallback((image: ImageContent, images: readonly ImageContent[] = [image]) => {
+    const index = images.indexOf(image);
+    if (index >= 0 && images.every(item => thumbnail(item.mimeType, item.data))) setImagePreview({ images: images.slice(), index, controller, client, conversationId });
+  }, [controller, client, conversationId]);
+  const preview = imagePreview && !chat.onOpenImage && imagePreview.controller === controller && imagePreview.client === client && imagePreview.conversationId === conversationId ? imagePreview : undefined;
+  useEffect(() => { setImagePreview(undefined); }, [controller, client, conversationId, chat.onOpenImage]);
   // ---- Presented files: the page confirms a `present` call only once its panel has mounted the revision (`onShown`, from the viewers).
   // The bookkeeping is `createPresentAcks` (pi-chat/artifact.ts); the answer goes through the chat's own `answer` (the transport's
   // `?op=answer`) and the server checks the path and revision.
@@ -554,12 +572,12 @@ export function AgentWorkspace({ layout = 'default', title, controller, conversa
   const hostControls = typeof controls === 'function' ? controls({ panelOpen }) : controls ?? chat.controls;
   const header = <>{conversations?.onNew && <Button variant="ghost" size="icon-sm" data-testid="workspace-new-chat" aria-label={text.labels.newChat} title={text.labels.newChat} className="min-[641px]:hidden" onClick={conversations.onNew}><text.icons.newChat data-icon="inline-start" aria-hidden="true" /></Button>}{hostControls}</>;
   const conversationTitle = conversations?.items.find(item => item.id === conversationId)?.title;
-  const chatProps: PiChatProps | undefined = controller && { ...(mentionsForChat ? { mentions: mentionsForChat } : {}), ...(attachments ? { attachments } : {}), ...(locale ? { locale } : {}), ...chat, controller, artifacts, onOpenFile: chat.onOpenFile ?? chat.mentions?.open ?? openFile, ...(conversations ? { conversations, historyList: popoverHistory, showHistory: chat.showHistory ?? popoverHistory, conversationTitle, onRenameTitle: conversations.rename && conversationId ? (title: string) => conversations.rename!(conversationId, title) : undefined } : {}),
+  const chatProps: PiChatProps | undefined = controller && { ...(mentionsForChat ? { mentions: mentionsForChat } : {}), ...(attachments ? { attachments } : {}), ...(locale ? { locale } : {}), ...chat, controller, artifacts, onOpenFile: chat.onOpenFile ?? chat.mentions?.open ?? openFile, onOpenImage: chat.onOpenImage ?? openImage, ...(conversations ? { conversations, historyList: popoverHistory, showHistory: chat.showHistory ?? popoverHistory, conversationTitle, onRenameTitle: conversations.rename && conversationId ? (title: string) => conversations.rename!(conversationId, title) : undefined } : {}),
     headerStart: <>{toggle}{chat.headerStart}</>, ...(header === undefined ? {} : { controls: header }),
     // Embedded: the bar above replaces the chat's header (History, New and the host's controls are in it); conversations stay for Fork.
     ...(embedded ? { header: false, historyList: false, showHistory: false } : {}) };
   const bar = embedded && <WorkspaceBar title={title ?? conversationTitle ?? chatText.labels.title} {...(title && conversationTitle ? { subtitle: conversationTitle } : {})} conversations={conversations} narrow={narrow}
-    library={libraryController ? onPicked => libraryTree(path => { openFile(path); onPicked(); }, onPicked) : undefined}
+    library={libraryController ? onPicked => libraryTree(path => { openFile(path); onPicked(); }, onPicked) : undefined} panels={barPanels}
     controls={<><BlockActions actions={chat.headerActions} testId="chat-action" menuLabel={chatText.labels.moreActions} />{hostControls}</>} />;
   const docked_chat = <div data-testid="workspace-center" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
     {bar}
@@ -591,7 +609,7 @@ export function AgentWorkspace({ layout = 'default', title, controller, conversa
     className={cn('pi-chat relative flex h-full min-h-0 min-w-0 flex-1 overflow-hidden', className)}>
     <DockLayout storageKey={`${storageKey}.dock`} minMain={SESSIONS_WIDTH + 480}>
     {hasNavigation && (docked || (narrow && drawer)) && (sessions ? sessions(sessionProps) : <SessionsPane {...sessionProps} />)}
-    <DockMain><ArtifactWorkspace open={panelOpen && !(panelLibrary && narrow)} onClose={close} panelLabel={text.labels.artifactPanel} labels={{ resize: text.labels.resizePanel, floatHint: text.labels.floatHint }} fullscreen={fullscreen} onFullscreenChange={setFullscreen} storageKey={`${storageKey}.panel-width`}
+    <DockMain><ArtifactWorkspace open={panelOpen && !(panelLibrary && narrow)} onClose={close} panelLabel={text.labels.artifactPanel} labels={{ resize: text.labels.resizePanel, floatHint: text.labels.floatHint }} fullscreen={fullscreen} onFullscreenChange={setFullscreen} storageKey={`${storageKey}.panel-width`} {...(panelWidth === undefined ? {} : { defaultWidth: panelWidth })}
       sheetBelow={Math.max(CHAT_MIN + VIEWER_MIN, docked ? sheetBelow - SESSIONS_WIDTH : sheetBelow)} {...(floatBelow === undefined || libraryOpen ? {} : { floatBelow })}
       chat={layout => <WorkspaceCenter libraryOpen={libraryOpen} floating={layout.floating} chat={docked_chat}
         floatingChat={floatingChat && chatProps ? floatingChat(chatProps, layout.dock) : undefined}
@@ -618,6 +636,8 @@ export function AgentWorkspace({ layout = 'default', title, controller, conversa
       </section>}
     </Dock>}
     </DockLayout>
+    {preview && <ImageViewer images={preview.images} index={preview.index} labels={chatText.labels} testId="conversation-image"
+      onIndexChange={index => setImagePreview({ ...preview, index })} onClose={() => setImagePreview(undefined)} />}
     {panelLibrary && narrow && <Drawer open showSwipeHandle onOpenChange={next => { if (!next) setPanelLibrary(false); }}><DrawerContent aria-label={text.labels.library} className="pi-chat min-h-[80dvh] max-h-[80dvh]"><DrawerTitle className="sr-only">{text.labels.library}</DrawerTitle><div data-testid="workspace-library-side" className="min-h-0 flex-1 overflow-auto pb-[env(safe-area-inset-bottom)]">{libraryTree(openFile, () => setPanelLibrary(false))}</div></DrawerContent></Drawer>}
   </div></ChatTextProvider></AppTextProvider>;
 }

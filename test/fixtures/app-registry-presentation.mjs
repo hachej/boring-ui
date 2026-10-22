@@ -90,6 +90,23 @@ try {
   await click('conversation-file');
   assert.equal(opened, 1, 'file selection invokes the existing host callback once');
   assert.equal(find('conversation-files').getAttribute('aria-expanded'), 'false');
+  window.happyDOM.setWindowSize({ width: 1200, height: 844 });
+  await render(h(ConversationFiles, { key: 'desktop-files', files: [
+    { id: 'notes', name: 'notes.md', open: () => { opened++; } },
+    { id: 'picture', name: 'picture.png', open: () => { opened += 10; } },
+  ] }));
+  await key(find('conversation-files'), 'ArrowDown');
+  const filesMenu = find('conversation-files-list');
+  assert.equal(filesMenu.getAttribute('data-slot'), 'dropdown-menu-content', 'desktop uses the same native menu as the other kit actions');
+  assert.ok(filesMenu.querySelector('[data-slot="dropdown-menu-group"] [data-slot="dropdown-menu-label"]'));
+  assert.equal(document.activeElement.dataset.file, 'notes');
+  await key(document.activeElement, 'ArrowDown');
+  assert.equal(document.activeElement.dataset.file, 'picture');
+  await key(document.activeElement, 'Enter');
+  assert.equal(opened, 11, 'native menu keyboard selection opens exactly the selected file');
+  await click('conversation-files');
+  await key(find('conversation-files-list'), 'Escape');
+  assert.equal(find('conversation-files').getAttribute('aria-expanded'), 'false');
   let historyReads = 0, libraryClosed = 0, fileOpened;
   const provider = {
     identity: { principalId: 'fictional', initiatorId: 'fictional', scopeId: 'fictional' },

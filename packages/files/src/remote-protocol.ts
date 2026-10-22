@@ -1,10 +1,12 @@
-import type { PublicationLookupResult, PublicationOutcome, PublicationRequest, PublicationResult, ReadResult, ResourceAccess, ResourceChange, ResourceLocator, ResourceRead } from './contracts.js';
-import { accessSnapshot, identifier, locator, parsePublicationResult, publicationSnapshot, reference } from './publication-input.js';
+import type { PublicationLookupResult, PublicationOutcome, PublicationRequest, PublicationResult, ReadResult, ResourceAccess, ResourceChange, ResourceLocator, ResourceRead, ResourceRenameRequest, ResourceDeleteRequest } from './contracts.js';
+import { accessSnapshot, identifier, locator, parsePublicationResult, publicationSnapshot, reference, renameSnapshot, deleteSnapshot } from './publication-input.js';
 
 export type ResourceIdentity = Pick<ResourceAccess, 'principalId' | 'scopeId' | 'initiatorId'>;
 export type ResourceCall =
   | { readonly kind: 'read'; readonly value: ResourceRead }
   | { readonly kind: 'publish'; readonly value: PublicationRequest }
+  | { readonly kind: 'rename'; readonly value: ResourceRenameRequest }
+  | { readonly kind: 'delete'; readonly value: ResourceDeleteRequest }
   | { readonly kind: 'lookup'; readonly value: string };
 
 export const schema = 'boring-resource';
@@ -33,7 +35,7 @@ function wireIdentity(value: unknown): ResourceIdentity {
 export function envelope(value: unknown): { requestId: string; identity: ResourceIdentity; kind: ResourceCall['kind']; value: unknown } {
   const input = object(value);
   if (input.schema !== schema || input.version !== version) throw new TypeError('Unsupported resource protocol');
-  if (input.kind !== 'read' && input.kind !== 'publish' && input.kind !== 'lookup') throw new TypeError('Unsupported resource method');
+  if (input.kind !== 'read' && input.kind !== 'publish' && input.kind !== 'lookup' && input.kind !== 'rename' && input.kind !== 'delete') throw new TypeError('Unsupported resource method');
   return { requestId: identifier(input.requestId), identity: wireIdentity(input.identity), kind: input.kind, value: input.value };
 }
 
@@ -65,6 +67,8 @@ function bytes(value: unknown): Uint8Array {
 export function decodeCall(input: ReturnType<typeof envelope>): ResourceCall {
   if (input.kind === 'read') return { kind: 'read', value: readSnapshot(input.value) };
   if (input.kind === 'lookup') return { kind: 'lookup', value: identifier(input.value) };
+  if (input.kind === 'rename') return { kind: 'rename', value: renameSnapshot(input.value) };
+  if (input.kind === 'delete') return { kind: 'delete', value: deleteSnapshot(input.value) };
   const value = object(input.value);
   if (!Array.isArray(value.changes)) throw new TypeError('Missing changes');
   const changes = value.changes.map(item => {
@@ -136,6 +140,17 @@ export function publicationResult(value: unknown, operationId: string, selected:
   const result = parsePublicationResult(value);
   if (result.kind === 'partial') throw new TypeError('Remote partial receipts are not qualified');
   outcomeAgreement(result, operationId, selected, request?.changes, digest);
+  return result;
+}
+
+export function renameResult(value: unknown, request: ResourceRenameRequest, selected: ResourceIdentity, digest: string): PublicationResult {
+  const result = publicationResult(value, request.operationId, selected, undefined, digest);
+  if (result.kind !== 'committed') return result;
+  const changes = result.receipt.changes;
+  const removed = changes.find(change => change.kind === 'delete');
+  const created = changes.find(change => change.kind === 'create');
+  if (changes.length !== 2 || !removed || !created || !sameTarget(removed.before, request.from) || removed.before.revision !== request.expectedRevision
+    || !sameTarget(created.after, request.to) || created.after.revision !== request.expectedRevision) throw new TypeError('Rename receipt mismatch');
   return result;
 }
 

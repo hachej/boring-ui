@@ -136,27 +136,26 @@ async function runStep(t, scenario, step, at, state) {
   if (step.wait !== false) await waitSettled(t, step.answers ?? []);
 }
 
-/**
- * Runs one scenario on the shown variant: a fresh conversation, the steps, the declarative checks, then `verify`. The studio journey passes `retries: 0` in the
- * scripted layer (a failure there is a bug); other callers (the Cloudflare journey) keep the `STUDIO_RETRIES` default of 1. Against a real model, which sometimes answers in text where a tool call was asked for, the
- * caller allows a retry in a new conversation (the first failure is printed); a scenario that fails every time is a real failure.
- */
-export async function runScenario(t, scenario, variant, expectations, { retries = Number(process.env.STUDIO_RETRIES ?? 1) } = {}) {
+/** Runs a scenario in a fresh conversation, with at most one logged retry. Both failures remain fatal. */
+export async function runScenario(t, scenario, variant, expectations, { retries = 1 } = {}) {
+  assert.ok(retries === 0 || retries === 1, 'Journeys allow at most one retry');
   for (let attempt = 0; ; attempt++) {
     try { return await runOnce(t, scenario, variant, expectations); }
     catch (error) {
       if (attempt >= retries) throw error;
-      console.log(`retry ${scenario.id} (${variant.id}) after: ${String(error.message).split('\n')[0].slice(0, 200)}`);
+      console.error(error);
+      console.log(`retried after flake: ${scenario.id}`);
     }
   }
 }
 
 async function runOnce(t, scenario, variant, expectations) {
   await t.step(`${scenario.id} (${variant.id}): ${scenario.title}`, async () => {
-    if (scenario.viewport) await t.device(scenario.viewport);
     t.answered = [];
     try {
+      // Clear the previous scenario in its own layout before a phone hides its desktop Close control.
       await t.fresh();
+      if (scenario.viewport) await t.device(scenario.viewport);
       await t.browser.until('the scenario list', `!!${q('[data-testid=scenario-list]')}`, 20000);
       const listed = await t.browser.evaluate(`(${qa(`[data-testid=scenario][data-scenario=${scenario.id}]`)})[0]?.dataset.available`);
       assert.equal(listed, 'true', `${scenario.id} is listed as available on ${variant.id}`);

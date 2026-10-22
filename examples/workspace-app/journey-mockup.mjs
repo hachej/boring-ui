@@ -66,12 +66,12 @@ try {
       await browser.press('Enter');
       await browser.screenshot(`${size}-${scheme}-point-pin.png`);
       if (size === 'phone-390' && scheme === 'light') {
-        await browser.click(q('[data-testid=feedback-point-use-app]'));
+        await browser.click(q('[data-testid=feedback-comment-switch]'));
         await pause(100);
         await inside(`document.getElementById('toggle').click()`);
-        assert.equal(await inside(`document.getElementById('reminder-state').textContent`), 'On', 'Use app suspends frame click interception');
+        assert.equal(await inside(`document.getElementById('reminder-state').textContent`), 'On', 'switching comment mode off suspends frame click interception');
         await inside(`document.getElementById('toggle').click()`);
-        await browser.click(q('[data-testid=feedback-point-use-app]'));
+        await browser.click(q('[data-testid=feedback-comment-switch]'));
       }
       await browser.click(q('[data-testid=mockup-comment]'));
       await browser.until('point mode ended', `!${q('[data-testid=feedback-point-bar]')}`, 5000);

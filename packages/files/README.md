@@ -8,11 +8,11 @@ Opaque resource view IDs are provider-scoped and bound to the actual backing/inc
 
 `@hachej/boring-files/workspace` exports `createWorkspaceProvider({ identity, fs, journal })`: the one provider of a workspace's files ([One place for files](../../docs/architecture/FILES-GIT-EXEC.md#one-place-for-files)). It takes a Pi `FileSystem` (a disk environment, the virtual workspace or the SQLite backend below), the host's workspace identity and a journal (`createWorkspaceJournal(connection)` from `@hachej/boring-files/journal`, receipts, intents and the last 20 versions of each file in SQLite). Revisions are Git blob ids of the bytes. A conditional write checks every expected revision and precondition inside the workspace's queue, records its intent first and its receipt last; an intent without a completion looks up as `unknown` and is never replayed. Its owner closes the connection; the provider borrows it. Node currently marks `node:sqlite` experimental.
 
-The provider accepts all-or-nothing create and replace. It refuses working views, per-change requests and deletes (files are removed with the workspace's own tools) before any effect. Logical paths are relative to the workspace root; a path whose real location leaves the root is denied. A single file is replaced atomically by every backend; a multi-file batch only by the SQLite backend, together with its receipt when the journal shares the database. Access control is the host's, at the workspace boundary: there are no per-file permissions inside a workspace, and external revocation fencing is not implemented.
+The provider accepts all-or-nothing create, replace and conditional delete, plus conditional rename through `renaming.rename`. It refuses working views, per-change requests and folder mutations before any effect. Logical paths are relative to the workspace root; a path whose real location leaves the root is denied. A single file is replaced atomically by every backend; a multi-file batch only by the SQLite backend, together with its receipt when the journal shares the database. Access control is the host's, at the workspace boundary: there are no per-file permissions inside a workspace, and external revocation fencing is not implemented.
 
 ### Agent writes and the change feed
 
-Agent writes are observed, never receipted ([owner ruling 2](../../docs/architecture/FILES-GIT-EXEC.md#one-place-for-files)). `provider.record({ path, before?, after, source: 'agent', conversationId? }, access)` is what the file guard (`@hachej/boring-agent/file-guard`) calls after a Pi `write` or `edit` succeeded: the file's history gains the written revision with `source: 'agent'` (and the replaced revision, `source: 'observed'`, when `before` carries its bytes), and the change feed an `agent` event. It never writes the publication journal and never mints a receipt. It does not enter the provider's queue (the guard already runs inside it), so calling it from queued work cannot deadlock. History entries (`saves`, `catalog.history`) carry `source`: `publish`, `agent` or `observed` (`keep` and replaced revisions).
+Agent writes are observed, never receipted ([owner ruling 2](../../docs/architecture/FILES-GIT-EXEC.md#one-place-for-files)). `provider.record({ path, before?, after, source: 'agent', conversationId? }, access)` is what the file guard (`@hachej/boring-agent/file-guard`) calls after a Pi `write` or `edit` succeeded: the file's history gains the written revision with `source: 'agent'` (and the replaced revision, `source: 'observed'`, when `before` carries its bytes), and the change feed an `agent` event. It never writes the publication journal and never mints a receipt. It does not enter the provider's queue (the guard already runs inside it), so calling it from queued work cannot deadlock. History entries (`saves`, `catalog.history`) carry `source`: `publish`, `agent`, `observed` (`keep` and replaced revisions), `rename` or `delete` (the affected retained version). History remains one row per content revision, not an operation log; receipts retain every conditional mutation. A rename retains the moved version at both paths; a delete retains its removed version without inventing a tombstone revision. `savedAt` remains the version's first recorded save time at that path, not a separate deletion timestamp.
 
 `provider.changes({ since?, signal }, access)` is one change feed for every file view: an `AsyncIterable` of `{ kind: 'change', path, revision | null, source: 'publish' | 'agent' | 'poll' | 'watch', seq, at }`, ordered by `seq` and replayable from `since` (the last `seq` seen; `changeHead()` is "now"). The provider retains the last `changeBuffer` events (default 1024); a cursor older than that, from another provider lifetime or ahead of this one, and a listener that falls behind get `{ kind: 'resnapshot', seq, at }`: reload everything shown, then continue. Events are invalidation hints; bytes and the journal stay authoritative. Sources: conditional writes (`publish`), `record` (`agent`), `poll` and, while someone listens (and `watchLingerMs` after, default 30 s), the file system's own `watch` (`watch`; a reported directory is `{ revision: null, directory: true }`). The SQLite file system reports writes through its own connection at once and polls every second for other connections. When the file system cannot watch (the virtual and remote environments report `not_supported`), the host calls `provider.poll()` at the end of each agent turn: without paths it hashes every file (not `.git` or `node_modules`); the first call takes the baseline, later ones report changed, new and removed files. A `bash` write gets change events only, never history. After the last listener leaves the watcher lingers and then closes; changes made while no watcher was open are unknown, so the first listener afterwards makes the feed append a `resnapshot` (a client that stays connected is never affected). `changeIncarnation` names the provider lifetime: a cursor sent with another `incarnation` is a `resnapshot` whatever its number. `provider.close()` ends every change stream, closes the watcher and drops the listeners.
 
@@ -43,7 +43,7 @@ A large or binary file (up to 100 MB) can live in the host's blob store as an im
 
 ## Optional authenticated resource transport
 
-`@hachej/boring-files/remote` exports `createResourceClient` and `createResourceHandler`. Both are Fetch adapters over the existing resource contracts. They import no Pi runtime, filesystem or database. The client implements `ResourceClient`; `publication: true` and `reconciliation: true` independently select its optional methods. The handler borrows a reader, optional publisher and optional lookup. It never closes them.
+`@hachej/boring-files/remote` exports `createResourceClient` and `createResourceHandler`. Both are Fetch adapters over the existing resource contracts. They import no Pi runtime, filesystem or database. The client implements `ResourceClient`; `publication: true` selects `publish`, `rename` and `delete`, and `reconciliation: true` selects `lookup`. The handler borrows a reader, optional publisher, renamer, deleter and lookup. It never closes them.
 
 ```ts
 const handler = createResourceHandler({
@@ -51,6 +51,8 @@ const handler = createResourceHandler({
   reader: provider,
   publisher: provider.publication,
   lookup: provider.reconciliation,
+  renamer: provider.renaming,
+  deleter: provider.deletion,
 });
 const client = createResourceClient({
   identity: { principalId, scopeId, initiatorId },
@@ -61,7 +63,7 @@ const client = createResourceClient({
 });
 ```
 
-`publication: true` requires `reconciliation: true` (types and constructor): a save whose acknowledgement is lost is `unknown`, and only a lookup can resolve it. A read-only client sets neither.
+`publication: true` requires `reconciliation: true` (types and constructor): a mutation whose acknowledgement is lost is `unknown`, and only a lookup can resolve it. A read-only client sets neither. The handler answers 405 for an uninstalled capability; client opt-ins grant no server authority.
 
 Authentication returns trusted `ResourceAccess` or null. Its optional signal represents host revocation; the handler combines it with request cancellation. Client identity is expected response metadata, never authority. The host owns credentials, origin/CSRF/CORS policy, endpoint routing and provider confinement. The injected Fetch must honor `redirect: 'error'`, preserve cancellation and never retry effects. Bind a handler to the host's selected provider capabilities. Browser JSON cannot grant access or supply a trusted digest or approval.
 
@@ -109,7 +111,7 @@ scope in the same database:
 | `openSqliteResources({ connection, ... })` (a Durable Object) | the same calls with `durableObjectSqliteConnection(ctx.storage)` from `@hachej/boring-files/sqlite-durable-object` |
 | `authorize(action, target, access)` inside the store | the host checks its policy before calling the workspace's provider; [`shared/sqlite-workspaces.mjs`](../../shared/sqlite-workspaces.mjs) shows one way (a refused write whose operation committed and a refused lookup read `unknown`) |
 | `provider.close()` | `connection.close()` by the connection's owner |
-| a `delete` change | the workspace's own file tools (`fs.remove`, Pi's `bash`); publication refuses deletes |
+| a `delete` change | conditional publication with the observed revision, or `provider.deletion.delete({ path: locator, expectedRevision, operationId }, access)` |
 | revisions were random ids; saving the same bytes made a new revision | revisions are Git blob ids: the same bytes keep their revision, and `before` equal to `after` is a valid committed change |
 | every revision retained | the last 20 versions per file (`createWorkspaceJournal(connection, { historyLimit })`); older ones read `unavailable` |
 
@@ -155,8 +157,43 @@ const revisionProvider = await connectRevisionProvider({
 
 The binding discovers identity and workspace incarnation from the authenticated
 server. Reconnect when the selected workspace changes. It exposes `list`,
-filename `search`, retained `history`, `locate`, `read`, `publish`, `lookup` and
-`changes({ since?, signal })`, the workspace's change feed.
+filename `search`, retained `history`, `locate`, `read`, `publish`, `lookup`,
+`rename`, `delete` and `changes({ since?, signal })`, the workspace's change feed.
+
+```ts
+const moved = await revisionProvider.rename?.({
+  from: revisionProvider.locate('draft.md'),
+  to: revisionProvider.locate('final.md'),
+  expectedRevision: loaded.snapshot.ref.revision,
+  operationId: 'move-draft-1',
+});
+const removed = await revisionProvider.delete?.({
+  path: revisionProvider.locate('final.md'),
+  expectedRevision: loaded.snapshot.ref.revision,
+  operationId: 'remove-final-1',
+});
+```
+
+These methods send `rename` and `delete` kinds on the same authenticated files
+endpoint. `from`, `to` and `path` are `ResourceLocator`s, not strings. Both require
+the current source revision; rename also requires an absent target in the same
+provider/view and an existing parent directory. Direct workspace callers use
+`provider.renaming.rename(request, access)` and `provider.deletion.delete(request, access)`.
+A rename receipt is a delete/create pair with the same content revision; its feed
+emits old-path `revision: null` then the new-path revision, both `source: 'publish'`.
+Delete emits `revision: null`. Stale revisions and existing file targets conflict.
+Identical operation-ID retries and `lookup` return the original receipt; changed
+arguments conflict. A lost reply stays `unknown`, never an automatic retry.
+`createRevisionHandler` installs these capabilities from its selected provider
+and holds the same workspace lease until they settle. Generic resource handlers
+install `renamer`/`deleter` explicitly. Folders, recursive deletion and file-tree
+Rename/Delete controls are not part of this endpoint increment.
+
+Both operations use the workspace queue and Pi's native `renameFile`/`remove`.
+SQLite (including the Durable Object adapter) reuses those filesystem mutations
+inside the bytes/history/receipt transaction when the journal shares its connection.
+Disk/remote backends retain their existing crash window: an effect without a
+completed journal receipt is `unknown`. Shell writers remain outside the queue.
 
 The feed is `GET <endpoint>?op=changes[&since=<seq>&incarnation=<id>]` with the binding header:
 server-sent events (`event: ready` with the current seq and the provider incarnation, then `event: change` or

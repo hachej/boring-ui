@@ -1,6 +1,6 @@
 {
   "name": "boring-ui",
-  "version": "0.4.4",
+  "version": "0.4.7",
   "license": "MIT",
   "private": true,
   "type": "module",
@@ -95,6 +95,7 @@
     "test:shared-chat-consumer": "node scripts/test-shared-chat-consumer.mjs",
     "test:app-registry-consumer": "node scripts/test-app-registry-consumer.mjs",
     "test:html-consumer": "node scripts/test-editor-consumer.mjs --html",
+    "test:artifact-viewer-consumer": "node scripts/test-artifact-viewer-consumer.mjs",
     "test:html-registry-consumer": "node scripts/test-registry-consumer.mjs --html",
     "test:feedback-registry-consumer": "node scripts/test-feedback-registry-consumer.mjs",
     "test:experience-consumer": "node scripts/test-experience-consumer.mjs",
@@ -112,10 +113,12 @@
     "test:morning-consumer": "node scripts/test-experience-consumer.mjs --morning",
     "check:pack": "node scripts/check-npm-packages.mjs",
     "draft-recovery:journey": "node examples/draft-recovery/journey.mjs",
-    "release:preflight": "npm run verify:release && node scripts/check-npm-packages.mjs --release",
+    "release:preflight": "npm run check && npm run typecheck && node scripts/release-preflight.mjs",
     "release:version": "node scripts/release-version.mjs",
     "file-tree:journey": "node examples/file-tree/journey.mjs && node examples/file-tree/journey-library.mjs",
-    "requests:journey": "node examples/workspace-app/journey-requests.mjs"
+    "requests:journey": "node examples/workspace-app/journey-requests.mjs",
+    "windows": "node examples/windows/server.mjs",
+    "windows:journey": "node examples/windows/journey.mjs"
   },
   "devDependencies": {
     "@aws-sdk/client-bedrock-agentcore": "3.1151.0",

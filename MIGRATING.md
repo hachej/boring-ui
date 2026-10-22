@@ -1,3 +1,77 @@
+# Unreleased
+
+- **Placed agent workspace (D-103).** New opt-in `placed-agent` registry block provides `PlacedAgentWorkspace`, `placement="tab+ambient"`, controlled `collapsed`/`onCollapsedChange`, and `usePlacedAgentState`. Install it with the matching kit and its `pi-app`, `pi-ambient` and `app-shell` dependencies. It reuses the conversation/controller: desktop collapse floats the chat; phones in an available app-shell layer use one 8rem peek above the tab bar, while phones outside a shell stay a page. Existing `AgentWorkspace` behavior and stored document formats are unchanged.
+
+- **Faster release preparation (D-234).** Release tooling reuses exact-main green CI, prepares audited archives without another full suite, and waits for npm visibility once for all packages. Package-changing PRs now add their migration note here; `release:version` promotes these notes and refuses an empty section. Browser journeys get one logged retry; unit tests do not. No application API or stored-format migration.
+
+# Migrating to 0.4.7
+
+Upgrade the registry blocks with `npx boring-ui-blocks update --version 0.4.7` (`npx boring-ui-blocks check` first lists your edited copies), and bump the npm pins to `0.4.7`.
+Stored formats remain compatible. Reinstall `feedback`, `app-shell`, `pi-app`, `pi-workspace`, `viewers` and `pi-chat` together: the feedback pin now uses `pi-chat`'s `use-hold-to-record`, and `feedback` gains `switch` as a registry dependency.
+
+## Feedback
+
+- **Comment mode (breaking, #1789).** `PointBar` is renamed `CommentBanner` and is shown on wide screens too (at the top, while hover targeting). Annuler and « Utiliser l'app » become an on/off « Commenter » switch (`feedback-comment-switch`); `feedback-point-cancel` and `feedback-point-use-app` are gone, and the count (`feedback-point-count`) is of notes that say something, absent at 0. The pin's Alt hint (`feedback-bubble-hint`) is gone, its label names the element in plain words (`plainElement`), and its mic is held to record: on release the transcript is appended and the note saved. Labels `altHint`, `pointHint`, `pointCancel`, `pointUseApp`, `pointUsing` and `pointBar` are removed; `commentMode`, `commentSwitch`, `commentTap`, `commentClick`, `commentPaused`, `commentSent` and `element` are added. New hooks: `useCommenting(session)` and `useSendEachNote(session, send)`. Journeys that tapped Annuler should tap `feedback-point-done` (with no note it ends comment mode with nothing).
+- The annotate toggle and pin controls keep 44px targets on desktop too.
+
+## Chat
+
+- **Sent page comments as cards (D-207, #1788).** A user message carrying a page-comments report renders a compact localized Card instead of the raw report. No migration step.
+- **Inline images and full-screen viewer (D-214, #1791).** Messages show image thumbnails, and `AgentWorkspace` replaces its ImagePane dialog with `ImageViewer` (pinch, double-tap, swipe to dismiss, 48px controls). `onOpenImage(image, gallery?)` gains the optional message gallery. Reinstall `pi-chat` and `pi-app` together.
+
+## Layout
+
+- **Host panels and opening width in `AgentWorkspace` (#1789).** `barPanels` (`WorkspaceBarPanel { id, label, icon, content(close) }`) adds the host's own panels to the bar after Library; `panelWidth` sets the side panel's opening width (a fraction of the workspace when at most 1, else pixels; `ArtifactWorkspace`'s `defaultWidth` accepts the same). Both optional.
+- **`ViewerFrame` `mainControl` (#1789).** A control that stays in the header at every width (`<testId>-main`) while `controls` fold into « … » on a phone. Optional.
+
+## Agent
+
+- **SheetJS is host-installed (D-225, #1792).** `xlsx` is now an optional peer of `@hachej/boring-agent`; hosts that read spreadsheets run `npm i https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`. Without it `read_spreadsheet` returns a refusal; PDF reading is unchanged.
+- **OptChat compactor cache (D-210, #1794).** Model summary requests reuse the last turn view as their prefix (compactor cache ≥95% in fictional replays, not live-provider qualification); `stats().compactor.requests` lists usage for the last 256 responses. Forgetting a message clears all summaries once shared-prefix summaries exist. No migration step; downgrading needs a deliberate summary invalidation.
+
+## Files
+
+- **Conditional rename and delete (D-226, #1793).** Workspace publication now accepts conditional delete changes. Publishing remote/revision clients additionally expose rename/delete with locator-valued paths, expectedRevision and operationId; generic handlers opt in with renamer/deleter, while revision handlers use their workspace provider's capabilities. Handle additive rename/delete history sources and rename capability metadata; reconcile uncertain operations by their original ID. No tree controls or recursive folder operations are included.
+
+# Migrating to 0.4.6
+
+Upgrade the registry blocks with `npx boring-ui-blocks update --version 0.4.6` (`npx boring-ui-blocks check` first lists your edited copies), and bump the npm pins to `0.4.6`.
+Existing APIs and stored formats remain compatible. No block gains an install dependency; the chat changes arrive when you reinstall `pi-chat` and `app-shell` together.
+
+## Chat
+
+- **Conversation files open (D-176, D-192, #1786).** Every row in a conversation's Files menu now opens: workspace paths in the file viewer, native images in a preview. `AgentWorkspace` supplies an image preview by default; `chat.onOpenImage`, `chat.onOpenFile` and `chat.mentions.open` still override it. Rows with no opener are hidden instead of shown disabled. An upload returning both `image` and `path` is still sent as the native image only, so it appears once in the message and once in the menu. On desktop the menu is the shadcn `DropdownMenu` (arrow keys, Enter, Escape); phones keep the Drawer with 48px rows. Journeys that clicked a disabled row or waited for the old popover should use the existing `conversation-files`, `conversation-files-list` and `conversation-file` test IDs.
+- **Calmer artifact card (D-180, #1784).** The chat artifact card has a tinted icon, a muted type and version line and a single chevron instead of an “Open” label. Built-in type names follow the chat's labels (English and French); host kind labels still win. Accessible names and `aria-pressed` are unchanged; update journeys that matched the visible “Open”/“Ouvrir” text.
+- **Stable OptChat prefix (D-160, #1781).** OptChat folds in batches at durable checkpoints, so consecutive requests share their prompt prefix and keep the provider cache warm. New optional `foldHighWater` / `foldLowWater` (defaults 1.25 / 0.75); equal values keep the former strict fitting. Fold state is stored in the native `boring.memory.optchat.fold` conversation document. No migration step.
+
+## Viewers
+
+- **Read-only ArtifactViewer (D-194, #1785).** New entry `@hachej/boring-ui-kit/artifact-viewer` exports `ArtifactViewer({ name, mimeType, content?, url?, className?, renderPdf? })` for Markdown, HTML, PDF, images and text, without ResourceClient, tiptap or the agent. Markdown and HTML are sanitized with the same passive-HTML allowlist as the HTML preview and shown in a sandboxed iframe. Existing viewers are unchanged.
+
+# Migrating to 0.4.5
+
+Upgrade the registry blocks with `npx boring-ui-blocks update --version 0.4.5` (`npx boring-ui-blocks check` first lists your edited copies), and bump the npm pins to `0.4.5`.
+Existing APIs and stored formats remain compatible. Floating windows and retained voice messages are opt-in; the chat queue's quieter presentation arrives when you reinstall the blocks.
+
+## Consumer dependencies
+
+Re-add the installed items to install their new files and dependencies. If you copied blocks by hand, install these yourself:
+
+- The optional `windows` block needs `utils`, shadcn `button`, `card`, `badge`, `drawer` and `dropdown-menu`, React/React DOM and `lucide-react@^1.51.0`. It installs no theme; add `theme.json` only if the host has no shadcn tokens.
+- Reinstall `pi-chat` and `app-shell` together for retained voice messages, and `shared-chat` if installed. Use the matching kit for the new `/voice-capture` entry. No transcription service or audio storage is installed: the host supplies both. Reinstall `utils` with `app-shell` for the extracted shared `useDraggable` hook.
+
+## Chat and floating windows
+
+- **Floating utilities (D-79, #1780).** Install `windows` and wrap host-owned utilities in `WindowLayer`, with `FloatingWindow({ id, title, children, defaultOpen?, defaultRect? })` and `WindowLauncher windows={[{ id, title }]}`. `useWindow(id)` exposes open, close and minimize after registration. Desktop windows drag, resize and stack; below 641px the front window uses a full-screen Drawer. `storageKey` and `persist="session" | "local"` on the layer remember rectangles and open/minimized/closed state, not content or task state. The default is session storage. Keep durable content and drafts in host controllers, especially across phone/desktop changes. Existing app-shell dock/float behavior is unchanged. See [Floating windows](registry/README.md#floating-windows-windows).
+- **Retained voice messages (D-111, #1776).** `PiChat` (also through `AmbientChat`) adds `voiceMessage={{ transcribe, maxMs?, upload? }}`. Hold to record; release uploads audio and transcribes in parallel, then sends one native text entry containing the `@uploads/voice-…` path and transcript, without sending or clearing the existing composer draft. Supply `transcribe(blob, signal)` and `attachments.upload`, or override with `voiceMessage.upload`; upload exactly one file, preserve its `voice-` filename prefix and recorded audio MIME, and return an `uploads/voice-…` path. Capture defaults to five minutes; reaching the cap does not send before release. Failed/empty transcription sends nothing automatically; local rows offer retry, explicit audio-only send or discard. Discard does not delete an uploaded file, and uncertain native admission uses reconciliation rather than a new send. In the app shell, opt in with `AgentSpec.voice.send: 'message'`; existing `auto` and default `draft` remain text-only. See [Voice messages](registry/README.md#voice-messages-in-pi-chat).
+- **Voice playback and custom hosts.** Reserved voice uploads render audio bubbles; other audio remains a file card. Provide stored audio MIME and base64 bytes through `mentions.preview`, or an authorized HTTP(S) URL through the new `mentions.audioUrl(path, signal)`, fetched only on Play. Permit Blob URLs or the signed-URL origin in the host's media CSP. A custom `timeline.render(context)` enabling voice must place `context.pendingVoice` in its transcript; the copied shared-chat timeline already does. Compatible custom controllers must preserve the native immutable draft/request identities used for admission and reconciliation. New `@hachej/boring-ui-kit/voice-capture` exports `createVoiceCapture` independently of React, files and Pi; the existing feedback capture API re-exports it unchanged. Physical-phone capture/playback still need consumer qualification.
+- **Quieter queue (D-174, #1782).** `PiChat` and `AmbientChat` use a compact queue strip with single-line previews, icon-only Steer and remove actions, and Edit under “…”; steering uses an icon and screen-reader status instead of a visible badge. The composer's Queue action is also icon-only, retaining its accessible name and title. Desktop Enter still queues, and withdrawal/steering/edit semantics are unchanged. No new prop or install dependency. Update journeys that locate actions by visible text to use accessible names or the existing test IDs. See [Queue controls](registry/README.md#panel-pi-workspace-history-and-queue-pi-chat).
+
+## Agent skills and CI
+
+- **Skill companion files (D-146, #1779).** Self-evolving agents now discover both flat `.agent/skills/<name>.md` and immediate `.agent/skills/<name>/SKILL.md` definitions. Only the folder's `SKILL.md` defines a skill; other Markdown and deeper files are companions. `load_skill` appends the source folder so relative references can be read on demand with Pi's native `read`, through the same workspace provider. Scanning/loading does not read companions or grant additional access. Existing flat skills still work; host-given `{ name, description, body }` skills have no source folder and return their bodies unchanged. No new host setting or tool. See [Self-evolution](packages/agent/README.md#self-evolution).
+- **Faster CI (D-153, #1778).** Verification, registered evidence, isolated consumers and scripted journeys are split across CI jobs instead of repeated serially. The normal `npm test` still runs the full suite; proof deferrals remain unchanged. CI/test tooling only: no application install or migration step.
+
 # Migrating to 0.4.4
 
 Upgrade the registry blocks with `npx boring-ui-blocks update --version 0.4.4` (`npx boring-ui-blocks check` first lists your edited copies), and bump the npm pins to `0.4.4`.

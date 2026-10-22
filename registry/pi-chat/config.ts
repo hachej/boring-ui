@@ -70,7 +70,7 @@ export interface PastedText { readonly text: string; readonly start: number; rea
 export interface UploadResult {
   /** The host saved the file in the workspace: it becomes an `@path` mention. */
   readonly path?: string;
-  /** Sent as a native image attachment. */
+  /** Sent as a native image attachment instead of a path mention when both are supplied. */
   readonly image?: { readonly data: string; readonly mimeType: string };
   readonly name: string;
 }

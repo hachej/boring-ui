@@ -108,7 +108,9 @@ export const view = createRoot(document.getElementById('root')!); view.render(<A
     assert.deepEqual(inputs.filter(path => /shared-chat|channel-source|channel-socket|channel-error|fake-channel/.test(path)), [], 'regular bundle excludes the optional feature and data entry');
   }
   assert.ok(inputs.some(path => path.endsWith('@hachej/boring-ui-kit/dist/voice-capture.js')), 'the installed chat reuses the neutral public capture');
-  assert.deepEqual(inputs.filter(path => /@hachej\/boring-feedback/.test(path)), [], 'recording does not couple regular chat to feedback');
+  const feedbackInputs = inputs.filter(path => /@hachej\/boring-feedback\//.test(path));
+  assert.ok(feedbackInputs.some(path => path.endsWith('/dist/format/report.js')), 'sent comments use the installed real formatter');
+  assert.deepEqual(feedbackInputs.filter(path => !/@hachej\/boring-feedback\/dist\/format\//.test(path)), [], 'format presentation imports no capture, UI, store or agent feature');
   assertConsumerTypeFiles(inputs.map(path => resolve(directory, path)).join('\n'), directory);
   assert.deepEqual(inputs.filter(path => /@hachej\/boring-agent|pi-durable\/dist\/(storage|env)|sqlite|node:/.test(path)), [], 'browser bundle holds no agent, storage or Node code');
   console.log(`PASS: real pinned shadcn installation of ${itemName} alone over HTTP with its ${closure.size - 1} registry dependencies, strict declarations of the copied chat and the moved hook, and a browser bundle; ${shared ? 'fictional DOM flow also executed (not live-service qualification)' : 'type and bundle evidence only'}`);

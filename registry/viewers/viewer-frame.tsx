@@ -47,6 +47,11 @@ export interface ViewerFrameProps {
   readonly headerStart?: ReactNode;
   /** Viewer-specific controls that stay visible: a mode toggle, Save while there are edits, zoom steps, a version switcher when there are several. */
   readonly controls?: ReactNode;
+  /**
+   * The one control that matters most here (Comment on a version to try, for example), kept in the bar at every width. With the compact
+   * header a phone folds `controls` into the "…" menu; this one stays beside it, so the main action is one tap away. Test id `<testId>-main`.
+   */
+  readonly mainControl?: ReactNode;
   /** Viewer-specific secondary actions, listed in the "…" menu after the standard ones. */
   readonly menu?: readonly ViewerMenuItem[];
   /**
@@ -136,7 +141,7 @@ function StatusMark({ status, testId }: { readonly status: ViewerStatus; readonl
 }
 
 /** The one top bar of every viewer, always a single row: title and facts, viewer controls, a status dot when something needs attention, Share, full screen, Close and the "…" menu. */
-export function ViewerFrame({ title, subtitle, status, showSavedStatus = false, target, revision, headerStart, controls, menu, actions, labels: ownLabels, icons: ownIcons, onRefresh, onShare, onCopy, onDownload, onOpenInNewTab, onClose, testId = 'viewer', titleTestId, compactHeader = true, className, children }: ViewerFrameProps) {
+export function ViewerFrame({ title, subtitle, status, showSavedStatus = false, target, revision, headerStart, controls, mainControl, menu, actions, labels: ownLabels, icons: ownIcons, onRefresh, onShare, onCopy, onDownload, onOpenInNewTab, onClose, testId = 'viewer', titleTestId, compactHeader = true, className, children }: ViewerFrameProps) {
   const bar = useRef<HTMLElement>(null);
   const [space, setSpace] = useState<ViewerBarSpace>({ tight: false });
   const [busy, setBusy] = useState<'refresh' | 'share' | undefined>();
@@ -212,6 +217,7 @@ export function ViewerFrame({ title, subtitle, status, showSavedStatus = false, 
           {(subtitle || reading) && <p data-testid={`${testId}-subtitle`} className={cn('m-0 flex min-w-0 items-center gap-x-1.5 text-xs leading-4 whitespace-nowrap text-muted-foreground', compactHeader ? 'hidden group-hover/title:flex max-[641px]:hidden' : 'overflow-hidden')}>{subtitle}{subtitle && reading && <span aria-hidden="true">·</span>}{reading && <span data-testid={`${testId}-readonly`}>{labels.readOnly}</span>}</p>}
         </div>
         {!stacked && toolbar}
+        {mainControl && <div data-testid={`${testId}-main`} className="flex shrink-0 items-center">{mainControl}</div>}
         {status && !reading && (showSavedStatus || status.kind !== 'saved' && status.label !== labels.saved) && <StatusMark status={status} testId={testId} />}
         <div className="flex shrink-0 items-center gap-0.5">
           {headerActions(hostActions).map(action => <ActionButton key={action.id} action={action} testId={testId} size="icon-sm" />)}

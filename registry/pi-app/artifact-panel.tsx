@@ -38,6 +38,7 @@ import { Separator } from '@/components/ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { readText, savedLabel, useSaved } from './use-saved';
 import { useAppText } from './app-labels';
+import { useChatText } from '../pi-chat/labels';
 
 const NOOP = () => () => {};
 /** The page's URL fragment without `#`, followed through `hashchange`: artifact kinds read a place inside the artifact from it. */
@@ -191,6 +192,7 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose, headerSta
   readonly onSelect: (value: string) => void; readonly onClose: () => void; readonly headerStart?: ReactNode;
 }) {
   const { type } = artifact;
+  const chatText = useChatText();
   const { client, identity } = options;
   const { labels } = useAppText();
   const path = artifact.target.resource.path;
@@ -241,7 +243,7 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose, headerSta
     title: artifact.title, testId: 'artifact', titleTestId: 'artifact-panel-title', controls: versions, onClose, target, ...(headerStart ? { headerStart } : {}), ...(revision === undefined ? {} : { revision }), ...(options.share ? { onShare: options.share } : {}),
     subtitle: <>
       <span title={path}>{path}</span><span aria-hidden="true">·</span>
-      <span data-testid="artifact-panel-type">{typeLabel(artifact, kinds)}</span>
+      <span data-testid="artifact-panel-type">{typeLabel(artifact, kinds, chatText.labels.artifactTypes)}</span>
       <span aria-hidden="true">·</span>
       <span data-testid="artifact-panel-version">{pinned ? (menu.savedAt !== undefined ? labels.savedAt(savedLabel(menu.savedAt, Date.now(), labels.earlierVersion)) : labels.olderVersion) : menu.savedAt ? labels.latestSavedAt(savedLabel(menu.savedAt, Date.now(), labels.earlierVersion)) : labels.latest}</span>
     </>,

@@ -57,6 +57,10 @@ try {
   run('npm', ['install', '--package-lock-only', ...npmInstallFlags(cache), ...archives]);
   run('npm', ['ci', ...npmInstallFlags(cache)]);
   for (const name of presentation ? ['@hachej/boring-execution', 'react', '@tiptap/core', 'tldraw'] : ['@hachej/boring-ui-kit', '@hachej/boring-execution']) assert.equal(existsSync(join(directory, 'node_modules', name)), false, name);
+  assert.equal(existsSync(join(directory, 'node_modules/xlsx')), false, 'agent consumers do not install optional SheetJS');
+  mkdirSync(join(directory, 'test/fixtures'), { recursive: true });
+  for (const path of ['test/fixtures/documents-without-xlsx.mjs', 'test/fixtures/document-bytes.mjs', 'test/fixtures/native-document.mjs']) copyFileSync(join(root, path), join(directory, path));
+  run(process.execPath, ['test/fixtures/documents-without-xlsx.mjs'], isolated);
   writeFileSync(join(directory, 'consumer.ts'), presentation ? readFileSync(join(root, 'test/fixtures/isolated-presentation-consumer.ts'), 'utf8') : `import { createQuestions } from '@hachej/boring-agent/questions';
 import { createQuestionResponseHandler } from '@hachej/boring-agent/question-response';
 import type { QuestionResponseAccess } from '@hachej/boring-agent/question-response';

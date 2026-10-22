@@ -139,21 +139,32 @@ export default [
     description: 'A message sent while busy waits in the queue with Steer now, edit and remove; the sessions pane is a drawer.',
     steps: [{ prompt: 'Without using tools or artifacts, write the numbers from 1 to 250 in English words, one per line, directly in the chat.', wait: false }],
     async verify(t) {
-      const { browser, q, qa, MESSAGE, SUBMIT, pause, shots } = t;
+      const { browser, q, qa, MESSAGE, SUBMIT, pause, shots, say, idle, logText } = t;
       const p = phoneKit(t);
       await browser.until('working', `${SUBMIT}?.dataset.state === 'stop'`, 30000);
       assert.equal(await browser.evaluate(`!${q('[data-testid=when-busy]')}`), true, 'no toggle in the composer');
       await browser.type(MESSAGE, 'Second message: reply with exactly: PHONE-QUEUE-ONE, and nothing else.');
+      assert.deepEqual(await browser.evaluate(`(() => { const e = ${q('[data-testid=composer-queue]')}, r = e.getBoundingClientRect(); return [e.innerText, e.getAttribute('aria-label'), e.getAttribute('title'), r.width >= 48 && r.height >= 48]; })()`), ['', 'Queue', 'Queue', true], 'the touch queue action is a named icon with a 48px target');
       // Enter is a newline on a touch device; the Queue button sends.
       await browser.tap(q('[data-testid=composer-queue]'));
       await browser.until('queued', `${qa('[data-testid=queue-item]')}.length === 1`, 15000);
+      await say('Third message: reply with exactly: PHONE-QUEUE-TWO, and nothing else.');
+      await browser.until('two queued messages', `${qa('[data-testid=queue-item]')}.length === 2`, 15000);
       await pause(300);
       await p.noOverflow('queue');
       for (const id of ['queue-steer', 'queue-more', 'queue-cancel']) assert.ok(await p.inViewport(`[data-testid=${id}]`), `${id} is on screen`);
       await p.check('queue', 'document.querySelector("[data-testid=queue]")');
+      assert.deepEqual(await browser.evaluate(`${qa('[data-testid=queue-item]')}.map(row => ['queue-steer', 'queue-cancel', 'queue-more'].map(id => { const e = row.querySelector('[data-testid=' + id + ']'), r = e.getBoundingClientRect(); return [e.innerText, !!e.getAttribute('aria-label'), !!e.getAttribute('title'), r.width >= 48 && r.height >= 48]; }))`), Array.from({ length: 2 }, () => [['', true, true, true], ['', true, true, true], ['', true, true, true]]), 'queue actions are icon-only, named and at least 48px');
       await shots('mobile-queue');
-      await browser.tap(q('[data-testid=queue-cancel]'));
-      await browser.until('removed', `${qa('[data-testid=queue-item]')}.length === 0`, 15000);
+      await browser.tap(`${qa('[data-testid=queue-item]')}[1].querySelector('[data-testid=queue-cancel]')`);
+      await browser.until('removed', `${qa('[data-testid=queue-item]')}.length === 1`, 15000);
+      await browser.tap(q('[data-testid=queue-steer]'));
+      await browser.until('steered message answered', `${idle} && ${qa('[data-testid=queue-item]')}.length === 0 && /PHONE-QUEUE-ONE/.test(${logText}.replace('reply with exactly: PHONE-QUEUE-ONE', ''))`, 120000);
+      const users = await browser.evaluate(t.userMessages);
+      assert.equal(users.filter(text => text.includes('PHONE-QUEUE-ONE')).length, 1, 'send-now places the message exactly once');
+      assert.ok(!users.some(text => text.includes('PHONE-QUEUE-TWO')), 'the removed message never ran');
+      await say('Without using tools or artifacts, write the numbers from 1 to 250 in English words, one per line, directly in the chat.');
+      await browser.until('working again', `${SUBMIT}?.dataset.state === 'stop'`, 30000);
       await browser.tap(SUBMIT);
       await browser.until('idle', `${SUBMIT}?.dataset.state === 'send'`, 30000);
       await browser.tap(q('[data-testid=sessions-toggle]'));

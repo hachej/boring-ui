@@ -9,6 +9,8 @@ import { checkPackages } from '../../scripts/check-npm-packages.mjs';
 import { setReleaseVersion, validReleaseVersion } from '../../scripts/release-version.mjs';
 import { publishRelease, readRelease } from '../../scripts/publish-npm-packages.mjs';
 import { INTENTIONALLY_PRIVATE, isExcludedFromRelease } from '../../scripts/release-set.mjs';
+import { checkReleaseNotes } from '../../scripts/check-release-notes.mjs';
+import { releasePreflight } from '../../scripts/release-preflight.mjs';
 
 const commit = 'a'.repeat(40);
 function fixture(t) {
@@ -18,6 +20,7 @@ function fixture(t) {
   const read = path => JSON.parse(readFileSync(join(root, path), 'utf8'));
   const main = { name: 'fixture', version: '1.0.0', private: true, workspaces: ['packages/*'] };
   write('package.json', main); write('LICENSE', 'MIT fixture license\n');
+  write('MIGRATING.md', '# Unreleased\n\n- Fictional package change.\n\n# Migrating to 1.0.0\n\nPrevious notes.\n');
   const lock = { name: main.name, version: main.version, lockfileVersion: 3, packages: { '': main } };
   for (const name of ['files', 'agent', 'browser']) {
     const manifest = {
@@ -70,6 +73,23 @@ test('release version edits synchronize internal pins without changing privacy o
   assert.deepEqual(f.read('public/r/fixture.json').registryDependencies, ['https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@1.1.0-rc.1/r/utils.json', 'https://example.test/r/other.json']);
 });
 
+test('release version promotes Unreleased notes and keeps prior releases intact', t => {
+  const f = fixture(t);
+  setReleaseVersion(f.root, '1.1.0');
+  assert.equal(readFileSync(join(f.root, 'MIGRATING.md'), 'utf8'), '# Unreleased\n\n# Migrating to 1.1.0\n\n- Fictional package change.\n\n# Migrating to 1.0.0\n\nPrevious notes.\n');
+});
+
+test('release version refuses missing, duplicate or empty Unreleased notes before any write', t => {
+  for (const notes of ['', '# Migrating to 1.0.0\n- Old note.\n', '# Unreleased\n\n', '# Unreleased\n\n<!-- Add notes here. -->\n\n## Changes\n', '# Unreleased\n- One.\n# Unreleased\n- Two.\n']) {
+    const f = fixture(t);
+    f.write('MIGRATING.md', notes);
+    assert.throws(() => setReleaseVersion(f.root, '1.1.0'), /Unreleased/);
+    assert.equal(f.read('package.json').version, '1.0.0');
+    assert.equal(f.read('packages/agent/package.json').version, '1.0.0');
+    assert.equal(readFileSync(join(f.root, 'MIGRATING.md'), 'utf8'), notes);
+  }
+});
+
 test('invalid versions and inconsistent lockfiles leave all source files untouched', t => {
   const f = fixture(t), before = readFileSync(join(f.root, 'package.json'), 'utf8');
   for (const version of ['latest', 'v1.0.0', '1.02.0', '1.0.0-01', '1.0.0+build', '1.0.0; echo unsafe', '999999999999999999999.0.0']) {
@@ -79,6 +99,56 @@ test('invalid versions and inconsistent lockfiles leave all source files untouch
   assert.throws(() => setReleaseVersion(f.root, '2.0.0'), /Lockfile/);
   assert.equal(readFileSync(join(f.root, 'package.json'), 'utf8'), before);
   assert.equal(f.read('packages/agent/package.json').version, '1.0.0');
+});
+
+test('PR migration-note policy compares real Git revisions and allows release promotion', t => {
+  for (const kind of ['missing', 'historical-only', 'added', 'promotion', 'promotion-runtime', 'promotion-manifest', 'private', 'registry']) {
+    const f = fixture(t);
+    const git = args => {
+      const result = spawnSync('git', ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test', ...args], { cwd: f.root, encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr);
+      return result.stdout.trim();
+    };
+    git(['init', '-q']); git(['add', '.']); git(['commit', '-qm', 'fictional baseline']);
+    const base = git(['rev-parse', 'HEAD']);
+    if (!['promotion', 'promotion-manifest'].includes(kind)) f.write(kind === 'private' ? 'packages/browser/dist/index.js' : kind === 'registry' ? 'public/r/fixture.json' : 'packages/agent/dist/index.js', 'fictional changed bytes\n');
+    if (kind === 'added') f.write('MIGRATING.md', readFileSync(join(f.root, 'MIGRATING.md'), 'utf8').replace('# Unreleased', '# Unreleased\n\n- Another fictional package change.'));
+    if (kind === 'historical-only') f.write('MIGRATING.md', readFileSync(join(f.root, 'MIGRATING.md'), 'utf8') + '\n- Only old release notes changed.\n');
+    if (kind.startsWith('promotion')) setReleaseVersion(f.root, '1.1.0');
+    if (kind === 'promotion-manifest') f.write('packages/agent/package.json', { ...f.read('packages/agent/package.json'), scripts: { postinstall: 'fictional-command' } });
+    git(['add', '.']); git(['commit', '-qm', 'fictional candidate']);
+    const head = git(['rev-parse', 'HEAD']);
+    if (['missing', 'historical-only', 'registry'].includes(kind)) assert.throws(() => checkReleaseNotes(f.root, base, head), /own line under # Unreleased/, kind);
+    else if (kind.startsWith('promotion-')) assert.throws(() => checkReleaseNotes(f.root, base, head), /Unreleased/, kind);
+    else assert.deepEqual(checkReleaseNotes(f.root, base, head), kind === 'private' ? { required: false } : { required: true, promoted: kind === 'promotion' });
+  }
+});
+
+test('a behind-main documentation-only PR is compared to its merge base, not unrelated main package changes', t => {
+  const f = fixture(t);
+  const git = args => {
+    const result = spawnSync('git', ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test', ...args], { cwd: f.root, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+  };
+  git(['init', '-q']); git(['add', '.']); git(['commit', '-qm', 'fictional baseline']);
+  const ancestor = git(['rev-parse', 'HEAD']);
+  f.write('packages/agent/dist/index.js', 'fictional main-only change\n');
+  git(['add', '.']); git(['commit', '-qm', 'fictional main package change']);
+  const base = git(['rev-parse', 'HEAD']);
+  git(['checkout', '-qb', 'fictional-pr', ancestor]);
+  f.write('README.md', '# Fictional docs-only PR\n');
+  git(['add', '.']); git(['commit', '-qm', 'fictional docs change']);
+  assert.deepEqual(checkReleaseNotes(f.root, base, git(['rev-parse', 'HEAD'])), { required: false });
+});
+
+test('lightweight release preparation audits and dry-runs archives without running tests or publishing', async t => {
+  const f = fixture(t), before = readFileSync(join(f.root, 'package.json'), 'utf8');
+  const result = await releasePreflight(f.root, commit);
+  assert.equal(result.dryRun, true);
+  assert.equal(readFileSync(join(f.root, 'package.json'), 'utf8'), before);
+  const pkg = f.read('packages/files/package.json'); f.write('packages/files/package.json', { ...pkg, private: true });
+  await assert.rejects(releasePreflight(f.root, commit), /private must explicitly be false/);
 });
 
 test('real audited tarballs support dry-run and reconcile partial publication without blind replay', async t => {
@@ -164,6 +234,35 @@ test('publish waits for the registry to confirm each package before failing', as
   await t.test('never visible fails with the same error after the timeout', async () => {
     await assert.rejects(publish(0, { never: true }), /Registry has not confirmed package\/version\/tag for /);
   });
+});
+
+test('all npm writes precede one shared visibility wait, with phase timings retained', async t => {
+  const f = fixture(t);
+  checkPackages(f.root, { release: true, outputDirectory: f.directory, commit });
+  const release = readRelease(f.directory, f.options), registry = new Map(), writes = [], records = [];
+  let clock = 0, waits = 0;
+  const result = await publishRelease(f.directory, f.options, {
+    now: () => clock, confirmIntervalMs: 15000, confirmTimeoutMs: 300000,
+    run: (_, args) => {
+      const pack = release.packages.find(pack => args[1] === join(f.directory, pack.filename));
+      writes.push(pack.name); clock += 1000;
+      registry.set(pack.name, { name: pack.name, version: pack.version, dist: { integrity: pack.integrity } });
+      return { status: 0, stdout: '{}' };
+    },
+    fetch: async url => {
+      const name = decodeURIComponent(new URL(url).pathname.slice(1).split('/')[0]);
+      return registry.has(name) && waits >= 6 ? Response.json(registry.get(name)) : new Response('missing', { status: 404 });
+    },
+    sleep: async ms => {
+      assert.equal(writes.length, release.packages.length, 'no per-package visibility wait before the other npm writes');
+      waits++; clock += ms;
+    },
+    record: value => records.push(value),
+  });
+  assert.equal(waits, 6, 'one shared 90-second validation delay, not one delay per package');
+  assert.equal(clock, 92000);
+  assert.ok(result.packages.every(pack => pack.status === 'published' && pack.publishMs === 1000));
+  assert.ok(records.some(value => value.packages.every(pack => pack.status === 'unconfirmed')));
 });
 
 test('the real pack audit rejects document-reader notices whose packed bytes differ from source', t => {

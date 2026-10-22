@@ -24,7 +24,8 @@ export default [
       await browser.until('the panel opened by itself with the rendered document', `!!${q(kit.PANEL)} && ${kit.editorText}.length > 200`, 20000);
       assert.equal(await browser.evaluate(`${q(kit.PANEL)}.dataset.follow`), 'true', 'the newest card opens the latest');
       assert.equal(await browser.evaluate(`${q('[data-testid=studio-main]')}.getBoundingClientRect().height - ${q(kit.SIDE)}.getBoundingClientRect().height < 4`), true, 'the panel takes the full height');
-      assert.equal(await browser.evaluate(`${q(`${kit.CARDS}[data-open=true] [data-testid=artifact-hint]`)}?.textContent`), 'Open', 'the open card keeps its quiet action label');
+      assert.equal(await browser.evaluate(`${q(`${kit.CARDS}[data-open=true]`)}?.getAttribute('aria-pressed')`), 'true', 'the open card exposes its state');
+      assert.equal(await browser.evaluate(`${q(`${kit.CARDS}[data-open=true] [data-testid=artifact-hint]`)}`), null, 'no repeated action text');
       assert.ok((await kit.rect('[data-testid=workspace-chat]')).w >= 330, 'the chat narrowed but stays usable');
       // Rendered headings, not source: unless the model wrote Markdown the rich editor could not keep exactly, which stays in source with a notice.
       assert.equal(await browser.evaluate(`!!${q(`${kit.PANEL} [role=textbox] h1, ${kit.PANEL} [role=textbox] h2`)} || !!${q(`${kit.PANEL} [data-testid=markdown-source-only]`)}`), true, 'rendered headings, or source with the notice');
@@ -178,7 +179,8 @@ document.getElementById('chart').append(svg);
       assert.equal(await browser.evaluate(`!${q(`${CARDS}[data-open=true]`)}`), true, 'no card claims to be open');
       await openCard(report.id, 2, `!!${q(PANEL)} && ${editorText}.length > 100`, 'reopened from the card');
       await pause(400);
-      assert.equal(await browser.evaluate(`${q(`${CARDS}[data-open=true] [data-testid=artifact-hint]`)}?.textContent`), 'Open');
+      assert.equal(await browser.evaluate(`${q(`${CARDS}[data-open=true]`)}?.getAttribute('aria-pressed')`), 'true');
+      assert.equal(await browser.evaluate(`${q(`${CARDS}[data-open=true] [data-testid=artifact-hint]`)}`), null);
 
       // ---- Versions: the switcher lists both and old cards pin their version.
       assert.equal((await kit.cards()).filter(c => c.id === report.id).length, 2, 'one card per message for the same artifact');

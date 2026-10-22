@@ -8,8 +8,20 @@ export function validReleaseVersion(value) {
   return !(value.split('-').slice(1).join('-').split('.').some(part => /^\d+$/.test(part) && part.length > 1 && part.startsWith('0')));
 }
 
+export function unreleasedNotes(notes) {
+  const sections = [...notes.matchAll(/^# Unreleased\r?$/gm)];
+  if (sections.length !== 1 || sections[0].index !== 0) throw new Error('MIGRATING.md must start with one # Unreleased section');
+  const pending = notes.slice(sections[0][0].length).split(/^# /m)[0].replace(/<!--[\s\S]*?-->/g, '');
+  if (!/^[-*] \S.+/m.test(pending)) throw new Error('Add a migration note under # Unreleased before setting a release version');
+  return pending.trim();
+}
+
 export function setReleaseVersion(root, version) {
   if (!validReleaseVersion(version)) throw new Error('Use an exact release version, for example 1.1.0 or 1.1.0-rc.1');
+  const notes = readFileSync(join(root, 'MIGRATING.md'), 'utf8');
+  unreleasedNotes(notes);
+  if (notes.includes(`# Migrating to ${version}\n`)) throw new Error('This version already has migration notes');
+  const promoted = notes.replace(/^# Unreleased\r?/, `# Unreleased\n\n# Migrating to ${version}`);
   const edits = new Map();
   const read = path => {
     const value = JSON.parse(readFileSync(join(root, path), 'utf8'));
@@ -56,11 +68,12 @@ export function setReleaseVersion(root, version) {
   registryPins(read('registry.json'));
   for (const file of readdirSync(join(root, 'public/r')).filter(name => name.endsWith('.json'))) registryPins(read(`public/r/${file}`));
   for (const [path, value] of edits) writeFileSync(join(root, path), JSON.stringify(value, null, 2) + '\n');
-  return [...edits.keys()];
+  writeFileSync(join(root, 'MIGRATING.md'), promoted);
+  return [...edits.keys(), 'MIGRATING.md'];
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   if (process.argv.length !== 3) throw new Error('Usage: npm run release:version -- <version>');
   const changed = setReleaseVersion(fileURLToPath(new URL('../', import.meta.url)), process.argv[2]);
-  console.log(`Set ${process.argv[2]} in ${changed.length} manifests/registry files. Private flags are unchanged; review and commit these edits before releasing.`);
+  console.log(`Set ${process.argv[2]} in ${changed.length} manifests/registry/notes files. Private flags are unchanged; review and commit these edits before releasing.`);
 }

@@ -4,15 +4,15 @@
   "title": "Point and dictate on app data",
   "description": "Tap explicitly marked JSON app context, dictate once and show the same app agent’s native reply without opening chat. Host-controlled presentation; no feedback report or second controller.",
   "dependencies": [
-    "@hachej/boring-ui-kit@^0.4.4",
-    "@hachej/boring-feedback@^0.4.4",
+    "@hachej/boring-ui-kit@^0.4.7",
+    "@hachej/boring-feedback@^0.4.7",
     "@earendil-works/pi-durable@~1.2.0",
     "react@^19.0.0",
     "react-dom@^19.0.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.4/r/app-shell.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.4/r/pi-chat.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.7/r/app-shell.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.7/r/pi-chat.json",
     "button",
     "card",
     "message",

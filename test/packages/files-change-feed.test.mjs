@@ -163,6 +163,28 @@ const connect = handler => connectRevisionProvider({ endpoint: 'https://fictiona
 const bindingOf = async handler => encodeURIComponent(JSON.stringify(await (await handler(new Request('https://fictional.invalid/files'))).json()));
 const changeRequest = (binding, query, signal) => new Request(`https://fictional.invalid/files?op=changes${query}`, { headers: binding ? { 'x-boring-workspace': binding } : {}, ...(signal ? { signal } : {}) });
 
+test('SSE replays rename as old-path deletion plus new-path creation, then conditional deletion', async t => {
+  const f = fixture(t), client = await connect(f.handler);
+  const saved = await client.publish(create('move-seed', 'old.md', 'kept'));
+  assert.equal(saved.kind, 'committed');
+  const revision = saved.receipt.changes[0].after.revision;
+  const since = f.provider.changeHead();
+  const move = { from: client.locate('old.md'), to: client.locate('new.md'), expectedRevision: revision, operationId: 'feed-move' };
+  assert.equal((await client.rename(move)).kind, 'committed');
+  assert.equal((await client.rename(move)).kind, 'committed');
+  assert.equal((await client.delete({ path: client.locate('new.md'), expectedRevision: revision, operationId: 'feed-delete' })).kind, 'committed');
+  const abort = new AbortController();
+  const events = await until(client.changes({ since, signal: abort.signal }), list => list.length === 3);
+  abort.abort();
+  assert.deepEqual(changesOnly(events), [
+    { path: 'old.md', revision: null, source: 'publish' },
+    { path: 'new.md', revision, source: 'publish' },
+    { path: 'new.md', revision: null, source: 'publish' },
+  ]);
+  assert.deepEqual(events.map(event => event.seq), [since + 1, since + 2, since + 3]);
+  assert.equal((await client.history('new.md'))[0].source, 'delete');
+});
+
 test('SSE: the client replays from since and then follows live events; the stream is event-stream framed with heartbeats', async t => {
   const f = fixture(t);
   const client = await connect(f.handler);
