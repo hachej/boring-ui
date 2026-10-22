@@ -27,7 +27,12 @@ jobs:
       - run: npm run check
       - run: npm run typecheck
       - name: Install Chromium for the design audit included in verify
-        run: npx --yes playwright@1.63.0 install --with-deps chromium-headless-shell
+        timeout-minutes: 8
+        run: |
+          if ! timeout 300 npx --yes playwright@1.63.0 install --with-deps chromium-headless-shell; then
+            echo "::notice::Chromium install failed or timed out; retrying once."
+            timeout 300 npx --yes playwright@1.63.0 install --with-deps chromium-headless-shell
+          fi
       - name: Allow the Chromium sandbox
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: npm run test:design
@@ -123,7 +128,12 @@ jobs:
           done
       - name: Install Chromium for the installed PDF viewer check
         if: matrix.kind == 'documents'
-        run: npx --yes playwright@1.63.0 install --with-deps chromium-headless-shell
+        timeout-minutes: 8
+        run: |
+          if ! timeout 300 npx --yes playwright@1.63.0 install --with-deps chromium-headless-shell; then
+            echo "::notice::Chromium install failed or timed out; retrying once."
+            timeout 300 npx --yes playwright@1.63.0 install --with-deps chromium-headless-shell
+          fi
       - name: Allow the Chromium sandbox
         if: matrix.kind == 'documents'
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
