@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -12,25 +12,12 @@ import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import * as XLSX from 'xlsx';
 import { documentTools, readStored, sniff } from '@hachej/boring-agent/documents';
 import { admitDocumentTool } from '../fixtures/native-document.mjs';
+import { pdf } from '../fixtures/document-bytes.mjs';
 
 const encode = text => new TextEncoder().encode(text);
 const blob = () => Uint8Array.from([0, 255, 254, 16, 128, 0, 66]);
 const png = () => Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='), c => c.charCodeAt(0));
 const zipNames = names => Uint8Array.from([0x50, 0x4b, 0x03, 0x04, ...encode(names)]);
-
-// Fictional PDF: one text stream per page; null models a scanned page without a text layer.
-function pdf(pages) {
-  const objects = ['<< /Type /Catalog /Pages 2 0 R >>', `<< /Type /Pages /Kids [${pages.map((_, i) => `${4 + 2 * i} 0 R`).join(' ')}] /Count ${pages.length} >>`, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'];
-  pages.forEach((lines, i) => {
-    const stream = lines ? `BT /F1 12 Tf 50 750 Td 14 TL ${lines.map(line => `(${line.replace(/[()\\]/g, '\\$&')}) Tj T*`).join(' ')} ET` : '';
-    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents ${5 + 2 * i} 0 R /Resources << /Font << /F1 3 0 R >> >> >>`, `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
-  });
-  let out = '%PDF-1.4\n'; const offsets = [];
-  objects.forEach((body, i) => { offsets.push(out.length); out += `${i + 1} 0 obj\n${body}\nendobj\n`; });
-  const xref = out.length;
-  out += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.map(offset => `${String(offset).padStart(10, '0')} 00000 n \n`).join('')}trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
-  return encode(out);
-}
 
 function workbook({ extra = 0, sheets = 2, long = false, bookType = 'xlsx' } = {}) {
   const book = XLSX.utils.book_new();
@@ -247,5 +234,28 @@ test('documents imports, registration, sniff and readStored never load either re
       if (documentTools({ readBytes: async () => bytes }).length !== 2) throw new Error('tools');
     `], { cwd: process.cwd(), encoding: 'utf8', timeout: 30000 });
     assert.equal(result.status, 0, result.stderr); assert.equal(result.error, undefined);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('documents package keeps SheetJS optional for hosts and pinned for development', () => {
+  const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.resolve('@hachej/boring-agent/documents')), 'utf8'));
+  assert.equal(manifest.dependencies?.xlsx, undefined, 'hosts must not install SheetJS transitively');
+  assert.equal(manifest.peerDependencies?.xlsx, '^0.20.3');
+  assert.equal(manifest.peerDependenciesMeta?.xlsx?.optional, true);
+  assert.equal(manifest.devDependencies?.xlsx, 'https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz');
+});
+
+test('documents missing optional SheetJS returns a refusal through Pi without disabling PDF reads', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'documents-no-xlsx-'));
+  try {
+    const register = join(directory, 'register.mjs');
+    writeFileSync(register, `import { registerHooks } from 'node:module';
+registerHooks({ resolve(specifier, context, next) {
+  if (specifier === 'xlsx') throw Object.assign(new Error('Cannot find optional package xlsx'), { code: 'ERR_MODULE_NOT_FOUND' });
+  return next(specifier, context);
+} });`);
+    const result = spawnSync(process.execPath, ['--import', register, 'test/fixtures/documents-without-xlsx.mjs'], { cwd: process.cwd(), encoding: 'utf8', timeout: 30000 });
+    assert.equal(result.status, 0, result.stderr); assert.equal(result.error, undefined);
+    assert.match(result.stdout, /PASS: optional SheetJS refusal and PDF text through native tools/);
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
