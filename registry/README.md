@@ -1083,7 +1083,8 @@ phone drawer through the existing file/artifact callbacks. Its title and rows sh
 a 6px anchor gap, and phone/coarse-pointer rows have 48px touch targets. Only rows with an opener are listed. `AgentWorkspace`
 opens workspace paths in its file viewer by default and supplies an image preview for native images without a path;
 `chat.onOpenFile`, `chat.mentions.open` and `chat.onOpenImage` keep their host overrides. An upload returning both
-`path` and `image` retains the workspace reference as well as its native image. `ConversationList` defaults to
+`path` and `image` uses the native image and its preview, not a second path mention: one upload produces one
+message attachment and one files-menu entry. The saved workspace file remains available through the Library. `ConversationList` defaults to
 search disclosure and overflow row actions; `searchMode="inline"` and `rowActionLayout="inline"`
 retain the former controls.
 

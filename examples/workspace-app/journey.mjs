@@ -24,6 +24,7 @@ const INPUT = q('[data-testid=composer-input]');
 const LOG = `(${q('[data-testid=transcript]')}?.innerText ?? '')`;
 const REPLIES = `${qa('[data-testid=transcript] article[data-role=assistant]')}.map(e => e.innerText).join(' ')`;
 const ACTIVE = `${q('[data-testid=app]')}.dataset.conversation`;
+const FILES_READY = `(() => { const list = ${q('[data-testid=conversation-files-list]')}; return !!list && !list.hasAttribute('data-starting-style') && !list.hasAttribute('data-ending-style') && list.getAnimations({ subtree: true }).every(animation => animation.playState !== 'running'); })()`;
 const ROWS = qa('[data-testid=conversation-row]');
 const row = text => `${ROWS}.find(row => row.innerText.includes(${JSON.stringify(text)}))`;
 const idle = `${q('[data-testid=composer-submit]')}?.dataset.state === 'send'`;
@@ -124,7 +125,7 @@ try {
               observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-starting-style'] });
             })()`);
             await press(q('[data-testid=conversation-files]'));
-            await browser.until('files list settled', `!!${q('[data-testid=conversation-files-list]')} && ${q('[data-testid=conversation-files-list]')}.getAnimations({ subtree: true }).every(animation => animation.playState !== 'running')`, 5000);
+            await browser.until('files list settled', FILES_READY, 5000);
             await press(q(`[data-file=${JSON.stringify(row.id)}]`));
             if (row.id.startsWith('file:')) {
               await browser.until('workspace file viewer', `${q('[data-testid=file-viewer]')}?.dataset.path === ${JSON.stringify(row.id.slice(5))}`, 10000);
@@ -169,7 +170,7 @@ try {
       if (device === 'coarse-desktop') await browser.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
       await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] });
       await browser.click(q('[data-testid=conversation-files]'));
-      await browser.until('layout menu settled', `!!${q('[data-testid=conversation-files-list]')} && ${q('[data-testid=conversation-files-list]')}.getAnimations({ subtree: true }).every(animation => animation.playState !== 'running')`, 5000);
+      await browser.until('layout menu settled', FILES_READY, 5000);
       const metrics = await browser.evaluate(`(() => {
         const list = ${q('[data-testid=conversation-files-list]')}, rows = [...list.querySelectorAll('[data-testid=conversation-file]')], title = list.querySelector('[data-slot=popover-title], [data-slot=drawer-title], [data-slot=dropdown-menu-label]');
         const box = list.getBoundingClientRect(), trigger = ${q('[data-testid=conversation-files]')}.getBoundingClientRect(), first = rows[0].getBoundingClientRect();
