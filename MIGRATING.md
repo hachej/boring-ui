@@ -1,6 +1,7 @@
 # Unreleased
 
 - **Hardening (D-248).** `githubSink` refuses `.`/`..` repository segments and an `apiUrl` that is not https (http only for localhost) before sending the token; reinstall `provider-setup` (non-http(s) `verificationUri` is plain text), `shared-chat` (`avatarUrl` loads only https, `data:image/`, `blob:` or same-origin paths) and `viewers` (`PdfPane` shows a `blob` only when typed `application/pdf`). `mockup-viewer` messages keep targetOrigin `'*'` (opaque-origin sandbox).
+- **App shell — agent trigger (D-239).** The header's agent trigger now shows `AgentSpec.icon` and is named by `AgentSpec.label` when the agent sets them; without them it keeps the sparkles and « Open the assistant ». Update the `app-shell` block.
 - **Invariants drift (D-249).** Docs only: the registry README now says every design group fails both static and browser checks, and packages never open a Harness (the host opens and closes it). No API, block or stored-format change.
 
 # Migrating to 0.4.8

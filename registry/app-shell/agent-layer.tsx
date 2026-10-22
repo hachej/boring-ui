@@ -48,9 +48,9 @@ import type { Dictation } from './use-dictation';
 
 export interface AgentSpec {
   readonly controller: NativeChatController;
-  /** The agent's name in the expanded sidebar (default: the chat's title, then « Assistant »). */
+  /** The agent's name in the expanded sidebar and the header trigger's accessible name (default: the chat's title, then « Assistant »). */
   readonly label?: string;
-  /** The agent's icon in the sidebar (default: the sparkles of the header trigger). */
+  /** The agent's icon in the sidebar and the header trigger (default: sparkles). */
   readonly icon?: ComponentType<{ className?: string }>;
   readonly chatProps?: Omit<PiChatProps, 'controller'>;
   /** Push-to-talk. `message` retains audio plus transcript; `auto` sends text only; `draft` (default) fills the composer. */
@@ -394,11 +394,13 @@ export function AgentTrigger({ className, children }: { readonly className?: str
       voice.cancel();
     }
   };
-  return <Button variant="ghost" size="icon" data-agent-trigger="" data-testid="agent-trigger" aria-label={text.open} title={text.open} aria-expanded={layer.state !== 'closed'}
+  const name = agent.label ?? text.open;
+  const Icon = agent.icon;
+  return <Button variant="ghost" size="icon" data-agent-trigger="" data-testid="agent-trigger" aria-label={name} title={name} aria-expanded={layer.state !== 'closed'}
     onPointerDown={down} onPointerUp={release} onPointerCancel={release} onPointerMove={move} onContextMenu={event => event.preventDefault()}
     onClick={event => { if (event.detail === 0) toggle(); }}
     className={cn('touch-none', className)}>
-    {children ?? <SparklesIcon data-icon="inline-start" aria-hidden="true" />}
+    {children ?? (Icon ? <Icon className="size-5" /> : <SparklesIcon data-icon="inline-start" aria-hidden="true" />)}
   </Button>;
 }
 
