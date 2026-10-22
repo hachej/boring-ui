@@ -134,7 +134,9 @@ const RANGE = /^([A-Za-z]{1,3})(\d{1,7})(?::([A-Za-z]{1,3})(\d{1,7}))?$/;
 async function readSpreadsheet(path: string, bytes: Uint8Array, sheet: string | undefined, range: string | undefined): Promise<SpreadsheetResult> {
   const type = sniff(bytes, path);
   if (!SPREADSHEET_TYPES.includes(type)) return refused(path, type, bytes.byteLength, 'Not a spreadsheet');
-  const XLSX = await import('xlsx');
+  let XLSX: typeof import('xlsx');
+  try { XLSX = await import('xlsx'); }
+  catch { return refused(path, type, bytes.byteLength, 'Spreadsheet reading needs the optional package xlsx (SheetJS); install it in the host'); }
   let book;
   try { book = type === TYPES.csv ? XLSX.read(textOf(bytes), { type: 'string', raw: true }) : XLSX.read(bytes, { type: 'array', cellDates: true }); }
   catch { return refused(path, type, bytes.byteLength, 'This spreadsheet cannot be read (damaged or protected)'); }

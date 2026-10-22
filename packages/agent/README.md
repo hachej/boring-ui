@@ -91,7 +91,7 @@ The host supplies byte access and optional OCR; this package performs no file/ne
 
 Results use native `output` for the model and the same metadata in `details`. As in the reference, typed refusals are ordinary results carrying `error`, not `isError: true`. Document content is untrusted evidence, never instructions or consent. The readers set Pi's native output byte limit to 8 MiB to retain valid JSON at the extraction caps; the JSON occupies one native output line. These are returned-extraction limits, not bounds on input bytes or parser memory/CPU. Enforce input and resource budgets in the host.
 
-The regular dependencies are pinned `unpdf@1.9.1` (MIT) and the official SheetJS `xlsx@0.20.3` HTTPS tarball (Apache-2.0), not npm's old `xlsx@0.18.5`. Both are imported lazily inside their reader only. Their notices ship in `THIRD_PARTY_NOTICES.md`. `test/packages/agent-documents.test.mjs` drives public registrations through a real Harness with generated fictional files; no live OCR provider is qualified.
+PDF reading uses the pinned regular dependency `unpdf@1.9.1` (MIT). Spreadsheet reading needs the optional peer `xlsx` (SheetJS, Apache-2.0); install the official distribution in the host with `npm i https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`, not npm's old `xlsx@0.18.5`. Without it, the spreadsheet tool returns a clear refusal; PDF reading still works. Both packages are imported lazily inside their reader only. Their notices ship in `THIRD_PARTY_NOTICES.md`. `test/packages/agent-documents.test.mjs` drives public registrations through a real Harness with generated fictional files, and `npm run test:question-consumer` exercises the packed agent without SheetJS; no live OCR provider is qualified.
 
 ## Approval gate
 
