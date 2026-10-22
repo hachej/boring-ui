@@ -29,7 +29,12 @@ export function checkReleaseNotes(root, base, head) {
   if (version !== oldVersion) {
     const promoted = before.replace(/^# Unreleased\r?/, `# Unreleased\n\n# Migrating to ${version}`);
     const versionFile = path => /^(package(?:-lock)?\.json|registry\.json|MIGRATING\.md|packages\/[^/]+\/package\.json|public\/r\/[^/]+\.json)$/.test(path);
-    if (after === promoted && paths.every(versionFile)) {
+    // The release may open its notes with prose; anything from the first list item or heading on must be the exact promotion.
+    const lines = after.split('\n'), start = lines.indexOf(`# Migrating to ${version}`) + 1;
+    let end = start;
+    while (start && end < lines.length && !/^([-*] |#)/.test(lines[end])) end++;
+    const withoutIntro = start ? [...lines.slice(0, start), '', ...lines.slice(end)].join('\n') : after;
+    if (withoutIntro === promoted && paths.every(versionFile)) {
       const directory = mkdtempSync(join(tmpdir(), 'boring-release-notes-'));
       try {
         const files = git(['ls-tree', '-r', '--name-only', base]).trim().split('\n').filter(versionFile);
@@ -38,7 +43,8 @@ export function checkReleaseNotes(root, base, head) {
           writeFileSync(join(directory, path), git(['show', `${base}:${path}`]));
         }
         setReleaseVersion(directory, version);
-        if (files.every(path => readFileSync(join(directory, path), 'utf8') === git(['show', `${head}:${path}`]))) return { required: true, promoted: true };
+        const released = path => path === 'MIGRATING.md' ? withoutIntro : git(['show', `${head}:${path}`]);
+        if (files.every(path => readFileSync(join(directory, path), 'utf8') === released(path))) return { required: true, promoted: true };
       } finally { rmSync(directory, { recursive: true, force: true }); }
     }
   }

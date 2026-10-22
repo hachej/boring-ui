@@ -102,7 +102,7 @@ test('invalid versions and inconsistent lockfiles leave all source files untouch
 });
 
 test('PR migration-note policy compares real Git revisions and allows release promotion', t => {
-  for (const kind of ['missing', 'historical-only', 'added', 'promotion', 'promotion-runtime', 'promotion-manifest', 'private', 'registry']) {
+  for (const kind of ['missing', 'historical-only', 'added', 'promotion', 'intro', 'promotion-runtime', 'promotion-manifest', 'promotion-bullet', 'private', 'registry']) {
     const f = fixture(t);
     const git = args => {
       const result = spawnSync('git', ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test', ...args], { cwd: f.root, encoding: 'utf8' });
@@ -111,16 +111,19 @@ test('PR migration-note policy compares real Git revisions and allows release pr
     };
     git(['init', '-q']); git(['add', '.']); git(['commit', '-qm', 'fictional baseline']);
     const base = git(['rev-parse', 'HEAD']);
-    if (!['promotion', 'promotion-manifest'].includes(kind)) f.write(kind === 'private' ? 'packages/browser/dist/index.js' : kind === 'registry' ? 'public/r/fixture.json' : 'packages/agent/dist/index.js', 'fictional changed bytes\n');
+    if (!['promotion', 'intro', 'promotion-manifest', 'promotion-bullet'].includes(kind)) f.write(kind === 'private' ? 'packages/browser/dist/index.js' : kind === 'registry' ? 'public/r/fixture.json' : 'packages/agent/dist/index.js', 'fictional changed bytes\n');
     if (kind === 'added') f.write('MIGRATING.md', readFileSync(join(f.root, 'MIGRATING.md'), 'utf8').replace('# Unreleased', '# Unreleased\n\n- Another fictional package change.'));
     if (kind === 'historical-only') f.write('MIGRATING.md', readFileSync(join(f.root, 'MIGRATING.md'), 'utf8') + '\n- Only old release notes changed.\n');
-    if (kind.startsWith('promotion')) setReleaseVersion(f.root, '1.1.0');
+    if (kind.startsWith('promotion') || kind === 'intro') setReleaseVersion(f.root, '1.1.0');
+    // A release may open its notes with prose, but may not slip in an unreviewed change line.
+    if (kind === 'intro') f.write('MIGRATING.md', readFileSync(join(f.root, 'MIGRATING.md'), 'utf8').replace('# Migrating to 1.1.0\n', '# Migrating to 1.1.0\n\nA fictional release about faster journeys.\nIt spans two lines.\n'));
+    if (kind === 'promotion-bullet') f.write('MIGRATING.md', readFileSync(join(f.root, 'MIGRATING.md'), 'utf8').replace('# Migrating to 1.1.0\n', '# Migrating to 1.1.0\n\n- A fictional unreviewed change.\n'));
     if (kind === 'promotion-manifest') f.write('packages/agent/package.json', { ...f.read('packages/agent/package.json'), scripts: { postinstall: 'fictional-command' } });
     git(['add', '.']); git(['commit', '-qm', 'fictional candidate']);
     const head = git(['rev-parse', 'HEAD']);
     if (['missing', 'historical-only', 'registry'].includes(kind)) assert.throws(() => checkReleaseNotes(f.root, base, head), /own line under # Unreleased/, kind);
     else if (kind.startsWith('promotion-')) assert.throws(() => checkReleaseNotes(f.root, base, head), /Unreleased/, kind);
-    else assert.deepEqual(checkReleaseNotes(f.root, base, head), kind === 'private' ? { required: false } : { required: true, promoted: kind === 'promotion' });
+    else assert.deepEqual(checkReleaseNotes(f.root, base, head), kind === 'private' ? { required: false } : { required: true, promoted: ['promotion', 'intro'].includes(kind) });
   }
 });
 

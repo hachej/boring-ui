@@ -32,6 +32,8 @@ jobs:
       github.ref == 'refs/heads/main' &&
       github.actor == 'hachej' && github.triggering_actor == 'hachej'
     runs-on: ubuntu-latest
+    # Admission waits up to 20 minutes for main's own checks of this commit before falling back to full qualification.
+    timeout-minutes: 25
     permissions:
       contents: read
       actions: read

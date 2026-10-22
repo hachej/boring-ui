@@ -9,7 +9,7 @@ export const REQUIRED_CHECKS = {
   'studio-scripted.yml': [...['studio-1', 'studio-2', 'design', 'workspace', 'documents'].map(shard => `Studio scripted journeys (${shard})`), 'Studio scripted journeys'],
 };
 
-export async function releaseAdmission({ commit, sha, repository, token }, { fetch: request = globalThis.fetch } = {}) {
+export async function releaseAdmission({ commit, sha, repository, token }, { fetch: request = globalThis.fetch, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), now = Date.now, waitIntervalMs = 30000, waitTimeoutMs = 1200000 } = {}) {
   if (!/^[a-f0-9]{40}$/.test(commit ?? '') || commit !== sha || repository !== 'hachej/boring-ui') throw new Error('Publication must use the exact reviewed dispatch commit in hachej/boring-ui');
   const fallback = reason => ({ reuse: false, reason });
   const list = async (path, key) => {
@@ -27,11 +27,18 @@ export async function releaseAdmission({ commit, sha, repository, token }, { fet
     throw new Error('GitHub check evidence exceeds pagination limit');
   };
   try {
-    const suites = await list(`commits/${commit}/check-suites`, 'check_suites');
+    const deadline = now() + waitTimeoutMs;
     for (const [workflow, names] of Object.entries(REQUIRED_CHECKS)) {
-      const runs = await list(`actions/workflows/${workflow}/runs?head_sha=${commit}`, 'workflow_runs');
-      const run = runs.filter(value => value.head_sha === commit && value.head_branch === 'main' && value.event === 'push' && value.repository?.full_name === repository).sort((a, b) => b.id - a.id)[0];
+      // A release dispatched right after its merge waits for main's own run of this commit rather than repeating it.
+      let run;
+      for (;;) {
+        const runs = await list(`actions/workflows/${workflow}/runs?head_sha=${commit}`, 'workflow_runs');
+        run = runs.filter(value => value.head_sha === commit && value.head_branch === 'main' && value.event === 'push' && value.repository?.full_name === repository).sort((a, b) => b.id - a.id)[0];
+        if (run?.status === 'completed' || now() >= deadline) break;
+        await sleep(waitIntervalMs);
+      }
       if (!run || run.status !== 'completed' || run.conclusion !== 'success') return fallback(`${workflow}: latest exact-SHA main push run is not green`);
+      const suites = await list(`commits/${commit}/check-suites`, 'check_suites');
       const suite = suites.find(value => value.id === run.check_suite_id && value.head_sha === commit && value.app?.slug === 'github-actions');
       if (!suite) return fallback(`${workflow}: missing GitHub Actions suite for this SHA`);
       const checks = await list(`check-suites/${suite.id}/check-runs?filter=latest`, 'check_runs');

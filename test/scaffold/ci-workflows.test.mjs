@@ -267,3 +267,15 @@ for (const name of ['verify', 'studio-scripted']) test(`${name} ci-ok needs all 
     assert.equal(ran.status === 0, success, `${results}: ${ran.stderr}`);
   }
 });
+
+test('a new pull request push cancels its superseded CI run; main pushes and release calls never cancel each other', () => {
+  const groups = new Set();
+  for (const name of ['verify', 'secrets', 'studio-scripted']) {
+    const source = workflow(name), match = /^concurrency:\n  group: ([\w-]+)-\$\{\{ github\.event\.pull_request\.number \|\| github\.run_id \}\}\n  cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}$/m.exec(source);
+    assert.ok(match, `${name} cancels superseded pull request runs only`);
+    assert.ok(source.indexOf('concurrency:') < source.indexOf('\njobs:'), `${name} sets concurrency for the whole workflow`);
+    groups.add(match[1]);
+  }
+  // The release calls all three with one run id; a shared prefix would make them cancel or wait on each other.
+  assert.equal(groups.size, 3);
+});
