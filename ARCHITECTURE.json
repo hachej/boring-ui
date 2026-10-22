@@ -563,7 +563,6 @@
     "FEEDBACK-7": "test/contracts/feedback-7.test.mjs",
     "FEEDBACK-8": "test/contracts/feedback-8.test.mjs"
   },
-  "harnessFactory": "packages/agent/src/setup/createAgent.ts",
   "sourceRoots": [
     "packages"
   ],
