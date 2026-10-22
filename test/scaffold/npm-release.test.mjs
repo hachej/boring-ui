@@ -79,6 +79,16 @@ test('release version promotes Unreleased notes and keeps prior releases intact'
   assert.equal(readFileSync(join(f.root, 'MIGRATING.md'), 'utf8'), '# Unreleased\n\n# Migrating to 1.1.0\n\n- Fictional package change.\n\n# Migrating to 1.0.0\n\nPrevious notes.\n');
 });
 
+test('the GitHub release body is the promoted section of the released version, read by the real script', t => {
+  const f = fixture(t);
+  f.write('MIGRATING.md', '# Unreleased\n\n- Fictional package change.\n<!-- reviewer hint -->\n\n# Migrating to 1.0.0\n\nPrevious notes.\n');
+  setReleaseVersion(f.root, '1.1.0');
+  const notes = version => spawnSync(process.execPath, [fileURLToPath(new URL('../../scripts/release-notes.mjs', import.meta.url)), version], { cwd: f.root, encoding: 'utf8' });
+  assert.equal(notes('1.1.0').stdout, '- Fictional package change.\n');
+  assert.equal(notes('1.0.0').stdout, 'Previous notes.\n');
+  for (const version of ['1.2.0', 'latest']) assert.notEqual(notes(version).status, 0, version);
+});
+
 test('release version refuses missing, duplicate or empty Unreleased notes before any write', t => {
   for (const notes of ['', '# Migrating to 1.0.0\n- Old note.\n', '# Unreleased\n\n', '# Unreleased\n\n<!-- Add notes here. -->\n\n## Changes\n', '# Unreleased\n- One.\n# Unreleased\n- Two.\n']) {
     const f = fixture(t);
@@ -363,37 +373,41 @@ function stepScript(job, stepName) {
   }
   return body.join('\n');
 }
-function runGithubRelease(t, { version, tag, exists = false, pr = '' }) {
-  const dir = mkdtempSync(join(tmpdir(), 'boring-gh-release-'));
+function runGithubRelease(t, { version, tag, exists = false, migrating = '# Unreleased\n\n# Migrating to 9.9.9\n\n- Fictional release note.\n' }) {
+  const dir = mkdtempSync(join(tmpdir(), 'boring-gh-release-')), checkout = join(dir, 'checkout');
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+  // The step runs in a checkout of the released commit: the real scripts beside a fictional MIGRATING.md.
+  mkdirSync(checkout);
+  cpSync(fileURLToPath(new URL('../../scripts', import.meta.url)), join(checkout, 'scripts'), { recursive: true });
+  writeFileSync(join(checkout, 'MIGRATING.md'), migrating);
   const log = join(dir, 'gh.log');
   writeFileSync(join(dir, 'gh'), [
     '#!/bin/sh',
     `printf '%s|' "$@" >> '${log}'; printf '\\n' >> '${log}'`,
     'case "$1" in',
-    '  api) printf "%s\\n" "$STUB_PR" ;;',
-    '  pr) printf "Release notes body\\n" ;;',
     '  release) if [ "$2" = view ]; then [ "$STUB_RELEASE_EXISTS" = 1 ]; fi ;;',
     'esac',
   ].join('\n'));
   chmodSync(join(dir, 'gh'), 0o755);
   writeFileSync(join(dir, 'step.sh'), stepScript('github-release', 'Create the GitHub release once'));
   const result = spawnSync('bash', [join(dir, 'step.sh')], {
-    encoding: 'utf8',
+    cwd: checkout, encoding: 'utf8',
     env: {
       ...process.env, PATH: `${dir}:${process.env.PATH}`, RUNNER_TEMP: dir, GITHUB_REPOSITORY: 'hachej/boring-ui', GH_REPO: 'hachej/boring-ui',
-      RELEASE_VERSION: version, RELEASE_TAG: tag, RELEASE_COMMIT: commit, STUB_PR: pr, STUB_RELEASE_EXISTS: exists ? '1' : '0',
+      RELEASE_VERSION: version, RELEASE_TAG: tag, RELEASE_COMMIT: commit, STUB_RELEASE_EXISTS: exists ? '1' : '0',
     },
   });
   const calls = existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').map(line => line.split('|').filter(Boolean)) : [];
-  return { status: result.status, stderr: result.stderr, calls, create: calls.find(args => args[0] === 'release' && args[1] === 'create') };
+  const notes = existsSync(join(dir, 'release-notes.md')) ? readFileSync(join(dir, 'release-notes.md'), 'utf8') : '';
+  return { status: result.status, stderr: result.stderr, calls, notes, create: calls.find(args => args[0] === 'release' && args[1] === 'create') };
 }
 
 test('a github-release job publishes the GitHub release only after a successful publish', () => {
   const job = workflowJob('github-release');
   assert.match(job, /^    needs: publish$/m);
   assert.match(job, /^    if: needs\.publish\.result == 'success'$/m);
-  assert.match(job, /^    permissions:\n      contents: write\n      pull-requests: read$/m);
+  assert.match(job, /^    permissions:\n      contents: write\n    env:$/m);
+  assert.match(job, /ref: \$\{\{ inputs\.commit \}\}\n {10}persist-credentials: false/, 'the notes come from the released commit');
   assert.equal((workflow.match(/contents: write/g) || []).length, 1, 'only the github-release job gets write access');
   assert.match(workflowJob('publish'), /^    permissions:\n      contents: read\n      id-token: write$/m);
   assert.match(job, /GH_TOKEN: \$\{\{ github\.token \}\}/);
@@ -401,25 +415,25 @@ test('a github-release job publishes the GitHub release only after a successful 
 });
 
 test('the GitHub release step is idempotent: an existing release is left alone', t => {
-  const result = runGithubRelease(t, { version: '9.9.9', tag: 'latest', exists: true, pr: '123' });
+  const result = runGithubRelease(t, { version: '9.9.9', tag: 'latest', exists: true });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.create, undefined);
 });
 
-test('a latest publish creates a Latest release with the merged release PR body', t => {
-  const result = runGithubRelease(t, { version: '9.9.9', tag: 'latest', pr: '123' });
+test('a latest publish creates a Latest release whose notes are the MIGRATING.md section of the version, then the merged PR list', t => {
+  const result = runGithubRelease(t, { version: '9.9.9', tag: 'latest' });
   assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(result.calls.find(args => args[0] === 'api').slice(0, 2), ['api', `repos/hachej/boring-ui/commits/${commit}/pulls`]);
-  assert.deepEqual(result.calls.find(args => args[0] === 'pr'), ['pr', 'view', '123', '--json', 'body', '--jq', '.body']);
+  assert.equal(result.notes, '- Fictional release note.\n');
+  assert.ok(!result.calls.some(args => args[0] === 'api' || args[0] === 'pr'), 'no hand-written pull request body is read');
   assert.ok(result.create, 'release create was called');
   assert.deepEqual(result.create.slice(0, 6), ['release', 'create', 'v9.9.9', '--target', commit, '--title']);
   assert.ok(result.create.includes('--latest'));
   assert.ok(!result.create.includes('--prerelease') && !result.create.includes('--latest=false'));
-  assert.ok(result.create.includes('--notes-file') && !result.create.includes('--generate-notes'));
+  assert.ok(result.create.includes('--notes-file') && result.create.includes('--generate-notes'));
 });
 
 test('a non-latest dist-tag creates a prerelease that is never Latest, and falls back to generated notes', t => {
-  const result = runGithubRelease(t, { version: '9.9.9-next.1', tag: 'next', pr: '' });
+  const result = runGithubRelease(t, { version: '9.9.9-next.1', tag: 'next' });
   assert.equal(result.status, 0, result.stderr);
   assert.ok(result.create, 'release create was called');
   assert.ok(result.create.includes('--prerelease') && result.create.includes('--latest=false'));
