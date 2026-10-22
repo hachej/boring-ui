@@ -366,12 +366,13 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
     openTextLineReader: (path, context) => guarded([[path, true]], file => local.openTextLineReader(file, context)),
     openBinaryReader: (path, readerOptions, context) => guarded([[path, !readerOptions?.noFollow]], file => local.openBinaryReader(file, readerOptions, context)),
     openDirReader: (path, context) => guarded([[path, true]], directory => local.openDirReader(directory, context)),
-    // The mount's own watcher, with its paths reported in the workspace's namespace.
+    // The mount's own watcher, confined like every file tool, with its paths reported in the workspace's namespace.
     watch: async (targets, onChange, context) => {
       const mapped: WatchTarget[] = [];
       for (const target of targets) {
         const path = toLocal(target.path);
         if (path === undefined) return err(outside(target.path));
+        try { if (!await confined(path, true)) return err(outside(target.path)); } catch (error) { return err(new FileError('unknown', errorText(error), namespace(target.path))); }
         mapped.push({ ...target, path });
       }
       const watcher = await local.watch(mapped, change => onChange('paths' in change ? { paths: change.paths.map(path => fromLocal(path)) } : 'error' in change ? { error: mapError(change.error) } : change), context);
