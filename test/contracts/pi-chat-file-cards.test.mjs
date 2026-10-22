@@ -80,24 +80,28 @@ test('conversation files omit rows with no opener, including draft and native im
   assert.equal(Boolean(ui.container.querySelector('[data-testid=conversation-files]')), false, 'there is nothing the person can open');
 });
 
-test('an inline upload retains its workspace path alongside its native image and opens the sent file', async t => {
-  const opened = [];
+test('an inline upload uses one native image, one files entry and the image opener, not a second path mention', async t => {
+  const opened = [], filesOpened = [];
   const image = { mimeType: 'image/png', data: 'AAAA' };
-  const ui = await harness(t, { onOpenFile: path => opened.push(path), attachments: { upload: async () => [{ name: 'fictional.png', path: 'uploads/fictional.png', image }] } });
+  const ui = await harness(t, { onOpenFile: path => filesOpened.push(path), extra: { onOpenImage: value => opened.push(value) }, attachments: { upload: async () => [{ name: 'fictional.png', path: 'uploads/fictional.png', image }] } });
   const input = ui.container.querySelector('[data-testid=composer-file]');
   await ui.act(async () => {
     Object.defineProperty(input, 'files', { configurable: true, value: [new File(['fictional'], 'fictional.png', { type: 'image/png' })] });
     input.dispatchEvent(new ui.window.Event('change', { bubbles: true }));
   });
-  assert.match(ui.controller.getSnapshot().draft.text, /@uploads\/fictional.png/);
+  assert.equal(ui.controller.getSnapshot().draft.text, '', 'the native image does not add a path for the host to resolve again');
   assert.equal(ui.controller.getSnapshot().draft.attachments.length, 1);
   assert.match(ui.container.querySelector('[data-testid=conversation-files]').textContent, /· 1$/);
   await ui.act(async () => ui.container.querySelector('[data-testid=composer-submit]').click());
-  assert.match(JSON.stringify(ui.controller.getSnapshot().view), /@uploads\/fictional.png/);
-  const card = ui.container.querySelector('[data-testid=message-mention][data-path="uploads/fictional.png"]');
-  assert.ok(card); assert.equal(card.tagName, 'BUTTON');
-  await ui.act(async () => card.click());
-  assert.deepEqual(opened, ['uploads/fictional.png']);
+  const messages = ui.controller.getSnapshot().view.entries.flatMap(entry => entry.model ?? []).filter(message => message.role === 'user');
+  assert.equal(messages.at(-1).content.filter(part => part.type === 'image').length, 1);
+  assert.doesNotMatch(JSON.stringify(messages), /@uploads\/fictional.png/);
+  assert.equal(ui.container.querySelectorAll('[data-testid=message-image]').length, 1);
+  assert.equal(ui.container.querySelectorAll('[data-testid=message-file]').length, 0);
+  assert.match(ui.container.querySelector('[data-testid=conversation-files]').textContent, /· 1$/);
+  await ui.act(async () => ui.container.querySelector('[data-testid=message-image]').click());
+  assert.deepEqual(opened, [{ type: 'image', ...image }]);
+  assert.deepEqual(filesOpened, []);
 });
 
 test('a sent upload mention is a card above the bubble, the raw mention is hidden and the message content keeps it', async t => {

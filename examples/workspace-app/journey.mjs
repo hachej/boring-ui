@@ -94,10 +94,35 @@ try {
           writeFileSync(join(evidence, `files-${mode}-${device}-${phase}.json`), JSON.stringify(rows, null, 2));
           await browser.screenshot(`files-${mode}-${device}-${phase}.png`);
           assert.deepEqual(rows.filter(row => row.disabled), [], JSON.stringify(rows));
-          for (const [name] of fixtures) assert.ok(rows.some(row => row.name.includes(name)), name);
+          assert.equal(rows.length, fixtures.length, 'each upload has exactly one files-menu entry');
+          for (const [name] of fixtures) {
+            if (mode === 'inline' && name.endsWith('.png')) assert.equal(rows.filter(row => row.id.startsWith(phase === 'draft' ? 'draft:' : 'image:')).length, 1);
+            else assert.ok(rows.some(row => row.name.includes(name)), name);
+          }
+          if (phase === 'sent') {
+            assert.equal(await browser.evaluate(`${qa('[data-testid=message-image]')}.length`), mode === 'inline' ? 1 : 0);
+            assert.equal(await browser.evaluate(`${qa('[data-testid=message-file]')}.length`), mode === 'inline' ? 2 : fixtures.length);
+          }
           await browser.press('Escape');
           await browser.until('files list closed', `!${q('[data-testid=conversation-files-list]')}`, 5000);
           for (const row of rows) {
+            const delayedDrawer = mode === 'reference' && phase === 'draft' && device === 'phone' && row === rows[0];
+            // A starting drawer can have no running transition yet; the first touch must wait for that native phase too.
+            if (delayedDrawer) await browser.evaluate(`(() => {
+              window.__filesDrawerPresses = [];
+              let held;
+              const observer = new MutationObserver(() => {
+                const drawer = ${q('[data-testid=conversation-files-list]')};
+                if (!drawer) return;
+                if (!held) {
+                  held = drawer; drawer.style.transition = 'none';
+                  drawer.addEventListener('pointerdown', () => window.__filesDrawerPresses.push(!drawer.hasAttribute('data-starting-style') && drawer.getBoundingClientRect().bottom <= innerHeight));
+                  setTimeout(() => { observer.disconnect(); drawer.style.removeProperty('transition'); drawer.removeAttribute('data-starting-style'); }, 600);
+                }
+                if (!drawer.hasAttribute('data-starting-style')) drawer.setAttribute('data-starting-style', '');
+              });
+              observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-starting-style'] });
+            })()`);
             await press(q('[data-testid=conversation-files]'));
             await browser.until('files list settled', `!!${q('[data-testid=conversation-files-list]')} && ${q('[data-testid=conversation-files-list]')}.getAnimations({ subtree: true }).every(animation => animation.playState !== 'running')`, 5000);
             await press(q(`[data-file=${JSON.stringify(row.id)}]`));
@@ -113,6 +138,10 @@ try {
               await press(q('[data-testid=conversation-image-close]'));
             }
             await browser.until('viewer closed', `!${q('[data-testid=workspace-panel]')} && !${q('[data-testid=conversation-image-image]')}`, 5000);
+            if (delayedDrawer) {
+              assert.deepEqual(await browser.evaluate('window.__filesDrawerPresses'), [true], 'one real press after the native drawer finishes starting');
+              await browser.evaluate('delete window.__filesDrawerPresses');
+            }
           }
           assert.equal(await browser.evaluate(noOverflow), true);
         }

@@ -62,12 +62,15 @@ test('AgentWorkspace opens conversation files and preserves host opener preceden
     await act(async () => root.render(createElement(AgentWorkspace, { ...props, conversationId: 'another-fictional-conversation' })));
     assert.equal(Boolean(document.querySelector('[data-testid=conversation-image-image]')), false, 'a preview never follows a conversation switch');
   });
-  await t.test('resources, uploads and chat attachments open uploaded Markdown, JSON and inline images through the file viewer', async () => {
+  await t.test('resources and uploads open documents as files and an inline image once through its preview', async () => {
     const identity = { scopeId: 'fictional', principalId: 'alice', initiatorId: 'alice' };
     const store = openSqliteWorkspaces({ filename: ':memory:', providerId: 'workspace', authorize: () => true });
     const handler = createResourceHandler({ authenticate: async () => identity, reader: store, publisher: store.publication, lookup: store.reconciliation });
     const files = [new File(['# Fictional picnic notes\n'], 'fictional.md', { type: 'text/markdown' }), new File(['{"fictional":"picnic"}\n'], 'fictional.json', { type: 'application/json' }), new File([Buffer.from(image.data, 'base64')], 'fictional.png', { type: 'image/png' })];
-    const paths = files.map(file => `uploads/${file.name}`);
+    const paths = files.filter(file => file.type !== 'image/png').map(file => `uploads/${file.name}`);
+    const uploadConversation = await harness.createConversation({ ownership: { kind: 'ownerless' }, agent: { model: fake.model } }, context);
+    const uploadController = createNativeChatController({ identity: { runtimeId: 'fictional', scopeId: 'fictional', principalId: 'alice' }, conversation: uploadConversation, context });
+    await uploadController.connect();
     const attachments = { upload: async picked => {
       const results = [];
       for (const file of picked) {
@@ -78,14 +81,26 @@ test('AgentWorkspace opens conversation files and preserves host opener preceden
       }
       return results;
     } };
-    await act(async () => { controller.setText(''); controller.setAttachments([]); root.render(createElement(AgentWorkspace, { key: 'resources-uploads', controller, conversationId: String(conversation.id), layout: 'embedded', storageKey: false,
+    await act(async () => { root.render(createElement(AgentWorkspace, { key: 'resources-uploads', controller: uploadController, conversationId: String(uploadConversation.id), layout: 'embedded', storageKey: false,
       resources: { identity, endpoint: 'https://fictional.invalid/resources', fetch: handler }, uploads: { inlineImages: true }, chat: { attachments } })); });
     const input = element.querySelector('[data-testid=composer-file]');
     await act(async () => { Object.defineProperty(input, 'files', { configurable: true, value: files }); input.dispatchEvent(new window.Event('change', { bubbles: true })); });
-    for (let n = 0; n < 100 && !controller.getSnapshot().draft.attachments.length; n++) await act(async () => new Promise(resolve => setTimeout(resolve, 10)));
+    for (let n = 0; n < 100 && !uploadController.getSnapshot().draft.attachments.length; n++) await act(async () => new Promise(resolve => setTimeout(resolve, 10)));
     try {
       for (const sent of [false, true]) {
-        if (sent) await act(async () => element.querySelector('[data-testid=composer-submit]').click());
+        if (sent) {
+          await act(async () => element.querySelector('[data-testid=composer-submit]').click());
+          assert.equal(element.querySelectorAll('[data-testid=message-image]').length, 1);
+          assert.equal(element.querySelectorAll('[data-testid=message-file]').length, 2);
+        }
+        await act(async () => element.querySelector('[data-testid=conversation-files]').click());
+        const rows = document.querySelectorAll('[data-testid=conversation-file]');
+        assert.equal(rows.length, 3, 'each upload has one files-menu entry');
+        assert.equal(Boolean(document.querySelector('[data-file="file:uploads/fictional.png"]')), false, 'inline images are not also path mentions');
+        const imageRow = document.querySelector(`[data-file^="${sent ? 'image:' : 'draft:'}"]`);
+        assert.ok(imageRow); await act(async () => imageRow.click());
+        assert.equal(document.querySelector('[data-testid=conversation-image-image]').getAttribute('src'), `data:image/png;base64,${image.data}`);
+        await act(async () => document.querySelector('[data-testid=conversation-image-close]').click());
         for (const path of paths) {
           await act(async () => element.querySelector('[data-testid=conversation-files]').click());
           const row = document.querySelector(`[data-file="file:${path}"]`);
@@ -93,12 +108,13 @@ test('AgentWorkspace opens conversation files and preserves host opener preceden
           await act(async () => row.click());
           for (let n = 0; n < 100 && !element.querySelector('[data-testid=viewer-image], [data-testid=file-viewer] .tiptap, [data-testid=file-viewer] pre'); n++) await act(async () => new Promise(resolve => setTimeout(resolve, 10)));
           assert.equal(element.querySelector('[data-testid=file-viewer]').dataset.path, path);
-          if (path.endsWith('.png')) assert.ok(element.querySelector('[data-testid=viewer-image]'));
-          else assert.match(element.querySelector('[data-testid=file-viewer]').textContent, /picnic/);
+          assert.match(element.querySelector('[data-testid=file-viewer]').textContent, /picnic/);
           await act(async () => element.querySelector('[data-testid=viewer-close]').click());
         }
       }
-    } finally { await act(async () => root.render(null)); store.close(); }
+      const saved = await store.read({ target: { resource: { providerId: 'workspace', path: 'uploads/fictional.png' }, view: { kind: 'published' } }, revision: { kind: 'latest' } }, identity);
+      assert.equal(saved.kind, 'available', 'choosing the native image does not remove its saved workspace bytes');
+    } finally { await act(async () => root.render(null)); await uploadController.dispose(); store.close(); }
   });
   await t.test('a host image opener takes precedence over the workspace preview', async () => {
     const opened = [];
