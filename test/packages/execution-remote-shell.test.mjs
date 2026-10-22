@@ -304,3 +304,18 @@ test('invalid local command limits refuse without dispatch and server authorizat
   }
   assert.equal(f.calls.length, 0);
 });
+
+test('loader and shell-startup environment keys from the client are refused before authorize, unless the host opts in (D-248)', async t => {
+  const f = await fixture(t);
+  const seen = [];
+  f.access.authorize = (_command, options) => { seen.push(options); return true; };
+  for (const key of ['LD_PRELOAD', 'DYLD_INSERT_LIBRARIES', 'BASH_ENV', 'ENV', 'NODE_OPTIONS', 'PYTHONSTARTUP', 'PERL5OPT', 'GIT_SSH_COMMAND']) {
+    failure(await f.lease().environment.exec('printf forbidden > artifact', { env: { [key]: '/tmp/fictional.so' } }, context), 'unknown');
+  }
+  assert.equal(f.calls.length, 0, 'nothing reached the native shell');
+  assert.deepEqual(seen, [], 'the host\'s authorize was not even asked');
+  assert.equal(getOrThrow(await f.lease().environment.exec('true', { env: { FICTIONAL_VALUE: 'fine' } }, context)).exitCode, 0);
+
+  const open = await fixture(t, { allowLoaderEnv: true });
+  assert.equal(getOrThrow(await open.lease().environment.exec('true', { env: { NODE_OPTIONS: '--no-warnings' } }, context)).exitCode, 0, 'the host opted in');
+});

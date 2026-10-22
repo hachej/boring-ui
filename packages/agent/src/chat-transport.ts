@@ -48,7 +48,10 @@ export interface ChatTransportAccess {
    * it in `createPromptContext({ context })`; this handler keeps nothing. Without it the `context` field is ignored.
    */
   readonly requestContext?: (value: Readonly<Record<string, unknown>>) => void | Promise<void>;
-  /** Refuse an effect call. Reading stays governed by `authenticate` and `project`. */
+  /**
+   * Refuse an effect call. Reading stays governed by `authenticate` and `project`. Without it EVERY effect (submit, abort, answer,
+   * withdraw, configure) is allowed to whoever `authenticate` accepted: a host with read-only viewers must pass it.
+   */
   readonly allow?: (operation: 'submit' | 'abort' | 'answer' | 'withdraw' | 'configure') => boolean | Promise<boolean>;
 }
 
@@ -248,9 +251,10 @@ export function createChatTransportHandler(options: ChatTransportOptions): (requ
         if (typeof input['requestId'] !== 'string' || !input['requestId'] || !content(input['content'])
           || (input['whenBusy'] !== undefined && typeof input['whenBusy'] !== 'string')
           || (access.requestContext && !contextValue(input['context']))) return failure(400, 'invalid-request');
+        if (!await allowed('submit')) return failure(403, 'not-authorized'); // before `prepareInput`: a denied submitter reads nothing
         let prepared = input['content'];
         if (access.prepareInput) { try { prepared = await access.prepareInput(prepared); } catch { /* submit what the person typed */ } }
-        if (!await allowed('submit') || access.revoked?.aborted) return failure(403, 'not-authorized');
+        if (access.revoked?.aborted) return failure(403, 'not-authorized');
         if (access.requestContext && input['context'] !== undefined) await access.requestContext(input['context'] as Readonly<Record<string, unknown>>);
         if (access.revoked?.aborted) return failure(403, 'not-authorized');
         const submission = await conversation.submit({ type: 'input', requestId: input['requestId'], content: prepared,
@@ -298,7 +302,7 @@ export function createChatTransportHandler(options: ChatTransportOptions): (requ
       if (error instanceof Error && (error as { code?: unknown }).code === 'submission-refused') {
         return Response.json({ schema: CHAT_TRANSPORT.schema, version: CHAT_TRANSPORT.version, reason: 'submission-refused', message: error.message.slice(0, 500) }, { status: 402, headers });
       }
-      return failure(503, error instanceof Error && error.message ? `source-unavailable: ${error.message.slice(0, 200)}` : 'source-unavailable');
+      return failure(503, 'source-unavailable'); // the detail stays on the host: a message can carry paths, hosts or credentials
     }
     return failure(404, 'unknown-operation');
   };
@@ -368,6 +372,12 @@ export interface ConversationSocketOptions {
    * hibernation (the original request is gone by then). The same access the HTTP handler gets from `authenticate`. Null closes the socket.
    */
   readonly access: (attachment: ConversationSocketAttachment) => Promise<ChatTransportAccess | null>;
+  /**
+   * Origins (`https://app.example`) besides the request's own host that may open the socket. A browser upgrade whose `Origin` is
+   * neither the request's host nor listed here is refused (a cross-site page would otherwise ride the visitor's cookies); a request with
+   * no `Origin` (not a browser) is not subject to this check, so `authenticate` still decides who it is.
+   */
+  readonly allowedOrigins?: readonly string[];
 }
 
 /** A socket frame a client sends: `ping` (plain text), or a call with the HTTP handler's operation, query parameters and JSON body. */
@@ -394,6 +404,14 @@ export interface ConversationSocketHandler {
   readonly broadcast: (event: unknown, to?: { readonly owner?: string; readonly conversationId?: string }) => void;
   /** The attachments of the open sockets, optionally by owner or conversation: presence is these. */
   readonly connections: (to?: { readonly owner?: string; readonly conversationId?: string }) => ConversationSocketAttachment[];
+}
+
+/** Whether a WebSocket upgrade comes from the page's own host or a listed origin. No `Origin` header: not a browser, so not subject. */
+function sameOrigin(request: Request, allowed: readonly string[] = []): boolean {
+  const origin = request.headers.get('origin');
+  if (origin === null) return true;
+  if (allowed.includes(origin)) return true;
+  try { return new URL(origin).host === (request.headers.get('host') ?? new URL(request.url).host); } catch { return false; }
 }
 
 const ownerTag = (owner: string) => `owner:${owner}`;
@@ -457,6 +475,7 @@ export function createConversationSocketHandler(options: ConversationSocketOptio
   async function resume() { await Promise.all(state.getWebSockets().map(socket => attach(socket))); }
 
   async function accept(socket: HibernatableSocket, request: Request): Promise<boolean> {
+    if (!sameOrigin(request, options.allowedOrigins)) return false;
     const found = await options.authenticate(request);
     if (!found) return false;
     state.acceptWebSocket(socket, [ownerTag(found.owner), conversationTag(found.conversationId)]);
@@ -494,7 +513,7 @@ export function createConversationSocketHandler(options: ConversationSocketOptio
       const pair = new Socket();
       let accepted: boolean;
       try { accepted = await accept(pair[1], request); } catch { return failure(503, 'authentication-unavailable'); }
-      if (!accepted) return failure(401, 'authentication-required');
+      if (!accepted) return failure(sameOrigin(request, options.allowedOrigins) ? 401 : 403, sameOrigin(request, options.allowedOrigins) ? 'authentication-required' : 'origin-not-allowed');
       const offered = (request.headers.get('sec-websocket-protocol') ?? '').split(',').map(value => value.trim());
       return new Response(null, { status: 101, webSocket: pair[0], ...(offered.includes(CHAT_SOCKET_PROTOCOL) ? { headers: { 'sec-websocket-protocol': CHAT_SOCKET_PROTOCOL } } : {}) } as ResponseInit);
     },
