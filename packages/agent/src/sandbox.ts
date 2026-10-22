@@ -1,6 +1,7 @@
 import { defineExtension, hook, ToolTask } from '@earendil-works/pi-durable';
 import type { Extension, ToolRegistration, Wrap } from '@earendil-works/pi-durable';
 import type { JsonValue } from '@earendil-works/chord';
+import { markGuard } from './guards.js';
 
 /** Key under a recorded call's result details: `{ simulated: true, tool, arguments }`. A caller reads it back with `simulatedCalls`. */
 export const SANDBOX_DETAILS = 'boring.sandbox';
@@ -73,13 +74,13 @@ export function createSandboxExtension(options: SandboxOptions): Extension {
   const recordOnly = new Set(options.tools.filter(name => sandboxDecision(options.flags?.[name]) === 'record'));
   const simulate = options.simulate ?? ((toolName: string) => defaultAck(toolName));
   const wraps: Wrap[] = [...recordOnly].map(name => ({ tool: name, wrap: (tool: ToolRegistration) => recorded(tool, simulate) }));
-  return defineExtension({
+  return markGuard(defineExtension({
     name: options.name ?? 'boring.sandbox',
     wraps,
     hooks: [hook(ToolTask, {
       beforeTool: call => covered.has(call.name) ? undefined : { block: `Not run: ${call.name} is not covered by the sandbox.` },
     })],
-  });
+  }));
 }
 
 /**

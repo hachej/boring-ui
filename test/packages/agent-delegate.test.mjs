@@ -13,6 +13,7 @@ import { createModels } from '@earendil-works/pi-ai/models';
 import { fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from '@earendil-works/pi-ai/providers/faux';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { createDelegateTool, defineAgent } from '@hachej/boring-agent/agents';
+import { createApprovalExtension } from '@hachej/boring-agent/approval';
 
 const lastToolResult = transcript => [...transcript.messages].reverse().find(message => message.role === 'toolResult');
 const resultText = message => message.content.filter(part => part.type === 'text').map(part => part.text).join('');
@@ -50,9 +51,10 @@ function scriptedModels({ stallChild = false } = {}) {
   return { models, calls };
 }
 
+const looked = [];
 const lookup = defineTool({
   name: 'lookup', description: 'Look up a fictional fact.', parameters: Type.Object({ topic: Type.String() }), replay: 'safe',
-  execute: async () => ({ output: [{ type: 'text', text: 'Glimmerton' }] }),
+  execute: async () => { looked.push('lookup'); return { output: [{ type: 'text', text: 'Glimmerton' }] }; },
 });
 const parentOnly = defineTool({
   name: 'parent_only', description: 'A tool only the parent has.', parameters: Type.Object({}), replay: 'safe',
@@ -130,4 +132,21 @@ test('a crash mid-delegate reattaches to the same child on reopen: no second chi
   assert.deepEqual(after.map(record => record.id), before.map(record => record.id), 'the rerun reattached to the child it created');
   assert.equal((await userInputs(again, after[0].id)).length, 1, 'the child received the task once');
   assert.equal(second.calls.parent, 1, 'the parent model was not asked to delegate again');
+});
+
+test('a delegated child inherits the parent\'s approval extension: it cannot run what the parent\'s gate refuses (D-248)', async t => {
+  looked.length = 0;
+  const { models } = scriptedModels();
+  const { lead, registry } = agents();
+  const approvals = createApprovalExtension({ tools: {}, unlisted: 'deny', allow: ['delegate'] });
+  registry.install(approvals);
+  const harness = await Harness.open(new MemoryStorage(), { registry, models }, context);
+  t.after(() => harness.close(context));
+  const conversation = await lead.createConversation(harness, context);
+  await conversation.configure({ extensions: { add: [approvals] } }, context);
+  assert.equal((await (await conversation.submit({ type: 'input', requestId: 'ask', content: 'Research the capital.' }, context)).wait(context)).status, 'done');
+  const [childRecord] = await owned(conversation);
+  const child = await harness.conversation(childRecord.id, context);
+  assert.ok((await child.agent(context)).extensions.some(extension => extension === approvals), 'the child selects the parent\'s approval extension');
+  assert.deepEqual(looked, [], 'the child\'s lookup was blocked by the inherited gate');
 });

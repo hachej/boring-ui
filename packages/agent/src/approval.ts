@@ -1,8 +1,9 @@
-import { defineExtension } from '@earendil-works/pi-durable';
+import { ToolTask, defineExtension, hook } from '@earendil-works/pi-durable';
 import type { ConversationId, Extension, ToolExecutionResult, ToolRegistration, Wrap } from '@earendil-works/pi-durable';
 import type { JsonValue } from '@earendil-works/chord';
 import type { Static, TSchema } from '@earendil-works/pi-ai';
 import { askPerson } from './ask-user.js';
+import { markGuard } from './guards.js';
 
 /** The two answers an approval question accepts. A chat answers with exactly these strings through `answerUserQuestion`. */
 export const APPROVE = 'Approve';
@@ -117,6 +118,14 @@ export interface ApprovalExtensionOptions {
   readonly name?: string;
   /** Tool names to gate, with their rule. Any native tool works, including Pi's stock `bash`, `write` and `edit`. */
   readonly tools: Readonly<Record<string, ApprovalRule>>;
+  /**
+   * What happens to a tool call whose tool is NOT named in `tools`. `'allow'` (default) runs it ungated. `'deny'` blocks it before it runs
+   * (the model is told it was not run), except the tools listed in `allow`. Approval is not asked for unlisted tools: a native hook can
+   * block a call but cannot ask the person, so name a tool in `tools` to have it asked.
+   */
+  readonly unlisted?: 'allow' | 'deny';
+  /** With `unlisted: 'deny'`: tool names that still run without approval (for example the read tools). Ignored otherwise. */
+  readonly allow?: readonly string[];
 }
 
 const defaultSummary = (name: string) => (args: Record<string, unknown>): string => `${name} ${JSON.stringify(args)}`.slice(0, 300);
@@ -127,6 +136,13 @@ const defaultSummary = (name: string) => (args: Record<string, unknown>): string
  * person there. Pi applies wraps only in conversations that select the extension, so it is opt-in per conversation:
  * `conversation.configure({ extensions: { add: [approvals] } })` turns it on and `remove` turns it off from the next call.
  * Several approval extensions (different `name`s) compose; a tool already gated is never asked twice.
+ *
+ * Gating only `bash` is bypassable when self-evolving tools or write+reload are enabled: the agent writes a tool with the ungated
+ * `write` tool, reloads it, and the new tool runs through the same `env.exec`. Gate `write`/`edit` and the reload path too, or set
+ * `unlisted: 'deny'` (with `allow` for the tools that may run freely) so a tool nobody listed cannot run. The default `'allow'` gates only
+ * what `tools` names.
+ *
+ * A delegated child (`createDelegateTool`) inherits the parent's approval extensions, so a delegate cannot escape the gate.
  *
  * It gates native tool calls only. A code-mode sandbox or any host code that offers the same capability another way is
  * not covered: keep such capabilities out of the sandbox (see `isApprovalGated`).
@@ -139,5 +155,9 @@ export function createApprovalExtension(options: ApprovalExtensionOptions): Exte
       ...(rule !== true && rule.when ? { when: rule.when } : {}),
     } as RequireApprovalOptions),
   }));
-  return defineExtension({ name: options.name ?? 'boring.approval', wraps });
+  const allowed = new Set([...Object.keys(options.tools), ...options.allow ?? []]);
+  const hooks = options.unlisted === 'deny'
+    ? [hook(ToolTask, { beforeTool: call => allowed.has(call.name) ? undefined : { block: `Not run: ${call.name} is not allowed in this conversation.` } })]
+    : [];
+  return markGuard(defineExtension({ name: options.name ?? 'boring.approval', wraps, hooks }));
 }
