@@ -1,3 +1,18 @@
+# Migrating to 0.4.6
+
+Upgrade the registry blocks with `npx boring-ui-blocks update --version 0.4.6` (`npx boring-ui-blocks check` first lists your edited copies), and bump the npm pins to `0.4.6`.
+Existing APIs and stored formats remain compatible. No block gains an install dependency; the chat changes arrive when you reinstall `pi-chat` and `app-shell` together.
+
+## Chat
+
+- **Conversation files open (D-176, D-192, #1786).** Every row in a conversation's Files menu now opens: workspace paths in the file viewer, native images in a preview. `AgentWorkspace` supplies an image preview by default; `chat.onOpenImage`, `chat.onOpenFile` and `chat.mentions.open` still override it. Rows with no opener are hidden instead of shown disabled. An upload returning both `image` and `path` is still sent as the native image only, so it appears once in the message and once in the menu. On desktop the menu is the shadcn `DropdownMenu` (arrow keys, Enter, Escape); phones keep the Drawer with 48px rows. Journeys that clicked a disabled row or waited for the old popover should use the existing `conversation-files`, `conversation-files-list` and `conversation-file` test IDs.
+- **Calmer artifact card (D-180, #1784).** The chat artifact card has a tinted icon, a muted type and version line and a single chevron instead of an “Open” label. Built-in type names follow the chat's labels (English and French); host kind labels still win. Accessible names and `aria-pressed` are unchanged; update journeys that matched the visible “Open”/“Ouvrir” text.
+- **Stable OptChat prefix (D-160, #1781).** OptChat folds in batches at durable checkpoints, so consecutive requests share their prompt prefix and keep the provider cache warm. New optional `foldHighWater` / `foldLowWater` (defaults 1.25 / 0.75); equal values keep the former strict fitting. Fold state is stored in the native `boring.memory.optchat.fold` conversation document. No migration step.
+
+## Viewers
+
+- **Read-only ArtifactViewer (D-194, #1785).** New entry `@hachej/boring-ui-kit/artifact-viewer` exports `ArtifactViewer({ name, mimeType, content?, url?, className?, renderPdf? })` for Markdown, HTML, PDF, images and text, without ResourceClient, tiptap or the agent. Markdown and HTML are sanitized with the same passive-HTML allowlist as the HTML preview and shown in a sandboxed iframe. Existing viewers are unchanged.
+
 # Migrating to 0.4.5
 
 Upgrade the registry blocks with `npx boring-ui-blocks update --version 0.4.5` (`npx boring-ui-blocks check` first lists your edited copies), and bump the npm pins to `0.4.5`.
