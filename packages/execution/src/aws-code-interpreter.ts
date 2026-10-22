@@ -378,12 +378,13 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
         close: readContext => reader.close(readContext),
       });
     },
-    // The mount's own watcher, with its paths reported in the workspace's namespace.
+    // The mount's own watcher, confined like every file tool, with its paths reported in the workspace's namespace.
     watch: async (targets, onChange, context) => {
       const mapped: WatchTarget[] = [];
       for (const target of targets) {
         const path = toLocal(target.path);
         if (path === undefined) return err(outside(target.path));
+        try { if (!await confined(path, true)) return err(outside(target.path)); } catch (error) { return err(new FileError('unknown', errorText(error), namespace(target.path))); }
         mapped.push({ ...target, path });
       }
       const watcher = await local.watch(mapped, change => onChange('paths' in change ? { paths: change.paths.map(path => fromLocal(path)) } : 'error' in change ? { error: mapError(change.error) } : change), context);
