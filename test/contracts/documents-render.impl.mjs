@@ -234,6 +234,8 @@ test('Documents at 1280: unsaved edits survive a visit to an older revision, and
   const view = await mount(t, { width: 1280, screen: shell => () => h(shell.Documents, { provider: f.provider }) });
   await view.settle(() => view.q('[role=treeitem][data-path="fiche.md"] button'));
   await view.click(view.q('[role=treeitem][data-path="fiche.md"] button'));
+  await view.settle(() => view.q('[data-testid$="-more"]'));
+  await view.click(view.q('[data-testid$="-more"]'));
   await view.settle(() => view.q('[data-testid$="-mode-source"]'));
   await view.click(view.q('[data-testid$="-mode-source"]'));
   await view.settle(() => view.q('[data-testid=file-viewer][data-path="fiche.md"] textarea'));

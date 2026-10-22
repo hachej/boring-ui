@@ -52,7 +52,7 @@ export function viewerKit(t) {
   // caret moved, putting it back at the end. Every Markdown file these scenarios edit starts with a level-1 title, so the toolbar's
   // Heading 1 state (computed from the editor's selection) is that signal.
   const caretAtStart = async scope => {
-    if (!await browser.evaluate(`!!${q(`${scope} [aria-label="Heading 1"]`)}`)) await browser.click(q(`${scope} [aria-label="Pin formatting toolbar"]`));
+    if (!await browser.evaluate(`!!${q(`${scope} [aria-label="Heading 1"]`)}`)) await t.menu(scope, 'viewer', 'formatting');
     const point = await browser.evaluate(`(() => { const box = ${q(`${scope} [role=textbox]`)}; box.firstElementChild.scrollIntoView({ block: 'nearest' });
       const text = document.createTreeWalker(box, NodeFilter.SHOW_TEXT, { acceptNode: node => node.textContent.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP }).nextNode();
       const range = document.createRange(); range.setStart(text, 0); range.setEnd(text, 1); const r = range.getBoundingClientRect();

@@ -104,7 +104,7 @@ export function Highlights({ controller, resource, locator, store: supplied, mar
     {result && result.kind !== 'saved' && <div role="alert"><p>{result.kind === 'unknown' ? l.unknown : result.kind === 'conflict' ? l.conflict : l.failed}</p>
       {result.kind === 'unknown' ? <Button variant="outline" size="sm" onClick={() => void run(() => store!.reconcile())}>{l.check}</Button> : <Button variant="outline" size="sm" onClick={() => void run(async () => { await store!.reload(); if (currentBinding()) { setActive(null); setChoices({}); } })}>{l.reload}</Button>}
     </div>}
-    <MarkdownEditor controller={controller} highlights={decorations} onQuoteSelection={selectQuote} onHighlightActivate={activate} autosave={false} />
+    <MarkdownEditor controller={controller} locale={locale} highlights={decorations} onQuoteSelection={selectQuote} onHighlightActivate={activate} autosave={false} />
     <details><summary>{l.source}</summary><AnnotatedSource source={state.text} placements={placed} choices={choices} active={active} commentLabel={l.commented} activate={activate} /></details>
     {current && <div className="flex flex-col items-start gap-2" data-testid="highlight-context">
       {(store || current.actions?.length) && <DropdownMenu><DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>{l.actions}</DropdownMenuTrigger>

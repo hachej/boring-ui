@@ -8,7 +8,7 @@ const evidence = resolve('.cache/evidence/D78'); mkdirSync(evidence, { recursive
 const report = { steps: [], markers: [] }, app = await startHighlights();
 let browser, second;
 const step = async (name, run) => { const item = { name }; report.steps.push(item); try { await run(); item.status = 'passed'; console.log(`PASS ${name}`); } catch (error) { item.status = 'failed'; item.error = String(error.stack ?? error); throw error; } };
-const button = label => `[...document.querySelectorAll('button,[role=menuitem]')].find(b => (b.getAttribute('aria-label') || b.textContent) === ${JSON.stringify(label)})`;
+const button = label => `[...document.querySelectorAll('button,[role^=menuitem]')].find(b => (b.getAttribute('aria-label') || b.textContent) === ${JSON.stringify(label)})`;
 const ready = page => page.until('highlights and exact decoration', `!!document.querySelector('[data-mark-id="kite"]') && !![...document.querySelectorAll('button')].find(b => ['Highlight selection','Surligner la sélection'].includes(b.textContent))`, 30000);
 const marks = async () => {
   const read = await app.client.read({ target: { ...target, resource: { ...target.resource, path: `${target.resource.path}.marks.json` } }, revision: { kind: 'latest' } });
@@ -90,7 +90,8 @@ try {
     await browser.press('Escape');
   });
   await step('source selection adds a mark without modifying document text; menu removal uses conditional publication', async () => {
-    await browser.click(button('Markdown source'));
+    await browser.click(button('More actions'));
+    await browser.click(button('Markdown'));
     const input = `document.querySelector('textarea.boring-markdown-source')`;
     await browser.click(input); await selectAll(browser);
     await browser.until('exact source selected', `![...document.querySelectorAll('button')].find(b => b.textContent === 'Highlight selection').disabled`);

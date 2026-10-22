@@ -58,11 +58,35 @@ test('revision workspace preserves file drafts, docked and floating chat mounts,
       assert.ok(back.compareDocumentPosition(title) & window.Node.DOCUMENT_POSITION_FOLLOWING, `${path}: Back precedes the file title`);
       assert.equal(element.querySelectorAll('[data-testid=viewer-bar]').length, 1, `${path}: one header`);
       assert.ok(bar.querySelector('[data-testid=viewer-close]'), `${path}: Close shares the header`);
-      const source = bar.querySelector('[data-testid=viewer-mode-source]');
-      if (source) { await act(async () => source.click()); assert.equal(source.getAttribute('aria-pressed'), 'true', `${path}: mode still works`); }
+      if (path === 'notes.md') {
+        assert.equal(bar.querySelector('[data-testid=viewer-mode-source]'), null, 'Markdown mode is not a visible header toggle');
+        await act(async () => bar.querySelector('[data-testid=viewer-more]').click());
+        const source = document.querySelector('[data-testid=viewer-mode-source]'); assert.ok(source);
+        await act(async () => source.click());
+        assert.ok(element.querySelector('textarea.boring-markdown-source'), `${path}: menu mode still works`);
+      } else {
+        const source = bar.querySelector('[data-testid=viewer-mode-source]');
+        if (source) { await act(async () => source.click()); assert.equal(source.getAttribute('aria-pressed'), 'true', `${path}: mode still works`); }
+      }
       await act(async () => { back.click(); bar.querySelector('[data-testid=viewer-close]').click(); });
     }
     assert.deepEqual([backed, closed], [4, 4]);
+  });
+  await t.test('a file viewer keeps its formatting choice across a saved-revision remount', async () => {
+    await act(async () => root.render(createElement(FileViewer, { key: 'formatting-revision', path: 'notes.md', locator: locate('notes.md'), options: { client: binding, identity }, onClose() {} })));
+    for (let n = 0; n < 100 && !element.querySelector('[data-testid=viewer-more]'); n++) await act(async () => new Promise(resolve => setTimeout(resolve, 10)));
+    await act(async () => element.querySelector('[data-testid=viewer-more]').click());
+    await act(async () => document.querySelector('[data-testid=viewer-formatting]').click());
+    assert.ok(element.querySelector('.boring-markdown-toolbar'));
+    const previous = element.querySelector('[data-testid=file-preview]').dataset.revision;
+    const read = await binding.read({ target: locate('notes.md'), revision: { kind: 'latest' } });
+    await binding.publish({ operationId: 'formatting-follow', atomicity: 'all-or-nothing', changes: [{ kind: 'replace', target: read.snapshot.ref, bytes: new TextEncoder().encode('# Next fictional notes\n'), mediaType: 'text/markdown' }] });
+    for (let n = 0; n < 300 && element.querySelector('[data-testid=file-preview]')?.dataset.revision === previous; n++) await act(async () => new Promise(resolve => setTimeout(resolve, 10)));
+    assert.notEqual(element.querySelector('[data-testid=file-preview]').dataset.revision, previous);
+    assert.ok(element.querySelector('.boring-markdown-toolbar'), 'the owner retained the preference, not the remounted pane');
+    await act(async () => element.querySelector('[data-testid=viewer-more]').click());
+    assert.equal(document.querySelector('[data-testid=viewer-formatting]').getAttribute('aria-checked'), 'true');
+    await act(async () => document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
   });
   await t.test('standalone file and artifact owners keep a refused Markdown draft mounted without a host guard', async () => {
     for (const artifact of [false, true]) {
@@ -81,8 +105,9 @@ test('revision workspace preserves file drafts, docked and floating chat mounts,
       }
       await act(async () => root.render(createElement(Standalone, { key: path })));
       const prefix = artifact ? 'artifact' : 'viewer';
-      for (let n = 0; n < 100 && !element.querySelector(`[data-testid=${prefix}-mode-source]`); n++) await act(async () => new Promise(resolve => setTimeout(resolve, 10)));
-      await act(async () => element.querySelector(`[data-testid=${prefix}-mode-source]`).click());
+      for (let n = 0; n < 100 && !element.querySelector(`[data-testid=${prefix}-more]`); n++) await act(async () => new Promise(resolve => setTimeout(resolve, 10)));
+      await act(async () => element.querySelector(`[data-testid=${prefix}-more]`).click());
+      await act(async () => document.querySelector(`[data-testid=${prefix}-mode-source]`).click());
       await act(async () => {
         const textarea = element.querySelector('textarea');
         Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(textarea, 'Retain this fictional refused draft');

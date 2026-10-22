@@ -16,11 +16,11 @@ try {
     await browser.send('Emulation.setDeviceMetricsOverride', { width, height: width === 390 ? 844 : 950, deviceScaleFactor: 1, mobile: width === 390 });
     await browser.send('Emulation.setTouchEmulationEnabled', { enabled: width === 390, maxTouchPoints: 5 });
     await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: mode }, { name: 'prefers-reduced-motion', value: 'reduce' }] });
-    for (const surface of ['markdown', 'source', 'selection', 'proposal', 'html', 'html-source', 'standalone-markdown', 'standalone-html', 'image', 'pdf', 'manual']) {
+    for (const surface of ['markdown', 'source', 'selection', 'pinned', 'menu', 'unsafe', 'proposal', 'html', 'html-source', 'standalone-markdown', 'standalone-html', 'image', 'pdf', 'manual']) {
       const previous = await browser.evaluate('performance.timeOrigin');
       await browser.send('Page.navigate', { url: `${app.url}?viewer=${surface}&theme=${theme}&mode=${mode}` });
       await browser.until('fictional viewer mounted', `performance.timeOrigin !== ${previous} && !!${q('[data-testid=viewer-chrome-fixture]')} && document.documentElement.classList.contains('dark') === ${mode === 'dark'}`, 30000);
-      if (['markdown', 'selection', 'proposal', 'standalone-markdown'].includes(surface)) await browser.until('native rich editor', `!!${q('[contenteditable=true]')}`, 10000);
+      if (['markdown', 'selection', 'pinned', 'menu', 'proposal', 'standalone-markdown'].includes(surface)) await browser.until('native rich editor', `!!${q('[contenteditable=true]')}`, 10000);
       if (surface === 'image') await browser.until('image loaded', `${q('img')}?.naturalWidth === 640`, 10000);
       if (surface === 'pdf') await assertPdfPages(browser, 1);
       if (surface === 'proposal') {
@@ -37,15 +37,44 @@ try {
         if (surface === 'markdown') assert.deepEqual(save, { name: 'Save', background: 'rgba(0, 0, 0, 0)' }, `${surface}: Save is a ghost icon button`);
         await browser.evaluate(`document.activeElement?.blur()`);
       }
-      if (surface === 'markdown' && width === 1440) {
+      if (['markdown', 'standalone-markdown'].includes(surface)) {
+        assert.equal(await browser.evaluate(`!!${q('.boring-markdown-toolbar, [data-testid=markdown-dock]')}`), false, 'default reading and focus mount no full formatting bar');
+      }
+      if (surface === 'pinned' && width === 1440) {
         // A narrow artifact column makes the formatting toolbar overflow: it scrolls, but shows no native scrollbar.
         const bar = await browser.evaluate(`(() => { const toolbar = ${q('.boring-markdown-toolbar')}; toolbar.style.width = '240px'; const style = getComputedStyle(toolbar); return { overflows: toolbar.scrollWidth > toolbar.clientWidth, scrollbarWidth: style.scrollbarWidth, barHeight: toolbar.offsetHeight - toolbar.clientHeight, overflowX: style.overflowX }; })()`);
         assert.deepEqual(bar, { overflows: true, scrollbarWidth: 'none', barHeight: 0, overflowX: 'auto' }, `${surface}: overflowing toolbar scrolls with no native scrollbar`);
       }
-      if (surface === 'selection' || surface === 'markdown' && width === 390) {
+      if (surface === 'selection') {
         await browser.evaluate(`(() => { const editor = ${q('[contenteditable=true]')}; editor.focus(); const range = document.createRange(); range.selectNodeContents(editor.querySelector('p')); const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range); document.dispatchEvent(new Event('selectionchange')); })()`);
-        // On a phone the focused editor docks the full formatting bar above the keyboard; on a desktop the selection opens the bubble.
-        await browser.until('native formatting toolbar', width === 390 ? `!!${q('[data-testid=markdown-dock] [data-slot=toggle]')} && !!${q('[data-testid=markdown-dock] [data-slot=separator]')}` : `!!${q('.boring-markdown-bubble [data-slot=toggle]')}`, 10000);
+        await browser.until('native selection bubble on desktop and phone', `!!${q('.boring-markdown-bubble [data-slot=toggle]')}`, 10000);
+        assert.equal(await browser.evaluate(`!!${q('[data-testid=markdown-dock]')}`), false, 'selection alone never pins the full dock');
+      }
+      if (surface === 'menu' || surface === 'unsafe') {
+        const open = async () => { await browser.click(q('[data-testid=fixture-viewer-more]')); await browser.until('view menu', `!!${q('[data-testid=fixture-viewer-mode-rich]')}`, 5000); };
+        await open();
+        assert.equal(await browser.evaluate(`${q('[data-testid=fixture-viewer-formatting]')}.dataset.slot`), 'dropdown-menu-checkbox-item');
+        assert.equal(await browser.evaluate(`${q('[data-testid=fixture-viewer-mode-source]')}.dataset.slot`), 'dropdown-menu-radio-item');
+        if (surface === 'unsafe') {
+          assert.equal(await browser.evaluate(`${q('[data-testid=fixture-viewer-mode-rich]')}.getAttribute('aria-disabled')`), 'true');
+          assert.match(await browser.evaluate(`${q('[data-testid=fixture-viewer-mode-rich]')}.textContent`), /front matter, raw HTML/);
+        } else {
+          await browser.click(q('[data-testid=fixture-viewer-mode-source]'));
+          await browser.until('Markdown selected and focused', `document.activeElement === ${q('textarea.boring-markdown-source')}`, 5000);
+          const text = await browser.evaluate(`${q('textarea.boring-markdown-source')}.value`);
+          await browser.evaluate(`${q('textarea.boring-markdown-source')}.setSelectionRange(3, 9, 'backward')`);
+          await open(); await browser.click(q('[data-testid=fixture-viewer-mode-rich]'));
+          await browser.until('Formatted selected', `!!${q('[contenteditable=true]')}`, 5000);
+          await open(); await browser.click(q('[data-testid=fixture-viewer-mode-source]'));
+          await browser.until('Markdown selected again', `!!${q('textarea.boring-markdown-source')}`, 5000);
+          assert.deepEqual(await browser.evaluate(`(() => { const input = ${q('textarea.boring-markdown-source')}; return [input.value, input.selectionStart, input.selectionEnd, input.selectionDirection]; })()`), [text, 3, 9, 'backward'], 'menu switches preserve bytes and the source cursor');
+          await open(); await browser.click(q('[data-testid=fixture-viewer-mode-rich]'));
+          await open();
+        }
+        if (width === 390) {
+          const heights = await browser.evaluate(`[...${q('[data-testid=fixture-viewer-more-list]')}.querySelectorAll('[role=menuitemradio], [role=menuitemcheckbox]')].map(item => item.getBoundingClientRect().height)`);
+          assert.ok(heights.every(height => height >= 48), `48px phone view choices: ${JSON.stringify(heights)}`);
+        }
       }
       if (surface === 'manual') {
         await browser.click(q('[data-testid=fixture-viewer-more]'));

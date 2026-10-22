@@ -27,7 +27,7 @@ export function ViewerChromeControls({ surface, fetch: authorized }) {
       if (closed) return;
       const options = { identity: provider.identity, client: provider, instanceId: 'fictional-chrome', epoch: 'fixture' };
       owned = {
-        markdown: createMarkdownController({ ...options, source: { kind: 'new', target: provider.locate('fixtures/chrome.md'), text: markdown } }),
+        markdown: createMarkdownController({ ...options, source: { kind: 'new', target: provider.locate('fixtures/chrome.md'), text: surface === 'unsafe' ? '---\ntitle: Fictional\n---\n\n<div>Literal HTML</div>\n' : markdown } }),
         html: createHtmlController({ ...options, source: { kind: 'new', target: provider.locate('fixtures/chrome.html'), text: html } }),
       };
       if (surface === 'proposal') owned.markdown.actions.propose(owned.markdown.actions.selection(), [{ find: 'some sandwiches', replace: 'lunch for everyone' }], 'Fictional lunch suggestion');
@@ -38,7 +38,7 @@ export function ViewerChromeControls({ surface, fetch: authorized }) {
   if (!controllers) return <p role="status">Loading fictional viewers</p>;
   const common = { testId: 'fixture-viewer', onClose() {}, onShare: () => 'copied' };
   return <main data-testid="viewer-chrome-fixture" data-surface={surface} className="boring-viewer flex h-full min-h-0 flex-col">
-    {['markdown', 'source', 'selection', 'proposal'].includes(surface) && <MarkdownPane {...common} controller={controllers.markdown} title="Cedar Works.md" initialMode={surface === 'source' ? 'source' : 'rich'} formattingToolbar={surface === 'selection' ? 'selection' : 'pinned'} autosave={false} />}
+    {['markdown', 'source', 'selection', 'pinned', 'menu', 'unsafe', 'proposal'].includes(surface) && <MarkdownPane {...common} controller={controllers.markdown} title="Cedar Works.md" initialMode={surface === 'source' ? 'source' : 'rich'} {...(surface === 'pinned' ? { formattingToolbar: 'pinned' } : {})} autosave={false} />}
     {['html', 'html-source'].includes(surface) && <HtmlPane {...common} controller={controllers.html} title="Cedar Works.html" initialMode={surface === 'html-source' ? 'source' : 'preview'} />}
     {surface === 'standalone-markdown' && <MarkdownEditor controller={controllers.markdown} title="Cedar Works.md" autosave={false} />}
     {surface === 'standalone-html' && <HtmlViewer controller={controllers.html} title="Cedar Works.html" />}

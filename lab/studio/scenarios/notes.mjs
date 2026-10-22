@@ -24,7 +24,7 @@ export default {
     if (!await browser.evaluate(`!!${q('[data-testid=artifact-panel]')}`)) await browser.click(`${t.qa('[data-testid=artifact-card][data-state=ready]')}.at(-1)`);
     await browser.until('the document is in the panel', `!!${q('[data-testid=workspace-panel] [data-testid=document]')}`, 30000);
     await t.panelControls('shared document');
-    await browser.click(q('[data-testid=workspace-panel] [data-testid=artifact-mode-source]'));
+    await t.menu('[data-testid=workspace-panel]', 'artifact', 'mode-source');
     await browser.until('document in editor', `${SOURCE}?.value.includes('Moon picnic')`, 60000);
     await browser.type(SOURCE, '\n- HUMAN-ADDED thermos\n');
     await browser.until('autosaved', `${q('[data-testid=artifact-status]')}?.textContent === 'Saved'`);

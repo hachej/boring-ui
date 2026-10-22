@@ -376,25 +376,45 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     assert.match(visibleText(view.q('[data-testid="viewer-status"]')), /Not saved: Fictional offline provider/, 'a refused save shows its reason in words');
   });
 
-  await t.test('the Markdown pane puts mode, Save and status in the bar; Refresh never drops unsaved edits; unsafe documents stay in source', async t => {
+  await t.test('the Markdown pane keeps tools in its real menu; Refresh never drops unsaved edits; unsafe documents stay in source', async t => {
     const d = await documents(t, 'text/markdown', '# Plan\n\n- [x] done\n');
-    const view = await mount(t, h(markdownPane.MarkdownPane, { controller: d.controller, title: 'Plan', subtitle: 'Markdown', autosave: false, onShare() {} }));
+    let tools;
+    const view = await mount(t, h(markdownPane.MarkdownPane, { controller: d.controller, title: 'Plan', subtitle: 'Markdown', autosave: false, onShare() {}, onMountedTools: value => { tools = value; } }));
     assert.equal(view.q('section[data-boring="markdown-editor"] > header') === null, true, 'the editor has no header of its own');
     assertDot(view, 'Saved', 'success');
     assert.match(view.q('[data-testid="viewer-status"] svg').getAttribute('class'), /\bfill-primary\b/, 'saved uses the primary role');
     assert.equal(view.q('[data-testid="viewer-save"]') === null, true, 'Save waits for an edit');
-    assert.ok(view.q('.boring-markdown-toolbar button[aria-label="Bold"] svg'), 'formatting is pinned by default');
-    assert.equal(view.q('[aria-label="Pin formatting toolbar"]'), null, 'the bar has no pin button');
-    const modes = view.q('[data-testid="viewer-controls"] [role="group"]');
-    assert.equal(modes.getAttribute('aria-label'), 'Editor mode');
-    assert.equal(modes.dataset.variant, 'outline', 'a segmented, outlined switch');
+    assert.equal(view.q('.boring-markdown-toolbar'), null, 'formatting is selection-only by default');
+    assert.equal(view.q('[data-testid="viewer-bar"] [data-testid="viewer-mode-source"]'), null, 'the header has no visible mode switch');
+    await act(async () => {
+      const result = await tools.select.invoke(tools.getTarget(), { expiresAt: Date.now() + 5000, selection: { kind: 'rich', anchor: 2, head: 5 } });
+      assert.equal(result.kind, 'applied');
+    });
+    await view.click('[data-testid="viewer-more"]');
     const rich = () => view.q('[data-testid="viewer-mode-rich"]'), source = () => view.q('[data-testid="viewer-mode-source"]');
-    assert.deepEqual([rich(), source()].map(item => [item.getAttribute('aria-label'), item.getAttribute('title'), item.textContent, !!item.querySelector('svg[aria-hidden="true"]')]),
-      [['Rich text', 'Rich text', '', true], ['Markdown source', 'Markdown source', '', true]], 'icons only; the words are the accessible names and tooltips');
-    const muted = item => item.querySelector('svg').parentElement.classList.contains('text-muted-foreground');
-    assert.deepEqual([rich().getAttribute('aria-pressed'), muted(rich()), source().getAttribute('aria-pressed'), muted(source())], ['true', false, 'false', true], 'the selected segment is pressed at full contrast, the other muted');
+    assert.deepEqual([rich(), source()].map(item => [item.dataset.slot, item.textContent.trim(), item.getAttribute('aria-checked'), !!item.querySelector('svg[aria-hidden="true"]')]),
+      [['dropdown-menu-radio-item', 'Formatted', 'true', true], ['dropdown-menu-radio-item', 'Markdown', 'false', true]], 'real shadcn radio items with icons and labels');
+    const pin = view.q('[data-testid="viewer-formatting"]');
+    assert.equal(pin.dataset.slot, 'dropdown-menu-checkbox-item');
+    assert.equal(pin.getAttribute('aria-checked'), 'false');
+    await view.click('[data-testid="viewer-formatting"]');
+    assert.ok(view.q('.boring-markdown-toolbar button[aria-label="Bold"] svg'), 'the menu pins the formatting row');
+    // Checkboxes may keep the menu open; dismiss it deliberately before the next action.
+    await act(async () => document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    if (!view.q('[data-testid="viewer-mode-source"]')) await view.click('[data-testid="viewer-more"]');
     await view.click('[data-testid="viewer-mode-source"]');
-    assert.deepEqual([rich().getAttribute('aria-pressed'), muted(rich()), source().getAttribute('aria-pressed'), muted(source())], ['false', true, 'true', false], 'the selected segment follows the mode');
+    assert.equal(view.q('section[data-boring="markdown-editor"]').dataset.mode, 'source');
+    assert.equal(document.activeElement === view.q('textarea'), true, 'choosing a mode hands focus to the editor, not back to the menu trigger');
+    assert.equal(d.controller.getSnapshot().text, '# Plan\n\n- [x] done\n');
+    await view.click('[data-testid="viewer-more"]');
+    assert.equal(view.q('[data-testid="viewer-formatting"]').getAttribute('aria-checked'), 'true', 'the viewer session remembers pinning');
+    await view.click('[data-testid="viewer-mode-rich"]');
+    assert.equal(view.q('section[data-boring="markdown-editor"]').dataset.mode, 'rich');
+    assert.ok(view.q('.boring-markdown-toolbar'));
+    const inspected = await tools.inspect.invoke(tools.getTarget(), { expiresAt: Date.now() + 5000 });
+    assert.equal(inspected.kind, 'applied');
+    assert.deepEqual([inspected.value.currentSelection.anchor, inspected.value.currentSelection.head], [2, 5], 'menu mode switches retain the native caret');
+    await view.click('[data-testid="viewer-more"]'); await view.click('[data-testid="viewer-mode-source"]');
     const area = view.q('textarea');
     await act(async () => { Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(area, '# Plan\n\n- [x] done\n- [ ] local edit\n'); area.dispatchEvent(new window.Event('input', { bubbles: true })); });
     assertDot(view, 'Unsaved', 'warning');
@@ -411,9 +431,11 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     // Unsupported constructs: rich is unavailable.
     const raw = await documents(t, 'text/markdown', '---\ntitle: x\n---\n\n<div>raw</div>\n');
     const unsafe = await mount(t, h(markdownPane.MarkdownPane, { controller: raw.controller, title: 'Raw' }));
-    assert.equal(unsafe.q('[data-testid="viewer-mode-rich"]').disabled, true);
-    assert.match(unsafe.q('[data-testid="viewer-mode-rich"]').getAttribute('title'), /^Rich text is off: this document contains front matter, raw HTML/, 'the disabled mode says why');
-    assert.equal(unsafe.q('[data-testid="viewer-mode-source"]').getAttribute('aria-pressed'), 'true');
+    await unsafe.click('[data-testid="viewer-more"]');
+    assert.equal(unsafe.q('[data-testid="viewer-mode-rich"]').getAttribute('aria-disabled'), 'true');
+    assert.match(unsafe.q('[data-testid="viewer-mode-rich"]').getAttribute('title'), /^Formatted is off: this document contains front matter, raw HTML/, 'the disabled mode says why');
+    assert.match(document.getElementById(unsafe.q('[data-testid="viewer-mode-rich"]').getAttribute('aria-describedby')).textContent, /front matter, raw HTML/, 'the visible reason is also its accessible description');
+    assert.equal(unsafe.q('[data-testid="viewer-mode-source"]').getAttribute('aria-checked'), 'true');
     assert.match(unsafe.q('[data-testid="markdown-source-only"]').textContent, /front matter, raw HTML/);
   });
 

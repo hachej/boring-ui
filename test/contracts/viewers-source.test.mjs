@@ -7,7 +7,9 @@ import { fileURLToPath } from 'node:url';
 test('the public Markdown guide documents current defaults and the owner teardown barrier', () => {
   const readme = readFileSync(new URL('../../packages/ui/README.md', import.meta.url), 'utf8');
   const editor = readme.split('## Optional Markdown editor')[1].split('### Mounted Markdown commands')[0];
-  assert.match(editor, /Formatting defaults to the pinned desktop toolbar\./);
+  assert.match(editor, /Formatting defaults to the native Tiptap selection bubble on desktop and phone\./);
+  assert.match(editor, /formattingToolbar="pinned"/);
+  assert.match(editor, /Show formatting bar/);
   assert.match(editor, /autosave.*default.*1200|default.*autosave.*1200/i);
   assert.match(editor, /autosave=\{false\}/);
   assert.match(editor, /onAutosaveChange/);

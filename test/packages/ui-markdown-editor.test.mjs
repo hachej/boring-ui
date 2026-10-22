@@ -44,8 +44,12 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
     const render = async (selected = controller) => { await act(async () => { root.render(createElement(MarkdownEditor, { controller: selected, title: 'Notes', autosave: false, ...(options.props ?? {}) })); }); };
     await render();
     t.after(async () => { await act(async () => root.unmount()); controller.dispose(); provider.close(); container.remove(); });
-    const button = label => { const found = [...container.querySelectorAll('button')].find(node => (node.getAttribute('aria-label') || node.textContent) === label); assert.ok(found, label); return found; };
+    const button = label => { const found = [...container.querySelectorAll('button,input[type=radio],input[type=checkbox],summary'), ...document.querySelectorAll('[role^=menuitem]')].find(node => (node.getAttribute('aria-label') || node.textContent) === label); assert.ok(found, label); return found; };
     const click = async label => { await act(async () => button(label).click()); };
+    const switchMode = async () => {
+      await click('More actions');
+      await click(container.querySelector('[data-boring="markdown-editor"]').dataset.mode === 'rich' ? 'Markdown' : 'Formatted');
+    };
     const settled = async () => {
       for (let attempt = 0; attempt < 100 && controller.getSnapshot().save.kind === 'pending'; attempt++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 5)); });
       assert.notEqual(controller.getSnapshot().save.kind, 'pending', 'publication must settle');
@@ -57,12 +61,12 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
         textarea.dispatchEvent(new window.Event('input', { bubbles: true }));
       });
     };
-    return { controller, client, target: selectedTarget, container, root, render, button, click, input, settled, writes: () => writes, saved: async () => new TextDecoder().decode((await client.read({ target: selectedTarget, revision: { kind: 'latest' } })).snapshot.bytes) };
+    return { controller, client, target: selectedTarget, container, root, render, button, click, switchMode, input, settled, writes: () => writes, saved: async () => new TextDecoder().decode((await client.read({ target: selectedTarget, revision: { kind: 'latest' } })).snapshot.bytes) };
   }
 
   await t.test('the owner document with a legacy nbsp-only trailing paragraph reopens rich and never writes nbsp again', async t => {
     const raw = '# Hello\n\nHow are you ?\n\n&nbsp;\n';
-    const f = await fixture(t, raw);
+    const f = await fixture(t, raw, { props: { formattingToolbar: 'pinned' } });
     assert.equal(f.container.querySelector('section').dataset.mode, 'rich');
     await f.click('Heading 2'); await f.click('Save'); await f.settled();
     assert.equal(await f.saved(), '## Hello\n\nHow are you ?\n');
@@ -81,7 +85,7 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
       'A hard break  \nthen more.\n', '# Hello\n\nHow are you ?\n\n&nbsp;\n',
     ];
     for (const markdown of corpus) {
-      const f = await fixture(t, markdown);
+      const f = await fixture(t, markdown, { props: { formattingToolbar: 'pinned' } });
       assert.equal(f.container.querySelector('section').dataset.mode, 'rich', markdown);
       // Native undo restores the parsed document; its update runs the real renderer's serializer.
       await f.click('Heading 1');
@@ -90,17 +94,46 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
       const once = f.controller.getSnapshot().text;
       assert.doesNotMatch(once, /^\s*&nbsp;\s*$/m, markdown);
       assert.equal(checkMarkdownRichSafety(once).safe, true, once);
-      const again = await fixture(t, once);
+      const again = await fixture(t, once, { props: { formattingToolbar: 'pinned' } });
       assert.equal(again.container.querySelector('section').dataset.mode, 'rich', once);
       await again.click('Heading 1'); await undo(again);
       assert.equal(again.controller.getSnapshot().text, once, `stable serialization: ${JSON.stringify(markdown)}`);
     }
   });
 
-  await t.test('desktop formatting is pinned by default and selection formatting remains an option', async t => {
-    const f = await fixture(t, 'original text\n');
-    assert.ok(f.container.querySelector('.boring-markdown-toolbar [aria-label="Bold"]'), 'desktop toolbar is visible by default');
-    assert.equal(f.container.querySelector('[aria-label="Pin formatting toolbar"]'), null, 'the header has no pin button: the formattingToolbar prop decides');
+  await t.test('default formatting stays quiet and the menu pins the bar for this viewer session', async t => {
+    const f = await fixture(t, '# Notes\n\noriginal text\n');
+    assert.equal(!!f.container.querySelector('.boring-markdown-toolbar'), false, 'no pinned row by default');
+    assert.equal(f.container.querySelector('nav[aria-label="Document outline"]'), null, 'the outline waits in the menu');
+    assert.equal(f.container.querySelector('header > button[aria-pressed]'), null, 'no visible mode toggle');
+    const menu = f.container.querySelector('summary[aria-label="More actions"]');
+    assert.ok(menu, 'the built-in header has its own menu');
+    await act(async () => menu.click());
+    const pin = f.container.querySelector('input[aria-label="Show formatting bar"]');
+    assert.ok(pin, 'formatting is a checkbox, not a mode radio');
+    assert.equal(pin.type, 'checkbox');
+    await act(async () => pin.click());
+    assert.ok(f.container.querySelector('.boring-markdown-toolbar [aria-label="Bold"]'));
+    await f.render();
+    assert.ok(f.container.querySelector('.boring-markdown-toolbar'), 'the session remembers the choice on rerender');
+    await act(async () => menu.click());
+    const outline = f.container.querySelector('input[aria-label="Show outline"]');
+    await act(async () => outline.click());
+    assert.ok(f.container.querySelector('nav[aria-label="Document outline"]'));
+    assert.equal(f.writes(), 0);
+  });
+
+  await t.test('the menu has French view labels and later host toolbar changes win over the session choice', async t => {
+    const f = await fixture(t, 'fictional text\n', { props: { locale: 'fr' } });
+    const menu = f.container.querySelector('summary[aria-label="Plus d’actions"]'); assert.ok(menu);
+    await act(async () => menu.click());
+    const pin = f.container.querySelector('input[aria-label="Afficher la barre de mise en forme"]'); assert.ok(pin);
+    assert.ok(f.container.querySelector('input[aria-label="Mis en forme"]'));
+    await act(async () => pin.click());
+    assert.ok(f.container.querySelector('.boring-markdown-toolbar'));
+    await act(async () => f.root.render(createElement(MarkdownEditor, { controller: f.controller, formattingToolbar: 'pinned', autosave: false })));
+    await act(async () => f.root.render(createElement(MarkdownEditor, { controller: f.controller, formattingToolbar: 'selection', autosave: false })));
+    assert.equal(f.container.querySelector('.boring-markdown-toolbar'), null);
     assert.equal(f.writes(), 0);
   });
 
@@ -253,7 +286,7 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
 
   await t.test('selection formatting formats the native selection without a write', async t => {
     let tools;
-    const f = await fixture(t, 'original text\n', { props: { formattingToolbar: 'selection', onMountedTools: value => { tools = value; } } });
+    const f = await fixture(t, 'original text\n', { props: { onMountedTools: value => { tools = value; } } });
     assert.ok(f.container.querySelector('.boring-markdown-toolbar') === null, 'no permanent formatting row by default');
     assert.equal(document.querySelector('.boring-markdown-bubble'), null, 'no menu before a text selection');
     const target = tools.getTarget();
@@ -274,9 +307,22 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
     assert.equal(f.controller.getSnapshot().text, '**original** text\n');
     assert.equal(f.writes(), 0, 'formatting does not publish');
     assert.equal(f.container.querySelector('[aria-label="Pin formatting toolbar"]'), null, 'no pin button: the host chose selection formatting');
-    await f.click('Markdown source');
+    await f.switchMode();
     assert.equal(document.querySelector('.boring-markdown-bubble'), null, 'source mode has no rich menu');
     assert.equal(f.writes(), 0);
+  });
+
+  await t.test('phone default focus does not show the full formatting dock', async t => {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'matchMedia');
+    Object.defineProperty(globalThis, 'matchMedia', { configurable: true, value: () => ({ matches: true, addEventListener() {}, removeEventListener() {} }) });
+    try {
+      const f = await fixture(t, 'phone text\n');
+      await act(async () => f.container.querySelector('[contenteditable="true"]').focus());
+      assert.equal(!!document.querySelector('[data-testid="markdown-dock"]'), false, 'focus alone is not a request for formatting');
+      assert.equal(f.writes(), 0);
+    } finally {
+      if (descriptor) Object.defineProperty(globalThis, 'matchMedia', descriptor); else delete globalThis.matchMedia;
+    }
   });
 
   await t.test('a phone never mounts the pinned toolbar, even when the host requests it', async t => {
@@ -329,7 +375,7 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
       assert.equal(dock(), null, 'the bar hides when the keyboard closes');
       await act(async () => { surface.focus(); });
       assert.ok(dock());
-      await f.click('Markdown source');
+      await f.switchMode();
       assert.equal(dock(), null, 'source mode has no bar');
     } finally {
       for (const [name, descriptor] of [['matchMedia', mediaDescriptor], ['visualViewport', viewportDescriptor], ['innerHeight', innerHeight]]) {
@@ -343,9 +389,9 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
     const f = await fixture(t, raw);
     assert.ok(f.container.querySelector('[contenteditable="true"]'));
     assert.equal(f.controller.getSnapshot().bufferVersion, 0);
-    await f.click('Markdown source');
+    await f.switchMode();
     assert.equal(f.container.querySelector('textarea').value, raw);
-    await f.click('Markdown source');
+    await f.switchMode();
     assert.equal(f.controller.getSnapshot().text, raw);
     assert.equal(f.controller.getSnapshot().dirty, false);
     assert.equal(f.writes(), 0);
@@ -360,7 +406,9 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
     assert.equal(f.container.querySelector('textarea').value, raw);
     const notice = f.container.querySelector('[data-testid="markdown-source-only"]');
     assert.match(notice.textContent, /front matter, raw HTML, footnotes, reference-style links/);
-    assert.equal(f.button('Markdown source').disabled, true, 'the rich switch is unavailable');
+    await f.click('More actions');
+    assert.equal(f.button('Formatted').disabled, true, 'the rich switch is unavailable');
+    assert.match(document.getElementById(f.button('Formatted').getAttribute('aria-describedby')).textContent, /front matter, raw HTML/, 'the disabled choice explains why');
     assert.equal(f.controller.getSnapshot().dirty, false);
     // An unrelated source edit saves exactly: the constructs are untouched.
     const edited = raw.replace('# title', '# retitled');
@@ -457,7 +505,7 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
 
   await t.test('source input saves the exact selection through real SQLite publication', async t => {
     const f = await fixture(t);
-    await f.click('Markdown source');
+    await f.switchMode();
     await f.input('human draft\n\n');
     assert.equal(f.controller.getSnapshot().text, 'human draft\n\n');
     assert.equal(f.container.querySelector('[role="status"]').textContent, 'Unsaved changes');
@@ -481,7 +529,7 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
 
   await t.test('new-document source input publishes with absence and a real revision', async t => {
     const f = await fixture(t, '', { newDocument: true });
-    await f.click('Markdown source'); await f.input('new document');
+    await f.switchMode(); await f.input('new document');
     await f.click('Save'); await f.settled();
     assert.equal(await f.saved(), 'new document');
     assert.equal(f.controller.getSnapshot().save.result.receipt.changes[0].before, null);
@@ -490,7 +538,7 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
 
   await t.test('lost acknowledgement exposes reconciliation and does not blindly repeat publication', async t => {
     const f = await fixture(t, 'original', { publish: async (request, commit) => { await commit(); throw new Error('fictional lost acknowledgement'); } });
-    await f.click('Markdown source'); await f.input('committed');
+    await f.switchMode(); await f.input('committed');
     await f.click('Save'); await f.settled();
     assert.equal(f.container.querySelector('[role="status"]').textContent, 'Save unconfirmed');
     assert.equal(f.button('Save').disabled, true);
@@ -506,7 +554,7 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
     const f = await fixture(t);
     const base = f.controller.getSnapshot().base;
     await f.client.publish({ operationId: 'other-writer', atomicity: 'all-or-nothing', changes: [{ kind: 'replace', target: base.target, bytes: new TextEncoder().encode('remote text'), mediaType: 'text/markdown' }] });
-    await f.click('Markdown source'); await f.input('local draft');
+    await f.switchMode(); await f.input('local draft');
     await f.click('Save'); await f.settled();
     assert.equal(f.container.querySelector('[role="status"]').textContent, 'Changed elsewhere');
     assert.equal(f.container.querySelector('textarea').value, 'local draft');
@@ -550,7 +598,7 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
   await t.test('late save acknowledgement preserves newer input and current controller selection', async t => {
     const committed = Promise.withResolvers(), release = Promise.withResolvers();
     const f = await fixture(t, 'original', { publish: async (request, commit) => { const result = await commit(); committed.resolve(); await release.promise; return result; } });
-    await f.click('Markdown source'); await f.input('selected');
+    await f.switchMode(); await f.input('selected');
     await f.click('Save'); await committed.promise;
     await f.input('newer input');
     const other = await fixture(t, 'another document');
@@ -577,7 +625,7 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
       await act(async () => anchor.dispatchEvent(event));
       assert.equal(event.defaultPrevented, true, `${type} must not navigate`);
     }
-    await f.click('Markdown source');
+    await f.switchMode();
     assert.equal(f.container.querySelector('textarea').readOnly, true);
     assert.equal(f.writes(), 0);
     await act(async () => f.controller.dispose());

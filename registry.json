@@ -197,7 +197,8 @@
         "@tiptap/extension-image@^3.31.4",
         "@tiptap/extension-highlight@^3.31.4",
         "@tiptap/extension-bubble-menu@^3.31.4",
-        "@tiptap/extension-floating-menu@^3.31.4"
+        "@tiptap/extension-floating-menu@^3.31.4",
+        "lucide-react@^1.51.0"
       ],
       "files": [
         {
@@ -337,7 +338,9 @@
       },
       "docs": "Create and own a MarkdownController from @hachej/boring-ui-kit/markdown. Pass it to MarkdownEditor. The wrapper does not acquire resources or dispose the controller. Check the repository release notes for available npm versions; local tarball tests do not establish registry availability.",
       "registryDependencies": [
-        "@boring-ui/button"
+        "@boring-ui/button",
+        "button",
+        "dropdown-menu"
       ]
     },
     {
@@ -1410,7 +1413,8 @@
         "dialog",
         "textarea",
         "badge",
-        "dropdown-menu"
+        "dropdown-menu",
+        "@boring-ui/markdown-editor"
       ],
       "files": [
         {

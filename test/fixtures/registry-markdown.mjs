@@ -50,8 +50,12 @@ test('installed registry Markdown wrapper with real React/Tiptap/SQLite (DOM, no
     const unmount = async () => { if (mounted) { mounted = false; await act(async () => root.unmount()); } };
     t.after(async () => { await unmount(); controller.dispose(); provider.close(); container.remove(); });
     await act(async () => root.render(createElement(MarkdownEditor, { controller, title: 'Fictional registry notes', placeholder: 'Fictional placeholder', autosave: false, ...options.props })));
-    const button = label => { const found = [...container.querySelectorAll('button')].find(node => (node.getAttribute('aria-label') || node.textContent) === label); assert.ok(found, label); return found; };
+    const button = label => { const found = [...container.querySelectorAll('button,input[type=radio],input[type=checkbox],summary'), ...document.querySelectorAll('[role^=menuitem]')].find(node => (node.getAttribute('aria-label') || node.textContent) === label); assert.ok(found, label); return found; };
     const click = async label => { await act(async () => button(label).click()); };
+    const switchMode = async () => {
+      await click('More actions');
+      await click(container.querySelector('[data-boring="markdown-editor"]').dataset.mode === 'rich' ? 'Markdown' : 'Formatted');
+    };
     const settled = async () => {
       for (let attempt = 0; attempt < 100 && controller.getSnapshot().save.kind === 'pending'; attempt++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 5)); });
       assert.equal(controller.getSnapshot().save.kind, 'settled');
@@ -64,7 +68,7 @@ test('installed registry Markdown wrapper with real React/Tiptap/SQLite (DOM, no
       });
     };
     const saved = async () => new TextDecoder().decode((await client.read({ target, revision: { kind: 'latest' } })).snapshot.bytes);
-    return { provider, identity, target, client, controller, container, unmount, button, click, input, settled, saved, writes: () => writes };
+    return { provider, identity, target, client, controller, container, unmount, button, click, switchMode, input, settled, saved, writes: () => writes };
   }
 
   await t.test('wrapper mount and mode changes preserve exact bytes and forward concrete editor props', async t => {
@@ -78,23 +82,46 @@ test('installed registry Markdown wrapper with real React/Tiptap/SQLite (DOM, no
     assert.equal(f.container.querySelector('textarea').dataset.slot, 'textarea');
     assert.equal(f.container.querySelector('textarea').value, source);
     assert.match(f.container.textContent, /Fictional registry notes/);
-    await f.click('Markdown source'); assert.ok(f.container.querySelector('[contenteditable="true"]'));
-    await f.click('Markdown source');
+    await f.switchMode(); assert.ok(f.container.querySelector('[contenteditable="true"]'));
+    await f.switchMode();
     assert.equal(f.container.querySelector('textarea').value, source);
     assert.equal(f.controller.getSnapshot().text, source); assert.equal(f.controller.getSnapshot().bufferVersion, 0);
     assert.equal(f.controller.getSnapshot().dirty, false); assert.equal(f.writes(), 0);
   });
 
-  await t.test('installed Markdown defaults to pinned formatting and autosaves exact bytes without Save', async t => {
+  await t.test('installed Markdown defaults to selection formatting and autosaves exact bytes without Save', async t => {
     const f = await fixture(t, 'fictional note\n', { props: { autosave: { delayMs: 250 } } });
-    assert.ok(f.container.querySelector('.boring-markdown-toolbar [aria-label="Bold"]'));
+    assert.equal(f.container.querySelector('.boring-markdown-toolbar'), null);
     assert.equal([...f.container.querySelectorAll('button')].find(node => node.textContent === 'Save'), undefined);
-    await f.click('Markdown source'); await f.input('autosaved fictional note\n');
+    await f.switchMode(); await f.input('autosaved fictional note\n');
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 400)); });
     await f.settled();
     assert.equal(f.writes(), 1);
     assert.equal(f.controller.getSnapshot().dirty, false);
     assert.equal(new TextDecoder().decode((await f.client.read({ target: f.target, revision: { kind: 'latest' } })).snapshot.bytes), 'autosaved fictional note\n');
+  });
+
+  await t.test('installed standalone view menus use real radio and checkbox items in English and French', async t => {
+    for (const [locale, more, formatted, markdown, pin, outline] of [
+      ['en', 'More actions', 'Formatted', 'Markdown', 'Show formatting bar', 'Show outline'],
+      ['fr', 'Plus d’actions', 'Mis en forme', 'Markdown', 'Afficher la barre de mise en forme', 'Afficher le plan'],
+    ]) {
+      const f = await fixture(t, '# Fictional guide\n\nUnchanged text.\n', { props: { locale } });
+      assert.equal(f.container.querySelector('.boring-markdown-toolbar'), null);
+      await f.click(more);
+      assert.equal(f.button(formatted).dataset.slot, 'dropdown-menu-radio-item');
+      assert.equal(f.button(pin).dataset.slot, 'dropdown-menu-checkbox-item');
+      await f.click(pin);
+      assert.ok(f.container.querySelector('.boring-markdown-toolbar'));
+      await f.click(more); await f.click(outline);
+      assert.ok(f.container.querySelector('nav[aria-label="Document outline"]'));
+      await f.click(more); await f.click(markdown);
+      assert.equal(f.container.querySelector('textarea').value, '# Fictional guide\n\nUnchanged text.\n');
+      assert.equal(document.activeElement === f.container.querySelector('textarea'), true, 'choosing Markdown focuses the source editor');
+      await f.click(more); await f.click(formatted);
+      assert.ok(f.container.querySelector('[contenteditable="true"]'));
+      assert.equal(f.writes(), 0);
+    }
   });
 
   await t.test('source editing and Save publish exact bytes with a real lookup receipt', async t => {
@@ -150,7 +177,7 @@ test('installed registry Markdown wrapper with real React/Tiptap/SQLite (DOM, no
     const f = await fixture(t, 'readonly fiction', { readOnly: true, props: { formattingToolbar: 'pinned' } });
     assert.equal(f.button('Heading 1').disabled, true); assert.equal(f.button('Save').disabled, true);
     assert.equal(f.container.querySelector('[contenteditable]').getAttribute('contenteditable'), 'false');
-    await f.click('Markdown source'); assert.equal(f.container.querySelector('textarea').readOnly, true);
+    await f.switchMode(); assert.equal(f.container.querySelector('textarea').readOnly, true);
     assert.equal(f.writes(), 0); assert.equal(await f.saved(), 'readonly fiction');
   });
 
@@ -163,7 +190,7 @@ test('installed registry Markdown wrapper with real React/Tiptap/SQLite (DOM, no
   });
 
   await t.test('installed controls use the host shadcn components without styling unrelated buttons', async t => {
-    const f = await fixture(t, 'styled fiction', { props: { className: 'fictional-host-theme' } });
+    const f = await fixture(t, 'styled fiction', { props: { className: 'fictional-host-theme', formattingToolbar: 'pinned' } });
     const root = f.container.querySelector('[data-boring="markdown-editor"]');
     const override = document.createElement('style');
     override.textContent = ':root { --background: rgb(12, 34, 56); --foreground: rgb(230, 231, 232); --border: rgb(71, 72, 73); --ring: rgb(91, 92, 93); }';
@@ -172,7 +199,8 @@ test('installed registry Markdown wrapper with real React/Tiptap/SQLite (DOM, no
     assert.equal(root.style.cssText, '', 'the wrapper carries no inline visual values');
     assert.equal(f.button('Save').dataset.slot, 'button');
     assert.equal(f.button('Bold').dataset.slot, 'toggle');
-    for (const control of f.container.querySelectorAll('button, input, textarea')) assert.ok(['button', 'toggle', 'input', 'textarea'].includes(control.dataset.slot), 'all controls are consumer shadcn components');
+    assert.equal(f.button('More actions').dataset.slot, 'dropdown-menu-trigger');
+    for (const control of f.container.querySelectorAll('button, input, textarea')) assert.ok(['button', 'toggle', 'input', 'textarea', 'dropdown-menu-trigger'].includes(control.dataset.slot), `all controls are consumer shadcn components: ${control.outerHTML}`);
     assert.deepEqual(buttonStyle(outside), unrelatedBaseline);
     assert.equal(outside.className, '');
     await act(async () => f.controller.actions.propose(f.controller.actions.selection(), [{ find: 'styled fiction', replace: 'reviewed fiction' }], 'Styled review'));

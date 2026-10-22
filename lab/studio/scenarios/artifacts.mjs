@@ -200,7 +200,9 @@ document.getElementById('chart').append(svg);
       // The whole bar is one row at the panel's width.
       const row = await browser.evaluate(`(() => { const b = ${q(bar)}.getBoundingClientRect(); const mids = ${qa(`${bar} button`)}.filter(x => x.checkVisibility()).map(x => { const r = x.getBoundingClientRect(); return r.top + r.height / 2; });
         return { bar: Math.round(b.height), spread: Math.round(Math.max(...mids) - Math.min(...mids)), buttons: mids.length }; })()`);
-      assert.ok(row.bar <= 60 && row.spread <= 6 && row.buttons >= 4, `the artifact bar is a single row ${JSON.stringify(row)}`);
+      assert.ok(row.bar <= 60 && row.spread <= 6, `the artifact bar is a single row ${JSON.stringify(row)}`);
+      assert.deepEqual(await browser.evaluate(`${qa(`${bar} button`)}.filter(button => button.checkVisibility()).map(button => button.getAttribute('aria-label')).sort()`), ['Close', 'More actions', 'Version history'], 'only window actions remain visible; mode choices wait in the menu');
+      assert.equal(row.buttons, 3);
       await shots('artifacts-versions');
       await browser.click(cardWhere(report.id, 1));
       await browser.until('pinned version 1', `${q(PANEL)}.dataset.follow === 'false' && ${q(PANEL)}.dataset.artifactPosition === '1' && ${editorText}.length > 100`);
@@ -225,7 +227,7 @@ document.getElementById('chart').append(svg);
       await browser.until('latest again', `${q(PANEL)}.dataset.follow === 'true' && /Safety notes/i.test(${editorText})`);
 
       // ---- The person edits the document in the panel; the agent keeps the edit in its next update.
-      await browser.click(button('Markdown source'));
+      await t.menu(PANEL, 'artifact', 'mode-source');
       const SOURCE = `document.querySelector('${PANEL} textarea')`;
       await browser.until('source editor', `!!${SOURCE}`);
       await browser.type(SOURCE, '\n\nHUMAN-EDIT-MARKER: bring a thermos.\n');

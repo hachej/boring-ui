@@ -43,7 +43,9 @@ const openDocument = async () => {
   const notesButton = `[...document.querySelectorAll('.studio-panel li button')].find(b => b.textContent === 'notes.md')`;
   await browser.until('notes.md is listed', `!!${notesButton}`);
   await browser.click(notesButton);
-  await browser.until('document panel opened', `!!${q('[data-testid=viewer-mode-source]')}`);
+  await browser.until('document panel opened', `!!${q('[data-testid=viewer-more]')}`);
+  await browser.click(q('[data-testid=viewer-more]'));
+  await browser.until('Markdown menu choice', `!!${q('[data-testid=viewer-mode-source]')}`);
   await browser.click(q('[data-testid=viewer-mode-source]'));
   await browser.until('source editor loaded', `!!${source}`);
 };
