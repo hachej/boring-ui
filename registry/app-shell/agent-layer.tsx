@@ -70,13 +70,13 @@ export interface AgentLayerApi {
   readonly agent: NativeChatController | undefined;
   readonly state: AgentLayerState;
   readonly showing: Which | null;
-  open(which?: Which, at?: 'half' | 'full'): void;
+  open(which?: Which, at?: 'peek' | 'half' | 'full'): void;
   close(): void;
   readonly expanded: boolean;
 }
 
-// The three fixed snap points: a peek (one composer row and a line of the last reply, `PEEK_REM` above the tab bar), 55% and the full height.
-const PEEK_REM = 6;
+// The three fixed snap points: a peek (the file chip, one composer row and a line of the last reply, `PEEK_REM` above the tab bar), 55% and the full height.
+const PEEK_REM = 8;
 /** The shell's z-scale (tabs 20, peek 30, drawer and panel 40, other sheets 50, point bar 60). */
 const Z = { tabs: 20, peek: 30, layer: 40, sheet: 50, point: 60 } as const;
 const HALF = 0.55;
@@ -153,6 +153,23 @@ function useInternal(): Internal {
   return layer;
 }
 
+/** A screen's way to hand the layer an assistant it already owns (see `useAgentLoan`). */
+export interface AgentLoan {
+  /** False when the shell has its own `agent`: a loan never replaces it. */
+  readonly available: boolean;
+  /** Lends `spec` as the shell's `agent` and opens it at `at` (just lends it without `at`). `undefined` takes it back and closes the layer. */
+  lend(spec: AgentSpec | undefined, at?: 'peek' | 'half' | 'full'): void;
+}
+interface LoanContextValue extends AgentLoan { readonly compact: boolean }
+const LoanContext = createContext<LoanContextValue | null>(null);
+
+/**
+ * For a screen that owns an assistant (a page-sized `AgentWorkspace`): `lend(spec, 'peek')` shows that same controller in the shell's
+ * bottom drawer on a phone, so one chat drawer serves the app; `lend(undefined)` returns it. `null` outside an `AppShell`; `compact` says
+ * whether the layer is the phone drawer (below 768px), the only place a loan is shown (a wide shell keeps the screen's own placement).
+ */
+export function useAgentLoan(): (AgentLoan & { readonly compact: boolean }) | null { return useContext(LoanContext); }
+
 /** The layer's state and controls. */
 export function useAgentLayer(): AgentLayerApi {
   const { state, showing, open, close, expanded, agent: spec } = useInternal();
@@ -208,11 +225,14 @@ function useMeasuredPeek(probe: RefObject<HTMLDivElement | null>): { readonly pe
 }
 
 /** Places the layer in the app. `agent` is the one assistant; `improve` is the product manager. Either may be absent. */
-export function AgentLayerProvider({ agent, improve, locale, agentLink, children }: { readonly agent?: AgentSpec | undefined; readonly improve?: AgentSpec | undefined; readonly locale?: AppShellLocale | undefined; readonly agentLink?: false | undefined; readonly children: ReactNode }): ReactElement {
+export function AgentLayerProvider({ agent: own, improve, locale, agentLink, children }: { readonly agent?: AgentSpec | undefined; readonly improve?: AgentSpec | undefined; readonly locale?: AppShellLocale | undefined; readonly agentLink?: false | undefined; readonly children: ReactNode }): ReactElement {
   const compact = useIsMobile();
   const expanded = !compact;
   const [snap, setSnapState] = useState<Snap>('closed');
   const [dockFloating, setDockFloating] = useState(false);
+  // A screen may lend the layer its assistant (`useAgentLoan`); the shell's own `agent` always wins.
+  const [lent, setLent] = useState<AgentSpec | undefined>();
+  const agent = own ?? lent;
   const [shown, setShown] = useState<Which>(agent ? 'agent' : 'improve');
   const probe = useRef<HTMLDivElement>(null);
   const { peekPoint, tabbar } = useMeasuredPeek(probe);
@@ -224,19 +244,27 @@ export function AgentLayerProvider({ agent, improve, locale, agentLink, children
   const setSide = useCallback((next: DockSide) => { setSideState(next); try { globalThis.localStorage?.setItem(SIDE_KEY, next); } catch { /* a convenience */ } }, []);
   const specs = useRef({ agent, improve, snap, shown });
   specs.current = { agent, improve, snap, shown };
+  const lentRef = useRef<AgentSpec | undefined>(undefined);
 
   const setSnap = useCallback((next: Snap) => setSnapState(next), []);
   const close = useCallback(() => setSnapState('closed'), []);
   // One full-screen layer at a time: opening the agent or product manager closes a view of the app (`useShellLayer`), and a view closes these.
   useEffect(() => registerAgentLayerCloser(close), [close]);
-  const open = useCallback((which?: Which, at: 'half' | 'full' = 'half') => {
+  const open = useCallback((which?: Which, at: 'peek' | 'half' | 'full' = 'half') => {
     const { agent: a, improve: i } = specs.current;
     const target = which ?? (a ? 'agent' : 'improve');
     if (target === 'agent' ? !a : !i) return;
     closeShellLayer();
     setShown(target);
-    setSnapState(at);
+    setSnapState(at === 'peek' && target !== 'agent' ? 'half' : at);
   }, []);
+  const lend = useCallback((spec: AgentSpec | undefined, at?: 'peek' | 'half' | 'full') => {
+    if (specs.current.agent && specs.current.agent !== lentRef.current) return;
+    lentRef.current = spec;
+    setLent(spec);
+    if (spec && at) { closeShellLayer(); setShown('agent'); setSnapState(at); }
+  }, []);
+  const loan = useMemo<LoanContextValue>(() => ({ available: !own, lend, compact }), [own, lend, compact]);
   const showAgent = useCallback(() => { if (specs.current.agent) setShown('agent'); }, []);
 
   // A spec that goes away takes the layer with it.
@@ -300,13 +328,13 @@ export function AgentLayerProvider({ agent, improve, locale, agentLink, children
   // The shell's z-scale (tabs 20, peek 30, drawer and panel 40, other sheets 50, point bar 60) as custom properties; `display: contents` keeps the box tree unchanged.
   const scale = { '--app-shell-z-tabs': Z.tabs, '--app-shell-z-peek': Z.peek, '--app-shell-z-layer': Z.layer, '--app-shell-z-sheet': Z.sheet, '--app-shell-z-point': Z.point } as CSSProperties;
   return <AgentContextProvider>
-    <LayerContext.Provider value={value}>
+    <LayerContext.Provider value={value}><LoanContext.Provider value={loan}>
       <div data-app-shell="" className="contents" style={scale}>
         <div ref={probe} aria-hidden="true" className="pointer-events-none invisible fixed top-0 left-0 w-0" style={{ height: 'var(--app-shell-tabbar, 0px)' }} />
         {children}
         {host && opened.current && createPortal(<Chats showing={shown} />, host)}
       </div>
-    </LayerContext.Provider>
+    </LoanContext.Provider></LayerContext.Provider>
   </AgentContextProvider>;
 }
 
@@ -501,7 +529,7 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
   // The popup is taller than what shows and slides down by `--drawer-snap-point-offset` (a registered, non-inheriting property, so only the
   // popup itself can read it): padding the popup by that offset makes its content box exactly the visible part. At peek the tab bar below is left out too.
   // The popup is portalled to the body, outside the shell root: it is given the measured tab bar height and the z-values explicitly.
-  const style = { '--app-shell-vv-height': vv ? `${vv.height}px` : '100dvh', '--app-shell-tabbar': `${layer.tabbar}px`, '--app-shell-z-layer': Z.layer,
+  const style = { '--app-shell-vv-height': vv ? `${vv.height}px` : '100dvh', '--app-shell-tabbar': `${layer.tabbar}px`, '--app-shell-peek-height': `${PEEK_REM}rem`, '--app-shell-z-layer': Z.layer,
     paddingBottom: peek ? 'calc(var(--drawer-snap-point-offset, 0px) + var(--app-shell-tabbar, 0px))' : 'var(--drawer-snap-point-offset, 0px)',
     ...(pinnedBottom ? { bottom: pinnedBottom } : {}) } as CSSProperties;
   // Entering the modal half or full from the non-modal peek does not rerun Base UI's initial focus: if focus is still on the page, take it to Close.
@@ -546,7 +574,7 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
     <DrawerContent data-testid="agent-layer" aria-label={title} data-state={snap} data-peek={peek} initialFocus={() => closeRef.current ?? false} style={style}
       className={cn('app-shell box-border z-(--app-shell-z-layer) data-[swipe-direction=down]:bottom-(--drawer-keyboard-inset,0px) data-[swipe-axis=y]:[--drawer-content-max-height:calc(var(--app-shell-vv-height,100dvh)-1.5rem)]',
         // The peek is the top PEEK_REM of the popup; the part that overlaps the tab bar is clipped away, so the tabs stay visible and tappable.
-        'data-[peek=true]:not-data-swiping:[clip-path:inset(0_0_calc(100%_-_6rem)_0)]')}>
+        'data-[peek=true]:not-data-swiping:[clip-path:inset(0_0_calc(100%_-_var(--app-shell-peek-height))_0)]')}>
       <BaseDrawerParts.Drawer.VirtualKeyboardProvider>
         <div ref={sheet} data-testid="agent-layer-sheet" onFocusCapture={event => { if (!recording && (event.target as HTMLElement).matches('[data-testid=composer-input]')) layer.setSnap('full'); }}
           className={cn('relative flex min-h-0 flex-1 flex-col overflow-hidden overscroll-contain',
