@@ -18,8 +18,6 @@ export interface FeedbackLabels {
   readonly saving: string;
   readonly saved: string;
   readonly bubblePlaceholder: string;
-  /** The pin's one-line desktop hint: holding Alt passes clicks to the app. */
-  readonly altHint: string;
   /** The pin's field label, its Add button, and the mic inside the field (record, stop, transcribing, nothing heard, failed). */
   readonly add: string;
   readonly voiceRecord: string;
@@ -29,14 +27,40 @@ export interface FeedbackLabels {
   readonly voiceFailed: string;
   /** Announced when the selection was cancelled, so a screen reader hears that the zone is gone. */
   readonly selectionCancelled: string;
-  /** Point mode's bar (phones): the hint, the count of picks, Done, Cancel and the "use the app" toggle with its hint. */
-  readonly pointHint: string;
+  /**
+   * The comment-mode banner (CommentBanner): its title, the count of notes, the on/off switch's name, what to do while on (a tap on a
+   * phone, a click with a mouse), what to do while off (use the app, then switch back on: the notes stay), and Done.
+   */
+  readonly commentMode: string;
   readonly pointCount: (count: number) => string;
+  readonly commentSwitch: string;
+  readonly commentTap: string;
+  readonly commentClick: string;
+  readonly commentPaused: string;
+  /** Once notes went to the agent one by one (`useSendEachNote`): how many, and that the reply comes in the conversation. */
+  readonly commentSent: (count: number) => string;
   readonly pointDone: string;
-  readonly pointCancel: string;
-  readonly pointUseApp: string;
-  readonly pointUsing: string;
-  readonly pointBar: string;
+  /** The picked element in the note bubble, in plain words: its kind (by ARIA role or tag) and its visible name when it has one. */
+  readonly element: (kind: string | undefined, name: string | undefined) => string;
+}
+
+/** The roles and tags people can name; anything else is « this element ». */
+const KINDS_EN: Record<string, string> = { button: 'Button', link: 'Link', a: 'Link', heading: 'Title', img: 'Image', textbox: 'Field', input: 'Field', checkbox: 'Checkbox',
+  combobox: 'List', listbox: 'List', option: 'Choice', tab: 'Tab', row: 'Row', listitem: 'Row', li: 'Row', cell: 'Cell', dialog: 'Window', navigation: 'Menu', menuitem: 'Menu item' };
+const KINDS_FR: Record<string, string> = { button: 'Bouton', link: 'Lien', a: 'Lien', heading: 'Titre', img: 'Image', textbox: 'Champ', input: 'Champ', checkbox: 'Case à cocher',
+  combobox: 'Liste', listbox: 'Liste', option: 'Choix', tab: 'Onglet', row: 'Ligne', listitem: 'Ligne', li: 'Ligne', cell: 'Cellule', dialog: 'Fenêtre', navigation: 'Menu', menuitem: 'Entrée du menu' };
+const named = (kinds: Record<string, string>, unknown: string) => (kind: string | undefined, name: string | undefined): string => {
+  const word = kind ? kinds[kind] : undefined;
+  return name ? `${word ?? unknown} « ${name} »` : word ?? unknown;
+};
+
+/**
+ * The picker's label (`button «Save»`, `button · masked`, `Form.tsx · link «Help»`, `masked`) in plain words: `Button « Save »`,
+ * `Button`, `Link « Help »`, `This element`. Nothing technical (no component, no « masked »): what the policy hides stays hidden.
+ */
+export function plainElement(label: string, words: Pick<FeedbackLabels, 'element'>): string {
+  const match = /(?:^|· )([a-z][a-z0-9-]*)(?: · masked| «(.*)»)$/.exec(label.trim());
+  return words.element(match?.[1], match?.[2]?.trim() || undefined);
 }
 
 export const feedbackLabels: FeedbackLabels = {
@@ -52,21 +76,22 @@ export const feedbackLabels: FeedbackLabels = {
   saving: 'Saving…',
   saved: 'Saved',
   bubblePlaceholder: "What's wrong here?",
-  altHint: 'Hold ⌥ to use the app',
   add: 'Add note',
-  voiceRecord: 'Speak your note',
+  voiceRecord: 'Hold to speak, release to send',
   voiceStop: 'Stop recording',
   voiceTranscribing: 'Transcribing…',
   voiceNothing: 'Nothing was heard. Your text is kept.',
   voiceFailed: 'The recording could not be transcribed. Your text is kept.',
   selectionCancelled: 'Selection cancelled.',
-  pointHint: 'Tap an element to comment',
-  pointCount: count => `${count} ${count === 1 ? 'selection' : 'selections'}`,
+  commentMode: 'Comment mode',
+  pointCount: count => `${count} ${count === 1 ? 'note' : 'notes'}`,
+  commentSwitch: 'Comment',
+  commentTap: 'Tap an element to comment on it',
+  commentClick: 'Click an element to comment on it',
+  commentPaused: 'Paused: use the app, then switch back on',
+  commentSent: count => `${count === 1 ? 'Note sent' : `${count} notes sent`}: the reply comes in the conversation (Done)`,
   pointDone: 'Done',
-  pointCancel: 'Cancel',
-  pointUseApp: 'Use the app',
-  pointUsing: 'Use the app, then come back to comment',
-  pointBar: 'Point mode',
+  element: named(KINDS_EN, 'This element'),
 };
 
 export const feedbackLabelsFr: FeedbackLabels = {
@@ -82,21 +107,22 @@ export const feedbackLabelsFr: FeedbackLabels = {
   saving: 'Enregistrement…',
   saved: 'Enregistré',
   bubblePlaceholder: "Qu’est-ce qui ne va pas ici ?",
-  altHint: 'Maintenez ⌥ pour utiliser l’app',
   add: 'Ajouter la note',
-  voiceRecord: 'Dicter votre note',
+  voiceRecord: 'Maintenez pour parler, relâchez pour envoyer',
   voiceStop: 'Arrêter l’enregistrement',
   voiceTranscribing: 'Transcription…',
   voiceNothing: 'Rien n’a été entendu. Votre texte est conservé.',
   voiceFailed: 'L’enregistrement n’a pas pu être transcrit. Votre texte est conservé.',
   selectionCancelled: 'Sélection annulée.',
-  pointHint: 'Touchez un élément à commenter',
-  pointCount: count => `${count} ${count <= 1 ? 'sélection' : 'sélections'}`,
+  commentMode: 'Mode commentaire',
+  pointCount: count => `${count} note${count > 1 ? 's' : ''}`,
+  commentSwitch: 'Commenter',
+  commentTap: 'Touchez un élément pour le commenter',
+  commentClick: 'Cliquez sur un élément pour le commenter',
+  commentPaused: 'En pause : utilisez l’app, puis réactivez',
+  commentSent: count => `${count === 1 ? 'Note envoyée' : `${count} notes envoyées`} : la réponse arrive dans la conversation (Terminé)`,
   pointDone: 'Terminé',
-  pointCancel: 'Annuler',
-  pointUseApp: 'Utiliser l’app',
-  pointUsing: 'Utilisez l’app, puis revenez commenter',
-  pointBar: 'Mode pointage',
+  element: named(KINDS_FR, 'Cet élément'),
 };
 
 /** The default labels with the host's overrides on top. */

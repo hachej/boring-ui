@@ -1,7 +1,7 @@
 // The composer journey (FEEDBACK.md, "UX"): one driven Chromium run (1280x800) of the default Fernhill page, with real pointer and keyboard
 // input over the DevTools protocol on an insecure origin, the keyless scripted builder (builder.mjs) and the SQLite store. Steps:
 //   the composer has exactly ONE annotate control and no Feedback block → toggle → hover and click Save (pinned, never pressed) → a pin with
-//   a text field and a mic inside it, and a hint that ⌥ passes clicks to the app → type a note, Enter → a count chip in the composer →
+//   a text field and a mic inside it (holding ⌥ still passes clicks to the app) → type a note, Enter → a count chip in the composer →
 //   hold ⌥ and use the app (open the Billing section, open the plan menu: both reach the page and are recorded as steps) → release ⌥, click
 //   Change plan → the mic says recording needs a secure page and keeps the typed text → Enter → Esc exits annotating, the chip stays →
 //   Send → the builder replies citing both elements with file:line → the card's element lines highlight in the page on hover → on a secure
@@ -117,12 +117,11 @@ try {
     assert.equal(await browser.evaluate(`${q('feedback-bubble-input')}.placeholder`), "What's wrong here?");
     assert.deepEqual(await browser.evaluate('window.__journeyHits'), { save: 0, submit: 0, plan: 0 }, 'Save was neither clicked nor submitted');
     assert.equal(await browser.evaluate(`${q('profile-saved')}.dataset.presses`), '0');
-    const geometry = await browser.evaluate(`(() => { const f = ${q('feedback-bubble-input')}.getBoundingClientRect(), m = ${q('feedback-bubble-mic')}.getBoundingClientRect(); const hint = ${q('feedback-bubble-hint')};
-      return { inside: m.left >= f.left && m.right <= f.right && m.top >= f.top && m.bottom <= f.bottom, mic: [Math.round(m.width), Math.round(m.height)], hint: hint.textContent, lines: Math.round(hint.getBoundingClientRect().height / parseFloat(getComputedStyle(hint).lineHeight || 16)), buttons: [...${q('feedback-bubble')}.querySelectorAll('button')].map(b => [b.textContent, Math.round(b.getBoundingClientRect().height)]) }; })()`);
+    const geometry = await browser.evaluate(`(() => { const f = ${q('feedback-bubble-input')}.getBoundingClientRect(), m = ${q('feedback-bubble-mic')}.getBoundingClientRect(); 
+      return { inside: m.left >= f.left && m.right <= f.right && m.top >= f.top && m.bottom <= f.bottom, mic: [Math.round(m.width), Math.round(m.height)], hint: !!${q('feedback-bubble-hint')}, buttons: [...${q('feedback-bubble')}.querySelectorAll('button')].map(b => [b.textContent, Math.round(b.getBoundingClientRect().height)]) }; })()`);
     assert.equal(geometry.inside, true, 'the mic is inside the text field');
     assert.ok(geometry.mic[0] >= 44 && geometry.mic[1] >= 44, `44px mic (${geometry.mic})`);
-    assert.match(geometry.hint, /Hold ⌥ to use the app/, 'desktop: Alt passes clicks to the app');
-    assert.equal(geometry.lines, 1, 'a one-line hint');
+    assert.equal(geometry.hint, false, 'no Alt hint: the banner\'s switch lets the app be used');
     for (const [name, height] of geometry.buttons) assert.ok(height >= 44, `${name || 'mic'} is 44px (${height})`);
     await browser.type(q('feedback-bubble-input'), NOTE_SAVE);
     await shot('03-pin');

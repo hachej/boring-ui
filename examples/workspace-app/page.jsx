@@ -8,7 +8,7 @@ import { connectRevisionProvider } from '@hachej/boring-files/revision';
 import { createFeedbackSession } from '@hachej/boring-feedback/ui';
 import { createPrivacyPolicy } from '@hachej/boring-feedback/page';
 import { NoteBubble, useComposerFeedback, usePointComments } from '../../registry/feedback/feedback-session.tsx';
-import { PointBar } from '../../registry/feedback/point-mode.tsx';
+import { CommentBanner } from '../../registry/feedback/point-mode.tsx';
 import { AgentWorkspace, useConversations, useRemoteChat } from '../../registry/pi-app/agent-workspace.tsx';
 import { useRevisionAttachments } from '../../registry/pi-app/use-revision-attachments.ts';
 import { createRecordsKind } from '../../registry/record-viewer/record-viewer.tsx';
@@ -130,7 +130,7 @@ function App() {
         ? <p role="alert" className="p-4 text-sm text-muted-foreground">The workspace could not be reached. <Button variant="link" onClick={() => setDiscovery(current => ({ attempt: current.attempt + 1, failed: false }))}>Retry</Button></p>
         : <p role="status" className="p-4 text-sm text-muted-foreground">Connecting…</p>}
     {(configured || recordKinds) && <output data-testid="host-log" className="sr-only">{logged.join(' ')}</output>}
-    {session && <><NoteBubble session={session} /><PointBar session={session} /></>}
+    {session && <><NoteBubble session={session} /><CommentBanner session={session} /></>}
   </main>;
 }
 
