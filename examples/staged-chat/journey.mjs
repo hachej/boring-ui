@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { launch, pause } from '@hachej/boring-testing/browser';
+import { draftReport, feedbackText } from '@hachej/boring-feedback/format';
 import { demoLabels } from './presentation.mjs';
 import { startStagedChat } from './server.mjs';
 
@@ -117,6 +118,62 @@ try {
     assert.deepEqual(browser.problems, []);
     await browser.close(); browser = undefined;
   }
+  // Sent comments exercise the same native transcript renderer, independently of the staged answer workflow above.
+  const feedbackEvidence = '.cache/evidence/D207'; mkdirSync(feedbackEvidence, { recursive: true });
+  const report = draftReport({
+    observed: { kind: 'host', subject: { type: 'app', app: 'fictional-workshop', route: '/settings' }, snapshot: 'app.dom@1', digest: `sha256:${'0'.repeat(64)}`, policy: { version: 1, widened: [] } },
+    anchors: [{ kind: 'app.element@1', fallback: 'the Header' }, { kind: 'app.element@1', fallback: 'the Save button' }],
+    said: '', notes: [{ anchor: 0, text: 'the logo is blurry' }, { anchor: 1, text: 'label unclear' }],
+  }, { id: 'fb_123456789ABCDEFG', created: '2026-10-21T12:00:00Z' });
+  const text = feedbackText(report);
+  const long = feedbackText({ ...report, notes: Array.from({ length: 6 }, (_, at) => ({ anchor: at % 2, text: `Fictional comment ${at + 1}` })) });
+  await app.host.threads.Questions.submit({ type: 'write', entry: { kind: 'message', model: [
+    { role: 'user', content: `\`\`\`markdown\n${text}\`\`\``, timestamp: 0 },
+    { role: 'user', content: `\`\`\`markdown\n${long}\`\`\``, timestamp: 1 },
+    { role: 'user', content: 'hello', timestamp: 2 },
+  ] } }, app.host.context);
+  const feedbackSteps = [];
+  for (const [device, width, height, locale] of [['desktop', 1440, 1000, 'en'], ['phone', 390, 844, 'fr']]) {
+    browser = await launch(`${app.url}?lang=${locale}`, { evidence: feedbackEvidence });
+    await browser.emulate(device);
+    await browser.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: device === 'phone' });
+    for (const dark of [false, true]) {
+      await browser.send('Page.navigate', { url: `${app.url}?lang=${locale}&mode=${dark ? 'dark' : 'light'}` });
+      const cards = `${thread('Questions')}.querySelectorAll('[data-testid="message-feedback"]')`;
+      const card = `${cards}[0]`, disclosure = `${cards}[1].querySelector('button')`;
+      const plain = `[...${thread('Questions')}.querySelectorAll('[data-testid="user-text"]')].at(-1)`;
+      await browser.until('the formatter reports and the plain message', `${cards}.length === 2 && ${plain}?.textContent === 'hello'`, 20000);
+      await browser.evaluate('document.fonts.ready.then(() => true)');
+      await browser.evaluate(`${thread('Questions')}.querySelector('[data-testid="transcript-scroll"]').scrollTop = 1e6`);
+      await pause(300);
+      assert.equal(await browser.evaluate(`${card}.getAttribute('aria-label')`), locale === 'fr' ? '2 commentaires sur la page' : '2 comments on the page');
+      assert.deepEqual(await browser.evaluate(`[...${card}.querySelectorAll('[data-testid="message-feedback-note"]')].map(node => node.textContent)`), ['Headerthe logo is blurry', 'Save buttonlabel unclear']);
+      assert.equal(await browser.evaluate(`${disclosure}.getAttribute('aria-expanded')`), 'false');
+      assert.equal(await browser.evaluate(`${cards}[1].querySelectorAll('[data-testid="message-feedback-note"]').length`), 0);
+      assert.equal(await browser.evaluate(`${plain}.closest('[data-slot="bubble"]') !== null`), true, 'hello remains a normal text bubble');
+      assert.equal(await browser.evaluate('document.documentElement.classList.contains("dark")'), dark);
+      const bounds = await browser.evaluate(`(() => { const a = ${card}.getBoundingClientRect(), b = ${disclosure}.getBoundingClientRect(), c = ${plain}.getBoundingClientRect(), d = ${cards}[1].getBoundingClientRect(); return { card: { left: a.left, right: a.right, top: a.top, bottom: a.bottom }, control: { width: b.width, height: b.height, left: b.left, right: b.right }, longCard: { left: d.left, right: d.right }, plain: { top: c.top, bottom: c.bottom }, width: innerWidth }; })()`);
+      assert.ok(bounds.control.left >= bounds.longCard.left && bounds.control.right <= bounds.longCard.right, `the entire disclosure is visible and tappable: ${JSON.stringify(bounds)}`);
+      assert.ok(bounds.card.left >= 0 && bounds.card.right <= width && bounds.card.top >= 0 && bounds.card.bottom <= height, JSON.stringify(bounds));
+      assert.ok(bounds.plain.top >= 0 && bounds.plain.bottom <= height, 'the plain message is visible with the card');
+      if (device === 'phone') assert.ok(bounds.control.width >= 48 && bounds.control.height >= 48, `48px disclosure: ${JSON.stringify(bounds.control)}`);
+      assert.equal(await browser.evaluate('document.documentElement.scrollWidth <= innerWidth'), true);
+      const activate = device === 'phone' ? browser.tap : browser.click;
+      await browser.screenshot(`sent-feedback-${locale}-${device}-${dark ? 'dark' : 'light'}.png`);
+      if (device === 'desktop' && !dark) await browser.screenshot('plain-message.png');
+      if (device === 'phone') await activate(disclosure);
+      else { await browser.evaluate(`${disclosure}.focus()`); await browser.press('Enter'); }
+      await browser.until('the long report opens', `${disclosure}.getAttribute('aria-expanded') === 'true' && ${cards}[1].querySelectorAll('[data-testid="message-feedback-note"]').length === 6`);
+      await activate(disclosure);
+      await browser.until('the long report closes', `${disclosure}.getAttribute('aria-expanded') === 'false'`);
+      const accessibility = await browser.send('Accessibility.getFullAXTree');
+      assert.ok(accessibility.nodes.some(node => !node.ignored && node.role?.value === 'button' && node.name?.value === (locale === 'fr' ? '6 commentaires sur la page' : '6 comments on the page')), 'native disclosure has a localised accessible name');
+      feedbackSteps.push({ device, width, height, locale, dark, bounds, result: 'passed' });
+    }
+    assert.deepEqual(browser.problems, [], 'no sent-feedback page errors');
+    await browser.close(); browser = undefined;
+  }
+  writeFileSync(`${feedbackEvidence}/journey-results.json`, JSON.stringify({ steps: feedbackSteps, limits: ['Fictional native transcript through the real transport.', 'Chromium phone emulation, not physical-device qualification.'] }, null, 2));
   writeFileSync(`${evidence}/journey-results.json`, JSON.stringify({ steps, limits: ['Scripted fictional model, not medical/provider qualification.', 'Native MemoryStorage survives browser reload only.'] }, null, 2));
   console.log('PASS: native staged chat on phone and desktop, restoration, retained text, filtered copy, unread, old offer and scroll independence');
 } catch (error) { await browser?.screenshot('journey-failed.png').catch(() => {}); throw error; }

@@ -82,6 +82,7 @@ export const defaultChatLabels = {
   annotateHint: 'Annotate: click what you want to comment on (Esc to stop)',
   annotateNotes: (count: number) => `${count} ${count === 1 ? 'note' : 'notes'}`,
   annotateClear: 'Remove the notes',
+  feedbackSent: (count: number) => `${count} ${count === 1 ? 'comment' : 'comments'} on the page`,
   remove: (name: string) => `Remove ${name}`,
   dismiss: (name: string) => `Dismiss ${name}`,
   uploading: (name: string) => `Uploading ${name}…`,

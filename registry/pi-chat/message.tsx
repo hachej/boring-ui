@@ -8,6 +8,8 @@ import { CopyButton } from './code-block';
 import { Markdown } from './markdown';
 import type { CommandMentions } from './markdown';
 import { ArtifactCard } from './artifact-card';
+import { feedbackContent } from './feedback-content';
+import { SentFeedback } from './sent-feedback';
 import type { ArtifactsConfig } from './artifact';
 import { ApprovalCard } from './approval-card';
 import { QuestionCard } from './question-card';
@@ -209,6 +211,12 @@ export function MessageText({ text, context, align = 'end' }: { readonly text: s
   if (target) return <>
     <Badge variant="secondary" data-testid="message-target" title={JSON.stringify(target.target)} className="max-w-full truncate">{target.label}</Badge>
     <MessageText text={target.speech} context={context} align={align} />
+  </>;
+  const feedback = feedbackContent(text);
+  if (feedback) return <>
+    {feedback.before && <MessageText text={feedback.before} context={context} align={align} />}
+    <SentFeedback report={feedback.report} align={align} />
+    {feedback.after && <MessageText text={feedback.after} context={context} align={align} />}
   </>;
   const open = context.pieces?.openMention;
   const render = context.pieces?.renderMention;

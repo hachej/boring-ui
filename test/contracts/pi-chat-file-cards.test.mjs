@@ -6,6 +6,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
+import { draftReport, feedbackText, parseFeedback, serializeFeedback } from '@hachej/boring-feedback/format';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const out = join(root, '.cache/pi-chat-file-cards-test');
@@ -19,6 +20,16 @@ const { PiChat, frenchChatLabels } = await load('pi-chat', `export { PiChat, fre
 const { AmbientChat } = await load('pi-ambient', `export { AmbientChat } from '${root}registry/pi-ambient/ambient.tsx';`);
 
 const SENT = 'Read @uploads/report-1a2b3c4d.pdf please';
+const pageComments = (extra = {}) => draftReport({
+  observed: { kind: 'host', subject: { type: 'app', app: 'fictional-workshop', route: '/settings' }, snapshot: 'app.dom@1', digest: `sha256:${'0'.repeat(64)}`, policy: { version: 1, widened: [] } },
+  anchors: [{ kind: 'app.element@1', fallback: 'the Header' }, { kind: 'app.element@1', fallback: 'the Save button' }],
+  said: '', notes: [{ anchor: 0, text: 'the logo is blurry' }, { anchor: 1, text: 'label unclear' }], ...extra,
+}, { id: 'fb_123456789ABCDEFG', created: '2026-10-21T12:00:00Z' });
+const fencedFeedback = report => {
+  const text = feedbackText(report);
+  const fence = '`'.repeat(Math.max(3, ...[...text.matchAll(/`+/g)].map(match => match[0].length + 1)));
+  return `${fence}markdown\n${text}${fence}`;
+};
 const LONG = `# Notes\n\n${'Fictional paragraph line.\n'.repeat(120)}`;
 
 async function harness(t, { attachments, mentions, onOpenFile, pasteToFile, locale, component, beforeSubmit, lostAdmission = false, admissionGate, stagedFailure, extra = {} } = {}) {
@@ -71,6 +82,84 @@ function paste(window, element, text) {
   Object.defineProperty(event, 'clipboardData', { value: { files: [], types: ['text/plain'], getData: () => text } });
   return { prevented: !element.dispatchEvent(event) };
 }
+
+test('sent page comments round-trip the real formatter and render a localised card through PiChat', async t => {
+  const report = pageComments();
+  const parsed = parseFeedback(serializeFeedback(report));
+  assert.equal(parsed.ok, true);
+  assert.deepEqual(parsed.report, report);
+  const sent = fencedFeedback(parsed.report);
+  const { controller, container, write, rerender } = await harness(t);
+  await write([{ role: 'user', content: sent, timestamp: 0 }]);
+  const card = container.querySelector('[data-testid=message-feedback]');
+  assert.ok(card, 'the rendered user message shows the card, not the report source');
+  assert.equal(card.getAttribute('aria-label'), '2 comments on the page');
+  assert.deepEqual([...card.querySelectorAll('[data-testid=message-feedback-note]')].map(note => note.textContent), ['Headerthe logo is blurry', 'Save buttonlabel unclear']);
+  assert.equal(container.querySelector('[data-testid=user-text]'), null);
+  assert.doesNotMatch(card.textContent, /feedback@1|sha256|## Notes/);
+  assert.ok(JSON.stringify(controller.getSnapshot().view.entries).includes(JSON.stringify(sent).slice(1, -1)), 'only presentation changes; the native input is intact');
+  await rerender({ locale: 'fr' });
+  assert.equal(container.querySelector('[data-testid=message-feedback]').getAttribute('aria-label'), '2 commentaires sur la page');
+  await rerender({ labels: { feedbackSent: count => `${count} fictional remarks` } });
+  assert.equal(container.querySelector('[data-testid=message-feedback]').getAttribute('aria-label'), '2 fictional remarks');
+});
+
+test('sent feedback preserves surrounding prose, general notes, multiline punctuation and longer fences', async t => {
+  const report = pageComments({ said: 'Please keep the layout.', notes: [{ anchor: 0, text: 'Keep ```code``` and <img src=x> literal.\nA second line.' }, { text: 'A general comment.' }] });
+  const { container, write } = await harness(t);
+  await write([{ role: 'user', content: `Before\n\n${fencedFeedback(report)}\n\nAfter`, timestamp: 0 }]);
+  const card = container.querySelector('[data-testid=message-feedback]');
+  assert.ok(card);
+  assert.match(card.textContent, /Please keep the layout\./);
+  assert.match(card.textContent, /Keep ```code``` and <img src=x> literal\.\nA second line\./);
+  assert.match(card.textContent, /A general comment\./);
+  assert.equal(card.querySelector('img'), null, 'captured notes stay inert text');
+  assert.deepEqual([...container.querySelectorAll('[data-testid=user-text]')].map(node => node.textContent), ['Before', 'After']);
+  await write([{ role: 'user', content: feedbackText(pageComments()), timestamp: 1 }]);
+  assert.equal(container.querySelectorAll('[data-testid=message-feedback]').length, 2, 'a bare formatted report also renders');
+});
+
+test('long sent feedback collapses behind a native button and opens without changing the report', async t => {
+  const report = pageComments({ notes: Array.from({ length: 6 }, (_, at) => ({ anchor: at % 2, text: `Fictional comment ${at + 1}` })) });
+  const { container, write, act, controller } = await harness(t);
+  await write([{ role: 'user', content: fencedFeedback(report), timestamp: 0 }]);
+  const card = container.querySelector('[data-testid=message-feedback]');
+  assert.ok(card);
+  const toggle = card.querySelector('button');
+  assert.equal(toggle?.dataset.slot, 'button', 'the consumer shadcn Button is the disclosure control');
+  assert.equal(toggle.getAttribute('aria-expanded'), 'false');
+  assert.equal(card.querySelectorAll('[data-testid=message-feedback-note]').length, 0);
+  const before = controller.getSnapshot().view;
+  await act(async () => toggle.click());
+  assert.equal(toggle.getAttribute('aria-expanded'), 'true');
+  assert.equal(card.querySelectorAll('[data-testid=message-feedback-note]').length, 6);
+  assert.equal(controller.getSnapshot().view, before, 'opening is local presentation only');
+  await act(async () => toggle.click());
+  assert.equal(toggle.getAttribute('aria-expanded'), 'false');
+});
+
+test('plain, malformed, non-page and assistant messages keep their existing text presentation', async t => {
+  const { container, write } = await harness(t);
+  const formatted = fencedFeedback(pageComments());
+  const plain = ['hello', '```markdown\n---\nnot a report\n```', formatted.replace('feedback@1', 'feedback@999'), fencedFeedback(pageComments({ observed: { kind: 'fictional.other' } })),
+    formatted.slice(0, -3), `~~~~example\n${formatted}\n~~~~`, `\`\`\`\`\`example\n${formatted}\n\`\`\`\`\``, fencedFeedback(pageComments({ notes: undefined, said: 'A general report without page comments.' }))];
+  for (const text of plain) await write([{ role: 'user', content: text, timestamp: 0 }]);
+  assert.equal(container.querySelector('[data-testid=message-feedback]'), null);
+  assert.deepEqual([...container.querySelectorAll('[data-testid=user-text]')].map(node => node.textContent), plain);
+  await write([modelReply([{ type: 'text', text: fencedFeedback(pageComments()) }])]);
+  assert.equal(container.querySelector('[data-testid=message-feedback]'), null, 'assistant reports are still Markdown, not user cards');
+});
+
+test('one sent comment uses singular EN/FR labels and a long single note is collapsed', async t => {
+  const { container, write, rerender } = await harness(t);
+  await write([{ role: 'user', content: fencedFeedback(pageComments({ notes: [{ anchor: 1, text: 'A short fictional note.' }] })), timestamp: 0 }]);
+  assert.equal(container.querySelector('[data-testid=message-feedback]').getAttribute('aria-label'), '1 comment on the page');
+  await rerender({ locale: 'fr' });
+  assert.equal(container.querySelector('[data-testid=message-feedback]').getAttribute('aria-label'), '1 commentaire sur la page');
+  await write([{ role: 'user', content: fencedFeedback(pageComments({ notes: [{ anchor: 0, text: 'A fictional long comment. '.repeat(20) }] })), timestamp: 1 }]);
+  const last = [...container.querySelectorAll('[data-testid=message-feedback]')].at(-1);
+  assert.equal(last.querySelector('button')?.getAttribute('aria-expanded'), 'false');
+});
 
 test('conversation files omit rows with no opener, including draft and native images', async t => {
   const ui = await harness(t);
