@@ -54,7 +54,7 @@ export function ToolCard({ entry, onOpenImage, details = true }: { readonly entr
         <Alert variant={result.isError ? 'destructive' : 'default'} role={result.isError ? 'alert' : 'status'}><AlertDescription>
           {result.content.map((part, index) => part.type === 'text'
             ? <pre key={index} className="m-0 max-h-72 overflow-auto whitespace-pre-wrap [overflow-wrap:anywhere]">{part.text}</pre>
-            : <Button key={index} variant="outline" size="sm" disabled={!onOpenImage} onClick={() => onOpenImage?.(part)}>{labels.openImageResult}</Button>)}
+            : <Button key={index} variant="outline" size="sm" className="max-sm:min-h-12! pointer-coarse:min-h-12!" disabled={!onOpenImage} onClick={() => onOpenImage?.(part)}>{labels.openImageResult}</Button>)}
           {result.content.length === 0 && <span>{labels.emptyResult}</span>}
         </AlertDescription></Alert></Section>}
     </div></TraceCollapsibleContent>}
