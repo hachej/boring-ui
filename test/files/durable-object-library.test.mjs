@@ -59,7 +59,7 @@ function durableObject(t, scopes = ['alpha', 'beta']) {
     return provider ? { provider, access: access(scopeId) } : null;
   } });
   const connect = scopeId => connectRevisionProvider({ endpoint: `https://fictional.invalid/files?scope=${scopeId}`, fetch: handler });
-  return { connect, providers };
+  return { connect, providers, storage };
 }
 
 function create(client, path, text, operationId = `create-${path}`) {
@@ -115,6 +115,50 @@ test('a Durable Object round-trips an empty file and its history when zero-lengt
   const older = await alpha.read({ target: alpha.locate('empty.md'), revision: { kind: 'exact', value: history[1].revision } });
   assert.equal(older.kind, 'available');
   assert.deepEqual(older.snapshot.bytes, new Uint8Array(), 'the saved empty version reads back as empty');
+});
+
+test('Durable Object rename/delete commit bytes, history and receipt together and roll back a failed receipt', async t => {
+  const { connect, storage } = durableObject(t);
+  const alpha = await connect('alpha'), beta = await connect('beta');
+  const saved = await alpha.publish(create(alpha, 'old.md', 'retained', 'rename-seed'));
+  assert.equal(saved.kind, 'committed');
+  const revision = saved.receipt.changes[0].after.revision;
+  const read = path => alpha.read({ target: alpha.locate(path), revision: { kind: 'latest' } });
+  const move = { from: alpha.locate('old.md'), to: alpha.locate('new.md'), expectedRevision: revision, operationId: 'durable-move' };
+  const exec = storage.sql.exec;
+  let fail = true;
+  storage.sql.exec = (query, ...bindings) => {
+    if (fail && query.startsWith('INSERT INTO boring_operations')) { fail = false; throw new Error('Fictional receipt failure'); }
+    return exec(query, ...bindings);
+  };
+  assert.equal((await alpha.rename(move)).kind, 'unavailable');
+  assert.equal((await read('old.md')).kind, 'available');
+  assert.equal((await read('new.md')).kind, 'missing');
+  assert.deepEqual(await alpha.history('new.md'), []);
+  assert.equal((await alpha.lookup(move.operationId)).kind, 'not-found');
+  const moved = await alpha.rename(move);
+  assert.equal(moved.kind, 'committed');
+  assert.deepEqual(await alpha.rename(move), moved);
+  assert.deepEqual(await alpha.lookup(move.operationId), moved);
+  assert.equal((await read('old.md')).kind, 'missing');
+  assert.equal((await read('new.md')).snapshot.ref.revision, revision);
+  assert.equal((await alpha.history('old.md'))[0].source, 'rename');
+  const deletion = { path: alpha.locate('new.md'), expectedRevision: revision, operationId: 'durable-delete' };
+  fail = true;
+  assert.equal((await alpha.delete(deletion)).kind, 'unavailable');
+  assert.equal((await read('new.md')).kind, 'available');
+  assert.equal((await alpha.history('new.md'))[0].source, 'rename');
+  assert.equal((await alpha.lookup(deletion.operationId)).kind, 'not-found');
+  const deleted = await alpha.delete(deletion);
+  assert.equal(deleted.kind, 'committed');
+  assert.deepEqual(await alpha.delete(deletion), deleted);
+  assert.deepEqual(await alpha.lookup(deletion.operationId), deleted);
+  assert.equal((await read('new.md')).kind, 'missing');
+  assert.equal((await alpha.history('new.md'))[0].source, 'delete');
+  assert.equal(decoder.decode((await alpha.read({ target: alpha.locate('new.md'), revision: { kind: 'exact', value: revision } })).snapshot.bytes), 'retained');
+  assert.equal((await beta.lookup(move.operationId)).kind, 'not-found');
+  assert.equal((await beta.rename({ ...move, operationId: 'beta-move' })).kind, 'conflict');
+  assert.deepEqual(await beta.history('new.md'), []);
 });
 
 test('scope isolation: one scope never lists, searches or reads another scope through the same database', async t => {

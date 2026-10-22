@@ -106,8 +106,8 @@ export interface StoredVersion {
   readonly source?: HistorySource;
 }
 
-export type HistorySource = 'publish' | 'agent' | 'observed';
-const historySource = (value: unknown): HistorySource => value === 'agent' || value === 'observed' ? value : 'publish';
+export type HistorySource = 'publish' | 'agent' | 'observed' | 'rename' | 'delete';
+const historySource = (value: unknown): HistorySource => value === 'agent' || value === 'observed' || value === 'rename' || value === 'delete' ? value : 'publish';
 
 /**
  * The operation journal plus what a workspace needs beyond receipts: an intent row written before an operation's first effect

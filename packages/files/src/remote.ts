@@ -1,7 +1,7 @@
 import type { ResourceClient } from './client.js';
 import type { PublicationLookupResult, PublicationResult, ReadResult } from './contracts.js';
-import { PublicationNotDispatchedError, identifier, publicationDigest, publicationSnapshot } from './publication-input.js';
-import { contentType, encode, envelope, identity, jsonBody, limit, lookupResult, observe, publicationResult, readResult, readSnapshot, sameIdentity, schema, version } from './remote-protocol.js';
+import { PublicationNotDispatchedError, identifier, publicationDigest, publicationSnapshot, renameSnapshot, renameDigest, deleteSnapshot, deletePublication } from './publication-input.js';
+import { contentType, encode, envelope, identity, jsonBody, limit, lookupResult, observe, publicationResult, renameResult, readResult, readSnapshot, sameIdentity, schema, version } from './remote-protocol.js';
 import type { ResourceCall, ResourceIdentity } from './remote-protocol.js';
 import { randomUUID } from './platform.js';
 export { createResourceHandler } from './remote-handler.js';
@@ -52,7 +52,7 @@ export function createResourceClient(options: ResourceClientOptions): ResourceCl
       if (result.requestId !== requestId || result.kind !== call.kind || !sameIdentity(result.identity, selected)) throw new TypeError('Resource response association mismatch');
       return result.value;
     } catch {
-      if (call.kind === 'publish' && !dispatched) throw new PublicationNotDispatchedError(call.value.operationId);
+      if ((call.kind === 'publish' || call.kind === 'rename' || call.kind === 'delete') && !dispatched) throw new PublicationNotDispatchedError(call.value.operationId);
       throw new Error('Remote resource operation is unconfirmed');
     } finally { abort.abort(); }
   }
@@ -77,7 +77,27 @@ export function createResourceClient(options: ResourceClientOptions): ResourceCl
           return { kind: 'unknown', operationId: captured.operationId, reason: 'Remote publication is unconfirmed; reconcile the original operation without automatic replay' };
         }
       },
-    } satisfies Pick<ResourceClient, 'publish'> : {}),
+      rename: async (request, signal): Promise<PublicationResult> => {
+        const captured = renameSnapshot(request);
+        let digest: string;
+        try { digest = await renameDigest(captured); } catch { throw new PublicationNotDispatchedError(captured.operationId); }
+        try { return renameResult(await invoke({ kind: 'rename', value: captured }, signal), captured, selected, digest); }
+        catch (error) {
+          if (error instanceof PublicationNotDispatchedError) throw error;
+          return { kind: 'unknown', operationId: captured.operationId, reason: 'Remote rename is unconfirmed; reconcile the original operation without automatic replay' };
+        }
+      },
+      delete: async (request, signal): Promise<PublicationResult> => {
+        const captured = deleteSnapshot(request), publication = deletePublication(captured);
+        let digest: string;
+        try { digest = await publicationDigest(publication); } catch { throw new PublicationNotDispatchedError(captured.operationId); }
+        try { return publicationResult(await invoke({ kind: 'delete', value: captured }, signal), captured.operationId, selected, publication, digest); }
+        catch (error) {
+          if (error instanceof PublicationNotDispatchedError) throw error;
+          return { kind: 'unknown', operationId: captured.operationId, reason: 'Remote delete is unconfirmed; reconcile the original operation without automatic replay' };
+        }
+      },
+    } satisfies Pick<ResourceClient, 'publish' | 'rename' | 'delete'> : {}),
     ...(options.reconciliation ? {
       lookup: async (operationId, signal): Promise<PublicationLookupResult> => {
         const captured = identifier(operationId);
