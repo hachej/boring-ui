@@ -173,3 +173,21 @@ test('the socket handler refuses an unauthenticated upgrade and answers ping wit
   await server.handler.webSocketMessage(socket, 'ping');
   assert.deepEqual(sent, ['pong']);
 });
+
+test('a socket upgrade is accepted only from the same origin or an allow-listed one (D-248)', async () => {
+  const accepted = [];
+  const state = { acceptWebSocket: socket => { accepted.push(socket); }, getWebSockets: () => [] };
+  const socket = () => ({ send() {}, close() {}, serializeAttachment() {}, deserializeAttachment: () => null });
+  const make = extra => createConversationSocketHandler({ state, ...extra,
+    authenticate: async () => ({ owner: 'fictional-person', conversationId: 'c1' }), access: async () => null });
+  const upgrade = origin => new Request('https://app.fixture.invalid/api/chat', { headers: { upgrade: 'websocket', ...(origin ? { origin } : {}) } });
+
+  const strict = make({});
+  assert.equal(await strict.accept(socket(), upgrade('https://evil.fixture.invalid')), false, 'a cross-origin page cannot open the socket with the visitor\'s cookies');
+  assert.equal(await strict.accept(socket(), upgrade('https://app.fixture.invalid')), true, 'same origin');
+  assert.equal(await strict.accept(socket(), upgrade(undefined)), true, 'a non-browser client sends no Origin');
+  const listed = make({ allowedOrigins: ['https://other.fixture.invalid'] });
+  assert.equal(await listed.accept(socket(), upgrade('https://other.fixture.invalid')), true, 'allow-listed');
+  assert.equal(await listed.accept(socket(), upgrade('https://evil.fixture.invalid')), false);
+  assert.equal(accepted.length, 3);
+});
