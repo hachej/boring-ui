@@ -1,134 +1,210 @@
 # Boring UI
 
-Build an AI assistant into your application with chat, document editors, canvas viewers and background tasks. Boring UI provides TypeScript libraries and React components around the native Pi runtime. Your application owns authentication, data, permissions and model credentials.
+**Put an AI agent inside your app.**
 
-**0.2.0 release candidate.** This is a breaking replacement for the 0.1.x implementation. Five packages (agent, ui-kit, files, execution, feedback) are published; boring-browser and boring-testing stay private. Per the owner ruling of 2026-10-10, deferred proofs are backlog, not release blockers. Read the [migration guide](MIGRATING.md) before upgrading. “v4” names the architecture, not the npm version.
+Chat, files, document viewers, approvals and background work for React and Node apps, built on the [Pi](https://www.npmjs.com/package/@earendil-works/pi-durable) agent harness. You keep authentication, data, permissions and model keys.
 
-## Shipping an app
+[![npm](https://img.shields.io/npm/v/@hachej/boring-ui-kit?label=%40hachej%2Fboring-ui-kit)](https://www.npmjs.com/package/@hachej/boring-ui-kit)
+[![CI](https://github.com/hachej/boring-ui/actions/workflows/verify.yml/badge.svg?branch=main)](https://github.com/hachej/boring-ui/actions/workflows/verify.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Apps live in Cloudflare Artifacts git repos and ship through the [Factory](https://github.com/hachej/boring-factory/blob/main/docs/PROVISIONING.md) (signed artifact, cloud verify, live pointer), starting from its `templates/app`. Boring UI provides the npm packages and shadcn registry blocks that template consumes via a vendor release.
+```tsx
+// Browser: a whole agent app (sessions, chat, artifact viewers) from one registry block.
+import { AgentWorkspace, useConversations, useRemoteChat } from '@/components/pi-app/agent-workspace';
 
-## What you can build
+const conversations = useConversations({ endpoint: '/api/conversations', fetch, activeId, onSelect });
+const chat = useRemoteChat({ conversationId: activeId, endpoint: id => `/api/chat?conversation=${id}`, fetch, identity });
+<AgentWorkspace conversationId={activeId} conversations={conversations} revisionProvider={revisionProvider}
+  controller={chat.status === 'ready' ? chat.controller : undefined} />;
+```
 
-- **An assistant beside your app.** Connect your tools and context to chat, notifications and document viewers inside your existing interface.
-- **A coding workspace.** Give an agent files, optional Bash and Git, chat and editors over a shared workspace.
-- **A background assistant.** Run native tasks with questions, validation and delivery without mounting a chat interface.
+```js
+// Server: your process opens the Pi Harness and the workspace; the kit adds an agent definition and HTTP handlers.
+const agent = defineAgent({ id: 'writer', model: { provider: 'openai', modelId: 'gpt-5-mini' },
+  tools: [createPresentTool({ workspace: { files, root, access } })] });
+agent.install(registry);
+const harness = await Harness.open(storage, { registry, models, env: () => env }, context);
+const chatHandler = createChatTransportHandler({ authenticate });  // your auth decides who opens which conversation
+```
 
-Editors and viewers also work without an agent. Choose the packages and entry points your application needs. [`LocalFileViewer`](registry/README.md#open-a-browser-only-file) previews a browser-only PDF, image or text File without a locator or upload. It is lost on reload.
+## Try it in 30 seconds
+
+Node.js 22.19 or later. The scripted model needs no API key.
+
+```sh
+git clone https://github.com/hachej/boring-ui && cd boring-ui
+npm ci && npm run build
+STUDIO_MODEL=scripted npm run workspace-app
+```
+
+Open the printed URL and click **Draft a plan**. The agent writes a fictional picnic plan and opens it in the side panel. Drop `STUDIO_MODEL=scripted` and set `OPENAI_API_KEY` to use a real model.
+
+## Why Boring UI
+
+- **The agent lives in your app.** A side panel, a floating bar, a bottom drawer on phones, or the whole page. You pick the placement.
+- **You own the server.** Your process opens the Pi Harness. The kit never holds your keys, your users or your policy.
+- **One place for files.** The agent's `read`/`write`/`edit`, the viewers and the file tree all go through one workspace provider, with revisions and conflict checks.
+- **Copy the UI, keep it updatable.** Blocks install through the shadcn CLI into your code, use your shadcn theme, and update with one command.
+- **Durable by default.** Conversations, questions, approvals and schedules survive a restart, because Pi stores them.
+
+## Install
+
+```sh
+npm i @hachej/boring-ui-kit @hachej/boring-agent @hachej/boring-files \
+  @earendil-works/pi-durable@~1.2.0 @earendil-works/pi-ai@~1.2.0 @earendil-works/chord@~1.2.0
+```
+
+Then add UI blocks to a React app that has shadcn's `components.json` (Base UI, `base-nova` style). Use the version you installed:
+
+```sh
+npx boring-ui-blocks add https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.8/r/pi-app.json
+```
+
+Add `.../r/theme.json` first if your app has no shadcn tokens yet. The full walk-through is the [build-agent-app skill](skills/build-agent-app/SKILL.md).
+
+## Features
+
+### Chat that knows your app
+
+`PiChat` is the conversation: queue, steer, stop, attachments, `@` file mentions, voice messages, question and approval cards. `AmbientChat` floats the same chat over an existing site. `AppShell` puts one agent above any app, as a drawer on phones and a panel on wide screens.
+
+```tsx
+import { AmbientChat } from '@/components/pi-ambient/ambient';
+
+<AmbientChat controller={controller} actions={actions} labels={{ title: 'Console assistant' }} />
+```
+
+See the [block list](registry/README.md#blocks-what-to-install).
+
+### Artifacts the agent can show
+
+The agent writes a file and calls `present`. The page opens it in a viewer: Markdown (editable), HTML, PDF, images, code, mock-ups, diagrams, typed records and boards.
+
+```js
+import { createPresentTool } from '@hachej/boring-agent/artifacts';
+
+defineAgent({ id: 'writer', model, tools: [createPresentTool({ workspace: { files, root, access } })] });
+```
+
+See [Whole agent app](registry/README.md#whole-agent-app-pi-app-agentworkspace) and [Artifacts](packages/agent/README.md#artifacts).
+
+### A workspace with history
+
+`createWorkspaceProvider` puts revisions, conditional writes and a change feed over a Pi `FileSystem` (disk, virtual or SQLite). `createFileGuard` routes Pi's own file tools through it, so an agent edit never overwrites a save the person just made.
+
+```js
+import { createWorkspaceProvider } from '@hachej/boring-files/workspace';
+import { createFileGuard } from '@hachej/boring-agent/file-guard';
+
+const files = createWorkspaceProvider({ identity, fs: env, journal: createWorkspaceJournal(db) });
+const guard = createFileGuard({ workspace: { files, root, access } });
+```
+
+See [`@hachej/boring-files`](packages/files/README.md) and [One file tool set](packages/agent/README.md#one-file-tool-set-the-guard).
+
+### Approvals, questions and schedules
+
+Gate any tool behind an Approve/Deny card, let the agent ask the person a question, hand work to a sub-agent, or schedule a follow-up. Each one is a native Pi tool or extension.
+
+```js
+import { createApprovalExtension } from '@hachej/boring-agent/approval';
+
+const approvals = createApprovalExtension({ tools: { write: true, edit: true } });
+defineAgent({ id: 'writer', model, extensions: [fileTools, approvals] });  // Approve/Deny before every write or edit
+```
+
+See [Approval gate](packages/agent/README.md#approval-gate), [Asking the person](packages/agent/README.md#asking-the-person) and [Sub-agents and schedules](packages/agent/README.md#sub-agents-and-schedules).
+
+### Shell, Git and sandboxes
+
+A virtual Bash and Git workspace in memory or SQLite, or a remote shell and file system you already run. The agent's tools see one view of the files either way.
+
+See [`@hachej/boring-execution`](packages/execution/README.md).
+
+### Feedback from your users
+
+People point at what they see, dictate a note and send it. Works with or without an agent.
+
+See [`@hachej/boring-feedback`](packages/feedback/README.md).
 
 ## Packages
 
-All seven packages target **0.2.0**. Five are in the publish set; browser and testing stay private. Nothing is published yet; publication awaits the owner checklist in the release guide.
+| Package | What it gives you |
+| --- | --- |
+| [`@hachej/boring-ui-kit`](packages/ui/README.md) | Headless controllers, editors and viewers, the shadcn registry (`r/`) and the `boring-ui-blocks` command |
+| [`@hachej/boring-agent`](packages/agent/README.md) | Pi agent pieces: `defineAgent`, chat transport, conversations, present, approvals, questions, schedules, memory |
+| [`@hachej/boring-files`](packages/files/README.md) | The workspace provider: revisions, conditional writes, history, remote access |
+| [`@hachej/boring-execution`](packages/execution/README.md) | Virtual Bash and Git, remote shell and file system adapters |
+| [`@hachej/boring-feedback`](packages/feedback/README.md) | In-app feedback capture and delivery |
 
-| Package | What it provides | Guide |
-| --- | --- | --- |
-| `@hachej/boring-ui-kit` | Headless controllers, React chat, document editors, canvas and custom viewers | [UI](packages/ui/README.md) |
-| `@hachej/boring-agent` | Native Pi integration, application tools, questions, delivery and authenticated transports | [Agent](packages/agent/README.md) |
-| `@hachej/boring-files` | Workspace providers, conditional document writes, revision history and remote access | [Files](packages/files/README.md) |
-| `@hachej/boring-execution` | Virtual Bash and Git, and remote execution adapters | [Execution](packages/execution/README.md) |
-| `@hachej/boring-browser` | Optional native Pi agent execution in a browser worker | [Browser](packages/browser/README.md) |
-| `@hachej/boring-feedback` | In-app feedback capture and host-controlled delivery | [Feedback](packages/feedback/README.md) |
-| `@hachej/boring-testing` | Test helpers for hosts and package consumers | [Testing](packages/testing/README.md) |
+Two more packages stay private to this repository: [`boring-browser`](packages/browser/README.md) (the agent in a browser worker) and [`boring-testing`](packages/testing/README.md) (a scripted keyless model and a headless browser driver).
 
-A single authenticated `revisionProvider` powers a frontend file tree, filename search for `@`, uploads and retained revision previews. See the [file tree guide](packages/ui/README.md#file-tree-and-filename-mentions).
+## Examples
 
-The headless UI root has no files, Pi or agent dependency. Select optional resource and Pi entry points when you need them. The [feature map](docs/implementation/FEATURES.md) links public APIs to their tests and known limits.
+Every example uses fictional data. Run it with `npm run <name>` after `npm run build`; `npm run <name>:journey` drives it in a real browser.
 
-## Try the fictional morning demo
+| Example | What it shows |
+| --- | --- |
+| [`workspace-app`](examples/workspace-app/server.mjs) | The smallest whole agent app: sessions, chat, artifact panel, about 120 lines of server |
+| [`ambient`](examples/ambient/README.md) | An agent floating over an existing settings console |
+| [`app-shell`](examples/app-shell/README.md) | A phone-first app with one agent in a bottom drawer |
+| [`dock-app`](examples/dock-app/README.md) | Chat and files in resizable docks beside a host page |
+| [`shared-chat`](examples/shared-chat/README.md) | A team conversation with several people and agents |
+| [`bot`](examples/bot/README.md) | One lifelong conversation with memory and a self it can edit |
+| [`browser-agent`](examples/browser-agent/README.md) | A coding agent that runs entirely in one browser tab |
+| [`hosts`](examples/hosts/README.md) | The same agent on Cloudflare Durable Objects and AWS |
+| [`workspace-demo`](demos/workspace/README.md) | A fictional accounts-payable week with approvals |
 
-Use **Node.js 22.19.0 or later**. From a checkout of this 0.2.0 candidate:
+The [studio](lab/README.md) is a playground over every block (`npm run studio`).
 
-```bash
-npm ci
-npm run build
-npm run morning
-```
+## Use with your coding agent
 
-Open **http://127.0.0.1:3000**. The example prepares fictional email, calendar and todo documents through native tasks. Edit a reply, review proposed changes and try the Send, Snooze, Slot and Tick actions. Send writes to a fictional outbox; it sends no email.
-
-Use fictional data when exploring these examples.
-
-## Integrate with your application
-
-1. Start with the [UI guide](packages/ui/README.md) for controllers and renderers, or the [native composition examples](fixtures/native-compositions.ts) for Pi integration.
-2. Supply your application's authentication, storage and authorization. Bind file access to one workspace provider and use conditional writes for documents that need revision checks and recovery.
-3. Add the chat and viewers your interface needs. Controllers have explicit lifetimes; a component can borrow a controller without owning its teardown.
-4. Use the [shadcn registry recipes](registry/README.md) to copy components into your application for customization. That guide covers registry setup, dependencies and installation checks.
-
-Pi owns conversations, tools, task execution and recovery. Boring uses its public APIs and borrows the native Harness. Your host retains policy, budgets and credentials. See [Pi integration and composition](docs/architecture/PI-COMPLEMENT.md) for the ownership boundaries.
-
-## Install components
-
-The shadcn registry ships inside `@hachej/boring-ui-kit` under `r/`, so each published version carries its own copy. Add components with the shadcn CLI (shadcn 3 or later).
-
-**Version 0.2.2 (the current npm release).** Its items name their dependencies as `@boring-ui/<item>`, so map the namespace once in your application's `components.json`, pinned to the version you installed:
-
-```json
-{
-  "registries": {
-    "@boring-ui": "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.2.2/r/{name}.json"
-  }
-}
-```
-
-Then add a component, for example the chat: `npx shadcn@latest add @boring-ui/pi-chat`. Items that need the shadcn tokens list `@boring-ui/theme` as a dependency and resolve it through the same pinned URL; `pi-chat`, `button`, `dock`, `feedback` and `app-shell` do not, see the [registry guide](registry/README.md).
-
-**The next release.** Its items name their dependencies as absolute URLs of their own version, so no `registries` line is needed. Add an item by its URL, with the version you installed:
+This repository ships [Agent Skills](skills/) that teach Claude Code, Codex and other coding agents to build with the kit:
 
 ```sh
-npx shadcn@latest add https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@<version>/r/theme.json https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@<version>/r/pi-chat.json
+npx skills add hachej/boring-ui
 ```
 
-The `theme.json` item (the shadcn tokens) is needed only when the host does not define them already. `pi-chat`, `button`, `dock`, `feedback` and `app-shell` do not install it.
-
-In either case the version in the URL must equal the installed `@hachej/boring-ui-kit` version. To upgrade, install the new npm version and re-add the components. `https://unpkg.com/@hachej/boring-ui-kit@<version>/r/<item>.json` also works. See the [registry guide](registry/README.md) for the available items.
-
-The artifact panel also opens `*.mockup.html` as sandboxed HTML mock-ups with the app's theme and element comments. Hosts that forbid inline scripts need a separate sandbox origin. See the [mock-up viewer and CSP requirements](registry/README.md#html-mock-ups-mockup-viewer).
-
-## Point and dictate on your app's data
-
-The optional [`agent-target` registry block](registry/README.md#point-and-dictate-on-app-data-agent-target) lets a person tap a marked item and dictate to the app's existing agent, without opening chat. Mark only approved JSON context in `data-agent-target`; the nearest marked ancestor is captured, capped at 1 KB, and sent in the message with the spoken words. See the [marking guide](docs/guides/agent-target.md) and the fictional app-shell example (`?targets=1`).
-
-## Theming
-
-Registry blocks support only shadcn Base UI `base-nova`. They compose your application's `@/components/ui/*` components without a separate control skin. Rebrand through your core theme tokens, following boring-stack's `boring-design-system` skill. Do not edit derived tokens or add per-block CSS overrides. `--shell` and `--overlay` are the documented kit-specific tokens.
-
-The migration is staged. REPORT groups are remaining design debt, not conformance. See the [theming contract and design verification](registry/README.md#styling) for the boundary and evidence commands.
-
-## Release status
-
-The repository contains working implementations and tests for document publication and recovery, chat, editors, canvas, background tasks, remote adapters and installed component recipes. Passing an individual test does not qualify every provider or deployment.
-
-Global release proofs, live-provider checks, consumer acceptance and optional dependency licensing still have outstanding qualifications. Deferred proofs are backlog and do not block release (owner ruling, 2026-10-10); publication waits on the owner checklist in the release guide. The [implementation checkpoint](docs/implementation/PARTIAL.md) records the remaining work; [VERIFY.json](VERIFY.json) owns the proof status.
-
-The [npm release guide](docs/implementation/NPM-RELEASE.md) describes version synchronization, package ownership, trusted publishing and the manual publishing workflow. Merging a PR does not publish packages.
-
-## Develop and verify
-
-```bash
-npm run check
-npm run typecheck
-npm test
-npm run verify
-npm run check:pack
-npm run verify:release
-```
-
-`check:pack` audits real package tarballs. `verify` reports deferred proofs; `verify:release` still lists them but does not fail on them (backlog, not blockers); real failures still fail. Browser journeys and isolated consumer checks run separately in CI. Raw local evidence belongs in `.cache/evidence/`.
+| Skill | Use it to |
+| --- | --- |
+| [`boring-ui`](skills/boring-ui/SKILL.md) | Learn the kit, its rules, and which skill to use next |
+| [`build-agent-app`](skills/build-agent-app/SKILL.md) | Scaffold an app with an agent inside, or add one to an existing app |
+| [`add-blocks`](skills/add-blocks/SKILL.md) | Find, install, update and theme registry blocks |
+| [`agent-capabilities`](skills/agent-capabilities/SKILL.md) | Give the in-app agent tools, files, approvals, questions, sub-agents and schedules |
 
 ## Documentation
 
 | Topic | Start here |
 | --- | --- |
-| Upgrade from 0.1.x | [Breaking migration](MIGRATING.md) |
-| Implemented APIs and evidence | [Feature map](docs/implementation/FEATURES.md) and [implementation checkpoint](docs/implementation/PARTIAL.md) |
-| Public contracts | [Contract guide](docs/contracts/SCAFFOLD.md) and [contract vocabulary](docs/contracts/CONTRACTS.md) |
-| Ownership and architecture | [Invariants](INVARIANTS.md) and [specification](docs/architecture/SPEC.md) |
-| Files and execution | [Workspace architecture](docs/architecture/FILES-GIT-EXEC.md) |
-| Product scope and delivery | [Requirements](docs/architecture/PRODUCT-REQUIREMENTS.md), [roadmap](docs/architecture/ROADMAP.md) and [acceptance](docs/acceptance/ACCEPTANCE.md) |
-| Existing-app compatibility | [Legacy UI](docs/compatibility/LEGACY-UI.md), [current hub ownership](docs/compatibility/HUB-M1.md#current-consumer-ownership) and [redaction study](docs/stress-tests/REDACTION.md) |
-| Release preparation | [npm release guide](docs/implementation/NPM-RELEASE.md) |
+| UI blocks and their props | [Registry guide](registry/README.md) |
+| Upgrading | [Migration guide](MIGRATING.md) |
+| What is implemented, with tests | [Feature map](docs/implementation/FEATURES.md) |
+| How the kit works with Pi | [Pi integration](docs/architecture/PI-COMPLEMENT.md) and [invariants](INVARIANTS.md) |
+| Files, Git and execution | [Workspace architecture](docs/architecture/FILES-GIT-EXEC.md) |
+| An agent beside an existing website | [Website integration](docs/architecture/WEBSITE-INTEGRATION.md) |
+| Agents that change their own tools | [Self-evolution](docs/architecture/SELF-EVOLUTION.md) |
+| Product scope | [Requirements](docs/architecture/PRODUCT-REQUIREMENTS.md) and [roadmap](docs/architecture/ROADMAP.md) |
+| Releasing | [npm release guide](docs/implementation/NPM-RELEASE.md) |
+
+Apps built by the Boring Factory start from its app template and ship through the [Factory](https://github.com/hachej/boring-factory/blob/main/docs/PROVISIONING.md); this repository provides the packages and blocks they consume.
+
+## Contributing
+
+Read [AGENTS.md](AGENTS.md) and [INVARIANTS.md](INVARIANTS.md) first. Use fictional data only.
+
+```sh
+npm ci
+npm run check        # docs links, package boundaries, registry blocks, design rules
+npm run typecheck
+npm test
+npm run verify       # all of the above plus invariants and design tests
+npm run check:pack   # audits the real package tarballs
+```
+
+`verify` lists deferred proofs; they are backlog, not release blockers. Browser journeys and isolated consumer checks run separately in CI. Keep raw local evidence in `.cache/evidence/`. A package change adds its note to [MIGRATING.md](MIGRATING.md) under Unreleased. Merging a PR does not publish packages; see the [release guide](docs/implementation/NPM-RELEASE.md).
+
+Release qualification is tracked in the [implementation checkpoint](docs/implementation/PARTIAL.md) and [VERIFY.json](VERIFY.json). Passing one test does not qualify every provider or deployment.
 
 ## License
 
-Boring UI is [MIT licensed](LICENSE). Optional dependencies retain their own licenses. In particular, qualify tldraw licensing and assets for your deployment as described in the [canvas guide](docs/architecture/CANVAS.md).
+[MIT](LICENSE). Optional dependencies keep their own licenses. Qualify tldraw licensing and assets for your deployment; see the [canvas guide](docs/architecture/CANVAS.md).
