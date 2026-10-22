@@ -152,6 +152,22 @@ test('the layer\'s own words follow the shell locale when the agent sets none; t
   assert.equal(await trigger(undefined, undefined), 'Open the assistant', 'neither set: English');
 });
 
+test('on a phone the header trigger shows the agent\'s own icon and is named by its label; without them, the sparkles and « Ouvrir l’assistant »', async t => {
+  const { createElement: h } = await import('react');
+  const Mascot = ({ className }) => h('img', { 'data-testid': 'agent-mascot', className, alt: '' });
+  const own = await render(t, { agent: { controller: idleController, icon: Mascot, label: 'Ton coach' }, locale: 'fr' });
+  const trigger = own.container.querySelector('[data-testid=agent-trigger]');
+  assert.equal(trigger.getAttribute('aria-label'), 'Ton coach');
+  assert.ok(trigger.querySelector('[data-testid=agent-mascot]'), 'the agent\'s icon, not the sparkles');
+  await own.unmount();
+  const plain = await render(t, { agent: agentWith(), locale: 'fr' });
+  const fallback = plain.container.querySelector('[data-testid=agent-trigger]');
+  assert.equal(fallback.getAttribute('aria-label'), 'Ouvrir l’assistant');
+  assert.equal(fallback.querySelector('[data-testid=agent-mascot]'), null);
+  assert.ok(fallback.querySelector('svg'), 'the default sparkles');
+  await plain.unmount();
+});
+
 const openAccount = async (t, props) => {
   const rendered = await render(t, props);
   const { act } = await import('react');

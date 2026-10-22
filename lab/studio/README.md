@@ -124,7 +124,7 @@ script: {
 },
 ```
 
-A turn (format owned by [`@hachej/boring-testing/model`](../../packages/testing/README.md#scripted-model-boringtestingmodel)) is a string (the final answer), `{ text, reasoning, tools: [{ name, args }], delay, hold, usage, error }`, or `ctx => turn` (`usage: { input, output }` overrides the token counts the turn reports; by default about four characters per token, priced at fictional rates). `text` can be `{ chunks, ms }` to stream slowly
+A turn (format owned by [`@hachej/boring-testing/model`](../../packages/testing/README.md#scripted-model-hachejboring-testingmodel)) is a string (the final answer), `{ text, reasoning, tools: [{ name, args }], delay, hold, usage, error }`, or `ctx => turn` (`usage: { input, output }` overrides the token counts the turn reports; by default about four characters per token, priced at fictional rates). `text` can be `{ chunks, ms }` to stream slowly
 (Stop and queue scenarios need a long, abortable answer: `slow(...)`, `story(seconds, ending)` in `scenarios/_script.mjs`), `delay` makes the model take a moment before it
 starts (so "the agent is working" is visible) and `hold` keeps a tool call on screen, running, before the turn ends. `ctx` has `user` (the typed text), `input` (the whole
 native message, including attached files and images), `results` (tool results since that message: `name`, `args`, `text`, `json`, `isError`, `details`), `last` and `history`.

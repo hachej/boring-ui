@@ -163,7 +163,7 @@ export function checkSource(file, source, policy) {
       args = array && ts.isArrayLiteralExpression(array) ? array.elements : [];
     }
     if (binding && binding[0] === '@earendil-works/pi-durable' && ((ts.isNewExpression(node) && binding.at(-1) === 'Harness') || (binding.at(-1) === 'open' && binding.at(-2) === 'Harness'))) {
-      if (file !== policy.harnessFactory) fail('BORING-PI-2', 'Harness construction belongs only in the owned convenience factory');
+      fail('BORING-PI-2', 'packages borrow a host-created Harness; the host opens and closes it');
     }
     if (binding && ['defineTask', 'defineDoc'].includes(binding.at(-1))) {
       const object = constant(args[0]);

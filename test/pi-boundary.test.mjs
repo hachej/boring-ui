@@ -61,7 +61,11 @@ for (const [name, body, owner] of [
   ['repository private subpath', 'import { store } from "@hachej/boring-agent/src/store.ts"', 'ui'],
 ]) test(`rejects mutant: ${name}`, () => forbidden(body, owner));
 
-test('owned convenience factory may open a native Harness', () => accepted('import { Harness } from "@earendil-works/pi-durable"; Harness.open(storage, options)', 'agent', policy.harnessFactory));
+test('packages never open a native Harness, not even in the former setup factory', () => {
+  for (const file of ['packages/agent/src/example.ts', 'packages/agent/src/setup/createAgent.ts']) {
+    assert.ok(source('import { Harness } from "@earendil-works/pi-durable"; Harness.open(storage, options)', 'agent', file).length, file);
+  }
+});
 test('native optional extension/task/doc is allowed', () => accepted('import { defineExtension, defineTask, defineDoc } from "@earendil-works/pi-durable"; const ask = defineDoc({kind:"boring.ask-user"}); const wait = defineTask({name:"boring.ask-user.wait"}); defineExtension({name:"ask-user", tasks:[wait]});'));
 test('borrowed native Harness operations need no constructor', () => accepted('import type { Harness } from "@earendil-works/pi-durable"; export const attach = (h: Harness) => h.watchTaskGraph(context);'));
 test('optional UI adapters can consume native/resource types without an agent facade', () => accepted('import type { ConversationView } from "@earendil-works/pi-durable"; export type { ResourceRef } from "@hachej/boring-files"; type Native = import("@earendil-works/pi-durable").ConversationId;', 'ui'));
