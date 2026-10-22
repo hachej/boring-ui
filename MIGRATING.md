@@ -1,6 +1,7 @@
 # Unreleased
 
 - **Hardening (D-248).** `githubSink` refuses `.`/`..` repository segments and an `apiUrl` that is not https (http only for localhost) before sending the token; reinstall `provider-setup` (non-http(s) `verificationUri` is plain text), `shared-chat` (`avatarUrl` loads only https, `data:image/`, `blob:` or same-origin paths) and `viewers` (`PdfPane` shows a `blob` only when typed `application/pdf`). `mockup-viewer` messages keep targetOrigin `'*'` (opaque-origin sandbox).
+- **Invariants drift (D-249).** Docs only: the registry README now says every design group fails both static and browser checks, and packages never open a Harness (the host opens and closes it). No API, block or stored-format change.
 
 # Migrating to 0.4.8
 

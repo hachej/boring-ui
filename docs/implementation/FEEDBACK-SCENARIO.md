@@ -2,7 +2,7 @@
 
 A quick, repeatable check of **adoption step A, annotation only: Feedback,
 notes, Copy report** (the composer UX of
-[FEEDBACK.md, "UX"](../architecture/FEEDBACK.md#ux-one-entry-point-feedback)), in an application that consumes the packages the way an
+[FEEDBACK.md, "UX"](../architecture/FEEDBACK.md#ux-one-annotate-toggle)), in an application that consumes the packages the way an
 outside application would. It validates the feature and the install path
 before feedback is rolled into real applications. It is manual evidence, not
 part of `npm test`. Feedback itself is specified in
