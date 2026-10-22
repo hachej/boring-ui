@@ -60,7 +60,16 @@ export default [
     steps: [{ upload: { name: 'swatch.png', mimeType: 'image/png', content: solidPng(64, [255, 0, 0]) }, prompt: 'What single colour is the attached image? Answer with one word.' }],
     script: { 0: [ctx => ctx.input.some(part => part.type === 'image' && part.mimeType === 'image/png') ? 'Red.' : 'No image reached the model.'] },
     expect: [{ reply: /red/i }, { nativeInputHasImage: 'image/png' }],
-    async verify(t) { assert.equal(await t.browser.evaluate(`${t.qa('[data-testid=message-image]')}.length`), 1, 'the sent message shows the image'); },
+    async verify(t) {
+      assert.equal(await t.browser.evaluate(`${t.qa('[data-testid=message-image]')}.length`), 1, 'the sent message shows the image');
+      const sent = (await t.messages()).filter(message => message.role === 'user').at(-1);
+      assert.equal(sent.content.filter(part => part.type === 'image').length, 1, 'the host does not resolve the same image a second time');
+      await t.browser.click(t.q('[data-testid=conversation-files]'));
+      await t.browser.until('one entry for the uploaded image', `${t.qa('[data-testid=conversation-file]')}.length === 1`, 5000);
+      assert.ok((await t.browser.evaluate(`${t.q('[data-testid=conversation-file]')}.dataset.file`)).startsWith('image:'));
+      await t.browser.press('Escape');
+      await t.browser.until('files menu closed', `!${t.q('[data-testid=conversation-files-list]')}`, 5000);
+    },
   },
   {
     id: 'mention-file', group: 'Attachments and mentions', title: 'Mention a workspace file', requires: ['workspace'], seed: NOTES,

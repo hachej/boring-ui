@@ -10,6 +10,7 @@ import { createPrivacyPolicy } from '@hachej/boring-feedback/page';
 import { NoteBubble, useComposerFeedback, usePointComments } from '../../registry/feedback/feedback-session.tsx';
 import { PointBar } from '../../registry/feedback/point-mode.tsx';
 import { AgentWorkspace, useConversations, useRemoteChat } from '../../registry/pi-app/agent-workspace.tsx';
+import { useRevisionAttachments } from '../../registry/pi-app/use-revision-attachments.ts';
 import { createRecordsKind } from '../../registry/record-viewer/record-viewer.tsx';
 import { AmbientChat } from '../../registry/pi-ambient/ambient.tsx';
 import { Button } from '@/components/ui/button';
@@ -30,6 +31,8 @@ const embedded = new URLSearchParams(location.search).has('embedded');
 // `?title=`: the embedded bar's fixed app title (the conversation title then follows it).
 const appTitle = new URLSearchParams(location.search).get('title');
 const resourcesOnly = new URLSearchParams(location.search).has('resources');
+const inlineImages = new URLSearchParams(location.search).has('inlineImages');
+const hostUploads = resourcesOnly && new URLSearchParams(location.search).has('uploads');
 // `?blobs` (server started with `blobs: true`): Library uploads above 256 KB go to the host's /_files (./blobs.mjs), which stores the
 // bytes and writes the pointer file; the Library shows pointers as their files and the viewers open them from /_files.
 const blobs = new URLSearchParams(location.search).has('blobs');
@@ -95,6 +98,7 @@ function App() {
     ? [createRecordsKind({ locale: 'fr', onAction: (action, row) => log(`${action.id}:${row.id}`) })] : undefined, [log]);
   // The workspace's revision provider (identity, listing, search, history, change feed) is bound by the server's binding of /api/resources.
   const [revisionProvider, setRevisionProvider] = useState();
+  const attachments = useRevisionAttachments({ revisionProvider: hostUploads ? revisionProvider : undefined, inlineImages });
   const [discovery, setDiscovery] = useState({ attempt: 0, failed: false });
   useEffect(() => { let off = false; setDiscovery(current => ({ ...current, failed: false })); connectRevisionProvider({ endpoint: at('/api/resources'), fetch: authorized }).then(value => { if (!off) setRevisionProvider(value); }, () => { if (!off) setDiscovery(current => ({ ...current, failed: true })); }); return () => { off = true; }; }, [discovery.attempt]);
   const listed = useConversations({ endpoint: at('/api/conversations'), fetch: authorized, activeId: selected, onSelect: setSelected });
@@ -113,11 +117,12 @@ function App() {
   return <main data-testid="app" data-conversation={active} data-configured={configured || undefined} className="flex h-full min-h-0">
     {revisionProvider ? <AgentWorkspace locale={locale} artifactKinds={recordKinds} conversationId={active} controller={chat.status === 'ready' ? chat.controller : undefined} conversations={conversations}
       {...(resourcesOnly ? { resources: { endpoint: at('/api/resources'), fetch: authorized, identity, history: at('/api/history') } } : { revisionProvider })} {...(embedded ? { layout: 'embedded', ...(appTitle ? { title: appTitle } : {}) } : {})}
-      {...(blobs && !resourcesOnly ? { resources: { uploadBlob }, uploads: { maxBytes: 256 * 1024 } } : {})}
+      uploads={{ inlineImages, ...(blobs ? { maxBytes: 256 * 1024 } : {}) }}
+      {...(blobs && !resourcesOnly ? { resources: { uploadBlob } } : {})}
       chat={{ labels: { title: 'Writer', emptyDescription: 'What can I help you write today?' }, suggestions: [
         { label: 'Draft a plan', text: 'Write a picnic plan and present it.' },
         { label: 'Write a short reply', text: 'Reply with exactly: AMBER-HARBOUR' },
-      ], ...config.chat, ...(feedback ? { feedback } : {}), ...(chat.status === 'ready' ? { actions: chat.actions } : {}) }}
+      ], ...config.chat, ...(attachments ? { attachments } : {}), ...(feedback ? { feedback } : {}), ...(chat.status === 'ready' ? { actions: chat.actions } : {}) }}
       {...(comments ? { comments } : {})}
       labels={{ sessionsTitle: 'Writer', ...config.labels }} panelActions={config.panelActions} {...floating}
       connecting={<p role="status" className="p-4 text-sm text-muted-foreground">{chat.status === 'offline' ? 'Server unreachable. Retrying…' : 'Connecting…'}</p>} />

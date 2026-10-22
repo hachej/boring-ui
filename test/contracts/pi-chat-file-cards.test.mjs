@@ -72,6 +72,38 @@ function paste(window, element, text) {
   return { prevented: !element.dispatchEvent(event) };
 }
 
+test('conversation files omit rows with no opener, including draft and native images', async t => {
+  const ui = await harness(t);
+  const image = { type: 'image', mimeType: 'image/png', data: 'AAAA' };
+  await ui.act(async () => ui.controller.setAttachments([{ id: 'fictional', name: 'fictional.png', content: image }]));
+  await ui.write([{ role: 'user', content: [{ type: 'text', text: '@uploads/fictional.md' }, image], timestamp: 0 }]);
+  assert.equal(Boolean(ui.container.querySelector('[data-testid=conversation-files]')), false, 'there is nothing the person can open');
+});
+
+test('an inline upload uses one native image, one files entry and the image opener, not a second path mention', async t => {
+  const opened = [], filesOpened = [];
+  const image = { mimeType: 'image/png', data: 'AAAA' };
+  const ui = await harness(t, { onOpenFile: path => filesOpened.push(path), extra: { onOpenImage: value => opened.push(value) }, attachments: { upload: async () => [{ name: 'fictional.png', path: 'uploads/fictional.png', image }] } });
+  const input = ui.container.querySelector('[data-testid=composer-file]');
+  await ui.act(async () => {
+    Object.defineProperty(input, 'files', { configurable: true, value: [new File(['fictional'], 'fictional.png', { type: 'image/png' })] });
+    input.dispatchEvent(new ui.window.Event('change', { bubbles: true }));
+  });
+  assert.equal(ui.controller.getSnapshot().draft.text, '', 'the native image does not add a path for the host to resolve again');
+  assert.equal(ui.controller.getSnapshot().draft.attachments.length, 1);
+  assert.match(ui.container.querySelector('[data-testid=conversation-files]').textContent, /· 1$/);
+  await ui.act(async () => ui.container.querySelector('[data-testid=composer-submit]').click());
+  const messages = ui.controller.getSnapshot().view.entries.flatMap(entry => entry.model ?? []).filter(message => message.role === 'user');
+  assert.equal(messages.at(-1).content.filter(part => part.type === 'image').length, 1);
+  assert.doesNotMatch(JSON.stringify(messages), /@uploads\/fictional.png/);
+  assert.equal(ui.container.querySelectorAll('[data-testid=message-image]').length, 1);
+  assert.equal(ui.container.querySelectorAll('[data-testid=message-file]').length, 0);
+  assert.match(ui.container.querySelector('[data-testid=conversation-files]').textContent, /· 1$/);
+  await ui.act(async () => ui.container.querySelector('[data-testid=message-image]').click());
+  assert.deepEqual(opened, [{ type: 'image', ...image }]);
+  assert.deepEqual(filesOpened, []);
+});
+
 test('a sent upload mention is a card above the bubble, the raw mention is hidden and the message content keeps it', async t => {
   const { controller, container, act } = await harness(t, { mentions: { search: async () => [] }, onOpenFile: () => {} });
   await act(async () => { controller.setText(SENT); });
@@ -679,7 +711,7 @@ test('an admission becoming uncertain during a hold cannot disable the release t
 });
 
 test('failed voice is a transcript row and leaves the mic available for another retained recording', async t => {
-  const ui = await voiceHarness(t); ui.failTranscribe(true);
+  const ui = await voiceHarness(t, { extra: { onOpenFile: () => {} } }); ui.failTranscribe(true);
   await ui.pointer('pointerdown'); await ui.pointer('pointerup');
   await ui.until(() => !!ui.container.querySelector('[data-testid=voice-retry]'));
   const failed = ui.container.querySelector('[data-testid=voice-pending]');

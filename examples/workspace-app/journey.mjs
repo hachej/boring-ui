@@ -24,6 +24,7 @@ const INPUT = q('[data-testid=composer-input]');
 const LOG = `(${q('[data-testid=transcript]')}?.innerText ?? '')`;
 const REPLIES = `${qa('[data-testid=transcript] article[data-role=assistant]')}.map(e => e.innerText).join(' ')`;
 const ACTIVE = `${q('[data-testid=app]')}.dataset.conversation`;
+const FILES_READY = `(() => { const list = ${q('[data-testid=conversation-files-list]')}; return !!list && !list.hasAttribute('data-starting-style') && !list.hasAttribute('data-ending-style') && list.getAnimations({ subtree: true }).every(animation => animation.playState !== 'running'); })()`;
 const ROWS = qa('[data-testid=conversation-row]');
 const row = text => `${ROWS}.find(row => row.innerText.includes(${JSON.stringify(text)}))`;
 const idle = `${q('[data-testid=composer-submit]')}?.dataset.state === 'send'`;
@@ -60,6 +61,146 @@ try {
     assert.ok(layout.textBottom <= layout.controlsTop + 1, 'text occupies the full-width row above the controls');
   };
 
+  const conversationFiles = async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'fictional-conversation-files-'));
+    const fixtures = [
+      ['fictional-notes.md', '# Fictional picnic notes\n\nBring a fictional blanket.\n'],
+      ['fictional-plan.json', '{"fictional":"picnic"}\n'],
+      ['fictional-image.png', Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a/OQAAAAASUVORK5CYII=', 'base64')],
+    ];
+    for (const [name, bytes] of fixtures) writeFileSync(join(directory, name), bytes);
+    for (const [mode, query] of [['reference', ''], ['resources', '?resources&uploads'], ['inline', '?resources&uploads&inlineImages']]) {
+      await browser.emulate('desktop');
+      await browser.send('Page.navigate', { url: `${insecureUrl(app.url)}${query}` }); await live();
+      const previous = await browser.evaluate(ACTIVE);
+      await browser.click(q('[data-testid=conversation-new]'));
+      await browser.until('new conversation selected', `${ACTIVE} && ${ACTIVE} !== ${JSON.stringify(previous)}`, 10000);
+      await live();
+      await browser.until('empty new conversation', `${LOG}.trim() === ''`, 10000);
+      await browser.until('host uploads ready', `!!${q('[data-testid=composer-file]')}`, 10000);
+      await browser.attachFiles(q('[data-testid=composer-file]'), fixtures.map(([name]) => join(directory, name)));
+      await browser.until('uploads ready', `!${q('[data-testid=composer-submit]')}.disabled && !${q('[data-testid=upload-pending]')}`, 15000);
+      for (const phase of ['draft', 'sent']) {
+        if (phase === 'sent') {
+          await browser.emulate('desktop');
+          await browser.type(INPUT, 'Reply with exactly: FICTIONAL-FILES-READY'); await browser.click(q('[data-testid=composer-submit]'));
+          await browser.until('files sent', `${REPLIES}.includes('FICTIONAL-FILES-READY') && ${idle}`, 20000);
+        }
+        for (const device of ['desktop', 'phone']) {
+          await browser.emulate(device);
+          const press = selector => device === 'phone' ? browser.tap(selector) : browser.click(selector);
+          await press(q('[data-testid=conversation-files]'));
+          await browser.until('Fichiers list', `!!${q('[data-testid=conversation-files-list]')}`, 5000);
+          const rows = await browser.evaluate(`${qa('[data-testid=conversation-file]')}.map(e => ({ id: e.dataset.file, name: e.innerText, disabled: e.hasAttribute('disabled') || e.getAttribute('aria-disabled') === 'true' }))`);
+          writeFileSync(join(evidence, `files-${mode}-${device}-${phase}.json`), JSON.stringify(rows, null, 2));
+          await browser.screenshot(`files-${mode}-${device}-${phase}.png`);
+          assert.deepEqual(rows.filter(row => row.disabled), [], JSON.stringify(rows));
+          assert.equal(rows.length, fixtures.length, 'each upload has exactly one files-menu entry');
+          for (const [name] of fixtures) {
+            if (mode === 'inline' && name.endsWith('.png')) assert.equal(rows.filter(row => row.id.startsWith(phase === 'draft' ? 'draft:' : 'image:')).length, 1);
+            else assert.ok(rows.some(row => row.name.includes(name)), name);
+          }
+          if (phase === 'sent') {
+            assert.equal(await browser.evaluate(`${qa('[data-testid=message-image]')}.length`), mode === 'inline' ? 1 : 0);
+            assert.equal(await browser.evaluate(`${qa('[data-testid=message-file]')}.length`), mode === 'inline' ? 2 : fixtures.length);
+          }
+          await browser.press('Escape');
+          await browser.until('files list closed', `!${q('[data-testid=conversation-files-list]')}`, 5000);
+          for (const row of rows) {
+            const delayedDrawer = mode === 'reference' && phase === 'draft' && device === 'phone' && row === rows[0];
+            // A starting drawer can have no running transition yet; the first touch must wait for that native phase too.
+            if (delayedDrawer) await browser.evaluate(`(() => {
+              window.__filesDrawerPresses = [];
+              let held;
+              const observer = new MutationObserver(() => {
+                const drawer = ${q('[data-testid=conversation-files-list]')};
+                if (!drawer) return;
+                if (!held) {
+                  held = drawer; drawer.style.transition = 'none';
+                  drawer.addEventListener('pointerdown', () => window.__filesDrawerPresses.push(!drawer.hasAttribute('data-starting-style') && drawer.getBoundingClientRect().bottom <= innerHeight));
+                  setTimeout(() => { observer.disconnect(); drawer.style.removeProperty('transition'); drawer.removeAttribute('data-starting-style'); }, 600);
+                }
+                if (!drawer.hasAttribute('data-starting-style')) drawer.setAttribute('data-starting-style', '');
+              });
+              observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-starting-style'] });
+            })()`);
+            await press(q('[data-testid=conversation-files]'));
+            await browser.until('files list settled', FILES_READY, 5000);
+            await press(q(`[data-file=${JSON.stringify(row.id)}]`));
+            if (row.id.startsWith('file:')) {
+              await browser.until('workspace file viewer', `${q('[data-testid=file-viewer]')}?.dataset.path === ${JSON.stringify(row.id.slice(5))}`, 10000);
+              if (row.name.includes('.png')) await browser.until('workspace image rendered', `${q('[data-testid=viewer-image]')}?.naturalWidth > 0`, 5000);
+              else await browser.until('uploaded content rendered', `${q('[data-testid=file-viewer]')}?.innerText.includes(${JSON.stringify(row.name.includes('.md') ? 'Fictional picnic notes' : 'picnic')})`, 10000);
+              await browser.screenshot(`opened-${mode}-${device}-${phase}-${row.name.trim()}.png`);
+              await press(q('[data-testid=viewer-close]'));
+            } else {
+              await browser.until('inline image preview rendered', `${q('[data-testid=conversation-image-image]')}?.naturalWidth > 0`, 5000);
+              await browser.screenshot(`preview-${mode}-${device}-${phase}.png`);
+              await press(q('[data-testid=conversation-image-close]'));
+            }
+            await browser.until('viewer closed', `!${q('[data-testid=workspace-panel]')} && !${q('[data-testid=conversation-image-image]')}`, 5000);
+            if (delayedDrawer) {
+              assert.deepEqual(await browser.evaluate('window.__filesDrawerPresses'), [true], 'one real press after the native drawer finishes starting');
+              await browser.evaluate('delete window.__filesDrawerPresses');
+            }
+          }
+          assert.equal(await browser.evaluate(noOverflow), true);
+        }
+      }
+      console.log(`ok  conversation files: ${mode}, draft/sent, desktop/390px`);
+    }
+  };
+  const conversationFilesLayout = async () => {
+    await browser.emulate('desktop');
+    await browser.send('Page.navigate', { url: `${insecureUrl(app.url)}?locale=fr` }); await live();
+    const previous = await browser.evaluate(ACTIVE);
+    await browser.click(q('[data-testid=conversation-new]'));
+    await browser.until('new layout conversation', `${ACTIVE} && ${ACTIVE} !== ${JSON.stringify(previous)}`, 10000); await live();
+    const directory = mkdtempSync(join(tmpdir(), 'fictional-menu-files-'));
+    writeFileSync(join(directory, 'fictional-plan.md'), '# Fictional menu plan\n');
+    writeFileSync(join(directory, 'fictional-image.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a/OQAAAAASUVORK5CYII=', 'base64'));
+    await browser.until('layout uploads available', `!!${q('[data-testid=composer-file]')}`, 10000);
+    await browser.attachFiles(q('[data-testid=composer-file]'), ['fictional-plan.md', 'fictional-image.png'].map(name => join(directory, name)));
+    await browser.until('two files attached', `${q('[data-testid=conversation-files]')}?.innerText.includes('2') && !${q('[data-testid=composer-submit]')}.disabled`, 15000);
+    await browser.type(INPUT, 'Reply with exactly: FICTIONAL-MENU-READY'); await browser.click(q('[data-testid=composer-submit]'));
+    await browser.until('layout message sent', `${REPLIES}.includes('FICTIONAL-MENU-READY') && ${idle}`, 20000);
+    const layouts = [];
+    for (const device of ['desktop', 'phone', 'coarse-desktop']) for (const scheme of ['light', 'dark']) {
+      await browser.emulate(device === 'phone' ? 'phone' : 'desktop');
+      if (device === 'coarse-desktop') await browser.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+      await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] });
+      await browser.click(q('[data-testid=conversation-files]'));
+      await browser.until('layout menu settled', FILES_READY, 5000);
+      const metrics = await browser.evaluate(`(() => {
+        const list = ${q('[data-testid=conversation-files-list]')}, rows = [...list.querySelectorAll('[data-testid=conversation-file]')], title = list.querySelector('[data-slot=popover-title], [data-slot=drawer-title], [data-slot=dropdown-menu-label]');
+        const box = list.getBoundingClientRect(), trigger = ${q('[data-testid=conversation-files]')}.getBoundingClientRect(), first = rows[0].getBoundingClientRect();
+        const range = document.createRange(); range.selectNodeContents(title); const titleText = range.getBoundingClientRect();
+        return { slot: list.dataset.slot, coarse: matchMedia('(pointer: coarse)').matches, width: innerWidth, padding: parseFloat(getComputedStyle(list).paddingLeft), titleLeft: titleText.left,
+          iconLeft: rows[0].querySelector('svg').getBoundingClientRect().left, titleGap: first.top - title.getBoundingClientRect().bottom, rowGap: rows[1].getBoundingClientRect().top - first.bottom,
+          heights: rows.map(row => row.getBoundingClientRect().height), triggerGap: trigger.top - box.bottom, overflow: document.documentElement.scrollWidth > innerWidth };
+      })()`);
+      layouts.push({ device, scheme, ...metrics });
+      await browser.screenshot(`files-layout-${device}-${scheme}.png`);
+      await browser.press('Escape'); await browser.until('layout menu closed', `!${q('[data-testid=conversation-files-list]')}`, 5000);
+    }
+    writeFileSync(join(evidence, 'files-layout.json'), JSON.stringify(layouts, null, 2));
+    for (const layout of layouts) {
+      const detail = JSON.stringify(layout);
+      assert.equal(layout.overflow, false, detail);
+      assert.ok(Math.abs(layout.titleLeft - layout.iconLeft) <= 1, detail);
+      assert.ok(layout.titleGap <= 4 && layout.rowGap <= 1, detail);
+      if (layout.device === 'phone' || layout.coarse) assert.ok(layout.heights.every(height => height >= 48), detail);
+      else assert.ok(layout.heights.every(height => height <= 36), detail);
+      if (layout.device !== 'phone') {
+        assert.equal(layout.slot, 'dropdown-menu-content', detail);
+        assert.ok(layout.padding <= 8 && Math.abs(layout.triggerGap - 6) <= 1, detail);
+      }
+    }
+    console.log('ok  conversation file menu: aligned, compact, 48px touch rows; desktop/390px/coarse, light/dark');
+  };
+  if (process.env.APP_ONLY === 'conversation-files') await conversationFiles();
+  else if (process.env.APP_ONLY === 'conversation-files-layout') await conversationFilesLayout();
+  else {
   await step('a failed discovery shows an alert, and Retry opens the workspace', async () => {
     await live();
     app.faults.resources = 1;
@@ -743,6 +884,9 @@ try {
     await browser.emulate('desktop');
   });
 
+  await conversationFiles();
+  await conversationFilesLayout();
+  }
   assert.deepEqual(misses, [], 'every prompt had a scripted answer');
   assert.deepEqual(browser.problems, [], 'no page errors');
   console.log(`PASS workspace-app journey; screenshots in ${evidence}`);
