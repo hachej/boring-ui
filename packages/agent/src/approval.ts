@@ -3,7 +3,6 @@ import type { ConversationId, Extension, ToolExecutionResult, ToolRegistration, 
 import type { JsonValue } from '@earendil-works/chord';
 import type { Static, TSchema } from '@earendil-works/pi-ai';
 import { askPerson } from './ask-user.js';
-import { markGuard } from './guards.js';
 
 /** The two answers an approval question accepts. A chat answers with exactly these strings through `answerUserQuestion`. */
 export const APPROVE = 'Approve';
@@ -20,6 +19,8 @@ export const CANCELLED_PREFIX = 'Not run: the approval question was cancelled.';
  */
 export const APPROVAL_DETAILS = 'boring.approval';
 
+const GUARDS: WeakSet<object> = ((globalThis as Record<symbol, WeakSet<object>>)[Symbol.for('boring.agent.guards')] ??= new WeakSet()); // approval + sandbox extensions: a delegated child inherits them
+const markGuard = <T extends object>(extension: T): T => { GUARDS.add(extension); return extension; };
 const MEMO = 'boring.approval.started';
 const GATED = new WeakSet<object>();
 

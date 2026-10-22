@@ -1,7 +1,9 @@
 import { AssistantEntry, configure, defineTool } from '@earendil-works/pi-durable';
 import type { AgentChange, ConversationId, Extension, ToolRegistration } from '@earendil-works/pi-durable';
 import { Type } from '@earendil-works/pi-ai';
-import { isGuard } from './guards.js';
+
+const GUARDS: WeakSet<object> = ((globalThis as Record<symbol, WeakSet<object>>)[Symbol.for('boring.agent.guards')] ??= new WeakSet()); // approval + sandbox extensions: a delegated child inherits them
+const isGuard = (extension: object): boolean => GUARDS.has(extension);
 
 export const DELEGATE_TOOL = 'delegate';
 

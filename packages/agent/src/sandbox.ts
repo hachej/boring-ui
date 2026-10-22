@@ -1,9 +1,11 @@
 import { defineExtension, hook, ToolTask } from '@earendil-works/pi-durable';
 import type { Extension, ToolRegistration, Wrap } from '@earendil-works/pi-durable';
 import type { JsonValue } from '@earendil-works/chord';
-import { markGuard } from './guards.js';
 
 /** Key under a recorded call's result details: `{ simulated: true, tool, arguments }`. A caller reads it back with `simulatedCalls`. */
+const GUARDS: WeakSet<object> = ((globalThis as Record<symbol, WeakSet<object>>)[Symbol.for('boring.agent.guards')] ??= new WeakSet()); // approval + sandbox extensions: a delegated child inherits them
+const markGuard = <T extends object>(extension: T): T => { GUARDS.add(extension); return extension; };
+
 export const SANDBOX_DETAILS = 'boring.sandbox';
 
 /** What the host declares about one tool. An unset field is not declared: a call is recorded unless the host declares it safe. */

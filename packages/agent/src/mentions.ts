@@ -109,7 +109,7 @@ export function createMentionResolver(options: MentionResolverOptions): (content
         if (text === undefined) { added.push(note(path, `binary file, ${bytes.length} bytes; content not included`)); continue; }
         const cut = bytes.length > room;
         used += Math.min(bytes.length, room);
-        added.push({ type: 'text', text: `${MENTION_FILE_PREFIX}${attribute(path)}"${cut ? ` truncated="showing the first ${new TextEncoder().encode(text).length} of ${bytes.length} bytes"` : ''}>\n${text.replace(/<\/file>/g, '<\\/file>')}\n</file>` });
+        added.push({ type: 'text', text: `${MENTION_FILE_PREFIX}${attribute(path)}"${cut ? ` truncated="showing the first ${new TextEncoder().encode(text).length} of ${bytes.length} bytes"` : ''}>\n${text.replace(/<(\s*\/?\s*file)\b/gi, '<\\$1')}\n</file>` });
       }
       return [...parts, ...added];
     } catch { return content; }

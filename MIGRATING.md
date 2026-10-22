@@ -1,5 +1,7 @@
 # Unreleased
 
+- **Agent and execution hardening (D-248).** `createApprovalExtension` takes `unlisted: 'deny'` (with `allow`) to block tools no rule names (default unchanged); delegated children now inherit the parent's approval and sandbox extensions; `createConversationSocketHandler` refuses a cross-origin upgrade unless `allowedOrigins` lists it; the chat transport checks `allow('submit')` before `prepareInput` and answers unexpected errors with a fixed `source-unavailable` instead of the message; remote shell requests setting `LD_*`, `DYLD_*`, `BASH_ENV`, `ENV`, `NODE_OPTIONS`, `PYTHONSTARTUP`, `PERL5OPT` or `GIT_SSH*`/`GIT_ASKPASS`/`GIT_EXTERNAL_DIFF`/`GIT_PROXY_COMMAND` in `env` get 403 unless `allowLoaderEnv: true`; the Code Interpreter env's `openDirReader` reports workspace paths; mention and request-context wrappers neutralise every tag spelling in their text.
+
 # Migrating to 0.4.8
 
 - **Viewers — Quiet Markdown editor (D-227, #1795).** The formatting bar appears on selection and a header Formatting toggle pins it; pass `formattingToolbar="pinned"` for the old always-visible bar.
