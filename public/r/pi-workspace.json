@@ -8,10 +8,10 @@
     "react-dom@^19.0.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.7/r/theme.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.7/r/pi-chat.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.7/r/utils.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.7/r/dock.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.8/r/theme.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.8/r/pi-chat.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.8/r/utils.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.8/r/dock.json",
     "badge",
     "card"
   ],

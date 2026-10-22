@@ -1,5 +1,7 @@
 # Unreleased
 
+# Migrating to 0.4.8
+
 - **Viewers — Quiet Markdown editor (D-227, #1795).** The formatting bar appears on selection and a header Formatting toggle pins it; pass `formattingToolbar="pinned"` for the old always-visible bar.
 - **Viewers — Fewer Markdown fallbacks (D-233):** front matter, HTML, footnotes, reference links, CRLF and alternate list/emphasis/heading spellings now open Formatted; untouched blocks keep their exact bytes; mixed line endings, bare CR and NUL still open as source.
 - **Placed agent workspace (D-103).** New opt-in `placed-agent` registry block provides `PlacedAgentWorkspace`, `placement="tab+ambient"`, controlled `collapsed`/`onCollapsedChange`, and `usePlacedAgentState`. Install it with the matching kit and its `pi-app`, `pi-ambient` and `app-shell` dependencies. It reuses the conversation/controller: desktop collapse floats the chat; phones in an available app-shell layer use one 8rem peek above the tab bar, while phones outside a shell stay a page. Existing `AgentWorkspace` behavior and stored document formats are unchanged.
