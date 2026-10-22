@@ -1,5 +1,7 @@
 # Unreleased
 
+- **Placed agent workspace (D-103).** New opt-in `placed-agent` registry block provides `PlacedAgentWorkspace`, `placement="tab+ambient"`, controlled `collapsed`/`onCollapsedChange`, and `usePlacedAgentState`. Install it with the matching kit and its `pi-app`, `pi-ambient` and `app-shell` dependencies. It reuses the conversation/controller: desktop collapse floats the chat; phones in an available app-shell layer use one 8rem peek above the tab bar, while phones outside a shell stay a page. Existing `AgentWorkspace` behavior and stored document formats are unchanged.
+
 - **Faster release preparation (D-234).** Release tooling reuses exact-main green CI, prepares audited archives without another full suite, and waits for npm visibility once for all packages. Package-changing PRs now add their migration note here; `release:version` promotes these notes and refuses an empty section. Browser journeys get one logged retry; unit tests do not. No application API or stored-format migration.
 
 # Migrating to 0.4.7
