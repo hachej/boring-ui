@@ -1130,10 +1130,15 @@ artifact without replacing the mounted conversation. `ArtifactWorkspace.onClose`
 to refuse a synchronous close; declining the file's discard prompt restores the sheet's Back entry.
 Reselecting the current file closes Library without changing the selected path or the chat draft.
 
-`MarkdownEditor` and `MarkdownPane` now default to `formattingToolbar="pinned"` on desktop.
-The toolbar stays on one row and scrolls when its controls do not fit. There is no header control to
-switch it: `formattingToolbar="selection"` uses Tiptap's native bubble menu instead. Phones always use selection formatting, with no pinned row. Keyboard shortcuts
-and Markdown input rules remain available.
+`MarkdownEditor` and `MarkdownPane` default to `formattingToolbar="selection"` on desktop and phone.
+Selecting text opens Tiptap's native bubble. The header’s **Formatting** (French: **Mise en forme**) Type icon
+toggles the full bar with `aria-pressed`; it stays visible on phones with a 48px target and hides in Markdown mode.
+The **…** menu contains **Formatted** / **Markdown**. The standalone editor also offers **Show outline** when allowed.
+Choices last for the viewer session; FileViewer retains formatting preferences across saved-revision remounts.
+Pass `formattingToolbar="pinned"` for the full desktop row, or the phone's keyboard dock while editing.
+A later host prop change takes precedence over the session choice. The menu uses the host's real
+shadcn Base UI radio and checkbox items, with 48px phone targets and English/French labels.
+Keyboard shortcuts and Markdown input rules remain available.
 
 Markdown autosave is on by default. It calls the existing `controller.flush` after 1200ms without an
 edit, on blur outside the editor, before closing or switching files, and when the page becomes hidden.

@@ -16,11 +16,11 @@ try {
     await browser.send('Emulation.setDeviceMetricsOverride', { width, height: width === 390 ? 844 : 950, deviceScaleFactor: 1, mobile: width === 390 });
     await browser.send('Emulation.setTouchEmulationEnabled', { enabled: width === 390, maxTouchPoints: 5 });
     await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: mode }, { name: 'prefers-reduced-motion', value: 'reduce' }] });
-    for (const surface of ['markdown', 'source', 'selection', 'proposal', 'html', 'html-source', 'standalone-markdown', 'standalone-html', 'image', 'pdf', 'manual']) {
+    for (const surface of ['markdown', 'source', 'selection', 'pinned', 'menu', 'menu-fr', 'unsafe', 'proposal', 'html', 'html-source', 'standalone-markdown', 'standalone-html', 'image', 'pdf', 'manual']) {
       const previous = await browser.evaluate('performance.timeOrigin');
       await browser.send('Page.navigate', { url: `${app.url}?viewer=${surface}&theme=${theme}&mode=${mode}` });
       await browser.until('fictional viewer mounted', `performance.timeOrigin !== ${previous} && !!${q('[data-testid=viewer-chrome-fixture]')} && document.documentElement.classList.contains('dark') === ${mode === 'dark'}`, 30000);
-      if (['markdown', 'selection', 'proposal', 'standalone-markdown'].includes(surface)) await browser.until('native rich editor', `!!${q('[contenteditable=true]')}`, 10000);
+      if (['markdown', 'selection', 'pinned', 'menu', 'menu-fr', 'proposal', 'standalone-markdown'].includes(surface)) await browser.until('native rich editor', `!!${q('[contenteditable=true]')}`, 10000);
       if (surface === 'image') await browser.until('image loaded', `${q('img')}?.naturalWidth === 640`, 10000);
       if (surface === 'pdf') await assertPdfPages(browser, 1);
       if (surface === 'proposal') {
@@ -37,15 +37,82 @@ try {
         if (surface === 'markdown') assert.deepEqual(save, { name: 'Save', background: 'rgba(0, 0, 0, 0)' }, `${surface}: Save is a ghost icon button`);
         await browser.evaluate(`document.activeElement?.blur()`);
       }
-      if (surface === 'markdown' && width === 1440) {
+      if (['markdown', 'standalone-markdown'].includes(surface)) {
+        assert.equal(await browser.evaluate(`!!${q('.boring-markdown-toolbar, [data-testid=markdown-dock]')}`), false, 'default reading and focus mount no full formatting bar');
+      }
+      if (surface === 'pinned' && width === 1440) {
         // A narrow artifact column makes the formatting toolbar overflow: it scrolls, but shows no native scrollbar.
         const bar = await browser.evaluate(`(() => { const toolbar = ${q('.boring-markdown-toolbar')}; toolbar.style.width = '240px'; const style = getComputedStyle(toolbar); return { overflows: toolbar.scrollWidth > toolbar.clientWidth, scrollbarWidth: style.scrollbarWidth, barHeight: toolbar.offsetHeight - toolbar.clientHeight, overflowX: style.overflowX }; })()`);
         assert.deepEqual(bar, { overflows: true, scrollbarWidth: 'none', barHeight: 0, overflowX: 'auto' }, `${surface}: overflowing toolbar scrolls with no native scrollbar`);
       }
-      if (surface === 'selection' || surface === 'markdown' && width === 390) {
+      if (surface === 'selection') {
         await browser.evaluate(`(() => { const editor = ${q('[contenteditable=true]')}; editor.focus(); const range = document.createRange(); range.selectNodeContents(editor.querySelector('p')); const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range); document.dispatchEvent(new Event('selectionchange')); })()`);
-        // On a phone the focused editor docks the full formatting bar above the keyboard; on a desktop the selection opens the bubble.
-        await browser.until('native formatting toolbar', width === 390 ? `!!${q('[data-testid=markdown-dock] [data-slot=toggle]')} && !!${q('[data-testid=markdown-dock] [data-slot=separator]')}` : `!!${q('.boring-markdown-bubble [data-slot=toggle]')}`, 10000);
+        await browser.until('native selection bubble on desktop and phone', `!!${q('.boring-markdown-bubble [data-slot=toggle]')}`, 10000);
+        assert.equal(await browser.evaluate(`!!${q('[data-testid=markdown-dock]')}`), false, 'selection alone never pins the full dock');
+      }
+      if (surface === 'menu' || surface === 'menu-fr' || surface === 'unsafe') {
+        const open = async () => { await browser.click(q('[data-testid=fixture-viewer-more]')); await browser.until('view menu', `!!${q('[data-testid=fixture-viewer-mode-rich]')}`, 5000); };
+        await open();
+        assert.equal(await browser.evaluate(`!!${q('[data-testid=fixture-viewer-more-list] [data-testid=fixture-viewer-formatting]')}`), false, 'formatting is not an overflow item');
+        assert.equal(await browser.evaluate(`${q('[data-testid=fixture-viewer-mode-source]')}.dataset.slot`), 'dropdown-menu-radio-item');
+        if (surface === 'unsafe') {
+          assert.equal(await browser.evaluate(`!!${q('[data-testid=fixture-viewer-formatting]')}`), false, 'unsafe source mode has no formatting icon');
+          assert.equal(await browser.evaluate(`${q('[data-testid=fixture-viewer-mode-rich]')}.getAttribute('aria-disabled')`), 'true');
+          assert.match(await browser.evaluate(`${q('[data-testid=fixture-viewer-mode-rich]')}.textContent`), /front matter, raw HTML/);
+        } else {
+          await browser.click(q('[data-testid=fixture-viewer-mode-source]'));
+          await browser.until('Markdown selected and focused', `document.activeElement === ${q('textarea.boring-markdown-source')}`, 5000);
+          assert.equal(await browser.evaluate(`!!${q('[data-testid=fixture-viewer-formatting]')}`), false, 'Markdown hides the formatting icon');
+          const text = await browser.evaluate(`${q('textarea.boring-markdown-source')}.value`);
+          await browser.evaluate(`${q('textarea.boring-markdown-source')}.setSelectionRange(3, 9, 'backward')`);
+          await open(); await browser.click(q('[data-testid=fixture-viewer-mode-rich]'));
+          await browser.until('Formatted selected', `!!${q('[contenteditable=true]')}`, 5000);
+          await open(); await browser.click(q('[data-testid=fixture-viewer-mode-source]'));
+          await browser.until('Markdown selected again', `!!${q('textarea.boring-markdown-source')}`, 5000);
+          assert.deepEqual(await browser.evaluate(`(() => { const input = ${q('textarea.boring-markdown-source')}; return [input.value, input.selectionStart, input.selectionEnd, input.selectionDirection]; })()`), [text, 3, 9, 'backward'], 'menu switches preserve bytes and the source cursor');
+          await open(); await browser.click(q('[data-testid=fixture-viewer-mode-rich]'));
+          await open();
+        }
+        const saveLabel = await browser.evaluate(`(() => { const item = ${q('[data-testid=fixture-viewer-save-menu]')}; return item?.checkVisibility() ? item.innerText.trim() : ''; })()`);
+        assert.equal(saveLabel, width === 390 ? surface === 'menu-fr' ? 'Enregistrer' : 'Save' : '', 'manual Save has visible translated words on phone and stays icon-only on desktop');
+        if (width === 390) {
+          const saveLayout = await browser.evaluate(`(() => { const menu = ${q('[data-testid=fixture-viewer-more-list]')}; const metrics = item => ({ iconX: item.querySelector('svg').getBoundingClientRect().x, fontSize: getComputedStyle(item).fontSize }); return { save: metrics(menu.querySelector('[data-testid=fixture-viewer-save-menu], [data-testid=fixture-viewer-save]')), share: metrics(menu.querySelector('[data-testid=fixture-viewer-share]')) }; })()`);
+          assert.deepEqual(saveLayout.save, saveLayout.share, 'Save icon alignment and font size match Share');
+          const heights = await browser.evaluate(`[...${q('[data-testid=fixture-viewer-more-list]')}.querySelectorAll('[role=menuitemradio], [role=menuitemcheckbox]')].map(item => item.getBoundingClientRect().height)`);
+          assert.ok(heights.every(height => height >= 48), `48px phone view choices: ${JSON.stringify(heights)}`);
+        }
+      }
+      if (['markdown', 'standalone-markdown', 'menu', 'menu-fr'].includes(surface)) {
+        if (await browser.evaluate(`!!${q('[data-slot=dropdown-menu-content]')}`)) await browser.press('Escape');
+        const label = surface === 'menu-fr' ? 'Mise en forme' : 'Formatting';
+        const toggle = q(`header button[aria-label="${label}"]`);
+        await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 80 });
+        const unpressedBackground = await browser.evaluate(`getComputedStyle(${toggle}).backgroundColor`);
+        const state = await browser.evaluate(`(() => { const button = ${toggle}; const box = button.getBoundingClientRect(); return { visible: button.checkVisibility(), slot: button.dataset.slot, pressed: button.getAttribute('aria-pressed'), title: button.title, typeIcon: !!button.querySelector('svg.lucide-type'), width: box.width, height: box.height }; })()`);
+        assert.deepEqual({ visible: state.visible, slot: state.slot, pressed: state.pressed, title: state.title, typeIcon: state.typeIcon }, { visible: true, slot: 'toggle', pressed: 'false', title: label, typeIcon: true });
+        if (width === 390) assert.ok(state.width >= 48 && state.height >= 48, `48px header formatting target: ${JSON.stringify(state)}`);
+        if (surface === 'markdown' && width === 1440) await browser.evaluate(`window.formattingFeedback = []; window.formattingObserver = new MutationObserver(() => window.formattingFeedback.push({ pressed: ${toggle}.getAttribute('aria-pressed'), bar: !!${q('.boring-markdown-toolbar')} })); window.formattingObserver.observe(${toggle}, { attributes: true, attributeFilter: ['aria-pressed'] });`);
+        const off = `viewer-${theme}-${mode}-${width}-${surface}-formatting-off.png`;
+        await browser.screenshot(off); screenshots.push(off);
+        await browser.click(toggle);
+        await browser.until('formatting pinned from the header icon', `${toggle}.getAttribute('aria-pressed') === 'true' && !!${q(width === 390 ? '[data-testid=markdown-dock]' : '.boring-markdown-toolbar')}`, 5000);
+        await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 80 });
+        await browser.evaluate(`Promise.all(${toggle}.getAnimations().map(animation => animation.finished.catch(() => {})))`);
+        if (surface === 'markdown' && width === 1440) assert.deepEqual(await browser.evaluate('window.formattingFeedback'), [{ pressed: 'true', bar: true }], 'pressed feedback never precedes the pinned bar');
+        const pressedBackground = await browser.evaluate(`getComputedStyle(${toggle}).backgroundColor`);
+        assert.notEqual(pressedBackground, unpressedBackground, 'pressed Formatting has a visibly different background');
+        const on = `viewer-${theme}-${mode}-${width}-${surface}-formatting-on.png`;
+        await browser.screenshot(on); screenshots.push(on);
+        await browser.click(toggle);
+        await browser.until('formatting unpinned from the same icon', `${toggle}.getAttribute('aria-pressed') === 'false' && !${q('.boring-markdown-toolbar, [data-testid=markdown-dock]')}`, 5000);
+        if (surface === 'markdown' && width === 1440) {
+          assert.deepEqual(await browser.evaluate('window.formattingFeedback'), [{ pressed: 'true', bar: true }, { pressed: 'false', bar: false }], 'unpressed feedback never leaves the old bar visible');
+          await browser.evaluate('window.formattingObserver.disconnect()');
+        }
+        if (surface === 'menu' || surface === 'menu-fr') {
+          await browser.click(q('[data-testid=fixture-viewer-more]'));
+          await browser.until('menu restored for screenshot', `!!${q('[data-testid=fixture-viewer-mode-source]')}`, 5000);
+        }
       }
       if (surface === 'manual') {
         await browser.click(q('[data-testid=fixture-viewer-more]'));

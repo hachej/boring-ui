@@ -28,7 +28,10 @@ export default [
       let scope = VIEWER('docs/picnic-plan.md');
       await standardBar(scope, 'Markdown');
       assert.equal(await browser.evaluate(`${q(`${scope} [data-testid=file-title]`)}.textContent`), 'picnic-plan.md');
-      assert.equal(await browser.evaluate(`${k.qa(`${scope} .boring-markdown-toolbar`)}.length`), 1, 'formatting is pinned by default');
+      assert.equal(await browser.evaluate(`${k.qa(`${scope} .boring-markdown-toolbar`)}.length`), 0, 'formatting waits for a selection by default');
+      await browser.click(q(`${scope} [data-testid=viewer-formatting]`));
+      await browser.until('document Formatting toggle is pressed and the pinned toolbar is rendered', `${q(`${scope} [data-testid=viewer-formatting]`)}?.getAttribute('aria-pressed') === 'true' && !!${q(`${scope} .boring-markdown-toolbar`)}`, 5000);
+      assert.equal(await browser.evaluate(`${k.qa(`${scope} .boring-markdown-toolbar`)}.length`), 1, 'the header icon pins formatting on demand');
       const tools = await browser.evaluate(`${k.qa(`${scope} [role=toolbar] button`)}.map(b => ({ label: b.getAttribute('aria-label'), icon: !!b.querySelector('svg'), text: b.textContent.trim() }))`);
       assert.ok(tools.length >= 14, `a formatting toolbar: ${tools.length} buttons`);
       assert.deepEqual(tools.filter(tool => !tool.label || !tool.icon || tool.text), [], 'every toolbar button is an icon with an accessible name');
@@ -58,8 +61,11 @@ export default [
       await openFile('docs/legacy-notes.md', 'markdown');
       scope = VIEWER('docs/legacy-notes.md');
       await browser.until('the notice', `!!${q(`${scope} [data-testid=markdown-source-only]`)}`);
-      assert.equal(await browser.evaluate(`${q(`${scope} [data-testid=viewer-mode-rich]`)}.disabled`), true, 'rich editing is disabled');
-      assert.equal(await browser.evaluate(`${q(`${scope} [data-testid=viewer-mode-source]`)}.getAttribute('aria-pressed')`), 'true');
+      await browser.click(q(`${scope} [data-testid=viewer-more]`));
+      await browser.until('unsafe document mode menu', `!!${q('[data-testid=viewer-mode-rich]')}`, 5000);
+      assert.equal(await browser.evaluate(`${q('[data-testid=viewer-mode-rich]')}.getAttribute('aria-disabled')`), 'true', 'rich editing is disabled');
+      assert.equal(await browser.evaluate(`${q('[data-testid=viewer-mode-source]')}.getAttribute('aria-checked')`), 'true');
+      await browser.press('Escape');
       assert.equal(await browser.evaluate(`!${q(`${scope} [role=toolbar]`)}`), true, 'no formatting toolbar without rich mode');
       await shots('fileviewers-markdown-source-only');
       const legacy = await readText('docs/legacy-notes.md');
@@ -257,7 +263,7 @@ export default [
   },
   {
     ...common, id: 'docs-viewer-bar', title: 'The viewer bar at any width',
-    description: 'One row at 1280 px and at the default panel width; an icon-only mode toggle with tooltips; the status as a dot.',
+    description: 'One row at 1280 px and at the default panel width; view choices in the overflow menu; the status as a dot.',
     async verify(t) {
       const { browser, q, shots, pause } = t;
       const k = viewerKit(t);
@@ -283,9 +289,12 @@ export default [
       await t.reload();
       await openFile('docs/picnic-plan.md', 'markdown');
       const scope = VIEWER('docs/picnic-plan.md');
-      await browser.until('the mode toggle', `${k.qa(`${scope} [data-testid=viewer-controls] [role=group] button`)}.length === 2`, 10000);
-      const toggles = await browser.evaluate(`${k.qa(`${scope} [data-testid=viewer-controls] [role=group] button`)}.map(b => ({ label: b.getAttribute('aria-label'), title: b.title, text: b.textContent.trim() }))`);
-      assert.deepEqual(toggles, [{ label: 'Rich text', title: 'Rich text', text: '' }, { label: 'Markdown source', title: 'Markdown source', text: '' }]);
+      assert.equal(await browser.evaluate(`${k.qa(`${scope} [data-testid=viewer-bar] [data-mode]`)}.length`), 0, 'no mode toggle in the title row');
+      await browser.click(q(`${scope} [data-testid=viewer-more]`));
+      await browser.until('the menu mode choices', `!!${q('[data-testid=viewer-mode-source]')}`, 10000);
+      const choices = await browser.evaluate(`[...document.querySelectorAll('[data-testid=viewer-more-list] [role=menuitemradio]')].map(item => [item.getAttribute('aria-label'), item.getAttribute('aria-checked')])`);
+      assert.deepEqual(choices, [['Formatted', 'true'], ['Markdown', 'false']]);
+      await browser.press('Escape');
       assert.equal(await browser.evaluate(`${q(`${scope} [data-testid=viewer-status]`)}?.textContent`), 'Saved', 'a clean Markdown document quietly confirms persistence');
       await shots('fileviewers-bar-markdown');
       await openFile('docs/tide-times.html', 'html');

@@ -56,8 +56,12 @@ export const defaultViewerLabels = {
   rich: 'Rich',
   richText: 'Rich text',
   markdownSource: 'Markdown source',
+  formatted: 'Formatted',
+  markdown: 'Markdown',
+  formatting: 'Formatting',
+  showOutline: 'Show outline',
   /** Tooltip of the disabled Text mode: what the rich editor could not keep exactly. */
-  richUnavailable: (reasons: string) => `Rich text is off: this document contains ${reasons}, which it could not keep exactly`,
+  richUnavailable: (reasons: string) => `Formatted is off: this document contains ${reasons}, which it could not keep exactly`,
   document: 'Document',
   // Images and PDFs
   zoom: 'Zoom',

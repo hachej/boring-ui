@@ -61,10 +61,14 @@ test('mounted Markdown commands use the live React/Tiptap editor and exact resou
     await render();
     const tools = () => delivered.filter(Boolean).at(-1);
     await waitFor(() => tools()?.getTarget(), 'Mounted tools did not become ready');
-    const button = label => [...container.querySelectorAll('button')].find(node => (node.getAttribute('aria-label') || node.textContent) === label);
+    const button = label => [...container.querySelectorAll('button,input[type=radio],input[type=checkbox],summary'), ...document.querySelectorAll('[role^=menuitem]')].find(node => (node.getAttribute('aria-label') || node.textContent) === label);
     const click = async label => { const node = button(label); assert.ok(node, `Missing ${label}`); await act(async () => node.click()); };
+    const switchMode = async () => {
+      await click('More actions');
+      await click(container.querySelector('[data-boring="markdown-editor"]').dataset.mode === 'rich' ? 'Markdown' : 'Formatted');
+    };
     t.after(async () => { await act(async () => root.unmount()); controller.dispose(); provider.close(); host.remove(); });
-    return { controller, container, root, delivered, tools, render, button, click, writes: () => writes, identity, target,
+    return { controller, container, root, delivered, tools, render, button, click, switchMode, writes: () => writes, identity, target,
       changeCallback: next => { callback = next; },
       saved: async () => new TextDecoder('utf-8', { ignoreBOM: true }).decode((await client.read({ target, revision: { kind: 'latest' } })).snapshot.bytes) };
   }
@@ -128,7 +132,7 @@ test('mounted Markdown commands use the live React/Tiptap editor and exact resou
         assert.ok(headings[0].contains(dom.focusNode));
         assert.deepEqual([dom.anchorOffset, dom.focusOffset], [selection.anchor - 1, selection.head - 1]);
         if (repeat === 0) {
-          f.button('Markdown source').focus();
+          f.button('More actions').focus();
           dom.setBaseAndExtent(outside.firstChild, 0, outside.firstChild, 7);
           assert.deepEqual((await inspect(tools, target)).value.currentSelection, selection);
         }
@@ -145,7 +149,7 @@ test('mounted Markdown commands use the live React/Tiptap editor and exact resou
     const f = await fixture(t);
     const richTools = f.tools();
     const richTarget = richTools.getTarget();
-    await f.click('Markdown source');
+    await f.switchMode();
     await waitFor(() => f.tools() !== richTools && f.tools()?.getTarget()?.subject.mode === 'source', 'Source tools did not mount');
     const tools = f.tools();
     const target = tools.getTarget();
@@ -174,7 +178,7 @@ test('mounted Markdown commands use the live React/Tiptap editor and exact resou
     outside.textContent = 'Outside';
     document.body.append(outside);
     t.after(() => outside.remove());
-    f.button('Markdown source').focus();
+    f.button('More actions').focus();
     window.getSelection().setBaseAndExtent(outside.firstChild, 0, outside.firstChild, 7);
     assert.equal((await invoke(tools.revealHeading, target, { expiresAt: expiresAt(), index: 1 })).kind, 'applied');
     const heading = f.container.querySelector('[contenteditable] h2');
@@ -192,7 +196,7 @@ test('mounted Markdown commands use the live React/Tiptap editor and exact resou
         assert.ok(title.contains(dom.focusNode));
         assert.deepEqual([dom.anchorOffset, dom.focusOffset], [selection.anchor - 1, selection.head - 1]);
         if (repeat === 0) {
-          f.button('Markdown source').focus();
+          f.button('More actions').focus();
           dom.setBaseAndExtent(outside.firstChild, 0, outside.firstChild, 7);
           assert.deepEqual((await inspect(tools, target)).value.currentSelection, selection);
         }
@@ -262,7 +266,7 @@ test('mounted Markdown commands use the live React/Tiptap editor and exact resou
 
   await t.test('pending native frame captures input, then abort, expiry and unmount settle without selection effects', async t => {
     const f = await fixture(t);
-    await f.click('Markdown source');
+    await f.switchMode();
     const tools = f.tools();
     const target = tools.getTarget();
     const input = f.container.querySelector('textarea');
@@ -303,7 +307,7 @@ test('mounted Markdown commands use the live React/Tiptap editor and exact resou
 
   await t.test('reentrant focus disposal and a changed buffer prevent queued selection', async t => {
     const f = await fixture(t);
-    await f.click('Markdown source');
+    await f.switchMode();
     const tools = f.tools();
     const target = tools.getTarget();
     const input = f.container.querySelector('textarea');
@@ -328,7 +332,7 @@ test('mounted Markdown commands use the live React/Tiptap editor and exact resou
 
   await t.test('source selection works inside a shadow root without publishing', async t => {
     const f = await fixture(t, { shadow: true });
-    await f.click('Markdown source');
+    await f.switchMode();
     const tools = f.tools();
     const target = tools.getTarget();
     const selected = { kind: 'source', start: 2, end: 8, direction: 'backward' };

@@ -36,10 +36,14 @@ async function fixture(t, source = 'A fictional kite.\n') {
   const store = await createMarkStore({ client, identity }, target);
   const host = document.createElement('div'); document.body.append(host); const root = createRoot(host);
   const render = async props => { await act(async () => root.render(h(Highlights, { controller, store, ...props }))); await until(() => host.querySelector('.tiptap') || host.querySelector('textarea.boring-markdown-source'), 'editor ready'); };
-  const button = label => [...document.querySelectorAll('button,[role=menuitem]')].find(el => (el.getAttribute('aria-label') || el.textContent) === label);
+  const button = label => [...document.querySelectorAll('button,[role^=menuitem]')].find(el => (el.getAttribute('aria-label') || el.textContent) === label);
   const click = async label => { const el = button(label); assert.ok(el, `Missing ${label}`); await act(async () => el.click()); };
+  const switchMode = async () => {
+    await click('More actions');
+    await click(host.querySelector('[data-boring="markdown-editor"]').dataset.mode === 'rich' ? 'Markdown' : 'Formatted');
+  };
   t.after(async () => { await act(async () => root.unmount()); assert.equal(controller.getSnapshot().lifecycle, 'active', 'controller borrowed'); assert.equal(store.getSnapshot().lifecycle, 'active', 'store borrowed'); store.dispose(); controller.dispose(); files.close(); host.remove(); });
-  return { host, root, controller, store, client, render, click, button };
+  return { host, root, controller, store, client, render, click, switchMode, button };
 }
 
 test('exact decorations leave the document unchanged and context actions use the mark id', async t => {
@@ -98,7 +102,7 @@ test('the tray explains unplaced quotes and selection hints in plain English and
 
 test('a selection enables compact highlight and reattach buttons without disabled hints', async t => {
   const f = await fixture(t, 'echo echo\n'); await f.store.add(mark('gone', anchor('vanished'))); await f.render();
-  await f.click('Markdown source');
+  await f.switchMode();
   const input = f.host.querySelector('textarea.boring-markdown-source');
   await act(async () => { input.focus(); input.setSelectionRange(0, 4); input.dispatchEvent(new window.KeyboardEvent('keyup', { key: 'ArrowRight', bubbles: true })); document.dispatchEvent(new window.Event('selectionchange')); });
   await until(() => !f.button('Highlight selection').disabled, 'selection enables highlighting');
@@ -135,7 +139,7 @@ test('default store captures source selections, writes the sidecar, and never wr
   const f = await fixture(t, 'A fictional kite.\n');
   await f.render({ store: undefined, resource: { client: f.client, identity }, locator: target });
   await until(() => f.button('Highlight selection'), 'default store loaded');
-  await f.click('Markdown source');
+  await f.switchMode();
   const input = f.host.querySelector('textarea.boring-markdown-source');
   await act(async () => { input.focus(); input.setSelectionRange(2, 11); input.dispatchEvent(new window.KeyboardEvent('keyup', { key: 'ArrowRight', bubbles: true })); document.dispatchEvent(new window.Event('selectionchange')); });
   await until(() => !f.button('Highlight selection').disabled, 'source capture');
@@ -170,7 +174,7 @@ test('invalid supplied colour tokens cannot introduce CSS or decorations', async
 test('rich capture refuses selections crossing syntax rather than guessing source offsets', async t => {
   const f = await fixture(t, 'A **fictional** kite.\n');
   await f.render();
-  await f.click('Markdown source'); await f.click('Markdown source');
+  await f.switchMode(); await f.switchMode();
   const rich = f.host.querySelector('.tiptap');
   assert.ok(rich);
   await act(async () => { const selection = window.getSelection(); selection.setBaseAndExtent(rich.querySelector('p').firstChild, 0, rich.querySelector('strong').firstChild, 4); rich.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true })); document.dispatchEvent(new window.Event('selectionchange')); });

@@ -75,6 +75,7 @@ function FileDocument({ path, kind, locator, options, onClose, back, onUnsavedCh
   }, [saved.controller, onUnsavedChange]);
   const { labels } = useAppText();
   const [mode, setMode] = useState<string>(kind === 'markdown' ? 'rich' : 'preview');
+  const [formattingToolbar, setFormattingToolbar] = useState<'selection' | 'pinned'>('selection');
   useReportShown(options.onShown, path, saved.kind === 'open' && saved.controller ? saved.snapshot.ref.revision : undefined);
   const common = { title: nameOf(path), subtitle: subtitleOf(locator), target: { file: path }, onClose, titleTestId: 'file-title', headerStart: back, ...(options.share ? { onShare: options.share } : {}) };
   // Until the document is open the bar offers no Share, Copy or menu actions of its own: they would act on a document that is not shown.
@@ -87,7 +88,7 @@ function FileDocument({ path, kind, locator, options, onClose, back, onUnsavedCh
   // The preview selector the journeys use keeps working: the wrapper holds the document's text.
   return <div data-testid="file-preview" className="h-full min-h-0" data-revision={revision}>
     {kind === 'markdown'
-      ? <MarkdownPane key={revision} controller={saved.controller as MarkdownController} revision={revision} initialMode={mode as 'rich'} onModeChange={setMode} onAutosaveChange={registerAutosave} onBeforeLeaveChange={onBeforeLeaveChange} {...common} />
+      ? <MarkdownPane key={revision} controller={saved.controller as MarkdownController} revision={revision} initialMode={mode as 'rich'} onModeChange={setMode} formattingToolbar={formattingToolbar} onFormattingToolbarChange={setFormattingToolbar} onAutosaveChange={registerAutosave} onBeforeLeaveChange={onBeforeLeaveChange} {...common} />
       : <HtmlPane key={revision} controller={saved.controller as HtmlController} revision={revision} initialMode={mode as 'preview'} onModeChange={setMode} {...(options.interactive ? { interactive: options.interactive } : {})} {...common} />}
   </div>;
 }

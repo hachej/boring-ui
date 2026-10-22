@@ -42,14 +42,22 @@ test('Markdown outline and caret retention in a DOM (not browser qualification)'
     const controller = createMarkdownController({ source: { kind: 'saved', snapshot: read.snapshot }, identity, client, instanceId: `navigation-${++sequence}`, epoch: 'one' });
     const container = document.createElement('div'); document.body.append(container);
     const root = createRoot(container);
-    const render = async (selected = controller) => { await act(async () => root.render(createElement(MarkdownEditor, { controller: selected, title: 'Notes' }))); };
+    const render = async (selected = controller) => {
+      await act(async () => root.render(createElement(MarkdownEditor, { controller: selected, title: 'Notes' })));
+      const outline = container.querySelector('input[aria-label="Show outline"]');
+      if (outline && !outline.checked) await act(async () => { container.querySelector('summary[aria-label="More actions"]').click(); outline.click(); });
+    };
     t.after(async () => { await act(async () => root.unmount()); controller.dispose(); provider.close(); container.remove(); });
     await render();
     const button = label => {
-      const result = [...container.querySelectorAll('button')].find(node => (node.getAttribute('aria-label') || node.textContent) === label);
+      const result = [...container.querySelectorAll('button,input[type=radio],input[type=checkbox],summary'), ...document.querySelectorAll('[role^=menuitem]')].find(node => (node.getAttribute('aria-label') || node.textContent) === label);
       assert.ok(result, `Missing button: ${label}`); return result;
     };
     const click = async label => { await act(async () => button(label).click()); };
+    const switchMode = async () => {
+      await click('More actions');
+      await click(container.querySelector('[data-boring="markdown-editor"]').dataset.mode === 'rich' ? 'Markdown' : 'Formatted');
+    };
     const input = async value => {
       const textarea = container.querySelector('textarea'); assert.ok(textarea);
       await act(async () => {
@@ -57,7 +65,7 @@ test('Markdown outline and caret retention in a DOM (not browser qualification)'
         textarea.dispatchEvent(new window.Event('input', { bubbles: true }));
       });
     };
-    return { controller, container, render, button, click, input, writes: () => writes,
+    return { controller, container, render, button, click, switchMode, input, writes: () => writes,
       saved: async () => new TextDecoder().decode((await client.read({ target, revision: { kind: 'latest' } })).snapshot.bytes) };
   }
   function outline(container) {
@@ -97,11 +105,11 @@ test('Markdown outline and caret retention in a DOM (not browser qualification)'
 
   await t.test('source selection range and direction return after unchanged-buffer mode toggles', async t => {
     const f = await fixture(t);
-    await f.click('Markdown source');
+    await f.switchMode();
     const textarea = f.container.querySelector('textarea');
     textarea.focus(); textarea.setSelectionRange(3, 17, 'backward');
-    await f.click('Markdown source');
-    await f.click('Markdown source');
+    await f.switchMode();
+    await f.switchMode();
     const restored = f.container.querySelector('textarea');
     await waitFor(() => document.activeElement === restored, 'Source editor did not regain focus');
     assert.deepEqual([restored.selectionStart, restored.selectionEnd, restored.selectionDirection], [3, 17, 'backward']);
@@ -124,8 +132,8 @@ test('Markdown outline and caret retention in a DOM (not browser qualification)'
     assert.equal(selection.anchorOffset, 6);
     assert.equal(selection.focusOffset, 2);
     const before = [selection.anchorNode.textContent, selection.anchorOffset, selection.focusNode.textContent, selection.focusOffset];
-    await f.click('Markdown source');
-    await f.click('Markdown source');
+    await f.switchMode();
+    await f.switchMode();
     const restoredHeading = f.container.querySelectorAll('[contenteditable] h2')[1];
     await waitFor(() => selectedWithin(restoredHeading), 'Rich selection did not return to the previous heading');
     const restored = window.getSelection();
@@ -139,10 +147,10 @@ test('Markdown outline and caret retention in a DOM (not browser qualification)'
     const f = await fixture(t);
     await act(async () => outline(f.container)[2].click());
     await waitFor(() => selectedWithin(f.container.querySelectorAll('[contenteditable] h2')[1]), 'Old heading selection was not established');
-    await f.click('Markdown source');
+    await f.switchMode();
     const changed = '# New title\n\nshort\n';
     await f.input(changed);
-    await f.click('Markdown source');
+    await f.switchMode();
     assert.deepEqual(outline(f.container).map(node => node.textContent), ['New title']);
     const content = f.container.querySelector('[contenteditable]');
     await waitFor(() => selectedWithin(content), 'Changed rich document did not receive a valid native selection');
@@ -161,9 +169,9 @@ test('Markdown outline and caret retention in a DOM (not browser qualification)'
   await t.test('whitespace-only source edits keep structurally equal heading targets navigable', async t => {
     const f = await fixture(t);
     const changed = raw.replace('\n\nOpening', '\n\n\nOpening');
-    await f.click('Markdown source');
+    await f.switchMode();
     await f.input(changed);
-    await f.click('Markdown source');
+    await f.switchMode();
     const buttons = outline(f.container);
     assert.deepEqual(buttons.map(node => node.textContent), ['Overview', 'Details', 'Details']);
     await act(async () => buttons[2].click());
@@ -176,9 +184,9 @@ test('Markdown outline and caret retention in a DOM (not browser qualification)'
   await t.test('controller replacement removes old headings and does not transfer source bookmarks', async t => {
     const old = await fixture(t);
     const detachedHeading = outline(old.container)[2];
-    await old.click('Markdown source');
+    await old.switchMode();
     old.container.querySelector('textarea').setSelectionRange(15, 22, 'backward');
-    await old.click('Markdown source');
+    await old.switchMode();
     const nextText = '# Next document\n\nA different document with enough text for an unrelated selection.\n';
     const next = await fixture(t, nextText);
     await old.render(next.controller);
@@ -187,7 +195,7 @@ test('Markdown outline and caret retention in a DOM (not browser qualification)'
     await act(async () => detachedHeading.click());
     await old.click('Go to heading: Next document');
     await waitFor(() => selectedWithin(old.container.querySelector('[contenteditable] h1')), 'Replacement heading did not receive native selection');
-    await old.click('Markdown source');
+    await old.switchMode();
     const textarea = old.container.querySelector('textarea');
     assert.equal(textarea.value, nextText);
     assert.notDeepEqual([textarea.selectionStart, textarea.selectionEnd, textarea.selectionDirection], [15, 22, 'backward']);

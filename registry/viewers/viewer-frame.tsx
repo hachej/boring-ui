@@ -9,6 +9,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
+import { DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { ActionButton, actionMenuItem, headerActions, menuActions } from '../button/actions';
 import type { BlockAction } from '../button/actions';
 import { ViewerActions } from './menu';
@@ -54,6 +55,8 @@ export interface ViewerFrameProps {
   readonly mainControl?: ReactNode;
   /** Viewer-specific secondary actions, listed in the "…" menu after the standard ones. */
   readonly menu?: readonly ViewerMenuItem[];
+  /** Viewer-specific native dropdown groups, before the standard secondary actions. */
+  readonly menuContent?: ReactNode;
   /**
    * The host's actions for this bar, after the window's (`ViewerWindow.actions`): `header` ones as buttons beside Share, `menu` ones at the
    * end of the "…" menu. Test ids `<testId>-<id>`.
@@ -141,7 +144,7 @@ function StatusMark({ status, testId }: { readonly status: ViewerStatus; readonl
 }
 
 /** The one top bar of every viewer, always a single row: title and facts, viewer controls, a status dot when something needs attention, Share, full screen, Close and the "…" menu. */
-export function ViewerFrame({ title, subtitle, status, showSavedStatus = false, target, revision, headerStart, controls, mainControl, menu, actions, labels: ownLabels, icons: ownIcons, onRefresh, onShare, onCopy, onDownload, onOpenInNewTab, onClose, testId = 'viewer', titleTestId, compactHeader = true, className, children }: ViewerFrameProps) {
+export function ViewerFrame({ title, subtitle, status, showSavedStatus = false, target, revision, headerStart, controls, mainControl, menu, menuContent, actions, labels: ownLabels, icons: ownIcons, onRefresh, onShare, onCopy, onDownload, onOpenInNewTab, onClose, testId = 'viewer', titleTestId, compactHeader = true, className, children }: ViewerFrameProps) {
   const bar = useRef<HTMLElement>(null);
   const [space, setSpace] = useState<ViewerBarSpace>({ tight: false });
   const [busy, setBusy] = useState<'refresh' | 'share' | undefined>();
@@ -222,7 +225,7 @@ export function ViewerFrame({ title, subtitle, status, showSavedStatus = false, 
         <div className="flex shrink-0 items-center gap-0.5">
           {headerActions(hostActions).map(action => <ActionButton key={action.id} action={action} testId={testId} size="icon-sm" />)}
           {!compactHeader && onShare && <Button variant="ghost" size="icon-sm" aria-label={labels.share} title={labels.share} data-testid={`${testId}-share`} disabled={busy === 'share'} onClick={share}><icons.share data-icon="inline-start" aria-hidden="true" /></Button>}
-          {(menuItems.length > 0 || controls) && <ViewerActions label={labels.moreActions} testId={`${testId}-more`} icon={<icons.more data-icon="inline-start" aria-hidden="true" />} items={menuItems}>{compactHeader && controls && <div className="boring-viewer flex flex-wrap items-center gap-2 p-2 min-[641px]:hidden">{controls}</div>}</ViewerActions>}
+          {(menuItems.length > 0 || controls || menuContent) && <ViewerActions label={labels.moreActions} testId={`${testId}-more`} icon={<icons.more data-icon="inline-start" aria-hidden="true" />} items={menuItems}>{menuContent}{menuContent && menuItems.length > 0 && <DropdownMenuSeparator />}{compactHeader && controls && <div className="boring-viewer flex flex-wrap items-center gap-2 p-2 min-[641px]:hidden">{controls}</div>}</ViewerActions>}
           {!compactHeader && host?.onFullscreenChange && <Toggle size="sm" aria-label={host.fullscreen ? labels.exitFullscreen : labels.enterFullscreen} title={host.fullscreen ? labels.exitFullscreen : labels.enterFullscreen} data-testid={`${testId}-fullscreen`} pressed={host.fullscreen === true}
             onPressedChange={pressed => host.onFullscreenChange!(pressed)}>{host.fullscreen ? <icons.exitFullscreen data-icon="inline-start" aria-hidden="true" /> : <icons.enterFullscreen data-icon="inline-start" aria-hidden="true" />}</Toggle>}
           {(!compactHeader || headerStart) && onClose && <Button variant="ghost" size="icon-sm" className={compactHeader ? 'max-[641px]:hidden' : undefined} aria-label={labels.close} title={labels.close} data-testid={`${testId}-close`} onClick={() => run(onClose)}><icons.close data-icon="inline-start" aria-hidden="true" /></Button>}

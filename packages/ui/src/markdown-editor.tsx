@@ -5,14 +5,14 @@ import { captureRichMarkdownQuote, installMarkdownHighlights, type MarkdownDecor
 export type { MarkdownDecoration, MarkdownQuoteCapture } from './markdown-highlight-layer.js';
 export { markdownMarkerBackground } from './markdown-highlight-layer.js';
 import { TextDraftControls } from './text-draft-controls.js';
-import type { ViewerComponents } from './viewer-components.js';
-export type { ViewerComponents } from './viewer-components.js';
+import type { MarkdownEditorMenuLabels, MarkdownEditorMenuProps, ViewerComponents } from './viewer-components.js';
+export type { MarkdownEditorMenuLabels, MarkdownEditorMenuProps, ViewerComponents } from './viewer-components.js';
 import { useMarkdownAutosave } from './markdown-autosave.js';
 import type { MarkdownAutosave, MarkdownFlush } from './markdown-autosave.js';
 import type { SaveResult } from './resources.js';
 export type { MarkdownAutosave, MarkdownFlush } from './markdown-autosave.js';
 
-import { Fragment, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Fragment, useDeferredValue, useEffect, useLayoutEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react/menus';
@@ -40,9 +40,9 @@ export interface MarkdownEditorProps {
   readonly placeholder?: string;
   readonly className?: string;
   readonly onMountedTools?: (tools: MarkdownMountedTools | null) => void;
-  /** `false` omits the built-in header (title, status, source toggle, Save) so a host bar such as the viewer frame supplies them. */
+  /** `false` omits the built-in header (title, status, view menu, Save) so a host bar such as the viewer frame supplies them. */
   readonly header?: boolean;
-  /** Show local heading navigation. Defaults to the built-in header's visibility. */
+  /** Offer local heading navigation in the view menu. Defaults to the built-in header's visibility; initially hidden. */
   readonly showOutline?: boolean;
   /** Controlled mode. The editor still falls back to `source` for a document that rich editing cannot keep exactly. */
   readonly mode?: 'rich' | 'source';
@@ -56,8 +56,10 @@ export interface MarkdownEditorProps {
   /** Registers the async navigation barrier. Null while autosave is disabled or the editor is unmounted. */
   readonly onAutosaveChange?: (flush: MarkdownFlush | null) => void;
   readonly onSaveResult?: (result: SaveResult) => void;
-  /** The complete formatting row is pinned by default on desktop; phones show it above the keyboard while editing, plus the selection bubble. */
+  /** Selection formatting by default. Pinned shows the full row on desktop or above the phone keyboard while editing. */
   readonly formattingToolbar?: 'selection' | 'pinned';
+  /** Locale of the built-in view menu. */
+  readonly locale?: 'en' | 'fr';
 }
 
 /** Borrows the controller. The host owns document selection, access and disposal. */
@@ -108,13 +110,38 @@ function useKeyboardInset(active: boolean): number {
   return inset;
 }
 
-function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActivate, components, controller, title = 'Document', initialMode = 'rich', placeholder = 'Start writing', className, onMountedTools, header = true, showOutline = header, mode: controlledMode, onModeChange, onRichSafety, resolveImage, formattingToolbar = 'pinned', autosave = true, onAutosaveChange, onSaveResult, activeController: active }: MarkdownEditorProps & { readonly activeController: { readonly current: MarkdownController } }) {
+const menuLabels: Record<'en' | 'fr', MarkdownEditorMenuLabels> = {
+  en: { moreActions: 'More actions', editorMode: 'Editor mode', formatted: 'Formatted', markdown: 'Markdown', showOutline: 'Show outline' },
+  fr: { moreActions: 'Plus d’actions', editorMode: 'Mode d’édition', formatted: 'Mis en forme', markdown: 'Markdown', showOutline: 'Afficher le plan' },
+};
+
+/** Unstyled native fallback. Installed recipes bind the host's shadcn dropdown. */
+function NativeMarkdownViewOptions({ labels, mode, onModeChange, richDisabledReason, outline, input }: MarkdownEditorMenuProps & { readonly input?: ViewerComponents['input'] | undefined }) {
+  const InputControl = input ?? 'input';
+  const group = useId();
+  const menu = useRef<HTMLDetailsElement>(null);
+  const choose = (action: () => void) => { action(); if (menu.current) menu.current.open = false; };
+  return <details ref={menu} data-boring="markdown-menu"><summary aria-label={labels.moreActions}><MarkdownIcon name="More" /></summary>
+    <fieldset><legend>{labels.editorMode}</legend>
+      <label title={richDisabledReason}><InputControl type="radio" name={group} aria-label={labels.formatted} aria-describedby={richDisabledReason ? `${group}-reason` : undefined} checked={mode === 'rich'} disabled={!!richDisabledReason} onChange={() => choose(() => onModeChange('rich'))} /><MarkdownIcon name="Heading1" />{labels.formatted}{richDisabledReason && <span id={`${group}-reason`}>{richDisabledReason}</span>}</label>
+      <label><InputControl type="radio" name={group} aria-label={labels.markdown} checked={mode === 'source'} onChange={() => choose(() => onModeChange('source'))} /><MarkdownIcon name="Code" />{labels.markdown}</label>
+    </fieldset>
+    {outline && <label><InputControl type="checkbox" aria-label={labels.showOutline} checked={outline.shown} onChange={event => choose(() => outline.onChange(event.currentTarget.checked))} /><MarkdownIcon name="BulletList" />{labels.showOutline}</label>}
+  </details>;
+}
+
+function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActivate, components, controller, title = 'Document', initialMode = 'rich', placeholder = 'Start writing', className, onMountedTools, header = true, showOutline = header, mode: controlledMode, onModeChange, onRichSafety, resolveImage, formattingToolbar = 'selection', locale = 'en', autosave = true, onAutosaveChange, onSaveResult, activeController: active }: MarkdownEditorProps & { readonly activeController: { readonly current: MarkdownController } }) {
   const Control = components?.button ?? 'button';
+  const FormattingControl = components?.formattingControl ?? 'button';
   const Bubble = components?.bubble ?? Fragment;
   const Source = components?.textarea ?? 'textarea';
   const LinkInput = components?.input ?? 'input';
+  const ViewOptions = components?.markdownMenu;
+  const [toolbar, setToolbar] = useState(formattingToolbar);
+  useLayoutEffect(() => setToolbar(formattingToolbar), [formattingToolbar]);
+  const [outlineShown, setOutlineShown] = useState(false);
   const phone = useSyncExternalStore(subscribePhone, phoneSnapshot, desktopSnapshot);
-  const showPinned = formattingToolbar === 'pinned' && !phone;
+  const showPinned = toolbar === 'pinned' && !phone;
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const projected = useRef<string | null>(null);
   const emitted = useRef<string | null>(null);
@@ -213,22 +240,26 @@ function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActiva
     });
     return { document: current.state.doc, headings };
   }, equalityFn: (left, right) => left?.document === right?.document });
-  const switchMode = () => {
-    const current = controller.getSnapshot();
-    if (mode === 'rich') {
-      richBookmark.current = editor && !editor.isDestroyed && projected.current === current.text
-        ? { version: current.bufferVersion, selection: editor.state.selection.getBookmark() } : null;
-    } else {
-      const input = sourceInput.current;
-      sourceBookmark.current = input?.value === current.text
-        ? { version: current.bufferVersion, start: input.selectionStart, end: input.selectionEnd, direction: input.selectionDirection } : null;
-    }
+  const switchMode = (next: 'rich' | 'source') => {
+    if (next === mode || next === 'rich' && !richOffered) return;
     interaction.current = false;
-    focusAfterSwitch.current = true;
-    const next = mode === 'source' ? 'rich' : 'source';
     if (controlledMode === undefined) setOwnMode(next);
     onModeChange?.(next);
   };
+  // The captured textarea survives DOM removal, including a mode change from a host menu.
+  useLayoutEffect(() => {
+    const source = sourceInput.current;
+    return () => {
+      if (active.current !== controller || activeMode.current === mode) return;
+      const current = controller.getSnapshot();
+      if (mode === 'rich') richBookmark.current = editor && !editor.isDestroyed && projected.current === current.text
+        ? { version: current.bufferVersion, selection: editor.state.selection.getBookmark() } : null;
+      else sourceBookmark.current = source?.value === current.text
+        ? { version: current.bufferVersion, start: source.selectionStart, end: source.selectionEnd, direction: source.selectionDirection } : null;
+      interaction.current = false;
+      focusAfterSwitch.current = true;
+    };
+  }, [active, controller, editor, mode]);
   useEffect(() => {
     if (!focusAfterSwitch.current || active.current !== controller || state.lifecycle !== 'active') return;
     if (mode === 'source') {
@@ -274,8 +305,13 @@ function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActiva
   const [linkDraft, setLinkDraft] = useState<string | null>(null);
   // On a phone the full formatting row docks above the soft keyboard while the rich surface has focus.
   const editing = useEditorFocus(editor);
-  const dockVisible = phone && !unavailable && !!editor && (editing || linkDraft !== null);
+  const dockVisible = phone && toolbar === 'pinned' && !unavailable && !!editor && (editing || linkDraft !== null);
   const keyboardInset = useKeyboardInset(dockVisible);
+  const previousToolbar = useRef(toolbar);
+  useEffect(() => {
+    if (previousToolbar.current !== toolbar && toolbar === 'pinned' && phone && mode === 'rich') editor?.commands.focus(undefined, { scrollIntoView: false });
+    previousToolbar.current = toolbar;
+  }, [toolbar, phone, mode, editor]);
   const command = (operation: () => unknown) => { interaction.current = true; try { operation(); } finally { interaction.current = false; } };
   const tool = (label: string, icon: MarkdownIconName, pressed: boolean | undefined, operation: () => unknown, extra: { disabled?: boolean } = {}) => (
     <Control type="button" className="boring-markdown-tool" aria-label={label} title={label} aria-pressed={pressed === true} data-active={pressed === true || undefined}
@@ -318,6 +354,11 @@ function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActiva
       {tool('Delete table', 'Trash', false, () => chain().deleteTable().run())}</>}
   </>;
 
+  const viewOptions: MarkdownEditorMenuProps = {
+    labels: menuLabels[locale], mode, onModeChange: switchMode, richDisabledReason: richOffered ? undefined : describeUnsafe(safety),
+    outline: showOutline ? { shown: outlineShown, onChange: setOutlineShown } : undefined,
+  };
+
   return <section className={className} data-boring="markdown-editor" data-mode={mode} data-dock={(mode === 'rich' && dockVisible) || undefined} data-dirty={state.dirty || undefined}
     onBlurCapture={event => { if (saving.enabled && !event.currentTarget.contains(event.relatedTarget)) void saving.immediate(); }}
     onKeyDownCapture={event => {
@@ -327,7 +368,8 @@ function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActiva
       <strong>{title}</strong>
       {state.readOnly && <span>Read only</span>}
       <span role="status">{state.lifecycle === 'disposed' ? 'Closed' : pending ? 'Saving…' : uncertain ? 'Save unconfirmed' : conflict ? 'Changed elsewhere' : state.dirty ? 'Unsaved changes' : 'Saved'}</span>
-      <Control type="button" aria-pressed={mode === 'source'} disabled={!richOffered} onClick={switchMode}>Markdown source</Control>
+      {ViewOptions ? <ViewOptions {...viewOptions} /> : <NativeMarkdownViewOptions {...viewOptions} input={components?.input} />}
+      {mode === 'rich' && <FormattingControl type="button" aria-label={locale === 'fr' ? 'Mise en forme' : 'Formatting'} title={locale === 'fr' ? 'Mise en forme' : 'Formatting'} aria-pressed={toolbar === 'pinned'} onClick={() => setToolbar(toolbar === 'pinned' ? 'selection' : 'pinned')}><MarkdownIcon name="Type" /></FormattingControl>}
       {!saving.enabled && <Control type="button" disabled={unavailable || !state.dirty || pending || uncertain} onClick={save}>Save</Control>}
     </header>}
     <TextDraftControls components={components} recovery={state.recovery} actions={controller.actions} readOnly={state.readOnly} blocked={state.lifecycle !== 'active' || state.save.kind === 'pending' || (state.save.kind === 'settled' && state.save.result.kind === 'unknown')} />
@@ -351,7 +393,7 @@ function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActiva
       <Control type="button" onClick={() => { setLinkDraft(null); editor?.commands.focus(); }}>Cancel</Control>
     </form>}
     {!richOffered && <p role="note" className="boring-markdown-notice" data-testid="markdown-source-only">{describeUnsafe(safety)}</p>}
-    {showOutline && mode === 'rich' && outline && outline.headings.length > 0 && <nav aria-label="Document outline">
+    {showOutline && outlineShown && mode === 'rich' && outline && outline.headings.length > 0 && <nav aria-label="Document outline">
       <ol>{outline.headings.map((heading, index) => <li key={heading.position} data-heading-level={heading.level}>
         <Control type="button" aria-label={`Go to heading: ${heading.text || 'Untitled heading'}`} disabled={state.lifecycle !== 'active'} onClick={() => {
           if (!editor || editor.isDestroyed || active.current !== controller || controller.getSnapshot().lifecycle !== 'active'
