@@ -55,7 +55,7 @@ Maintain attribution/licenses for copied/adapted code. Dependency/SDK approval p
 
 A47 composes native agent, readonly references, writable document, installed chat/editor/custom viewer, proposal/acceptance/save/reload. It also exercises provider substitution, independent add/remove/failure cleanup, published versus private working views, readonly/dirty/disconnected negatives and unopened-document operations. The background reference example runs without a browser; the coding example proves coherent file/shell acquisition and honest cancellation/restart. These do not manufacture clinical expert acceptance or full Hub M1 qualification.
 
-See [ACCEPTANCE.md](../acceptance/ACCEPTANCE.md), [PI-COMPLEMENT.md](../architecture/PI-COMPLEMENT.md#three-reference-applications) and [ROADMAP.md](../architecture/ROADMAP.md#implementation-packet-reconciliation). All P01–P14 and earlier evidence obligations remain; this ledger makes preservation and deliberate corrections inspectable.
+See [ACCEPTANCE.md](../acceptance/ACCEPTANCE.md), [PI-COMPLEMENT.md](../architecture/PI-COMPLEMENT.md#three-reference-applications) and [ROADMAP.md](../architecture/ROADMAP.md#qualification-and-handoff). All P01–P14 and earlier evidence obligations remain; this ledger makes preservation and deliberate corrections inspectable.
 
 ## Partial Markdown port
 
