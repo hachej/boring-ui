@@ -54,7 +54,7 @@ export function Revisions({ provider, path, version, selected, locale, labels, o
           const current = index === 0;
           const on = selected === save.revision;
           const when = whenSaved(save.savedAt, locale, labels.unknownTime);
-          const who = save.source ? labels.savedBy[save.source] : labels.savedBy.observed;
+          const who = (save.source ? labels.savedBy[save.source] : undefined) ?? labels.savedBy.observed;
           return <li key={save.revision}>
             <Button type="button" variant={on ? 'secondary' : 'ghost'} data-testid="revision-item" data-revision={save.revision} data-current={current ? 'true' : undefined}
               aria-current={on ? 'true' : undefined} aria-label={labels.openRevision(when)} onClick={() => onOpen(save.revision)}
