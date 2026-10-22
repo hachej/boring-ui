@@ -39,7 +39,7 @@ function fixture(t, options = {}) {
   return { provider, handler, client, setAccess: value => { access = value; } };
 }
 
-test('Fetch transport retains binary bytes, media type and exact history through replace, and relays a refused delete', async t => {
+test('Fetch transport retains binary bytes, media type and exact history through replace and conditional delete', async t => {
   const { client } = fixture(t);
   const bytes = Uint8Array.of(0, 255, 128, 1);
   const first = await client().publish(create('binary-create', 'image.bin', bytes));
@@ -55,12 +55,68 @@ test('Fetch transport retains binary bytes, media type and exact history through
   assert.equal(second.kind, 'committed');
   assert.deepEqual((await client().read(latest('image.bin'))).snapshot.bytes, Uint8Array.of(2, 3));
   assert.deepEqual((await client().read(exact('image.bin', before.revision))).snapshot.bytes, bytes);
-  // The workspace provider does not delete through publication: the transport carries its refusal, and nothing changes.
-  const deleted = await client().publish(remove('binary-delete', second.receipt.changes[0].after));
-  assert.equal(deleted.kind, 'unavailable');
-  assert.deepEqual((await client().read(latest('image.bin'))).snapshot.bytes, Uint8Array.of(2, 3));
+  assert.equal((await client().publish(remove('stale-binary-delete', before))).kind, 'conflict');
+  const request = remove('binary-delete', second.receipt.changes[0].after);
+  const deleted = await client().publish(request);
+  assert.equal(deleted.kind, 'committed');
+  assert.deepEqual(deleted.receipt.changes, [{ kind: 'delete', before: second.receipt.changes[0].after, after: null }]);
+  assert.equal((await client().read(latest('image.bin'))).kind, 'missing');
   assert.deepEqual((await client().read(exact('image.bin', before.revision))).snapshot.bytes, bytes);
-  assert.equal((await client().lookup('binary-delete')).kind, 'not-found');
+  assert.deepEqual(await client().lookup('binary-delete'), deleted);
+  assert.deepEqual(await client().publish(request), deleted);
+});
+
+test('rename/delete methods validate receipts, preserve uncertain outcomes and refuse unsupported handlers', async t => {
+  const connection = openNodeConnection(':memory:');
+  t.after(() => connection.close());
+  const fs = openSqliteFileSystem({ connection, workspace: 'documents', cwd: '/workspace' });
+  const provider = createWorkspaceProvider({ identity: { providerId: 'documents', instanceId: identity.scopeId, incarnation: fs.incarnation, viewId: 'published' }, fs, journal: createWorkspaceJournal(connection) });
+  const handler = createResourceHandler({ authenticate: async () => identity, reader: provider, publisher: provider.publication, lookup: provider.reconciliation, renamer: provider.renaming, deleter: provider.deletion });
+  const client = (fetch = handler) => createResourceClient({ identity, endpoint: 'https://fictional.invalid/resources', fetch, publication: true, reconciliation: true });
+  const saved = await client().publish(create('mutation-seed', 'old.bin', Uint8Array.of(0, 255, 1)));
+  const revision = saved.receipt.changes[0].after.revision;
+  const rename = { from: target('old.bin'), to: target('new.bin'), expectedRevision: revision, operationId: 'rename-once' };
+  const lost = client(async request => { const response = await handler(request); await response.body?.cancel(); throw new Error('Fictional lost acknowledgement'); });
+  assert.equal((await lost.rename(rename)).kind, 'unknown');
+  const moved = await client().lookup('rename-once');
+  assert.equal(moved.kind, 'committed');
+  assert.deepEqual(await client().rename(rename), moved);
+  assert.equal((await client().read(latest('old.bin'))).kind, 'missing');
+  assert.deepEqual((await client().read(latest('new.bin'))).snapshot.bytes, Uint8Array.of(0, 255, 1));
+  const deletion = { path: target('new.bin'), expectedRevision: revision, operationId: 'delete-once' };
+  const corrupt = client(async request => { const response = await handler(request), body = await response.json(); body.value.receipt.changes[0].before.revision = 'forged'; return Response.json(body); });
+  assert.equal((await corrupt.delete(deletion)).kind, 'unknown');
+  const deleted = await client().lookup('delete-once');
+  assert.equal(deleted.kind, 'committed');
+  assert.deepEqual(await client().delete(deletion), deleted);
+  assert.equal((await client().read(latest('new.bin'))).kind, 'missing');
+  assert.equal((await client().delete({ ...deletion, expectedRevision: 'changed' })).kind, 'conflict');
+  const unsupported = createResourceHandler({ authenticate: async () => identity, reader: provider });
+  for (const [kind, value] of [['rename', rename], ['delete', deletion]]) {
+    const response = await unsupported(new Request('https://fictional.invalid/resources', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ schema: 'boring-resource', version: 2, requestId: kind, identity, kind, value }) }));
+    assert.equal(response.status, 405);
+    assert.equal((await client(unsupported)[kind](value)).kind, 'unknown');
+    const abort = new AbortController(); abort.abort();
+    await assert.rejects(client()[kind](value, abort.signal), PublicationNotDispatchedError);
+  }
+});
+
+test('a forged rename transition cannot acknowledge another path or revision', async t => {
+  const connection = openNodeConnection(':memory:');
+  t.after(() => connection.close());
+  const fs = openSqliteFileSystem({ connection, workspace: 'documents', cwd: '/workspace' });
+  const provider = createWorkspaceProvider({ identity: { providerId: 'documents', instanceId: identity.scopeId, incarnation: fs.incarnation, viewId: 'published' }, fs, journal: createWorkspaceJournal(connection) });
+  const handler = createResourceHandler({ authenticate: async () => identity, reader: provider, publisher: provider.publication, lookup: provider.reconciliation, renamer: provider.renaming });
+  const client = fetch => createResourceClient({ identity, endpoint: 'https://fictional.invalid/resources', fetch: fetch ?? handler, publication: true, reconciliation: true });
+  const saved = await client().publish(create('forged-seed', 'a.bin', Uint8Array.of(4)));
+  const request = { from: target('a.bin'), to: target('b.bin'), expectedRevision: saved.receipt.changes[0].after.revision, operationId: 'forged-move' };
+  const good = await client().rename(request);
+  assert.equal(good.kind, 'committed');
+  for (const alter of [receipt => { receipt.changes[1].after.resource.path = 'other.bin'; }, receipt => { receipt.changes[1].after.revision = 'other'; }, receipt => { receipt.changes[0].before.revision = 'other'; }, receipt => { receipt.argumentDigest = 'other'; }]) {
+    const corrupt = client(async pending => { const response = await handler(pending), body = await response.json(); alter(body.value.receipt); return Response.json(body); });
+    assert.equal((await corrupt.rename(request)).kind, 'unknown');
+  }
+  assert.deepEqual(await client().lookup('forged-move'), good);
 });
 
 test('stale replacement, absence conflict and read dependency reject the whole batch', async t => {
@@ -233,6 +289,8 @@ test('unselected publication and lookup capabilities remain absent on the client
   assert.equal(typeof reader.read, 'function');
   assert.equal(reader.publish, undefined);
   assert.equal(reader.lookup, undefined);
+  assert.equal(reader.rename, undefined);
+  assert.equal(reader.delete, undefined);
   // Publishing without a way to reconcile would lock an editor after one lost acknowledgement, so it cannot be constructed.
   assert.throws(() => client({ publication: true, reconciliation: false }), /needs reconciliation/);
 });

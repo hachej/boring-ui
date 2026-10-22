@@ -1,19 +1,21 @@
-import type { PublicationLookup, ResourceAccess, ResourcePublisher, ResourceReader } from './contracts.js';
+import type { PublicationLookup, ResourceAccess, ResourcePublisher, ResourceReader, ResourceRenamer, ResourceDeleter } from './contracts.js';
 import { guardStatus, readJsonBody } from './request-guard.js';
-import { accessSnapshot, publicationDigest } from './publication-input.js';
-import { contentType, decodeCall, encode, envelope, identity, limit, lookupResult, observe, publicationResult, readResult, sameIdentity, schema, version } from './remote-protocol.js';
+import { accessSnapshot, publicationDigest, renameDigest, deletePublication } from './publication-input.js';
+import { contentType, decodeCall, encode, envelope, identity, limit, lookupResult, observe, publicationResult, renameResult, readResult, sameIdentity, schema, version } from './remote-protocol.js';
 
 export interface ResourceHandlerOptions {
   readonly authenticate: (request: Request) => Promise<ResourceAccess | null>;
   readonly reader: ResourceReader;
   readonly publisher?: ResourcePublisher;
   readonly lookup?: PublicationLookup;
+  readonly renamer?: ResourceRenamer;
+  readonly deleter?: ResourceDeleter;
   readonly maxRequestBytes?: number;
   readonly maxResponseBytes?: number;
 }
 
 export function createResourceHandler(options: ResourceHandlerOptions): (request: Request) => Promise<Response> {
-  const { authenticate, reader, publisher, lookup } = options;
+  const { authenticate, reader, publisher, lookup, renamer, deleter } = options;
   const requestLimit = limit(options.maxRequestBytes ?? 4_194_304), responseLimit = limit(options.maxResponseBytes ?? 8_388_608);
   return async request => {
     const refuse = (status: number) => new Response(null, { status, headers: { 'cache-control': 'no-store' } });
@@ -40,6 +42,21 @@ export function createResourceHandler(options: ResourceHandlerOptions): (request
           const digest = await observe(publicationDigest(call.value), signal);
           if (signal.aborted) return refuse(403);
           value = publicationResult(await observe(publisher.publish(call.value, access), signal), call.value.operationId, captured, call.value, digest);
+          break;
+        }
+        case 'rename': {
+          if (!renamer) return refuse(405);
+          const digest = await observe(renameDigest(call.value), signal);
+          if (signal.aborted) return refuse(403);
+          value = renameResult(await observe(renamer.rename(call.value, access), signal), call.value, captured, digest);
+          break;
+        }
+        case 'delete': {
+          if (!deleter) return refuse(405);
+          const publication = deletePublication(call.value);
+          const digest = await observe(publicationDigest(publication), signal);
+          if (signal.aborted) return refuse(403);
+          value = publicationResult(await observe(deleter.delete(call.value, access), signal), call.value.operationId, captured, publication, digest);
           break;
         }
         case 'lookup': {

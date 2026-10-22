@@ -43,8 +43,8 @@ export interface FileSearchRequest {
 export interface SavedRevision {
   readonly revision: string;
   readonly savedAt: number;
-  /** Who wrote it: `publish` (a conditional write), `agent` (a Pi `write` or `edit`: observed, never receipted) or `observed` (retained as found). */
-  readonly source?: 'publish' | 'agent' | 'observed';
+  /** `publish`, `agent` or `observed` bytes; `rename`/`delete` retain the affected version. Receipts record each operation. */
+  readonly source?: 'publish' | 'agent' | 'observed' | 'rename' | 'delete';
 }
 
 /**

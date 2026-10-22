@@ -195,6 +195,32 @@ export function openSqliteFileSystem(options: SqliteFileSystemOptions): SqliteFi
   }
   const encode = (content: string | Uint8Array) => typeof content === 'string' ? new TextEncoder().encode(content) : Uint8Array.from(content);
 
+  function rename(from: string, to: string): void {
+    const moved = existing(from);
+    if (from === to) return;
+    const oversized = db.get<{ path: string; size: number | bigint }>(`SELECT path, length(bytes) AS size FROM boring_workspace_files WHERE ${subtree(from)} AND kind = 'file' AND length(bytes) > ? LIMIT 1`, ...subtreeArgs(from), maxFileBytes);
+    if (oversized) throw fileTooLarge(oversized.path, Number(oversized.size), maxFileBytes);
+    touched.add(from); touched.add(to);
+    if (from === '/' || within(from, to)) throw failure('invalid', 'EINVAL', to, 'cannot move a directory into itself');
+    const target = row(to);
+    if (target) {
+      if (moved.kind !== 'directory' && target.kind === 'directory') throw failure('is_directory', 'EISDIR', to, 'illegal operation on a directory');
+      if (moved.kind === 'directory' && target.kind !== 'directory') throw failure('not_directory', 'ENOTDIR', to, 'not a directory');
+      if (target.kind === 'directory' && children(to).length) throw failure('invalid', 'ENOTEMPTY', to, 'directory not empty');
+      db.run('DELETE FROM boring_workspace_files WHERE workspace = ? AND path = ?', workspace, to);
+    } else parent(to);
+    db.run(`UPDATE boring_workspace_files SET path = ? || substr(path, ?), parent = CASE WHEN path = ? THEN ? ELSE ? || substr(parent, ?) END WHERE ${subtree(from)}`,
+      to, from.length + 1, from, dirname(to), to, from.length + 1, ...subtreeArgs(from));
+  }
+  function remove(absolute: string, options?: { readonly force?: boolean; readonly recursive?: boolean }): void {
+    const found = row(absolute);
+    if (!found) { if (options?.force) return; throw absent(absolute); }
+    if (absolute === '/' || absolute === fs.cwd) throw failure('permission_denied', 'EPERM', absolute, 'the workspace root cannot be removed');
+    if (found.kind === 'directory' && !options?.recursive && children(absolute).length) throw failure('invalid', 'ENOTEMPTY', absolute, 'directory not empty');
+    touched.add(absolute);
+    db.run(`DELETE FROM boring_workspace_files WHERE ${subtree(absolute)}`, ...subtreeArgs(absolute));
+  }
+
   const fs: SqliteFileSystem = {
     id: `sqlite:${workspace}`, cwd: normalize(options.cwd), incarnation,
     absolutePath: (path, context) => run(path, context, 'read', absolute => absolute),
@@ -278,25 +304,7 @@ export function openSqliteFileSystem(options: SqliteFileSystemOptions): SqliteFi
     // Every write is already a committed SQLite transaction.
     flushFile: (path, context) => run(path, context, 'read', absolute => { existing(absolute); }),
     // One transaction: a reader sees the old or the new path, never both or neither. A directory moves with everything below it.
-    renameFile: (source, destination, context) => run(source, context, 'write', from => {
-      const to = normalize(destination.startsWith('/') ? destination : `${fs.cwd}/${destination}`);
-      const moved = existing(from);
-      if (from === to) return;
-      // A moved file keeps its bytes, so a file (or a file below a moved directory) over the limit cannot replace another file by renaming.
-      const oversized = db.get<{ path: string; size: number | bigint }>(`SELECT path, length(bytes) AS size FROM boring_workspace_files WHERE ${subtree(from)} AND kind = 'file' AND length(bytes) > ? LIMIT 1`, ...subtreeArgs(from), maxFileBytes);
-      if (oversized) throw fileTooLarge(oversized.path, Number(oversized.size), maxFileBytes);
-      touched.add(from); touched.add(to);
-      if (from === '/' || within(from, to)) throw failure('invalid', 'EINVAL', to, 'cannot move a directory into itself');
-      const target = row(to);
-      if (target) {
-        if (moved.kind !== 'directory' && target.kind === 'directory') throw failure('is_directory', 'EISDIR', to, 'illegal operation on a directory');
-        if (moved.kind === 'directory' && target.kind !== 'directory') throw failure('not_directory', 'ENOTDIR', to, 'not a directory');
-        if (target.kind === 'directory' && children(to).length) throw failure('invalid', 'ENOTEMPTY', to, 'directory not empty');
-        db.run('DELETE FROM boring_workspace_files WHERE workspace = ? AND path = ?', workspace, to);
-      } else parent(to);
-      db.run(`UPDATE boring_workspace_files SET path = ? || substr(path, ?), parent = CASE WHEN path = ? THEN ? ELSE ? || substr(parent, ?) END WHERE ${subtree(from)}`,
-        to, from.length + 1, from, dirname(to), to, from.length + 1, ...subtreeArgs(from));
-    }),
+    renameFile: (source, destination, context) => run(source, context, 'write', from => rename(from, normalize(destination.startsWith('/') ? destination : `${fs.cwd}/${destination}`))),
     fileInfo: (path, context) => run(path, context, 'read', absolute => info(absolute, existing(absolute))),
     listDir: (path, context) => run(path, context, 'read', absolute => {
       directory(absolute);
@@ -362,14 +370,7 @@ export function openSqliteFileSystem(options: SqliteFileSystemOptions): SqliteFi
       if (options?.recursive !== false && row(absolute)?.kind === 'directory') return;
       makeDirectory(absolute, options?.recursive !== false);
     }),
-    remove: (path, options, context) => run(path, context, 'write', absolute => {
-      const found = row(absolute);
-      if (!found) { if (options?.force) return; throw absent(absolute); }
-      if (absolute === '/' || absolute === fs.cwd) throw failure('permission_denied', 'EPERM', absolute, 'the workspace root cannot be removed');
-      if (found.kind === 'directory' && !options?.recursive && children(absolute).length) throw failure('invalid', 'ENOTEMPTY', absolute, 'directory not empty');
-      touched.add(absolute);
-      db.run(`DELETE FROM boring_workspace_files WHERE ${subtree(absolute)}`, ...subtreeArgs(absolute));
-    }),
+    remove: (path, options, context) => run(path, context, 'write', absolute => remove(absolute, options)),
     createTempDir: (prefix, context) => temporary(prefix ?? 'tmp-', '', 'directory', context),
     createTempFile: (options, context) => temporary(options?.prefix ?? 'tmp-', options?.suffix ?? '', 'file', context),
     cleanup: async () => {},
@@ -380,6 +381,8 @@ export function openSqliteFileSystem(options: SqliteFileSystemOptions): SqliteFi
     setMaxFileBytes: limit => { assertLimit(limit); maxFileBytes = limit; },
     bytes: path => { const found = row(normalize(path)); return !found ? null : found.kind === 'directory' ? undefined : bytes(normalize(path)); },
     write: (path, content) => { const absolute = normalize(path); makeDirectory(dirname(absolute), true); write(absolute, content); notify(); },
+    rename: (from, to) => { rename(normalize(from), normalize(to)); notify(); },
+    remove: path => { remove(normalize(path)); notify(); },
   });
   return fs;
 }

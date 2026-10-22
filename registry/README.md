@@ -567,7 +567,7 @@ A tab left open keeps running the JavaScript it loaded, so after a deploy it can
 
 The `documents` item is the workspace's file screen with no page of its own: `Documents` shows the Library (the file tree) as the list (`ListDetail`: beside the file on a wide screen, one pane at a time on a phone), the chosen file in the same viewer the Library opens (editable where it edits), and its Revisions beside it. `<Documents provider={revisionProvider} locale="fr" labels={…} viewers={…} share={…} />`; the provider is the files guide's `connectRevisionProvider` (or a host binding), borrowed and never disposed here.
 
-Revisions are the public `RevisionProvider.history(path)`: one row per retained revision, newest first, with when it was saved and who wrote it (`publish`, `agent` or `observed`), and its revision id. The list is read again when the provider's `changes` feed moves. An older revision opens read-only in the artifact panel's pinned view (text, Markdown and HTML); the newest row returns to the editable file. Images and PDFs have no older-version preview here (the panel says so).
+Revisions are the public `RevisionProvider.history(path)`: one row per retained revision, newest first, with when it was saved and its source (`publish`, `agent`, `observed`, `rename` or `delete`), and its revision id. Rename/delete mark the affected retained version; receipts, not these deduplicated revision rows, are the operation audit. The list is read again when the provider's `changes` feed moves. An older revision opens read-only in the artifact panel's pinned view (text, Markdown and HTML); the newest row returns to the editable file. Images and PDFs have no older-version preview here (the panel says so).
 
 `DocumentSheet` opens one document over the app, for a host's « Voir la fiche »: the host holds the `path` and clears it in `onClose`. `<DocumentSheet provider path onClose onShowAll locale />` is a bottom sheet of the full height that uses `useShellLayer('document')` (one layer at a time, Back closes it), with the viewer and an optional « Toutes les fiches » button that closes the sheet and then calls `onShowAll`.
 
@@ -1033,7 +1033,13 @@ It can mount in a detached window without the workspace layout. Pass the concret
 `revisionProvider` from the [files guide](../packages/files/README.md#frontend-revision-provider).
 The `pi-app` recipe accepts the same binding and supplies the tree, `@` filename
 search and attachment uploads. See the [UI guide](../packages/ui/README.md#file-tree-and-filename-mentions)
-for publication, navigation and lifecycle behavior. `npm run file-tree:journey`
+for publication, navigation and lifecycle behavior. The files endpoint also supports
+conditional `revisionProvider.rename({ from: locate(oldPath), to: locate(newPath), expectedRevision, operationId })`
+and `revisionProvider.delete({ path: locate(path), expectedRevision, operationId })`
+when its provider installs them; reconcile an unknown result with the same operation ID.
+See the [files endpoint contract](../packages/files/README.md#frontend-revision-provider).
+This adds no Rename/Delete tree controls or recursive folder operations.
+`npm run file-tree:journey`
 drives the fictional SQLite-backed browser fixture; `npm run
 test:app-registry-consumer` installs the recipes in an isolated consumer.
 

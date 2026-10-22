@@ -183,7 +183,7 @@ test('two providers over one database honor create absence; history survives a f
   const first = await provider.publication.publish(request, access);
   assert.equal((await other.publication.publish(create('collision', 'image.bin', 'oops'), access)).kind, 'conflict');
   const before = first.receipt.changes[0].after;
-  // Files are deleted by the workspace's own tools (here its file system), never through publication.
+  // An outside working-file removal has no publication receipt, but retained history still reads.
   const connection = openNodeConnection(options.filename);
   t.after(() => connection.close());
   const fs = openSqliteFileSystem({ connection, workspace: access.scopeId, cwd: '/workspace' });
@@ -193,7 +193,8 @@ test('two providers over one database honor create absence; history survives a f
   assert.deepEqual(history.snapshot.bytes, Uint8Array.of(0, 255, 128, 1));
   assert.equal(history.snapshot.mediaType, 'application/octet-stream');
   assert.equal((await provider.read({ target: target('image.bin'), revision: { kind: 'exact', value: 'unknown' } }, access)).kind, 'unavailable');
-  assert.equal((await provider.publication.publish({ operationId: 'delete', atomicity: 'all-or-nothing', changes: [{ kind: 'delete', target: before }] }, access)).kind, 'unavailable');
+  assert.equal((await provider.publication.publish({ operationId: 'delete', atomicity: 'all-or-nothing', changes: [{ kind: 'delete', target: before }] }, access)).kind, 'conflict');
+  assert.equal((await provider.reconciliation.lookup('delete', access)).kind, 'not-found');
 });
 
 test('capability limitations remain explicit and a closed database refuses', async t => {
@@ -202,7 +203,7 @@ test('capability limitations remain explicit and a closed database refuses', asy
   assert.equal(capabilities.guarantees.revocationFencing, false);
   assert.equal(capabilities.guarantees.atomicMutationAndReceipt, true);
   assert.equal(capabilities.guarantees.atomicBatch, true);
-  assert.deepEqual(capabilities.effective, ['read', 'create', 'replace', 'lookup']);
+  assert.deepEqual(capabilities.effective, ['read', 'create', 'replace', 'delete', 'rename', 'lookup']);
   provider.close();
   await assert.rejects(provider.read(latest('notes.md'), access), /closed/);
 });

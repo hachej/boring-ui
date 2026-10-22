@@ -507,8 +507,8 @@ application's workspace, served by its workspace provider
 - **The store refuses to start** unless the provider declares
   `conditionalPublication`, `operationLookup` and `atomicMutationAndReceipt`
   (the SQLite workspace commits a file and its receipt together).
-- **Deletion** is not a store operation: the workspace provider does not delete
-  through publication, so removing a report is a file operation of the host.
+- **Deletion** is not a store operation: removing a report is a host-controlled
+  [conditional workspace file operation](../../packages/files/README.md#frontend-revision-provider).
 
 **Listing rules:**
 

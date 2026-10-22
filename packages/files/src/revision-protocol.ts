@@ -37,7 +37,7 @@ export function savedRevisions(value: unknown): readonly SavedRevision[] {
   return value.map(item => {
     const entry = record(item);
     if (typeof entry.savedAt !== 'number' || !Number.isSafeInteger(entry.savedAt) || entry.savedAt < 0) throw new RevisionError('invalid', 'Invalid save timestamp');
-    const source = entry.source === 'publish' || entry.source === 'agent' || entry.source === 'observed' ? entry.source : undefined;
+    const source = entry.source === 'publish' || entry.source === 'agent' || entry.source === 'observed' || entry.source === 'rename' || entry.source === 'delete' ? entry.source : undefined;
     return { revision: identifier(entry.revision), savedAt: entry.savedAt, ...(source ? { source } : {}) };
   });
 }

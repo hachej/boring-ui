@@ -47,6 +47,78 @@ test('revision binding lists and searches paginated native SQLite files with nes
   assert.equal(f.released(), f.resolves(), 'every request releases its borrowed workspace');
 });
 
+test('conditional rename and delete share receipts, retained history and stale checks through the files endpoint', async t => {
+  const f = fixture(t), client = await connect(f.handler);
+  await seed(client, { 'old.md': 'first', 'taken.md': 'occupied' });
+  const read = path => client.read({ target: client.locate(path), revision: { kind: 'latest' } });
+  const original = (await read('old.md')).snapshot.ref;
+  const rename = { from: client.locate('old.md'), to: client.locate('new.md'), expectedRevision: original.revision, operationId: 'move-file' };
+  assert.equal((await client.rename({ ...rename, expectedRevision: 'stale', operationId: 'stale-move' })).kind, 'conflict');
+  assert.equal((await client.rename({ ...rename, to: client.locate('taken.md'), operationId: 'taken-move' })).kind, 'conflict');
+  const moved = await client.rename(rename);
+  assert.equal(moved.kind, 'committed');
+  assert.deepEqual(moved.receipt.changes.map(change => change.kind), ['delete', 'create']);
+  assert.equal((await read('old.md')).kind, 'missing');
+  assert.equal(new TextDecoder().decode((await read('new.md')).snapshot.bytes), 'first');
+  assert.deepEqual(await client.rename(rename), moved);
+  assert.deepEqual(await client.lookup(rename.operationId), moved);
+  assert.equal((await client.rename({ ...rename, to: client.locate('other.md') })).kind, 'conflict');
+  assert.equal((await read('other.md')).kind, 'missing');
+  assert.equal((await client.history('old.md'))[0].source, 'rename');
+  assert.equal((await client.history('new.md'))[0].source, 'rename');
+  const deletion = { path: client.locate('new.md'), expectedRevision: original.revision, operationId: 'delete-file' };
+  assert.equal((await client.delete({ ...deletion, expectedRevision: 'stale', operationId: 'stale-delete' })).kind, 'conflict');
+  const deleted = await client.delete(deletion);
+  assert.equal(deleted.kind, 'committed');
+  assert.equal((await read('new.md')).kind, 'missing');
+  assert.deepEqual(await client.delete(deletion), deleted);
+  assert.deepEqual(await client.lookup(deletion.operationId), deleted);
+  assert.equal((await client.history('new.md'))[0].source, 'delete');
+  assert.equal(new TextDecoder().decode((await client.read({ target: client.locate('new.md'), revision: { kind: 'exact', value: original.revision } })).snapshot.bytes), 'first');
+  assert.equal((await read('taken.md')).kind, 'available');
+  assert.equal(f.released(), f.resolves());
+});
+
+test('native files rename and remove through their one provider; folders, aliases and old bindings cannot mutate it', async t => {
+  const f = fixture(t), root = mkdtempSync(join(tmpdir(), 'boring-mutation-native-'));
+  t.after(() => rmSync(root, { force: true, recursive: true }));
+  const fs = new NodeExecutionEnv({ cwd: root });
+  let renamed = 0, removed = 0;
+  const nativeRename = fs.renameFile.bind(fs), nativeRemove = fs.remove.bind(fs);
+  fs.renameFile = (...args) => { renamed++; return nativeRename(...args); };
+  fs.remove = (...args) => { removed++; return nativeRemove(...args); };
+  const provider = createWorkspaceProvider({ fs, journal: createWorkspaceJournal(f.db), identity: { providerId: 'files', instanceId: 'native', incarnation: 'one', viewId: 'published' } });
+  f.select(provider);
+  const client = await connect(f.handler);
+  await seed(client, { 'source.md': 'original', 'folder/child.md': 'child' });
+  const saved = (await client.read({ target: client.locate('source.md'), revision: { kind: 'latest' } })).snapshot.ref;
+  const move = { from: client.locate('source.md'), to: client.locate('moved.md'), expectedRevision: saved.revision, operationId: 'native-move' };
+  const beforeRename = renamed;
+  assert.equal((await client.rename(move)).kind, 'committed');
+  assert.equal(renamed, beforeRename + 1, 'one native rename, not copy then delete');
+  assert.equal((await client.rename(move)).kind, 'committed');
+  assert.equal(renamed, beforeRename + 1, 'a duplicate never invokes the native rename');
+  const beforeRemove = removed;
+  const deletion = { path: client.locate('moved.md'), expectedRevision: saved.revision, operationId: 'native-delete' };
+  assert.equal((await client.delete(deletion)).kind, 'committed');
+  assert.equal(removed, beforeRemove + 1);
+  assert.equal((await client.delete(deletion)).kind, 'committed');
+  assert.equal(removed, beforeRemove + 1);
+  assert.notEqual((await client.delete({ ...deletion, path: client.locate('folder'), operationId: 'folder-delete' })).kind, 'committed');
+  assert.notEqual((await client.rename({ ...move, from: client.locate('folder'), operationId: 'folder-move' })).kind, 'committed');
+  symlinkSync(join(root, 'folder/child.md'), join(root, 'alias.md'));
+  const alias = await client.read({ target: client.locate('alias.md'), revision: { kind: 'latest' } });
+  assert.equal((await client.delete({ ...deletion, path: client.locate('alias.md'), expectedRevision: alias.snapshot.ref.revision, operationId: 'alias-delete' })).kind, 'denied');
+  assert.equal((await client.rename({ ...move, from: client.locate('alias.md'), expectedRevision: alias.snapshot.ref.revision, operationId: 'alias-move' })).kind, 'denied');
+  const child = await client.read({ target: client.locate('folder/child.md'), revision: { kind: 'latest' } });
+  assert.equal(child.kind, 'available');
+  f.select({ ...provider, identity: { ...provider.identity, incarnation: 'another' } });
+  assert.equal((await client.delete({ ...deletion, path: client.locate('folder/child.md'), expectedRevision: child.snapshot.ref.revision, operationId: 'old-binding-delete' })).kind, 'unknown');
+  assert.equal((await client.rename({ ...move, from: client.locate('folder/child.md'), expectedRevision: child.snapshot.ref.revision, operationId: 'old-binding-move' })).kind, 'unknown');
+  assert.equal((await provider.read({ target: client.locate('folder/child.md'), revision: { kind: 'latest' } }, access)).kind, 'available');
+  assert.equal(f.released(), f.resolves());
+});
+
 test('catalog overrides affect browsing only, while traversal overflow fails explicitly', async t => {
   const f = fixture(t, { catalog: { defaults: false, filter: entry => entry.path !== 'hidden.md' } }), client = await connect(f.handler);
   await seed(client, { '.gitignore': '*.tmp', 'visible.tmp': 'show', 'hidden.md': 'hidden', 'node_modules/package.json': '{}' });
