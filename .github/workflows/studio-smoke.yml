@@ -37,11 +37,8 @@ jobs:
           path: ${{ github.workspace }}/.cache/ms-playwright
           key: chromium-headless-shell-1243-playwright-${{ env.PLAYWRIGHT_VERSION }}
       - timeout-minutes: 8
-        run: |
-          if ! timeout 300 npx --yes playwright@${{ env.PLAYWRIGHT_VERSION }} install --with-deps chromium-headless-shell; then
-            echo "::notice::Chromium install failed or timed out; retrying once."
-            timeout 300 npx --yes playwright@${{ env.PLAYWRIGHT_VERSION }} install --with-deps chromium-headless-shell
-          fi
+        # Ubuntu runners already have Chrome libraries; apt is only a fallback for missing ldd dependencies.
+        run: bash scripts/install-ci-chromium.sh "${{ env.PLAYWRIGHT_VERSION }}"
       # Ubuntu 24.04 runners block the user namespaces Chromium's sandbox needs; re-allow them for this job.
       - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Smoke scenarios against the real model

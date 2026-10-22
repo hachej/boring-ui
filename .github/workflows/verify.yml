@@ -28,11 +28,8 @@ jobs:
       - run: npm run typecheck
       - name: Install Chromium for the design audit included in verify
         timeout-minutes: 8
-        run: |
-          if ! timeout 300 npx --yes playwright@1.63.0 install --with-deps chromium-headless-shell; then
-            echo "::notice::Chromium install failed or timed out; retrying once."
-            timeout 300 npx --yes playwright@1.63.0 install --with-deps chromium-headless-shell
-          fi
+        # Ubuntu runners already have Chrome libraries; apt is only a fallback for missing ldd dependencies.
+        run: bash scripts/install-ci-chromium.sh 1.63.0
       - name: Allow the Chromium sandbox
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: npm run test:design
@@ -129,11 +126,8 @@ jobs:
       - name: Install Chromium for the installed PDF viewer check
         if: matrix.kind == 'documents'
         timeout-minutes: 8
-        run: |
-          if ! timeout 300 npx --yes playwright@1.63.0 install --with-deps chromium-headless-shell; then
-            echo "::notice::Chromium install failed or timed out; retrying once."
-            timeout 300 npx --yes playwright@1.63.0 install --with-deps chromium-headless-shell
-          fi
+        # Ubuntu runners already have Chrome libraries; apt is only a fallback for missing ldd dependencies.
+        run: bash scripts/install-ci-chromium.sh 1.63.0
       - name: Allow the Chromium sandbox
         if: matrix.kind == 'documents'
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
