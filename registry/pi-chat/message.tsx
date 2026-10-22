@@ -17,6 +17,7 @@ import type { ActivityState } from './activity';
 import { Shimmer } from './shimmer';
 import { ToolCard } from './tool';
 import { thumbnail } from './composer';
+import { ImageViewer } from './image-viewer';
 import { displayName, fileKind, isUploadPath, isVoicePath, pieces, visibleParts } from './config';
 import type { AudioUrlRead, FileKind, Piece, PreviewRead } from './config';
 import { voiceClock } from './voice-message';
@@ -27,6 +28,7 @@ import { Button } from '@/components/ui/button';
 import { BlockActions } from '../button/actions';
 import type { BlockAction } from '../button/actions';
 import { useChatText } from './labels';
+import { cn } from '../utils/utils';
 import type { ReplyRef } from './config';
 import { Message, MessageContent, MessageFooter } from '@/components/ui/message';
 import { Bubble, BubbleContent } from '@/components/ui/bubble';
@@ -41,7 +43,8 @@ export interface RowContext {
   readonly natural?: boolean | undefined;
   readonly groupTool: DeriveOptions['groupTool'];
   readonly commandMentions: CommandMentions | undefined;
-  readonly onOpenImage: ((image: ImageContent) => void) | undefined;
+  /** Host openers keep their single image argument; the workspace's default also accepts the message gallery. */
+  readonly onOpenImage: ((image: ImageContent, gallery?: readonly ImageContent[]) => void) | undefined;
   readonly onCopy: ((text: string) => Promise<void>) | undefined;
   /** Which tokens of a sent message get a styled treatment (`@path` mentions, a leading `/skill`). */
   readonly pieces: { readonly mentions: boolean; readonly uploads?: boolean; readonly skills: readonly string[]; readonly openMention?: ((path: string) => void) | undefined; readonly renderMention?: ((path: string) => ReactNode | undefined) | undefined;
@@ -67,14 +70,15 @@ export interface RowContext {
 
 const replyRef = (row: Extract<Row, { type: 'assistant' }>): ReplyRef => ({ key: row.key, text: row.text, entryId: row.entryId, timestamp: row.timestamp, model: row.model, durationMs: row.durationMs });
 
-function Image({ image, onOpenImage }: { readonly image: ImageContent; readonly onOpenImage: RowContext['onOpenImage'] }) {
+function ImageThumbnails({ images, onOpenImage }: { readonly images: readonly ImageContent[]; readonly onOpenImage: RowContext['onOpenImage'] }) {
   const { labels } = useChatText();
-  const src = thumbnail(image.mimeType, image.data);
-  return <Attachment orientation="vertical">
-    <AttachmentMedia variant={src ? 'image' : 'icon'}>{src ? <img src={src} alt={labels.imageAttachment} /> : <ImageIcon aria-hidden="true" />}</AttachmentMedia>
-    <AttachmentContent><AttachmentTitle>{labels.imageAttachment}</AttachmentTitle></AttachmentContent>
-    <AttachmentTrigger data-testid="message-image" disabled={!onOpenImage} aria-label={labels.openImage} onClick={() => onOpenImage?.(image)} />
-  </Attachment>;
+  if (!images.length) return null;
+  return <div data-testid="message-images" data-slot="message-images" className={cn('grid max-w-full gap-2', images.length === 1 ? 'w-60' : 'w-120 grid-cols-2')}>
+    {images.map((image, at) => <div key={at} className="relative min-h-12 min-w-12 self-start">
+      <img src={thumbnail(image.mimeType, image.data)} alt={labels.imageAttachment} className="block h-auto w-full rounded-[var(--radius)]" />
+      <Button variant="link" className="absolute inset-0 h-auto min-h-12 min-w-12 w-full" data-testid="message-image" aria-label={images.length > 1 ? `${labels.openImage}, ${labels.imagePosition(at + 1, images.length)}` : labels.openImage} onClick={() => onOpenImage?.(image, images)} />
+    </div>)}
+  </div>;
 }
 
 /** Inline sent mention; workspace openers and host renderers keep their existing authority. */
@@ -232,11 +236,12 @@ export function MessageText({ text, context, align = 'end' }: { readonly text: s
   </>;
 }
 
-function UserBubble({ message, context, align = 'end' }: { readonly message: UserMessage; readonly context: RowContext; readonly align?: 'start' | 'end' }) {
+function UserBubble({ message, images, context, align = 'end' }: { readonly message: UserMessage; readonly images: readonly ImageContent[]; readonly context: RowContext; readonly align?: 'start' | 'end' }) {
   const parts = typeof message.content === 'string' ? [{ type: 'text' as const, text: message.content }] : message.content;
   return <Message align={align}><MessageContent>
+    <ImageThumbnails images={images} onOpenImage={context.onOpenImage} />
     {parts.map((part, index) => part.type === 'text' ? (isFileBlock(part.text) ? null : <MessageText key={index} text={part.text} context={context} align={align} />)
-      : <Image key={index} image={part} onOpenImage={context.onOpenImage} />)}
+      : null)}
   </MessageContent></Message>;
 }
 
@@ -248,16 +253,36 @@ function Notice({ tone, icon, children, testid }: { readonly tone: 'error' | 'mu
 
 function resultText(message: ToolResultMessage): string { return message.content.map(part => part.type === 'text' ? part.text : '').join('\n'); }
 
-export function RowView({ row, context }: { readonly row: Row; readonly context: RowContext }) {
-  return <RowBody row={row} context={context} />;
+function messageImages(row: Row): readonly ImageContent[] {
+  const images = (content: ToolResultMessage['content']) => content.flatMap(part => part.type === 'image' && thumbnail(part.mimeType, part.data) ? [part] : []);
+  if (row.type === 'user') return typeof row.message.content === 'string' ? [] : images(row.message.content);
+  if (row.type === 'orphan-result') return images(row.message.content);
+  return row.type === 'assistant' ? row.images?.filter(image => thumbnail(image.mimeType, image.data)) ?? row.parts.flatMap(part => part.kind === 'tool' && part.entry.result ? images(part.entry.result.content) : []) : [];
 }
 
-function RowBody({ row, context: liveContext }: { readonly row: Row; readonly context: RowContext }) {
+export function RowView({ row, context }: { readonly row: Row; readonly context: RowContext }) {
+  const images = messageImages(row);
+  const [selection, setSelection] = useState<{ readonly index: number; readonly images: readonly ImageContent[]; readonly key: string; readonly opener: RowContext['onOpenImage'] }>();
+  const current = selection && selection.key === row.key && selection.opener === context.onOpenImage && selection.images.length === images.length
+    && selection.images.every((image, at) => image.mimeType === images[at]?.mimeType && image.data === images[at]?.data) ? selection : undefined;
+  useEffect(() => { if (selection && !current) setSelection(undefined); }, [selection, current]);
+  const openImage: NonNullable<RowContext['onOpenImage']> = image => {
+    if (!thumbnail(image.mimeType, image.data)) return;
+    if (context.onOpenImage) { context.onOpenImage(image, images); return; }
+    const index = images.indexOf(image);
+    if (index >= 0) setSelection({ index, images, key: row.key, opener: context.onOpenImage });
+  };
+  return <><RowBody row={row} images={images} context={{ ...context, onOpenImage: openImage }} />
+    {current && <ImageViewer images={images} index={current.index} onIndexChange={index => setSelection({ ...current, index })} onClose={() => setSelection(undefined)} />}
+  </>;
+}
+
+function RowBody({ row, images, context: liveContext }: { readonly row: Row; readonly images: readonly ImageContent[]; readonly context: RowContext }) {
   const context: RowContext = row.historical ? { ...liveContext, answer: undefined, onFork: undefined, messageActions: liveContext.historicalMessageActions ? liveContext.messageActions : undefined, replyActions: undefined, commandMentions: undefined } : liveContext;
   const { labels, icons } = useChatText();
   const renderMention = useMemo(() => context.pieces?.mentions ? (path: string, text: string) => <UserMention path={path} text={text} open={context.pieces?.openMention} render={context.pieces?.renderMention} /> : undefined, [context.pieces]);
   switch (row.type) {
-    case 'user': return <article data-row-id={row.key} data-role="user" aria-live={row.historical ? 'off' : undefined}><UserBubble message={row.message} context={context} /></article>;
+    case 'user': return <article data-row-id={row.key} data-role="user" aria-live={row.historical ? 'off' : undefined}><UserBubble message={row.message} images={images} context={context} /></article>;
     case 'card': return <article data-row-id={row.key} data-role="event">{row.card.content}</article>;
     case 'event': return <article data-row-id={row.key} data-role="event" className="text-center text-xs text-muted-foreground">{labels.event(row.label)}</article>;
     case 'system': return <article data-row-id={row.key} data-role="system"><Collapsible>
@@ -265,7 +290,7 @@ function RowBody({ row, context: liveContext }: { readonly row: Row; readonly co
       <CollapsibleContent><pre className="whitespace-pre-wrap">{row.text}</pre></CollapsibleContent>
     </Collapsible></article>;
     case 'orphan-result': return <article data-row-id={row.key} data-role="toolResult"><Notice tone="error" testid="tool-error" icon={<AlertCircleIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />}>
-      <strong className="font-semibold">{labels.toolFailed(row.message.toolName)}</strong><span className="mt-1 block font-mono text-xs whitespace-pre-wrap">{resultText(row.message)}</span></Notice></article>;
+      <strong className="font-semibold">{labels.toolFailed(row.message.toolName)}</strong><span className="mt-1 block font-mono text-xs whitespace-pre-wrap">{resultText(row.message)}</span></Notice><ImageThumbnails images={images} onOpenImage={context.onOpenImage} /></article>;
     case 'assistant': {
       const settled = !row.streaming;
       const nativeActions = settled;
@@ -308,6 +333,7 @@ function RowBody({ row, context: liveContext }: { readonly row: Row; readonly co
               open={part.artifact !== undefined && (context.artifacts?.isOpen?.(part.artifact) ?? false)} onOpen={context.artifacts?.open} kinds={context.artifacts?.kinds} />;
             return part.entry.custom ? <div key={part.key}>{part.entry.custom}</div> : <ToolCard key={part.key} entry={part.entry} {...(context.onOpenImage ? { onOpenImage: context.onOpenImage } : {})} />;
           })}
+          <ImageThumbnails images={images} onOpenImage={context.onOpenImage} />
           {files.size > 0 && <ul data-testid="reply-files" className="m-0 flex list-none flex-wrap gap-2 p-0">
             {[...files].map(([path, change]) => <li key={path} data-testid="message-file"><FileCard path={path} change={change} open={context.openFile} preview={context.pieces?.preview} /></li>)}
           </ul>}

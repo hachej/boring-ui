@@ -15,8 +15,8 @@ async function load(name, contents) {
   await build({ entryPoints: [join(out, `${name}-entry.tsx`)], outfile: join(out, `${name}.mjs`), bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
   return import(pathToFileURL(join(out, `${name}.mjs`)).href);
 }
-const { PiChat, frenchChatLabels } = await load('pi-chat', `export { PiChat, frenchChatLabels } from '${root}registry/pi-chat/pi-chat.tsx';`);
-const { AmbientChat } = await load('pi-ambient', `export { AmbientChat } from '${root}registry/pi-ambient/ambient.tsx';`);
+const { frenchChatLabels } = await load('labels', `export { frenchChatLabels } from '${root}registry/pi-chat/labels-fr.ts';`);
+let PiChat, AmbientChat;
 
 const SENT = 'Read @uploads/report-1a2b3c4d.pdf please';
 const LONG = `# Notes\n\n${'Fictional paragraph line.\n'.repeat(120)}`;
@@ -30,6 +30,9 @@ async function harness(t, { attachments, mentions, onOpenFile, pasteToFile, loca
     const value = name === 'window' ? window : name === 'IS_REACT_ACT_ENVIRONMENT' ? true : name === 'ResizeObserver' ? class { observe() {} unobserve() {} disconnect() {} } : window[name];
     Object.defineProperty(globalThis, name, { configurable: true, writable: true, value: typeof value === 'function' && /^[a-z]/.test(name) ? value.bind(window) : value });
   }
+  // Base UI chooses its layout effects at import time; load the rendered blocks only after this browser realm exists.
+  if (!PiChat) ({ PiChat } = await load('pi-chat', `export { PiChat } from '${root}registry/pi-chat/pi-chat.tsx';`));
+  if (!AmbientChat) ({ AmbientChat } = await load('pi-ambient', `export { AmbientChat } from '${root}registry/pi-ambient/ambient.tsx';`));
   const { Harness: NativeHarness, MemoryStorage, createRegistry } = await import('@earendil-works/pi-durable');
   const { BACKGROUND_CONTEXT: context } = await import('@earendil-works/chord/context');
   const { createNativeChatController } = await import('@hachej/boring-ui-kit/native-chat');
@@ -56,7 +59,7 @@ async function harness(t, { attachments, mentions, onOpenFile, pasteToFile, loca
   });
   const props = { controller, historyList: false, showHistory: false, ...(attachments ? { attachments } : {}), ...(mentions ? { mentions } : {}),
     ...(onOpenFile ? { onOpenFile } : {}), ...(pasteToFile ? { pasteToFile } : {}), ...(locale ? { locale } : {}), ...extra };
-  const Component = component ?? PiChat;
+  const Component = component === 'ambient' ? AmbientChat : component ?? PiChat;
   const renderWith = async next => { Object.assign(props, next); await act(async () => ui.render(createElement(Component, props))); };
   await renderWith({});
   return { window, controller, container, act, context, rerender: renderWith, unmount: () => act(async () => ui.unmount()), write: async model => {
@@ -283,6 +286,142 @@ test('native write/edit results reuse file cards below the reply, deduplicate pa
   assert.equal(container.querySelector('[data-testid=reply-files]'), null, 'opt-in, so unrelated tools named write never gain file semantics by default');
 });
 
+const screenshot = { type: 'image', mimeType: 'image/png', data: 'iVBORw0KGgo=' };
+const secondScreenshot = { type: 'image', mimeType: 'image/jpeg', data: '/9j/4AAQSkZJRg==' };
+const imageViewer = ui => ui.window.document.querySelector('[data-testid=image-viewer]');
+const viewerKey = async (ui, key) => ui.act(async () => imageViewer(ui).dispatchEvent(new ui.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })));
+const imagePointer = async (ui, type, values) => ui.act(async () => ui.window.document.querySelector('[data-testid=image-viewer-surface]').dispatchEvent(new ui.window.PointerEvent(type, { bubbles: true, cancelable: true, pointerType: 'touch', ...values })));
+
+test('sent screenshots are visible unchromed thumbnails and open the default message gallery', async t => {
+  const ui = await harness(t);
+  await ui.write([{ role: 'user', content: [{ type: 'text', text: 'Fictional screenshot' }, screenshot, secondScreenshot], timestamp: 0 }]);
+  const thumbnails = [...ui.container.querySelectorAll('[data-testid=message-image]')];
+  assert.equal(thumbnails.length, 2);
+  for (const trigger of thumbnails) {
+    assert.equal(trigger.disabled, false, 'a default viewer needs no host callback');
+    assert.ok(trigger.parentElement.querySelector('img')?.getAttribute('src')?.startsWith('data:image/'), 'the image itself is inline');
+    assert.equal(trigger.closest('[data-slot=attachment]'), null, 'no attachment card chrome');
+  }
+  await ui.act(async () => thumbnails[0].click());
+  assert.ok(imageViewer(ui), 'the rendered message opens the shared viewer');
+  assert.match(imageViewer(ui).textContent, /Image 1 of 2/);
+  await viewerKey(ui, 'ArrowRight');
+  assert.equal(imageViewer(ui).querySelector('img').getAttribute('src'), `data:image/jpeg;base64,${secondScreenshot.data}`);
+  assert.match(imageViewer(ui).textContent, /Image 2 of 2/);
+  await viewerKey(ui, 'ArrowLeft');
+  assert.match(imageViewer(ui).textContent, /Image 1 of 2/);
+  await viewerKey(ui, 'Escape');
+  assert.equal(imageViewer(ui), null, 'native Dialog closes on Escape');
+  await ui.act(async () => thumbnails[1].click());
+  await ui.act(async () => ui.window.document.querySelector('[data-testid=image-viewer-close]').click());
+  assert.equal(imageViewer(ui), null);
+});
+
+test('tool screenshots are lifted out of folded activity and remain in its details', async t => {
+  const ui = await harness(t, { extra: { mode: 'developer' } });
+  await ui.write([modelReply([toolCall('screen', 'read', 'fictional.png')]),
+    { ...toolResult('screen', 'read'), content: [screenshot, secondScreenshot] }, modelReply([{ type: 'text', text: 'Fictional screenshots are ready.' }])]);
+  const thumbnails = [...ui.container.querySelectorAll('[data-role=assistant] [data-testid=message-image]')];
+  assert.equal(thumbnails.length, 2, 'both results are visible without expanding any tool');
+  assert.ok(thumbnails.every(trigger => !trigger.closest('[data-testid=activity]')));
+  await ui.act(async () => thumbnails[0].click());
+  assert.match(imageViewer(ui).textContent, /Image 1 of 2/);
+  await viewerKey(ui, 'Escape');
+  await ui.act(async () => ui.container.querySelector('[data-testid=activity] [data-slot=trace-collapsible-trigger]').click());
+  await ui.act(async () => ui.container.querySelector('[data-testid=tool-card] [data-slot=trace-collapsible-trigger]').click());
+  const detailImages = [...ui.container.querySelectorAll('[data-testid=tool-details] button')].filter(button => button.textContent.includes('Open image result'));
+  assert.equal(detailImages.length, 2, 'details still offer each native result image');
+  await ui.act(async () => detailImages[1].click());
+  assert.match(imageViewer(ui).textContent, /Image 2 of 2/);
+});
+
+for (const mode of ['natural', 'hidden-tool']) test(`tool screenshots survive ${mode} presentation without prose or tool chrome`, async t => {
+  const ui = await harness(t, { extra: { mode: 'expert', ...(mode === 'natural' ? { presentation: 'natural' } : { groupTool: () => false }) } });
+  await ui.write([modelReply([toolCall('screen', 'read', 'fictional.png')]), { ...toolResult('screen', 'read'), content: [screenshot] }]);
+  const thumbnail = ui.container.querySelector('[data-role=assistant] [data-testid=message-image]');
+  assert.ok(thumbnail, 'image payloads survive independent of folded or omitted tool chrome');
+  assert.equal(ui.container.querySelector('[data-testid=tool-card]'), null);
+  await ui.act(async () => thumbnail.click());
+  assert.match(imageViewer(ui).textContent, /Image 1 of 1/);
+});
+
+test('host onOpenImage wins for user thumbnails and tool screenshots', async t => {
+  const opened = [];
+  const ui = await harness(t, { extra: { onOpenImage: image => opened.push(image) } });
+  await ui.write([{ role: 'user', content: [screenshot], timestamp: 0 }, modelReply([toolCall('screen', 'read', 'fictional.png')]),
+    { ...toolResult('screen', 'read'), content: [secondScreenshot] }]);
+  const thumbnails = [...ui.container.querySelectorAll('[data-testid=message-image]')];
+  assert.equal(thumbnails.length, 2);
+  for (const trigger of thumbnails) await ui.act(async () => trigger.click());
+  assert.deepEqual(opened, [screenshot, secondScreenshot]);
+  assert.equal(imageViewer(ui), null, 'no competing kit modal');
+});
+
+test('message images refuse remote and SVG content before rendering or opening', async t => {
+  const opened = [];
+  const ui = await harness(t, { extra: { onOpenImage: image => opened.push(image) } });
+  await ui.write([{ role: 'user', content: [{ ...screenshot, data: 'https://fictional.invalid/screen.png' }, { ...screenshot, mimeType: 'image/svg+xml' }], timestamp: 0 }]);
+  assert.equal(ui.container.querySelector('[data-role=user] img'), null);
+  for (const trigger of ui.container.querySelectorAll('[data-testid=message-image]')) await ui.act(async () => trigger.click());
+  assert.deepEqual(opened, []);
+  assert.equal(imageViewer(ui), null);
+});
+
+test('the image viewer localises its count and closes on an unzoomed downward swipe only', async t => {
+  const ui = await harness(t, { locale: 'fr' });
+  await ui.write([{ role: 'user', content: [screenshot], timestamp: 0 }]);
+  await ui.act(async () => ui.container.querySelector('[data-testid=message-image]').click());
+  assert.equal(ui.container.querySelector('[data-testid=message-image]').getAttribute('aria-label'), 'Ouvrir l’image jointe');
+  assert.match(imageViewer(ui).textContent, /Image 1 sur 1/);
+  assert.equal(ui.window.document.querySelector('[data-testid=image-viewer-close]').getAttribute('aria-label'), 'Fermer');
+  const surface = () => ui.window.document.querySelector('[data-testid=image-viewer-surface]');
+  await ui.act(async () => surface().dispatchEvent(new ui.window.MouseEvent('dblclick', { bubbles: true, cancelable: true, clientX: 100, clientY: 100 })));
+  assert.equal(surface().dataset.scale, '2');
+  await imagePointer(ui, 'pointerdown', { pointerId: 1, clientX: 100, clientY: 100 });
+  await imagePointer(ui, 'pointermove', { pointerId: 1, clientX: 100, clientY: 240 });
+  await imagePointer(ui, 'pointerup', { pointerId: 1, clientX: 100, clientY: 240 });
+  assert.ok(imageViewer(ui), 'panning a zoomed image never dismisses it');
+  for (const pointerId of [3, 4]) {
+    await imagePointer(ui, 'pointerdown', { pointerId, clientX: 100, clientY: 100 });
+    await imagePointer(ui, 'pointerup', { pointerId, clientX: 100, clientY: 100 });
+  }
+  assert.equal(surface().dataset.scale, '1');
+  await imagePointer(ui, 'pointerdown', { pointerId: 2, clientX: 100, clientY: 100 });
+  await imagePointer(ui, 'pointermove', { pointerId: 2, clientX: 100, clientY: 240 });
+  await imagePointer(ui, 'pointerup', { pointerId: 2, clientX: 100, clientY: 240 });
+  assert.equal(imageViewer(ui), null, 'a downward swipe at fitted scale closes');
+});
+
+test('a screenshot gallery stays within its message and pinch cancellation never dismisses it', async t => {
+  const ui = await harness(t);
+  await ui.write([{ role: 'user', content: [screenshot], timestamp: 0 }, { role: 'user', content: [screenshot, secondScreenshot], timestamp: 1 }]);
+  const thumbnails = [...ui.container.querySelectorAll('[data-testid=message-image]')];
+  await ui.act(async () => thumbnails[0].click());
+  await viewerKey(ui, 'ArrowRight');
+  assert.match(imageViewer(ui).textContent, /Image 1 of 1/, 'arrows cannot reach another message');
+  await viewerKey(ui, 'Escape');
+  await ui.act(async () => thumbnails[2].click());
+  assert.match(imageViewer(ui).textContent, /Image 2 of 2/);
+  await imagePointer(ui, 'pointerdown', { pointerId: 1, clientX: 80, clientY: 100 });
+  await imagePointer(ui, 'pointerdown', { pointerId: 2, clientX: 180, clientY: 100 });
+  await imagePointer(ui, 'pointermove', { pointerId: 2, clientX: 280, clientY: 100 });
+  assert.equal(ui.window.document.querySelector('[data-testid=image-viewer-surface]').dataset.scale, '2');
+  await imagePointer(ui, 'pointercancel', { pointerId: 2, clientX: 280, clientY: 240 });
+  await imagePointer(ui, 'pointercancel', { pointerId: 1, clientX: 80, clientY: 240 });
+  assert.ok(imageViewer(ui));
+  await viewerKey(ui, 'Escape');
+  await ui.act(async () => thumbnails[2].click());
+  assert.equal(ui.window.document.querySelector('[data-testid=image-viewer-surface]').dataset.scale, '1', 'reopening resets zoom and the pointer epoch');
+  await imagePointer(ui, 'pointerdown', { pointerId: 1, clientX: 100, clientY: 100 });
+  await imagePointer(ui, 'pointerdown', { pointerId: 2, clientX: 200, clientY: 100 });
+  await imagePointer(ui, 'pointermove', { pointerId: 2, clientX: 300, clientY: 100 });
+  await imagePointer(ui, 'pointerup', { pointerId: 2, clientX: 300, clientY: 100 });
+  await imagePointer(ui, 'pointerup', { pointerId: 1, clientX: 100, clientY: 100 });
+  await imagePointer(ui, 'pointerdown', { pointerId: 3, clientX: 100, clientY: 100 });
+  await imagePointer(ui, 'pointerup', { pointerId: 3, clientX: 100, clientY: 100 });
+  assert.equal(ui.window.document.querySelector('[data-testid=image-viewer-surface]').dataset.scale, '2', 'releasing the last pinching finger is not a tap');
+});
+
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 const undoEvent = window => new window.KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true, cancelable: true });
 
@@ -337,7 +476,7 @@ test('AmbientChat forwards onOpenFile and pasteToFile', async t => {
   const opened = [];
   const uploads = [];
   const attachments = { upload: (files, signal) => new Promise(() => { uploads.push(files); }) };
-  const { controller, container, act, window } = await harness(t, { component: AmbientChat, attachments, onOpenFile: path => opened.push(path), pasteToFile: { minLines: 3 },
+  const { controller, container, act, window } = await harness(t, { component: 'ambient', attachments, onOpenFile: path => opened.push(path), pasteToFile: { minLines: 3 },
     extra: { defaultState: 'expanded' } });
   await act(async () => { controller.setText(SENT); });
   await act(async () => { container.querySelector('[data-testid=composer-submit]').click(); });
