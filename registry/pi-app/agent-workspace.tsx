@@ -3,7 +3,6 @@
 import '@hachej/boring-ui-kit/file-tree.css';
 
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer';
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import type { ResourceLocator } from '@hachej/boring-files';
@@ -50,7 +49,8 @@ import type { AppIcons, AppLabels } from './app-labels';
 import { ArtifactPanel, useArtifactVersions, useTurn } from './artifact-panel';
 import type { CustomViewers, SavedRevision, ViewerOptions } from './artifact-panel';
 import { FileViewer } from './file-viewer';
-import { ImagePane } from '../viewers/image-pane';
+import { ImageViewer } from '../pi-chat/image-viewer';
+import { thumbnail } from '../pi-chat/composer';
 import { useRevisionAttachments } from './use-revision-attachments';
 import { imageData } from './revision-files';
 import { SessionsPane, SessionsToggle } from './sessions';
@@ -374,9 +374,12 @@ export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, titl
   // The viewers' client: the Library's binding when there is one (its calls carry the binding the revision protocol checks), else the plain resource client.
   const client = useMemo(() => libraryProvider ?? createResourceClient({ identity, endpoint: new URL(endpoint!, globalThis.location?.href), publication: true, reconciliation: true,
     fetch: request => fetcher.current!(request) }), [libraryProvider, endpoint, identityKey]); // eslint-disable-line react-hooks/exhaustive-deps
-  const [imagePreview, setImagePreview] = useState<{ readonly image: ImageContent; readonly controller: typeof controller; readonly client: typeof client; readonly conversationId: typeof conversationId }>();
-  const openImage = useCallback((image: ImageContent) => setImagePreview({ image, controller, client, conversationId }), [controller, client, conversationId]);
-  const preview = imagePreview && imagePreview.controller === controller && imagePreview.client === client && imagePreview.conversationId === conversationId ? imagePreview.image : undefined;
+  const [imagePreview, setImagePreview] = useState<{ readonly images: readonly ImageContent[]; readonly index: number; readonly controller: typeof controller; readonly client: typeof client; readonly conversationId: typeof conversationId }>();
+  const openImage = useCallback((image: ImageContent, images: readonly ImageContent[] = [image]) => {
+    const index = images.indexOf(image);
+    if (index >= 0 && images.every(item => thumbnail(item.mimeType, item.data))) setImagePreview({ images: images.slice(), index, controller, client, conversationId });
+  }, [controller, client, conversationId]);
+  const preview = imagePreview && !chat.onOpenImage && imagePreview.controller === controller && imagePreview.client === client && imagePreview.conversationId === conversationId ? imagePreview : undefined;
   useEffect(() => { setImagePreview(undefined); }, [controller, client, conversationId, chat.onOpenImage]);
   // ---- Presented files: the page confirms a `present` call only once its panel has mounted the revision (`onShown`, from the viewers).
   // The bookkeeping is `createPresentAcks` (pi-chat/artifact.ts); the answer goes through the chat's own `answer` (the transport's
@@ -633,10 +636,8 @@ export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, titl
       </section>}
     </Dock>}
     </DockLayout>
-    {preview && <Dialog open onOpenChange={open => { if (!open) setImagePreview(undefined); }}><DialogContent showCloseButton={false} aria-describedby={undefined} className="flex flex-col overflow-hidden sm:max-w-4xl">
-      <DialogTitle className="sr-only">{chatText.labels.imageAttachment}</DialogTitle>
-      <div className="pi-chat flex h-[80dvh] min-h-0 flex-col"><ViewerWindowProvider value={{ labels: text.labels, icons: text.icons }}><ImagePane name={chatText.labels.imageAttachment} mediaType={preview.mimeType} url={`data:${preview.mimeType};base64,${preview.data}`} onClose={() => setImagePreview(undefined)} testId="conversation-image" className="min-h-0 flex-1" /></ViewerWindowProvider></div>
-    </DialogContent></Dialog>}
+    {preview && <ImageViewer images={preview.images} index={preview.index} labels={chatText.labels} testId="conversation-image"
+      onIndexChange={index => setImagePreview({ ...preview, index })} onClose={() => setImagePreview(undefined)} />}
     {panelLibrary && narrow && <Drawer open showSwipeHandle onOpenChange={next => { if (!next) setPanelLibrary(false); }}><DrawerContent aria-label={text.labels.library} className="pi-chat min-h-[80dvh] max-h-[80dvh]"><DrawerTitle className="sr-only">{text.labels.library}</DrawerTitle><div data-testid="workspace-library-side" className="min-h-0 flex-1 overflow-auto pb-[env(safe-area-inset-bottom)]">{libraryTree(openFile, () => setPanelLibrary(false))}</div></DrawerContent></Drawer>}
   </div></ChatTextProvider></AppTextProvider>;
 }

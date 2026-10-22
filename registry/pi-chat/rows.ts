@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import type { ConversationView, EntryRecord, InboxItem, JsonObject } from '@earendil-works/pi-durable';
 import type { JsonValue } from '@earendil-works/chord';
-import type { AssistantMessage, Message, ToolCall, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai';
+import type { AssistantMessage, ImageContent, Message, ToolCall, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai';
 import type { ToolEntry, ToolStatus } from './tool';
 import { ASK_USER_TOOL } from './question-card';
 import { PRESENT_TOOL, artifactKey, detectArtifact, pendingId, pendingTitle } from './artifact';
@@ -50,7 +50,7 @@ export type Part =
 
 export type Row = (
   | { readonly key: string; readonly type: 'user'; readonly message: UserMessage }
-  | { readonly key: string; readonly type: 'assistant'; readonly parts: readonly Part[]; readonly streaming: boolean; /** The turn is still running (the last row while a run is active). */ readonly active?: boolean; readonly stopReason?: AssistantMessage['stopReason']; readonly errorMessage?: string; readonly text: string; /** When the reply was written (the last round of a merged turn), in ms. Absent while it streams. */ readonly timestamp?: number; /** The model that wrote the last round of the reply. */ readonly model?: { readonly provider: string; readonly modelId: string }; /** Sum of the merged rounds' native `durationMs`, when recorded. */ readonly durationMs?: number; /** The native entry of its last committed round: where a fork of the conversation after this reply starts. */ readonly entryId?: string }
+  | { readonly key: string; readonly type: 'assistant'; readonly parts: readonly Part[]; /** Native result images remain visible when their tool chrome is omitted. */ readonly images?: readonly ImageContent[]; readonly streaming: boolean; /** The turn is still running (the last row while a run is active). */ readonly active?: boolean; readonly stopReason?: AssistantMessage['stopReason']; readonly errorMessage?: string; readonly text: string; /** When the reply was written (the last round of a merged turn), in ms. Absent while it streams. */ readonly timestamp?: number; /** The model that wrote the last round of the reply. */ readonly model?: { readonly provider: string; readonly modelId: string }; /** Sum of the merged rounds' native `durationMs`, when recorded. */ readonly durationMs?: number; /** The native entry of its last committed round: where a fork of the conversation after this reply starts. */ readonly entryId?: string }
   | { readonly key: string; readonly type: 'orphan-result'; readonly message: ToolResultMessage }
   | { readonly key: string; readonly type: 'system'; readonly text: string }
   | { readonly key: string; readonly type: 'event'; readonly label: string }
@@ -196,6 +196,9 @@ export function derive(view: ConversationView | undefined, options: DeriveOption
     return parts;
   }
 
+  const imagesOf = (content: readonly StreamPart[]): ImageContent[] => content.flatMap(part => part.type === 'toolCall'
+    ? (results.get(part)?.content ?? []).filter((item): item is ImageContent => item.type === 'image') : []);
+
   // Pass 2: rows.
   const rows: Row[] = [];
   for (const item of items) {
@@ -209,17 +212,17 @@ export function derive(view: ConversationView | undefined, options: DeriveOption
       if (!natural && message.isError && !matched.has(message)) rows.push({ key: item.key, type: 'orphan-result', message });
     } else if (message.role === 'user') rows.push({ key: item.key, type: 'user', message });
     else {
-      const parts = partsOf(message.content, item.key, false, true);
+      const parts = partsOf(message.content, item.key, false, true), images = imagesOf(message.content);
       // Empty/tool-only rounds still contribute their native metadata to the answer.
-      rows.push({ key: item.key, type: 'assistant', parts, streaming: false, stopReason: message.stopReason, ...(message.errorMessage && !natural ? { errorMessage: message.errorMessage } : {}), text: textOf(parts), ...replyMeta(message), entryId: String(item.entry.id) });
+      rows.push({ key: item.key, type: 'assistant', parts, ...(images.length ? { images } : {}), streaming: false, stopReason: message.stopReason, ...(message.errorMessage && !natural ? { errorMessage: message.errorMessage } : {}), text: textOf(parts), ...replyMeta(message), entryId: String(item.entry.id) });
     }
   }
   if (typeof taskId === 'number' && liveMessage) {
     const key = `assistant:${taskId}:${counts.get(taskId) ?? 0}`, content = streamParts(liveMessage['content']);
-    const parts = partsOf(content, key, true, false);
-    if (!natural || parts.length) rows.push({ key, type: 'assistant', parts, streaming: true, text: textOf(parts) });
+    const parts = partsOf(content, key, true, false), images = imagesOf(content);
+    if (!natural || parts.length || images.length) rows.push({ key, type: 'assistant', parts, ...(images.length ? { images } : {}), streaming: true, text: textOf(parts) });
   }
-  const merged = mergeTurns(rows).filter(row => row.type !== 'assistant' || row.parts.length || row.stopReason === 'error' || row.stopReason === 'aborted' || row.streaming && !natural).map(row => row.type === 'assistant' && options.artifacts ? { ...row, parts: oneCardPerArtifact(row.parts) } : row);
+  const merged = mergeTurns(rows).filter(row => row.type !== 'assistant' || row.parts.length || row.images?.length || row.stopReason === 'error' || row.stopReason === 'aborted' || row.streaming && !natural).map(row => row.type === 'assistant' && options.artifacts ? { ...row, parts: oneCardPerArtifact(row.parts) } : row);
   const last = merged[merged.length - 1];
   if (run && last?.type === 'assistant') merged[merged.length - 1] = { ...last, active: true };
   return { rows: merged, pinned, run, retry, stageStatus, compacting: Array.isArray(live?.['compactions']) && live['compactions'].length > 0 };
@@ -246,7 +249,7 @@ function mergeTurns(rows: readonly Row[]): Row[] {
     if (last?.type === 'assistant' && row.type === 'card' && row.card.inline) {
       out[out.length - 1] = { ...last, parts: [...last.parts, { kind: 'card', key: row.key, content: row.card.content }] };
     } else if (last?.type === 'assistant' && row.type === 'assistant' && !last.stopReason?.match(/^(error|aborted)$/)) {
-      out[out.length - 1] = { key: last.key, type: 'assistant', parts: [...last.parts, ...row.parts], streaming: row.streaming,
+      out[out.length - 1] = { key: last.key, type: 'assistant', parts: [...last.parts, ...row.parts], ...((last.images?.length || row.images?.length) ? { images: [...(last.images ?? []), ...(row.images ?? [])] } : {}), streaming: row.streaming,
         ...(row.stopReason ? { stopReason: row.stopReason } : {}), ...(row.errorMessage ? { errorMessage: row.errorMessage } : {}),
         text: [last.text, row.text].filter(Boolean).join('\n\n'), ...(row.timestamp !== undefined ? { timestamp: row.timestamp } : {}), ...(row.model ? { model: row.model } : {}), ...(last.durationMs !== undefined || row.durationMs !== undefined ? { durationMs: (last.durationMs ?? 0) + (row.durationMs ?? 0) } : {}),
         ...(row.entryId !== undefined ? { entryId: row.entryId } : last.entryId !== undefined ? { entryId: last.entryId } : {}) };
