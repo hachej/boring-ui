@@ -77,14 +77,20 @@ SHA must match the dispatch SHA; arbitrary checkouts are refused. Merging this
 PR or pushing a tag does not publish anything.
 
 Admission uses the workflow token with read-only actions/checks permissions to
-query the exact SHA's GitHub Actions suites. It requires the latest main-push run
-of both `verify.yml` and `studio-scripted.yml` to succeed, and every named job in
+query the GitHub Actions suites. For each of `verify.yml` and `studio-scripted.yml`,
+a completed latest main-push run of the exact SHA decides. Until it completes, the
+latest pull-request run of the merged head qualifies only when Git proves it tested
+the same files: the release commit is a two-parent merge whose main parent is an
+ancestor of the head (the head was up to date, so its test merge equalled the head)
+and whose tree equals the head's tree. Otherwise admission waits up to 20 minutes
+for main's run. The qualifying run must succeed, with every named job in
 [`scripts/release-admission.mjs`](../../scripts/release-admission.mjs) to be completed
 and successful in the matching suite. This includes all consumer/browser shards,
 Specification checks, tests, release-gate, Worker bundle and aggregates. A missing,
 failed, pending, skipped, foreign-SHA or unreadable check falls back to the full
-verify and browser workflows. Checks from another commit or a PR branch never
-qualify. A reviewed/dispatch SHA mismatch is refused, not a fallback.
+verify and browser workflows. Checks of other files, of a fork's branch, or of a PR
+head that was behind main never qualify, and a completed red main run outranks a
+green pull request. A reviewed/dispatch SHA mismatch is refused, not a fallback.
 
 The full-history secret scan still runs on every release. Preparation always
 builds/typechecks, audits the actual tarballs once, writes their identities and
