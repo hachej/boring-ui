@@ -1,5 +1,11 @@
 # Implemented behavior and evidence
 
+## Placed workspace phone peek
+
+`PlacedAgentWorkspace` lends its existing controller to the app shell's native Base UI drawer on phones. The 8rem peek above the measured tab bar fits the conversation file chip, input and Send; its snap point and clipping boundary share one height. This is host layout, not a Pi execution extension.
+
+`npm run app-shell:journey:placed` checks the composer, input and Send bounding boxes against the viewport and tab bar, and hit-tests the input and Send edges for clipping or occlusion. The journey retains the draft/conversation and page-node checks, with screenshots and geometry under `.cache/evidence/placed-agent/`. Headless Chromium emulation does not qualify physical soft keyboards or real-device behavior.
+
 ## Read-only ArtifactViewer (D-194)
 
 `@hachej/boring-ui-kit/artifact-viewer` presents host-supplied Markdown, HTML, images, PDF and text without a resource controller, editor or agent. This is host presentation, not a Pi execution extension. It shares HtmlViewer's passive allowlist, uses native browser PDF by default and owns only Blob URLs made from its content. The [UI guide](../../packages/ui/README.md#read-only-artifactviewer) owns props, precedence and limits.

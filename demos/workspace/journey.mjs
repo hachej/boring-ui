@@ -746,7 +746,13 @@ try {
     for (const [path, persisted] of [['Policies/AP policy.md', policyDraft], ['tt.md', createdDraft]]) {
       await library(); await choosePolicyWithKeyboard(path);
       await browser.until('reloaded markdown viewer is available', `!!${q('[data-testid=library-document] [data-testid=viewer-more]')}`, 15000);
-      assert.equal(await browser.evaluate(`!!${q('[data-testid=library-document] .boring-markdown-toolbar')}`), true, 'desktop toolbar starts pinned');
+      assert.equal(await browser.evaluate(`!!${q('[data-testid=library-document] .boring-markdown-toolbar')}`), false, 'desktop toolbar stays unpinned after reload');
+      await browser.click(q('[data-testid=library-document] [contenteditable] h1'));
+      await browser.press('ArrowLeft');
+      await browser.press('ArrowRight', { shift: true });
+      await browser.until('selecting document text shows the formatting bubble', `${q('[data-testid=library-document] [contenteditable]')}?.contains(getSelection()?.anchorNode) && getSelection()?.toString().length > 0 && ${q('.boring-markdown-bubble')}?.checkVisibility({ visibilityProperty: true })`, 5000);
+      await browser.press('ArrowLeft');
+      await browser.until('collapsing the selection hides the formatting bubble', `!${q('.boring-markdown-bubble')}?.checkVisibility({ visibilityProperty: true })`, 5000);
       await viewAction('viewer', 'mode-source');
       await browser.until('the persisted text after reload', `${q('[data-testid=library-document] textarea')}?.value === ${JSON.stringify(persisted)}`, 10000);
       await viewAction('viewer', 'mode-rich');
