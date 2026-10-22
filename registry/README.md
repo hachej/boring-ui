@@ -188,6 +188,14 @@ A sent message that mentions an upload (`@uploads/<path>`, what `attachments` sa
 
 `fileChanges` on `PiChat` or `AmbientChat` opts into the same file-card renderer for successful native `write` and `edit` calls with a `path`. One card per path appears below the reply, outside collapsed activity, labelled Created for `write` or Edited for `edit`. A write followed by edits stays Created. Failed, pending and unrelated calls show no file card. Clicking uses `onOpenFile`, falling back to `mentions.open`; without either, the card is not clickable. This is a view of native tool results, not publication evidence or a pinned revision. It is off by default because a host's tools named `write` or `edit` need not operate on workspace files. The workspace demo enables it.
 
+## Sent page comments in `pi-chat`
+
+A user message carrying a page-comments report from `@hachej/boring-feedback/format` renders a compact Card instead of the raw report. `feedback-content.ts` uses the real `parseFeedback`: only a valid host observation with nonempty notes is recognised, either as the complete report or in the composer's `markdown` backtick fence. Reports inside other code fences, malformed reports, non-page reports and ordinary messages keep their existing presentation. Words before and after the fence remain text bubbles, and the native message retains the complete report unchanged.
+
+`sent-feedback.tsx` lists each readable target followed by its note, with the report's general note when present. Captured text stays inert; the card does not resolve live elements, load resources or claim acceptance. More than three notes, or over 400 characters of note/general text, starts collapsed behind the consumer's Base UI Collapsible and Button. That button has a 48px minimum touch target on phone/coarse-pointer screens. Short reports show their notes immediately. `labels.feedbackSent(count)` names the card and disclosure: “2 comments on the page”, or “2 commentaires sur la page” with `locale="fr"`. Override it through the normal partial `labels` prop.
+
+The block imports only the feedback package's browser-safe `/format` entry; it installs no capture UI, store or agent feature. Rendered-message and real formatter round-trip coverage is in `test/contracts/pi-chat-file-cards.test.mjs`; `npm run staged-chat:journey` records desktop/phone, light/dark and plain-message evidence under `.cache/evidence/D207/`.
+
 ## Voice messages in `pi-chat`
 
 `voiceMessage={{ transcribe, maxMs?, upload? }}` adds a hold-to-record microphone to PiChat. Release starts upload and transcription in parallel, then submits one native text message, `@uploads/voice-<timestamp>.<extension> <transcript>`. The agent reads the transcript; history retains that same entry and the audio stays in the person's workspace. The existing composer draft is not sent or cleared. Native refusal restores only the transcript beside later typing.

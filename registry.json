@@ -406,6 +406,7 @@
       "dependencies": [
         "@hachej/boring-ui-kit@^0.4.6",
         "@hachej/boring-files@^0.4.6",
+        "@hachej/boring-feedback@^0.4.6",
         "react@^19.0.0",
         "react-dom@^19.0.0",
         "marked@^17.0.6",
@@ -507,6 +508,16 @@
           "path": "registry/pi-chat/history.tsx",
           "type": "registry:component",
           "target": "components/pi-chat/history.tsx"
+        },
+        {
+          "path": "registry/pi-chat/feedback-content.ts",
+          "type": "registry:lib",
+          "target": "components/pi-chat/feedback-content.ts"
+        },
+        {
+          "path": "registry/pi-chat/sent-feedback.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat/sent-feedback.tsx"
         },
         {
           "path": "registry/pi-chat/markdown.tsx",
@@ -667,6 +678,10 @@
             ".pi-chat :is([data-slot=\"button\"], [data-slot=\"toggle\"], [class~=\"group/button\"], [class~=\"group/toggle\"])": {
               "min-height": "2.75rem",
               "min-width": "2.75rem"
+            },
+            ".pi-chat [data-testid=\"message-feedback\"] [data-slot=\"button\"]": {
+              "min-height": "3rem",
+              "min-width": "3rem"
             },
             ".pi-chat [data-testid=\"queue\"] button, .pi-chat button[data-testid=\"composer-queue\"]": {
               "min-height": "3rem",

@@ -89,6 +89,7 @@ export const frenchChatLabels: ChatLabels = {
   annotateHint: 'Annoter : cliquez sur ce que vous voulez commenter (Échap pour arrêter)',
   annotateNotes: count => `${count} ${count === 1 ? 'note' : 'notes'}`,
   annotateClear: 'Retirer les notes',
+  feedbackSent: count => `${count} ${count === 1 ? 'commentaire' : 'commentaires'} sur la page`,
   remove: name => `Retirer ${name}`,
   dismiss: name => `Fermer ${name}`,
   uploading: name => `Envoi de ${name}…`,
