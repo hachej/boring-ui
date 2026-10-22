@@ -112,7 +112,7 @@
     "test:morning-consumer": "node scripts/test-experience-consumer.mjs --morning",
     "check:pack": "node scripts/check-npm-packages.mjs",
     "draft-recovery:journey": "node examples/draft-recovery/journey.mjs",
-    "release:preflight": "npm run verify:release && node scripts/check-npm-packages.mjs --release",
+    "release:preflight": "npm run check && npm run typecheck && node scripts/release-preflight.mjs",
     "release:version": "node scripts/release-version.mjs",
     "file-tree:journey": "node examples/file-tree/journey.mjs && node examples/file-tree/journey-library.mjs",
     "requests:journey": "node examples/workspace-app/journey-requests.mjs",

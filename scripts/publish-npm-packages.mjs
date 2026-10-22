@@ -41,7 +41,7 @@ export function readRelease(directory, { version, tag, commit, root = projectRoo
   return release;
 }
 
-export async function publishRelease(directory, options, { fetch: request = globalThis.fetch, run = runCaptured, record = () => {}, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), confirmIntervalMs = 15000, confirmTimeoutMs = 300000 } = {}) {
+export async function publishRelease(directory, options, { fetch: request = globalThis.fetch, run = runCaptured, record = () => {}, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), confirmIntervalMs = 15000, confirmTimeoutMs = 300000, now = Date.now, log = console.log } = {}) {
   const release = readRelease(directory, options);
   const results = release.packages.map(pack => ({ name: pack.name, version: pack.version, integrity: pack.integrity, status: 'pending' }));
   const snapshot = () => record({ commit: release.commit, version: release.version, tag: options.tag, packages: structuredClone(results) });
@@ -74,7 +74,12 @@ export async function publishRelease(directory, options, { fetch: request = glob
     if (results[index].status === 'already-published') continue;
     const pack = release.packages[index];
     results[index].status = 'unconfirmed'; snapshot();
-    const result = run('npm', args(pack), { timeout: 180000 });
+    const started = now();
+    let result;
+    try { result = run('npm', args(pack), { timeout: 180000 }); }
+    catch (error) { result = { status: null, error }; }
+    results[index].publishMs = now() - started;
+    log(`npm publish ${pack.name}: ${results[index].publishMs} ms`);
     if (result.status !== 0 || result.error) {
       let code = result.error?.code;
       for (const output of [result.stdout, result.stderr]) {
@@ -84,14 +89,25 @@ export async function publishRelease(directory, options, { fetch: request = glob
       snapshot();
       throw new Error(`Publication unconfirmed for ${pack.name} (${results[index].diagnostic.errorCode ?? `exit ${result.status}`}); rerun the publish job with these same artifacts to reconcile`);
     }
-    // npm can take a few minutes to expose a fresh version (automated validation), so poll before failing.
-    const deadline = Date.now() + confirmTimeoutMs;
-    while (!matching(await lookup(pack, pack.version), pack) || !matching(await lookup(pack, options.tag), pack)) {
-      if (Date.now() >= deadline) throw new Error(`Registry has not confirmed package/version/tag for ${pack.name}; retain these artifacts`);
-      await sleep(confirmIntervalMs);
-    }
-    results[index].status = 'published'; snapshot();
+    snapshot();
   }
+  // Submit all approved archives before waiting for npm's automated validation; visibility advances together.
+  const confirming = now(), deadline = confirming + confirmTimeoutMs;
+  while (results.some(result => result.status === 'unconfirmed')) {
+    await Promise.all(release.packages.map(async (pack, index) => {
+      if (results[index].status !== 'unconfirmed') return;
+      if (matching(await lookup(pack, pack.version), pack) && matching(await lookup(pack, options.tag), pack)) {
+        results[index].status = 'published';
+        results[index].confirmationMs = now() - confirming;
+        snapshot();
+      }
+    }));
+    const pending = results.filter(result => result.status === 'unconfirmed');
+    if (!pending.length) break;
+    if (now() >= deadline) throw new Error(`Registry has not confirmed package/version/tag for ${pending.map(pack => pack.name).join(', ')}; retain these artifacts`);
+    await sleep(confirmIntervalMs);
+  }
+  log(`Registry visibility confirmation: ${now() - confirming} ms`);
   return { commit: release.commit, version: release.version, tag: options.tag, packages: results };
 }
 

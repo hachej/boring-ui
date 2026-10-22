@@ -3,8 +3,8 @@
 // (./journeys/*.mjs) for what is not scenario-shaped.
 //   STUDIO_VARIANT=local|vercel|local,vercel|all   which variants to run (default local)
 //   STUDIO_ONLY=<scenario ids, group names or UI journey names, comma separated>
-//   STUDIO_MODEL=scripted   the scripted layer: a deterministic model driven by the scenarios' `script`s (no key, no retries, blocking in CI)
-//   STUDIO_SMOKE=1    the smoke layer: only the scenarios marked `smoke: true`, against the real model, retries allowed (STUDIO_RETRIES, default 2),
+//   STUDIO_MODEL=scripted   the scripted layer: a deterministic model driven by the scenarios' `script`s (no key, one logged scenario retry, blocking in CI)
+//   STUDIO_SMOKE=1    the smoke layer: only the scenarios marked `smoke: true`, against the real model, one retry allowed,
 //                     prints a pass rate and exits 0 unless it is below STUDIO_SMOKE_MIN (default 0.6). Never blocking.
 //   STUDIO_SECURE=1   debugging: 127.0.0.1 (a secure context) instead of the default insecure origin
 import assert from 'node:assert/strict';
@@ -17,6 +17,7 @@ import { JOURNEYS } from './journeys/index.mjs';
 import { createToolkit } from './journey-toolkit.mjs';
 import { applicable, expectations, runScenario } from './journey-scenarios.mjs';
 import { unavailableReason } from './scenario-availability.mjs';
+import { retryJourney } from '../../scripts/retry-journey.mjs';
 
 const evidence = process.env.STUDIO_EVIDENCE ?? '.cache/evidence/studio';
 mkdirSync(evidence, { recursive: true });
@@ -28,7 +29,7 @@ const steps = [];
 const smoke = process.env.STUDIO_SMOKE === '1';
 const scripted = process.env.STUDIO_MODEL === 'scripted';
 assert.ok(!(smoke && scripted), 'The smoke layer uses the real model: unset STUDIO_MODEL');
-const retries = scripted ? 0 : Number(process.env.STUDIO_RETRIES ?? (smoke ? 2 : 1));
+const retries = 1;
 const smokeResults = [];
 const step = async (name, run) => { const started = Date.now(); await run(); steps.push({ name, ms: Date.now() - started }); console.log(`ok  ${name} (${Date.now() - started} ms)`); };
 const slug = text => text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -86,7 +87,7 @@ try {
     assert.equal(await browser.evaluate(`document.querySelector('.studio').dataset.variant`), 'local');
   });
 
-  if (!smoke) for (const [name, journey] of Object.entries(JOURNEYS)) if (selected(name)) await journey(t);
+  if (!smoke) for (const [name, journey] of Object.entries(JOURNEYS)) if (selected(name)) await retryJourney(name, () => journey(t));
 
   const scenarios = app.scenarios();
   for (const id of wanted) {

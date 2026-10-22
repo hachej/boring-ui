@@ -1,3 +1,37 @@
+# Unreleased
+
+- **Viewers — Quiet Markdown editor (D-227, #1795).** The formatting bar appears on selection and a header Formatting toggle pins it; pass `formattingToolbar="pinned"` for the old always-visible bar.
+- **Faster release preparation (D-234).** Release tooling reuses exact-main green CI, prepares audited archives without another full suite, and waits for npm visibility once for all packages. Package-changing PRs now add their migration note here; `release:version` promotes these notes and refuses an empty section. Browser journeys get one logged retry; unit tests do not. No application API or stored-format migration.
+
+# Migrating to 0.4.7
+
+Upgrade the registry blocks with `npx boring-ui-blocks update --version 0.4.7` (`npx boring-ui-blocks check` first lists your edited copies), and bump the npm pins to `0.4.7`.
+Stored formats remain compatible. Reinstall `feedback`, `app-shell`, `pi-app`, `pi-workspace`, `viewers` and `pi-chat` together: the feedback pin now uses `pi-chat`'s `use-hold-to-record`, and `feedback` gains `switch` as a registry dependency.
+
+## Feedback
+
+- **Comment mode (breaking, #1789).** `PointBar` is renamed `CommentBanner` and is shown on wide screens too (at the top, while hover targeting). Annuler and « Utiliser l'app » become an on/off « Commenter » switch (`feedback-comment-switch`); `feedback-point-cancel` and `feedback-point-use-app` are gone, and the count (`feedback-point-count`) is of notes that say something, absent at 0. The pin's Alt hint (`feedback-bubble-hint`) is gone, its label names the element in plain words (`plainElement`), and its mic is held to record: on release the transcript is appended and the note saved. Labels `altHint`, `pointHint`, `pointCancel`, `pointUseApp`, `pointUsing` and `pointBar` are removed; `commentMode`, `commentSwitch`, `commentTap`, `commentClick`, `commentPaused`, `commentSent` and `element` are added. New hooks: `useCommenting(session)` and `useSendEachNote(session, send)`. Journeys that tapped Annuler should tap `feedback-point-done` (with no note it ends comment mode with nothing).
+- The annotate toggle and pin controls keep 44px targets on desktop too.
+
+## Chat
+
+- **Sent page comments as cards (D-207, #1788).** A user message carrying a page-comments report renders a compact localized Card instead of the raw report. No migration step.
+- **Inline images and full-screen viewer (D-214, #1791).** Messages show image thumbnails, and `AgentWorkspace` replaces its ImagePane dialog with `ImageViewer` (pinch, double-tap, swipe to dismiss, 48px controls). `onOpenImage(image, gallery?)` gains the optional message gallery. Reinstall `pi-chat` and `pi-app` together.
+
+## Layout
+
+- **Host panels and opening width in `AgentWorkspace` (#1789).** `barPanels` (`WorkspaceBarPanel { id, label, icon, content(close) }`) adds the host's own panels to the bar after Library; `panelWidth` sets the side panel's opening width (a fraction of the workspace when at most 1, else pixels; `ArtifactWorkspace`'s `defaultWidth` accepts the same). Both optional.
+- **`ViewerFrame` `mainControl` (#1789).** A control that stays in the header at every width (`<testId>-main`) while `controls` fold into « … » on a phone. Optional.
+
+## Agent
+
+- **SheetJS is host-installed (D-225, #1792).** `xlsx` is now an optional peer of `@hachej/boring-agent`; hosts that read spreadsheets run `npm i https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`. Without it `read_spreadsheet` returns a refusal; PDF reading is unchanged.
+- **OptChat compactor cache (D-210, #1794).** Model summary requests reuse the last turn view as their prefix (compactor cache ≥95% in fictional replays, not live-provider qualification); `stats().compactor.requests` lists usage for the last 256 responses. Forgetting a message clears all summaries once shared-prefix summaries exist. No migration step; downgrading needs a deliberate summary invalidation.
+
+## Files
+
+- **Conditional rename and delete (D-226, #1793).** Workspace publication now accepts conditional delete changes. Publishing remote/revision clients additionally expose rename/delete with locator-valued paths, expectedRevision and operationId; generic handlers opt in with renamer/deleter, while revision handlers use their workspace provider's capabilities. Handle additive rename/delete history sources and rename capability metadata; reconcile uncertain operations by their original ID. No tree controls or recursive folder operations are included.
+
 # Migrating to 0.4.6
 
 Upgrade the registry blocks with `npx boring-ui-blocks update --version 0.4.6` (`npx boring-ui-blocks check` first lists your edited copies), and bump the npm pins to `0.4.6`.
