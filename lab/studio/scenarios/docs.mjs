@@ -14,7 +14,7 @@ const common = { group: 'Documents and files', requires: ['workspace'], seed: VI
 export default [
   {
     ...common, id: 'docs-markdown-editing', title: 'Edit a Markdown file',
-    description: 'Rich editing keeps tables, links and task lists byte for byte; unsafe Markdown stays source; Refresh never drops your edits.',
+    description: 'Formatted preserves tables, links, task lists, front matter, HTML and footnotes; mixed line endings stay source; Refresh never drops your edits.',
     async verify(t) {
       const { browser, q, shots } = t;
       const k = viewerKit(t);
@@ -57,21 +57,51 @@ export default [
       assert.equal(after.replace('EDITED ', ''), original, 'everything but the edited text is byte for byte unchanged');
       for (const kept of ['| Item     | Quantity |', '| Blankets | 2        |', '|Tide|Time|Height|\n|:--|:-:|--:|\n|Low|`19:40`|*0.4 m*|', '![Moon badge](../media/moon-badge.png)', '[tide table](tide-times.html)', '- [x] Pick the pier', '- [ ] Pack the star map']) assert.ok(after.includes(kept), `kept: ${kept}`);
 
-      // A document with raw HTML, a footnote and front matter opens in source mode with rich editing disabled, and a source edit leaves them untouched.
-      await openFile('docs/legacy-notes.md', 'markdown');
-      scope = VIEWER('docs/legacy-notes.md');
-      await browser.until('the notice', `!!${q(`${scope} [data-testid=markdown-source-only]`)}`);
+      // Opaque Markdown is now preserved in Formatted: opening writes nothing, and one heading edit publishes once without changing any other bytes.
+      const legacy = await readText('docs/legacy-notes.md');
+      const legacyWrites = [];
+      const stopLegacyWrites = k.variant().files.onChange(change => { if (change.path === 'docs/legacy-notes.md' && change.source === 'publish') legacyWrites.push(change); });
+      try {
+        await openFile('docs/legacy-notes.md', 'markdown');
+        scope = VIEWER('docs/legacy-notes.md');
+        await browser.until('preserved document opens Formatted', `${q(`${scope} [data-boring=markdown-editor]`)}?.dataset.mode === 'rich' && !!${q(`${scope} [data-preserved="Front matter"]`)}`);
+        for (const label of ['HTML', 'Footnote']) assert.equal(await browser.evaluate(`!!${q(`${scope} [data-preserved="${label}"]`)}`), true, `${label} is a literal block`);
+        assert.equal(await browser.evaluate(`!!${q(`${scope} [data-testid=markdown-source-only]`)}`), false, 'supported constructs have no refusal notice');
+        assert.equal(await readText('docs/legacy-notes.md'), legacy, 'opening retains the exact original source');
+        assert.equal(legacyWrites.length, 0, 'opening performs no write');
+        await browser.click(q(`${scope} [data-testid=viewer-more]`));
+        await browser.until('preserved document mode menu', `!!${q('[data-testid=viewer-mode-rich]')}`, 5000);
+        assert.notEqual(await browser.evaluate(`${q('[data-testid=viewer-mode-rich]')}.getAttribute('aria-disabled')`), 'true');
+        assert.equal(await browser.evaluate(`${q('[data-testid=viewer-mode-rich]')}.getAttribute('aria-checked')`), 'true');
+        await browser.press('Escape');
+        await shots('fileviewers-markdown-preserved');
+        await caretAtStart(scope, '.boring-markdown-content h1');
+        await browser.send('Input.insertText', { text: 'EDITED ' });
+        await browser.until('preserved document is unsaved', `${q(`${scope} [data-testid=viewer-status]`)}?.textContent === 'Unsaved'`);
+        await browser.until('preserved document autosaved', `${q(`${scope} [data-testid=viewer-status]`)}?.textContent === 'Saved'`);
+        const savedLegacy = await readText('docs/legacy-notes.md');
+        assert.equal(savedLegacy, legacy.replace('# Legacy notes', '# EDITED Legacy notes'), 'only the heading edit changes; YAML, HTML and footnotes retain every byte');
+        await openFile('docs/picnic-plan.md', 'markdown');
+        assert.equal(legacyWrites.length, 1, 'one edit and leaving the viewer produce exactly one workspace write');
+      } finally { stopLegacyWrites(); }
+
+      // A genuinely unsupported encoding retains the explained, disabled Formatted choice and never rewrites the source on open.
+      const unsupported = await readText('docs/unsupported-notes.md');
+      await openFile('docs/unsupported-notes.md', 'markdown');
+      scope = VIEWER('docs/unsupported-notes.md');
+      await browser.until('the source-only fallback notice', `!!${q(`${scope} [data-testid=markdown-source-only]`)}`);
+      assert.match(await browser.evaluate(`${q(`${scope} [data-testid=markdown-source-only]`)}.textContent`), /mixed line endings/);
+      assert.equal(await browser.evaluate(`${q(`${scope} [data-boring=markdown-editor]`)}.dataset.mode`), 'source');
       await browser.click(q(`${scope} [data-testid=viewer-more]`));
-      await browser.until('unsafe document mode menu', `!!${q('[data-testid=viewer-mode-rich]')}`, 5000);
-      assert.equal(await browser.evaluate(`${q('[data-testid=viewer-mode-rich]')}.getAttribute('aria-disabled')`), 'true', 'rich editing is disabled');
+      await browser.until('unsupported document mode menu', `!!${q('[data-testid=viewer-mode-rich]')}`, 5000);
+      assert.equal(await browser.evaluate(`${q('[data-testid=viewer-mode-rich]')}.getAttribute('aria-disabled')`), 'true', 'rich editing is disabled for mixed endings');
       assert.equal(await browser.evaluate(`${q('[data-testid=viewer-mode-source]')}.getAttribute('aria-checked')`), 'true');
+      await browser.evaluate(`${q('[data-testid=viewer-mode-rich]')}.click()`);
+      assert.equal(await browser.evaluate(`${q(`${scope} [data-boring=markdown-editor]`)}.dataset.mode`), 'source', 'the disabled choice cannot leave source mode');
       await browser.press('Escape');
       assert.equal(await browser.evaluate(`!${q(`${scope} [role=toolbar]`)}`), true, 'no formatting toolbar without rich mode');
       await shots('fileviewers-markdown-source-only');
-      const legacy = await readText('docs/legacy-notes.md');
-      await browser.type(`${q(`${scope} textarea`)}`, '\nAn unrelated source edit.\n');
-      await browser.until('source autosaved', `${q(`${scope} [data-testid=viewer-status]`)}?.textContent === 'Saved'`);
-      assert.equal(await readText('docs/legacy-notes.md'), `${legacy}\nAn unrelated source edit.\n`);
+      assert.equal(await readText('docs/unsupported-notes.md'), unsupported, 'opening and the disabled mode choice keep mixed line endings byte for byte');
 
       // Refresh never drops unsaved edits and shows that the file changed elsewhere.
       await openFile('docs/picnic-plan.md', 'markdown');
