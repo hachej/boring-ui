@@ -558,7 +558,7 @@ test('registry: the bar, the bubble (Enter saves, Esc discards), the chip and it
   await act(async () => composer.annotate());
   const bar = document.querySelector('[data-testid=feedback-bar]');
   assert.ok(bar.hasAttribute('data-feedback-ignore'));
-  assert.match(bar.textContent, /Feedback0 notes.*Hold ⌥ to use the app.*Use app.*Done/);
+  assert.match(bar.textContent, /Feedback0 notes.*Click what you want to comment on.*Use app.*Done/);
   assert.equal(document.querySelector('[data-testid=feedback-voice]'), null, 'no voice toggle without voice');
   assert.equal(composer.active, true);
   assert.equal(document.querySelector('[data-testid=feedback-general]'), null, 'no general-question entry in the bar');
@@ -569,7 +569,7 @@ test('registry: the bar, the bubble (Enter saves, Esc discards), the chip and it
   assert.equal(input.getAttribute('placeholder'), "What's wrong here?");
   assert.equal(document.querySelector('[data-testid=feedback-bubble-general]'), null, 'no general-question button in the pin');
   assert.equal(document.querySelector('[data-testid=feedback-bubble-mic]'), null, 'no mic without a transcribe');
-  assert.equal(document.querySelector('[data-testid=feedback-bubble-label]').textContent, 'button «Save profile»');
+  assert.equal(document.querySelector('[data-testid=feedback-bubble-label]').textContent, 'Button « Save profile »', 'the pin names the element in plain words; the note keeps the precise label');
   await act(async () => setValue(window, input, 'Say what it saves.'));
   await act(async () => { keydown(window, input, 'Enter'); });
   assert.equal(document.querySelector('[data-testid=feedback-bubble]'), null, 'Enter saved the note');
@@ -630,7 +630,7 @@ class PinRecorder extends EventTarget {
   }
 }
 
-test('registry: ONE annotate toggle: pin, type, count, Send attaches it; Esc exits; the mic keeps the typed text; the pin says Alt passes clicks', { timeout: 30000 }, async t => {
+test('registry: ONE annotate toggle: pin, type, count, Send attaches it; Esc exits; the held mic keeps the typed text and saves the spoken note', { timeout: 30000 }, async t => {
   const { window, document, components, createElement, act, createRoot } = await registry(t);
   const { NoteBubble, useComposerFeedback } = components;
   document.body.innerHTML = PAGE;
@@ -659,35 +659,38 @@ test('registry: ONE annotate toggle: pin, type, count, Send attaches it; Esc exi
   assert.ok($t('feedback-bubble'));
   assert.ok($t('feedback-bubble').querySelector('textarea') && $t('feedback-bubble').querySelector('[data-testid=feedback-bubble-mic]'), 'the mic is inside the pin');
   assert.equal($t('feedback-bubble').querySelector('.boring-feedback-pin-field [data-testid=feedback-bubble-mic]') !== null, true);
-  assert.match($t('feedback-bubble-hint').textContent, /Hold ⌥ to use the app/, 'a one-line hint: Alt passes clicks to the app');
+  assert.equal($t('feedback-bubble-hint'), null, 'no Alt hint in the pin');
   assert.equal($t('feedback-bubble-general'), null);
   await act(async () => setValue(window, $t('feedback-bubble-input'), 'Say what it saves'));
   assert.equal(composer.count, 1, 'a note being typed already counts: Send saves it');
 
-  // The mic: record, stop, the transcript is appended to the typed text.
-  await act(async () => $t('feedback-bubble-mic').click());
-  await until('recording', () => $t('feedback-bubble-mic').dataset.state === 'recording');
-  await act(async () => $t('feedback-bubble-mic').click());
-  await until('the transcript is appended', () => $t('feedback-bubble-input').value === 'Say what it saves and it is slow');
-  // A rejected transcription keeps the typed text and says so.
+  // The mic is held: press records, release transcribes. A rejected transcription keeps the typed text and says so.
+  const hold = async () => act(async () => pointer(window, 'pointerdown', $t('feedback-bubble-mic'), { pointerId: 7, button: 0 }));
+  const letGo = async () => act(async () => pointer(window, 'pointerup', $t('feedback-bubble-mic'), { pointerId: 7, button: 0 }));
   transcribe = async () => { throw new Error('the transcription answered 502'); };
-  await act(async () => $t('feedback-bubble-mic').click());
-  await until('recording again', () => $t('feedback-bubble-mic').dataset.state === 'recording');
-  await act(async () => $t('feedback-bubble-mic').click());
+  await hold();
+  await until('recording', () => $t('feedback-bubble-mic').dataset.state === 'recording');
+  assert.equal($t('feedback-bubble-mic').getAttribute('aria-pressed'), 'true', 'pressed while held');
+  await letGo();
   await until('the failure is said', () => $t('feedback-bubble-voice-problem'));
-  assert.equal($t('feedback-bubble-input').value, 'Say what it saves and it is slow', 'the typed text is kept');
+  assert.equal($t('feedback-bubble-input').value, 'Say what it saves', 'the typed text is kept');
   assert.match($t('feedback-bubble-voice-problem').textContent, /could not be transcribed/);
   assert.equal($t('feedback-bubble-mic').dataset.state, 'idle');
   // Nothing recorded (a refused microphone) keeps the text too.
+  const allowed = window.navigator.mediaDevices.getUserMedia;
   window.navigator.mediaDevices.getUserMedia = async () => { throw Object.assign(new Error('no'), { name: 'NotAllowedError' }); };
-  await act(async () => $t('feedback-bubble-mic').click());
+  await hold();
   await until('the refusal is said', () => /blocked/.test($t('feedback-bubble-voice-problem')?.textContent ?? ''));
-  assert.equal($t('feedback-bubble-input').value, 'Say what it saves and it is slow');
-
-  // Enter saves the pin; the count is 1. Esc with no pin open exits annotating (on the page, where the session swallows Esc).
-  await act(async () => { keydown(window, $t('feedback-bubble-input'), 'Enter'); });
-  assert.equal($t('feedback-bubble'), null);
+  await letGo();
+  assert.equal($t('feedback-bubble-input').value, 'Say what it saves');
+  // Let go before the microphone is ready still records, then saves: the transcript is appended to the typed text and the note is kept.
+  window.navigator.mediaDevices.getUserMedia = allowed;
+  transcribe = async () => 'and it is slow';
+  await hold();
+  await letGo();
+  await until('the spoken note is saved', () => $t('feedback-bubble') === null);
   assert.equal(composer.count, 1);
+  assert.equal(session.getSnapshot().notes.at(-1).text, 'Say what it saves and it is slow', 'appended, never replacing what was typed');
   assert.equal(session.getSnapshot().phase, 'active');
   await act(async () => { keydown(window, document.body, 'Escape'); });
   await until('review', () => session.getSnapshot().phase === 'review');

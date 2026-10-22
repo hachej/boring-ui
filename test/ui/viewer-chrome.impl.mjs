@@ -70,3 +70,18 @@ test('manual copy uses the host Dialog and Textarea and selects the exact text',
   await ui.click(ui.q('[data-testid=viewer-manual-copy-close]'));
   assert.equal(ui.q('[data-testid=viewer-manual-copy]'), null);
 });
+
+test('mainControl stays in the header beside the "…" menu while controls fold into it on a phone', async t => {
+  const ui = await mount(t); const events = [];
+  await ui.render(ui.h(ui.ViewerFrame, { title: 'Fictional notes', controls: ui.h('button', { 'data-testid': 'fictional-zoom' }, 'Zoom'), mainControl: ui.h('button', { 'data-testid': 'fictional-comment', onClick: () => events.push('comment') }, 'Comment') }));
+  const main = ui.q('[data-testid=viewer-main]');
+  assert.ok(main.querySelector('[data-testid=fictional-comment]'), 'the main control renders in its own slot');
+  assert.equal(ui.q('[data-testid=viewer-controls]').contains(main), false, 'not inside the controls a phone hides');
+  assert.doesNotMatch(main.className, /hidden/, 'visible at every width');
+  assert.equal(main.closest('[data-testid=viewer-bar]') !== null, true);
+  await ui.click(main.querySelector('button'));
+  assert.deepEqual(events, ['comment']);
+  await ui.click(ui.q('[data-testid=viewer-more]'));
+  await ui.act(async () => { await new Promise(resolve => setTimeout(resolve, 50)); });
+  assert.equal(ui.window.document.querySelectorAll('[data-testid=fictional-comment]').length, 1, 'never duplicated into the "…" menu');
+});

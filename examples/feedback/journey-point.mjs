@@ -1,6 +1,6 @@
 // The point-mode journey (FEEDBACK.md, "Point mode"): one driven Chromium run of the Fernhill page in its phone layout (`?mobile=1`),
 // emulated as a 390x844 phone with touch through the DevTools protocol, the keyless scripted builder (builder.mjs) and the SQLite store.
-// Steps: open the assistant (a full-screen panel whose composer has ONE annotate toggle) → the toggle enters point mode: the panel steps aside and PointBar sits above the tab bar →
+// Steps: open the assistant (a full-screen panel whose composer has ONE annotate toggle) → the toggle enters point mode: the panel steps aside and CommentBanner sits above the tab bar →
 // tap an element and Annuler: the panel comes back with no picks → point again → tap the Facturation tab (navigation while pointing) →
 // tap Change plan (the bubble, the page never reacts) → note → re-tap deselects → tap again, note → tap Profil → tap Save profile → note
 // → tap a heading and scroll it down to the bar (the bubble stays clear of the bar) → re-tap deselects → Terminé: the panel is back and the composer's count chip holds the two picks → Send attaches the report. Geometry: the bar never overlaps
@@ -40,11 +40,11 @@ try {
   await browser.emulate('phone');
   await browser.send('Page.navigate', { url: `${app.url}settings/profile?mobile=1` });
   const shot = async name => { await pause(300); await browser.screenshot(`${name}.png`); summary.screenshots.push(join(evidence, `${name}.png`)); };
-  const count = () => browser.evaluate(`${q('feedback-point-count')}.textContent`);
+  const count = () => browser.evaluate(`${q('feedback-point-count')}?.textContent ?? ''`);
   /** The bar against the tab bar, a selected element and the bubble: none overlap, and the bar sits above the tab bar. */
   const geometry = async selected => {
     const found = await browser.evaluate(`({ bar: ${box(BAR)}, tabbar: ${box(q('tabbar'))}, selected: ${selected ? box(selected) : 'null'}, bubble: ${box(q('feedback-bubble'))},
-      viewport: { width: innerWidth, height: innerHeight }, targets: [...${BAR}.querySelectorAll('button')].map(button => { const r = button.getBoundingClientRect(); return { name: button.textContent, width: r.width, height: r.height }; }) })`);
+      viewport: { width: innerWidth, height: innerHeight }, targets: [...${BAR}.querySelectorAll('button:not([role=switch])'), ${q('feedback-comment-switch')}?.parentElement].filter(Boolean).map(button => { const r = button.getBoundingClientRect(); return { name: button.textContent || button.dataset.testid || 'the switch', width: r.width, height: r.height }; }) })`);
     assert.ok(found.bar.bottom <= found.tabbar.top, `the bar (${found.bar.bottom}) sits above the tab bar (${found.tabbar.top})`);
     assert.ok(!overlap(found.bar, found.tabbar), 'the bar does not overlap the tab bar');
     if (found.selected) assert.ok(!overlap(found.bar, found.selected), 'the bar does not overlap the selection');
@@ -65,7 +65,7 @@ try {
     const panel = await browser.evaluate(box(PANEL));
     assert.deepEqual([panel.top, panel.left, panel.width, panel.height], [0, 0, 390, 844], 'the panel covers the phone');
     const found = await browser.evaluate(`(() => { const form = ${inPanel('composer')}; const toggles = [...form.querySelectorAll('[data-testid=composer-annotate]')]; const r = toggles[0].getBoundingClientRect();
-      return { toggles: toggles.length, label: toggles[0].textContent, size: [Math.round(r.width), Math.round(r.height)], words: /Retour|Feedback|Montrer dans|question générale|Terminé/i.test(form.innerText),
+      return { toggles: toggles.length, label: toggles[0].getAttribute('aria-label'), size: [Math.round(r.width), Math.round(r.height)], words: /Retour|Feedback|Montrer dans|question générale|Terminé/i.test(form.innerText),
         gone: ['composer-feedback', 'composer-point', 'feedback-bar', 'feedback-chip', 'feedback-general', 'feedback-count'].filter(id => document.querySelector('[data-testid=' + id + ']')) }; })()`);
     assert.equal(found.toggles, 1);
     assert.equal(found.label, 'Annoter');
@@ -78,16 +78,17 @@ try {
   await step('the annotate toggle on a phone is point mode: the panel steps aside, the app is visible, the bar sits above the tab bar', async () => {
     await browser.tap(inPanel('composer-annotate'));
     await browser.until('point mode', `!!${BAR} && ${PANEL}.hidden`, 5000);
-    assert.equal(await browser.evaluate(`${q('feedback-point-hint')}.textContent`), 'Touchez un élément à commenter');
-    assert.equal(await count(), '0 sélection');
+    assert.equal(await browser.evaluate(`${q('feedback-point-hint')}.textContent`), 'Touchez un élément pour le commenter');
+    assert.equal(await count(), '', 'no count before a note says something');
+    assert.equal(await browser.evaluate(`${q('feedback-comment-switch')}.getAttribute('aria-checked')`), 'true', 'comment mode is on');
     summary.records.bar = await geometry();
     await shot('02-point-bar');
   });
 
-  await step('Annuler: the panel comes back with no picks', async () => {
+  await step('Terminé with an empty pin: the panel comes back with no notes', async () => {
     await browser.tap(q('save-profile'));
     await browser.until('the bubble', `!!${q('feedback-bubble-input')}`, 5000);
-    await browser.tap(q('feedback-point-cancel'));
+    await browser.tap(q('feedback-point-done'));
     await browser.until('the panel is back', `!${BAR} && !${PANEL}.hidden`, 5000);
     assert.equal(await browser.evaluate(`!!${inPanel('feedback-count')}`), false, 'no count chip');
     assert.equal(await browser.evaluate(`!!${q('feedback-bubble')}`), false);
@@ -104,11 +105,11 @@ try {
   await step('tap Change plan: selected with the existing picker (box, pin, bubble); the page never reacts; a re-tap deselects', async () => {
     await browser.tap(q('change-plan'));
     await browser.until('the bubble', `!!${q('feedback-bubble-input')}`, 5000);
-    assert.equal(await count(), '1 sélection');
+    assert.equal(await count(), '', 'an empty pin is not a note yet');
     assert.equal(await browser.evaluate(`!!${q('plan-menu')}`), false, 'the plan menu did not open');
     assert.deepEqual(await browser.evaluate('window.__journeyHits'), { save: 0, submit: 0, plan: 0 }, 'Change plan was not pressed');
     await browser.tap(q('change-plan'));
-    await browser.until('deselected', `!${q('feedback-bubble')} && ${q('feedback-point-count')}.textContent === '0 sélection'`, 5000);
+    await browser.until('deselected', `!${q('feedback-bubble')} && !${q('feedback-point-count')}`, 5000);
     await browser.tap(q('change-plan'));
     await browser.until('the bubble', `document.activeElement === ${q('feedback-bubble-input')}`, 5000);
     await browser.send('Input.insertText', { text: NOTE_PLAN });
@@ -127,7 +128,7 @@ try {
     await browser.tap(q('tab-profile'));
     await browser.until('the Profile section', `location.pathname === '/settings/profile' && !!${q('save-profile')}`, 5000);
     await browser.tap(q('save-profile'));
-    await browser.until('the second bubble', `document.activeElement === ${q('feedback-bubble-input')} && ${q('feedback-point-count')}.textContent === '2 sélections'`, 5000);
+    await browser.until('the second bubble', `document.activeElement === ${q('feedback-bubble-input')} && ${q('feedback-point-count')}?.textContent === ' · 1 note'`, 5000);
     await browser.send('Input.insertText', { text: NOTE_SAVE });
     assert.deepEqual(await browser.evaluate('window.__journeyHits'), { save: 0, submit: 0, plan: 0 }, 'Save was neither pressed nor submitted');
     summary.records.second = await geometry(q('save-profile'));
@@ -142,8 +143,8 @@ try {
       return Math.abs(r.top - 200) < 2 && !(b && x >= b.left && x <= b.right && y >= b.top && y <= b.bottom) ? { x, y } : null; })()`, 5000);
     await browser.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [at] });
     await browser.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-    await browser.until('its bubble', `!!${q('feedback-bubble')} && ${q('feedback-point-count')}.textContent === '3 sélections'`, 5000);
-    // Scroll the page up so the selected heading sits 745px down the 844px screen, just above the tab bar and behind PointBar.
+    await browser.until('its bubble', `!!${q('feedback-bubble')} && ${q('feedback-point-count')}?.textContent === ' · 2 notes'`, 5000);
+    // Scroll the page up so the selected heading sits 745px down the 844px screen, just above the tab bar and behind CommentBanner.
     await browser.evaluate(`window.scrollBy(0, ${HEADING}.getBoundingClientRect().top - 745)`);
     const low = await browser.until('the selection low on the screen', `(() => { const r = ${HEADING}.getBoundingClientRect(); return Math.abs(r.top - 745) < 2 ? r.top : null; })()`, 5000);
     await pause(200);
@@ -151,7 +152,7 @@ try {
     assert.ok(summary.records.scrolled.bubble, 'the bubble is still open');
     await shot('04b-scrolled');
     await browser.tap(HEADING);
-    await browser.until('deselected', `!${q('feedback-bubble')} && ${q('feedback-point-count')}.textContent === '2 sélections'`, 5000);
+    await browser.until('deselected', `!${q('feedback-bubble')} && ${q('feedback-point-count')}?.textContent === ' · 2 notes'`, 5000);
   });
 
   await step('Terminé: the panel is back and the picks are the composer\'s count chip', async () => {

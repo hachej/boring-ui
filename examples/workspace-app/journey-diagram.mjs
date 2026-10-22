@@ -3,7 +3,7 @@
 // with the built-in diagram kind, its path highlighted, top to bottom on a phone with no horizontal scroll at 390 or 360. Then the booking
 // mock-up: How it works draws its workflow with the same view. Then comment pins: the maquette's comment icon enters the feedback item's
 // point mode, two taps on blocks pin two notes, the icon again is Done and the pinned blocks show small numbers; the notes go with the next
-// message and name the maquette path, screen id and block id. Screenshots at desktop 1440 and phone 390, light and dark, go to
+// message as a page-comments card with both element labels and note text. Screenshots at desktop 1440 and phone 390, light and dark, go to
 // .cache/evidence/diagram-comments/.
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync } from 'node:fs';
@@ -119,17 +119,25 @@ try {
     await shoot('phone-pins');
   });
 
-  await step('phone 390: the notes go with the next message, naming the maquette path, screen id and block id', async () => {
+  await step('phone 390: the next message shows the page-comments card with both element labels and notes', async () => {
     await browser.tap(q('[data-testid=artifact-close]'));
     await browser.until('the chat again', `!!${INPUT} && !!${q('[data-testid=feedback-count]')}`, 10000);
     // On a phone Enter is a new line: the send button sends.
     await browser.type(INPUT, 'Two changes on the class list');
     await browser.tap(q('[data-testid=composer-submit]'));
     await browser.until('the reply', `/Noted: the class list button/.test(document.body.textContent)`, 30000);
-    const sent = await browser.evaluate(`${qa('[data-testid=message-user], [data-role=user]')}.map(e => e.textContent).join('\\n') || document.body.textContent`);
-    assert.match(sent, /maquette:booking\.maquette\.json#screen=classes&block=4/);
-    assert.match(sent, /maquette:booking\.maquette\.json#screen=classes&block=0/);
-    assert.match(sent, /A friendlier heading/);
+    const card = q('[data-role=user] [data-testid=message-feedback]');
+    await browser.until('the sent page comments card', `${card}?.checkVisibility()`);
+    assert.equal(await browser.evaluate(`${card}.querySelector('[data-slot=card-title]').innerText`), '2 comments on the page');
+    assert.equal(await browser.evaluate(`${card}.getAttribute('aria-label')`), '2 comments on the page');
+    const sent = await browser.evaluate(`[...${card}.querySelectorAll('[data-testid=message-feedback-note]')].map(note => {
+      const target = note.querySelector('[data-slot=card-description]'), text = note.querySelector('p');
+      return { target: target.innerText, text: text.innerText, visible: target.checkVisibility() && text.checkVisibility() };
+    })`);
+    assert.deepEqual(sent, [
+      { target: '«Wheel throwing, beginners» span element', text: 'Say "Book a place" here', visible: true },
+      { target: '«Book a class» heading', text: 'A friendlier heading', visible: true },
+    ]);
     assert.ok(await browser.evaluate(noOverflow), 'no horizontal scroll with the sent note');
     await shoot('phone-sent-note');
     await desktop();

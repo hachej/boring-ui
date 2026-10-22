@@ -1,7 +1,7 @@
 'use client';
 
-// The compact top bar of `AgentWorkspace layout="embedded"`: the conversation title, then History, Library and New as icon buttons
-// (History and Library open a popover on a wide workspace and a bottom sheet on a phone) and the host's controls. Inside an app-shell
+// The compact top bar of `AgentWorkspace layout="embedded"`: the conversation title, then History, Library, the host's own panels and New
+// as icon buttons (each panel opens a popover on a wide workspace and a bottom sheet on a phone) and the host's controls. Inside an app-shell
 // screen the controls go into the shell's header instead (`useScreenHeaderSlot`), so the page keeps one row. Host concern: Pi has no layout.
 import { useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
@@ -54,6 +54,14 @@ function BarPanel({ id, label, icon: Icon, narrow, open, onOpenChange, children 
   </Popover>;
 }
 
+/** A host panel in the bar, beside History and Library: an icon button that opens `content` (`close` closes the popover or sheet). */
+export interface WorkspaceBarPanel {
+  readonly id: string;
+  readonly label: string;
+  readonly icon: BlockIcon;
+  readonly content: (close: () => void) => ReactNode;
+}
+
 export interface WorkspaceBarProps {
   readonly title: string;
   /** Muted after a fixed `title`: the conversation's title. Hidden on a phone, where History names the conversations. */
@@ -61,6 +69,8 @@ export interface WorkspaceBarProps {
   readonly conversations: ConversationsConfig | undefined;
   /** The Library's list (`onPicked` closes the popover or sheet), or undefined without a Library. */
   readonly library: ((onPicked: () => void) => ReactNode) | undefined;
+  /** The host's own panels, after Library and before New (test ids `workspace-bar-<id>` and `workspace-<id>`). */
+  readonly panels?: readonly WorkspaceBarPanel[] | undefined;
   /** A phone-sized workspace: sheets instead of popovers, 44px buttons. */
   readonly narrow: boolean;
   /** The host's own controls, after New. */
@@ -68,11 +78,11 @@ export interface WorkspaceBarProps {
 }
 
 /** The bar, or only its controls in the app shell's header when the page sits in a shell screen (then nothing renders here). */
-export function WorkspaceBar({ title, subtitle, conversations, library, narrow, controls }: WorkspaceBarProps) {
+export function WorkspaceBar({ title, subtitle, conversations, library, panels, narrow, controls }: WorkspaceBarProps) {
   const { labels, icons } = useAppText();
   const slot = useScreenHeaderSlot();
-  const [shown, setShown] = useState<'history' | 'library' | null>(null);
-  const toggle = (which: 'history' | 'library') => (open: boolean) => setShown(open ? which : current => current === which ? null : current);
+  const [shown, setShown] = useState<string | null>(null);
+  const toggle = (which: string) => (open: boolean) => setShown(open ? which : current => current === which ? null : current);
   const close = () => setShown(null);
   const tools = <div data-testid="workspace-bar-tools" className="flex shrink-0 items-center gap-0.5">
     {conversations && <BarPanel id="history" label={labels.history} icon={icons.history} narrow={narrow} open={shown === 'history'} onOpenChange={toggle('history')}>
@@ -86,6 +96,9 @@ export function WorkspaceBar({ title, subtitle, conversations, library, narrow, 
     {library && <BarPanel id="library" label={labels.library} icon={icons.library} narrow={narrow} open={shown === 'library'} onOpenChange={toggle('library')}>
       <div className="min-h-0 flex-1 overflow-auto">{library(close)}</div>
     </BarPanel>}
+    {panels?.map(panel => <BarPanel key={panel.id} id={panel.id} label={panel.label} icon={panel.icon} narrow={narrow} open={shown === panel.id} onOpenChange={toggle(panel.id)}>
+      {panel.content(close)}
+    </BarPanel>)}
     {conversations?.onNew && <Hinted label={labels.newChat} narrow={narrow} trigger={<Button variant="ghost" size="icon" data-testid="workspace-bar-new" aria-label={labels.newChat} className={iconSize(narrow)} onClick={() => conversations.onNew?.()}><icons.newChat aria-hidden="true" /></Button>} />}
     {controls}
   </div>;

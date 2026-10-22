@@ -14,7 +14,7 @@
 // report's pins, shows PreviewBanner, and answers the call through the chat transport (`remote.answer`) on Approve or Discard.
 // `?mobile=1` is a phone layout (FEEDBACK.md, "Point mode"): a bottom tab bar and the assistant as a full-screen panel (PiChat, in
 // French) whose composer offers « Montrer dans l'app ». The panel binds `usePointing`: it is hidden (kept mounted) while the person
-// taps elements in the app over PointBar, and comes back with the picks as the composer's chip.
+// taps elements in the app over CommentBanner, and comes back with the picks as the composer's chip.
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createPrivacyPolicy, createVoiceCapture, runPrivacyCanaries } from '@hachej/boring-feedback/page';
@@ -30,7 +30,7 @@ import { feedbackMentionRenderer, feedbackRenderTool } from '../../registry/feed
 import { PointButton } from '../../registry/feedback/point-button.tsx';
 import { pickerOverlayStyles, usePickerOverlay } from '../../registry/feedback/picker-overlay.ts';
 import { NoteBubble, useComposerFeedback } from '../../registry/feedback/feedback-session.tsx';
-import { PointBar, usePointing } from '../../registry/feedback/point-mode.tsx';
+import { CommentBanner, usePointing } from '../../registry/feedback/point-mode.tsx';
 import { feedbackLabelsFr } from '../../registry/feedback/feedback-labels.ts';
 import { PiChat } from '../../registry/pi-chat/pi-chat.tsx';
 import { AnnotateSheet } from '../../registry/feedback/annotate-sheet.tsx';
@@ -244,12 +244,12 @@ function App() {
   </>;
 }
 
-/** The tab bar's height: PointBar sits above it. */
+/** The tab bar's height: CommentBanner sits above it. */
 const TABBAR = '64px';
 
 /**
  * `?mobile=1`: the phone layout. The assistant is a full-screen panel (the host's Sheet stand-in) over the page; its composer offers
- * « Montrer dans l'app ». While `usePointing` is true the panel is hidden but stays mounted (the typed text is kept), PointBar sits
+ * « Montrer dans l'app ». While `usePointing` is true the panel is hidden but stays mounted (the typed text is kept), CommentBanner sits
  * above the tab bar, and the tab bar (marked `data-feedback-ignore`) still navigates between the two sections.
  */
 function PhoneApp() {
@@ -273,7 +273,7 @@ function PhoneApp() {
   return <>
     <SettingsPage saveLabel={copy.saveLabel} section={section} onNavigate={navigate} />
     {session && <NoteBubble session={session} labels={feedbackLabelsFr} transcribe={pinTranscribe} />}
-    {session && <PointBar session={session} labels={feedbackLabelsFr} bottomOffset={TABBAR} />}
+    {session && <CommentBanner session={session} labels={feedbackLabelsFr} bottomOffset={TABBAR} />}
     <nav className="fh-tabbar" data-feedback-ignore="" data-testid="tabbar" aria-label="Sections" style={{ height: TABBAR }}>
       {[['profile', 'Profil'], ['billing', 'Facturation']].map(([id, name]) => <button key={id} type="button" data-testid={`tab-${id}`}
         aria-current={(!panel || pointing) && section === id ? 'page' : undefined} onClick={() => { if (!pointing) setPanel(false); navigate(`/settings/${id}`); }}>{name}</button>)}
