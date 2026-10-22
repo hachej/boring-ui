@@ -32,7 +32,7 @@ jobs:
       github.ref == 'refs/heads/main' &&
       github.actor == 'hachej' && github.triggering_actor == 'hachej'
     runs-on: ubuntu-latest
-    # Admission waits up to 20 minutes for main's own checks of this commit before falling back to full qualification.
+    # Admission takes the merged pull request's green checks of identical files, or waits up to 20 minutes for main's own.
     timeout-minutes: 25
     permissions:
       contents: read
@@ -48,8 +48,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
+          # The full history lets admission prove a merge's files equal its pull request head's, already tested there.
+          fetch-depth: 0
           persist-credentials: false
-      - name: Reuse only green checks of this exact main commit
+      - name: Reuse only green checks of these exact files
         id: checks
         env:
           REVIEWED_COMMIT: ${{ inputs.commit }}

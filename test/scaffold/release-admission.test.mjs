@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { releaseAdmission, REQUIRED_CHECKS } from '../../scripts/release-admission.mjs';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { releaseAdmission, REQUIRED_CHECKS, testedPullRequestHead } from '../../scripts/release-admission.mjs';
 
 const commit = 'a'.repeat(40), repository = 'hachej/boring-ui';
 const input = { commit, sha: commit, repository, token: 'fictional-workflow-token' };
@@ -80,7 +84,7 @@ test('a release dispatched while main is still checking its commit waits for tha
     if (url.includes('studio-scripted.yml/runs') && ++polls === 3) Object.assign(run, { status: 'completed', conclusion: 'success' });
     return fetch(url, options);
   };
-  assert.deepEqual(await releaseAdmission(input, f), { reuse: true, reason: 'All named verification and browser checks passed on this exact main push SHA' });
+  assert.deepEqual(await releaseAdmission(input, f), { reuse: true, reason: 'All named verification and browser checks passed on these exact files (main push)' });
   assert.equal(polls, 3);
   assert.equal(f.now(), 60000, 'two 30 s waits');
 });
@@ -100,4 +104,68 @@ test('a mismatched reviewed commit is refused, not a fallback admission', async 
   const f = fixture();
   for (const values of [{ commit: 'b'.repeat(40) }, { commit: 'main' }, { repository: 'fictional/fork' }]) await assert.rejects(releaseAdmission({ ...input, ...values }, f), /exact reviewed/);
   assert.equal(f.calls.length, 0);
+});
+
+// The fixture's green runs re-labelled as the merged pull request's runs of its head, while main's runs are still going.
+function pullRequestEvidence(f, head) {
+  for (const [index, workflow] of Object.keys(REQUIRED_CHECKS).entries()) {
+    const run = f.pages.get(`actions/workflows/${workflow}/runs`).workflow_runs[0];
+    f.pages.set(`actions/workflows/${workflow}/runs?pr`, { workflow_runs: [{ ...run, head_sha: head, head_branch: 'platform/fictional', event: 'pull_request', head_repository: { full_name: repository } }] });
+    Object.assign(run, { status: 'in_progress', conclusion: null });
+    f.pages.get(`check-suites/${index + 1}/check-runs`).check_runs.forEach(check => { check.head_sha = head; });
+  }
+  f.pages.get(`commits/${commit}/check-suites`).check_suites.forEach(suite => { suite.head_sha = head; });
+  f.pages.set(`commits/${head}/check-suites`, f.pages.get(`commits/${commit}/check-suites`));
+  const fetch = f.fetch;
+  f.fetch = async (url, options) => {
+    const parsed = new URL(url);
+    if (parsed.searchParams.get('head_sha') === head) return Response.json(f.pages.get(`${parsed.pathname.replace(`/repos/${repository}/`, '')}?pr`));
+    if (parsed.pathname.endsWith(`commits/${head}/check-suites`)) return Response.json(f.pages.get(`commits/${head}/check-suites`));
+    return fetch(url, options);
+  };
+}
+
+test('a merge whose files the pull request already tested is admitted at once, without waiting for main', async () => {
+  const f = fixture(), head = 'c'.repeat(40);
+  pullRequestEvidence(f, head);
+  assert.deepEqual(await releaseAdmission({ ...input, tested: head }, f), { reuse: true, reason: 'All named verification and browser checks passed on these exact files (merged pull request)' });
+  assert.equal(f.now(), 0, 'no wait');
+  // Without a tested head, the same state waits for main and, as main never completes here, falls back.
+  const g = fixture(); pullRequestEvidence(g, head);
+  assert.equal((await releaseAdmission(input, g)).reuse, false);
+});
+
+test('a red or foreign pull request run of the tested head never admits; a completed red main run outranks a green pull request', async () => {
+  const head = 'c'.repeat(40);
+  for (const change of ['failure', 'fork', 'check', 'main-red']) {
+    const f = fixture(); pullRequestEvidence(f, head);
+    const pr = f.pages.get('actions/workflows/verify.yml/runs?pr').workflow_runs[0];
+    if (change === 'failure') pr.conclusion = 'failure';
+    else if (change === 'fork') pr.head_repository = { full_name: 'fictional/fork' };
+    else if (change === 'check') f.pages.get('check-suites/1/check-runs').check_runs[0].conclusion = 'failure';
+    else Object.assign(f.pages.get('actions/workflows/verify.yml/runs').workflow_runs[0], { status: 'completed', conclusion: 'failure' });
+    assert.equal((await releaseAdmission({ ...input, tested: head }, f)).reuse, false, change);
+  }
+});
+
+test('only an up-to-date merge with an identical tree names its pull request head as already tested', t => {
+  const root = mkdtempSync(join(tmpdir(), 'boring-admission-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const git = (...args) => {
+    const result = spawnSync('git', ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test', ...args], { cwd: root, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+  };
+  const commitFile = (name, text) => { writeFileSync(join(root, name), text); git('add', '.'); git('commit', '-qm', name); return git('rev-parse', 'HEAD'); };
+  git('init', '-q', '-b', 'main'); commitFile('a.txt', 'fictional base\n');
+  git('checkout', '-qb', 'feature'); const head = commitFile('b.txt', 'fictional change\n');
+  git('checkout', '-q', 'main'); git('merge', '-q', '--no-ff', '-m', 'up to date merge', 'feature');
+  assert.equal(testedPullRequestHead(root, git('rev-parse', 'HEAD')), head);
+  // main moved after the PR's run: the merge combines files the PR never tested together.
+  git('checkout', '-q', 'feature'); const stale = commitFile('c.txt', 'fictional second change\n');
+  git('checkout', '-q', 'main'); commitFile('d.txt', 'fictional main change\n');
+  git('merge', '-q', '--no-ff', '-m', 'behind merge', 'feature');
+  assert.equal(testedPullRequestHead(root, git('rev-parse', 'HEAD')), null);
+  assert.equal(testedPullRequestHead(root, head), null, 'a non-merge commit has no tested pull request head');
+  assert.ok(stale);
 });
