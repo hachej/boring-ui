@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
+import { REQUIRED_CHECKS } from '../../scripts/release-admission.mjs';
 
 const root = new URL('../../', import.meta.url);
 const workflow = name => readFileSync(new URL(`.github/workflows/${name}.yml`, root), 'utf8');
@@ -32,12 +33,12 @@ test('browser matrix preserves every journey command and scopes every evidence a
   const job = jobs(source)['scripted-journeys'];
   assert.match(job, /fail-fast: false/);
   assert.match(job, /shard: \[studio-1, studio-2, design, workspace, documents\]/);
-  const actual = [...job.matchAll(/npm run ([\w:-]+)/g)].map(match => match[1]).filter(name => name !== 'build');
+  const actual = [...job.matchAll(/(?:npm run |node scripts\/retry-journey\.mjs )([\w:-]+)/g)].map(match => match[1]).filter(name => name !== 'build');
   assert.deepEqual(actual.sort(), [...journeys].sort());
   const shards = ['studio-1', 'studio-2', 'design', 'workspace', 'documents'];
   const assignments = new Map(journeys.map(name => [name, []]));
   for (const step of job.split(/(?=^      -)/m)) {
-    const command = /npm run ([\w:-]+)/.exec(step)?.[1];
+    const command = /(?:npm run |node scripts\/retry-journey\.mjs )([\w:-]+)/.exec(step)?.[1];
     if (!assignments.has(command)) continue;
     const condition = /^        if: (.+)$/m.exec(step)?.[1];
     assert.ok(condition, `${command} has a shard selector`);
@@ -92,6 +93,53 @@ test('a phone scenario clears the previous desktop conversation before changing 
   assert.deepEqual(events, ['fresh:desktop', 'device:phone', 'run:phone', 'screenshot', 'device:desktop', 'reload']);
 });
 
+test('studio scenarios retry once in a fresh conversation, log it, and fail on the second attempt', async t => {
+  const { runScenario } = await import('../../lab/studio/journey-scenarios.mjs');
+  const logs = [];
+  t.mock.method(console, 'log', value => logs.push(value));
+  t.mock.method(console, 'error', () => {});
+  for (const failures of [0, 1, 2]) {
+    let attempts = 0, fresh = 0;
+    logs.length = 0;
+    const toolkit = {
+      step: async (_, run) => run(), fresh: async () => { fresh++; },
+      browser: { until: async () => {}, evaluate: async () => 'true', screenshot: async () => {} },
+    };
+    const scenario = { id: 'fictional-flake', title: 'Fixture', steps: [{ prompt: 'fixture', run: async () => { if (++attempts <= failures) throw new Error('fictional failure'); } }] };
+    const result = runScenario(toolkit, scenario, { id: 'local' }, () => {});
+    if (failures === 2) await assert.rejects(result, /fictional failure/);
+    else await result;
+    assert.equal(attempts, failures === 0 ? 1 : 2);
+    assert.equal(fresh, attempts);
+    assert.deepEqual(logs, failures === 0 ? [] : ['retried after flake: fictional-flake']);
+    await assert.rejects(runScenario(toolkit, scenario, { id: 'local' }, () => {}, { retries: 2 }), /at most one retry/);
+  }
+});
+
+test('the journey command wrapper reruns only its failed journey, never unit tests', t => {
+  const directory = mkdtempSync(join(tmpdir(), 'boring-journey-retry-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const log = join(directory, 'calls');
+  writeFileSync(join(directory, 'npm'), '#!/bin/sh\nprintf "%s\\n" "$*" >> "$CALLS"\n[ "$ALWAYS_FAIL" != 1 ] && [ "$(wc -l < "$CALLS")" -gt "$FAILURES" ]\n');
+  chmodSync(join(directory, 'npm'), 0o755);
+  const run = (name, failures, always = false) => {
+    writeFileSync(log, '');
+    return spawnSync(process.execPath, [new URL('scripts/retry-journey.mjs', root).pathname, name], { encoding: 'utf8', env: { ...process.env, PATH: `${directory}:${process.env.PATH}`, CALLS: log, FAILURES: String(failures), ALWAYS_FAIL: always ? '1' : '0' } });
+  };
+  for (const failures of [0, 1]) {
+    const result = run('mockup:journey', failures);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(readFileSync(log, 'utf8').trim().split('\n').length, failures + 1);
+    assert.equal(result.stdout.includes('retried after flake: mockup:journey'), failures === 1);
+  }
+  assert.equal(run('mockup:journey', 2, true).status, 1);
+  assert.equal(readFileSync(log, 'utf8').trim().split('\n').length, 2);
+  for (const name of ['test', 'test:document-consumer', 'studio:journey:scripted']) {
+    assert.equal(run(name, 0).status, 1);
+    assert.equal(readFileSync(log, 'utf8'), '');
+  }
+});
+
 test('consumer kinds are disjoint and retain every original consumer plus the installed workspace recipes', t => {
   const job = jobs(workflow('verify'))['isolated-consumers'];
   assert.match(job, /fail-fast: false/);
@@ -128,7 +176,56 @@ test('verification jobs separate checks, unregistered tests and strict registere
   const release = workflow('release');
   assert.match(release, /uses: \.\/\.github\/workflows\/verify\.yml/);
   assert.match(release, /uses: \.\/\.github\/workflows\/studio-scripted\.yml/);
-  assert.match(release, /needs: \[prepare, verify, browser, secrets\]/);
+  assert.match(release, /needs: \[admit, prepare, verify, browser, secrets\]/);
+  assert.doesNotMatch(jobs(release).prepare, /release:preflight|verify:release|npm test/);
+  assert.match(jobs(release).prepare, /npm run typecheck/);
+  assert.match(jobs(release).prepare, /check-npm-packages\.mjs --release --out/);
+});
+
+test('release admission names every current main-push job, including every matrix expansion', () => {
+  for (const [file, names] of Object.entries(REQUIRED_CHECKS)) {
+    const source = workflow(file.replace('.yml', ''));
+    const actual = Object.entries(jobs(source)).flatMap(([id, job]) => {
+      const name = /^    name: (.+)$/m.exec(job)?.[1] ?? id;
+      if (name.includes('${{ matrix.shard }}')) return ['studio-1', 'studio-2', 'design', 'workspace', 'documents'].map(value => name.replace('${{ matrix.shard }}', value));
+      if (name.includes('${{ matrix.kind }}')) return [...job.matchAll(/- kind: (.+)/g)].map(match => name.replace('${{ matrix.kind }}', match[1]));
+      return name;
+    });
+    assert.deepEqual([...names].sort(), actual.sort());
+  }
+});
+
+test('the actual release publish condition admits reused green checks or a fully green fallback, never missing evidence', () => {
+  const all = jobs(workflow('release'));
+  for (const id of ['verify', 'browser']) assert.match(all[id], /if: needs.admit.outputs.reuse-ci != 'true'/);
+  assert.match(all.admit, /actions: read\n      checks: read/);
+  assert.match(all.admit, /run: node scripts\/release-admission.mjs/);
+  assert.match(all.admit, /REVIEWED_COMMIT: \$\{\{ inputs.commit \}\}/);
+  const expression = /if: >-\n([\s\S]*?)\n    needs:/.exec(all.publish)[1].trim()
+    .replaceAll('needs.admit.outputs.reuse-ci', 'needs.admit.outputs["reuse-ci"]')
+    .replaceAll('always()', 'true').replaceAll('cancelled()', 'cancelled');
+  const allows = new Function('needs', 'cancelled', 'github', `return (${expression});`);
+  const github = { repository: 'hachej/boring-ui', ref: 'refs/heads/main', actor: 'hachej', triggering_actor: 'hachej' };
+  const statuses = ['success', 'failure', 'skipped', 'cancelled', ''];
+  for (const reuse of ['true', 'false', '']) for (const admit of statuses) for (const prepare of statuses) for (const secrets of statuses) for (const verify of statuses) for (const browser of statuses) {
+    const needs = { admit: { result: admit, outputs: { 'reuse-ci': reuse } }, prepare: { result: prepare }, secrets: { result: secrets }, verify: { result: verify }, browser: { result: browser } };
+    const expected = admit === 'success' && prepare === 'success' && secrets === 'success' && ((reuse === 'true' && verify === 'skipped' && browser === 'skipped') || (reuse === 'false' && verify === 'success' && browser === 'success'));
+    assert.equal(allows(needs, false, github), expected, JSON.stringify(needs));
+    assert.equal(allows(needs, true, github), false);
+    assert.equal(allows(needs, false, { ...github, triggering_actor: 'fictional' }), false);
+  }
+});
+
+test('only browser journey commands gain retry wrappers; studio retries scenarios, not the full shard', () => {
+  const job = jobs(workflow('studio-scripted'))['scripted-journeys'];
+  const wrapped = [...job.matchAll(/node scripts\/retry-journey\.mjs ([\w:-]+)/g)].map(match => match[1]);
+  assert.deepEqual(wrapped.sort(), journeys.filter(name => name.includes(':journey') && name !== 'studio:journey:scripted').sort());
+  assert.match(job, /npm run studio:journey:scripted/);
+  assert.doesNotMatch(workflow('verify'), /retry-journey/);
+  const manifest = JSON.parse(readFileSync(new URL('package.json', root), 'utf8'));
+  assert.equal(manifest.scripts['release:preflight'], 'npm run check && npm run typecheck && node scripts/release-preflight.mjs');
+  assert.match(jobs(workflow('verify')).verify, /fetch-depth: 0/);
+  assert.match(jobs(workflow('verify')).verify, /node scripts\/check-release-notes.mjs/);
 });
 
 test('all branch-protection check names remain exact, non-matrix job display names', () => {

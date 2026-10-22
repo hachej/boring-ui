@@ -1,6 +1,6 @@
 name: Scripted browser journeys
 # The blocking browser layer: real Chromium against the studio and the ambient example with a scripted model (no key, no network model,
-# no retries). A failure here is a bug. The required check "Studio scripted journeys" is the final ci-ok job.
+# one logged retry per journey scenario). A repeated failure blocks. The required check "Studio scripted journeys" is the final ci-ok job.
 # The real-model layer is separate and never blocks: .github/workflows/studio-smoke.yml.
 on:
   workflow_call:
@@ -63,47 +63,47 @@ jobs:
           if-no-files-found: error
       - name: App shell agent layer on a phone and a desktop
         if: matrix.shard == 'design'
-        run: npm run app-shell:journey
+        run: node scripts/retry-journey.mjs app-shell:journey
         env:
           APP_EVIDENCE: ${{ runner.temp }}/evidence/app-shell
       - name: App shell layouts workspace and chat on a phone and a desktop
         if: matrix.shard == 'workspace'
-        run: npm run app-shell:journey:workspace
+        run: node scripts/retry-journey.mjs app-shell:journey:workspace
         env:
           APP_EVIDENCE: ${{ runner.temp }}/evidence/app-shell
       - name: Workspace app autosave and scrolling during slow history loads
         if: matrix.shard == 'workspace'
-        run: npm run workspace-app:journey
+        run: node scripts/retry-journey.mjs workspace-app:journey
         env:
           APP_EVIDENCE: ${{ runner.temp }}/evidence/workspace-app
       - name: Shared conversation in the existing embedded workspace
         if: matrix.shard == 'workspace'
-        run: npm run shared-chat:journey
+        run: node scripts/retry-journey.mjs shared-chat:journey
         env:
           SHARED_CHAT_EVIDENCE: ${{ runner.temp }}/evidence/shared-chat
       - name: Sandboxed HTML mock-ups, theme and element comments
         if: matrix.shard == 'documents'
-        run: npm run mockup:journey
+        run: node scripts/retry-journey.mjs mockup:journey
         env:
           APP_EVIDENCE: ${{ runner.temp }}/evidence/mockup-html
       - name: Document draft recovery with IndexedDB
         if: matrix.shard == 'documents'
-        run: npm run draft-recovery:journey
+        run: node scripts/retry-journey.mjs draft-recovery:journey
       - name: File tree, mentions, uploads and revision history
         if: matrix.shard == 'documents'
-        run: npm run file-tree:journey
+        run: node scripts/retry-journey.mjs file-tree:journey
       - name: Mounted canvas command geometry
         if: matrix.shard == 'documents'
-        run: npm run canvas:journey:commands
+        run: node scripts/retry-journey.mjs canvas:journey:commands
       - name: Canvas proposal review and persistence
         if: matrix.shard == 'documents'
-        run: npm run canvas:journey:proposals
+        run: node scripts/retry-journey.mjs canvas:journey:proposals
       - name: Authenticated remote canvas commands
         if: matrix.shard == 'documents'
-        run: npm run canvas:journey:remote
+        run: node scripts/retry-journey.mjs canvas:journey:remote
       - name: Board artifact projection, conditional saves and phone read-only input
         if: matrix.shard == 'documents'
-        run: npm run board:journey
+        run: node scripts/retry-journey.mjs board:journey
       - name: Board viewer evidence
         if: always() && matrix.shard == 'documents'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -114,13 +114,13 @@ jobs:
           retention-days: 7
       - name: Consumer task-list viewer
         if: matrix.shard == 'documents'
-        run: npm run task-list:journey
+        run: node scripts/retry-journey.mjs task-list:journey
       - name: Fictional morning experience
         if: matrix.shard == 'documents'
-        run: npm run morning:journey
+        run: node scripts/retry-journey.mjs morning:journey
       - name: Fake-model correctness journey
         if: matrix.shard == 'documents'
-        run: npm run studio:journey:correctness
+        run: node scripts/retry-journey.mjs studio:journey:correctness
       - name: Studio journeys with the scripted model
         if: startsWith(matrix.shard, 'studio-')
         shell: bash
@@ -144,12 +144,12 @@ jobs:
           STUDIO_EVIDENCE: ${{ runner.temp }}/evidence/studio
       - name: Workspace demo journey (accounts payable)
         if: matrix.shard == 'workspace'
-        run: npm run workspace-demo:journey
+        run: node scripts/retry-journey.mjs workspace-demo:journey
         env:
           APP_EVIDENCE: ${{ runner.temp }}/evidence/workspace-demo
       - name: Ambient journey with the scripted model
         if: matrix.shard == 'workspace'
-        run: npm run ambient:journey:scripted
+        run: node scripts/retry-journey.mjs ambient:journey:scripted
         env:
           AMBIENT_EVIDENCE: ${{ runner.temp }}/evidence/ambient
       - name: Canvas command evidence

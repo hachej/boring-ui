@@ -17,12 +17,19 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22.22.1
           cache: npm
       - run: npm ci
+      - name: Require migration notes for published package changes
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/check-release-notes.mjs
       # These are the non-test parts of npm run verify. Registered tests run in release-gate, the rest in tests.
       - run: npm run check
       - run: npm run typecheck
