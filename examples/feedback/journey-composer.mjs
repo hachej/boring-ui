@@ -5,7 +5,7 @@
 //   hold ⌥ and use the app (open the Billing section, open the plan menu: both reach the page and are recorded as steps) → release ⌥, click
 //   Change plan → the mic says recording needs a secure page and keeps the typed text → Enter → Esc exits annotating, the chip stays →
 //   Send → the builder replies citing both elements with file:line → the card's element lines highlight in the page on hover → on a secure
-//   origin (127.0.0.1) with Chromium's fake microphone: the mic in a pin records and the transcript lands in the field (run with
+//   origin (127.0.0.1) with Chromium's fake microphone: hold the mic, release, and the transcript is appended and the note saved (run with
 //   `env -u TRANSCRIPTION_API_KEY` so the example uses its fake transcription).
 // Screenshots and journey.json go to .cache/evidence/feedback-composer/. Manual evidence, not an npm test.
 import assert from 'node:assert/strict';
@@ -68,6 +68,7 @@ try {
         words: /Feedback|Record|Done|Show in app|general question|Use app/i.test(form.innerText),
         gone: ['composer-feedback', 'composer-point', 'feedback-bar', 'feedback-chip', 'feedback-general', 'feedback-done', 'feedback-voice', 'feedback-count'].filter(id => document.querySelector('[data-testid=' + id + ']')),
         page: ['feedback-point', 'feedback-open-list', 'feedback-dock'].filter(id => document.querySelector('[data-testid=' + id + ']')) }; })()`);
+    summary.records.annotateSize = found.size;
     assert.equal(found.toggles, 1);
     assert.ok(found.size[0] >= 44 && found.size[1] >= 44, `44px target (${found.size})`);
     assert.equal(found.words, false, 'no Feedback block words in the composer');
@@ -111,7 +112,7 @@ try {
     assert.equal(await browser.evaluate(`!!${inChat('feedback-count')}`), false, 'nothing taken: no count chip');
   });
 
-  await step('click Save: a pin right there with a text field, a mic inside it and a one-line Alt hint; the page never reacts', async () => {
+  await step('click Save: a pin right there with a text field, a 44px mic inside it and no Alt hint; the page never reacts', async () => {
     await clickAt(SAVE);
     await browser.until('the pin', `!!${q('feedback-bubble-input')}`, 5000);
     assert.equal(await browser.evaluate(`${q('feedback-bubble-input')}.placeholder`), "What's wrong here?");
@@ -119,6 +120,7 @@ try {
     assert.equal(await browser.evaluate(`${q('profile-saved')}.dataset.presses`), '0');
     const geometry = await browser.evaluate(`(() => { const f = ${q('feedback-bubble-input')}.getBoundingClientRect(), m = ${q('feedback-bubble-mic')}.getBoundingClientRect(); 
       return { inside: m.left >= f.left && m.right <= f.right && m.top >= f.top && m.bottom <= f.bottom, mic: [Math.round(m.width), Math.round(m.height)], hint: !!${q('feedback-bubble-hint')}, buttons: [...${q('feedback-bubble')}.querySelectorAll('button')].map(b => [b.textContent, Math.round(b.getBoundingClientRect().height)]) }; })()`);
+    summary.records.pinTargets = geometry;
     assert.equal(geometry.inside, true, 'the mic is inside the text field');
     assert.ok(geometry.mic[0] >= 44 && geometry.mic[1] >= 44, `44px mic (${geometry.mic})`);
     assert.equal(geometry.hint, false, 'no Alt hint: the banner\'s switch lets the app be used');
@@ -238,7 +240,7 @@ try {
     summary.records.card = { save: saveLine.text, plan: (await read(1)).text };
   });
 
-  await step('the mic in a pin (secure origin, fake microphone): record, stop, the transcript lands in the field after the typed text; a failed one never loses it', async () => {
+  await step('the mic in a pin (secure origin, fake microphone): hold, release, the transcript appends and saves the note; a failed one never loses it', async () => {
     await browser.send('Page.navigate', { url: `${app.url}settings/profile` });
     await browser.until('the secure page', `location.hostname === '127.0.0.1' && isSecureContext && !!(${inChat('composer-annotate')} && !${inChat('composer-annotate')}.disabled)`, 30000);
     await browser.click(inChat('composer-annotate'));
@@ -246,21 +248,29 @@ try {
     await clickAt(SAVE);
     await browser.until('the pin', `!!${q('feedback-bubble-input')}`, 5000);
     await browser.type(q('feedback-bubble-input'), 'Typed first.');
-    await browser.click(q('feedback-bubble-mic'));
-    await browser.until('recording', `${q('feedback-bubble-mic')}.dataset.state === 'recording'`, 10000);
+    const holdMic = async () => {
+      const at = await point(q('feedback-bubble-mic'));
+      await browser.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', buttons: 1, clickCount: 1 });
+      await browser.until('recording while held', `${q('feedback-bubble-mic')}?.dataset.state === 'recording'`, 10000);
+      return at;
+    };
+    const releaseMic = at => browser.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x, y: at.y, button: 'left', buttons: 0, clickCount: 1 });
+    const firstHold = await holdMic();
     await pause(1200);
     await shot('07-pin-recording');
-    await browser.click(q('feedback-bubble-mic'));
-    await browser.until('the transcript is in the field', `${q('feedback-bubble-input')}.value.startsWith('Typed first. ') && ${q('feedback-bubble-input')}.value.includes('Fake transcript')`, 20000);
-    assert.equal(await browser.evaluate(`!!${q('feedback-bubble-voice-problem')}`), false, 'no transcription problem');
-    const spoken = await browser.evaluate(`${q('feedback-bubble-input')}.value`);
+    await releaseMic(firstHold);
+    const recorded = 'window.__feedbackSession.getSnapshot().notes[0]?.text';
+    await browser.until('release saves the appended transcript', `!${q('feedback-bubble')} && ${recorded}?.startsWith('Typed first. ') && ${recorded}.includes('Fake transcript')`, 20000);
+    assert.equal(await browser.evaluate(`${inChat('feedback-count')}?.dataset.count`), '1');
+    const spoken = await browser.evaluate(recorded);
     summary.records.spoken = spoken;
+    await clickAt(SAVE);
+    await browser.until('the saved note reopens', `${q('feedback-bubble-input')}?.value === ${JSON.stringify(spoken)}`, 5000);
     // A transcription the server refuses keeps everything typed and says so.
     await browser.evaluate(`(() => { const real = window.fetch; window.__realFetch = real; window.fetch = (input, init) => /\\/api\\/transcribe/.test(String(input?.url ?? input)) ? Promise.resolve(new Response('no', { status: 502 })) : real(input, init); })()`);
-    await browser.click(q('feedback-bubble-mic'));
-    await browser.until('recording again', `${q('feedback-bubble-mic')}.dataset.state === 'recording'`, 10000);
+    const secondHold = await holdMic();
     await pause(600);
-    await browser.click(q('feedback-bubble-mic'));
+    await releaseMic(secondHold);
     await browser.until('the failure is said', `!!${q('feedback-bubble-voice-problem')}`, 20000);
     assert.equal(await browser.evaluate(`${q('feedback-bubble-input')}.value`), spoken, 'the field is unchanged by a failed transcription');
     await browser.evaluate('window.fetch = window.__realFetch');

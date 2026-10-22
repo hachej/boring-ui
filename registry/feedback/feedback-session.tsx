@@ -177,7 +177,7 @@ function PinMic({ session, transcribe, words }: { readonly session: FeedbackSess
   }, phase === 'transcribing');
   const recording = phase === 'recording';
   return <>
-    <Button {...hold} variant="ghost" size="icon" className="boring-feedback-pin-mic touch-none select-none" data-testid="feedback-bubble-mic" data-state={phase}
+    <Button {...hold} variant="ghost" size="icon" className="boring-feedback-pin-mic min-h-11 min-w-11 touch-none select-none" data-testid="feedback-bubble-mic" data-state={phase}
       aria-pressed={recording || phase === 'starting'} aria-label={recording ? words.voiceStop : words.voiceRecord} title={recording ? words.voiceStop : words.voiceRecord} disabled={phase === 'transcribing'}>
       {phase === 'transcribing' ? <span role="status" aria-label={words.voiceTranscribing}>…</span>
         : recording ? <SquareIcon data-icon="inline-start" aria-hidden="true" /> : <MicIcon data-icon="inline-start" aria-hidden="true" />}
@@ -239,8 +239,8 @@ export function NoteBubble({ session, labels, transcribe }: { readonly session: 
       {transcribe && <PinMic key={bubble.noteId} session={session} transcribe={transcribe} words={words} />}
     </span>
     <span className="boring-feedback-bubble-actions">
-      <Button variant="ghost" data-testid="feedback-cancel-selection" onClick={cancel}>{words.cancelSelection}</Button>
-      <Button variant="default" data-testid="feedback-bubble-save" onClick={() => session.saveBubble()}>{words.add}</Button>
+      <Button variant="ghost" className="min-h-11 min-w-11" data-testid="feedback-cancel-selection" onClick={cancel}>{words.cancelSelection}</Button>
+      <Button variant="default" className="min-h-11 min-w-11" data-testid="feedback-bubble-save" onClick={() => session.saveBubble()}>{words.add}</Button>
     </span>
   </Card></>;
 }
