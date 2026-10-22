@@ -40,7 +40,10 @@ export interface ArtifactWorkspaceProps {
   readonly onFullscreenChange?: (next: boolean) => void;
   /** Width of the panel is remembered for this browser session under this key. */
   readonly storageKey?: string;
-  /** Initial panel width in pixels, before the person drags the divider. */
+  /**
+   * Initial panel width before the person drags the divider: pixels, or a fraction of the workspace's width when at most 1 (0.55: a bit
+   * over half). Without it the panel takes all but 420px of chat. Double-clicking the divider comes back to it.
+   */
   readonly defaultWidth?: number;
   readonly minPanel?: number;
   readonly minChat?: number;
@@ -80,7 +83,7 @@ export function ArtifactWorkspace({ chat, open, panel, onClose, fullscreen: cont
   minPanel = 360, minChat = 360, sheetBelow = 641, floatBelow, panelLabel = 'Artifact panel', variant = 'split', labels, className }: ArtifactWorkspaceProps) {
   const root = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState(0);
-  const [stored, setStored] = useState<number | undefined>(() => read(storageKey) ?? defaultWidth);
+  const [stored, setStored] = useState<number | undefined>(() => read(storageKey) ?? (defaultWidth !== undefined && defaultWidth > 1 ? defaultWidth : undefined));
   const closeRef = useRef(onClose); closeRef.current = onClose;
   const fullscreenRef = useRef(false);
   const opener = useRef<HTMLElement | null>(null);
@@ -153,7 +156,8 @@ export function ArtifactWorkspace({ chat, open, panel, onClose, fullscreen: cont
   }, [open, sheet]); // The mounted sheet keeps its own Back entry, independent of renders.
 
   const max = Math.max(minPanel, size - minChat);
-  const width = Math.min(Math.max(stored ?? Math.max(minPanel, size - 420), minPanel), max);
+  const initial = defaultWidth === undefined ? size - 420 : defaultWidth <= 1 ? size * defaultWidth : defaultWidth;
+  const width = Math.min(Math.max(stored ?? Math.max(minPanel, initial), minPanel), max);
   const resize = (next: number) => { const clamped = Math.min(Math.max(next, minPanel), max); setStored(clamped); write(storageKey, clamped); };
   const drag = (event: PointerEvent<HTMLElement>) => {
     if (!dragging) return;
@@ -193,7 +197,7 @@ export function ArtifactWorkspace({ chat, open, panel, onClose, fullscreen: cont
         data-testid="workspace-divider" data-dragging={dragging ? 'true' : undefined}
         onPointerDown={event => { event.preventDefault(); event.currentTarget.focus(); event.currentTarget.setPointerCapture(event.pointerId); setDragging(true); }} onPointerMove={drag}
         onPointerUp={release} onPointerCancel={() => { setDragging(false); setFloatHint(false); }}
-        onKeyDown={keys} onDoubleClick={() => resize(defaultWidth ?? size - 420)}
+        onKeyDown={keys} onDoubleClick={() => resize(initial)}
         className="group relative z-10 -mx-1.5 w-3 shrink-0 cursor-col-resize touch-none select-none outline-none">
         <span aria-hidden="true" className={cn('absolute inset-y-0 left-1/2 w-px -translate-x-1/2', 'bg-border/65', 'transition-colors group-hover:w-0.5 group-hover:bg-ring group-focus-visible:w-0.5 group-focus-visible:bg-ring motion-reduce:transition-none', dragging && 'w-0.5 bg-ring')} />
       </div>}

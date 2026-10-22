@@ -14,8 +14,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { readableElement } from '@hachej/boring-feedback/format';
 import { createVoiceCapture, type VoiceCapture } from '@hachej/boring-feedback/page';
 import { pinMark, type FeedbackSession, type FeedbackSessionSnapshot, type SessionNote } from '@hachej/boring-feedback/ui';
+import { useHoldToRecord } from '../pi-chat/use-hold-to-record';
 import { useExternal } from './use-external';
-import { withLabels, type FeedbackLabels } from './feedback-labels';
+import { plainElement, withLabels, type FeedbackLabels } from './feedback-labels';
 
 const plural = (count: number, one: string, many: string): string => `${count} ${count === 1 ? one : many}`;
 /** Notes the chip and the bar count: every note that says something (not a pin still being typed), plus the general note. */
@@ -63,7 +64,7 @@ function barHint(state: FeedbackSessionSnapshot): string {
 }
 
 /**
- * Feedback mode's bar: `● Feedback · N notes · 🎙 Record · Hold ⌥ to use the app · Use app · Done · ✕`. While recording: a red dot, the
+ * Feedback mode's bar: `● Feedback · N notes · 🎙 Record · Use app · Done · ✕`. While recording: a red dot, the
  * running time, "Recording — point and talk" and Stop. A refused microphone is said in the bar itself, never only in a tooltip.
  */
 export function FeedbackBar({ session, className, docked = false }: FeedbackBarProps) {
@@ -89,7 +90,6 @@ export function FeedbackBar({ session, className, docked = false }: FeedbackBarP
       <span className="boring-feedback-timer" data-testid="feedback-recording-time">{time}</span></Badge>}
     <span className="boring-feedback-hint" role="status" aria-live="polite" data-testid="feedback-bar-hint">{barHint(state)}</span>
     {voiceProblem && <span className="boring-feedback-voice-problem" role="alert" data-testid="feedback-voice-problem" data-code={voiceProblem.code}>{voiceProblem.reason}</span>}
-    {!processing && <span className="boring-feedback-keys boring-feedback-alt">Hold ⌥ to use the app</span>}
     {!processing && <Toggle data-testid="feedback-use-app" pressed={state.useToggle} onPressedChange={pressed => session.setUseToggle(pressed)}>Use app</Toggle>}
     <Button variant="default" data-testid="feedback-done" disabled={processing} onClick={() => { void session.done(); }}>Done</Button>
     <Button variant="ghost" size="icon" data-testid="feedback-discard" aria-label="Discard feedback" title="Discard feedback" disabled={processing} onClick={() => session.discard()}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>
@@ -97,9 +97,9 @@ export function FeedbackBar({ session, className, docked = false }: FeedbackBarP
 }
 
 const BUBBLE_WIDTH = 280;
-/** Pixels at the bottom of the viewport taken by point mode's bar (PointBar, `data-feedback-point-bar`), plus a gap; 0 without it. */
+/** Pixels at the bottom of the viewport taken by comment mode's banner on a phone (CommentBanner, `data-feedback-point-bar="bottom"`), plus a gap; 0 without it. */
 export function pointBarInset(document: Document): number {
-  const bar = document.querySelector('[data-feedback-point-bar]');
+  const bar = document.querySelector('[data-feedback-point-bar="bottom"]');
   const height = document.defaultView?.innerHeight ?? 768;
   return bar ? Math.max(0, height - bar.getBoundingClientRect().top + 8) : 0;
 }
@@ -124,8 +124,10 @@ function bubblePlace(element: Element, size = 120): CSSProperties {
 type PinVoice = 'idle' | 'starting' | 'recording' | 'transcribing';
 
 /**
- * The mic inside the pin's field: record, stop, and the transcript is appended to what is typed. A refused microphone, nothing heard or a
- * rejected transcription is said under the field and never touches the typed text. One capture (`createVoiceCapture`) per pin.
+ * The mic inside the pin's field, held like the chat's voice message (`useHoldToRecord`, the same gesture policy as the composer and the
+ * shell): press and hold to talk (Space or Enter from the keyboard), release and the transcript is added to the note and the note is kept
+ * (with `useSendEachNote`, sent at once). A slide off the button, Escape or a hidden page drops the recording. A refused microphone, nothing
+ * heard or a rejected transcription is said under the field and never touches the typed text. One capture (`createVoiceCapture`) per pin.
  */
 function PinMic({ session, transcribe, words }: { readonly session: FeedbackSession; readonly transcribe: PinTranscribe; readonly words: FeedbackLabels }) {
   const [phase, setPhase] = useState<PinVoice>('idle');
@@ -133,18 +135,11 @@ function PinMic({ session, transcribe, words }: { readonly session: FeedbackSess
   const capture = useRef<VoiceCapture | null>(null);
   const run = useRef(0);
   const work = useRef<AbortController | null>(null);
+  // Let go before the microphone was ready: the recording ends as soon as it starts.
+  const released = useRef(false);
   capture.current ??= createVoiceCapture();
   // A closed pin releases the microphone and drops a transcription still in flight.
   useEffect(() => () => { run.current += 1; capture.current?.cancel(); work.current?.abort(); }, []);
-  const start = async (): Promise<void> => {
-    const attempt = ++run.current;
-    setProblem(undefined); setPhase('starting');
-    // Called straight from the click, so the browser ties the permission prompt to the person's gesture.
-    const result = await capture.current!.start();
-    if (attempt !== run.current) return;
-    if (result.kind === 'refused') { setPhase('idle'); setProblem(result.reason); return; }
-    setPhase('recording');
-  };
   const finish = async (): Promise<void> => {
     const attempt = run.current;
     setPhase('transcribing');
@@ -160,17 +155,33 @@ function PinMic({ session, transcribe, words }: { readonly session: FeedbackSess
       // Appended to what is typed NOW (the person may have kept typing), never replacing it.
       const typed = session.getSnapshot().bubble?.text ?? '';
       session.setBubbleText(`${typed}${typed === '' || /\s$/.test(typed) ? '' : ' '}${spoken}`);
+      session.saveBubble();
     } catch { if (attempt === run.current) setProblem(words.voiceFailed); }
     finally { if (work.current === abort) work.current = null; if (attempt === run.current) setPhase('idle'); }
   };
+  const hold = useHoldToRecord({
+    // Called straight from the press, so the browser ties the permission prompt to the person's gesture.
+    start: () => {
+      const attempt = ++run.current;
+      released.current = false;
+      setProblem(undefined); setPhase('starting');
+      void capture.current!.start().then(result => {
+        if (attempt !== run.current) return;
+        if (result.kind === 'refused') { setPhase('idle'); setProblem(result.reason); return; }
+        setPhase('recording');
+        if (released.current) void finish();
+      });
+    },
+    finish: () => { if (phase === 'recording') void finish(); else released.current = true; },
+    cancel: () => { run.current += 1; capture.current?.cancel(); setPhase('idle'); },
+  }, phase === 'transcribing');
   const recording = phase === 'recording';
   return <>
-    <Toggle className="boring-feedback-pin-mic" data-testid="feedback-bubble-mic" data-state={phase} pressed={recording}
-      aria-label={recording ? words.voiceStop : words.voiceRecord} title={recording ? words.voiceStop : words.voiceRecord} disabled={phase === 'starting' || phase === 'transcribing'}
-      onPressedChange={() => { if (phase === 'idle') void start(); else if (recording) void finish(); }}>
+    <Button {...hold} variant="ghost" size="icon" className="boring-feedback-pin-mic min-h-11 min-w-11 touch-none select-none" data-testid="feedback-bubble-mic" data-state={phase}
+      aria-pressed={recording || phase === 'starting'} aria-label={recording ? words.voiceStop : words.voiceRecord} title={recording ? words.voiceStop : words.voiceRecord} disabled={phase === 'transcribing'}>
       {phase === 'transcribing' ? <span role="status" aria-label={words.voiceTranscribing}>…</span>
         : recording ? <SquareIcon data-icon="inline-start" aria-hidden="true" /> : <MicIcon data-icon="inline-start" aria-hidden="true" />}
-    </Toggle>
+    </Button>
     {problem && <span className="boring-feedback-voice-problem" role="alert" data-testid="feedback-bubble-voice-problem">{problem}</span>}
   </>;
 }
@@ -178,12 +189,9 @@ function PinMic({ session, transcribe, words }: { readonly session: FeedbackSess
 /** Turns a recording into text (`signal` aborts when the pin closes); a rejection keeps what was typed. */
 export type PinTranscribe = (audio: Blob, signal: AbortSignal) => Promise<string>;
 
-const touchScreen = (): boolean => globalThis.matchMedia?.('(pointer: coarse)').matches === true;
-
 /**
  * The pin beside a picked element: a text field with a mic inside it, "Add note" (Enter) and Cancel (Esc). Enter saves, Shift-Enter for a
- * new line, Esc discards the pin. On desktop one line says that holding Alt passes clicks to the app. In point mode it keeps clear of
- * the PointBar. `transcribe` turns the mic's recording into text; without it there is no mic.
+ * new line, Esc discards the pin. The element is named in plain words (`plainElement`). On a phone it keeps clear of the comment banner. `transcribe` turns the mic's recording into text; without it there is no mic.
  */
 export function NoteBubble({ session, labels, transcribe }: { readonly session: FeedbackSession; readonly labels?: Partial<FeedbackLabels>; readonly transcribe?: PinTranscribe }) {
   const state = useExternal(session);
@@ -224,17 +232,16 @@ export function NoteBubble({ session, labels, transcribe }: { readonly session: 
   return <>{live}<Card size="sm" data-boring="feedback" data-feedback-ignore="" role="dialog" aria-label={`Note ${bubble.number}`} data-testid="feedback-bubble" data-note={bubble.number}
     ref={box} className="boring-feedback-bubble" style={place} onKeyDown={onKeyDown}>
     <span className="boring-feedback-bubble-head"><span className="boring-feedback-pin" aria-hidden="true">{pinMark(bubble.number)}</span>
-      <span className="boring-feedback-bubble-label" data-testid="feedback-bubble-label">{bubble.label}</span></span>
+      <span className="boring-feedback-bubble-label" data-testid="feedback-bubble-label">{plainElement(bubble.label, words)}</span></span>
     <span className="boring-feedback-pin-field">
       <Textarea ref={field} data-testid="feedback-bubble-input" rows={2} placeholder={words.bubblePlaceholder} aria-label={words.bubblePlaceholder} value={bubble.text}
         onChange={event => session.setBubbleText(event.target.value)} />
       {transcribe && <PinMic key={bubble.noteId} session={session} transcribe={transcribe} words={words} />}
     </span>
     <span className="boring-feedback-bubble-actions">
-      <Button variant="ghost" data-testid="feedback-cancel-selection" onClick={cancel}>{words.cancelSelection}</Button>
-      <Button variant="default" data-testid="feedback-bubble-save" onClick={() => session.saveBubble()}>{words.add}</Button>
+      <Button variant="ghost" className="min-h-11 min-w-11" data-testid="feedback-cancel-selection" onClick={cancel}>{words.cancelSelection}</Button>
+      <Button variant="default" className="min-h-11 min-w-11" data-testid="feedback-bubble-save" onClick={() => session.saveBubble()}>{words.add}</Button>
     </span>
-    {!touchScreen() && <span className="boring-feedback-keys" data-testid="feedback-bubble-hint">{words.altHint}</span>}
   </Card></>;
 }
 
@@ -357,7 +364,8 @@ function pointsInstead(): boolean {
  * this listens on the window's capture phase BEFORE the session starts, and ends the mode (Done: the notes wait for Send) when no pin is
  * open. From the review, `resume` keeps the notes, anchors and save guards: a second round adds to the same draft.
  */
-function startAnnotating(session: FeedbackSession, mode: 'point' | undefined = pointsInstead() ? 'point' : undefined): void {
+function startAnnotating(session: FeedbackSession, mode: 'point' | undefined = pointsInstead() ? 'point' : undefined, fresh = true): void {
+  if (fresh) sentInRound.delete(session);
   const view = globalThis.window;
   const onKey = (event: globalThis.KeyboardEvent): void => {
     // Esc that ends annotating is spent: a host layer around the composer (a panel that closes on Esc) must not also react to it.
@@ -401,6 +409,42 @@ export function useComposerFeedback(session: FeedbackSession | undefined): Compo
     },
     sent: () => session.sent(),
   };
+}
+
+/** Notes sent one by one in the current round of comment mode (`useSendEachNote`), for the banner; a new round starts at zero. */
+const sentInRound = new WeakMap<FeedbackSession, number>();
+export const notesSent = (session: FeedbackSession): number => sentInRound.get(session) ?? 0;
+
+/**
+ * Each note goes to the chat the moment it is added: its element and text as one message (`send`, the chat's follow-up send), and
+ * comment mode stays on for the next note. Nothing waits in a hidden batch, and the agent's reply follows in the conversation. Without
+ * `send`, the notes wait for the person's next message as before. A refused report or a failed send stays in the review, where the composer shows it.
+ */
+export function useSendEachNote(session: FeedbackSession | undefined, send: ((text: string) => Promise<unknown>) | undefined): void {
+  const state = useSyncState(session);
+  const busy = useRef(false);
+  useEffect(() => {
+    if (!session || !send || !state || busy.current) return;
+    if (state.phase !== 'active' || state.bubble || !state.notes.some(note => note.text.trim())) return;
+    busy.current = true;
+    const mode = state.mode === 'point' ? 'point' : undefined;
+    void (async () => {
+      let again = false;
+      try {
+        await session.done();
+        const attached = await session.attach();
+        if (attached.kind === 'refused') return;
+        const submission = await send(attached.kind === 'mention' ? `@${attached.path}` : fenced(attached.text)).catch(() => undefined);
+        if (submission === false || submission === undefined || submission === null) return;
+        sentInRound.set(session, notesSent(session) + noteCount(session.getSnapshot()));
+        session.sent();
+        again = true;
+      } finally {
+        busy.current = false;
+        if (again) startAnnotating(session, mode, false);
+      }
+    })();
+  }, [session, send, state]);
 }
 
 const NO_STATE = { getSnapshot: () => undefined, subscribe: () => () => {} };

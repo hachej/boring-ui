@@ -715,7 +715,7 @@ try {
     await tap('[data-spec=improve] [data-testid=composer-annotate]');
     await browser.until('point mode', `!!${q('[data-testid=feedback-point-bar]')}`, 8000);
     assert.equal(await browser.evaluate(`['feedback-general', 'feedback-general-bubble', 'feedback-bar'].some(id => !!document.querySelector('[data-testid=' + id + ']'))`), false, 'no general question, no Feedback bar');
-    await tap('[data-testid=feedback-point-cancel]');
+    await tap('[data-testid=feedback-point-done]');
     await browser.until('back to the sheet', `!${q('[data-testid=feedback-point-bar]')} && ${snap} === 'half'`, 8000);
     await pause(400);
     await browser.evaluate(`window.__vv.set(844)`);
@@ -754,7 +754,7 @@ try {
     await browser.until('pointing', `!!${q('[data-testid=feedback-point-bar]')}`, 8000);
     await pause(600);
     assert.equal(await browser.evaluate('location.href'), href, 'still on the page while pointing');
-    await tap('[data-testid=feedback-point-cancel]');
+    await tap('[data-testid=feedback-point-done]');
     await browser.until('back to the sheet', `!${q('[data-testid=feedback-point-bar]')} && ${snap} === 'half'`, 8000);
     assert.equal(await browser.evaluate('location.href'), href);
     await browser.evaluate('history.back()');
@@ -1030,7 +1030,7 @@ try {
     await browser.send('Page.navigate', { url: app.url }); await live();
   });
 
-  await step('expanded 1280x800: the annotate toggle arms pins, not point mode: hover, click, a pin with a field and a mic, the count chip, Esc exits (and does not close the panel), Send attaches the note', async () => {
+  await step('expanded 1280x800: the annotate toggle arms pins (the comment banner at the top), not point mode: hover, click, a pin with a field and a mic, the count chip, Esc exits (and does not close the panel), Send attaches the note', async () => {
     await browser.click(q('[data-testid=nav-progres]'));
     await browser.until('Progrès on show', `${q('[data-testid=header-title]')}.textContent === 'Progrès' && !${q('[data-testid=screen-progres]')}.hidden`);
     await browser.click(q('[data-testid=nav-user]'));
@@ -1042,10 +1042,12 @@ try {
     const found = await browser.evaluate(`(() => { const form = ${q(IMPROVE + ' [data-testid=composer]')}; const toggles = [...form.querySelectorAll('[data-testid=composer-annotate]')]; const r = toggles[0]?.getBoundingClientRect();
       return { toggles: toggles.length, label: toggles[0]?.getAttribute('aria-label'), size: r ? [Math.round(r.width), Math.round(r.height)] : null, words: /Retour|Feedback|Montrer dans|question générale|Terminé/i.test(form.innerText),
         gone: ['composer-feedback', 'composer-point', 'feedback-bar', 'feedback-chip', 'feedback-general', 'feedback-count'].filter(id => document.querySelector('[data-testid=' + id + ']')) }; })()`);
-    assert.deepEqual(found, { toggles: 1, label: 'Annoter', size: [34, 32], words: false, gone: [] }, 'exactly one stock native pointer Toggle and no Feedback block');
+    assert.deepEqual(found, { toggles: 1, label: 'Annoter', size: [44, 44], words: false, gone: [] }, 'exactly one stock native pointer Toggle and no Feedback block');
     await browser.click(q(IMPROVE + ' [data-testid=composer-annotate]'));
     await browser.until('annotating', `${q(IMPROVE + ' [data-testid=composer-annotate]')}.getAttribute('aria-pressed') === 'true'`);
-    assert.equal(await browser.evaluate(`!!${q('[data-testid=feedback-point-bar]')} || !!${q('[data-testid=feedback-bar]')}`), false, 'pins, not point mode, and no bar');
+    assert.equal(await browser.evaluate(`${q('[data-testid=feedback-point-bar]')}?.dataset.feedbackPointBar`), 'top', 'pins, not point mode: the comment banner sits at the top');
+    assert.equal(await browser.evaluate(`!!${q('[data-testid=feedback-bar]')}`), false, 'no Feedback bar');
+    await browser.screenshot('desktop-comment-banner.png');
     assert.equal(await browser.evaluate(`${q(LAYER)}?.dataset.state`), 'open', 'the panel stays open: the page is visible beside it');
     const item = '[data-testid=screen-progres] li:nth-child(3)';
     const at = await center(item);
@@ -1057,12 +1059,12 @@ try {
     const pin = await browser.evaluate(`(() => { const f = ${q('[data-testid=feedback-bubble-input]')}.getBoundingClientRect(), m = ${q('[data-testid=feedback-bubble-mic]')}?.getBoundingClientRect(), b = ${q('[data-testid=feedback-bubble]')}.getBoundingClientRect();
       return { mic: m ? [Math.round(m.width), Math.round(m.height)] : null, inside: !!m && m.left >= f.left && m.right <= f.right && m.bottom <= f.bottom + 1, hint: ${q('[data-testid=feedback-bubble-hint]')}?.textContent, general: !!${q('[data-testid=feedback-bubble-general]')},
         inViewport: b.left >= 0 && b.top >= 0 && b.right <= innerWidth && b.bottom <= innerHeight, buttons: [...${q('[data-testid=feedback-bubble]')}.querySelectorAll('button')].map(x => Math.round(x.getBoundingClientRect().height)) }; })()`);
-    assert.deepEqual(pin.mic, [34, 32], 'stock pointer Toggle geometry');
+    assert.deepEqual(pin.mic, [44, 44], 'pin controls are not header icons: the held microphone keeps its 44px target');
     assert.ok(pin.inside, `the native mic stays inside the field: ${JSON.stringify(pin)}`);
-    assert.equal(pin.hint, 'Maintenez ⌥ pour utiliser l’app');
+    assert.equal(pin.hint, undefined, 'no Alt hint: the banner\'s switch lets the app be used');
     assert.equal(pin.general, false);
     assert.equal(pin.inViewport, true, 'the pin is inside the viewport');
-    assert.ok(pin.buttons.every(height => height === 32), `stock pointer controls in the pin: ${pin.buttons}`);
+    assert.ok(pin.buttons.every(height => height >= 44), `44px controls in the pin: ${pin.buttons}`);
     await browser.type(q('[data-testid=feedback-bubble-input]'), 'Montrer les pas de la semaine.');
     await browser.screenshot('desktop-annotate-pin.png');
     await browser.press('Enter');

@@ -7,7 +7,7 @@ implementation work, and [VERIFY.json](../../VERIFY.json) owns proof deferrals.
 ## Release ruling (owner, 2026-10-10)
 
 Deferred proofs are backlog, not release blockers. `verify:release` and
-`release:preflight` still list every `DEFERRED` proof and `release.json` records
+the CI release gate still list every `DEFERRED` proof and `release.json` records
 them (`deferredProofs`), but they no longer fail the run. Failing tests, missing
 evidence files, missing runtime proof slots and broken verifiers still fail it.
 VERIFY.json keeps its deferrals unchanged; they remain visible backlog.
@@ -19,19 +19,28 @@ Publish set, from version `0.2.4` (owner approval 2026-10-13), dist-tag `latest`
 the publisher skip them explicitly (`scripts/release-set.mjs`), and the workflow
 checks the retained artifact contains none of them. No published package depends on them.
 
-## Validate the candidate
+## Prepare the release PR
 
-1. Use a clean checkout of the exact candidate with Node.js 22.19.0 or later.
-2. Run `npm ci`.
-3. Run `npm run check`, `npm run typecheck`, `npm test`, and `npm run verify`.
-4. Run `npm run check:pack`. It creates real tarballs, reads their manifests and
-   file lists, checks every export, compares the MIT license, rejects build state
-   and source files, and checks internal dependency versions. Temporary archives
-   are deleted after inspection. It never publishes.
-5. Run the isolated consumers in the CI workflow and the browser journeys for
-   the same commit. Preserve their logs and artifact identities.
-6. Run `npm run verify:release` separately. Deferrals are listed but do not fail it
-   (see the ruling above). Do not delete deferrals or weaken proofs to make it pass.
+1. Each PR changing a published package or shipped registry recipe adds its own
+   bullet under `# Unreleased` in [MIGRATING.md](../../MIGRATING.md), including
+   compatibility and any consumer action. The Specification checks job enforces
+   this against the PR's merge base. Private-only and tooling-only PRs need no
+   consumer note. A version-only release PR may promote the accumulated notes;
+   runtime or other manifest changes still require a new Unreleased line.
+2. Use a clean checkout with Node.js 22.19.0 or later and run `npm ci`.
+3. Run `npm run release:version -- <version>`. It refuses an empty Unreleased
+   section, promotes those notes to `# Migrating to <version>` and leaves a fresh
+   empty `# Unreleased` for subsequent PRs. Review the notes and version/pin diff.
+4. Run `npm run release:preflight`: static checks, build/typecheck, real tarball
+   audits and `npm publish --dry-run --ignore-scripts` of those archives. Temporary
+   archives are removed. No registry write or version change occurs in preflight.
+5. Commit and open the release PR. Do not run `npm test`, `verify` or
+   `verify:release` again during local release prep: the full tests, release gate,
+   isolated consumers and browser journeys run in CI. Preserve their logs and
+   artifact identities. Do not delete deferrals or weaken proofs to pass CI.
+
+Preparation targets about 10 minutes, excluding human review. Qualification of
+both the PR and the exact main merge SHA remains CI's responsibility.
 
 ## Set the release identity
 
@@ -44,13 +53,15 @@ Pi peers use the tilde range `~1.2.0` (dev pins exact `1.2.0`); a Pi minor move 
 Run `npm run release:version -- 0.2.0` (or an exact prerelease such as `0.2.0-rc.1`).
 This updates all seven workspace packages, internal dependency pins, lockfile records and
 source/generated registry recipe pins together. It changes neither privacy flags
-nor external dependency versions. Review the changes and commit them. Build metadata
-suffixes and version aliases such as `latest` are not accepted.
+nor external dependency versions. It also promotes the nonempty Unreleased notes.
+Review the changes and commit them. Build metadata suffixes and version aliases
+such as `latest` are not accepted.
 
 The five publish-set packages are `private: false` in the reviewed release
-commit; browser, testing and the repository root stay private. Run the validation
-again, including `npm run release:preflight`. This command requires both full
-release verification and publication-ready manifests. There is no override flag.
+commit; browser, testing and the repository root stay private. `release:preflight`
+requires publication-ready manifests and dry-runs audited archives, not the full
+suite. `verify:release` remains available for a deliberate full qualification;
+it is not an additional preparation step.
 
 ## Maintainer-triggered publishing
 
@@ -65,12 +76,23 @@ SHA, the version already in its manifests and a distribution tag. The supplied
 SHA must match the dispatch SHA; arbitrary checkouts are refused. Merging this
 PR or pushing a tag does not publish anything.
 
-The workflow reruns the normal verification/installed-consumer, scripted-browser
-and full-history secret-scan workflows. Separately, preparation runs
-`release:preflight`, retaining all existing release blockers. It audits the actual
-tarballs, writes their package identities and SHA-512 integrity into `release.json`,
-and performs npm publish dry runs. Qualification and installation jobs have no
-OIDC publishing permission. Existing consumer scripts test separately packed
+Admission uses the workflow token with read-only actions/checks permissions to
+query the exact SHA's GitHub Actions suites. It requires the latest main-push run
+of both `verify.yml` and `studio-scripted.yml` to succeed, and every named job in
+[`scripts/release-admission.mjs`](../../scripts/release-admission.mjs) to be completed
+and successful in the matching suite. This includes all consumer/browser shards,
+Specification checks, tests, release-gate, Worker bundle and aggregates. A missing,
+failed, pending, skipped, foreign-SHA or unreadable check falls back to the full
+verify and browser workflows. Checks from another commit or a PR branch never
+qualify. A reviewed/dispatch SHA mismatch is refused, not a fallback.
+
+The full-history secret scan still runs on every release. Preparation always
+builds/typechecks, audits the actual tarballs once, writes their identities and
+SHA-512 integrity into `release.json`, and dry-runs the retained archives. It does
+not run the full tests again, whether qualification was reused or the fallback
+jobs ran. Publish accepts only a successful admission, prepare and secret scan,
+plus either explicitly reused CI with both jobs skipped, or both fallback jobs
+successful. Qualification and installation jobs have no OIDC publishing permission. Existing consumer scripts test separately packed
 archives from the same source commit; they are not claimed to consume the retained
 publishing archives.
 
@@ -124,7 +146,26 @@ looks up every version. Registry errors are failures, not proof a version is abs
 An existing version is skipped only when both its integrity and requested dist-tag
 match these artifacts. Different bytes or tags stop the run for manual review.
 
-After each `npm publish`, the publisher polls the registry every 15 seconds for up to 5 minutes until the version and dist-tag are visible, since npm can take a few minutes to expose a new version.
+The publisher submits all missing archives before waiting for visibility, rather
+than serializing npm's validation delay five times. It then polls unconfirmed
+packages concurrently every 15 seconds against one five-minute deadline, requiring
+both the immutable version integrity and requested dist-tag. Each command is marked
+unconfirmed before it starts; failed commands stop further writes and retain that
+uncertainty. Receipts and logs include per-command milliseconds and visibility
+confirmation time, so npm command latency and registry validation can be distinguished.
+
+The target is about 10 minutes from dispatch to npm when exact-main CI is already
+green. Merge-to-npm also includes main CI, runner queues and environment approval;
+this change cannot bound those or npm's validation time. Time the next authorized
+release end to end (merge, main checks complete, dispatch, prepare, each npm command,
+visibility and completion), retaining `npm-publication-*` and the run URL. No real
+release or timing qualification is performed by this change.
+
+Scripted browser CI retries only a failed journey once. Studio scenarios start a
+fresh conversation; other named journey commands restart their own process. The
+first failure is printed and `retried after flake: <scenario>` records the retry.
+A second failure blocks CI. Unit tests, design audits and consumer tests are never
+retried. A passing retry does not qualify an unrun browser scenario.
 
 The `npm-publication-*` artifact records each package as pending, unconfirmed,
 published or already-published. A failed command or lost response can leave a package

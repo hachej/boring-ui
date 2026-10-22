@@ -48,7 +48,10 @@ export interface ViewerFrameProps {
   readonly headerStart?: ReactNode;
   /** Viewer-specific controls that stay visible: a mode toggle, Save while there are edits, zoom steps, a version switcher when there are several. */
   readonly controls?: ReactNode;
-  /** Primary viewer control beside Save; stays in the header on phones, never duplicated in overflow. */
+  /**
+   * The one control that matters most here (Comment on a version to try, for example), kept in the bar at every width. With the compact
+   * header a phone folds `controls` into the "…" menu; this one stays beside it, so the main action is one tap away. Test id `<testId>-main`.
+   */
   readonly mainControl?: ReactNode;
   /** Viewer-specific secondary actions, listed in the "…" menu after the standard ones. */
   readonly menu?: readonly ViewerMenuItem[];
@@ -216,8 +219,8 @@ export function ViewerFrame({ title, subtitle, status, showSavedStatus = false, 
           <h2 data-testid={titleTestId ?? `${testId}-title`} title={title} className="m-0 truncate text-sm leading-5 font-semibold tracking-tight">{title}</h2>
           {(subtitle || reading) && <p data-testid={`${testId}-subtitle`} className={cn('m-0 flex min-w-0 items-center gap-x-1.5 text-xs leading-4 whitespace-nowrap text-muted-foreground', compactHeader ? 'hidden group-hover/title:flex max-[641px]:hidden' : 'overflow-hidden')}>{subtitle}{subtitle && reading && <span aria-hidden="true">·</span>}{reading && <span data-testid={`${testId}-readonly`}>{labels.readOnly}</span>}</p>}
         </div>
-        {mainControl}
         {!stacked && toolbar}
+        {mainControl && <div data-testid={`${testId}-main`} className="flex shrink-0 items-center">{mainControl}</div>}
         {status && !reading && (showSavedStatus || status.kind !== 'saved' && status.label !== labels.saved) && <StatusMark status={status} testId={testId} />}
         <div className="flex shrink-0 items-center gap-0.5">
           {headerActions(hostActions).map(action => <ActionButton key={action.id} action={action} testId={testId} size="icon-sm" />)}

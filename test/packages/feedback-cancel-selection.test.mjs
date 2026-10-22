@@ -285,7 +285,7 @@ test('registry bubble: Annuler la sélection, Esc, a second click on the zone, w
   assert.equal(document.body.textContent.includes('Poser une question générale'), false);
   await act(async () => setValue(window, q('feedback-bubble-input'), 'Comment annuler mon abonnement ?'));
   assert.equal(q('feedback-bubble-save').textContent, 'Ajouter la note');
-  assert.match(q('feedback-bubble-hint').textContent, /Maintenez ⌥ pour utiliser l’app/);
+  assert.equal(q('feedback-bubble-hint'), null, 'no Alt hint in the pin');
   await act(async () => q('feedback-bubble-save').click());
   assert.equal(q('feedback-bubble'), null);
   assert.equal(q('feedback-bar-count').textContent, '1 note');

@@ -32,7 +32,7 @@ import { voiceClock } from '../pi-chat/voice-message';
 import { chatTextFor } from '../pi-chat/locale';
 import { NoteBubble, useComposerFeedback } from '../feedback/feedback-session';
 import { feedbackLabelsFr } from '../feedback/feedback-labels';
-import { PointBar, usePointing } from '../feedback/point-mode';
+import { CommentBanner, useCommenting, usePointing } from '../feedback/point-mode';
 import { cn } from '../utils/utils';
 import { useBackLayer } from './back';
 import { parseAgentLink } from './agent-link';
@@ -648,18 +648,19 @@ export function AgentLayer(): ReactElement | null {
   const layer = useInternal();
   const pointingAgent = usePointing(layer.agent?.feedback), pointingImprove = usePointing(layer.improve?.feedback);
   const session = pointingAgent ? layer.agent?.feedback : pointingImprove ? layer.improve?.feedback : undefined;
-  // Back ends pointing first (the `point` priority); the layer keeps its own history entry underneath.
-  useBackLayer(session !== undefined, () => session?.discard(), 'point');
+  const commentingAgent = useCommenting(layer.agent?.feedback), commentingImprove = useCommenting(layer.improve?.feedback);
+  const commenting = commentingAgent ? layer.agent?.feedback : commentingImprove ? layer.improve?.feedback : undefined;
+  // Back ends pointing first (the `point` priority), like Done: the notes wait for the next message. The layer keeps its own history entry underneath.
+  useBackLayer(session !== undefined, () => { void session?.done(); }, 'point');
   if (!layer.agent && !layer.improve) return null;
-  const pointed = pointingAgent ? layer.agent : layer.improve;
+  const pointed = pointingAgent || commentingAgent ? layer.agent : layer.improve;
   const transcribe = (pointed?.voice ?? layer.agent?.voice)?.transcribe;
   const locale = pointed?.chatProps?.locale ?? layer.locale;
-  // Point mode: the compact sheet steps aside (the wide dock does not cover the app); the bar sits above the tab bar, outside the layer.
+  // Comment mode shows its banner either way: on a phone (point mode) above the tab bar, outside the layer, while the compact sheet steps
+  // aside; on a wide screen at the top, the dock beside the app. The note bubble is here only while pointing (else inside the layer).
   return <>
     {!layer.expanded && <CompactSheet pointing={session !== undefined} />}
-    {session && <>
-      <PointBar session={session} bottomOffset={`${layer.tabbar}px`} className="z-[60]" {...(locale === 'fr' ? { labels: feedbackLabelsFr } : {})} />
-      <NoteBubble session={session} {...(transcribe ? { transcribe } : {})} {...(locale === 'fr' ? { labels: feedbackLabelsFr } : {})} />
-    </>}
+    {commenting && <CommentBanner session={commenting} bottomOffset={`${layer.tabbar}px`} className="z-[60]" {...(locale === 'fr' ? { labels: feedbackLabelsFr } : {})} />}
+    {session && <NoteBubble session={session} {...(transcribe ? { transcribe } : {})} {...(locale === 'fr' ? { labels: feedbackLabelsFr } : {})} />}
   </>;
 }
