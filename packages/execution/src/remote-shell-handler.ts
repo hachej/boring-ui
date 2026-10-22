@@ -24,7 +24,15 @@ export interface RemoteShellHandlerOptions {
   readonly maxRequestBytes?: number;
   readonly maxFrameBytes?: number;
   readonly maxQueuedBytes?: number;
+  /**
+   * A client-chosen `env` may not set loader or shell-startup variables (`LD_*`, `DYLD_*`, `BASH_ENV`, `ENV`, `NODE_OPTIONS`,
+   * `PYTHONSTARTUP`, `PERL5OPT` and a few `GIT_*` command hooks): they run code before the command, which a host that authorizes
+   * only the command string would not see. The request is refused (403) before `authorize`. Set true to let clients pass them.
+   */
+  readonly allowLoaderEnv?: boolean;
 }
+
+const LOADER_ENV = /^(LD_|DYLD_)|^(BASH_ENV|ENV|NODE_OPTIONS|PYTHONSTARTUP|PERL5OPT|GIT_SSH_COMMAND|GIT_SSH|GIT_ASKPASS|GIT_EXTERNAL_DIFF|GIT_PROXY_COMMAND)$/;
 
 function failure(status: number): Response {
   return new Response(null, { status, headers: { 'cache-control': 'no-store' } });
@@ -48,6 +56,7 @@ export function createRemoteShellHandler(options: RemoteShellHandlerOptions): (r
     catch (error) { return failure(guardStatus(error)); }
     if (!sameIdentity(input.identity, selected)) return failure(409);
     if (input.options.timeout !== undefined && supports.timeout !== true || input.options.spill !== undefined && supports.spill !== true) return failure(422);
+    if (!options.allowLoaderEnv && Object.keys(input.options.env ?? {}).some(key => LOADER_ENV.test(key))) return failure(403);
     try {
       if (signal?.aborted || await awaitWithContext(Promise.resolve(authorize(input.command, structuredClone(input.options))), context) !== true || signal?.aborted) return failure(403);
     } catch { return failure(503); }
