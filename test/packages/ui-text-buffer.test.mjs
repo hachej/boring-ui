@@ -15,7 +15,7 @@ const readText = snapshot => {
 };
 
 test('public custom text buffer creates only on exact flush and preserves a newer draft after late acknowledgement', async t => {
-  const provider = openSqliteWorkspaces({ filename: ':memory:', providerId: 'tasks' });
+  const provider = openSqliteWorkspaces({ filename: ':memory:', providerId: 'tasks', authorize: () => true });
   t.after(() => provider.close());
   let release, committed, writes = 0;
   const dispatched = new Promise(resolve => { committed = resolve; });
@@ -54,7 +54,7 @@ test('public custom text buffer creates only on exact flush and preserves a newe
 });
 
 test('public custom text buffer validates remote documents and keeps read-only publication unavailable', async t => {
-  const provider = openSqliteWorkspaces({ filename: ':memory:', providerId: 'tasks' });
+  const provider = openSqliteWorkspaces({ filename: ':memory:', providerId: 'tasks', authorize: () => true });
   t.after(() => provider.close());
   const seeded = await provider.publication.publish({ operationId: 'seed', atomicity: 'all-or-nothing', changes: [
     { kind: 'create', target, expected: { kind: 'absent' }, bytes: new TextEncoder().encode(initial), mediaType },
@@ -76,7 +76,7 @@ test('public custom text buffer validates remote documents and keeps read-only p
 });
 
 for (const effect of ['edit', 'dispose']) test(`refresh preserves ${effect} performed by the replacement callback`, async t => {
-  const provider = openSqliteWorkspaces({ filename: ':memory:', providerId: 'tasks' });
+  const provider = openSqliteWorkspaces({ filename: ':memory:', providerId: 'tasks', authorize: () => true });
   t.after(() => provider.close());
   const client = { read: request => provider.read(request, identity), publish: request => provider.publication.publish(request, identity) };
   await client.publish({ operationId: 'seed', atomicity: 'all-or-nothing', changes: [

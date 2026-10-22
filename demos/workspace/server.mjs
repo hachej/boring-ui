@@ -42,7 +42,7 @@ export async function startWorkspaceDemo({ directory = mkdtempSync(join(tmpdir()
   const db = openNodeConnection(join(directory, 'library.sqlite'));
   const files = createWorkspaceProvider({ identity: { providerId: 'workspace', instanceId: 'ap', incarnation: 'ap', viewId: 'published' }, fs: env, journal: createWorkspaceJournal(db) });
   await seedLibrary(files, person);
-  const store = openSqliteWorkspaces({ filename: join(directory, 'ap.sqlite'), providerId: 'ap-invoices' });
+  const store = openSqliteWorkspaces({ filename: join(directory, 'ap.sqlite'), providerId: 'ap-invoices', authorize: () => true });
   const ap = await openAccountsPayable({ files: store.workspace(person.scopeId), person });
 
   const demo = createWorkspaceDemo({ files, root, ap });

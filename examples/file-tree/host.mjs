@@ -3,7 +3,7 @@ import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 
 /** Fictional auth and workspace selection; a real host uses its OAuth session here. */
 export async function openFileTreeHost({ filename }) {
-  const storage = openSqliteWorkspaces({ filename, providerId: 'fictional-files' });
+  const storage = openSqliteWorkspaces({ filename, providerId: 'fictional-files', authorize: () => true });
   const access = scopeId => ({ principalId: 'fictional-person', scopeId, initiatorId: 'fictional-browser' });
   const target = path => ({ resource: { providerId: 'fictional-files', path }, view: { kind: 'published' } });
   const publish = (scope, operationId, changes) => storage.workspace(scope).publication.publish({ operationId, atomicity: 'all-or-nothing', changes }, access(scope));

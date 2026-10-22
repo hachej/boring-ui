@@ -7,7 +7,7 @@ export const draftTarget = format => ({ resource: { providerId: 'fictional-draft
 export const draftLayout = title => ({ format: 'boring.experience', version: 1, name: 'fictional-recovery', title, source: 'fixed', kinds: { 'boring/stack': 1, 'boring/cell': 1, 'fictional/content': 1 }, root: 'root', elements: { root: { type: 'boring/stack', props: {}, children: ['content'] }, content: { type: 'boring/cell', props: { ref: 'fictional/content' } } } });
 
 export async function openDraftHost({ filename, authenticate = async () => draftIdentity, beforePublish } = {}) {
-  const provider = openSqliteWorkspaces({ filename, providerId: 'fictional-drafts' });
+  const provider = openSqliteWorkspaces({ filename, providerId: 'fictional-drafts', authorize: () => true });
   const page = PageRecordType.create({ id: PageRecordType.createId('fictional'), name: 'Fictional page', index: 'a1' });
   const document = DocumentRecordType.create({ id: TLDOCUMENT_ID, name: 'Fictional recovery canvas' });
   const sources = { markdown: ['text/markdown', '# Fictional original\n'], html: ['text/html', '<p>Fictional original</p>\n'], experience: ['application/json', JSON.stringify(draftLayout('Original fictional layout')) + '\n'], canvas: ['application/vnd.tldraw+json', JSON.stringify({ schema: createTLSchema().serialize(), store: { [document.id]: document, [page.id]: page } })] };
