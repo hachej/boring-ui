@@ -7,6 +7,8 @@ import { MarkdownEditor } from '@hachej/boring-ui-kit/markdown-editor';
 import type { MarkdownEditorProps, MarkdownImageResolver, MarkdownMountedTools, MarkdownRichSafety } from '@hachej/boring-ui-kit/markdown-editor';
 import type { MarkdownController } from '@hachej/boring-ui-kit/markdown';
 import { Button } from '@/components/ui/button';
+import { DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
+import { ActionMenuItemContent } from '../button/actions';
 import { editorControls } from '../button/editor-controls';
 import { MarkdownFormattingControl, MarkdownMenuItems } from '../markdown-editor/markdown-editor';
 import { downloadFile, fileNameFor } from './download';
@@ -101,16 +103,23 @@ export function MarkdownPane({ controller, title: givenTitle, labels: ownLabels,
     setRefused(null);
     void controller.flush(controller.actions.selection()).then(report, () => setRefused({ save: controller.getSnapshot().save, label: labels.notSaved(labels.saveFailedReason) }));
   };
+  const manualSave = autosave === false && !state.readOnly && state.dirty;
+  const saveItem = { id: 'save', label: labels.save, icon: <SaveIcon className="size-4" />, disabled: unavailable || pending || unconfirmed, onSelect: save };
   const filename = useMemo(() => fileNameFor(title, 'md'), [title]);
   return <ViewerFrame showSavedStatus title={title} subtitle={subtitle} headerStart={headerStart} status={refused && refused.save === state.save && state.save.kind !== 'pending' ? { label: refused.label, tone: 'danger' } : markdownStatus(state, labels)} target={target} labels={labels} revision={revision} testId={testId} {...(titleTestId ? { titleTestId } : {})} className={className}
     onRefresh={onRefresh ?? (() => controller.actions.refresh())} onShare={onShare} onCopy={() => copyText(controller.getSnapshot().text)}
     onDownload={() => downloadFile(filename, controller.getSnapshot().text, 'text/markdown;charset=utf-8')} onOpenInNewTab={onOpenInNewTab} onClose={close}
-    menuContent={<MarkdownMenuItems labels={labels} mode={mode} onModeChange={setRequested} richDisabledReason={safety.safe ? undefined : labels.richUnavailable(safety.reasons.join(', '))} testId={testId} />}
-    mainControl={mode === 'rich' && <MarkdownFormattingControl type="button" aria-label={labels.formatting} title={labels.formatting} aria-pressed={toolbar === 'pinned'} data-testid={`${testId}-formatting`} onClick={() => setFormatting(toolbar === 'pinned' ? 'selection' : 'pinned')} />}
-    controls={autosave === false && !state.readOnly && state.dirty || controls ? <>
-      {autosave === false && !state.readOnly && state.dirty && <Button variant="ghost" size="sm" aria-label={labels.save} title={labels.save} data-testid={`${testId}-save`} disabled={unavailable || pending || unconfirmed} onClick={save}><SaveIcon data-icon="inline-start" aria-hidden="true" /><span className="min-[641px]:hidden">{labels.save}</span></Button>}
-      {controls}
-    </> : undefined}>
+    menuContent={<>
+      <MarkdownMenuItems labels={labels} mode={mode} onModeChange={setRequested} richDisabledReason={safety.safe ? undefined : labels.richUnavailable(safety.reasons.join(', '))} testId={testId} />
+      {manualSave && <><DropdownMenuSeparator className="min-[641px]:hidden" /><DropdownMenuGroup className="min-[641px]:hidden">
+        <DropdownMenuItem aria-label={labels.save} data-testid={`${testId}-save-menu`} disabled={saveItem.disabled} onClick={save} className="min-h-8 max-sm:min-h-10 pointer-coarse:min-h-10"><ActionMenuItemContent item={saveItem} testId={`${testId}-save-menu`} /></DropdownMenuItem>
+      </DropdownMenuGroup></>}
+    </>}
+    mainControl={<>
+      {mode === 'rich' && <MarkdownFormattingControl type="button" aria-label={labels.formatting} title={labels.formatting} aria-pressed={toolbar === 'pinned'} data-testid={`${testId}-formatting`} onClick={() => setFormatting(toolbar === 'pinned' ? 'selection' : 'pinned')} />}
+      {manualSave && <span className="max-[641px]:hidden"><Button variant="ghost" size="icon-sm" aria-label={labels.save} title={labels.save} data-testid={`${testId}-save`} disabled={saveItem.disabled} onClick={save}><SaveIcon data-icon="inline-start" aria-hidden="true" /></Button></span>}
+    </>}
+    controls={controls}>
     <MarkdownEditor components={editorControls} controller={controller} title={title} header={false} autosave={autosave} onAutosaveChange={registerAutosave} onSaveResult={report} formattingToolbar={toolbar} mode={mode} onModeChange={setRequested} onRichSafety={setSafety}
       {...(placeholder === undefined ? {} : { placeholder })} {...(resolveImage ? { resolveImage } : {})} {...(onMountedTools ? { onMountedTools } : {})} className="boring-markdown-editor" />
   </ViewerFrame>;

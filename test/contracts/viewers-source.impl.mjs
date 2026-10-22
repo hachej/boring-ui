@@ -382,8 +382,10 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
       d.controller.actions.edit('fictional draft');
       const view = await mount(t, h(markdownPane.MarkdownPane, { controller: d.controller, autosave: false, labels: { save } }));
       await view.click('[data-testid="viewer-more"]');
-      const button = document.querySelector('[data-testid="viewer-more-list"] [data-testid="viewer-save"]');
+      const button = document.querySelector('[data-testid="viewer-more-list"] [data-testid="viewer-save-menu"]');
       assert.ok(button, 'the phone overflow has the manual Save control');
+      assert.equal(button.dataset.slot, 'dropdown-menu-item', 'Save uses the same menu item as the standard actions');
+      assert.equal(button.getAttribute('role'), 'menuitem');
       assert.equal(button.textContent.trim(), save, 'Save has visible words, not only an accessible name');
       assert.equal(button.getAttribute('aria-label'), save);
       await act(async () => button.click()); await saved(d.controller);
@@ -413,7 +415,7 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     assert.equal(document.querySelector('[data-testid="viewer-more-list"] [data-testid="viewer-formatting"]'), null, 'no formatting item in the menu');
     await act(async () => document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
     const pin = view.q('[data-testid="viewer-bar"] [data-testid="viewer-formatting"]');
-    assert.equal(pin.dataset.slot, 'button');
+    assert.equal(pin.dataset.slot, 'toggle', 'Formatting uses the host Toggle pressed-state skin');
     assert.equal(pin.getAttribute('aria-pressed'), 'false');
     assert.equal(pin.getAttribute('title'), 'Formatting');
     assert.ok(pin.querySelector('svg.lucide-type'));

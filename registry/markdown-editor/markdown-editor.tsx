@@ -6,6 +6,7 @@ import { TypeIcon, CodeXmlIcon, EllipsisIcon, ListIcon, PencilLineIcon } from 'l
 import { MarkdownEditor as RuntimeMarkdownEditor } from '@hachej/boring-ui-kit/markdown-editor';
 import type { MarkdownEditorMenuProps, MarkdownEditorProps } from '@hachej/boring-ui-kit/markdown-editor';
 import { Button } from '@/components/ui/button';
+import { Toggle } from '@/components/ui/toggle';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuGroup, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuCheckboxItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { ActionMenuContent, useMenuPortal } from '../button/actions';
 import { editorControls } from '../button/editor-controls';
@@ -37,9 +38,9 @@ function MarkdownViewOptions(props: MarkdownEditorMenuProps) {
   </DropdownMenu>;
 }
 
-/** The header uses Button presentation and native toggle-button semantics, not the toolbar Toggle skin. */
-export function MarkdownFormattingControl(props: ComponentPropsWithRef<'button'>) {
-  return <Button variant="ghost" size="icon-sm" {...props} className="max-sm:min-h-12! max-sm:min-w-12! pointer-coarse:min-h-12! pointer-coarse:min-w-12!"><TypeIcon data-icon="inline-start" aria-hidden="true" /></Button>;
+/** The host Toggle supplies the visible pressed state as well as toggle-button semantics. */
+export function MarkdownFormattingControl({ 'aria-pressed': pressed, value, ...props }: ComponentPropsWithRef<'button'>) {
+  return <Toggle size="sm" pressed={pressed === true || pressed === 'true'} value={value === undefined ? undefined : String(value)} {...props} className="max-sm:min-h-12! max-sm:min-w-12! pointer-coarse:min-h-12! pointer-coarse:min-w-12!"><TypeIcon data-icon="inline-start" aria-hidden="true" /></Toggle>;
 }
 
 const markdownControls = { ...editorControls, markdownMenu: MarkdownViewOptions, formattingControl: MarkdownFormattingControl };

@@ -108,7 +108,7 @@ test('installed registry Markdown wrapper with real React/Tiptap/SQLite (DOM, no
     ]) {
       const f = await fixture(t, '# Fictional guide\n\nUnchanged text.\n', { props: { locale } });
       assert.equal(f.container.querySelector('.boring-markdown-toolbar'), null);
-      assert.equal(f.button(pin).dataset.slot, 'button');
+      assert.equal(f.button(pin).dataset.slot, 'toggle');
       assert.equal(f.button(pin).getAttribute('aria-pressed'), 'false');
       assert.equal(f.button(pin).getAttribute('title'), pin);
       assert.ok(f.button(pin).querySelector('svg.lucide-type'));

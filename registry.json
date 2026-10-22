@@ -340,6 +340,7 @@
       "registryDependencies": [
         "@boring-ui/button",
         "button",
+        "toggle",
         "dropdown-menu"
       ]
     },

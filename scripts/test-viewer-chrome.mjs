@@ -73,9 +73,11 @@ try {
           await open(); await browser.click(q('[data-testid=fixture-viewer-mode-rich]'));
           await open();
         }
-        const saveLabel = await browser.evaluate(`(() => { const button = ${q('[data-testid=fixture-viewer-more-list] [data-testid=fixture-viewer-save]')}; const label = button?.querySelector('span'); return label?.checkVisibility() ? label.innerText.trim() : ''; })()`);
+        const saveLabel = await browser.evaluate(`(() => { const item = ${q('[data-testid=fixture-viewer-save-menu]')}; return item?.checkVisibility() ? item.innerText.trim() : ''; })()`);
         assert.equal(saveLabel, width === 390 ? surface === 'menu-fr' ? 'Enregistrer' : 'Save' : '', 'manual Save has visible translated words on phone and stays icon-only on desktop');
         if (width === 390) {
+          const saveLayout = await browser.evaluate(`(() => { const menu = ${q('[data-testid=fixture-viewer-more-list]')}; const metrics = item => ({ iconX: item.querySelector('svg').getBoundingClientRect().x, fontSize: getComputedStyle(item).fontSize }); return { save: metrics(menu.querySelector('[data-testid=fixture-viewer-save-menu], [data-testid=fixture-viewer-save]')), share: metrics(menu.querySelector('[data-testid=fixture-viewer-share]')) }; })()`);
+          assert.deepEqual(saveLayout.save, saveLayout.share, 'Save icon alignment and font size match Share');
           const heights = await browser.evaluate(`[...${q('[data-testid=fixture-viewer-more-list]')}.querySelectorAll('[role=menuitemradio], [role=menuitemcheckbox]')].map(item => item.getBoundingClientRect().height)`);
           assert.ok(heights.every(height => height >= 48), `48px phone view choices: ${JSON.stringify(heights)}`);
         }
@@ -84,13 +86,19 @@ try {
         if (await browser.evaluate(`!!${q('[data-slot=dropdown-menu-content]')}`)) await browser.press('Escape');
         const label = surface === 'menu-fr' ? 'Mise en forme' : 'Formatting';
         const toggle = q(`header button[aria-label="${label}"]`);
+        await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 80 });
+        const unpressedBackground = await browser.evaluate(`getComputedStyle(${toggle}).backgroundColor`);
         const state = await browser.evaluate(`(() => { const button = ${toggle}; const box = button.getBoundingClientRect(); return { visible: button.checkVisibility(), slot: button.dataset.slot, pressed: button.getAttribute('aria-pressed'), title: button.title, typeIcon: !!button.querySelector('svg.lucide-type'), width: box.width, height: box.height }; })()`);
-        assert.deepEqual({ visible: state.visible, slot: state.slot, pressed: state.pressed, title: state.title, typeIcon: state.typeIcon }, { visible: true, slot: 'button', pressed: 'false', title: label, typeIcon: true });
+        assert.deepEqual({ visible: state.visible, slot: state.slot, pressed: state.pressed, title: state.title, typeIcon: state.typeIcon }, { visible: true, slot: 'toggle', pressed: 'false', title: label, typeIcon: true });
         if (width === 390) assert.ok(state.width >= 48 && state.height >= 48, `48px header formatting target: ${JSON.stringify(state)}`);
         const off = `viewer-${theme}-${mode}-${width}-${surface}-formatting-off.png`;
         await browser.screenshot(off); screenshots.push(off);
         await browser.click(toggle);
         await browser.until('formatting pinned from the header icon', `${toggle}.getAttribute('aria-pressed') === 'true' && !!${q(width === 390 ? '[data-testid=markdown-dock]' : '.boring-markdown-toolbar')}`, 5000);
+        await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 80 });
+        await browser.evaluate(`Promise.all(${toggle}.getAnimations().map(animation => animation.finished.catch(() => {})))`);
+        const pressedBackground = await browser.evaluate(`getComputedStyle(${toggle}).backgroundColor`);
+        assert.notEqual(pressedBackground, unpressedBackground, 'pressed Formatting has a visibly different background');
         const on = `viewer-${theme}-${mode}-${width}-${surface}-formatting-on.png`;
         await browser.screenshot(on); screenshots.push(on);
         await browser.click(toggle);
