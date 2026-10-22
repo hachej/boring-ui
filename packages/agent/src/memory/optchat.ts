@@ -14,7 +14,7 @@ import { withAbortSignal, withCancel } from '@earendil-works/chord/context';
 import { Type } from '@earendil-works/pi-ai';
 import type { Message, Models, Usage, UserMessage } from '@earendil-works/pi-ai';
 import {
-  DEFAULTS, OptChatLog, OptChatTree, advanceFold, bareLines, byteLength, compactPrompt, cutBytes, dateText, emptyFold, leavesOf,
+  COMPACTOR_REQUEST_HISTORY_LIMIT, DEFAULTS, OptChatLog, OptChatTree, advanceFold, bareLines, byteLength, compactPrompt, cutBytes, dateText, emptyFold, leavesOf,
   nodeKey, openParts, partStart, renderView, scaleLine, span, viewDoc, zoomText,
 } from './optchat-core.js';
 import type { Leaf, StoredNode, ViewFold } from './optchat-core.js';
@@ -50,13 +50,13 @@ const OptChatFold = defineDocFamily<{ configuration: string; revision: number; f
 
 type Ledger = { input: number; output: number; cacheRead: number; cacheWrite: number; cost: number };
 type Failure = { at: number; of: string; error: string; attempts?: number };
-type StateDoc = { calls: number; usage: Ledger; failures: Record<string, Failure> };
+type StateDoc = { calls: number; usage: Ledger; requests?: Ledger[]; sharedContext?: boolean; failures: Record<string, Failure> };
 /** Compactor bookkeeping of one conversation: calls, spend and the last failure of each node, including its retry streak. */
 export const OptChatState = defineDoc<StateDoc>({
   kind: 'boring.memory.optchat.state', version: 1, scope: 'conversation', history: 'latest', fork: 'initial',
   initial: () => ({ calls: 0, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 }, failures: {} }),
 });
-/** Input of one summary task. `key` is `level:index:fingerprint`; `upTo` is how much of the log the view context may use. */
+/** Input of one summary task. `key` is `level:index:fingerprint`; `upTo` bounds the admitted source, not the cached context. */
 type NodeInput = { key: string; level: number; index: number; of: string; upTo: number };
 type NodeResult = { built: boolean };
 const SHARD = 64;
@@ -98,7 +98,7 @@ export interface OptChatOptions {
   readonly agentName?: string;
   readonly nodeBytes?: number;
   readonly viewBytes?: number;
-  /** Target budget of the compactor's separate checkpoint-folded view. Default 32 000 UTF-8 bytes. */
+  /** Cold-start/callback context budget. Model jobs otherwise reuse the last turn view. Default 32 000 UTF-8 bytes. */
   readonly compactBytes?: number;
   /** Checkpoint high/low marks as fractions of both view budgets. Defaults 1.25 / 0.75; set both to 1 for strict budgets. */
   readonly foldHighWater?: number;
@@ -143,6 +143,8 @@ export interface OptChatStats {
     readonly error?: string;
     /** Summarizer calls made for this conversation (from the state document, so it survives a restart). */
     readonly calls: number;
+    /** Latest 256 provider response usage records booked by settled tasks, including retries; retained across restart. Lifetime calls/usage are not truncated. Interrupted tasks and callback summarizers have no usage record. */
+    readonly requests: readonly Readonly<Ledger>[];
     /** Spend of those calls (kept by this extension; not in Pi's `pi.usage`). */
     readonly usage: { readonly input: number; readonly output: number; readonly cacheRead: number; readonly cacheWrite: number; readonly cost: number };
   };
@@ -230,7 +232,7 @@ const addUsage = (sum: Usage | undefined, usage: Usage): Usage => {
 };
 
 /** The model's side of one node: what it spent (also on a failed attempt) and the line, or why there is none. */
-interface Summary { readonly text?: string; readonly error?: unknown; readonly usage?: Usage; readonly calls: number; readonly spender?: string }
+interface Summary { readonly text?: string; readonly error?: unknown; readonly usage?: Usage; readonly calls: number; readonly spender?: string; readonly requests?: Ledger[] }
 
 export function createOptChatMemory(options: OptChatOptions): OptChatMemory {
   const nodeBytes = options.nodeBytes ?? DEFAULTS.nodeBytes, viewBytes = options.viewBytes ?? DEFAULTS.viewBytes, jobs = options.jobs ?? DEFAULTS.jobs;
@@ -250,6 +252,8 @@ export function createOptChatMemory(options: OptChatOptions): OptChatMemory {
   const logOptions = (seed: readonly string[], edits: Edits) => ({ notes: seed, forgotten: edits.forgotten, ...(options.workOf ? { workOf: options.workOf } : {}) });
   const sessions = new Map<string, Session>();
   const naps = new Map<string, Promise<void>>();
+  const warming = new Map<string, Promise<void>>();
+  const warmed = new Map<string, string>();
   const retryDelay = (failure: Failure) => Math.min(60_000, retryMs * 2 ** Math.min(30, (failure.attempts ?? 1) - 1));
   const aborter = new AbortController();
   const hostContext = withAbortSignal(aborter.signal, options.context);
@@ -284,13 +288,13 @@ export function createOptChatMemory(options: OptChatOptions): OptChatMemory {
     return foldView(copyFold(s.compactFold), s.tree, to, compactBytes);
   }
 
-  async function restoreFold(s: Session, revision: number, to: number, kind: 'turn' | 'compact' = 'turn'): Promise<void> {
+  async function restoreFold(s: Session, revision: number, to: number, kind: 'turn' | 'compact' | 'bootstrap' = 'turn'): Promise<void> {
     const saved = await options.harness().snapshot(OptChatFold, s.id, kind, options.context);
     if (saved?.fold && saved.configuration === configuration && saved.revision === revision && saved.fold.T <= to
-      && saved.fingerprints.every((fp, i) => { const part = saved.fold!.parts[i]!; return fp === s.log.fp(part.level, part.index); })) s[kind === 'turn' ? 'fold' : 'compactFold'] = copyFold(saved.fold);
+      && saved.fingerprints.every((fp, i) => { const part = saved.fold!.parts[i]!; return fp === s.log.fp(part.level, part.index); })) s[kind === 'compact' ? 'compactFold' : 'fold'] = copyFold(saved.fold);
   }
 
-  async function saveFold(s: Session, revision: number, kind: 'turn' | 'compact', fold: ViewFold, context: Context): Promise<void> {
+  async function saveFold(s: Session, revision: number, kind: 'turn' | 'compact' | 'bootstrap', fold: ViewFold, context: Context): Promise<void> {
     await (await conversationOf(s.id)).commit(async tx => {
       if ((await tx.doc(OptChatEdits, s.id)).revision !== revision) return;
       const doc = await tx.doc(OptChatFold, s.id, kind, null);
@@ -331,7 +335,7 @@ export function createOptChatMemory(options: OptChatOptions): OptChatMemory {
   // ---- The summarizer (runs inside the native task) ----------------------------------------------------------------------
 
   /** One node by the reference protocol (§4.2, §4.3): context first, then the step; over-long lines are resubmitted cut at the limit; the shortest wins. */
-  async function askModel(job: SummaryJob, runtimeModels: Models, signal: AbortSignal): Promise<Summary> {
+  async function askModel(job: SummaryJob, runtimeModels: Models, signal: AbortSignal, prefix = job.context): Promise<Summary> {
     const summarizer = options.summarizer;
     if ('summarize' in summarizer) {
       try { return { text: cutBytes((await summarizer.summarize(job, signal)).trim(), nodeBytes), calls: 1 }; } catch (error) { if (signal.aborted) throw error; return { error, calls: 1 }; }
@@ -341,17 +345,38 @@ export function createOptChatMemory(options: OptChatOptions): OptChatMemory {
     const model = models.getModel(ref.provider, ref.modelId);
     if (!model) throw new Error(`Summarizer model ${ref.provider}/${ref.modelId} is not available`);
     const lines = job.source.map(line => line.replace(/\r?\n/g, ' '));
-    const step = `For scale, this line is exactly ${scale.bytes} bytes:\n${scale.text}\n\n` + (job.level === 0
+    const prompt = `${system}\n\nFor scale, this line is exactly ${scale.bytes} bytes:\n${scale.text}`;
+    const step = job.level === 0
       ? `Compress this message into one line, in at most ${nodeBytes} bytes:\n${job.source[0]}`
-      : `Merge these two lines into one, in at most ${nodeBytes} bytes:\n${lines.join('\n')}`);
-    const conversation: Message[] = [message([...chatBlocks(job.context), step])];
+      : `Merge these two lines into one, in at most ${nodeBytes} bytes:\n${lines.join('\n')}`;
+    const conversation: Message[] = [message([...chatBlocks(prefix), step])];
     const attempts: string[] = [];
+    const requests: Ledger[] = [];
     let usage: Usage | undefined, calls = 0, spender: string | undefined;
+    const owner = `${String(job.conversationId)}:${ref.provider}/${ref.modelId}`;
+    const key = JSON.stringify([owner, prefix]);
+    let release: (() => void) | undefined;
     try {
+      // Tasks already occupy the host's admission cap. Only the first request on a new prefix warms it.
+      while (warmed.get(owner) !== prefix) {
+        const pending = warming.get(key);
+        if (!pending) { warming.set(key, new Promise<void>(resolve => { release = resolve; })); break; }
+        if (signal.aborted) throw signal.reason;
+        let abort: (() => void) | undefined;
+        try {
+          await Promise.race([pending, new Promise<never>((_resolve, reject) => {
+            abort = () => reject(signal.reason);
+            signal.addEventListener('abort', abort, { once: true });
+          })]);
+        } finally { if (abort) signal.removeEventListener('abort', abort); }
+      }
       for (;;) {
-        const reply = await models.complete(model, { systemPrompt: system, messages: conversation }, { signal });
+        const reply = await models.complete(model, { systemPrompt: prompt, messages: conversation }, { signal });
         calls++; spender = `${reply.provider}/${reply.model}`; usage = addUsage(usage, reply.usage);
+        requests.push({ input: reply.usage.input, output: reply.usage.output, cacheRead: reply.usage.cacheRead, cacheWrite: reply.usage.cacheWrite, cost: reply.usage.cost.total });
         if (reply.stopReason === 'error' || reply.stopReason === 'aborted') throw new Error(reply.errorMessage ?? `Summarizer stopped: ${reply.stopReason}`);
+        warmed.set(owner, prefix);
+        if (release) { warming.delete(key); release(); release = undefined; }
         const line = reply.content.filter(part => part.type === 'text').map(part => part.text).join('\n').trim();
         if (!line) throw new Error('The summarizer returned nothing');
         attempts.push(line);
@@ -360,15 +385,16 @@ export function createOptChatMemory(options: OptChatOptions): OptChatMemory {
       }
     } catch (error) {
       if (signal.aborted) throw error;
-      return { error, ...(usage ? { usage } : {}), calls, ...(spender ? { spender } : {}) };
-    }
-    return { text: attempts.reduce((best, line) => byteLength(line) < byteLength(best) ? line : best), ...(usage ? { usage } : {}), calls, ...(spender ? { spender } : {}) };
+      return { error, ...(usage ? { usage } : {}), calls, requests, ...(spender ? { spender } : {}) };
+    } finally { if (release) { warming.delete(key); release(); } }
+    return { text: attempts.reduce((best, line) => byteLength(line) < byteLength(best) ? line : best), ...(usage ? { usage } : {}), calls, requests, ...(spender ? { spender } : {}) };
   }
 
   /** What one node task adds to the conversation's documents in its single commit: calls, spend and the node or its failure. */
   async function bookkeeping(tx: Tx, id: ConversationId, summary: Summary): Promise<StateDoc> {
     const state = await tx.doc(OptChatState, id);
     state.calls += summary.calls;
+    if (summary.requests?.length) { state.requests = [...(state.requests ?? []), ...summary.requests].slice(-COMPACTOR_REQUEST_HISTORY_LIMIT); state.sharedContext = true; }
     if (summary.usage && summary.spender) {
       const u = summary.usage;
       state.usage.input += u.input; state.usage.output += u.output; state.usage.cacheRead += u.cacheRead; state.usage.cacheWrite += u.cacheWrite; state.usage.cost += u.cost.total;
@@ -398,15 +424,21 @@ export function createOptChatMemory(options: OptChatOptions): OptChatMemory {
         };
         const revision = await load();
         const ready = () => s.log.fp(level, index) === of && (level === 0 || (s.tree.text(level - 1, 2 * index) !== undefined && s.tree.text(level - 1, 2 * index + 1) !== undefined));
-        if (!ready() || s.tree.text(level, index) !== undefined) return stale(); // the history changed, a child is missing, or the node needs no summary
+        if ((index + 1) * span(level) > upTo || !ready() || s.tree.text(level, index) !== undefined) return stale(); // the history changed, a child is missing, or the node needs no summary
         const to = Math.min(upTo, index * span(level));
         const fold = compactView(s, to);
         if (fold.size > compactBytes * highWater || fold.checkpoint) return stale(); // admission will build preceding parents before trying this node again
         await saveFold(s, revision, 'compact', fold, context);
         const source = level === 0 ? [s.log.leaves[index]!.line] : [s.tree.text(level - 1, 2 * index)!, s.tree.text(level - 1, 2 * index + 1)!];
         const job: SummaryJob = { conversationId: id, level, index, range: [index * span(level), (index + 1) * span(level) - 1], source, context: bareLines(fold, s.tree, to), nodeBytes };
+        // Keep the callback's past-only context; model requests carry the last turn's full prefix, with the job after it.
+        await restoreFold(s, revision, s.log.leaves.length, 'bootstrap');
+        await restoreFold(s, revision, s.log.leaves.length);
+        const prefixFold = s.fold.stableThrough === undefined ? fold : s.fold;
+        await loadStored(s, runtime, context); // the selected turn may reference summaries committed since load()
+        const prefix = bareLines(prefixFold, s.tree, prefixFold.T);
         let summary: Summary;
-        try { summary = await askModel(job, runtime.models, runtime.signal); }
+        try { summary = await askModel(job, runtime.models, runtime.signal, prefix); }
         catch (error) {
           if (runtime.signal.aborted) throw error;
           summary = { error, calls: 0 }; // model resolution can fail before any request is sent
@@ -470,6 +502,23 @@ export function createOptChatMemory(options: OptChatOptions): OptChatMemory {
     const failures = (await options.harness().snapshot(OptChatState, s.id, options.context))?.failures ?? {};
     const now = Date.now(), upTo = Math.min(s.upTo, s.log.leaves.length);
     const conversation = await conversationOf(s.id);
+    // Before the first turn there is no sent view. Freeze one cold prefix for the seed's native tasks.
+    if ('model' in options.summarizer) {
+      const revision = (await memoryEdits(s.id)).revision;
+      const saved = await options.harness().snapshot(OptChatFold, s.id, 'bootstrap', options.context);
+      if (!saved?.fold || saved.revision !== revision || saved.configuration !== configuration
+        || !saved.fingerprints.every((fp, i) => fp === s.log.fp(saved.fold!.parts[i]!.level, saved.fold!.parts[i]!.index))) {
+        const prefix = emptyFold();
+        for (let i = 0; i + 4 <= s.fold.parts.length; i += 4) {
+          const block = s.fold.parts.slice(i, i + 4), bytes = block.reduce((sum, part) => sum + part.bytes, 0);
+          if (prefix.size + bytes > compactBytes * highWater) break;
+          prefix.parts.push(...block.map(part => ({ ...part }))); prefix.size += bytes;
+          const last = block.at(-1)!; prefix.T = partStart(last) + span(last.level);
+        }
+        prefix.stableThrough = prefix.T;
+        await saveFold(s, revision, 'bootstrap', prefix, options.context);
+      }
+    }
     let waiting = 0, created = 0;
     const live = await conversation.commit(async tx => {
       const found = new Map<string, TaskId<NodeResult>>();
@@ -562,7 +611,7 @@ export function createOptChatMemory(options: OptChatOptions): OptChatMemory {
     }
   }
 
-  /** Context can copy an earlier fact into a later summary. Invalidate those too, atomically with the tombstone. */
+  /** Context can copy facts across nodes. Shared-prefix model summaries may depend on any leaf, transitively. */
   async function forgetMessage(id: ConversationId, messageIndex: number): Promise<void> {
     if (!Number.isInteger(messageIndex) || messageIndex < 0) throw new Error('Invalid message index');
     const conversation = await conversationOf(id);
@@ -582,8 +631,9 @@ export function createOptChatMemory(options: OptChatOptions): OptChatMemory {
         doc.revision++;
         const state = await tx.doc(OptChatState, id);
         for (let level = 0; span(level) <= leaves.length; level++) {
-          for (let index = Math.floor(start / span(level)); (index + 1) * span(level) <= leaves.length; index++) {
+          for (let index = 0; (index + 1) * span(level) <= leaves.length; index++) {
             const shard = await tx.doc(OptChatNodes, id, shardKey(level, index), 0);
+            if (!state.sharedContext && index < Math.floor(start / span(level))) continue;
             delete shard.nodes[String(index)];
             delete state.failures[nodeKey(level, index)];
           }
@@ -694,14 +744,14 @@ export function createOptChatMemory(options: OptChatOptions): OptChatMemory {
         leaves: s.log.leaves.length, summaries,
         view: { bytes: fold.size, budget: viewBytes, open: openParts(fold).length,
           parts: fold.parts.map(part => ({ id: partStart(part), n: span(part.level), level: part.level, text: part.open ? '' : s.tree.text(part.level, part.index) ?? '', open: part.open })) },
-        compactor: { busy, retrying, failed: failures.length, idle: busy === 0 && retrying === 0, ...(latest ? { error: latest.error } : {}), calls: state?.calls ?? 0, usage: { ...(state?.usage ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 }) } },
+        compactor: { busy, retrying, failed: failures.length, idle: busy === 0 && retrying === 0, ...(latest ? { error: latest.error } : {}), calls: state?.calls ?? 0, requests: (state?.requests ?? []).slice(-COMPACTOR_REQUEST_HISTORY_LIMIT).map(request => ({ ...request })), usage: { ...(state?.usage ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 }) } },
         ...(s.lastRequest ? { lastRequest: s.lastRequest } : {}),
       };
     },
     async zoom(id, nth, n) { return zoomText((await refresh(id)).tree, nth, n); },
     async date(id, nth) { return dateText((await refresh(id)).log, nth); },
     forgetMessage,
-    forget(id) { sessions.delete(String(id)); },
+    forget(id) { sessions.delete(String(id)); for (const key of warmed.keys()) if (key.startsWith(`${String(id)}:`)) warmed.delete(key); },
     async dispose() { aborter.abort(); await Promise.allSettled(naps.values()); },
   };
 }
