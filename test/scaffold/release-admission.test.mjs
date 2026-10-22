@@ -23,13 +23,15 @@ function fixture() {
     }
     return Response.json(pages.get(`${path}:${parsed.searchParams.get('page') ?? '1'}`) ?? pages.get(path));
   };
-  return { pages, calls, fetch };
+  // A fictional clock: each wait advances it, so a run that never completes reaches the deadline at once.
+  let clock = 0;
+  return { pages, calls, fetch, now: () => clock, sleep: async ms => { clock += ms; } };
 }
 
 test('fixture main commit admits only the complete named verify and browser suites', async () => {
   const f = fixture();
   assert.equal((await releaseAdmission(input, f)).reuse, true);
-  assert.equal(f.calls.length, 5);
+  assert.equal(f.calls.length, 6);
   assert.ok(f.calls.every(url => !new URL(url).searchParams.has('page')), 'omit explicit page=1, which GitHub can mis-handle with head_sha');
   const verify = readFileSync(new URL('../../.github/workflows/verify.yml', import.meta.url), 'utf8');
   const browser = readFileSync(new URL('../../.github/workflows/studio-scripted.yml', import.meta.url), 'utf8');
@@ -68,6 +70,19 @@ test('only the latest successful main push workflow run can authorize reuse', as
     else runs.push({ ...run, id: 999, conclusion: 'failure' });
     assert.equal((await releaseAdmission(input, f)).reuse, false, change);
   }
+});
+
+test('a release dispatched while main is still checking its commit waits for that run and reuses it', async () => {
+  const f = fixture(), run = f.pages.get('actions/workflows/studio-scripted.yml/runs').workflow_runs[0], fetch = f.fetch;
+  let polls = 0;
+  Object.assign(run, { status: 'in_progress', conclusion: null });
+  f.fetch = async (url, options) => {
+    if (url.includes('studio-scripted.yml/runs') && ++polls === 3) Object.assign(run, { status: 'completed', conclusion: 'success' });
+    return fetch(url, options);
+  };
+  assert.deepEqual(await releaseAdmission(input, f), { reuse: true, reason: 'All named verification and browser checks passed on this exact main push SHA' });
+  assert.equal(polls, 3);
+  assert.equal(f.now(), 60000, 'two 30 s waits');
 });
 
 test('pagination is consumed; unavailable or malformed API evidence never authorizes skipping', async () => {
