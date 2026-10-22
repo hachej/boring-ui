@@ -170,6 +170,43 @@ test('AgentWorkspace embedded: one bar, no left column, and a Library over resou
     assert.equal(q('[data-testid=workspace-bar-conversation]'), null);
   });
 
+  await t.test('barPanels: the host\'s own panels sit in the bar after Library and before New, open a popover (a sheet on a phone) and close from inside', async () => {
+    for (const width of [1440, 390]) {
+      measured = width;
+      const picked = [];
+      const Icon = props => createElement('svg', props);
+      const barPanels = [{ id: 'comments', label: 'Fictional comments', icon: Icon,
+        content: close => createElement('button', { 'data-testid': 'fictional-comment', onClick: () => { picked.push('one'); close(); } }, 'A fictional note') }];
+      await render({ key: `panels-${width}`, barPanels });
+      await settle(() => bar('comments'));
+      const order = [...q('[data-testid=workspace-bar-tools]').querySelectorAll('[data-testid^=workspace-bar-]')].map(node => node.dataset.testid.replace('workspace-bar-', ''));
+      assert.deepEqual(order.filter(id => ['history', 'library', 'comments', 'new'].includes(id)), ['history', 'library', 'comments', 'new'], `${width}: after Library, before New`);
+      assert.equal(bar('comments').getAttribute('aria-label'), 'Fictional comments');
+      await act(async () => bar('comments').click());
+      await settle(() => q('[data-testid=workspace-comments] [data-testid=fictional-comment]'));
+      assert.ok(q('[data-testid=workspace-comments] [data-testid=fictional-comment]'), `${width}: the panel shows the host content`);
+      await act(async () => q('[data-testid=fictional-comment]').click());
+      await settle(() => !q('[data-testid=fictional-comment]'));
+      assert.deepEqual(picked, ['one']);
+      assert.equal(q('[data-testid=fictional-comment]'), null, `${width}: close() closes the panel`);
+    }
+  });
+
+  await t.test('panelWidth: the side panel opens at the host\'s width (a fraction of the workspace or pixels) until the person drags', async () => {
+    measured = 1440;
+    const opened = async (extra, key) => {
+      sessionStorage.clear();
+      await render({ key, ...extra });
+      await settle(() => bar('library'));
+      await pickFromLibrary('notes.md');
+      await settle(() => q('[data-testid=workspace-divider]'));
+      return Number(q('[data-testid=workspace-divider]').getAttribute('aria-valuenow'));
+    };
+    assert.equal(await opened({}, 'width-default'), 1440 - 420, 'without it: all but 420px of chat');
+    assert.equal(await opened({ panelWidth: 0.55 }, 'width-fraction'), Math.round(1440 * 0.55), 'a fraction of the workspace');
+    assert.equal(await opened({ panelWidth: 600 }, 'width-pixels'), 600, 'pixels');
+  });
+
   await t.test('inside a host header slot (the app shell\'s), the bar\'s controls move there: one row', { skip: !slot && 'no header slot on this revision' }, async () => {
     measured = 1440;
     const header = document.createElement('div'); header.dataset.testid = 'host-header'; document.body.append(header);

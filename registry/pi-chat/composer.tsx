@@ -110,7 +110,7 @@ export interface ComposerProps {
 /** The annotate toggle beside the "+" menu in both layouts. */
 function AnnotateButton({ feedback, disabled }: { readonly feedback: ComposerFeedback; readonly disabled: boolean }) {
   const { labels } = useChatText();
-  return <Toggle data-testid="composer-annotate" pressed={feedback.active} disabled={disabled}
+  return <Toggle className="min-h-11 min-w-11" data-testid="composer-annotate" pressed={feedback.active} disabled={disabled}
     aria-label={labels.annotate} title={labels.annotateHint} onPressedChange={() => feedback.annotate()}>
     <MessageSquarePlusIcon data-icon="inline-start" aria-hidden="true" />
   </Toggle>;

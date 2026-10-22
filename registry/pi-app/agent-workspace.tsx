@@ -58,6 +58,7 @@ import { focusHistoryRow, historyColumnFits, useHistoryOpen } from './history-co
 import type { HistoryPlacement } from './history-column';
 import type { SessionsView, WorkspaceAgents } from './sessions';
 import { WorkspaceBar } from './workspace-bar';
+import type { WorkspaceBarPanel } from './workspace-bar';
 
 export { ArtifactPanel, useArtifactVersions, useTurn } from './artifact-panel';
 export type { CustomViewerProps, CustomViewers, SavedRevision, ViewerOptions } from './artifact-panel';
@@ -66,7 +67,7 @@ export { SessionsPane, SessionsToggle } from './sessions';
 export { HistoryColumn, HistoryColumnToggle, historyColumnFits, useHistoryColumn } from './history-column';
 export type { HistoryPlacement } from './history-column';
 export { WorkspaceBar } from './workspace-bar';
-export type { WorkspaceBarProps } from './workspace-bar';
+export type { WorkspaceBarPanel, WorkspaceBarProps } from './workspace-bar';
 export { ConversationList, ConversationHistory } from '../pi-chat/history';
 export { FileTree } from '../file-tree/file-tree';
 export type { SessionsView, WorkspaceAgent, WorkspaceAgents } from './sessions';
@@ -139,6 +140,13 @@ interface AgentWorkspaceBaseProps {
    * `controls`. Inside an app-shell screen the bar's buttons go into the shell's header, so the page has one row.
    */
   readonly layout?: 'default' | 'embedded' | undefined;
+  /**
+   * The side panel's width when it first opens, before the person drags the divider (then the dragged width is kept for the session):
+   * pixels, or a fraction of the workspace's width when at most 1. Without it the panel leaves the chat 420px.
+   */
+  readonly panelWidth?: number | undefined;
+  /** `embedded` only: the host's own panels in the bar, after History and Library (a popover on a wide workspace, a sheet on a phone). */
+  readonly barPanels?: readonly WorkspaceBarPanel[] | undefined;
   /**
    * `embedded` only: a fixed leading title for the bar, normally the app's name. It stays whatever the conversation is called; the
    * conversation title then follows it as a muted second element (on a phone it is left to History). Without it the bar shows the
@@ -272,7 +280,7 @@ const defaultLocate = (path: string): ResourceLocator => ({ resource: { provider
  * its versions, the file viewer and the host's own views). Agent artifacts open the panel as they appear. Every prop is data or a callback:
  * the host owns the routes, authentication, the controller and what is open (when controlled).
  */
-export function AgentWorkspace({ layout = 'default', title, controller, conversationId, chat = {}, labels, icons, panelActions, connecting, conversations, sessions, history: historyPlacement = 'column', resources, revisionProvider, libraryPlacement = 'panel', locale, fileTree: treeOptions, uploads, agents, detect, artifactKinds, comments, viewers, interactive, share, opened: controlled,
+export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, title, controller, conversationId, chat = {}, labels, icons, panelActions, connecting, conversations, sessions, history: historyPlacement = 'column', resources, revisionProvider, libraryPlacement = 'panel', locale, fileTree: treeOptions, uploads, agents, detect, artifactKinds, comments, viewers, interactive, share, opened: controlled,
   defaultOpened = null, onOpenedChange, onUnsavedChange, panels, autoOpen = true, fileBack, floatingChat, chatTop, controls, storageKey = 'boring.agent-workspace', sheetBelow = 641, drawerBelow = 641, floatBelow, className }: AgentWorkspaceProps) {
   const [own, setOwn] = useState<OpenedView | null>(defaultOpened);
   const [panelLibrary, setPanelLibrary] = useState(false);
@@ -569,7 +577,7 @@ export function AgentWorkspace({ layout = 'default', title, controller, conversa
     // Embedded: the bar above replaces the chat's header (History, New and the host's controls are in it); conversations stay for Fork.
     ...(embedded ? { header: false, historyList: false, showHistory: false } : {}) };
   const bar = embedded && <WorkspaceBar title={title ?? conversationTitle ?? chatText.labels.title} {...(title && conversationTitle ? { subtitle: conversationTitle } : {})} conversations={conversations} narrow={narrow}
-    library={libraryController ? onPicked => libraryTree(path => { openFile(path); onPicked(); }, onPicked) : undefined}
+    library={libraryController ? onPicked => libraryTree(path => { openFile(path); onPicked(); }, onPicked) : undefined} panels={barPanels}
     controls={<><BlockActions actions={chat.headerActions} testId="chat-action" menuLabel={chatText.labels.moreActions} />{hostControls}</>} />;
   const docked_chat = <div data-testid="workspace-center" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
     {bar}
@@ -601,7 +609,7 @@ export function AgentWorkspace({ layout = 'default', title, controller, conversa
     className={cn('pi-chat relative flex h-full min-h-0 min-w-0 flex-1 overflow-hidden', className)}>
     <DockLayout storageKey={`${storageKey}.dock`} minMain={SESSIONS_WIDTH + 480}>
     {hasNavigation && (docked || (narrow && drawer)) && (sessions ? sessions(sessionProps) : <SessionsPane {...sessionProps} />)}
-    <DockMain><ArtifactWorkspace open={panelOpen && !(panelLibrary && narrow)} onClose={close} panelLabel={text.labels.artifactPanel} labels={{ resize: text.labels.resizePanel, floatHint: text.labels.floatHint }} fullscreen={fullscreen} onFullscreenChange={setFullscreen} storageKey={`${storageKey}.panel-width`}
+    <DockMain><ArtifactWorkspace open={panelOpen && !(panelLibrary && narrow)} onClose={close} panelLabel={text.labels.artifactPanel} labels={{ resize: text.labels.resizePanel, floatHint: text.labels.floatHint }} fullscreen={fullscreen} onFullscreenChange={setFullscreen} storageKey={`${storageKey}.panel-width`} {...(panelWidth === undefined ? {} : { defaultWidth: panelWidth })}
       sheetBelow={Math.max(CHAT_MIN + VIEWER_MIN, docked ? sheetBelow - SESSIONS_WIDTH : sheetBelow)} {...(floatBelow === undefined || libraryOpen ? {} : { floatBelow })}
       chat={layout => <WorkspaceCenter libraryOpen={libraryOpen} floating={layout.floating} chat={docked_chat}
         floatingChat={floatingChat && chatProps ? floatingChat(chatProps, layout.dock) : undefined}
