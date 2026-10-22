@@ -1,5 +1,7 @@
 # Unreleased
 
+- **Invariants drift (D-249).** Docs only: the registry README now says every design group fails both static and browser checks, and packages never open a Harness (the host opens and closes it). No API, block or stored-format change.
+
 # Migrating to 0.4.8
 
 - **Viewers — Quiet Markdown editor (D-227, #1795).** The formatting bar appears on selection and a header Formatting toggle pins it; pass `formattingToolbar="pinned"` for the old always-visible bar.
