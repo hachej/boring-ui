@@ -8,6 +8,7 @@ import Highlight from '@tiptap/extension-highlight';
 import { Node as TiptapNode } from '@tiptap/core';
 import type { Editor, Extensions, JSONContent } from '@tiptap/core';
 import { createMarkdownParser } from './markdown-parser.js';
+import { preservedMarkdownNodes } from './markdown-preserved.js';
 
 type TextEncoder = (text: string, node: { marks?: readonly unknown[] }, parent: { type?: string } | null) => string;
 
@@ -29,13 +30,71 @@ const PlainTextMarkdown = Markdown.extend({
   },
 });
 
-const RichStarterKit = StarterKit.extend({
-  addExtensions() {
-    return (this.parent?.() ?? []).map(extension => extension instanceof TiptapNode && extension.name === 'paragraph'
-      ? extension.extend({ renderMarkdown: (node, helpers) => helpers.renderChildren(node.content ?? []) })
-      : extension);
-  },
-});
+function sourceBlock(extension: TiptapNode, schema: () => Editor['schema'] | undefined) {
+  return extension.extend({
+    addAttributes() { return { ...this.parent?.(), markdownSource: { default: null, rendered: false, parseHTML: () => null } }; },
+    parseMarkdown(token, helpers) {
+      const parsed = this.parent!(token, helpers) as JSONContent, current = schema();
+      if (!current || !token.raw || Array.isArray(parsed) || /^(?:[ \t]*&nbsp;[ \t]*)+$/.test(token.raw.trim())) return parsed;
+      const snapshot = current.nodeFromJSON(parsed).toJSON();
+      return { ...parsed, attrs: { ...parsed.attrs, markdownSource: { raw: token.raw.replace(/\n+$/, ''), snapshot: JSON.stringify(snapshot) } } };
+    },
+    renderMarkdown(node, helpers, context) {
+      const original = node.attrs?.['markdownSource'] as { raw?: unknown; snapshot?: unknown } | null;
+      const snapshot = { ...node, attrs: { ...node.attrs, markdownSource: null } };
+      if (original && typeof original.raw === 'string' && original.snapshot === JSON.stringify(snapshot)) return original.raw;
+      return this.parent!(node, helpers, context);
+    },
+  });
+}
+
+function sourceStarterKit(source: () => string, schema: () => Editor['schema'] | undefined) {
+  return StarterKit.extend({
+    addExtensions() {
+      return (this.parent?.() ?? []).map(extension => {
+        if (extension instanceof TiptapNode && extension.name === 'paragraph') return sourceBlock(extension.extend({ renderMarkdown: (node, helpers) => helpers.renderChildren(node.content ?? []) }), schema);
+        if (extension.name === 'bold' || extension.name === 'italic') return extension.extend({ renderMarkdown: (node, helpers, context) => {
+          const text = typeof context.meta?.['markText'] === 'string' ? context.meta['markText'] : '';
+          const escaped = text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const prose = source().replace(/[*_]/g, '');
+          const intraword = text === '' || !prose.includes(text) || new RegExp(`(?:[\\p{L}\\p{N}]${escaped}|${escaped}[\\p{L}\\p{N}])`, 'u').test(prose);
+          const marker = extension.name === 'bold' ? (!intraword && /__\S/.test(source()) ? '__' : '**') : (!intraword && /(?:^|\s)_\S/.test(source()) ? '_' : '*');
+          return marker + helpers.renderChildren(node) + marker;
+        } });
+        if (extension instanceof TiptapNode && extension.name === 'listItem') return extension.extend({
+          addAttributes() { return { ...this.parent?.(), markdownSource: { default: null, rendered: false, parseHTML: () => null } }; },
+          parseMarkdown(token, helpers) {
+            const parsed = this.parent!(token, helpers) as JSONContent;
+            const current = schema();
+            if (!current || !token.raw || Array.isArray(parsed)) return parsed;
+            const content = current.nodeFromJSON(parsed).toJSON().content ?? [];
+            return { ...parsed, attrs: { ...parsed.attrs, markdownSource: { raw: token.raw.replace(/\n$/, ''), content: JSON.stringify(content) } } };
+          },
+          renderMarkdown(node, helpers, context) {
+            const original = node.attrs?.['markdownSource'] as { raw?: unknown; content?: unknown } | null;
+            if (original && typeof original.raw === 'string' && original.content === JSON.stringify(node.content ?? [])) return original.raw;
+            const rendered = this.parent!(node, helpers, context);
+            const bullet = /^ {0,3}([-*+])\s/m.exec(source())?.[1] ?? '-';
+            return context.parentType === 'bulletList' ? rendered.replace(/^- /, `${bullet} `) : rendered;
+          },
+        });
+        if (extension instanceof TiptapNode && extension.name === 'horizontalRule') return extension.extend({ renderMarkdown: () => /^ {0,3}(?:(?:\*\s*){3,}|(?:-\s*){3,}|(?:_\s*){3,})$/m.exec(source())?.[0] ?? '---' });
+        if (extension instanceof TiptapNode && extension.name === 'heading') return sourceBlock(extension.extend({
+          addAttributes() { return { ...this.parent?.(), markdownHeadingStyle: { default: 'atx', rendered: false, parseHTML: () => 'atx' } }; },
+          parseMarkdown(token, helpers) {
+            const parsed = this.parent!(token, helpers) as JSONContent;
+            return { ...parsed, attrs: { ...parsed.attrs, markdownHeadingStyle: /^ {0,3}#{1,6}(?:\s|$)/.test(token.raw ?? '') ? 'atx' : 'setext' } };
+          },
+          renderMarkdown(node, helpers, context) {
+            const text = helpers.renderChildren(node.content ?? []), level = Number(node.attrs?.['level']);
+            return level <= 2 && node.attrs?.['markdownHeadingStyle'] === 'setext' ? `${text}\n${(level === 1 ? '=' : '-').repeat(Math.max(3, text.length))}` : this.parent!(node, helpers, context);
+          },
+        }), schema);
+        return extension;
+      });
+    },
+  });
+}
 
 type Schema = Editor['schema'];
 
@@ -81,6 +140,7 @@ export const inlineImagesOnly: MarkdownImageResolver = source => /^data:image\/(
 export interface MarkdownExtensionOptions {
   readonly placeholder?: string;
   readonly images?: () => MarkdownImageResolver | undefined;
+  readonly source?: () => string;
 }
 
 /**
@@ -88,7 +148,7 @@ export interface MarkdownExtensionOptions {
  * strike, links), task lists, GFM tables, images and highlight. Underline is off because Markdown has no underline.
  * Images are inert: without a host resolver they render as a labelled placeholder and never make a request.
  */
-export function createMarkdownExtensions({ placeholder, images }: MarkdownExtensionOptions = {}): Extensions {
+export function createMarkdownExtensions({ placeholder, images, source = () => '' }: MarkdownExtensionOptions = {}): Extensions {
   const InertImage = Image.extend({
     renderHTML({ node }) {
       const source = String(node.attrs['src'] ?? '');
@@ -105,12 +165,13 @@ export function createMarkdownExtensions({ placeholder, images }: MarkdownExtens
     onBeforeCreate() { (this.parent as (() => void) | undefined)?.(); schema = this.editor.schema; },
   });
   return [
-    RichStarterKit.configure({ link: { openOnClick: false, autolink: false, linkOnPaste: false }, underline: false }),
+    sourceStarterKit(source, () => schema).configure({ link: { openOnClick: false, autolink: false, linkOnPaste: false }, underline: false }),
+    ...preservedMarkdownNodes(),
     TaskList, TaskItem.configure({ nested: true }),
     SourceTable.configure({ resizable: false }), TableRow, TableHeader, TableCell,
     InertImage.configure({ inline: false, allowBase64: true }),
     Highlight,
     Placeholder.configure({ placeholder: placeholder ?? 'Start writing' }),
-    PlainTextMarkdown.configure({ marked: createMarkdownParser(), markedOptions: { gfm: true, breaks: false } }),
+    PlainTextMarkdown.configure({ marked: createMarkdownParser(), markedOptions: { gfm: true, breaks: false }, indentation: { style: 'space', size: /^ {4}[-*+]\s/m.test(source()) ? 4 : 2 } }),
   ];
 }

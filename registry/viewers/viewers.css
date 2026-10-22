@@ -94,6 +94,10 @@
   .boring-viewer .boring-markdown-content :is(th, td) > p { margin: 0; }
   .boring-viewer .boring-markdown-content .selectedCell { background: var(--accent); }
   .boring-viewer .boring-markdown-content img { display: block; max-width: 100%; height: auto; margin: 1rem 0; }
+  .boring-viewer .boring-markdown-content .boring-markdown-preserved { margin: 0.75rem 0; color: var(--muted-foreground); font-family: var(--font-mono); font-size: var(--text-sm); }
+  .boring-viewer .boring-markdown-content .boring-markdown-preserved small { font-size: var(--text-xs); }
+  .boring-viewer .boring-markdown-content .boring-markdown-preserved pre { margin: 0.25rem 0; padding: 0.5rem 0.75rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .boring-viewer .boring-markdown-content .boring-markdown-preserved-inline { color: var(--muted-foreground); font-family: var(--font-mono); font-size: var(--text-sm); }
   .boring-viewer .boring-markdown-content .boring-markdown-image { display: inline-flex; max-width: 100%; margin: 0.125rem 0; padding: 0.125rem 0.5rem; background: var(--muted); color: var(--muted-foreground); }
 
   .boring-viewer .boring-html-viewer__preview { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }

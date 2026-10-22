@@ -2,7 +2,7 @@ import { Marked, marked } from 'marked';
 
 /** Tiptap expects the callable marked API; keep its mutable options local to one editor. */
 export function createMarkdownParser(): typeof marked {
-  const instance = new Marked({ tokenizer: { html: () => undefined, tag: () => undefined } });
+  const instance = new Marked();
   // marked HTML-escapes the text of inline tokens (`&` becomes `&amp;`); the editor holds plain text, so decode it again or a
   // serialised document would not match what was written.
   const plain = (text: string) => text.replace(/&(?:amp|lt|gt|quot|#39);/g, entity => ({ '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'" })[entity] ?? entity);

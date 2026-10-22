@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { launch, q } from '@hachej/boring-testing/browser';
 import { startWorkspaceApp } from '../examples/workspace-app/server.mjs';
+import { preservedMarkdown } from '../test/fixtures/markdown-rich-corpus.mjs';
 
 const evidence = process.env.DESIGN_EVIDENCE ?? '.cache/evidence/shadcn-first/group-7';
 mkdirSync(evidence, { recursive: true });
@@ -16,11 +17,18 @@ try {
     await browser.send('Emulation.setDeviceMetricsOverride', { width, height: width === 390 ? 844 : 950, deviceScaleFactor: 1, mobile: width === 390 });
     await browser.send('Emulation.setTouchEmulationEnabled', { enabled: width === 390, maxTouchPoints: 5 });
     await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: mode }, { name: 'prefers-reduced-motion', value: 'reduce' }] });
-    for (const surface of ['markdown', 'source', 'selection', 'pinned', 'menu', 'menu-fr', 'unsafe', 'proposal', 'html', 'html-source', 'standalone-markdown', 'standalone-html', 'image', 'pdf', 'manual']) {
+    for (const surface of (process.env.VIEWER_SURFACES?.split(',') ?? ['markdown', 'source', 'selection', 'pinned', 'menu', 'menu-fr', 'unsafe', 'preserved', 'proposal', 'html', 'html-source', 'standalone-markdown', 'standalone-html', 'image', 'pdf', 'manual'])) {
       const previous = await browser.evaluate('performance.timeOrigin');
       await browser.send('Page.navigate', { url: `${app.url}?viewer=${surface}&theme=${theme}&mode=${mode}` });
       await browser.until('fictional viewer mounted', `performance.timeOrigin !== ${previous} && !!${q('[data-testid=viewer-chrome-fixture]')} && document.documentElement.classList.contains('dark') === ${mode === 'dark'}`, 30000);
       if (['markdown', 'selection', 'pinned', 'menu', 'menu-fr', 'proposal', 'standalone-markdown'].includes(surface)) await browser.until('native rich editor', `!!${q('[contenteditable=true]')}`, 10000);
+      if (surface === 'preserved') {
+        await browser.until('preserved document in Formatted', `${q('[data-boring=markdown-editor]')}?.dataset.mode === 'rich' && !!${q('[data-preserved="Front matter"]')}`, 10000);
+        assert.equal(await browser.evaluate(`document.querySelectorAll('[data-preserved=HTML]').length`), 2, 'comment and details are literal blocks');
+        assert.ok(await browser.evaluate(`!!${q('[data-preserved=Footnote]')}`));
+        assert.equal(await browser.evaluate(`!!${q('[contenteditable=true] details, [contenteditable=true] br:not(.ProseMirror-trailingBreak)')}`), false, 'HTML is never executed or rendered');
+        assert.equal(await browser.evaluate(`document.documentElement.scrollWidth > innerWidth`), false, 'no phone page overflow');
+      }
       if (surface === 'image') await browser.until('image loaded', `${q('img')}?.naturalWidth === 640`, 10000);
       if (surface === 'pdf') await assertPdfPages(browser, 1);
       if (surface === 'proposal') {
@@ -58,7 +66,7 @@ try {
         if (surface === 'unsafe') {
           assert.equal(await browser.evaluate(`!!${q('[data-testid=fixture-viewer-formatting]')}`), false, 'unsafe source mode has no formatting icon');
           assert.equal(await browser.evaluate(`${q('[data-testid=fixture-viewer-mode-rich]')}.getAttribute('aria-disabled')`), 'true');
-          assert.match(await browser.evaluate(`${q('[data-testid=fixture-viewer-mode-rich]')}.textContent`), /front matter, raw HTML/);
+          assert.match(await browser.evaluate(`${q('[data-testid=fixture-viewer-mode-rich]')}.textContent`), /mixed line endings/);
         } else {
           await browser.click(q('[data-testid=fixture-viewer-mode-source]'));
           await browser.until('Markdown selected and focused', `document.activeElement === ${q('textarea.boring-markdown-source')}`, 5000);
@@ -119,6 +127,14 @@ try {
       assert.deepEqual(rawControls, [], `${surface}: every mounted viewer control comes from shadcn`);
       const file = `viewer-${theme}-${mode}-${width}-${surface}.png`;
       await browser.screenshot(file); screenshots.push(file);
+      if (surface === 'preserved') {
+        await browser.evaluate(`(() => { const code = ${q('[aria-label="Front matter code"]')}; code.focus(); const start = code.textContent.indexOf('Cedar Works'); const range = document.createRange(); range.setStart(code.firstChild, start); range.setEnd(code.firstChild, start + 11); const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range); const data = new DataTransfer(); data.setData('text/html', '<img src="https://fictional.invalid/asset"><b>Cedar Grove</b>'); data.setData('text/plain', 'Cedar Grove'); code.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: data })); })()`);
+        assert.equal(await browser.evaluate(`!!${q('[aria-label="Front matter code"] img, [aria-label="Front matter code"] b')}`), false, 'front-matter paste stays plaintext in a real browser');
+        await browser.click(q('[data-testid=fixture-viewer-more]'));
+        await browser.click(q('[data-testid=fixture-viewer-mode-source]'));
+        await browser.until('pasted code reached the exact source buffer', `!!${q('textarea.boring-markdown-source')}`, 5000);
+        assert.equal(await browser.evaluate(`${q('textarea.boring-markdown-source')}.value`), preservedMarkdown.replace('Cedar Works', 'Cedar Grove'), 'browser code edit changes no other bytes');
+      }
     }
   }
   // A high-density phone: the page canvas carries three device pixels per CSS pixel.

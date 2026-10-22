@@ -4,6 +4,7 @@ import { Window } from 'happy-dom';
 import { createMarkdownController } from '@hachej/boring-ui-kit/markdown';
 import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 import { marked } from 'marked';
+import { markdownRichCorpus } from '../fixtures/markdown-rich-corpus.mjs';
 
 test('React/Tiptap Markdown editor public output (DOM environment, not browser qualification)', async t => {
   const window = new Window({ url: 'https://fictional.invalid/' });
@@ -63,6 +64,128 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
     };
     return { controller, client, target: selectedTarget, container, root, render, button, click, switchMode, input, settled, writes: () => writes, saved: async () => new TextDecoder().decode((await client.read({ target: selectedTarget, revision: { kind: 'latest' } })).snapshot.bytes) };
   }
+
+  await t.test('real-document corpus opens Formatted, saves untouched bytes and changes only the selected paragraph', async t => {
+    for (const [name, raw] of markdownRichCorpus) await t.test(name, async t => {
+      let tools;
+      const f = await fixture(t, raw, { props: { formattingToolbar: 'pinned', onMountedTools: next => { tools = next; } } });
+      assert.equal(f.container.querySelector('section').dataset.mode, 'rich', name);
+      assert.equal(f.controller.getSnapshot().dirty, false);
+      await act(async () => f.container.querySelector('[contenteditable]').dispatchEvent(new window.KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true, cancelable: true })));
+      await f.settled();
+      assert.equal(await f.saved(), raw, 'save without editing is byte-identical');
+      const start = raw.startsWith('---') ? 2 : 1; // A preserved front-matter atom occupies one native position.
+      await act(async () => {
+        assert.equal((await tools.select.invoke(tools.getTarget(), { expiresAt: Date.now() + 5000, selection: { kind: 'rich', anchor: start + 2, head: start + 11 } })).kind, 'applied');
+      });
+      await f.click('Bold');
+      const edited = raw.replace('A fictional paragraph.', raw.includes('__bold__') ? 'A __fictional__ paragraph.' : 'A **fictional** paragraph.');
+      assert.equal(f.controller.getSnapshot().text, edited, 'every byte outside the paragraph stays identical');
+      await f.click('Save'); await f.settled();
+      assert.equal(await f.saved(), edited);
+      await f.switchMode(); await f.switchMode();
+      assert.equal(f.container.querySelector('section').dataset.mode, 'rich');
+      assert.equal(f.controller.getSnapshot().text, edited);
+    });
+  });
+
+  await t.test('front matter is editable literal code and inline HTML and references are source atoms', async t => {
+    const raw = '---\ntitle: Fictional  \n---  \n\nA <br> paragraph with <b>literal</b>, [^one] and [site][ref].\n\n[^one]: Footnote.\n\n[ref]: https://fictional.invalid/\n';
+    const f = await fixture(t, raw);
+    const code = f.container.querySelector('[aria-label="Front matter code"]'); assert.ok(code);
+    assert.equal(code.textContent, '---\ntitle: Fictional  \n---  ');
+    const atoms = [...f.container.querySelectorAll('.boring-markdown-preserved-inline')];
+    assert.deepEqual(atoms.map(node => node.textContent), ['<br>', '<b>', '</b>', '[^one]', '[site][ref]']);
+    assert.ok(atoms.every(node => node.getAttribute('contenteditable') === 'false'));
+    assert.equal(f.container.querySelector('b, script, iframe, img[src]'), null, 'literal HTML never renders');
+    await act(async () => { code.textContent = code.textContent.replace('Fictional', 'Cedar'); code.dispatchEvent(new window.Event('input', { bubbles: true })); });
+    assert.equal(f.controller.getSnapshot().text, raw.replace('Fictional', 'Cedar'), 'only the YAML code edit changes');
+    await f.click('Save'); await f.settled();
+    assert.equal(await f.saved(), raw.replace('Fictional', 'Cedar'));
+    const readonly = await fixture(t, raw, { readOnly: true });
+    const referenceCode = readonly.container.querySelector('[aria-label="Front matter code"]');
+    assert.equal(referenceCode.contentEditable, 'false');
+    await act(async () => { referenceCode.textContent = 'forged'; referenceCode.dispatchEvent(new window.Event('input', { bubbles: true })); });
+    assert.equal(readonly.controller.getSnapshot().text, raw);
+    assert.equal(readonly.writes(), 0);
+  });
+
+  await t.test('block insertion keeps both separators and undo restores exact soft-wrapped source', async t => {
+    let tools;
+    const f = await fixture(t, 'Alpha.\n\nBeta.\n', { props: { formattingToolbar: 'pinned', onMountedTools: next => { tools = next; } } });
+    await act(async () => { await tools.select.invoke(tools.getTarget(), { expiresAt: Date.now() + 5000, selection: { kind: 'rich', anchor: 7, head: 7 } }); });
+    await f.click('Horizontal rule');
+    assert.equal(f.controller.getSnapshot().text, 'Alpha.\n\n---\n\nBeta.\n');
+    const raw = 'Alpha\ncontinues.\n\nBeta.\n';
+    const wrapped = await fixture(t, raw, { props: { formattingToolbar: 'pinned' } });
+    await wrapped.click('Heading 1');
+    await act(async () => wrapped.container.querySelector('[contenteditable]').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'z', code: 'KeyZ', keyCode: 90, ctrlKey: true, bubbles: true, cancelable: true })));
+    assert.equal(wrapped.controller.getSnapshot().text, raw);
+    assert.equal(wrapped.controller.getSnapshot().dirty, false);
+  });
+
+  await t.test('editing one list paragraph retains sibling source and intraword emphasis stays valid', async t => {
+    let tools;
+    const raw = '* First paragraph.\n* Second _paragraph_\n  wrapped.\n    * Nested\n';
+    const f = await fixture(t, raw, { props: { formattingToolbar: 'pinned', onMountedTools: next => { tools = next; } } });
+    await act(async () => { await tools.select.invoke(tools.getTarget(), { expiresAt: Date.now() + 5000, selection: { kind: 'rich', anchor: 3, head: 8 } }); });
+    await f.click('Bold');
+    assert.equal(f.controller.getSnapshot().text, raw.replace('First', '**First**'));
+    const intraword = await fixture(t, 'Use _italic_.\n\nfoo*bar*baz.\n', { props: { formattingToolbar: 'pinned', onMountedTools: next => { tools = next; } } });
+    // Select the italic word in the second native paragraph and replace it through the real clipboard path.
+    await act(async () => { await tools.select.invoke(tools.getTarget(), { expiresAt: Date.now() + 5000, selection: { kind: 'rich', anchor: 20, head: 20 } }); });
+    const clipboardData = new window.DataTransfer(); clipboardData.setData('text/plain', 'x');
+    await act(async () => intraword.container.querySelector('[contenteditable]').dispatchEvent(new window.ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData })));
+    assert.match(intraword.controller.getSnapshot().text, /foo\*barx\*baz/);
+    await intraword.switchMode(); await intraword.switchMode();
+    assert.equal(intraword.container.querySelectorAll('em').length, 2, 'the edited intraword emphasis still parses as emphasis');
+  });
+
+  await t.test('heading style is local, and undo retains noncanonical source after many edits', async t => {
+    let tools;
+    const raw = '---\ntitle: Fictional\n---\n\n# Heading\n';
+    const f = await fixture(t, raw, { props: { formattingToolbar: 'pinned', onMountedTools: next => { tools = next; } } });
+    await act(async () => { await tools.select.invoke(tools.getTarget(), { expiresAt: Date.now() + 5000, selection: { kind: 'rich', anchor: 2, head: 9 } }); });
+    await f.click('Bold');
+    assert.equal(f.controller.getSnapshot().text, raw.replace('# Heading', '# **Heading**'), 'YAML is not a setext heading');
+    const original = 'Title\n========================\n';
+    const heading = await fixture(t, original, { props: { onMountedTools: next => { tools = next; } } });
+    await act(async () => { await tools.select.invoke(tools.getTarget(), { expiresAt: Date.now() + 5000, selection: { kind: 'rich', anchor: 6, head: 6 } }); });
+    for (let i = 0; i < 33; i++) {
+      const clipboardData = new window.DataTransfer(); clipboardData.setData('text/plain', 'x');
+      await act(async () => heading.container.querySelector('[contenteditable]').dispatchEvent(new window.ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData })));
+    }
+    assert.match(heading.controller.getSnapshot().text, /^Titlex+/);
+    for (let i = 0; i < 34 && heading.controller.getSnapshot().text !== original; i++) await act(async () => heading.container.querySelector('[contenteditable]').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'z', code: 'KeyZ', keyCode: 90, ctrlKey: true, bubbles: true, cancelable: true })));
+    assert.equal(heading.controller.getSnapshot().text, original);
+    for (const [text, anchor] of [['* One.\n* Two **bold**.\n\nOutside __bold__.\n', 3], ['> One.\n>\n> Two **bold**.\n\nOutside __bold__.\n', 2]]) {
+      const nested = await fixture(t, text, { props: { formattingToolbar: 'pinned', onMountedTools: next => { tools = next; } } });
+      await act(async () => { await tools.select.invoke(tools.getTarget(), { expiresAt: Date.now() + 5000, selection: { kind: 'rich', anchor, head: anchor + 4 } }); });
+      await nested.click('Bold');
+      assert.equal(nested.controller.getSnapshot().text, text.replace('One.', '__One.__'), 'untouched sibling paragraphs keep their own emphasis spelling');
+    }
+  });
+
+  await t.test('front-matter paste and drop accept text only, never clipboard HTML or asset requests', async t => {
+    const raw = '---\ntitle: Fictional\n---\n\nBody.\n';
+    const f = await fixture(t, raw);
+    const code = f.container.querySelector('[aria-label="Front matter code"]');
+    const clipboardData = new window.DataTransfer();
+    clipboardData.setData('text/html', '<img src="https://fictional.invalid/asset"><b>Cedar</b>'); clipboardData.setData('text/plain', 'Cedar');
+    await act(async () => {
+      const range = document.createRange(); range.setStart(code.firstChild, 11); range.setEnd(code.firstChild, 20);
+      window.getSelection().removeAllRanges(); window.getSelection().addRange(range);
+      code.dispatchEvent(new window.ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData }));
+    });
+    assert.equal(code.querySelector('img,b'), null);
+    assert.equal(f.controller.getSnapshot().text, raw.replace('Fictional', 'Cedar'));
+    await f.click('Save'); await f.settled();
+    assert.equal(await f.saved(), raw.replace('Fictional', 'Cedar'));
+    const drop = new window.Event('drop', { bubbles: true, cancelable: true }); Object.defineProperty(drop, 'dataTransfer', { value: clipboardData });
+    await act(async () => code.dispatchEvent(drop));
+    assert.equal(drop.defaultPrevented, true);
+    assert.equal(code.querySelector('img,b'), null);
+  });
 
   await t.test('the owner document with a legacy nbsp-only trailing paragraph reopens rich and never writes nbsp again', async t => {
     const raw = '# Hello\n\nHow are you ?\n\n&nbsp;\n';
@@ -416,17 +539,17 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
   });
 
   await t.test('a document rich editing cannot keep exactly opens as source with a notice and no rich controls', async t => {
-    const raw = '---\ntitle: Fictional\n---\n\n# title\n\n<div class="note">raw <b>html</b></div>\n\nA footnote[^1] and a [reference link][site].\n\n[^1]: Fictional note.\n\n[site]: https://fictional.invalid/\n';
+    const raw = '# title\r\n\r\nA paragraph with mixed endings.\n';
     const f = await fixture(t, raw);
     assert.equal(f.container.querySelector('section').dataset.mode, 'source');
     assert.equal(f.container.querySelector('[contenteditable]'), null, 'no rich surface');
     assert.equal(f.container.querySelector('[role="toolbar"]'), null, 'no formatting toolbar');
     assert.equal(f.container.querySelector('textarea').value, raw);
     const notice = f.container.querySelector('[data-testid="markdown-source-only"]');
-    assert.match(notice.textContent, /front matter, raw HTML, footnotes, reference-style links/);
+    assert.match(notice.textContent, /mixed line endings/);
     await f.click('More actions');
     assert.equal(f.button('Formatted').disabled, true, 'the rich switch is unavailable');
-    assert.match(document.getElementById(f.button('Formatted').getAttribute('aria-describedby')).textContent, /front matter, raw HTML/, 'the disabled choice explains why');
+    assert.match(document.getElementById(f.button('Formatted').getAttribute('aria-describedby')).textContent, /mixed line endings/, 'the disabled choice explains why');
     assert.equal(f.controller.getSnapshot().dirty, false);
     // An unrelated source edit saves exactly: the constructs are untouched.
     const edited = raw.replace('# title', '# retitled');
@@ -436,23 +559,22 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
     assert.equal(f.writes(), 1);
   });
 
-  await t.test('rich safety is a real round trip: named constructs and rewritten formatting are refused, supported ones are not', async () => {
+  await t.test('rich safety verifies preserved source spans and refuses encodings the LF editor cannot retain', async () => {
     assert.deepEqual(checkMarkdownRichSafety('# A\n\n[x](https://fictional.invalid/) ![i](https://fictional.invalid/i.png)\n\n- [x] a\n- [ ] b\n\n| a   | b   |\n| --- | --- |\n| 1   | 2   |\n'), { safe: true });
     assert.deepEqual(checkMarkdownRichSafety(''), { safe: true });
     assert.deepEqual(checkMarkdownRichSafety('a\n\n\n\nb\n'), { safe: true }, 'blank-line runs are insignificant');
-    assert.deepEqual(checkMarkdownRichSafety('<!-- c -->\n'), { safe: false, reasons: ['raw HTML'] });
-    assert.deepEqual(checkMarkdownRichSafety('x[^1]\n\n[^1]: n\n').reasons, ['footnotes']);
-    assert.deepEqual(checkMarkdownRichSafety('a\r\nb\r\n').reasons, ['Windows line endings']);
+    for (const text of ['<!-- c -->\n', 'x[^1]\n\n[^1]: n\n', 'a\r\nb\r\n']) assert.deepEqual(checkMarkdownRichSafety(text), { safe: true });
+    assert.deepEqual(checkMarkdownRichSafety('a\r\nb\n').reasons, ['mixed line endings']);
+    assert.deepEqual(checkMarkdownRichSafety('a\rb\r').reasons, ['bare carriage returns']);
+    assert.deepEqual(checkMarkdownRichSafety('a\0b\n').reasons, ['NUL characters']);
     assert.deepEqual(checkMarkdownRichSafety('# A\nText directly under a heading.\n## B\nMore.\n'), { safe: true }, 'a heading without blank lines around it is the same document');
     assert.deepEqual(checkMarkdownRichSafety('# Notes & Highlights\n\nFish & chips, 5 < 6.\n'), { safe: true }, 'an ampersand is not rewritten as an entity');
     assert.deepEqual(checkMarkdownRichSafety('# Notes\n\n- A first point that wraps\n  onto an indented second line.\n- Second point.\n  Wrapped as well.\n\n1. Numbered and\n   wrapped.\n'), { safe: true }, 'an indented line continuing a list item is the same paragraph');
     assert.equal(checkMarkdownRichSafety('- parent\n  - nested\n').safe, true, 'nesting the serialiser keeps is safe');
     assert.deepEqual(checkMarkdownRichSafety('Several situations:\n- an unpaid invoice,\n- a payment not yet matched.\n'), { safe: true }, 'a list may interrupt the paragraph above it');
     assert.equal(checkMarkdownRichSafety('- tight\n- list\n').safe, true);
-    assert.equal(checkMarkdownRichSafety('- parent\n    - nested deeper than the serialiser writes\n').safe, false, 'a rewritten nesting indentation is still refused');
-    const rewritten = checkMarkdownRichSafety('* item\n* item\n');
-    assert.equal(rewritten.safe, false);
-    assert.match(rewritten.reasons[0], /rewrite/);
+    assert.equal(checkMarkdownRichSafety('- parent\n    - nested deeper than the serialiser writes\n').safe, true, 'source spans retain nesting indentation');
+    assert.deepEqual(checkMarkdownRichSafety('* item\n* item\n'), { safe: true });
     assert.equal(checkMarkdownRichSafety('```\nkeep\n\n\n\nblank runs in code\n```\n').safe, true);
     // GFM tables keep the text they were written in, padded or not.
     for (const table of ['|a|b|\n|-|-|\n|1|2|\n', '| L | C | R |\n|:---|:---:|---:|\n| 1 | 2 | 3 |\n', 'a | b\n--- | ---\n1 | 2\n',
@@ -650,13 +772,13 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
     assert.equal(f.container.querySelector('[role="status"]').textContent, 'Closed');
   });
 
-  await t.test('raw HTML opens as source, executable links and assets stay inert, and the host parser is unchanged', async t => {
+  await t.test('raw HTML opens Formatted as literal atoms, executable links and assets stay inert, and the host parser is unchanged', async t => {
     const defaults = marked.defaults;
     const html = '<strong onclick="fictional()">literal</strong>\n\n<script>fictional()</script>\n\n<img src="https://fictional.invalid/asset" onerror="fictional()">\n';
     const raw = await fixture(t, html);
-    assert.equal(raw.container.querySelector('section').dataset.mode, 'source');
-    assert.equal(raw.container.querySelector('[contenteditable]'), null);
-    assert.equal(raw.container.querySelector('script,img,iframe'), null);
+    assert.equal(raw.container.querySelector('section').dataset.mode, 'rich');
+    assert.ok(raw.container.querySelector('[contenteditable] [data-preserved="HTML"]'));
+    assert.equal(raw.container.querySelector('script,img[src],iframe,[onclick],[onerror]'), null, 'no executable elements or image requests (native atom separators have no src)');
     assert.equal(raw.controller.getSnapshot().text, html);
     assert.equal(raw.controller.getSnapshot().dirty, false);
     const safe = await fixture(t, '[safe](https://fictional.invalid/)\n\n![remote](https://fictional.invalid/asset)\n');

@@ -1,6 +1,6 @@
 import { Editor } from '@tiptap/core';
-import { marked, type Token } from 'marked';
 import { createMarkdownExtensions } from './markdown-extensions.js';
+import { captureMarkdownSource } from './markdown-source.js';
 
 export type MarkdownRichSafety = { readonly safe: true } | { readonly safe: false; readonly reasons: readonly string[] };
 
@@ -65,35 +65,20 @@ export function finishRichMarkdown(serialized: string, previous: string): string
   return body === '' ? '' : body + (trailingWhitespace(previous) || '');
 }
 
-const stripCode = (text: string) => text.replace(/^ {0,3}(```|~~~)[\s\S]*?(?:^ {0,3}\1.*$|(?![\s\S]))/gm, '').replace(/`[^`\n]*`/g, '');
-
-function hasToken(tokens: readonly Token[], type: string, accept: (token: Token) => boolean = () => true): boolean {
-  return tokens.some(token => token.type === type && accept(token)
-    || ('tokens' in token && Array.isArray(token.tokens) && hasToken(token.tokens as Token[], type, accept))
-    || ('items' in token && Array.isArray(token.items) && hasToken(token.items as Token[], type, accept)));
-}
-
-/** Constructs that name themselves, for a short explanation. The round trip below is the authority. */
+/** Encodings that cannot be represented by a single LF editor view. */
 function namedReasons(text: string): string[] {
   const reasons: string[] = [];
-  if (/^﻿?---[ \t]*\r?\n[\s\S]*?\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/.test(text)) reasons.push('front matter');
-  let tokens: Token[] = [];
-  try { tokens = marked.lexer(text) as Token[]; } catch { /* the round trip still decides */ }
-  if (hasToken(tokens, 'html')) reasons.push('raw HTML');
-  const prose = stripCode(text);
-  if (/\[\^[^\]\s]+\]/.test(prose)) reasons.push('footnotes');
-  if (hasToken(tokens, 'def', token => !('tag' in token) || !String(token.tag).startsWith('^'))) reasons.push('reference-style links');
-  if (text.includes('\r')) reasons.push('Windows line endings');
+  if (/\r(?!\n)/.test(text)) reasons.push('bare carriage returns');
+  if (text.includes('\r\n') && /(^|[^\r])\n/.test(text)) reasons.push('mixed line endings');
+  if (text.includes('\0')) reasons.push('NUL characters');
   return reasons;
 }
 
 const cache = new Map<string, MarkdownRichSafety>();
 
 /**
- * Decides whether the rich editor can open and edit `text` without changing anything but what the person edits: the text is
- * parsed into the editor's document and serialised back without any edit, and must equal the original apart from blank-line runs and
- * the ends. Named constructs the editor cannot hold (front matter, raw HTML, footnotes, reference links, CRLF) are reported as the
- * reason. Without a DOM only the named constructs can be checked.
+ * Verifies a native projection and its exact source spans. Unchanged blocks retain their source, and unsupported constructs are
+ * inert atoms. The legacy whitespace comparison remains for empty/nbsp-only layout. Without a DOM only encoding can be checked.
  */
 export function checkMarkdownRichSafety(text: string): MarkdownRichSafety {
   if (text === '') return { safe: true };
@@ -103,15 +88,15 @@ export function checkMarkdownRichSafety(text: string): MarkdownRichSafety {
   if (reasons.length === 0 && typeof document !== 'undefined') {
     let editor: Editor | undefined;
     try {
-      editor = new Editor({ element: document.createElement('div'), extensions: createMarkdownExtensions(), content: '' });
-      editor.commands.setContent(text, { contentType: 'markdown', emitUpdate: false });
-      if (comparableMarkdown(editor.getMarkdown()) !== comparableMarkdown(text)) reasons.push('formatting the rich editor would rewrite');
+      editor = new Editor({ element: document.createElement('div'), extensions: createMarkdownExtensions({ source: () => text }), content: '' });
+      editor.commands.setContent(text.replace(/\r\n/g, '\n'), { contentType: 'markdown', emitUpdate: false });
+      if (!captureMarkdownSource(editor, text) && comparableMarkdown(editor.getMarkdown()) !== comparableMarkdown(text)) reasons.push('blocks whose source spans the rich editor cannot retain');
     } catch { reasons.push('content the rich editor cannot read'); }
     finally { editor?.destroy(); }
   }
   const result: MarkdownRichSafety = reasons.length ? { safe: false, reasons } : { safe: true };
   if (cache.size > 32) cache.delete(cache.keys().next().value as string);
-  cache.set(text, result);
+  if (typeof document !== 'undefined') cache.set(text, result);
   return result;
 }
 
