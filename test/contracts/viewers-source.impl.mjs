@@ -449,15 +449,23 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     assert.match(view.container.textContent, /Your local text has been kept/);
     await view.click('[data-testid="viewer-save"]'); await saved(d.controller);
     assert.equal(visibleText(view.q('[data-testid="viewer-status"]')), 'Changed elsewhere', 'a refused stale write retains the existing conflict status');
-    // Unsupported constructs: rich is unavailable.
-    const raw = await documents(t, 'text/markdown', '---\ntitle: x\n---\n\n<div>raw</div>\n');
+    // Preserved constructs open Formatted in the real frame, not just the standalone editor.
+    const preserved = await documents(t, 'text/markdown', '---\ntitle: x\n---\n\n<div>raw</div>\n');
+    const formatted = await mount(t, h(markdownPane.MarkdownPane, { controller: preserved.controller, title: 'Preserved' }));
+    assert.equal(formatted.q('section[data-boring="markdown-editor"]').dataset.mode, 'rich');
+    assert.ok(formatted.q('[data-preserved="Front matter"]'));
+    assert.ok(formatted.q('[data-preserved="HTML"]'));
+    assert.equal(preserved.controller.getSnapshot().dirty, false);
+    await formatted.render(null);
+    // A genuine unsupported encoding still explains the fallback.
+    const raw = await documents(t, 'text/markdown', '# Mixed\r\n\nMixed line endings.\n');
     const unsafe = await mount(t, h(markdownPane.MarkdownPane, { controller: raw.controller, title: 'Raw' }));
     await unsafe.click('[data-testid="viewer-more"]');
     assert.equal(unsafe.q('[data-testid="viewer-mode-rich"]').getAttribute('aria-disabled'), 'true');
-    assert.match(unsafe.q('[data-testid="viewer-mode-rich"]').getAttribute('title'), /^Formatted is off: this document contains front matter, raw HTML/, 'the disabled mode says why');
-    assert.match(document.getElementById(unsafe.q('[data-testid="viewer-mode-rich"]').getAttribute('aria-describedby')).textContent, /front matter, raw HTML/, 'the visible reason is also its accessible description');
+    assert.match(unsafe.q('[data-testid="viewer-mode-rich"]').getAttribute('title'), /^Formatted is off: this document contains mixed line endings/, 'the disabled mode says why');
+    assert.match(document.getElementById(unsafe.q('[data-testid="viewer-mode-rich"]').getAttribute('aria-describedby')).textContent, /mixed line endings/, 'the visible reason is also its accessible description');
     assert.equal(unsafe.q('[data-testid="viewer-mode-source"]').getAttribute('aria-checked'), 'true');
-    assert.match(unsafe.q('[data-testid="markdown-source-only"]').textContent, /front matter, raw HTML/);
+    assert.match(unsafe.q('[data-testid="markdown-source-only"]').textContent, /mixed line endings/);
   });
 
   await t.test('the HTML pane has preview and source, Save, and a passive sandboxed preview', async t => {

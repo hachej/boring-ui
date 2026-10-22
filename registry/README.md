@@ -1140,6 +1140,8 @@ A later host prop change takes precedence over the session choice. The menu uses
 shadcn Base UI radio and checkbox items, with 48px phone targets and English/French labels.
 Keyboard shortcuts and Markdown input rules remain available.
 
+Formatted preserves front matter, HTML/comments, footnotes, reference links and Windows line endings without rewriting untouched source. Raw constructs appear as literal labelled blocks or inline atoms; front matter is editable as code. Source-only fallback now names unsupported encodings or unretainable source spans, not those common constructs. The [editor guide](../packages/ui/README.md#optional-markdown-editor) owns preservation and serialization limits.
+
 Markdown autosave is on by default. It calls the existing `controller.flush` after 1200ms without an
 edit, on blur outside the editor, before closing or switching files, and when the page becomes hidden.
 Saves run one at a time; edits during a save are flushed next. The header shows Saving… and then Saved.

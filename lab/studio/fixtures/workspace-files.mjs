@@ -12,7 +12,7 @@ Plan: refer to physiotherapy for a strengthening programme; review in six weeks.
 /** The notes the writing and delegation scenarios read. */
 export const NOTES = { 'notes/consultation.md': CONSULTATION };
 
-/** Files for the viewers: Markdown that rich editing keeps exactly, Markdown it cannot, HTML, an image, an SVG and a PDF. */
+/** Files for the viewers: formatted Markdown including preserved constructs, mixed-ending source-only Markdown, HTML and media. */
 export const VIEWER_FILES = {
   'docs/picnic-plan.md': `# Moon picnic plan
 
@@ -45,6 +45,7 @@ A claim with a footnote.[^1]
 
 [^1]: The footnote is invented too.
 `,
+  'docs/unsupported-notes.md': '# Fictional mixed-ending notes\r\n\r\nThis invented paragraph uses LF.\n',
   'docs/tide-times.html': '<h1>Fictional tide times</h1>\n<p>High tide at the placeholder pier.</p>\n<table><tr><th>Day</th><th>High</th></tr><tr><td>Monday</td><td>06:12</td></tr><tr><td>Tuesday</td><td>06:58</td></tr></table>\n',
   'media/moon-badge.png': moonBadgePng(),
   'media/orbit.svg': ORBIT_SVG,

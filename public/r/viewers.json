@@ -400,6 +400,26 @@
         "height": "auto",
         "margin": "1rem 0"
       },
+      ".boring-viewer .boring-markdown-content .boring-markdown-preserved": {
+        "margin": "0.75rem 0",
+        "color": "var(--muted-foreground)",
+        "font-family": "var(--font-mono)",
+        "font-size": "var(--text-sm)"
+      },
+      ".boring-viewer .boring-markdown-content .boring-markdown-preserved small": {
+        "font-size": "var(--text-xs)"
+      },
+      ".boring-viewer .boring-markdown-content .boring-markdown-preserved pre": {
+        "margin": "0.25rem 0",
+        "padding": "0.5rem 0.75rem",
+        "white-space": "pre-wrap",
+        "overflow-wrap": "anywhere"
+      },
+      ".boring-viewer .boring-markdown-content .boring-markdown-preserved-inline": {
+        "color": "var(--muted-foreground)",
+        "font-family": "var(--font-mono)",
+        "font-size": "var(--text-sm)"
+      },
       ".boring-viewer .boring-markdown-content .boring-markdown-image": {
         "display": "inline-flex",
         "max-width": "100%",

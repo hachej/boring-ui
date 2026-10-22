@@ -20,6 +20,7 @@ import type { SelectionBookmark } from '@tiptap/pm/state';
 import type { MarkdownController } from './markdown.js';
 import { createMarkdownExtensions, type MarkdownImageResolver } from './markdown-extensions.js';
 import { checkMarkdownRichSafety, describeUnsafe, finishRichMarkdown, type MarkdownRichSafety } from './markdown-safety.js';
+import { captureMarkdownSource, serializeMarkdownEdit, type MarkdownSource } from './markdown-source.js';
 import { MarkdownIcon, type MarkdownIconName } from './markdown-icons.js';
 import { MarkdownProposalDiff } from './markdown-proposal-diff.js';
 import { createMountedMarkdownTools, type MarkdownMountedTools } from './markdown-mounted.js';
@@ -144,13 +145,14 @@ function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActiva
   const showPinned = toolbar === 'pinned' && !phone;
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const projected = useRef<string | null>(null);
+  const source = useRef<MarkdownSource | null>(null);
   const emitted = useRef<string | null>(null);
   const [ownMode, setOwnMode] = useState(initialMode);
   const requestedMode = controlledMode ?? ownMode;
   // Rich editing is only offered for a document the editor can keep exactly; anything else is edited as source.
   const checked = useDeferredValue(state.text);
   // The editor's own output is safe by construction; only text that arrived from elsewhere (or from the source box) is checked.
-  const ownText = state.text === emitted.current;
+  const ownText = state.text === emitted.current && source.current !== null;
   const safety = useMemo<MarkdownRichSafety>(() => ownText ? { safe: true } : checkMarkdownRichSafety(checked), [checked, ownText]);
   const richOffered = safety.safe;
   const mode = richOffered ? requestedMode : 'source';
@@ -169,14 +171,16 @@ function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActiva
   };
   const editor = useEditor({
     immediatelyRender: false,
-    extensions: createMarkdownExtensions({ placeholder, images: () => images.current }),
+    extensions: createMarkdownExtensions({ placeholder, images: () => images.current, source: () => controller.getSnapshot().text.replace(/\r\n/g, '\n') }),
     content: '',
     editable: !state.readOnly && state.lifecycle === 'active',
     editorProps: { attributes: { role: 'textbox', 'aria-label': `${title} rich text`, 'aria-multiline': 'true', tabindex: '0', class: 'boring-markdown-content' } },
     onUpdate: ({ editor: current, transaction }) => {
       if (active.current !== controller || !interaction.current || !transaction.docChanged || controller.getSnapshot().lifecycle !== 'active' || controller.getSnapshot().readOnly) return;
       interaction.current = false;
-      const markdown = finishRichMarkdown(current.getMarkdown(), controller.getSnapshot().text);
+      const previous = controller.getSnapshot().text;
+      const markdown = serializeMarkdownEdit(current, source.current, previous) ?? finishRichMarkdown(current.getMarkdown(), previous);
+      source.current = captureMarkdownSource(current, markdown);
       projected.current = markdown;
       emitted.current = markdown;
       controller.actions.edit(markdown);
@@ -195,7 +199,8 @@ function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActiva
     // its caret when the text is replaced. Replacing the whole document would otherwise leave the editor's selection at the end while the
     // caret shows the start: a click there changes nothing the editor sees, so formatting applied to the end, and ProseMirror's own sync
     // after a focus or click put the caret back at the end.
-    editor.chain().setContent(state.text, { contentType: 'markdown', emitUpdate: false }).setTextSelection(0).run();
+    editor.chain().setContent(state.text.replace(/\r\n/g, '\n'), { contentType: 'markdown', emitUpdate: false }).setTextSelection(0).command(({ tr }) => { tr.setMeta('addToHistory', false); return true; }).run();
+    source.current = captureMarkdownSource(editor, state.text);
     projected.current = state.text;
   }, [editor, state.text]);
   useEffect(() => { editor?.setEditable(!state.readOnly && state.lifecycle === 'active'); }, [editor, state.readOnly, state.lifecycle]);

@@ -46,19 +46,19 @@ export function viewerKit(t) {
     await browser.press('Escape');
     await browser.until('viewer overflow dismissed', `!${q(`[data-testid=${prefix}-more-list]`)}`, 5000);
   };
-  // The caret at the very start of the rich document, as a person puts it there: a click on the left edge of its first character.
+  // The caret at the start of the rich document (or a supplied target, such as a heading after front matter): a click on its first character.
   // Ready means the editor's own selection agrees, not only the browser's caret: after a focus or a click ProseMirror writes its selection
   // back to the page a moment later (a freshly loaded document holds it at the end), and on a busy machine that write can land after the
-  // caret moved, putting it back at the end. Every Markdown file these scenarios edit starts with a level-1 title, so the toolbar's
+  // caret moved, putting it back at the end. These edits target level-1 titles, so the toolbar's
   // Heading 1 state (computed from the editor's selection) is that signal.
-  const caretAtStart = async scope => {
+  const caretAtStart = async (scope, target = '[role=textbox]') => {
     if (!await browser.evaluate(`!!${q(`${scope} [aria-label="Heading 1"]`)}`)) await browser.click(q(`${scope} [data-testid=viewer-formatting]`));
-    const point = await browser.evaluate(`(() => { const box = ${q(`${scope} [role=textbox]`)}; box.firstElementChild.scrollIntoView({ block: 'nearest' });
+    const point = await browser.evaluate(`(() => { const box = ${q(`${scope} ${target}`)}; (box.firstElementChild ?? box).scrollIntoView({ block: 'nearest' });
       const text = document.createTreeWalker(box, NodeFilter.SHOW_TEXT, { acceptNode: node => node.textContent.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP }).nextNode();
       const range = document.createRange(); range.setStart(text, 0); range.setEnd(text, 1); const r = range.getBoundingClientRect();
       return { x: r.left + 1, y: r.top + r.height / 2 }; })()`);
     for (const type of ['mousePressed', 'mouseReleased']) await browser.send('Input.dispatchMouseEvent', { type, ...point, button: 'left', clickCount: 1 });
-    await browser.until('the caret at the start', `(() => { const box = ${q(`${scope} [role=textbox]`)}, s = getSelection();
+    await browser.until('the caret at the start', `(() => { const box = ${q(`${scope} ${target}`)}, s = getSelection();
       if (!box || !s.rangeCount || !s.isCollapsed || !box.contains(s.anchorNode)) return false;
       const before = document.createRange(); before.selectNodeContents(box); before.setEnd(s.anchorNode, s.anchorOffset);
       return before.toString() === '' && ${q(`${scope} [aria-label="Heading 1"]`)}?.getAttribute('aria-pressed') === 'true'; })()`, 5000);
