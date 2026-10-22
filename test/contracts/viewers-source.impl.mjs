@@ -376,6 +376,22 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     assert.match(visibleText(view.q('[data-testid="viewer-status"]')), /Not saved: Fictional offline provider/, 'a refused save shows its reason in words');
   });
 
+  await t.test('manual Markdown Save carries the translated label into the phone overflow controls', async t => {
+    for (const save of ['Save', 'Enregistrer']) {
+      const d = await documents(t, 'text/markdown', 'original');
+      d.controller.actions.edit('fictional draft');
+      const view = await mount(t, h(markdownPane.MarkdownPane, { controller: d.controller, autosave: false, labels: { save } }));
+      await view.click('[data-testid="viewer-more"]');
+      const button = document.querySelector('[data-testid="viewer-more-list"] [data-testid="viewer-save"]');
+      assert.ok(button, 'the phone overflow has the manual Save control');
+      assert.equal(button.textContent.trim(), save, 'Save has visible words, not only an accessible name');
+      assert.equal(button.getAttribute('aria-label'), save);
+      await act(async () => button.click()); await saved(d.controller);
+      assert.equal(new TextDecoder().decode((await d.read()).snapshot.bytes), 'fictional draft');
+      await view.render(null);
+    }
+  });
+
   await t.test('the Markdown pane keeps tools in its real menu; Refresh never drops unsaved edits; unsafe documents stay in source', async t => {
     const d = await documents(t, 'text/markdown', '# Plan\n\n- [x] done\n');
     let tools;

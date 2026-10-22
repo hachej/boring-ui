@@ -16,11 +16,11 @@ try {
     await browser.send('Emulation.setDeviceMetricsOverride', { width, height: width === 390 ? 844 : 950, deviceScaleFactor: 1, mobile: width === 390 });
     await browser.send('Emulation.setTouchEmulationEnabled', { enabled: width === 390, maxTouchPoints: 5 });
     await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: mode }, { name: 'prefers-reduced-motion', value: 'reduce' }] });
-    for (const surface of ['markdown', 'source', 'selection', 'pinned', 'menu', 'unsafe', 'proposal', 'html', 'html-source', 'standalone-markdown', 'standalone-html', 'image', 'pdf', 'manual']) {
+    for (const surface of ['markdown', 'source', 'selection', 'pinned', 'menu', 'menu-fr', 'unsafe', 'proposal', 'html', 'html-source', 'standalone-markdown', 'standalone-html', 'image', 'pdf', 'manual']) {
       const previous = await browser.evaluate('performance.timeOrigin');
       await browser.send('Page.navigate', { url: `${app.url}?viewer=${surface}&theme=${theme}&mode=${mode}` });
       await browser.until('fictional viewer mounted', `performance.timeOrigin !== ${previous} && !!${q('[data-testid=viewer-chrome-fixture]')} && document.documentElement.classList.contains('dark') === ${mode === 'dark'}`, 30000);
-      if (['markdown', 'selection', 'pinned', 'menu', 'proposal', 'standalone-markdown'].includes(surface)) await browser.until('native rich editor', `!!${q('[contenteditable=true]')}`, 10000);
+      if (['markdown', 'selection', 'pinned', 'menu', 'menu-fr', 'proposal', 'standalone-markdown'].includes(surface)) await browser.until('native rich editor', `!!${q('[contenteditable=true]')}`, 10000);
       if (surface === 'image') await browser.until('image loaded', `${q('img')}?.naturalWidth === 640`, 10000);
       if (surface === 'pdf') await assertPdfPages(browser, 1);
       if (surface === 'proposal') {
@@ -50,7 +50,7 @@ try {
         await browser.until('native selection bubble on desktop and phone', `!!${q('.boring-markdown-bubble [data-slot=toggle]')}`, 10000);
         assert.equal(await browser.evaluate(`!!${q('[data-testid=markdown-dock]')}`), false, 'selection alone never pins the full dock');
       }
-      if (surface === 'menu' || surface === 'unsafe') {
+      if (surface === 'menu' || surface === 'menu-fr' || surface === 'unsafe') {
         const open = async () => { await browser.click(q('[data-testid=fixture-viewer-more]')); await browser.until('view menu', `!!${q('[data-testid=fixture-viewer-mode-rich]')}`, 5000); };
         await open();
         assert.equal(await browser.evaluate(`${q('[data-testid=fixture-viewer-formatting]')}.dataset.slot`), 'dropdown-menu-checkbox-item');
@@ -71,6 +71,8 @@ try {
           await open(); await browser.click(q('[data-testid=fixture-viewer-mode-rich]'));
           await open();
         }
+        const saveLabel = await browser.evaluate(`(() => { const button = ${q('[data-testid=fixture-viewer-more-list] [data-testid=fixture-viewer-save]')}; const label = button?.querySelector('span'); return label?.checkVisibility() ? label.innerText.trim() : ''; })()`);
+        assert.equal(saveLabel, width === 390 ? surface === 'menu-fr' ? 'Enregistrer' : 'Save' : '', 'manual Save has visible translated words on phone and stays icon-only on desktop');
         if (width === 390) {
           const heights = await browser.evaluate(`[...${q('[data-testid=fixture-viewer-more-list]')}.querySelectorAll('[role=menuitemradio], [role=menuitemcheckbox]')].map(item => item.getBoundingClientRect().height)`);
           assert.ok(heights.every(height => height >= 48), `48px phone view choices: ${JSON.stringify(heights)}`);

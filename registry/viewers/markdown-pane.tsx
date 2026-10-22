@@ -107,7 +107,7 @@ export function MarkdownPane({ controller, title: givenTitle, labels: ownLabels,
     onDownload={() => downloadFile(filename, controller.getSnapshot().text, 'text/markdown;charset=utf-8')} onOpenInNewTab={onOpenInNewTab} onClose={close}
     menuContent={<MarkdownMenuItems labels={labels} mode={mode} onModeChange={setRequested} richDisabledReason={safety.safe ? undefined : labels.richUnavailable(safety.reasons.join(', '))} formattingToolbar={toolbar} onFormattingToolbarChange={setFormatting} testId={testId} />}
     controls={autosave === false && !state.readOnly && state.dirty || controls ? <>
-      {autosave === false && !state.readOnly && state.dirty && <Button variant="ghost" size="icon-sm" aria-label={labels.save} title={labels.save} data-testid={`${testId}-save`} disabled={unavailable || pending || unconfirmed} onClick={save}><SaveIcon data-icon="inline-start" aria-hidden="true" /></Button>}
+      {autosave === false && !state.readOnly && state.dirty && <Button variant="ghost" size="sm" aria-label={labels.save} title={labels.save} data-testid={`${testId}-save`} disabled={unavailable || pending || unconfirmed} onClick={save}><SaveIcon data-icon="inline-start" aria-hidden="true" /><span className="min-[641px]:hidden">{labels.save}</span></Button>}
       {controls}
     </> : undefined}>
     <MarkdownEditor components={editorControls} controller={controller} title={title} header={false} autosave={autosave} onAutosaveChange={registerAutosave} onSaveResult={report} formattingToolbar={toolbar} mode={mode} onModeChange={setRequested} onRichSafety={setSafety}
