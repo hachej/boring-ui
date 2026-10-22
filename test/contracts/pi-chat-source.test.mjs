@@ -462,14 +462,20 @@ test('a sent @mention of a feedback report renders as a feedback chip; other men
   assert.doesNotMatch(plain, /feedback-mention/);
 });
 
-test('the pi-chat registry item never imports @hachej/boring-feedback (feedback is a plug-in through host slots)', () => {
+test('pi-chat permits feedback format presentation only; capture, store and agent features remain host plug-ins', () => {
   const FEEDBACK = '@hachej/boring-feedback';
   const item = JSON.parse(readFileSync(`${root}registry.json`, 'utf8')).items.find(entry => entry.name === 'pi-chat');
   const published = JSON.parse(readFileSync(`${root}public/r/pi-chat.json`, 'utf8'));
   assert.ok(item && published.name === 'pi-chat', 'pi-chat is a registry item and has a published copy');
-  for (const file of item.files) assert.ok(!readFileSync(`${root}${file.path}`, 'utf8').includes(FEEDBACK), `source ${file.path} imports ${FEEDBACK}`);
-  for (const file of published.files) assert.ok(!file.content.includes(FEEDBACK), `published ${file.path} imports ${FEEDBACK}`);
-  for (const dependency of [...item.dependencies ?? [], ...published.dependencies ?? []]) assert.ok(!String(dependency).startsWith(FEEDBACK), `pi-chat depends on ${dependency}`);
+  const allowed = imported => imported === `${FEEDBACK}/format`;
+  for (const imported of [FEEDBACK, `${FEEDBACK}/page`, `${FEEDBACK}/ui`, `${FEEDBACK}/store`, `${FEEDBACK}/agent`, `${FEEDBACK}/preview`]) assert.equal(allowed(imported), false);
+  for (const files of [item.files.map(file => ({ ...file, content: readFileSync(`${root}${file.path}`, 'utf8') })), published.files]) {
+    const imports = files.flatMap(file => [...file.content.matchAll(/['"](@hachej\/boring-feedback[^'"]*)['"]/g)].map(match => ({ path: file.path, imported: match[1] })));
+    assert.ok(imports.length > 0, 'the sent report uses the real formatter, not a copied grammar');
+    for (const { path, imported } of imports) assert.ok(allowed(imported), `${path} imports ${imported}: only /format is permitted`);
+    for (const file of files.filter(file => /voice|hold-to-record/.test(file.path))) assert.ok(!file.content.includes(FEEDBACK), 'recording still uses the neutral capture entry');
+  }
+  for (const copy of [item, published]) assert.ok(copy.dependencies.some(dependency => dependency.startsWith(`${FEEDBACK}@`)), 'the standalone item declares its formatter dependency');
 });
 
 test('a host reply footer sees the model and timestamp of the last round of a settled reply, and only settled replies get one', async () => {
