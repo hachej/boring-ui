@@ -99,18 +99,24 @@ try {
         const state = await browser.evaluate(`(() => { const button = ${toggle}; const box = button.getBoundingClientRect(); return { visible: button.checkVisibility(), slot: button.dataset.slot, pressed: button.getAttribute('aria-pressed'), title: button.title, typeIcon: !!button.querySelector('svg.lucide-type'), width: box.width, height: box.height }; })()`);
         assert.deepEqual({ visible: state.visible, slot: state.slot, pressed: state.pressed, title: state.title, typeIcon: state.typeIcon }, { visible: true, slot: 'toggle', pressed: 'false', title: label, typeIcon: true });
         if (width === 390) assert.ok(state.width >= 48 && state.height >= 48, `48px header formatting target: ${JSON.stringify(state)}`);
+        if (surface === 'markdown' && width === 1440) await browser.evaluate(`window.formattingFeedback = []; window.formattingObserver = new MutationObserver(() => window.formattingFeedback.push({ pressed: ${toggle}.getAttribute('aria-pressed'), bar: !!${q('.boring-markdown-toolbar')} })); window.formattingObserver.observe(${toggle}, { attributes: true, attributeFilter: ['aria-pressed'] });`);
         const off = `viewer-${theme}-${mode}-${width}-${surface}-formatting-off.png`;
         await browser.screenshot(off); screenshots.push(off);
         await browser.click(toggle);
         await browser.until('formatting pinned from the header icon', `${toggle}.getAttribute('aria-pressed') === 'true' && !!${q(width === 390 ? '[data-testid=markdown-dock]' : '.boring-markdown-toolbar')}`, 5000);
         await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 80 });
         await browser.evaluate(`Promise.all(${toggle}.getAnimations().map(animation => animation.finished.catch(() => {})))`);
+        if (surface === 'markdown' && width === 1440) assert.deepEqual(await browser.evaluate('window.formattingFeedback'), [{ pressed: 'true', bar: true }], 'pressed feedback never precedes the pinned bar');
         const pressedBackground = await browser.evaluate(`getComputedStyle(${toggle}).backgroundColor`);
         assert.notEqual(pressedBackground, unpressedBackground, 'pressed Formatting has a visibly different background');
         const on = `viewer-${theme}-${mode}-${width}-${surface}-formatting-on.png`;
         await browser.screenshot(on); screenshots.push(on);
         await browser.click(toggle);
         await browser.until('formatting unpinned from the same icon', `${toggle}.getAttribute('aria-pressed') === 'false' && !${q('.boring-markdown-toolbar, [data-testid=markdown-dock]')}`, 5000);
+        if (surface === 'markdown' && width === 1440) {
+          assert.deepEqual(await browser.evaluate('window.formattingFeedback'), [{ pressed: 'true', bar: true }, { pressed: 'false', bar: false }], 'unpressed feedback never leaves the old bar visible');
+          await browser.evaluate('window.formattingObserver.disconnect()');
+        }
         if (surface === 'menu' || surface === 'menu-fr') {
           await browser.click(q('[data-testid=fixture-viewer-more]'));
           await browser.until('menu restored for screenshot', `!!${q('[data-testid=fixture-viewer-mode-source]')}`, 5000);

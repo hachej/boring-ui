@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { SaveIcon } from 'lucide-react';
 import { MarkdownEditor } from '@hachej/boring-ui-kit/markdown-editor';
@@ -84,7 +84,7 @@ export function MarkdownPane({ controller, title: givenTitle, labels: ownLabels,
   const [requested, setRequestedState] = useState<'rich' | 'source'>(initialMode);
   const setRequested = (next: 'rich' | 'source') => { setRequestedState(next); onModeChange?.(next); };
   const [toolbar, setToolbar] = useState(formattingToolbar);
-  useEffect(() => setToolbar(formattingToolbar), [formattingToolbar]);
+  useLayoutEffect(() => setToolbar(formattingToolbar), [formattingToolbar]);
   const setFormatting = (next: 'selection' | 'pinned') => { setToolbar(next); onFormattingToolbarChange?.(next); };
   const [safety, setSafety] = useState<MarkdownRichSafety>({ safe: true });
   const mode = safety.safe ? requested : 'source';

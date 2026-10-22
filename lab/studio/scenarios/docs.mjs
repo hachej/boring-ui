@@ -30,6 +30,7 @@ export default [
       assert.equal(await browser.evaluate(`${q(`${scope} [data-testid=file-title]`)}.textContent`), 'picnic-plan.md');
       assert.equal(await browser.evaluate(`${k.qa(`${scope} .boring-markdown-toolbar`)}.length`), 0, 'formatting waits for a selection by default');
       await browser.click(q(`${scope} [data-testid=viewer-formatting]`));
+      await browser.until('document Formatting toggle is pressed and the pinned toolbar is rendered', `${q(`${scope} [data-testid=viewer-formatting]`)}?.getAttribute('aria-pressed') === 'true' && !!${q(`${scope} .boring-markdown-toolbar`)}`, 5000);
       assert.equal(await browser.evaluate(`${k.qa(`${scope} .boring-markdown-toolbar`)}.length`), 1, 'the header icon pins formatting on demand');
       const tools = await browser.evaluate(`${k.qa(`${scope} [role=toolbar] button`)}.map(b => ({ label: b.getAttribute('aria-label'), icon: !!b.querySelector('svg'), text: b.textContent.trim() }))`);
       assert.ok(tools.length >= 14, `a formatting toolbar: ${tools.length} buttons`);

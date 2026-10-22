@@ -139,7 +139,7 @@ function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActiva
   const LinkInput = components?.input ?? 'input';
   const ViewOptions = components?.markdownMenu;
   const [toolbar, setToolbar] = useState(formattingToolbar);
-  useEffect(() => setToolbar(formattingToolbar), [formattingToolbar]);
+  useLayoutEffect(() => setToolbar(formattingToolbar), [formattingToolbar]);
   const [outlineShown, setOutlineShown] = useState(false);
   const phone = useSyncExternalStore(subscribePhone, phoneSnapshot, desktopSnapshot);
   const showPinned = toolbar === 'pinned' && !phone;
