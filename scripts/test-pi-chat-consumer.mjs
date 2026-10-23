@@ -57,6 +57,9 @@ try {
     assert.equal(existsSync(join(directory, 'src/components/shared-chat')), false);
     // D-257: the composer features are optional items; pi-chat alone installs none of them.
     for (const feature of ['markdown', 'slash', 'mentions', 'pickers', 'voice', 'attachments', 'plugins']) assert.equal(existsSync(join(directory, `src/components/pi-chat-${feature}`)), false, `pi-chat alone must not install pi-chat-${feature}`);
+    // D-257 step 3: so are the reply cards; the core keeps none of their modules.
+    for (const item of ['pi-chat-question', 'pi-chat-approval', 'pi-chat-subagent', 'pi-artifacts']) assert.equal(existsSync(join(directory, `src/components/${item}`)), false, `pi-chat alone must not install ${item}`);
+    for (const card of ['question-card.tsx', 'approval-card.tsx', 'subagent-card.tsx', 'run-card.tsx', 'artifact-card.tsx', 'artifact.ts']) assert.equal(existsSync(join(directory, `src/components/pi-chat/${card}`)), false, `the core pi-chat ships no ${card}`);
     assert.equal(existsSync(join(directory, 'src/components/pi-chat/shared.tsx')), false);
     assert.equal(existsSync(join(directory, 'src/components/pi-chat/use-shared-chat.ts')), false);
   }
@@ -113,6 +116,7 @@ export const view = createRoot(document.getElementById('root')!); view.render(<A
   const featureOnly = inputs.filter(path => /node_modules\/(marked|entities)\/|@hachej\/boring-ui-kit\/dist\/voice-capture\.js$/.test(path));
   if (shared) assert.ok(inputs.some(path => /node_modules\/marked\//.test(path)), 'the shared timeline draws messages with the installed pi-chat-markdown');
   else assert.deepEqual(featureOnly, [], 'the core-only pi-chat bundle excludes Markdown and voice capture (pi-chat-markdown, pi-chat-voice)');
+  if (!shared) assert.deepEqual(inputs.filter(path => /src\/components\/(pi-chat-question|pi-chat-approval|pi-chat-subagent|pi-artifacts)\/|(question|approval|subagent|run|artifact)-card\.tsx$/.test(path)), [], 'the core-only pi-chat bundle carries no reply card (pi-chat-question, pi-chat-approval, pi-chat-subagent, pi-artifacts)');
   const feedbackInputs = inputs.filter(path => /@hachej\/boring-feedback\//.test(path));
   assert.ok(feedbackInputs.some(path => path.endsWith('/dist/format/report.js')), 'sent comments use the installed real formatter');
   assert.deepEqual(feedbackInputs.filter(path => !/@hachej\/boring-feedback\/dist\/format\//.test(path)), [], 'format presentation imports no capture, UI, store or agent feature');
