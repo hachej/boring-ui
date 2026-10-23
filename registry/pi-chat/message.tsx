@@ -369,7 +369,7 @@ function RowBody({ row, images, context: liveContext }: { readonly row: Row; rea
               if (!artifacts || (artifact.path !== undefined && files.has(artifact.path.replace(/^(\.\/)+/, '')))) return null;
               const descriptor = artifact.descriptor as never;
               return <artifacts.Card key={part.key} artifact={artifact} open={artifact.state === 'ready' && (artifacts.isOpen?.(descriptor) ?? false)}
-                onOpen={artifact.state === 'ready' ? () => artifacts.open(descriptor) : undefined} kinds={artifacts.kinds} />;
+                onOpen={artifact.state === 'ready' && artifacts.open ? () => artifacts.open(descriptor) : undefined} kinds={artifacts.kinds} />;
             }
             return part.entry.custom ? <div key={part.key}>{part.entry.custom}</div> : <ToolCard key={part.key} entry={part.entry} {...(context.onOpenImage ? { onOpenImage: context.onOpenImage } : {})} />;
           })}

@@ -187,7 +187,7 @@ export function useChatSession(options: ChatSessionOptions) {
       for (const part of row.parts) {
         if (part.kind === 'artifact' && part.artifact.state === 'ready' && part.artifact.path !== undefined) {
           const descriptor = part.artifact.descriptor as never, id = `file:${part.artifact.path.replace(/^\.\//, '')}`;
-          found.set(id, { id, name: displayName(part.artifact.path), open: artifacts ? () => artifacts.open(descriptor) : undefined });
+          found.set(id, { id, name: displayName(part.artifact.path), open: artifacts?.open ? () => artifacts.open(descriptor) : undefined });
         }
         if (!natural && part.kind === 'tool' && part.entry.result && !part.entry.result.isError && ['read', 'write', 'edit'].includes(part.entry.call.name)) {
           const path = part.entry.call.arguments['path'];

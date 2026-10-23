@@ -60,20 +60,24 @@ test('PiChat uses plugged renderers, cards and feature components when passed, a
 
   const slash = { commands: [{ name: 'fictional-plan', description: 'Plan', run: () => {} }] };
   const mentions = { search: async () => [] };
-  await t.test('core defaults: plain text, built-in question and approval cards, renderTool as catch-all, no feature component configured without its item', async () => {
+  await t.test('core defaults: plain text, a waiting notice instead of the question card, no approval card, renderTool as catch-all, no feature component configured without its item', async () => {
     await render({ model, slash, mentions, voiceMessage: { transcribe: async () => '' }, renderTool: call => ({ content: createElement('div', { 'data-testid': 'catch-all', 'data-tool': call.name }), inline: true }) });
     assert.equal(get('message-text')?.textContent, 'Here is the **fictional** ledger.', 'the core text renderer is plain text');
     assert.equal(get('message-text').querySelector('strong'), null, 'no Markdown without pi-chat-markdown');
-    assert.ok(get('question-card'), 'the built-in question card');
-    assert.ok(get('approval-card'), 'the built-in approval card');
+    assert.equal(get('question-card'), null, 'no question card without pi-chat-question');
+    assert.equal(get('approval-card'), null, 'no approval card without pi-chat-approval');
+    assert.deepEqual(all('answer-waiting').map(node => node.dataset.kind), ['question'], 'a waiting notice for the open question; the settled approval keeps only its step');
     assert.deepEqual(all('catch-all').map(node => node.dataset.tool), ['fictional_lookup', 'fictional_other']);
     assert.equal(get('composer-model'), null, 'no model pill without pi-chat-pickers');
     assert.equal(get('voice-message-record'), null, 'no record button without pi-chat-voice');
     assert.equal(get('composer-input').getAttribute('role'), null, 'no `/` or `@` menu without pi-chat-slash and pi-chat-mentions');
   });
 
-  await t.test('withChatPlugins: Markdown, the model pill, the record button and the `/` and `@` menus come back', async () => {
+  await t.test('withChatPlugins: Markdown, the cards, the model pill, the record button and the `/` and `@` menus come back', async () => {
     await render(withChatPlugins({ model, slash, mentions, voiceMessage: { transcribe: async () => '' } }));
+    assert.ok(get('question-card'), 'pi-chat-question draws the question');
+    assert.ok(get('approval-card'), 'pi-chat-approval draws the approval');
+    assert.equal(get('answer-waiting'), null);
     assert.equal(get('message-text').querySelector('strong')?.textContent, 'fictional', 'pi-chat-markdown draws the reply');
     assert.ok(get('composer-model'), 'pi-chat-pickers draws the pill');
     assert.ok(get('voice-message-record'), 'pi-chat-voice draws the record button');
