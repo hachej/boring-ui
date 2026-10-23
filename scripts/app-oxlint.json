@@ -1,0 +1,70 @@
+{
+  "plugins": [
+    "import",
+    "typescript"
+  ],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "rules": {
+    "no-unused-vars": [
+      "error",
+      {
+        "argsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_",
+        "caughtErrors": "none",
+        "ignoreRestSiblings": true
+      }
+    ],
+    "no-undef": "error",
+    "import/no-cycle": "error",
+    "no-empty": "off",
+    "no-async-promise-executor": "error",
+    "no-unused-expressions": [
+      "error",
+      {
+        "allowShortCircuit": true,
+        "allowTernary": true
+      }
+    ],
+    "import/no-unassigned-import": [
+      "warn",
+      {
+        "allow": [
+          "**/*.css"
+        ]
+      }
+    ]
+  },
+  "env": {
+    "browser": true,
+    "node": true,
+    "es2024": true
+  },
+  "ignorePatterns": [
+    "registry/app-shell/",
+    "registry/pi-chat/",
+    "registry/button/",
+    "registry/utils/"
+  ],
+  "overrides": [
+    {
+      "files": [
+        "registry/**"
+      ],
+      "plugins": [
+        "import",
+        "typescript",
+        "react"
+      ],
+      "rules": {
+        "react/react-in-jsx-scope": "off",
+        "react/jsx-key": "error",
+        "react-hooks/exhaustive-deps": "off",
+        "react/exhaustive-effect-dependencies": "off",
+        "react/set-state-in-effect": "off"
+      }
+    }
+  ]
+}

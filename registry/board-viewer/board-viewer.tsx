@@ -1,7 +1,7 @@
 'use client';
 
 import { lazy, Suspense, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
-import type { ResourceClient, ResourceLocator } from '@hachej/boring-files';
+import type { ResourceLocator } from '@hachej/boring-files';
 import { createTextBuffer } from '@hachej/boring-ui-kit/text-buffer';
 import type { TextBuffer } from '@hachej/boring-ui-kit/text-buffer';
 import { Button } from '@/components/ui/button';
