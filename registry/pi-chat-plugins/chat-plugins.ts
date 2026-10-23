@@ -21,6 +21,9 @@ export interface ChatPluginProps {
   readonly effort?: EffortConfig | undefined;
   readonly voiceMessage?: VoiceMessageConfig | undefined;
   readonly attachments?: AttachmentsConfig | undefined;
+  /** The camera of a chat that attaches through `onFiles` instead of `attachments`. */
+  readonly camera?: AttachmentsConfig['Camera'];
+  readonly onFiles?: unknown;
   /** Voice rows a host (the app shell, a shared chat) records itself: drawn by the voice item's bubble even without `voiceMessage`. */
   readonly pendingVoice?: readonly PendingVoice[] | undefined;
   readonly cards?: ChatCards | undefined;
@@ -69,5 +72,7 @@ export function withChatPlugins<T extends ChatPluginProps>(props: T): T {
     attachments: attachmentsWith(props.attachments),
     cards: props.cards ? cardsWith(props.cards) : allCards,
     artifacts: artifactsWith(props.artifacts),
+    // A chat that attaches through `onFiles` gets the camera too, as before the move.
+    ...(props.onFiles && !props.attachments && !props.camera ? { camera: CameraSheet } : {}),
   };
 }

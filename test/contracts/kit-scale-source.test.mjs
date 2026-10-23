@@ -9,7 +9,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 // shadcn roles gets a matching chat.
 const root = new URL('../../', import.meta.url);
 const read = path => readFileSync(new URL(path, root), 'utf8');
-const ITEMS = ['pi-chat', 'pi-ambient', 'pi-workspace', 'feedback', 'feedback-preview', 'button'];
+const ITEMS = ['pi-chat', 'pi-chat-markdown', 'pi-chat-slash', 'pi-chat-mentions', 'pi-chat-pickers', 'pi-chat-voice', 'pi-chat-attachments', 'pi-chat-question', 'pi-chat-approval', 'pi-chat-subagent', 'pi-artifacts', 'pi-chat-plugins', 'pi-ambient', 'pi-workspace', 'feedback', 'feedback-preview', 'button'];
 const sources = ITEMS.flatMap(item => readdirSync(new URL(`registry/${item}/`, root)).filter(name => /\.tsx?$/.test(name)).map(name => `registry/${item}/${name}`));
 
 test('kit sources use the scale: no arbitrary text size, leading or radius, no palette or hex colour, no off-scale shadow or motion', () => {
