@@ -1,5 +1,7 @@
 # Unreleased
 
+- **Chat plug points (D-257).** `PiChat` and `AmbientChat` take `renderText`, `cards` (`question`, `approval`) and `toolRenderers` (keyed by tool name, before the `renderTool` catch-all), and the `slash`, `mentions`, `model`, `effort`, `voiceMessage` and `attachments` configs may carry their own component (`Picker`, `Button`/`Bubble`, `Camera`). Additive: without them the built-in components render as before, so no migration is needed. Re-run `boring-ui-blocks add pi-chat` (updates `pi-ambient` too) to get the props.
+
 # Migrating to 0.4.9
 
 - **Hardening (D-248).** `githubSink` refuses `.`/`..` repository segments and an `apiUrl` that is not https (http only for localhost) before sending the token; reinstall `provider-setup` (non-http(s) `verificationUri` is plain text), `shared-chat` (`avatarUrl` loads only https, `data:image/`, `blob:` or same-origin paths) and `viewers` (`PdfPane` shows a `blob` only when typed `application/pdf`). `mockup-viewer` messages keep targetOrigin `'*'` (opaque-origin sandbox).

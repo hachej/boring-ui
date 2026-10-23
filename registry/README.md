@@ -169,7 +169,8 @@ The line format is `<check> <rule> <file>[:<line>:<column>] <detail>` with paths
 | list, create, rename, archive and fork conversations in the shell's chat | `chatProps.conversations` from `useConversations` (relative `_agent/<name>/conversations`) |
 | show something under the composer (a requests tray) | `belowComposer` on `PiChat` and `AmbientChat`; `tools` for controls inside the composer bar |
 | answer a question outside the chat (a popover) | `QuestionCard` exported from `pi-chat`, with a tool call, a `questionId` and an `answer` callback, inside `ChatTextProvider` |
-| render a tool result its own way | `renderTool`, `renderEntry`, `groupTool`, `replyFooter` |
+| render a tool result its own way | `toolRenderers` (keyed by tool name, tried first; an entry returning `undefined` falls back), `renderTool` (the catch-all), `renderEntry`, `groupTool`, `replyFooter` |
+| replace a built-in piece of the chat | `renderText(part)` draws assistant text (default Markdown); `cards={{ question, approval }}` take `QuestionCardProps` / `ApprovalCardProps`; a feature config carries its own component: `slash.Picker`, `mentions.Picker`, `model.Picker` / `effort.Picker`, `voiceMessage.Button` / `Bubble`, `attachments.Camera`. Anything left out uses today's component, on `PiChat` and `AmbientChat` |
 | everything else the chat takes | the props of `PiChat` (`PiChatProps`), `AmbientChat` and `AgentWorkspace` |
 
 ## Artifact cards in `pi-chat`

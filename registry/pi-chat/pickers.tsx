@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { ChevronDownIcon, Loader2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import type { EffortConfig, ModelConfig, ModelRef } from './config';
+import type { EffortConfig, ModelConfig, ModelEffortPickerProps, ModelRef } from './config';
 import { useChatText } from './labels';
 
 interface Choice { readonly section: 'model' | 'effort'; readonly value: string; readonly label: string; readonly detail?: string }
@@ -15,12 +15,7 @@ const key = (model: ModelRef) => `${model.provider}/${model.modelId}`;
  * One pill for the model and the thinking level ("GPT-5 mini · Medium") that opens the host's shadcn dropdown menu with a radio
  * group for each. Only the configured parts show; with neither there is no pill.
  */
-export function ModelEffortPicker({ model, effort, currentModel, currentEffort, disabled, busy, onModel, onEffort }: {
-  readonly model: ModelConfig | undefined; readonly effort: EffortConfig | undefined;
-  readonly currentModel: ModelRef | undefined; readonly currentEffort: string | undefined;
-  readonly disabled: boolean; readonly busy: 'model' | 'effort' | null;
-  readonly onModel: (model: ModelRef) => void; readonly onEffort: (level: string) => void;
-}) {
+export function ModelEffortPicker({ model, effort, currentModel, currentEffort, disabled, busy, onModel, onEffort }: ModelEffortPickerProps) {
   const { labels } = useChatText();
   const name = labels.effortName;
   const [open, setOpen] = useState(false);
