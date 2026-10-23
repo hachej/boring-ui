@@ -1,5 +1,7 @@
 # Unreleased
 
+# Migrating to 0.4.11
+
 - **Pick a look / pick a layout.** New opt-in `looks-viewer` block: `createLooksKind({ onPick, locale })` draws `*.looks.json` (looks@1: one `*.mockup.html` key screen in 2 to 6 shadcn themes, then layout variants in the chosen look) with `parseLooks` and `parseShadcnTheme` (shadcn theme variables only). `MockupViewer` gains optional `themeOverride` (shadcn `cssVars`: `{ theme, light, dark }`), `mode` and `title`; without them it renders as before. Update `mockup-viewer` with `looks-viewer`; pass the kind in `artifactKinds`. No stored-format change for existing files.
 
 # Migrating to 0.4.10
