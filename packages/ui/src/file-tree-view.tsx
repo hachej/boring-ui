@@ -410,7 +410,7 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
     if (parentPath(path) === folder) return;
     void controller.move(path, folder).catch(refused(path));
   };
-  const closeDialog = () => { const path = asking?.path; setAsking(undefined); if (path) requestAnimationFrame(() => focus(path)); };
+  const closeAsking = () => { const path = asking?.path; setAsking(undefined); if (path) requestAnimationFrame(() => focus(path)); };
   const draggedPath = (event: DragEvent) => event.dataTransfer.types.includes(DRAGGED_FILE) ? dragged ?? event.dataTransfer.getData(DRAGGED_FILE) : undefined;
   /** A folder (or `''`, the root) accepts a dragged file that is not already in it. */
   const dropHandlers = (folder: string) => can.rename ? {
@@ -606,16 +606,16 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
       {upload.path}: {upload.state.kind === 'pending' ? labels.uploading : upload.state.result.kind === 'committed' ? labels.saved : upload.state.result.kind === 'partial' ? labels.unconfirmed : upload.state.result.reason}
     </li>)}{[...localFailures].map(([path, failure]) => <li key={path}>{path}: {failure.reason}</li>)}
     {state.mutations.map(item => <li key={item.operationId} data-operation={item.operationId}>{item.path}: {mutationReason(item)}</li>)}</ul>
-    {Dialog && <Dialog open={asking !== undefined} onOpenChange={open => { if (!open) closeDialog(); }}
+    {Dialog && <Dialog open={asking !== undefined} onOpenChange={open => { if (!open) closeAsking(); }}
       title={asking?.kind === 'move' ? labels.moveTitle(baseName(dialogPath)) : labels.deleteTitle(baseName(dialogPath))}
       description={asking?.kind === 'move' ? labels.moveDescription : labels.deleteDescription}
       footer={asking?.kind === 'delete' ? <>
-        <Button type="button" variant="outline" data-confirm="cancel" onClick={closeDialog}>{labels.cancel}</Button>
+        <Button type="button" variant="outline" data-confirm="cancel" onClick={closeAsking}>{labels.cancel}</Button>
         <Button type="button" variant="destructive" data-confirm="delete" onClick={() => {
           const path = dialogPath; setAsking(undefined);
           void controller.remove(path).catch(refused(path));
         }}><Trash2 aria-hidden="true" />{labels.delete}</Button>
-      </> : <Button type="button" variant="outline" data-confirm="cancel" onClick={closeDialog}>{labels.cancel}</Button>}>
+      </> : <Button type="button" variant="outline" data-confirm="cancel" onClick={closeAsking}>{labels.cancel}</Button>}>
       {asking?.kind === 'move' && <ul className="file-tree-destinations" aria-label={labels.moveTitle(baseName(dialogPath))}>{folders.map(folder => <li key={folder}>
         <Button type="button" variant="ghost" data-destination={folder} disabled={folder === parentPath(dialogPath)} onClick={() => moveTo(dialogPath, folder)}>
           {folder ? <Folder aria-hidden="true" /> : <FolderOpen aria-hidden="true" />}<span className="file-tree-name">{folder || labels.root}</span>

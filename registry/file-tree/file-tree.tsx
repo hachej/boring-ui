@@ -42,7 +42,7 @@ function FileVersions({ versions, current, onSelect, locale, earlierVersion }: F
     current={current} onSelect={onSelect} testId="file-history-versions" {...(locale === 'fr' ? { labels: frenchVersionHistoryLabels } : {})} />;
 }
 
-function FileTreeDialog({ open, onOpenChange, title, description, children, footer }: FileTreeDialogProps) {
+function FileTreeModal({ open, onOpenChange, title, description, children, footer }: FileTreeDialogProps) {
   return <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent data-boring="file-tree-dialog" showCloseButton={false}>
       <DialogHeader>
@@ -69,7 +69,7 @@ function FileTreeEmpty({ icon, title, description, className, children }: Parame
 export const fileTreeComponents = {
   Button: LibraryButton, Actions: FileActions, Versions: FileVersions,
   Menu: SidebarMenu, MenuItem: SidebarMenuItem, MenuSub: SidebarMenuSub, Input, Separator: () => <Separator />,
-  Collapsible, CollapsibleTrigger, CollapsibleContent, Empty: FileTreeEmpty, Dialog: FileTreeDialog,
+  Collapsible, CollapsibleTrigger, CollapsibleContent, Empty: FileTreeEmpty, Dialog: FileTreeModal,
   Progress: ({ value, 'aria-label': label }: { readonly value: number | null; readonly 'aria-label': string }) => <Progress value={value} aria-label={label} />,
 } satisfies FileTreeComponents;
 export type FileTreeProps = Omit<PackageFileTreeProps, 'components'>;
