@@ -12,7 +12,7 @@ import { build } from 'esbuild';
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const out = join(root, '.cache/diagram-viewer-test');
 mkdirSync(out, { recursive: true });
-writeFileSync(join(out, 'entry.tsx'), `export { ArtifactPanel } from '${root}registry/pi-app/artifact-panel.tsx'; export { createDiagramKind, diagramKind } from '${root}registry/diagram-viewer/diagram-viewer.tsx';`);
+writeFileSync(join(out, 'entry.tsx'), `export { ArtifactPanel } from '${root}registry/pi-app/artifact-panel.tsx'; export { createDiagramKind, diagramKind } from '${root}registry/diagram-viewer/diagram-kind.tsx';`);
 await build({ entryPoints: [join(out, 'entry.tsx')], outfile: join(out, 'kit.mjs'), bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
 // Imported once the first test's DOM globals exist: Base UI decides at load time whether it runs in a browser.
 let kit;

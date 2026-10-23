@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { PDFDocumentProxy, PDFWorker, RenderTask } from 'pdfjs-dist';
-import { useViewerText } from './viewer-window';
+import { useViewerText } from '../viewer-frame/viewer-window';
 
 /** Device pixels per CSS pixel are capped (3) and so is one page's canvas (about 8 megapixels) so a zoomed page stays within a phone's memory. */
 const MAX_RATIO = 3;

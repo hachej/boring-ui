@@ -15,8 +15,8 @@ async function mount(t) {
   const directory = new URL('../../.cache/viewer-chrome-test/', import.meta.url); mkdirSync(directory, { recursive: true });
   const before = process.env.BEFORE_VIEWER_SOURCE;
   const output = new URL(before ? 'before.mjs' : 'after.mjs', directory);
-  await build({ stdin: { contents: "export { ViewerToggle, ViewerFrame } from './registry/viewers/viewer-frame'; export { editorControls } from './registry/button/editor-controls';", resolveDir: new URL('../../', import.meta.url).pathname, loader: 'tsx' }, outfile: output.pathname, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent',
-    plugins: before ? [{ name: 'pre-migration-viewer', setup(builder) { builder.onLoad({ filter: /registry\/viewers\/viewer-frame\.tsx$/ }, () => ({ contents: readFileSync(before, 'utf8'), loader: 'tsx', resolveDir: new URL('../../registry/viewers/', import.meta.url).pathname })); } }] : [] });
+  await build({ stdin: { contents: "export { ViewerToggle, ViewerFrame } from './registry/viewer-frame/viewer-frame'; export { editorControls } from './registry/button/editor-controls';", resolveDir: new URL('../../', import.meta.url).pathname, loader: 'tsx' }, outfile: output.pathname, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent',
+    plugins: before ? [{ name: 'pre-migration-viewer', setup(builder) { builder.onLoad({ filter: /registry\/viewer-frame\/viewer-frame\.tsx$/ }, () => ({ contents: readFileSync(before, 'utf8'), loader: 'tsx', resolveDir: new URL('../../registry/viewer-frame/', import.meta.url).pathname })); } }] : [] });
   const components = await import(output.href);
   const { createElement: h, act } = await import('react');
   const { createRoot } = await import('react-dom/client');

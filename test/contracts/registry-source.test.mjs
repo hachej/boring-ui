@@ -9,14 +9,14 @@ import { fileURLToPath } from 'node:url';
 import { registrySchema, registryItemSchema } from 'shadcn/schema';
 import { buildRegistry } from '../../scripts/build-registry.mjs';
 import { checkRegistryBlocks, SHADCN_BUILTINS } from '../../scripts/check-registry-blocks.mjs';
-import { viewersCss } from '../../registry/viewers/build-css.mjs';
+import { viewersCss } from '../../registry/viewer-frame/build-css.mjs';
 import { feedbackCss } from '../../scripts/build-feedback-css.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 // Items written in Tailwind, installed into their own folder, rather than recipes over a headless @hachej/boring-ui-kit controller.
 const manifest = registrySchema.parse(JSON.parse(readFileSync(join(root, 'registry.json'), 'utf8')));
 // Tailwind items bring owned source with shadcn tokens: every rule is scoped to the item's root class and lives in the base or components layer.
-const TAILWIND = { windows: { scope: '[data-boring="window-layer"]', keyframes: /^$/, folder: 'windows' }, 'requests-board': { scope: '[data-boring="requests-board"]', keyframes: /^$/, folder: 'requests-board' }, 'record-viewer': { scope: '[data-boring="records-viewer"]', keyframes: /^$/, folder: 'record-viewer' }, 'agent-target': { scope: '[data-boring="agent-target"]', keyframes: /^$/, folder: 'agent-target' }, 'mockup-viewer': { scope: '[data-boring="mockup-viewer"]', keyframes: /^$/, folder: 'mockup-viewer' }, 'version-history': { scope: '[data-boring="version-history"]', keyframes: /^$/, folder: 'version-history' }, 'file-tree': { scope: '[data-boring="file-tree"]', keyframes: /^$/, folder: 'file-tree' }, button: { scope: '.pi-chat', keyframes: /^$/, folder: 'button' }, utils: { scope: '.pi-chat', keyframes: /^$/, folder: 'utils' }, 'pi-chat': { scope: '.pi-chat', keyframes: /^@keyframes pi-chat-/, folder: 'pi-chat' }, 'pi-chat-markdown': { scope: '.pi-chat', keyframes: /^$/, folder: 'pi-chat-markdown' }, 'pi-chat-slash': { scope: '.pi-chat', keyframes: /^$/, folder: 'pi-chat-slash' }, 'pi-chat-mentions': { scope: '.pi-chat', keyframes: /^$/, folder: 'pi-chat-mentions' }, 'pi-chat-pickers': { scope: '.pi-chat', keyframes: /^$/, folder: 'pi-chat-pickers' }, 'pi-chat-voice': { scope: '.pi-chat', keyframes: /^$/, folder: 'pi-chat-voice' }, 'pi-chat-attachments': { scope: '.pi-chat', keyframes: /^$/, folder: 'pi-chat-attachments' }, 'pi-chat-plugins': { scope: '.pi-chat', keyframes: /^$/, folder: 'pi-chat-plugins' }, 'pi-chat-question': { scope: '.pi-chat', keyframes: /^$/, folder: 'pi-chat-question' }, 'pi-chat-approval': { scope: '.pi-chat', keyframes: /^$/, folder: 'pi-chat-approval' }, 'pi-chat-subagent': { scope: '.pi-chat', keyframes: /^$/, folder: 'pi-chat-subagent' }, 'pi-artifacts': { scope: '.pi-chat', keyframes: /^$/, folder: 'pi-artifacts' }, 'shared-chat': { scope: '.pi-chat', keyframes: /^$/, folder: 'shared-chat' }, 'pi-ambient': { scope: '.pi-chat', keyframes: /^@keyframes pi-ambient-/, folder: 'pi-ambient' }, dock: { scope: '.pi-chat', keyframes: /^$/, folder: 'dock' }, 'pi-workspace': { scope: '.pi-chat', keyframes: /^@keyframes pi-workspace-/, folder: 'pi-workspace' }, 'placed-agent': { scope: '.pi-chat', keyframes: /^$/, folder: 'placed-agent' }, 'pi-app': { scope: '.pi-chat', keyframes: /^@keyframes pi-app-/, folder: 'pi-app' }, viewers: { scope: '.boring-viewer', keyframes: /^@keyframes boring-viewer-/, folder: 'viewers' }, 'provider-setup': { scope: '.provider-setup', keyframes: /^@keyframes provider-setup-/, folder: 'provider-setup' }, 'app-shell': { scope: '.app-shell', keyframes: /^$/, folder: 'app-shell' }, documents: { scope: '.app-shell', keyframes: /^$/, folder: 'documents' }, 'maquette-viewer': { scope: '[data-boring="maquette-viewer"]', keyframes: /^$/, folder: 'maquette-viewer' }, 'diagram-viewer': { scope: '[data-boring="diagram-viewer"]', keyframes: /^$/, folder: 'diagram-viewer' } };
+const TAILWIND = { windows: { scope: '[data-boring="window-layer"]', keyframes: /^$/, folder: 'windows' }, 'requests-board': { scope: '[data-boring="requests-board"]', keyframes: /^$/, folder: 'requests-board' }, 'record-viewer': { scope: '[data-boring="records-viewer"]', keyframes: /^$/, folder: 'record-viewer' }, 'agent-target': { scope: '[data-boring="agent-target"]', keyframes: /^$/, folder: 'agent-target' }, 'mockup-viewer': { scope: '[data-boring="mockup-viewer"]', keyframes: /^$/, folder: 'mockup-viewer' }, 'version-history': { scope: '[data-boring="version-history"]', keyframes: /^$/, folder: 'version-history' }, 'file-tree': { scope: '[data-boring="file-tree"]', keyframes: /^$/, folder: 'file-tree' }, button: { scope: '.pi-chat', keyframes: /^$/, folder: 'button' }, utils: { scope: '.pi-chat', keyframes: /^$/, folder: 'utils' }, 'pi-chat': { scope: '.pi-chat', keyframes: /^@keyframes pi-chat-/, folder: 'pi-chat' }, 'pi-chat-markdown': { scope: '.pi-chat', keyframes: /^$/, folder: 'pi-chat-markdown' }, 'pi-chat-slash': { scope: '.pi-chat', keyframes: /^$/, folder: 'pi-chat-slash' }, 'pi-chat-mentions': { scope: '.pi-chat', keyframes: /^$/, folder: 'pi-chat-mentions' }, 'pi-chat-pickers': { scope: '.pi-chat', keyframes: /^$/, folder: 'pi-chat-pickers' }, 'pi-chat-voice': { scope: '.pi-chat', keyframes: /^$/, folder: 'pi-chat-voice' }, 'pi-chat-attachments': { scope: '.pi-chat', keyframes: /^$/, folder: 'pi-chat-attachments' }, 'pi-chat-plugins': { scope: '.pi-chat', keyframes: /^$/, folder: 'pi-chat-plugins' }, 'pi-chat-question': { scope: '.pi-chat', keyframes: /^$/, folder: 'pi-chat-question' }, 'pi-chat-approval': { scope: '.pi-chat', keyframes: /^$/, folder: 'pi-chat-approval' }, 'pi-chat-subagent': { scope: '.pi-chat', keyframes: /^$/, folder: 'pi-chat-subagent' }, 'pi-artifacts': { scope: '.pi-chat', keyframes: /^$/, folder: 'pi-artifacts' }, 'shared-chat': { scope: '.pi-chat', keyframes: /^$/, folder: 'shared-chat' }, 'pi-ambient': { scope: '.pi-chat', keyframes: /^@keyframes pi-ambient-/, folder: 'pi-ambient' }, dock: { scope: '.pi-chat', keyframes: /^$/, folder: 'dock' }, 'pi-workspace': { scope: '.pi-chat', keyframes: /^@keyframes pi-workspace-/, folder: 'pi-workspace' }, 'placed-agent': { scope: '.pi-chat', keyframes: /^$/, folder: 'placed-agent' }, 'pi-app': { scope: '.pi-chat', keyframes: /^@keyframes pi-app-/, folder: 'pi-app' }, 'viewer-frame': { scope: '.boring-viewer', keyframes: /^@keyframes boring-viewer-/, folder: 'viewer-frame' }, 'viewer-markdown': { scope: '.boring-viewer', keyframes: /^$/, folder: 'viewer-markdown' }, 'viewer-html': { scope: '.boring-viewer', keyframes: /^$/, folder: 'viewer-html' }, 'viewer-image': { scope: '.boring-viewer', keyframes: /^$/, folder: 'viewer-image' }, 'viewer-pdf': { scope: '.boring-viewer', keyframes: /^$/, folder: 'viewer-pdf' }, 'viewer-code': { scope: '.boring-viewer', keyframes: /^$/, folder: 'viewer-code' }, 'provider-setup': { scope: '.provider-setup', keyframes: /^@keyframes provider-setup-/, folder: 'provider-setup' }, 'app-shell': { scope: '.app-shell', keyframes: /^$/, folder: 'app-shell' }, documents: { scope: '.app-shell', keyframes: /^$/, folder: 'documents' }, 'maquette-viewer': { scope: '[data-boring="maquette-viewer"]', keyframes: /^$/, folder: 'maquette-viewer' }, 'diagram-viewer': { scope: '[data-boring="diagram-viewer"]', keyframes: /^$/, folder: 'diagram-viewer' } };
 // The feedback item imports the package's browser entries directly (no copied validators), React and React DOM (a portal); nothing from store, agent or source.
 const FEEDBACK_IMPORTS = new Set(['react', 'react-dom', 'lucide-react', '@hachej/boring-feedback/format', '@hachej/boring-feedback/page', '@hachej/boring-feedback/ui', '@hachej/boring-feedback/preview']);
 // The feedback item is a plug-in of its host pi-chat (owner ruling 6): its card and voice button import pi-chat's rows and labels and utils
@@ -141,7 +141,7 @@ test('registry dependency pins and scoped styles preserve the declared source di
         assert.match(at, /^@layer (base|components|utilities)$/);
         scoped(rules, at);
       }
-      if (item.name === 'viewers') assert.deepEqual(item.css, viewersCss(), 'registry.json css differs from registry/viewers/viewers.css: run node registry/viewers/build-css.mjs');
+      if (item.name === 'viewer-frame') assert.deepEqual(item.css, viewersCss(), 'registry.json css differs from registry/viewer-frame/viewers.css: run node registry/viewer-frame/build-css.mjs');
       const names = new Set(item.files.map(file => file.path.replace(new RegExp('^registry/' + folder + '/'), '')));
       for (const file of item.files) {
         assert.match(file.target, new RegExp('^components/' + folder + '/'), 'files install into their own folder, never over the host\'s button or utils');
@@ -296,6 +296,45 @@ test('the block check keeps the reply cards out of the core chat: no card module
     cpSync(join(root, 'registry.json'), manifestPath);
     edit(item => item.registryDependencies.push('@boring-ui/pi-artifacts'));
     assert.ok(checkRegistryBlocks(directory).errors.some(error => /core chat must not depend on the optional feature item pi-artifacts/.test(error)), 'a core that depends on pi-artifacts is refused');
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('the block check keeps the core chat small: only its core npm packages and within its file and line budget (rule 7, D-257 step 5)', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'boring-registry-core-'));
+  try {
+    cpSync(join(root, 'registry.json'), join(directory, 'registry.json'));
+    cpSync(join(root, 'registry'), join(directory, 'registry'), { recursive: true });
+    for (const name of readdirSync(join(root, 'packages'))) cpSync(join(root, 'packages', name, 'src'), join(directory, 'packages', name, 'src'), { recursive: true });
+    assert.deepEqual(checkRegistryBlocks(directory).errors, [], 'the committed core chat passes');
+    const manifestPath = join(directory, 'registry.json');
+    const edit = change => { const value = JSON.parse(readFileSync(manifestPath, 'utf8')); change(value.items.find(item => item.name === 'pi-chat')); writeFileSync(manifestPath, JSON.stringify(value)); };
+    // The layout before step 2: the Markdown renderer back in the core, with its packages.
+    cpSync(join(root, 'registry/pi-chat-markdown/markdown.tsx'), join(directory, 'registry/pi-chat/markdown.tsx'));
+    edit(item => { item.files.push({ path: 'registry/pi-chat/markdown.tsx', type: 'registry:component', target: 'components/pi-chat/markdown.tsx' }); item.dependencies.push('marked@^17.0.6', 'tiptap-anything@1.0.0'); });
+    const errors = checkRegistryBlocks(directory).errors;
+    assert.ok(errors.some(error => /pi-chat: the core chat has 27 files and \d+ lines, over its budget/.test(error)), 'a feature module back in the core is over budget');
+    assert.ok(errors.some(error => /pi-chat: the core chat must not declare marked;/.test(error)), 'a feature package in the core is refused');
+    assert.ok(errors.some(error => /pi-chat: the core chat must not declare tiptap-anything;/.test(error)), 'any package outside the core set is refused, not only the known feature ones');
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('the block check keeps viewers lazy: the agent page and the kind modules never import a view statically (rule 7, D-257 step 4)', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'boring-registry-viewers-'));
+  try {
+    cpSync(join(root, 'registry.json'), join(directory, 'registry.json'));
+    cpSync(join(root, 'registry'), join(directory, 'registry'), { recursive: true });
+    for (const name of readdirSync(join(root, 'packages'))) cpSync(join(root, 'packages', name, 'src'), join(directory, 'packages', name, 'src'), { recursive: true });
+    assert.deepEqual(checkRegistryBlocks(directory).errors, [], 'the committed agent page and kinds pass');
+    const prepend = (path, line) => writeFileSync(join(directory, path), line + '\n' + readFileSync(join(directory, path), 'utf8'));
+    // Type-only imports are erased: allowed.
+    prepend('registry/pi-app/artifact-panel.tsx', "import type { PdfPaneProps } from '../viewer-pdf/pdf-pane';");
+    assert.deepEqual(checkRegistryBlocks(directory).errors.filter(error => error.includes('statically')), [], 'a type-only import of a view is allowed');
+    // The layout before step 4: the panel imports the Markdown pane and a kind module imports its view.
+    prepend('registry/pi-app/artifact-panel.tsx', "import { MarkdownPane } from '../viewer-markdown/markdown-pane';");
+    prepend('registry/maquette-viewer/maquette-kind.tsx', "import { MaquetteViewer } from './maquette-viewer';");
+    const errors = checkRegistryBlocks(directory).errors.filter(error => error.includes('statically'));
+    assert.ok(errors.some(error => /registry\/pi-app\/artifact-panel\.tsx: imports the view viewer-markdown\/markdown-pane statically/.test(error)), 'the agent page importing a view is refused');
+    assert.ok(errors.some(error => /registry\/maquette-viewer\/maquette-kind\.tsx: imports the view maquette-viewer\/maquette-viewer statically/.test(error)), 'a kind module importing its view is refused');
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 

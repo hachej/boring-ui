@@ -1,13 +1,12 @@
 'use client';
 
-// The diagram viewer: an agent's `*.diagram.json` (format v1) drawn by `DiagramView`, with its highlighted path and note. `diagramKind` is
+// The diagram viewer: an agent's `*.diagram.json` (format v1) drawn by `DiagramView`, with its highlighted path and note. `diagramKind` (diagram-kind.ts) is
 // the kind the pi-app artifact panel uses by default for `.diagram.json` files; an app's own kind in `artifactKinds` wins. The maquette
 // viewer draws its workflow ("How it works") with the same `DiagramView`. It draws data only: nothing in the file runs.
 import { useMemo } from 'react';
-import type { ComponentType, ReactNode } from 'react';
-import { InfoIcon, TriangleAlertIcon, WorkflowIcon } from 'lucide-react';
+import { InfoIcon, TriangleAlertIcon } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { DIAGRAM_FORMAT_VERSION, isDiagramPath, parseDiagram } from './diagram';
+import { DIAGRAM_FORMAT_VERSION, parseDiagram } from './diagram';
 import { diagramLabelsFor } from './diagram-labels';
 import type { DiagramLabels, DiagramLocale } from './diagram-labels';
 import { DiagramView } from './diagram-view';
@@ -41,27 +40,3 @@ export function DiagramViewer({ text, locale, labels: given }: DiagramViewerProp
         <AlertDescription>{parsed.reason === 'json' ? labels.invalidJson : labels.invalidShape}</AlertDescription></Alert>}
   </section>;
 }
-
-/**
- * The artifact kind of a diagram file (structurally an `ArtifactKind` of pi-artifacts): it matches `*.diagram.json`, names it, gives its icon
- * and draws it with `DiagramViewer`. Pass it, or your own, in `artifactKinds`; kinds an app passes are consulted before the built-in one.
- */
-export interface DiagramKind {
-  readonly match: (target: { readonly resource: { readonly path: string } }) => boolean;
-  readonly label: string;
-  readonly icon: ComponentType<{ readonly className?: string; readonly 'aria-hidden'?: boolean | 'true' }>;
-  readonly renderer: (props: { readonly text: string }) => ReactNode;
-}
-
-/** A diagram kind in `locale` ("Diagram" in English, "Diagramme" in French) with any word overridden. */
-export function createDiagramKind({ locale, labels }: { readonly locale?: DiagramLocale | undefined; readonly labels?: Partial<DiagramLabels> | undefined } = {}): DiagramKind {
-  return {
-    match: target => isDiagramPath(target.resource.path),
-    label: diagramLabelsFor(locale, labels).kind,
-    icon: WorkflowIcon,
-    renderer: ({ text }) => <DiagramViewer text={text} locale={locale} labels={labels} />,
-  };
-}
-
-/** The built-in diagram kind, in English. */
-export const diagramKind: DiagramKind = createDiagramKind();

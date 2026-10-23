@@ -6,7 +6,7 @@ import { createContext, createElement, useContext } from 'react';
 import type { ReactNode } from 'react';
 import { ArrowLeftIcon, HistoryIcon, LibraryIcon, MessageSquareIcon, PanelLeftIcon, PictureInPicture2Icon, SquarePenIcon, XIcon } from 'lucide-react';
 import type { BlockIcon } from '../button/actions';
-import { defaultViewerIcons, defaultViewerLabels } from '../viewers/viewer-window';
+import { defaultViewerIcons, defaultViewerLabels } from '../viewer-frame/viewer-window';
 
 export const defaultAppLabels = {
   ...defaultViewerLabels,

@@ -1,5 +1,5 @@
-// Converts registry/viewers/viewers.css into the `css` object of the viewers item in registry.json (the shadcn registry schema keeps
-// css as JSON). `node registry/viewers/build-css.mjs` rewrites registry.json; the source test fails when the two differ.
+// Converts registry/viewer-frame/viewers.css into the `css` object of the viewer-frame item in registry.json (the shadcn registry schema keeps
+// css as JSON). `node registry/viewer-frame/build-css.mjs` rewrites registry.json; the source test fails when the two differ.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -46,9 +46,9 @@ export const viewersCss = () => parseCss(readFileSync(new URL('viewers.css', her
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const manifestPath = fileURLToPath(new URL('../../registry.json', import.meta.url));
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
-  const item = manifest.items.find(entry => entry.name === 'viewers');
-  if (!item) throw new Error('registry.json has no viewers item');
+  const item = manifest.items.find(entry => entry.name === 'viewer-frame');
+  if (!item) throw new Error('registry.json has no viewer-frame item');
   item.css = viewersCss();
   writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
-  console.log('registry.json viewers css updated');
+  console.log('registry.json viewer-frame css updated');
 }

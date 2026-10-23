@@ -6,6 +6,7 @@
 //   npx boring-ui-blocks update [--version <v>] [--registry <url>] [--dry-run] [--manifest <path>] [--cwd <dir>]
 //   npx boring-ui-blocks add <shadcn add arguments...> [--manifest <path>] [--cwd <dir>]
 //   npx boring-ui-blocks manifest [--manifest <path>] [--cwd <dir>]
+//   npx boring-ui-blocks help    (also --help: the usage and which items to add; exit 0)
 //
 // `check` writes nothing. `add`, `update` and `manifest` write the shadcn files they install and the manifest, nothing else.
 import { createHash } from 'node:crypto';
@@ -214,7 +215,12 @@ export function check(app, design = [], manifest = MANIFEST) {
   return { version, blocks: blocks.map(block => block.name), violations };
 }
 
-const USAGE = 'usage: boring-ui-blocks check [--design <dir>...] [--manifest <path>] [--cwd <dir>] [--json] | update [--version <v>] [--registry <url>] [--dry-run] [--manifest <path>] [--cwd <dir>] | add <shadcn add args...> [--manifest <path>] [--cwd <dir>] | manifest [--manifest <path>] [--cwd <dir>]';
+const USAGE = `usage: boring-ui-blocks check [--design <dir>...] [--manifest <path>] [--cwd <dir>] [--json] | update [--version <v>] [--registry <url>] [--dry-run] [--manifest <path>] [--cwd <dir>] | add <shadcn add args...> [--manifest <path>] [--cwd <dir>] | manifest [--manifest <path>] [--cwd <dir>] | help\n\n` +
+  'Blocks: pi-app is the whole agent app with every chat feature and viewer. pi-chat is the core chat only: add pi-chat-plugins for every ' +
+  'feature, or one of pi-chat-markdown, pi-chat-slash, pi-chat-mentions, pi-chat-pickers, pi-chat-voice, pi-chat-attachments, ' +
+  'pi-chat-question, pi-chat-approval, pi-chat-subagent and pi-artifacts. Viewers are viewer-frame plus viewer-markdown, viewer-html, ' +
+  'viewer-image, viewer-pdf and viewer-code, loaded by kind. update reinstalls only installed items: ' +
+  'add the new ones an app uses once (registry/README.md, "From one item to small items").';
 const FLAGS = { check: ['design', 'manifest', 'json'], update: ['version', 'registry', 'dry-run', 'manifest'], manifest: ['manifest'] };
 
 function parse(command, rest) {
@@ -274,6 +280,7 @@ const line = v => `${v.check} ${v.rule} ${v.file}${v.line ? `:${v.line}:${v.colu
 
 export function main(argv, cwd = process.cwd(), log = console.log, error = console.error) {
   const [command, ...rest] = argv;
+  if (['help', '--help', '-h'].includes(command)) { log(USAGE); return 0; }
   let flags;
   try {
     if (!['check', 'update', 'add', 'manifest'].includes(command)) throw new Error(command ? `unknown command ${command}` : 'missing command');

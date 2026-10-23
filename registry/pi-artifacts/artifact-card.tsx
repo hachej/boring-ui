@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@/components/ui/item';
 import { Shimmer } from '../pi-chat/shimmer';
 import { artifactKey, artifactKind, recogniseArtifact, typeLabel } from './artifact';
-import type { ArtifactDescriptor, ArtifactKind, ArtifactType } from './artifact';
+import type { ArtifactDescriptor, ArtifactType, KindMatch } from './artifact';
 import { useChatText } from '../pi-chat/labels';
 import type { ChatArtifactCardProps } from '../pi-chat/config';
 
@@ -26,7 +26,7 @@ export function ArtifactCard({ artifact, pending, title, open = false, onOpen, k
   readonly open?: boolean;
   readonly onOpen?: ((artifact: ArtifactDescriptor) => void) | undefined;
   /** The app's artifact kinds (`ArtifactsConfig.kinds`): their label and icon win over the type's. */
-  readonly kinds?: readonly ArtifactKind[] | undefined;
+  readonly kinds?: readonly KindMatch[] | undefined;
 }) {
   const { labels } = useChatText();
   if (!artifact) {
@@ -57,7 +57,7 @@ export function ArtifactCard({ artifact, pending, title, open = false, onOpen, k
 export function PluggedArtifactCard({ artifact, open, onOpen, kinds }: ChatArtifactCardProps) {
   const descriptor = artifact.state === 'ready' ? artifact.descriptor as ArtifactDescriptor : undefined;
   return <ArtifactCard artifact={descriptor} title={artifact.title} {...(artifact.state === 'ready' ? {} : { pending: artifact.state })}
-    open={open} onOpen={onOpen ? () => onOpen() : undefined} kinds={kinds as readonly ArtifactKind[] | undefined} />;
+    open={open} onOpen={onOpen ? () => onOpen() : undefined} kinds={kinds as readonly KindMatch[] | undefined} />;
 }
 
 /** What makes `PiChat` offer artifacts: `<PiChat artifacts={{ open, isOpen, kinds, ...artifactCards }} />` (`withChatPlugins` adds it). */

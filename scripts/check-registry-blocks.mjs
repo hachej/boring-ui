@@ -18,6 +18,11 @@
 //    props (D-257). The core depends on no `pi-chat-*` item nor on pi-artifacts, declares none of their npm packages, imports none of
 //    the feature-only modules in CORE_EXCLUDED and ships none of the card modules in CORE_EXCLUDED_FILES (question, approval,
 //    sub-agent, run and artifact cards, and the artifact descriptors), so a question or an approval without its item shows a notice.
+//    Viewers load by kind, lazily (D-257 step 4): the core chat depends on no viewer item, and neither the agent page (pi-app, documents) nor any
+//    kind module (`*-kind.ts(x)`) makes a static value import of a view module in LAZY_VIEWS; it reaches the view only through the
+//    kind's `load: () => import(...)`, so each view lands in its own chunk. Type-only imports are allowed (they are erased).
+//    So that features cannot drift back (D-257 step 5), the core declares only the npm packages in CORE_PACKAGES and stays within
+//    CORE_BUDGET (listed files and their lines); growing either is a decision made by editing the constant, not a side effect.
 import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -32,7 +37,15 @@ export const SHADCN_BUILTINS = Object.freeze(['button', 'toggle', 'switch', 'dra
 /** npm packages (or package subpaths) only the optional composer feature items use: Markdown and voice capture. */
 export const CORE_EXCLUDED = Object.freeze(['marked', 'entities', '@hachej/boring-ui-kit/voice-capture']);
 /** The optional items the core chat must not depend on besides the `pi-chat-*` ones. */
-export const CORE_EXCLUDED_ITEMS = Object.freeze(['pi-artifacts']);
+export const CORE_EXCLUDED_ITEMS = Object.freeze(['pi-artifacts', 'viewer-frame', 'viewer-markdown', 'viewer-html', 'viewer-image', 'viewer-pdf', 'viewer-code', 'maquette-viewer', 'diagram-viewer', 'mockup-viewer', 'record-viewer', 'looks-viewer', 'board-viewer']);
+/** The view modules a kind loads lazily (D-257 step 4): the agent page and the kind modules never import them statically. */
+export const LAZY_VIEWS = Object.freeze(['viewer-markdown/markdown-pane', 'viewer-html/html-pane', 'viewer-image/image-pane', 'viewer-pdf/pdf-pane', 'viewer-pdf/pdf-pages', 'viewer-pdf/local-file-viewer', 'viewer-code/svg-view', 'viewer-code/csv-table', 'maquette-viewer/maquette-viewer', 'diagram-viewer/diagram-viewer', 'mockup-viewer/mockup-viewer', 'record-viewer/record-viewer', 'looks-viewer/looks-viewer', 'board-viewer/board-viewer']);
+/** A static import or re-export that brings values: `import x from`, `import { a } from`, `export { a } from`, `import '...'`; not `import type`. */
+const staticValueImport = /^\s*(?:import\s+(?!type\b)(?:[^'";]*?\sfrom\s*)?|export\s+(?!type\b)[^'";]*?\sfrom\s*)['"]([^'"]+)['"]/gm;
+/** The npm packages the core chat may declare: the borrowed native chat, the Pi types it renders, React, icons and the shadcn runtime. */
+export const CORE_PACKAGES = Object.freeze(['@hachej/boring-ui-kit', '@hachej/boring-files', '@hachej/boring-feedback', 'react', 'react-dom', '@base-ui/react', '@earendil-works/pi-durable', '@earendil-works/chord', '@earendil-works/pi-ai', '@modelcontextprotocol/sdk', 'lucide-react', '@shadcn/react', 'zod']);
+/** The core chat's size: its listed files and their lines (26 files and 4110 lines after D-257 step 4, from 38 files and ~5.4k before). */
+export const CORE_BUDGET = Object.freeze({ files: 26, lines: 4200 });
 /** The card modules that live in their optional items, never in the core chat (D-257 step 3). */
 export const CORE_EXCLUDED_FILES = Object.freeze(['question-card', 'approval-card', 'subagent-card', 'run-card', 'artifact-card', 'artifact']);
 const packageName = (dependency) => dependency.replace(/(.)@[^@]*$/, '$1');
@@ -148,12 +161,24 @@ export function checkRegistryBlocks(root) {
   const core = items.get('pi-chat');
   if (core) {
     for (const dependency of closure('pi-chat')) if (dependency.startsWith('pi-chat-') || CORE_EXCLUDED_ITEMS.includes(dependency)) errors.push(`BORING-BLOCKS pi-chat: the core chat must not depend on the optional feature item ${dependency}; the host plugs it in through the chat's props`);
-    for (const dependency of core.dependencies ?? []) if (CORE_EXCLUDED.includes(packageName(dependency))) errors.push(`BORING-BLOCKS pi-chat: the core chat must not declare ${packageName(dependency)}; it belongs to an optional pi-chat-* feature item`);
+    for (const dependency of core.dependencies ?? []) if (!CORE_PACKAGES.includes(packageName(dependency))) errors.push(`BORING-BLOCKS pi-chat: the core chat must not declare ${packageName(dependency)}; it belongs to an optional pi-chat-* item (core packages: ${CORE_PACKAGES.join(', ')})`);
+    const lines = (core.files ?? []).reduce((total, file) => total + (existsSync(resolve(root, file.path)) ? readFileSync(resolve(root, file.path), 'utf8').split('\n').length : 0), 0);
+    if ((core.files ?? []).length > CORE_BUDGET.files || lines > CORE_BUDGET.lines) errors.push(`BORING-BLOCKS pi-chat: the core chat has ${(core.files ?? []).length} files and ${lines} lines, over its budget of ${CORE_BUDGET.files} files and ${CORE_BUDGET.lines} lines; ship the feature as an optional pi-chat-* item plugged in through the chat's props`);
     for (const file of core.files ?? []) {
       const base = posix.basename(file.path).replace(/\.[^.]+$/, '');
       if (CORE_EXCLUDED_FILES.includes(base)) errors.push(`BORING-BLOCKS ${file.path}: the core chat ships ${base}, a card module that belongs to its optional item (pi-chat-question, pi-chat-approval, pi-chat-subagent or pi-artifacts)`);
       if (!existsSync(resolve(root, file.path))) continue;
       for (const [, specifier] of readFileSync(resolve(root, file.path), 'utf8').matchAll(importPattern)) if (CORE_EXCLUDED.includes(specifier)) errors.push(`BORING-BLOCKS ${file.path}: the core chat imports ${specifier}; move that feature to its optional pi-chat-* item`);
+    }
+  }
+  for (const item of items.values()) for (const file of item.files ?? []) {
+    const base = posix.basename(file.path);
+    if (!['pi-chat', 'pi-app', 'documents'].includes(item.name) && !/-kinds?\.tsx?$/.test(base)) continue;
+    if (!existsSync(resolve(root, file.path))) continue;
+    for (const [, specifier] of readFileSync(resolve(root, file.path), 'utf8').matchAll(staticValueImport)) {
+      if (!specifier.startsWith('.')) continue;
+      const target = posix.normalize(posix.join(posix.dirname(file.path), specifier)).replace(/^registry\//, '').replace(/\.tsx?$/, '');
+      if (LAZY_VIEWS.includes(target)) errors.push(`BORING-BLOCKS ${file.path}: imports the view ${target} statically; load it through its kind's \`load: () => import(...)\` so it stays in its own chunk`);
     }
   }
   for (const cycle of importCycles(root, cycleFolders(root))) errors.push(`BORING-BLOCKS import cycle: ${cycle.join(' -> ')} (move the shared piece to the module that owns it so imports go one way)`);

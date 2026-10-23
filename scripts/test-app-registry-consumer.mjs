@@ -137,8 +137,8 @@ async function testStyle(style) {
     // The installed PDF viewer as a phone sees it (no browser viewer): pdf.js and its worker come from the consumer's own install.
     const pdfBase64 = Buffer.from(fictionalPdf([['Cedar Works', 'A fictional picnic plan.'], ['Page two', 'Pack some sandwiches.']])).toString('base64');
     writeFileSync(join(directory, 'src/pdf-check.tsx'), `import { createRoot } from 'react-dom/client';
-  import { PdfPane } from './components/viewers/pdf-pane';
-  import { LocalFileViewer } from './components/viewers/local-file-viewer';
+  import { PdfPane } from './components/viewer-pdf/pdf-pane';
+  import { LocalFileViewer } from './components/viewer-pdf/local-file-viewer';
   const bytes = Uint8Array.from(atob('${pdfBase64}'), character => character.charCodeAt(0));
   const local = location.search === '?local';
   if (local) Object.defineProperty(navigator, 'pdfViewerEnabled', { value: false });
@@ -152,14 +152,25 @@ async function testStyle(style) {
     assert.ok(bundledCss.includes('file-tree-row-button') && bundledCss.includes('file-tree'), 'portable tree styles ship without scanning package internals');
     const inputs = Object.keys(JSON.parse(readFileSync(join(directory, 'dist/meta.json'), 'utf8')).inputs);
     assertConsumerTypeFiles(inputs.map(path => resolve(directory, path)).join('\n'), directory);
-    for (const file of ['file-tree/file-tree.tsx', 'pi-app/agent-workspace.tsx', 'pi-app/artifact-panel.tsx', 'pi-app/file-viewer.tsx', 'pi-app/sessions.tsx', 'pi-chat/pi-chat.tsx', 'pi-workspace/workspace.tsx', 'viewers/viewer-frame.tsx', 'viewers/local-file-viewer.tsx', 'documents/documents.tsx', 'documents/document-sheet.tsx', 'highlights/highlights.tsx'])
+    for (const file of ['file-tree/file-tree.tsx', 'pi-app/agent-workspace.tsx', 'pi-app/artifact-panel.tsx', 'pi-app/file-viewer.tsx', 'pi-app/sessions.tsx', 'pi-chat/pi-chat.tsx', 'pi-workspace/workspace.tsx', 'viewer-frame/viewer-frame.tsx', 'viewer-pdf/local-file-viewer.tsx', 'documents/documents.tsx', 'documents/document-sheet.tsx', 'highlights/highlights.tsx'])
       assert.ok(inputs.some(path => path.endsWith(`src/components/${file}`)), `the bundle uses the CLI-installed ${file}`);
     assert.deepEqual(inputs.filter(path => /@hachej\/boring-agent|pi-durable\/dist\/(storage|env)|sqlite|node:|tldraw/.test(path)), [], 'browser bundle holds no agent, storage, Node or canvas code');
+    // D-257 step 4: bundled with code splitting, as the app's bundler does, the installed views sit in chunks the page reaches only by a
+    // kind's dynamic import. (The page's own LocalFileViewer example imports the image and PDF panes directly, and Highlights the Markdown editor.)
+    run(process.execPath, ['node_modules/esbuild/bin/esbuild', 'src/page.tsx', '--bundle', '--splitting', '--platform=browser', '--format=esm', '--jsx=automatic', '--outdir=dist/split', '--metafile=dist/split-meta.json',
+      '--define:process.env.NODE_ENV="production"', '--alias:@=./src'], isolated);
+    const split = JSON.parse(readFileSync(join(directory, 'dist/split-meta.json'), 'utf8')).outputs;
+    const entry = Object.keys(split).find(path => split[path].entryPoint === 'src/page.tsx');
+    const eager = new Set([entry]);
+    for (const path of eager) for (const edge of split[path].imports) if (edge.kind === 'import-statement' && !edge.external) eager.add(edge.path);
+    const lazyViews = /src\/components\/(viewer-markdown\/markdown-pane|viewer-html\/html-pane|viewer-code\/(svg-view|csv-table)|maquette-viewer\/maquette-viewer|diagram-viewer\/diagram-viewer|mockup-viewer\/mockup-viewer|record-viewer\/record-viewer)\.tsx$/;
+    assert.deepEqual([...eager].flatMap(path => Object.keys(split[path].inputs)).filter(path => lazyViews.test(path)), [], 'the page loads no view up front');
+    assert.ok(Object.values(split).some(output => Object.keys(output.inputs).some(path => path.endsWith('src/components/viewer-markdown/markdown-pane.tsx'))), 'the Markdown view is bundled in a chunk of its own');
     run(process.execPath, ['node_modules/esbuild/bin/esbuild', 'src/pdf-check.tsx', '--bundle', '--platform=browser', '--format=esm', '--jsx=automatic', '--outfile=dist/pdf-check.js',
       '--define:process.env.NODE_ENV="production"', '--alias:@=./src'], isolated);
     await assertInstalledPdfWorker(directory);
     // Keep the DOM setup outside the component bundle: public Base UI modules must initialize in that DOM realm.
-    writeFileSync(join(directory, 'presentation-components.tsx'), "export { ViewerActions, ViewerVersions } from './src/components/viewers/menu';\nexport { ConversationFiles } from './src/components/pi-chat/conversation-files';\nexport { FileTree } from './src/components/file-tree/file-tree';\nexport { HistoryColumnToggle, useHistoryColumn } from './src/components/pi-app/history-column';\n");
+    writeFileSync(join(directory, 'presentation-components.tsx'), "export { ViewerActions, ViewerVersions } from './src/components/viewer-frame/menu';\nexport { ConversationFiles } from './src/components/pi-chat/conversation-files';\nexport { FileTree } from './src/components/file-tree/file-tree';\nexport { HistoryColumnToggle, useHistoryColumn } from './src/components/pi-app/history-column';\n");
     writeFileSync(join(directory, 'dist/presentation.mjs'), readFileSync(join(root, 'test/fixtures/app-registry-presentation.mjs'), 'utf8'));
     run(process.execPath, ['node_modules/esbuild/bin/esbuild', 'presentation-components.tsx', '--bundle', '--platform=node', '--format=esm', '--packages=external', '--jsx=automatic', '--outfile=dist/presentation-components.mjs', '--alias:@=./src', '--alias:@hachej/boring-ui-kit/file-tree.css=./node_modules/@hachej/boring-ui-kit/styles/file-tree.css'], isolated);
     run(process.execPath, ['dist/presentation.mjs'], isolated);

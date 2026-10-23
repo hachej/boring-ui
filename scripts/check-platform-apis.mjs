@@ -38,7 +38,7 @@ export const ALLOWLIST = {
   'packages/ui/src/voice-capture.ts': { rules: ['navigator.secure', 'getUserMedia'], requires: [/typeof globalThis\.navigator\?\.mediaDevices\?\.getUserMedia !== 'function'/, /options\.getUserMedia \?\? browserGetUserMedia\(\)/] },
   // The composer's camera ("Take a photo" on phones): opens only when the sheet mounts (the person's tap), through an injectable getUserMedia whose default feature-detects.
   'registry/pi-chat-attachments/camera-sheet.tsx': { rules: ['navigator.secure', 'getUserMedia'], requires: [/typeof globalThis\.navigator\?\.mediaDevices\?\.getUserMedia !== 'function'/, /latest\.current\.getUserMedia \?\? browserGetUserMedia\(\)/] },
-  'registry/viewers/share.ts': { rules: ['navigator.share'], requires: [/typeof nav\?\.share === 'function'/, /copyText/] },
+  'registry/viewer-frame/share.ts': { rules: ['navigator.share'], requires: [/typeof nav\?\.share === 'function'/, /copyText/] },
 };
 
 const SECURE_ONLY = new Set(['clipboard', 'share', 'canShare', 'credentials', 'mediaDevices', 'geolocation', 'serviceWorker', 'wakeLock', 'bluetooth', 'usb', 'serial', 'hid']);
@@ -46,7 +46,7 @@ const HOW = {
   randomUUID: 'import { randomUUID } from "@hachej/boring-files/platform" (crypto.randomUUID is secure-context only)',
   'crypto.subtle': 'use sha256 from "@hachej/boring-files/platform" (crypto.subtle is secure-context only)',
   'navigator.clipboard': 'use copyToClipboard from "@hachej/boring-files/platform", or copyText in the registry item (navigator.clipboard is secure-context only)',
-  'navigator.share': 'use createLinkShare from registry/viewers/share.ts (navigator.share is secure-context only)',
+  'navigator.share': 'use createLinkShare from registry/viewer-frame/share.ts (navigator.share is secure-context only)',
   'navigator.secure': 'secure-context-only browser API; feature-detect behind the platform module',
   isSecureContext: 'branching on isSecureContext hides the insecure-origin path; feature-detect the capability instead',
   'node:crypto': 'node:crypto does not exist in the browser; use "@hachej/boring-files/platform"',

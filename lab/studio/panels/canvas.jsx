@@ -8,8 +8,8 @@ import { DEFAULT_EMBED_DEFINITIONS, defaultBindingUtils, defaultEditorAssetUrls,
 import { createResourceClient } from '@hachej/boring-files/remote';
 import { createCanvasController } from '@hachej/boring-ui-kit/canvas';
 import { CanvasEditor } from '@hachej/boring-ui-kit/canvas-editor';
-import { ViewerFrame } from '../../../registry/viewers/viewer-frame.tsx';
-import { markdownStatus } from '../../../registry/viewers/markdown-pane.tsx';
+import { ViewerFrame } from '../../../registry/viewer-frame/viewer-frame.tsx';
+import { markdownStatus } from '../../../registry/viewer-markdown/markdown-pane.tsx';
 import { shareStudioLink } from '../share-link.mjs';
 import { randomUUID } from '@hachej/boring-files/platform';
 

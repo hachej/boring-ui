@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { useEffect, useState } from 'react';
 import { createResourceClient } from '@hachej/boring-files/remote';
 import { ArtifactPanel } from '../../registry/pi-app/artifact-panel';
-import { createBoardKind } from '../../registry/board-viewer/board-viewer';
+import { createBoardKind } from '../../registry/board-viewer/board-kind';
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer';
 import { Button } from '@/components/ui/button';
 

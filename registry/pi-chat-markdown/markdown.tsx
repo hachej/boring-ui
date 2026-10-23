@@ -53,7 +53,7 @@ function children(value: unknown, context: Context, before = '', after = '', inl
   });
 }
 
-const mentionPattern = /(^|[\s(\[{"'“‘])\/([A-Za-z0-9_][A-Za-z0-9_-]*)(?=$|\s|[.,;!?)}\]"'”’]+(?=$|\s))/g;
+const mentionPattern = /(^|[\s([{"'“‘])\/([A-Za-z0-9_][A-Za-z0-9_-]*)(?=$|\s|[.,;!?)}\]"'”’]+(?=$|\s))/g;
 function mentionText(value: string, mentions: CommandMentions | undefined, before: string, after: string, labels: ChatLabels): ReactNode {
   if (!mentions?.commands.length || !value.includes('/')) return value;
   const commands = new Map(mentions.commands.filter(item => /^[A-Za-z0-9_][A-Za-z0-9_-]*$/.test(item.name)
@@ -84,6 +84,8 @@ function mentionText(value: string, mentions: CommandMentions | undefined, befor
 function linkTarget(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   const decoded = decodeHTML(value);
+  // Control characters are what this refuses; the pattern names them on purpose.
+  // oxlint-disable-next-line no-control-regex
   if (!/^https?:\/\//i.test(decoded) || /[\u0000- \u007f-\u009f\\]/.test(decoded)) return undefined;
   const authority = /^https?:\/\/([^/?#]*)/i.exec(decoded)?.[1];
   if (!authority || authority.includes('@')) return undefined;

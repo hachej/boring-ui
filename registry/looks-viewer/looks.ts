@@ -149,3 +149,6 @@ export function swatches(look: Look, dark = false): { readonly colors: readonly 
 
 /** A path named in the looks file, read next to it. */
 export const besideLooks = (looksPath: string, relative: string): string => looksPath.slice(0, looksPath.lastIndexOf('/') + 1) + relative;
+
+/** A `*.looks.json` file: the looks kind's match, here so the kind does not load the viewer. */
+export const isLooksPath = (path: string): boolean => /\.looks\.json$/i.test(path);
