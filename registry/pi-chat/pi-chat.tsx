@@ -15,7 +15,7 @@ import type { BlockAction } from '../button/actions';
 import { Composer } from './composer';
 import type { ComposerFeedback, ComposerProps } from './composer';
 import { ConversationFiles } from './conversation-files';
-import type { ConversationsConfig, PendingVoice, VoiceMessageConfig, VoiceMessageHandle, VoiceRecorderHook } from './config';
+import type { AttachmentsConfig, ConversationsConfig, PendingVoice, VoiceMessageConfig, VoiceMessageHandle, VoiceRecorderHook } from './config';
 import { displayName } from './config';
 import { EmptyState } from './empty-state';
 import type { Suggestion } from './empty-state';
@@ -114,6 +114,8 @@ export interface PiChatProps extends ChatFeatureProps {
   /** Rendered before the title in the header (for example a menu button on narrow screens). */
   readonly headerStart?: ReactNode;
   readonly onFiles?: FilesHandler;
+  /** The phone camera's Take a photo entry for an `onFiles` chat (`CameraSheet` of `pi-chat-attachments`); with `attachments`, set `attachments.Camera` instead. */
+  readonly camera?: AttachmentsConfig['Camera'];
   /** Shown instead of the default empty state before the first message. */
   readonly emptyState?: ReactNode;
   readonly suggestions?: readonly Suggestion[];
@@ -171,7 +173,7 @@ const noVoice: VoiceRecorderHook = () => silent;
 function NoVoiceBubble(_: { readonly pending: PendingVoice | undefined }) { return null; }
 
 function PiChatSession({ controller, placement = 'docked', mode = 'expert', presentation, className, keyboardInset = true, actions, avatar, headerActions, header = true, decisions, controls, tools, voiceMessage, pendingVoice, belowComposer, composerChips, composerHeader, composerHasContent, onPickFiles, timeline, renderConnectionError, headerStart, renderEntry, hideLine, displayLimit, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions,
-  onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = false, emptyLayout = 'centered', composerLayout = 'card', conversationTitle, onRenameTitle, feedback, draftKey, onOpenFile, fileChanges, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: ChatController } }) {
+  onOpenImage, onCopy, onComposerKeyDown, onFiles, camera, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = false, emptyLayout = 'centered', composerLayout = 'card', conversationTitle, onRenameTitle, feedback, draftKey, onOpenFile, fileChanges, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: ChatController } }) {
   const { labels, icons } = useChatText();
   useChatDraft(controller, draftKey);
   useChatPlacement(controller, placement);
@@ -183,7 +185,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
   const fork = useRef(conversations?.fork); fork.current = conversations?.fork;
   const canFork = Boolean(conversations?.fork);
   const rowExtras = useMemo(() => canFork ? { onFork: (entryId: string) => { void fork.current?.(entryId).catch(() => {}); } } : undefined, [canFork]);
-  const session = useChatSession({ controller, activeController: active, mode, presentation, actions, renderEntry, hideLine, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept,
+  const session = useChatSession({ controller, activeController: active, mode, presentation, actions, renderEntry, hideLine, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, camera, fileAccept,
     slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => timeline ? timeline.afterSend?.() : scrollToBottom.current(), feedback, rowExtras, onOpenFile, fileChanges, pasteToFile, composerChips, composerHeader, composerHasContent, onPickFiles });
   const { state, derived, rows, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, files, loading } = session;
   const voiceRows = pendingVoice ?? voice.pending;
