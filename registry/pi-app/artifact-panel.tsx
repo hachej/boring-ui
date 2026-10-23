@@ -4,7 +4,7 @@
 // the artifact's type. It follows the latest saved revision while nothing is unsaved ("Latest") or pins one older version, read-only. It
 // lists the versions the host's workspace provider retains for the file (`history`) and reads through the host's resource client. It never
 // executes artifact content (HTML runs only in the viewers' sandboxed preview when the host passes `interactive`).
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Component, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { CodeXmlIcon, EyeIcon } from 'lucide-react';
 import { randomUUID } from '@hachej/boring-files/platform';
@@ -17,7 +17,7 @@ import { createHtmlController } from '@hachej/boring-ui-kit/html';
 import type { HtmlController } from '@hachej/boring-ui-kit/html';
 import type { ChatController } from '@hachej/boring-ui-kit/native-chat';
 import { artifactKey, collectArtifacts } from '../pi-chat/pi-chat';
-import type { ArtifactDescriptor, ArtifactKind, ArtifactTarget, ArtifactsConfig } from '../pi-chat/pi-chat';
+import type { ArtifactDescriptor, ArtifactKind, ArtifactKindViewProps, ArtifactTarget, ArtifactsConfig } from '../pi-chat/pi-chat';
 import { CodeBlock } from '../pi-chat/code-block';
 import { artifactKind, typeLabel } from '../pi-chat/artifact';
 import { HtmlPane } from '../viewers/html-pane';
@@ -32,7 +32,7 @@ import { downloadFile } from '../viewers/download';
 import { MaquetteMenuContext, maquetteKind } from '../maquette-viewer/maquette-viewer';
 import { diagramKind } from '../diagram-viewer/diagram-viewer';
 import { recordsKind } from '../record-viewer/record-viewer';
-import { isMockupPath, mockupKind } from '../mockup-viewer/mockup-viewer';
+import { mockupKind } from '../mockup-viewer/mockup-viewer';
 import { copyText } from '../utils/utils';
 import { Separator } from '@/components/ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -87,6 +87,8 @@ export interface ViewerOptions {
   readonly onBeforeLeaveChange?: ((flush: (() => Promise<boolean>) | null) => void) | undefined;
   /** Told each revision a built-in viewer has mounted and shows (after it loads, never before): the page's acknowledgement of `present`. */
   readonly onShown?: ((shown: { readonly path: string; readonly revision: string; readonly hidden?: true }) => void) | undefined;
+  /** Told when an artifact kind could not show a revision (its `onFailed`, or its renderer threw): the page refuses a `present` of that file. */
+  readonly onFailed?: ((failed: { readonly path: string; readonly revision: string; readonly reason: string }) => void) | undefined;
   /** Where the host serves blob bytes (a checked same-origin path, default `/_files/`): a pointer file opens from `<blobBase><id>`. */
   readonly blobBase?: string | undefined;
 }
@@ -98,6 +100,21 @@ export function useReportShown(onShown: ViewerOptions['onShown'], path: string, 
     onShown({ path, revision });
     return () => onShown({ path, revision, hidden: true });
   }, [onShown, path, revision]);
+}
+
+/** Draws a kind's renderer as its own component, so a throw is caught by `KindBoundary` and reported as a failure. */
+function KindView({ render, props }: { readonly render: (props: ArtifactKindViewProps) => ReactNode; readonly props: ArtifactKindViewProps }) {
+  return <>{render(props)}</>;
+}
+
+/** Catches a kind renderer that throws: shows a short note instead of the view and reports the failure once. */
+class KindBoundary extends Component<{ readonly onError: () => void; readonly message: string; readonly children: ReactNode }, { readonly failed: boolean }> {
+  override state = { failed: false };
+  static getDerivedStateFromError(): { failed: boolean } { return { failed: true }; }
+  override componentDidCatch(): void { this.props.onError(); }
+  override render(): ReactNode {
+    return this.state.failed ? <p className="m-0 p-4 text-sm text-muted-foreground" role="status">{this.props.message}</p> : this.props.children;
+  }
 }
 
 /** Every artifact version the conversation's tool results produced (the version switcher's source), oldest first. */
@@ -235,7 +252,14 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose, headerSta
   const extension = EXTENSION.exec(path)?.[1] ?? 'txt';
   const revision = saved.kind === 'open' ? saved.snapshot.ref.revision : pinned ? artifact.revision : undefined;
   // A host viewer and the canvas (which shows only a "no viewer" note) never report a mount: a presented file in them stays unconfirmed.
-  useReportShown(options.onShown, path, !custom && type !== 'canvas' && saved.kind === 'open' && (!isMockupPath(path) || ready !== undefined && ready.revision === revision && ready.text === saved.text) ? saved.snapshot.ref.revision : undefined);
+  // A kind that waits for ready (a dashboard loading its data, the sandboxed mock-up) reports only once its renderer called `onReady` for this text.
+  const waits = !!(kind?.renderer && kind.waitsForReady);
+  useReportShown(options.onShown, path, !custom && type !== 'canvas' && saved.kind === 'open' && (!waits || ready !== undefined && ready.revision === revision && ready.text === saved.text) ? saved.snapshot.ref.revision : undefined);
+  const onFailedOption = options.onFailed;
+  const reportFailed = useCallback((reason: string) => {
+    setReady(undefined);
+    if (revision !== undefined) onFailedOption?.({ path, revision, reason });
+  }, [onFailedOption, path, revision]);
   // Choosing newest follows live saves; Current marks the displayed revision.
   const versions = menu.items.length > 1 ? <ViewerVersions testId="artifact-versions" current={menu.current} onSelect={onSelect} versions={menu.items} /> : undefined;
   const target = { artifact: artifactKey(artifact), version: pinned ? artifact.revision : 'latest' };
@@ -265,7 +289,7 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose, headerSta
   if (type === 'markdown' && controller) return body(document(<MarkdownPane controller={controller as MarkdownController} initialMode="rich" onAutosaveChange={registerAutosave} onBeforeLeaveChange={options.onBeforeLeaveChange} {...frame} />));
   if (type === 'html' && controller) return body(document(<HtmlPane controller={controller as HtmlController} {...(options.interactive ? { interactive: options.interactive } : {})} {...frame} />));
   const actions = { onCopy: () => copyText(text ?? ''), onDownload: () => downloadFile(filename, text ?? '', `${artifact.mediaType};charset=utf-8`) };
-  if (kind?.renderer) return body(<ViewerFrame {...frame} {...actions} menu={kindMenu}><MaquetteMenuContext value={setKindMenu}><div data-testid="artifact-kind-view" className="min-h-0 flex-1 overflow-auto">{kind.renderer({ artifact, text: saved.text, revision: saved.snapshot.ref.revision, pinned, fragment, read, onReady: () => setReady({ revision, text: saved.text }) })}</div></MaquetteMenuContext></ViewerFrame>);
+  if (kind?.renderer) return body(<ViewerFrame {...frame} {...actions} menu={kindMenu}><MaquetteMenuContext value={setKindMenu}><div data-testid="artifact-kind-view" className="min-h-0 flex-1 overflow-auto"><KindBoundary key={saved.snapshot.ref.revision} message={labels.versionUnavailable} onError={() => reportFailed('the view failed to render')}><KindView render={kind.renderer} props={{ artifact, text: saved.text, revision: saved.snapshot.ref.revision, pinned, fragment, read, onReady: () => setReady({ revision, text: saved.text }), onFailed: reportFailed }} /></KindBoundary></div></MaquetteMenuContext></ViewerFrame>);
   if (type === 'code' && artifact.language === 'csv') return body(<ViewerFrame {...frame} {...actions}><div className="min-h-0 flex-1 overflow-auto"><CsvTable text={saved.text} /></div></ViewerFrame>);
   if (type === 'svg') return body(<SvgView text={saved.text} title={artifact.title} frame={{ ...frame, ...actions }} />);
   if (type === 'canvas') return body(<ViewerFrame {...frame}><p className="m-0 p-4 text-sm text-muted-foreground" role="status">{labels.noCanvasViewer}</p></ViewerFrame>);

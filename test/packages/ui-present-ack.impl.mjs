@@ -281,3 +281,69 @@ test('a request that fails in transport keeps its call waiting, so a later mount
   assert.deepEqual(sent, ['A', 'B'], 'the later mount of B is answered');
   assert.deepEqual(acks.waiting(), [], 'B is accepted, so the call is done');
 });
+
+test('an app kind that waits for ready (a dashboard) reports its mount only after onReady, and onFailed or a throw is reported as a failure', async () => {
+  const { ArtifactPanel } = await load('artifact-panel', 'pi-app/artifact-panel.tsx');
+  const { createElement, act } = await import('react');
+  const { createRoot } = await import('react-dom/client');
+  const window = new Window({ url: 'https://fictional.invalid/' });
+  const restore = installDom(window);
+  const { client, descriptor } = panelFixture();
+  const dashboard = descriptor('code', 'sales.dashboard.json');
+  const errors = console.error; console.error = () => {};
+  /** Mounts the dashboard with a kind whose renderer is `draw(props)`; `step(props)` runs once it rendered. */
+  async function mount(draw, step = async () => {}) {
+    const reports = [], failures = [];
+    let props;
+    const kind = { match: target => target.resource.path.endsWith('.dashboard.json'), label: 'Dashboard', waitsForReady: true,
+      renderer: value => { props = value; return draw(value); } };
+    const container = window.document.createElement('div');
+    window.document.body.appendChild(container);
+    const root = createRoot(container);
+    const options = { client, identity: { runtimeId: 'fictional' }, kinds: [kind], onShown: shown => reports.push(shown), onFailed: failed => failures.push(failed) };
+    try {
+      await act(async () => { root.render(createElement(ArtifactPanel, { active: { descriptor: dashboard, follow: true }, versions: [dashboard], options, onSelect: () => {}, onClose: () => {} })); });
+      for (let i = 0; i < 10; i++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 5)); });
+      await step(props, reports, act);
+    } finally {
+      await act(async () => { root.unmount(); });
+    }
+    return { reports, failures };
+  }
+  try {
+    const ready = await mount(() => createElement('div', null, 'chart'), async (props, reports, act) => {
+      assert.deepEqual(reports, [], 'nothing is reported while the dashboard has not called onReady');
+      await act(async () => { props.onReady(); });
+    });
+    assert.deepEqual(ready.reports, [{ path: 'sales.dashboard.json', revision: 'rev-code' }, { path: 'sales.dashboard.json', revision: 'rev-code', hidden: true }]);
+    assert.deepEqual(ready.failures, []);
+
+    const failed = await mount(() => createElement('div', null, 'chart'), async (props, _reports, act) => { await act(async () => { props.onFailed('the sales query failed'); }); });
+    assert.deepEqual(failed.reports, [], 'a failed dashboard never reports a mount');
+    assert.deepEqual(failed.failures, [{ path: 'sales.dashboard.json', revision: 'rev-code', reason: 'the sales query failed' }]);
+
+    const thrown = await mount(() => { throw new Error('fictional render bug'); });
+    assert.deepEqual(thrown.reports, [], 'a renderer that throws never reports a mount');
+    assert.deepEqual(thrown.failures, [{ path: 'sales.dashboard.json', revision: 'rev-code', reason: 'the view failed to render' }]);
+
+    const never = await mount(() => createElement('div', null, 'loading'));
+    assert.deepEqual(never, { reports: [], failures: [] }, 'a dashboard that never calls onReady reports nothing: the present ends unconfirmed');
+  } finally {
+    console.error = errors;
+    restore(); await window.happyDOM.close();
+  }
+});
+
+test('createPresentAcks refuses the calls waiting for a file whose view failed, with the reason', async () => {
+  const { sent, make } = await fakeChat();
+  const acks = make();
+  acks.consider([pendingCall('c1', 'sales.dashboard.json'), pendingCall('c2', 'other.md')], context({ autoOpen: false }));
+  acks.failed({ path: 'sales.dashboard.json', reason: 'the sales query failed' });
+  await flush();
+  assert.deepEqual(sent, [{ id: 'c1', kind: 'refused', reason: 'the sales query failed' }]);
+  assert.deepEqual(acks.waiting(), ['c2'], 'only the failed file is refused');
+  acks.consider([pendingCall('c2', 'other.md'), pendingCall('c3', 'sales.dashboard.json')], context({ autoOpen: false }));
+  acks.failed({ path: 'sales.dashboard.json', reason: 'x'.repeat(500) });
+  await flush();
+  assert.equal(sent.at(-1).reason.length, 200, 'the reason is bounded to what the server accepts');
+});

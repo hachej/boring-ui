@@ -1,5 +1,7 @@
 # Unreleased
 
+- **Present acknowledgement for views that load (D-256).** An `ArtifactKind` may set `waitsForReady: true`: the panel then confirms a `present` of its file only after the renderer calls `onReady`, and refuses it with the reason when the renderer calls the new `onFailed(reason)` or throws (a throw now shows a short note instead of breaking the panel). Use it for a dashboard or any view that loads its data; kinds without it are confirmed when their file is read, as before. `createPresentAcks` gains `failed({ path, reason })` and `ViewerOptions` gains `onFailed`. Update the `pi-chat`, `pi-app` and `mockup-viewer` blocks together (the mock-up kind now declares `waitsForReady` instead of the panel special-casing its path). No agent API or stored-format change.
+
 # Migrating to 0.4.9
 
 - **Hardening (D-248).** `githubSink` refuses `.`/`..` repository segments and an `apiUrl` that is not https (http only for localhost) before sending the token; reinstall `provider-setup` (non-http(s) `verificationUri` is plain text), `shared-chat` (`avatarUrl` loads only https, `data:image/`, `blob:` or same-origin paths) and `viewers` (`PdfPane` shows a `blob` only when typed `application/pdf`). `mockup-viewer` messages keep targetOrigin `'*'` (opaque-origin sandbox).

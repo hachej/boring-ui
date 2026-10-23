@@ -119,10 +119,12 @@ export interface MockupKind {
   readonly label: string;
   readonly icon: ComponentType<{ readonly className?: string; readonly 'aria-hidden'?: boolean | 'true' }>;
   readonly renderer: (props: { readonly text: string; readonly onReady?: (() => void) | undefined; readonly artifact?: { readonly target: { readonly resource: { readonly path: string } } } | undefined }) => ReactNode;
+  /** The sandboxed frame loads asynchronously: a `present` of a mock-up is confirmed only once it has loaded. */
+  readonly waitsForReady: true;
 }
 
 export function createMockupKind({ comments, locale }: { readonly comments?: MockupComments | undefined; readonly locale?: 'en' | 'fr' | undefined } = {}): MockupKind {
-  return { match: target => isMockupPath(target.resource.path), label: locale === 'fr' ? 'Maquette HTML' : 'HTML mock-up', icon: CodeXmlIcon,
+  return { match: target => isMockupPath(target.resource.path), label: locale === 'fr' ? 'Maquette HTML' : 'HTML mock-up', icon: CodeXmlIcon, waitsForReady: true,
     renderer: ({ text, artifact, onReady }) => <MockupViewer key={artifact?.target.resource.path} text={text} path={artifact?.target.resource.path} comments={comments} locale={locale} onReady={onReady} /> };
 }
 export const mockupKind: MockupKind = createMockupKind();

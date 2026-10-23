@@ -28,6 +28,8 @@ const endpoint = 'https://fixture.invalid/chat';
 const access = { principalId: 'agent', initiatorId: 'agent', scopeId: 'fictional-project' };
 const encoder = new TextEncoder();
 const text = '# Fictional report\n\nA paragraph.\n';
+// A dashboard view an app registers as an artifact kind (`waitsForReady`): its file names the data, its renderer loads it.
+const dashboardText = '{"title":"Fictional sales","query":"sales by month"}\n';
 const until = async (label, check, ms = 8000) => { const deadline = Date.now() + ms; while (!(await check())) { assert.ok(Date.now() < deadline, label); await new Promise(resolve => setTimeout(resolve, 10)); } };
 const parts = (message, type) => (message.content ?? []).filter(part => part.type === type);
 const messages = view => view.entries.flatMap(entry => entry.model ?? []);
@@ -76,6 +78,7 @@ function workspace(directory) {
   const root = join(directory, 'workspace');
   mkdirSync(root);
   writeFileSync(join(root, 'doc.md'), text);
+  writeFileSync(join(root, 'sales.dashboard.json'), dashboardText);
   const env = new NodeExecutionEnv({ cwd: root });
   const db = openNodeConnection(join(directory, 'journal.sqlite'));
   const files = createWorkspaceProvider({ identity: { providerId: 'fictional', instanceId: 'one', incarnation: 'one', viewId: 'published' }, fs: env, journal: createWorkspaceJournal(db) });
@@ -344,4 +347,36 @@ test('ack: a replay answered before the tool resumes writes no result until resu
 
 test('ack: the default timeout is 15 seconds', () => {
   assert.equal(VIEW_OPEN_TIMEOUT_MS, 15_000);
+});
+
+test('ack: a dashboard view (an app kind that waits for ready) is opened only once it is ready, and refused with the reason when it fails', async t => {
+  const { createPresentAcks } = await loadPageAcks();
+  const pageContext = { closedThisTurn: false, unsaved: false, narrow: false, autoOpen: true, showing: () => false };
+  const path = 'sales.dashboard.json';
+  const dashboardRevision = await blobRevision(encoder.encode(dashboardText));
+  // Ready: the panel's mount report for a `waitsForReady` kind comes after the renderer's onReady (test/packages/ui-present-ack.impl.mjs).
+  const f = await fixture(t, { ack: { timeoutMs: 5000 }, args: { path } });
+  await f.submit();
+  const call = await f.waitPending();
+  const acks = createPresentAcks({ answer: (id, body) => f.remote.answer(id, body), open: () => true, instanceId: 'tab-1' });
+  acks.consider([{ id: call.answerId, callId: call.id, path }], pageContext);
+  await new Promise(resolve => setTimeout(resolve, 50));
+  assert.deepEqual(f.caller.requests, ['call'], 'opening the panel alone does not answer: the dashboard is not ready yet');
+  acks.shown({ path, revision: dashboardRevision });
+  await until('model continues', async () => finalText(await view(f.remote))?.startsWith('Got {"kind":"presented"'));
+  const opened = JSON.parse(finalText(await view(f.remote)).slice(4));
+  assert.equal(opened.opened, true);
+  assert.equal(opened.artifact.target.resource.path, path);
+
+  // Failed: the kind's onFailed (or a renderer that throws) refuses the call with the reason the agent reads.
+  const g = await fixture(t, { ack: { timeoutMs: 5000 }, args: { path } });
+  await g.submit();
+  const failing = await g.waitPending();
+  const page = createPresentAcks({ answer: (id, body) => g.remote.answer(id, body), open: () => true, instanceId: 'tab-1' });
+  page.consider([{ id: failing.answerId, callId: failing.id, path }], pageContext);
+  page.failed({ path, reason: 'the sales query failed' });
+  await until('model continues', async () => finalText(await view(g.remote))?.startsWith('Got {"kind":"presented"'));
+  const refused = JSON.parse(finalText(await view(g.remote)).slice(4));
+  assert.equal(refused.opened, false);
+  assert.equal(refused.refused, 'the sales query failed');
 });
