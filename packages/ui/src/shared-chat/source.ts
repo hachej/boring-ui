@@ -1,6 +1,14 @@
-export type Member = { id: string; name: string; kind: 'person' | 'agent' | 'admin'; role?: 'owner' | 'validator' | 'member' | 'admin' | `agent:${string}`; avatarUrl?: string; presence?: 'here' | 'away' };
+/** `roleLabel` is the host's own line beside the author (« the coach »); without it the view derives one from `kind` and `role`. */
+export type Member = { id: string; name: string; kind: 'person' | 'agent' | 'admin'; role?: 'owner' | 'validator' | 'member' | 'admin' | `agent:${string}`; roleLabel?: string; avatarUrl?: string; presence?: 'here' | 'away' };
 export type Conversation = { id: string; title: string; kind: 'main' | 'admin' | 'direct' | string; members: string[] };
-export type Card = { requestId: string; title: string; line: string; since?: string; state?: string; action?: { id: string; label: string } };
+/** `primary` is the card's main choice; `secondary` a quieter one (« Not now »). Without a variant the first action is primary. */
+export type CardAction = { id: string; label: string; variant?: 'primary' | 'secondary' };
+/** `actions` offers several choices; the older single `action` still works and is used only when `actions` is absent. */
+export type Card = { requestId: string; title: string; line: string; since?: string; state?: string; action?: CardAction; actions?: CardAction[] };
+/** The card's choices in order: `actions`, else the single `action`, else none. */
+export function cardActions(card: Pick<Card, 'action' | 'actions'>): readonly CardAction[] {
+  return card.actions ?? (card.action ? [card.action] : []);
+}
 export type Step = { label: string; detail?: string; status: 'running' | 'done' | 'failed' };
 export type AvatarState = 'working' | 'thinking' | 'waiting' | 'blocked' | 'done' | 'neutral';
 /** Host lifecycle ids affect presentation only. Missing and unknown ids have no indicator. */

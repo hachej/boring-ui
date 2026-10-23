@@ -3,9 +3,10 @@ import { randomUUID } from '@hachej/boring-files/platform';
 import { createChatOutbox } from '../chat-outbox.js';
 import { ChannelRequestError } from './error.js';
 export { ChannelRequestError } from './error.js';
+import { cardActions } from './source.js';
 import type { Card, ChannelEvent, ChannelMessage, ChannelSource, Member, SharedChatState } from './source.js';
 export type * from './source.js';
-export { channelAvatarStates } from './source.js';
+export { channelAvatarStates, cardActions } from './source.js';
 
 export type SharedChatSnapshot = Omit<NativeChatSnapshot, 'conversationId' | 'send' | 'shared'> & {
   readonly conversationId: string;
@@ -192,10 +193,16 @@ export function createSharedChat(source: ChannelSource, options: { readonly conv
       listeners.clear();
       return undefined;
     },
-    action: (card: Card) => card.action ? source.action({ conversationId: id, requestId: card.requestId, actionId: card.action.id }) : Promise.resolve(),
+    /** Runs one of the card's own actions (the first when `actionId` is omitted). An id the card does not offer is refused. */
+    action: (card: Card, actionId?: string): Promise<void> => {
+      const actions = cardActions(card);
+      const chosen = actionId === undefined ? actions[0] : actions.find(action => action.id === actionId);
+      if (!chosen) return actionId === undefined ? Promise.resolve() : Promise.reject(new Error(`The card offers no action ${actionId}`));
+      return source.action({ conversationId: id, requestId: card.requestId, actionId: chosen.id });
+    },
     remove: source.remove && source.canRemove ? (message: ChannelMessage) => source.canRemove?.(message) === true ? source.remove!(message.id) : Promise.reject(new Error('Removal refused')) : undefined,
     canRemove: (message: ChannelMessage) => Boolean(source.remove && source.canRemove?.(message)),
-  } satisfies ChatController & { setFiles: (files: readonly File[]) => void; setReplyTo: (id: string | undefined) => void; action: (card: Card) => Promise<void>; remove: ((message: ChannelMessage) => Promise<void>) | undefined; canRemove: (message: ChannelMessage) => boolean };
+  } satisfies ChatController & { setFiles: (files: readonly File[]) => void; setReplyTo: (id: string | undefined) => void; action: (card: Card, actionId?: string) => Promise<void>; remove: ((message: ChannelMessage) => Promise<void>) | undefined; canRemove: (message: ChannelMessage) => boolean };
   return controller;
 }
 export type SharedChatController = ReturnType<typeof createSharedChat>;
