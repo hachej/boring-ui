@@ -1713,3 +1713,64 @@ test('OptChat compactor replay is deterministic across failed-node SQLite reopen
   assert.equal(contexts[0], contexts[1], 'the same summary job gets byte-identical folded context after reopen');
   assert.ok(contexts[0].split('\n').length < 40, 'the restart fixture exercised coarsening');
 });
+
+test('addExtension adds a host extension to an existing conversation: the next turn runs with it, and it survives a reopen', { timeout: 20000 }, async t => {
+  const { defineTool } = await import('@earendil-works/pi-durable');
+  const { Type } = await import('@earendil-works/pi-ai');
+  const { fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } = await import('@earendil-works/pi-ai/providers/faux');
+  const { addExtension, defineAgent } = await import('@hachej/boring-agent/agents');
+  const directory = mkdtempSync(join(tmpdir(), 'add-extension-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  // Scripted model: records the tools each request offers; calls `stamp` when it is offered and has not run yet, else answers.
+  const offered = [];
+  const faux = fauxProvider({ provider: 'fictional-faux', models: [{ id: 'scripted' }] });
+  faux.setResponses(Array.from({ length: 20 }, () => transcript => {
+    const current = new Map((transcript.tools ?? []).map(tool => [tool.name, tool]));
+    for (const message of transcript.messages.filter(message => message.role === 'system')) {
+      for (const tool of message.toolsAdded ?? []) current.set(tool.name, tool);
+      for (const tool of message.toolsRemoved ?? []) current.delete(tool.name);
+    }
+    const names = [...current.keys()];
+    offered.push(names);
+    const stamped = transcript.messages.at(-1)?.role === 'toolResult';
+    return names.includes('stamp') && !stamped
+      ? fauxAssistantMessage([fauxToolCall('stamp', {}, { id: `stamp-${offered.length}` })], { stopReason: 'toolUse' })
+      : fauxAssistantMessage([fauxText('Done.')]);
+  }));
+  const models = createModels(); models.setProvider(faux.provider);
+  const own = defineTool({ name: 'note', description: 'The agent\'s own tool.', parameters: Type.Object({}), replay: 'safe', execute: async () => ({ output: [{ type: 'text', text: 'noted' }] }) });
+  const stamps = [];
+  const stamp = defineTool({ name: 'stamp', description: 'Stamp the fictional ledger.', parameters: Type.Object({}), replay: 'safe', execute: async () => { stamps.push('stamp'); return { output: [{ type: 'text', text: 'stamped' }] }; } });
+  const added = defineExtension({ name: 'fictional.stamp', tools: [stamp] });
+  const agent = defineAgent({ id: 'clerk', model: { provider: 'fictional-faux', modelId: 'scripted' }, instructions: 'Keep the ledger.', tools: [own] });
+  // Another agent shares the registry: a conversation of `clerk` must not pick up its extension.
+  const audit = defineTool({ name: 'audit', description: 'Another agent\'s tool.', parameters: Type.Object({}), replay: 'safe', execute: async () => ({ output: [{ type: 'text', text: 'audited' }] }) });
+  const auditor = defineAgent({ id: 'auditor', model: { provider: 'fictional-faux', modelId: 'scripted' }, tools: [audit] });
+  // The host installs its extensions in the registry every time it opens the Harness: the conversation stores names only.
+  const open = async () => {
+    const registry = createRegistry(); agent.install(registry); auditor.install(registry); registry.install(added);
+    return Harness.open(await openNodeSqliteStorage(join(directory, 'session.sqlite')), { registry, models }, context);
+  };
+  let harness = await open();
+  t.after(async () => harness.close(context));
+  const conversation = await agent.createConversation(harness, context);
+  const turn = async target => (await target.submit({ type: 'input', requestId: `turn-${offered.length}`, content: 'Next.' }, context)).wait(context);
+
+  await turn(conversation);
+  assert.deepEqual(offered.at(-1), ['note'], 'the first turn runs with the agent\'s own tools only');
+  assert.deepEqual(stamps, []);
+
+  await addExtension(conversation, added, context);
+  await addExtension(conversation, added, context); // adding it again changes nothing
+  await turn(conversation);
+  assert.deepEqual(offered.at(-1), ['note', 'stamp'], 'the next turn keeps the agent\'s tools and offers the added one');
+  assert.deepEqual(stamps, ['stamp'], 'the added extension\'s tool ran');
+  assert.deepEqual((await conversation.agent(context)).extensions.map(extension => extension.name), ['agent.clerk', 'fictional.stamp']);
+
+  await harness.close(context);
+  harness = await open();
+  const reopened = await harness.conversation(conversation.id, context);
+  assert.deepEqual((await reopened.agent(context)).extensions.map(extension => extension.name), ['agent.clerk', 'fictional.stamp'], 'the selection is durable');
+  const other = await agent.createConversation(harness, context);
+  assert.deepEqual((await other.agent(context)).extensions.map(extension => extension.name), ['agent.clerk'], 'another conversation of the agent does not get it');
+});
