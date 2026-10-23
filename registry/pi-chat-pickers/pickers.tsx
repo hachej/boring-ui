@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react';
 import { ChevronDownIcon, Loader2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import type { ModelEffortPickerProps, ModelRef } from './config';
-import { useChatText } from './labels';
+import type { ModelEffortPickerProps, ModelRef } from '../pi-chat/config';
+import { useChatText } from '../pi-chat/labels';
 
 interface Choice { readonly section: 'model' | 'effort'; readonly value: string; readonly label: string; readonly detail?: string }
 

@@ -16,7 +16,7 @@ async function load(name, contents) {
   await build({ entryPoints: [join(out, `${name}-entry.tsx`)], outfile: join(out, `${name}.mjs`), bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
   return import(pathToFileURL(join(out, `${name}.mjs`)).href);
 }
-const kit = await load('pi-chat', `export * from '${root}registry/pi-chat/pi-chat.tsx'; export { ArtifactPanel } from '${root}registry/pi-app/artifact-panel.tsx';`);
+const kit = await load('pi-chat', `export * from '${root}registry/pi-chat/pi-chat.tsx'; export { ArtifactPanel } from '${root}registry/pi-app/artifact-panel.tsx'; export { markdownText } from '${root}registry/pi-chat-markdown/markdown.tsx';`);
 
 const DOM = ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node', 'Text', 'Event', 'addEventListener', 'removeEventListener', 'MutationObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'IS_REACT_ACT_ENVIRONMENT', 'ResizeObserver', 'localStorage', 'sessionStorage'];
 async function dom(t) {
@@ -306,7 +306,7 @@ test('the run card follows a headless run: title, status badge, spinner and elap
   const fetched = [];
   // The first poll still runs; later polls see it completed.
   const fetchRun = async id => { fetched.push(id); return states[Math.min(fetched.length - 1, states.length - 1)]; };
-  await page.render(page.h(kit.RunCard, { run: { id: 'run-7', status: 'queued', agent: 'Fictional planner', startedAt: 1_000 }, fetchRun, pollMs: 60, now: () => 43_000 }));
+  await page.render(page.h(kit.RunCard, { run: { id: 'run-7', status: 'queued', agent: 'Fictional planner', startedAt: 1_000 }, fetchRun, pollMs: 60, now: () => 43_000, renderText: kit.markdownText }));
   const card = () => page.container.querySelector('[data-testid=run-card]');
   assert.equal(card().getAttribute('aria-label'), 'Fictional planner');
   assert.ok(page.container.querySelector('[data-testid=run-spinner]'), 'a spinner while queued or running');
@@ -316,7 +316,7 @@ test('the run card follows a headless run: title, status badge, spinner and elap
   assert.equal(page.container.querySelector('[data-testid=run-status]').textContent, 'Completed');
   assert.equal(page.container.querySelector('[data-testid=run-spinner]'), null);
   assert.equal(page.container.querySelector('[data-testid=run-time]').textContent, 'Took 1 min 5 s');
-  assert.equal(page.container.querySelector('[data-testid=run-output] strong')?.textContent, 'Plan', 'text renders as Markdown');
+  assert.equal(page.container.querySelector('[data-testid=run-output] strong')?.textContent, 'Plan', 'text renders as Markdown through the pi-chat-markdown renderer');
   const polls = fetched.length;
   await page.act(async () => new Promise(resolve => setTimeout(resolve, 80)));
   assert.equal(fetched.length, polls, 'a settled run is not polled');

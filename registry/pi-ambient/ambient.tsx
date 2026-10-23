@@ -24,7 +24,8 @@ import type { AttachmentsConfig, ConversationsConfig, EffortConfig, MentionsConf
 import { notifyPermission, requestNotifyPermission } from './browser-notify';
 import type { NotifyPermission } from './browser-notify';
 import { ConversationHistory, TranscriptHistory } from '../pi-chat/history';
-import type { CommandMentions } from '../pi-chat/markdown';
+import type { CommandMentions } from '../pi-chat/config';
+import { withChatPlugins } from '../pi-chat-plugins/chat-plugins';
 import { RowView } from '../pi-chat/message';
 import type { RowContext } from '../pi-chat/message';
 import { ChatNotices, Notice, PreparingStatus, preparing } from '../pi-chat/notice';
@@ -241,7 +242,9 @@ function useRunFeed({ enabled, store, conversationId, title, session, suppress, 
 }
 
 /** A compact floating agent bar over an existing page; it grows into a chat window in place. Borrows a concrete native controller like `PiChat`. */
-export function AmbientChat(props: AmbientChatProps) {
+/** The ambient bar comes with every composer feature item (`withChatPlugins`); a component the host passes is kept. */
+export function AmbientChat(given: AmbientChatProps) {
+  const props = withChatPlugins(given);
   const active = useRef(props.controller); active.current = props.controller;
   const [mount, setMount] = useState({ controller: props.controller, sequence: 0 });
   if (mount.controller !== props.controller) setMount({ controller: props.controller, sequence: mount.sequence + 1 });

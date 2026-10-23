@@ -4,25 +4,23 @@ import { createElement, Fragment, memo, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { Marked } from 'marked';
 import { decodeHTML } from 'entities';
-import { CodeBlock } from './code-block';
-import { pieces } from './config';
-import { useChatText } from './labels';
-import type { ChatLabels } from './labels';
+import { CodeBlock } from '../pi-chat/code-block';
+import { pieces } from '../pi-chat/config';
+import type { CommandMention, CommandMentions } from '../pi-chat/config';
+import { useChatText } from '../pi-chat/labels';
+import type { ChatLabels } from '../pi-chat/labels';
+import type { ChatTextPart } from '../pi-chat/message';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+
+export type { CommandMention, CommandMentions } from '../pi-chat/config';
 
 /*
  * Safe Markdown for model output. Tokens are mapped to React elements one by one: raw HTML is shown as text, images are
  * shown as their alt text (nothing is fetched), and a link is only rendered when it is a plain http(s) URL.
  * Ported from the v4 `@hachej/boring-ui-kit` chat markdown renderer; the styling is Tailwind and fenced code gets a code block card.
  */
-export interface CommandMention { readonly name: string; readonly behavior: 'execute' | 'insert' }
-export interface CommandMentions {
-  readonly commands: readonly CommandMention[];
-  readonly onActivate: (command: CommandMention) => void;
-}
-
 const markdown = new Marked({ gfm: true, breaks: false, pedantic: false });
 
 function isRecord(value: unknown): value is Record<string, unknown> { return value !== null && typeof value === 'object' && !Array.isArray(value); }
@@ -182,3 +180,7 @@ export const Markdown = memo(function Markdown({ text: source, commandMentions, 
     {body}
   </div>;
 });
+
+/** The chat's `renderText` that draws an assistant reply as Markdown: `<PiChat renderText={markdownText} />`. */
+export const markdownText = ({ text, streaming, renderMention, commandMentions, onCopy }: ChatTextPart): ReactNode =>
+  <Markdown text={text} streaming={streaming} renderMention={renderMention} {...(commandMentions ? { commandMentions } : {})} {...(onCopy ? { onCopy } : {})} />;

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { RowView } from '../../../registry/pi-chat/message.tsx';
+import { markdownText } from '../../../registry/pi-chat-markdown/markdown.tsx';
 import { MessageQueue } from '../../../registry/pi-chat/queue.tsx';
 import { Shimmer } from '../../../registry/pi-chat/shimmer.tsx';
 import { formAnswer } from '../../../registry/pi-chat/question-card.tsx';
@@ -19,7 +20,8 @@ const reply = (key, parts, extra = {}) => ({ key, type: 'assistant', parts, text
 export function GroupFiveControls({ surface }) {
   const [event, setEvent] = useState('');
   const text = chatTextFor(new URLSearchParams(location.search).get('lang') === 'fr' ? 'fr' : 'en');
-  const context = { answer: async (_, answer) => { setEvent(answer); return { kind: 'answered' }; }, developer: true, onOpenImage: () => setEvent('image opened'), openFile: path => setEvent(path), onCopy: async () => setEvent('copied'),
+  // The transcript is audited with Markdown replies (the pi-chat-markdown item), as the aggregates install it.
+  const context = { renderText: markdownText, answer: async (_, answer) => { setEvent(answer); return { kind: 'answered' }; }, developer: true, onOpenImage: () => setEvent('image opened'), openFile: path => setEvent(path), onCopy: async () => setEvent('copied'),
     pieces: { mentions: true, skills: ['plan'], openMention: path => setEvent(path), preview: async () => image },
     commandMentions: { commands: [{ name: 'plan', behavior: 'insert' }], onActivate: () => setEvent('command activated') } };
   const render = row => <RowView key={row.key} row={row} context={context} />;

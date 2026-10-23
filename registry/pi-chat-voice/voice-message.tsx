@@ -5,11 +5,13 @@ import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { Bubble, BubbleContent } from '@/components/ui/bubble';
 import { Message, MessageContent } from '@/components/ui/message';
-import { useChatText } from './labels';
+import { useChatText } from '../pi-chat/labels';
+import { voiceClock } from '../pi-chat/config';
+import type { PendingVoiceBubbleProps, VoiceMessageButtonProps } from '../pi-chat/config';
 import { useHoldToRecord } from './use-hold-to-record';
-import type { PendingVoiceBubbleProps, VoiceMessageButtonProps } from './config';
+import { useVoiceMessage } from './use-voice-message';
 
-export const voiceClock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+export { voiceClock } from '../pi-chat/config';
 
 export function VoiceMessageButton({ voice, disabled }: VoiceMessageButtonProps) {
   const { labels } = useChatText();
@@ -39,3 +41,6 @@ export function PendingVoiceBubble({ pending }: PendingVoiceBubbleProps) {
     </div>}
   </BubbleContent></Bubble></MessageContent></Message>;
 }
+
+/** Hold-to-record voice messages for the chat: `voiceMessage={{ ...config, ...voiceMessagePlugin }}`. */
+export const voiceMessagePlugin = { useRecorder: useVoiceMessage, Button: VoiceMessageButton, Bubble: PendingVoiceBubble } as const;

@@ -14,6 +14,8 @@
 // 6. No import cycle in registry blocks or package sources (packages/*/src), type-only and lazy imports included: copied-in
 //    code with a cycle breaks some bundlers, HMR and tree-shaking. Shared types and helpers live in the module that owns them
 //    (a leaf lib never imports a component), and a module that needs them imports them in one direction.
+// 7. pi-chat is the core chat; each composer feature is its own optional item that plugs in through the chat's props (D-257). The core
+//    depends on no `pi-chat-*` item, declares none of their npm packages and imports none of the feature-only modules in CORE_EXCLUDED.
 import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -25,6 +27,9 @@ const namespace = '@boring-ui/';
 const local = (dependency) => dependency.startsWith(namespace) ? dependency.slice(namespace.length) : dependency;
 /** The shadcn built-in components a registry item may depend on by bare name. Fixed: a new one is a decision, not a convenience. */
 export const SHADCN_BUILTINS = Object.freeze(['button', 'toggle', 'switch', 'drawer', 'sidebar', 'avatar', 'dropdown-menu', 'separator', 'tooltip', 'trace', 'message', 'bubble', 'attachment', 'badge', 'alert', 'collapsible', 'checkbox', 'table', 'card', 'spinner', 'message-scroller', 'empty', 'input', 'input-group', 'popover', 'scroll-area', 'native-select', 'label', 'item', 'toggle-group', 'tabs', 'textarea', 'dialog', 'progress']);
+/** npm packages (or package subpaths) only the optional composer feature items use: Markdown and voice capture. */
+export const CORE_EXCLUDED = Object.freeze(['marked', 'entities', '@hachej/boring-ui-kit/voice-capture']);
+const packageName = (dependency) => dependency.replace(/(.)@[^@]*$/, '$1');
 const importPattern = /\b(?:from|import)\s*\(?\s*['"]([^'"]+)['"]/g;
 
 /** Cycles among the source files under `folders`, following relative imports (`./x`, `./x.js` for `x.ts`, `./x` for `x.tsx`). */
@@ -133,6 +138,15 @@ export function checkRegistryBlocks(root) {
       }
     }
     for (const file of own) if (!existsSync(resolve(root, file))) errors.push(`BORING-BLOCKS ${item.name}: listed file ${file} does not exist`);
+  }
+  const core = items.get('pi-chat');
+  if (core) {
+    for (const dependency of closure('pi-chat')) if (dependency.startsWith('pi-chat-')) errors.push(`BORING-BLOCKS pi-chat: the core chat must not depend on the optional feature item ${dependency}; the host plugs it in through the chat's props`);
+    for (const dependency of core.dependencies ?? []) if (CORE_EXCLUDED.includes(packageName(dependency))) errors.push(`BORING-BLOCKS pi-chat: the core chat must not declare ${packageName(dependency)}; it belongs to an optional pi-chat-* feature item`);
+    for (const file of core.files ?? []) {
+      if (!existsSync(resolve(root, file.path))) continue;
+      for (const [, specifier] of readFileSync(resolve(root, file.path), 'utf8').matchAll(importPattern)) if (CORE_EXCLUDED.includes(specifier)) errors.push(`BORING-BLOCKS ${file.path}: the core chat imports ${specifier}; move that feature to its optional pi-chat-* item`);
+    }
   }
   for (const cycle of importCycles(root, cycleFolders(root))) errors.push(`BORING-BLOCKS import cycle: ${cycle.join(' -> ')} (move the shared piece to the module that owns it so imports go one way)`);
   return { errors, files };

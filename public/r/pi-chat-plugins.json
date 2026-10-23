@@ -1,0 +1,27 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "pi-chat-plugins",
+  "title": "Pi chat with every composer feature",
+  "description": "withChatPlugins(props): pi-chat with every composer feature item plugged in (Markdown, slash menu, mentions, model and effort picker, voice messages, phone camera). Components the host already passes are kept; features the host does not configure stay off. pi-app, pi-ambient, app-shell and shared-chat use it.",
+  "dependencies": [
+    "react@^19.0.0"
+  ],
+  "registryDependencies": [
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.9/r/pi-chat.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.9/r/pi-chat-markdown.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.9/r/pi-chat-slash.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.9/r/pi-chat-mentions.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.9/r/pi-chat-pickers.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.9/r/pi-chat-voice.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.9/r/pi-chat-attachments.json"
+  ],
+  "files": [
+    {
+      "path": "registry/pi-chat-plugins/chat-plugins.ts",
+      "content": "import type { ReactNode } from 'react';\nimport type { AttachmentsConfig, EffortConfig, MentionsConfig, ModelConfig, PendingVoice, SlashConfig, VoiceMessageConfig } from '../pi-chat/config';\nimport type { ChatTextPart } from '../pi-chat/message';\nimport { markdownText } from '../pi-chat-markdown/markdown';\nimport { SlashPicker } from '../pi-chat-slash/slash-menu';\nimport { MentionPicker } from '../pi-chat-mentions/mention-menu';\nimport { ModelEffortPicker } from '../pi-chat-pickers/pickers';\nimport { voiceMessagePlugin } from '../pi-chat-voice/voice-message';\nimport { CameraSheet } from '../pi-chat-attachments/camera-sheet';\n\n/** The chat props a composer feature item plugs into. */\nexport interface ChatPluginProps {\n  readonly renderText?: ((part: ChatTextPart) => ReactNode) | undefined;\n  readonly slash?: SlashConfig | undefined;\n  readonly mentions?: MentionsConfig | undefined;\n  readonly model?: ModelConfig | undefined;\n  readonly effort?: EffortConfig | undefined;\n  readonly voiceMessage?: VoiceMessageConfig | undefined;\n  readonly attachments?: AttachmentsConfig | undefined;\n  /** Voice rows a host (the app shell, a shared chat) records itself: drawn by the voice item's bubble even without `voiceMessage`. */\n  readonly pendingVoice?: readonly PendingVoice[] | undefined;\n}\n\n/** Fills a config once per config object, so the chat sees the same object on every render. */\nfunction filler<T extends object>(fill: (config: T) => T): (config: T | undefined) => T | undefined {\n  const cache = new WeakMap<T, T>();\n  return config => {\n    if (!config) return config;\n    let filled = cache.get(config);\n    if (!filled) { filled = fill(config); cache.set(config, filled); }\n    return filled;\n  };\n}\nconst slashWith = filler<SlashConfig>(config => config.Picker ? config : { ...config, Picker: SlashPicker });\nconst mentionsWith = filler<MentionsConfig>(config => config.Picker ? config : { ...config, Picker: MentionPicker });\nconst modelWith = filler<ModelConfig>(config => config.Picker ? config : { ...config, Picker: ModelEffortPicker });\nconst effortWith = filler<EffortConfig>(config => config.Picker ? config : { ...config, Picker: ModelEffortPicker });\nconst voiceWith = filler<VoiceMessageConfig>(config => ({ ...config, useRecorder: config.useRecorder ?? voiceMessagePlugin.useRecorder, Button: config.Button ?? voiceMessagePlugin.Button, Bubble: config.Bubble ?? voiceMessagePlugin.Bubble }));\n/** Draws host-recorded rows only: no recorder or button, so `transcribe` is never called. */\nconst bubbleOnly: VoiceMessageConfig = { transcribe: () => Promise.reject(new Error('This chat records no voice')), Bubble: voiceMessagePlugin.Bubble };\nconst attachmentsWith = filler<AttachmentsConfig>(config => config.Camera ? config : { ...config, Camera: CameraSheet });\n\n/**\n * Every composer feature item at once: Markdown replies, the `/` menu, the `@` picker, the model and effort pill, voice messages and\n * the phone camera. A component the host already set is kept; a feature the host did not configure stays off.\n * `<PiChat {...withChatPlugins({ controller, slash, mentions, model, voiceMessage, attachments })} />`.\n */\nexport function withChatPlugins<T extends ChatPluginProps>(props: T): T {\n  const { model, effort } = props;\n  return {\n    ...props,\n    renderText: props.renderText ?? markdownText,\n    slash: slashWith(props.slash),\n    mentions: mentionsWith(props.mentions),\n    // One pill draws both: fill the model's unless the host gave the effort its own.\n    model: effort?.Picker ? model : modelWith(model),\n    effort: model ? effort : effortWith(effort),\n    voiceMessage: props.voiceMessage || !props.pendingVoice ? voiceWith(props.voiceMessage) : bubbleOnly,\n    attachments: attachmentsWith(props.attachments),\n  };\n}\n",
+      "type": "registry:lib",
+      "target": "components/pi-chat-plugins/chat-plugins.ts"
+    }
+  ],
+  "type": "registry:block"
+}

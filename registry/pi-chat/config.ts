@@ -1,12 +1,14 @@
 import type { ComponentType, ReactNode } from 'react';
+import type { ChatController } from '@hachej/boring-ui-kit/native-chat';
 import type { BlockAction } from '../button/actions';
-import type { CameraSheetProps } from './camera-sheet';
+import type { ChatLabels } from './labels';
 
 /*
  * Composer features the host switches on by configuration. Each prop is optional: leave it out and the composer has
  * no menu, no button and no keyboard trigger for it. The current model and thinking level are read from the native
- * view's `pi.agent` document, so there is no extra state to keep in sync. A config may carry the component that draws its feature
- * (`Picker`, `Camera`, `Button`, `Bubble`); leave it out and the built-in one is used.
+ * view's `pi.agent` document, so there is no extra state to keep in sync. The component that draws a feature comes from its own
+ * registry item and rides on the config (`Picker`, `Camera`, `useRecorder` with `Button` and `Bubble`): without it the feature is
+ * simply not offered (no menu, no pill, no camera entry, no record button). `withChatPlugins` of `pi-chat-plugins` fills them all in.
  */
 
 /** Where a `/` menu entry comes from. Skills and host commands are grouped separately in the menu. */
@@ -33,7 +35,7 @@ export interface SlashSkill {
 export interface SlashConfig {
   readonly commands?: readonly SlashCommand[];
   readonly skills?: readonly SlashSkill[];
-  /** The `/` menu. Default: the built-in `SlashPicker`. */
+  /** The `/` menu (`SlashPicker` of `pi-chat-slash`). Without it there is no `/` menu and no Commands entry. */
   readonly Picker?: ComponentType<SlashPickerProps> | undefined;
 }
 
@@ -61,7 +63,7 @@ export interface MentionsConfig {
   readonly preview?: PreviewRead | undefined;
   /** Optional authorized playback URL, requested only on Play; otherwise voice audio uses `preview`. */
   readonly audioUrl?: AudioUrlRead | undefined;
-  /** The `@` picker. Default: the built-in `MentionPicker`. */
+  /** The `@` picker (`MentionPicker` of `pi-chat-mentions`). Without it typing `@` opens nothing. */
   readonly Picker?: ComponentType<MentionPickerProps> | undefined;
 }
 export type AudioUrlRead = (path: string, signal: AbortSignal) => Promise<string | undefined>;
@@ -86,9 +88,11 @@ export interface VoiceMessageConfig {
   readonly maxMs?: number;
   /** Same workspace upload contract as `attachments.upload`, used instead when supplied. Preserve the voice- filename prefix. */
   readonly upload?: AttachmentsConfig['upload'];
-  /** The hold-to-record button at the end of the composer bar. Default: the built-in `VoiceMessageButton`. */
+  /** The recorder (`useVoiceMessage` of `pi-chat-voice`). Without it there is no voice message: no button, no pending bubble. */
+  readonly useRecorder?: VoiceRecorderHook | undefined;
+  /** The hold-to-record button at the end of the composer bar (`VoiceMessageButton` of `pi-chat-voice`). */
   readonly Button?: ComponentType<VoiceMessageButtonProps> | undefined;
-  /** A voice message on its way (recording, transcribing, uploading). Default: the built-in `PendingVoiceBubble`. */
+  /** A voice message on its way: recording, transcribing, uploading (`PendingVoiceBubble` of `pi-chat-voice`). */
   readonly Bubble?: ComponentType<PendingVoiceBubbleProps> | undefined;
 }
 
@@ -96,7 +100,7 @@ export interface AttachmentsConfig {
   /** The file input's `accept`. Any file when omitted. */
   readonly accept?: string;
   readonly upload: (files: File[], signal: AbortSignal) => Promise<readonly UploadResult[]>;
-  /** The full-screen camera the attach menu opens on a phone. Default: the built-in `CameraSheet`. */
+  /** The full-screen camera the attach menu opens on a phone (`CameraSheet` of `pi-chat-attachments`). Without it there is no Take a photo entry. */
   readonly Camera?: ComponentType<CameraSheetProps> | undefined;
 }
 
@@ -156,13 +160,13 @@ export interface ModelConfig {
   readonly options: readonly (ModelRef & { readonly label?: string })[];
   /** Reject to refuse: the message is shown inline. */
   readonly change: (model: ModelRef) => Promise<void>;
-  /** The one model-and-effort pill. Default: the built-in `ModelEffortPicker` (`effort.Picker` is used when only it is set). */
+  /** The one model-and-effort pill (`ModelEffortPicker` of `pi-chat-pickers`; `effort.Picker` is used when only it is set). Without one there is no pill. */
   readonly Picker?: ComponentType<ModelEffortPickerProps> | undefined;
 }
 export interface EffortConfig {
   readonly options: readonly string[];
   readonly change: (level: string) => Promise<void>;
-  /** The one model-and-effort pill, when `model` does not carry one. Default: the built-in `ModelEffortPicker`. */
+  /** The one model-and-effort pill, when `model` does not carry one (`ModelEffortPicker` of `pi-chat-pickers`). */
   readonly Picker?: ComponentType<ModelEffortPickerProps> | undefined;
 }
 
@@ -308,7 +312,7 @@ export function pieces(text: string, options: { readonly mentions: boolean; read
   return out;
 }
 
-/** Props of the slash picker; `SlashConfig.Picker` replaces the built-in one. */
+/** Props of the slash picker that `SlashConfig.Picker` carries. */
 export interface SlashPickerProps {
   readonly query: string;
   readonly items: readonly SlashItem[];
@@ -316,7 +320,7 @@ export interface SlashPickerProps {
   readonly onDismiss: () => void;
 }
 
-/** Props of the mention picker; `MentionsConfig.Picker` replaces the built-in one. */
+/** Props of the mention picker that `MentionsConfig.Picker` carries. */
 export interface MentionPickerProps {
   readonly query: string;
   readonly listLabel?: MentionsConfig['listLabel'];
@@ -327,7 +331,7 @@ export interface MentionPickerProps {
   readonly onDismiss: () => void;
 }
 
-/** Props of the model and effort picker; `ModelConfig.Picker` or `EffortConfig.Picker` replaces the built-in one. */
+/** Props of the model and effort picker that `ModelConfig.Picker` or `EffortConfig.Picker` carries. */
 export interface ModelEffortPickerProps {
   readonly model: ModelConfig | undefined; readonly effort: EffortConfig | undefined;
   readonly currentModel: ModelRef | undefined; readonly currentEffort: string | undefined;
@@ -358,7 +362,37 @@ export interface VoiceMessageHandle {
   readonly finish: () => void;
   readonly cancel: () => void;
 }
-/** Props of the hold-to-record button; `VoiceMessageConfig.Button` replaces the built-in one. */
+/** Props of the hold-to-record button that `VoiceMessageConfig.Button` carries. */
 export interface VoiceMessageButtonProps { readonly voice: VoiceMessageHandle; readonly disabled?: boolean }
-/** Props of a pending voice message bubble; `VoiceMessageConfig.Bubble` replaces the built-in one. */
+/** Props of a pending voice message bubble that `VoiceMessageConfig.Bubble` carries. */
 export interface PendingVoiceBubbleProps { readonly pending: PendingVoice | undefined }
+/** What the chat hands its recorder (`VoiceMessageConfig.useRecorder`). `config` is undefined when voice is off. */
+export interface VoiceRecorderOptions {
+  readonly controller: ChatController | undefined;
+  readonly config: VoiceMessageConfig | undefined;
+  readonly attachments?: AttachmentsConfig | undefined;
+  readonly labels: ChatLabels;
+  readonly admitted?: (() => void) | undefined;
+  readonly activeController?: { readonly current: ChatController } | undefined;
+}
+/** A React hook: the chat calls it on every render of a mounted chat (a new hook remounts the chat). */
+export type VoiceRecorderHook = (options: VoiceRecorderOptions) => VoiceMessageHandle;
+
+/** Props of the phone camera sheet that `AttachmentsConfig.Camera` carries. */
+export interface CameraSheetProps {
+  /** The photo, as a JPEG File scaled to at most `CAMERA_MAX_SIDE` on its longest side (or the phone camera's own file, from the fallback). */
+  readonly onCapture: (file: File) => void;
+  readonly onClose: () => void;
+  /** Opens the camera; defaults to the browser's, when it has one. */
+  readonly getUserMedia?: ((constraints: MediaStreamConstraints) => Promise<MediaStream>) | undefined;
+}
+
+/** A `/command` a settled reply may turn into a button (`commandMentions`; drawn by a text renderer such as `pi-chat-markdown`). */
+export interface CommandMention { readonly name: string; readonly behavior: 'execute' | 'insert' }
+export interface CommandMentions {
+  readonly commands: readonly CommandMention[];
+  readonly onActivate: (command: CommandMention) => void;
+}
+
+/** A recording's length as m:ss. */
+export const voiceClock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;

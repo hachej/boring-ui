@@ -29,9 +29,9 @@
       "mode": "FAIL",
       "folders": [
         "registry/pi-chat/composer.tsx",
-        "registry/pi-chat/pickers.tsx",
-        "registry/pi-chat/mention-menu.tsx",
-        "registry/pi-chat/slash-menu.tsx"
+        "registry/pi-chat-pickers/pickers.tsx",
+        "registry/pi-chat-mentions/mention-menu.tsx",
+        "registry/pi-chat-slash/slash-menu.tsx"
       ],
       "selector": "input, textarea, select, [data-testid=composer], [data-testid=mention-menu], [data-testid=slash-menu]"
     },
@@ -55,7 +55,7 @@
       "mode": "FAIL",
       "folders": [
         "registry/pi-chat/message.tsx",
-        "registry/pi-chat/markdown.tsx",
+        "registry/pi-chat-markdown/markdown.tsx",
         "registry/pi-chat/activity.tsx",
         "registry/pi-chat/tool.tsx",
         "registry/pi-chat/queue.tsx",

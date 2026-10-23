@@ -4,9 +4,15 @@
 // @ts-nocheck: an example page, bundled by esbuild and not part of the typechecked sources.
 import { createRoot } from 'react-dom/client';
 import { Dock, DockLayout, DockMain, useDock } from '../../registry/pi-workspace/dock.tsx';
-import { PiChat } from '../../registry/pi-chat/pi-chat.tsx';
+import { PiChat as BarePiChat } from '../../registry/pi-chat/pi-chat.tsx';
+import type { PiChatProps } from '../../registry/pi-chat/pi-chat.tsx';
+import { withChatPlugins } from '../../registry/pi-chat-plugins/chat-plugins.ts';
+
 import { AmbientChat } from '../../registry/pi-ambient/ambient.tsx';
 import { useRemoteChat } from '../../registry/pi-chat/use-remote-chat.ts';
+
+// The example ships every composer feature item (Markdown, `/`, `@`, model pill, voice, camera).
+const PiChat = (props: PiChatProps) => <BarePiChat {...withChatPlugins(props)} />;
 
 const { token, identity, conversation } = window.__APP__;
 const authorized = (request: Request) => { const headers = new Headers(request.headers); headers.set('authorization', `Bearer ${token}`); return fetch(new Request(request, { headers })); };

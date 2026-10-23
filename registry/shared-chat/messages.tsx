@@ -2,14 +2,14 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
-import { cardActions, channelAvatarStates } from '@hachej/boring-ui-kit/shared-chat';
+import { channelAvatarStates } from '@hachej/boring-ui-kit/shared-chat';
 import type { Card as Request, ChannelMessage, SharedChatController, Member, SharedChatState } from '@hachej/boring-ui-kit/shared-chat';
 import { BotIcon, CircleIcon, ReplyIcon, Trash2Icon, XIcon } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarGroup, AvatarGroupCount, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer';
-import { Item, ItemActions, ItemContent, ItemDescription, ItemFooter, ItemTitle } from '@/components/ui/item';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { relativeTime } from '../pi-chat/history';
@@ -110,35 +110,14 @@ export function SharedMembers({ controller }: { readonly controller: SharedChatC
   </div>;
 }
 
-/** The member's role line: the host's own `roleLabel`, else the labels' derivation from kind and role. */
-export function useRoleLine(member: Member): string | undefined {
+export function RequestCard({ card, action }: { readonly card: Request; readonly action: (card: Request) => Promise<void> }) {
   const { labels } = useChatText();
-  return member.roleLabel?.trim() || labels.sharedRole(member);
-}
-
-/** An outline Item, like the other conversation cards, so its border follows the theme's border colour and width. */
-export function RequestCard({ card, action }: { readonly card: Request; readonly action: (card: Request, actionId?: string) => Promise<void> }) {
-  const { labels } = useChatText();
-  const [busy, setBusy] = useState<string>(), [error, setError] = useState<string>();
-  const actions = cardActions(card);
-  const run = (id: string) => {
-    setBusy(id); setError(undefined);
-    void action(card, id).catch(error => setError(error instanceof Error ? error.message : labels.actionFailedShort)).finally(() => setBusy(undefined));
-  };
-  return <Item variant="outline" render={<section />} data-testid="request-card" aria-label={card.title} className="text-start">
-    <ItemContent className="min-w-0 basis-0">
-      <ItemTitle className="line-clamp-none">{card.title}</ItemTitle>
-      <ItemDescription className="line-clamp-none">{card.line}</ItemDescription>
-      {card.since && <ItemDescription><time dateTime={card.since}>{labels.sharedSince(relativeTime(card.since, Date.now(), labels))}</time></ItemDescription>}
-    </ItemContent>
-    {actions.length > 0 && <ItemFooter><ItemActions role="group" aria-label={card.title} className="flex-wrap">
-      {actions.map((choice, index) => {
-        const primary = (choice.variant ?? (index === 0 ? 'primary' : 'secondary')) === 'primary';
-        return <Button key={choice.id} data-testid="request-action" data-action={choice.id} data-action-variant={primary ? 'primary' : 'secondary'} variant={primary ? 'default' : 'secondary'} disabled={busy !== undefined} aria-busy={busy === choice.id || undefined} onClick={() => run(choice.id)}>{choice.label}</Button>;
-      })}
-    </ItemActions></ItemFooter>}
-    {error && <ItemFooter><p role="alert" className="m-0 text-sm text-destructive">{error}</p></ItemFooter>}
-  </Item>;
+  const [busy, setBusy] = useState(false), [error, setError] = useState<string>();
+  return <Card data-testid="request-card">
+    <CardHeader><CardTitle>{card.title}</CardTitle></CardHeader>
+    <CardContent><p className="m-0">{card.line}</p>{card.since && <time dateTime={card.since} className="text-muted-foreground">{labels.sharedSince(relativeTime(card.since, Date.now(), labels))}</time>}{error && <p role="alert">{error}</p>}</CardContent>
+    {card.action && <CardFooter><Button disabled={busy} onClick={() => { setBusy(true); setError(undefined); void action(card).catch(error => setError(error instanceof Error ? error.message : labels.actionFailedShort)).finally(() => setBusy(false)); }}>{card.action.label}</Button></CardFooter>}
+  </Card>;
 }
 
 /** Both the composer chip and the timeline quote use this one parent reference. No thread or routing policy. */
@@ -180,7 +159,6 @@ export function SharedMessage({ shared, children, remove, canRemove, openFile, o
     return () => document.removeEventListener('pointerdown', outside);
   }, [actionsOpen]);
   const { message, author, first, own, lastItem } = shared;
-  const role = useRoleLine(author);
   const replyable = Boolean(onReply && ((author.kind === 'agent' && !message.via) || message.card));
   const removable = Boolean(remove && canRemove?.(message));
   const actionable = !message.removed && (replyable || removable);
@@ -188,7 +166,6 @@ export function SharedMessage({ shared, children, remove, canRemove, openFile, o
     <div className="flex min-w-0 items-center gap-2">
       <span data-testid="message-author" data-agent-color={agentTone(author)?.token} className={`min-w-0 truncate text-sm ${agentTone(author)?.text ?? 'text-muted-foreground'}`}>{author.name}</span>
       {message.via && <span data-testid="message-via" className={`min-w-0 truncate text-muted-foreground${own ? '' : ' text-sm'}`}>{labels.sharedVia(message.via)}</span>}
-      {role && !(message.via && author.kind === 'agent') && <span data-testid="message-role" className="min-w-0 truncate text-sm text-muted-foreground"><span aria-hidden="true">· </span>{role}</span>}
       {!(message.via && author.kind === 'agent') && <MemberBadge member={author} />}
     </div>
   </div>;

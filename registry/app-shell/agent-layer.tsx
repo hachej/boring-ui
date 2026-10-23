@@ -25,10 +25,12 @@ import type { DockApi } from '../dock/dock';
 import { PiChat } from '../pi-chat/pi-chat';
 import type { PiChatProps } from '../pi-chat/pi-chat';
 import type { VoiceMessageConfig } from '../pi-chat/config';
-import { useHoldToRecord, useRecordingCancellation } from '../pi-chat/use-hold-to-record';
-import { useVoiceMessage } from '../pi-chat/use-voice-message';
-import type { PendingVoice } from '../pi-chat/use-voice-message';
-import { voiceClock } from '../pi-chat/voice-message';
+import { useHoldToRecord, useRecordingCancellation } from '../pi-chat-voice/use-hold-to-record';
+import { useVoiceMessage } from '../pi-chat-voice/use-voice-message';
+import type { PendingVoice } from '../pi-chat-voice/use-voice-message';
+import { voiceClock } from '../pi-chat/config';
+import { withChatPlugins } from '../pi-chat-plugins/chat-plugins';
+import { PendingVoiceBubble } from '../pi-chat-voice/voice-message';
 import { chatTextFor } from '../pi-chat/locale';
 import { NoteBubble, useComposerFeedback } from '../feedback/feedback-session';
 import { feedbackLabelsFr } from '../feedback/feedback-labels';
@@ -436,8 +438,8 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const transcribe = (spec.voice ?? layer.agent?.voice)?.transcribe;
   const fr = locale === 'fr';
   return <div data-spec={role} hidden={!visible} className={cn('min-h-0 min-w-0 flex-1', visible ? 'flex flex-col' : 'hidden')}>
-    <PiChat {...spec.chatProps} {...(locale ? { locale } : {})} controller={spec.controller} keyboardInset={false} placement={layer.expanded && !layer.dockFloating ? 'docked' : 'floating'} {...(feedback ? { feedback } : {})}
-      {...(role === 'agent' && spec.voice ? { voiceMessage: undefined, tools: <>{spec.chatProps?.tools}<TalkButton text={appShellText(locale)} /></>, pendingVoice: layer.voice.pending } : {})} />
+    <PiChat {...withChatPlugins(spec.chatProps ?? {})} {...(locale ? { locale } : {})} controller={spec.controller} keyboardInset={false} placement={layer.expanded && !layer.dockFloating ? 'docked' : 'floating'} {...(feedback ? { feedback } : {})}
+      {...(role === 'agent' && spec.voice ? { voiceMessage: { transcribe: spec.voice.transcribe, Bubble: PendingVoiceBubble }, tools: <>{spec.chatProps?.tools}<TalkButton text={appShellText(locale)} /></>, pendingVoice: layer.voice.pending } : {})} />
     {/* The note editor of ordinary feedback lives inside the layer, in the modal's focus tree; while pointing the layer steps aside and AgentLayer renders it. */}
     {/* In the flow, inside the visible content box: the popup is transformed (a fixed element would be placed against its off-screen bottom). */}
     {spec.feedback && visible && !pointing && <div className="shrink-0 px-2 pb-2 empty:hidden">

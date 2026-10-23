@@ -37,7 +37,7 @@ export const ALLOWLIST = {
   // Shared voice capture opens the microphone only from start() (the person's gesture), through a feature-detecting default.
   'packages/ui/src/voice-capture.ts': { rules: ['navigator.secure', 'getUserMedia'], requires: [/typeof globalThis\.navigator\?\.mediaDevices\?\.getUserMedia !== 'function'/, /options\.getUserMedia \?\? browserGetUserMedia\(\)/] },
   // The composer's camera ("Take a photo" on phones): opens only when the sheet mounts (the person's tap), through an injectable getUserMedia whose default feature-detects.
-  'registry/pi-chat/camera-sheet.tsx': { rules: ['navigator.secure', 'getUserMedia'], requires: [/typeof globalThis\.navigator\?\.mediaDevices\?\.getUserMedia !== 'function'/, /latest\.current\.getUserMedia \?\? browserGetUserMedia\(\)/] },
+  'registry/pi-chat-attachments/camera-sheet.tsx': { rules: ['navigator.secure', 'getUserMedia'], requires: [/typeof globalThis\.navigator\?\.mediaDevices\?\.getUserMedia !== 'function'/, /latest\.current\.getUserMedia \?\? browserGetUserMedia\(\)/] },
   'registry/viewers/share.ts': { rules: ['navigator.share'], requires: [/typeof nav\?\.share === 'function'/, /copyText/] },
 };
 

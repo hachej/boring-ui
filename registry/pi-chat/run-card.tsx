@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -8,17 +9,17 @@ import { Item, ItemContent, ItemDescription, ItemFooter, ItemMedia, ItemTitle } 
 import { Spinner } from '@/components/ui/spinner';
 import { CheckIcon, CircleAlertIcon, RefreshCwIcon } from 'lucide-react';
 import { CodeBlock } from './code-block';
-import { Markdown } from './markdown';
 import { useChatText } from './labels';
+import type { ChatTextPart } from './message';
 
 export type RunStatus = 'queued' | 'running' | 'completed' | 'failed';
 /** A headless run as the host's `GET _agent/<name>/runs/<id>` returns it. */
 export interface RunRecord {
   readonly id: string;
   readonly status: RunStatus;
-  /** The structured result: shown as Markdown when it is text, as JSON otherwise. */
+  /** The structured result: shown as text (`renderText`) when it is text, as JSON otherwise. */
   readonly output?: unknown;
-  /** The run's final text, shown as Markdown when there is no `output`. */
+  /** The run's final text, shown when there is no `output`. */
   readonly text?: string | undefined;
   readonly error?: string | undefined;
   /** The agent's title. */
@@ -55,14 +56,18 @@ const span = (ms: number): string => {
 
 /**
  * A headless run (`POST _agent/<name>/runs` → `GET runs/<id>`) as a card: the agent's title, a status badge, a spinner while it is queued or
- * running with the elapsed time, then the duration and the output (or text) as Markdown, or the error. The host fetches: give `run` (a
+ * running with the elapsed time, then the duration and the output (or text, drawn by `renderText`: plain text, or `markdownText` of `pi-chat-markdown`), or the error. The host fetches: give `run` (a
  * record it keeps current), and optionally `fetchRun(id, signal)` to have the card poll every `pollMs` until the run settles and offer
  * Refresh. URLs are the host's (relative to its page). Render it from `renderTool` or `renderEntry`, or anywhere in the page.
  */
-export function RunCard({ run: given, fetchRun, pollMs = 2000, now: clock = Date.now }: {
+const plainRunText = ({ text }: ChatTextPart): ReactNode => <div data-testid="message-text" className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">{text}</div>;
+
+export function RunCard({ run: given, fetchRun, pollMs = 2000, now: clock = Date.now, renderText = plainRunText }: {
   readonly run: RunRecord;
   readonly fetchRun?: ((id: string, signal: AbortSignal) => Promise<unknown>) | undefined;
   readonly pollMs?: number;
+  /** Draws the run's text. Default: plain text. */
+  readonly renderText?: ((part: ChatTextPart) => ReactNode) | undefined;
   /** Test seam: the clock of the elapsed time. */
   readonly now?: () => number;
 }) {
@@ -96,8 +101,8 @@ export function RunCard({ run: given, fetchRun, pollMs = 2000, now: clock = Date
 
   const started = time(run.startedAt), finished = time(run.finishedAt);
   const timing = started === undefined ? undefined : finished !== undefined ? labels.runDuration(span(finished - started)) : settled ? undefined : labels.runElapsed(span(now - started));
-  const body = run.output !== undefined ? (typeof run.output === 'string' ? <Markdown text={run.output} /> : <CodeBlock code={JSON.stringify(run.output, null, 2)} language="json" />)
-    : run.text ? <Markdown text={run.text} /> : undefined;
+  const body = run.output !== undefined ? (typeof run.output === 'string' ? renderText({ text: run.output, streaming: false }) : <CodeBlock code={JSON.stringify(run.output, null, 2)} language="json" />)
+    : run.text ? renderText({ text: run.text, streaming: false }) : undefined;
 
   return <Item variant="outline" size="sm" render={<section />} data-testid="run-card" data-state={run.status} data-run-id={run.id} aria-label={run.agent ?? labels.run} aria-busy={!settled} className="my-2 text-start">
     <ItemMedia variant="icon">

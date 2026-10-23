@@ -32,12 +32,17 @@ import { pickerOverlayStyles, usePickerOverlay } from '../../registry/feedback/p
 import { NoteBubble, useComposerFeedback } from '../../registry/feedback/feedback-session.tsx';
 import { CommentBanner, usePointing } from '../../registry/feedback/point-mode.tsx';
 import { feedbackLabelsFr } from '../../registry/feedback/feedback-labels.ts';
-import { PiChat } from '../../registry/pi-chat/pi-chat.tsx';
+import { PiChat as BarePiChat } from '../../registry/pi-chat/pi-chat.tsx';
+import { withChatPlugins } from '../../registry/pi-chat-plugins/chat-plugins.ts';
+
 import { AnnotateSheet } from '../../registry/feedback/annotate-sheet.tsx';
 import { FeedbackList } from '../../registry/feedback/feedback-list.tsx';
 import { FeedbackReport } from '../../registry/feedback/feedback-report.tsx';
 import { SettingsPage, sectionOf } from './settings/SettingsPage.jsx';
 import { pageShow } from './show-outcome.mjs';
+
+// The example ships every composer feature item (Markdown, `/`, `@`, model pill, voice, camera).
+const PiChat = props => <BarePiChat {...withChatPlugins(props)} />;
 
 const config = window.__FEEDBACK__;
 const params = new URLSearchParams(location.search);

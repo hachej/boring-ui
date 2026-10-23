@@ -1,5 +1,6 @@
-// D-257 step 1: PiChat's plug points (`renderText`, `cards`, `toolRenderers` and the components a feature config carries) are used when
-// passed, and today's built-in components are used otherwise. Presentation fixture at the public PiChat entry; fictional data only.
+// D-257: PiChat's plug points (`renderText`, `cards`, `toolRenderers` and the components a feature config carries) are used when passed.
+// Step 2 moved the composer features into their own items: without them the core chat shows plain text and no feature component (and
+// never crashes); `withChatPlugins` of pi-chat-plugins brings them all back. Presentation fixture at the public PiChat entry; fictional data only.
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { mkdirSync } from 'node:fs';
@@ -14,6 +15,8 @@ const out = `${root}.cache/pi-chat-plug-points-test`;
 mkdirSync(out, { recursive: true });
 await build({ entryPoints: [`${source}registry/pi-chat/pi-chat.tsx`], outfile: `${out}/chat.mjs`, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
 const { PiChat } = await import(pathToFileURL(`${out}/chat.mjs`).href);
+await build({ entryPoints: [`${root}registry/pi-chat-plugins/chat-plugins.ts`], outfile: `${out}/plugins.mjs`, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
+const { withChatPlugins } = await import(pathToFileURL(`${out}/plugins.mjs`).href);
 
 const assistant = content => ({ role: 'assistant', content, api: 'fictional', provider: 'fictional', model: 'fictional', usage: {}, stopReason: 'stop', timestamp: 1 });
 const result = (id, name, details) => ({ role: 'toolResult', toolCallId: id, toolName: name, content: [{ type: 'text', text: '{"fictional":true}' }], isError: false, timestamp: 2, ...(details ? { details } : {}) });
@@ -55,13 +58,26 @@ test('PiChat uses plugged renderers, cards and feature components when passed, a
   const get = id => container.querySelector(`[data-testid="${id}"]`);
   const model = { options: [{ provider: 'fictional', modelId: 'fictional-1' }], change: async () => {} };
 
-  await t.test('defaults: Markdown text, built-in question and approval cards, renderTool as catch-all, built-in model picker', async () => {
-    await render({ model, renderTool: call => ({ content: createElement('div', { 'data-testid': 'catch-all', 'data-tool': call.name }), inline: true }) });
-    assert.equal(get('message-text').querySelector('strong')?.textContent, 'fictional', 'the default text renderer is Markdown');
+  const slash = { commands: [{ name: 'fictional-plan', description: 'Plan', run: () => {} }] };
+  const mentions = { search: async () => [] };
+  await t.test('core defaults: plain text, built-in question and approval cards, renderTool as catch-all, no feature component configured without its item', async () => {
+    await render({ model, slash, mentions, voiceMessage: { transcribe: async () => '' }, renderTool: call => ({ content: createElement('div', { 'data-testid': 'catch-all', 'data-tool': call.name }), inline: true }) });
+    assert.equal(get('message-text')?.textContent, 'Here is the **fictional** ledger.', 'the core text renderer is plain text');
+    assert.equal(get('message-text').querySelector('strong'), null, 'no Markdown without pi-chat-markdown');
     assert.ok(get('question-card'), 'the built-in question card');
     assert.ok(get('approval-card'), 'the built-in approval card');
     assert.deepEqual(all('catch-all').map(node => node.dataset.tool), ['fictional_lookup', 'fictional_other']);
-    assert.ok(get('composer-model'), 'the built-in model picker');
+    assert.equal(get('composer-model'), null, 'no model pill without pi-chat-pickers');
+    assert.equal(get('voice-message-record'), null, 'no record button without pi-chat-voice');
+    assert.equal(get('composer-input').getAttribute('role'), null, 'no `/` or `@` menu without pi-chat-slash and pi-chat-mentions');
+  });
+
+  await t.test('withChatPlugins: Markdown, the model pill, the record button and the `/` and `@` menus come back', async () => {
+    await render(withChatPlugins({ model, slash, mentions, voiceMessage: { transcribe: async () => '' } }));
+    assert.equal(get('message-text').querySelector('strong')?.textContent, 'fictional', 'pi-chat-markdown draws the reply');
+    assert.ok(get('composer-model'), 'pi-chat-pickers draws the pill');
+    assert.ok(get('voice-message-record'), 'pi-chat-voice draws the record button');
+    assert.equal(get('composer-input').getAttribute('role'), 'combobox', 'pi-chat-slash and pi-chat-mentions open their menus');
   });
 
   await t.test('plugged: renderText, cards.question, cards.approval, toolRenderers before renderTool, model.Picker', async () => {

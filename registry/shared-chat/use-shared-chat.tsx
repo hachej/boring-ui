@@ -6,6 +6,7 @@ import { createSharedChat } from '@hachej/boring-ui-kit/shared-chat';
 import type { ChannelSource, Conversation, SharedChatController } from '@hachej/boring-ui-kit/shared-chat';
 import type { PiChatProps } from '../pi-chat/pi-chat';
 import type { ConversationsConfig, MentionsConfig } from '../pi-chat/config';
+import { MentionPicker } from '../pi-chat-mentions/mention-menu';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@/components/ui/item';
@@ -25,7 +26,7 @@ export function useSharedChatProps(controller: SharedChatController | undefined,
   const members = state?.shared.members ?? [];
   const labels = { ...(options.locale === 'fr' ? frenchSharedLabels : defaultSharedLabels), ...options.labels };
   const mentions = useMemo<MentionsConfig>(() => ({
-    listLabel: labels.sharedMembers, icon: <UserIcon aria-hidden="true" />,
+    listLabel: labels.sharedMembers, icon: <UserIcon aria-hidden="true" />, Picker: MentionPicker,
     label: id => members.find(member => member.id === id)?.name ?? id,
     search: async query => members.filter(member => `${member.name} ${member.id}`.toLowerCase().includes(query.toLowerCase()))
       .sort((a, b) => Number(b.kind === 'agent') - Number(a.kind === 'agent')).map(member => ({ path: member.id, label: member.name })),

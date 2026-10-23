@@ -41,7 +41,7 @@ try {
       const exposeActions = async id => {
         await reveal(id);
         if (device === 'phone') {
-          const point = await browser.evaluate(`(() => { const r = ${message(id)}.querySelector('[data-slot=item-title]').getBoundingClientRect(); return { x: r.left + 10, y: r.top + r.height / 2 }; })()`);
+          const point = await browser.evaluate(`(() => { const r = ${message(id)}.querySelector('[data-slot=card-title]').getBoundingClientRect(); return { x: r.left + 10, y: r.top + r.height / 2 }; })()`);
           await browser.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] }); await pause(550);
           await browser.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
         } else await browser.hover(message(id));
@@ -112,7 +112,7 @@ try {
       assert.equal(await browser.evaluate(`${trace}.dataset.open`), 'false');
       assert.equal(await browser.evaluate(`${qa('[data-slot=spinner]')}.length`), 1);
       assert.equal(await browser.evaluate(`!!${avatar}.querySelector('[data-slot=spinner]')`), false);
-      assert.equal(await browser.evaluate(`(() => { const a = ${avatar}.getBoundingClientRect(), c = ${message('pdf-card')}.querySelector('[data-testid=request-card]').getBoundingClientRect(); return Math.abs(a.bottom - c.bottom) <= 1; })()`), true, 'avatar aligns with the final request card');
+      assert.equal(await browser.evaluate(`(() => { const a = ${avatar}.getBoundingClientRect(), c = ${message('pdf-card')}.querySelector('[data-slot=card]').getBoundingClientRect(); return Math.abs(a.bottom - c.bottom) <= 1; })()`), true, 'avatar aligns with the final request card');
       await reveal('pdf-card'); await shot('pm-working');
       await browser.click(`${trace}.querySelector('button')`);
       await browser.until('expanded steps', `${trace}.querySelectorAll('[data-testid=activity-step]').length === 3`);
@@ -127,7 +127,7 @@ try {
       assert.equal(await browser.evaluate(`${qa('[data-slot=spinner]')}.length`), 0);
       assert.equal(await browser.evaluate(`${trace}.dataset.open`), 'false');
       assert.equal(await browser.evaluate(`${trace}.querySelector('[data-testid=activity-label]').textContent`), '3 étapes');
-      assert.equal(await browser.evaluate(`(() => { const c = ${message('pdf-card')}.querySelector('[data-testid=request-card]').getBoundingClientRect(), body = ${message('pdf-card')}.querySelector('[data-testid=shared-message-content]').getBoundingClientRect(); return c.width <= body.width * 0.8 + 1; })()`), true);
+      assert.equal(await browser.evaluate(`(() => { const c = ${message('pdf-card')}.querySelector('[data-slot=card]').getBoundingClientRect(), body = ${message('pdf-card')}.querySelector('[data-testid=shared-message-content]').getBoundingClientRect(); return c.width <= body.width * 0.8 + 1; })()`), true);
       await reveal('pdf-card'); await shot('card-result');
       const actions = `${message('pdf-card')}.querySelector('[data-testid=shared-message-actions]')`;
       assert.equal(await browser.evaluate(device === 'phone' ? `${actions}.hidden` : `getComputedStyle(${actions}).opacity === '0'`), true);
