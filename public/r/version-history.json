@@ -4,12 +4,12 @@
   "title": "Version history rows",
   "description": "Shared view-only version rows and menu metadata with relative time, provenance and Current. No file reads, publication or restoration.",
   "dependencies": [
-    "@hachej/boring-files@^0.4.13",
+    "@hachej/boring-files@^0.4.14",
     "react@^19.0.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.13/r/theme.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.13/r/button.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.14/r/theme.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.14/r/button.json",
     "button"
   ],
   "files": [
