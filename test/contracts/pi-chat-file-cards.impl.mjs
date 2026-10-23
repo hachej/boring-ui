@@ -17,7 +17,7 @@ async function load(name, contents) {
   return import(pathToFileURL(join(out, `${name}.mjs`)).href);
 }
 const { frenchChatLabels } = await load('labels', `export { frenchChatLabels } from '${root}registry/pi-chat/labels-fr.ts';`);
-let PiChat, AmbientChat;
+let PiChat, AmbientChat, voiceMessagePlugin;
 
 const SENT = 'Read @uploads/report-1a2b3c4d.pdf please';
 const pageComments = (extra = {}) => draftReport({
@@ -42,7 +42,8 @@ async function harness(t, { attachments, mentions, onOpenFile, pasteToFile, loca
     Object.defineProperty(globalThis, name, { configurable: true, writable: true, value: typeof value === 'function' && /^[a-z]/.test(name) ? value.bind(window) : value });
   }
   // Base UI chooses its layout effects at import time; load the rendered blocks only after this browser realm exists.
-  if (!PiChat) ({ PiChat } = await load('pi-chat', `export { PiChat } from '${root}registry/pi-chat/pi-chat.tsx';`));
+  // The microphone, recorder and pending bubble are the optional pi-chat-voice item's, plugged in through voiceMessage (one bundle: one labels context).
+  if (!PiChat) ({ PiChat, voiceMessagePlugin } = await load('pi-chat', `export { PiChat } from '${root}registry/pi-chat/pi-chat.tsx'; export { voiceMessagePlugin } from '${root}registry/pi-chat-voice/voice-message.tsx';`));
   if (!AmbientChat) ({ AmbientChat } = await load('pi-ambient', `export { AmbientChat } from '${root}registry/pi-ambient/ambient.tsx';`));
   const { Harness: NativeHarness, MemoryStorage, createRegistry } = await import('@earendil-works/pi-durable');
   const { BACKGROUND_CONTEXT: context } = await import('@earendil-works/chord/context');
@@ -365,7 +366,7 @@ test('native write/edit results reuse file cards below the reply, deduplicate pa
   assert.deepEqual(cards.map(card => card.dataset.path), ['tt.md', 'budget.xlsx']);
   assert.match(cards[0].closest('[data-slot=attachment]').textContent, /tt.md.*Created/s, 'a write followed by edits is one created file');
   assert.match(cards[1].closest('[data-slot=attachment]').textContent, /budget.xlsx.*Edited/s);
-  const prose = [...container.querySelectorAll('[data-role=assistant] p')].find(node => node.textContent === 'The fictional files are ready.');
+  const prose = [...container.querySelectorAll('[data-role=assistant] [data-testid=message-text]')].find(node => node.textContent.trim() === 'The fictional files are ready.');
   assert.ok(prose.compareDocumentPosition(container.querySelector('[data-testid=reply-files]')) & 4, 'file cards follow the reply text');
   await act(async () => cards[0].click());
   assert.deepEqual(opened, ['tt.md']);
@@ -642,7 +643,7 @@ async function voiceHarness(t, config = {}) {
   let release;
   const gate = new Promise(resolve => { release = resolve; });
   let gated = config.gated ?? false;
-  const voiceMessage = { transcribe: async (audio, signal) => {
+  const voiceMessage = { ...voiceMessagePlugin, transcribe: async (audio, signal) => {
     transcriptions.push({ audio, signal }); if (gated) await gate;
     if (transcribeError) throw new Error('fictional transcription failure'); return spoken;
   }, ...config.voiceMessage };

@@ -17,7 +17,7 @@ const { createElement } = await import('react');
 const { renderToStaticMarkup } = await import('react-dom/server');
 
 test('Markdown keeps model HTML inert and refuses unsafe link targets', async () => {
-  const { Markdown } = await load('markdown', 'markdown.tsx');
+  const { Markdown } = await load('markdown', 'markdown.tsx', 'pi-chat-markdown');
   const html = renderToStaticMarkup(createElement(Markdown, { text: '<img src=x onerror=alert(1)> <script>alert(1)</script>\n\n[a](javascript:alert(1)) [b](data:text/html,x) [c](https://example.com/p) [d](//evil.test) ![i](https://evil.test/x.png)' }));
   assert.ok(!/<img|<script|onerror=/.test(html.replace(/&lt;[^]*?&gt;/g, '')), html);
   assert.ok(!/href="javascript:|href="data:|href="\/\//.test(html), html);
@@ -27,7 +27,7 @@ test('Markdown keeps model HTML inert and refuses unsafe link targets', async ()
 });
 
 test('Markdown renders fenced code as a labelled, copyable block', async () => {
-  const { Markdown } = await load('markdown', 'markdown.tsx');
+  const { Markdown } = await load('markdown', 'markdown.tsx', 'pi-chat-markdown');
   const html = renderToStaticMarkup(createElement(Markdown, { text: '```python\nprint("hi")\n```' }));
   assert.match(html, /data-testid="code-language"[^>]*>python</);
   assert.match(html, /aria-label="Copy code"/);
@@ -650,7 +650,7 @@ test('the "Take a photo" item shows only for attachments that admit images on a 
 
   const noop = () => {};
   const base = { text: '', onText: noop, attachments: [], onRemoveAttachment: noop, working: false, sendBlocked: false, disabled: false, stopRequested: false,
-    onSend: noop, onStop: noop, uploading: false, canAttach: true, fileAccept: 'image/*', onPickFiles: noop, textareaRef: { current: null } };
+    onSend: noop, onStop: noop, uploading: false, canAttach: true, fileAccept: 'image/*', onPickFiles: noop, textareaRef: { current: null }, camera: () => null };
   const names = ['window', 'document', 'navigator', 'HTMLElement', 'HTMLButtonElement', 'Element', 'Node', 'Text', 'Event', 'KeyboardEvent', 'MouseEvent', 'PointerEvent', 'FocusEvent', 'MutationObserver', 'ResizeObserver', 'requestAnimationFrame', 'cancelAnimationFrame', 'getComputedStyle', 'matchMedia', 'IS_REACT_ACT_ENVIRONMENT'];
   const showsItem = async (props, coarse) => {
     const window = new Window({ url: 'https://fictional.invalid/', settings: { disableIframePageLoading: true } });
@@ -675,8 +675,9 @@ test('the "Take a photo" item shows only for attachments that admit images on a 
   assert.equal(await showsItem({ fileAccept: '' }, true), true, 'an empty accept admits everything');
   assert.equal(await showsItem({}, false), false, 'a fine pointer has no camera item');
   assert.equal(await showsItem({ fileAccept: 'application/pdf' }, true), false, 'a PDF-only accept');
-  assert.equal(await showsItem({ canAttach: false, onCommands: undefined, slash: { commands: [{ name: 'help', description: 'Fictional help' }] } }, true), false, 'without attachments');
-  t.diagnostic('menu item gating checked in five states');
+  assert.equal(await showsItem({ canAttach: false, onCommands: undefined, slash: { commands: [{ name: 'help', description: 'Fictional help' }], Picker: () => null } }, true), false, 'without attachments');
+  assert.equal(await showsItem({ camera: undefined }, true), false, 'without the pi-chat-attachments camera');
+  t.diagnostic('menu item gating checked in six states');
 });
 
 test('the camera words exist in English and French, and the English composer baseline markup has no camera', async () => {

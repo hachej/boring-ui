@@ -5,7 +5,10 @@ import { createPortal } from 'react-dom';
 import { CameraIcon, XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useChatText } from './labels';
+import { useChatText } from '../pi-chat/labels';
+import type { CameraSheetProps } from '../pi-chat/config';
+
+export type { CameraSheetProps } from '../pi-chat/config';
 
 // The in-page camera behind the composer's "Take a photo" (phones). getUserMedia is secure-context only and needs permission, so it is
 // opened only when this sheet mounts (the person's tap on the menu item), through an injectable `getUserMedia` whose default
@@ -16,21 +19,13 @@ import { useChatText } from './labels';
 export const CAMERA_MAX_SIDE = 1600;
 const JPEG_QUALITY = 0.85;
 
-type GetUserMedia = (constraints: MediaStreamConstraints) => Promise<MediaStream>;
+type GetUserMedia = NonNullable<CameraSheetProps['getUserMedia']>;
 
 /** The browser's camera, or null where the page cannot have one (insecure origin, no media devices). */
 function browserGetUserMedia(): GetUserMedia | null {
   if (typeof globalThis.navigator?.mediaDevices?.getUserMedia !== 'function') return null;
   const devices = globalThis.navigator.mediaDevices;
   return constraints => devices.getUserMedia(constraints);
-}
-
-export interface CameraSheetProps {
-  /** The photo, as a JPEG File scaled to at most `CAMERA_MAX_SIDE` on its longest side (or the phone camera's own file, from the fallback). */
-  readonly onCapture: (file: File) => void;
-  readonly onClose: () => void;
-  /** Opens the camera; defaults to the browser's, when it has one. */
-  readonly getUserMedia?: GetUserMedia | undefined;
 }
 
 /** Full-screen camera above the agent layer (the app shell's point layer + 10): a live preview, a shutter and a close button. */

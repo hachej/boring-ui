@@ -15,11 +15,8 @@ import type { BlockAction } from '../button/actions';
 import { Composer } from './composer';
 import type { ComposerFeedback, ComposerProps } from './composer';
 import { ConversationFiles } from './conversation-files';
-import type { ConversationsConfig, VoiceMessageConfig } from './config';
-import { useVoiceMessage } from './use-voice-message';
-import type { PendingVoice } from './use-voice-message';
+import type { AttachmentsConfig, ConversationsConfig, PendingVoice, VoiceMessageConfig, VoiceMessageHandle, VoiceRecorderHook } from './config';
 import { displayName } from './config';
-import { PendingVoiceBubble, VoiceMessageButton } from './voice-message';
 import { EmptyState } from './empty-state';
 import type { Suggestion } from './empty-state';
 import { ConversationHistory, TranscriptHistory } from './history';
@@ -47,13 +44,14 @@ export type { ApprovalCardProps } from './approval-card';
 export type { ChatCards, ChatTextPart } from './message';
 export type { MentionPickerProps, ModelEffortPickerProps, SlashPickerProps } from './config';
 export type { PendingVoice, PendingVoiceBubbleProps, VoiceMessageButtonProps, VoiceMessageHandle } from './config';
-export type { CameraSheetProps } from './camera-sheet';
+export type { CameraSheetProps, VoiceRecorderHook, VoiceRecorderOptions } from './config';
+export { voiceClock } from './config';
 export { artifactKey, artifactKind, collectArtifacts, detectArtifact, parseArtifact, typeLabel } from './artifact';
 export type { ArtifactDescriptor, ArtifactKind, ArtifactKindViewProps, ArtifactsConfig, ArtifactTarget, ArtifactType } from './artifact';
 export { QuestionCard, formAnswer, parseQuestion, ASK_USER_TOOL } from './question-card';
 export type { FormQuestion } from './question-card';
 export { ChatTextProvider } from './labels';
-export type { CommandMention, CommandMentions } from './markdown';
+export type { CommandMention, CommandMentions } from './config';
 export type { Suggestion } from './empty-state';
 export { ConversationList, relativeTime } from './history';
 export { defaultChatIcons, defaultChatLabels } from './labels';
@@ -66,7 +64,6 @@ export { useChatDraft } from './use-chat-draft';
 export { useConversations } from './use-conversations';
 export type { ChatController, ChatSnapshot } from '@hachej/boring-ui-kit/native-chat';
 export { MessageText, VoiceBubble } from './message';
-export { Markdown } from './markdown';
 export { useTranscript } from './session';
 export { RunCard, parseRun } from './run-card';
 export { SubagentCard, parseDelegateDetails, DELEGATE_DETAILS_KIND } from './subagent-card';
@@ -117,6 +114,8 @@ export interface PiChatProps extends ChatFeatureProps {
   /** Rendered before the title in the header (for example a menu button on narrow screens). */
   readonly headerStart?: ReactNode;
   readonly onFiles?: FilesHandler;
+  /** The phone camera's Take a photo entry for an `onFiles` chat (`CameraSheet` of `pi-chat-attachments`); with `attachments`, set `attachments.Camera` instead. */
+  readonly camera?: AttachmentsConfig['Camera'];
   /** Shown instead of the default empty state before the first message. */
   readonly emptyState?: ReactNode;
   readonly suggestions?: readonly Suggestion[];
@@ -151,8 +150,10 @@ type TranscriptRow = { readonly key: string; readonly kind: 'native'; readonly r
 /** Borrows a concrete native controller; unmount releases presentation and uploads only. */
 export function PiChat(props: PiChatProps) {
   const active = useRef(props.controller); active.current = props.controller;
-  const [mount, setMount] = useState({ controller: props.controller, sequence: 0 });
-  if (mount.controller !== props.controller) setMount({ controller: props.controller, sequence: mount.sequence + 1 });
+  // A new controller or a new voice recorder hook starts a fresh session, so the recorder's hooks keep their order.
+  const recorder = props.voiceMessage?.useRecorder ?? noVoice;
+  const [mount, setMount] = useState({ controller: props.controller, recorder, sequence: 0 });
+  if (mount.controller !== props.controller || mount.recorder !== recorder) setMount({ controller: props.controller, recorder, sequence: mount.sequence + 1 });
   const text = useMergedText(props.labels, props.icons, chatTextFor(props.locale));
   return <ChatTextProvider value={text}><MessageScrollerProvider key={mount.sequence} autoScroll><PiChatSession {...props} activeController={active} /></MessageScrollerProvider></ChatTextProvider>;
 }
@@ -165,24 +166,30 @@ function ConnectionBadge({ kind }: { readonly kind: string }) {
   </Badge>;
 }
 
+/** No voice message: without `voiceMessage.useRecorder` (from `pi-chat-voice`) the chat records nothing. */
+const silent: VoiceMessageHandle = { canStart: false, phase: 'idle', seconds: 0, captureSequence: 0, problem: undefined, pending: [], start: () => {}, finish: () => {}, cancel: () => {} };
+const noVoice: VoiceRecorderHook = () => silent;
+/** A shell's pending voice row when no `voiceMessage.Bubble` is plugged in: nothing to draw. */
+function NoVoiceBubble(_: { readonly pending: PendingVoice | undefined }) { return null; }
+
 function PiChatSession({ controller, placement = 'docked', mode = 'expert', presentation, className, keyboardInset = true, actions, avatar, headerActions, header = true, decisions, controls, tools, voiceMessage, pendingVoice, belowComposer, composerChips, composerHeader, composerHasContent, onPickFiles, timeline, renderConnectionError, headerStart, renderEntry, hideLine, displayLimit, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions,
-  onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = false, emptyLayout = 'centered', composerLayout = 'card', conversationTitle, onRenameTitle, feedback, draftKey, onOpenFile, fileChanges, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: ChatController } }) {
+  onOpenImage, onCopy, onComposerKeyDown, onFiles, camera, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = false, emptyLayout = 'centered', composerLayout = 'card', conversationTitle, onRenameTitle, feedback, draftKey, onOpenFile, fileChanges, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: ChatController } }) {
   const { labels, icons } = useChatText();
   useChatDraft(controller, draftKey);
   useChatPlacement(controller, placement);
   const { title } = labels;
   const [pickingConversation, setPickingConversation] = useState(false);
   const scrollToBottom = useRef<() => void>(() => {});
-  const voice = useVoiceMessage({ controller, config: voiceMessage, attachments, labels, activeController: active, admitted: () => timeline ? timeline.afterSend?.() : scrollToBottom.current() });
+  const voice = (voiceMessage?.useRecorder ?? noVoice)({ controller, config: voiceMessage, attachments, labels, activeController: active, admitted: () => timeline ? timeline.afterSend?.() : scrollToBottom.current() });
   // A reply's Fork button calls the host's latest `fork`; the row context changes only when forking is switched on or off.
   const fork = useRef(conversations?.fork); fork.current = conversations?.fork;
   const canFork = Boolean(conversations?.fork);
   const rowExtras = useMemo(() => canFork ? { onFork: (entryId: string) => { void fork.current?.(entryId).catch(() => {}); } } : undefined, [canFork]);
-  const session = useChatSession({ controller, activeController: active, mode, presentation, actions, renderEntry, hideLine, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept,
+  const session = useChatSession({ controller, activeController: active, mode, presentation, actions, renderEntry, hideLine, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, camera, fileAccept,
     slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => timeline ? timeline.afterSend?.() : scrollToBottom.current(), feedback, rowExtras, onOpenFile, fileChanges, pasteToFile, composerChips, composerHeader, composerHasContent, onPickFiles });
   const { state, derived, rows, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, files, loading } = session;
   const voiceRows = pendingVoice ?? voice.pending;
-  const VoiceButton = voiceMessage?.Button ?? VoiceMessageButton, VoiceBubbleView = voiceMessage?.Bubble ?? PendingVoiceBubble;
+  const VoiceButton = voiceMessage?.Button, VoiceBubbleView = voiceMessage?.Bubble ?? NoVoiceBubble;
   const transcriptRows: readonly TranscriptRow[] = [
     ...rows.map(row => ({ key: row.key, kind: 'native' as const, row })),
     ...voiceRows.map(voice => ({ key: `voice:${voice.id}`, kind: 'voice' as const, voice })),
@@ -272,7 +279,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
           <ConversationFiles files={[...conversationFiles.values()]} />
           <MessageQueue items={queued} sending={state.outbox} withdraw={actions?.withdraw} actions={queueActions} />
           {voice.problem && <p role="alert" data-testid="voice-message-problem">{voice.problem}</p>}
-          <Composer {...composer} layout={composerLayout} placeholder={labels.placeholder === 'Message the agent…' ? `Message ${title}…` : labels.placeholder} barStart={barStart} barNote={barNote} barEnd={voiceMessage ? <>{tools}<VoiceButton voice={voice} disabled={state.disposed || !connected || state.send.kind === 'unknown'} /></> : tools} />
+          <Composer {...composer} layout={composerLayout} placeholder={labels.placeholder === 'Message the agent…' ? `Message ${title}…` : labels.placeholder} barStart={barStart} barNote={barNote} barEnd={voiceMessage && VoiceButton ? <>{tools}<VoiceButton voice={voice} disabled={state.disposed || !connected || state.send.kind === 'unknown'} /></> : tools} />
           {belowComposer !== undefined && <div data-testid="below-composer" className="pt-2">{belowComposer}</div>}
         </div>
       </div>

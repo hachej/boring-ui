@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { connectRevisionProvider } from '@hachej/boring-files/revision';
 import { FileTree } from '../../registry/file-tree/file-tree';
 import { AgentWorkspace } from '../../registry/pi-app/agent-workspace';
-import { MentionPicker } from '../../registry/pi-chat/mention-menu';
+import { MentionPicker } from '../../registry/pi-chat-mentions/mention-menu';
 
 window.fileTreeFixture = { ready: false, dropNextPublish: false, holdNextList: false, holdNextPublish: false, publishCalls: 0, releaseList: undefined, releasePublish: undefined };
 function App() {

@@ -5,8 +5,7 @@ import type { ComponentType, ReactNode } from 'react';
 import type { ImageContent, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai';
 import { AlertCircleIcon, CircleSlashIcon, FileAudioIcon, FileIcon, FileSpreadsheetIcon, FileTextIcon, ImageIcon, PauseIcon, PlayIcon, PresentationIcon } from 'lucide-react';
 import { CopyButton } from './code-block';
-import { Markdown } from './markdown';
-import type { CommandMentions } from './markdown';
+import type { CommandMentions } from './config';
 import { ArtifactCard } from './artifact-card';
 import { feedbackContent } from './feedback-content';
 import { SentFeedback } from './sent-feedback';
@@ -24,7 +23,7 @@ import { thumbnail } from './composer';
 import { ImageViewer } from './image-viewer';
 import { displayName, fileKind, isUploadPath, isVoicePath, pieces, visibleParts } from './config';
 import type { AudioUrlRead, FileKind, Piece, PreviewRead } from './config';
-import { voiceClock } from './voice-message';
+import { voiceClock } from './config';
 import { Spinner } from '@/components/ui/spinner';
 import { isFileBlock, segments, targetContent } from './rows';
 import type { DeriveOptions, Row } from './rows';
@@ -51,9 +50,9 @@ export interface ChatTextPart {
   readonly commandMentions?: CommandMentions | undefined;
   readonly onCopy?: ((text: string) => Promise<void>) | undefined;
 }
-/** The default text renderer: the built-in Markdown. */
-const markdownText = ({ text, streaming, renderMention, commandMentions, onCopy }: ChatTextPart): ReactNode =>
-  <Markdown text={text} streaming={streaming} renderMention={renderMention} {...(commandMentions ? { commandMentions } : {})} {...(onCopy ? { onCopy } : {})} />;
+/** The default text renderer: the reply as plain text. `markdownText` of `pi-chat-markdown` draws it as Markdown. */
+const plainText = ({ text, streaming }: ChatTextPart): ReactNode =>
+  <div data-testid="message-text" data-streaming={streaming ? 'true' : undefined} className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">{text}</div>;
 
 /** The cards the chat draws for a human decision. Each one left out uses the built-in card. */
 export interface ChatCards {
@@ -65,7 +64,7 @@ export interface ChatCards {
 
 export interface RowContext {
   readonly developer: boolean;
-  /** Draws an assistant text part. Default: the built-in Markdown. */
+  /** Draws an assistant text part. Default: plain text (`markdownText` of `pi-chat-markdown` draws Markdown). */
   readonly renderText?: ((part: ChatTextPart) => ReactNode) | undefined;
   readonly cards?: ChatCards | undefined;
   /** `presentation="natural"`: no "working" shimmer in a reply (the chat shows one status instead). */
@@ -237,18 +236,17 @@ export function VoiceBubble({ path, transcript, preview, audioUrl, align = 'end'
  * A text part of a sent message. Its `uploads/` mentions become file cards above the bubble and leave the text; the message content keeps
  * them (only what is drawn changes).
  */
-/** `variant` picks the bubble: `muted` (the chat's user bubble) or `default` (the theme's primary, used for my own messages in a shared chat). */
-export function MessageText({ text, context, align = 'end', variant = 'muted' }: { readonly text: string; readonly context: Pick<RowContext, 'pieces' | 'openFile'>; readonly align?: 'start' | 'end'; readonly variant?: 'muted' | 'default' }) {
+export function MessageText({ text, context, align = 'end' }: { readonly text: string; readonly context: Pick<RowContext, 'pieces' | 'openFile'>; readonly align?: 'start' | 'end' }) {
   const target = targetContent(text);
   if (target) return <>
     <Badge variant="secondary" data-testid="message-target" title={JSON.stringify(target.target)} className="max-w-full truncate">{target.label}</Badge>
-    <MessageText text={target.speech} context={context} align={align} variant={variant} />
+    <MessageText text={target.speech} context={context} align={align} />
   </>;
   const feedback = feedbackContent(text);
   if (feedback) return <>
-    {feedback.before && <MessageText text={feedback.before} context={context} align={align} variant={variant} />}
+    {feedback.before && <MessageText text={feedback.before} context={context} align={align} />}
     <SentFeedback report={feedback.report} align={align} />
-    {feedback.after && <MessageText text={feedback.after} context={context} align={align} variant={variant} />}
+    {feedback.after && <MessageText text={feedback.after} context={context} align={align} />}
   </>;
   const open = context.pieces?.openMention;
   const render = context.pieces?.renderMention;
@@ -258,7 +256,7 @@ export function MessageText({ text, context, align = 'end', variant = 'muted' }:
   const isFile = (piece: Piece) => piece.kind === 'mention' && isUploadPath(piece.value!);
   const files = all.filter(isFile).map(piece => piece.value!);
   const voice = files.find(isVoicePath), cards = files.filter(path => path !== voice);
-  if (!context.pieces && !voice) return <Bubble variant={variant} align={align}><BubbleContent data-testid="user-text"><span className="whitespace-pre-wrap">{text}</span></BubbleContent></Bubble>;
+  if (!context.pieces && !voice) return <Bubble variant="muted" align={align}><BubbleContent data-testid="user-text"><span className="whitespace-pre-wrap">{text}</span></BubbleContent></Bubble>;
   const shown = files.length ? visibleParts(all, isFile) : all;
   const empty = shown.every(piece => piece.kind === undefined && piece.text === '');
   const content = shown.map((piece, at) => piece.kind === 'mention'
@@ -268,7 +266,7 @@ export function MessageText({ text, context, align = 'end', variant = 'muted' }:
   return <>
     {cards.length > 0 && <FileCards paths={cards} open={context.openFile ?? open} preview={context.pieces?.preview} />}
     {voice ? <VoiceBubble path={voice} transcript={empty ? null : content} preview={context.pieces?.preview} audioUrl={context.pieces?.audioUrl} align={align} />
-      : !(files.length > 0 && empty) && <Bubble variant={variant} align={align}><BubbleContent data-testid="user-text"><span className="whitespace-pre-wrap">{content}</span></BubbleContent></Bubble>}
+      : !(files.length > 0 && empty) && <Bubble variant="muted" align={align}><BubbleContent data-testid="user-text"><span className="whitespace-pre-wrap">{content}</span></BubbleContent></Bubble>}
   </>;
 }
 
@@ -360,7 +358,7 @@ function RowBody({ row, images, context: liveContext }: { readonly row: Row; rea
             }
             const part = chunk.part;
             if (part.kind === 'card') return <div key={part.key}>{part.content}</div>;
-            if (part.kind === 'text') return <Bubble key={part.key} variant="ghost"><BubbleContent>{(context.renderText ?? markdownText)({ text: part.text, renderMention, streaming: row.streaming && part === lastText && row.parts[row.parts.length - 1] === part,
+            if (part.kind === 'text') return <Bubble key={part.key} variant="ghost"><BubbleContent>{(context.renderText ?? plainText)({ text: part.text, renderMention, streaming: row.streaming && part === lastText && row.parts[row.parts.length - 1] === part,
               ...(settled && context.commandMentions ? { commandMentions: context.commandMentions } : {}), ...(context.onCopy ? { onCopy: context.onCopy } : {}) })}</BubbleContent></Bubble>;
             if (part.kind === 'thinking') return null; // reasoning is a step of an activity block
             if (part.kind === 'approval') return <Approval key={part.key} call={part.call} result={part.result} questionId={part.questionId} answer={context.answer} summary={part.summary} decision={part.decision} live={part.live} />;

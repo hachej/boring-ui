@@ -3,11 +3,16 @@
 import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ArrowLeftIcon, BrainIcon } from 'lucide-react';
-import { PiChat } from '../../registry/pi-chat/pi-chat.tsx';
+import { PiChat as BarePiChat } from '../../registry/pi-chat/pi-chat.tsx';
+import { withChatPlugins } from '../../registry/pi-chat-plugins/chat-plugins.ts';
+
 import { createNativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { createRemoteChat } from '@hachej/boring-ui-kit/remote-chat';
 import { copyToClipboard } from '@hachej/boring-files/platform';
 import { BotPanel } from './panel.jsx';
+
+// The example ships every composer feature item (Markdown, `/`, `@`, model pill, voice, camera).
+const PiChat = props => <BarePiChat {...withChatPlugins(props)} />;
 
 const { token, identity, model } = window.__BOT__;
 const authorized = request => { const headers = new Headers(request.headers); headers.set('authorization', `Bearer ${token}`); return fetch(new Request(request, { headers })); };

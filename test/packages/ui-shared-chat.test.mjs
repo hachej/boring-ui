@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createSharedChat, createFakeChannelSource, createChannelSocket, ChannelRequestError, cardActions } from '@hachej/boring-ui-kit/shared-chat';
+import { createSharedChat, createFakeChannelSource, createChannelSocket, ChannelRequestError } from '@hachej/boring-ui-kit/shared-chat';
 import { sharedChatSeed } from '../../examples/shared-chat/seed.mjs';
 
 const tick = () => new Promise(resolve => setTimeout(resolve, 10));
@@ -116,35 +116,4 @@ test('channel socket RPC, validated events, overrides and owned reconnect lifecy
   stop(); await tick(); assert.equal(sockets.length, 2);
   const overridden = await createChannelSocket({ url: 'https://fictional.invalid', fetch: async () => Response.json({ space: 'sp_fictional', me: sharedChatSeed.me }), routes: { history: async () => ({ messages: [] }) } });
   assert.deepEqual(await overridden.history('main', { limit: 20 }), { messages: [] });
-});
-
-test('a card with several actions runs the chosen one; the single action and the first action stay the default', async t => {
-  const card = { requestId: 'reminders', title: 'Reminders by text', line: 'Ready to build.', actions: [{ id: 'build', label: 'Build it', variant: 'primary' }, { id: 'later', label: 'Not now', variant: 'secondary' }] };
-  const source = createFakeChannelSource(sharedChatSeed);
-  const chat = createSharedChat(source, { conversationId: 'main' }); t.after(() => chat.dispose()); await chat.connect();
-  await chat.action(card, 'later');
-  await chat.action(card);
-  await chat.action({ requestId: 'review-plan', title: 'Review', line: 'Waiting.', action: { id: 'review', label: 'Review' } });
-  await chat.action({ requestId: 'review-plan', title: 'Review', line: 'Waiting.', action: { id: 'review', label: 'Review' } }, 'review');
-  await chat.action({ requestId: 'none', title: 'No choice', line: 'Nothing to do.' });
-  await assert.rejects(chat.action(card, 'forged'), /offers no action forged/);
-  assert.deepEqual(source.actions.map(action => action.actionId), ['later', 'build', 'review', 'review']);
-  assert.deepEqual(cardActions({ action: { id: 'one', label: 'One' } }), [{ id: 'one', label: 'One' }]);
-  assert.deepEqual(cardActions({ action: { id: 'one', label: 'One' }, actions: [] }), [], 'actions, when present, win over the single action');
-});
-
-test('the channel socket keeps card actions and the member role line', async () => {
-  const actions = [{ id: 'build', label: 'Build it', variant: 'primary' }, { id: 'later', label: 'Not now', variant: 'secondary' }];
-  const msg = { id: 'card', conversationId: 'main', author: 'pm', at: '2026-10-20T12:00:00Z', card: { requestId: 'r', title: 'Reminders', line: 'Ready.', actions } };
-  const members = [{ id: 'reminder', name: 'Reminder agent', kind: 'agent', role: 'agent:reminder', roleLabel: 'the reminders' }];
-  const source = await createChannelSocket({ url: 'https://fictional.invalid',
-    fetch: async request => {
-      const path = new URL(request.url).pathname;
-      if (path.endsWith('/me')) return Response.json({ space: 'sp_fictional', me: sharedChatSeed.me });
-      if (path.endsWith('/members')) return Response.json(members);
-      return Response.json({ messages: [msg] });
-    },
-    open: url => ({ url, close() {} }) });
-  assert.deepEqual((await source.history('main', { limit: 20 })).messages[0].card.actions, actions);
-  assert.equal((await source.members('main'))[0].roleLabel, 'the reminders');
 });

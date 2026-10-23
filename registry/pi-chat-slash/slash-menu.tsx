@@ -6,11 +6,11 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group';
 import { Item, ItemContent, ItemDescription, ItemTitle } from '@/components/ui/item';
-import { usePickerKeyboard } from './picker-keyboard';
-import { ComposerSuggestions } from './mention-menu';
-import { slashGroup } from './config';
-import type { SlashPickerProps } from './config';
-import { useChatText } from './labels';
+import { usePickerKeyboard } from '../pi-chat/picker-keyboard';
+import { ComposerSuggestions } from '../pi-chat/suggestions';
+import { slashGroup } from '../pi-chat/config';
+import type { SlashPickerProps } from '../pi-chat/config';
+import { useChatText } from '../pi-chat/labels';
 
 const ALL = '__all__';
 

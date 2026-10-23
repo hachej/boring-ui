@@ -1,4 +1,4 @@
-// The composer's in-page camera (pi-chat/camera-sheet.tsx) in happy-dom: a fake getUserMedia whose tracks record being stopped, and
+// The composer's in-page camera (pi-chat-attachments/camera-sheet.tsx) in happy-dom: a fake getUserMedia whose tracks record being stopped, and
 // a stubbed video, canvas and toBlob. Fictional data only.
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -37,7 +37,7 @@ const mount = async (t, { refuse = false, videoSize = [3200, 2400], props = {} }
   };
 
   const out = new URL('../../.cache/camera-sheet-test/', import.meta.url); mkdirSync(out, { recursive: true });
-  await build({ entryPoints: [new URL('../../registry/pi-chat/camera-sheet.tsx', import.meta.url).pathname], outfile: new URL('camera-sheet.mjs', out).pathname,
+  await build({ entryPoints: [new URL('../../registry/pi-chat-attachments/camera-sheet.tsx', import.meta.url).pathname], outfile: new URL('camera-sheet.mjs', out).pathname,
     bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
   const { CameraSheet, CAMERA_MAX_SIDE } = await import(new URL('camera-sheet.mjs', out).href);
   const { createElement, act } = await import('react'); const { createRoot } = await import('react-dom/client');

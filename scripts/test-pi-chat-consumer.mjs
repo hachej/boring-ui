@@ -46,7 +46,7 @@ try {
     iconLibrary: 'lucide', aliases: { components: '@/components', utils: '@/lib/utils', ui: '@/components/ui', lib: '@/lib', hooks: '@/hooks' } }));
   writeFileSync(join(directory, 'src/index.css'), '@import "tailwindcss";\n');
   writeFileSync(join(directory, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'ESNext', moduleResolution: 'Bundler', jsx: 'react-jsx', strict: true, noUncheckedIndexedAccess: true, skipLibCheck: false,
-    noEmit: true, types: [], lib: ['ES2023', 'DOM', 'DOM.Iterable'], baseUrl: '.', paths: { '@/*': ['./src/*'] } }, include: ['src/components/pi-chat/**/*.tsx', 'src/components/pi-chat/**/*.ts', 'src/components/shared-chat/**/*.tsx', 'src/components/shared-chat/**/*.ts', 'src/page.tsx'] }));
+    noEmit: true, types: [], lib: ['ES2023', 'DOM', 'DOM.Iterable'], baseUrl: '.', paths: { '@/*': ['./src/*'] } }, include: ['src/components/pi-chat*/**/*.tsx', 'src/components/pi-chat*/**/*.ts', 'src/components/shared-chat/**/*.tsx', 'src/components/shared-chat/**/*.ts', 'src/page.tsx'] }));
   const installer = { ...process.env, npm_config_cache: cache, npm_config_offline: 'true', npm_config_ignore_scripts: 'true', npm_config_audit: 'false', npm_config_fund: 'false' };
   delete installer.NODE_OPTIONS;
   run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', `${registry}/${itemName}.json`, '--cwd', directory, '--yes'], installer);
@@ -55,6 +55,8 @@ try {
   assert.ok(existsSync(join(directory, 'src/components/pi-chat/use-remote-chat.ts')), 'the moved hook is installed with pi-chat alone');
   if (!shared) {
     assert.equal(existsSync(join(directory, 'src/components/shared-chat')), false);
+    // D-257: the composer features are optional items; pi-chat alone installs none of them.
+    for (const feature of ['markdown', 'slash', 'mentions', 'pickers', 'voice', 'attachments', 'plugins']) assert.equal(existsSync(join(directory, `src/components/pi-chat-${feature}`)), false, `pi-chat alone must not install pi-chat-${feature}`);
     assert.equal(existsSync(join(directory, 'src/components/pi-chat/shared.tsx')), false);
     assert.equal(existsSync(join(directory, 'src/components/pi-chat/use-shared-chat.ts')), false);
   }
@@ -107,7 +109,10 @@ export const view = createRoot(document.getElementById('root')!); view.render(<A
     assert.ok(inputs.some(path => path.endsWith('src/components/pi-chat/use-remote-chat.ts')), 'the bundle uses the CLI-installed hook');
     assert.deepEqual(inputs.filter(path => /shared-chat|channel-source|channel-socket|channel-error|fake-channel/.test(path)), [], 'regular bundle excludes the optional feature and data entry');
   }
-  assert.ok(inputs.some(path => path.endsWith('@hachej/boring-ui-kit/dist/voice-capture.js')), 'the installed chat reuses the neutral public capture');
+  // D-257: Markdown (marked, entities) and voice capture live in optional items; the core-only bundle carries none of them.
+  const featureOnly = inputs.filter(path => /node_modules\/(marked|entities)\/|@hachej\/boring-ui-kit\/dist\/voice-capture\.js$/.test(path));
+  if (shared) assert.ok(inputs.some(path => /node_modules\/marked\//.test(path)), 'the shared timeline draws messages with the installed pi-chat-markdown');
+  else assert.deepEqual(featureOnly, [], 'the core-only pi-chat bundle excludes Markdown and voice capture (pi-chat-markdown, pi-chat-voice)');
   const feedbackInputs = inputs.filter(path => /@hachej\/boring-feedback\//.test(path));
   assert.ok(feedbackInputs.some(path => path.endsWith('/dist/format/report.js')), 'sent comments use the installed real formatter');
   assert.deepEqual(feedbackInputs.filter(path => !/@hachej\/boring-feedback\/dist\/format\//.test(path)), [], 'format presentation imports no capture, UI, store or agent feature');

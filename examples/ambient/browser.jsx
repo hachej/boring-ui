@@ -8,8 +8,13 @@ import { createNativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { createRemoteChat } from '@hachej/boring-ui-kit/remote-chat';
 import { useRemoteChat } from '../../registry/pi-chat/use-remote-chat.ts';
 import { createArtifactPanel } from './artifact-panel.jsx';
-import { PiChat } from '../../registry/pi-chat/pi-chat.tsx';
+import { PiChat as BarePiChat } from '../../registry/pi-chat/pi-chat.tsx';
+import { withChatPlugins } from '../../registry/pi-chat-plugins/chat-plugins.ts';
+
 import { micSupported, openMicrophone } from './mic.mjs';
+
+// The example ships every composer feature item (Markdown, `/`, `@`, model pill, voice, camera).
+const PiChat = props => <BarePiChat {...withChatPlugins(props)} />;
 
 const { token, identity } = window.__AMBIENT__;
 const authorized = request => { const headers = new Headers(request.headers); headers.set('authorization', `Bearer ${token}`); return fetch(new Request(request, { headers })); };

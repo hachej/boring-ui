@@ -4,9 +4,9 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import { createVoiceCapture, DEFAULT_MAX_VOICE_MS } from '@hachej/boring-ui-kit/voice-capture';
 import type { VoiceCapture, VoiceRecording, VoiceRefusal } from '@hachej/boring-ui-kit/voice-capture';
 import type { ChatController, ChatDraft } from '@hachej/boring-ui-kit/native-chat';
-import { isVoicePath, mentionToken } from './config';
-import type { AttachmentsConfig, PendingVoice, VoiceMessageConfig, VoiceMessageHandle, VoicePhase } from './config';
-import type { ChatLabels } from './labels';
+import { isVoicePath, mentionToken } from '../pi-chat/config';
+import type { AttachmentsConfig, PendingVoice, VoiceMessageConfig, VoiceMessageHandle, VoicePhase, VoiceRecorderOptions } from '../pi-chat/config';
+import type { ChatLabels } from '../pi-chat/labels';
 
 interface Attempt {
   readonly id: number;
@@ -24,7 +24,7 @@ interface Attempt {
   transcript?: string;
   requestId?: string;
 }
-export type { PendingVoice } from './config';
+export type { PendingVoice } from '../pi-chat/config';
 const REFUSAL: Readonly<Record<VoiceRefusal, keyof Pick<ChatLabels, 'voiceDenied' | 'voiceNoMicrophone' | 'voiceBusy' | 'voiceInsecure' | 'voiceUnsupported' | 'voiceStartFailed'>>> = {
   denied: 'voiceDenied', 'no-microphone': 'voiceNoMicrophone', busy: 'voiceBusy', insecure: 'voiceInsecure', unsupported: 'voiceUnsupported', failed: 'voiceStartFailed',
 };
@@ -35,14 +35,7 @@ const targetOf = (controller: ChatController) => {
 const noSubscribe = () => () => {};
 
 /** Local admission preparation only. Native send/reconcile owns the submission; uploaded bytes stay in the host workspace. */
-export function useVoiceMessage({ controller, config, attachments, labels, admitted, activeController }: {
-  readonly controller: ChatController | undefined;
-  readonly config: VoiceMessageConfig | undefined;
-  readonly attachments?: AttachmentsConfig | undefined;
-  readonly labels: ChatLabels;
-  readonly admitted?: (() => void) | undefined;
-  readonly activeController?: { readonly current: ChatController } | undefined;
-}): VoiceMessageHandle {
+export function useVoiceMessage({ controller, config, attachments, labels, admitted, activeController }: VoiceRecorderOptions): VoiceMessageHandle {
   const selected = config ? controller : undefined;
   const readObservation = useCallback(() => {
     if (!selected) return '';

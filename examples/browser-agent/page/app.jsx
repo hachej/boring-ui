@@ -3,12 +3,17 @@
 // in this tab; nothing here talks to a server except for static files and, if you set one, the model gateway.
 import { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { PiChat } from '../../../registry/pi-chat/pi-chat.tsx';
+import { PiChat as BarePiChat } from '../../../registry/pi-chat/pi-chat.tsx';
+import { withChatPlugins } from '../../../registry/pi-chat-plugins/chat-plugins.ts';
+
 import { ProviderSetup } from '../../../registry/provider-setup/provider-setup.tsx';
 import { createNativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { createRemoteChat } from '@hachej/boring-ui-kit/remote-chat';
 import { copyToClipboard } from '@hachej/boring-files/platform';
 import { connectWorker } from '@hachej/boring-browser/transport';
+
+// The example ships every composer feature item (Markdown, `/`, `@`, model pill, voice, camera).
+const PiChat = props => <BarePiChat {...withChatPlugins(props)} />;
 
 const scripted = new URLSearchParams(location.search).has('scripted');
 const agent = connectWorker(`/agent-worker.js${scripted ? '?scripted' : ''}`);

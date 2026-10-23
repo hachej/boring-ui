@@ -14,7 +14,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { readableElement } from '@hachej/boring-feedback/format';
 import { createVoiceCapture, type VoiceCapture } from '@hachej/boring-feedback/page';
 import { pinMark, type FeedbackSession, type FeedbackSessionSnapshot, type SessionNote } from '@hachej/boring-feedback/ui';
-import { useHoldToRecord } from '../pi-chat/use-hold-to-record';
+import { useHoldToRecord } from '../pi-chat-voice/use-hold-to-record';
 import { useExternal } from './use-external';
 import { plainElement, withLabels, type FeedbackLabels } from './feedback-labels';
 

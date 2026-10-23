@@ -12,8 +12,7 @@ import type { ComposerFeedback, ComposerProps, PendingUpload } from './composer'
 import type { ConversationFile } from './conversation-files';
 import type { AttachmentsConfig, EffortConfig, MentionsConfig, ModelConfig, ModelRef, PastedText, PasteToFile, SlashConfig } from './config';
 import { displayName, looksLikeMarkdown, mentionToken, pieces } from './config';
-import { ModelEffortPicker } from './pickers';
-import type { CommandMentions } from './markdown';
+import type { CommandMentions } from './config';
 import type { ChatCards, ChatTextPart, RowContext } from './message';
 import type { QueueActions, QueuedMessage } from './queue';
 import type { AnswerOutcome } from './question-card';
@@ -54,7 +53,7 @@ export interface ChatFeatureProps {
   readonly renderTool?: (call: ToolCall, result: ToolResultMessage | undefined) => ChatCard | undefined;
   /** Cards for tool calls, keyed by tool name (same contract as `renderTool`). An entry that returns undefined falls back to `renderTool`. */
   readonly toolRenderers?: Readonly<Record<string, (call: ToolCall, result: ToolResultMessage | undefined) => ChatCard | undefined>> | undefined;
-  /** Draws an assistant text part. Default: the built-in Markdown. */
+  /** Draws an assistant text part. Default: plain text (`markdownText` of `pi-chat-markdown` draws Markdown). */
   readonly renderText?: ((part: ChatTextPart) => ReactNode) | undefined;
   /** The question and approval cards. Each one left out uses the built-in card. */
   readonly cards?: ChatCards | undefined;
@@ -110,6 +109,8 @@ export interface ChatSessionOptions extends Readonly<{ [Key in keyof ChatFeature
   readonly mode: Mode;
   readonly fileAccept: string;
   readonly onFiles?: FilesHandler | undefined;
+  /** The phone camera for an `onFiles` chat (`attachments.Camera` is used with `attachments`). */
+  readonly camera?: AttachmentsConfig['Camera'];
   /** Runs after a message was accepted for sending (for example to scroll to the bottom). */
   readonly afterSend?: (() => void) | undefined;
   /** Extra attributes of the row context a surface needs (for example per-reply actions). */
@@ -362,8 +363,9 @@ export function useChatSession(options: ChatSessionOptions) {
   /** The model-and-effort pill and the note that reports a refused change. */
   const pickers = () => {
     const disabled = changing !== null || state.disposed || !connected;
-    const Picker = model?.Picker ?? effort?.Picker ?? ModelEffortPicker;
-    const barStart = model || effort ? <Picker model={model} effort={effort} currentModel={optimistic.model ?? viewModel} currentEffort={optimistic.effort ?? viewEffort} disabled={disabled} busy={changing}
+    // The pill is drawn by the component the config carries (`pi-chat-pickers`); without one there is no pill.
+    const Picker = model?.Picker ?? effort?.Picker;
+    const barStart = (model || effort) && Picker ? <Picker model={model} effort={effort} currentModel={optimistic.model ?? viewModel} currentEffort={optimistic.effort ?? viewEffort} disabled={disabled} busy={changing}
       onModel={next => void change('model', () => model!.change(next), () => setOptimistic(value => ({ ...value, model: next })), () => {})}
       onEffort={next => void change('effort', () => effort!.change(next), () => setOptimistic(value => ({ ...value, effort: next })), () => {})} /> : undefined;
     const barNote = changeError ? <Button variant="ghost" size="sm" role="alert" data-testid="configure-error" title={`${changeError} (${labels.dismissHint})`} onClick={() => setChangeError(null)}
@@ -374,6 +376,7 @@ export function useChatSession(options: ChatSessionOptions) {
   const empty = connected && !state.view?.entries.length && !rows.length;
   const loading = (state.connection.kind === 'idle' || state.connection.kind === 'connecting') && !state.view;
 
+  const camera = attachments ? attachments.Camera : options.camera;
   /** Everything `Composer` needs from the session; a surface adds its layout and slots. */
   const composer = {
     text: state.draft.text, onText: (text: string) => controller.setText(text), onKeyDown: onComposerKeyDown, textareaRef: textarea,
@@ -382,7 +385,7 @@ export function useChatSession(options: ChatSessionOptions) {
     working, sendBlocked, disabled: state.disposed, stopRequested: state.stop === 'requested',
     onSend: send, onStop: () => act(controller.stop),
     hasFiles: Boolean(composerHasContent),
-    uploading: uploading > 0, canAttach: Boolean(onPickFiles || onFiles || attachments), ...(attachments?.Camera ? { camera: attachments.Camera } : {}), fileAccept: attachments ? attachments.accept ?? '' : fileAccept, onPickFiles: (files: readonly File[]) => { void upload(files); },
+    uploading: uploading > 0, canAttach: Boolean(onPickFiles || onFiles || attachments), ...(camera ? { camera } : {}), fileAccept: attachments ? attachments.accept ?? '' : fileAccept, onPickFiles: (files: readonly File[]) => { void upload(files); },
     slash, onSlashError: report, mentions, mentionPaths: picked, onMentionPicked: (path: string) => setPicked(value => value.includes(path) ? value : [...value, path]),
     uploads: pending, onDismissUpload: (id: string) => setPending(items => items.filter(item => item.id !== id)),
     onPasteText: attachments ? pasteText : undefined, pasteToFile,

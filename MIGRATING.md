@@ -1,5 +1,14 @@
 # Unreleased
 
+- **Composer features are their own items (D-257).** `pi-chat` no longer ships Markdown, the slash and mention menus, the model/effort pickers, voice messages or the camera sheet, and no longer installs `marked`, `entities` or the kit's `voice-capture`. Without an item the feature is not offered (plain text, no menu, picker, microphone or camera); nothing crashes. `pi-app`, `pi-ambient`, `app-shell` and `shared-chat` install them all through `pi-chat-plugins`, so their pages are unchanged. A bare `PiChat` page adds the ones it uses:
+  - Markdown: `npx boring-ui-blocks add <registry>/pi-chat-markdown.json`, then `renderText={markdownText}` (`RunCard` takes the same prop).
+  - Slash commands: `npx boring-ui-blocks add <registry>/pi-chat-slash.json`, then `slash={{ ..., Picker: SlashPicker }}`.
+  - @mentions: `npx boring-ui-blocks add <registry>/pi-chat-mentions.json`, then `mentions={{ ..., Picker: MentionPicker }}`.
+  - Model and effort pickers: `npx boring-ui-blocks add <registry>/pi-chat-pickers.json`, then `model={{ ..., Picker: ModelEffortPicker }}`.
+  - Voice messages: `npx boring-ui-blocks add <registry>/pi-chat-voice.json`, then `voiceMessage={{ transcribe, ...voiceMessagePlugin }}`.
+  - Camera: `npx boring-ui-blocks add <registry>/pi-chat-attachments.json`, then `attachments={{ upload, Camera: CameraSheet }}`.
+  - All of them: `npx boring-ui-blocks add <registry>/pi-chat-plugins.json`, then `<PiChat {...withChatPlugins(props)} />`. `Markdown` is now exported from `pi-chat-markdown`, the voice hooks from `pi-chat-voice`; `feedback` installs `pi-chat-voice` for `use-hold-to-record`.
+
 # Migrating to 0.4.11
 
 - **Pick a look / pick a layout.** New opt-in `looks-viewer` block: `createLooksKind({ onPick, locale })` draws `*.looks.json` (looks@1: one `*.mockup.html` key screen in 2 to 6 shadcn themes, then layout variants in the chosen look) with `parseLooks` and `parseShadcnTheme` (shadcn theme variables only). `MockupViewer` gains optional `themeOverride` (shadcn `cssVars`: `{ theme, light, dark }`), `mode` and `title`; without them it renders as before. Update `mockup-viewer` with `looks-viewer`; pass the kind in `artifactKinds`. No stored-format change for existing files.

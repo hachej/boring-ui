@@ -413,8 +413,6 @@
         "@hachej/boring-feedback@^0.4.11",
         "react@^19.0.0",
         "react-dom@^19.0.0",
-        "marked@^17.0.6",
-        "entities@^8.1.0",
         "@base-ui/react@1.9.0",
         "@earendil-works/pi-durable@~1.2.0",
         "@earendil-works/chord@~1.2.0",
@@ -436,8 +434,6 @@
         "attachment",
         "badge",
         "alert",
-        "checkbox",
-        "table",
         "card",
         "spinner",
         "collapsible",
@@ -478,11 +474,6 @@
           "path": "registry/pi-chat/artifact.ts",
           "type": "registry:lib",
           "target": "components/pi-chat/artifact.ts"
-        },
-        {
-          "path": "registry/pi-chat/camera-sheet.tsx",
-          "type": "registry:component",
-          "target": "components/pi-chat/camera-sheet.tsx"
         },
         {
           "path": "registry/pi-chat/code-block.tsx",
@@ -530,16 +521,6 @@
           "target": "components/pi-chat/sent-feedback.tsx"
         },
         {
-          "path": "registry/pi-chat/markdown.tsx",
-          "type": "registry:component",
-          "target": "components/pi-chat/markdown.tsx"
-        },
-        {
-          "path": "registry/pi-chat/mention-menu.tsx",
-          "type": "registry:component",
-          "target": "components/pi-chat/mention-menu.tsx"
-        },
-        {
           "path": "registry/pi-chat/message.tsx",
           "type": "registry:component",
           "target": "components/pi-chat/message.tsx"
@@ -558,11 +539,6 @@
           "path": "registry/pi-chat/picker-keyboard.ts",
           "type": "registry:lib",
           "target": "components/pi-chat/picker-keyboard.ts"
-        },
-        {
-          "path": "registry/pi-chat/pickers.tsx",
-          "type": "registry:component",
-          "target": "components/pi-chat/pickers.tsx"
         },
         {
           "path": "registry/pi-chat/question-card.tsx",
@@ -590,9 +566,9 @@
           "target": "components/pi-chat/shimmer.tsx"
         },
         {
-          "path": "registry/pi-chat/slash-menu.tsx",
+          "path": "registry/pi-chat/suggestions.tsx",
           "type": "registry:component",
-          "target": "components/pi-chat/slash-menu.tsx"
+          "target": "components/pi-chat/suggestions.tsx"
         },
         {
           "path": "registry/pi-chat/tool.tsx",
@@ -638,21 +614,6 @@
           "path": "registry/pi-chat/subagent-card.tsx",
           "type": "registry:component",
           "target": "components/pi-chat/subagent-card.tsx"
-        },
-        {
-          "path": "registry/pi-chat/use-hold-to-record.ts",
-          "type": "registry:hook",
-          "target": "components/pi-chat/use-hold-to-record.ts"
-        },
-        {
-          "path": "registry/pi-chat/use-voice-message.ts",
-          "type": "registry:hook",
-          "target": "components/pi-chat/use-voice-message.ts"
-        },
-        {
-          "path": "registry/pi-chat/voice-message.tsx",
-          "type": "registry:component",
-          "target": "components/pi-chat/voice-message.tsx"
         }
       ],
       "css": {
@@ -723,6 +684,180 @@
       }
     },
     {
+      "name": "pi-chat-markdown",
+      "type": "registry:block",
+      "title": "Pi chat Markdown",
+      "description": "Markdown for the chat's assistant replies: safe token-by-token rendering (raw HTML shown as text, no images fetched, http(s) links only), code blocks, tables, task lists and /command buttons. Plug it in with `renderText={markdownText}`; without it pi-chat shows replies as plain text.",
+      "dependencies": [
+        "react@^19.0.0",
+        "marked@^17.0.6",
+        "entities@^8.1.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat.json",
+        "button",
+        "checkbox",
+        "table"
+      ],
+      "files": [
+        {
+          "path": "registry/pi-chat-markdown/markdown.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat-markdown/markdown.tsx"
+        }
+      ]
+    },
+    {
+      "name": "pi-chat-slash",
+      "type": "registry:block",
+      "title": "Pi chat slash menu",
+      "description": "The composer's `/` menu of commands and skills (and the Commands entry of the + menu). Plug it in with `slash={{ ...config, Picker: SlashPicker }}`; without it pi-chat has no `/` menu.",
+      "dependencies": [
+        "react@^19.0.0",
+        "lucide-react@^1.51.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat.json",
+        "badge",
+        "button",
+        "input-group",
+        "item"
+      ],
+      "files": [
+        {
+          "path": "registry/pi-chat-slash/slash-menu.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat-slash/slash-menu.tsx"
+        }
+      ]
+    },
+    {
+      "name": "pi-chat-mentions",
+      "type": "registry:block",
+      "title": "Pi chat mentions",
+      "description": "The composer's `@` picker for files and other mentionable things. Plug it in with `mentions={{ ...config, Picker: MentionPicker }}`; without it typing `@` opens nothing (sent mentions still show as chips).",
+      "dependencies": [
+        "react@^19.0.0",
+        "lucide-react@^1.51.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat.json",
+        "item"
+      ],
+      "files": [
+        {
+          "path": "registry/pi-chat-mentions/mention-menu.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat-mentions/mention-menu.tsx"
+        }
+      ]
+    },
+    {
+      "name": "pi-chat-pickers",
+      "type": "registry:block",
+      "title": "Pi chat model and effort picker",
+      "description": "The composer's one model-and-effort pill. Plug it in with `model={{ ...config, Picker: ModelEffortPicker }}` (or on `effort`); without it pi-chat shows no pill.",
+      "dependencies": [
+        "react@^19.0.0",
+        "lucide-react@^1.51.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat.json",
+        "button",
+        "dropdown-menu"
+      ],
+      "files": [
+        {
+          "path": "registry/pi-chat-pickers/pickers.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat-pickers/pickers.tsx"
+        }
+      ]
+    },
+    {
+      "name": "pi-chat-voice",
+      "type": "registry:block",
+      "title": "Pi chat voice messages",
+      "description": "Hold-to-record voice messages: the recorder hook over the kit's voice capture, the composer's record button and the pending voice bubble, plus useHoldToRecord. Plug it in with `voiceMessage={{ ...config, ...voiceMessagePlugin }}`; without it pi-chat has no voice button.",
+      "dependencies": [
+        "@hachej/boring-ui-kit@^0.4.11",
+        "react@^19.0.0",
+        "lucide-react@^1.51.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat.json",
+        "bubble",
+        "button",
+        "message",
+        "spinner"
+      ],
+      "files": [
+        {
+          "path": "registry/pi-chat-voice/use-hold-to-record.ts",
+          "type": "registry:hook",
+          "target": "components/pi-chat-voice/use-hold-to-record.ts"
+        },
+        {
+          "path": "registry/pi-chat-voice/use-voice-message.ts",
+          "type": "registry:hook",
+          "target": "components/pi-chat-voice/use-voice-message.ts"
+        },
+        {
+          "path": "registry/pi-chat-voice/voice-message.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat-voice/voice-message.tsx"
+        }
+      ]
+    },
+    {
+      "name": "pi-chat-attachments",
+      "type": "registry:block",
+      "title": "Pi chat camera",
+      "description": "The full-screen phone camera the composer's + menu opens (Take a photo). Plug it in with `attachments={{ ...config, Camera: CameraSheet }}`; without it the menu offers file upload only.",
+      "dependencies": [
+        "react@^19.0.0",
+        "react-dom@^19.0.0",
+        "lucide-react@^1.51.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat.json",
+        "button",
+        "input"
+      ],
+      "files": [
+        {
+          "path": "registry/pi-chat-attachments/camera-sheet.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat-attachments/camera-sheet.tsx"
+        }
+      ]
+    },
+    {
+      "name": "pi-chat-plugins",
+      "type": "registry:block",
+      "title": "Pi chat with every composer feature",
+      "description": "withChatPlugins(props): pi-chat with every composer feature item plugged in (Markdown, slash menu, mentions, model and effort picker, voice messages, phone camera). Components the host already passes are kept; features the host does not configure stay off. pi-app, pi-ambient, app-shell and shared-chat use it.",
+      "dependencies": [
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat-markdown.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat-slash.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat-mentions.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat-pickers.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat-voice.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat-attachments.json"
+      ],
+      "files": [
+        {
+          "path": "registry/pi-chat-plugins/chat-plugins.ts",
+          "type": "registry:lib",
+          "target": "components/pi-chat-plugins/chat-plugins.ts"
+        }
+      ]
+    },
+    {
       "name": "pi-ambient",
       "type": "registry:block",
       "title": "Pi ambient agent",
@@ -738,6 +873,7 @@
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/theme.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat-plugins.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-workspace.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/utils.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/button.json",
@@ -1096,10 +1232,14 @@
       ],
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat-plugins.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat-markdown.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat-mentions.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/theme.json",
         "avatar",
         "badge",
         "button",
+        "card",
         "drawer",
         "popover",
         "tooltip",
@@ -1168,6 +1308,7 @@
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/theme.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat-plugins.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-workspace.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/viewers.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/maquette-viewer.json",
@@ -1300,6 +1441,8 @@
       ],
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat-plugins.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat-voice.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/dock.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/feedback.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/utils.json",
@@ -2423,6 +2566,7 @@
       },
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat-voice.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/utils.json",
         "button",
         "toggle",

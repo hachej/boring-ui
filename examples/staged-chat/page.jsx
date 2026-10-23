@@ -2,10 +2,15 @@ import { createElement as h, useEffect, useRef, useState, useSyncExternalStore }
 import { createRoot } from 'react-dom/client';
 import { createNativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { createRemoteChat } from '@hachej/boring-ui-kit/remote-chat';
-import { PiChat } from '../../registry/pi-chat/pi-chat';
+import { PiChat as BarePiChat } from '../../registry/pi-chat/pi-chat';
+import { withChatPlugins } from '../../registry/pi-chat-plugins/chat-plugins';
+
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { demoLabels, stageProjection } from './presentation.mjs';
+
+// The example ships every composer feature item (Markdown, `/`, `@`, model pill, voice, camera).
+const PiChat = props => <BarePiChat {...withChatPlugins(props)} />;
 
 const question = 'Quelle dose pour un adulte ?';
 const locale = new URLSearchParams(location.search).get('lang') === 'en' ? 'en' : 'fr';
