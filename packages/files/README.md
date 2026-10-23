@@ -155,6 +155,15 @@ const revisionProvider = await connectRevisionProvider({
 });
 ```
 
+The same route also answers `createResourceClient` of `@hachej/boring-files/remote`:
+a resource call (`read`, `publish`, `lookup`, `rename`, `delete`) sent without the
+binding header is served by `createResourceHandler` with the resolved access, so the
+envelope's identity must match it, and conditional writes refuse a stale revision
+with `conflict`. A binding header that is sent is checked (`409` for another
+workspace); the listing and the change feed always need it. A host that serves only
+`createResourceHandler` (for example at `/api/resource`) keeps working with the same
+client; `connectRevisionProvider` there fails discovery (`405`), which means no listing.
+
 The binding discovers identity and workspace incarnation from the authenticated
 server. Reconnect when the selected workspace changes. It exposes `list`,
 filename `search`, retained `history`, `locate`, `read`, `publish`, `lookup`,

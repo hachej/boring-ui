@@ -113,11 +113,17 @@ export function createRevisionHandler(options: RevisionHandlerOptions): (request
       const respond = (value: unknown) => Response.json(value, { headers: { 'cache-control': 'no-store' } });
       const op = new URL(request.url).searchParams.get('op');
       if (request.method === 'GET' && op === null) return respond(association);
+      // A resource call (POST without the catalog header) is `createResourceHandler`'s protocol, whose envelope carries and checks
+      // the identity, so a plain `createResourceClient` works here too. The listing and the change feed need the binding; a binding
+      // that is sent is always checked.
+      const resourceCall = request.method === 'POST' && !request.headers.has(catalogHeader);
       const header = request.headers.get(bindingHeader);
-      if (!header || header.length > 16384) return refuse(403);
-      let requested: string;
-      try { requested = bindingValue(binding(JSON.parse(decodeURIComponent(header)))); } catch { return refuse(403); }
-      if (requested !== bindingValue(association)) return refuse(409);
+      if (header === null ? !resourceCall : header.length > 16384) return refuse(403);
+      if (header !== null) {
+        let requested: string;
+        try { requested = bindingValue(binding(JSON.parse(decodeURIComponent(header)))); } catch { return refuse(403); }
+        if (requested !== bindingValue(association)) return refuse(409);
+      }
       const provider = selected.provider;
       if (request.method === 'GET') {
         if (op !== 'changes') return refuse(400);
@@ -132,7 +138,7 @@ export function createRevisionHandler(options: RevisionHandlerOptions): (request
         release = undefined;
         return changeStream(provider, access, { since, incarnation }, heartbeatMs, async () => { try { await lease?.(); } catch { /* the stream already ended */ } });
       }
-      if (!request.headers.has(catalogHeader)) return await createResourceHandler({
+      if (resourceCall) return await createResourceHandler({
         authenticate: async () => access,
         reader: { read: (value, context) => hold(provider.read(value, context)) },
         publisher: { publish: (value, context) => hold(provider.publication.publish(value, context)) },
