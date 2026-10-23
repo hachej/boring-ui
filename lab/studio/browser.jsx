@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { PanelRightOpenIcon } from 'lucide-react';
-import { artifactKey } from '../../registry/pi-chat/pi-chat.tsx';
+import { artifactKey } from '../../registry/pi-artifacts/artifact.ts';
 import { AmbientChat } from '../../registry/pi-ambient/ambient.tsx';
 import { AgentWorkspace, useArtifactVersions, useConversations, useRemoteChat } from '../../registry/pi-app/agent-workspace.tsx';
 import { ViewerFrame } from '../../registry/viewers/viewer-frame.tsx';

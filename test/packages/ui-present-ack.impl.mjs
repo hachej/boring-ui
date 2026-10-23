@@ -1,4 +1,4 @@
-// The page side of the view-open acknowledgement (registry/pi-chat/artifact.ts: `pendingPresents`, `createPresentAcks`;
+// The page side of the view-open acknowledgement (registry/pi-artifacts/artifact.ts: `pendingPresents`, `createPresentAcks`;
 // registry/pi-app/artifact-panel.tsx: the mount report). The real bookkeeping is exercised with a fake chat answer.
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -36,7 +36,7 @@ const context = (overrides = {}) => ({ closedThisTurn: false, unsaved: false, na
 const pendingCall = (id, path) => ({ id, callId: id, path });
 
 test('pendingPresents lists the present calls with no result, while the run is live, with the answer ID the server binds', async () => {
-  const { pendingPresents } = await load('artifact', 'pi-chat/artifact.ts');
+  const { pendingPresents } = await load('artifact', 'pi-artifacts/artifact.ts');
   const messages = [assistant([call('c1', 'present', { path: './a.md' }), call('c9', 'read', { path: 'x' })])];
   assert.deepEqual(pendingPresents(view(messages)), [{ id: '[3,"c1"]', callId: 'c1', path: 'a.md' }, { id: '[5,"c2"]', callId: 'c2', path: 'b.md' }]);
   assert.deepEqual(pendingPresents(view(messages, false)), [], 'nothing waits once the run is not live');
@@ -49,7 +49,7 @@ test('pendingPresents lists the present calls with no result, while the run is l
 async function fakeChat(verdict = () => ({ kind: 'answered' })) {
   const sent = [];
   const answer = async (id, body) => { const parsed = JSON.parse(body); sent.push({ id, ...parsed }); return verdict(id, parsed); };
-  const { createPresentAcks } = await load('artifact', 'pi-chat/artifact.ts');
+  const { createPresentAcks } = await load('artifact', 'pi-artifacts/artifact.ts');
   const make = (extra = {}) => createPresentAcks({ answer, open: () => true, instanceId: 'tab-1', wait: async () => {}, ...extra });
   return { sent, make };
 }
@@ -202,7 +202,7 @@ test('an answer in flight keeps its call waiting, so a mount during the flight s
   let release;
   const held = new Promise(resolve => { release = resolve; });
   const answer = async (id, body) => { const parsed = JSON.parse(body); sent.push(parsed.revision); return parsed.revision === 'A' ? held : { kind: 'answered' }; };
-  const { createPresentAcks } = await load('artifact', 'pi-chat/artifact.ts');
+  const { createPresentAcks } = await load('artifact', 'pi-artifacts/artifact.ts');
   const acks = createPresentAcks({ answer, open: () => true, instanceId: 'tab-1', wait: async () => {} });
   acks.consider([pendingCall('c1', 'a.md')], context({ autoOpen: false }));
   acks.shown({ path: 'a.md', revision: 'A' });
@@ -270,7 +270,7 @@ test('a request that fails in transport keeps its call waiting, so a later mount
     if (parsed.revision === 'A') throw new Error('network down');
     return { kind: 'answered' };
   };
-  const { createPresentAcks } = await load('artifact', 'pi-chat/artifact.ts');
+  const { createPresentAcks } = await load('artifact', 'pi-artifacts/artifact.ts');
   const acks = createPresentAcks({ answer, open: () => true, instanceId: 'tab-1', wait: async () => {} });
   acks.consider([pendingCall('c1', 'a.md')], context({ autoOpen: false }));
   acks.shown({ path: 'a.md', revision: 'A' });

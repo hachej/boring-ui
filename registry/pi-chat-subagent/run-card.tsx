@@ -8,9 +8,9 @@ import { Button } from '@/components/ui/button';
 import { Item, ItemContent, ItemDescription, ItemFooter, ItemMedia, ItemTitle } from '@/components/ui/item';
 import { Spinner } from '@/components/ui/spinner';
 import { CheckIcon, CircleAlertIcon, RefreshCwIcon } from 'lucide-react';
-import { CodeBlock } from './code-block';
-import { useChatText } from './labels';
-import type { ChatTextPart } from './message';
+import { CodeBlock } from '../pi-chat/code-block';
+import { useChatText } from '../pi-chat/labels';
+import type { ChatTextPart } from '../pi-chat/message';
 
 export type RunStatus = 'queued' | 'running' | 'completed' | 'failed';
 /** A headless run as the host's `GET _agent/<name>/runs/<id>` returns it. */

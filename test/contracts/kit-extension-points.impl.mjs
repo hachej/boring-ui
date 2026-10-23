@@ -16,7 +16,10 @@ async function load(name, contents) {
   await build({ entryPoints: [join(out, `${name}-entry.tsx`)], outfile: join(out, `${name}.mjs`), bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
   return import(pathToFileURL(join(out, `${name}.mjs`)).href);
 }
-const kit = await load('pi-chat', `export * from '${root}registry/pi-chat/pi-chat.tsx'; export { ArtifactPanel } from '${root}registry/pi-app/artifact-panel.tsx'; export { markdownText } from '${root}registry/pi-chat-markdown/markdown.tsx';`);
+// The chat as the kit's pages build it: core pi-chat with every optional item plugged in by withChatPlugins (D-257).
+const kit = await load('pi-chat', `import { PiChat as CorePiChat } from '${root}registry/pi-chat/pi-chat.tsx'; import { withChatPlugins } from '${root}registry/pi-chat-plugins/chat-plugins.ts';
+export const PiChat = (props: any) => <CorePiChat {...withChatPlugins(props)} />;
+export * from '${root}registry/pi-chat/pi-chat.tsx'; export { ArtifactPanel } from '${root}registry/pi-app/artifact-panel.tsx'; export { markdownText } from '${root}registry/pi-chat-markdown/markdown.tsx'; export { QuestionCard } from '${root}registry/pi-chat-question/question-card.tsx'; export { RunCard, parseRun } from '${root}registry/pi-chat-subagent/run-card.tsx'; export { typeLabel } from '${root}registry/pi-artifacts/artifact.ts';`);
 
 const DOM = ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node', 'Text', 'Event', 'addEventListener', 'removeEventListener', 'MutationObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'IS_REACT_ACT_ENVIRONMENT', 'ResizeObserver', 'localStorage', 'sessionStorage'];
 async function dom(t) {

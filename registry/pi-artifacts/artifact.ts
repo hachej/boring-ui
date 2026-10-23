@@ -1,7 +1,8 @@
 import type { ConversationView } from '@earendil-works/pi-durable';
 import type { ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
 import type { ComponentType, ReactNode } from 'react';
-import { defaultChatLabels } from './labels';
+import { defaultChatLabels } from '../pi-chat/labels';
+import type { ChatArtifact, ChatArtifactsConfig } from '../pi-chat/config';
 
 /*
  * Artifacts in the chat: substantial content (a document, an HTML page, an SVG, code, a canvas) that the transcript shows as a
@@ -98,6 +99,10 @@ export interface ArtifactsConfig {
   readonly isOpen?: (artifact: ArtifactDescriptor) => boolean;
   /** Recognise a descriptor in a successful tool result that does not carry one itself (for example a document save). */
   readonly detect?: (call: ToolCall, result: ToolResultMessage) => ArtifactDescriptor | undefined;
+  /** How the chat finds a call's artifact (`recogniseArtifact`). With `Card`, it is what makes `PiChat` offer artifacts; `artifactCards` sets both. */
+  readonly recognise?: ChatArtifactsConfig['recognise'];
+  /** The card the chat draws (`PluggedArtifactCard`). */
+  readonly Card?: ChatArtifactsConfig['Card'];
 }
 
 export const PRESENT_TOOL = 'present';
@@ -333,3 +338,18 @@ export function createPresentAcks(host: PresentAcksHost) {
 
 /** What `createPresentAcks` returns. */
 export type PresentAcks = ReturnType<typeof createPresentAcks>;
+
+/**
+ * The artifact a tool call made, as the chat places it: a finished call that carries a descriptor (its own, or one the host's `detect`
+ * finds) is ready; a `present` call still running while its conversation runs (`running`) is presenting. Any other call has none.
+ */
+export function recogniseArtifact(call: ToolCall, result: ToolResultMessage | undefined, running: boolean, detect: ChatArtifactsConfig['detect']): ChatArtifact | undefined {
+  if (result) {
+    const artifact = detectArtifact(call, result, detect as ArtifactsConfig['detect']);
+    if (!artifact) return undefined;
+    // A tool whose own result carries the descriptor is replaced by its card; a host-detected card is shown in addition to the step.
+    return { state: 'ready', id: artifactKey(artifact), title: artifact.title, path: artifact.target.resource.path, own: detectArtifact(call, result) !== undefined, descriptor: artifact };
+  }
+  if (running && call.name === PRESENT_TOOL) return { state: 'presenting', id: pendingId(call), title: pendingTitle(call), path: undefined, own: true, descriptor: undefined };
+  return undefined;
+}

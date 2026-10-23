@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { createResourceClient } from '@hachej/boring-files/remote';
 import { createMarkdownController } from '@hachej/boring-ui-kit/markdown';
 import { createHtmlController } from '@hachej/boring-ui-kit/html';
-import { typeLabel } from '../../registry/pi-chat/artifact.ts';
+import { typeLabel } from '../../registry/pi-artifacts/artifact.ts';
 import { CodeBlock } from '../../registry/pi-chat/code-block.tsx';
 import { HtmlPane } from '../../registry/viewers/html-pane.tsx';
 import { MarkdownPane } from '../../registry/viewers/markdown-pane.tsx';

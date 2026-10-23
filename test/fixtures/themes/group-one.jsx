@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { PinIcon, WorkflowIcon } from 'lucide-react';
 import { EmptyState } from '../../../registry/pi-chat/empty-state';
-import { QuestionCard } from '../../../registry/pi-chat/question-card';
-import { ArtifactCard } from '../../../registry/pi-chat/artifact-card';
+import { QuestionCard } from '../../../registry/pi-chat-question/question-card';
+import { ArtifactCard } from '../../../registry/pi-artifacts/artifact-card';
 import { ChatTextProvider } from '../../../registry/pi-chat/labels';
 import { chatTextFor } from '../../../registry/pi-chat/locale';
 
