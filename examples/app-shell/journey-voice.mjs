@@ -53,7 +53,7 @@ try {
     await browser.until('transcript and replay bubble', `!!${q(bubble)} && !${q(pending)} && document.body.innerText.includes('Tu as choisi une salade')`, 30000);
     assert.equal(app.submits.length, before + 1, 'exactly one native message for the recording');
     const sent = JSON.stringify(app.submits.at(-1).body);
-    assert.match(sent, /@uploads\/voice-[^ ]+\.webm Je mange une salade/);
+    assert.match(sent, /@uploads\/voice-[^ ]+\.wav Je mange une salade/);
     assert.ok(await browser.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'no horizontal overflow');
     const beforeReload = await browser.evaluate('performance.timeOrigin');
     await browser.reload();
@@ -120,7 +120,8 @@ try {
   const trigger = await browser.evaluate(`(() => { const r = ${q('[data-testid=agent-trigger]')}.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
   const beforePeek = app.submits.length;
   await touch('touchStart', trigger);
-  await browser.until('trigger records at peek', `${q('[data-testid=agent-listening]')}?.dataset.phase === 'recording'`);
+  // Recording starts at the first sound (voice-capture.ts): a fresh headless AudioContext takes a second or two.
+  await browser.until('trigger records at peek', `${q('[data-testid=agent-listening]')}?.dataset.phase === 'recording'`, 15000);
   await pause(500); await touch('touchEnd');
   await browser.until('failed peek reveals actions at half', `${q('[data-testid=agent-layer]')}?.dataset.state === 'half' && !!${q('[data-testid=voice-retry]')}`);
   await pause(800);
