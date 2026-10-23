@@ -1051,7 +1051,7 @@
         "zod@^4.6.5"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/viewers.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/viewer-frame.json",
         "badge",
         "toggle",
         "tooltip"
@@ -1076,6 +1076,16 @@
           "path": "registry/mockup-viewer/mockup-tailwind.ts",
           "type": "registry:lib",
           "target": "components/mockup-viewer/mockup-tailwind.ts"
+        },
+        {
+          "path": "registry/mockup-viewer/mockup-path.ts",
+          "type": "registry:lib",
+          "target": "components/mockup-viewer/mockup-path.ts"
+        },
+        {
+          "path": "registry/mockup-viewer/mockup-kind.tsx",
+          "type": "registry:component",
+          "target": "components/mockup-viewer/mockup-kind.tsx"
         }
       ]
     },
@@ -1105,6 +1115,11 @@
           "path": "registry/looks-viewer/looks.ts",
           "type": "registry:lib",
           "target": "components/looks-viewer/looks.ts"
+        },
+        {
+          "path": "registry/looks-viewer/looks-kind.tsx",
+          "type": "registry:component",
+          "target": "components/looks-viewer/looks-kind.tsx"
         }
       ]
     },
@@ -1141,6 +1156,11 @@
           "path": "registry/record-viewer/record-viewer.tsx",
           "type": "registry:component",
           "target": "components/record-viewer/record-viewer.tsx"
+        },
+        {
+          "path": "registry/record-viewer/records-kind.tsx",
+          "type": "registry:component",
+          "target": "components/record-viewer/records-kind.tsx"
         }
       ]
     },
@@ -1178,6 +1198,11 @@
           "path": "registry/diagram-viewer/diagram-viewer.tsx",
           "type": "registry:component",
           "target": "components/diagram-viewer/diagram-viewer.tsx"
+        },
+        {
+          "path": "registry/diagram-viewer/diagram-kind.tsx",
+          "type": "registry:component",
+          "target": "components/diagram-viewer/diagram-kind.tsx"
         }
       ]
     },
@@ -1231,6 +1256,11 @@
           "path": "registry/maquette-viewer/maquette-viewer.tsx",
           "type": "registry:component",
           "target": "components/maquette-viewer/maquette-viewer.tsx"
+        },
+        {
+          "path": "registry/maquette-viewer/maquette-kind.tsx",
+          "type": "registry:component",
+          "target": "components/maquette-viewer/maquette-kind.tsx"
         }
       ],
       "css": {
@@ -1304,6 +1334,11 @@
           "path": "registry/board-viewer/board-props.ts",
           "type": "registry:lib",
           "target": "components/board-viewer/board-props.ts"
+        },
+        {
+          "path": "registry/board-viewer/board-kind.tsx",
+          "type": "registry:component",
+          "target": "components/board-viewer/board-kind.tsx"
         }
       ]
     },
@@ -1398,7 +1433,12 @@
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/pi-chat-plugins.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/pi-artifacts.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/pi-workspace.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/viewers.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/viewer-frame.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/viewer-markdown.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/viewer-html.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/viewer-image.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/viewer-pdf.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/viewer-code.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/maquette-viewer.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/diagram-viewer.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/mockup-viewer.json",
@@ -1486,6 +1526,11 @@
           "path": "registry/pi-app/use-revision-attachments.ts",
           "type": "registry:hook",
           "target": "components/pi-app/use-revision-attachments.ts"
+        },
+        {
+          "path": "registry/pi-app/viewer-kinds.tsx",
+          "type": "registry:component",
+          "target": "components/pi-app/viewer-kinds.tsx"
         }
       ]
     },
@@ -1667,30 +1712,15 @@
       ]
     },
     {
-      "name": "viewers",
+      "name": "viewer-frame",
       "type": "registry:component",
-      "title": "Viewers",
-      "description": "The standard viewer top bar (title, status, viewer controls, Refresh, Share, Copy, Download, Open in new tab, Close, overflow menu) with Tailwind panes over it: the Markdown editor with a formatting toolbar and prose styling, the passive HTML preview and source editor, an image viewer with zoom and pan, a PDF viewer, and LocalFileViewer for browser-only files. Owned, editable source over the borrowed controllers; no AI SDK.",
+      "title": "Viewer frame",
+      "description": "The standard viewer top bar every viewer draws in (title, status, viewer controls, Refresh, Share, Copy, Download, Open in new tab, Close, overflow menu), its window labels, download, share and media helpers and the sandboxed interactive HTML frame. The viewers' styles live here. Each viewer is its own item (viewer-markdown, viewer-html, viewer-image, viewer-pdf, viewer-code) with a cheap kind module and a view loaded on first open.",
       "dependencies": [
         "@hachej/boring-ui-kit@^0.4.12",
-        "@hachej/boring-files@^0.4.12",
         "react@^19.0.0",
         "react-dom@^19.0.0",
-        "marked@^17.0.6",
-        "@tiptap/core@^3.31.4",
-        "@tiptap/react@^3.31.4",
-        "@tiptap/pm@^3.31.4",
-        "@tiptap/starter-kit@^3.31.4",
-        "@tiptap/markdown@^3.31.4",
-        "@tiptap/extensions@^3.31.4",
-        "@tiptap/extension-list@^3.31.4",
-        "@tiptap/extension-table@^3.31.4",
-        "@tiptap/extension-image@^3.31.4",
-        "@tiptap/extension-highlight@^3.31.4",
-        "@tiptap/extension-bubble-menu@^3.31.4",
-        "@tiptap/extension-floating-menu@^3.31.4",
-        "lucide-react@^1.51.0",
-        "pdfjs-dist@6.3.289"
+        "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/theme.json",
@@ -1703,79 +1733,48 @@
         "dialog",
         "textarea",
         "badge",
-        "dropdown-menu",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/markdown-editor.json"
+        "dropdown-menu"
       ],
       "files": [
         {
-          "path": "registry/viewers/download.ts",
+          "path": "registry/viewer-frame/download.ts",
           "type": "registry:lib",
-          "target": "components/viewers/download.ts"
+          "target": "components/viewer-frame/download.ts"
         },
         {
-          "path": "registry/viewers/html-pane.tsx",
+          "path": "registry/viewer-frame/interactive-html.tsx",
           "type": "registry:component",
-          "target": "components/viewers/html-pane.tsx"
+          "target": "components/viewer-frame/interactive-html.tsx"
         },
         {
-          "path": "registry/viewers/image-pane.tsx",
-          "type": "registry:component",
-          "target": "components/viewers/image-pane.tsx"
-        },
-        {
-          "path": "registry/viewers/interactive-html.tsx",
-          "type": "registry:component",
-          "target": "components/viewers/interactive-html.tsx"
-        },
-        {
-          "path": "registry/viewers/local-file-viewer.tsx",
-          "type": "registry:component",
-          "target": "components/viewers/local-file-viewer.tsx"
-        },
-        {
-          "path": "registry/viewers/markdown-pane.tsx",
-          "type": "registry:component",
-          "target": "components/viewers/markdown-pane.tsx"
-        },
-        {
-          "path": "registry/viewers/media.ts",
+          "path": "registry/viewer-frame/media.ts",
           "type": "registry:lib",
-          "target": "components/viewers/media.ts"
+          "target": "components/viewer-frame/media.ts"
         },
         {
-          "path": "registry/viewers/menu.tsx",
+          "path": "registry/viewer-frame/menu.tsx",
           "type": "registry:component",
-          "target": "components/viewers/menu.tsx"
+          "target": "components/viewer-frame/menu.tsx"
         },
         {
-          "path": "registry/viewers/pdf-pane.tsx",
-          "type": "registry:component",
-          "target": "components/viewers/pdf-pane.tsx"
-        },
-        {
-          "path": "registry/viewers/pdf-pages.tsx",
-          "type": "registry:component",
-          "target": "components/viewers/pdf-pages.tsx"
-        },
-        {
-          "path": "registry/viewers/share.ts",
+          "path": "registry/viewer-frame/share.ts",
           "type": "registry:lib",
-          "target": "components/viewers/share.ts"
+          "target": "components/viewer-frame/share.ts"
         },
         {
-          "path": "registry/viewers/viewer-frame.tsx",
+          "path": "registry/viewer-frame/viewer-frame.tsx",
           "type": "registry:component",
-          "target": "components/viewers/viewer-frame.tsx"
+          "target": "components/viewer-frame/viewer-frame.tsx"
         },
         {
-          "path": "registry/viewers/viewer-window.ts",
+          "path": "registry/viewer-frame/viewer-window.ts",
           "type": "registry:lib",
-          "target": "components/viewers/viewer-window.ts"
+          "target": "components/viewer-frame/viewer-window.ts"
         },
         {
-          "path": "registry/viewers/viewer-labels-fr.ts",
+          "path": "registry/viewer-frame/viewer-labels-fr.ts",
           "type": "registry:lib",
-          "target": "components/viewers/viewer-labels-fr.ts"
+          "target": "components/viewer-frame/viewer-labels-fr.ts"
         }
       ],
       "css": {
@@ -2149,6 +2148,198 @@
           }
         }
       }
+    },
+    {
+      "name": "viewer-markdown",
+      "type": "registry:component",
+      "title": "Markdown viewer",
+      "description": "The Markdown kind: `markdownKind` (match, loader) and `MarkdownPane`, the tiptap editor with a formatting toolbar and prose styling over the kit's revisioned Markdown controller, in the viewer frame. The pane and tiptap load the first time a Markdown file opens.",
+      "dependencies": [
+        "@hachej/boring-ui-kit@^0.4.12",
+        "react@^19.0.0",
+        "lucide-react@^1.51.0",
+        "marked@^17.0.6",
+        "@tiptap/core@^3.31.4",
+        "@tiptap/react@^3.31.4",
+        "@tiptap/pm@^3.31.4",
+        "@tiptap/starter-kit@^3.31.4",
+        "@tiptap/markdown@^3.31.4",
+        "@tiptap/extensions@^3.31.4",
+        "@tiptap/extension-list@^3.31.4",
+        "@tiptap/extension-table@^3.31.4",
+        "@tiptap/extension-image@^3.31.4",
+        "@tiptap/extension-highlight@^3.31.4",
+        "@tiptap/extension-bubble-menu@^3.31.4",
+        "@tiptap/extension-floating-menu@^3.31.4"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/viewer-frame.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/markdown-editor.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/button.json",
+        "button",
+        "dropdown-menu"
+      ],
+      "files": [
+        {
+          "path": "registry/viewer-markdown/markdown-kind.ts",
+          "type": "registry:lib",
+          "target": "components/viewer-markdown/markdown-kind.ts"
+        },
+        {
+          "path": "registry/viewer-markdown/markdown-pane.tsx",
+          "type": "registry:component",
+          "target": "components/viewer-markdown/markdown-pane.tsx"
+        }
+      ]
+    },
+    {
+      "name": "viewer-html",
+      "type": "registry:component",
+      "title": "HTML viewer",
+      "description": "The HTML kind: `htmlKind` (match, loader) and `HtmlPane`, the passive HTML preview (sandboxed when the host opts in) and source editor, in the viewer frame. The pane loads the first time an HTML file opens.",
+      "dependencies": [
+        "@hachej/boring-ui-kit@^0.4.12",
+        "react@^19.0.0",
+        "lucide-react@^1.51.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/viewer-frame.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/button.json",
+        "button"
+      ],
+      "files": [
+        {
+          "path": "registry/viewer-html/html-kind.ts",
+          "type": "registry:lib",
+          "target": "components/viewer-html/html-kind.ts"
+        },
+        {
+          "path": "registry/viewer-html/html-pane.tsx",
+          "type": "registry:component",
+          "target": "components/viewer-html/html-pane.tsx"
+        }
+      ]
+    },
+    {
+      "name": "viewer-image",
+      "type": "registry:component",
+      "title": "Image viewer",
+      "description": "The image kind: `imageKind` (match on PNG, JPEG, GIF, WebP and SVG, loader) and `ImagePane`, zoom and pan in the viewer frame. The pane loads the first time an image opens.",
+      "dependencies": [
+        "react@^19.0.0",
+        "lucide-react@^1.51.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/viewer-frame.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/utils.json",
+        "button"
+      ],
+      "files": [
+        {
+          "path": "registry/viewer-image/image-kind.ts",
+          "type": "registry:lib",
+          "target": "components/viewer-image/image-kind.ts"
+        },
+        {
+          "path": "registry/viewer-image/image-types.ts",
+          "type": "registry:lib",
+          "target": "components/viewer-image/image-types.ts"
+        },
+        {
+          "path": "registry/viewer-image/image-pane.tsx",
+          "type": "registry:component",
+          "target": "components/viewer-image/image-pane.tsx"
+        }
+      ]
+    },
+    {
+      "name": "viewer-pdf",
+      "type": "registry:component",
+      "title": "PDF viewer",
+      "description": "The PDF kind: `pdfKind` (match, loader) and `PdfPane` in the viewer frame (the browser's viewer, or pdf.js pages where there is none), and LocalFileViewer for browser-only files. The pane loads the first time a PDF opens.",
+      "dependencies": [
+        "@hachej/boring-files@^0.4.12",
+        "react@^19.0.0",
+        "lucide-react@^1.51.0",
+        "pdfjs-dist@6.3.289"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/viewer-frame.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/viewer-image.json",
+        "badge",
+        "button"
+      ],
+      "files": [
+        {
+          "path": "registry/viewer-pdf/pdf-kind.ts",
+          "type": "registry:lib",
+          "target": "components/viewer-pdf/pdf-kind.ts"
+        },
+        {
+          "path": "registry/viewer-pdf/pdf-pane.tsx",
+          "type": "registry:component",
+          "target": "components/viewer-pdf/pdf-pane.tsx"
+        },
+        {
+          "path": "registry/viewer-pdf/pdf-pages.tsx",
+          "type": "registry:component",
+          "target": "components/viewer-pdf/pdf-pages.tsx"
+        },
+        {
+          "path": "registry/viewer-pdf/local-file-viewer.tsx",
+          "type": "registry:component",
+          "target": "components/viewer-pdf/local-file-viewer.tsx"
+        }
+      ]
+    },
+    {
+      "name": "viewer-code",
+      "type": "registry:component",
+      "title": "Code viewers",
+      "description": "The SVG and CSV kinds: `svgKind` (a preview from a blob URL, or its source) and `csvKind` (a table), drawn inside the artifact panel's bar. Each view loads the first time its artifact opens; other code stays in the panel's code block.",
+      "dependencies": [
+        "react@^19.0.0",
+        "lucide-react@^1.51.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/viewer-frame.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/pi-chat.json",
+        "table"
+      ],
+      "files": [
+        {
+          "path": "registry/viewer-code/code-kinds.ts",
+          "type": "registry:lib",
+          "target": "components/viewer-code/code-kinds.ts"
+        },
+        {
+          "path": "registry/viewer-code/svg-view.tsx",
+          "type": "registry:component",
+          "target": "components/viewer-code/svg-view.tsx"
+        },
+        {
+          "path": "registry/viewer-code/csv-table.tsx",
+          "type": "registry:component",
+          "target": "components/viewer-code/csv-table.tsx"
+        }
+      ]
+    },
+    {
+      "name": "viewers",
+      "type": "registry:component",
+      "title": "Viewers",
+      "description": "Deprecated aggregate: installs every viewer item (viewer-frame, viewer-markdown, viewer-html, viewer-image, viewer-pdf, viewer-code). Add the items you use instead.",
+      "files": [],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/viewer-frame.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/viewer-markdown.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/viewer-html.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/viewer-image.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/viewer-pdf.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/viewer-code.json"
+      ]
     },
     {
       "name": "provider-setup",
@@ -2820,7 +3011,9 @@
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/pi-app.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/app-shell.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/file-tree.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/viewers.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/viewer-frame.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/viewer-image.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/viewer-pdf.json",
         "drawer",
         "button",
         "scroll-area",

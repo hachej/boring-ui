@@ -27,7 +27,7 @@ export function registryCss(item) {
 }
 
 /** Every item written in Tailwind: their source is scanned for classes and their `css` is compiled in. */
-const TAILWIND_ITEMS = ['button', 'utils', 'file-tree', 'version-history', 'pi-chat', 'pi-chat-markdown', 'pi-chat-slash', 'pi-chat-mentions', 'pi-chat-pickers', 'pi-chat-voice', 'pi-chat-attachments', 'pi-chat-question', 'pi-chat-approval', 'pi-chat-subagent', 'pi-artifacts', 'pi-chat-plugins', 'shared-chat', 'pi-ambient', 'pi-workspace', 'pi-app', 'viewers', 'markdown-editor', 'html-viewer', 'app-shell', 'maquette-viewer', 'diagram-viewer', 'record-viewer'];
+const TAILWIND_ITEMS = ['button', 'utils', 'file-tree', 'version-history', 'pi-chat', 'pi-chat-markdown', 'pi-chat-slash', 'pi-chat-mentions', 'pi-chat-pickers', 'pi-chat-voice', 'pi-chat-attachments', 'pi-chat-question', 'pi-chat-approval', 'pi-chat-subagent', 'pi-artifacts', 'pi-chat-plugins', 'shared-chat', 'pi-ambient', 'pi-workspace', 'pi-app', 'viewer-frame', 'viewer-markdown', 'viewer-html', 'viewer-image', 'viewer-pdf', 'viewer-code', 'markdown-editor', 'html-viewer', 'app-shell', 'maquette-viewer', 'diagram-viewer', 'record-viewer'];
 
 /**
  * The registry `theme` item as CSS: light tokens on `:root`, dark tokens on `.dark` (as the CLI writes them in a consumer app; the

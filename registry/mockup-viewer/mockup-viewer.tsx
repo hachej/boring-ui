@@ -1,17 +1,17 @@
 'use client';
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { ComponentType, ReactNode, RefObject } from 'react';
-import { CodeXmlIcon, MessageSquarePlusIcon } from 'lucide-react';
+import type { RefObject } from 'react';
+import { MessageSquarePlusIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Toggle } from '@/components/ui/toggle';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { InteractiveFrame } from '../viewers/interactive-html';
+import { InteractiveFrame } from '../viewer-frame/interactive-html';
 import { mockupContent, readMockupPick } from './mockup-frame';
 import type { MockupPick } from './mockup-frame';
 
-export const isMockupPath = (path: string): boolean => /\.mockup\.html$/i.test(path);
-export const mockupTarget = (path: string, selector: string): string => `mockup:${path}#element=${selector}`;
+import { mockupTarget } from './mockup-path';
+export { isMockupPath, mockupTarget } from './mockup-path';
 
 /** Structurally the feedback item's usePointComments. Picks are host-owned proxy elements, never frame DOM. */
 export interface MockupComments {
@@ -146,18 +146,3 @@ export function MockupViewer({ text, path = '', comments, locale, onReady, theme
     </div>
   </div>;
 }
-
-export interface MockupKind {
-  readonly match: (target: { readonly resource: { readonly path: string } }) => boolean;
-  readonly label: string;
-  readonly icon: ComponentType<{ readonly className?: string; readonly 'aria-hidden'?: boolean | 'true' }>;
-  readonly renderer: (props: { readonly text: string; readonly onReady?: (() => void) | undefined; readonly artifact?: { readonly target: { readonly resource: { readonly path: string } } } | undefined }) => ReactNode;
-  /** The sandboxed frame loads asynchronously: a `present` of a mock-up is confirmed only once it has loaded. */
-  readonly waitsForReady: true;
-}
-
-export function createMockupKind({ comments, locale }: { readonly comments?: MockupComments | undefined; readonly locale?: 'en' | 'fr' | undefined } = {}): MockupKind {
-  return { match: target => isMockupPath(target.resource.path), label: locale === 'fr' ? 'Maquette HTML' : 'HTML mock-up', icon: CodeXmlIcon, waitsForReady: true,
-    renderer: ({ text, artifact, onReady }) => <MockupViewer key={artifact?.target.resource.path} text={text} path={artifact?.target.resource.path} comments={comments} locale={locale} onReady={onReady} /> };
-}
-export const mockupKind: MockupKind = createMockupKind();

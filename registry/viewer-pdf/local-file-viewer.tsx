@@ -2,13 +2,13 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { mediaTypeOf } from '@hachej/boring-files/file-types';
-import { downloadFile } from './download';
-import { IMAGE_TYPES, ImagePane } from './image-pane';
-import { formatBytes } from './media';
+import { downloadFile } from '../viewer-frame/download';
+import { IMAGE_TYPES, ImagePane } from '../viewer-image/image-pane';
+import { formatBytes } from '../viewer-frame/media';
 import { PdfPane } from './pdf-pane';
-import { ViewerFrame } from './viewer-frame';
-import type { ViewerFrameProps } from './viewer-frame';
-import { useViewerText } from './viewer-window';
+import { ViewerFrame } from '../viewer-frame/viewer-frame';
+import type { ViewerFrameProps } from '../viewer-frame/viewer-frame';
+import { useViewerText } from '../viewer-frame/viewer-window';
 
 export interface LocalFileViewerProps extends Pick<ViewerFrameProps, 'subtitle' | 'headerStart' | 'controls' | 'onClose' | 'testId' | 'titleTestId' | 'className'> {
   readonly name: string;

@@ -78,7 +78,8 @@ export async function testDesign({ evidence = process.env.DESIGN_EVIDENCE } = {}
           // Open an actual editable document and its real portalled menu, in both viewport sizes.
           await browser.until('artifact card', `!!${q('[data-testid=artifact-card][data-state=ready]')}`, 20000);
           await browser.click(q('[data-testid=artifact-card][data-state=ready]'));
-          await browser.until('viewer bar', `!!${q('[data-testid=artifact-panel] [data-testid$="-more"]')}`, 20000);
+          // The version opens, then the bar shows a spinner while the lazily loaded view arrives (D-257); the menu is the view's own once it has mounted.
+          await browser.until('viewer bar', `!!${q('[data-testid=artifact-panel] [data-testid=artifact-body][data-state=open] [data-testid$="-more"]')} && !${q('[data-testid=artifact-panel] [data-testid=viewer-loading]')}`, 20000);
           await inspect(`${prefix}-viewer`, params);
           await browser.click(q('[data-testid=artifact-panel] [data-testid$="-more"]'));
           await browser.until('viewer menu', `!!${q('[role=menu]')}`, 5000);

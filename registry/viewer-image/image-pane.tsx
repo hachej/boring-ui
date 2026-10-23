@@ -4,15 +4,16 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent, ReactNode } from 'react';
 import { MaximizeIcon, ScanIcon, ZoomInIcon, ZoomOutIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { downloadFile } from './download';
-import { formatBytes, useMediaUrl } from './media';
-import type { MediaSource } from './media';
+import { downloadFile } from '../viewer-frame/download';
+import { formatBytes, useMediaUrl } from '../viewer-frame/media';
+import type { MediaSource } from '../viewer-frame/media';
 import { cn } from '../utils/utils';
-import { useViewerBar, ViewerFrame } from './viewer-frame';
-import type { ViewerShare, ViewerStatus } from './viewer-frame';
-import { useViewerText } from './viewer-window';
+import { useViewerBar, ViewerFrame } from '../viewer-frame/viewer-frame';
+import type { ViewerShare, ViewerStatus } from '../viewer-frame/viewer-frame';
+import { useViewerText } from '../viewer-frame/viewer-window';
 
-export const IMAGE_TYPES: Readonly<Record<string, string>> = { 'image/png': 'PNG', 'image/jpeg': 'JPEG', 'image/gif': 'GIF', 'image/webp': 'WebP', 'image/svg+xml': 'SVG' };
+import { IMAGE_TYPES } from './image-types';
+export { IMAGE_TYPES } from './image-types';
 const STEPS = [0.1, 0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 6, 8];
 
 export interface ImagePaneProps extends MediaSource {

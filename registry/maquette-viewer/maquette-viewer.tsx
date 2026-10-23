@@ -2,14 +2,14 @@
 
 // The maquette viewer: a PM agent's `*.maquette.json` mock-up, one screen at a time. The screen is the content; the chrome is one thin bar
 // of icons: Back, ‹ 2 / 5 › (also arrow keys and swipe) and a menu holding the guided tours and "How it works" (the workflow, in a dialog).
-// During a tour the bar shows the step dots and ×, with the step's caption under it. `maquetteKind` is the kind the pi-app artifact panel
+// During a tour the bar shows the step dots and ×, with the step's caption under it. `maquetteKind` (maquette-kind.ts) is the kind the pi-app artifact panel
 // uses by default for `.maquette.json` files; an app's own kind in `artifactKinds` wins. It draws data only: nothing in the file runs.
 // The workflow is drawn by the diagram-viewer item's `DiagramView`, inline or from a linked `*.diagram.json`. With `comments` (the feedback
 // item's `usePointComments`, structurally) one more icon enters point mode on the screen: a tap on a block pins a note that names the
 // maquette path, the screen id and the block id; the pins of the current screen show as small numbers on their blocks.
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import type { ComponentType, KeyboardEvent, ReactNode, TouchEvent } from 'react';
-import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, CompassIcon, EllipsisIcon, InfoIcon, LayoutTemplateIcon, MessageSquarePlusIcon, TriangleAlertIcon, WorkflowIcon, XIcon } from 'lucide-react';
+import type { KeyboardEvent, ReactNode, TouchEvent } from 'react';
+import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, CompassIcon, EllipsisIcon, InfoIcon, MessageSquarePlusIcon, TriangleAlertIcon, WorkflowIcon, XIcon } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -21,7 +21,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { parseDiagram } from '../diagram-viewer/diagram';
 import type { Diagram } from '../diagram-viewer/diagram';
 import { DiagramView } from '../diagram-viewer/diagram-view';
-import { MAQUETTE_FORMAT_VERSION, diagramPathOf, isMaquettePath, parseMaquette, screenFromFragment } from './maquette';
+import { MAQUETTE_FORMAT_VERSION, diagramPathOf, parseMaquette, screenFromFragment } from './maquette';
 import type { Maquette, MaquetteBlock, MaquetteCase, MaquetteScreen } from './maquette';
 import { maquetteLabelsFor } from './maquette-labels';
 import type { MaquetteLabels, MaquetteLocale } from './maquette-labels';
@@ -67,6 +67,8 @@ export interface MaquetteViewerProps {
   readonly locale?: MaquetteLocale | undefined;
   /** Any word over the locale's. */
   readonly labels?: Partial<MaquetteLabels> | undefined;
+  /** A host bar's "…" menu (the pi-app artifact panel's `setMenu`): the tours and "How it works" go there, as with `MaquetteMenuContext`. */
+  readonly publishMenu?: ((items: readonly MaquetteMenuEntry[]) => void) | undefined;
 }
 
 /** Where the person is: the screens visited (the last is shown) and the guided tour under way. */
@@ -129,9 +131,10 @@ function HowItWorks({ maquette, source, labels, open, onOpenChange }: {
 /** Where a linked diagram is read from: its resolved path and the reader (both absent for an inline workflow, or with no reader). */
 interface DiagramSource { readonly path: string | undefined; readonly read: MaquetteRead | undefined }
 
-function Walkthrough({ maquette, labels, fragment, path, comments, read }: {
+function Walkthrough({ maquette, labels, fragment, path, comments, read, publishMenu }: {
   readonly maquette: Maquette; readonly labels: MaquetteLabels; readonly fragment: string | undefined;
   readonly path: string | undefined; readonly comments: MaquetteComments | undefined; readonly read: MaquetteRead | undefined;
+  readonly publishMenu: ((items: readonly MaquetteMenuEntry[]) => void) | undefined;
 }) {
   const exists = (id: string | undefined): id is string => !!id && maquette.screens.some(screen => screen.id === id);
   const linked = screenFromFragment(fragment);
@@ -181,7 +184,8 @@ function Walkthrough({ maquette, labels, fragment, path, comments, read }: {
   const source: DiagramSource = { path: maquette.diagramLink && read ? diagramPathOf(path ?? '', maquette.diagramLink) : undefined, read };
   const workflow = !!maquette.diagram || !!source.path;
   // Inside a host bar with its own "…" menu, the tours and "How it works" go there (one menu, not two).
-  const publish = useContext(MaquetteMenuContext);
+  const fromContext = useContext(MaquetteMenuContext);
+  const publish = publishMenu ?? fromContext;
   const latestTour = useRef(startTour); latestTour.current = startTour;
   useEffect(() => {
     if (!publish) return undefined;
@@ -251,7 +255,7 @@ function Walkthrough({ maquette, labels, fragment, path, comments, read }: {
 }
 
 /** A maquette file drawn one screen at a time; a newer format version shows a notice, an unreadable file an inline error. */
-export function MaquetteViewer({ text, fragment, locale, labels: given, path, comments, read }: MaquetteViewerProps) {
+export function MaquetteViewer({ text, fragment, locale, labels: given, path, comments, read, publishMenu }: MaquetteViewerProps) {
   const labels = useMemo(() => maquetteLabelsFor(locale, given), [locale, given]);
   const parsed = useMemo(() => parseMaquette(text), [text]);
   const newer = parsed.version !== undefined && parsed.version > MAQUETTE_FORMAT_VERSION;
@@ -259,41 +263,8 @@ export function MaquetteViewer({ text, fragment, locale, labels: given, path, co
   return <section data-boring="maquette-viewer" data-state={parsed.kind} aria-label={parsed.kind === 'ok' ? parsed.maquette.title || labels.kind : labels.kind}
     className="mx-auto flex w-full max-w-5xl min-w-0 flex-col gap-2 px-3 pt-1 pb-4 sm:px-6">
     {notice}
-    {parsed.kind === 'ok' ? <Walkthrough maquette={parsed.maquette} labels={labels} fragment={fragment} path={path} comments={comments} read={read} />
+    {parsed.kind === 'ok' ? <Walkthrough maquette={parsed.maquette} labels={labels} fragment={fragment} path={path} comments={comments} read={read} publishMenu={publishMenu} />
       : <Alert variant="destructive" data-testid="maquette-error" data-reason={parsed.reason}><TriangleAlertIcon aria-hidden="true" /><AlertTitle>{labels.errorTitle}</AlertTitle>
         <AlertDescription>{parsed.reason === 'json' ? labels.invalidJson : labels.invalidShape}</AlertDescription></Alert>}
   </section>;
 }
-
-/**
- * The artifact kind of a maquette file (structurally an `ArtifactKind` of pi-artifacts): it matches `*.maquette.json`, names it, gives its icon
- * and draws it with `MaquetteViewer`. Pass it, or your own, in `artifactKinds`; kinds an app passes are consulted before the built-in one.
- */
-export interface MaquetteKind {
-  readonly match: (target: { readonly resource: { readonly path: string } }) => boolean;
-  readonly label: string;
-  readonly icon: ComponentType<{ readonly className?: string; readonly 'aria-hidden'?: boolean | 'true' }>;
-  readonly renderer: (props: {
-    readonly text: string; readonly fragment?: string | undefined;
-    readonly artifact?: { readonly target: { readonly resource: { readonly path: string } } } | undefined; readonly read?: MaquetteRead | undefined;
-  }) => ReactNode;
-}
-
-/**
- * A maquette kind in `locale` ("Mock-up" in English, "Maquette" in French) with any word overridden. `comments` (the feedback item's
- * `usePointComments(session)`) adds the comment icon; pass a fresh kind when it changes.
- */
-export function createMaquetteKind({ locale, labels, comments }: {
-  readonly locale?: MaquetteLocale | undefined; readonly labels?: Partial<MaquetteLabels> | undefined; readonly comments?: MaquetteComments | undefined;
-} = {}): MaquetteKind {
-  return {
-    match: target => isMaquettePath(target.resource.path),
-    label: maquetteLabelsFor(locale, labels).kind,
-    icon: LayoutTemplateIcon,
-    renderer: ({ text, fragment, artifact, read }) => <MaquetteViewer text={text} fragment={fragment} locale={locale} labels={labels}
-      path={artifact?.target.resource.path} comments={comments} read={read} />,
-  };
-}
-
-/** The built-in maquette kind, in English. */
-export const maquetteKind: MaquetteKind = createMaquetteKind();

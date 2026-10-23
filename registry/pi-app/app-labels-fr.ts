@@ -1,6 +1,6 @@
 /* The pi-app block's words in French with its viewers', the `locale="fr"` base of `AgentWorkspace`. Typed as `AppLabels`, so a key added in English must be added here too. */
 import type { AppLabels } from './app-labels';
-import { frenchViewerLabels } from '../viewers/viewer-labels-fr';
+import { frenchViewerLabels } from '../viewer-frame/viewer-labels-fr';
 
 export const frenchAppLabels: AppLabels = {
   ...frenchViewerLabels,

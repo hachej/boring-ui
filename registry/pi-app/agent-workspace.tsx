@@ -25,20 +25,22 @@ import type { ChatController } from '@hachej/boring-ui-kit/native-chat';
 import { PiChat } from '../pi-chat/pi-chat';
 import { withChatPlugins } from '../pi-chat-plugins/chat-plugins';
 import { artifactKey, createPresentAcks, pendingPresents } from '../pi-artifacts/artifact';
-import type { ArtifactDescriptor, ArtifactsConfig, PresentAcks } from '../pi-artifacts/artifact';
+import type { ArtifactDescriptor, ArtifactKind, ArtifactsConfig, PresentAcks } from '../pi-artifacts/artifact';
 import type { ConversationsConfig, PiChatProps } from '../pi-chat/pi-chat';
 import { Dock, DockLayout, DockMain } from '../pi-workspace/dock';
 import { ArtifactWorkspace } from '../pi-workspace/workspace';
 import type { WorkspacePanelApi } from '../pi-workspace/workspace';
-import { ViewerWindowProvider } from '../viewers/viewer-frame';
-import type { ViewerShare } from '../viewers/viewer-frame';
-import type { InteractiveHtml } from '../viewers/interactive-html';
-import { createMaquetteKind } from '../maquette-viewer/maquette-viewer';
-import { createMockupKind } from '../mockup-viewer/mockup-viewer';
+import { ViewerWindowProvider } from '../viewer-frame/viewer-frame';
+import type { ViewerShare } from '../viewer-frame/viewer-frame';
+import type { InteractiveHtml } from '../viewer-frame/interactive-html';
+import { createMaquetteKind } from '../maquette-viewer/maquette-kind';
+import { createMockupKind } from '../mockup-viewer/mockup-kind';
 import type { MockupComments } from '../mockup-viewer/mockup-viewer';
 import type { MaquetteComments } from '../maquette-viewer/maquette-viewer';
-import { createDiagramKind } from '../diagram-viewer/diagram-viewer';
-import { createRecordsKind } from '../record-viewer/record-viewer';
+import { createDiagramKind } from '../diagram-viewer/diagram-kind';
+import { createRecordsKind } from '../record-viewer/records-kind';
+import { documentKinds } from './viewer-kinds';
+import type { PanelKind } from './viewer-kinds';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { BlockActions } from '../button/actions';
@@ -212,8 +214,8 @@ interface AgentWorkspaceBaseProps {
   readonly history?: HistoryPlacement | undefined;
   /** Recognise artifacts in tool results that carry no descriptor (`ArtifactsConfig.detect`). */
   readonly detect?: ArtifactsConfig['detect'] | undefined;
-  /** The app's own artifact kinds (`ArtifactKind`: match, label, icon, renderer): the chat's cards and the artifact panel consult them before the built-in types and before the built-in maquette and diagram kinds (`*.maquette.json`, `maquette-viewer`; `*.diagram.json`, `diagram-viewer`), so an app kind for those files wins. */
-  readonly artifactKinds?: ArtifactsConfig['kinds'] | undefined;
+  /** The app's own artifact kinds (`ArtifactKind`: match, label, icon, and a `renderer` or a lazily loaded `load`): the chat's cards and the artifact panel consult them before the built-in kinds (maquette, diagram, mock-up, records, then Markdown, HTML, SVG, CSV, image and PDF), so an app kind for those files wins. */
+  readonly artifactKinds?: readonly ArtifactKind[] | undefined;
   /** Comment pins on mock-ups: the registry `feedback` item's `usePointComments(session)`. The maquette viewer then shows a comment icon that enters point mode on its screen. Omit it (no feedback session) and no icon shows. */
   readonly comments?: (MaquetteComments & Pick<MockupComments, 'pick' | 'picking' | 'reposition'>) | undefined;
   /** Host viewers by artifact type or file kind, for example `{ canvas: props => <MyCanvas {...props} /> }`. */
@@ -395,8 +397,9 @@ export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, titl
   }, []);
   // A kind that could not show the file (a dashboard whose data failed): the waiting `present` is refused with its reason.
   const onFailed = useCallback((view: { readonly path: string; readonly reason: string }) => { presentAcks.current?.failed(view); }, []);
-  // The app's kinds first, then the built-in maquette and diagram kinds in the workspace's language (a `.maquette.json` card and panel say « Maquette » in French).
-  const kinds = useMemo(() => [...(artifactKinds ?? []), createMaquetteKind({ locale, comments }), createDiagramKind({ locale }), createMockupKind({ locale, comments }), createRecordsKind({ locale })], [artifactKinds, locale, comments]);
+  // The app's kinds first, then the built-in domain kinds in the workspace's language (a `.maquette.json` card and panel say « Maquette » in
+  // French), then the document kinds. Each kind's view loads the first time an artifact of that kind opens.
+  const kinds = useMemo((): readonly PanelKind[] => [...(artifactKinds ?? []), createMaquetteKind({ locale, comments }), createDiagramKind({ locale }), createMockupKind({ locale, comments }), createRecordsKind({ locale }), ...documentKinds], [artifactKinds, locale, comments]);
   const options: ViewerOptions = useMemo(() => ({ client, identity, history, viewers, kinds, interactive, share, onShown, onFailed, onUnsavedChange: noteUnsaved, onBeforeLeaveChange: registerBeforeLeave, blobBase }), [client, identityKey, history, viewers, kinds, interactive, share, onShown, onFailed, noteUnsaved, registerBeforeLeave, blobBase]); // eslint-disable-line react-hooks/exhaustive-deps
   const locate = revisionProvider?.locate ?? remote?.locate ?? defaultLocate;
   const readOnlyLibrary = !revisionProvider;

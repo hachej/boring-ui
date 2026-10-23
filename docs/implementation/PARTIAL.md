@@ -483,7 +483,7 @@ Public DOM tests use real controllers and SQLite, reconstruct exact LF/CRLF/EOF/
 
 ## Supported browser environments
 
-Browsers expose `crypto.randomUUID`, `crypto.subtle`, `navigator.clipboard` and `navigator.share` only in secure contexts (HTTPS or localhost). The studio opened over plain HTTP on a private address (Tailscale, LAN) has none of them, so browser-reachable code never calls them directly: `@hachej/boring-files/platform` owns `randomUUID`, `sha256` and `copyToClipboard`, and each registry item keeps one self-contained helper (`copyText` in `utils.ts`; `createLinkShare` in `registry/viewers/share.ts`). Copy and Share fall back from the platform API to a hidden-textarea `execCommand('copy')`, then to a popover that shows the text selected for a manual copy.
+Browsers expose `crypto.randomUUID`, `crypto.subtle`, `navigator.clipboard` and `navigator.share` only in secure contexts (HTTPS or localhost). The studio opened over plain HTTP on a private address (Tailscale, LAN) has none of them, so browser-reachable code never calls them directly: `@hachej/boring-files/platform` owns `randomUUID`, `sha256` and `copyToClipboard`, and each registry item keeps one self-contained helper (`copyText` in `utils.ts`; `createLinkShare` in `registry/viewer-frame/share.ts`). Copy and Share fall back from the platform API to a hidden-textarea `execCommand('copy')`, then to a popover that shows the text selected for a manual copy.
 
 | Environment | Supported | Gate |
 | --- | --- | --- |

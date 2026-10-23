@@ -22,6 +22,9 @@ const SCREEN = `${WALK}?.dataset.screen`;
 const noOverflow = `document.documentElement.scrollWidth <= innerWidth && document.body.scrollWidth <= innerWidth`;
 // Visible buttons, selects and inputs of the viewer smaller than 44px in either direction.
 const SMALL = `${qa('[data-boring=maquette-viewer] button, [data-boring=maquette-viewer] select, [data-boring=maquette-viewer] input')}.filter(e => e.checkVisibility() && !e.closest('[inert]')).map(e => { const r = e.getBoundingClientRect(); return { t: e.dataset.testid ?? e.textContent.trim().slice(0, 20), h: r.height }; }).filter(b => b.h < 44)`;
+// The scripts the page has fetched that hold the maquette view (D-257 step 4: it is a chunk of its own, fetched when a maquette opens).
+const VIEW_CHUNKS = `Promise.all(performance.getEntriesByType('resource').map(entry => entry.name).filter(name => name.endsWith('.js'))
+  .map(name => fetch(name).then(response => response.text()).then(text => text.includes('"maquette-walk"') ? new URL(name).pathname : undefined))).then(names => names.filter(Boolean))`;
 const scheme = value => browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value }] });
 const shoot = async name => { for (const value of ['light', 'dark']) { await scheme(value); await pause(250); await browser.screenshot(`${name}-${value}.png`); } await scheme('light'); };
 const swipe = async dx => {
@@ -38,6 +41,10 @@ try {
   await browser.until('the chat is live', `!!${INPUT} && !${INPUT}.disabled`, 20000);
   const openMenu = async tap => { await (tap ? browser.tap : browser.click)(q('[data-testid=artifact-more]')); await browser.until('the menu', `!!${q('[role=menu]')}`, 5000); await pause(200); };
 
+  await step('the maquette view is not fetched before a maquette opens (lazy chunk, D-257)', async () => {
+    assert.deepEqual(await browser.evaluate(VIEW_CHUNKS), [], 'no script holding the maquette view is loaded with the page');
+  });
+
   await step('phone: the presented mock-up opens in the sheet, the screen taking most of the height', async () => {
     await browser.type(INPUT, 'Make the booking mock-up and present it.'); await browser.press('Enter');
     await browser.until('the card names the built-in kind', `${q('[data-testid=artifact-card][data-state=ready]')}?.dataset.artifactKind === 'Mock-up'`, 30000);
@@ -46,6 +53,8 @@ try {
     if (!(await browser.evaluate(`!!${WALK}`))) await browser.tap(q('[data-testid=artifact-card][data-state=ready]'));
     await browser.until('the sheet with the viewer', `${q('[data-testid=workspace-panel]')}?.dataset.sheet === 'true' && ${SCREEN} === 'classes'`, 10000);
     assert.equal(await browser.evaluate(`${q('[data-testid=artifact-panel-type]')}?.textContent`), 'Mock-up');
+    const chunks = await browser.evaluate(VIEW_CHUNKS);
+    assert.ok(chunks.length === 1 && chunks[0] !== '/app.js', `the maquette view came in its own chunk once the maquette opened (${chunks.join(', ')})`);
     assert.equal(await browser.evaluate(`${q('[data-testid=maquette-position]')}.textContent`), '1 / 3');
     const top = await browser.evaluate(`${q('[data-testid=maquette-frame]')}.getBoundingClientRect().top / innerHeight`);
     assert.ok(top <= 0.15, `the screen starts within the top 15% of the phone (${top.toFixed(3)})`);

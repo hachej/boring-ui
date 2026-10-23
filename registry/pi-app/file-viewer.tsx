@@ -1,9 +1,10 @@
 'use client';
 
-// Opens one workspace file in the viewer that suits its type, always in the standard viewer frame (viewers item): Markdown and HTML in
-// their editors (revisioned through the host's resource client, so saves go back to the file and an edit made behind the editor's back is
-// a conflict), images and PDFs read-only from the file's bytes, anything else as text. A host viewer (`viewers[kind]`) takes precedence.
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+// Opens one workspace file in the viewer its kind names (`ViewerOptions.kinds`), always in the standard viewer frame (viewer-frame item):
+// Markdown and HTML in their editors (revisioned through the host's resource client, so saves go back to the file and an edit made behind
+// the editor's back is a conflict), images and PDFs read-only from the file's bytes, a drawing kind in the artifact panel, anything else as
+// text. Each viewer loads the first time its kind opens. A host viewer (`viewers[kind]`) wins over a built-in document kind.
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { DownloadIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -13,21 +14,20 @@ import { createMarkdownController } from '@hachej/boring-ui-kit/markdown';
 import type { MarkdownController } from '@hachej/boring-ui-kit/markdown';
 import { createHtmlController } from '@hachej/boring-ui-kit/html';
 import type { HtmlController } from '@hachej/boring-ui-kit/html';
-import { HtmlPane } from '../viewers/html-pane';
-import { IMAGE_TYPES, ImagePane } from '../viewers/image-pane';
-import { MarkdownPane } from '../viewers/markdown-pane';
-import { PdfPane } from '../viewers/pdf-pane';
-import { ViewerFrame } from '../viewers/viewer-frame';
-import { downloadFile } from '../viewers/download';
-import { formatBytes } from '../viewers/media';
+import { ViewerFrame } from '../viewer-frame/viewer-frame';
+import { downloadFile } from '../viewer-frame/download';
+import { formatBytes } from '../viewer-frame/media';
 import { copyText } from '../utils/utils';
 import { mediaTypeOf, viewerKindOf } from '@hachej/boring-files/file-types';
 import { isBlobPointerPath, resolveBlobPointer } from '@hachej/boring-files/blob';
 import type { BlobItem } from '@hachej/boring-files/blob';
 import type { ViewerKind as FileKind } from '@hachej/boring-files/file-types';
 import { KIND_LABEL, decodeText } from './file-kinds';
-import { ArtifactPanel, resolveKind, useReportShown } from './artifact-panel';
-import type { ArtifactDescriptor } from '../pi-artifacts/artifact';
+import { ArtifactPanel, useReportShown } from './artifact-panel';
+import { artifactKind } from '../pi-artifacts/artifact';
+import type { ArtifactDescriptor, ArtifactType } from '../pi-artifacts/artifact';
+import { Mounted, ViewLoading, drawsText, isEditorKind, isMediaKind, lazyView, viewerKinds } from './viewer-kinds';
+import type { EditorKind, MediaKind, PanelKind } from './viewer-kinds';
 import type { ViewerOptions } from './artifact-panel';
 import { useSaved } from './use-saved';
 import { useAppText } from './app-labels';
@@ -46,16 +46,20 @@ interface Common {
   readonly onBeforeLeaveChange?: ((flush: (() => Promise<boolean>) | null) => void) | undefined;
 }
 
+const FILE_TYPE: Partial<Record<FileKind, ArtifactType>> = { markdown: 'markdown', html: 'html' };
 /** A file as the artifact its kind sees: the same descriptor a `present` of it would carry, so one kind match serves every way of opening a file. */
-const fileArtifact = (path: string, locator: ResourceLocator): ArtifactDescriptor => ({ schema: 'boring.artifact', version: 1, title: nameOf(path), type: 'code', mediaType: mediaTypeOf(path), target: locator, revision: 'latest' });
+const fileArtifact = (path: string, locator: ResourceLocator): ArtifactDescriptor => ({ schema: 'boring.artifact', version: 1, title: nameOf(path), type: FILE_TYPE[viewerKindOf(path)] ?? 'code', mediaType: mediaTypeOf(path), target: locator, revision: 'latest' });
+/** The image or PDF kind of a media type (a file's, or a large file's behind a pointer). */
+const mediaKindOf = (kinds: readonly PanelKind[], artifact: ArtifactDescriptor): MediaKind | undefined => artifactKind(artifact, kinds.filter(isMediaKind));
 
 const subtitleOf = (locator: ResourceLocator) => <span data-testid="file-path" className="truncate">{locator.resource.path}</span>;
 
 /** Markdown or HTML: a revisioned controller over the file. A new revision remounts the pane; it starts in the mode the person chose. */
-function FileDocument({ path, kind, locator, options, onClose, back, onUnsavedChange, onBeforeLeaveChange }: Common) {
+function FileDocument({ path, editor, locator, options, onClose, back, onUnsavedChange, onBeforeLeaveChange }: Common & { readonly editor: EditorKind }) {
   const { client, identity } = options;
-  const create = useMemo(() => (snapshot: ResourceSnapshot): MarkdownController | HtmlController => (kind === 'markdown' ? createMarkdownController : createHtmlController)({
-    identity, client, instanceId: randomUUID(), epoch: 'workspace', source: { kind: 'saved', snapshot } }), [kind, client, identity]);
+  const markdown = editor.editor === 'markdown';
+  const create = useMemo(() => (snapshot: ResourceSnapshot): MarkdownController | HtmlController => (markdown ? createMarkdownController : createHtmlController)({
+    identity, client, instanceId: randomUUID(), epoch: 'workspace', source: { kind: 'saved', snapshot } }), [markdown, client, identity]);
   const autosave = useRef<{ controller: MarkdownController | HtmlController; flush: () => Promise<boolean> } | null>(null);
   const saved = useSaved({ client, target: locator, create, beforeDispose: controller => autosave.current?.controller === controller ? autosave.current.flush() : undefined });
   const registerAutosave = useCallback((flush: (() => Promise<boolean>) | null) => {
@@ -74,9 +78,12 @@ function FileDocument({ path, kind, locator, options, onClose, back, onUnsavedCh
     return () => { unsubscribe(); onUnsavedChange?.(false); };
   }, [saved.controller, onUnsavedChange]);
   const { labels } = useAppText();
-  const [mode, setMode] = useState<string>(kind === 'markdown' ? 'rich' : 'preview');
+  const [mode, setMode] = useState<string>(markdown ? 'rich' : 'preview');
   const [formattingToolbar, setFormattingToolbar] = useState<'selection' | 'pinned'>('selection');
-  useReportShown(options.onShown, path, saved.kind === 'open' && saved.controller ? saved.snapshot.ref.revision : undefined);
+  // The editor loads the first time a document opens: the file counts as shown once it has mounted.
+  const [mounted, setMounted] = useState<string>();
+  const opened = saved.kind === 'open' && saved.controller ? saved.snapshot.ref.revision : undefined;
+  useReportShown(options.onShown, path, opened !== undefined && mounted === opened ? opened : undefined);
   const common = { title: nameOf(path), subtitle: subtitleOf(locator), target: { file: path }, onClose, titleTestId: 'file-title', headerStart: back, ...(options.share ? { onShare: options.share } : {}) };
   // Until the document is open the bar offers no Share, Copy or menu actions of its own: they would act on a document that is not shown.
   if (saved.kind !== 'open' || !saved.controller) {
@@ -86,10 +93,18 @@ function FileDocument({ path, kind, locator, options, onClose, back, onUnsavedCh
   }
   const revision = saved.snapshot.ref.revision;
   // The preview selector the journeys use keeps working: the wrapper holds the document's text.
+  let pane: ReactNode;
+  if (editor.editor === 'markdown') {
+    const MarkdownPane = lazyView(editor.load);
+    pane = <MarkdownPane key={revision} controller={saved.controller as MarkdownController} revision={revision} initialMode={mode as 'rich'} onModeChange={setMode} formattingToolbar={formattingToolbar} onFormattingToolbarChange={setFormattingToolbar} onAutosaveChange={registerAutosave} onBeforeLeaveChange={onBeforeLeaveChange} {...common} />;
+  } else {
+    const HtmlPane = lazyView(editor.load);
+    pane = <HtmlPane key={revision} controller={saved.controller as HtmlController} revision={revision} initialMode={mode as 'preview'} onModeChange={setMode} {...(options.interactive ? { interactive: options.interactive } : {})} {...common} />;
+  }
   return <div data-testid="file-preview" className="h-full min-h-0" data-revision={revision}>
-    {kind === 'markdown'
-      ? <MarkdownPane key={revision} controller={saved.controller as MarkdownController} revision={revision} initialMode={mode as 'rich'} onModeChange={setMode} formattingToolbar={formattingToolbar} onFormattingToolbarChange={setFormattingToolbar} onAutosaveChange={registerAutosave} onBeforeLeaveChange={onBeforeLeaveChange} {...common} />
-      : <HtmlPane key={revision} controller={saved.controller as HtmlController} revision={revision} initialMode={mode as 'preview'} onModeChange={setMode} {...(options.interactive ? { interactive: options.interactive } : {})} {...common} />}
+    <Suspense fallback={<ViewerFrame testId="viewer-pending" title={common.title} subtitle={common.subtitle} onClose={onClose} headerStart={back}><ViewLoading label={labels.loading} /></ViewerFrame>}>
+      {pane}<Mounted value={revision} onMount={setMounted} />
+    </Suspense>
   </div>;
 }
 
@@ -109,11 +124,11 @@ function VideoPreview({ item }: { readonly item: BlobItem }) {
  * A large file behind a pointer, from the host's URL: images, PDFs and videos inline, anything else as a download.
  * The viewers get a URL; none reads the media bytes into the page.
  */
-function BlobFile({ item, subtitle, ...common }: { readonly item: BlobItem; readonly subtitle: ReactNode; readonly onClose: () => void; readonly onRefresh: () => unknown; readonly target: unknown; readonly titleTestId: string; readonly headerStart: ReactNode; readonly onShare?: NonNullable<ViewerOptions['share']> }) {
+function BlobFile({ item, subtitle, media, ...common }: { readonly item: BlobItem; readonly subtitle: ReactNode; readonly media: MediaKind | undefined; readonly onClose: () => void; readonly onRefresh: () => unknown; readonly target: unknown; readonly titleTestId: string; readonly headerStart: ReactNode; readonly onShare?: NonNullable<ViewerOptions['share']> }) {
   const { labels } = useAppText();
   const details = <>{subtitle}<span aria-hidden="true">·</span><span>{formatBytes(item.size)}</span></>;
-  if (item.type in IMAGE_TYPES) return <ImagePane name={item.name} mediaType={item.type} url={item.url} subtitle={details} {...common} />;
-  if (item.type === 'application/pdf') return <PdfPane name={item.name} url={item.url} subtitle={subtitle} {...common} />;
+  if (media?.media === 'image') { const ImagePane = lazyView(media.load); return <ImagePane name={item.name} mediaType={item.type} url={item.url} subtitle={details} {...common} />; }
+  if (media?.media === 'pdf') { const PdfPane = lazyView(media.load); return <PdfPane name={item.name} url={item.url} subtitle={subtitle} {...common} />; }
   if (item.type.startsWith('video/')) return <ViewerFrame title={item.name} subtitle={details} {...common} onDownload={() => {
     const link = Object.assign(document.createElement('a'), { href: item.url, download: item.name });
     document.body.append(link); link.click(); link.remove();
@@ -129,13 +144,14 @@ function BlobFile({ item, subtitle, ...common }: { readonly item: BlobItem; read
 type Loaded = { readonly kind: 'loading' | 'missing' } | { readonly kind: 'ready'; readonly bytes: Uint8Array; readonly revision: string; readonly text: string | undefined };
 
 /** Image, PDF and text files: read through the resource client, refreshed on demand (and followed while open, for text). */
-function FileBytes({ path, kind, locator, options, onClose, back }: Common) {
+function FileBytes({ path, kind, locator, options, onClose, back, media }: Common & { readonly media: MediaKind | undefined }) {
   const { labels } = useAppText();
+  // An image or PDF pane loads the first time one opens: the file counts as shown once it has mounted.
+  const [mounted, setMounted] = useState<string>();
   const targetKey = JSON.stringify(locator);
   const binding = useMemo(() => ({ client: options.client, locator, path }), [options.client, targetKey, path]); // eslint-disable-line react-hooks/exhaustive-deps
   const [stored, setStored] = useState<{ readonly binding: typeof binding; readonly value: Loaded }>();
   const file: Loaded = stored?.binding === binding ? stored.value : { kind: 'loading' };
-  useReportShown(options.onShown, path, file.kind === 'ready' ? file.revision : undefined);
   const running = useRef<AbortController | undefined>(undefined);
   const load = useCallback(async () => {
     running.current?.abort();
@@ -160,6 +176,9 @@ function FileBytes({ path, kind, locator, options, onClose, back }: Common) {
   }, [load, kind]);
   // A pointer file is resolved here, where it is read, once per read: the viewers below receive the item, never the pointer.
   const blob = useMemo(() => file.kind === 'ready' && isBlobPointerPath(path) ? resolveBlobPointer(file.bytes, options.blobBase) : undefined, [file, path, options.blobBase]);
+  // A lazily loaded pane (an image, a PDF, a large file's viewer) counts as shown once it has mounted; the text view at once.
+  const lazyPane = blob?.kind === 'blob' || !blob && !!media;
+  useReportShown(options.onShown, path, file.kind === 'ready' && (!lazyPane || mounted === file.revision) ? file.revision : undefined);
   const common = { subtitle: subtitleOf(locator), target: { file: path }, onClose, titleTestId: 'file-title', headerStart: back, ...(options.share ? { onShare: options.share } : {}) };
   // Until the file is read the bar offers no Share: the image and PDF panes bring their own frame, so this one is replaced (remounted)
   // when the bytes arrive, and a Share pressed just then would copy the link with its "Link copied" notice lost with the old frame.
@@ -168,9 +187,15 @@ function FileBytes({ path, kind, locator, options, onClose, back }: Common) {
       <p role="status" className="m-0 p-4 text-sm text-muted-foreground">{file.kind === 'loading' ? labels.loading : labels.fileMissing}</p>
     </ViewerFrame>;
   }
-  if (blob?.kind === 'blob') return <BlobFile item={blob.item} onRefresh={load} {...common} />;
-  if (kind === 'image') return <ImagePane name={nameOf(path)} mediaType={mediaTypeOf(path)} bytes={file.bytes} onRefresh={load} {...common} />;
-  if (kind === 'pdf') return <PdfPane name={nameOf(path)} bytes={file.bytes} onRefresh={load} {...common} />;
+  // The bar while a view loads: `viewer-pending-*` test ids, so `viewer-more` is the view's own menu.
+  const loading = <ViewerFrame testId="viewer-pending" title={nameOf(path)} subtitle={common.subtitle} onClose={onClose} titleTestId="file-title" headerStart={back}><ViewLoading label={labels.loading} /></ViewerFrame>;
+  const shown = <Mounted value={file.revision} onMount={setMounted} />;
+  if (blob?.kind === 'blob') {
+    const blobMedia = mediaKindOf(options.kinds ?? viewerKinds, { ...fileArtifact(path, locator), mediaType: blob.item.type });
+    return <Suspense fallback={loading}><BlobFile item={blob.item} media={blobMedia} onRefresh={load} {...common} />{shown}</Suspense>;
+  }
+  if (media?.media === 'image') { const ImagePane = lazyView(media.load); return <Suspense fallback={loading}><ImagePane name={nameOf(path)} mediaType={mediaTypeOf(path)} bytes={file.bytes} onRefresh={load} {...common} />{shown}</Suspense>; }
+  if (media?.media === 'pdf') { const PdfPane = lazyView(media.load); return <Suspense fallback={loading}><PdfPane name={nameOf(path)} bytes={file.bytes} onRefresh={load} {...common} />{shown}</Suspense>; }
   const { text } = file, size = file.bytes.byteLength;
   return <ViewerFrame title={nameOf(path)} {...common} subtitle={<>{subtitleOf(locator)}<span aria-hidden="true">·</span><span>{formatBytes(size)}</span></>}
     onRefresh={load} {...(text === undefined ? {} : { onCopy: () => copyText(text), onDownload: () => downloadFile(nameOf(path), text, 'text/plain;charset=utf-8') })}>
@@ -200,21 +225,25 @@ export function FileViewer({ path, locator, options, onClose, onBack, backLabel,
   const kind = viewerKindOf(path);
   const { labels, icons } = useAppText();
   const back = onBack ? <Button variant="ghost" size="sm" data-testid="file-back" aria-label={backLabel ?? labels.back} title={backLabel ?? labels.back} onClick={onBack} className="shrink-0"><icons.back data-icon="inline-start" aria-hidden="true" /><span className="max-sm:sr-only">{backLabel ?? labels.back}</span></Button> : undefined;
-  const custom = options.viewers?.[kind];
   const common: Common = { path, kind, locator, options, onClose, back, onUnsavedChange, onBeforeLeaveChange };
-  // An app kind or a built-in one (maquette, diagram) that draws its files shows them in the artifact panel, whoever opened the file.
   const locatorKey = JSON.stringify(locator);
   const artifact = useMemo(() => fileArtifact(path, locator), [path, locatorKey]); // eslint-disable-line react-hooks/exhaustive-deps
-  const drawn = resolveKind(artifact, options.kinds)?.renderer ? artifact : undefined;
+  // One resolution through the kinds, whoever opened the file: a host viewer for the file kind wins over a built-in document kind, not
+  // over a host's kind. A drawing kind (a maquette, a diagram, an app's) shows the file in the artifact panel.
+  const kinds = options.kinds ?? viewerKinds;
+  const found = artifactKind(artifact, kinds.filter(entry => drawsText(entry) || isMediaKind(entry)));
+  const custom = found && !found.fallback ? undefined : options.viewers?.[kind];
+  const resolved = custom ? undefined : found;
+  const drawn = resolved && !isEditorKind(resolved) && !isMediaKind(resolved) ? artifact : undefined;
   if (drawn) return <div data-testid="file-viewer" data-kind="artifact" data-path={path} aria-label={labels.fileViewer(drawn.title)} className="flex h-full min-h-0 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1">
     <ArtifactPanel active={{ descriptor: drawn, follow: true }} versions={[]} options={options} onSelect={() => {}} onClose={onClose} headerStart={back} />
   </div>;
   return <div data-testid="file-viewer" data-kind={kind} data-path={path} aria-label={labels.fileViewer(KIND_LABEL[kind])} className="flex h-full min-h-0 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:flex-1">
     {custom ? custom({ target: locator, title: nameOf(path), frame: { titleTestId: 'file-title', onClose, target: { file: path }, headerStart: back } })
-      : kind === 'markdown' || kind === 'html' ? <FileDocument {...common} />
+      : isEditorKind(resolved) ? <FileDocument {...common} editor={resolved} />
       // The resource client supplies bytes, not a streaming URL. Unlike images, videos must not be buffered to make an object URL.
       : kind === 'video' ? <ViewerFrame title={nameOf(path)} subtitle={subtitleOf(locator)} onClose={onClose} headerStart={back}><p role="status" className="m-0 p-4 text-sm text-muted-foreground">{labels.fileNotText}</p></ViewerFrame>
       : kind === 'canvas' ? <ViewerFrame title={nameOf(path)} subtitle={subtitleOf(locator)} onClose={onClose} headerStart={back}><p role="status" className="m-0 p-4 text-sm text-muted-foreground">{labels.noCanvasViewer}</p></ViewerFrame>
-      : <FileBytes {...common} />}
+      : <FileBytes {...common} media={isMediaKind(resolved) ? resolved : undefined} />}
   </div>;
 }

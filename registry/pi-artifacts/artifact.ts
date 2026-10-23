@@ -61,7 +61,20 @@ export interface ArtifactKindViewProps {
   readonly onFailed?: ((reason: string) => void) | undefined;
   readonly fragment?: string | undefined;
   readonly read?: ((path: string) => Promise<string | undefined>) | undefined;
+  /**
+   * The panel's bar owns the one "…" menu: a view publishes its own entries there (a maquette's guided tours) and clears them with `[]`.
+   * Absent outside the panel; the view then draws its own menu.
+   */
+  readonly setMenu?: ((items: readonly ArtifactMenuEntry[]) => void) | undefined;
+  /** The panel bar's controls slot: a view puts its own controls there (the SVG preview and source toggle) and clears them with undefined. */
+  readonly setControls?: ((controls: ReactNode) => void) | undefined;
 }
+
+/** One entry a kind's view adds to the panel bar's "…" menu (structurally the viewer frame's menu item). */
+export interface ArtifactMenuEntry { readonly id: string; readonly label: string; readonly icon: ReactNode; readonly testId: string; readonly separatorBefore: boolean; readonly onSelect: () => void }
+
+/** What a kind's `load` resolves to: a module whose default export is the view. */
+export type ArtifactKindView = { readonly default: ComponentType<ArtifactKindViewProps> };
 
 /**
  * An app's own kind of artifact (for example `.maquette.json` files): how its card and the panel name it, its icon, and optionally
@@ -71,12 +84,23 @@ export interface ArtifactKindViewProps {
 export interface ArtifactKind {
   /** True for the artifacts of this kind, for example `target => target.resource.path.endsWith('.maquette.json')`. */
   readonly match: (target: ArtifactTarget, artifact: ArtifactDescriptor) => boolean;
-  /** The kind's name on the card and in the panel bar ("Maquette"). */
-  readonly label: string;
+  /** The kind's name on the card and in the panel bar ("Maquette"). The type's name otherwise. */
+  readonly label?: string | undefined;
   /** The card's icon (any component taking `className`, such as a lucide icon). The type's icon otherwise. */
   readonly icon?: ComponentType<{ readonly className?: string; readonly 'aria-hidden'?: boolean | 'true' }> | undefined;
   /** Draws the artifact in the panel (`AgentWorkspace`, `ArtifactPanel`) inside the standard viewer bar, with copy and download. */
   readonly renderer?: ((props: ArtifactKindViewProps) => ReactNode) | undefined;
+  /**
+   * The view's module, loaded the first time an artifact of this kind opens: the panel wraps it once per kind in `React.lazy` with a
+   * spinner in the bar, so the view's code (and its libraries) is not in the page's first bundle. Same props and bar as `renderer`; a kind
+   * with both draws with `renderer`. Write it as `() => import('./my-view')` so a bundler splits the view into its own chunk.
+   */
+  readonly load?: (() => Promise<ArtifactKindView>) | undefined;
+  /**
+   * A default viewer for a whole type or media type (the built-in Markdown, HTML, SVG, CSV, image and PDF kinds): a host's `viewers`
+   * entry for that type wins over it, as it did over the built-in viewers.
+   */
+  readonly fallback?: boolean | undefined;
   /**
    * The renderer loads asynchronously (a dashboard fetching its data, a sandboxed frame): the panel confirms a `present` of this file
    * only after the renderer calls `onReady`, and refuses it when it calls `onFailed` or throws. With no call, the call ends unconfirmed.
@@ -84,15 +108,18 @@ export interface ArtifactKind {
   readonly waitsForReady?: boolean | undefined;
 }
 
+/** What every kind shares, whatever its view: the match, its name and icon. The panel's Markdown and HTML editor kinds are kinds too. */
+export type KindMatch = Pick<ArtifactKind, 'match' | 'label' | 'icon'>;
+
 /** The first kind that matches the artifact; a `match` that throws counts as no match. */
-export function artifactKind(artifact: ArtifactDescriptor, kinds: readonly ArtifactKind[] | undefined): ArtifactKind | undefined {
+export function artifactKind<Kind extends KindMatch>(artifact: ArtifactDescriptor, kinds: readonly Kind[] | undefined): Kind | undefined {
   return kinds?.find(kind => { try { return kind.match(artifact.target, artifact); } catch { return false; } });
 }
 
 /** What the host passes to `PiChat` to turn artifact tool results into cards. */
 export interface ArtifactsConfig {
   /** The app's own artifact kinds (label, icon, renderer), consulted before the built-in types. */
-  readonly kinds?: readonly ArtifactKind[] | undefined;
+  readonly kinds?: readonly KindMatch[] | undefined;
   /** The person clicked a card: show this artifact (and revision) in the host's panel. */
   readonly open: (artifact: ArtifactDescriptor) => void;
   /** True for the card whose artifact version is on display. */
@@ -168,9 +195,9 @@ export function parseArtifact(value: unknown): ArtifactDescriptor | undefined {
 }
 
 /** The artifact's type name: the matching kind's label first, then the chat's name of its type. */
-export function typeLabel(artifact: ArtifactDescriptor, kinds?: readonly ArtifactKind[], labels: Readonly<Record<ArtifactType, string>> = defaultChatLabels.artifactTypes): string {
+export function typeLabel(artifact: ArtifactDescriptor, kinds?: readonly KindMatch[], labels: Readonly<Record<ArtifactType, string>> = defaultChatLabels.artifactTypes): string {
   const kind = artifactKind(artifact, kinds);
-  if (kind) return kind.label;
+  if (kind?.label) return kind.label;
   return artifact.type === 'code' && artifact.language ? `${labels.code} · ${artifact.language}` : labels[artifact.type];
 }
 

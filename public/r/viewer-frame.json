@@ -1,0 +1,447 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "viewer-frame",
+  "title": "Viewer frame",
+  "description": "The standard viewer top bar every viewer draws in (title, status, viewer controls, Refresh, Share, Copy, Download, Open in new tab, Close, overflow menu), its window labels, download, share and media helpers and the sandboxed interactive HTML frame. The viewers' styles live here. Each viewer is its own item (viewer-markdown, viewer-html, viewer-image, viewer-pdf, viewer-code) with a cheap kind module and a view loaded on first open.",
+  "dependencies": [
+    "@hachej/boring-ui-kit@^0.4.12",
+    "react@^19.0.0",
+    "react-dom@^19.0.0",
+    "lucide-react@^1.51.0"
+  ],
+  "registryDependencies": [
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/theme.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/utils.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/button.json",
+    "button",
+    "toggle",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/version-history.json",
+    "toggle-group",
+    "dialog",
+    "textarea",
+    "badge",
+    "dropdown-menu"
+  ],
+  "files": [
+    {
+      "path": "registry/viewer-frame/download.ts",
+      "content": "/** Offers `data` as a file download without navigating. The temporary object URL is revoked once the browser has taken the file. */\nexport function downloadFile(name: string, data: BlobPart, type: string): void {\n  const url = URL.createObjectURL(new Blob([data], { type }));\n  const link = Object.assign(document.createElement('a'), { href: url, download: name });\n  document.body.append(link);\n  link.click();\n  link.remove();\n  setTimeout(() => URL.revokeObjectURL(url), 1000);\n}\n\n/** A file name for a document title: lower case words joined by hyphens, with the extension of its type. */\nexport function fileNameFor(title: string, extension: string): string {\n  const base = title.toLowerCase().replace(/\\.[a-z0-9]{1,8}$/, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'document';\n  return `${base}.${extension}`;\n}\n",
+      "type": "registry:lib",
+      "target": "components/viewer-frame/download.ts"
+    },
+    {
+      "path": "registry/viewer-frame/interactive-html.tsx",
+      "content": "'use client';\n\nimport type { ReactNode, Ref } from 'react';\n\n/**\n * Host opt-in for running an HTML document's own scripts. `scriptSources` are the HTTPS origins the page may load libraries, styles and fonts\n * from (for example `https://cdnjs.cloudflare.com`). Everything else is closed: no network requests from the page, no frames, no forms.\n * Pinning library versions is the page's responsibility.\n */\nexport interface InteractiveHtml { readonly scriptSources: readonly string[] }\n\n/** An origin only: `https://host` with an optional port, no path, no wildcard, nothing that could add a second CSP directive. */\nconst ORIGIN = /^https:\\/\\/[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*(:\\d{1,5})?$/i;\n\nexport function allowedOrigins(sources: readonly string[]): string[] {\n  return [...new Set(sources.map(source => source.trim().toLowerCase()).filter(source => ORIGIN.test(source)))];\n}\n\n/** The Content-Security-Policy the running page gets: inline script and style, the allow-listed origins for libraries, nothing else. */\nexport function interactivePolicy(sources: readonly string[]): string {\n  const origins = allowedOrigins(sources).join(' ');\n  const list = (...extra: string[]) => [...extra, ...(origins ? [origins] : [])].join(' ');\n  return [\n    \"default-src 'none'\",\n    `script-src ${list(\"'unsafe-inline'\")}`,\n    `style-src ${list(\"'unsafe-inline'\")}`,\n    'img-src data: blob:',\n    `font-src ${list('data:')}`,\n    \"connect-src 'none'\",\n    \"frame-src 'none'\",\n    \"base-uri 'none'\",\n    \"form-action 'none'\",\n  ].join('; ');\n}\n\n/**\n * The document the frame loads: the policy and a no-referrer rule come first, so they apply before any of the page's own markup is parsed.\n * A second doctype or head in the page is ignored by the parser; a meta policy of the page's own can only tighten this one.\n */\nexport function interactiveDocument(text: string, sources: readonly string[]): string {\n  return `<!doctype html><meta http-equiv=\"Content-Security-Policy\" content=\"${interactivePolicy(sources).replaceAll('\"', '&quot;')}\"><meta name=\"referrer\" content=\"no-referrer\">${text}`;\n}\n\n/**\n * The page running in a sandboxed frame: `allow-scripts` only. There is no `allow-same-origin`, so the page has an opaque origin (no cookies,\n * storage or access to this page), and no top navigation, popups, forms, downloads or modals. `allow=\"\"` withholds camera, microphone, location\n * and the other powerful features. Changing `reload` loads the page again from the start.\n */\nexport function InteractiveFrame({ text, sources, reload = 0, title = 'HTML page (running)', testId = 'viewer', children, frameRef, onLoad }: {\n  readonly text: string;\n  readonly sources: readonly string[];\n  readonly reload?: number;\n  readonly title?: string;\n  readonly testId?: string;\n  readonly children?: ReactNode;\n  /** Host message bridges may identify the sender, never read the frame's document. */\n  readonly frameRef?: Ref<HTMLIFrameElement> | undefined;\n  readonly onLoad?: (() => void) | undefined;\n}) {\n  return <div className=\"boring-html-run flex min-h-0 flex-1 flex-col\" data-testid={`${testId}-run`}>\n    <iframe key={reload} ref={frameRef} onLoad={onLoad} title={title} sandbox=\"allow-scripts\" allow=\"\" referrerPolicy=\"no-referrer\" srcDoc={interactiveDocument(text, sources)}\n      data-testid={`${testId}-run-frame`} className=\"size-full min-h-0 flex-1\" />\n    {children}\n  </div>;\n}\n",
+      "type": "registry:component",
+      "target": "components/viewer-frame/interactive-html.tsx"
+    },
+    {
+      "path": "registry/viewer-frame/media.ts",
+      "content": "import { useEffect, useMemo, useState } from 'react';\n\n/** What a read-only media viewer shows: bytes or a Blob (the viewer owns the object URL it makes) or a URL the host owns. */\nexport interface MediaSource {\n  readonly bytes?: Uint8Array | ArrayBuffer;\n  readonly blob?: Blob;\n  readonly url?: string;\n}\n\n/** A Blob for the source, or `undefined` when the host gave a URL (or nothing). */\nexport function mediaBlob(source: MediaSource, mediaType: string): Blob | undefined {\n  if (source.blob) return source.blob;\n  if (source.bytes) return new Blob([source.bytes as BlobPart], { type: mediaType });\n  return undefined;\n}\n\n/** An object URL for the source, revoked when the source changes or the viewer unmounts. A host `url` is passed through untouched. */\nexport function useMediaUrl(source: MediaSource, mediaType: string): { url: string | undefined; size: number | undefined; blob: Blob | undefined } {\n  const blob = useMemo(() => mediaBlob(source, mediaType), [source.blob, source.bytes, mediaType]); // eslint-disable-line react-hooks/exhaustive-deps\n  const [made, setMade] = useState<string>();\n  useEffect(() => {\n    if (!blob) { setMade(undefined); return; }\n    const url = URL.createObjectURL(blob);\n    setMade(url);\n    return () => { URL.revokeObjectURL(url); setMade(current => current === url ? undefined : current); };\n  }, [blob]);\n  return { url: blob ? made : source.url, size: blob?.size, blob };\n}\n\nexport function formatBytes(size: number): string {\n  if (size < 1024) return `${size} B`;\n  if (size < 1024 * 1024) return `${(size / 1024).toFixed(size < 10240 ? 1 : 0)} KB`;\n  return `${(size / 1024 / 1024).toFixed(1)} MB`;\n}\n",
+      "type": "registry:lib",
+      "target": "components/viewer-frame/media.ts"
+    },
+    {
+      "path": "registry/viewer-frame/menu.tsx",
+      "content": "'use client';\n\nimport { useState } from 'react';\nimport { HistoryIcon } from 'lucide-react';\nimport type { ReactNode } from 'react';\nimport { Button } from '@/components/ui/button';\nimport { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';\nimport { ActionMenuContent, useMenuPortal } from '../button/actions';\nimport type { MenuItem } from '../button/actions';\nimport { versionHistoryItems } from '../version-history/version-history';\nimport type { VersionHistoryEntry } from '../version-history/version-history';\nimport { useViewerText } from './viewer-window';\n\nexport type ViewerMenuItem = MenuItem;\nexport interface ViewerActionsProps {\n  readonly label: string;\n  readonly icon: ReactNode;\n  readonly items: readonly MenuItem[];\n  readonly testId?: string;\n  readonly align?: 'start' | 'end';\n  readonly className?: string;\n  readonly children?: ReactNode;\n  readonly onOpenChange?: (open: boolean) => void;\n}\nexport type ViewerVersion = VersionHistoryEntry;\n\n/** The consumer's shadcn Base UI dropdown supplies positioning, dismissal and keyboard navigation. */\nexport function ViewerActions({ label, icon, items, testId = 'viewer-menu', align = 'end', className, children, onOpenChange }: ViewerActionsProps) {\n  const portal = useMenuPortal();\n  return <DropdownMenu onOpenChange={open => onOpenChange?.(open)}>\n    <DropdownMenuTrigger render={<Button ref={portal.ref} variant=\"ghost\" size=\"icon-sm\" aria-label={label} title={label} data-testid={testId} className={className}>{icon}</Button>} />\n    <ActionMenuContent label={label} testId={testId} items={items} align={align} container={portal.container}>{children}</ActionMenuContent>\n  </DropdownMenu>;\n}\n\n/** Saved versions are view-only choices. Current is the displayed revision, not necessarily the latest one. */\nexport function ViewerVersions({ versions, current, onSelect, testId = 'viewer-versions', label }: {\n  readonly versions: readonly ViewerVersion[];\n  readonly current: string;\n  readonly onSelect: (id: string) => void;\n  readonly testId?: string;\n  readonly label?: string;\n}) {\n  const { labels } = useViewerText();\n  const [now, setNow] = useState(Date.now);\n  return <ViewerActions label={label ?? labels.versionHistory} testId={testId} align=\"end\" icon={<HistoryIcon data-icon=\"inline-start\" aria-hidden=\"true\" />} onOpenChange={open => { if (open) setNow(Date.now()); }}\n    items={versionHistoryItems({ versions, current, onSelect, labels, now, testId })} />;\n}\n",
+      "type": "registry:component",
+      "target": "components/viewer-frame/menu.tsx"
+    },
+    {
+      "path": "registry/viewer-frame/share.ts",
+      "content": "import { copyText } from '../utils/utils';\n\n/** What the frame hands the host when the person presses Share. `target` and `revision` are the host's own identifiers for what is shown. */\nexport interface ViewerShareRequest {\n  readonly title: string;\n  readonly target: unknown;\n  readonly revision: string | undefined;\n}\n\n/** `shared`: the system share sheet took it. `copied`: a link is on the clipboard (the frame says so). Nothing: the host confirmed it its own way. */\nexport type ViewerShareResult = 'shared' | 'copied' | undefined | void;\nexport type ViewerShare = (request: ViewerShareRequest) => ViewerShareResult | Promise<ViewerShareResult>;\n\n/**\n * The ready-made Share action. `link` turns the request into the URL a person can open to see the same thing. Uses the Web Share\n * API where the browser offers it (phones), otherwise copies the link (see `copyText`) and lets the frame show \"Link copied\". A cancelled share\n * sheet is not an error.\n */\nexport function createLinkShare(link: (request: ViewerShareRequest) => string): ViewerShare {\n  return async request => {\n    const url = link(request);\n    const nav = globalThis.navigator;\n    if (typeof nav?.share === 'function' && (typeof nav.canShare !== 'function' || nav.canShare({ title: request.title, url }))) {\n      try { await nav.share({ title: request.title, url }); return 'shared'; }\n      catch (error) { if ((error as { name?: string })?.name === 'AbortError') return undefined; /* fall back to the clipboard */ }\n    }\n    // Clipboard API, then execCommand; when neither works copyText throws ManualCopyError and the frame shows the link selected.\n    await copyText(url);\n    return 'copied';\n  };\n}\n",
+      "type": "registry:lib",
+      "target": "components/viewer-frame/share.ts"
+    },
+    {
+      "path": "registry/viewer-frame/viewer-frame.tsx",
+      "content": "'use client';\n\nimport { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';\nimport type { ReactNode } from 'react';\nimport { ArrowLeftIcon, CheckIcon, CircleIcon, CopyIcon, DownloadIcon, ExternalLinkIcon, RefreshCwIcon } from 'lucide-react';\nimport { Button } from '@/components/ui/button';\nimport { Toggle } from '@/components/ui/toggle';\nimport { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';\nimport { Badge } from '@/components/ui/badge';\nimport { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';\nimport { Textarea } from '@/components/ui/textarea';\nimport { DropdownMenuSeparator } from '@/components/ui/dropdown-menu';\nimport { ActionButton, actionMenuItem, headerActions, menuActions } from '../button/actions';\nimport type { BlockAction } from '../button/actions';\nimport { ViewerActions } from './menu';\nimport type { ViewerMenuItem } from './menu';\nimport { useViewerText, useViewerWindow } from './viewer-window';\nimport type { ViewerIcons, ViewerLabels } from './viewer-window';\nimport { cn } from '../utils/utils';\nimport type { ManualCopyError } from '../utils/utils';\nimport type { ViewerShare } from './share';\n\nexport type { ViewerShare, ViewerShareRequest, ViewerShareResult } from './share';\nexport { ViewerWindowProvider, defaultViewerIcons, defaultViewerLabels, useViewerText } from './viewer-window';\nexport type { ViewerIcons, ViewerLabels, ViewerWindow } from './viewer-window';\n\nexport type ViewerTone = 'neutral' | 'success' | 'warning' | 'danger';\n/**\n * `kind` says what the status is whatever its (translated) label: the bar hides a plain `saved` (unless `showSavedStatus`) and shows\n * `read-only` as a fact. The bar shows a dot in the default shadcn roles: `success` primary, `warning` and `neutral` muted-foreground, `danger` destructive. Only a\n * `danger` status also shows its words, because the person must act on it; the others keep the label in the tooltip and for screen readers.\n */\nexport interface ViewerStatus { readonly label: string; readonly tone?: ViewerTone; readonly kind?: 'saved' | 'read-only' | undefined }\n\nexport interface ViewerFrameProps {\n  /** What is shown, for example the file name. */\n  readonly title: string;\n  /** Type, version, path, size: short facts under the title. */\n  readonly subtitle?: ReactNode;\n  /** Saved, Unsaved, Saving, Changed elsewhere, Read-only. */\n  readonly status?: ViewerStatus | undefined;\n  /** Keep a quiet saved acknowledgement visible, for autosaving editors. */\n  readonly showSavedStatus?: boolean | undefined;\n  /** Opaque identifiers handed to `onShare` so the host can build a link to this exact thing. */\n  readonly target?: unknown;\n  readonly revision?: string | undefined;\n  /** Leading header content, for example Back before the file title. */\n  readonly headerStart?: ReactNode;\n  /** Viewer-specific controls that stay visible: a mode toggle, Save while there are edits, zoom steps, a version switcher when there are several. */\n  readonly controls?: ReactNode;\n  /**\n   * The one control that matters most here (Comment on a version to try, for example), kept in the bar at every width. With the compact\n   * header a phone folds `controls` into the \"…\" menu; this one stays beside it, so the main action is one tap away. Test id `<testId>-main`.\n   */\n  readonly mainControl?: ReactNode;\n  /** Viewer-specific secondary actions, listed in the \"…\" menu after the standard ones. */\n  readonly menu?: readonly ViewerMenuItem[];\n  /** Viewer-specific native dropdown groups, before the standard secondary actions. */\n  readonly menuContent?: ReactNode;\n  /**\n   * The host's actions for this bar, after the window's (`ViewerWindow.actions`): `header` ones as buttons beside Share, `menu` ones at the\n   * end of the \"…\" menu. Test ids `<testId>-<id>`.\n   */\n  readonly actions?: readonly BlockAction[] | undefined;\n  /** This bar's words and icons, over the window's and the defaults (`defaultViewerLabels`, `defaultViewerIcons`). */\n  readonly labels?: Partial<ViewerLabels> | undefined;\n  readonly icons?: Partial<ViewerIcons> | undefined;\n  /** Each standard action appears only when its handler is supplied. Share is always visible; Reload, Copy, Download and Open in new tab live in the \"…\" menu. */\n  readonly onRefresh?: () => unknown;\n  readonly onShare?: ViewerShare;\n  readonly onCopy?: () => unknown;\n  readonly onDownload?: () => unknown;\n  readonly onOpenInNewTab?: () => unknown;\n  readonly onClose?: () => unknown;\n  /** Prefix of the `data-testid` of the bar and its actions (`viewer-share`, `viewer-more`, and `viewer-refresh` for the menu's Reload, ...). */\n  readonly testId?: string;\n  readonly titleTestId?: string;\n  /** Quiet one-row bar with secondary actions in the menu. False retains the former visible Share/fullscreen/close layout. */\n  readonly compactHeader?: boolean;\n  readonly className?: string;\n  readonly children?: ReactNode;\n}\n\n\n/** Narrow panes drop optional controls. */\nconst TIGHT_WIDTH = { touch: 440, pointer: 340 };\nconst touchScreen = () => typeof matchMedia === 'function' && matchMedia('(max-width: 639px), (pointer: coarse)').matches;\n\n/** How much room the bar has, for a pane that wants to drop optional controls (the zoom percentage, for example) on a narrow panel. */\nexport interface ViewerBarSpace { readonly tight: boolean }\nconst ViewerBarContext = createContext<ViewerBarSpace>({ tight: false });\nexport const useViewerBar = (): ViewerBarSpace => useContext(ViewerBarContext);\nconst NOTICE_MS = 2600;\n\n/**\n * One choice of a mode toggle, for example Rich | Source. Icon only: `label` is the accessible name and the tooltip, `text` the short word\n * for hosts that want it (shown when there is no icon). A disabled choice shows `reason` as its tooltip.\n */\nexport interface ViewerToggleOption<T extends string> { readonly id: T; readonly label: string; readonly text: string; readonly icon?: ReactNode; readonly disabled?: boolean; readonly reason?: string | undefined; readonly testId?: string }\n\n/** A segmented control over the consumer's outlined ToggleGroup: the pressed segment is filled with a full-contrast icon, the others muted. */\nexport function ViewerToggle<T extends string>({ label, value, options, onChange }: { readonly label: string; readonly value: T; readonly options: readonly ViewerToggleOption<T>[]; readonly onChange: (id: T) => void }) {\n  return <ToggleGroup aria-label={label} variant=\"outline\" size=\"sm\" spacing={1} value={[value]} onValueChange={values => {\n    const selected = options.find(option => option.id === values[0] && !option.disabled);\n    if (selected && selected.id !== value) onChange(selected.id);\n  }}>\n    {options.map(option => <ToggleGroupItem key={option.id} value={option.id} aria-label={option.label} title={option.disabled && option.reason ? option.reason : option.label} disabled={option.disabled}\n      className=\"disabled:pointer-events-auto disabled:cursor-not-allowed\" data-testid={option.testId} data-mode={option.id}>\n      <span className={cn('inline-flex items-center', value !== option.id && 'text-muted-foreground')}>{option.icon ?? option.text}</span></ToggleGroupItem>)}\n  </ToggleGroup>;\n}\n\n/** The copy helper throws this when the browser allowed no automatic copy at all; the person copies by hand instead. */\nconst needsManualCopy = (error: unknown): error is ManualCopyError => (error as { name?: string } | null)?.name === 'ManualCopyError' && typeof (error as { text?: unknown }).text === 'string';\n\n/** Last resort for Copy and Share: the text, already selected, so Ctrl/Cmd+C or the long-press menu finishes the job. */\nfunction ManualCopy({ testId, link, text, onClose, labels }: { readonly testId: string; readonly link: boolean; readonly text: string; readonly onClose: () => void; readonly labels: ViewerLabels }) {\n  const field = useRef<HTMLTextAreaElement>(null);\n  return <Dialog open onOpenChange={open => { if (!open) onClose(); }}>\n    <DialogContent showCloseButton={false} className=\"boring-viewer\" data-testid={`${testId}-manual-copy`} initialFocus={field}>\n      <DialogHeader><DialogTitle>{labels.manualCopy(link)}</DialogTitle></DialogHeader>\n      <Textarea ref={field} readOnly rows={Math.min(6, Math.max(2, Math.ceil(text.length / 48)))} value={text} data-testid={`${testId}-manual-copy-text`} onFocus={event => event.currentTarget.select()} />\n      <div className=\"flex justify-end\"><Button variant=\"ghost\" size=\"sm\" data-testid={`${testId}-manual-copy-close`} onClick={onClose}>{labels.done}</Button></div>\n    </DialogContent>\n  </Dialog>;\n}\n\n/** Dot colours: default shadcn roles only. */\nconst DOTS: Record<ViewerTone, string> = {\n  neutral: 'fill-muted-foreground',\n  success: 'fill-primary',\n  warning: 'fill-muted-foreground',\n  danger: 'fill-destructive',\n};\n\n/** The save status as a coloured dot; the label is the tooltip and the screen-reader text, and is shown only when the person must act (`danger`). */\nfunction StatusMark({ status, testId }: { readonly status: ViewerStatus; readonly testId: string }) {\n  const tone = status.tone ?? 'neutral';\n  return <span role=\"status\" aria-label={status.label} title={status.label} data-testid={`${testId}-status`} data-tone={tone} data-kind={status.kind}\n    className=\"inline-flex h-6 min-w-6 shrink-0 cursor-default items-center justify-center gap-1.5 text-xs\">\n    <CircleIcon aria-hidden=\"true\" strokeWidth={0} className={cn('size-2 shrink-0', DOTS[tone])} />\n    <span data-testid={`${testId}-status-text`} className={tone === 'danger' ? 'max-w-48 truncate text-destructive' : 'sr-only'}>{status.label}</span>\n  </span>;\n}\n\n/** The one top bar of every viewer, always a single row: title and facts, viewer controls, a status dot when something needs attention, Share, full screen, Close and the \"…\" menu. */\nexport function ViewerFrame({ title, subtitle, status, showSavedStatus = false, target, revision, headerStart, controls, mainControl, menu, menuContent, actions, labels: ownLabels, icons: ownIcons, onRefresh, onShare, onCopy, onDownload, onOpenInNewTab, onClose, testId = 'viewer', titleTestId, compactHeader = true, className, children }: ViewerFrameProps) {\n  const bar = useRef<HTMLElement>(null);\n  const [space, setSpace] = useState<ViewerBarSpace>({ tight: false });\n  const [busy, setBusy] = useState<'refresh' | 'share' | undefined>();\n  const [notice, setNotice] = useState<{ readonly text: string; readonly tone: ViewerTone } | undefined>();\n  const [copied, setCopied] = useState(false);\n  const [manual, setManual] = useState<{ readonly text: string; readonly link: boolean } | undefined>();\n  const host = useViewerWindow();\n  const { labels, icons } = useViewerText(ownLabels, ownIcons);\n  const mounted = useRef(true);\n  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);\n  useLayoutEffect(() => {\n    const element = bar.current;\n    if (!element || typeof ResizeObserver === 'undefined') return;\n    const measure = () => {\n      const width = element.getBoundingClientRect().width;\n      const next = { tight: width > 0 && width < (touchScreen() ? TIGHT_WIDTH.touch : TIGHT_WIDTH.pointer) };\n      setSpace(now => now.tight === next.tight ? now : next);\n    };\n    measure();\n    const observer = new ResizeObserver(measure);\n    observer.observe(element);\n    return () => observer.disconnect();\n  }, [host?.renderHeader]);\n  useEffect(() => {\n    if (!notice) return;\n    const timer = setTimeout(() => setNotice(undefined), NOTICE_MS);\n    return () => clearTimeout(timer);\n  }, [notice]);\n\n  const guarded = useCallback(async (kind: 'refresh' | 'share', run: () => unknown, failed: string) => {\n    setBusy(kind);\n    setNotice(undefined);\n    try { return await run(); }\n    catch (error) { if (mounted.current) { if (needsManualCopy(error)) setManual({ text: error.text, link: kind === 'share' }); else setNotice({ text: failed, tone: 'danger' }); } return undefined; }\n    finally { if (mounted.current) setBusy(undefined); }\n  }, []);\n  const refresh = () => { if (onRefresh) void guarded('refresh', onRefresh, labels.refreshFailed); };\n  const share = () => {\n    if (!onShare) return;\n    void guarded('share', () => onShare({ title, target, revision }), labels.shareFailed).then(result => {\n      if (!mounted.current) return;\n      if (result === 'copied') setNotice({ text: labels.linkCopied, tone: 'success' });\n      else if (result === 'shared') setNotice({ text: labels.shared, tone: 'success' });\n    });\n  };\n  const copy = () => {\n    void Promise.resolve().then(onCopy).then(() => { if (mounted.current) { setCopied(true); setNotice({ text: labels.copied, tone: 'success' }); setTimeout(() => { if (mounted.current) setCopied(false); }, 1500); } })\n      .catch(error => { if (!mounted.current) return; if (needsManualCopy(error)) setManual({ text: error.text, link: false }); else setNotice({ text: labels.copyFailed, tone: 'danger' }); });\n  };\n  const run = (action: (() => unknown) | undefined) => { void Promise.resolve().then(action).catch(() => { if (mounted.current) setNotice({ text: labels.actionFailed, tone: 'danger' }); }); };\n  // The host's actions: the window's (every viewer in the panel), then this frame's. Each runs through `run`, so a failure shows as a notice.\n  const hostActions = [...host?.actions ?? [], ...actions ?? []].map(action => ({ ...action, onSelect: () => run(action.onSelect) }));\n\n  const reading = status?.kind === 'read-only' || status?.label === labels.readOnly;\n  const menuItems: ViewerMenuItem[] = ([\n    ...(compactHeader && onShare ? [{ id: 'share', label: labels.share, icon: <icons.share className=\"size-4\" />, onSelect: share }] : []),\n    ...(compactHeader && host?.onFullscreenChange ? [{ id: 'fullscreen', label: host.fullscreen ? labels.exitFullscreen : labels.enterFullscreen, icon: <icons.enterFullscreen className=\"size-4\" />, onSelect: () => host.onFullscreenChange!(!host.fullscreen) }] : []),\n    ...(onRefresh ? [{ id: 'refresh', separatorBefore: true, label: labels.reload, icon: <RefreshCwIcon className=\"size-4\" />, disabled: busy === 'refresh', onSelect: refresh }] : []),\n    ...(onCopy ? [{ id: 'copy', label: labels.copy, icon: copied ? <CheckIcon className=\"size-4\" /> : <CopyIcon className=\"size-4\" />, onSelect: copy }] : []),\n    ...(onDownload ? [{ id: 'download', label: labels.download, icon: <DownloadIcon className=\"size-4\" />, onSelect: () => run(onDownload) }] : []),\n    ...(onOpenInNewTab ? [{ id: 'open', label: labels.openInNewTab, icon: <ExternalLinkIcon className=\"size-4\" />, onSelect: () => run(onOpenInNewTab) }] : []),\n    ...(menu ?? []).map((item, index) => ({ ...item, separatorBefore: index === 0 || item.separatorBefore })),\n    ...menuActions(hostActions).map((action, index) => ({ ...actionMenuItem(action, testId), separatorBefore: index === 0 })),\n  ] as ViewerMenuItem[]).map(entry => ({ ...entry, testId: entry.testId ?? `${testId}-${entry.id}` }));\n\n  const stacked = !compactHeader && host?.headerLayout === 'stacked';\n  const toolbar = controls && <div data-testid={`${testId}-controls`} className={cn('flex shrink-0 items-center gap-1', compactHeader && 'max-[641px]:hidden', stacked && 'flex-wrap px-3 py-2')}>{controls}</div>;\n  const titlebar = <>\n        {compactHeader && !headerStart && onClose && <Button variant=\"ghost\" size=\"icon-sm\" aria-label={labels.close} title={labels.close} data-testid={`${testId}-close`} onClick={() => run(onClose)}><ArrowLeftIcon data-icon=\"inline-start\" className=\"min-[641px]:hidden\" aria-hidden=\"true\" /><icons.close data-icon=\"inline-start\" className=\"hidden min-[641px]:block\" aria-hidden=\"true\" /></Button>}\n        {headerStart}\n        <div className=\"group/title relative min-w-0 flex-1 basis-0 text-left\">\n          <h2 data-testid={titleTestId ?? `${testId}-title`} title={title} className=\"m-0 truncate text-sm leading-5 font-semibold tracking-tight\">{title}</h2>\n          {(subtitle || reading) && <p data-testid={`${testId}-subtitle`} className={cn('m-0 flex min-w-0 items-center gap-x-1.5 text-xs leading-4 whitespace-nowrap text-muted-foreground', compactHeader ? 'hidden group-hover/title:flex max-[641px]:hidden' : 'overflow-hidden')}>{subtitle}{subtitle && reading && <span aria-hidden=\"true\">·</span>}{reading && <span data-testid={`${testId}-readonly`}>{labels.readOnly}</span>}</p>}\n        </div>\n        {!stacked && toolbar}\n        {mainControl && <div data-testid={`${testId}-main`} className=\"flex shrink-0 items-center\">{mainControl}</div>}\n        {status && !reading && (showSavedStatus || status.kind !== 'saved' && status.label !== labels.saved) && <StatusMark status={status} testId={testId} />}\n        <div className=\"flex shrink-0 items-center gap-0.5\">\n          {headerActions(hostActions).map(action => <ActionButton key={action.id} action={action} testId={testId} size=\"icon-sm\" />)}\n          {!compactHeader && onShare && <Button variant=\"ghost\" size=\"icon-sm\" aria-label={labels.share} title={labels.share} data-testid={`${testId}-share`} disabled={busy === 'share'} onClick={share}><icons.share data-icon=\"inline-start\" aria-hidden=\"true\" /></Button>}\n          {(menuItems.length > 0 || controls || menuContent) && <ViewerActions label={labels.moreActions} testId={`${testId}-more`} icon={<icons.more data-icon=\"inline-start\" aria-hidden=\"true\" />} items={menuItems}>{menuContent}{menuContent && menuItems.length > 0 && <DropdownMenuSeparator />}{compactHeader && controls && <div className=\"boring-viewer flex flex-wrap items-center gap-2 p-2 min-[641px]:hidden\">{controls}</div>}</ViewerActions>}\n          {!compactHeader && host?.onFullscreenChange && <Toggle size=\"sm\" aria-label={host.fullscreen ? labels.exitFullscreen : labels.enterFullscreen} title={host.fullscreen ? labels.exitFullscreen : labels.enterFullscreen} data-testid={`${testId}-fullscreen`} pressed={host.fullscreen === true}\n            onPressedChange={pressed => host.onFullscreenChange!(pressed)}>{host.fullscreen ? <icons.exitFullscreen data-icon=\"inline-start\" aria-hidden=\"true\" /> : <icons.enterFullscreen data-icon=\"inline-start\" aria-hidden=\"true\" />}</Toggle>}\n          {(!compactHeader || headerStart) && onClose && <Button variant=\"ghost\" size=\"icon-sm\" className={compactHeader ? 'max-[641px]:hidden' : undefined} aria-label={labels.close} title={labels.close} data-testid={`${testId}-close`} onClick={() => run(onClose)}><icons.close data-icon=\"inline-start\" aria-hidden=\"true\" /></Button>}\n        </div>\n      </>;\n  const header = <header ref={bar} data-testid={`${testId}-bar`} data-layout={stacked ? 'stacked' : undefined}\n    className={cn('relative flex shrink-0', stacked ? 'flex-col' : 'h-13 flex-nowrap items-center gap-x-1.5 px-2 sm:px-3')}>\n        {stacked ? <><div data-testid={`${testId}-titlebar`} className=\"flex min-h-14 min-w-0 items-center gap-x-1.5 px-3 py-1.5\">{titlebar}</div>{toolbar}</> : titlebar}\n        {notice && <Badge role=\"status\" aria-live=\"polite\" data-testid={`${testId}-notice`} data-tone={notice.tone} variant={notice.tone === 'danger' ? 'destructive' : 'secondary'}>{notice.text}</Badge>}\n        {manual && <ManualCopy testId={testId} link={manual.link} text={manual.text} labels={labels} onClose={() => setManual(undefined)} />}\n      </header>;\n  return <ViewerBarContext.Provider value={space}>\n    <section data-boring=\"viewer-frame\" data-testid={`${testId}-frame`} data-tight={space.tight || undefined}\n      className={cn('boring-viewer isolate flex h-full min-h-0 min-w-0 flex-col bg-background text-foreground', className)}>\n      {host?.renderHeader ? host.renderHeader(header) : header}\n      <div data-testid={`${testId}-body`} className=\"flex min-h-0 min-w-0 flex-1 flex-col\">{children}</div>\n    </section>\n  </ViewerBarContext.Provider>;\n}\n",
+      "type": "registry:component",
+      "target": "components/viewer-frame/viewer-frame.tsx"
+    },
+    {
+      "path": "registry/viewer-frame/viewer-window.ts",
+      "content": "/*\n * The window a viewer sits in, and the viewers' words and icons as plain data. A host passes a partial `labels` (and `icons`) object to\n * `ViewerWindowProvider` (every viewer below reads it) or to one `ViewerFrame`; what it leaves out keeps the default below.\n */\nimport { createContext, useContext, useMemo } from 'react';\nimport { EllipsisIcon, Maximize2Icon, Minimize2Icon, Share2Icon, XIcon } from 'lucide-react';\nimport type { ReactNode } from 'react';\nimport type { MarkdownEditorProps } from '@hachej/boring-ui-kit/markdown-editor';\nimport type { BlockAction, BlockIcon } from '../button/actions';\nimport { withDefaults } from '../utils/utils';\nimport { defaultVersionHistoryLabels } from '../version-history/version-history';\n\nexport const defaultViewerLabels = {\n  share: 'Share',\n  moreActions: 'More actions',\n  reload: 'Reload',\n  copy: 'Copy',\n  download: 'Download',\n  openInNewTab: 'Open in new tab',\n  enterFullscreen: 'Enter full screen',\n  exitFullscreen: 'Exit full screen',\n  close: 'Close',\n  readOnly: 'Read-only',\n  refreshFailed: 'Refresh failed',\n  shareFailed: 'Could not share',\n  linkCopied: 'Link copied',\n  shared: 'Shared',\n  copied: 'Copied',\n  copyFailed: 'Could not copy',\n  actionFailed: 'The action failed',\n  /** Shown when the browser allowed no automatic copy: `link` is true for Share, false for Copy. */\n  manualCopy: (link: boolean) => `This browser blocked automatic copying. Copy the ${link ? 'link' : 'text'} below.`,\n  done: 'Done',\n  ...defaultVersionHistoryLabels,\n  versionViewOnly: 'Viewing an older version. Restore is not available in this viewer.',\n  latest: 'Latest',\n  loading: 'Loading…',\n  // Save status\n  saved: 'Saved',\n  unsaved: 'Unsaved',\n  saving: 'Saving…',\n  saveUnconfirmed: 'Save unconfirmed',\n  changedElsewhere: 'Changed elsewhere',\n  closed: 'Closed',\n  save: 'Save',\n  checkSave: 'Check save outcome',\n  abandon: 'Abandon and refresh, keeping my draft',\n  discardLocal: 'Discard local edits',\n  // Modes\n  view: 'View',\n  preview: 'Preview',\n  source: 'Source',\n  htmlPreview: 'HTML preview',\n  htmlSource: 'HTML source',\n  editorMode: 'Editor mode',\n  rich: 'Rich',\n  richText: 'Rich text',\n  markdownSource: 'Markdown source',\n  formatted: 'Formatted',\n  markdown: 'Markdown',\n  formatting: 'Formatting',\n  showOutline: 'Show outline',\n  /** Tooltip of the disabled Text mode: what the rich editor could not keep exactly. */\n  richUnavailable: (reasons: string) => `Formatted is off: this document contains ${reasons}, which it could not keep exactly`,\n  document: 'Document',\n  // Images and PDFs\n  zoom: 'Zoom',\n  zoomIn: 'Zoom in',\n  zoomOut: 'Zoom out',\n  zoomLevel: (percent: string) => `Zoom ${percent}, fit to view`,\n  fitToView: 'Fit to view',\n  actualSize: 'Actual size',\n  noPreview: 'No preview available. You can still download this file.',\n  imageUnreadable: 'This file could not be read as an image.',\n  imageUnsupported: (mediaType: string) => `This image type (${mediaType || 'unknown'}) cannot be shown here. You can still download it.`,\n  imageStage: (name: string) => `${name} image`,\n  pdfUnsupported: 'This browser cannot show PDFs inline.',\n  pdfDocument: (name: string) => `${name} pages`,\n  /** The page indicator of the drawn pages, for example `3 / 12`. */\n  pdfPage: (current: number, count: number) => `${current} / ${count}`,\n  pdfHint: (name: string, canOpen: boolean) => `Download ${name} to read it in a PDF app${canOpen ? ', or open it in a new tab' : ''}.`,\n  notSaved: (reason: string) => `Not saved: ${reason}`,\n  saveFailedReason: 'the save failed',\n  changedElsewhereReason: 'changed elsewhere',\n  operationFailed: 'The document operation failed. Your source has been retained.',\n};\nexport type ViewerLabels = typeof defaultViewerLabels;\n\nexport const defaultViewerIcons = {\n  share: Share2Icon as BlockIcon,\n  more: EllipsisIcon as BlockIcon,\n  close: XIcon as BlockIcon,\n  enterFullscreen: Maximize2Icon as BlockIcon,\n  exitFullscreen: Minimize2Icon as BlockIcon,\n};\nexport type ViewerIcons = typeof defaultViewerIcons;\n\n/**\n * The window a viewer sits in, when the host lays viewers out in a panel (pi-app's `AgentWorkspace`, the ambient window). With\n * `onFullscreenChange`, every `ViewerFrame` below shows an \"Enter full screen\" / \"Exit full screen\" button; `actions` adds the host's\n * actions to every viewer bar (`header` ones as buttons, `menu` ones in its \"…\" menu, test ids `<frame testId>-<id>`); `labels` and\n * `icons` reach every viewer below. Without a provider nothing changes.\n */\nexport interface ViewerWindow {\n  /** Markdown autosave policy for every pane below. Defaults to true, with a 1200ms idle delay. */\n  readonly autosave?: MarkdownEditorProps['autosave'];\n  /** Place the existing bar in a host-owned shared header (for example with createPortal). Default: above the viewer body. */\n  readonly renderHeader?: ((header: ReactNode) => ReactNode) | undefined;\n  /** `stacked` keeps the title and window actions above a separate content toolbar. Default: `inline`, one row. */\n  readonly headerLayout?: 'inline' | 'stacked' | undefined;\n  readonly fullscreen?: boolean | undefined;\n  readonly onFullscreenChange?: ((next: boolean) => void) | undefined;\n  readonly actions?: readonly BlockAction[] | undefined;\n  readonly labels?: Partial<ViewerLabels> | undefined;\n  readonly icons?: Partial<ViewerIcons> | undefined;\n}\nconst ViewerWindowContext = createContext<ViewerWindow | undefined>(undefined);\nexport const ViewerWindowProvider = ViewerWindowContext.Provider;\nexport const useViewerWindow = (): ViewerWindow | undefined => useContext(ViewerWindowContext);\n\n/** The viewers' labels and icons: the defaults, then the window's, then the frame's own. */\nexport function useViewerText(labels?: Partial<ViewerLabels>, icons?: Partial<ViewerIcons>): { readonly labels: ViewerLabels; readonly icons: ViewerIcons } {\n  const host = useViewerWindow();\n  return useMemo(() => ({ labels: withDefaults(defaultViewerLabels, host?.labels, labels), icons: withDefaults(defaultViewerIcons, host?.icons, icons) }), [host?.labels, host?.icons, labels, icons]);\n}\n",
+      "type": "registry:lib",
+      "target": "components/viewer-frame/viewer-window.ts"
+    },
+    {
+      "path": "registry/viewer-frame/viewer-labels-fr.ts",
+      "content": "/* The viewers' words in French, the `locale=\"fr\"` base of `AgentWorkspace`'s viewers. Typed as `ViewerLabels`, so a key added in English must be added here too. */\nimport type { ViewerLabels } from './viewer-window';\nimport { frenchVersionHistoryLabels } from '../version-history/version-history';\n\nexport const frenchViewerLabels: ViewerLabels = {\n  share: 'Partager',\n  moreActions: 'Plus d’actions',\n  reload: 'Recharger',\n  copy: 'Copier',\n  download: 'Télécharger',\n  openInNewTab: 'Ouvrir dans un nouvel onglet',\n  enterFullscreen: 'Plein écran',\n  exitFullscreen: 'Quitter le plein écran',\n  close: 'Fermer',\n  readOnly: 'Lecture seule',\n  refreshFailed: 'Échec de l’actualisation',\n  shareFailed: 'Partage impossible',\n  linkCopied: 'Lien copié',\n  shared: 'Partagé',\n  copied: 'Copié',\n  copyFailed: 'Copie impossible',\n  actionFailed: 'L’action a échoué',\n  manualCopy: link => `Ce navigateur a bloqué la copie automatique. Copiez ${link ? 'le lien' : 'le texte'} ci-dessous.`,\n  done: 'Terminé',\n  ...frenchVersionHistoryLabels,\n  versionViewOnly: 'Ancienne version en lecture seule. La restauration n’est pas disponible dans cette vue.',\n  latest: 'Dernière version',\n  loading: 'Chargement…',\n  saved: 'Enregistré',\n  unsaved: 'Non enregistré',\n  saving: 'Enregistrement',\n  saveUnconfirmed: 'Enregistrement non confirmé',\n  changedElsewhere: 'Modifié ailleurs',\n  closed: 'Fermé',\n  save: 'Enregistrer',\n  checkSave: 'Vérifier l’enregistrement',\n  abandon: 'Abandonner et actualiser, en gardant mon brouillon',\n  discardLocal: 'Annuler mes modifications',\n  view: 'Affichage',\n  preview: 'Aperçu',\n  source: 'Source',\n  htmlPreview: 'Aperçu HTML',\n  htmlSource: 'Source HTML',\n  editorMode: 'Mode d’édition',\n  rich: 'Mise en forme',\n  richText: 'Texte mis en forme',\n  markdownSource: 'Source Markdown',\n  formatted: 'Mis en forme',\n  markdown: 'Markdown',\n  formatting: 'Mise en forme',\n  showOutline: 'Afficher le plan',\n  richUnavailable: reasons => `Texte mis en forme indisponible : ce document contient ${reasons}, qu’il ne pourrait pas conserver à l’identique`,\n  document: 'Document',\n  zoom: 'Zoom',\n  zoomIn: 'Agrandir',\n  zoomOut: 'Réduire',\n  zoomLevel: percent => `Zoom ${percent}, ajuster à la vue`,\n  fitToView: 'Ajuster à la vue',\n  actualSize: 'Taille réelle',\n  noPreview: 'Aucun aperçu disponible. Vous pouvez toujours télécharger ce fichier.',\n  imageUnreadable: 'Ce fichier n’a pas pu être lu comme une image.',\n  imageUnsupported: mediaType => `Ce type d’image (${mediaType || 'inconnu'}) ne peut pas être affiché ici. Vous pouvez toujours le télécharger.`,\n  imageStage: name => `Image ${name}`,\n  pdfUnsupported: 'Ce navigateur ne peut pas afficher les PDF directement.',\n  pdfDocument: name => `Pages de ${name}`,\n  pdfPage: (current, count) => `${current} / ${count}`,\n  pdfHint: (name, canOpen) => `Téléchargez ${name} pour le lire dans une application PDF${canOpen ? ', ou ouvrez-le dans un nouvel onglet' : ''}.`,\n  notSaved: reason => `Non enregistré : ${reason}`,\n  saveFailedReason: 'l’enregistrement a échoué',\n  changedElsewhereReason: 'modifié ailleurs',\n  operationFailed: 'L’opération sur le document a échoué. Votre source est conservée.',\n};\n",
+      "type": "registry:lib",
+      "target": "components/viewer-frame/viewer-labels-fr.ts"
+    }
+  ],
+  "css": {
+    "@layer utilities": {
+      "@media (max-width: 640px), (pointer: coarse)": {
+        ".boring-viewer :is([data-slot=\"button\"], [data-slot=\"toggle\"], [data-slot=\"toggle-group-item\"], [class~=\"group/button\"], [class~=\"group/toggle\"])": {
+          "min-height": "2.75rem",
+          "min-width": "2.75rem"
+        },
+        ".boring-viewer.boring-markdown-bubble :is([data-slot=\"button\"], [data-slot=\"toggle\"])": {
+          "min-height": "2.75rem",
+          "min-width": "2.75rem"
+        }
+      }
+    },
+    "@layer components": {
+      ".boring-viewer .boring-markdown-editor, .boring-viewer .boring-html-pane": {
+        "display": "flex",
+        "flex-direction": "column",
+        "flex": "1 1 auto",
+        "min-height": "0",
+        "min-width": "0",
+        "container-type": "inline-size"
+      },
+      ".boring-viewer .boring-markdown-surface": {
+        "flex": "1 1 auto",
+        "min-height": "0",
+        "overflow": "auto"
+      },
+      ".boring-viewer .boring-markdown-toolbar, .boring-viewer.boring-markdown-bubble": {
+        "display": "flex",
+        "flex": "none",
+        "align-items": "center",
+        "gap": "0.25rem",
+        "max-width": "calc(100vw - 24px)"
+      },
+      ".boring-viewer .boring-markdown-toolbar": {
+        "padding": "0.375rem 1.5rem 0.375rem 0.75rem",
+        "overflow-x": "auto",
+        "scrollbar-width": "none",
+        "mask-image": "linear-gradient(to right, black calc(100% - 2rem), transparent)"
+      },
+      ".boring-viewer .boring-markdown-toolbar::-webkit-scrollbar": {
+        "display": "none"
+      },
+      ".boring-viewer .boring-markdown-tool": {
+        "flex": "none"
+      },
+      ".boring-viewer .boring-markdown-separator": {
+        "flex": "none",
+        "margin-inline": "0.25rem"
+      },
+      ".boring-viewer span.boring-markdown-separator": {
+        "width": "0.5rem",
+        "margin": "0"
+      },
+      ".boring-viewer .boring-markdown-icon": {
+        "display": "block"
+      },
+      ".boring-viewer .boring-markdown-link, .boring-viewer .boring-markdown-alert, .boring-viewer .boring-markdown-proposal, .boring-viewer [data-boring=\"text-draft-controls\"]": {
+        "display": "flex",
+        "flex": "none",
+        "flex-wrap": "wrap",
+        "align-items": "center",
+        "gap": "0.5rem",
+        "padding": "0.5rem 0.75rem"
+      },
+      ".boring-viewer .boring-markdown-link [data-slot=\"input\"]": {
+        "flex": "1 1 14rem",
+        "min-width": "0"
+      },
+      ".boring-viewer .boring-markdown-notice": {
+        "margin": "0.75rem"
+      },
+      ".boring-viewer .boring-markdown-proposal :is(h3, details)": {
+        "flex": "1 1 100%",
+        "min-width": "0"
+      },
+      ".boring-viewer .boring-markdown-proposal pre": {
+        "max-height": "12rem",
+        "overflow": "auto",
+        "white-space": "pre-wrap"
+      },
+      ".boring-viewer .boring-markdown-editor nav[aria-label=\"Document outline\"]": {
+        "display": "none"
+      },
+      "@container (min-width: 46rem)": {
+        ".boring-viewer .boring-markdown-editor nav[aria-label=\"Document outline\"]": {
+          "display": "block",
+          "flex": "none",
+          "overflow-x": "auto",
+          "padding": "0.375rem 0.75rem"
+        },
+        ".boring-viewer .boring-markdown-editor nav[aria-label=\"Document outline\"] ol": {
+          "display": "flex",
+          "gap": "0.25rem",
+          "list-style": "none",
+          "margin": "0",
+          "padding": "0"
+        }
+      },
+      ".boring-viewer .boring-markdown-source, .boring-viewer .boring-html-viewer__source": {
+        "flex": "1 1 auto",
+        "width": "100%",
+        "min-height": "0",
+        "resize": "none"
+      },
+      ".boring-viewer .boring-markdown-content": {
+        "max-width": "68ch",
+        "min-height": "100%",
+        "margin": "0 auto",
+        "padding": "1.5rem 1.5rem 3rem",
+        "overflow-wrap": "anywhere",
+        "color": "var(--foreground)",
+        "font-size": "var(--text-base)",
+        "line-height": "var(--leading-relaxed)"
+      },
+      ".boring-viewer .boring-markdown-content:focus": {
+        "outline": "none"
+      },
+      ".boring-viewer .boring-markdown-content > :first-child": {
+        "margin-top": "0"
+      },
+      ".boring-viewer .boring-markdown-content p": {
+        "margin": "0.75rem 0"
+      },
+      ".boring-viewer .boring-markdown-content p.is-editor-empty:first-child::before": {
+        "content": "attr(data-placeholder)",
+        "float": "left",
+        "height": "0",
+        "color": "var(--muted-foreground)",
+        "pointer-events": "none"
+      },
+      ".boring-viewer .boring-markdown-content :is(h1, h2, h3, h4, h5, h6)": {
+        "font-weight": "var(--font-weight-semibold)",
+        "line-height": "var(--leading-tight)"
+      },
+      ".boring-viewer .boring-markdown-content h1": {
+        "margin": "1.75rem 0 0.75rem",
+        "font-size": "var(--text-2xl)"
+      },
+      ".boring-viewer .boring-markdown-content h2": {
+        "margin": "2rem 0 0.75rem",
+        "font-size": "var(--text-xl)"
+      },
+      ".boring-viewer .boring-markdown-content h3": {
+        "margin": "1.25rem 0 0.5rem",
+        "font-size": "var(--text-lg)"
+      },
+      ".boring-viewer .boring-markdown-content :is(h4, h5, h6)": {
+        "margin": "1rem 0 0.4rem",
+        "font-size": "var(--text-base)"
+      },
+      ".boring-viewer .boring-markdown-content :is(ul, ol)": {
+        "margin": "0.75rem 0",
+        "padding-left": "1.5rem"
+      },
+      ".boring-viewer .boring-markdown-content ul": {
+        "list-style": "disc"
+      },
+      ".boring-viewer .boring-markdown-content ol": {
+        "list-style": "decimal"
+      },
+      ".boring-viewer .boring-markdown-content li": {
+        "margin": "0.25rem 0"
+      },
+      ".boring-viewer .boring-markdown-content li > p": {
+        "margin": "0"
+      },
+      ".boring-viewer .boring-markdown-content ul[data-type=\"taskList\"]": {
+        "padding-left": "0",
+        "list-style": "none"
+      },
+      ".boring-viewer .boring-markdown-content ul[data-type=\"taskList\"] li": {
+        "display": "flex",
+        "align-items": "flex-start",
+        "gap": "0.5rem"
+      },
+      ".boring-viewer .boring-markdown-content ul[data-type=\"taskList\"] li > label": {
+        "display": "inline-flex",
+        "flex": "none",
+        "align-items": "center",
+        "height": "1.7em",
+        "margin": "0",
+        "user-select": "none"
+      },
+      ".boring-viewer .boring-markdown-content ul[data-type=\"taskList\"] li > label input[type=\"checkbox\"]": {
+        "width": "1rem",
+        "height": "1rem",
+        "margin": "0",
+        "accent-color": "var(--primary)",
+        "cursor": "pointer"
+      },
+      ".boring-viewer .boring-markdown-content ul[data-type=\"taskList\"] li > div": {
+        "flex": "1 1 auto",
+        "min-width": "0"
+      },
+      ".boring-viewer .boring-markdown-content li[data-checked=\"true\"] > div": {
+        "color": "var(--muted-foreground)",
+        "text-decoration": "line-through"
+      },
+      ".boring-viewer .boring-markdown-content strong": {
+        "font-weight": "var(--font-weight-semibold)"
+      },
+      ".boring-viewer .boring-markdown-content code": {
+        "padding": "0.1em 0.35em",
+        "border-radius": "var(--radius-sm)",
+        "background": "var(--muted)",
+        "font-family": "var(--font-mono)",
+        "font-size": "var(--text-sm)"
+      },
+      ".boring-viewer .boring-markdown-content pre": {
+        "margin": "1rem 0",
+        "padding": "0.875rem 1rem",
+        "overflow-x": "auto",
+        "border": "var(--default-border-width) solid var(--border)",
+        "border-radius": "var(--radius-lg)",
+        "background": "var(--muted)",
+        "font-family": "var(--font-mono)",
+        "font-size": "var(--text-sm)"
+      },
+      ".boring-viewer .boring-markdown-content pre code": {
+        "padding": "0",
+        "background": "transparent",
+        "font": "inherit"
+      },
+      ".boring-viewer .boring-markdown-content blockquote": {
+        "margin": "1rem 0",
+        "padding": "0.5rem 1rem",
+        "border-inline-start": "var(--default-border-width) solid var(--border)",
+        "color": "var(--muted-foreground)"
+      },
+      ".boring-viewer .boring-markdown-content a": {
+        "color": "var(--foreground)",
+        "text-decoration": "underline",
+        "cursor": "text"
+      },
+      ".boring-viewer .boring-markdown-content hr": {
+        "margin": "1.5rem 0",
+        "border": "0",
+        "border-top": "var(--default-border-width) solid var(--border)"
+      },
+      ".boring-viewer .boring-markdown-content mark": {
+        "background": "var(--accent)",
+        "color": "var(--accent-foreground)"
+      },
+      ".boring-viewer .boring-markdown-content .tableWrapper": {
+        "margin": "1rem 0",
+        "overflow-x": "auto"
+      },
+      ".boring-viewer .boring-markdown-content table": {
+        "width": "100%",
+        "border-collapse": "collapse",
+        "font-size": "var(--text-sm)"
+      },
+      ".boring-viewer .boring-markdown-content :is(th, td)": {
+        "min-width": "4rem",
+        "padding": "0.5rem 0.75rem",
+        "border": "var(--default-border-width) solid var(--border)",
+        "text-align": "left",
+        "vertical-align": "top"
+      },
+      ".boring-viewer .boring-markdown-content th": {
+        "background": "var(--muted)",
+        "font-weight": "var(--font-weight-semibold)"
+      },
+      ".boring-viewer .boring-markdown-content :is(th, td) > p": {
+        "margin": "0"
+      },
+      ".boring-viewer .boring-markdown-content .selectedCell": {
+        "background": "var(--accent)"
+      },
+      ".boring-viewer .boring-markdown-content img": {
+        "display": "block",
+        "max-width": "100%",
+        "height": "auto",
+        "margin": "1rem 0"
+      },
+      ".boring-viewer .boring-markdown-content .boring-markdown-preserved": {
+        "margin": "0.75rem 0",
+        "color": "var(--muted-foreground)",
+        "font-family": "var(--font-mono)",
+        "font-size": "var(--text-sm)"
+      },
+      ".boring-viewer .boring-markdown-content .boring-markdown-preserved small": {
+        "font-size": "var(--text-xs)"
+      },
+      ".boring-viewer .boring-markdown-content .boring-markdown-preserved pre": {
+        "margin": "0.25rem 0",
+        "padding": "0.5rem 0.75rem",
+        "white-space": "pre-wrap",
+        "overflow-wrap": "anywhere"
+      },
+      ".boring-viewer .boring-markdown-content .boring-markdown-preserved-inline": {
+        "color": "var(--muted-foreground)",
+        "font-family": "var(--font-mono)",
+        "font-size": "var(--text-sm)"
+      },
+      ".boring-viewer .boring-markdown-content .boring-markdown-image": {
+        "display": "inline-flex",
+        "max-width": "100%",
+        "margin": "0.125rem 0",
+        "padding": "0.125rem 0.5rem",
+        "background": "var(--muted)",
+        "color": "var(--muted-foreground)"
+      },
+      ".boring-viewer .boring-html-viewer__preview": {
+        "display": "flex",
+        "flex": "1 1 auto",
+        "flex-direction": "column",
+        "min-height": "0"
+      },
+      ".boring-viewer .boring-html-viewer__preview > p": {
+        "flex": "none",
+        "margin": "0",
+        "padding": "0.375rem 0.75rem"
+      },
+      ".boring-viewer .boring-html-viewer__preview > div": {
+        "display": "flex",
+        "flex": "1 1 auto",
+        "min-height": "0"
+      },
+      ".boring-viewer .boring-html-viewer__frame": {
+        "flex": "1 1 auto",
+        "width": "100%",
+        "height": "100%",
+        "min-height": "0",
+        "border": "0"
+      },
+      ".boring-viewer .boring-viewer-checker": {
+        "background-color": "var(--background)",
+        "background-image": "linear-gradient(45deg, var(--muted) 25%, transparent 25%, transparent 75%, var(--muted) 75%), linear-gradient(45deg, var(--muted) 25%, transparent 25%, transparent 75%, var(--muted) 75%)",
+        "background-position": "0 0, 8px 8px",
+        "background-size": "16px 16px"
+      },
+      ".boring-viewer .boring-viewer-stage": {
+        "overflow": "auto"
+      },
+      "@media (max-width: 640px)": {
+        ".boring-viewer .boring-markdown-content": {
+          "padding": "1.25rem 1.25rem 3rem"
+        },
+        ".boring-viewer .boring-markdown-toolbar": {
+          "display": "none"
+        },
+        ".boring-viewer.boring-markdown-dock": {
+          "display": "flex",
+          "align-items": "center",
+          "gap": "0.125rem",
+          "overflow-x": "auto",
+          "scrollbar-width": "none",
+          "position": "fixed",
+          "inset-inline": "0",
+          "z-index": "50",
+          "padding": "0.25rem 1.5rem 0.25rem 0.5rem",
+          "padding-bottom": "calc(0.25rem + env(safe-area-inset-bottom, 0px))",
+          "background": "var(--background)",
+          "mask-image": "linear-gradient(to right, black calc(100% - 2rem), transparent)"
+        },
+        ".boring-viewer.boring-markdown-dock[data-keyboard]": {
+          "padding-bottom": "0.25rem"
+        },
+        ".boring-viewer.boring-markdown-dock > .boring-markdown-dock-rule": {
+          "position": "absolute",
+          "inset-inline": "0",
+          "top": "0"
+        },
+        ".boring-viewer [data-boring=\"markdown-editor\"][data-dock] .boring-markdown-content": {
+          "padding-bottom": "6rem"
+        }
+      }
+    }
+  },
+  "type": "registry:component"
+}

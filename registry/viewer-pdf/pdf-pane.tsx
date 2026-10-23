@@ -5,14 +5,14 @@ import type { ReactNode } from 'react';
 import { DownloadIcon, FileTextIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { downloadFile } from './download';
-import { ZoomControls } from './image-pane';
-import { formatBytes, useMediaUrl } from './media';
+import { downloadFile } from '../viewer-frame/download';
+import { ZoomControls } from '../viewer-image/image-pane';
+import { formatBytes, useMediaUrl } from '../viewer-frame/media';
 import { PdfPages } from './pdf-pages';
-import type { MediaSource } from './media';
-import { ViewerFrame } from './viewer-frame';
-import type { ViewerShare, ViewerStatus } from './viewer-frame';
-import { useViewerText } from './viewer-window';
+import type { MediaSource } from '../viewer-frame/media';
+import { ViewerFrame } from '../viewer-frame/viewer-frame';
+import type { ViewerShare, ViewerStatus } from '../viewer-frame/viewer-frame';
+import { useViewerText } from '../viewer-frame/viewer-window';
 
 export interface PdfPaneProps extends MediaSource {
   readonly name: string;

@@ -13,8 +13,10 @@ import { fictionalPng } from '../fixtures/blob-bytes.mjs';
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const out = `${root}.cache/viewers-test`;
 mkdirSync(out, { recursive: true });
+/** The viewer items (D-257): the frame and its helpers, and one item per pane. */
+const FOLDER = { 'markdown-pane.tsx': 'viewer-markdown', 'html-pane.tsx': 'viewer-html', 'image-pane.tsx': 'viewer-image', 'pdf-pane.tsx': 'viewer-pdf', 'pdf-pages.tsx': 'viewer-pdf', 'local-file-viewer.tsx': 'viewer-pdf' };
 async function load(name) {
-  await build({ entryPoints: [`${root}registry/viewers/${name}`], outfile: `${out}/${name.replace(/\.tsx?$/, '')}.mjs`, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
+  await build({ entryPoints: [`${root}registry/${FOLDER[name] ?? 'viewer-frame'}/${name}`], outfile: `${out}/${name.replace(/\.tsx?$/, '')}.mjs`, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
   return import(`${pathToFileURL(`${out}/${name.replace(/\.tsx?$/, '')}.mjs`).href}?${Date.now()}`);
 }
 

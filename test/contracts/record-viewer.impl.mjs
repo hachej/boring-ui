@@ -9,7 +9,7 @@ import { build } from 'esbuild';
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const out = join(root, '.cache/record-viewer-test');
 mkdirSync(out, { recursive: true });
-writeFileSync(join(out, 'entry.tsx'), `export { ArtifactPanel } from '${root}registry/pi-app/artifact-panel.tsx'; export { createRecordsKind, recordsKind, RecordTable, RecordList, RecordsViewer } from '${root}registry/record-viewer/record-viewer.tsx';`);
+writeFileSync(join(out, 'entry.tsx'), `export { ArtifactPanel } from '${root}registry/pi-app/artifact-panel.tsx'; export { createRecordsKind, recordsKind } from '${root}registry/record-viewer/records-kind.tsx'; export { RecordTable, RecordList, RecordsViewer } from '${root}registry/record-viewer/record-viewer.tsx';`);
 await build({ entryPoints: [join(out, 'entry.tsx')], outfile: join(out, 'kit.mjs'), bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
 // Imported once the first test's DOM globals exist: Base UI decides at load time whether it runs in a browser.
 let kit;
