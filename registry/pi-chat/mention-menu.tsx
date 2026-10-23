@@ -6,7 +6,7 @@ import { FileTextIcon, FolderIcon } from 'lucide-react';
 import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@/components/ui/item';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { usePickerKeyboard } from './picker-keyboard';
-import type { MentionResult, MentionsConfig } from './config';
+import type { MentionPickerProps, MentionResult, MentionsConfig } from './config';
 import { useChatText } from './labels';
 
 /**
@@ -29,15 +29,7 @@ function highlight(text: string, query: string) {
 }
 
 /** The `@` file picker, ported from v2's `MentionPicker`: debounced search, one highlighted row, name over path. */
-export function MentionPicker({ query, search, generation, listLabel, renderOption, onSelect, onDismiss }: {
-  readonly query: string;
-  readonly listLabel?: MentionsConfig['listLabel'];
-  readonly renderOption?: MentionsConfig['renderOption'];
-  readonly generation?: MentionsConfig['generation'];
-  readonly search: MentionsConfig['search'];
-  readonly onSelect: (path: string) => void;
-  readonly onDismiss: () => void;
-}) {
+export function MentionPicker({ query, search, generation, listLabel, renderOption, onSelect, onDismiss }: MentionPickerProps) {
   const { labels } = useChatText();
   // Results are tagged with the search function that produced them: a binding switch hides the previous binding's rows at once.
   const [outcome, setOutcome] = useState<{ readonly search: MentionsConfig['search']; readonly results: readonly MentionResult[]; readonly failure: string | null }>();

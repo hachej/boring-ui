@@ -41,7 +41,13 @@ import { cn } from '../utils/utils';
 
 export type { PiChatActions } from './session';
 export type { ChatCard, Mode } from './rows';
-export type { AnswerOutcome } from './question-card';
+export type { AnswerOutcome, QuestionCardProps } from './question-card';
+export { ApprovalCard } from './approval-card';
+export type { ApprovalCardProps } from './approval-card';
+export type { ChatCards, ChatTextPart } from './message';
+export type { MentionPickerProps, ModelEffortPickerProps, SlashPickerProps } from './config';
+export type { PendingVoice, PendingVoiceBubbleProps, VoiceMessageButtonProps, VoiceMessageHandle } from './config';
+export type { CameraSheetProps } from './camera-sheet';
 export { artifactKey, artifactKind, collectArtifacts, detectArtifact, parseArtifact, typeLabel } from './artifact';
 export type { ArtifactDescriptor, ArtifactKind, ArtifactKindViewProps, ArtifactsConfig, ArtifactTarget, ArtifactType } from './artifact';
 export { QuestionCard, formAnswer, parseQuestion, ASK_USER_TOOL } from './question-card';
@@ -157,7 +163,7 @@ function ConnectionBadge({ kind }: { readonly kind: string }) {
   </Badge>;
 }
 
-function PiChatSession({ controller, placement = 'docked', mode = 'expert', presentation, className, keyboardInset = true, actions, avatar, headerActions, header = true, decisions, controls, tools, voiceMessage, pendingVoice, belowComposer, composerChips, composerHeader, composerHasContent, onPickFiles, timeline, renderConnectionError, headerStart, renderEntry, hideLine, displayLimit, historicalMessageActions, unread, replyError, renderTool, groupTool, commandMentions,
+function PiChatSession({ controller, placement = 'docked', mode = 'expert', presentation, className, keyboardInset = true, actions, avatar, headerActions, header = true, decisions, controls, tools, voiceMessage, pendingVoice, belowComposer, composerChips, composerHeader, composerHasContent, onPickFiles, timeline, renderConnectionError, headerStart, renderEntry, hideLine, displayLimit, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions,
   onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = false, emptyLayout = 'centered', composerLayout = 'card', conversationTitle, onRenameTitle, feedback, draftKey, onOpenFile, fileChanges, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: ChatController } }) {
   const { labels, icons } = useChatText();
   useChatDraft(controller, draftKey);
@@ -170,15 +176,16 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
   const fork = useRef(conversations?.fork); fork.current = conversations?.fork;
   const canFork = Boolean(conversations?.fork);
   const rowExtras = useMemo(() => canFork ? { onFork: (entryId: string) => { void fork.current?.(entryId).catch(() => {}); } } : undefined, [canFork]);
-  const session = useChatSession({ controller, activeController: active, mode, presentation, actions, renderEntry, hideLine, historicalMessageActions, unread, replyError, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept,
+  const session = useChatSession({ controller, activeController: active, mode, presentation, actions, renderEntry, hideLine, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept,
     slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => timeline ? timeline.afterSend?.() : scrollToBottom.current(), feedback, rowExtras, onOpenFile, fileChanges, pasteToFile, composerChips, composerHeader, composerHasContent, onPickFiles });
   const { state, derived, rows, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, files, loading } = session;
   const voiceRows = pendingVoice ?? voice.pending;
+  const VoiceButton = voiceMessage?.Button ?? VoiceMessageButton, VoiceBubbleView = voiceMessage?.Bubble ?? PendingVoiceBubble;
   const transcriptRows: readonly TranscriptRow[] = [
     ...rows.map(row => ({ key: row.key, kind: 'native' as const, row })),
     ...voiceRows.map(voice => ({ key: `voice:${voice.id}`, kind: 'voice' as const, voice })),
   ];
-  const pendingRows = voiceRows.map(item => <MessageScrollerItem key={`voice:${item.id}`} messageId={`voice:${item.id}`} data-local-voice="" className="[content-visibility:visible]"><PendingVoiceBubble pending={item} /></MessageScrollerItem>);
+  const pendingRows = voiceRows.map(item => <MessageScrollerItem key={`voice:${item.id}`} messageId={`voice:${item.id}`} data-local-voice="" className="[content-visibility:visible]"><VoiceBubbleView pending={item} /></MessageScrollerItem>);
   const empty = (timeline ? timeline.count === 0 : session.empty) && voiceRows.length === 0;
   const conversationFiles = new Map(files.map(file => [file.id, file]));
   for (const item of voiceRows) if (item.path && !conversationFiles.has(`file:${item.path}`)) {
@@ -238,7 +245,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
           {!empty && <TranscriptHistory history={state.history} connected={!state.disposed && connected} onLoad={transcript.reveal} sentinelRef={transcript.sentinelRef} hidden={hidden} loaded={transcript.loaded} />}
           <div className="mx-auto w-full max-w-[720px] px-4 pt-6 pb-8 sm:px-6">
           <MessageScrollerContent aria-label={labels.messages} aria-live="polite" data-testid="transcript">
-            {visible.map(item => <MessageScrollerItem key={item.key} messageId={item.key} data-local-voice={item.kind === 'voice' ? '' : undefined} className="[content-visibility:visible]">{item.kind === 'native' ? <RowView row={item.row} context={rowContext} /> : <PendingVoiceBubble pending={item.voice} />}</MessageScrollerItem>)}
+            {visible.map(item => <MessageScrollerItem key={item.key} messageId={item.key} data-local-voice={item.kind === 'voice' ? '' : undefined} className="[content-visibility:visible]">{item.kind === 'native' ? <RowView row={item.row} context={rowContext} /> : <VoiceBubbleView pending={item.voice} />}</MessageScrollerItem>)}
           </MessageScrollerContent>
           </div>
         </MessageScrollerViewport>
@@ -263,7 +270,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
           <ConversationFiles files={[...conversationFiles.values()]} />
           <MessageQueue items={queued} sending={state.outbox} withdraw={actions?.withdraw} actions={queueActions} />
           {voice.problem && <p role="alert" data-testid="voice-message-problem">{voice.problem}</p>}
-          <Composer {...composer} layout={composerLayout} placeholder={labels.placeholder === 'Message the agent…' ? `Message ${title}…` : labels.placeholder} barStart={barStart} barNote={barNote} barEnd={voiceMessage ? <>{tools}<VoiceMessageButton voice={voice} disabled={state.disposed || !connected || state.send.kind === 'unknown'} /></> : tools} />
+          <Composer {...composer} layout={composerLayout} placeholder={labels.placeholder === 'Message the agent…' ? `Message ${title}…` : labels.placeholder} barStart={barStart} barNote={barNote} barEnd={voiceMessage ? <>{tools}<VoiceButton voice={voice} disabled={state.disposed || !connected || state.send.kind === 'unknown'} /></> : tools} />
           {belowComposer !== undefined && <div data-testid="below-composer" className="pt-2">{belowComposer}</div>}
         </div>
       </div>
