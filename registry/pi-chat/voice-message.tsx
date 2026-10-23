@@ -7,11 +7,11 @@ import { Bubble, BubbleContent } from '@/components/ui/bubble';
 import { Message, MessageContent } from '@/components/ui/message';
 import { useChatText } from './labels';
 import { useHoldToRecord } from './use-hold-to-record';
-import type { PendingVoice, useVoiceMessage } from './use-voice-message';
+import type { PendingVoiceBubbleProps, VoiceMessageButtonProps } from './config';
 
 export const voiceClock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 
-export function VoiceMessageButton({ voice, disabled }: { readonly voice: ReturnType<typeof useVoiceMessage>; readonly disabled?: boolean }) {
+export function VoiceMessageButton({ voice, disabled }: VoiceMessageButtonProps) {
   const { labels } = useChatText();
   const active = voice.phase === 'starting' || voice.phase === 'recording';
   const blocked = !active && (disabled || voice.phase !== 'idle');
@@ -21,7 +21,7 @@ export function VoiceMessageButton({ voice, disabled }: { readonly voice: Return
   </Button>{(voice.phase === 'starting' || voice.phase === 'recording') && <span role="status" data-testid="voice-recording">{labels.voiceRecording} {voiceClock(voice.seconds)}</span>}</div>;
 }
 
-export function PendingVoiceBubble({ pending }: { readonly pending: PendingVoice | undefined }) {
+export function PendingVoiceBubble({ pending }: PendingVoiceBubbleProps) {
   const { labels } = useChatText();
   if (!pending) return null;
   const failed = pending.phase === 'transcribe-failed' || pending.phase === 'upload-failed';

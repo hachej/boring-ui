@@ -9,7 +9,7 @@ import { Item, ItemContent, ItemDescription, ItemTitle } from '@/components/ui/i
 import { usePickerKeyboard } from './picker-keyboard';
 import { ComposerSuggestions } from './mention-menu';
 import { slashGroup } from './config';
-import type { SlashItem } from './config';
+import type { SlashPickerProps } from './config';
 import { useChatText } from './labels';
 
 const ALL = '__all__';
@@ -18,12 +18,7 @@ const ALL = '__all__';
  * The `/` picker, ported from v2's `SlashCommandPicker`: a search box seeded from what was typed after `/`, filter chips
  * (All, built-in, skills, plugin names), then rows with a name, badges and a one line description.
  */
-export function SlashPicker({ query, items, onSelect, onDismiss }: {
-  readonly query: string;
-  readonly items: readonly SlashItem[];
-  readonly onSelect: (item: SlashItem) => void;
-  readonly onDismiss: () => void;
-}) {
+export function SlashPicker({ query, items, onSelect, onDismiss }: SlashPickerProps) {
   const { labels } = useChatText();
   const [group, setGroup] = useState(ALL);
   const [search, setSearch] = useState(query);

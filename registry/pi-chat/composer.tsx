@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { InputGroup, InputGroupAddon, InputGroupTextarea } from '@/components/ui/input-group';
 import { Toggle } from '@/components/ui/toggle';
 import { hasMention, isLongPaste, mentionToken, mentionTrigger, removeMention, slashItems, slashQuery } from './config';
-import type { MentionsConfig, PastedText, PasteToFile, SlashConfig, SlashItem } from './config';
+import type { AttachmentsConfig, MentionsConfig, PastedText, PasteToFile, SlashConfig, SlashItem } from './config';
 import { CameraSheet } from './camera-sheet';
 import { MentionPicker } from './mention-menu';
 import { SlashPicker } from './slash-menu';
@@ -93,6 +93,8 @@ export interface ComposerProps {
   readonly onStop: () => void;
   readonly uploading: boolean;
   readonly canAttach: boolean;
+  /** The phone camera sheet (`attachments.Camera`). Default: the built-in `CameraSheet`. */
+  readonly camera?: AttachmentsConfig['Camera'];
   readonly fileAccept: string;
   readonly onPickFiles: (files: readonly File[]) => void;
   readonly onKeyDown?: ((event: KeyboardEvent<HTMLTextAreaElement>) => void) | undefined;
@@ -333,14 +335,16 @@ export function Composer(props: ComposerProps) {
       <icons.queue data-icon="inline-start" aria-hidden="true" /></Button>}
     {send}
   </>;
+  // A feature config may carry its own component; the built-in one is the default.
+  const Slash = slash?.Picker ?? SlashPicker, Mention = mentions?.Picker ?? MentionPicker, Camera = props.camera ?? CameraSheet;
 
   // One shadcn InputGroup: the chips, the text and a row of controls (`card`, also used for the `stacked` and `inline` compatibility
   // values), or one row with the text between the controls (`pill`, chips above it). Its look is the host's; ours is layout only.
   return <form data-testid="composer" data-layout={layout} data-dragging={dragging || undefined} onSubmit={event => { event.preventDefault(); if (canSubmit) props.onSend(); }} onDragOver={drag} onDragLeave={drag} onDrop={drop}
     className={cn('relative flex flex-col gap-2', pill && '@container/composer')}>
     {fileEl}
-    {slashOpen && <SlashPicker query={query!} items={items} onSelect={pickSlash} onDismiss={dismiss} />}
-    {mentionOpen && mentions && <MentionPicker query={trigger!.query} listLabel={mentions.listLabel} renderOption={mentions.renderOption} search={mentions.search} generation={mentions.generation} onSelect={pickMention} onDismiss={dismiss} />}
+    {slashOpen && <Slash query={query!} items={items} onSelect={pickSlash} onDismiss={dismiss} />}
+    {mentionOpen && mentions && <Mention query={trigger!.query} listLabel={mentions.listLabel} renderOption={mentions.renderOption} search={mentions.search} generation={mentions.generation} onSelect={pickMention} onDismiss={dismiss} />}
     {pill && chipList && <div className="flex flex-wrap gap-2">{chipList}</div>}
     {pill ? <InputGroup>
       <InputGroupAddon>{plus}{feedback && <AnnotateButton feedback={feedback} disabled={disabled} />}</InputGroupAddon>
@@ -355,6 +359,6 @@ export function Composer(props: ComposerProps) {
         {end}
       </InputGroupAddon>
     </InputGroup>}
-    {cameraOpen && <CameraSheet onClose={() => setCameraOpen(false)} onCapture={file => { setCameraOpen(false); props.onPickFiles([file]); }} />}
+    {cameraOpen && <Camera onClose={() => setCameraOpen(false)} onCapture={file => { setCameraOpen(false); props.onPickFiles([file]); }} />}
   </form>;
 }
