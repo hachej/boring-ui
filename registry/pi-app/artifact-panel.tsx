@@ -107,10 +107,16 @@ function KindView({ render, props }: { readonly render: (props: ArtifactKindView
   return <>{render(props)}</>;
 }
 
-/** Catches a kind renderer that throws: shows a short note instead of the view and reports the failure once. */
-class KindBoundary extends Component<{ readonly onError: () => void; readonly message: string; readonly children: ReactNode }, { readonly failed: boolean }> {
-  override state = { failed: false };
+/**
+ * Catches a kind renderer that throws: shows a short note instead of the view and reports the failure once. A new `revision` clears the
+ * note without remounting the renderer: a stateful kind (the board's local frame, its save and conflict state) survives its own saves.
+ */
+class KindBoundary extends Component<{ readonly revision: string; readonly onError: () => void; readonly message: string; readonly children: ReactNode }, { readonly failed: boolean; readonly revision: string }> {
+  override state = { failed: false, revision: this.props.revision };
   static getDerivedStateFromError(): { failed: boolean } { return { failed: true }; }
+  static getDerivedStateFromProps(props: { readonly revision: string }, state: { readonly failed: boolean; readonly revision: string }): { failed: boolean; revision: string } | null {
+    return props.revision === state.revision ? null : { failed: false, revision: props.revision };
+  }
   override componentDidCatch(): void { this.props.onError(); }
   override render(): ReactNode {
     return this.state.failed ? <p className="m-0 p-4 text-sm text-muted-foreground" role="status">{this.props.message}</p> : this.props.children;
@@ -289,7 +295,7 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose, headerSta
   if (type === 'markdown' && controller) return body(document(<MarkdownPane controller={controller as MarkdownController} initialMode="rich" onAutosaveChange={registerAutosave} onBeforeLeaveChange={options.onBeforeLeaveChange} {...frame} />));
   if (type === 'html' && controller) return body(document(<HtmlPane controller={controller as HtmlController} {...(options.interactive ? { interactive: options.interactive } : {})} {...frame} />));
   const actions = { onCopy: () => copyText(text ?? ''), onDownload: () => downloadFile(filename, text ?? '', `${artifact.mediaType};charset=utf-8`) };
-  if (kind?.renderer) return body(<ViewerFrame {...frame} {...actions} menu={kindMenu}><MaquetteMenuContext value={setKindMenu}><div data-testid="artifact-kind-view" className="min-h-0 flex-1 overflow-auto"><KindBoundary key={saved.snapshot.ref.revision} message={labels.versionUnavailable} onError={() => reportFailed('the view failed to render')}><KindView render={kind.renderer} props={{ artifact, text: saved.text, revision: saved.snapshot.ref.revision, pinned, fragment, read, onReady: () => setReady({ revision, text: saved.text }), onFailed: reportFailed }} /></KindBoundary></div></MaquetteMenuContext></ViewerFrame>);
+  if (kind?.renderer) return body(<ViewerFrame {...frame} {...actions} menu={kindMenu}><MaquetteMenuContext value={setKindMenu}><div data-testid="artifact-kind-view" className="min-h-0 flex-1 overflow-auto"><KindBoundary revision={saved.snapshot.ref.revision} message={labels.versionUnavailable} onError={() => reportFailed('the view failed to render')}><KindView render={kind.renderer} props={{ artifact, text: saved.text, revision: saved.snapshot.ref.revision, pinned, fragment, read, onReady: () => setReady({ revision, text: saved.text }), onFailed: reportFailed }} /></KindBoundary></div></MaquetteMenuContext></ViewerFrame>);
   if (type === 'code' && artifact.language === 'csv') return body(<ViewerFrame {...frame} {...actions}><div className="min-h-0 flex-1 overflow-auto"><CsvTable text={saved.text} /></div></ViewerFrame>);
   if (type === 'svg') return body(<SvgView text={saved.text} title={artifact.title} frame={{ ...frame, ...actions }} />);
   if (type === 'canvas') return body(<ViewerFrame {...frame}><p className="m-0 p-4 text-sm text-muted-foreground" role="status">{labels.noCanvasViewer}</p></ViewerFrame>);
