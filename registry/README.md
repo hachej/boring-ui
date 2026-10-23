@@ -975,6 +975,34 @@ A `srcdoc` frame inherits its host's CSP. Hosts that forbid inline scripts need 
 
 `npm run mockup:journey` drives the fictional `test/fixtures/booking.mockup.html` through the workspace app and real point comments. It checks theme variables, opaque-origin isolation, blocked storage and network, delivered element notes and 360px overflow. Screenshots cover phone 390 and desktop 1440 in light and dark.
 
+### A given look (`themeOverride`)
+
+`MockupViewer` takes `themeOverride`: a shadcn theme in shadcn's own `cssVars` shape (`{ theme, light, dark }`, names without `--`). Its
+variables are applied after the host's, so the frame shows that look instead of the host's; a `--radius` also sets shadcn's radius steps.
+`mode: 'light' | 'dark'` forces a mode (absent: the host's) and `title` names the frame. Fonts named by a look render only when the frame
+can load them (its CSP allows `data:` fonts only), so the swatch names the font even when the frame falls back.
+
+## Looks (`looks-viewer`)
+
+An assistant compares looks for an app: the same `*.mockup.html` key screen in 2 to 6 shadcn themes side by side, then 2 to 4 layout
+variants of it in the chosen look. A look is a shadcn theme, nothing else: a preset (`npx shadcn@latest apply <preset> --only theme,font`)
+and the theme block that preset writes. `createLooksKind({ onPick, locale })` is opt-in (pass it in `artifactKinds`); the panel's `read`
+loads the mock-ups named by the file. `onPick({ kind: 'look' | 'layout', id, label, path })` is the host's: the viewer only marks the pick.
+
+```jsonc
+// documents/missing-receipts.looks.json (paths are relative to this file)
+{ "mockup": "missing-receipts.mockup.html",
+  "looks": [{ "id": "warm", "label": "Warm", "personality": "Friendly and human, like a good café.",
+              "preset": "b3kcqrM3M", "css": ":root { --background: oklch(1 0 0); … } .dark { … } @theme inline { --font-sans: 'DM Sans Variable', sans-serif; }" }],
+  "layouts": [{ "id": "a", "label": "List and detail", "why": "You work one client at a time.", "mockup": "missing-receipts-a.mockup.html" }],
+  "look": "warm" }
+```
+
+`parseLooks` validates the file (2 to 6 looks, or 1 when the file compares layouts; unique ids; at most 4 layouts) and `parseShadcnTheme`
+the block: only `:root`, `.dark` and `@theme inline`, only shadcn theme variables (`SHADCN_COLOR_VARIABLES`, `radius`, `font-*`) with
+colour, length and font-family values; anything else is an issue, never kept. `npm run looks:journey` renders the fictional
+`test/fixtures/looks/` files and screenshots the looks grid and the layout grid at desktop 1440 and phone 390, light and dark.
+
 ## Diagram viewer (`diagram-viewer`)
 
 An agent writes boxes and arrows as `<name>.diagram.json` and presents it; the `pi-app` artifact panel draws it with `DiagramViewer` by default.

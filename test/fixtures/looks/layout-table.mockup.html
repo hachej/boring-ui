@@ -1,0 +1,13 @@
+<div class="flex min-h-screen flex-col gap-4 bg-background p-6 text-foreground">
+  <header class="flex items-center justify-between"><h1 class="text-2xl font-semibold">Missing receipts</h1><div class="flex gap-2"><input class="rounded-md border border-input bg-background px-3 py-2 text-sm" placeholder="Search a client"><button class="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground">Chase selected</button></div></header>
+  <table class="w-full rounded-lg border border-border bg-card text-left text-sm text-card-foreground">
+    <thead class="text-xs text-muted-foreground"><tr class="border-b border-border"><th class="p-3"></th><th class="p-3">Client</th><th class="p-3">Missing</th><th class="p-3">Period</th><th class="p-3">Reminders</th><th class="p-3">Status</th></tr></thead>
+    <tbody>
+      <tr class="border-b border-border"><td class="p-3"><input type="checkbox" checked></td><td class="p-3 font-medium">Boulangerie Roux</td><td class="p-3">3</td><td class="p-3">Sept</td><td class="p-3">2</td><td class="p-3 text-destructive">Late</td></tr>
+      <tr class="border-b border-border"><td class="p-3"><input type="checkbox"></td><td class="p-3 font-medium">Atelier Nord</td><td class="p-3">1</td><td class="p-3">Sept</td><td class="p-3">1</td><td class="p-3">Chased</td></tr>
+      <tr class="border-b border-border"><td class="p-3"><input type="checkbox" checked></td><td class="p-3 font-medium">Studio Lemaire</td><td class="p-3">5</td><td class="p-3">Aug–Sept</td><td class="p-3">0</td><td class="p-3">To chase</td></tr>
+      <tr class="border-b border-border"><td class="p-3"><input type="checkbox"></td><td class="p-3 font-medium">Garage Petit</td><td class="p-3">0</td><td class="p-3">Sept</td><td class="p-3">1</td><td class="p-3 text-primary">Received</td></tr>
+      <tr><td class="p-3"><input type="checkbox"></td><td class="p-3 font-medium">Fleurs Martin</td><td class="p-3">2</td><td class="p-3">Sept</td><td class="p-3">0</td><td class="p-3">To chase</td></tr>
+    </tbody>
+  </table>
+</div>
