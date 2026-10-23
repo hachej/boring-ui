@@ -280,6 +280,12 @@ export const defaultChatLabels = {
   runDuration: (time: string) => `Took ${time}`,
   runRefresh: 'Refresh',
   runNotLoaded: 'The run could not be loaded.',
+  // Sub-agent card (a `delegate` call)
+  subagentStatus: (status: 'running' | 'done' | 'failed' | 'cancelled'): string => ({ running: 'Running', done: 'Done', failed: 'Failed', cancelled: 'Stopped' })[status],
+  subagentTime: 'Time',
+  subagentToolCalls: (count: number) => `${count} tool ${count === 1 ? 'call' : 'calls'}`,
+  subagentTokens: (input: number, output: number) => `${input} tokens in, ${output} tokens out`,
+  subagentConversation: (id: number) => `Open conversation ${id}`,
   // Artifact cards
   artifact: 'Artifact',
   artifactTypes: { markdown: 'Document', html: 'HTML page', svg: 'SVG image', code: 'Code', canvas: 'Canvas' },

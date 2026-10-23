@@ -1,6 +1,7 @@
 # Unreleased
 
 - **Delegate — child identity (D-254).** `createDelegateTool` (and `defineAgent` `delegates` entries) take `onChild(parent, child, tx)`, run inside the native commit that creates the child conversation: write the parent's user, workspace binding and permissions onto the child there. A throw aborts that commit, so no child exists. Optional; without it nothing changes.
+- **Delegate — sub-agent card data (D-255).** A delegate call's `details` is now the exported `DelegateDetails` (`kind: 'boring.delegate'`, `version: 1`, `agent`, `conversationId`, `status`, `startedAt`, `durationMs`, `toolCalls`, `tokens`, `error?`), published live while the child runs; `details.conversationId` is unchanged. Update the `pi-chat` block: a delegate call now shows a `SubagentCard` (status, time, tool calls, tokens, child conversation id) instead of a plain tool step.
 
 # Migrating to 0.4.9
 

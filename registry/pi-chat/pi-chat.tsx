@@ -63,6 +63,8 @@ export { MessageText, VoiceBubble } from './message';
 export { Markdown } from './markdown';
 export { useTranscript } from './session';
 export { RunCard, parseRun } from './run-card';
+export { SubagentCard, parseDelegateDetails, DELEGATE_DETAILS_KIND } from './subagent-card';
+export type { SubagentDetails, SubagentStatus } from './subagent-card';
 export type { RunRecord, RunStatus } from './run-card';
 export type { BlockAction, BlockIcon } from '../button/actions';
 export type { AudioUrlRead, VoiceMessageConfig, AttachmentsConfig, ConversationItem, ConversationsConfig, EffortConfig, FileKind, MentionResult, MentionsConfig, ModelConfig, ModelRef, PasteToFile, PreviewRead, ReplyRef, SlashApi, SlashCommand, SlashConfig, SlashSkill, UploadResult } from './config';
