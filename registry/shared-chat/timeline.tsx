@@ -38,6 +38,10 @@ export function SharedTimeline({ controller, api, focusComposer, openFile, menti
   const latest = state.shared.messages.at(-1)?.id;
   const [seen, setSeen] = useState(latest);
   useEffect(() => { if (stick.isAtBottom && seen !== latest) setSeen(latest); }, [stick.isAtBottom, latest, seen]);
+  // The pill's row shows only once the reader scrolls up, so loading a room (which scrolls down) never shifts the list under a tap.
+  const lastTop = useRef(0);
+  const [scrolledUp, setScrolledUp] = useState(false);
+  useEffect(() => { if (stick.isAtBottom) setScrolledUp(false); }, [stick.isAtBottom]);
   const seenAt = state.shared.messages.findIndex(message => message.id === seen);
   const unseen = stick.isAtBottom ? 0 : state.shared.messages.slice(seenAt + 1).filter(message => message.author !== state.shared.me.id).length;
   useEffect(() => {
@@ -92,7 +96,8 @@ export function SharedTimeline({ controller, api, focusComposer, openFile, menti
     </MessageContent></Message></article>;
   };
   return <MessageScroller>
-    <MessageScrollerViewport ref={node => { root.current = node; stick.scrollRef(node); }} data-testid="transcript-scroll" aria-label={labels.messages} className="min-h-0 flex-1 scrollbar-thumb-border scrollbar-track-transparent">
+    <MessageScrollerViewport ref={node => { root.current = node; stick.scrollRef(node); }} data-testid="transcript-scroll" aria-label={labels.messages} className="min-h-0 flex-1 scrollbar-thumb-border scrollbar-track-transparent"
+      onScroll={event => { const top = event.currentTarget.scrollTop; if (top < lastTop.current - 4) setScrolledUp(true); lastTop.current = top; }}>
       {items.length > 0 && (hidden > 0 || state.history.kind === 'loading' || state.history.kind === 'error' || state.history.kind === 'ready' && state.history.hasMore) && <TranscriptHistory history={state.history} connected={!state.disposed && connected} onLoad={transcript.reveal} sentinelRef={transcript.sentinelRef} hidden={hidden} loaded={transcript.loaded} />}
       <div data-testid="transcript-bottom" className="mx-auto flex min-h-full w-full max-w-[720px] flex-col justify-end px-4 pt-4 pb-3 sm:px-6">
         <MessageScrollerContent aria-label={labels.messages} aria-live="polite" data-testid="transcript" className="h-auto min-h-0 gap-0 [&>[data-local-voice]]:mt-3">
@@ -108,7 +113,7 @@ export function SharedTimeline({ controller, api, focusComposer, openFile, menti
         </MessageScrollerContent>
       </div>
     </MessageScrollerViewport>
-    {hasContent && !stick.isAtBottom && <div data-testid="transcript-navigation" className="flex shrink-0 items-center justify-center py-1.5">
+    {hasContent && !stick.isAtBottom && scrolledUp && <div data-testid="transcript-navigation" className="flex shrink-0 items-center justify-center py-1.5">
       <Button variant="secondary" size="sm" data-testid="jump-latest" data-unseen={unseen || undefined} aria-label={unseen ? labels.sharedNewMessages(unseen) : labels.jumpToLatest} title={labels.jumpToLatest} className="max-sm:min-h-11 pointer-coarse:min-h-11" onClick={() => api.current?.reset()}>
         <icons.jumpToLatest data-icon="inline-start" aria-hidden="true" />{unseen ? labels.sharedNewMessages(unseen) : labels.jumpToLatest}</Button>
     </div>}

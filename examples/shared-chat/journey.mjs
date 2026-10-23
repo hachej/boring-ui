@@ -161,7 +161,9 @@ try {
       await browser.until('host conversations', `${qa('[data-testid=conversation-row]')}.length === 3`);
       await pause(600);
       await browser.click(q('[data-testid=conversation-row][data-conversation-id=admin]'));
-      await browser.until('admin host trace', `!!${message('admin-trace')}`);
+      // The History sheet closes over the room on a phone; tap the trace once the sheet is gone and the room has settled.
+      await browser.until('admin host trace', `!!${message('admin-trace')} && !document.querySelector('[data-testid=conversation-row]')`);
+      await pause(300);
       await browser.click(`${message('admin-trace')}.querySelector('[data-testid=activity] button')`);
       await browser.until('admin details', `${message('admin-trace')}.querySelectorAll('[data-testid=step-detail]').length === 3`);
       const contrast = await auditAgentContrast(browser);
