@@ -1,6 +1,7 @@
 # Unreleased
 
 - **One resource contract (D-258).** `createRevisionHandler` now serves a plain `createResourceClient` (read, conditional publish, lookup, rename, delete) without the `x-boring-workspace` binding header, through `createResourceHandler`; before, those calls got `403` (a page's viewers saved as `unknown` until the revision binding connected). A binding that is sent is still checked (`409`), and the listing and change feed still require it. Routes on `createResourceHandler` are unchanged. No API, block or stored-format change.
+- **Add an extension to an existing conversation (D-253).** New `addExtension(conversation, extension, context)` in `@hachej/boring-agent/agents` appends one extension to a conversation's stored selection, so its next turn runs with it, without recreating it. The name is durable; the host installs the extension in the Harness registry at every open. Additive: no API or stored-format change.
 
 # Migrating to 0.4.9
 
