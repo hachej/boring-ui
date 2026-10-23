@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ComponentType, ReactNode, RefObject } from 'react';
 import { CodeXmlIcon, MessageSquarePlusIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -29,6 +29,32 @@ export interface MockupViewerProps {
   readonly comments?: MockupComments | undefined;
   readonly locale?: 'en' | 'fr' | undefined;
   readonly onReady?: (() => void) | undefined;
+  /**
+   * Render the frame with this shadcn theme instead of the host's (a look being compared): shadcn's own `cssVars` shape, variable names
+   * without `--`. Its variables are applied after the host's, so a look that names only some of them keeps the host's others.
+   */
+  readonly themeOverride?: ShadcnTheme | undefined;
+  /** Force light or dark in the frame; absent: follow the host. */
+  readonly mode?: 'light' | 'dark' | undefined;
+  /** The frame's accessible name (several frames side by side need distinct names). */
+  readonly title?: string | undefined;
+}
+
+/** A shadcn theme as the shadcn registry writes it (`cssVars`): `theme` (fonts, radius steps), `light` (:root) and `dark` (.dark). */
+export interface ShadcnTheme {
+  readonly theme?: Readonly<Record<string, string>> | undefined;
+  readonly light?: Readonly<Record<string, string>> | undefined;
+  readonly dark?: Readonly<Record<string, string>> | undefined;
+}
+
+const NAME = /^[a-z][a-z0-9-]{0,47}$/;
+const VALUE = /^[^;{}<>\\]{1,240}$/;
+
+/** The declarations a shadcn theme gives the frame in one mode. Names and values that could leave the declaration list are dropped. */
+export function themeDeclarations(theme: ShadcnTheme, dark: boolean): string {
+  const entries = { ...theme.theme, ...theme.light, ...(dark ? theme.dark : undefined) };
+  // The frame's radius steps are bound to --radius (the registry theme's bindings), so a look's --radius reshapes every rounded-*.
+  return Object.entries(entries).filter(([name, value]) => NAME.test(name) && typeof value === 'string' && VALUE.test(value.trim())).map(([name, value]) => `--${name}:${value.trim()}`).join(';');
 }
 
 function useTheme(root: RefObject<HTMLDivElement | null>) {
@@ -54,12 +80,19 @@ function useTheme(root: RefObject<HTMLDivElement | null>) {
   return theme;
 }
 
-export function MockupViewer({ text, path = '', comments, locale, onReady }: MockupViewerProps) {
+export function MockupViewer({ text, path = '', comments, locale, onReady, themeOverride, mode: forced, title }: MockupViewerProps) {
   const root = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const proxies = useRef(new Map<string, HTMLSpanElement>());
   const pending = useRef<string | undefined>(undefined);
-  const theme = useTheme(root);
+  const host = useTheme(root);
+  const overrideKey = themeOverride ? JSON.stringify(themeOverride) : '';
+  const theme = useMemo(() => {
+    const dark = forced ? forced === 'dark' : host.dark;
+    if (!themeOverride) return dark === host.dark ? host : { ...host, dark };
+    const own = themeDeclarations(themeOverride, dark);
+    return { variables: [host.variables, own].filter(Boolean).join(';'), dark };
+  }, [host, overrideKey, forced]); // eslint-disable-line react-hooks/exhaustive-deps
   const [compiled, setCompiled] = useState<{ text: string; css: string } | { text: string; error: true }>();
   const [picks, setPicks] = useState<readonly MockupPick[]>([]);
   const label = locale === 'fr' ? 'Commenter un élément' : 'Comment on an element';
@@ -104,7 +137,7 @@ export function MockupViewer({ text, path = '', comments, locale, onReady }: Moc
     </nav>}
     <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
       {content === undefined ? <p role="status" className="p-3 text-muted-foreground">{compiled && 'error' in compiled ? 'HTML mock-up unavailable.' : 'Loading HTML mock-up…'}</p>
-        : <InteractiveFrame key={content} text={content} sources={[]} title="HTML mock-up" testId="mockup" frameRef={frame} onLoad={() => { mode(); onReady?.(); }} />}
+        : <InteractiveFrame key={content} text={content} sources={[]} title={title ?? 'HTML mock-up'} testId="mockup" frameRef={frame} onLoad={() => { mode(); onReady?.(); }} />}
       {picks.map(pick => <span key={pick.selector} ref={element => { if (element) proxies.current.set(pick.selector, element); else proxies.current.delete(pick.selector); }}
         data-testid="mockup-element" data-feedback-id={mockupTarget(path, pick.selector)} role="img" aria-label="HTML mock-up element"
         className="pointer-events-none absolute overflow-hidden" style={{ left: pick.rect.x, top: pick.rect.y, width: pick.rect.w, height: pick.rect.h }}>

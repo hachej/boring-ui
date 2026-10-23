@@ -1,0 +1,27 @@
+<div class="flex min-h-screen bg-background text-foreground">
+  <aside class="flex w-56 flex-col gap-1 border-r border-border bg-muted p-3 text-sm text-foreground">
+    <div class="mb-3 flex items-center gap-2 px-2 text-base font-semibold"><span class="size-6 rounded-md bg-primary"></span>Cabinet Lefèvre</div>
+    <a class="rounded-md bg-accent px-2 py-1.5 font-medium text-accent-foreground" href="#">Missing receipts</a>
+    <a class="rounded-md px-2 py-1.5" href="#">Clients</a>
+    <a class="rounded-md px-2 py-1.5" href="#">VAT returns</a>
+    <a class="rounded-md px-2 py-1.5" href="#">Settings</a>
+  </aside>
+  <main class="flex flex-1 flex-col gap-5 p-6">
+    <header class="flex items-center justify-between">
+      <div><h1 class="text-2xl font-semibold">Missing receipts</h1><p class="text-sm text-muted-foreground">September VAT · 14 clients, 38 receipts</p></div>
+      <div class="flex gap-2"><button class="rounded-md border border-border bg-background px-3 py-2 text-sm font-medium">Export</button><button class="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground">Chase all</button></div>
+    </header>
+    <section class="grid grid-cols-3 gap-4">
+      <div class="rounded-lg border border-border bg-card p-4 text-card-foreground"><p class="text-sm text-muted-foreground">Waiting</p><p class="text-2xl font-semibold">38</p></div>
+      <div class="rounded-lg border border-border bg-card p-4 text-card-foreground"><p class="text-sm text-muted-foreground">Chased twice</p><p class="text-2xl font-semibold">9</p></div>
+      <div class="rounded-lg border border-border bg-card p-4 text-card-foreground"><p class="text-sm text-muted-foreground">Received this week</p><p class="text-2xl font-semibold">21</p></div>
+    </section>
+    <section class="rounded-lg border border-border bg-card text-card-foreground">
+      <div class="grid grid-cols-4 border-b border-border px-4 py-2 text-xs font-medium text-muted-foreground"><span>Client</span><span>Receipts</span><span>Last reminder</span><span>Status</span></div>
+      <div class="grid grid-cols-4 items-center border-b border-border px-4 py-3 text-sm"><span class="font-medium">Boulangerie Roux</span><span>3 supplier invoices</span><span>2 days ago</span><span><span class="rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">Late</span></span></div>
+      <div class="grid grid-cols-4 items-center border-b border-border px-4 py-3 text-sm"><span class="font-medium">Atelier Nord</span><span>1 bank statement</span><span>Monday</span><span><span class="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">Chased</span></span></div>
+      <div class="grid grid-cols-4 items-center border-b border-border px-4 py-3 text-sm"><span class="font-medium">Studio Lemaire</span><span>5 receipts</span><span>—</span><span><span class="rounded-full bg-accent px-2 py-0.5 text-xs font-medium text-accent-foreground">To chase</span></span></div>
+      <div class="grid grid-cols-4 items-center px-4 py-3 text-sm"><span class="font-medium">Garage Petit</span><span>2 fuel receipts</span><span>Last week</span><span><span class="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">Received</span></span></div>
+    </section>
+  </main>
+</div>

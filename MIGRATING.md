@@ -8,6 +8,7 @@
   - Voice messages: `npx boring-ui-blocks add <registry>/pi-chat-voice.json`, then `voiceMessage={{ transcribe, ...voiceMessagePlugin }}`.
   - Camera: `npx boring-ui-blocks add <registry>/pi-chat-attachments.json`, then `attachments={{ upload, Camera: CameraSheet }}`.
   - All of them: `npx boring-ui-blocks add <registry>/pi-chat-plugins.json`, then `<PiChat {...withChatPlugins(props)} />`. `Markdown` is now exported from `pi-chat-markdown`, the voice hooks from `pi-chat-voice`; `feedback` installs `pi-chat-voice` for `use-hold-to-record`.
+- **Pick a look / pick a layout.** New opt-in `looks-viewer` block: `createLooksKind({ onPick, locale })` draws `*.looks.json` (looks@1: one `*.mockup.html` key screen in 2 to 6 shadcn themes, then layout variants in the chosen look) with `parseLooks` and `parseShadcnTheme` (shadcn theme variables only). `MockupViewer` gains optional `themeOverride` (shadcn `cssVars`: `{ theme, light, dark }`), `mode` and `title`; without them it renders as before. Update `mockup-viewer` with `looks-viewer`; pass the kind in `artifactKinds`. No stored-format change for existing files.
 
 # Migrating to 0.4.10
 

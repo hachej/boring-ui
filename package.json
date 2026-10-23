@@ -30,6 +30,7 @@
     "shared-chat:demo": "node examples/shared-chat/server.mjs",
     "shared-chat:journey": "node examples/shared-chat/journey.mjs",
     "mockup:journey": "node examples/workspace-app/journey-mockup.mjs",
+    "looks:journey": "node examples/looks-viewer/journey.mjs",
     "maquette:journey": "node examples/workspace-app/journey-maquette.mjs",
     "blobs:journey": "node examples/workspace-app/journey-blobs.mjs",
     "diagram:journey": "node examples/workspace-app/journey-diagram.mjs",
