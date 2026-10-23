@@ -375,3 +375,181 @@ test('a concurrent upload of different bytes to the same path is refused, the sa
   assert.equal(done.state.result.kind, 'committed'); assert.equal(again.operationId, done.operationId);
   assert.deepEqual((await f.binding.read({ target: f.binding.locate('n.txt'), revision: { kind: 'latest' } })).snapshot.bytes, new Uint8Array([88]));
 });
+
+// A binding whose listing, rename and delete reach the same fictional sqlite workspace, as `connectRevisionProvider` would.
+function mutable(t, overrides = {}) {
+  const listed = [];
+  const f = fixture(t, {
+    list: async request => { listed.push(request.directory ?? ''); return f.store.workspace('fictional').catalog.list(request, f.binding.identity); },
+    rename: request => f.store.workspace('fictional').renaming.rename(request, f.binding.identity),
+    delete: request => f.store.workspace('fictional').deletion.delete(request, f.binding.identity),
+    ...overrides,
+  });
+  const text = async path => { const read = await f.binding.read({ target: f.binding.locate(path), revision: { kind: 'latest' } }); return read.kind === 'available' ? new TextDecoder().decode(read.snapshot.bytes) : read.kind; };
+  const seed = async (path, value) => { const result = await f.controller.upload({ path, bytes: new TextEncoder().encode(value), mediaType: 'text/markdown' }); assert.equal(result.state.result.kind, 'committed'); return result.state.result.receipt.changes[0].after; };
+  return { ...f, listed, text, seed };
+}
+
+test('file tree renames, moves and deletes files through the one client with the revision the row knows', async t => {
+  assert.deepEqual(fixture(t).controller.actions, { rename: false, delete: false }, 'a client without rename/delete offers neither');
+  const f = mutable(t);
+  assert.deepEqual(f.controller.actions, { rename: true, delete: true });
+  await f.seed('docs/a.md', 'Fictional note'); await f.seed('archive/keep.md', 'Fictional archive');
+  f.listed.length = 0;
+  const renamed = await f.controller.rename('docs/a.md', 'docs/b.md');
+  assert.equal(renamed.kind, 'rename'); assert.equal(renamed.state.result.kind, 'committed');
+  assert.equal(await f.text('docs/a.md'), 'missing'); assert.equal(await f.text('docs/b.md'), 'Fictional note');
+  assert.ok(f.listed.includes('docs'), 'the renamed file\'s folder is listed again');
+  f.listed.length = 0;
+  const moved = await f.controller.move('docs/b.md', 'archive');
+  assert.equal(moved.to, 'archive/b.md'); assert.equal(moved.state.result.kind, 'committed');
+  assert.equal(await f.text('archive/b.md'), 'Fictional note');
+  assert.ok(f.listed.includes('docs') && f.listed.includes('archive'), 'a move lists both folders again');
+  assert.ok(f.controller.getSnapshot().expanded.has('archive'), 'the destination folder opens');
+  const toRoot = await f.controller.move('archive/b.md', '');
+  assert.equal(toRoot.to, 'b.md'); assert.equal(toRoot.state.result.kind, 'committed');
+  const removed = await f.controller.remove('b.md');
+  assert.equal(removed.kind, 'delete'); assert.equal(removed.state.result.kind, 'committed'); assert.equal(await f.text('b.md'), 'missing');
+  await assert.rejects(f.controller.rename('archive/keep.md', 'archive/../escape.md'), TypeError);
+  await assert.rejects(f.controller.rename('archive/keep.md', 'archive/keep.md'), TypeError);
+  await assert.rejects(f.controller.rename('archive/keep.md', ' '), TypeError);
+  assert.equal(await f.text('archive/keep.md'), 'Fictional archive', 'a refused name changes nothing');
+});
+
+test('a rename or delete against a changed file is refused on its row, and the tree is read again', async t => {
+  const f = mutable(t);
+  const base = await f.seed('stale.md', 'Fictional first');
+  assert.equal(await f.controller.prepare('stale.md'), base.revision, 'the row learns the revision it shows');
+  await f.binding.publish({ operationId: 'fictional-agent-edit', atomicity: 'all-or-nothing', changes: [{ kind: 'replace', target: base, bytes: new TextEncoder().encode('Fictional agent edit'), mediaType: 'text/markdown' }] });
+  f.listed.length = 0;
+  const stale = await f.controller.rename('stale.md', 'fresh.md');
+  assert.equal(stale.state.result.kind, 'conflict');
+  assert.equal(await f.text('stale.md'), 'Fictional agent edit'); assert.equal(await f.text('fresh.md'), 'missing');
+  assert.deepEqual(f.controller.getSnapshot().mutations.map(item => [item.path, item.state.kind, item.state.result?.kind]), [['stale.md', 'settled', 'conflict']]);
+  assert.ok(f.listed.includes(''), 'a refusal reads the folder again');
+  await f.controller.prepare('stale.md');
+  const deleted = await f.controller.remove('stale.md');
+  assert.equal(deleted.state.result.kind, 'committed');
+  assert.deepEqual(f.controller.getSnapshot().mutations.map(item => item.path), ['stale.md'], 'one current outcome per row');
+  f.controller.dismiss(deleted.operationId); assert.deepEqual(f.controller.getSnapshot().mutations, []);
+  await f.seed('gone.md', 'Fictional gone');
+  f.binding.delete = async request => { throw new PublicationNotDispatchedError(request.operationId); };
+  assert.equal((await f.controller.remove('gone.md')).state.result.kind, 'unavailable', 'not sent is a known refusal');
+  f.binding.delete = async () => { throw new Error('Fictional lost acknowledgement'); };
+  assert.equal((await f.controller.remove('gone.md')).state.result.kind, 'unknown', 'a lost answer stays unconfirmed');
+  assert.equal(await f.text('gone.md'), 'Fictional gone');
+});
+
+async function renderedTree(t) {
+  const { Window } = await import('happy-dom');
+  const window = new Window({ url: 'https://fictional.invalid/' });
+  const names = ['window', 'document', 'navigator', 'HTMLElement', 'HTMLInputElement', 'Element', 'Node', 'NodeFilter', 'Text', 'CustomEvent', 'MutationObserver', 'ResizeObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'IS_REACT_ACT_ENVIRONMENT'];
+  const globals = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
+  for (const name of names) {
+    const value = name === 'window' ? window : name === 'IS_REACT_ACT_ENVIRONMENT' ? true : window[name];
+    Object.defineProperty(globalThis, name, { configurable: true, writable: true, value: typeof value === 'function' && /^[a-z]/.test(name) ? value.bind(window) : value });
+  }
+  const { createElement, act } = await import('react');
+  const { createRoot } = await import('react-dom/client');
+  const { build } = await import('esbuild'); const { mkdirSync } = await import('node:fs');
+  const out = new URL('../../.cache/file-tree-test/', import.meta.url); mkdirSync(out, { recursive: true });
+  const output = new URL('presentation-mutations.mjs', out);
+  await build({ entryPoints: [new URL('../../registry/file-tree/file-tree.tsx', import.meta.url).pathname], outfile: output.pathname, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external',
+    plugins: [{ name: 'dom-without-css', setup(builder) { builder.onResolve({ filter: /\.css$/ }, () => ({ path: 'styles', namespace: 'empty-style' })); builder.onLoad({ filter: /.*/, namespace: 'empty-style' }, () => ({ contents: '', loader: 'js' })); } }] });
+  const { FileTree } = await import(output.href);
+  const element = window.document.createElement('div'); window.document.body.append(element); const root = createRoot(element);
+  t.after(async () => {
+    await act(async () => root.unmount()); await window.happyDOM.close();
+    for (const [name, descriptor] of globals) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else delete globalThis[name]; }
+  });
+  const settle = async (done, tries = 100) => { for (let attempt = 0; attempt < tries && !done(); attempt++) await act(async () => new Promise(resolve => setTimeout(resolve, 10))); };
+  const render = props => act(async () => root.render(createElement(FileTree, { variant: 'list', ...props })));
+  const key = (node, value) => act(async () => node.dispatchEvent(new window.KeyboardEvent('keydown', { key: value, bubbles: true, cancelable: true })));
+  const row = path => element.querySelector(`[role=treeitem][data-path="${path}"]`);
+  const menu = async path => { await key(row(path).querySelector('[data-file-more]'), 'ArrowDown'); return [...window.document.querySelectorAll('[role=menuitem]')]; };
+  return { window, element, act, settle, render, key, row, menu };
+}
+
+test('rendered tree renames inline, deletes after confirmation and moves by drag or by picking a folder', async t => {
+  const f = mutable(t);
+  await f.seed('docs/a.md', 'Fictional note'); await f.seed('archive/keep.md', 'Fictional archive'); await f.seed('loose.md', 'Fictional loose');
+  const ui = await renderedTree(t);
+  const { window, element, act, settle, render, key, row, menu } = ui;
+  await render({ revisionProvider: f.binding });
+  await settle(() => row('docs'));
+  await t.test('without effective capabilities no mutation is offered', async () => {
+    const items = await menu('loose.md');
+    assert.deepEqual(items.map(item => item.dataset.action).filter(id => ['rename', 'move', 'delete'].includes(id)), []);
+    await key(items[0], 'Escape');
+    await key(row('loose.md'), 'F2'); assert.equal(element.querySelector('[data-file-rename]'), null);
+  });
+  await render({ revisionProvider: f.binding, capabilities: { effective: ['read', 'rename'] } });
+  const renameOnly = await menu('loose.md');
+  assert.deepEqual(renameOnly.map(item => item.dataset.action).filter(id => ['rename', 'move', 'delete'].includes(id)), ['rename', 'move'], 'move is a rename; delete needs its own capability');
+  await key(renameOnly[0], 'Escape');
+  await render({ revisionProvider: f.binding, capabilities: { effective: ['read', 'rename', 'delete'] } });
+
+  // Rename from the menu: an inline input in the row, Escape cancels, Enter commits.
+  const items = await menu('loose.md');
+  const rename = items.find(item => item.dataset.action === 'rename'); assert.equal(rename.textContent, 'Rename');
+  assert.ok(items.find(item => item.dataset.action === 'delete')?.textContent.includes('Delete'));
+  await act(async () => rename.click());
+  let input = row('loose.md').querySelector('input[data-file-rename]');
+  assert.ok(input); assert.equal(input.getAttribute('aria-label'), 'Rename loose.md'); assert.equal(input.value, 'loose.md');
+  await key(input, 'Escape');
+  assert.equal(row('loose.md').querySelector('input[data-file-rename]'), null); assert.equal(await f.text('loose.md'), 'Fictional loose');
+  await key(row('loose.md'), 'F2');
+  input = row('loose.md').querySelector('input[data-file-rename]'); assert.ok(input, 'F2 renames the focused row');
+  input.value = 'renamed.md';
+  await key(input, 'Enter');
+  await settle(() => row('renamed.md') && !row('loose.md'));
+  assert.ok(row('renamed.md')); assert.equal(row('loose.md'), null); assert.equal(await f.text('renamed.md'), 'Fictional loose');
+
+  // Delete: the Delete key asks first; cancelling keeps the file.
+  await key(row('renamed.md'), 'Delete');
+  let dialog = window.document.querySelector('[role=alertdialog], [role=dialog]');
+  assert.ok(dialog); assert.match(dialog.textContent, /Delete renamed\.md\?/);
+  await act(async () => dialog.querySelector('[data-confirm=cancel]').click());
+  await settle(() => !window.document.querySelector('[role=alertdialog], [role=dialog]'));
+  assert.equal(await f.text('renamed.md'), 'Fictional loose');
+  await act(async () => (await menu('renamed.md')).find(item => item.dataset.action === 'delete').click());
+  dialog = window.document.querySelector('[role=alertdialog], [role=dialog]');
+  await act(async () => dialog.querySelector('[data-confirm=delete]').click());
+  await settle(() => !row('renamed.md'));
+  assert.equal(row('renamed.md'), null); assert.equal(await f.text('renamed.md'), 'missing');
+
+  // Move by drag: a file row dropped on a folder row; the folder shows it is a target while hovered.
+  await key(row('docs'), 'ArrowRight'); await settle(() => row('docs/a.md'));
+  const data = new Map();
+  const transfer = { types: [], setData: (type, value) => { data.set(type, value); transfer.types = [...data.keys()]; }, getData: type => data.get(type) ?? '', effectAllowed: 'all', dropEffect: 'none', files: [] };
+  const drag = (node, type) => { const event = new window.Event(type, { bubbles: true, cancelable: true }); Object.defineProperty(event, 'dataTransfer', { value: transfer }); return act(async () => node.dispatchEvent(event)); };
+  await drag(row('docs/a.md'), 'dragstart');
+  await drag(row('archive'), 'dragenter'); await drag(row('archive'), 'dragover');
+  assert.equal(row('archive').dataset.dropTarget, 'true');
+  await drag(row('archive'), 'drop');
+  await settle(() => row('archive/a.md'));
+  assert.equal(await f.text('archive/a.md'), 'Fictional note'); assert.equal(await f.text('docs/a.md'), 'missing');
+  assert.equal(row('archive').dataset.dropTarget, undefined);
+
+  // Move to…: a dialog lists the folders; the current one is not offered.
+  await act(async () => (await menu('archive/a.md')).find(item => item.dataset.action === 'move').click());
+  dialog = window.document.querySelector('[role=dialog]');
+  assert.match(dialog.textContent, /Move a\.md/);
+  assert.equal(dialog.querySelector('[data-destination="archive"]')?.disabled, true, 'the current folder is not a destination');
+  await act(async () => dialog.querySelector('[data-destination="docs"]').click());
+  await settle(() => row('docs/a.md'));
+  assert.equal(await f.text('docs/a.md'), 'Fictional note');
+
+  // A stale rename is refused on its row, and the row keeps the file.
+  const latest = await f.binding.read({ target: f.binding.locate('docs/a.md'), revision: { kind: 'latest' } });
+  await key(row('docs/a.md'), 'F2');
+  await f.binding.publish({ operationId: 'fictional-agent-edit-2', atomicity: 'all-or-nothing', changes: [{ kind: 'replace', target: latest.snapshot.ref, bytes: new TextEncoder().encode('Fictional agent edit'), mediaType: 'text/markdown' }] });
+  input = row('docs/a.md').querySelector('input[data-file-rename]'); input.value = 'late.md';
+  await key(input, 'Enter');
+  await settle(() => row('docs/a.md')?.querySelector('[data-mutation-error]'));
+  assert.equal(row('docs/a.md').dataset.mutationState, 'failed');
+  assert.ok(row('docs/a.md').querySelector('[data-mutation-error]').textContent.length > 0);
+  assert.equal(await f.text('docs/a.md'), 'Fictional agent edit'); assert.equal(await f.text('docs/late.md'), 'missing');
+  await act(async () => row('docs/a.md').querySelector('[data-mutation-dismiss]').click());
+  assert.equal(row('docs/a.md').querySelector('[data-mutation-error]'), null);
+});

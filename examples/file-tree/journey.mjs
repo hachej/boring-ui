@@ -91,6 +91,80 @@ try {
     await browser.until('exact old revision', `${q('[data-testid="file-history-preview"]')}?.dataset.revision===${JSON.stringify(previous.snapshot.ref.revision)}`);
     assert.match(await browser.evaluate(`${q('[data-testid="file-history-preview"]')}.textContent`), /first workspace/);
   });
+  await step('rename, move and delete files from the tree; a stale change is refused on its row', async () => {
+    const text = async path => { const read = await host.storage.workspace('first').read({ target: host.target(path), revision: { kind: 'latest' } }, host.access('first')); return read.kind === 'available' ? new TextDecoder().decode(read.snapshot.bytes) : read.kind; };
+    const shots = async name => {
+      for (const dark of [false, true]) {
+        await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: dark ? 'dark' : 'light' }] });
+        await new Promise(resolve => setTimeout(resolve, 200));
+        await browser.screenshot(`tree-actions-${name}-${dark ? 'dark' : 'light'}.png`);
+      }
+      await browser.send('Emulation.setEmulatedMedia', { features: [] });
+    };
+    const replaceName = async name => { await browser.evaluate(`${q('input[data-file-rename]')}.select()`); await browser.send('Input.insertText', { text: name }); await browser.press('Enter'); };
+    // Rename from the row's menu: the name becomes an input in the row, focused with the name before its extension selected.
+    await browser.click(q('button[aria-label="Actions for uploads/recovery.txt"]'));
+    await browser.until('row menu', `!!${q('[role=menuitem][data-action=rename]')}`);
+    assert.deepEqual(await browser.evaluate(`[...document.querySelectorAll('[role=menuitem]')].map(item => item.dataset.action)`), ['open', 'history', 'download', 'rename', 'move', 'delete']);
+    await shots('menu');
+    await browser.click(q('[role=menuitem][data-action=rename]'));
+    await browser.until('inline rename focused', `document.activeElement?.matches('input[data-file-rename][aria-label="Rename uploads/recovery.txt"]') && document.activeElement.selectionEnd === 'recovery'.length`);
+    await shots('rename');
+    await replaceName('recovered.txt');
+    await browser.until('renamed row', `!!${q(row('uploads/recovered.txt'))} && !${q(row('uploads/recovery.txt'))}`);
+    assert.equal(await text('uploads/recovered.txt'), 'fictional recovery'); assert.equal(await text('uploads/recovery.txt'), 'missing');
+    // Delete from the keyboard: Delete asks first, in a dialog.
+    await browser.evaluate(`${q(row('uploads/sample.bin'))}.focus()`); await browser.press('Delete');
+    await browser.until('delete dialog', `!!${q('[data-boring=file-tree-dialog]')} && ${q('[data-boring=file-tree-dialog]')}.textContent.includes('Delete sample.bin?')`);
+    await shots('delete');
+    await browser.click(q('[data-boring=file-tree-dialog] [data-confirm=delete]'));
+    await browser.until('deleted row', `!${q(row('uploads/sample.bin'))} && !${q('[data-boring=file-tree-dialog]')}`);
+    assert.equal(await text('uploads/sample.bin'), 'missing');
+    // Move by dragging the row onto a folder: the folder is outlined while the file is over it.
+    const fire = (selector, type) => `${q(selector)}.dispatchEvent(new DragEvent(${JSON.stringify(type)}, { bubbles: true, cancelable: true, dataTransfer: window.__treeDrag }))`;
+    await browser.evaluate(`window.__treeDrag = new DataTransfer(); ${fire(`${row('uploads/recovered.txt')} .file-tree-row-button`, 'dragstart')}`);
+    await browser.evaluate(`${fire(`${row('docs')} .file-tree-row-button`, 'dragenter')}; ${fire(`${row('docs')} .file-tree-row-button`, 'dragover')}`);
+    await browser.until('folder outlined as the drop target', `${q(row('docs'))}.dataset.dropTarget === 'true' && getComputedStyle(${q(`${row('docs')} > div`)}).outlineStyle === 'solid'`);
+    await shots('drag');
+    await browser.evaluate(`${fire(`${row('docs')} .file-tree-row-button`, 'drop')}; ${fire(`${row('uploads/recovered.txt')} .file-tree-row-button`, 'dragend')}`);
+    await browser.until('moved by drag', `!!${q(row('docs/recovered.txt'))} && !${q('[data-drop-target]')}`);
+    assert.equal(await text('docs/recovered.txt'), 'fictional recovery');
+    // Move to…: the dialog lists the folders, the current one disabled.
+    await browser.click(q('button[aria-label="Actions for docs/recovered.txt"]'));
+    await browser.click(q('[role=menuitem][data-action=move]'));
+    await browser.until('move dialog', `!!${q('[data-boring=file-tree-dialog] [data-destination=""]')}`);
+    assert.equal(await browser.evaluate(`${q('[data-boring=file-tree-dialog] [data-destination="docs"]')}.disabled`), true);
+    await shots('move');
+    await browser.click(q('[data-boring=file-tree-dialog] [data-destination=""]'));
+    await browser.until('moved to the root', `!!${q(row('recovered.txt'))} && !${q(row('docs/recovered.txt'))}`);
+    // F2 renames; an edit made meanwhile refuses it on the row and nothing changes.
+    await browser.evaluate(`${q(row('recovered.txt'))}.focus()`); await browser.press('F2');
+    await browser.until('F2 rename', `document.activeElement?.matches('input[data-file-rename]')`);
+    const before = await host.storage.workspace('first').read({ target: host.target('recovered.txt'), revision: { kind: 'latest' } }, host.access('first'));
+    assert.equal((await host.publish('first', 'fictional-agent-rename-race', [{ kind: 'replace', target: before.snapshot.ref, bytes: new TextEncoder().encode('fictional agent edit'), mediaType: 'text/plain' }])).kind, 'committed');
+    await replaceName('late.txt');
+    await browser.until('stale rename refused on its row', `${q(row('recovered.txt'))}?.dataset.mutationState === 'failed' && !!${q(`${row('recovered.txt')} [data-mutation-error]`)}`);
+    assert.equal(await text('recovered.txt'), 'fictional agent edit'); assert.equal(await text('late.txt'), 'missing');
+    await shots('conflict');
+    await browser.click(q(`${row('recovered.txt')} [data-mutation-dismiss]`));
+    await browser.until('message dismissed', `!${q(`${row('recovered.txt')} [data-mutation-error]`)}`);
+    // A phone: the same menu, with touch-sized items.
+    await browser.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
+    await browser.until('phone width', 'innerWidth === 390');
+    await browser.click(q('button[aria-label="Actions for recovered.txt"]'));
+    await browser.until('phone menu', `!!${q('[role=menuitem][data-action=delete]')}`);
+    assert.ok(await browser.evaluate(`${q('[role=menuitem][data-action=delete]')}.getBoundingClientRect().height`) >= 44, 'touch-sized menu items');
+    assert.ok(await browser.evaluate(`${q('button[aria-label="Actions for recovered.txt"]')}.getBoundingClientRect().height`) >= 44, 'touch-sized row trigger');
+    assert.equal(await browser.evaluate('document.documentElement.scrollWidth <= innerWidth'), true, 'no horizontal scroll');
+    await browser.screenshot('tree-actions-phone-menu-light.png');
+    await browser.press('Escape');
+    await browser.evaluate(`${q(row('recovered.txt'))}.focus()`); await browser.press('F2');
+    await browser.until('phone rename', `document.activeElement?.matches('input[data-file-rename]')`);
+    await browser.screenshot('tree-actions-phone-rename-light.png');
+    await browser.press('Escape');
+    await browser.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
+    await browser.until('desktop width', 'innerWidth === 1440');
+  });
   await step('workspace switch fences a delayed old listing', async () => {
     await browser.evaluate('window.fileTreeFixture.holdNextList=true');
     await browser.click("[...document.querySelectorAll('button')].find(b=>b.textContent==='Refresh')");
