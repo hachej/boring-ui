@@ -8,6 +8,12 @@
   - Voice messages: `npx boring-ui-blocks add <registry>/pi-chat-voice.json`, then `voiceMessage={{ transcribe, ...voiceMessagePlugin }}`.
   - Camera: `npx boring-ui-blocks add <registry>/pi-chat-attachments.json`, then `attachments={{ upload, Camera: CameraSheet }}`.
   - All of them: `npx boring-ui-blocks add <registry>/pi-chat-plugins.json`, then `<PiChat {...withChatPlugins(props)} />`. `Markdown` is now exported from `pi-chat-markdown`, the voice hooks from `pi-chat-voice`; `feedback` installs `pi-chat-voice` for `use-hold-to-record`.
+- **Reply cards are their own items (D-257).** `pi-chat` no longer ships the question card, the approval card, the sub-agent and run cards or the artifact card and `artifact.ts`. Without an item a question or an approval shows a « Waiting for your answer » notice (`data-testid="answer-waiting"`, `role="status"`) with no answer UI, a sub-agent call is an ordinary tool step and no artifact card is offered (the `artifacts` prop alone no longer draws cards). `pi-app`, `pi-ambient`, `app-shell`, `shared-chat`, `documents` and every page that uses `withChatPlugins` get them all, unchanged. Import paths move: `components/pi-chat/artifact` is now `components/pi-artifacts/artifact` (kinds, `ArtifactDescriptor`, `artifactKey`, `typeLabel`…), and `QuestionCard`, `ApprovalCard`, `RunCard`/`parseRun`, `SubagentCard`/`DELEGATE_DETAILS_KIND` are no longer exported from `pi-chat`.
+  - Questions: `npx boring-ui-blocks add <registry>/pi-chat-question.json`, then `cards={{ question: QuestionCard }}`.
+  - Approvals: `npx boring-ui-blocks add <registry>/pi-chat-approval.json`, then `cards={{ approval: ApprovalCard }}`.
+  - Sub-agents: `npx boring-ui-blocks add <registry>/pi-chat-subagent.json`, then `cards={{ subagent: subagentCard }}` (`RunCard` lives here too).
+  - Artifacts: `npx boring-ui-blocks add <registry>/pi-artifacts.json`, then `artifacts={{ ...artifactCards, open, isOpen, kinds }}`.
+  - All of them: `pi-chat-plugins` now installs the four; `withChatPlugins(props)` fills `cards` and the artifact card (a host's own `cards` entries win).
 
 # Migrating to 0.4.10
 
