@@ -320,6 +320,8 @@ export function Composer(props: ComposerProps) {
       onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }}
       className={pill ? 'max-h-52 min-h-0 min-w-0' : 'max-h-52 min-h-11'} />;
   const plus = (canAttach || items.length > 0) && <PlusActions disabled={disabled} textarea={inner} onAttach={canAttach ? () => fileInput.current?.click() : undefined} onTakePhoto={canPhoto ? () => setCameraOpen(true) : undefined} onCommands={items.length > 0 ? openCommands : undefined} />;
+  // One child slot either way, so a composer without `start` keeps its exact markup (React ids included).
+  const startAndPlus = props.start ? <><div data-testid="composer-start" className="flex shrink-0 items-center gap-1">{props.start}</div>{plus}</> : plus;
   const fileEl = canAttach && <Input ref={fileInput} type="file" multiple accept={props.fileAccept} disabled={disabled} tabIndex={-1} aria-hidden="true" className="sr-only" data-testid="composer-file" data-attach="true"
     onChange={event => { const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ''; props.onPickFiles(files); }} />;
   const send = working
@@ -349,15 +351,14 @@ export function Composer(props: ComposerProps) {
     {mentionOpen && mentions && Mention && <Mention query={trigger!.query} listLabel={mentions.listLabel} renderOption={mentions.renderOption} search={mentions.search} generation={mentions.generation} onSelect={pickMention} onDismiss={dismiss} />}
     {pill && chipList && <div className="flex flex-wrap gap-2">{chipList}</div>}
     {pill ? <InputGroup>
-      <InputGroupAddon>{props.start && <div data-testid="composer-start" className="flex shrink-0 items-center gap-1">{props.start}</div>}{plus}{feedback && <AnnotateButton feedback={feedback} disabled={disabled} />}</InputGroupAddon>
+      <InputGroupAddon>{startAndPlus}{feedback && <AnnotateButton feedback={feedback} disabled={disabled} />}</InputGroupAddon>
       {textareaEl}
       <InputGroupAddon align="inline-end" data-testid="composer-controls">{end}</InputGroupAddon>
     </InputGroup> : <InputGroup>
       {chipList && <InputGroupAddon align="block-start" className="flex-wrap">{chipList}</InputGroupAddon>}
       {textareaEl}
       <InputGroupAddon align="block-end" data-testid="composer-controls">
-        {props.start && <div data-testid="composer-start" className="flex shrink-0 items-center gap-1">{props.start}</div>}
-        {plus}
+        {startAndPlus}
         {feedback && <AnnotateButton feedback={feedback} disabled={disabled} />}
         {end}
       </InputGroupAddon>
