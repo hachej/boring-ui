@@ -1,6 +1,7 @@
 # Unreleased
 
 - **Present acknowledgement for views that load (D-256).** An `ArtifactKind` may set `waitsForReady: true`: the panel then confirms a `present` of its file only after the renderer calls `onReady`, and refuses it with the reason when the renderer calls the new `onFailed(reason)` or throws (a throw now shows a short note instead of breaking the panel). Use it for a dashboard or any view that loads its data; kinds without it are confirmed when their file is read, as before. `createPresentAcks` gains `failed({ path, reason })` and `ViewerOptions` gains `onFailed`. Update the `pi-chat`, `pi-app` and `mockup-viewer` blocks together (the mock-up kind now declares `waitsForReady` instead of the panel special-casing its path). No agent API or stored-format change.
+- **Delegate — child identity (D-254).** `createDelegateTool` (and `defineAgent` `delegates` entries) take `onChild(parent, child, tx)`, run inside the native commit that creates the child conversation: write the parent's user, workspace binding and permissions onto the child there. A throw aborts that commit, so no child exists. Optional; without it nothing changes.
 - **Add an extension to an existing conversation (D-253).** New `addExtension(conversation, extension, context)` in `@hachej/boring-agent/agents` appends one extension to a conversation's stored selection, so its next turn runs with it, without recreating it. The name is durable; the host installs the extension in the Harness registry at every open. Additive: no API or stored-format change.
 
 # Migrating to 0.4.9
