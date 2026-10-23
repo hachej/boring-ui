@@ -1,5 +1,7 @@
 # Unreleased
 
+- **One resource contract (D-258).** `createRevisionHandler` now serves a plain `createResourceClient` (read, conditional publish, lookup, rename, delete) without the `x-boring-workspace` binding header, through `createResourceHandler`; before, those calls got `403` (a page's viewers saved as `unknown` until the revision binding connected). A binding that is sent is still checked (`409`), and the listing and change feed still require it. Routes on `createResourceHandler` are unchanged. No API, block or stored-format change.
+
 # Migrating to 0.4.9
 
 - **Hardening (D-248).** `githubSink` refuses `.`/`..` repository segments and an `apiUrl` that is not https (http only for localhost) before sending the token; reinstall `provider-setup` (non-http(s) `verificationUri` is plain text), `shared-chat` (`avatarUrl` loads only https, `data:image/`, `blob:` or same-origin paths) and `viewers` (`PdfPane` shows a `blob` only when typed `application/pdf`). `mockup-viewer` messages keep targetOrigin `'*'` (opaque-origin sandbox).
