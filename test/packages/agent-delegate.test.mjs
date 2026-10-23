@@ -6,7 +6,7 @@ import test from 'node:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Harness, MemoryStorage, UserEntry, createRegistry, defineTool } from '@earendil-works/pi-durable';
+import { Harness, MemoryStorage, UserEntry, createRegistry, defineDoc, defineTool } from '@earendil-works/pi-durable';
 import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node';
 import { Type } from '@earendil-works/pi-ai';
 import { createModels } from '@earendil-works/pi-ai/models';
@@ -61,9 +61,9 @@ const parentOnly = defineTool({
   execute: async () => ({ output: [{ type: 'text', text: 'never offered to the child' }] }),
 });
 
-function agents() {
-  const researcher = defineAgent({ id: 'researcher', model: { provider: 'fictional-faux', modelId: 'child' }, instructions: 'Answer briefly.', tools: [lookup] });
-  const lead = defineAgent({ id: 'lead', model: { provider: 'fictional-faux', modelId: 'parent' }, instructions: 'Delegate research.', tools: [parentOnly], delegates: [{ agent: researcher }] });
+function agents({ childTools = [lookup], onChild } = {}) {
+  const researcher = defineAgent({ id: 'researcher', model: { provider: 'fictional-faux', modelId: 'child' }, instructions: 'Answer briefly.', tools: childTools });
+  const lead = defineAgent({ id: 'lead', model: { provider: 'fictional-faux', modelId: 'parent' }, instructions: 'Delegate research.', tools: [parentOnly], delegates: [{ agent: researcher, ...(onChild ? { onChild } : {}) }] });
   const registry = createRegistry();
   lead.install(registry); // installs the researcher's extensions too
   return { lead, registry };
@@ -149,4 +149,55 @@ test('a delegated child inherits the parent\'s approval extension: it cannot run
   const child = await harness.conversation(childRecord.id, context);
   assert.ok((await child.agent(context)).extensions.some(extension => extension === approvals), 'the child selects the parent\'s approval extension');
   assert.deepEqual(looked, [], 'the child\'s lookup was blocked by the inherited gate');
+});
+
+// A host-owned identity document (fictional): who the conversation acts for, which workspace it binds and what it may do.
+const Identity = defineDoc({
+  kind: 'test.delegate.identity', version: 1, scope: 'conversation', history: 'latest', fork: 'initial',
+  initial: () => ({ user: '', workspace: '', permissions: [] }),
+});
+const copyIdentity = async (parent, child, tx) => {
+  const from = await tx.doc(Identity, parent), to = await tx.doc(Identity, child);
+  to.user = from.user; to.workspace = from.workspace; to.permissions = [...from.permissions];
+};
+async function setIdentity(harness, id) {
+  await harness.commit(async tx => {
+    const doc = await tx.doc(Identity, id);
+    doc.user = 'ada@fictional.test'; doc.workspace = 'ws-fictional-1'; doc.permissions = ['files:read'];
+  }, context);
+}
+
+test('onChild runs in the commit that creates the child: what it writes is there for the child\'s first turn (D-254)', async t => {
+  const seen = [], hooked = [];
+  const whoami = defineTool({
+    name: 'lookup', description: 'Look up a fictional fact.', parameters: Type.Object({ topic: Type.String() }), replay: 'safe',
+    execute: async (_args, api, ctx) => { seen.push(await api.snapshot(Identity, api.conversationId, ctx)); return { output: [{ type: 'text', text: 'Glimmerton' }] }; },
+  });
+  const { models } = scriptedModels();
+  const { lead, registry } = agents({ childTools: [whoami], onChild: async (parent, child, tx) => { hooked.push([parent, child]); await copyIdentity(parent, child, tx); } });
+  const harness = await Harness.open(new MemoryStorage(), { registry, models }, context);
+  t.after(() => harness.close(context));
+  const conversation = await lead.createConversation(harness, context);
+  await setIdentity(harness, conversation.id);
+  assert.equal((await (await conversation.submit({ type: 'input', requestId: 'ask', content: 'Research the capital.' }, context)).wait(context)).status, 'done');
+
+  const [childRecord] = await owned(conversation);
+  assert.deepEqual(hooked, [[conversation.id, childRecord.id]], 'onChild ran once, with the parent and the new child');
+  assert.deepEqual(seen, [{ user: 'ada@fictional.test', workspace: 'ws-fictional-1', permissions: ['files:read'] }], 'the child\'s first turn sees the parent\'s identity');
+  assert.equal(await finalText(conversation), 'Parent heard: The capital is Glimmerton.');
+});
+
+test('a throwing onChild aborts the creating commit: no child conversation is left behind (D-254)', async t => {
+  const { models, calls } = scriptedModels();
+  const { lead, registry } = agents({ onChild: () => { throw new Error('no identity for this child'); } });
+  const harness = await Harness.open(new MemoryStorage(), { registry, models }, context);
+  t.after(() => harness.close(context));
+  const conversation = await lead.createConversation(harness, context);
+  assert.equal((await (await conversation.submit({ type: 'input', requestId: 'ask', content: 'Research the capital.' }, context)).wait(context)).status, 'done');
+
+  assert.deepEqual(await owned(conversation), [], 'no child conversation exists');
+  assert.equal(calls.child, 0, 'the child model was never asked');
+  const toolResult = (await conversation.context(context)).messages.find(message => message.role === 'toolResult');
+  assert.equal(toolResult.isError, true, 'the delegate call failed');
+  assert.match(resultText(toolResult), /no identity for this child/);
 });
