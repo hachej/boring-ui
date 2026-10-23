@@ -48,8 +48,16 @@ export interface ArtifactKindViewProps {
   readonly text: string;
   readonly revision: string;
   readonly pinned: boolean;
-  /** Async built-in viewers call this only once their document is loaded. */
+  /**
+   * The view is loaded and on screen. A kind with `waitsForReady` must call it (once per revision shown): only then does the page
+   * acknowledge a `present` call for this file. Other kinds are acknowledged as soon as their file is read, and may ignore it.
+   */
   readonly onReady?: (() => void) | undefined;
+  /**
+   * The view could not be shown (its data failed to load, for example), with a short reason for the agent (at most 200 characters are
+   * sent). A `present` call waiting for this file is refused with that reason. A renderer that throws is reported the same way.
+   */
+  readonly onFailed?: ((reason: string) => void) | undefined;
   readonly fragment?: string | undefined;
   readonly read?: ((path: string) => Promise<string | undefined>) | undefined;
 }
@@ -68,6 +76,11 @@ export interface ArtifactKind {
   readonly icon?: ComponentType<{ readonly className?: string; readonly 'aria-hidden'?: boolean | 'true' }> | undefined;
   /** Draws the artifact in the panel (`AgentWorkspace`, `ArtifactPanel`) inside the standard viewer bar, with copy and download. */
   readonly renderer?: ((props: ArtifactKindViewProps) => ReactNode) | undefined;
+  /**
+   * The renderer loads asynchronously (a dashboard fetching its data, a sandboxed frame): the panel confirms a `present` of this file
+   * only after the renderer calls `onReady`, and refuses it when it calls `onFailed` or throws. With no call, the call ends unconfirmed.
+   */
+  readonly waitsForReady?: boolean | undefined;
 }
 
 /** The first kind that matches the artifact; a `match` that throws counts as no match. */
@@ -270,11 +283,23 @@ export function createPresentAcks(host: PresentAcksHost) {
     if (kind === 'answered' || kind === 'conflict') mounting.delete(id);
   }
 
+  /** Refuses a waiting call; like `confirm`, only an accepted or conflicting answer ends it. */
+  async function refuse(id: string, reason: string): Promise<void> {
+    const kind = await send(id, { kind: 'refused', reason });
+    if (kind === 'answered' || kind === 'conflict') mounting.delete(id);
+  }
+
   return {
     /** A viewer mounted and shows `path` at `revision`: confirms the calls waiting for that file. */
     shown(view: { readonly path: string; readonly revision: string }): void {
       for (const [id, path] of mounting) if (path === view.path) void confirm(id, path, view.revision);
       lastShown = view;
+    },
+    /** A viewer could not show `path` (a kind's `onFailed`, or its renderer threw): refuses the calls waiting for that file with `reason`. */
+    failed(view: { readonly path: string; readonly reason: string }): void {
+      if (lastShown?.path === view.path) lastShown = undefined;
+      const reason = view.reason.trim().slice(0, 200) || 'the view failed';
+      for (const [id, path] of mounting) if (path === view.path) void refuse(id, reason);
     },
     /** A viewer stopped showing `path` at `revision` (it unmounted, or a custom viewer or the canvas took the file): it no longer confirms. */
     hidden(view: { readonly path: string; readonly revision: string }): void {

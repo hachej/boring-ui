@@ -58,6 +58,25 @@ Limits: a run is admitted against its hold, not stopped mid-run (no per-call fen
 
 `createPresentTool({ workspace, resolveAccess?, maxBytes? })` from `@hachej/boring-agent/artifacts` returns the native `present(path)` tool (its workspace resolved per call like the guard's): the agent writes a workspace file with its ordinary file tools and presents it, and the chat shows a card that points at that file (`target`, the revision shown, no `id` or `ordinal`). The file's versions are the history of the workspace provider (`@hachej/boring-files/workspace`, whose `keep` retains the presented revision); a card of an older revision pins it and a card of the newest follows the file as it changes. The tool writes nothing and refuses files that are missing, not UTF-8 text or larger than 256 KiB. An opt-in `ack: { timeoutMs?, viewers? }` makes `present` wait until a page has mounted the presented revision: the page answers `{ kind: 'opened', instanceId, path, revision }` or `{ kind: 'refused', reason }` through the chat's `answer` (the transport's `?op=answer`), and the result carries `opened: true` with `viewer`, `opened: false` with `refused` (for example `closed by user`), `opened: 'unconfirmed'` after `timeoutMs` (default 15 s) or `opened: false, viewer: 'none'` at once when `viewers()` says no page watches the conversation. The wait is the durable wait of `ask_user` (`packages/agent/src/view-open.ts`, a conversation document keyed by the call); the deadline is stored, so a restart cannot extend it, and the first valid answer wins. Without `ack` the result is unchanged. `answerViewOpen` settles an answer; the host chains it with `answerUserQuestion` and `answerBrowserTask` in its `answer` handler. How to use it is in the tool's own description, so a host does not repeat it in its prompt: substantial output goes to a file that is then presented, short answers (and anything asked for in the chat) stay in the chat, and a revision re-reads the file, changes it at the same path and presents it again. A host adds only what is its own, such as what its HTML preview allows.
 
+### A view that is not a document (a dashboard)
+
+A view the agent opens, such as a dashboard, is presented the same way: it is a small workspace file that names what to show (for example `sales.dashboard.json`), and the app registers an artifact kind that draws it. There is no second channel: the same `ack` answers for it. Mark the kind `waitsForReady: true` when its renderer loads asynchronously: the panel then reports the mount (and the page confirms the `present` call) only after the renderer calls `onReady` for the revision shown. `onFailed(reason)`, or a renderer that throws, refuses the call with that reason, and a renderer that never becomes ready leaves it `unconfirmed` at the deadline. A kind without `waitsForReady` is confirmed as soon as its file is read.
+
+```tsx
+// Server: the agent writes sales.dashboard.json, then calls present('sales.dashboard.json').
+createPresentTool({ workspace, ack: { timeoutMs: 15_000 } });
+// -> { kind: 'presented', artifact, opened: true, viewer } | { opened: false, refused: 'the sales query failed' } | { opened: 'unconfirmed', timeoutMs }
+
+// Page (pi-app block): the kind confirms the view only once its data has loaded.
+const dashboard: ArtifactKind = {
+  match: target => target.resource.path.endsWith('.dashboard.json'),
+  label: 'Dashboard',
+  waitsForReady: true,
+  renderer: ({ text, onReady, onFailed }) => <SalesDashboard spec={JSON.parse(text)} onLoaded={onReady} onError={error => onFailed?.(error.message)} />,
+};
+<AgentWorkspace {...workspace} artifactKinds={[dashboard]} />;
+```
+
 `workspaceMentionReader(files, access, { maxReadBytes? })` is the reader for a host with a workspace provider: it reads the person's own published view through the provider (the access check the file viewers use) and has no containment check of its own. A host that has no provider has no reader here; it writes a `MentionReader` over whatever it does have.
 
 The descriptor's `id` and `ordinal` are optional and `present` sets neither; `parseArtifact` validates a descriptor and has no Pi runtime dependency (the copied `pi-chat` registry item carries the same validator for the browser).
