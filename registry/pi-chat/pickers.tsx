@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { ChevronDownIcon, Loader2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import type { EffortConfig, ModelConfig, ModelEffortPickerProps, ModelRef } from './config';
+import type { ModelEffortPickerProps, ModelRef } from './config';
 import { useChatText } from './labels';
 
 interface Choice { readonly section: 'model' | 'effort'; readonly value: string; readonly label: string; readonly detail?: string }

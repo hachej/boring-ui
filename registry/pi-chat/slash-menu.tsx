@@ -9,7 +9,7 @@ import { Item, ItemContent, ItemDescription, ItemTitle } from '@/components/ui/i
 import { usePickerKeyboard } from './picker-keyboard';
 import { ComposerSuggestions } from './mention-menu';
 import { slashGroup } from './config';
-import type { SlashItem, SlashPickerProps } from './config';
+import type { SlashPickerProps } from './config';
 import { useChatText } from './labels';
 
 const ALL = '__all__';
