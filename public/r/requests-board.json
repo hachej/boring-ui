@@ -7,7 +7,7 @@
     "react@^19.0.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.9/r/utils.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.10/r/utils.json",
     "badge",
     "button",
     "input",
