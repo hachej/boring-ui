@@ -187,6 +187,15 @@ test('usage and configuration errors exit 2: no components.json, no installed ki
   assert.equal(run(noKit, ['frobnicate']).status, 2);
 });
 
+test('help exits 0 and names every optional chat and viewer item of the registry (D-257)', () => {
+  const help = run(root, ['help']);
+  assert.equal(help.status, 0, help.stderr);
+  assert.equal(run(root, ['--help']).stdout, help.stdout);
+  const items = JSON.parse(readFileSync(join(root, 'registry.json'), 'utf8')).items.map(item => item.name).filter(name => /^(pi-chat-|viewer-)/.test(name) || name === 'pi-artifacts');
+  assert.ok(items.length >= 15, items.join(' '));
+  for (const name of [...items, 'pi-app', 'pi-chat']) assert.match(help.stdout, new RegExp(`(^|[\\s,])${name}[\\s,.]`), `help names ${name}`);
+});
+
 test('add runs the pinned shadcn CLI then records the manifest, so check passes; update --dry-run prints the reinstall', t => {
   const app = fixture(t);
   // A stand-in `npx` first on PATH: writes the file `shadcn add card` would write and records its arguments (offline).
