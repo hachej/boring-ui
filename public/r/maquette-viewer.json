@@ -8,8 +8,8 @@
     "lucide-react@^1.51.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/theme.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/diagram-viewer.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.13/r/theme.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.13/r/diagram-viewer.json",
     "alert",
     "badge",
     "bubble",
