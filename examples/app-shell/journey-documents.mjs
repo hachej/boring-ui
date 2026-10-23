@@ -126,13 +126,16 @@ try {
   await browser.until('Back closes the sheet at 1280', `!${q(SHEET)}`, 15000);
 
   // The Library renames and deletes files through the app's own /api/resources handler (D-263): a draft written to the workspace is
-  // renamed inline from its row's menu, then deleted with the Delete key after the confirmation dialog.
+  // renamed inline from its row's menu, then deleted with the Delete key after the confirmation dialog. The draft is open in the
+  // viewer meanwhile: the viewer follows the rename to the new path and closes when the file is deleted.
   writeFileSync(join(directory, 'workspace', 'brouillon.md'), '# Brouillon fictif\n');
   await browser.send('Page.reload', {});
   await browser.until('the Fiches screen again', `!!${q('[data-testid=screen-fiches]')}`, 30000);
   await live();
   const draft = path => `[role=treeitem][data-path="${path}"]`;
   await browser.until('the draft is listed', `!!${q(draft('brouillon.md'))}`, 15000);
+  await browser.evaluate(`${q(`${draft('brouillon.md')} button`)}.click()`);
+  await browser.until('the draft opens', `!!${q('[data-testid=file-viewer][data-path="brouillon.md"]')}`, 15000);
   await browser.evaluate(`${q('button[aria-label="Actions pour brouillon.md"]')}.focus()`); await browser.press('Enter');
   await browser.until('the row menu', `!!${q('[data-boring=file-actions] [data-action=rename]')}`);
   assert.deepEqual(await browser.evaluate(`[...document.querySelectorAll('[data-boring=file-actions] [role=menuitem]')].map(item => item.dataset.action)`), ['open', 'download', 'rename', 'move', 'delete']);
@@ -142,14 +145,17 @@ try {
   await browser.evaluate(`${q('input[data-file-rename]')}.select()`); await send('Input.insertText', { text: 'brouillon-relu.md' }); await browser.press('Enter');
   await browser.until('the renamed row', `!!${q(draft('brouillon-relu.md'))} && !${q(draft('brouillon.md'))}`, 15000);
   assert.equal(readFileSync(join(directory, 'workspace', 'brouillon-relu.md'), 'utf8'), '# Brouillon fictif\n'); assert.equal(existsSync(join(directory, 'workspace', 'brouillon.md')), false);
+  await browser.until('the viewer follows the rename', `!!${q('[data-testid=file-viewer][data-path="brouillon-relu.md"]')} && !${q('[data-testid=file-viewer][data-path="brouillon.md"]')}`, 15000);
+  assert.equal(await browser.evaluate(`${q(draft('brouillon-relu.md'))}.getAttribute('aria-selected')`), 'true', 'the renamed row stays the selected one');
   await browser.screenshot('desktop-tree-actions-renamed.png');
   await browser.evaluate(`${q(draft('brouillon-relu.md'))}.focus()`); await browser.press('Delete');
   await browser.until('the delete dialog', `!!${q('[data-boring=file-tree-dialog] [data-confirm=delete]')}`);
   await browser.evaluate(`${q('[data-boring=file-tree-dialog] [data-confirm=delete]')}.click()`);
   await browser.until('the deleted row', `!${q(draft('brouillon-relu.md'))} && !${q('[data-boring=file-tree-dialog]')}`, 15000);
   assert.equal(existsSync(join(directory, 'workspace', 'brouillon-relu.md')), false);
+  await browser.until('the viewer closes on delete', `!${q('[data-testid=file-viewer]')}`, 15000);
   assert.ok(await browser.evaluate(`!!${q(`[role=treeitem][data-path="${FILE}"]`)}`), 'the other files stay');
 
   assert.deepEqual(browser.problems.filter(p => !/Failed to load resource/.test(p)), [], 'no page problems');
-  console.log('documents journey ok: 390x844 (Library, Revisions, read-only revision, PM sheet, Back, Toutes les fiches) and 1280x800 (side by side, PM sheet, Back, rename and delete from the Library)');
+  console.log('documents journey ok: 390x844 (Library, Revisions, read-only revision, PM sheet, Back, Toutes les fiches) and 1280x800 (side by side, PM sheet, Back, rename and delete from the Library, the open file followed and closed)');
 } finally { await browser?.close(); await app.close(); }

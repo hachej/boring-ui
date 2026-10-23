@@ -333,6 +333,26 @@ try {
     await browser.evaluate(`document.documentElement.classList.remove('dark')`);
   });
 
+  await step('10 the open document renamed from the Library stays open at its new path, and closes when it is deleted (D-263)', async () => {
+    const viewing = path => `!!${q(`[data-testid=viewer-panel] [data-testid=file-viewer][data-path=${JSON.stringify(path)}]`)}`;
+    await browser.until('the document is open in the panel', viewing('picnic-plan.md'), 10000);
+    await browser.click(BAR('library'));
+    await browser.until('the Library popover lists the document', `!!${libraryRow('picnic-plan.md')}`, 10000);
+    await browser.evaluate(`${libraryRow('picnic-plan.md')}.querySelector('[data-file-more]').focus()`); await browser.press('Enter');
+    await browser.until('the row menu', `!!${q('[data-boring=file-actions] [data-action=rename]')}`, 5000);
+    await browser.evaluate(`${q('[data-boring=file-actions] [data-action=rename]')}.click()`);
+    await browser.until('inline rename', `document.activeElement?.matches('input[data-file-rename][data-revision-known]')`, 5000);
+    await browser.evaluate(`${q('input[data-file-rename]')}.select()`); await send('Input.insertText', { text: 'picnic-plan-v2.md' }); await browser.press('Enter');
+    await browser.until('the renamed row', `!!${libraryRow('picnic-plan-v2.md')} && !${libraryRow('picnic-plan.md')}`, 10000);
+    await browser.until('the panel follows the rename', `${viewing('picnic-plan-v2.md')} && !${viewing('picnic-plan.md')}`, 10000);
+    await settle(); await shot('shell-desktop-renamed-open-file.png');
+    await browser.evaluate(`${libraryRow('picnic-plan-v2.md')}.focus()`); await browser.press('Delete');
+    await browser.until('the delete dialog', `!!${q('[data-boring=file-tree-dialog] [data-confirm=delete]')}`, 5000);
+    await browser.evaluate(`${q('[data-boring=file-tree-dialog] [data-confirm=delete]')}.click()`);
+    await browser.until('the deleted row', `!${libraryRow('picnic-plan-v2.md')}`, 10000);
+    await browser.until('the panel closes on delete', `!${q('[data-testid=file-viewer]')}`, 10000);
+  });
+
   if (failed.length) console.log(`COLLECT: ${failed.length} failing step(s): ${failed.join(' | ')}`);
   console.log(browser.problems.length ? `page problems:\n${browser.problems.join('\n')}` : 'no page problems');
   assert.deepEqual(browser.problems.filter(p => !/Failed to load resource/.test(p)), []);

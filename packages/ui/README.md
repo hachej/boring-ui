@@ -396,7 +396,9 @@ file onto a folder or the root); when it has `delete`, Delete (Delete key, after
 confirmation dialog). `capabilities={{ effective }}`, when the host passes it, only
 narrows these to the listed `rename`/`delete`. Each change is a conditional write with the
 revision read when the action started (`controller.prepare`); a refusal stays on the
-row until dismissed and the affected folders are read again. Folders are destinations
+row until dismissed and the affected folders are read again. A committed change calls
+`onRenamed(from, to)` or `onDeleted(path)`, so a host's viewer follows the file or closes
+(`AgentWorkspace` and `Documents` do). Folders are destinations
 only. No edit date or
 author is invented or fetched per row. `variant="plain"` keeps the compact tree.
 `title` overrides the list heading; `onClose` adds a host-owned close button.

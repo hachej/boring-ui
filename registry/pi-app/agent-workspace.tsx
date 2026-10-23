@@ -434,6 +434,14 @@ export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, titl
     else for (const directory of ['', ...expanded]) void libraryController.refresh(directory);
   }, [libraryController, refreshKey, feed.seq]);
   const openFile = useCallback((path: string) => { setOpened({ kind: 'file', path }); }, [setOpened]);
+  // The file on show was renamed, moved or deleted from the Library: follow it to its new path, or close it (its old path is gone).
+  const followFile = (from: string, to: string | null) => {
+    const current = currentView.current;
+    if (!isFile(current) || current.path !== from) return;
+    const next = to === null ? null : { kind: 'file' as const, path: to };
+    noteUnsaved(false);
+    if (!isControlled) setOwn(next); change.current?.(next);
+  };
   // @ search: results are reused while the feed reports nothing new (typing back and forth), and dropped at the next change event.
   // One cache per provider instance (one workspace binding), so another binding never sees these results.
   const mentionResults = useMemo(() => ({ seq: undefined as number | undefined, results: new Map<string, readonly FileEntry[]>() }), [revisionProvider]);
@@ -545,7 +553,7 @@ export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, titl
   // The Library tree, one view for the side column, the center and the pane; `onOpen` is what choosing a file does there.
   const libraryTree = (onOpen: (path: string) => void, onClose?: () => void) => libraryController
     ? <FileTreeView variant="list" refresh={libraryPlacement !== 'panel'} title={text.labels.library} {...(onClose ? { onClose } : {})} key={JSON.stringify([libraryProvider?.workspace, libraryProvider?.identity])} {...(locale ? { locale } : {})} {...viewOptions}
-      {...(readOnlyLibrary ? { upload: false, history: history !== undefined } : {})} {...(maxBytes !== undefined ? { maxBytes, ...(tooLarge ? { tooLarge } : {}) } : {})} {...(uploadBlob ? { uploadBlob } : {})} controller={libraryController} historyKey={feed.seq} onOpen={onOpen} {...(isFile(opened) ? { selectedPath: opened.path } : {})} />
+      {...(readOnlyLibrary ? { upload: false, history: history !== undefined } : {})} {...(maxBytes !== undefined ? { maxBytes, ...(tooLarge ? { tooLarge } : {}) } : {})} {...(uploadBlob ? { uploadBlob } : {})} controller={libraryController} historyKey={feed.seq} onOpen={onOpen} onRenamed={(from, to) => followFile(from, to)} onDeleted={path => followFile(path, null)} {...(isFile(opened) ? { selectedPath: opened.path } : {})} />
     : <p role="status" className="m-0 p-3 text-sm text-muted-foreground">{treeOptions?.labels?.loading ?? text.labels.loading}</p>;
   // `history="popover"` keeps the conversations out of the pane. With an open panel the column steps aside unless column, panel and chat fit.
   const paneConversations = historyPlacement === 'column' ? conversations : undefined;

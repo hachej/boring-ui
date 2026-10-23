@@ -275,6 +275,10 @@ export interface FileTreeProps {
    * Delete; when given, only the listed `rename`/`delete` stay. Omitted: whatever the client has.
    */
   readonly capabilities?: FileTreeCapabilities;
+  /** A rename or move from the tree committed: `from` is now `to` (a host showing `from` follows it). */
+  readonly onRenamed?: (from: string, to: string) => void;
+  /** A delete from the tree committed (a host showing `path` closes it). */
+  readonly onDeleted?: (path: string) => void;
 }
 
 /** One borrowed binding powers browsing, search, upload and history. Historical previews never replace an editor's draft. */
@@ -301,7 +305,15 @@ type UploadRow = { readonly kind: 'pending'; readonly size: number }
   | { readonly kind: 'failed'; readonly size: number; readonly reason: string; readonly retryLabel: string; readonly retry: () => void };
 
 /** Renders a borrowed controller, for a workspace whose chat and tree share upload state. */
-export function FileTreeView({ components, controller, onOpen, selectedPath, className, uploadDirectory = 'uploads', locale = 'en', labels: given, upload = true, history = true, refresh = true, variant = 'list', title, onClose, refreshKey, historyKey, maxBytes, tooLarge, uploadBlob, capabilities }: FileTreeViewProps) {
+export function FileTreeView({ components, controller, onOpen, selectedPath, className, uploadDirectory = 'uploads', locale = 'en', labels: given, upload = true, history = true, refresh = true, variant = 'list', title, onClose, refreshKey, historyKey, maxBytes, tooLarge, uploadBlob, capabilities, onRenamed, onDeleted }: FileTreeViewProps) {
+  const changed = useRef({ onRenamed, onDeleted }); changed.current = { onRenamed, onDeleted };
+  /** Tell the host about a committed rename or delete, so a viewer showing the file follows or closes. */
+  const report = (mutation: FileMutation) => {
+    if (mutation.state.kind !== 'settled' || mutation.state.result.kind !== 'committed') return mutation;
+    if (mutation.kind === 'rename' && mutation.to !== undefined) changed.current.onRenamed?.(mutation.path, mutation.to);
+    else if (mutation.kind === 'delete') changed.current.onDeleted?.(mutation.path);
+    return mutation;
+  };
   const { Button, Actions, Menu: SidebarMenu, MenuItem: SidebarMenuItem, MenuSub: SidebarMenuSub, Input, Collapsible: CollapsibleRoot, CollapsibleTrigger, CollapsibleContent, Empty, Progress, Dialog } = components;
   const can = {
     // The client's methods turn the actions on; capabilities, when the host passes them, only narrow.
@@ -403,12 +415,12 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
     const to = parentPath(path) ? `${parentPath(path)}/${name}` : name;
     if (name.includes('/')) { setRenaming(current => ({ ...current, path, error: labels.invalidName })); return; }
     setRenaming(undefined); focus(path);
-    void controller.rename(path, to).then(result => { if (result.state.kind === 'settled' && result.state.result.kind === 'committed') setFocused(to); }, refused(path));
+    void controller.rename(path, to).then(report).then(result => { if (result.state.kind === 'settled' && result.state.result.kind === 'committed') setFocused(to); }, refused(path));
   };
   const moveTo = (path: string, folder: string) => {
     setAsking(undefined);
     if (parentPath(path) === folder) return;
-    void controller.move(path, folder).catch(refused(path));
+    void controller.move(path, folder).then(report).catch(refused(path));
   };
   const closeAsking = () => { const path = asking?.path; setAsking(undefined); if (path) requestAnimationFrame(() => focus(path)); };
   const draggedPath = (event: DragEvent) => event.dataTransfer.types.includes(DRAGGED_FILE) ? dragged ?? event.dataTransfer.getData(DRAGGED_FILE) : undefined;
@@ -420,7 +432,7 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
     onDrop: (event: DragEvent) => {
       const path = draggedPath(event); if (path === undefined) return;
       event.preventDefault(); event.stopPropagation(); setDropTarget(undefined); setDragged(undefined);
-      if (path && parentPath(path) !== folder) void controller.move(path, folder).catch(refused(path));
+      if (path && parentPath(path) !== folder) void controller.move(path, folder).then(report).catch(refused(path));
     },
   } : {};
 
@@ -613,7 +625,7 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
         <Button type="button" variant="outline" data-confirm="cancel" onClick={closeAsking}>{labels.cancel}</Button>
         <Button type="button" variant="destructive" data-confirm="delete" onClick={() => {
           const path = dialogPath; setAsking(undefined);
-          void controller.remove(path).catch(refused(path));
+          void controller.remove(path).then(report).catch(refused(path));
         }}><Trash2 aria-hidden="true" />{labels.delete}</Button>
       </> : <Button type="button" variant="outline" data-confirm="cancel" onClick={closeAsking}>{labels.cancel}</Button>}>
       {asking?.kind === 'move' && <ul className="file-tree-destinations" aria-label={labels.moveTitle(baseName(dialogPath))}>{folders.map(folder => <li key={folder}>

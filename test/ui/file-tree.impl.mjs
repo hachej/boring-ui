@@ -498,7 +498,9 @@ test('rendered tree renames inline, deletes after confirmation and moves by drag
   const renameOnly = await menu('loose.md');
   assert.deepEqual(renameOnly.map(item => item.dataset.action).filter(id => ['rename', 'move', 'delete'].includes(id)), ['rename', 'move'], 'move is a rename; delete needs its own capability');
   await key(renameOnly[0], 'Escape');
-  await render({ revisionProvider: f.binding, capabilities: { effective: ['read', 'rename', 'delete'] } });
+  // The host hears of each committed rename, move and delete, so a viewer showing the file follows it or closes.
+  const changes = [];
+  await render({ revisionProvider: f.binding, capabilities: { effective: ['read', 'rename', 'delete'] }, onRenamed: (from, to) => changes.push(['renamed', from, to]), onDeleted: path => changes.push(['deleted', path]) });
 
   // Rename from the menu: an inline input in the row, Escape cancels, Enter commits.
   const items = await menu('loose.md');
@@ -515,6 +517,7 @@ test('rendered tree renames inline, deletes after confirmation and moves by drag
   await key(input, 'Enter');
   await settle(() => row('renamed.md') && !row('loose.md'));
   assert.ok(row('renamed.md')); assert.equal(row('loose.md'), null); assert.equal(await f.text('renamed.md'), 'Fictional loose');
+  assert.deepEqual(changes, [['renamed', 'loose.md', 'renamed.md']], 'the host hears the rename');
 
   // Delete: the Delete key asks first; cancelling keeps the file.
   await key(row('renamed.md'), 'Delete');
@@ -523,11 +526,13 @@ test('rendered tree renames inline, deletes after confirmation and moves by drag
   await act(async () => dialog.querySelector('[data-confirm=cancel]').click());
   await settle(() => !window.document.querySelector('[role=alertdialog], [role=dialog]'));
   assert.equal(await f.text('renamed.md'), 'Fictional loose');
+  assert.equal(changes.length, 1, 'a cancelled delete reports nothing');
   await act(async () => (await menu('renamed.md')).find(item => item.dataset.action === 'delete').click());
   dialog = window.document.querySelector('[role=alertdialog], [role=dialog]');
   await act(async () => dialog.querySelector('[data-confirm=delete]').click());
   await settle(() => !row('renamed.md'));
   assert.equal(row('renamed.md'), null); assert.equal(await f.text('renamed.md'), 'missing');
+  assert.deepEqual(changes.at(-1), ['deleted', 'renamed.md'], 'the host hears the delete');
 
   // Move by drag: a file row dropped on a folder row; the folder shows it is a target while hovered.
   await key(row('docs'), 'ArrowRight'); await settle(() => row('docs/a.md'));
@@ -541,6 +546,7 @@ test('rendered tree renames inline, deletes after confirmation and moves by drag
   await settle(() => row('archive/a.md'));
   assert.equal(await f.text('archive/a.md'), 'Fictional note'); assert.equal(await f.text('docs/a.md'), 'missing');
   assert.equal(row('archive').dataset.dropTarget, undefined);
+  assert.deepEqual(changes.at(-1), ['renamed', 'docs/a.md', 'archive/a.md'], 'a drag move is a rename the host hears');
 
   // Move to…: a dialog lists the folders; the current one is not offered.
   await act(async () => (await menu('archive/a.md')).find(item => item.dataset.action === 'move').click());
@@ -550,6 +556,8 @@ test('rendered tree renames inline, deletes after confirmation and moves by drag
   await act(async () => dialog.querySelector('[data-destination="docs"]').click());
   await settle(() => row('docs/a.md'));
   assert.equal(await f.text('docs/a.md'), 'Fictional note');
+  assert.deepEqual(changes.at(-1), ['renamed', 'archive/a.md', 'docs/a.md'], 'Move to… is a rename the host hears');
+  const heard = changes.length;
 
   // A stale rename is refused on its row, and the row keeps the file.
   const latest = await f.binding.read({ target: f.binding.locate('docs/a.md'), revision: { kind: 'latest' } });
@@ -561,6 +569,7 @@ test('rendered tree renames inline, deletes after confirmation and moves by drag
   assert.equal(row('docs/a.md').dataset.mutationState, 'failed');
   assert.ok(row('docs/a.md').querySelector('[data-mutation-error]').textContent.length > 0);
   assert.equal(await f.text('docs/a.md'), 'Fictional agent edit'); assert.equal(await f.text('docs/late.md'), 'missing');
+  assert.equal(changes.length, heard, 'a refused rename reports nothing');
   await act(async () => row('docs/a.md').querySelector('[data-mutation-dismiss]').click());
   assert.equal(row('docs/a.md').querySelector('[data-mutation-error]'), null);
 });
