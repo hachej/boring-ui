@@ -12,7 +12,7 @@
     "packages/*"
   ],
   "scripts": {
-    "check": "node scripts/check-docs.mjs && node scripts/check-platform-apis.mjs && node scripts/check-handlers.mjs && node scripts/check-sqlite-settings.mjs && node scripts/check-registry-blocks.mjs && node scripts/check-design.mjs && node scripts/check-pi-boundary.mjs && node scripts/check-doc-drafts.mjs",
+    "check": "node scripts/check-docs.mjs && node scripts/check-platform-apis.mjs && node scripts/check-handlers.mjs && node scripts/check-sqlite-settings.mjs && node scripts/check-registry-blocks.mjs && node scripts/check-block-lint.mjs && node scripts/check-design.mjs && node scripts/check-pi-boundary.mjs && node scripts/check-doc-drafts.mjs",
     "build": "node scripts/build.mjs",
     "typecheck": "npm run build && tsc --project tsconfig.contract-tests.json --noEmit",
     "pretest": "npm run build",
@@ -167,6 +167,7 @@
     "just-bash": "3.6.0",
     "lucide-react": "1.57.0",
     "marked": "17.0.6",
+    "oxlint": "1.86.0",
     "pdfjs-dist": "6.3.289",
     "react": "19.3.0",
     "react-dom": "19.3.0",
