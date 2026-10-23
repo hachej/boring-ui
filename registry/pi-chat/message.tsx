@@ -13,6 +13,7 @@ import { SentFeedback } from './sent-feedback';
 import type { ArtifactsConfig } from './artifact';
 import { ApprovalCard } from './approval-card';
 import type { ApprovalCardProps } from './approval-card';
+import { SubagentCard } from './subagent-card';
 import { QuestionCard } from './question-card';
 import type { AnswerOutcome, QuestionCardProps } from './question-card';
 import { ActivityBlock } from './activity';
@@ -362,6 +363,7 @@ function RowBody({ row, images, context: liveContext }: { readonly row: Row; rea
               ...(settled && context.commandMentions ? { commandMentions: context.commandMentions } : {}), ...(context.onCopy ? { onCopy: context.onCopy } : {}) })}</BubbleContent></Bubble>;
             if (part.kind === 'thinking') return null; // reasoning is a step of an activity block
             if (part.kind === 'approval') return <Approval key={part.key} call={part.call} result={part.result} questionId={part.questionId} answer={context.answer} summary={part.summary} decision={part.decision} live={part.live} />;
+            if (part.kind === 'subagent') return <SubagentCard key={part.key} details={part.details} />;
             if (part.kind === 'question') return <Question key={part.key} call={part.call} result={part.result} questionId={part.questionId} answer={context.answer} live={part.live} />;
             if (part.kind === 'artifact' && part.artifact && files.has(part.artifact.target.resource.path.replace(/^(\.\/)+/, ''))) return null;
             if (part.kind === 'artifact') return <ArtifactCard key={part.key} artifact={part.artifact} title={part.title} {...(part.state === 'ready' ? {} : { pending: part.state })}

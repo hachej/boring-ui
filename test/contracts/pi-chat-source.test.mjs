@@ -226,6 +226,59 @@ test('gated tool calls become approval cards that show the real arguments and th
   assert.doesNotMatch(stoppedCard, /approval-approve|>Approved</);
 });
 
+test('delegate calls become sub-agent cards that read DelegateDetails, live and settled', async () => {
+  const { derive } = await load('rows', 'rows.ts');
+  const { RowView } = await load('subagent-message', 'message.tsx');
+  const { SubagentCard, parseDelegateDetails, DELEGATE_DETAILS_KIND } = await load('subagent-card', 'subagent-card.tsx');
+  const agents = await import('@hachej/boring-agent/agents');
+  assert.equal(DELEGATE_DETAILS_KIND, agents.DELEGATE_DETAILS_KIND, 'the card and the delegate tool agree on the details kind');
+  const running = { kind: agents.DELEGATE_DETAILS_KIND, version: 1, agent: 'researcher', conversationId: 14, status: 'running', startedAt: 1_000, durationMs: 1_500, toolCalls: 2, tokens: { input: 1_234, output: 56 } };
+  const args = { agent: 'researcher', task: 'Summarise the fictional notes' };
+  const view = { entries: entries([user('look it up')], [assistant([call('1', 'delegate', args)])]), docs: {} };
+  assert.deepEqual(derive(view, options('expert')).rows[1].parts.map(part => part.kind), ['tool'], 'a call without delegate details is an ordinary tool step');
+  // While the child runs, the call's live slot carries the details the delegate tool publishes through api.details.
+  const live = derive({ ...view, docs: { 'pi.live': { tools: [{ callId: '1', name: 'delegate', status: 'running', details: running }] } } }, options('natural')).rows[1].parts;
+  assert.deepEqual(live.map(part => part.kind), ['subagent'], 'shown to every reader, natural mode included');
+  assert.equal(live[0].details.status, 'running');
+  const card = details => renderToStaticMarkup(createElement(SubagentCard, { details, now: () => 4_000 }));
+  const runningCard = card(live[0].details);
+  assert.match(runningCard, /data-testid="subagent-card"[^>]*data-state="running"/);
+  assert.match(runningCard, /data-conversation-id="14"/);
+  assert.match(runningCard, /data-testid="subagent-spinner"/);
+  assert.match(runningCard, /data-testid="subagent-status"[^>]*aria-label="Running"/, 'the status is an icon with an accessible name, no badge text');
+  assert.doesNotMatch(runningCard, /data-slot="badge"/);
+  assert.match(runningCard, /data-testid="subagent-time"[^>]*>.*3 s</, 'the time ticks from startedAt while it runs');
+  assert.match(runningCard, /data-testid="subagent-tool-calls"[^>]*data-count="2"/);
+  assert.match(runningCard, /aria-label="1234 tokens in, 56 tokens out"/);
+  assert.match(runningCard, /1\.2k/);
+  assert.match(runningCard, /data-testid="subagent-conversation"[^>]*>#14</);
+  const opened = [];
+  assert.match(renderToStaticMarkup(createElement(SubagentCard, { details: live[0].details, onOpen: id => opened.push(id) })), /<button[^>]*data-testid="subagent-open"[^>]*aria-label="Open conversation 14"/, 'a host can link the child conversation');
+  // Settled: the result's details carry the finished value.
+  const settled = (details, text, isError = false) => derive({ entries: entries([user('look it up')], [assistant([call('1', 'delegate', args)])], [{ ...result('1', 'delegate', text, isError), timestamp: 9_000, details }]), docs: {} }, options('expert')).rows[1].parts;
+  const done = settled({ ...running, status: 'done', durationMs: 7_000, toolCalls: 3 }, 'The fictional answer.');
+  assert.deepEqual(done.map(part => part.kind), ['tool', 'subagent'], 'expert keeps the call as a step of the activity block next to its card');
+  const doneCard = card(done[1].details);
+  assert.match(doneCard, /data-state="done"/);
+  assert.match(doneCard, /data-testid="subagent-time"[^>]*>.*7 s</);
+  assert.match(doneCard, /data-count="3"/);
+  assert.doesNotMatch(doneCard, /subagent-spinner|subagent-error/);
+  const error = 'The researcher agent did not answer: model_error (Fictional provider refused the request)';
+  const failedCard = card(settled({ ...running, status: 'failed', error }, error, true)[1].details);
+  assert.match(failedCard, /data-state="failed"/);
+  assert.match(failedCard, /data-testid="subagent-error"[^]*Fictional provider refused the request/);
+  // A stopped delegate call: Pi writes the aborted result from the last running details, which the card reads as cancelled.
+  const stopped = settled(running, 'Tool call aborted', true)[1].details;
+  assert.equal(stopped.status, 'cancelled');
+  assert.equal(stopped.durationMs, 8_000, 'up to the result');
+  assert.match(card(stopped), /data-state="cancelled"/);
+  assert.doesNotMatch(card(stopped), /subagent-spinner/);
+  for (const value of [undefined, null, 'x', { ...running, version: 2 }, { ...running, kind: 'other' }, { ...running, toolCalls: -1 }, { ...running, status: 'odd' }, { ...running, tokens: null }]) assert.equal(parseDelegateDetails(value), undefined, JSON.stringify(value));
+  // The transcript renders the card.
+  const html = renderToStaticMarkup(createElement(RowView, { row: { key: 'reply', type: 'assistant', parts: live, text: '', streaming: true, active: true }, context: { developer: false } }));
+  assert.match(html, /data-testid="subagent-card"/);
+});
+
 test('the browser mention parser agrees with the agent package mention resolver', async () => {
   const { pieces } = await load('config', 'config.ts');
   const { mentionedPaths } = await import('@hachej/boring-agent/mentions');

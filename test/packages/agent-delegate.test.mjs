@@ -6,12 +6,13 @@ import test from 'node:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Harness, MemoryStorage, UserEntry, createRegistry, defineDoc, defineTool } from '@earendil-works/pi-durable';
+import { Harness, LiveDoc, MemoryStorage, UserEntry, createRegistry, defineDoc, defineTool } from '@earendil-works/pi-durable';
 import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node';
 import { Type } from '@earendil-works/pi-ai';
 import { createModels } from '@earendil-works/pi-ai/models';
 import { fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from '@earendil-works/pi-ai/providers/faux';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
+import * as agentsEntry from '@hachej/boring-agent/agents';
 import { createDelegateTool, defineAgent } from '@hachej/boring-agent/agents';
 import { createApprovalExtension } from '@hachej/boring-agent/approval';
 
@@ -22,7 +23,7 @@ const resultText = message => message.content.filter(part => part.type === 'text
  * Parent model: delegates once, then repeats what the delegate returned. Child model: looks the fact up with its only tool, then
  * answers. `stallChild` holds the child's first request until the request is aborted (the harness closing: a crash mid-call).
  */
-function scriptedModels({ stallChild = false } = {}) {
+function scriptedModels({ stallChild = false, childLookups = 1, childError } = {}) {
   const calls = { parent: 0, child: 0, stalled: 0 };
   const faux = fauxProvider({ provider: 'fictional-faux', models: [{ id: 'parent' }, { id: 'child' }] });
   const respond = (transcript, options, _state, model) => {
@@ -41,9 +42,11 @@ function scriptedModels({ stallChild = false } = {}) {
         if (options?.signal?.aborted) abort(); else options?.signal?.addEventListener('abort', abort, { once: true });
       });
     }
-    return result
+    if (childError) return fauxAssistantMessage([], { stopReason: 'error', errorMessage: childError });
+    const done = transcript.messages.filter(message => message.role === 'toolResult').length;
+    return done >= childLookups
       ? fauxAssistantMessage([fauxText(`The capital is ${resultText(result)}.`)])
-      : fauxAssistantMessage([fauxToolCall('lookup', { topic: 'capital' }, { id: 'lookup-1' })], { stopReason: 'toolUse' });
+      : fauxAssistantMessage([fauxToolCall('lookup', { topic: 'capital' }, { id: `lookup-${done + 1}` })], { stopReason: 'toolUse' });
   };
   faux.setResponses(Array.from({ length: 20 }, () => respond));
   const models = createModels();
@@ -200,4 +203,99 @@ test('a throwing onChild aborts the creating commit: no child conversation is le
   const toolResult = (await conversation.context(context)).messages.find(message => message.role === 'toolResult');
   assert.equal(toolResult.isError, true, 'the delegate call failed');
   assert.match(resultText(toolResult), /no identity for this child/);
+});
+
+// D-255: the sub-agent card's data. While the child runs, the delegate call's running details (its `pi.live` tool slot) carry a
+// `DelegateDetails` with status `running` and the child's counts so far; the result's details carry the finished value.
+const DELEGATE_DETAILS_KIND = 'boring.delegate';
+const delegateResult = async conversation => (await conversation.context(context)).messages.find(message => message.role === 'toolResult' && message.toolName === 'delegate');
+/** Every distinct running details value the parent's delegate slot showed while `run` ran (polling the parent's `pi.live`). */
+async function watchSlot(harness, conversationId, run) {
+  const seen = [];
+  let done = false;
+  const poll = (async () => {
+    while (!done) {
+      const slot = (await harness.snapshot(LiveDoc, conversationId, context))?.tools?.find(item => item.name === 'delegate');
+      const json = slot?.details === undefined ? undefined : JSON.stringify(slot.details);
+      if (json !== undefined && json !== seen.at(-1)) seen.push(json);
+      await new Promise(resolve => setTimeout(resolve, 2));
+    }
+  })();
+  try { return [await run(), seen.map(json => JSON.parse(json))]; } finally { done = true; await poll; }
+}
+const slowLookup = defineTool({
+  name: 'lookup', description: 'Look up a fictional fact.', parameters: Type.Object({ topic: Type.String() }), replay: 'safe',
+  execute: async () => { await new Promise(resolve => setTimeout(resolve, 250)); return { output: [{ type: 'text', text: 'Glimmerton' }] }; },
+});
+
+test('delegate publishes live DelegateDetails while the child runs and finishes with done, duration, tool calls and tokens (D-255)', async t => {
+  const { models } = scriptedModels({ childLookups: 2 });
+  const { lead, registry } = agents({ childTools: [slowLookup] });
+  const harness = await Harness.open(new MemoryStorage(), { registry, models }, context);
+  t.after(() => harness.close(context));
+  const conversation = await lead.createConversation(harness, context);
+  const [settled, live] = await watchSlot(harness, conversation.id, async () => (await conversation.submit({ type: 'input', requestId: 'ask', content: 'Research the capital.' }, context)).wait(context));
+  assert.equal(settled.status, 'done');
+  const [childRecord] = await owned(conversation);
+
+  const running = live.filter(details => details.status === 'running');
+  assert.ok(running.length >= 2, `live details were published while the child ran: ${JSON.stringify(live)}`);
+  for (const details of running) {
+    assert.equal(details.kind, DELEGATE_DETAILS_KIND);
+    assert.equal(details.conversationId, childRecord.id, 'the live details name the child conversation');
+  }
+  const calls = running.map(details => details.toolCalls);
+  assert.deepEqual(calls, [...calls].sort((a, b) => a - b), 'tool calls only grow');
+  assert.ok(calls.includes(1) && calls.includes(2), `the count rose with each of the child's tool calls: ${calls}`);
+
+  const final = (await delegateResult(conversation)).details;
+  assert.equal(agentsEntry.DELEGATE_DETAILS_KIND, DELEGATE_DETAILS_KIND, 'the kind is exported');
+  assert.equal(final.kind, DELEGATE_DETAILS_KIND);
+  assert.equal(final.version, 1);
+  assert.equal(final.agent, 'researcher');
+  assert.equal(final.conversationId, childRecord.id);
+  assert.equal(final.status, 'done');
+  assert.ok(final.durationMs > 0, 'a duration');
+  assert.ok(final.startedAt <= Date.now() && final.startedAt === running[0].startedAt, 'one start time, live and final');
+  assert.equal(final.toolCalls, 2, 'both of the child\'s tool calls');
+  assert.ok(final.tokens.input > 0 && final.tokens.output > 0, `the child's tokens: ${JSON.stringify(final.tokens)}`);
+  assert.equal(final.error, undefined);
+  assert.equal(await finalText(conversation), 'Parent heard: The capital is Glimmerton.', 'the model still gets only the child\'s final text');
+});
+
+test('a failing child ends the delegate call with status failed and the error text (D-255)', async t => {
+  const { models } = scriptedModels({ childError: 'Fictional provider refused the request' });
+  const { lead, registry } = agents();
+  const harness = await Harness.open(new MemoryStorage(), { registry, models }, context);
+  t.after(() => harness.close(context));
+  const conversation = await lead.createConversation(harness, context);
+  assert.equal((await (await conversation.submit({ type: 'input', requestId: 'ask', content: 'Research the capital.' }, context)).wait(context)).status, 'done');
+
+  const result = await delegateResult(conversation);
+  assert.equal(result.isError, true, 'the delegate call failed');
+  const [childRecord] = await owned(conversation);
+  assert.equal(result.details.kind, DELEGATE_DETAILS_KIND);
+  assert.equal(result.details.status, 'failed');
+  assert.equal(result.details.conversationId, childRecord.id);
+  assert.match(result.details.error, /Fictional provider refused the request/);
+  assert.match(resultText(result), /Fictional provider refused the request/, 'the model sees why');
+});
+
+test('a stopped delegate call keeps the child in its result details: Pi writes the aborted result from the last running value (D-255)', async t => {
+  const { models, calls } = scriptedModels({ stallChild: true });
+  const { lead, registry } = agents();
+  const harness = await Harness.open(new MemoryStorage(), { registry, models }, context);
+  t.after(() => harness.close(context));
+  const conversation = await lead.createConversation(harness, context);
+  const submission = await conversation.submit({ type: 'input', requestId: 'ask', content: 'Research the capital.' }, context);
+  const deadline = Date.now() + 8000;
+  while (calls.stalled === 0) { assert.ok(Date.now() < deadline, 'the child request starts'); await new Promise(resolve => setTimeout(resolve, 10)); }
+  await conversation.abort(context);
+  await submission.wait(context).catch(() => undefined);
+  const result = await delegateResult(conversation);
+  assert.equal(result.isError, true, 'Pi wrote the aborted result');
+  const [childRecord] = await owned(conversation);
+  assert.equal(result.details.kind, DELEGATE_DETAILS_KIND);
+  assert.equal(result.details.conversationId, childRecord.id, 'a card can still link the child');
+  assert.equal(result.details.status, 'running', 'the last running value: a settled error result with running details reads as cancelled');
 });

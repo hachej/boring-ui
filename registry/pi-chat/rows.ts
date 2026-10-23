@@ -4,6 +4,8 @@ import type { JsonValue } from '@earendil-works/chord';
 import type { AssistantMessage, ImageContent, Message, ToolCall, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai';
 import type { ToolEntry, ToolStatus } from './tool';
 import { ASK_USER_TOOL } from './question-card';
+import { parseDelegateDetails } from './subagent-card';
+import type { SubagentDetails } from './subagent-card';
 import { PRESENT_TOOL, artifactKey, detectArtifact, pendingId, pendingTitle } from './artifact';
 import type { ArtifactDescriptor, ArtifactsConfig } from './artifact';
 
@@ -45,6 +47,7 @@ export type Part =
   | { readonly kind: 'thinking'; readonly key: string; readonly text: string; readonly streaming: boolean }
   | { readonly kind: 'question'; readonly key: string; readonly call: ToolCall; readonly result: ToolResultMessage | undefined; readonly live: boolean; readonly questionId: string | undefined }
   | { readonly kind: 'approval'; readonly key: string; readonly call: ToolCall; readonly result: ToolResultMessage | undefined; readonly live: boolean; /** The bound question ID the answer must use (as for `question`). */ readonly questionId: string | undefined; /** The one-line summary `requireApproval` published for this call. */ readonly summary: string; /** The decision it recorded, once made. */ readonly decision?: ApprovalDecision; /** The call's own step, shown in the activity block once it has a result. */ readonly entry?: ToolEntry }
+  | { readonly kind: 'subagent'; readonly key: string; readonly call: ToolCall; readonly result: ToolResultMessage | undefined; /** The `DelegateDetails` the call published (live) or finished with, settled from its result. */ readonly details: SubagentDetails; /** The call's own step, shown in the activity block once it has a result. */ readonly entry?: ToolEntry }
   | { readonly kind: 'artifact'; readonly key: string; readonly call: ToolCall; readonly state: 'presenting' | 'ready'; readonly artifact: ArtifactDescriptor | undefined; readonly title: string | undefined; /** Set when the host's `detect` found the descriptor: the call stays a step of the activity block too. */ readonly entry?: ToolEntry }
   | { readonly kind: 'tool'; readonly key: string; readonly entry: ToolEntry };
 
@@ -164,8 +167,12 @@ export function derive(view: ConversationView | undefined, options: DeriveOption
     const result = results.get(call);
     if (call.name === ASK_USER_TOOL) return { kind: 'question', key, call, result, live: !committed, questionId: questionIds.get(call) };
     // A call gated by `requireApproval` identifies itself: it publishes its summary under APPROVAL_DETAILS before it asks.
-    const record = approvalRecord(result ? result.details : (Array.isArray(live?.['tools']) ? live['tools'] : []).map(object).find(slot => slot?.['callId'] === call.id)?.['details']);
+    const slotDetails = result ? undefined : (Array.isArray(live?.['tools']) ? live['tools'] : []).map(object).find(slot => slot?.['callId'] === call.id)?.['details'];
+    const record = approvalRecord(result ? result.details : slotDetails);
     if (record) return { kind: 'approval', key, call, result, live: !committed, questionId: questionIds.get(call), summary: record.summary, ...(record.decision ? { decision: record.decision } : {}), ...(result ? { entry: { key: `${key}:step`, call, result, status: status(result) } } : {}) };
+    // A `delegate` call (or any tool publishing `DelegateDetails`) is a sub-agent card, live from its running slot.
+    const delegated = parseDelegateDetails(result ? result.details : slotDetails, result);
+    if (delegated) return { kind: 'subagent', key, call, result, details: delegated, ...(result ? { entry: { key: `${key}:step`, call, result, status: status(result) } } : {}) };
     if (options.artifacts) {
       // A finished call that carries a descriptor becomes a card; a running `present` shows an "opening" card. A failed call stays an ordinary (failed) tool step.
       const artifact = result ? detectArtifact(call, result, options.artifacts.detect) : undefined;
@@ -191,7 +198,7 @@ export function derive(view: ConversationView | undefined, options: DeriveOption
     for (const [index, part] of content.entries()) {
       if (part.type === 'text') { const text = visibleText(part.text, streaming && index === content.length - 1, options.hideLine); if (text.length) parts.push({ kind: 'text', key: `${rowKey}:text:${index}`, text }); }
       else if (part.type === 'thinking') { if (developer && part.thinking.length) parts.push({ kind: 'thinking', key: `${rowKey}:thinking:${index}`, text: part.thinking, streaming: streaming && index === content.length - 1 }); }
-      else { const made = toolPart(part, `${rowKey}:tool:${index}`, committed); if (!natural && (made?.kind === 'artifact' || made?.kind === 'approval') && made.entry) parts.push({ kind: 'tool', key: `${made.key}:step`, entry: made.entry }); if (made) parts.push(made); }
+      else { const made = toolPart(part, `${rowKey}:tool:${index}`, committed); if (!natural && (made?.kind === 'artifact' || made?.kind === 'approval' || made?.kind === 'subagent') && made.entry) parts.push({ kind: 'tool', key: `${made.key}:step`, entry: made.entry }); if (made) parts.push(made); }
     }
     return parts;
   }

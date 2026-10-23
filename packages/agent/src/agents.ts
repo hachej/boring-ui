@@ -15,8 +15,8 @@ export { createSkillsExtension, parseSkill } from './skills.js';
 export type { Skill } from './skills.js';
 export { jsonSchemaTool } from './json-schema-tool.js';
 export type { JsonObjectSchema, JsonSchemaToolOptions } from './json-schema-tool.js';
-export { createDelegateTool, DELEGATE_TOOL } from './delegate.js';
-export type { DelegateOptions } from './delegate.js';
+export { createDelegateTool, DELEGATE_DETAILS_KIND, DELEGATE_TOOL } from './delegate.js';
+export type { DelegateDetails, DelegateOptions, DelegateStatus } from './delegate.js';
 
 /** One agent as plain data over native Pi pieces. It is a convenience, not another registry or lifecycle. */
 export interface AgentSpec {

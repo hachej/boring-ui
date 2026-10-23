@@ -635,6 +635,11 @@
           "target": "components/pi-chat/run-card.tsx"
         },
         {
+          "path": "registry/pi-chat/subagent-card.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat/subagent-card.tsx"
+        },
+        {
           "path": "registry/pi-chat/use-hold-to-record.ts",
           "type": "registry:hook",
           "target": "components/pi-chat/use-hold-to-record.ts"
