@@ -3,11 +3,8 @@ import type { ConversationView, EntryRecord, InboxItem, JsonObject } from '@eare
 import type { JsonValue } from '@earendil-works/chord';
 import type { AssistantMessage, ImageContent, Message, ToolCall, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai';
 import type { ToolEntry, ToolStatus } from './tool';
-import { ASK_USER_TOOL } from './question-card';
-import { parseDelegateDetails } from './subagent-card';
-import type { SubagentDetails } from './subagent-card';
-import { PRESENT_TOOL, artifactKey, detectArtifact, pendingId, pendingTitle } from './artifact';
-import type { ArtifactDescriptor, ArtifactsConfig } from './artifact';
+import { ASK_USER_TOOL } from './config';
+import type { ApprovalDecision, ChatArtifact, ChatArtifactsConfig, SubagentRenderer } from './config';
 
 /** The host adds file content for `@path` mentions as parts that start like this; the message already shows the mention itself. */
 export const isFileBlock = (text: string): boolean => text.startsWith('<file path="');
@@ -47,8 +44,8 @@ export type Part =
   | { readonly kind: 'thinking'; readonly key: string; readonly text: string; readonly streaming: boolean }
   | { readonly kind: 'question'; readonly key: string; readonly call: ToolCall; readonly result: ToolResultMessage | undefined; readonly live: boolean; readonly questionId: string | undefined }
   | { readonly kind: 'approval'; readonly key: string; readonly call: ToolCall; readonly result: ToolResultMessage | undefined; readonly live: boolean; /** The bound question ID the answer must use (as for `question`). */ readonly questionId: string | undefined; /** The one-line summary `requireApproval` published for this call. */ readonly summary: string; /** The decision it recorded, once made. */ readonly decision?: ApprovalDecision; /** The call's own step, shown in the activity block once it has a result. */ readonly entry?: ToolEntry }
-  | { readonly kind: 'subagent'; readonly key: string; readonly call: ToolCall; readonly result: ToolResultMessage | undefined; /** The `DelegateDetails` the call published (live) or finished with, settled from its result. */ readonly details: SubagentDetails; /** The call's own step, shown in the activity block once it has a result. */ readonly entry?: ToolEntry }
-  | { readonly kind: 'artifact'; readonly key: string; readonly call: ToolCall; readonly state: 'presenting' | 'ready'; readonly artifact: ArtifactDescriptor | undefined; readonly title: string | undefined; /** Set when the host's `detect` found the descriptor: the call stays a step of the activity block too. */ readonly entry?: ToolEntry }
+  | { readonly kind: 'subagent'; readonly key: string; readonly call: ToolCall; readonly result: ToolResultMessage | undefined; /** The sub-agent card (`ChatCards.subagent`), from the details the call published (live) or finished with. */ readonly content: ReactNode; /** The call's own step, shown in the activity block once it has a result. */ readonly entry?: ToolEntry }
+  | { readonly kind: 'artifact'; readonly key: string; readonly call: ToolCall; readonly artifact: ChatArtifact; /** Set when the host's `detect` found the descriptor: the call stays a step of the activity block too. */ readonly entry?: ToolEntry }
   | { readonly kind: 'tool'; readonly key: string; readonly entry: ToolEntry };
 
 export type Row = (
@@ -99,15 +96,17 @@ export interface DeriveOptions {
   readonly renderEntry: ((entry: EntryRecord) => ChatCard | undefined) | undefined;
   readonly renderTool: ((call: ToolCall, result: ToolResultMessage | undefined) => ChatCard | undefined) | undefined;
   readonly groupTool: ((call: ToolCall, result: ToolResultMessage) => boolean) | undefined;
-  /** Turn artifact tool results into cards (`detect` recognises descriptors the tool result does not carry itself). */
-  readonly artifacts?: { readonly detect?: ArtifactsConfig['detect'] | undefined } | undefined;
+  /** Turn artifact tool results into cards (`pi-artifacts` recognises them; `detect` finds descriptors the tool result does not carry itself). */
+  readonly artifacts?: { readonly recognise: NonNullable<ChatArtifactsConfig['recognise']>; readonly detect?: ChatArtifactsConfig['detect'] } | undefined;
+  /** Draws sub-agent calls (`ChatCards.subagent`). Without it they are ordinary tool steps. */
+  readonly subagent?: SubagentRenderer | undefined;
   /** `natural` shows only what a non-developer reads: their messages, the assistant's prose and the question, approval and artifact cards. Tool steps, reasoning, system rows and raw error text are left out of the rows (the entries stay as they are). */
   readonly presentation?: 'natural' | undefined;
 }
 
 /** Key of `{ summary, decision? }` in a gated call's details: `APPROVAL_DETAILS` of `@hachej/boring-agent/approval` (a contract test keeps them equal). */
 export const APPROVAL_DETAILS = 'boring.approval';
-export type ApprovalDecision = 'approved' | 'denied' | 'cancelled';
+export type { ApprovalDecision } from './config';
 /** The approval record a gated call publishes: its summary and, once made, the decision (`approved`, `denied` or `cancelled`). */
 const approvalRecord = (details: unknown): { summary: string; decision?: ApprovalDecision } | undefined => {
   const record = object(object(details as JsonValue | undefined)?.[APPROVAL_DETAILS]);
@@ -170,21 +169,13 @@ export function derive(view: ConversationView | undefined, options: DeriveOption
     const slotDetails = result ? undefined : (Array.isArray(live?.['tools']) ? live['tools'] : []).map(object).find(slot => slot?.['callId'] === call.id)?.['details'];
     const record = approvalRecord(result ? result.details : slotDetails);
     if (record) return { kind: 'approval', key, call, result, live: !committed, questionId: questionIds.get(call), summary: record.summary, ...(record.decision ? { decision: record.decision } : {}), ...(result ? { entry: { key: `${key}:step`, call, result, status: status(result) } } : {}) };
-    // A `delegate` call (or any tool publishing `DelegateDetails`) is a sub-agent card, live from its running slot.
-    const delegated = parseDelegateDetails(result ? result.details : slotDetails, result);
-    if (delegated) return { kind: 'subagent', key, call, result, details: delegated, ...(result ? { entry: { key: `${key}:step`, call, result, status: status(result) } } : {}) };
-    if (options.artifacts) {
-      // A finished call that carries a descriptor becomes a card; a running `present` shows an "opening" card. A failed call stays an ordinary (failed) tool step.
-      const artifact = result ? detectArtifact(call, result, options.artifacts.detect) : undefined;
-      if (artifact) {
-        // A tool whose own result carries the descriptor is replaced by its card; a host-detected card is shown in addition to the step.
-        const own = result && detectArtifact(call, result);
-        return { kind: 'artifact', key, call, state: 'ready', artifact, title: artifact.title, ...(own ? {} : { entry: { key, call, result, status: status(result) } }) };
-      }
-      if (!result && run && call.name === PRESENT_TOOL) {
-        return { kind: 'artifact', key, call, state: 'presenting', artifact: undefined, title: pendingTitle(call) };
-      }
-    }
+    // A `delegate` call (or any tool publishing `DelegateDetails`) is a sub-agent card, live from its running slot, when the sub-agent item draws it.
+    const delegated = options.subagent?.(call, result ? result.details : slotDetails, result);
+    if (delegated !== undefined) return { kind: 'subagent', key, call, result, content: delegated, ...(result ? { entry: { key: `${key}:step`, call, result, status: status(result) } } : {}) };
+    // With the artifacts item, a finished call that carries a descriptor becomes a card and a running `present` an "opening" card. A failed call stays an ordinary (failed) tool step.
+    const artifact = options.artifacts?.recognise(call, result, !result && run !== undefined, options.artifacts.detect);
+    // A tool whose own result carries the descriptor is replaced by its card; a host-detected card is shown in addition to the step.
+    if (artifact) return { kind: 'artifact', key, call, artifact, ...(result && !artifact.own ? { entry: { key, call, result, status: status(result) } } : {}) };
     const custom = committed ? renderTool?.(call, result) : undefined;
     if (custom?.required) { pinned.push({ key, content: custom.content }); return undefined; }
     if (natural) return undefined;
@@ -270,16 +261,16 @@ function mergeTurns(rows: readonly Row[]): Row[] {
  * A running `present` of a file already shown takes over the title of its card.
  */
 function oneCardPerArtifact(parts: readonly Part[]): Part[] {
-  const idOf = (part: Part) => part.kind === 'artifact' ? part.artifact ? artifactKey(part.artifact) : (part.state === 'presenting' ? pendingId(part.call) : undefined) : undefined;
+  const idOf = (part: Part) => part.kind === 'artifact' ? part.artifact.id : undefined;
   const last = new Map<string, number>();
   for (const [index, part] of parts.entries()) { const id = idOf(part); if (id !== undefined) last.set(id, index); }
   const out: Part[] = [];
   for (const [index, part] of parts.entries()) {
     const id = idOf(part);
     if (id === undefined || last.get(id) === index) {
-      if (part.kind === 'artifact' && part.artifact === undefined && part.title === undefined && id !== undefined) {
-        const earlier = parts.find(other => other.kind === 'artifact' && other.artifact !== undefined && artifactKey(other.artifact) === id);
-        if (earlier?.kind === 'artifact') { out.push({ ...part, title: earlier.title }); continue; }
+      if (part.kind === 'artifact' && part.artifact.state === 'presenting' && part.artifact.title === undefined && id !== undefined) {
+        const earlier = parts.find(other => other.kind === 'artifact' && other.artifact.state === 'ready' && other.artifact.id === id);
+        if (earlier?.kind === 'artifact') { out.push({ ...part, artifact: { ...part.artifact, title: earlier.artifact.title } }); continue; }
       }
       out.push(part);
     }

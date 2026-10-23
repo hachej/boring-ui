@@ -104,12 +104,12 @@ const REVISION = await blobRevision(encoder.encode(text));
 const revision = () => REVISION;
 const doc = (overrides = {}) => ({ kind: 'opened', instanceId: 'tab-1', path: 'doc.md', revision: undefined, ...overrides });
 
-/** The page's real presents bookkeeping (registry/pi-chat/artifact.ts), bundled as a consumer would. */
+/** The page's real presents bookkeeping (registry/pi-artifacts/artifact.ts), bundled as a consumer would. */
 async function loadPageAcks() {
   const root = fileURLToPath(new URL('../../', import.meta.url));
   const out = `${root}.cache/view-open-page-test`;
   mkdirOut(out, { recursive: true });
-  await build({ entryPoints: [`${root}registry/pi-chat/artifact.ts`], outfile: `${out}/artifact.mjs`, bundle: true, format: 'esm', platform: 'node', packages: 'external', logLevel: 'silent' });
+  await build({ entryPoints: [`${root}registry/pi-artifacts/artifact.ts`], outfile: `${out}/artifact.mjs`, bundle: true, format: 'esm', platform: 'node', packages: 'external', logLevel: 'silent' });
   return import(pathToFileURL(`${out}/artifact.mjs`).href);
 }
 

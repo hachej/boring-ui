@@ -34,8 +34,9 @@ import type { AgentNotification, NotificationLabels, NotificationStore } from '.
 import { ChatTextProvider, defaultChatIcons, defaultChatLabels, useMergedText } from '../pi-chat/labels';
 import type { ChatIcons, ChatLabels } from '../pi-chat/labels';
 import { MessageQueue } from '../pi-chat/queue';
-import { artifactKey, collectArtifacts } from '../pi-chat/artifact';
-import type { ArtifactDescriptor, ArtifactsConfig } from '../pi-chat/artifact';
+import { artifactKey, collectArtifacts } from '../pi-artifacts/artifact';
+import type { ArtifactDescriptor, ArtifactsConfig } from '../pi-artifacts/artifact';
+import { artifactCards } from '../pi-artifacts/artifact-card';
 import type { ChatCard, Mode } from '../pi-chat/rows';
 import { useChatSession, useTranscript } from '../pi-chat/session';
 import type { ChatFeatureProps, ChatSession } from '../pi-chat/session';
@@ -107,8 +108,10 @@ export interface AmbientArtifactPanelApi extends WorkspacePanelApi {
   readonly select: (version: ArtifactDescriptor | 'latest') => void;
 }
 
-export interface AmbientChatProps extends ChatFeatureProps {
+export interface AmbientChatProps extends Omit<ChatFeatureProps, 'artifacts'> {
   readonly controller: NativeChatController;
+  /** Artifact cards (`ArtifactsConfig` of `pi-artifacts`); the ambient bar plugs in their card itself. */
+  readonly artifacts?: ArtifactsConfig | undefined;
   /** Embed the expanded conversation in a host workspace. Switching this flag changes layout without remounting the transcript or composer. The host supplies the header. */
   readonly embedded?: boolean;
   /**
@@ -307,6 +310,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
     isOpen: descriptor => opened !== null && artifactKey(opened.descriptor) === artifactKey(descriptor) && (opened.follow ? (descriptor.ordinal ?? 0) >= (versionsRef.current.find(version => artifactKey(version) === artifactKey(descriptor))?.ordinal ?? 0) : descriptor.revision === opened.descriptor.revision),
     ...(detect ? { detect } : {}),
     ...(hostArtifacts?.kinds ? { kinds: hostArtifacts.kinds } : {}),
+    recognise: hostArtifacts?.recognise ?? artifactCards.recognise, Card: hostArtifacts?.Card ?? artifactCards.Card,
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inWindow, hostArtifacts, opened, detect]);
   const session = useChatSession({ controller, activeController, mode, presentation, actions, renderEntry, hideLine, historicalMessageActions, unread: replyUnread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept,

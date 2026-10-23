@@ -14,8 +14,10 @@
 // 6. No import cycle in registry blocks or package sources (packages/*/src), type-only and lazy imports included: copied-in
 //    code with a cycle breaks some bundlers, HMR and tree-shaking. Shared types and helpers live in the module that owns them
 //    (a leaf lib never imports a component), and a module that needs them imports them in one direction.
-// 7. pi-chat is the core chat; each composer feature is its own optional item that plugs in through the chat's props (D-257). The core
-//    depends on no `pi-chat-*` item, declares none of their npm packages and imports none of the feature-only modules in CORE_EXCLUDED.
+// 7. pi-chat is the core chat; each composer feature and each reply card is its own optional item that plugs in through the chat's
+//    props (D-257). The core depends on no `pi-chat-*` item nor on pi-artifacts, declares none of their npm packages, imports none of
+//    the feature-only modules in CORE_EXCLUDED and ships none of the card modules in CORE_EXCLUDED_FILES (question, approval,
+//    sub-agent, run and artifact cards, and the artifact descriptors), so a question or an approval without its item shows a notice.
 import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,6 +31,10 @@ const local = (dependency) => dependency.startsWith(namespace) ? dependency.slic
 export const SHADCN_BUILTINS = Object.freeze(['button', 'toggle', 'switch', 'drawer', 'sidebar', 'avatar', 'dropdown-menu', 'separator', 'tooltip', 'trace', 'message', 'bubble', 'attachment', 'badge', 'alert', 'collapsible', 'checkbox', 'table', 'card', 'spinner', 'message-scroller', 'empty', 'input', 'input-group', 'popover', 'scroll-area', 'native-select', 'label', 'item', 'toggle-group', 'tabs', 'textarea', 'dialog', 'progress']);
 /** npm packages (or package subpaths) only the optional composer feature items use: Markdown and voice capture. */
 export const CORE_EXCLUDED = Object.freeze(['marked', 'entities', '@hachej/boring-ui-kit/voice-capture']);
+/** The optional items the core chat must not depend on besides the `pi-chat-*` ones. */
+export const CORE_EXCLUDED_ITEMS = Object.freeze(['pi-artifacts']);
+/** The card modules that live in their optional items, never in the core chat (D-257 step 3). */
+export const CORE_EXCLUDED_FILES = Object.freeze(['question-card', 'approval-card', 'subagent-card', 'run-card', 'artifact-card', 'artifact']);
 const packageName = (dependency) => dependency.replace(/(.)@[^@]*$/, '$1');
 const importPattern = /\b(?:from|import)\s*\(?\s*['"]([^'"]+)['"]/g;
 
@@ -141,9 +147,11 @@ export function checkRegistryBlocks(root) {
   }
   const core = items.get('pi-chat');
   if (core) {
-    for (const dependency of closure('pi-chat')) if (dependency.startsWith('pi-chat-')) errors.push(`BORING-BLOCKS pi-chat: the core chat must not depend on the optional feature item ${dependency}; the host plugs it in through the chat's props`);
+    for (const dependency of closure('pi-chat')) if (dependency.startsWith('pi-chat-') || CORE_EXCLUDED_ITEMS.includes(dependency)) errors.push(`BORING-BLOCKS pi-chat: the core chat must not depend on the optional feature item ${dependency}; the host plugs it in through the chat's props`);
     for (const dependency of core.dependencies ?? []) if (CORE_EXCLUDED.includes(packageName(dependency))) errors.push(`BORING-BLOCKS pi-chat: the core chat must not declare ${packageName(dependency)}; it belongs to an optional pi-chat-* feature item`);
     for (const file of core.files ?? []) {
+      const base = posix.basename(file.path).replace(/\.[^.]+$/, '');
+      if (CORE_EXCLUDED_FILES.includes(base)) errors.push(`BORING-BLOCKS ${file.path}: the core chat ships ${base}, a card module that belongs to its optional item (pi-chat-question, pi-chat-approval, pi-chat-subagent or pi-artifacts)`);
       if (!existsSync(resolve(root, file.path))) continue;
       for (const [, specifier] of readFileSync(resolve(root, file.path), 'utf8').matchAll(importPattern)) if (CORE_EXCLUDED.includes(specifier)) errors.push(`BORING-BLOCKS ${file.path}: the core chat imports ${specifier}; move that feature to its optional pi-chat-* item`);
     }

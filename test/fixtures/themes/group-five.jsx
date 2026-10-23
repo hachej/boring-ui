@@ -3,7 +3,7 @@ import { RowView } from '../../../registry/pi-chat/message.tsx';
 import { markdownText } from '../../../registry/pi-chat-markdown/markdown.tsx';
 import { MessageQueue } from '../../../registry/pi-chat/queue.tsx';
 import { Shimmer } from '../../../registry/pi-chat/shimmer.tsx';
-import { formAnswer } from '../../../registry/pi-chat/question-card.tsx';
+import { formAnswer } from '../../../registry/pi-chat-question/question-card.tsx';
 import { ChatTextProvider } from '../../../registry/pi-chat/labels.ts';
 import { chatTextFor } from '../../../registry/pi-chat/locale.ts';
 

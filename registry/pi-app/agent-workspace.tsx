@@ -22,11 +22,11 @@ import type { ChatLocale } from '../pi-chat/locale';
 import type { FileTreeViewProps } from '../file-tree/file-tree';
 import type { ResourceIdentity } from '@hachej/boring-files/remote';
 import type { ChatController } from '@hachej/boring-ui-kit/native-chat';
-import { PiChat, artifactKey } from '../pi-chat/pi-chat';
+import { PiChat } from '../pi-chat/pi-chat';
 import { withChatPlugins } from '../pi-chat-plugins/chat-plugins';
-import { createPresentAcks, pendingPresents } from '../pi-chat/artifact';
-import type { PresentAcks } from '../pi-chat/artifact';
-import type { ArtifactDescriptor, ArtifactsConfig, ConversationsConfig, PiChatProps } from '../pi-chat/pi-chat';
+import { artifactKey, createPresentAcks, pendingPresents } from '../pi-artifacts/artifact';
+import type { ArtifactDescriptor, ArtifactsConfig, PresentAcks } from '../pi-artifacts/artifact';
+import type { ConversationsConfig, PiChatProps } from '../pi-chat/pi-chat';
 import { Dock, DockLayout, DockMain } from '../pi-workspace/dock';
 import { ArtifactWorkspace } from '../pi-workspace/workspace';
 import type { WorkspacePanelApi } from '../pi-workspace/workspace';
@@ -383,7 +383,7 @@ export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, titl
   const preview = imagePreview && !chat.onOpenImage && imagePreview.controller === controller && imagePreview.client === client && imagePreview.conversationId === conversationId ? imagePreview : undefined;
   useEffect(() => { setImagePreview(undefined); }, [controller, client, conversationId, chat.onOpenImage]);
   // ---- Presented files: the page confirms a `present` call only once its panel has mounted the revision (`onShown`, from the viewers).
-  // The bookkeeping is `createPresentAcks` (pi-chat/artifact.ts); the answer goes through the chat's own `answer` (the transport's
+  // The bookkeeping is `createPresentAcks` (pi-artifacts/artifact.ts); the answer goes through the chat's own `answer` (the transport's
   // `?op=answer`) and the server checks the path and revision.
   const answerPresent = useRef(chat.actions?.answer); answerPresent.current = chat.actions?.answer;
   const openForPresent = useRef<(path: string) => boolean>(() => false);

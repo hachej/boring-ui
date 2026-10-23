@@ -1,20 +1,13 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ComponentType, ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import type { ImageContent, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai';
 import { AlertCircleIcon, CircleSlashIcon, FileAudioIcon, FileIcon, FileSpreadsheetIcon, FileTextIcon, ImageIcon, PauseIcon, PlayIcon, PresentationIcon } from 'lucide-react';
 import { CopyButton } from './code-block';
-import type { CommandMentions } from './config';
-import { ArtifactCard } from './artifact-card';
+import type { AnswerOutcome, ChatArtifactsConfig, ChatCards, CommandMentions } from './config';
 import { feedbackContent } from './feedback-content';
 import { SentFeedback } from './sent-feedback';
-import type { ArtifactsConfig } from './artifact';
-import { ApprovalCard } from './approval-card';
-import type { ApprovalCardProps } from './approval-card';
-import { SubagentCard } from './subagent-card';
-import { QuestionCard } from './question-card';
-import type { AnswerOutcome, QuestionCardProps } from './question-card';
 import { ActivityBlock } from './activity';
 import type { ActivityState } from './activity';
 import { Shimmer } from './shimmer';
@@ -54,13 +47,7 @@ export interface ChatTextPart {
 const plainText = ({ text, streaming }: ChatTextPart): ReactNode =>
   <div data-testid="message-text" data-streaming={streaming ? 'true' : undefined} className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">{text}</div>;
 
-/** The cards the chat draws for a human decision. Each one left out uses the built-in card. */
-export interface ChatCards {
-  /** An `ask_user` question. Default: `QuestionCard`. */
-  readonly question?: ComponentType<QuestionCardProps> | undefined;
-  /** A call gated by `requireApproval`. Default: `ApprovalCard`. */
-  readonly approval?: ComponentType<ApprovalCardProps> | undefined;
-}
+export type { ChatCards } from './config';
 
 export interface RowContext {
   readonly developer: boolean;
@@ -81,7 +68,7 @@ export interface RowContext {
   /** Opens a file card through the host's workspace opener. */
   readonly openFile?: ((path: string) => void) | undefined;
   readonly answer: ((questionId: string, answer: string) => Promise<AnswerOutcome>) | undefined;
-  readonly artifacts: { readonly open: ArtifactsConfig['open']; readonly isOpen?: ArtifactsConfig['isOpen'] | undefined; readonly kinds?: ArtifactsConfig['kinds'] } | undefined;
+  readonly artifacts: { readonly open: ChatArtifactsConfig['open']; readonly isOpen?: ChatArtifactsConfig['isOpen'] | undefined; readonly kinds?: ChatArtifactsConfig['kinds']; readonly Card: NonNullable<ChatArtifactsConfig['Card']> } | undefined;
   /** Replaces the default copy button under a settled reply (the ambient window adds feedback and the time); `host` holds the host's message actions. */
   readonly replyActions?: ((reply: { readonly key: string; readonly text: string; readonly timestamp?: number | undefined }, host: ReactNode) => ReactNode) | undefined;
   /** The host's actions for a settled reply (`messageActions`). */
@@ -285,6 +272,17 @@ function Notice({ tone, icon, children, testid }: { readonly tone: 'error' | 'mu
   </Alert>;
 }
 
+/**
+ * A question or an approval waits for the person but this chat has no card for it (no `pi-chat-question` or `pi-chat-approval`): say so,
+ * so the run is never silently blocked. It offers no answer UI.
+ */
+function AnswerWaiting({ kind }: { readonly kind: 'question' | 'approval' }) {
+  const { labels } = useChatText();
+  return <Alert role="status" data-testid="answer-waiting" data-kind={kind}>
+    <AlertCircleIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" /><AlertDescription>{labels.waitingForAnswer}</AlertDescription>
+  </Alert>;
+}
+
 function resultText(message: ToolResultMessage): string { return message.content.map(part => part.type === 'text' ? part.text : '').join('\n'); }
 
 function messageImages(row: Row): readonly ImageContent[] {
@@ -338,7 +336,7 @@ function RowBody({ row, images, context: liveContext }: { readonly row: Row; rea
         if (normalized) files.set(normalized, files.get(normalized) === 'created' || call.name === 'write' ? 'created' : 'edited');
       }
       const chunks = segments(row.parts, context.groupTool);
-      const Question = context.cards?.question ?? QuestionCard, Approval = context.cards?.approval ?? ApprovalCard;
+      const { question: Question, approval: Approval } = context.cards ?? {};
       const active = row.active === true || row.streaming;
       const lastText = [...row.parts].reverse().find(part => part.kind === 'text');
       const host = nativeActions && row.text && context.messageActions
@@ -361,12 +359,18 @@ function RowBody({ row, images, context: liveContext }: { readonly row: Row; rea
             if (part.kind === 'text') return <Bubble key={part.key} variant="ghost"><BubbleContent>{(context.renderText ?? plainText)({ text: part.text, renderMention, streaming: row.streaming && part === lastText && row.parts[row.parts.length - 1] === part,
               ...(settled && context.commandMentions ? { commandMentions: context.commandMentions } : {}), ...(context.onCopy ? { onCopy: context.onCopy } : {}) })}</BubbleContent></Bubble>;
             if (part.kind === 'thinking') return null; // reasoning is a step of an activity block
-            if (part.kind === 'approval') return <Approval key={part.key} call={part.call} result={part.result} questionId={part.questionId} answer={context.answer} summary={part.summary} decision={part.decision} live={part.live} />;
-            if (part.kind === 'subagent') return <SubagentCard key={part.key} details={part.details} />;
-            if (part.kind === 'question') return <Question key={part.key} call={part.call} result={part.result} questionId={part.questionId} answer={context.answer} live={part.live} />;
-            if (part.kind === 'artifact' && part.artifact && files.has(part.artifact.target.resource.path.replace(/^(\.\/)+/, ''))) return null;
-            if (part.kind === 'artifact') return <ArtifactCard key={part.key} artifact={part.artifact} title={part.title} {...(part.state === 'ready' ? {} : { pending: part.state })}
-              open={part.artifact !== undefined && (context.artifacts?.isOpen?.(part.artifact) ?? false)} onOpen={context.artifacts?.open} kinds={context.artifacts?.kinds} />;
+            if (part.kind === 'approval') return Approval ? <Approval key={part.key} call={part.call} result={part.result} questionId={part.questionId} answer={context.answer} summary={part.summary} decision={part.decision} live={part.live} />
+              : !part.live && !part.result && !part.decision ? <AnswerWaiting key={part.key} kind="approval" /> : null;
+            if (part.kind === 'subagent') return <Fragment key={part.key}>{part.content}</Fragment>;
+            if (part.kind === 'question') return Question ? <Question key={part.key} call={part.call} result={part.result} questionId={part.questionId} answer={context.answer} live={part.live} />
+              : !part.live && !part.result ? <AnswerWaiting key={part.key} kind="question" /> : null;
+            if (part.kind === 'artifact') {
+              const { artifact } = part, artifacts = context.artifacts;
+              if (!artifacts || (artifact.path !== undefined && files.has(artifact.path.replace(/^(\.\/)+/, '')))) return null;
+              const descriptor = artifact.descriptor as never;
+              return <artifacts.Card key={part.key} artifact={artifact} open={artifact.state === 'ready' && (artifacts.isOpen?.(descriptor) ?? false)}
+                onOpen={artifact.state === 'ready' ? () => artifacts.open(descriptor) : undefined} kinds={artifacts.kinds} />;
+            }
             return part.entry.custom ? <div key={part.key}>{part.entry.custom}</div> : <ToolCard key={part.key} entry={part.entry} {...(context.onOpenImage ? { onOpenImage: context.onOpenImage } : {})} />;
           })}
           <ImageThumbnails images={images} onOpenImage={context.onOpenImage} />

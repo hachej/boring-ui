@@ -27,7 +27,7 @@ import type { BlobItem } from '@hachej/boring-files/blob';
 import type { ViewerKind as FileKind } from '@hachej/boring-files/file-types';
 import { KIND_LABEL, decodeText } from './file-kinds';
 import { ArtifactPanel, resolveKind, useReportShown } from './artifact-panel';
-import type { ArtifactDescriptor } from '../pi-chat/artifact';
+import type { ArtifactDescriptor } from '../pi-artifacts/artifact';
 import type { ViewerOptions } from './artifact-panel';
 import { useSaved } from './use-saved';
 import { useAppText } from './app-labels';
