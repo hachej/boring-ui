@@ -7,6 +7,13 @@ import { createWorkspaceJournal } from '@hachej/boring-files/journal';
 import { openNodeConnection } from '@hachej/boring-files/sqlite';
 import { openSqliteFileSystem } from '@hachej/boring-files/sqlite-filesystem';
 import { createWorkspaceProvider } from '@hachej/boring-files/workspace';
+import { createRevisionHandler } from '@hachej/boring-files/revision-handler';
+import { connectRevisionProvider } from '@hachej/boring-files/revision';
+import { sendWebResponse, webRequest } from '@hachej/boring-files/node-http';
+import { createServer } from 'node:http';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const identity = { scopeId: 'fictional-project', principalId: 'fictional-editor', initiatorId: 'alice' };
 const target = (path, view = { kind: 'published' }) => ({ resource: { providerId: 'documents', path }, view });
@@ -482,4 +489,57 @@ test('a typed error thrown after remote commit remains uncertain and reconciles 
   assert.equal(result.kind, 'unknown');
   assert.equal((await f.client().lookup('committed-before-error')).kind, 'committed');
   assert.deepEqual((await f.client().read(latest('note.md'))).snapshot.bytes, Uint8Array.of(1, 2));
+});
+
+// D-258: the revision handler serves the resource calls through `createResourceHandler`, so the plain resource client a page
+// uses (before or without the revision binding) reads and writes on either route. Real client, real handlers, real HTTP.
+test('createResourceClient reads and conditionally writes over HTTP against createResourceHandler and createRevisionHandler alike', async t => {
+  const directory = mkdtempSync(join(tmpdir(), 'boring-resource-http-'));
+  const db = openNodeConnection(join(directory, 'files.sqlite'));
+  const fs = openSqliteFileSystem({ connection: db, workspace: 'fictional', cwd: '/workspace' });
+  const workspace = createWorkspaceProvider({ fs, journal: createWorkspaceJournal(db), identity: { providerId: 'documents', instanceId: 'fictional', incarnation: fs.incarnation, viewId: 'published' } });
+  const routes = {
+    '/api/resource': createResourceHandler({ authenticate: async () => identity, reader: workspace, publisher: workspace.publication, lookup: workspace.reconciliation }),
+    '/api/files': createRevisionHandler({ resolve: async () => ({ provider: workspace, access: identity }) }),
+  };
+  const server = createServer(async (incoming, outgoing) => {
+    const url = new URL(incoming.url, 'http://127.0.0.1');
+    const request = await webRequest(incoming, url);
+    const handler = routes[url.pathname];
+    await sendWebResponse(request && handler ? await handler(request) : new Response(null, { status: 404 }), outgoing);
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => { server.close(); db.close(); rmSync(directory, { force: true, recursive: true }); });
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  const statuses = [];
+  const http = request => fetch(request).then(response => { statuses.push(response.status); return response; });
+  for (const route of ['/api/resource', '/api/files']) await t.test(route, async () => {
+    statuses.length = 0;
+    const client = createResourceClient({ identity, endpoint: origin + route, fetch: http, publication: true, reconciliation: true });
+    const path = `${route.slice(5)}.md`, encoder = new TextEncoder();
+    const created = await client.publish(create(`create-${route.slice(5)}`, path, encoder.encode('# One\n'), 'text/markdown'));
+    assert.equal(created.kind, 'committed', `${route}: create (HTTP ${statuses.join(', ')})`);
+    const read = await client.read(latest(path));
+    assert.equal(read.kind, 'available', `${route}: read`);
+    assert.equal(new TextDecoder().decode(read.snapshot.bytes), '# One\n');
+    const current = read.snapshot.ref;
+    const saved = await client.publish(replace(`save-${route.slice(5)}`, current, encoder.encode('# Two\n'), 'text/markdown'));
+    assert.equal(saved.kind, 'committed', `${route}: conditional write with the current revision`);
+    const stale = await client.publish(replace(`stale-${route.slice(5)}`, current, encoder.encode('# Lost\n'), 'text/markdown'));
+    assert.equal(stale.kind, 'conflict', `${route}: the stale revision is refused`);
+    assert.equal(new TextDecoder().decode((await client.read(latest(path))).snapshot.bytes), '# Two\n');
+    assert.equal((await client.lookup(`save-${route.slice(5)}`)).kind, 'committed', `${route}: lookup by operation id`);
+    assert.ok(statuses.every(status => status === 200), `${route}: HTTP ${statuses.join(', ')}`);
+  });
+  // The binding stays enforced when a client sends one: the revision provider still works, and a binding for another workspace is refused.
+  const bound = await connectRevisionProvider({ endpoint: `${origin}/api/files`, fetch: request => fetch(request) });
+  assert.equal((await bound.read(latest('files.md'))).kind, 'available');
+  const forged = createResourceClient({ identity, endpoint: `${origin}/api/files`, publication: true, reconciliation: true, fetch: request => {
+    const headers = new Headers(request.headers);
+    headers.set('x-boring-workspace', encodeURIComponent(JSON.stringify({ identity, workspace: { providerId: 'documents', instanceId: 'other', incarnation: 'other', viewId: 'published' } })));
+    return fetch(new Request(request, { headers }));
+  } });
+  assert.equal((await forged.read(latest('files.md'))).kind, 'unavailable');
+  assert.equal((await forged.publish(replace('forged', (await bound.read(latest('files.md'))).snapshot.ref, Uint8Array.of(1)))).kind, 'unknown');
+  assert.equal(new TextDecoder().decode((await bound.read(latest('files.md'))).snapshot.bytes), '# Two\n');
 });

@@ -14,7 +14,7 @@ import type { AttachmentsConfig, EffortConfig, MentionsConfig, ModelConfig, Mode
 import { displayName, looksLikeMarkdown, mentionToken, pieces } from './config';
 import { ModelEffortPicker } from './pickers';
 import type { CommandMentions } from './markdown';
-import type { RowContext } from './message';
+import type { ChatCards, ChatTextPart, RowContext } from './message';
 import type { QueueActions, QueuedMessage } from './queue';
 import type { AnswerOutcome } from './question-card';
 import type { ArtifactsConfig } from './artifact';
@@ -50,7 +50,14 @@ export interface ChatFeatureProps {
   readonly unread?: (reply: ReplyRef) => ReactNode;
   /** Message inside the single native response-error notice. Null/undefined keeps the default; native status and metadata stay unchanged. */
   readonly replyError?: (reply: ReplyRef) => ReactNode;
+  /** Card for any tool call; the catch-all after `toolRenderers`. */
   readonly renderTool?: (call: ToolCall, result: ToolResultMessage | undefined) => ChatCard | undefined;
+  /** Cards for tool calls, keyed by tool name (same contract as `renderTool`). An entry that returns undefined falls back to `renderTool`. */
+  readonly toolRenderers?: Readonly<Record<string, (call: ToolCall, result: ToolResultMessage | undefined) => ChatCard | undefined>> | undefined;
+  /** Draws an assistant text part. Default: the built-in Markdown. */
+  readonly renderText?: ((part: ChatTextPart) => ReactNode) | undefined;
+  /** The question and approval cards. Each one left out uses the built-in card. */
+  readonly cards?: ChatCards | undefined;
   readonly groupTool?: (call: ToolCall, result: ToolResultMessage) => boolean;
   readonly commandMentions?: CommandMentions;
   readonly onOpenImage?: (image: ImageContent) => void;
@@ -112,7 +119,7 @@ export interface ChatSessionOptions extends Readonly<{ [Key in keyof ChatFeature
 }
 
 export function useChatSession(options: ChatSessionOptions) {
-  const { controller, activeController: active, mode, presentation, actions, renderEntry, hideLine, historicalMessageActions, unread, replyError, renderTool, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept,
+  const { controller, activeController: active, mode, presentation, actions, renderEntry, hideLine, historicalMessageActions, unread, replyError, renderTool: catchAll, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept,
     slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend, rowExtras, feedback, onOpenFile, fileChanges, pasteToFile, composerChips, composerHeader, composerHasContent, onPickFiles } = options;
   const { labels } = useChatText();
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
@@ -135,6 +142,8 @@ export function useChatSession(options: ChatSessionOptions) {
   }, [controller]);
 
   const natural = presentation === 'natural';
+  // A tool's own renderer comes first; `renderTool` stays the catch-all.
+  const renderTool = useMemo(() => toolRenderers ? (call: ToolCall, result: ToolResultMessage | undefined) => (Object.hasOwn(toolRenderers, call.name) ? toolRenderers[call.name]?.(call, result) : undefined) ?? catchAll?.(call, result) : catchAll, [toolRenderers, catchAll]);
   const developer = mode === 'developer' && !natural;
   // Only the recogniser takes part in deriving rows; which card is open changes without rebuilding them.
   const artifactDetect = useMemo(() => artifacts ? { detect: artifacts.detect } : undefined, [Boolean(artifacts), artifacts?.detect]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -339,7 +348,7 @@ export function useChatSession(options: ChatSessionOptions) {
     if (catalog && selected) act(async () => catalog.onActivate({ name: selected.name, behavior: selected.behavior }));
   };
   const rowContext = useMemo<RowContext>(() => ({
-    developer, natural, groupTool, onOpenImage, onCopy, openFile: onOpenFile ?? mentions?.open, fileChanges,
+    developer, natural, renderText, cards, groupTool, onOpenImage, onCopy, openFile: onOpenFile ?? mentions?.open, fileChanges,
     commandMentions: commandMentions ? { commands: commandMentions.commands, onActivate: activateMention } : undefined,
     answer: actions?.answer,
     artifacts: artifacts ? { open: artifacts.open, isOpen: artifacts.isOpen, kinds: artifacts.kinds } : undefined,
@@ -348,12 +357,13 @@ export function useChatSession(options: ChatSessionOptions) {
     pieces: slash?.skills?.length || mentions || attachments ? { mentions: Boolean(mentions), uploads: Boolean(attachments), skills: (slash?.skills ?? []).map(skill => skill.name), openMention: mentions?.open, renderMention: mentions?.renderSent ?? mentions?.render, preview: mentions?.preview, audioUrl: mentions?.audioUrl } : undefined,
     ...rowExtras,
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [controller, developer, natural, groupTool, onOpenImage, onCopy, onOpenFile, fileChanges, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, mentions?.renderSent, mentions?.preview, mentions?.audioUrl, attachments, artifacts?.open, artifacts?.isOpen, artifacts?.kinds, messageActions, historicalMessageActions, unread, replyError, replyFooter, rowExtras]);
+  }), [controller, developer, natural, renderText, cards, groupTool, onOpenImage, onCopy, onOpenFile, fileChanges, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, mentions?.renderSent, mentions?.preview, mentions?.audioUrl, attachments, artifacts?.open, artifacts?.isOpen, artifacts?.kinds, messageActions, historicalMessageActions, unread, replyError, replyFooter, rowExtras]);
 
   /** The model-and-effort pill and the note that reports a refused change. */
   const pickers = () => {
     const disabled = changing !== null || state.disposed || !connected;
-    const barStart = model || effort ? <ModelEffortPicker model={model} effort={effort} currentModel={optimistic.model ?? viewModel} currentEffort={optimistic.effort ?? viewEffort} disabled={disabled} busy={changing}
+    const Picker = model?.Picker ?? effort?.Picker ?? ModelEffortPicker;
+    const barStart = model || effort ? <Picker model={model} effort={effort} currentModel={optimistic.model ?? viewModel} currentEffort={optimistic.effort ?? viewEffort} disabled={disabled} busy={changing}
       onModel={next => void change('model', () => model!.change(next), () => setOptimistic(value => ({ ...value, model: next })), () => {})}
       onEffort={next => void change('effort', () => effort!.change(next), () => setOptimistic(value => ({ ...value, effort: next })), () => {})} /> : undefined;
     const barNote = changeError ? <Button variant="ghost" size="sm" role="alert" data-testid="configure-error" title={`${changeError} (${labels.dismissHint})`} onClick={() => setChangeError(null)}
@@ -372,7 +382,7 @@ export function useChatSession(options: ChatSessionOptions) {
     working, sendBlocked, disabled: state.disposed, stopRequested: state.stop === 'requested',
     onSend: send, onStop: () => act(controller.stop),
     hasFiles: Boolean(composerHasContent),
-    uploading: uploading > 0, canAttach: Boolean(onPickFiles || onFiles || attachments), fileAccept: attachments ? attachments.accept ?? '' : fileAccept, onPickFiles: (files: readonly File[]) => { void upload(files); },
+    uploading: uploading > 0, canAttach: Boolean(onPickFiles || onFiles || attachments), ...(attachments?.Camera ? { camera: attachments.Camera } : {}), fileAccept: attachments ? attachments.accept ?? '' : fileAccept, onPickFiles: (files: readonly File[]) => { void upload(files); },
     slash, onSlashError: report, mentions, mentionPaths: picked, onMentionPicked: (path: string) => setPicked(value => value.includes(path) ? value : [...value, path]),
     uploads: pending, onDismissUpload: (id: string) => setPending(items => items.filter(item => item.id !== id)),
     onPasteText: attachments ? pasteText : undefined, pasteToFile,

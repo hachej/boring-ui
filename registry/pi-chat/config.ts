@@ -1,10 +1,12 @@
-import type { ReactNode } from 'react';
+import type { ComponentType, ReactNode } from 'react';
 import type { BlockAction } from '../button/actions';
+import type { CameraSheetProps } from './camera-sheet';
 
 /*
  * Composer features the host switches on by configuration. Each prop is optional: leave it out and the composer has
  * no menu, no button and no keyboard trigger for it. The current model and thinking level are read from the native
- * view's `pi.agent` document, so there is no extra state to keep in sync.
+ * view's `pi.agent` document, so there is no extra state to keep in sync. A config may carry the component that draws its feature
+ * (`Picker`, `Camera`, `Button`, `Bubble`); leave it out and the built-in one is used.
  */
 
 /** Where a `/` menu entry comes from. Skills and host commands are grouped separately in the menu. */
@@ -31,6 +33,8 @@ export interface SlashSkill {
 export interface SlashConfig {
   readonly commands?: readonly SlashCommand[];
   readonly skills?: readonly SlashSkill[];
+  /** The `/` menu. Default: the built-in `SlashPicker`. */
+  readonly Picker?: ComponentType<SlashPickerProps> | undefined;
 }
 
 export interface MentionResult { readonly path: string; readonly kind?: 'file' | 'directory'; readonly label?: string }
@@ -57,6 +61,8 @@ export interface MentionsConfig {
   readonly preview?: PreviewRead | undefined;
   /** Optional authorized playback URL, requested only on Play; otherwise voice audio uses `preview`. */
   readonly audioUrl?: AudioUrlRead | undefined;
+  /** The `@` picker. Default: the built-in `MentionPicker`. */
+  readonly Picker?: ComponentType<MentionPickerProps> | undefined;
 }
 export type AudioUrlRead = (path: string, signal: AbortSignal) => Promise<string | undefined>;
 /** Reads an upload for its thumbnail or lazy voice playback: its media type and base64 data, or undefined. */
@@ -80,12 +86,18 @@ export interface VoiceMessageConfig {
   readonly maxMs?: number;
   /** Same workspace upload contract as `attachments.upload`, used instead when supplied. Preserve the voice- filename prefix. */
   readonly upload?: AttachmentsConfig['upload'];
+  /** The hold-to-record button at the end of the composer bar. Default: the built-in `VoiceMessageButton`. */
+  readonly Button?: ComponentType<VoiceMessageButtonProps> | undefined;
+  /** A voice message on its way (recording, transcribing, uploading). Default: the built-in `PendingVoiceBubble`. */
+  readonly Bubble?: ComponentType<PendingVoiceBubbleProps> | undefined;
 }
 
 export interface AttachmentsConfig {
   /** The file input's `accept`. Any file when omitted. */
   readonly accept?: string;
   readonly upload: (files: File[], signal: AbortSignal) => Promise<readonly UploadResult[]>;
+  /** The full-screen camera the attach menu opens on a phone. Default: the built-in `CameraSheet`. */
+  readonly Camera?: ComponentType<CameraSheetProps> | undefined;
 }
 
 /** One past conversation in the history list. `title` is its name or first message; `updatedAt` is when it last had activity. */
@@ -144,10 +156,14 @@ export interface ModelConfig {
   readonly options: readonly (ModelRef & { readonly label?: string })[];
   /** Reject to refuse: the message is shown inline. */
   readonly change: (model: ModelRef) => Promise<void>;
+  /** The one model-and-effort pill. Default: the built-in `ModelEffortPicker` (`effort.Picker` is used when only it is set). */
+  readonly Picker?: ComponentType<ModelEffortPickerProps> | undefined;
 }
 export interface EffortConfig {
   readonly options: readonly string[];
   readonly change: (level: string) => Promise<void>;
+  /** The one model-and-effort pill, when `model` does not carry one. Default: the built-in `ModelEffortPicker`. */
+  readonly Picker?: ComponentType<ModelEffortPickerProps> | undefined;
 }
 
 /** The unified, internal menu entry. */
@@ -291,3 +307,58 @@ export function pieces(text: string, options: { readonly mentions: boolean; read
   if (cursor < text.length) out.push({ text: text.slice(cursor) });
   return out;
 }
+
+/** Props of the slash picker; `SlashConfig.Picker` replaces the built-in one. */
+export interface SlashPickerProps {
+  readonly query: string;
+  readonly items: readonly SlashItem[];
+  readonly onSelect: (item: SlashItem) => void;
+  readonly onDismiss: () => void;
+}
+
+/** Props of the mention picker; `MentionsConfig.Picker` replaces the built-in one. */
+export interface MentionPickerProps {
+  readonly query: string;
+  readonly listLabel?: MentionsConfig['listLabel'];
+  readonly renderOption?: MentionsConfig['renderOption'];
+  readonly generation?: MentionsConfig['generation'];
+  readonly search: MentionsConfig['search'];
+  readonly onSelect: (path: string) => void;
+  readonly onDismiss: () => void;
+}
+
+/** Props of the model and effort picker; `ModelConfig.Picker` or `EffortConfig.Picker` replaces the built-in one. */
+export interface ModelEffortPickerProps {
+  readonly model: ModelConfig | undefined; readonly effort: EffortConfig | undefined;
+  readonly currentModel: ModelRef | undefined; readonly currentEffort: string | undefined;
+  readonly disabled: boolean; readonly busy: 'model' | 'effort' | null;
+  readonly onModel: (model: ModelRef) => void; readonly onEffort: (level: string) => void;
+}
+
+export type VoicePhase = 'starting' | 'recording' | 'processing' | 'transcribe-failed' | 'upload-failed' | 'sending' | 'unconfirmed' | 'blocked';
+/** A voice message on its way: recorded, then transcribed, uploaded and sent. */
+export interface PendingVoice {
+  readonly id: number;
+  readonly path: string | undefined;
+  readonly phase: VoicePhase;
+  readonly seconds: number;
+  readonly retry: () => void;
+  readonly audioOnly: (() => void) | undefined;
+  readonly discard: () => void;
+}
+/** The recorder the chat hands to the voice button. */
+export interface VoiceMessageHandle {
+  readonly canStart: boolean;
+  readonly phase: VoicePhase | 'idle';
+  readonly seconds: number;
+  readonly captureSequence: number;
+  readonly problem: string | undefined;
+  readonly pending: readonly PendingVoice[];
+  readonly start: () => void;
+  readonly finish: () => void;
+  readonly cancel: () => void;
+}
+/** Props of the hold-to-record button; `VoiceMessageConfig.Button` replaces the built-in one. */
+export interface VoiceMessageButtonProps { readonly voice: VoiceMessageHandle; readonly disabled?: boolean }
+/** Props of a pending voice message bubble; `VoiceMessageConfig.Bubble` replaces the built-in one. */
+export interface PendingVoiceBubbleProps { readonly pending: PendingVoice | undefined }

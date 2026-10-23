@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
+import type { ComponentType, ReactNode } from 'react';
 import type { ImageContent, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai';
 import { AlertCircleIcon, CircleSlashIcon, FileAudioIcon, FileIcon, FileSpreadsheetIcon, FileTextIcon, ImageIcon, PauseIcon, PlayIcon, PresentationIcon } from 'lucide-react';
 import { CopyButton } from './code-block';
@@ -12,9 +12,10 @@ import { feedbackContent } from './feedback-content';
 import { SentFeedback } from './sent-feedback';
 import type { ArtifactsConfig } from './artifact';
 import { ApprovalCard } from './approval-card';
+import type { ApprovalCardProps } from './approval-card';
 import { SubagentCard } from './subagent-card';
 import { QuestionCard } from './question-card';
-import type { AnswerOutcome } from './question-card';
+import type { AnswerOutcome, QuestionCardProps } from './question-card';
 import { ActivityBlock } from './activity';
 import type { ActivityState } from './activity';
 import { Shimmer } from './shimmer';
@@ -40,8 +41,33 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
+/** One assistant text part, as `renderText` receives it. `streaming` is true while the model still writes it. */
+export interface ChatTextPart {
+  readonly text: string;
+  readonly streaming: boolean;
+  /** Draws an `@path` mention (when mentions are on). */
+  readonly renderMention?: ((path: string, text: string) => ReactNode) | undefined;
+  /** The `/` commands a settled reply may turn into buttons. */
+  readonly commandMentions?: CommandMentions | undefined;
+  readonly onCopy?: ((text: string) => Promise<void>) | undefined;
+}
+/** The default text renderer: the built-in Markdown. */
+const markdownText = ({ text, streaming, renderMention, commandMentions, onCopy }: ChatTextPart): ReactNode =>
+  <Markdown text={text} streaming={streaming} renderMention={renderMention} {...(commandMentions ? { commandMentions } : {})} {...(onCopy ? { onCopy } : {})} />;
+
+/** The cards the chat draws for a human decision. Each one left out uses the built-in card. */
+export interface ChatCards {
+  /** An `ask_user` question. Default: `QuestionCard`. */
+  readonly question?: ComponentType<QuestionCardProps> | undefined;
+  /** A call gated by `requireApproval`. Default: `ApprovalCard`. */
+  readonly approval?: ComponentType<ApprovalCardProps> | undefined;
+}
+
 export interface RowContext {
   readonly developer: boolean;
+  /** Draws an assistant text part. Default: the built-in Markdown. */
+  readonly renderText?: ((part: ChatTextPart) => ReactNode) | undefined;
+  readonly cards?: ChatCards | undefined;
   /** `presentation="natural"`: no "working" shimmer in a reply (the chat shows one status instead). */
   readonly natural?: boolean | undefined;
   readonly groupTool: DeriveOptions['groupTool'];
@@ -313,6 +339,7 @@ function RowBody({ row, images, context: liveContext }: { readonly row: Row; rea
         if (normalized) files.set(normalized, files.get(normalized) === 'created' || call.name === 'write' ? 'created' : 'edited');
       }
       const chunks = segments(row.parts, context.groupTool);
+      const Question = context.cards?.question ?? QuestionCard, Approval = context.cards?.approval ?? ApprovalCard;
       const active = row.active === true || row.streaming;
       const lastText = [...row.parts].reverse().find(part => part.kind === 'text');
       const host = nativeActions && row.text && context.messageActions
@@ -332,12 +359,12 @@ function RowBody({ row, images, context: liveContext }: { readonly row: Row; rea
             }
             const part = chunk.part;
             if (part.kind === 'card') return <div key={part.key}>{part.content}</div>;
-            if (part.kind === 'text') return <Bubble key={part.key} variant="ghost"><BubbleContent><Markdown text={part.text} renderMention={renderMention} streaming={row.streaming && part === lastText && row.parts[row.parts.length - 1] === part}
-              {...(settled && context.commandMentions ? { commandMentions: context.commandMentions } : {})} {...(context.onCopy ? { onCopy: context.onCopy } : {})} /></BubbleContent></Bubble>;
+            if (part.kind === 'text') return <Bubble key={part.key} variant="ghost"><BubbleContent>{(context.renderText ?? markdownText)({ text: part.text, renderMention, streaming: row.streaming && part === lastText && row.parts[row.parts.length - 1] === part,
+              ...(settled && context.commandMentions ? { commandMentions: context.commandMentions } : {}), ...(context.onCopy ? { onCopy: context.onCopy } : {}) })}</BubbleContent></Bubble>;
             if (part.kind === 'thinking') return null; // reasoning is a step of an activity block
-            if (part.kind === 'approval') return <ApprovalCard key={part.key} call={part.call} result={part.result} questionId={part.questionId} answer={context.answer} summary={part.summary} decision={part.decision} live={part.live} />;
+            if (part.kind === 'approval') return <Approval key={part.key} call={part.call} result={part.result} questionId={part.questionId} answer={context.answer} summary={part.summary} decision={part.decision} live={part.live} />;
             if (part.kind === 'subagent') return <SubagentCard key={part.key} details={part.details} />;
-            if (part.kind === 'question') return <QuestionCard key={part.key} call={part.call} result={part.result} questionId={part.questionId} answer={context.answer} live={part.live} />;
+            if (part.kind === 'question') return <Question key={part.key} call={part.call} result={part.result} questionId={part.questionId} answer={context.answer} live={part.live} />;
             if (part.kind === 'artifact' && part.artifact && files.has(part.artifact.target.resource.path.replace(/^(\.\/)+/, ''))) return null;
             if (part.kind === 'artifact') return <ArtifactCard key={part.key} artifact={part.artifact} title={part.title} {...(part.state === 'ready' ? {} : { pending: part.state })}
               open={part.artifact !== undefined && (context.artifacts?.isOpen?.(part.artifact) ?? false)} onOpen={context.artifacts?.open} kinds={context.artifacts?.kinds} />;

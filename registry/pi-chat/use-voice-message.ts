@@ -5,10 +5,9 @@ import { createVoiceCapture, DEFAULT_MAX_VOICE_MS } from '@hachej/boring-ui-kit/
 import type { VoiceCapture, VoiceRecording, VoiceRefusal } from '@hachej/boring-ui-kit/voice-capture';
 import type { ChatController, ChatDraft } from '@hachej/boring-ui-kit/native-chat';
 import { isVoicePath, mentionToken } from './config';
-import type { AttachmentsConfig, VoiceMessageConfig } from './config';
+import type { AttachmentsConfig, PendingVoice, VoiceMessageConfig, VoiceMessageHandle, VoicePhase } from './config';
 import type { ChatLabels } from './labels';
 
-type Phase = 'starting' | 'recording' | 'processing' | 'transcribe-failed' | 'upload-failed' | 'sending' | 'unconfirmed' | 'blocked';
 interface Attempt {
   readonly id: number;
   readonly controller: ChatController;
@@ -18,22 +17,14 @@ interface Attempt {
   readonly abort: AbortController;
   readonly capture: VoiceCapture;
   readonly maxMs: number;
-  phase: Phase;
+  phase: VoicePhase;
   seconds: number;
   file?: File;
   path?: string;
   transcript?: string;
   requestId?: string;
 }
-export interface PendingVoice {
-  readonly id: number;
-  readonly path: string | undefined;
-  readonly phase: Phase;
-  readonly seconds: number;
-  readonly retry: () => void;
-  readonly audioOnly: (() => void) | undefined;
-  readonly discard: () => void;
-}
+export type { PendingVoice } from './config';
 const REFUSAL: Readonly<Record<VoiceRefusal, keyof Pick<ChatLabels, 'voiceDenied' | 'voiceNoMicrophone' | 'voiceBusy' | 'voiceInsecure' | 'voiceUnsupported' | 'voiceStartFailed'>>> = {
   denied: 'voiceDenied', 'no-microphone': 'voiceNoMicrophone', busy: 'voiceBusy', insecure: 'voiceInsecure', unsupported: 'voiceUnsupported', failed: 'voiceStartFailed',
 };
@@ -51,7 +42,7 @@ export function useVoiceMessage({ controller, config, attachments, labels, admit
   readonly labels: ChatLabels;
   readonly admitted?: (() => void) | undefined;
   readonly activeController?: { readonly current: ChatController } | undefined;
-}) {
+}): VoiceMessageHandle {
   const selected = config ? controller : undefined;
   const readObservation = useCallback(() => {
     if (!selected) return '';
