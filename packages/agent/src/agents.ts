@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { defineExtension } from '@earendil-works/pi-durable';
+import { AgentDoc, defineExtension } from '@earendil-works/pi-durable';
 import type { AgentChange, Conversation, ConversationCreateOptions, Extension, Harness, Registry, ToolRegistration } from '@earendil-works/pi-durable';
 import type { Context } from '@earendil-works/chord';
 import type { ExecutionEnv } from '@earendil-works/pi-durable/env';
@@ -156,4 +156,30 @@ export async function refreshAgentState(options: {
   }
   await options.write(hash);
   return configured;
+}
+
+/**
+ * Add one extension to an existing conversation, so its next turn runs with it (native `Conversation.commit` over the public
+ * `pi.agent` document, `AgentDoc`). The conversation stores extension names only: the host installs `extension` in the Harness
+ * registry, now and every time it opens the Harness, or the name selects nothing. Unlike `configure({ extensions: { add } })`,
+ * which replaces a stored list (a `defineAgent` conversation's) with an edit of the host default selection, this appends to the
+ * conversation's own list, so it keeps its other extensions and gains no one else's. Its tools are enabled and offered even when
+ * the conversation lists its tools explicitly. Adding an extension twice changes nothing. Remove it with native `configure`.
+ */
+export async function addExtension(conversation: Conversation, extension: Extension, context: Context): Promise<void> {
+  const tools = (extension.tools ?? []).map(tool => tool.name);
+  await conversation.commit(async tx => {
+    const state = await tx.doc(AgentDoc, conversation.id);
+    const append = (list: string[], names: readonly string[]) => { for (const name of names) if (!list.includes(name)) list.push(name); };
+    const selected = state.extensions;
+    if (Array.isArray(selected)) append(selected, [extension.name]);
+    else {
+      const add = [...selected?.add ?? []]; append(add, [extension.name]);
+      const remove = (selected?.remove ?? []).filter(name => name !== extension.name);
+      state.extensions = { add, ...(remove.length ? { remove } : {}) };
+    }
+    if (Array.isArray(state.tools)) append(state.tools, tools);
+    else if (state.tools) state.tools = { remove: state.tools.remove.filter(name => !tools.includes(name)) };
+    if (Array.isArray(state.modelTools)) append(state.modelTools, tools);
+  }, context);
 }
