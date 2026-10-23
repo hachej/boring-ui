@@ -1,5 +1,6 @@
 # Unreleased
 
+- **Delegate — child identity (D-254).** `createDelegateTool` (and `defineAgent` `delegates` entries) take `onChild(parent, child, tx)`, run inside the native commit that creates the child conversation: write the parent's user, workspace binding and permissions onto the child there. A throw aborts that commit, so no child exists. Optional; without it nothing changes.
 - **Add an extension to an existing conversation (D-253).** New `addExtension(conversation, extension, context)` in `@hachej/boring-agent/agents` appends one extension to a conversation's stored selection, so its next turn runs with it, without recreating it. The name is durable; the host installs the extension in the Harness registry at every open. Additive: no API or stored-format change.
 
 # Migrating to 0.4.9

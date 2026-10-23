@@ -1,5 +1,5 @@
 import { AssistantEntry, configure, defineTool } from '@earendil-works/pi-durable';
-import type { AgentChange, ConversationId, Extension, ToolRegistration } from '@earendil-works/pi-durable';
+import type { AgentChange, ConversationId, Extension, ToolRegistration, Tx } from '@earendil-works/pi-durable';
 import { Type } from '@earendil-works/pi-ai';
 
 const GUARDS: WeakSet<object> = ((globalThis as Record<symbol, WeakSet<object>>)[Symbol.for('boring.agent.guards')] ??= new WeakSet()); // approval + sandbox extensions: a delegated child inherits them
@@ -16,6 +16,12 @@ export interface DelegateOptions {
   /** Tool name; default `delegate`. Give each delegate of one agent its own name. */
   readonly name?: string;
   readonly description?: string;
+  /**
+   * Runs inside the native commit (`ToolExecutionApi.commit`, Pi's `Tx`) that creates the child, after the child agent is
+   * configured: the host copies what the child must carry from the parent (user, workspace binding, permissions) with `tx`.
+   * It runs once per child (never on a replay that finds the existing child); a throw aborts the commit, so no child exists.
+   */
+  readonly onChild?: (parent: ConversationId, child: ConversationId, tx: Tx) => void | Promise<void>;
 }
 
 /**
@@ -25,6 +31,7 @@ export interface DelegateOptions {
  * ownership index and its submission through the request id, so it never starts a second child or a second turn. Returns only the
  * child's final text. The child inherits the parent's approval and sandbox extensions (appended after its own, in the parent's order, so a
  * sandbox stays last), so a delegate cannot escape the parent's gate; `details.conversationId` names the child for a UI that shows it.
+ * `onChild` lets the host write the parent's identity onto the child in the same commit that creates it.
  */
 export function createDelegateTool(options: DelegateOptions): ToolRegistration {
   const name = options.name ?? DELEGATE_TOOL;
@@ -44,6 +51,7 @@ export function createDelegateTool(options: DelegateOptions): ToolRegistration {
         if (existing !== undefined) return existing.id;
         const created = await tx.createConversation({ ownership: { kind: 'task', taskId: api.taskId } });
         await configure(tx, created.id, agent);
+        await options.onChild?.(api.conversationId, created.id, tx);
         return created.id;
       }, context);
       await api.details({ conversationId: childId }, context);
