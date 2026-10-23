@@ -143,7 +143,7 @@ export function useVoiceMessage({ controller, config, attachments, labels, admit
       if (!valid(item)) return;
       if (!recording) { remove(item); setProblem(labels.voiceNothingHeard); update(); return; }
       item.seconds = Math.max(0, Math.round((recording.endedAt - recording.startedAt) / 1000));
-      const type = recording.mimeType.split(';')[0]!, ext = type === 'audio/mp4' ? 'mp4' : type === 'audio/ogg' ? 'ogg' : 'webm';
+      const type = recording.mimeType.split(';')[0]!, ext = type === 'audio/wav' ? 'wav' : type === 'audio/mp4' ? 'mp4' : type === 'audio/ogg' ? 'ogg' : 'webm';
       const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').replace(/\.(\d+)Z$/, '-$1');
       item.file = new File([recording.audio], `voice-${stamp}.${ext}`, { type });
       await process(item);

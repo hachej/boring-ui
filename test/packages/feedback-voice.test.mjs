@@ -8,6 +8,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { alignSpeech, createVoiceCapture, PIN_AFTER_MS } from '@hachej/boring-feedback/page';
+import { downsample, encodeWav } from '@hachej/boring-ui-kit/voice-capture';
 import { checkPlatformApis } from '../../scripts/check-platform-apis.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -226,6 +227,108 @@ test('createVoiceCapture: cancel discards the audio and releases the microphone,
   open();
   assert.equal((await again).kind, 'recording', 'a cancelled capture can start again');
   slow.cancel();
+});
+
+// ---------------------------------------------------------------- createVoiceCapture: WAV through Web Audio
+/** A Web Audio context whose processor is fed by hand: `feed(samples)` delivers one buffer at 48 kHz. */
+function fakeAudio() {
+  const made = { contexts: [], node: null };
+  class Context {
+    constructor() { this.sampleRate = 48_000; this.state = 'suspended'; this.destination = {}; this.closed = false; made.contexts.push(this); }
+    resume() { this.state = 'running'; return Promise.resolve(); }
+    close() { this.closed = true; this.state = 'closed'; return Promise.resolve(); }
+    createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
+    createScriptProcessor() { made.node = { onaudioprocess: null, connect() {}, disconnect() {} }; return made.node; }
+  }
+  const feed = (length = 4800, value = 0.5) => made.node?.onaudioprocess?.({ inputBuffer: { length, getChannelData: () => new Float32Array(length).fill(value) } });
+  return { made, audioContext: () => new Context(), feed };
+}
+const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+
+test('createVoiceCapture: with Web Audio it records a 16 kHz WAV, recording only once the first sound arrives', async () => {
+  const audio = fakeAudio();
+  const { track, stream } = fakeStream();
+  let time = 1000;
+  const capture = createVoiceCapture({ getUserMedia: async () => stream, audioContext: audio.audioContext, now: () => time });
+  let started;
+  const starting = capture.start().then(result => { started = result; });
+  await tick(); await tick();
+  assert.equal(started, undefined, 'no sound yet: not recording');
+  time = 1600;
+  audio.feed(); // 4800 samples at 48 kHz: 100 ms, its first sample heard at 1500
+  await starting;
+  assert.deepEqual(started, { kind: 'recording' });
+  audio.feed(); audio.feed();
+  const result = await capture.stop();
+  assert.equal(result.mimeType, 'audio/wav');
+  assert.equal(result.startedAt, 1500);
+  assert.equal(result.endedAt, 1800, '300 ms of samples');
+  assert.equal(result.truncated, false);
+  const bytes = new DataView(await result.audio.arrayBuffer());
+  assert.equal(String.fromCharCode(bytes.getUint8(0), bytes.getUint8(1), bytes.getUint8(2), bytes.getUint8(3)), 'RIFF');
+  assert.equal(bytes.getUint32(24, true), 16_000);
+  assert.equal(bytes.getUint32(40, true), 3 * 1600 * 2, '4800 samples at 16 kHz, 16-bit');
+  assert.equal(bytes.byteLength, 44 + 3 * 1600 * 2);
+  assert.equal(track.stopped, true, 'the microphone is released');
+  assert.equal(audio.made.contexts[0].closed, true, 'the context is closed');
+  assert.equal(await capture.stop(), null);
+});
+
+test('createVoiceCapture: a microphone that sends no sound is refused as busy, and released', async () => {
+  const audio = fakeAudio();
+  const { track, stream } = fakeStream();
+  const capture = createVoiceCapture({ getUserMedia: async () => stream, audioContext: audio.audioContext, firstSoundMs: 20 });
+  const result = await capture.start();
+  assert.equal(result.kind, 'refused');
+  assert.equal(result.code, 'busy');
+  assert.match(result.reason, /no sound from the microphone/);
+  assert.equal(track.stopped, true);
+  assert.equal(audio.made.contexts[0].closed, true);
+  assert.equal(await capture.stop(), null);
+});
+
+test('createVoiceCapture: WAV maxMs stops capturing at the limit; cancel while waiting for sound refuses and releases', async () => {
+  const audio = fakeAudio();
+  const first = fakeStream();
+  const capture = createVoiceCapture({ getUserMedia: async () => first.stream, audioContext: audio.audioContext, maxMs: 150 });
+  const starting = capture.start();
+  await tick(); await tick();
+  audio.feed(); await starting;
+  audio.feed(); audio.feed(); // 300 ms offered, 150 ms kept
+  assert.equal(first.track.stopped, true, 'the limit releases the microphone on its own');
+  const result = await capture.stop();
+  assert.equal(result.truncated, true);
+  assert.ok(Math.abs(result.endedAt - result.startedAt - 150) < 1e-6, '150 ms kept');
+  const second = fakeStream();
+  const waiting = createVoiceCapture({ getUserMedia: async () => second.stream, audioContext: fakeAudio().audioContext });
+  const pending = waiting.start();
+  await tick(); await tick();
+  waiting.cancel();
+  assert.equal((await pending).kind, 'refused');
+  assert.equal(second.track.stopped, true);
+  assert.equal(await waiting.stop(), null);
+});
+
+test('createVoiceCapture: a context the browser keeps suspended records that take with MediaRecorder on the open microphone', async t => {
+  withRecorder(t);
+  const audio = fakeAudio();
+  const { track, stream } = fakeStream();
+  let opened = 0;
+  const suspended = () => { const context = audio.audioContext(); context.resume = () => new Promise(() => {}); return context; };
+  const capture = createVoiceCapture({ getUserMedia: async () => { opened++; return stream; }, audioContext: suspended });
+  assert.deepEqual(await capture.start(), { kind: 'recording' });
+  assert.equal(opened, 1, 'the microphone is opened once');
+  assert.equal(audio.made.contexts[0].closed, true);
+  assert.equal(track.stopped, false, 'the microphone stays open for MediaRecorder');
+  const result = await capture.stop();
+  assert.equal(result.mimeType, 'audio/webm;codecs=opus');
+  assert.equal(track.stopped, true);
+});
+
+test('encodeWav and downsample: 48 kHz to 16 kHz by the mean, PCM16 clipped to [-1, 1]', () => {
+  assert.deepEqual([...downsample(new Float32Array([0, 0.3, 0.6, 1, 1, 1]), 48_000)].map(v => Math.round(v * 10) / 10), [0.3, 1]);
+  const view = new DataView(encodeWav([new Float32Array([2, -2, 0])]).buffer);
+  assert.deepEqual([view.getInt16(44, true), view.getInt16(46, true), view.getInt16(48, true)], [0x7fff, -0x8000, 0]);
 });
 
 // ---------------------------------------------------------------- boundaries
