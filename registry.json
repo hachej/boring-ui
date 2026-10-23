@@ -820,7 +820,7 @@
       "name": "mockup-viewer",
       "type": "registry:block",
       "title": "HTML mock-up viewer",
-      "description": "Sandboxed *.mockup.html artifacts with host theme variables, lazy Tailwind compilation and feedback point comments. Host presentation only; artifact scripts run in an opaque-origin InteractiveFrame, never in the host.",
+      "description": "Sandboxed *.mockup.html artifacts with host theme variables (or a given shadcn theme through themeOverride), lazy Tailwind compilation and feedback point comments. Host presentation only; artifact scripts run in an opaque-origin InteractiveFrame, never in the host.",
       "dependencies": [
         "react@^19.0.0",
         "lucide-react@^1.51.0",
@@ -853,6 +853,35 @@
           "path": "registry/mockup-viewer/mockup-tailwind.ts",
           "type": "registry:lib",
           "target": "components/mockup-viewer/mockup-tailwind.ts"
+        }
+      ]
+    },
+    {
+      "name": "looks-viewer",
+      "type": "registry:block",
+      "title": "Looks viewer",
+      "description": "A looks@1 artifact kind for *.looks.json: the same *.mockup.html key screen in 2 to 6 shadcn themes side by side (label, one-line personality, colour, font and radius swatches, Pick), then layout variants in the chosen look. A look is a shadcn preset and its theme block, applied to each sandboxed frame through MockupViewer's themeOverride. The host decides what a pick does.",
+      "dependencies": [
+        "react@^19.0.0",
+        "lucide-react@^1.51.0"
+      ],
+      "registryDependencies": [
+        "@boring-ui/mockup-viewer",
+        "alert",
+        "button",
+        "card",
+        "toggle-group"
+      ],
+      "files": [
+        {
+          "path": "registry/looks-viewer/looks-viewer.tsx",
+          "type": "registry:component",
+          "target": "components/looks-viewer/looks-viewer.tsx"
+        },
+        {
+          "path": "registry/looks-viewer/looks.ts",
+          "type": "registry:lib",
+          "target": "components/looks-viewer/looks.ts"
         }
       ]
     },
