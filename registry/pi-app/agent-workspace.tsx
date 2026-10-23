@@ -171,7 +171,7 @@ interface AgentWorkspaceBaseProps {
    * the tree, the Library, the history panel and the @ search reload from the workspace's own change events; `refreshKey` remains
    * for a provider without one.
    */
-  readonly fileTree?: Pick<FileTreeViewProps, 'labels' | 'upload' | 'history' | 'refreshKey'> | undefined;
+  readonly fileTree?: Pick<FileTreeViewProps, 'labels' | 'upload' | 'history' | 'refreshKey' | 'capabilities'> | undefined;
   /**
    * How the chat's attachments are saved under `uploads/` (they exist only with a Library, `revisionProvider` or `resources`). Every file
    * is reference-only by default: the message carries its `@path` and the agent reads it with its file tools. See `WorkspaceUploads`.
@@ -356,7 +356,7 @@ export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, titl
     if (!response.ok) throw new Error(`History: ${response.status}`);
     return (await response.json() as { saves: readonly SavedRevision[] }).saves;
   }, [revisionProvider, historyEndpoint]);
-  // Resources only: a read-only Library over the endpoint's own listing, when it answers the revision protocol's discovery for the same
+  // Resources only: a Library over the endpoint's own listing, when it answers the revision protocol's discovery for the same
   // person (`createRevisionHandler` serves the resource calls and the listing on one route). A plain resource handler refuses: no Library.
   const [listing, setListing] = useState<{ readonly key: string; readonly provider: RevisionProvider }>();
   const listingKey = revisionProvider || endpoint === undefined ? undefined : JSON.stringify([endpoint, identity]);

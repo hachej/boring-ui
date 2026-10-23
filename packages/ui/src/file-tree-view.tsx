@@ -271,8 +271,8 @@ export interface FileTreeProps {
   /** The host's large-file upload (see `UploadBlob`), used above `maxBytes`. */
   readonly uploadBlob?: UploadBlob;
   /**
-   * What this person may do in this workspace. Rename and Move to… need `rename`, Delete needs `delete`, and the client must have
-   * the call too. Omitted: no file is renamed, moved or deleted from the tree.
+   * Narrows the file actions to what this person may do. The client's `rename` turns on Rename and Move to…, its `delete` turns on
+   * Delete; when given, only the listed `rename`/`delete` stay. Omitted: whatever the client has.
    */
   readonly capabilities?: FileTreeCapabilities;
 }
@@ -303,10 +303,10 @@ type UploadRow = { readonly kind: 'pending'; readonly size: number }
 /** Renders a borrowed controller, for a workspace whose chat and tree share upload state. */
 export function FileTreeView({ components, controller, onOpen, selectedPath, className, uploadDirectory = 'uploads', locale = 'en', labels: given, upload = true, history = true, refresh = true, variant = 'list', title, onClose, refreshKey, historyKey, maxBytes, tooLarge, uploadBlob, capabilities }: FileTreeViewProps) {
   const { Button, Actions, Menu: SidebarMenu, MenuItem: SidebarMenuItem, MenuSub: SidebarMenuSub, Input, Collapsible: CollapsibleRoot, CollapsibleTrigger, CollapsibleContent, Empty, Progress, Dialog } = components;
-  // An action is offered only when the client has the call and the workspace's capabilities allow it.
   const can = {
-    rename: controller.actions.rename && capabilities?.effective.includes('rename') === true,
-    delete: controller.actions.delete && capabilities?.effective.includes('delete') === true && Dialog !== undefined,
+    // The client's methods turn the actions on; capabilities, when the host passes them, only narrow.
+    rename: controller.actions.rename && (capabilities === undefined || capabilities.effective.includes('rename')),
+    delete: controller.actions.delete && (capabilities === undefined || capabilities.effective.includes('delete')) && Dialog !== undefined,
   };
   const list = variant === 'list';
   const labels: FileTreeLabels = { ...LOCALES[locale], ...given };

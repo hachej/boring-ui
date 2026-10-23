@@ -391,11 +391,10 @@ visible items, including folders; it is not a workspace total. A folder shows it
 child count only after its provider listing is complete; unloaded, loading, failed
 or paginated listings show no count. The menu offers
 Open, Version history and Download through the same provider. When the client has
-`rename`/`delete` and the host passes `capabilities={{ effective }}` listing them,
-files also offer Rename (inline in the row, F2), Move to… (plus dragging a file onto a
-folder or the root) and Delete (Delete key, after a confirmation dialog). The client has
-no capabilities operation, so the host says what its provider grants; without
-`capabilities` these actions are absent. Each change is a conditional write with the
+`rename`, files also offer Rename (inline in the row, F2) and Move to… (plus dragging a
+file onto a folder or the root); when it has `delete`, Delete (Delete key, after a
+confirmation dialog). `capabilities={{ effective }}`, when the host passes it, only
+narrows these to the listed `rename`/`delete`. Each change is a conditional write with the
 revision read when the action started (`controller.prepare`); a refusal stays on the
 row until dismissed and the affected folders are read again. Folders are destinations
 only. No edit date or

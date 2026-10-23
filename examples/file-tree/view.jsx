@@ -55,8 +55,7 @@ function App() {
     <button type="button" onClick={() => setIntegrated(true)}>Open integrated workspace</button>
     {provider && integrated && <div style={{ height: 700 }}><AgentWorkspace controller={undefined} conversationId={undefined} revisionProvider={provider} libraryPlacement={side ? 'side' : 'center'} /></div>}
     {provider && !integrated && <>
-      {/* The fictional host grants this person every action; a real host passes the capabilities its provider reports. */}
-      <FileTree revisionProvider={provider} onOpen={setOpened} selectedPath={opened} capabilities={{ effective: ['read', 'create', 'replace', 'rename', 'delete', 'lookup'] }} />
+      <FileTree revisionProvider={provider} onOpen={setOpened} selectedPath={opened} />
       <output aria-label="Opened file">{opened}</output>
       <section aria-label="Mention picker" style={{ position: 'relative', maxWidth: 480 }}>
         <label>File mention<input aria-label="File mention" value={mention} onChange={event => setMention(event.target.value)} /></label>

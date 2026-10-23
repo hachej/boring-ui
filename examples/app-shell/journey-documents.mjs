@@ -6,7 +6,7 @@
 // Every control is at least 44x44px on the phone, nothing overflows horizontally, and the page has no console errors. Screenshots go to
 // .cache/evidence/documents/ (APP_EVIDENCE overrides).
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { launch, pause, q } from '@hachej/boring-testing/browser';
@@ -19,7 +19,8 @@ const FILE = 'fiche-produit.md';
 const SHEET = '[data-testid=document-sheet]';
 const noOverflow = `document.documentElement.scrollWidth <= innerWidth && document.body.scrollWidth <= innerWidth`;
 
-const app = await startAppShell({ directory: mkdtempSync(join(tmpdir(), 'boring-documents-')) });
+const directory = mkdtempSync(join(tmpdir(), 'boring-documents-'));
+const app = await startAppShell({ directory });
 let browser;
 try {
   browser = await launch(`${app.url}?documents=1`, { evidence, args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] });
@@ -124,6 +125,31 @@ try {
   await browser.evaluate('history.back()');
   await browser.until('Back closes the sheet at 1280', `!${q(SHEET)}`, 15000);
 
+  // The Library renames and deletes files through the app's own /api/resources handler (D-263): a draft written to the workspace is
+  // renamed inline from its row's menu, then deleted with the Delete key after the confirmation dialog.
+  writeFileSync(join(directory, 'workspace', 'brouillon.md'), '# Brouillon fictif\n');
+  await browser.send('Page.reload', {});
+  await browser.until('the Fiches screen again', `!!${q('[data-testid=screen-fiches]')}`, 30000);
+  await live();
+  const draft = path => `[role=treeitem][data-path="${path}"]`;
+  await browser.until('the draft is listed', `!!${q(draft('brouillon.md'))}`, 15000);
+  await browser.evaluate(`${q('button[aria-label="Actions pour brouillon.md"]')}.focus()`); await browser.press('Enter');
+  await browser.until('the row menu', `!!${q('[data-boring=file-actions] [data-action=rename]')}`);
+  assert.deepEqual(await browser.evaluate(`[...document.querySelectorAll('[data-boring=file-actions] [role=menuitem]')].map(item => item.dataset.action)`), ['open', 'download', 'rename', 'move', 'delete']);
+  await browser.screenshot('desktop-tree-actions-menu.png');
+  await browser.evaluate(`${q('[data-boring=file-actions] [data-action=rename]')}.click()`);
+  await browser.until('inline rename', `document.activeElement?.matches('input[data-file-rename][data-revision-known]')`);
+  await browser.evaluate(`${q('input[data-file-rename]')}.select()`); await send('Input.insertText', { text: 'brouillon-relu.md' }); await browser.press('Enter');
+  await browser.until('the renamed row', `!!${q(draft('brouillon-relu.md'))} && !${q(draft('brouillon.md'))}`, 15000);
+  assert.equal(readFileSync(join(directory, 'workspace', 'brouillon-relu.md'), 'utf8'), '# Brouillon fictif\n'); assert.equal(existsSync(join(directory, 'workspace', 'brouillon.md')), false);
+  await browser.screenshot('desktop-tree-actions-renamed.png');
+  await browser.evaluate(`${q(draft('brouillon-relu.md'))}.focus()`); await browser.press('Delete');
+  await browser.until('the delete dialog', `!!${q('[data-boring=file-tree-dialog] [data-confirm=delete]')}`);
+  await browser.evaluate(`${q('[data-boring=file-tree-dialog] [data-confirm=delete]')}.click()`);
+  await browser.until('the deleted row', `!${q(draft('brouillon-relu.md'))} && !${q('[data-boring=file-tree-dialog]')}`, 15000);
+  assert.equal(existsSync(join(directory, 'workspace', 'brouillon-relu.md')), false);
+  assert.ok(await browser.evaluate(`!!${q(`[role=treeitem][data-path="${FILE}"]`)}`), 'the other files stay');
+
   assert.deepEqual(browser.problems.filter(p => !/Failed to load resource/.test(p)), [], 'no page problems');
-  console.log('documents journey ok: 390x844 (Library, Revisions, read-only revision, PM sheet, Back, Toutes les fiches) and 1280x800 (side by side, PM sheet, Back)');
+  console.log('documents journey ok: 390x844 (Library, Revisions, read-only revision, PM sheet, Back, Toutes les fiches) and 1280x800 (side by side, PM sheet, Back, rename and delete from the Library)');
 } finally { await browser?.close(); await app.close(); }

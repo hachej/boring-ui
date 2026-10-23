@@ -475,14 +475,25 @@ test('rendered tree renames inline, deletes after confirmation and moves by drag
   await f.seed('docs/a.md', 'Fictional note'); await f.seed('archive/keep.md', 'Fictional archive'); await f.seed('loose.md', 'Fictional loose');
   const ui = await renderedTree(t);
   const { window, element, act, settle, render, key, row, menu } = ui;
-  await render({ revisionProvider: f.binding });
+  const offered = items => items.map(item => item.dataset.action).filter(id => ['rename', 'move', 'delete'].includes(id));
+  await render({ revisionProvider: { ...f.binding, rename: undefined, delete: undefined } });
   await settle(() => row('docs'));
-  await t.test('without effective capabilities no mutation is offered', async () => {
+  await t.test('a client without rename or delete offers no mutation', async () => {
     const items = await menu('loose.md');
-    assert.deepEqual(items.map(item => item.dataset.action).filter(id => ['rename', 'move', 'delete'].includes(id)), []);
+    assert.deepEqual(offered(items), []);
     await key(items[0], 'Escape');
     await key(row('loose.md'), 'F2'); assert.equal(element.querySelector('[data-file-rename]'), null);
   });
+  await render({ revisionProvider: f.binding });
+  await t.test('a client with rename and delete offers them with no capabilities given', async () => {
+    const items = await menu('loose.md');
+    assert.deepEqual(offered(items), ['rename', 'move', 'delete']);
+    await key(items[0], 'Escape');
+  });
+  await render({ revisionProvider: f.binding, capabilities: { effective: ['read'] } });
+  const narrowed = await menu('loose.md');
+  assert.deepEqual(offered(narrowed), [], 'capabilities narrow what the client offers');
+  await key(narrowed[0], 'Escape');
   await render({ revisionProvider: f.binding, capabilities: { effective: ['read', 'rename'] } });
   const renameOnly = await menu('loose.md');
   assert.deepEqual(renameOnly.map(item => item.dataset.action).filter(id => ['rename', 'move', 'delete'].includes(id)), ['rename', 'move'], 'move is a rename; delete needs its own capability');
