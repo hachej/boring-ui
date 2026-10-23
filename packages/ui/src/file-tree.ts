@@ -12,6 +12,15 @@ export interface FileUpload {
   readonly size: number;
   readonly state: { readonly kind: 'pending' } | { readonly kind: 'settled'; readonly result: PublicationResult };
 }
+/** A rename (a move is a rename to another folder) or a delete of one file, as its row shows it. */
+export interface FileMutation {
+  readonly operationId: string;
+  readonly kind: 'rename' | 'delete';
+  readonly path: string;
+  /** The new path of a rename. */
+  readonly to?: string;
+  readonly state: { readonly kind: 'pending' } | { readonly kind: 'settled'; readonly result: PublicationResult };
+}
 export interface FileTreeState {
   readonly lifecycle: 'active' | 'disposed';
   readonly directories: ReadonlyMap<string, FileListing>;
@@ -19,6 +28,8 @@ export interface FileTreeState {
   readonly query: string;
   readonly search: FileListing;
   readonly uploads: readonly FileUpload[];
+  /** The latest rename or delete of each path, until it is dismissed or the path changes again. */
+  readonly mutations: readonly FileMutation[];
 }
 export interface FileTreeController {
   readonly revisionProvider: RevisionProvider;
@@ -34,12 +45,31 @@ export interface FileTreeController {
   /** Retry a refused upload with its captured bytes. Unconfirmed uploads only reconcile the original operation. */
   readonly retry: (operationId: string) => Promise<FileUpload>;
   readonly history: (path: string, signal?: AbortSignal) => Promise<readonly SavedRevision[]>;
+  /** What the client can do: a client without `rename` or `delete` offers neither (the host's capabilities may narrow it further). */
+  readonly actions: { readonly rename: boolean; readonly delete: boolean };
+  /** Learn the revision of a file as its row shows it (on opening its menu, renaming, dragging): a later rename or delete is conditional on it. */
+  readonly prepare: (path: string, signal?: AbortSignal) => Promise<string | undefined>;
+  /** Rename a file through the client's conditional rename. `to` is a full path; its folder must exist. */
+  readonly rename: (path: string, to: string) => Promise<FileMutation>;
+  /** Move a file into `folder` (`''` is the workspace root): a rename that keeps its name. */
+  readonly move: (path: string, folder: string) => Promise<FileMutation>;
+  /** Delete a file through the client's conditional delete. */
+  readonly remove: (path: string) => Promise<FileMutation>;
+  /** Forget a settled rename or delete (its row's message). */
+  readonly dismiss: (operationId: string) => void;
   readonly dispose: () => void;
 }
 
 const message = (error: unknown) => error instanceof Error ? error.message : 'Files could not be loaded';
 const empty: FileListing = { kind: 'ready', entries: [] };
 const parentOf = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf('/')));
+const nameOf = (path: string) => path.slice(path.lastIndexOf('/') + 1);
+/** A file path the tree may write: relative segments, none empty, `.` or `..`, no surrounding space. */
+function checkedPath(path: string): string {
+  const segments = path.split('/');
+  if (!path || segments.some(segment => !segment || segment === '.' || segment === '..' || segment.trim() !== segment)) throw new TypeError(`${JSON.stringify(path)} is not a file name the tree can use`);
+  return path;
+}
 const sameBytes = (left: Uint8Array, right: Uint8Array) => left.length === right.length && left.every((byte, index) => byte === right[index]);
 const sameTarget = (left: ResourceRef, right: PublicationRequest['changes'][number]['target']) =>
   left.resource.providerId === right.resource.providerId && left.resource.path === right.resource.path
@@ -47,7 +77,10 @@ const sameTarget = (left: ResourceRef, right: PublicationRequest['changes'][numb
 
 /** Browsing state belongs to one borrowed binding. Disposal fences late results; it never closes the workspace. */
 export function createFileTreeController({ revisionProvider }: { readonly revisionProvider: RevisionProvider }): FileTreeController {
-  let state: FileTreeState = { lifecycle: 'active', directories: new Map(), expanded: new Set(), query: '', search: empty, uploads: [] };
+  let state: FileTreeState = { lifecycle: 'active', directories: new Map(), expanded: new Set(), query: '', search: empty, uploads: [], mutations: [] };
+  // The revision each row last learned (`prepare`): a rename or delete is refused if the file changed since.
+  const revisions = new Map<string, string>();
+  const preparing = new Map<string, Promise<string | undefined>>();
   const listeners = new Set<() => void>();
   const lifetime = new AbortController();
   const loads = new Map<string, AbortController>();
@@ -111,6 +144,52 @@ export function createFileTreeController({ revisionProvider }: { readonly revisi
       return unknown(operationId, 'The upload receipt did not match its request');
     }
     return result;
+  }
+
+  const unavailableResult = (reason: string): PublicationResult => ({ kind: 'unavailable', reason });
+  async function latest(path: string, signal: AbortSignal): Promise<string | PublicationResult> {
+    const read = await revisionProvider.read({ target: revisionProvider.locate(path), revision: { kind: 'latest' } }, signal);
+    if (read.kind === 'available') return read.snapshot.ref.revision;
+    if (read.kind === 'missing') return { kind: 'conflict', current: [], reason: `${path} is no longer there` };
+    return read;
+  }
+  function settle(current: FileMutation, result: PublicationResult): FileMutation {
+    const settled: FileMutation = { ...current, state: { kind: 'settled', result } };
+    update({ ...state, mutations: state.mutations.map(item => item.operationId === current.operationId ? settled : item) });
+    if (state.lifecycle !== 'active') return settled;
+    // Whatever the outcome, the folders involved are read again, so the tree shows what is there now.
+    const folders = new Set([parentOf(current.path), ...(current.to === undefined ? [] : [parentOf(current.to)])]);
+    if (result.kind === 'committed' && current.to !== undefined && parentOf(current.to)) update({ ...state, expanded: new Set([...state.expanded, parentOf(current.to)]) });
+    for (const folder of folders) void refresh(folder);
+    if (state.query) void load('', false, true);
+    return settled;
+  }
+  async function mutate(kind: FileMutation['kind'], path: string, to?: string): Promise<FileMutation> {
+    active();
+    if (kind === 'rename' ? !revisionProvider.rename : !revisionProvider.delete) throw new Error(`This workspace cannot ${kind} files`);
+    if (state.mutations.some(item => item.path === path && item.state.kind === 'pending')) throw new Error(`${path} is already being changed; wait for it to finish`);
+    const operationId = randomUUID();
+    const current: FileMutation = { operationId, kind, path, ...(to === undefined ? {} : { to }), state: { kind: 'pending' } };
+    update({ ...state, mutations: [...state.mutations.filter(item => item.path !== path), current] });
+    let result: PublicationResult;
+    try {
+      await preparing.get(path);
+      const known = revisions.get(path) ?? await latest(path, lifetime.signal);
+      if (typeof known !== 'string') result = known;
+      else {
+        const from = revisionProvider.locate(path);
+        const answer = kind === 'rename' && to !== undefined
+          ? await revisionProvider.rename!({ from, to: revisionProvider.locate(to), expectedRevision: known, operationId }, lifetime.signal)
+          : await revisionProvider.delete!({ path: from, expectedRevision: known, operationId }, lifetime.signal);
+        try { result = parsePublicationResult(answer); } catch { result = unknown(operationId, 'The acknowledgement was invalid; read the folder again before retrying'); }
+        if (result.kind === 'partial' || (result.kind === 'unknown' && result.operationId !== operationId)) result = unknown(operationId, 'The acknowledgement did not match its operation');
+      }
+    } catch (error) {
+      result = error instanceof PublicationNotDispatchedError && error.operationId === operationId ? unavailableResult(`${nameOf(path)} was not changed: the request was not sent`)
+        : unknown(operationId, `The outcome is unconfirmed; read the folder again before retrying`);
+    }
+    revisions.delete(path);
+    return settle(current, result);
   }
 
   const controller: FileTreeController = {
@@ -190,6 +269,35 @@ export function createFileTreeController({ revisionProvider }: { readonly revisi
       return controller.upload({ path: attempt.current.path, bytes: attempt.bytes, mediaType: change.mediaType,
         ...(change.kind === 'replace' ? { replace: change.target } : {}) });
     },
+    actions: { rename: typeof revisionProvider.rename === 'function', delete: typeof revisionProvider.delete === 'function' },
+    prepare: (path, signal) => {
+      try { active(); } catch (error) { return Promise.reject(error); }
+      // A rename or delete started meanwhile waits for this read, so it uses the revision the row learned.
+      const reading = (async () => {
+        try {
+          const known = await latest(path, signal ? AbortSignal.any([signal, lifetime.signal]) : lifetime.signal);
+          if (typeof known !== 'string') { revisions.delete(path); return undefined; }
+          revisions.set(path, known); return known;
+        } catch { return undefined; }
+      })();
+      preparing.set(path, reading);
+      void reading.finally(() => { if (preparing.get(path) === reading) preparing.delete(path); });
+      return reading;
+    },
+    rename: async (path, to) => {
+      checkedPath(path); checkedPath(to);
+      if (to === path) throw new TypeError('The new name is the current name');
+      return mutate('rename', path, to);
+    },
+    move: async (path, folder) => {
+      checkedPath(path); if (folder) checkedPath(folder);
+      const to = folder ? `${folder}/${nameOf(path)}` : nameOf(path);
+      if (to === path) throw new TypeError(`${nameOf(path)} is already in that folder`);
+      if (folder === path || folder.startsWith(`${path}/`)) throw new TypeError('A file cannot move into itself');
+      return mutate('rename', path, to);
+    },
+    remove: async path => mutate('delete', checkedPath(path)),
+    dismiss: operationId => { if (state.mutations.some(item => item.operationId === operationId && item.state.kind === 'settled')) update({ ...state, mutations: state.mutations.filter(item => item.operationId !== operationId) }); },
     history: (path, signal) => { active(); return revisionProvider.history(path, signal ? AbortSignal.any([signal, lifetime.signal]) : lifetime.signal); },
     dispose: () => { if (state.lifecycle === 'disposed') return; lifetime.abort(); for (const load of loads.values()) load.abort(); loads.clear(); state = { ...state, lifecycle: 'disposed' }; listeners.clear(); },
   };

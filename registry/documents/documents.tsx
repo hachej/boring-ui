@@ -199,8 +199,11 @@ export function Documents({ provider, locale, labels: given, viewers, share, blo
     setPinned(undefined);
   };
   const closeFile = () => { if (!mayLeave()) return; setPath(undefined); setPinned(undefined); };
+  // The file on show was renamed, moved or deleted from the list: follow it to its new path, or close it (its old path is gone).
+  const renamed = (from: string, to: string) => { setPath(current => current === from ? to : current); setPinned(undefined); };
+  const deleted = (gone: string) => { setPath(current => { if (current !== gone) return current; dirty.current = false; return undefined; }); setPinned(undefined); };
   const list = tree ? <div className="min-h-0">
-    <FileTreeView controller={tree} onOpen={choose} selectedPath={path} locale={language} upload={false} history={false} />
+    <FileTreeView controller={tree} onOpen={choose} onRenamed={renamed} onDeleted={deleted} selectedPath={path} locale={language} upload={false} history={false} />
   </div> : null;
   const older = path !== undefined && pinned?.path === path ? pinned.revision : undefined;
   // `null` (nothing chosen) is what lets a phone show the list alone: ListDetail stacks the detail only when there is one.

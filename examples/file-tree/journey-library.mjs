@@ -120,7 +120,7 @@ for (const [name, start, trigger] of [
         await browser.until('file actions menu', `!!${q('[data-boring=file-actions]')}`);
         const menu = await browser.evaluate(`${q('[data-boring=file-actions]')}.innerText`);
         assert.match(menu, /Open/); assert.match(menu, /Version history/); assert.match(menu, /Download/);
-        assert.doesNotMatch(menu, /Rename|Delete/, 'unsupported provider mutations are absent');
+        assert.match(menu, /Rename/); assert.match(menu, /Move to/); assert.match(menu, /Delete/); // the client carries rename and delete, so the tree offers them
         assert.equal(await browser.evaluate(`(() => { const r=${q('[data-boring=file-actions]')}.getBoundingClientRect(); return r.left>=0 && r.right<=innerWidth && r.top>=0 && r.bottom<=innerHeight; })()`), true, 'actions menu stays within the viewport');
         await browser.screenshot(`${name}-${phone ? 'phone' : 'desktop'}-actions-${dark ? 'dark' : 'light'}.png`);
         await browser.press('Escape');

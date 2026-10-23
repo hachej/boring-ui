@@ -2963,7 +2963,7 @@
       "name": "file-tree",
       "type": "registry:component",
       "title": "File tree",
-      "description": "Browse, search, upload and inspect retained versions through one revisionProvider binding. Uses the consumer's shadcn Button and dropdown-menu with shared version-history rows; Base UI style only.",
+      "description": "Browse, search, upload, rename, move, delete and inspect retained versions through one revisionProvider binding. Uses the consumer's shadcn Button, dropdown-menu and dialog with shared version-history rows; Base UI style only.",
       "dependencies": [
         "@hachej/boring-ui-kit@^0.4.13",
         "@hachej/boring-files@^0.4.13",
@@ -2975,6 +2975,7 @@
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.13/r/utils.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.13/r/version-history.json",
         "button",
+        "dialog",
         "dropdown-menu",
         "collapsible",
         "empty",

@@ -148,7 +148,7 @@ export async function launch(url: string, { chromium = process.env.CHROMIUM, evi
   const type = async (selector: string, text: string) => { await click(selector); await evaluate(`(() => { const e = ${selector}; e.focus(); e.selectionStart = e.selectionEnd = e.value.length; })()`); await send('Input.insertText', { text }); };
   // Keyboard input as the browser would deliver it. `shift` makes Enter a newline.
   const KEYS: Record<string, { code: string; keyCode: number; text?: string; commands?: string[] }> = { Enter: { code: 'Enter', keyCode: 13, text: '\r' }, Escape: { code: 'Escape', keyCode: 27 }, Backspace: { code: 'Backspace', keyCode: 8, commands: ['deleteBackward'] },
-    ArrowDown: { code: 'ArrowDown', keyCode: 40 }, ArrowLeft: { code: 'ArrowLeft', keyCode: 37 }, ArrowRight: { code: 'ArrowRight', keyCode: 39 }, ArrowUp: { code: 'ArrowUp', keyCode: 38 }, Tab: { code: 'Tab', keyCode: 9 } };
+    ArrowDown: { code: 'ArrowDown', keyCode: 40 }, ArrowLeft: { code: 'ArrowLeft', keyCode: 37 }, ArrowRight: { code: 'ArrowRight', keyCode: 39 }, ArrowUp: { code: 'ArrowUp', keyCode: 38 }, Tab: { code: 'Tab', keyCode: 9 }, Delete: { code: 'Delete', keyCode: 46 }, F2: { code: 'F2', keyCode: 113 } };
   const press = async (key: string, { shift = false, alt = false } = {}) => {
     const info = KEYS[key] ?? { code: key, keyCode: key.toUpperCase().charCodeAt(0), ...(key.length === 1 ? { text: key } : {}) };
     const base = { key, code: info.code, windowsVirtualKeyCode: info.keyCode, modifiers: (alt ? 1 : 0) | (shift ? 8 : 0), ...(info.commands ? { commands: info.commands } : {}) };

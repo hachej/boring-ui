@@ -390,8 +390,16 @@ The default `list` variant has a Library header, visible-item count, inset searc
 visible items, including folders; it is not a workspace total. A folder shows its
 child count only after its provider listing is complete; unloaded, loading, failed
 or paginated listings show no count. The menu offers
-Open, Version history and Download through the same provider. Rename and Delete
-are absent because `RevisionProvider` exposes neither operation. No edit date or
+Open, Version history and Download through the same provider. When the client has
+`rename`, files also offer Rename (inline in the row, F2) and Move to… (plus dragging a
+file onto a folder or the root); when it has `delete`, Delete (Delete key, after a
+confirmation dialog). `capabilities={{ effective }}`, when the host passes it, only
+narrows these to the listed `rename`/`delete`. Each change is a conditional write with the
+revision read when the action started (`controller.prepare`); a refusal stays on the
+row until dismissed and the affected folders are read again. A committed change calls
+`onRenamed(from, to)` or `onDeleted(path)`, so a host's viewer follows the file or closes
+(`AgentWorkspace` and `Documents` do). Folders are destinations
+only. No edit date or
 author is invented or fetched per row. `variant="plain"` keeps the compact tree.
 `title` overrides the list heading; `onClose` adds a host-owned close button.
 

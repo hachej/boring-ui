@@ -173,7 +173,7 @@ interface AgentWorkspaceBaseProps {
    * the tree, the Library, the history panel and the @ search reload from the workspace's own change events; `refreshKey` remains
    * for a provider without one.
    */
-  readonly fileTree?: Pick<FileTreeViewProps, 'labels' | 'upload' | 'history' | 'refreshKey'> | undefined;
+  readonly fileTree?: Pick<FileTreeViewProps, 'labels' | 'upload' | 'history' | 'refreshKey' | 'capabilities'> | undefined;
   /**
    * How the chat's attachments are saved under `uploads/` (they exist only with a Library, `revisionProvider` or `resources`). Every file
    * is reference-only by default: the message carries its `@path` and the agent reads it with its file tools. See `WorkspaceUploads`.
@@ -358,7 +358,7 @@ export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, titl
     if (!response.ok) throw new Error(`History: ${response.status}`);
     return (await response.json() as { saves: readonly SavedRevision[] }).saves;
   }, [revisionProvider, historyEndpoint]);
-  // Resources only: a read-only Library over the endpoint's own listing, when it answers the revision protocol's discovery for the same
+  // Resources only: a Library over the endpoint's own listing, when it answers the revision protocol's discovery for the same
   // person (`createRevisionHandler` serves the resource calls and the listing on one route). A plain resource handler refuses: no Library.
   const [listing, setListing] = useState<{ readonly key: string; readonly provider: RevisionProvider }>();
   const listingKey = revisionProvider || endpoint === undefined ? undefined : JSON.stringify([endpoint, identity]);
@@ -437,6 +437,14 @@ export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, titl
     else for (const directory of ['', ...expanded]) void libraryController.refresh(directory);
   }, [libraryController, refreshKey, feed.seq]);
   const openFile = useCallback((path: string) => { setOpened({ kind: 'file', path }); }, [setOpened]);
+  // The file on show was renamed, moved or deleted from the Library: follow it to its new path, or close it (its old path is gone).
+  const followFile = (from: string, to: string | null) => {
+    const current = currentView.current;
+    if (!isFile(current) || current.path !== from) return;
+    const next = to === null ? null : { kind: 'file' as const, path: to };
+    noteUnsaved(false);
+    if (!isControlled) setOwn(next); change.current?.(next);
+  };
   // @ search: results are reused while the feed reports nothing new (typing back and forth), and dropped at the next change event.
   // One cache per provider instance (one workspace binding), so another binding never sees these results.
   const mentionResults = useMemo(() => ({ seq: undefined as number | undefined, results: new Map<string, readonly FileEntry[]>() }), [revisionProvider]);
@@ -548,7 +556,7 @@ export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, titl
   // The Library tree, one view for the side column, the center and the pane; `onOpen` is what choosing a file does there.
   const libraryTree = (onOpen: (path: string) => void, onClose?: () => void) => libraryController
     ? <FileTreeView variant="list" refresh={libraryPlacement !== 'panel'} title={text.labels.library} {...(onClose ? { onClose } : {})} key={JSON.stringify([libraryProvider?.workspace, libraryProvider?.identity])} {...(locale ? { locale } : {})} {...viewOptions}
-      {...(readOnlyLibrary ? { upload: false, history: history !== undefined } : {})} {...(maxBytes !== undefined ? { maxBytes, ...(tooLarge ? { tooLarge } : {}) } : {})} {...(uploadBlob ? { uploadBlob } : {})} controller={libraryController} historyKey={feed.seq} onOpen={onOpen} {...(isFile(opened) ? { selectedPath: opened.path } : {})} />
+      {...(readOnlyLibrary ? { upload: false, history: history !== undefined } : {})} {...(maxBytes !== undefined ? { maxBytes, ...(tooLarge ? { tooLarge } : {}) } : {})} {...(uploadBlob ? { uploadBlob } : {})} controller={libraryController} historyKey={feed.seq} onOpen={onOpen} onRenamed={(from, to) => followFile(from, to)} onDeleted={path => followFile(path, null)} {...(isFile(opened) ? { selectedPath: opened.path } : {})} />
     : <p role="status" className="m-0 p-3 text-sm text-muted-foreground">{treeOptions?.labels?.loading ?? text.labels.loading}</p>;
   // `history="popover"` keeps the conversations out of the pane. With an open panel the column steps aside unless column, panel and chat fit.
   const paneConversations = historyPlacement === 'column' ? conversations : undefined;

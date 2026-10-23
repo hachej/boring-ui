@@ -2,7 +2,7 @@
 
 import '@hachej/boring-ui-kit/file-tree.css';
 import { FileTree as PackageFileTree, FileTreeView as PackageFileTreeView } from '@hachej/boring-ui-kit/file-tree-view';
-import type { FileTreeComponents, FileTreeActionsProps, FileTreeButtonProps, FileTreeVersionsProps, FileTreeProps as PackageFileTreeProps, FileTreeViewProps as PackageFileTreeViewProps } from '@hachej/boring-ui-kit/file-tree-view';
+import type { FileTreeComponents, FileTreeActionsProps, FileTreeButtonProps, FileTreeDialogProps, FileTreeVersionsProps, FileTreeProps as PackageFileTreeProps, FileTreeViewProps as PackageFileTreeViewProps } from '@hachej/boring-ui-kit/file-tree-view';
 import { useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { SidebarMenu, SidebarMenuItem, SidebarMenuSub } from '@/components/ui/sidebar';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { VersionHistoryRows, frenchVersionHistoryLabels } from '../version-history/version-history';
 import { cn } from '../utils/utils';
@@ -23,11 +24,14 @@ function LibraryButton({ className, ...props }: FileTreeButtonProps) {
 function FileActions({ label, icon, items }: FileTreeActionsProps) {
   const trigger = useRef<HTMLButtonElement>(null);
   const portal = useRef<HTMLElement | null>(null);
+  // Rename, Move to… and Delete move focus themselves (an inline input, a dialog): closing the menu leaves it there.
+  const chosen = useRef<FileTreeActionsProps['items'][number] | undefined>(undefined);
   return <DropdownMenu>
-    <DropdownMenuTrigger ref={trigger} render={<LibraryButton type="button" variant="ghost" size="icon" ref={node => { portal.current = node?.ownerDocument.body ?? null; }} />} data-file-more aria-label={label}>{icon}</DropdownMenuTrigger>
+    <DropdownMenuTrigger ref={trigger} onClick={() => { chosen.current = undefined; }} render={<LibraryButton type="button" variant="ghost" size="icon" ref={node => { portal.current = node?.ownerDocument.body ?? null; }} />} data-file-more aria-label={label}>{icon}</DropdownMenuTrigger>
     <DropdownMenuPortal container={portal}>
-      <DropdownMenuContent data-boring="file-actions" align="end" finalFocus={trigger} className="w-max max-w-(--available-width)">
-        {items.map(item => <DropdownMenuItem key={item.id} data-action={item.id} onClick={item.onSelect} className="max-sm:min-h-11 pointer-coarse:min-h-11">{item.icon}{item.label}</DropdownMenuItem>)}
+      <DropdownMenuContent data-boring="file-actions" align="end" finalFocus={() => chosen.current?.ownsFocus ? false : trigger.current} className="w-max max-w-(--available-width)">
+        {items.map(item => <DropdownMenuItem key={item.id} data-action={item.id} variant={item.destructive ? 'destructive' : 'default'}
+          onClick={() => { chosen.current = item; item.onSelect(); }} className="max-sm:min-h-11 pointer-coarse:min-h-11">{item.icon}{item.label}</DropdownMenuItem>)}
       </DropdownMenuContent>
     </DropdownMenuPortal>
   </DropdownMenu>;
@@ -36,6 +40,19 @@ function FileActions({ label, icon, items }: FileTreeActionsProps) {
 function FileVersions({ versions, current, onSelect, locale, earlierVersion }: FileTreeVersionsProps) {
   return <VersionHistoryRows versions={versions.map(version => ({ id: version.revision, label: earlierVersion, savedAt: version.savedAt, ...(version.source ? { source: version.source } : {}) }))}
     current={current} onSelect={onSelect} testId="file-history-versions" {...(locale === 'fr' ? { labels: frenchVersionHistoryLabels } : {})} />;
+}
+
+function FileTreeModal({ open, onOpenChange, title, description, children, footer }: FileTreeDialogProps) {
+  return <Dialog open={open} onOpenChange={onOpenChange}>
+    <DialogContent data-boring="file-tree-dialog" showCloseButton={false}>
+      <DialogHeader>
+        <DialogTitle>{title}</DialogTitle>
+        {description && <DialogDescription>{description}</DialogDescription>}
+      </DialogHeader>
+      {children}
+      <DialogFooter>{footer}</DialogFooter>
+    </DialogContent>
+  </Dialog>;
 }
 
 function FileTreeEmpty({ icon, title, description, className, children }: Parameters<FileTreeComponents['Empty']>[0]) {
@@ -52,7 +69,7 @@ function FileTreeEmpty({ icon, title, description, className, children }: Parame
 export const fileTreeComponents = {
   Button: LibraryButton, Actions: FileActions, Versions: FileVersions,
   Menu: SidebarMenu, MenuItem: SidebarMenuItem, MenuSub: SidebarMenuSub, Input, Separator: () => <Separator />,
-  Collapsible, CollapsibleTrigger, CollapsibleContent, Empty: FileTreeEmpty,
+  Collapsible, CollapsibleTrigger, CollapsibleContent, Empty: FileTreeEmpty, Dialog: FileTreeModal,
   Progress: ({ value, 'aria-label': label }: { readonly value: number | null; readonly 'aria-label': string }) => <Progress value={value} aria-label={label} />,
 } satisfies FileTreeComponents;
 export type FileTreeProps = Omit<PackageFileTreeProps, 'components'>;
