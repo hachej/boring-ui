@@ -10,8 +10,8 @@ export { useSharedChat, useSharedChatProps } from './use-shared-chat';
 export { defaultSharedLabels } from './shared-labels';
 export { frenchSharedLabels } from './shared-labels-fr';
 export type { SharedLabels } from './shared-labels';
-export { createSharedChat, createChannelSocket, createFakeChannelSource, channelAvatarStates, ChannelRequestError } from '@hachej/boring-ui-kit/shared-chat';
-export type { ChannelSource, ChannelEvent, ChannelMessage, Member, Conversation, Card, Step, AvatarState, SharedChatController } from '@hachej/boring-ui-kit/shared-chat';
+export { createSharedChat, createChannelSocket, createFakeChannelSource, channelAvatarStates, cardActions, ChannelRequestError } from '@hachej/boring-ui-kit/shared-chat';
+export type { ChannelSource, ChannelEvent, ChannelMessage, Member, Conversation, Card, CardAction, Step, AvatarState, SharedChatController } from '@hachej/boring-ui-kit/shared-chat';
 
 export interface SharedChatProps extends Omit<PiChatProps, 'controller'> {
   readonly controller: SharedChatController;

@@ -63,7 +63,7 @@ export function SharedTimeline({ controller, api, focusComposer, openFile, menti
               <SharedMessage shared={item} remove={controller.remove} canRemove={controller.canRemove} openFile={openFile} onReply={id => { controller.setReplyTo(id); focusComposer(); }} onReveal={setRevealing}>
                 {message.card ? <article data-row-id={item.key} data-role="event" className="max-w-[80%]"><RequestCard card={message.card} action={controller.action} /></article>
                   : <article data-row-id={item.key} data-role={person ? 'user' : 'assistant'} data-streaming={message.streaming ? 'true' : undefined} className="group/message"><Message align={own ? 'end' : 'start'}><MessageContent>
-                    {own ? <MessageText text={message.text ?? ''} context={context} /> : <Bubble variant="muted"><BubbleContent>
+                    {own ? <div data-testid="own-message" className="contents [&_[data-testid=message-mention]]:text-inherit"><MessageText text={message.text ?? ''} context={context} variant="default" /></div> : <Bubble variant="muted"><BubbleContent>
                       {message.text && <Markdown text={message.text} streaming={Boolean(message.streaming)} renderMention={renderMention} />}
                       {!message.via && author.kind === 'agent' && (message.streaming || message.steps?.length) && <HostTrace participant={author.name} steps={message.steps ?? []} streaming={Boolean(message.streaming)} active={item.showSpinner} />}
                     </BubbleContent></Bubble>}
