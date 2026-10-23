@@ -1,9 +1,14 @@
 import { createRoot } from 'react-dom/client';
+import { SparklesIcon } from 'lucide-react';
 import { AgentWorkspace } from '../../registry/pi-app/agent-workspace';
 import { useSharedChat } from '../../registry/shared-chat/shared-chat';
+import { SharedChat } from '../../registry/shared-chat/shared-chat';
+import { voiceMessagePlugin } from '../../registry/pi-chat-voice/voice-message';
 import { createPdfDemo } from './pdf-flow.mjs';
+import { createStorySource } from './story.mjs';
 
-const source = createPdfDemo({ manual: new URLSearchParams(location.search).has('manual') });
+const story = new URLSearchParams(location.search).has('story');
+const source = story ? createStorySource() : createPdfDemo({ manual: new URLSearchParams(location.search).has('manual') });
 // Demo controls only. No agent runs in this page; a real host owns the shared log and each agent's Pi conversation.
 window.__SHARED__ = source;
 const revisionProvider = {
@@ -19,4 +24,12 @@ function App() {
     chat={{ ...shared.workspaceProps.chat, labels: { title: 'Équipe fictive', placeholder: 'Écrivez à l’équipe…' }, draftKey: `fictional-shared:${shared.conversationId}` }}
     connecting={<p>Opening the fictional shared conversation…</p>} />;
 }
-createRoot(document.getElementById('root')).render(<App />);
+/** The block's story: SharedChat alone, as an app shows a channel on a phone, with an app control beside the send button. */
+function Story() {
+  const shared = useSharedChat(source);
+  if (!shared.controller) return <p>Opening the fictional channel…</p>;
+  return <SharedChat controller={shared.controller} conversations={shared.conversations} labels={{ title: '#missing-receipts', placeholder: 'Message' }}
+    voiceMessage={{ ...voiceMessagePlugin, transcribe: async () => 'A fictional voice note.' }}
+    tools={<button type="button" data-testid="story-app-control" aria-label="Assistant" className="inline-flex size-11 items-center justify-center text-chart-2"><SparklesIcon aria-hidden="true" className="size-5" /></button>} />;
+}
+createRoot(document.getElementById('root')).render(story ? <Story /> : <App />);

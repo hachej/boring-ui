@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { launch, pause, q, qa } from '@hachej/boring-testing/browser';
 import { startSharedChat } from './server.mjs';
-import { auditAgentContrast } from './colour-audit.mjs';
+import { auditAgentContrast, auditSmallText } from './colour-audit.mjs';
+import { checkStory } from './story-checks.mjs';
 
 const evidence = process.env.SHARED_CHAT_EVIDENCE ?? '.cache/evidence/shared-chat/r9';
 mkdirSync(evidence, { recursive: true });
@@ -11,7 +12,7 @@ let browser;
 const input = q('[data-testid=composer-input]');
 const message = id => q(`[data-shared-message="${id}"]`);
 const trace = `${message('pdf-plan')}.querySelector('[data-testid=activity]')`;
-const avatar = `${message('pdf-card')}.querySelector('[data-testid=agent-avatar-pm]')`;
+const avatar = `${message('pdf-card')}.querySelector('[data-testid=message-avatar] [data-slot=avatar]')`;
 const noOverflow = 'document.documentElement.scrollWidth <= innerWidth && document.body.scrollWidth <= innerWidth';
 try {
   for (const [device, width, height] of [['phone', 390, 844], ['desktop', 1440, 1000]]) {
@@ -41,7 +42,7 @@ try {
       const exposeActions = async id => {
         await reveal(id);
         if (device === 'phone') {
-          const point = await browser.evaluate(`(() => { const r = ${message(id)}.querySelector('[data-slot=card-title]').getBoundingClientRect(); return { x: r.left + 10, y: r.top + r.height / 2 }; })()`);
+          const point = await browser.evaluate(`(() => { const r = ${message(id)}.querySelector('[data-testid=request-title]').getBoundingClientRect(); return { x: r.left + 10, y: r.top + r.height / 2 }; })()`);
           await browser.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] }); await pause(550);
           await browser.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
         } else await browser.hover(message(id));
@@ -56,8 +57,8 @@ try {
       await browser.evaluate("window.__SHARED__.setStatus('live')");
       await browser.until('quiet live bar', `!${q('[data-testid=shared-status]')}`);
       assert.equal(await browser.evaluate(`${message('via-person')}.querySelector('[data-testid=message-via]').textContent`), 'via Claude');
-      assert.equal(await browser.evaluate(`${qa('[data-testid=time-separator]')}.length`), 1);
-      assert.match(await browser.evaluate(`${q('[data-testid=time-separator]')}.textContent`), /jeu\. 10 sept\./);
+      assert.equal(await browser.evaluate(`${qa('[data-testid=day-separator]')}.length`), 1);
+      assert.match(await browser.evaluate(`${q('[data-testid=day-separator]')}.textContent`), /^jeu\. 10 sept\.$/);
       assert.equal(await browser.evaluate(`document.body.innerText.includes('Début de la conversation')`), false);
 
       await browser.type(input, '@');
@@ -92,7 +93,8 @@ try {
       assert.equal(await browser.evaluate(`!!${message(ownId)}.querySelector('[data-testid=message-author], [data-testid=message-avatar]')`), false);
       assert.equal(await browser.evaluate(`!!${message('pdf-doing')}.querySelector('[data-testid=message-avatar] [data-slot=avatar]')`), false);
       assert.equal(await browser.evaluate(`!!${message('pdf-plan')}.querySelector('[data-testid=message-author]')`), false);
-      assert.equal(await browser.evaluate(`!!${message('pdf-plan')}.querySelector('[data-testid=message-avatar] svg[data-lucide=bot]')`), true);
+      assert.equal(await browser.evaluate(`!!${message('pdf-plan')}.querySelector('[data-testid=message-avatar] svg[data-lucide=sparkle]')`), true);
+      assert.equal(await browser.evaluate(`!!document.querySelector('[data-testid=transcript] [data-testid=avatar-indicator], [data-testid=transcript] [data-lucide=bot]')`), false, 'clean glyphs, no state dot');
       assert.equal(await browser.evaluate(`!!${q('[data-testid=author-badge]')}`), false);
       const geometry = await browser.evaluate(`(() => {
         const rect = e => e.getBoundingClientRect();
@@ -102,7 +104,7 @@ try {
       for (const author of [geometry.person, geometry.agent]) { assert.equal(author.avatar, 24); assert.ok(author.bottom <= 1); assert.equal(author.before, true); }
       assert.ok(geometry.continuationGap > 0 && geometry.continuationGap <= 8);
       writeFileSync(`${evidence}/${width}-${scheme}-geometry.json`, JSON.stringify(geometry, null, 2));
-      assert.equal(await browser.evaluate(`${qa('[data-testid=time-separator]')}.length`), 2);
+      assert.deepEqual(await browser.evaluate(`${qa('[data-testid=day-separator]')}.map(e => e.textContent)`), ['jeu. 10 sept.', 'Aujourd’hui']);
       await shot('room-overview');
 
       await browser.evaluate('window.__SHARED__.build()');
@@ -112,7 +114,7 @@ try {
       assert.equal(await browser.evaluate(`${trace}.dataset.open`), 'false');
       assert.equal(await browser.evaluate(`${qa('[data-slot=spinner]')}.length`), 1);
       assert.equal(await browser.evaluate(`!!${avatar}.querySelector('[data-slot=spinner]')`), false);
-      assert.equal(await browser.evaluate(`(() => { const a = ${avatar}.getBoundingClientRect(), c = ${message('pdf-card')}.querySelector('[data-slot=card]').getBoundingClientRect(); return Math.abs(a.bottom - c.bottom) <= 1; })()`), true, 'avatar aligns with the final request card');
+      assert.equal(await browser.evaluate(`(() => { const a = ${avatar}.getBoundingClientRect(), c = ${message('pdf-card')}.querySelector('[data-testid=card-bubble]').getBoundingClientRect(); return Math.abs(a.bottom - c.bottom) <= 1; })()`), true, 'avatar aligns with the final request card');
       await reveal('pdf-card'); await shot('pm-working');
       await browser.click(`${trace}.querySelector('button')`);
       await browser.until('expanded steps', `${trace}.querySelectorAll('[data-testid=activity-step]').length === 3`);
@@ -127,7 +129,7 @@ try {
       assert.equal(await browser.evaluate(`${qa('[data-slot=spinner]')}.length`), 0);
       assert.equal(await browser.evaluate(`${trace}.dataset.open`), 'false');
       assert.equal(await browser.evaluate(`${trace}.querySelector('[data-testid=activity-label]').textContent`), '3 étapes');
-      assert.equal(await browser.evaluate(`(() => { const c = ${message('pdf-card')}.querySelector('[data-slot=card]').getBoundingClientRect(), body = ${message('pdf-card')}.querySelector('[data-testid=shared-message-content]').getBoundingClientRect(); return c.width <= body.width * 0.8 + 1; })()`), true);
+      assert.equal(await browser.evaluate(`(() => { const c = ${message('pdf-card')}.querySelector('[data-testid=request-card]').getBoundingClientRect(), body = ${message('pdf-card')}.querySelector('[data-testid=shared-message-content]').getBoundingClientRect(); return c.width <= body.width * 0.8 + 1; })()`), true);
       await reveal('pdf-card'); await shot('card-result');
       const actions = `${message('pdf-card')}.querySelector('[data-testid=shared-message-actions]')`;
       assert.equal(await browser.evaluate(device === 'phone' ? `${actions}.hidden` : `getComputedStyle(${actions}).opacity === '0'`), true);
@@ -159,10 +161,13 @@ try {
       await browser.until('host conversations', `${qa('[data-testid=conversation-row]')}.length === 3`);
       await pause(600);
       await browser.click(q('[data-testid=conversation-row][data-conversation-id=admin]'));
-      await browser.until('admin host trace', `!!${message('admin-trace')}`);
+      // The History sheet closes over the room on a phone; tap the trace once the sheet is gone and the room has settled.
+      await browser.until('admin host trace', `!!${message('admin-trace')} && !document.querySelector('[data-testid=conversation-row]')`);
+      await pause(300);
       await browser.click(`${message('admin-trace')}.querySelector('[data-testid=activity] button')`);
       await browser.until('admin details', `${message('admin-trace')}.querySelectorAll('[data-testid=step-detail]').length === 3`);
       const contrast = await auditAgentContrast(browser);
+      writeFileSync(`${evidence}/${width}-${scheme}-small-text.json`, JSON.stringify(await auditSmallText(browser), null, 2));
       writeFileSync(`${evidence}/${width}-${scheme}-contrast.json`, JSON.stringify(contrast, null, 2));
       assert.equal(await browser.evaluate(noOverflow), true);
       assert.deepEqual(browser.problems, []);
@@ -174,6 +179,8 @@ try {
   await pause(200);
   assert.equal(await browser.evaluate(noOverflow), true, 'no horizontal overflow at 360px');
   assert.deepEqual(browser.problems, []);
+  await browser.close(); browser = undefined;
+  writeFileSync(`${evidence}/story-small-text.json`, JSON.stringify(await checkStory(app.url, { evidence }), null, 2));
   writeFileSync(`${evidence}/browser-result.json`, JSON.stringify({ passed: true, fictional: true, widths: [390, 1440], themes: ['light', 'dark'] }, null, 2));
 } catch (error) { await browser?.screenshot('last-state.png'); throw error; }
 finally { await browser?.close(); await app.close(); }
