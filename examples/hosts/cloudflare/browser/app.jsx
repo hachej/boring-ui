@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { NotebookTextIcon } from 'lucide-react';
-import { artifactKey } from '../../../../registry/pi-chat/pi-chat.tsx';
+import { artifactKey } from '../../../../registry/pi-artifacts/artifact.ts';
 import { connectRevisionProvider } from '@hachej/boring-files/revision';
 import { AgentWorkspace, useArtifactVersions, useRemoteChat } from '../../../../registry/pi-app/agent-workspace.tsx';
 import { useScenarioRun, useTyped } from '../../../../lab/studio/scenarios-ui.jsx';

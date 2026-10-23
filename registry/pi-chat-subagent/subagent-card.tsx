@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Item, ItemActions, ItemContent, ItemFooter, ItemMedia, ItemTitle } from '@/components/ui/item';
 import { Spinner } from '@/components/ui/spinner';
 import { ArrowDownIcon, ArrowUpIcon, ArrowUpRightIcon, CheckIcon, CircleAlertIcon, CircleSlashIcon, ClockIcon, WrenchIcon } from 'lucide-react';
-import { useChatText } from './labels';
+import { useChatText } from '../pi-chat/labels';
+import type { SubagentRenderer } from '../pi-chat/config';
 
 /** `DELEGATE_DETAILS_KIND` of `@hachej/boring-agent/agents` (a contract test keeps them equal). */
 export const DELEGATE_DETAILS_KIND = 'boring.delegate';
@@ -122,3 +123,12 @@ export function SubagentCard({ details, onOpen, now: clock = Date.now }: {
     </ItemFooter>}
   </Item>;
 }
+
+/**
+ * The sub-agent card as the chat's `cards.subagent`: a call whose details (live from its running slot, or settled from its result) are
+ * `DelegateDetails` becomes a `SubagentCard`. Any other call stays an ordinary tool step.
+ */
+export const subagentCard: SubagentRenderer = (_call, details, result) => {
+  const parsed = parseDelegateDetails(details, result);
+  return parsed ? <SubagentCard details={parsed} /> : undefined;
+};

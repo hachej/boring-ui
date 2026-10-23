@@ -406,7 +406,7 @@
       "name": "pi-chat",
       "type": "registry:block",
       "title": "Pi chat",
-      "description": "A complete Tailwind chat over the borrowed native chat controller: composer, messages, one collapsible activity block per turn (tool calls and reasoning), message queue, history, a human-in-the-loop question card, an Approve / Deny card for host tools wrapped with requireApproval optional artifact cards that open generated content in the host's panel, and feedback cards for the opt-in feedback tool (lists, and Show offers that the host page resolves). Chat only: no layout. Owned, editable source; no AI SDK. The optional pi-ambient and pi-workspace blocks build on it.",
+      "description": "A complete Tailwind chat over the borrowed native chat controller: composer, messages, one collapsible activity block per turn (tool calls and reasoning), message queue, history and feedback cards for the opt-in feedback tool (lists, and Show offers that the host page resolves). Chat only: no layout. Owned, editable source; no AI SDK. The question, approval, sub-agent and artifact cards are separate items (pi-chat-question, pi-chat-approval, pi-chat-subagent, pi-artifacts); without them a question or an approval shows a \"waiting for your answer\" notice, a sub-agent call is an ordinary tool step and no artifact is offered. The optional pi-ambient and pi-workspace blocks build on it.",
       "dependencies": [
         "@hachej/boring-ui-kit@^0.4.11",
         "@hachej/boring-files@^0.4.11",
@@ -459,21 +459,6 @@
           "path": "registry/pi-chat/activity.tsx",
           "type": "registry:component",
           "target": "components/pi-chat/activity.tsx"
-        },
-        {
-          "path": "registry/pi-chat/artifact-card.tsx",
-          "type": "registry:component",
-          "target": "components/pi-chat/artifact-card.tsx"
-        },
-        {
-          "path": "registry/pi-chat/approval-card.tsx",
-          "type": "registry:component",
-          "target": "components/pi-chat/approval-card.tsx"
-        },
-        {
-          "path": "registry/pi-chat/artifact.ts",
-          "type": "registry:lib",
-          "target": "components/pi-chat/artifact.ts"
         },
         {
           "path": "registry/pi-chat/code-block.tsx",
@@ -541,11 +526,6 @@
           "target": "components/pi-chat/picker-keyboard.ts"
         },
         {
-          "path": "registry/pi-chat/question-card.tsx",
-          "type": "registry:component",
-          "target": "components/pi-chat/question-card.tsx"
-        },
-        {
           "path": "registry/pi-chat/queue.tsx",
           "type": "registry:component",
           "target": "components/pi-chat/queue.tsx"
@@ -604,16 +584,6 @@
           "path": "registry/pi-chat/use-conversations.ts",
           "type": "registry:hook",
           "target": "components/pi-chat/use-conversations.ts"
-        },
-        {
-          "path": "registry/pi-chat/run-card.tsx",
-          "type": "registry:component",
-          "target": "components/pi-chat/run-card.tsx"
-        },
-        {
-          "path": "registry/pi-chat/subagent-card.tsx",
-          "type": "registry:component",
-          "target": "components/pi-chat/subagent-card.tsx"
         }
       ],
       "css": {
@@ -833,6 +803,117 @@
       ]
     },
     {
+      "name": "pi-chat-question",
+      "type": "registry:block",
+      "title": "Pi chat question card",
+      "description": "The human-in-the-loop question card for `ask_user` (choices, free text, answered state). Plug it in with `cards={{ question: QuestionCard }}`; without it pi-chat shows a \"waiting for your answer\" notice with no answer UI.",
+      "dependencies": [
+        "react@^19.0.0",
+        "lucide-react@^1.51.0",
+        "@earendil-works/pi-ai@~1.2.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat.json",
+        "alert",
+        "button",
+        "card",
+        "input",
+        "item",
+        "spinner"
+      ],
+      "files": [
+        {
+          "path": "registry/pi-chat-question/question-card.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat-question/question-card.tsx"
+        }
+      ]
+    },
+    {
+      "name": "pi-chat-approval",
+      "type": "registry:block",
+      "title": "Pi chat approval card",
+      "description": "The Approve / Deny card for host tools wrapped with `requireApproval`. Plug it in with `cards={{ approval: ApprovalCard }}`; without it pi-chat shows a \"waiting for your answer\" notice with no answer UI.",
+      "dependencies": [
+        "react@^19.0.0",
+        "lucide-react@^1.51.0",
+        "@earendil-works/pi-ai@~1.2.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat.json",
+        "badge",
+        "button",
+        "item"
+      ],
+      "files": [
+        {
+          "path": "registry/pi-chat-approval/approval-card.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat-approval/approval-card.tsx"
+        }
+      ]
+    },
+    {
+      "name": "pi-chat-subagent",
+      "type": "registry:block",
+      "title": "Pi chat sub-agent card",
+      "description": "The card for a tool call that ran a sub-agent (`delegate`, and the run card of a started run). Plug it in with `cards={{ subagent: subagentCard }}`; without it the call is an ordinary tool step.",
+      "dependencies": [
+        "react@^19.0.0",
+        "lucide-react@^1.51.0",
+        "@earendil-works/pi-ai@~1.2.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat.json",
+        "alert",
+        "badge",
+        "button",
+        "item",
+        "spinner"
+      ],
+      "files": [
+        {
+          "path": "registry/pi-chat-subagent/run-card.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat-subagent/run-card.tsx"
+        },
+        {
+          "path": "registry/pi-chat-subagent/subagent-card.tsx",
+          "type": "registry:component",
+          "target": "components/pi-chat-subagent/subagent-card.tsx"
+        }
+      ]
+    },
+    {
+      "name": "pi-artifacts",
+      "type": "registry:block",
+      "title": "Pi artifacts",
+      "description": "Artifact descriptors, kinds and the artifact card that opens generated content in the host's panel. Plug it in with `artifacts={{ ...artifactCards, open, isOpen, kinds }}`; without it pi-chat offers no artifact. pi-app and the viewers import their artifact kinds and types from it.",
+      "dependencies": [
+        "react@^19.0.0",
+        "lucide-react@^1.51.0",
+        "@earendil-works/pi-ai@~1.2.0",
+        "@earendil-works/pi-durable@~1.2.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat.json",
+        "button",
+        "item"
+      ],
+      "files": [
+        {
+          "path": "registry/pi-artifacts/artifact.ts",
+          "type": "registry:lib",
+          "target": "components/pi-artifacts/artifact.ts"
+        },
+        {
+          "path": "registry/pi-artifacts/artifact-card.tsx",
+          "type": "registry:component",
+          "target": "components/pi-artifacts/artifact-card.tsx"
+        }
+      ]
+    },
+    {
       "name": "pi-chat-plugins",
       "type": "registry:block",
       "title": "Pi chat with every composer feature",
@@ -847,7 +928,11 @@
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat-mentions.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat-pickers.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat-voice.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat-attachments.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat-attachments.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat-question.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat-approval.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat-subagent.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-artifacts.json"
       ],
       "files": [
         {
@@ -874,6 +959,8 @@
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/theme.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat-plugins.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat-question.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-artifacts.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-workspace.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/utils.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/button.json",
@@ -1191,7 +1278,7 @@
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/maquette-viewer.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/mockup-viewer.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-artifacts.json",
         "button",
         "alert",
         "card",
@@ -1309,6 +1396,7 @@
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/theme.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat-plugins.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-artifacts.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-workspace.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/viewers.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/maquette-viewer.json",
@@ -2728,7 +2816,7 @@
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/theme.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/utils.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/button.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-artifacts.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-app.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/app-shell.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/file-tree.json",

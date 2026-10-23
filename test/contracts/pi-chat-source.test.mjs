@@ -121,7 +121,8 @@ const presentResult = (id, artifact) => result(id, 'present', JSON.stringify({ k
 
 test('artifact results become cards: one per artifact per turn, in progress while running, none on failure', async () => {
   const { derive, segments } = await load('rows', 'rows.ts');
-  const withArtifacts = mode => ({ ...options(mode), artifacts: {} });
+  const { recogniseArtifact: recognise } = await load('artifact', 'artifact.ts', 'pi-artifacts');
+  const withArtifacts = mode => ({ ...options(mode), artifacts: { recognise } });
   const view = { entries: entries([user('write')],
     [assistant([call('1', 'present', { path: 'docs/a.md' }), call('2', 'present', { path: 'docs/b.md' })])], [presentResult('1', presented('a', 'a-1')), presentResult('2', presented('b', 'b-1'))],
     [assistant([call('3', 'present', { path: 'docs/a.md' }), call('4', 'present', { path: './docs/a.md' }), call('5', 'read', { path: 'docs/a.md' })])],
@@ -129,7 +130,7 @@ test('artifact results become cards: one per artifact per turn, in progress whil
     [assistant([{ type: 'text', text: 'Done.' }])]), docs: {} };
   for (const mode of ['expert', 'developer']) {
     const cards = derive(view, withArtifacts(mode)).rows[1].parts.filter(part => part.kind === 'artifact');
-    assert.deepEqual(cards.map(card => [card.artifact.target.resource.path, card.artifact.revision, card.state]), [['docs/b.md', 'b-1', 'ready'], ['docs/a.md', 'a-3', 'ready']], mode);
+    assert.deepEqual(cards.map(card => [card.artifact.descriptor.target.resource.path, card.artifact.descriptor.revision, card.artifact.state]), [['docs/b.md', 'b-1', 'ready'], ['docs/a.md', 'a-3', 'ready']], mode);
   }
   // Cards sit outside the activity block, at the place of their step.
   const parts = derive(view, withArtifacts('expert')).rows[1].parts;
@@ -139,10 +140,10 @@ test('artifact results become cards: one per artifact per turn, in progress whil
   // A running present shows an in-progress card named after the file; presenting a shown file again replaces its card.
   const running = { entries: entries([user('write')], [assistant([call('1', 'present', { path: 'docs/a.md' }), call('3', 'present', { path: 'docs/b.md' })])], [presentResult('1', presented('a', 'a-1'))]), docs: { 'pi.live': { run: { taskId: 1 } } } };
   const live = derive(running, withArtifacts('expert')).rows[1].parts.filter(part => part.kind === 'artifact');
-  assert.deepEqual(live.map(card => [card.state, card.artifact?.revision, card.title]), [['ready', 'a-1', 'a.md'], ['presenting', undefined, 'b.md']]);
+  assert.deepEqual(live.map(card => [card.artifact.state, card.artifact.descriptor?.revision, card.artifact.title]), [['ready', 'a-1', 'a.md'], ['presenting', undefined, 'b.md']]);
   const replaced = { ...running, entries: entries([user('write')], [assistant([call('1', 'present', { path: 'docs/a.md' })])], [presentResult('1', presented('a', 'a-1'))], [assistant([call('2', 'present', { path: 'docs/a.md' })])]) };
   const second = derive(replaced, withArtifacts('expert')).rows[1].parts.filter(part => part.kind === 'artifact');
-  assert.deepEqual(second.map(card => [card.state, card.title]), [['presenting', 'a.md']]);
+  assert.deepEqual(second.map(card => [card.artifact.state, card.artifact.title]), [['presenting', 'a.md']]);
   // A failed call and a call that stopped show no card, only the ordinary step.
   const failed = { entries: entries([user('write')], [assistant([call('1', 'present', { path: 'docs/a.md' })])], [result('1', 'present', 'denied', true)]), docs: {} };
   assert.deepEqual(derive(failed, withArtifacts('expert')).rows[1].parts.map(part => part.kind), ['tool']);
@@ -150,13 +151,13 @@ test('artifact results become cards: one per artifact per turn, in progress whil
   assert.deepEqual(derive(stopped, withArtifacts('expert')).rows[1].parts.map(part => part.kind), ['tool']);
   // A host detector maps a result that carries no descriptor (the step stays in the activity block next to its card); a faulty or malformed one is ignored.
   const saved = { entries: entries([user('save')], [assistant([call('1', 'save_note', {})])], [result('1', 'save_note', '{"kind":"committed"}')]), docs: {} };
-  assert.deepEqual(derive(saved, { ...options('expert'), artifacts: { detect: () => descriptor('doc', 4) } }).rows[1].parts.map(part => part.kind), ['tool', 'artifact']);
-  assert.deepEqual(derive(saved, { ...options('expert'), artifacts: { detect: () => ({ nope: 1 }) } }).rows[1].parts.map(part => part.kind), ['tool']);
-  assert.deepEqual(derive(saved, { ...options('expert'), artifacts: { detect: () => { throw new Error('boom'); } } }).rows[1].parts.map(part => part.kind), ['tool']);
+  assert.deepEqual(derive(saved, { ...options('expert'), artifacts: { recognise, detect: () => descriptor('doc', 4) } }).rows[1].parts.map(part => part.kind), ['tool', 'artifact']);
+  assert.deepEqual(derive(saved, { ...options('expert'), artifacts: { recognise, detect: () => ({ nope: 1 }) } }).rows[1].parts.map(part => part.kind), ['tool']);
+  assert.deepEqual(derive(saved, { ...options('expert'), artifacts: { recognise, detect: () => { throw new Error('boom'); } } }).rows[1].parts.map(part => part.kind), ['tool']);
 });
 
 test('collectArtifacts lists every version a conversation produced', async () => {
-  const { collectArtifacts } = await load('artifact', 'artifact.ts');
+  const { collectArtifacts } = await load('artifact', 'artifact.ts', 'pi-artifacts');
   const view = { entries: entries([user('x')], [assistant([call('1', 'present', { path: 'docs/a.md' }), call('2', 'present', { path: 'docs/a.md' }), call('3', 'present', { path: 'docs/c.md' }), call('4', 'bash', {})])],
     [presentResult('1', presented('a', 'a-1')), presentResult('2', presented('a', 'a-2')), result('3', 'present', JSON.stringify({ kind: 'presented', artifact: 'not a descriptor' })),
       // A valid descriptor in the text of any other tool (here `cat card.json`) must not become a card.
@@ -165,13 +166,13 @@ test('collectArtifacts lists every version a conversation produced', async () =>
 });
 
 test('a pending present call and its completed artifact share one identity for repeated ./ prefixes', async () => {
-  const { pendingId } = await load('artifact', 'artifact.ts');
+  const { pendingId } = await load('artifact', 'artifact.ts', 'pi-artifacts');
   assert.equal(pendingId(call('1', 'present', { path: './././docs/a.md' })), 'docs/a.md');
   assert.equal(pendingId(call('2', 'present', { path: 'docs/a.md' })), 'docs/a.md');
 });
 
 test('the browser descriptor validator agrees with the agent package validator', async () => {
-  const browser = await load('artifact', 'artifact.ts');
+  const browser = await load('artifact', 'artifact.ts', 'pi-artifacts');
   const agent = await import('@hachej/boring-agent/artifacts');
   const good = descriptor('abc', 2, { language: 'python', type: 'code', mediaType: 'text/plain' });
   const values = [good, descriptor('a', 1), undefined, null, 'x', [], {}, { ...good, schema: 'other' }, { ...good, id: '../x' }, { ...good, title: ' ' }, { ...good, type: 'pdf' }, { ...good, mediaType: 'nope' }, { ...good, language: 7 },
@@ -182,7 +183,7 @@ test('the browser descriptor validator agrees with the agent package validator',
 
 test('gated tool calls become approval cards that show the real arguments and the decision', async () => {
   const { derive } = await load('rows', 'rows.ts');
-  const { ApprovalCard, APPROVE, DENY, DENIED_PREFIX } = await load('approval-card', 'approval-card.tsx');
+  const { ApprovalCard, APPROVE, DENY, DENIED_PREFIX } = await load('approval-card', 'approval-card.tsx', 'pi-chat-approval');
   const agent = await import('@hachej/boring-agent/approval');
   assert.deepEqual([APPROVE, DENY, DENIED_PREFIX], [agent.APPROVE, agent.DENY, agent.DENIED_PREFIX], 'the card and requireApproval agree on the decision strings');
   assert.equal((await load('rows', 'rows.ts')).APPROVAL_DETAILS, agent.APPROVAL_DETAILS, 'and on where the stored summary travels');
@@ -229,19 +230,25 @@ test('gated tool calls become approval cards that show the real arguments and th
 test('delegate calls become sub-agent cards that read DelegateDetails, live and settled', async () => {
   const { derive } = await load('rows', 'rows.ts');
   const { RowView } = await load('subagent-message', 'message.tsx');
-  const { SubagentCard, parseDelegateDetails, DELEGATE_DETAILS_KIND } = await load('subagent-card', 'subagent-card.tsx');
+  const { SubagentCard, parseDelegateDetails, DELEGATE_DETAILS_KIND, subagentCard } = await load('subagent-card', 'subagent-card.tsx', 'pi-chat-subagent');
+  // The card is the pi-chat-subagent item, plugged in as `cards.subagent`; without it a delegate call stays an ordinary tool step.
+  const withCard = mode => ({ ...options(mode), subagent: subagentCard });
   const agents = await import('@hachej/boring-agent/agents');
   assert.equal(DELEGATE_DETAILS_KIND, agents.DELEGATE_DETAILS_KIND, 'the card and the delegate tool agree on the details kind');
   const running = { kind: agents.DELEGATE_DETAILS_KIND, version: 1, agent: 'researcher', conversationId: 14, status: 'running', startedAt: 1_000, durationMs: 1_500, toolCalls: 2, tokens: { input: 1_234, output: 56 } };
   const args = { agent: 'researcher', task: 'Summarise the fictional notes' };
   const view = { entries: entries([user('look it up')], [assistant([call('1', 'delegate', args)])]), docs: {} };
-  assert.deepEqual(derive(view, options('expert')).rows[1].parts.map(part => part.kind), ['tool'], 'a call without delegate details is an ordinary tool step');
+  assert.deepEqual(derive(view, withCard('expert')).rows[1].parts.map(part => part.kind), ['tool'], 'a call without delegate details is an ordinary tool step');
   // While the child runs, the call's live slot carries the details the delegate tool publishes through api.details.
-  const live = derive({ ...view, docs: { 'pi.live': { tools: [{ callId: '1', name: 'delegate', status: 'running', details: running }] } } }, options('natural')).rows[1].parts;
+  const liveView = { ...view, docs: { 'pi.live': { tools: [{ callId: '1', name: 'delegate', status: 'running', details: running }] } } };
+  assert.deepEqual(derive(liveView, options('expert')).rows[1].parts.map(part => part.kind), ['tool'], 'without the pi-chat-subagent item the call is an ordinary tool step');
+  const live = derive(liveView, withCard('natural')).rows[1].parts;
   assert.deepEqual(live.map(part => part.kind), ['subagent'], 'shown to every reader, natural mode included');
-  assert.equal(live[0].details.status, 'running');
+  assert.match(renderToStaticMarkup(live[0].content), /data-testid="subagent-card"[^>]*data-state="running"/, 'the part carries the item\'s card');
+  const liveDetails = parseDelegateDetails(running);
+  assert.equal(liveDetails.status, 'running');
   const card = details => renderToStaticMarkup(createElement(SubagentCard, { details, now: () => 4_000 }));
-  const runningCard = card(live[0].details);
+  const runningCard = card(liveDetails);
   assert.match(runningCard, /data-testid="subagent-card"[^>]*data-state="running"/);
   assert.match(runningCard, /data-conversation-id="14"/);
   assert.match(runningCard, /data-testid="subagent-spinner"/);
@@ -253,22 +260,25 @@ test('delegate calls become sub-agent cards that read DelegateDetails, live and 
   assert.match(runningCard, /1\.2k/);
   assert.match(runningCard, /data-testid="subagent-conversation"[^>]*>#14</);
   const opened = [];
-  assert.match(renderToStaticMarkup(createElement(SubagentCard, { details: live[0].details, onOpen: id => opened.push(id) })), /<button[^>]*data-testid="subagent-open"[^>]*aria-label="Open conversation 14"/, 'a host can link the child conversation');
+  assert.match(renderToStaticMarkup(createElement(SubagentCard, { details: liveDetails, onOpen: id => opened.push(id) })), /<button[^>]*data-testid="subagent-open"[^>]*aria-label="Open conversation 14"/, 'a host can link the child conversation');
   // Settled: the result's details carry the finished value.
-  const settled = (details, text, isError = false) => derive({ entries: entries([user('look it up')], [assistant([call('1', 'delegate', args)])], [{ ...result('1', 'delegate', text, isError), timestamp: 9_000, details }]), docs: {} }, options('expert')).rows[1].parts;
+  const settled = (details, text, isError = false) => derive({ entries: entries([user('look it up')], [assistant([call('1', 'delegate', args)])], [{ ...result('1', 'delegate', text, isError), timestamp: 9_000, details }]), docs: {} }, withCard('expert')).rows[1].parts;
+  const settledDetails = (details, text, isError = false) => parseDelegateDetails(details, { ...result('1', 'delegate', text, isError), timestamp: 9_000 });
   const done = settled({ ...running, status: 'done', durationMs: 7_000, toolCalls: 3 }, 'The fictional answer.');
   assert.deepEqual(done.map(part => part.kind), ['tool', 'subagent'], 'expert keeps the call as a step of the activity block next to its card');
-  const doneCard = card(done[1].details);
+  assert.match(renderToStaticMarkup(done[1].content), /data-testid="subagent-card"[^>]*data-state="done"/);
+  const doneCard = card(settledDetails({ ...running, status: 'done', durationMs: 7_000, toolCalls: 3 }, 'The fictional answer.'));
   assert.match(doneCard, /data-state="done"/);
   assert.match(doneCard, /data-testid="subagent-time"[^>]*>.*7 s</);
   assert.match(doneCard, /data-count="3"/);
   assert.doesNotMatch(doneCard, /subagent-spinner|subagent-error/);
   const error = 'The researcher agent did not answer: model_error (Fictional provider refused the request)';
-  const failedCard = card(settled({ ...running, status: 'failed', error }, error, true)[1].details);
+  const failedCard = card(settledDetails({ ...running, status: 'failed', error }, error, true));
   assert.match(failedCard, /data-state="failed"/);
   assert.match(failedCard, /data-testid="subagent-error"[^]*Fictional provider refused the request/);
   // A stopped delegate call: Pi writes the aborted result from the last running details, which the card reads as cancelled.
-  const stopped = settled(running, 'Tool call aborted', true)[1].details;
+  assert.match(renderToStaticMarkup(settled(running, 'Tool call aborted', true)[1].content), /data-state="cancelled"/);
+  const stopped = settledDetails(running, 'Tool call aborted', true);
   assert.equal(stopped.status, 'cancelled');
   assert.equal(stopped.durationMs, 8_000, 'up to the result');
   assert.match(card(stopped), /data-state="cancelled"/);
@@ -349,7 +359,7 @@ test('question controls submit the owning entry identity even when call IDs repe
   }
   const { act } = await import('react');
   const { createRoot } = await import('react-dom/client');
-  const { QuestionCard } = await load('question-card', 'question-card.tsx');
+  const { QuestionCard } = await load('question-card', 'question-card.tsx', 'pi-chat-question');
   const { derive } = await load('rows', 'rows.ts');
   const container = document.createElement('div'); document.body.append(container);
   const rootNode = createRoot(container);

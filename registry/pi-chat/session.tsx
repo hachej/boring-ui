@@ -15,8 +15,7 @@ import { displayName, looksLikeMarkdown, mentionToken, pieces } from './config';
 import type { CommandMentions } from './config';
 import type { ChatCards, ChatTextPart, RowContext } from './message';
 import type { QueueActions, QueuedMessage } from './queue';
-import type { AnswerOutcome } from './question-card';
-import type { ArtifactsConfig } from './artifact';
+import type { AnswerOutcome, ChatArtifactsConfig } from './config';
 import { derive, isFileBlock, object, queuedMessages } from './rows';
 import type { ChatCard, Mode, Row } from './rows';
 import { useChatText } from './labels';
@@ -55,7 +54,11 @@ export interface ChatFeatureProps {
   readonly toolRenderers?: Readonly<Record<string, (call: ToolCall, result: ToolResultMessage | undefined) => ChatCard | undefined>> | undefined;
   /** Draws an assistant text part. Default: plain text (`markdownText` of `pi-chat-markdown` draws Markdown). */
   readonly renderText?: ((part: ChatTextPart) => ReactNode) | undefined;
-  /** The question and approval cards. Each one left out uses the built-in card. */
+  /**
+   * The question, approval and sub-agent cards (`pi-chat-question`, `pi-chat-approval`, `pi-chat-subagent`; `withChatPlugins` adds them all).
+   * Without a question or approval card the chat shows that it waits for the person's answer, with no answer UI; without the sub-agent card a
+   * sub-agent call is an ordinary tool step.
+   */
   readonly cards?: ChatCards | undefined;
   readonly groupTool?: (call: ToolCall, result: ToolResultMessage) => boolean;
   readonly commandMentions?: CommandMentions;
@@ -87,8 +90,11 @@ export interface ChatFeatureProps {
   readonly model?: ModelConfig;
   /** Thinking level picker in the composer bar. The current level comes from the view's `pi.agent` document. */
   readonly effort?: EffortConfig;
-  /** Artifact cards: tool results that carry a descriptor become a card that opens the artifact in the host's panel. Omit it and nothing changes. */
-  readonly artifacts?: ArtifactsConfig;
+  /**
+   * Artifact cards: tool results that carry a descriptor become a card that opens the artifact in the host's panel. The card and its recogniser
+   * come from `pi-artifacts` (`withChatPlugins` adds them); without them, or without this prop, no artifact is offered.
+   */
+  readonly artifacts?: ChatArtifactsConfig;
   /**
    * Host actions under each settled reply, beside Copy (and Fork): `header` ones as buttons, `menu` ones in a "…" menu. Test ids
    * `reply-action-<id>`, the menu `reply-action-more`.
@@ -147,17 +153,19 @@ export function useChatSession(options: ChatSessionOptions) {
   const renderTool = useMemo(() => toolRenderers ? (call: ToolCall, result: ToolResultMessage | undefined) => (Object.hasOwn(toolRenderers, call.name) ? toolRenderers[call.name]?.(call, result) : undefined) ?? catchAll?.(call, result) : catchAll, [toolRenderers, catchAll]);
   const developer = mode === 'developer' && !natural;
   // Only the recogniser takes part in deriving rows; which card is open changes without rebuilding them.
-  const artifactDetect = useMemo(() => artifacts ? { detect: artifacts.detect } : undefined, [Boolean(artifacts), artifacts?.detect]); // eslint-disable-line react-hooks/exhaustive-deps
-  const derived = useMemo(() => derive(state.view, { mode, presentation, hideLine, renderEntry, renderTool, groupTool, artifacts: artifactDetect }), [state.view, mode, presentation, hideLine, renderEntry, renderTool, groupTool, artifactDetect]);
+  const offered = artifacts?.recognise && artifacts.Card ? artifacts : undefined;
+  const artifactDetect = useMemo(() => offered?.recognise ? { recognise: offered.recognise, detect: offered.detect } : undefined, [offered?.recognise, offered?.detect]);
+  const subagent = cards?.subagent;
+  const derived = useMemo(() => derive(state.view, { mode, presentation, hideLine, renderEntry, renderTool, groupTool, artifacts: artifactDetect, subagent }), [state.view, mode, presentation, hideLine, renderEntry, renderTool, groupTool, artifactDetect, subagent]);
   const queued = useMemo(() => queuedMessages(state.view), [state.view]);
   const { run } = derived;
   const earlier = useMemo<readonly Row[]>(() => {
     if (!state.view || !('entries' in state.history)) return [];
     const activeIds = new Set(state.view.entries.map(entry => entry.id));
     const entries = state.history.entries.filter(entry => !activeIds.has(entry.id));
-    return derive({ ...state.view, entries, docs: {} }, { mode, presentation, hideLine, renderEntry: undefined, renderTool: undefined, groupTool: undefined, artifacts: artifactDetect }).rows
+    return derive({ ...state.view, entries, docs: {} }, { mode, presentation, hideLine, renderEntry: undefined, renderTool: undefined, groupTool: undefined, artifacts: artifactDetect, subagent }).rows
       .map(row => ({ ...row, key: `history:${row.key}`, historical: true }));
-  }, [state.view, state.history, mode, presentation, hideLine, artifactDetect]);
+  }, [state.view, state.history, mode, presentation, hideLine, artifactDetect, subagent]);
   const rows = useMemo(() => [...earlier, ...derived.rows], [earlier, derived.rows]);
   const files = useMemo(() => {
     const found = new Map<string, ConversationFile>();
@@ -179,9 +187,9 @@ export function useChatSession(options: ChatSessionOptions) {
       }
       if (row.type !== 'assistant') continue;
       for (const part of row.parts) {
-        if (part.kind === 'artifact' && part.artifact) {
-          const artifact = part.artifact, id = `file:${artifact.target.resource.path.replace(/^\.\//, '')}`;
-          found.set(id, { id, name: displayName(artifact.target.resource.path), open: artifacts ? () => artifacts.open(artifact) : undefined });
+        if (part.kind === 'artifact' && part.artifact.state === 'ready' && part.artifact.path !== undefined) {
+          const descriptor = part.artifact.descriptor as never, id = `file:${part.artifact.path.replace(/^\.\//, '')}`;
+          found.set(id, { id, name: displayName(part.artifact.path), open: artifacts?.open ? () => artifacts.open(descriptor) : undefined });
         }
         if (!natural && part.kind === 'tool' && part.entry.result && !part.entry.result.isError && ['read', 'write', 'edit'].includes(part.entry.call.name)) {
           const path = part.entry.call.arguments['path'];
@@ -352,13 +360,13 @@ export function useChatSession(options: ChatSessionOptions) {
     developer, natural, renderText, cards, groupTool, onOpenImage, onCopy, openFile: onOpenFile ?? mentions?.open, fileChanges,
     commandMentions: commandMentions ? { commands: commandMentions.commands, onActivate: activateMention } : undefined,
     answer: actions?.answer,
-    artifacts: artifacts ? { open: artifacts.open, isOpen: artifacts.isOpen, kinds: artifacts.kinds } : undefined,
+    artifacts: offered?.Card ? { open: offered.open, isOpen: offered.isOpen, kinds: offered.kinds, Card: offered.Card } : undefined,
     messageActions, historicalMessageActions, unread, replyError,
     replyFooter,
     pieces: slash?.skills?.length || mentions || attachments ? { mentions: Boolean(mentions), uploads: Boolean(attachments), skills: (slash?.skills ?? []).map(skill => skill.name), openMention: mentions?.open, renderMention: mentions?.renderSent ?? mentions?.render, preview: mentions?.preview, audioUrl: mentions?.audioUrl } : undefined,
     ...rowExtras,
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [controller, developer, natural, renderText, cards, groupTool, onOpenImage, onCopy, onOpenFile, fileChanges, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, mentions?.renderSent, mentions?.preview, mentions?.audioUrl, attachments, artifacts?.open, artifacts?.isOpen, artifacts?.kinds, messageActions, historicalMessageActions, unread, replyError, replyFooter, rowExtras]);
+  }), [controller, developer, natural, renderText, cards, groupTool, onOpenImage, onCopy, onOpenFile, fileChanges, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, mentions?.renderSent, mentions?.preview, mentions?.audioUrl, attachments, offered?.open, offered?.isOpen, offered?.kinds, offered?.Card, messageActions, historicalMessageActions, unread, replyError, replyFooter, rowExtras]);
 
   /** The model-and-effort pill and the note that reports a refused change. */
   const pickers = () => {

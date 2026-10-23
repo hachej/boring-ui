@@ -6,7 +6,7 @@ import { CircleCheckIcon, CircleAlertIcon, MessageCircleQuestionIcon, XIcon } fr
 import { Button } from '@/components/ui/button';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { notifyWhenHidden } from './browser-notify';
-import { parseQuestion } from '../pi-chat/question-card';
+import { parseQuestion } from '../pi-chat-question/question-card';
 import { derive, object } from '../pi-chat/rows';
 import type { Row } from '../pi-chat/rows';
 import { cn, withDefaults } from '../utils/utils';

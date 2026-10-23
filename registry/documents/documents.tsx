@@ -16,7 +16,7 @@ import { checkBlobBase, withBlobPointers } from '@hachej/boring-files/blob';
 import type { ViewerKind } from '@hachej/boring-files/file-types';
 import { ListDetail } from '../app-shell/list-detail';
 import { ArtifactPanel } from '../pi-app/artifact-panel';
-import type { ArtifactDescriptor } from '../pi-chat/artifact';
+import type { ArtifactDescriptor } from '../pi-artifacts/artifact';
 import type { CustomViewers, ViewerOptions } from '../pi-app/artifact-panel';
 import { FileViewer } from '../pi-app/file-viewer';
 import { ImagePane } from '../viewers/image-pane';

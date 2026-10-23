@@ -4,10 +4,11 @@ import type { ComponentType } from 'react';
 import { CheckIcon, ChevronRightIcon, FileCodeIcon, FileTextIcon, GlobeIcon, ImageIcon, PenToolIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@/components/ui/item';
-import { Shimmer } from './shimmer';
-import { artifactKey, artifactKind, typeLabel } from './artifact';
+import { Shimmer } from '../pi-chat/shimmer';
+import { artifactKey, artifactKind, recogniseArtifact, typeLabel } from './artifact';
 import type { ArtifactDescriptor, ArtifactKind, ArtifactType } from './artifact';
-import { useChatText } from './labels';
+import { useChatText } from '../pi-chat/labels';
+import type { ChatArtifactCardProps } from '../pi-chat/config';
 
 const ICONS: Record<ArtifactType, ComponentType<{ readonly 'aria-hidden'?: boolean | 'true' }>> = {
   markdown: FileTextIcon, html: GlobeIcon, svg: ImageIcon, code: FileCodeIcon, canvas: PenToolIcon,
@@ -51,3 +52,13 @@ export function ArtifactCard({ artifact, pending, title, open = false, onOpen, k
     {open ? <CheckIcon data-icon="inline-end" aria-hidden="true" /> : <ChevronRightIcon data-icon="inline-end" aria-hidden="true" />}
   </Button>;
 }
+
+/** `ArtifactCard` as the chat's `artifacts.Card`: the chat hands back the descriptor `recogniseArtifact` found. */
+export function PluggedArtifactCard({ artifact, open, onOpen, kinds }: ChatArtifactCardProps) {
+  const descriptor = artifact.state === 'ready' ? artifact.descriptor as ArtifactDescriptor : undefined;
+  return <ArtifactCard artifact={descriptor} title={artifact.title} {...(artifact.state === 'ready' ? {} : { pending: artifact.state })}
+    open={open} onOpen={onOpen ? () => onOpen() : undefined} kinds={kinds as readonly ArtifactKind[] | undefined} />;
+}
+
+/** What makes `PiChat` offer artifacts: `<PiChat artifacts={{ open, isOpen, kinds, ...artifactCards }} />` (`withChatPlugins` adds it). */
+export const artifactCards = { recognise: recogniseArtifact, Card: PluggedArtifactCard } as const;

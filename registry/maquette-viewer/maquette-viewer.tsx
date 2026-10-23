@@ -266,7 +266,7 @@ export function MaquetteViewer({ text, fragment, locale, labels: given, path, co
 }
 
 /**
- * The artifact kind of a maquette file (structurally an `ArtifactKind` of pi-chat): it matches `*.maquette.json`, names it, gives its icon
+ * The artifact kind of a maquette file (structurally an `ArtifactKind` of pi-artifacts): it matches `*.maquette.json`, names it, gives its icon
  * and draws it with `MaquetteViewer`. Pass it, or your own, in `artifactKinds`; kinds an app passes are consulted before the built-in one.
  */
 export interface MaquetteKind {

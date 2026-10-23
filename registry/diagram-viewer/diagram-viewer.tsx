@@ -43,7 +43,7 @@ export function DiagramViewer({ text, locale, labels: given }: DiagramViewerProp
 }
 
 /**
- * The artifact kind of a diagram file (structurally an `ArtifactKind` of pi-chat): it matches `*.diagram.json`, names it, gives its icon
+ * The artifact kind of a diagram file (structurally an `ArtifactKind` of pi-artifacts): it matches `*.diagram.json`, names it, gives its icon
  * and draws it with `DiagramViewer`. Pass it, or your own, in `artifactKinds`; kinds an app passes are consulted before the built-in one.
  */
 export interface DiagramKind {

@@ -54,7 +54,7 @@ export function createArtifactDescriptor(input: ArtifactDescriptorInput): Artifa
 
 /**
  * Strict shape check of an untrusted value (a model-visible tool result, a stored reference). Returns a fresh copy or
- * undefined. This function has no Pi runtime dependency; `registry/pi-chat/artifact.ts` carries the same validator for
+ * undefined. This function has no Pi runtime dependency; `registry/pi-artifacts/artifact.ts` carries the same validator for
  * the browser, because a copied registry item cannot import this package.
  */
 export function parseArtifact(value: unknown): ArtifactDescriptor | undefined {

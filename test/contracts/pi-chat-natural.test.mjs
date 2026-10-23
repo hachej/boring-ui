@@ -11,6 +11,11 @@ const out = `${root}.cache/pi-chat-natural-test`;
 mkdirSync(out, { recursive: true });
 await build({ entryPoints: [`${source}registry/pi-chat/pi-chat.tsx`], outfile: `${out}/chat.mjs`, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
 const { PiChat } = await import(pathToFileURL(`${out}/chat.mjs`).href);
+// The optional card items (D-257), plugged in where the test needs their cards.
+await build({ stdin: { contents: `export { QuestionCard } from './registry/pi-chat-question/question-card.tsx'; export { ApprovalCard } from './registry/pi-chat-approval/approval-card.tsx'; export { artifactCards } from './registry/pi-artifacts/artifact-card.tsx';`, resolveDir: source, loader: 'tsx' },
+  outfile: `${out}/cards.mjs`, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
+const { QuestionCard, ApprovalCard, artifactCards } = await import(pathToFileURL(`${out}/cards.mjs`).href);
+const cards = { question: QuestionCard, approval: ApprovalCard };
 
 const SECRET = '/srv/fictional/secret.py';
 const assistant = (content, extra = {}) => ({ role: 'assistant', content, api: 'fictional', provider: 'fictional', model: 'fictional', usage: {}, stopReason: 'stop', timestamp: 1, ...extra });
@@ -117,20 +122,26 @@ test('PiChat natural presentation shows prose and one status, never technical de
   assert.doesNotMatch(container.textContent, /secret\.py/);
   assert.equal(get('send-blocked').textContent, 'Sending is not available right now.');
 
-  // Question and approval cards stay, with no status while waiting for the person.
+  // Question and approval cards stay, with no preparing status while waiting for the person; without their items the core says it waits.
   const ask = call('q', 'ask_user', { question: 'Which fictional colour?', options: ['red', 'blue'] });
-  await render({ entries: [user, entry(11, [assistant([ask])])], docs: live() });
+  await render({ entries: [user, entry(11, [assistant([ask])])], docs: live() }, { cards });
   assert.ok(get('question-card')); assert.equal(get('preparing'), null);
+  await render({ entries: [user, entry(11, [assistant([ask])])], docs: live() });
+  assert.equal(get('question-card'), null); assert.equal(get('answer-waiting')?.dataset.kind, 'question'); assert.equal(get('preparing'), null);
   const gated = call('g', 'delete_all', { path: 'fictional/x' });
-  await render({ entries: [user, entry(11, [assistant([gated])])], docs: live({ tools: [{ callId: 'g', details: { 'boring.approval': { summary: 'Delete fictional files?' } } }] }) });
+  const gatedView = { entries: [user, entry(11, [assistant([gated])])], docs: live({ tools: [{ callId: 'g', details: { 'boring.approval': { summary: 'Delete fictional files?' } } }] }) };
+  await render(gatedView, { cards });
   assert.ok(get('approval-card')); assert.equal(get('preparing'), null);
+  assert.equal(all('tool-card').length, 0);
+  await render(gatedView);
+  assert.equal(get('approval-card'), null); assert.equal(get('answer-waiting')?.dataset.kind, 'approval'); assert.equal(get('preparing'), null);
   assert.equal(all('tool-card').length, 0);
 
   // A user image and an artifact card survive; the host-detected step does not.
   const present = call('p', 'present', { path: 'plan.md' });
   await render({ entries: [{ id: 1, kind: 'message', model: [{ role: 'user', content: [{ type: 'text', text: 'Look' }, { type: 'image', mimeType: 'image/png', data: 'AAAA' }], timestamp: 0 }] },
     entry(2, [assistant([present])]), entry(3, [result('p', 'present', JSON.stringify({ 'boring.artifact': true, artifact })), assistant([{ type: 'text', text: 'Plan ready.' }])])], docs: {} },
-  { artifacts: { open: () => {} } });
+  { artifacts: { ...artifactCards, open: () => {} } });
   assert.ok(get('message-image')); assert.ok(get('artifact-card')); assert.equal(all('tool-card').length, 0);
   assert.ok(get('conversation-files'), 'artifacts and images are still listed');
   assert.equal(container.querySelector('[data-testid="conversation-file"]'), null, 'closed list');

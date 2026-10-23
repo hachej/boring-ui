@@ -7,7 +7,7 @@ import { createTextBuffer } from '@hachej/boring-ui-kit/text-buffer';
 import type { TextBuffer } from '@hachej/boring-ui-kit/text-buffer';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import type { ArtifactKind } from '../pi-chat/artifact';
+import type { ArtifactKind } from '../pi-artifacts/artifact';
 import type { BoardHostProps, BoardViewerProps } from './board-props';
 export type { BoardHostProps, BoardViewerProps } from './board-props';
 import { parseBoard } from './board';
