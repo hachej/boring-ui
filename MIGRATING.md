@@ -1,5 +1,7 @@
 # Unreleased
 
+# Migrating to 0.4.13
+
 - **Blocks pass the apps' lint (0.4.12 fix).** `pi-chat-markdown` (two oxlint errors), `pi-ambient` and `board-viewer` (unused type imports) now pass the app template's oxlint rules, so an app's `lint` check passes again after the kit update; reinstall those items. No API change. `npm run check` now runs `scripts/check-block-lint.mjs`: the template's rules (`scripts/app-oxlint.json`, oxlint 1.86.0, errors only) over every registry block, outside the four kit folders apps ignore (`app-shell`, `pi-chat`, `button`, `utils`).
 
 - **Viewers by kind, lazily (D-257).** `viewers` is split into `viewer-frame` (`ViewerFrame`, the menu, words, share, download, `viewers.css`) and one item per viewer: `viewer-markdown`, `viewer-html`, `viewer-image`, `viewer-pdf` (with `LocalFileViewer`) and `viewer-code` (SVG and CSV). Each ships a cheap kind module and a view that `pi-app` loads only when its artifact or file first opens (`React.lazy`, a spinner in the viewer bar meanwhile), so a page that never opens a PDF never downloads pdf.js. `pi-app` installs all six, so its pages are unchanged; the `viewers` item remains, deprecated and empty, and installs the six. Import paths move: `components/viewers/<file>` is now `components/viewer-frame/<file>` for the frame files, and `markdown-pane`, `html-pane`, `image-pane`, `pdf-pane`, `pdf-pages` and `local-file-viewer` move to their item's folder.
