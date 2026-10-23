@@ -326,7 +326,7 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
   const [focused, setFocused] = useState('');
   const [uploadError, setUploadError] = useState('');
   const [historyPath, setHistoryPath] = useState<string>();
-  const [renaming, setRenaming] = useState<{ readonly path: string; readonly error?: string }>();
+  const [renaming, setRenaming] = useState<{ readonly path: string; readonly error?: string; readonly known?: boolean }>();
   const [asking, setAsking] = useState<{ readonly kind: 'delete' | 'move'; readonly path: string }>();
   const [dragged, setDragged] = useState<string>();
   const [dropTarget, setDropTarget] = useState<string>();
@@ -385,10 +385,14 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
     : item.state.result.kind === 'conflict' ? labels.changedSince : item.state.result.kind === 'partial' ? labels.unconfirmed : item.state.result.reason;
   // A refusal of the name itself (empty, `..`, the same name) keeps the input open with the reason; anything else is the row's.
   const refused = (path: string) => (error: unknown) => {
-    if (error instanceof TypeError) setRenaming({ path, error: error.message });
+    if (error instanceof TypeError) setRenaming(current => ({ ...current, path, error: error.message }));
     else setUploadError(error instanceof Error ? error.message : labels.changedSince);
   };
-  const startRename = (path: string) => { if (!can.rename) return; void controller.prepare(path); setRenaming({ path }); };
+  const startRename = (path: string) => {
+    if (!can.rename) return;
+    setRenaming({ path });
+    void controller.prepare(path).then(revision => { if (revision !== undefined) setRenaming(current => current?.path === path ? { ...current, known: true } : current); });
+  };
   const ask = (kind: 'delete' | 'move', path: string) => {
     if (!Dialog || (kind === 'delete' ? !can.delete : !can.rename)) return;
     void controller.prepare(path); setAsking({ kind, path });
@@ -397,7 +401,7 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
     const name = value.trim();
     if (!name || name === baseName(path)) { setRenaming(undefined); focus(path); return; }
     const to = parentPath(path) ? `${parentPath(path)}/${name}` : name;
-    if (name.includes('/')) { setRenaming({ path, error: labels.invalidName }); return; }
+    if (name.includes('/')) { setRenaming(current => ({ ...current, path, error: labels.invalidName })); return; }
     setRenaming(undefined); focus(path);
     void controller.rename(path, to).then(result => { if (result.state.kind === 'settled' && result.state.result.kind === 'committed') setFocused(to); }, refused(path));
   };
@@ -441,7 +445,7 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
     for (const node of Array.from(nodes ?? [])) if (node.dataset.path === path) node.focus();
   };
   /** Files only: a provider renames and deletes regular files, and a row busy uploading or changing waits. */
-  const mutable = (entry: FileEntry) => entry.kind === 'file' && !temporaryPaths.has(entry.path) && !uploadRows.has(entry.path) && mutationRows.get(entry.path)?.state.kind !== 'pending';
+  const mutable = (entry: FileEntry) => entry.kind === 'file' && !temporaryPaths.has(entry.path) && uploadRows.get(entry.path)?.kind !== 'pending' && mutationRows.get(entry.path)?.state.kind !== 'pending';
   /** A blob pointer's row shows the file it stands for, not the pointer's own name: it can be moved or deleted, not renamed in place. */
   const renameable = (entry: FileEntry) => !entry.blob;
   const keyboard = (event: KeyboardEvent, entry: FileEntry) => {
@@ -529,7 +533,7 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
       <div className="flex items-center gap-1">
         {editing ? <span className="file-tree-rename">
           <Icon aria-hidden="true" />
-          <Input data-file-rename aria-label={labels.renameOf(entry.path)} defaultValue={name} autoFocus enterKeyHint="done" spellCheck={false}
+          <Input data-file-rename data-revision-known={renaming?.known || undefined} aria-label={labels.renameOf(entry.path)} defaultValue={name} autoFocus enterKeyHint="done" spellCheck={false}
             aria-invalid={renaming?.error ? true : undefined}
             onFocus={event => { const dot = event.currentTarget.value.lastIndexOf('.'); event.currentTarget.setSelectionRange(0, dot > 0 ? dot : event.currentTarget.value.length); }}
             onKeyDown={event => {

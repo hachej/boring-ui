@@ -80,6 +80,7 @@ export function createFileTreeController({ revisionProvider }: { readonly revisi
   let state: FileTreeState = { lifecycle: 'active', directories: new Map(), expanded: new Set(), query: '', search: empty, uploads: [], mutations: [] };
   // The revision each row last learned (`prepare`): a rename or delete is refused if the file changed since.
   const revisions = new Map<string, string>();
+  const preparing = new Map<string, Promise<string | undefined>>();
   const listeners = new Set<() => void>();
   const lifetime = new AbortController();
   const loads = new Map<string, AbortController>();
@@ -172,6 +173,7 @@ export function createFileTreeController({ revisionProvider }: { readonly revisi
     update({ ...state, mutations: [...state.mutations.filter(item => item.path !== path), current] });
     let result: PublicationResult;
     try {
+      await preparing.get(path);
       const known = revisions.get(path) ?? await latest(path, lifetime.signal);
       if (typeof known !== 'string') result = known;
       else {
@@ -268,13 +270,19 @@ export function createFileTreeController({ revisionProvider }: { readonly revisi
         ...(change.kind === 'replace' ? { replace: change.target } : {}) });
     },
     actions: { rename: typeof revisionProvider.rename === 'function', delete: typeof revisionProvider.delete === 'function' },
-    prepare: async (path, signal) => {
-      active();
-      try {
-        const known = await latest(path, signal ? AbortSignal.any([signal, lifetime.signal]) : lifetime.signal);
-        if (typeof known !== 'string') { revisions.delete(path); return undefined; }
-        revisions.set(path, known); return known;
-      } catch { return undefined; }
+    prepare: (path, signal) => {
+      try { active(); } catch (error) { return Promise.reject(error); }
+      // A rename or delete started meanwhile waits for this read, so it uses the revision the row learned.
+      const reading = (async () => {
+        try {
+          const known = await latest(path, signal ? AbortSignal.any([signal, lifetime.signal]) : lifetime.signal);
+          if (typeof known !== 'string') { revisions.delete(path); return undefined; }
+          revisions.set(path, known); return known;
+        } catch { return undefined; }
+      })();
+      preparing.set(path, reading);
+      void reading.finally(() => { if (preparing.get(path) === reading) preparing.delete(path); });
+      return reading;
     },
     rename: async (path, to) => {
       checkedPath(path); checkedPath(to);

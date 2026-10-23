@@ -118,7 +118,8 @@ try {
     await browser.until('delete dialog', `!!${q('[data-boring=file-tree-dialog]')} && ${q('[data-boring=file-tree-dialog]')}.textContent.includes('Delete sample.bin?')`);
     await shots('delete');
     await browser.click(q('[data-boring=file-tree-dialog] [data-confirm=delete]'));
-    await browser.until('deleted row', `!${q(row('uploads/sample.bin'))} && !${q('[data-boring=file-tree-dialog]')}`);
+    // The listed file is gone; only the earlier refused duplicate upload keeps a failed-upload row with its Retry.
+    await browser.until('deleted row', `!${q('[data-boring=file-tree-dialog]')} && (!${q(row('uploads/sample.bin'))} || ${q(row('uploads/sample.bin'))}.dataset.uploadState === 'failed')`);
     assert.equal(await text('uploads/sample.bin'), 'missing');
     // Move by dragging the row onto a folder: the folder is outlined while the file is over it.
     const fire = (selector, type) => `${q(selector)}.dispatchEvent(new DragEvent(${JSON.stringify(type)}, { bubbles: true, cancelable: true, dataTransfer: window.__treeDrag }))`;
@@ -139,7 +140,7 @@ try {
     await browser.until('moved to the root', `!!${q(row('recovered.txt'))} && !${q(row('docs/recovered.txt'))}`);
     // F2 renames; an edit made meanwhile refuses it on the row and nothing changes.
     await browser.evaluate(`${q(row('recovered.txt'))}.focus()`); await browser.press('F2');
-    await browser.until('F2 rename', `document.activeElement?.matches('input[data-file-rename]')`);
+    await browser.until('F2 rename with the revision the row learned', `document.activeElement?.matches('input[data-file-rename][data-revision-known]')`);
     const before = await host.storage.workspace('first').read({ target: host.target('recovered.txt'), revision: { kind: 'latest' } }, host.access('first'));
     assert.equal((await host.publish('first', 'fictional-agent-rename-race', [{ kind: 'replace', target: before.snapshot.ref, bytes: new TextEncoder().encode('fictional agent edit'), mediaType: 'text/plain' }])).kind, 'committed');
     await replaceName('late.txt');
@@ -158,6 +159,7 @@ try {
     assert.equal(await browser.evaluate('document.documentElement.scrollWidth <= innerWidth'), true, 'no horizontal scroll');
     await browser.screenshot('tree-actions-phone-menu-light.png');
     await browser.press('Escape');
+    await browser.until('phone menu closed', `!${q('[role=menu]')} && document.activeElement?.matches('button[aria-label="Actions for recovered.txt"]')`);
     await browser.evaluate(`${q(row('recovered.txt'))}.focus()`); await browser.press('F2');
     await browser.until('phone rename', `document.activeElement?.matches('input[data-file-rename]')`);
     await browser.screenshot('tree-actions-phone-rename-light.png');

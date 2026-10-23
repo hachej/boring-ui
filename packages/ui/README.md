@@ -390,8 +390,15 @@ The default `list` variant has a Library header, visible-item count, inset searc
 visible items, including folders; it is not a workspace total. A folder shows its
 child count only after its provider listing is complete; unloaded, loading, failed
 or paginated listings show no count. The menu offers
-Open, Version history and Download through the same provider. Rename and Delete
-are absent because `RevisionProvider` exposes neither operation. No edit date or
+Open, Version history and Download through the same provider. When the client has
+`rename`/`delete` and the host passes `capabilities={{ effective }}` listing them,
+files also offer Rename (inline in the row, F2), Move to… (plus dragging a file onto a
+folder or the root) and Delete (Delete key, after a confirmation dialog). The client has
+no capabilities operation, so the host says what its provider grants; without
+`capabilities` these actions are absent. Each change is a conditional write with the
+revision read when the action started (`controller.prepare`); a refusal stays on the
+row until dismissed and the affected folders are read again. Folders are destinations
+only. No edit date or
 author is invented or fetched per row. `variant="plain"` keeps the compact tree.
 `title` overrides the list heading; `onClose` adds a host-owned close button.
 

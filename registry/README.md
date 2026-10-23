@@ -1119,7 +1119,7 @@ conditional `revisionProvider.rename({ from: locate(oldPath), to: locate(newPath
 and `revisionProvider.delete({ path: locate(path), expectedRevision, operationId })`
 when its provider installs them; reconcile an unknown result with the same operation ID.
 See the [files endpoint contract](../packages/files/README.md#frontend-revision-provider).
-This adds no Rename/Delete tree controls or recursive folder operations.
+The tree uses them for its Rename, Move and Delete file actions when `capabilities` lists `rename`/`delete`; there are no recursive folder operations.
 `npm run file-tree:journey`
 drives the fictional SQLite-backed browser fixture; `npm run
 test:app-registry-consumer` installs the recipes in an isolated consumer.
