@@ -1,8 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { ComponentType, ReactNode } from 'react';
-import { CheckIcon, PaletteIcon } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { CheckIcon } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,10 +12,9 @@ import type { ShadcnTheme } from '../mockup-viewer/mockup-viewer';
 import { besideLooks, parseLooks, swatches } from './looks';
 import type { Look, Looks } from './looks';
 
-export { parseLooks, parseShadcnTheme, swatches, besideLooks, shadcnValue, SHADCN_COLOR_VARIABLES, SHADCN_SHAPE_VARIABLES } from './looks';
+export { isLooksPath, parseLooks, parseShadcnTheme, swatches, besideLooks, shadcnValue, SHADCN_COLOR_VARIABLES, SHADCN_SHAPE_VARIABLES } from './looks';
 export type { Look, Looks, LayoutVariant } from './looks';
 
-export const isLooksPath = (path: string): boolean => /\.looks\.json$/i.test(path);
 
 /** The person pressed Pick: the host says it in the conversation (or records it); the viewer only marks it. */
 export interface LookPick {
@@ -161,18 +160,4 @@ function Choice({ testId, title, line, chosen, labels, onPick, extra, children }
       {extra}
     </CardHeader>
   </Card>;
-}
-
-export interface LooksKind {
-  readonly match: (target: { readonly resource: { readonly path: string } }) => boolean;
-  readonly label: string;
-  readonly icon: ComponentType<{ readonly className?: string; readonly 'aria-hidden'?: boolean | 'true' }>;
-  readonly renderer: (props: { readonly text: string; readonly onReady?: (() => void) | undefined; readonly onFailed?: ((reason: string) => void) | undefined; readonly read?: ((path: string) => Promise<string | undefined>) | undefined; readonly artifact?: { readonly target: { readonly resource: { readonly path: string } } } | undefined }) => ReactNode;
-  readonly waitsForReady: true;
-}
-
-/** The `*.looks.json` kind: opt-in, like the board. `onPick` is the host's (the PM page says the pick in the conversation). */
-export function createLooksKind({ onPick, locale }: { readonly onPick?: ((pick: LookPick) => void) | undefined; readonly locale?: 'en' | 'fr' | undefined } = {}): LooksKind {
-  return { match: target => isLooksPath(target.resource.path), label: locale === 'fr' ? 'Styles' : 'Looks', icon: PaletteIcon, waitsForReady: true,
-    renderer: ({ text, artifact, read, onReady, onFailed }) => <LooksViewer key={artifact?.target.resource.path} text={text} path={artifact?.target.resource.path} read={read} onPick={onPick} locale={locale} onReady={onReady} onFailed={onFailed} /> };
 }

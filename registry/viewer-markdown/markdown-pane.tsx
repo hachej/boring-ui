@@ -11,12 +11,12 @@ import { DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator } from '@/co
 import { ActionMenuItemContent } from '../button/actions';
 import { editorControls } from '../button/editor-controls';
 import { MarkdownFormattingControl, MarkdownMenuItems } from '../markdown-editor/markdown-editor';
-import { downloadFile, fileNameFor } from './download';
+import { downloadFile, fileNameFor } from '../viewer-frame/download';
 import { copyText } from '../utils/utils';
-import { ViewerFrame } from './viewer-frame';
-import type { ViewerShare, ViewerStatus } from './viewer-frame';
-import { defaultViewerLabels, useViewerText, useViewerWindow } from './viewer-window';
-import type { ViewerLabels } from './viewer-window';
+import { ViewerFrame } from '../viewer-frame/viewer-frame';
+import type { ViewerShare, ViewerStatus } from '../viewer-frame/viewer-frame';
+import { defaultViewerLabels, useViewerText, useViewerWindow } from '../viewer-frame/viewer-window';
+import type { ViewerLabels } from '../viewer-frame/viewer-window';
 
 export interface MarkdownPaneProps {
   /** Borrowed: the host owns the controller and disposes it. */

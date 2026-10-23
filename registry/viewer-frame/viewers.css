@@ -1,5 +1,5 @@
 /* Viewer layout and Markdown document content only. Controls use the consumer's shadcn components unchanged.
-   Source for registry.json: run node registry/viewers/build-css.mjs after editing. */
+   Source for registry.json: run node registry/viewer-frame/build-css.mjs after editing. */
 @layer utilities {
   @media (max-width: 640px), (pointer: coarse) {
     .boring-viewer :is([data-slot="button"], [data-slot="toggle"], [data-slot="toggle-group-item"], [class~="group/button"], [class~="group/toggle"]) { min-height: 2.75rem; min-width: 2.75rem; }

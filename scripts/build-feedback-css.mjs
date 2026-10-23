@@ -1,9 +1,9 @@
 // Converts registry/feedback/feedback.css into the `css` object of the feedback item in registry.json (the shadcn registry schema keeps
-// css as JSON), with the viewers item's CSS parser. Tooling, outside the registry folders so the feedback item depends on no other item.
+// css as JSON), with the viewer-frame item's CSS parser. Tooling, outside the registry folders so the feedback item depends on no other item.
 // `node scripts/build-feedback-css.mjs` rewrites registry.json; the source test fails when the two differ.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { parseCss } from '../registry/viewers/build-css.mjs';
+import { parseCss } from '../registry/viewer-frame/build-css.mjs';
 
 export const feedbackCss = () => parseCss(readFileSync(new URL('../registry/feedback/feedback.css', import.meta.url), 'utf8'));
 

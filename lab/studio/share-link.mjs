@@ -1,6 +1,6 @@
 // Links that reopen the studio on a variant with one workspace file or artifact open. The link is read once when the page
 // loads and then removed from the address bar, so a later reload restores the person's own state instead.
-import { createLinkShare } from '../../registry/viewers/share.ts';
+import { createLinkShare } from '../../registry/viewer-frame/share.ts';
 
 const FIELDS = ['variant', 'conversation', 'file', 'artifact', 'version'];
 

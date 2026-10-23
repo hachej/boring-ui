@@ -18,6 +18,9 @@
 //    props (D-257). The core depends on no `pi-chat-*` item nor on pi-artifacts, declares none of their npm packages, imports none of
 //    the feature-only modules in CORE_EXCLUDED and ships none of the card modules in CORE_EXCLUDED_FILES (question, approval,
 //    sub-agent, run and artifact cards, and the artifact descriptors), so a question or an approval without its item shows a notice.
+//    Viewers load by kind, lazily (D-257 step 4): the core chat depends on no viewer item, and neither the agent page (pi-app, documents) nor any
+//    kind module (`*-kind.ts(x)`) makes a static value import of a view module in LAZY_VIEWS; it reaches the view only through the
+//    kind's `load: () => import(...)`, so each view lands in its own chunk. Type-only imports are allowed (they are erased).
 import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -32,7 +35,11 @@ export const SHADCN_BUILTINS = Object.freeze(['button', 'toggle', 'switch', 'dra
 /** npm packages (or package subpaths) only the optional composer feature items use: Markdown and voice capture. */
 export const CORE_EXCLUDED = Object.freeze(['marked', 'entities', '@hachej/boring-ui-kit/voice-capture']);
 /** The optional items the core chat must not depend on besides the `pi-chat-*` ones. */
-export const CORE_EXCLUDED_ITEMS = Object.freeze(['pi-artifacts']);
+export const CORE_EXCLUDED_ITEMS = Object.freeze(['pi-artifacts', 'viewer-frame', 'viewer-markdown', 'viewer-html', 'viewer-image', 'viewer-pdf', 'viewer-code', 'maquette-viewer', 'diagram-viewer', 'mockup-viewer', 'record-viewer', 'looks-viewer', 'board-viewer']);
+/** The view modules a kind loads lazily (D-257 step 4): the agent page and the kind modules never import them statically. */
+export const LAZY_VIEWS = Object.freeze(['viewer-markdown/markdown-pane', 'viewer-html/html-pane', 'viewer-image/image-pane', 'viewer-pdf/pdf-pane', 'viewer-pdf/pdf-pages', 'viewer-pdf/local-file-viewer', 'viewer-code/svg-view', 'viewer-code/csv-table', 'maquette-viewer/maquette-viewer', 'diagram-viewer/diagram-viewer', 'mockup-viewer/mockup-viewer', 'record-viewer/record-viewer', 'looks-viewer/looks-viewer', 'board-viewer/board-viewer']);
+/** A static import or re-export that brings values: `import x from`, `import { a } from`, `export { a } from`, `import '...'`; not `import type`. */
+const staticValueImport = /^\s*(?:import\s+(?!type\b)(?:[^'";]*?\sfrom\s*)?|export\s+(?!type\b)[^'";]*?\sfrom\s*)['"]([^'"]+)['"]/gm;
 /** The card modules that live in their optional items, never in the core chat (D-257 step 3). */
 export const CORE_EXCLUDED_FILES = Object.freeze(['question-card', 'approval-card', 'subagent-card', 'run-card', 'artifact-card', 'artifact']);
 const packageName = (dependency) => dependency.replace(/(.)@[^@]*$/, '$1');
@@ -154,6 +161,16 @@ export function checkRegistryBlocks(root) {
       if (CORE_EXCLUDED_FILES.includes(base)) errors.push(`BORING-BLOCKS ${file.path}: the core chat ships ${base}, a card module that belongs to its optional item (pi-chat-question, pi-chat-approval, pi-chat-subagent or pi-artifacts)`);
       if (!existsSync(resolve(root, file.path))) continue;
       for (const [, specifier] of readFileSync(resolve(root, file.path), 'utf8').matchAll(importPattern)) if (CORE_EXCLUDED.includes(specifier)) errors.push(`BORING-BLOCKS ${file.path}: the core chat imports ${specifier}; move that feature to its optional pi-chat-* item`);
+    }
+  }
+  for (const item of items.values()) for (const file of item.files ?? []) {
+    const base = posix.basename(file.path);
+    if (!['pi-chat', 'pi-app', 'documents'].includes(item.name) && !/-kinds?\.tsx?$/.test(base)) continue;
+    if (!existsSync(resolve(root, file.path))) continue;
+    for (const [, specifier] of readFileSync(resolve(root, file.path), 'utf8').matchAll(staticValueImport)) {
+      if (!specifier.startsWith('.')) continue;
+      const target = posix.normalize(posix.join(posix.dirname(file.path), specifier)).replace(/^registry\//, '').replace(/\.tsx?$/, '');
+      if (LAZY_VIEWS.includes(target)) errors.push(`BORING-BLOCKS ${file.path}: imports the view ${target} statically; load it through its kind's \`load: () => import(...)\` so it stays in its own chunk`);
     }
   }
   for (const cycle of importCycles(root, cycleFolders(root))) errors.push(`BORING-BLOCKS import cycle: ${cycle.join(' -> ')} (move the shared piece to the module that owns it so imports go one way)`);

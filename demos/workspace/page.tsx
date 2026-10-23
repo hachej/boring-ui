@@ -16,7 +16,7 @@ import { useConversations } from '../../registry/pi-chat/use-conversations.ts';
 import { useHistoryColumn } from '../../registry/pi-app/history-column.tsx';
 import { FileViewer } from '../../registry/pi-app/file-viewer.tsx';
 import { BlockActions } from '../../registry/button/actions.tsx';
-import { PdfPane } from '../../registry/viewers/pdf-pane.tsx';
+import { PdfPane } from '../../registry/viewer-pdf/pdf-pane.tsx';
 import { Button } from '@/components/ui/button';
 import { Badge as ShadcnBadge } from '@/components/ui/badge';
 import { MenuIcon } from 'lucide-react';

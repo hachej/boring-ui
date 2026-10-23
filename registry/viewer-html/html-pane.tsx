@@ -7,14 +7,14 @@ import { HtmlViewer } from '@hachej/boring-ui-kit/html-viewer';
 import type { HtmlController } from '@hachej/boring-ui-kit/html';
 import { Button } from '@/components/ui/button';
 import { editorControls } from '../button/editor-controls';
-import { downloadFile, fileNameFor } from './download';
+import { downloadFile, fileNameFor } from '../viewer-frame/download';
 import { copyText } from '../utils/utils';
-import { InteractiveFrame } from './interactive-html';
-import type { InteractiveHtml } from './interactive-html';
-import { ViewerFrame, ViewerToggle } from './viewer-frame';
-import type { ViewerShare, ViewerStatus } from './viewer-frame';
-import { defaultViewerLabels, useViewerText } from './viewer-window';
-import type { ViewerLabels } from './viewer-window';
+import { InteractiveFrame } from '../viewer-frame/interactive-html';
+import type { InteractiveHtml } from '../viewer-frame/interactive-html';
+import { ViewerFrame, ViewerToggle } from '../viewer-frame/viewer-frame';
+import type { ViewerShare, ViewerStatus } from '../viewer-frame/viewer-frame';
+import { defaultViewerLabels, useViewerText } from '../viewer-frame/viewer-window';
+import type { ViewerLabels } from '../viewer-frame/viewer-window';
 
 export type HtmlPaneMode = 'preview' | 'source';
 

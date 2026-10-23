@@ -8,7 +8,7 @@ const root = new URL('../../', import.meta.url);
 const registry = JSON.parse(readFileSync(new URL('registry.json', root), 'utf8'));
 const TOKENS = ['background', 'foreground', 'card', 'card-foreground', 'popover', 'popover-foreground', 'primary', 'primary-foreground', 'secondary',
   'secondary-foreground', 'muted', 'muted-foreground', 'accent', 'accent-foreground', 'destructive', 'border', 'input', 'ring'];
-const KIT = ['pi-chat', 'pi-chat-markdown', 'pi-chat-slash', 'pi-chat-mentions', 'pi-chat-pickers', 'pi-chat-voice', 'pi-chat-attachments', 'pi-chat-question', 'pi-chat-approval', 'pi-chat-subagent', 'pi-artifacts', 'pi-chat-plugins', 'pi-ambient', 'pi-workspace', 'feedback', 'feedback-preview', 'button', 'utils'];
+const KIT = ['pi-chat', 'pi-chat-markdown', 'pi-chat-slash', 'pi-chat-mentions', 'pi-chat-pickers', 'pi-chat-voice', 'pi-chat-attachments', 'pi-chat-question', 'pi-chat-approval', 'pi-chat-subagent', 'pi-artifacts', 'pi-chat-plugins', 'pi-ambient', 'pi-workspace', 'feedback', 'feedback-preview', 'button', 'utils', 'viewer-frame', 'viewer-markdown', 'viewer-html', 'viewer-image', 'viewer-pdf', 'viewer-code'];
 
 /** Every [selector path, property] declared in an item's `css` object. */
 function declarations(css, path = []) {

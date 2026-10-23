@@ -7,7 +7,7 @@ import { PanelRightOpenIcon } from 'lucide-react';
 import { artifactKey } from '../../registry/pi-artifacts/artifact.ts';
 import { AmbientChat } from '../../registry/pi-ambient/ambient.tsx';
 import { AgentWorkspace, useArtifactVersions, useConversations, useRemoteChat } from '../../registry/pi-app/agent-workspace.tsx';
-import { ViewerFrame } from '../../registry/viewers/viewer-frame.tsx';
+import { ViewerFrame } from '../../registry/viewer-frame/viewer-frame.tsx';
 import { WorkspaceTabs } from './panels.jsx';
 import { Canvas } from './panels/canvas.jsx';
 import { useScenarioRun, useTyped } from './scenarios-ui.jsx';

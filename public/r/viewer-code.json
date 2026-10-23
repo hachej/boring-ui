@@ -1,0 +1,36 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "viewer-code",
+  "title": "Code viewers",
+  "description": "The SVG and CSV kinds: `svgKind` (a preview from a blob URL, or its source) and `csvKind` (a table), drawn inside the artifact panel's bar. Each view loads the first time its artifact opens; other code stays in the panel's code block.",
+  "dependencies": [
+    "react@^19.0.0",
+    "lucide-react@^1.51.0"
+  ],
+  "registryDependencies": [
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/viewer-frame.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.11/r/pi-chat.json",
+    "table"
+  ],
+  "files": [
+    {
+      "path": "registry/viewer-code/code-kinds.ts",
+      "content": "import type { ComponentType } from 'react';\nimport type { CodeViewProps } from './svg-view';\n\n/**\n * The code kinds (D-257): an SVG artifact (preview from a blob URL, or its source) and a CSV artifact (a table). Both draw inside the\n * panel's viewer bar, with its copy and download. This module is cheap; each view loads the first time its artifact opens. Other code\n * and text stay in the panel's own code block.\n */\nexport interface CodeKind {\n  readonly match: (target: { readonly resource: { readonly path: string } }, artifact: { readonly type: string; readonly language?: string | undefined }) => boolean;\n  readonly label?: string | undefined;\n  /** A default viewer for a type: a host's `viewers.svg` or `viewers.code` wins over it. */\n  readonly fallback: true;\n  readonly load: () => Promise<{ readonly default: ComponentType<CodeViewProps> }>;\n}\n\nexport const svgKind: CodeKind = {\n  match: (_target, artifact) => artifact.type === 'svg',\n  fallback: true,\n  load: () => import('./svg-view').then(module => ({ default: module.SvgView })),\n};\n\nexport const csvKind: CodeKind = {\n  match: (_target, artifact) => artifact.type === 'code' && artifact.language === 'csv',\n  fallback: true,\n  load: () => import('./csv-table').then(module => ({ default: module.CsvView })),\n};\n",
+      "type": "registry:lib",
+      "target": "components/viewer-code/code-kinds.ts"
+    },
+    {
+      "path": "registry/viewer-code/svg-view.tsx",
+      "content": "'use client';\n\nimport { useEffect, useMemo, useState } from 'react';\nimport type { ReactNode } from 'react';\nimport { CodeXmlIcon, EyeIcon } from 'lucide-react';\nimport { CodeBlock } from '../pi-chat/code-block';\nimport { ViewerToggle } from '../viewer-frame/viewer-frame';\nimport { useViewerText } from '../viewer-frame/viewer-window';\n\n/** What the code kinds' views read of the panel's kind props (structurally `ArtifactKindViewProps` of pi-artifacts). */\nexport interface CodeViewProps {\n  readonly text: string;\n  readonly artifact: { readonly title: string };\n  /** The panel bar's controls slot (the preview and source toggle goes there). */\n  readonly setControls?: ((controls: ReactNode) => void) | undefined;\n}\n\n/** An SVG artifact: a preview, or its source. The preview is an image from a blob URL: it never becomes markup in this page, so its scripts cannot run. */\nexport function SvgView({ text, artifact, setControls }: CodeViewProps) {\n  const { labels } = useViewerText();\n  const [mode, setMode] = useState<'preview' | 'source'>('preview');\n  const url = useMemo(() => URL.createObjectURL(new Blob([text], { type: 'image/svg+xml' })), [text]);\n  useEffect(() => () => URL.revokeObjectURL(url), [url]);\n  useEffect(() => {\n    setControls?.(<ViewerToggle label={labels.view} value={mode} onChange={setMode} options={[\n      { id: 'preview', label: labels.preview, text: labels.preview, icon: <EyeIcon className=\"size-4\" aria-hidden=\"true\" />, testId: 'artifact-mode' },\n      { id: 'source', label: labels.source, text: labels.source, icon: <CodeXmlIcon className=\"size-4\" aria-hidden=\"true\" />, testId: 'artifact-mode' }]} />);\n    return () => setControls?.(undefined);\n  }, [setControls, mode, labels.view, labels.preview, labels.source]);\n  return mode === 'preview'\n    ? <div className=\"boring-viewer-checker flex h-full min-h-0 items-center justify-center overflow-auto p-6\"><img data-testid=\"artifact-svg\" src={url} alt={artifact.title} className=\"max-h-full max-w-full\" /></div>\n    : <div className=\"min-h-0 p-3\"><CodeBlock code={text} language=\"svg\" /></div>;\n}\n",
+      "type": "registry:component",
+      "target": "components/viewer-code/svg-view.tsx"
+    },
+    {
+      "path": "registry/viewer-code/csv-table.tsx",
+      "content": "'use client';\n\nimport { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';\nimport type { CodeViewProps } from './svg-view';\n\n/** Rows of a CSV text (comma or semicolon separated, double-quoted cells with `\"\"` escapes), at most 2000. */\nexport function csvRows(text: string): string[][] {\n  const rows: string[][] = []; let row: string[] = [], cell = '', quoted = false;\n  for (let i = 0; i < text.length && rows.length < 2000; i++) {\n    const c = text[i];\n    if (quoted) { if (c === '\"' && text[i + 1] === '\"') { cell += '\"'; i++; } else if (c === '\"') quoted = false; else cell += c; }\n    else if (c === '\"') quoted = true;\n    else if (c === ',' || c === ';') { row.push(cell); cell = ''; }\n    else if (c === '\\n' || c === '\\r') { if (c === '\\r' && text[i + 1] === '\\n') i++; row.push(cell); rows.push(row); row = []; cell = ''; }\n    else cell += c;\n  }\n  if ((cell || row.length) && rows.length < 2000) { row.push(cell); rows.push(row); }\n  return rows;\n}\n\n/** A CSV artifact as a table: the first row is the header. */\nexport function CsvView({ text }: CodeViewProps) {\n  const [head = [], ...rows] = csvRows(text);\n  return <Table data-testid=\"artifact-csv\">\n    <TableHeader><TableRow>{head.map((cell, i) => <TableHead key={i}>{cell}</TableHead>)}</TableRow></TableHeader>\n    <TableBody>{rows.map((row, i) => <TableRow key={i}>{row.map((cell, j) => <TableCell key={j} className=\"align-top\">{cell}</TableCell>)}</TableRow>)}</TableBody>\n  </Table>;\n}\n",
+      "type": "registry:component",
+      "target": "components/viewer-code/csv-table.tsx"
+    }
+  ],
+  "type": "registry:component"
+}

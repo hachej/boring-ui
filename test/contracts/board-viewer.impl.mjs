@@ -1,14 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 import { Window } from 'happy-dom';
 
 const out = join(process.cwd(), '.cache/board-viewer-test');
 mkdirSync(out, { recursive: true });
-await build({ entryPoints: ['registry/board-viewer/board-viewer.tsx'], outfile: join(out, 'viewer.mjs'), bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
+const source = fileURLToPath(new URL('../../registry/board-viewer/', import.meta.url));
+writeFileSync(join(out, 'entry.tsx'), `export { createBoardKind } from '${source}board-kind.tsx'; export { BoardViewer } from '${source}board-viewer.tsx';`);
+await build({ entryPoints: [join(out, 'entry.tsx')], outfile: join(out, 'viewer.mjs'), bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
 const window = new Window({ url: 'https://fictional.invalid/', settings: { disableIframePageLoading: true } });
 for (const name of ['document', 'navigator', 'HTMLElement', 'HTMLButtonElement', 'Element', 'Node', 'MutationObserver', 'Event', 'MouseEvent', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame']) {
   const value = window[name];

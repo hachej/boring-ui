@@ -38,7 +38,7 @@ body { margin: 0; background: var(--shell); color: var(--foreground); font: 15px
 
 .studio-filelist { max-height: 9.5rem; overflow: auto; }
 
-/* A viewer in a side panel: the standard frame (registry/viewers) fills a bordered slot below the panel's own heading and list. */
+/* A viewer in a side panel: the standard frame (registry/viewer-frame) fills a bordered slot below the panel's own heading and list. */
 .studio-viewer { height: clamp(26rem, 72dvh, 56rem); margin-top: 0.75rem; border: 1px solid var(--border); border-radius: 0.75rem; overflow: hidden; }
 .studio-viewer > .boring-viewer, .studio-viewer > [data-testid="file-preview"] { height: 100%; }
 [data-testid="viewer-panel"] .studio-viewer { height: 100%; margin: 0; border: 0; border-radius: 0; }

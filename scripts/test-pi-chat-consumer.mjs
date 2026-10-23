@@ -117,6 +117,8 @@ export const view = createRoot(document.getElementById('root')!); view.render(<A
   if (shared) assert.ok(inputs.some(path => /node_modules\/marked\//.test(path)), 'the shared timeline draws messages with the installed pi-chat-markdown');
   else assert.deepEqual(featureOnly, [], 'the core-only pi-chat bundle excludes Markdown and voice capture (pi-chat-markdown, pi-chat-voice)');
   if (!shared) assert.deepEqual(inputs.filter(path => /src\/components\/(pi-chat-question|pi-chat-approval|pi-chat-subagent|pi-artifacts)\/|(question|approval|subagent|run|artifact)-card\.tsx$/.test(path)), [], 'the core-only pi-chat bundle carries no reply card (pi-chat-question, pi-chat-approval, pi-chat-subagent, pi-artifacts)');
+  // D-257 step 4: viewers are their own items, loaded by kind; the core chat bundle carries none of them, nor their editors or pdf.js.
+  assert.deepEqual(inputs.filter(path => /src\/components\/(viewer-[\w-]+|viewers|maquette-viewer|diagram-viewer|mockup-viewer|record-viewer|looks-viewer|board-viewer)\/|node_modules\/(pdfjs-dist|@tiptap)\/|boring-ui-kit\/dist\/(markdown-editor|html-viewer)/.test(path)), [], 'the pi-chat bundle carries no viewer item');
   const feedbackInputs = inputs.filter(path => /@hachej\/boring-feedback\//.test(path));
   assert.ok(feedbackInputs.some(path => path.endsWith('/dist/format/report.js')), 'sent comments use the installed real formatter');
   assert.deepEqual(feedbackInputs.filter(path => !/@hachej\/boring-feedback\/dist\/format\//.test(path)), [], 'format presentation imports no capture, UI, store or agent feature');

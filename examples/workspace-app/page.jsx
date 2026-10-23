@@ -11,7 +11,7 @@ import { NoteBubble, useComposerFeedback, usePointComments } from '../../registr
 import { CommentBanner } from '../../registry/feedback/point-mode.tsx';
 import { AgentWorkspace, useConversations, useRemoteChat } from '../../registry/pi-app/agent-workspace.tsx';
 import { useRevisionAttachments } from '../../registry/pi-app/use-revision-attachments.ts';
-import { createRecordsKind } from '../../registry/record-viewer/record-viewer.tsx';
+import { createRecordsKind } from '../../registry/record-viewer/records-kind.tsx';
 import { AmbientChat } from '../../registry/pi-ambient/ambient.tsx';
 import { Button } from '@/components/ui/button';
 import { RequestsDemo } from './requests-demo.jsx';

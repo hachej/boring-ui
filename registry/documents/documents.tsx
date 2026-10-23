@@ -4,7 +4,7 @@
 // the chosen file opens in the same viewer the Library uses (editable where it edits); its Revisions sit beside it. Every revision row opens
 // that exact revision read-only, and « Back to editing » returns to the file. The editor stays mounted while a revision is inspected, so its
 // unsaved edits survive; leaving the file with unsaved edits asks first. Every read goes through the one `revisionProvider` the host binds.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { createFileTreeController } from '@hachej/boring-ui-kit/file-tree';
@@ -19,10 +19,11 @@ import { ArtifactPanel } from '../pi-app/artifact-panel';
 import type { ArtifactDescriptor } from '../pi-artifacts/artifact';
 import type { CustomViewers, ViewerOptions } from '../pi-app/artifact-panel';
 import { FileViewer } from '../pi-app/file-viewer';
-import { ImagePane } from '../viewers/image-pane';
-import { PdfPane } from '../viewers/pdf-pane';
-import { ViewerFrame } from '../viewers/viewer-frame';
-import { useViewerText } from '../viewers/viewer-window';
+import { lazyView, ViewLoading } from '../pi-app/viewer-kinds';
+import { imageKind } from '../viewer-image/image-kind';
+import { pdfKind } from '../viewer-pdf/pdf-kind';
+import { ViewerFrame } from '../viewer-frame/viewer-frame';
+import { useViewerText } from '../viewer-frame/viewer-window';
 import { cn } from '../utils/utils';
 import { Revisions } from './revisions';
 import type { DocumentsLabels } from './documents-labels';
@@ -107,9 +108,13 @@ function BinaryRevision({ provider, path, revision, kind, labels, onClose }: {
   if (state.kind !== 'ready') return <ViewerFrame title={nameOf(path)} status={status} onClose={onClose}>
     <p role="status" className="m-0 p-4 text-sm text-muted-foreground">{state.kind === 'loading' ? labels.revisionsLoading : labels.revisionLoadFailed}</p>
   </ViewerFrame>;
-  return kind === 'image'
-    ? <ImagePane name={nameOf(path)} mediaType={state.mediaType} bytes={state.bytes} status={status} onClose={onClose} />
-    : <PdfPane name={nameOf(path)} bytes={state.bytes} status={status} onClose={onClose} />;
+  // The panes load the first time an image or a PDF revision opens (D-257), like the file viewer's.
+  const ImagePane = lazyView(imageKind.load), PdfPane = lazyView(pdfKind.load);
+  return <Suspense fallback={<ViewerFrame title={nameOf(path)} status={status} onClose={onClose}><ViewLoading label={viewer.loading} /></ViewerFrame>}>
+    {kind === 'image'
+      ? <ImagePane name={nameOf(path)} mediaType={state.mediaType} bytes={state.bytes} status={status} onClose={onClose} />
+      : <PdfPane name={nameOf(path)} bytes={state.bytes} status={status} onClose={onClose} />}
+  </Suspense>;
 }
 
 /** One revision of the file, read-only, with « Back to editing ». Text, Markdown and HTML use the artifact panel's pinned view. */

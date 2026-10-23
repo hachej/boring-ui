@@ -10,7 +10,7 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 const out = join(root, '.cache/mockup-viewer-test');
 mkdirSync(out, { recursive: true });
 writeFileSync(join(out, 'entry.tsx'), `export { ArtifactPanel } from '${root}registry/pi-app/artifact-panel.tsx';
-export { createMockupKind, mockupKind } from '${root}registry/mockup-viewer/mockup-viewer.tsx';
+export { createMockupKind, mockupKind } from '${root}registry/mockup-viewer/mockup-kind.tsx';
 export { compileMockup } from '${root}registry/mockup-viewer/mockup-compile.ts';
 export { useComposerFeedback, usePointComments } from '${root}registry/feedback/feedback-session.tsx';`);
 await build({ entryPoints: [join(out, 'entry.tsx')], outfile: join(out, 'kit.mjs'), bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });

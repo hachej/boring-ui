@@ -1,13 +1,11 @@
 'use client';
 
 import { lazy, Suspense, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
-import { LayoutDashboardIcon } from 'lucide-react';
 import type { ResourceClient, ResourceLocator } from '@hachej/boring-files';
 import { createTextBuffer } from '@hachej/boring-ui-kit/text-buffer';
 import type { TextBuffer } from '@hachej/boring-ui-kit/text-buffer';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import type { ArtifactKind } from '../pi-artifacts/artifact';
 import type { BoardHostProps, BoardViewerProps } from './board-props';
 export type { BoardHostProps, BoardViewerProps } from './board-props';
 import { parseBoard } from './board';
@@ -21,12 +19,6 @@ const readText = (snapshot: Parameters<Parameters<typeof createTextBuffer>[0]['r
   if (parseBoard(text).kind !== 'ok') throw new Error('Unreadable board');
   return text;
 };
-
-/** An opt-in artifact kind. Its client and authenticated receipt identity belong to the host's selected workspace. */
-export function createBoardKind(host: BoardHostProps): ArtifactKind {
-  return { match: target => /\.board\.json$/i.test(target.resource.path), label: 'Board', icon: LayoutDashboardIcon,
-    renderer: ({ artifact, text, revision, pinned }) => <BoardViewer {...host} target={artifact.target} text={text} revision={revision} pinned={pinned} /> };
-}
 
 export function BoardViewer(props: BoardViewerProps) {
   const parsed = useMemo(() => parseBoard(props.text), [props.text]);

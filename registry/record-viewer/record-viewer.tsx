@@ -1,15 +1,13 @@
 'use client';
 
 import { useMemo } from 'react';
-import type { ComponentType, ReactNode } from 'react';
-import { Rows3Icon } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
 import { Item, ItemActions, ItemContent, ItemGroup } from '@/components/ui/item';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { formatRecordValue, isRecordsPath, parseRecords, recordValue } from './records';
+import { formatRecordValue, parseRecords, recordValue } from './records';
 import type { RecordAction, RecordColumn, RecordRow, RecordStatus, RecordTone } from './records';
 import { recordsLabelsFor } from './records-labels';
 import type { RecordsLabels, RecordsLocale } from './records-labels';
@@ -26,7 +24,7 @@ function Status({ status, label }: { readonly status: RecordStatus; readonly lab
 function NoRecords({ label }: { readonly label: string }) {
   return <Empty><EmptyHeader><EmptyTitle>{label}</EmptyTitle></EmptyHeader></Empty>;
 }
-interface Words {
+export interface Words {
   readonly locale?: RecordsLocale | undefined;
   readonly labels?: Partial<RecordsLabels> | undefined;
 }
@@ -135,15 +133,3 @@ export function RecordsViewer({ text, onAction, locale, labels: given }: Records
     })}</div>
   </section>;
 }
-
-export interface RecordsKind {
-  readonly match: (target: { readonly resource: { readonly path: string } }) => boolean;
-  readonly label: string;
-  readonly icon: ComponentType<{ readonly className?: string; readonly 'aria-hidden'?: boolean | 'true' }>;
-  readonly renderer: (props: { readonly text: string }) => ReactNode;
-}
-export function createRecordsKind(options: Words & { readonly onAction?: RecordTableProps['onAction'] } = {}): RecordsKind {
-  return { match: target => isRecordsPath(target.resource.path), label: recordsLabelsFor(options.locale, options.labels).kind, icon: Rows3Icon,
-    renderer: ({ text }) => <RecordsViewer text={text} {...options} /> };
-}
-export const recordsKind: RecordsKind = createRecordsKind();

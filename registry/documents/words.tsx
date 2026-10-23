@@ -6,8 +6,8 @@
 import type { ReactNode } from 'react';
 import { defaultAppIcons, defaultAppLabels, AppTextProvider } from '../pi-app/app-labels';
 import { frenchAppLabels } from '../pi-app/app-labels-fr';
-import { defaultViewerIcons, defaultViewerLabels, ViewerWindowProvider } from '../viewers/viewer-window';
-import { frenchViewerLabels } from '../viewers/viewer-labels-fr';
+import { defaultViewerIcons, defaultViewerLabels, ViewerWindowProvider } from '../viewer-frame/viewer-window';
+import { frenchViewerLabels } from '../viewer-frame/viewer-labels-fr';
 import { defaultDocumentsLabels, frenchDocumentsLabels } from './documents-labels';
 import type { DocumentsLabels } from './documents-labels';
 
