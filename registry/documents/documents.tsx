@@ -110,7 +110,7 @@ function BinaryRevision({ provider, path, revision, kind, labels, onClose }: {
   </ViewerFrame>;
   // The panes load the first time an image or a PDF revision opens (D-257), like the file viewer's.
   const ImagePane = lazyView(imageKind.load), PdfPane = lazyView(pdfKind.load);
-  return <Suspense fallback={<ViewerFrame title={nameOf(path)} status={status} onClose={onClose}><ViewLoading label={viewer.loading} /></ViewerFrame>}>
+  return <Suspense fallback={<ViewerFrame testId="viewer-pending" title={nameOf(path)} status={status} onClose={onClose}><ViewLoading label={viewer.loading} /></ViewerFrame>}>
     {kind === 'image'
       ? <ImagePane name={nameOf(path)} mediaType={state.mediaType} bytes={state.bytes} status={status} onClose={onClose} />
       : <PdfPane name={nameOf(path)} bytes={state.bytes} status={status} onClose={onClose} />}

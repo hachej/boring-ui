@@ -102,7 +102,7 @@ function FileDocument({ path, editor, locator, options, onClose, back, onUnsaved
     pane = <HtmlPane key={revision} controller={saved.controller as HtmlController} revision={revision} initialMode={mode as 'preview'} onModeChange={setMode} {...(options.interactive ? { interactive: options.interactive } : {})} {...common} />;
   }
   return <div data-testid="file-preview" className="h-full min-h-0" data-revision={revision}>
-    <Suspense fallback={<ViewerFrame title={common.title} subtitle={common.subtitle} onClose={onClose} headerStart={back}><ViewLoading label={labels.loading} /></ViewerFrame>}>
+    <Suspense fallback={<ViewerFrame testId="viewer-pending" title={common.title} subtitle={common.subtitle} onClose={onClose} headerStart={back}><ViewLoading label={labels.loading} /></ViewerFrame>}>
       {pane}<Mounted value={revision} onMount={setMounted} />
     </Suspense>
   </div>;
@@ -187,7 +187,8 @@ function FileBytes({ path, kind, locator, options, onClose, back, media }: Commo
       <p role="status" className="m-0 p-4 text-sm text-muted-foreground">{file.kind === 'loading' ? labels.loading : labels.fileMissing}</p>
     </ViewerFrame>;
   }
-  const loading = <ViewerFrame title={nameOf(path)} subtitle={common.subtitle} onClose={onClose} titleTestId="file-title" headerStart={back}><ViewLoading label={labels.loading} /></ViewerFrame>;
+  // The bar while a view loads: `viewer-pending-*` test ids, so `viewer-more` is the view's own menu.
+  const loading = <ViewerFrame testId="viewer-pending" title={nameOf(path)} subtitle={common.subtitle} onClose={onClose} titleTestId="file-title" headerStart={back}><ViewLoading label={labels.loading} /></ViewerFrame>;
   const shown = <Mounted value={file.revision} onMount={setMounted} />;
   if (blob?.kind === 'blob') {
     const blobMedia = mediaKindOf(options.kinds ?? viewerKinds, { ...fileArtifact(path, locator), mediaType: blob.item.type });

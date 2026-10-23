@@ -252,8 +252,9 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose, headerSta
     <div className="min-h-0 flex-1">{children}</div>
   </div>;
   if (isEditorKind(drawing) && controller) {
-    // The pane brings its own bar; while it loads, the same bar without Share shows a spinner.
-    const { onShare: _, ...waiting } = frame;
+    // The pane brings its own bar; while it loads, the same bar without Share shows a spinner. Its test ids are `artifact-pending-*`, so a
+    // test (or a script) waiting for `artifact-more` reaches the pane's own menu, not the one of a bar about to be replaced.
+    const { onShare: _, ...waiting } = { ...frame, testId: 'artifact-pending' };
     let pane: ReactNode;
     if (drawing.editor === 'markdown') {
       const MarkdownPane = lazyView(drawing.load);
