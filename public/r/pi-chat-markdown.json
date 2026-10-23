@@ -9,7 +9,7 @@
     "entities@^8.1.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.12/r/pi-chat.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.13/r/pi-chat.json",
     "button",
     "checkbox",
     "table"
