@@ -148,3 +148,19 @@ test('the channel socket keeps card actions and the member role line', async () 
   assert.deepEqual((await source.history('main', { limit: 20 })).messages[0].card.actions, actions);
   assert.equal((await source.members('main'))[0].roleLabel, 'the reminders');
 });
+
+test('the channel socket keeps system notices and pinned comments; an unknown kind reads as absent, never as a refused page', async () => {
+  const messages = [
+    { id: 'joined', conversationId: 'main', author: 'lea', at: '2026-10-20T12:00:00Z', kind: 'system', text: 'Léa joined' },
+    { id: 'pin', conversationId: 'main', author: 'mira', at: '2026-10-20T12:01:00Z', card: { requestId: 'p', kind: 'pin', title: 'White bg', line: 'Preview of Due date column' } },
+    { id: 'future', conversationId: 'main', author: 'pm', at: '2026-10-20T12:02:00Z', kind: 'poll', text: 'A newer host kind', card: { requestId: 'f', kind: 'vote', title: 'Vote', line: 'Later' } },
+  ];
+  const source = await createChannelSocket({ url: 'https://fictional.invalid',
+    fetch: async request => new URL(request.url).pathname.endsWith('/me') ? Response.json({ space: 'sp_fictional', me: sharedChatSeed.me }) : Response.json({ messages }),
+    open: url => ({ url, close() {} }) });
+  const [joined, pin, future] = (await source.history('main', { limit: 20 })).messages;
+  assert.equal(joined.kind, 'system');
+  assert.equal(pin.card.kind, 'pin');
+  assert.equal(future.kind, undefined); assert.equal(future.card.kind, undefined);
+  assert.equal(future.text, 'A newer host kind');
+});

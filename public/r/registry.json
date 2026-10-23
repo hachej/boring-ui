@@ -1241,6 +1241,7 @@
         "button",
         "drawer",
         "popover",
+        "separator",
         "tooltip",
         "trace",
         "spinner",

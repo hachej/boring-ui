@@ -13,12 +13,12 @@ import { useVoiceMessage } from './use-voice-message';
 
 export { voiceClock } from '../pi-chat/config';
 
-export function VoiceMessageButton({ voice, disabled }: VoiceMessageButtonProps) {
+export function VoiceMessageButton({ voice, disabled, primary = false }: VoiceMessageButtonProps) {
   const { labels } = useChatText();
   const active = voice.phase === 'starting' || voice.phase === 'recording';
   const blocked = !active && (disabled || voice.phase !== 'idle');
   const hold = useHoldToRecord(voice, Boolean(blocked));
-  return <div className="flex items-center gap-2"><Button {...hold} variant="ghost" size="icon" className="touch-none" data-testid="voice-message-record" data-state={voice.phase} disabled={blocked} aria-label={labels.voiceHold} title={labels.voiceHold} aria-pressed={voice.phase === 'recording'}>
+  return <div className="flex items-center gap-2"><Button {...hold} variant={primary ? 'default' : 'ghost'} size="icon" className="touch-none" data-testid="voice-message-record" data-state={voice.phase} disabled={blocked} aria-label={labels.voiceHold} title={labels.voiceHold} aria-pressed={voice.phase === 'recording'}>
     <MicIcon data-icon="inline-start" aria-hidden="true" />
   </Button>{(voice.phase === 'starting' || voice.phase === 'recording') && <span role="status" data-testid="voice-recording">{labels.voiceRecording} {voiceClock(voice.seconds)}</span>}</div>;
 }

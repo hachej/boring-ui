@@ -50,6 +50,8 @@ export function useSharedChatProps(controller: SharedChatController | undefined,
     onPickFiles: files => { if (controller) controller.setFiles([...controller.getSnapshot().shared.files, ...files]); },
     composerChips: controller && wrap(state?.shared.files.map((file, index) => <Badge key={index} variant="secondary">{file.name}<Button variant="ghost" size="icon" aria-label={`Remove ${file.name}`} onClick={() => controller.setFiles(controller.getSnapshot().shared.files.filter((_, at) => at !== index))}><span aria-hidden="true">×</span></Button></Badge>)),
     renderConnectionError: error => error instanceof Error ? error.message : String(error),
+    // WhatsApp's composer; a host spreading these props can still override either.
+    composerLayout: 'pill', voiceReplacesSend: true,
   };
 }
 

@@ -102,6 +102,10 @@ export interface ComposerProps {
   readonly layout?: 'card' | 'pill' | 'stacked' | 'inline';
   /** Host controls (for example a voice button) as round buttons between the model pill and the send button. */
   readonly barEnd?: ReactNode;
+  /** Host controls at the very left edge of the bar, before "+" (`PiChat`'s `composerStart`). */
+  readonly start?: ReactNode;
+  /** A control shown in place of Send while there is nothing to send (WhatsApp's microphone): Send comes back as soon as there is text or a file. */
+  readonly whenEmpty?: ReactNode;
   /** The optional Feedback button and chip. */
   readonly feedback?: ComposerFeedback | undefined;
 }
@@ -321,6 +325,7 @@ export function Composer(props: ComposerProps) {
   const send = working
     ? <Button variant="default" size="icon" data-testid="composer-submit" data-state="stop" aria-label={labels.stop} title={labels.stop} disabled={disabled || stopRequested} onClick={props.onStop} className="shrink-0">
       {stopRequested ? <Loader2Icon data-icon="inline-start" className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <icons.stop data-icon="inline-start" aria-hidden="true" />}</Button>
+    : props.whenEmpty && !hasContent ? <div data-testid="composer-when-empty" className="flex shrink-0 items-center">{props.whenEmpty}</div>
     : <Button variant="default" size="icon" type="submit" data-testid="composer-submit" data-state="send" aria-label={labels.send} title={labels.sendHint} disabled={!canSubmit} className="shrink-0">
       <icons.send data-icon="inline-start" aria-hidden="true" /></Button>;
   const end = <>
@@ -344,13 +349,14 @@ export function Composer(props: ComposerProps) {
     {mentionOpen && mentions && Mention && <Mention query={trigger!.query} listLabel={mentions.listLabel} renderOption={mentions.renderOption} search={mentions.search} generation={mentions.generation} onSelect={pickMention} onDismiss={dismiss} />}
     {pill && chipList && <div className="flex flex-wrap gap-2">{chipList}</div>}
     {pill ? <InputGroup>
-      <InputGroupAddon>{plus}{feedback && <AnnotateButton feedback={feedback} disabled={disabled} />}</InputGroupAddon>
+      <InputGroupAddon>{props.start && <div data-testid="composer-start" className="flex shrink-0 items-center gap-1">{props.start}</div>}{plus}{feedback && <AnnotateButton feedback={feedback} disabled={disabled} />}</InputGroupAddon>
       {textareaEl}
       <InputGroupAddon align="inline-end" data-testid="composer-controls">{end}</InputGroupAddon>
     </InputGroup> : <InputGroup>
       {chipList && <InputGroupAddon align="block-start" className="flex-wrap">{chipList}</InputGroupAddon>}
       {textareaEl}
       <InputGroupAddon align="block-end" data-testid="composer-controls">
+        {props.start && <div data-testid="composer-start" className="flex shrink-0 items-center gap-1">{props.start}</div>}
         {plus}
         {feedback && <AnnotateButton feedback={feedback} disabled={disabled} />}
         {end}

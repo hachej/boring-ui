@@ -237,11 +237,14 @@ export function VoiceBubble({ path, transcript, preview, audioUrl, align = 'end'
  * them (only what is drawn changes).
  */
 /** `variant` picks the bubble: `muted` (the chat's user bubble) or `default` (the theme's primary, used for my own messages in a shared chat). */
-export function MessageText({ text, context, align = 'end', variant = 'muted' }: { readonly text: string; readonly context: Pick<RowContext, 'pieces' | 'openFile'>; readonly align?: 'start' | 'end'; readonly variant?: 'muted' | 'default' }) {
+/** `decoration` sits inside the Bubble before its content (a tail); `header` and `footer` inside the content, around the text (a quote, the time). */
+export function MessageText({ text, context, align = 'end', variant = 'muted', decoration, header, footer }: { readonly text: string; readonly context: Pick<RowContext, 'pieces' | 'openFile'>; readonly align?: 'start' | 'end'; readonly variant?: 'muted' | 'default'; readonly decoration?: ReactNode; readonly header?: ReactNode; readonly footer?: ReactNode }) {
+  const framed = decoration !== undefined || header !== undefined || footer !== undefined;
+  const wrap = (body: ReactNode) => <Bubble variant={variant} align={align}>{decoration}<BubbleContent data-testid="user-text" className={framed ? 'relative' : undefined}>{header}{body}{footer}</BubbleContent></Bubble>;
   const target = targetContent(text);
   if (target) return <>
     <Badge variant="secondary" data-testid="message-target" title={JSON.stringify(target.target)} className="max-w-full truncate">{target.label}</Badge>
-    <MessageText text={target.speech} context={context} align={align} variant={variant} />
+    <MessageText text={target.speech} context={context} align={align} variant={variant} decoration={decoration} header={header} footer={footer} />
   </>;
   const feedback = feedbackContent(text);
   if (feedback) return <>
@@ -257,7 +260,7 @@ export function MessageText({ text, context, align = 'end', variant = 'muted' }:
   const isFile = (piece: Piece) => piece.kind === 'mention' && isUploadPath(piece.value!);
   const files = all.filter(isFile).map(piece => piece.value!);
   const voice = files.find(isVoicePath), cards = files.filter(path => path !== voice);
-  if (!context.pieces && !voice) return <Bubble variant={variant} align={align}><BubbleContent data-testid="user-text"><span className="whitespace-pre-wrap">{text}</span></BubbleContent></Bubble>;
+  if (!context.pieces && !voice) return wrap(<span className="whitespace-pre-wrap">{text}</span>);
   const shown = files.length ? visibleParts(all, isFile) : all;
   const empty = shown.every(piece => piece.kind === undefined && piece.text === '');
   const content = shown.map((piece, at) => piece.kind === 'mention'
@@ -267,7 +270,7 @@ export function MessageText({ text, context, align = 'end', variant = 'muted' }:
   return <>
     {cards.length > 0 && <FileCards paths={cards} open={context.openFile ?? open} preview={context.pieces?.preview} />}
     {voice ? <VoiceBubble path={voice} transcript={empty ? null : content} preview={context.pieces?.preview} audioUrl={context.pieces?.audioUrl} align={align} />
-      : !(files.length > 0 && empty) && <Bubble variant={variant} align={align}><BubbleContent data-testid="user-text"><span className="whitespace-pre-wrap">{content}</span></BubbleContent></Bubble>}
+      : !(files.length > 0 && empty) && wrap(<span className="whitespace-pre-wrap">{content}</span>)}
   </>;
 }
 

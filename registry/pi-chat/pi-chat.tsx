@@ -105,6 +105,10 @@ export interface PiChatProps extends ChatFeatureProps {
   readonly controls?: ReactNode;
   /** Host controls at the end of the composer bar (for example a microphone), like AmbientChat's tools slot. */
   readonly tools?: ReactNode;
+  /** Host controls at the left edge of the composer bar, before "+" (for example an app's own menu). Absent: nothing changes. */
+  readonly composerStart?: ReactNode;
+  /** With `voiceMessage`: the microphone takes Send's place while there is nothing to send, and Send comes back with the first character or file (WhatsApp's composer). Default false. */
+  readonly voiceReplacesSend?: boolean;
   /** Hold-to-send one retained audio upload plus transcript. Omit to keep the existing composer unchanged. */
   readonly voiceMessage?: VoiceMessageConfig | undefined;
   /** Local voice rows owned by the shell's shared microphone; rendered with the native transcript, never the composer. */
@@ -172,7 +176,7 @@ const noVoice: VoiceRecorderHook = () => silent;
 /** A shell's pending voice row when no `voiceMessage.Bubble` is plugged in: nothing to draw. */
 function NoVoiceBubble(_: { readonly pending: PendingVoice | undefined }) { return null; }
 
-function PiChatSession({ controller, placement = 'docked', mode = 'expert', presentation, className, keyboardInset = true, actions, avatar, headerActions, header = true, decisions, controls, tools, voiceMessage, pendingVoice, belowComposer, composerChips, composerHeader, composerHasContent, onPickFiles, timeline, renderConnectionError, headerStart, renderEntry, hideLine, displayLimit, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions,
+function PiChatSession({ controller, placement = 'docked', mode = 'expert', presentation, className, keyboardInset = true, actions, avatar, headerActions, header = true, decisions, controls, tools, composerStart, voiceReplacesSend = false, voiceMessage, pendingVoice, belowComposer, composerChips, composerHeader, composerHasContent, onPickFiles, timeline, renderConnectionError, headerStart, renderEntry, hideLine, displayLimit, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions,
   onOpenImage, onCopy, onComposerKeyDown, onFiles, camera, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = false, emptyLayout = 'centered', composerLayout = 'card', conversationTitle, onRenameTitle, feedback, draftKey, onOpenFile, fileChanges, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: ChatController } }) {
   const { labels, icons } = useChatText();
   useChatDraft(controller, draftKey);
@@ -279,7 +283,9 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
           <ConversationFiles files={[...conversationFiles.values()]} />
           <MessageQueue items={queued} sending={state.outbox} withdraw={actions?.withdraw} actions={queueActions} />
           {voice.problem && <p role="alert" data-testid="voice-message-problem">{voice.problem}</p>}
-          <Composer {...composer} layout={composerLayout} placeholder={labels.placeholder === 'Message the agent…' ? `Message ${title}…` : labels.placeholder} barStart={barStart} barNote={barNote} barEnd={voiceMessage && VoiceButton ? <>{tools}<VoiceButton voice={voice} disabled={state.disposed || !connected || state.send.kind === 'unknown'} /></> : tools} />
+          <Composer {...composer} layout={composerLayout} placeholder={labels.placeholder === 'Message the agent…' ? `Message ${title}…` : labels.placeholder} barStart={barStart} barNote={barNote} start={composerStart}
+            {...(voiceMessage && VoiceButton && voiceReplacesSend ? { barEnd: tools, whenEmpty: <VoiceButton voice={voice} primary disabled={state.disposed || !connected || state.send.kind === 'unknown'} /> }
+              : { barEnd: voiceMessage && VoiceButton ? <>{tools}<VoiceButton voice={voice} disabled={state.disposed || !connected || state.send.kind === 'unknown'} /></> : tools })} />
           {belowComposer !== undefined && <div data-testid="below-composer" className="pt-2">{belowComposer}</div>}
         </div>
       </div>
