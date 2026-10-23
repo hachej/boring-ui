@@ -20,7 +20,7 @@ The `markdown-editor` and `html-viewer` items copy thin React wrappers and scope
 
 ## Blocks: what to install
 
-`pi-chat` is the chat and nothing else. `pi-ambient` and `pi-workspace` are optional blocks over it; install only what the page needs. A block imports its dependency by the installed sibling folder (`../pi-chat/rows`, `../utils/utils`, `../button/actions`), so there is one copy of each helper, and `scripts/check-registry-blocks.mjs` (in `npm run check`) fails if `pi-chat` imports a block or an optional `pi-chat-*` item (or depends on `marked`, `entities` or the kit's `voice-capture`), `pi-workspace` imports `pi-ambient`, a source file is not listed in its item, a file's type or target is off, two items ship the same file name, or any import cycle exists in a block or a package's sources (type-only and lazy imports count; it prints the cycle's path).
+`pi-chat` is the chat and nothing else. `pi-ambient` and `pi-workspace` are optional blocks over it; install only what the page needs. A block imports its dependency by the installed sibling folder (`../pi-chat/rows`, `../utils/utils`, `../button/actions`), so there is one copy of each helper, and `scripts/check-registry-blocks.mjs` (in `npm run check`) fails if `pi-chat` imports a block or an optional `pi-chat-*` item, imports `marked`, `entities` or the kit's `voice-capture`, declares an npm package outside its core set (`CORE_PACKAGES`) or grows past its size budget (`CORE_BUDGET`: listed files and lines), `pi-workspace` imports `pi-ambient`, a source file is not listed in its item, a file's type or target is off, two items ship the same file name, or any import cycle exists in a block or a package's sources (type-only and lazy imports count; it prints the cycle's path).
 
 Item and file types follow the shadcn schema: the multi-file chat items are `registry:block`, the viewer wrappers and component sets `registry:component`, the host-action adapters `registry:component`, the shared helpers `registry:lib`, the tokens `registry:theme`. Within an item a `.tsx` file is `registry:component`, a `use*.ts` file (and `pi-ambient/browser-notify.ts`) is `registry:hook`, and any other `.ts` file is `registry:lib`. Every file has the target `components/<item>/<file>`, so the installed folders mirror `registry/` (the Markdown and HTML wrappers land in `components/markdown-editor/markdown-editor.tsx` and `components/html-viewer/html-viewer.tsx`, the preview banner in `components/feedback-preview/`).
 
@@ -45,6 +45,29 @@ Item and file types follow the shadcn schema: the multi-file chat items are `reg
 | `app-shell` | `... add <registry>/app-shell.json` (also installs `pi-chat`, `feedback` and pinned `drawer` and `dropdown-menu` recipes plus the shadcn `sidebar` and `avatar` of your own style; add `<registry>/theme.json` too when the host has no shadcn tokens) | one agent above any app: a bottom drawer with peek, half and full on a phone, a right panel on a wide screen (see [below](#agent-layer-app-shell)) |
 | `windows` | `... add <registry>/windows.json` (host Base UI controls only; add `theme.json` if needed) | independent floating utilities and a keyboard launcher (see [below](#floating-windows-windows)) |
 | `agent-target` | `... add <registry>/agent-target.json` (also installs `app-shell`; requires the coordinated kit patch, not the older published 0.4.3) | point and dictate on explicitly marked app JSON without opening chat (see [below](#point-and-dictate-on-app-data-agent-target)) |
+
+### From one item to small items (D-257)
+
+`pi-app` is the batteries item: it installs every item below and passes them to the chat through `withChatPlugins` (`pi-chat-plugins`), so `AgentWorkspace` needs no configuration and an app that re-runs `boring-ui-blocks add <registry>/pi-app.json` keeps every feature. `boring-ui-blocks update` reinstalls only the items an app already has, so an app that installed `pi-chat` or `viewers` directly adds the new items it uses once:
+
+| Before (item, file) | Now (item) | Plug it in |
+| --- | --- | --- |
+| `pi-chat` `markdown.tsx` | `pi-chat-markdown` | `renderText={markdownText}` |
+| `pi-chat` `slash-menu.tsx` | `pi-chat-slash` | `slash={{ ..., Picker: SlashPicker }}` |
+| `pi-chat` `mention-menu.tsx` | `pi-chat-mentions` | `mentions={{ ..., Picker: MentionPicker }}` |
+| `pi-chat` `pickers.tsx` | `pi-chat-pickers` | `model={{ ..., Picker: ModelEffortPicker }}` |
+| `pi-chat` `use-voice-message.ts`, `voice-message.tsx`, `use-hold-to-record.ts` | `pi-chat-voice` | `voiceMessage={{ transcribe, ...voiceMessagePlugin }}` |
+| `pi-chat` `camera-sheet.tsx` | `pi-chat-attachments` | `attachments={{ upload, Camera: CameraSheet }}` |
+| `pi-chat` `question-card.tsx` | `pi-chat-question` | `cards={{ question: QuestionCard }}` |
+| `pi-chat` `approval-card.tsx` | `pi-chat-approval` | `cards={{ approval: ApprovalCard }}` |
+| `pi-chat` `run-card.tsx` (and the sub-agent card) | `pi-chat-subagent` | `cards={{ subagent: subagentCard }}` |
+| `pi-chat` `artifact.ts`, `artifact-card.tsx` | `pi-artifacts` | `artifacts={{ ...artifactCards, open, isOpen, kinds }}` |
+| all of the above | `pi-chat-plugins` | `<PiChat {...withChatPlugins(props)} />` |
+| `viewers` (frame, menu, share, download) | `viewer-frame` | imported by the viewer items |
+| `viewers` `markdown-pane`, `html-pane`, `image-pane`, `pdf-pane`/`pdf-pages`/`local-file-viewer`, SVG and CSV | `viewer-markdown`, `viewer-html`, `viewer-image`, `viewer-pdf`, `viewer-code` | loaded by kind (`viewerKinds` from `pi-app/viewer-kinds`); `viewers` remains, empty, and installs the five |
+| `maquette-viewer`, `diagram-viewer`, `mockup-viewer`, `record-viewer`, `looks-viewer`, `board-viewer` views | the same items, plus a `*-kind` module | pass the kind (`maquetteKind`, …) in `artifactKinds`; its view loads lazily |
+
+[MIGRATING.md](../MIGRATING.md) has the release notes of each step.
 
 Registry blocks support the shadcn **Base UI style only**. Only the `base-nova` style is supported. Viewer, Library and shared chat menus use the consumer's real `@/components/ui/dropdown-menu`, declared as the bare `dropdown-menu` registry dependency. `ActionMenu` only maps actions and metadata to that component; it owns no menu positioning, focus loop or visual primitive. The consumer's shadcn components supply appearance and interaction. `npm run test:app-registry-consumer` installs and strictly checks Base UI, including Library controls, portalled viewer/version menus and the phone files drawer. Ordinary buttons and icon actions import the consumer's `@/components/ui/button` directly. Pressed actions use `@/components/ui/toggle`; the compact account theme uses `@/components/ui/switch`. Their bare registry dependencies install the consumer's components. `button/actions.tsx` adapts host actions, not visual primitives. Lists (conversation history, sessions, Library tree, documents' revisions, empty states) compose the consumer's `sidebar` menu, `input-group`, `popover`, `scroll-area`, `collapsible`, `empty` and `separator`; the packaged tree (`@hachej/boring-ui-kit/file-tree-view`) takes them through its `components` prop and ships layout CSS only. Other component groups remain tracked in `scripts/design-groups.json`. The cards (approval, question, artifact, code block, feedback) use the consumer's `@/components/ui/item` and `badge` with layout classes only; `pi-chat` and `feedback` declare those bare dependencies. The approval card follows shadcn's Confirmation recipe (an outline Item with Approve and Deny buttons). shadcn's Code Block is not used because installing it adds the `shiki` highlighter this block never calls, and its Questionnaire is a multi-step wizard on a new `@shadcn/react` dependency that does not fit the one-form `ask_user` card.
 
@@ -145,7 +168,10 @@ npx boring-ui-blocks check [--design <dir>...] [--manifest <path>] [--cwd <app w
 npx boring-ui-blocks update [--version <v>] [--registry <url>] [--dry-run] [--manifest <path>] [--cwd <dir>]
 npx boring-ui-blocks add <shadcn add arguments...> [--manifest <path>] [--cwd <dir>]
 npx boring-ui-blocks manifest [--manifest <path>] [--cwd <dir>]
+npx boring-ui-blocks help
 ```
+
+`help` (or `--help`) prints the usage and which items to add (`pi-app` for everything, `pi-chat` plus its optional items, the viewer items) and exits 0.
 
 `boring-ui-blocks` is the `bin` of `@hachej/boring-ui-kit` (`packages/ui/bin/boring-ui-blocks.mjs`). It runs in the app's web directory (the one holding `components.json`), or in `--cwd`. Paths come from `components.json` `aliases`: `components` (default `@/components`) and `ui` (default `<components>/ui`); an `@/` alias resolves to `src/` when the app has one, else to the app root. The kit version is the `version` of the installed `node_modules/@hachej/boring-ui-kit/package.json`, and the registry items are the ones that package ships in `node_modules/@hachej/boring-ui-kit/r/`, so `check` needs no network.
 

@@ -299,6 +299,25 @@ test('the block check keeps the reply cards out of the core chat: no card module
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
+test('the block check keeps the core chat small: only its core npm packages and within its file and line budget (rule 7, D-257 step 5)', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'boring-registry-core-'));
+  try {
+    cpSync(join(root, 'registry.json'), join(directory, 'registry.json'));
+    cpSync(join(root, 'registry'), join(directory, 'registry'), { recursive: true });
+    for (const name of readdirSync(join(root, 'packages'))) cpSync(join(root, 'packages', name, 'src'), join(directory, 'packages', name, 'src'), { recursive: true });
+    assert.deepEqual(checkRegistryBlocks(directory).errors, [], 'the committed core chat passes');
+    const manifestPath = join(directory, 'registry.json');
+    const edit = change => { const value = JSON.parse(readFileSync(manifestPath, 'utf8')); change(value.items.find(item => item.name === 'pi-chat')); writeFileSync(manifestPath, JSON.stringify(value)); };
+    // The layout before step 2: the Markdown renderer back in the core, with its packages.
+    cpSync(join(root, 'registry/pi-chat-markdown/markdown.tsx'), join(directory, 'registry/pi-chat/markdown.tsx'));
+    edit(item => { item.files.push({ path: 'registry/pi-chat/markdown.tsx', type: 'registry:component', target: 'components/pi-chat/markdown.tsx' }); item.dependencies.push('marked@^17.0.6', 'tiptap-anything@1.0.0'); });
+    const errors = checkRegistryBlocks(directory).errors;
+    assert.ok(errors.some(error => /pi-chat: the core chat has 27 files and \d+ lines, over its budget/.test(error)), 'a feature module back in the core is over budget');
+    assert.ok(errors.some(error => /pi-chat: the core chat must not declare marked;/.test(error)), 'a feature package in the core is refused');
+    assert.ok(errors.some(error => /pi-chat: the core chat must not declare tiptap-anything;/.test(error)), 'any package outside the core set is refused, not only the known feature ones');
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
 test('the block check keeps viewers lazy: the agent page and the kind modules never import a view statically (rule 7, D-257 step 4)', () => {
   const directory = mkdtempSync(join(tmpdir(), 'boring-registry-viewers-'));
   try {
