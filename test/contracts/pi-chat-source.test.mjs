@@ -245,6 +245,8 @@ test('delegate calls become sub-agent cards that read DelegateDetails, live and 
   assert.match(runningCard, /data-testid="subagent-card"[^>]*data-state="running"/);
   assert.match(runningCard, /data-conversation-id="14"/);
   assert.match(runningCard, /data-testid="subagent-spinner"/);
+  assert.match(runningCard, /data-testid="subagent-status"[^>]*aria-label="Running"/, 'the status is an icon with an accessible name, no badge text');
+  assert.doesNotMatch(runningCard, /data-slot="badge"/);
   assert.match(runningCard, /data-testid="subagent-time"[^>]*>.*3 s</, 'the time ticks from startedAt while it runs');
   assert.match(runningCard, /data-testid="subagent-tool-calls"[^>]*data-count="2"/);
   assert.match(runningCard, /aria-label="1234 tokens in, 56 tokens out"/);

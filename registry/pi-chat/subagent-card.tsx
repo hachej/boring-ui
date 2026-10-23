@@ -2,12 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import type { ToolResultMessage } from '@earendil-works/pi-ai';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Item, ItemContent, ItemDescription, ItemFooter, ItemMedia, ItemTitle } from '@/components/ui/item';
+import { Item, ItemActions, ItemContent, ItemFooter, ItemMedia, ItemTitle } from '@/components/ui/item';
 import { Spinner } from '@/components/ui/spinner';
-import { ArrowDownIcon, ArrowUpIcon, BotIcon, CheckIcon, CircleAlertIcon, CircleSlashIcon, ClockIcon, WrenchIcon } from 'lucide-react';
+import { ArrowDownIcon, ArrowUpIcon, ArrowUpRightIcon, CheckIcon, CircleAlertIcon, CircleSlashIcon, ClockIcon, WrenchIcon } from 'lucide-react';
 import { useChatText } from './labels';
 
 /** `DELEGATE_DETAILS_KIND` of `@hachej/boring-agent/agents` (a contract test keeps them equal). */
@@ -88,28 +86,39 @@ export function SubagentCard({ details, onOpen, now: clock = Date.now }: {
   }, [running, clock]);
   const elapsed = running ? Math.max(details.durationMs, now - details.startedAt) : details.durationMs;
   const conversation = labels.subagentConversation(details.conversationId);
-  return <Item variant="outline" size="sm" render={<section />} data-testid="subagent-card" data-state={details.status} data-conversation-id={details.conversationId}
-    aria-label={details.agent} aria-busy={running} className="my-2 text-start">
-    <ItemMedia variant="icon">
-      {running ? <Spinner data-testid="subagent-spinner" aria-label={labels.subagentStatus('running')} />
-        : details.status === 'done' ? <CheckIcon aria-hidden="true" /> : details.status === 'failed' ? <CircleAlertIcon aria-hidden="true" /> : <CircleSlashIcon aria-hidden="true" />}
+  const status = labels.subagentStatus(details.status);
+  const tokens = labels.subagentTokens(details.tokens.input, details.tokens.output);
+  const calls = labels.subagentToolCalls(details.toolCalls);
+  const time = `${labels.subagentTime}: ${span(elapsed)}`;
+  return <Item variant="outline" size="xs" render={<section />} data-testid="subagent-card" data-state={details.status} data-conversation-id={details.conversationId}
+    aria-label={`${details.agent}, ${status}`} aria-busy={running} className="my-1 text-start">
+    <ItemMedia variant="icon" data-testid="subagent-status" role="img" aria-label={status} title={status}>
+      <span className={details.status === 'failed' ? 'contents text-destructive' : details.status === 'done' ? 'contents' : 'contents text-muted-foreground'}>
+        {running ? <Spinner data-testid="subagent-spinner" aria-hidden="true" />
+          : details.status === 'done' ? <CheckIcon aria-hidden="true" /> : details.status === 'failed' ? <CircleAlertIcon aria-hidden="true" /> : <CircleSlashIcon aria-hidden="true" />}
+      </span>
     </ItemMedia>
-    <ItemContent className="min-w-0 basis-0">
-      <ItemTitle className="line-clamp-none [overflow-wrap:anywhere]"><BotIcon aria-hidden="true" className="size-4 text-muted-foreground" />{details.agent}</ItemTitle>
-      <ItemDescription className="line-clamp-none flex flex-wrap items-center gap-x-3 gap-y-1 tabular-nums">
-        <Badge data-testid="subagent-status" variant={details.status === 'failed' ? 'destructive' : details.status === 'done' ? 'secondary' : 'outline'}>{labels.subagentStatus(details.status)}</Badge>
-        <span data-testid="subagent-time" className="inline-flex items-center gap-1" title={labels.subagentTime} aria-label={`${labels.subagentTime}: ${span(elapsed)}`}><ClockIcon aria-hidden="true" className="size-3.5" />{span(elapsed)}</span>
-        <span data-testid="subagent-tool-calls" data-count={details.toolCalls} className="inline-flex items-center gap-1" title={labels.subagentToolCalls(details.toolCalls)} aria-label={labels.subagentToolCalls(details.toolCalls)}><WrenchIcon aria-hidden="true" className="size-3.5" />{details.toolCalls}</span>
-        <span data-testid="subagent-tokens" className="inline-flex items-center gap-1" title={labels.subagentTokens(details.tokens.input, details.tokens.output)} aria-label={labels.subagentTokens(details.tokens.input, details.tokens.output)}>
-          <ArrowUpIcon aria-hidden="true" className="size-3.5" />{compact(details.tokens.input)}<ArrowDownIcon aria-hidden="true" className="size-3.5" />{compact(details.tokens.output)}
+    <ItemContent className="min-w-0">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+        <ItemTitle className="min-w-0 [overflow-wrap:anywhere]">{details.agent}</ItemTitle>
+        <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground tabular-nums [&_svg]:size-3.5 [&_svg]:shrink-0">
+          <span data-testid="subagent-time" className="inline-flex items-center gap-1" title={time} aria-label={time}><ClockIcon aria-hidden="true" />{span(elapsed)}</span>
+          <span data-testid="subagent-tool-calls" data-count={details.toolCalls} className="inline-flex items-center gap-1" title={calls} aria-label={calls}><WrenchIcon aria-hidden="true" />{details.toolCalls}</span>
+          <span data-testid="subagent-tokens" className="inline-flex items-center gap-0.5" title={tokens} aria-label={tokens}>
+            <ArrowUpIcon aria-hidden="true" />{compact(details.tokens.input)}<ArrowDownIcon aria-hidden="true" className="ms-1" />{compact(details.tokens.output)}
+          </span>
         </span>
-        {onOpen
-          ? <Button variant="link" size="xs" data-testid="subagent-open" title={conversation} aria-label={conversation} onClick={() => onOpen(details.conversationId)}>#{details.conversationId}</Button>
-          : <span data-testid="subagent-conversation" className="font-mono text-xs" title={conversation}>#{details.conversationId}</span>}
-      </ItemDescription>
+      </div>
     </ItemContent>
-    {details.status === 'failed' && details.error && <ItemFooter className="flex-col items-stretch">
-      <Alert variant="destructive" data-testid="subagent-error"><AlertDescription className="[overflow-wrap:anywhere]">{details.error}</AlertDescription></Alert>
+    <ItemActions>
+      {onOpen
+        ? <Button variant="ghost" size="xs" data-testid="subagent-open" title={conversation} aria-label={conversation} onClick={() => onOpen(details.conversationId)}>
+          #{details.conversationId}<ArrowUpRightIcon aria-hidden="true" data-icon="inline-end" />
+        </Button>
+        : <span data-testid="subagent-conversation" className="text-xs text-muted-foreground tabular-nums" title={conversation}>#{details.conversationId}</span>}
+    </ItemActions>
+    {details.status === 'failed' && details.error && <ItemFooter>
+      <p data-testid="subagent-error" role="alert" className="m-0 ps-6 text-xs text-destructive [overflow-wrap:anywhere]">{details.error}</p>
     </ItemFooter>}
   </Item>;
 }
