@@ -15,9 +15,9 @@ export interface SharedViewOptions {
   readonly steps?: 'shown' | 'hidden' | undefined;
   /** Actions on an answer; `'copy'` copies its text. Default none. */
   readonly messageActions?: readonly 'copy'[] | undefined;
-  /** A line under each answer (« Generated in 1.0 s »). */
+  /** A line under each answer (« Generated in 1.0 s »). Keep it stable (memoised or module-level): an inline function changes the view on every render. */
   readonly footer?: ((message: ChannelMessage) => ReactNode) | undefined;
-  /** `'plain'`: an answer is plain text, not a bubble; the questions keep theirs. Default `'bubble'`. */
+  /** `'plain'`: the agent's answer is plain text, not a bubble; people's messages keep theirs. Default `'bubble'`. */
   readonly answerStyle?: 'bubble' | 'plain' | undefined;
 }
 export interface SharedTextOptions extends SharedViewOptions { readonly locale?: 'en' | 'fr' | undefined; readonly labels?: Partial<SharedLabels> | undefined }

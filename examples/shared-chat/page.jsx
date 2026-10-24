@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { SparklesIcon } from 'lucide-react';
 import { AgentWorkspace } from '../../registry/pi-app/agent-workspace';
@@ -25,10 +26,17 @@ function App() {
     connecting={<p>Opening the fictional shared conversation…</p>} />;
 }
 /** The block's story: SharedChat alone, as an app shows a channel on a phone, with an app control beside the send button. */
+// `?plain` shows production's plain chrome (presence off, steps hidden, copy, a footer, plain answers); `?answer` adds an answer with steps either way.
+const plainChrome = { presence: false, steps: 'hidden', messageActions: ['copy'], answerStyle: 'plain', footer: message => <span>Generated in 1.0 s · {message.id}</span> };
 function Story() {
-  const shared = useSharedChat(source);
+  const plain = new URLSearchParams(location.search).has('plain');
+  const shared = useSharedChat(source, plain ? plainChrome : {});
+  useEffect(() => {
+    if (new URLSearchParams(location.search).has('answer')) source.emit({ type: 'message', message: { id: 'answer', conversationId: 'room', author: 'assistant', at: new Date().toISOString(),
+      text: 'The Due date column is live. It sorts oldest first.', steps: [{ label: 'Read the list', status: 'done' }, { label: 'Add the column', status: 'done' }, { label: 'Check the sort', status: 'done' }] } });
+  }, []);
   if (!shared.controller) return <p>Opening the fictional channel…</p>;
-  return <SharedChat controller={shared.controller} conversations={shared.conversations} labels={{ title: '#missing-receipts', placeholder: 'Message' }}
+  return <SharedChat {...(plain ? plainChrome : {})} controller={shared.controller} conversations={shared.conversations} labels={{ title: '#missing-receipts', placeholder: 'Message' }}
     voiceMessage={{ ...voiceMessagePlugin, transcribe: async () => 'A fictional voice note.' }}
     tools={<button type="button" data-testid="story-app-control" aria-label="Assistant" className="inline-flex size-11 items-center justify-center text-chart-2"><SparklesIcon aria-hidden="true" className="size-5" /></button>} />;
 }

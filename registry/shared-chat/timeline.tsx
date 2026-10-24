@@ -87,7 +87,7 @@ export function SharedTimeline({ controller, api, focusComposer, openFile, menti
     return <article data-row-id={item.key} data-role={person ? 'user' : 'assistant'} data-streaming={message.streaming ? 'true' : undefined} className="group/message"><Message align={own ? 'end' : 'start'}><MessageContent>
       {own ? <div data-testid="own-message" className="contents [&_[data-testid=message-mention]]:text-inherit">
         <MessageText text={message.text ?? ''} context={context} variant="default" decoration={first ? <BubbleTail side="end" /> : undefined} header={quote} footer={<><ClockSpacer /><MessageClock at={message.at} tone="primary" /></>} /></div>
-        : view.answerStyle === 'plain' ? <div data-testid="plain-answer" className="min-w-0">
+        : view.answerStyle === 'plain' && !person ? <div data-testid="plain-answer" className="min-w-0">
           {head}{quote}
           {message.text && <Markdown text={message.text} streaming={Boolean(message.streaming)} renderMention={renderMention} />}
           {traced && <HostTrace participant={author.name} steps={message.steps ?? []} streaming={Boolean(message.streaming)} active={item.showSpinner} />}
