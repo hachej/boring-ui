@@ -1,5 +1,7 @@
 # Unreleased
 
+# Migrating to 0.4.17
+
 - **Automatic « load earlier » works when the reader lands on the very top.** Reinstall `pi-chat` (and `shared-chat`, `pi-ambient`). A fast scroll reaches the top before the sentinel is seen; earlier pages were then loaded only by the hidden button. Now any scroll near the top, and the check after each page, loads the next page once the reader has left the top at least once (never during the mount). A host that clicked the button as a workaround can drop it. No API change.
 - **Pages loaded above cost far less, above all in SharedChat.** Reinstall `pi-chat`, `shared-chat` and the npm kit (`@hachej/boring-ui-kit`). No API change.
   - `createSharedChat` copies only the incoming messages: a page, a delta or an event keeps every other message object.
