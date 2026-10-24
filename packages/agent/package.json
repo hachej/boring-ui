@@ -144,6 +144,10 @@
     "./prompt-context": {
       "types": "./dist/prompt-context.d.ts",
       "import": "./dist/prompt-context.js"
+    },
+    "./room": {
+      "types": "./dist/room.d.ts",
+      "import": "./dist/room.js"
     }
   },
   "dependencies": {
