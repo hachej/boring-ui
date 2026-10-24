@@ -27,6 +27,18 @@ export function afterBack(action: () => void): void {
   setTimeout(() => { if (ignored > 0) waiting.push(action); else action(); }, 0);
 }
 
+/**
+ * Runs `action` after the open stack layers (a ListDetail's pushed detail) have gone back. A nav choice that replaces the URL must not
+ * run before: the stack layer's cleanup `history.back()` would restore the detail's URL over it. The layers are released here, not in
+ * their cleanup (which only runs once the choice has hidden the screen, too late), and their cleanup then does nothing.
+ */
+export function afterStacksBack(action: () => void): void {
+  const stacks = [...layers].filter(layer => layer.order === 'stack' && !layer.popped);
+  if (!stacks.length) { action(); return; }
+  waiting.push(action);
+  for (const layer of stacks) { layer.popped = true; layers.delete(layer); ignored += 1; history.back(); }
+}
+
 const topmost = (): Layer | undefined => [...layers].toSorted((a, b) => RANK[a.order] - RANK[b.order])[0];
 
 function onPopState(): void {
