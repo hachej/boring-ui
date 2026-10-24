@@ -748,6 +748,9 @@ try {
       await browser.until('reloaded markdown viewer is available', `!!${q('[data-testid=library-document] [data-testid=viewer-more]')}`, 15000);
       assert.equal(await browser.evaluate(`!!${q('[data-testid=library-document] .boring-markdown-toolbar')}`), false, 'desktop toolbar stays unpinned after reload');
       await browser.click(q('[data-testid=library-document] [contenteditable] h1'));
+      // ProseMirror's focus handler queues a 20 ms task that writes its selection back over a DOM selection it has not read yet, so keys
+      // sent sooner after the click lose their selection. A same-delay timer queued now runs after that task: wait for it, not a guessed pause.
+      await browser.evaluate('new Promise(resolve => setTimeout(resolve, 20))');
       await browser.press('ArrowLeft');
       await browser.press('ArrowRight', { shift: true });
       await browser.until('selecting document text shows the formatting bubble', `${q('[data-testid=library-document] [contenteditable]')}?.contains(getSelection()?.anchorNode) && getSelection()?.toString().length > 0 && ${q('.boring-markdown-bubble')}?.checkVisibility({ visibilityProperty: true })`, 5000);
