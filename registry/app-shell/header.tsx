@@ -73,6 +73,7 @@ export function useScreenHeader(spec: ScreenHeaderSpec, options?: { readonly ove
     touch(store);
     return () => { const at = store.entries.indexOf(mine); if (at >= 0) store.entries.splice(at, 1); touch(store); };
   }, [store, active]);
+  // `leading` is a node with no stable key, so it is a new value on each render of the screen and touches the store each time; that only re-renders the header, which is cheap and intended.
   useLayoutEffect(() => { if (store && active) touch(store); }, [store, active, key, spec.leading]);
 }
 
