@@ -15,7 +15,7 @@ import { MessageScroller, MessageScrollerViewport, MessageScrollerContent, Messa
 import { AuthorName, BubbleTail, ClockSpacer, MessageClock, PinnedComment, ReplyQuote, RequestCard, SharedMessage, SystemLines, clockRoom, sharedItems } from './messages';
 import type { SharedItem } from './messages';
 import { HostTrace } from './host-trace';
-import { useChatText } from './text';
+import { useChatText, useSharedView } from './text';
 
 export interface TimelineApi { readonly reset: () => void; readonly reveal: (id: string) => void }
 /**
@@ -28,6 +28,7 @@ export function SharedTimeline({ controller, api, focusComposer, openFile, menti
 }) {
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const { labels, icons } = useChatText();
+  const view = useSharedView();
   const items = useMemo(() => sharedItems(state.shared), [state.shared]);
   const connected = state.connection.kind === 'connected';
   const transcript = useTranscript(items, 60, 40, { state: state.history, connected: !state.disposed && connected, load: controller.loadEarlier });
@@ -66,7 +67,7 @@ export function SharedTimeline({ controller, api, focusComposer, openFile, menti
   }, [revealing, items, hidden, state.history]);
   const hasContent = items.length > 0 || Children.count(pendingVoice) > 0;
   // Avatars and names only where they tell people apart: more than two members.
-  const multi = state.shared.members.length > 2;
+  const multi = view.presence !== false && state.shared.members.length > 2;
   const context = { pieces: { mentions: true, skills: [], renderMention: mentions.renderSent }, openFile };
   const renderMention = (path: string, text: string) => mentions.renderSent?.(path) ?? text;
   const reply = (id: string) => { controller.setReplyTo(id); focusComposer(); };
@@ -74,6 +75,7 @@ export function SharedTimeline({ controller, api, focusComposer, openFile, menti
     const { message, author, own, first } = item;
     const person = own || author.kind !== 'agent' || message.via !== undefined;
     const head = first && !own && multi ? <AuthorName member={author} via={message.via} /> : undefined;
+    const traced = view.steps !== 'hidden' && !message.via && author.kind === 'agent' && Boolean(message.streaming || message.steps?.length);
     const quote = message.replyTo ? <ReplyQuote targetId={message.replyTo} quote={item.quote} onReveal={setRevealing} /> : undefined;
     if (message.card) return <article data-row-id={item.key} data-role="event" className="flex w-full min-w-0 flex-col">
       <Bubble variant={own ? 'default' : 'muted'} align={own ? 'end' : 'start'} data-testid="card-bubble">
@@ -85,10 +87,15 @@ export function SharedTimeline({ controller, api, focusComposer, openFile, menti
     return <article data-row-id={item.key} data-role={person ? 'user' : 'assistant'} data-streaming={message.streaming ? 'true' : undefined} className="group/message"><Message align={own ? 'end' : 'start'}><MessageContent>
       {own ? <div data-testid="own-message" className="contents [&_[data-testid=message-mention]]:text-inherit">
         <MessageText text={message.text ?? ''} context={context} variant="default" decoration={first ? <BubbleTail side="end" /> : undefined} header={quote} footer={<><ClockSpacer /><MessageClock at={message.at} tone="primary" /></>} /></div>
+        : view.answerStyle === 'plain' && !person ? <div data-testid="plain-answer" className="min-w-0">
+          {head}{quote}
+          {message.text && <Markdown text={message.text} streaming={Boolean(message.streaming)} renderMention={renderMention} />}
+          {traced && <HostTrace participant={author.name} steps={message.steps ?? []} streaming={Boolean(message.streaming)} active={item.showSpinner} />}
+        </div>
         : <Bubble variant="muted">{first && <BubbleTail side="start" />}<BubbleContent className="relative">
           {head}{quote}
-          {message.text && <div className={message.streaming || message.steps?.length ? undefined : clockRoom}><Markdown text={message.text} streaming={Boolean(message.streaming)} renderMention={renderMention} /></div>}
-          {!message.via && author.kind === 'agent' && (message.streaming || message.steps?.length) ? <>
+          {message.text && <div className={traced ? undefined : clockRoom}><Markdown text={message.text} streaming={Boolean(message.streaming)} renderMention={renderMention} /></div>}
+          {traced ? <>
             <HostTrace participant={author.name} steps={message.steps ?? []} streaming={Boolean(message.streaming)} active={item.showSpinner} />
             <div className="flex justify-end"><MessageClock at={message.at} tone="muted" floating={false} /></div>
           </> : <MessageClock at={message.at} tone="muted" />}

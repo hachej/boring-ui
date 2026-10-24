@@ -3,17 +3,19 @@ import { PiChat } from '../pi-chat/pi-chat';
 import type { PiChatProps } from '../pi-chat/pi-chat';
 import type { SharedChatController } from '@hachej/boring-ui-kit/shared-chat';
 import type { SharedLabels } from './shared-labels';
+import type { SharedViewOptions } from './text';
 import { useSharedChatProps } from './use-shared-chat';
 import { withChatPlugins } from '../pi-chat-plugins/chat-plugins';
 
 export { useSharedChat, useSharedChatProps } from './use-shared-chat';
+export type { SharedViewOptions, SharedTextOptions } from './text';
 export { defaultSharedLabels } from './shared-labels';
 export { frenchSharedLabels } from './shared-labels-fr';
 export type { SharedLabels } from './shared-labels';
 export { createSharedChat, createChannelSocket, createFakeChannelSource, channelAvatarStates, cardActions, ChannelRequestError } from '@hachej/boring-ui-kit/shared-chat';
 export type { ChannelSource, ChannelEvent, ChannelMessage, Member, Conversation, Card, CardAction, Step, AvatarState, SharedChatController } from '@hachej/boring-ui-kit/shared-chat';
 
-export interface SharedChatProps extends Omit<PiChatProps, 'controller'> {
+export interface SharedChatProps extends Omit<PiChatProps, 'controller'>, SharedViewOptions {
   readonly controller: SharedChatController;
   readonly participantLabels?: Partial<SharedLabels>;
 }
@@ -22,8 +24,8 @@ export interface SharedChatProps extends Omit<PiChatProps, 'controller'> {
  * one `pill` row and, with `voiceMessage`, the microphone in Send's place while empty; `composerLayout` and `voiceReplacesSend` override.
  * `composerStart` puts an app control at the left edge of the composer, `tools` beside Send.
  */
-export function SharedChat({ participantLabels, ...props }: SharedChatProps) {
-  const composition = useSharedChatProps(props.controller, { locale: props.locale, labels: participantLabels });
+export function SharedChat({ participantLabels, presence, steps, answerActions, footer, answerStyle, ...props }: SharedChatProps) {
+  const composition = useSharedChatProps(props.controller, { locale: props.locale, labels: participantLabels, presence, steps, answerActions, footer, answerStyle });
   return <PiChat {...withChatPlugins({ ...props, ...composition })} controls={<>{composition.controls}{props.controls}</>} composerChips={<>{props.composerChips}{composition.composerChips}</>}
     composerLayout={props.composerLayout ?? composition.composerLayout} voiceReplacesSend={props.voiceReplacesSend ?? composition.voiceReplacesSend} />;
 }

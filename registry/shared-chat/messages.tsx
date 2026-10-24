@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import { cardActions, channelAvatarStates } from '@hachej/boring-ui-kit/shared-chat';
 import type { Card as Request, ChannelMessage, SharedChatController, Member, SharedChatState } from '@hachej/boring-ui-kit/shared-chat';
-import { CircleIcon, PinIcon, ReplyIcon, SparkleIcon, Trash2Icon, XIcon } from 'lucide-react';
+import { CheckIcon, CircleIcon, CopyIcon, PinIcon, ReplyIcon, SparkleIcon, Trash2Icon, XIcon } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarGroup, AvatarGroupCount, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -12,7 +12,8 @@ import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer';
 import { Separator } from '@/components/ui/separator';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { useChatText } from './text';
+import { copyText } from '../utils/utils';
+import { useChatText, useSharedView } from './text';
 
 // Text shares one treatment across headings and muted bubbles; only AA-qualified default palette entries colour it.
 const agentTones = [
@@ -240,7 +241,11 @@ export function SharedMessage({ shared, children, avatars = true, remove, canRem
   readonly onReveal?: ((messageId: string) => void) | undefined;
 }) {
   const { labels } = useChatText();
+  const view = useSharedView();
   const [error, setError] = useState<string>();
+  const [copied, setCopied] = useState(false);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(copiedTimer.current), []);
   const [actionsOpen, setActionsOpen] = useState(false);
   const phone = usePhone();
   const element = useRef<HTMLDivElement>(null);
@@ -257,7 +262,15 @@ export function SharedMessage({ shared, children, avatars = true, remove, canRem
   const { message, author, own, lastItem } = shared;
   const replyable = Boolean(onReply && ((author.kind === 'agent' && !message.via) || message.card));
   const removable = Boolean(remove && canRemove?.(message));
-  const actionable = !message.removed && (replyable || removable);
+  // An answer: the app agent's own message (not a person's, not a card, not a host notice).
+  const answer = !own && author.kind === 'agent' && !message.via && !message.card && message.kind !== 'system' && !message.removed;
+  const plain = view.answerStyle === 'plain' && answer;
+  const copyable = answer && Boolean(message.text) && view.answerActions?.includes('copy') === true;
+  const copy = () => { void copyText(message.text ?? '').then(() => { setCopied(true); clearTimeout(copiedTimer.current); copiedTimer.current = setTimeout(() => setCopied(false), 1500); }, () => setError(labels.copyFailed)); };
+  const footer = answer ? view.footer?.(message) : undefined;
+  // In a plain answer the copy action is a visible text button under it; in a bubble it is an icon on hover with Reply and Delete.
+  const copyInline = copyable && plain, copyOnHover = copyable && !plain;
+  const actionable = !message.removed && (replyable || removable || copyOnHover);
   return <div ref={element} data-shared-message={message.id} data-own={own ? 'true' : undefined} className="group/shared-message relative flex min-w-0 flex-col"
     tabIndex={phone && actionable ? 0 : undefined} aria-keyshortcuts={phone && actionable ? 'Shift+F10' : undefined}
     onKeyDown={event => {
@@ -278,9 +291,14 @@ export function SharedMessage({ shared, children, avatars = true, remove, canRem
     <div data-testid="shared-message-content" className={`flex min-w-0 flex-1 flex-col gap-1${own ? ' [&>button]:self-end' : ''}`}>
     {message.removed ? <p className="m-0 text-sm text-muted-foreground italic">{labels.sharedRemoved}</p> : children}
     {!message.removed && message.attachments?.map(file => <Button key={file.path} variant="outline" disabled={!openFile} onClick={() => openFile?.(file.path)} className="max-w-full justify-start"><span className="truncate">{file.title ?? file.path}</span></Button>)}
+    {(copyInline || footer) && <div data-testid="message-footer" className="flex min-w-0 flex-wrap items-center gap-x-3 text-xs text-muted-foreground">
+      {copyInline && <Button variant="ghost" size="sm" data-testid="message-copy" onClick={copy}>{copied ? <CheckIcon data-icon="inline-start" aria-hidden="true" /> : <CopyIcon data-icon="inline-start" aria-hidden="true" />}{copied ? labels.copied : labels.copyResponse}</Button>}
+      {footer}
+    </div>}
     {error && <p role="alert">{error}</p>}
     </div></div>
     {actionable && <div data-testid="shared-message-actions" hidden={phone && !actionsOpen} className={`absolute ${own ? 'left-0' : 'right-0'} top-0 ${phone && !actionsOpen ? 'hidden' : 'flex'} items-center gap-1${phone ? '' : ' opacity-0 group-hover/shared-message:opacity-100 group-focus-within/shared-message:opacity-100'}`}>
+      {copyOnHover && <Tooltip><TooltipTrigger render={<Button variant="ghost" size={phone ? 'icon' : 'icon-xs'} data-testid="message-copy" aria-label={copied ? labels.copied : labels.copyResponse} onClick={copy}>{copied ? <CheckIcon aria-hidden="true" /> : <CopyIcon aria-hidden="true" />}</Button>} /><TooltipContent>{copied ? labels.copied : labels.copyResponse}</TooltipContent></Tooltip>}
       {replyable && onReply && <Tooltip><TooltipTrigger render={<Button variant="ghost" size={phone ? 'icon' : 'icon-xs'} data-testid="shared-reply" aria-label={labels.sharedReply} onClick={() => { setActionsOpen(false); onReply(message.id); }}><ReplyIcon aria-hidden="true" /></Button>} /><TooltipContent>{labels.sharedReply}</TooltipContent></Tooltip>}
       {removable && remove && <Tooltip><TooltipTrigger render={<Button variant="ghost" size={phone ? 'icon' : 'icon-xs'} aria-label={labels.delete} onClick={() => { void remove(message).catch(error => setError(error instanceof Error ? error.message : labels.actionFailedShort)); }}><Trash2Icon aria-hidden="true" /></Button>} /><TooltipContent>{labels.delete}</TooltipContent></Tooltip>}
     </div>}
