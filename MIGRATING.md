@@ -1,4 +1,5 @@
 # Unreleased
+
 - **Shared chat can wear a plain chrome (boring-factory#503).** Reinstall `shared-chat`. `useSharedChatProps` / `useSharedChat` / `<SharedChat>` accept `presence: false` (no members control, avatars or author lines), `steps: 'hidden'`, `answerActions: ['copy']`, `footer: message => ReactNode` (under each answer) and `answerStyle: 'plain'` (answers as plain text; the copy action becomes a visible button under them). Every default is unchanged.
 
 - **`app-shell` sidebar content, phone sheet, collapsible `ListDetail` (boring-factory#500, #501, #502).** Reinstall `app-shell`. All additive, defaults unchanged: `NavItem.sidebar?: ({ collapsed }) => ReactNode` renders a screen's own content in the wide-screen sidebar above the nav items; `AppShell compactNav="sheet"` replaces the phone tab bar with the sidebar as a sheet opened from the header; `ListDetail collapsible collapsed onCollapsedChange railWidth labels` folds the list pane to a rail (`list` may be a function of `{ collapsed }`).
