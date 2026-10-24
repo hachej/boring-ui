@@ -53,7 +53,13 @@ export async function checkStory(url, { evidence }) {
       // Scrolled up, a new message from someone else raises the pill below the list, never over it; the pill brings the reader back.
       await browser.evaluate(`document.querySelector('[data-testid=transcript-scroll]').scrollTop = 0`);
       await browser.until('jump pill', `!!${q('[data-testid=transcript-navigation]')}`);
-      await browser.evaluate(`window.__SHARED__.emit({ type: 'message', message: { id: 'late', conversationId: 'room', author: 'lea', at: new Date().toISOString(), text: 'One more thing.' } })`);
+      // The room orders by time and the story's « Today » runs 9:00 to 9:14, so before 9:15 « now » would land mid-room, not after the
+      // reader's last seen message: stamp the late message after the room's latest one, as a live server clock would.
+      await browser.evaluate(`(() => {
+        const latest = Math.max(...[...document.querySelectorAll('[data-shared-message] [data-testid=message-time]')].map(e => Date.parse(e.dateTime)));
+        const at = new Date(Math.max(Date.now(), latest + 60_000)).toISOString();
+        window.__SHARED__.emit({ type: 'message', message: { id: 'late', conversationId: 'room', author: 'lea', at, text: 'One more thing.' } });
+      })()`);
       await browser.until('new messages pill', `${q('[data-testid=jump-latest]')}?.textContent === '1 new message'`);
       const pill = await browser.evaluate(`(() => { const nav = document.querySelector('[data-testid=transcript-navigation]').getBoundingClientRect(), view = document.querySelector('[data-testid=transcript-scroll]').getBoundingClientRect(), button = document.querySelector('[data-testid=jump-latest]').getBoundingClientRect(); return { below: nav.top >= view.bottom - 1, height: Math.round(button.height) }; })()`);
       assert.equal(pill.below, true, 'the pill sits below the list, not over it');
