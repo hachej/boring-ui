@@ -46,6 +46,22 @@ const clamp = (rect: WindowRect): WindowRect => {
   const width = Math.min(Math.max(rect.width, MIN_WIDTH), window.innerWidth), height = Math.min(Math.max(rect.height, MIN_HEIGHT), window.innerHeight);
   return { width, height, x: Math.min(Math.max(rect.x, 0), Math.max(0, window.innerWidth - width)), y: Math.min(Math.max(rect.y, 0), Math.max(0, window.innerHeight - height)) };
 };
+type Edges = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
+/** The rectangle after dragging `edges` of `start` by (dx, dy): the opposite edges stay put, the minimum and the viewport bound the rest. */
+const edgeRect = (start: WindowRect, edges: Edges, dx: number, dy: number): WindowRect => {
+  let { x, y, width, height } = start;
+  if (edges.includes('e')) width = Math.min(Math.max(start.width + dx, MIN_WIDTH), Math.max(MIN_WIDTH, window.innerWidth - start.x));
+  if (edges.includes('s')) height = Math.min(Math.max(start.height + dy, MIN_HEIGHT), Math.max(MIN_HEIGHT, window.innerHeight - start.y));
+  if (edges.includes('w')) { const right = start.x + start.width; x = Math.min(Math.max(start.x + dx, 0), right - MIN_WIDTH); width = right - x; }
+  if (edges.includes('n')) { const bottom = start.y + start.height; y = Math.min(Math.max(start.y + dy, 0), bottom - MIN_HEIGHT); height = bottom - y; }
+  return { x, y, width, height };
+};
+const HANDLES: readonly { readonly edges: Edges; readonly className: string }[] = [
+  { edges: 'n', className: 'inset-x-2 top-0 h-1.5 cursor-n-resize' }, { edges: 's', className: 'inset-x-2 bottom-0 h-1.5 cursor-s-resize' },
+  { edges: 'w', className: 'inset-y-2 left-0 w-1.5 cursor-w-resize' }, { edges: 'e', className: 'inset-y-2 right-0 w-1.5 cursor-e-resize' },
+  { edges: 'nw', className: 'left-0 top-0 size-2 cursor-nw-resize' }, { edges: 'ne', className: 'right-0 top-0 size-2 cursor-ne-resize' },
+  { edges: 'sw', className: 'bottom-0 left-0 size-2 cursor-sw-resize' },
+];
 const validRect = (rect: unknown): rect is WindowRect => !!rect && typeof rect === 'object' && ['x', 'y', 'width', 'height'].every(key => typeof (rect as Record<string, unknown>)[key] === 'number' && Number.isFinite((rect as Record<string, number>)[key])) && (rect as WindowRect).width > 0 && (rect as WindowRect).height > 0;
 
 /** One viewport window stack. Like DockLayout, persistence is tab-local unless `persist="local"` is selected. */
@@ -122,12 +138,14 @@ export function FloatingWindow({ id, title, children, defaultRect = DEFAULT_RECT
   const drag = useDraggable({ box, position, onPositionChange: move, enabled: !phone && visible });
   const focus = () => box.current?.querySelector<HTMLElement>('button, input, textarea, select, a[href], [tabindex="0"]') ?? box.current;
   useLayoutEffect(() => { if (visible && state.focus === id) focus()?.focus({ preventScroll: true }); }, [visible, state.focus, state.request, id, phone]);
-  const sizing = useRef<{ x: number; y: number; rect: WindowRect } | null>(null);
-  const startResize = (event: PointerEvent<HTMLElement>) => {
+  const sizing = useRef<{ x: number; y: number; rect: WindowRect; edges: Edges } | null>(null);
+  const startResize = (edges: Edges) => (event: PointerEvent<HTMLElement>) => {
     if (event.button !== 0) return;
     event.preventDefault(); event.currentTarget.focus(); event.currentTarget.setPointerCapture?.(event.pointerId);
-    sizing.current = { x: event.clientX, y: event.clientY, rect };
+    sizing.current = { x: event.clientX, y: event.clientY, rect, edges };
   };
+  const moveResize = (event: PointerEvent<HTMLElement>) => { const start = sizing.current; if (start) resize(id, edgeRect(start.rect, start.edges, event.clientX - start.x, event.clientY - start.y)); };
+  const endResize = () => { sizing.current = null; };
   const resizeKey = (event: KeyboardEvent<HTMLElement>) => {
     const step = event.shiftKey ? 96 : 24;
     const width = rect.width + (event.key === 'ArrowRight' ? step : event.key === 'ArrowLeft' ? -step : 0), height = rect.height + (event.key === 'ArrowDown' ? step : event.key === 'ArrowUp' ? -step : 0);
@@ -152,11 +170,12 @@ export function FloatingWindow({ id, title, children, defaultRect = DEFAULT_RECT
       <CardTitle id={titleId}>{title}</CardTitle><CardAction className="flex items-center gap-1">{controls}</CardAction>
     </CardHeader>
     <CardContent className="min-h-0 flex-1 overflow-auto">{children}</CardContent>
-    <Button variant="ghost" size="icon-sm" data-window-resize="" aria-label={`Resize ${title}`} className="absolute bottom-0 right-0 cursor-se-resize touch-none"
-      onPointerDown={startResize} onPointerMove={event => { const start = sizing.current; if (start) resize(id, { ...start.rect, width: start.rect.width + event.clientX - start.x, height: start.rect.height + event.clientY - start.y }); }}
-      onPointerUp={() => { sizing.current = null; }} onPointerCancel={() => { sizing.current = null; }} onKeyDown={resizeKey}>
+    <Button variant="ghost" size="icon-sm" data-window-resize="se" aria-label={`Resize ${title}`} className="absolute bottom-0 right-0 cursor-se-resize touch-none"
+      onPointerDown={startResize('se')} onPointerMove={moveResize} onPointerUp={endResize} onPointerCancel={endResize} onKeyDown={resizeKey}>
       <GripIcon data-icon="inline-start" aria-hidden="true" />
     </Button>
+    {HANDLES.map(handle => <div key={handle.edges} data-window-resize={handle.edges} aria-hidden="true" className={`absolute touch-none ${handle.className}`}
+      onPointerDown={startResize(handle.edges)} onPointerMove={moveResize} onPointerUp={endResize} onPointerCancel={endResize} />)}
   </Card>, host) : null;
 }
 

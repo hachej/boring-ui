@@ -107,8 +107,8 @@ const windows = [
   No content is stored. Malformed or unavailable storage falls back to defaults.
 - `FloatingWindow` accepts `id`, `title`, `children`, `defaultOpen` (false) and
   `defaultRect` (48, 64, 400, 320 pixels). Remembered choices take precedence.
-  Drag its title row, resize its corner, click or focus its content to raise it.
-  The resize control also accepts arrow keys (24 pixels, Shift: 96). Desktop
+  Drag its title row, resize it from any edge or corner (eight handles; the bottom-right corner is the focusable one), click or focus its content to raise it.
+  The corner resize button also accepts arrow keys (24 pixels, Shift: 96). Desktop
   rectangles stay within the viewport on drag, resize, restore and viewport resize;
   the minimum is 240 by 160 pixels, capped by the viewport.
 - `WindowLauncher windows={[{ id, title }]}` lists the host's available windows,

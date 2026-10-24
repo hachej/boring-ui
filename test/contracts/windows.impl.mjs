@@ -73,6 +73,28 @@ test('resize is pointer and keyboard operable, bounded by the viewport and re-cl
   assert.ok(parseFloat(panel.style.left) + parseFloat(panel.style.width) <= 700); assert.ok(parseFloat(panel.style.top) + parseFloat(panel.style.height) <= 400);
 });
 
+test('every edge and corner resizes from the opposite side, keeping the minimum and the viewport', async t => {
+  const f = await fixture(t); await f.open('notes'); const panel = f.panel('notes');
+  const box = () => ({ x: parseFloat(panel.style.left), y: parseFloat(panel.style.top), w: parseFloat(panel.style.width), h: parseFloat(panel.style.height) });
+  const edges = [...panel.querySelectorAll('[data-window-resize]')].map(handle => handle.getAttribute('data-window-resize')).sort();
+  assert.deepEqual(edges, ['e', 'n', 'ne', 'nw', 's', 'se', 'sw', 'w']);
+  const drag = async (edge, dx, dy) => { const handle = panel.querySelector(`[data-window-resize="${edge}"]`); await f.pointer(handle, 'pointerdown', 300, 300); await f.pointer(handle, 'pointermove', 300 + dx, 300 + dy); await f.pointer(handle, 'pointerup', 300 + dx, 300 + dy); };
+  const start = box();
+  await drag('w', -40, 0); assert.deepEqual(box(), { ...start, x: start.x - 40, w: start.w + 40 });
+  const a = box(); await drag('n', 0, -20); assert.deepEqual(box(), { ...a, y: a.y - 20, h: a.h + 20 });
+  const b = box(); await drag('e', 30, 0); assert.deepEqual(box(), { ...b, w: b.w + 30 });
+  const c = box(); await drag('s', 0, 25); assert.deepEqual(box(), { ...c, h: c.h + 25 });
+  const d = box(); await drag('nw', 10, 10); assert.deepEqual(box(), { x: d.x + 10, y: d.y + 10, w: d.w - 10, h: d.h - 10 });
+  const e = box(); await drag('ne', 10, -10); assert.deepEqual(box(), { ...e, y: e.y - 10, w: e.w + 10, h: e.h + 10 });
+  const g = box(); await drag('sw', -10, 10); assert.deepEqual(box(), { ...g, x: g.x - 10, w: g.w + 10, h: g.h + 10 });
+  // the minimum holds and the opposite edge stays fixed
+  const h = box(); await drag('w', 2000, 0); assert.equal(box().w, 240); assert.equal(box().x + box().w, h.x + h.w);
+  const i = box(); await drag('n', 0, 2000); assert.equal(box().h, 160); assert.equal(box().y + box().h, i.y + i.h);
+  // the viewport bounds it
+  await drag('w', -5000, 0); assert.equal(box().x, 0); await drag('n', 0, -5000); assert.equal(box().y, 0);
+  await drag('e', 5000, 0); assert.equal(box().x + box().w, 1440); await drag('s', 0, 5000); assert.equal(box().y + box().h, 900);
+});
+
 test('session and local persistence restore rectangle and open/minimized status, reject malformed data and isolate keys', async t => {
   for (const persist of ['session', 'local']) {
     const f = await fixture(t, { persist, saved: { 'fictional.windows.notes': JSON.stringify({ status: 'open', rect: { x: 210, y: 120, width: 510, height: 380 } }), 'fictional.windows.calculator': JSON.stringify({ status: 'minimized', rect: { x: 90, y: 100, width: 400, height: 300 } }), 'fictional.windows.planning': '{broken' } });

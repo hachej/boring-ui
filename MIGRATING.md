@@ -1,5 +1,7 @@
 # Unreleased
 
+- **Floating windows resize from every edge.** Reinstall `windows`. `FloatingWindow` now has eight resize handles (four edges, four corners) instead of the bottom-right corner alone; dragging the west or north side moves the window and keeps the opposite edge fixed. The 240 by 160 minimum, viewport clamping, persistence and the keyboard resize on the corner button (`data-window-resize`, now `"se"`) are unchanged; the seven new handles are pointer-only and `aria-hidden`. No API change.
+
 # Migrating to 0.4.14
 
 - **Voice is recorded as WAV.** `createVoiceCapture` (`@hachej/boring-ui-kit/voice-capture`, re-exported by `@hachej/boring-feedback/page`) records 16 kHz mono WAV through Web Audio where the page has it, and `start()` resolves only at the first sound. No API change: `stop()` returns `mimeType: 'audio/wav'`, so a host that names files or picks a transcription path from the MIME type must accept `audio/wav` (reinstall `pi-chat-voice`: it now names the upload `voice-….wav`). MediaRecorder remains where Web Audio cannot start; pass `audioContext: null` to keep it. A host CSP needs nothing new (a ScriptProcessorNode, no worklet module).
