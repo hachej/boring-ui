@@ -227,13 +227,16 @@ test('AppShellProps has the shell props, optional rail, locale and URL opt-out, 
   const program = ts.createProgram([`${root}${folder}/app-shell.tsx`], { allowImportingTsExtensions: true, jsx: ts.JsxEmit.ReactJSX, noEmit: true, skipLibCheck: true });
   const file = program.getSourceFile(`${root}${folder}/app-shell.tsx`);
   const props = file.statements.find(node => ts.isInterfaceDeclaration(node) && node.name.text === 'AppShellProps');
-  assert.deepEqual(props.members.map(member => member.name.text).sort(), ['account', 'agent', 'agentLink', 'improve', 'layout', 'locale', 'nav', 'rail', 'route', 'title']);
+  assert.deepEqual(props.members.map(member => member.name.text).sort(), ['account', 'agent', 'agentLink', 'compactNav', 'improve', 'layout', 'locale', 'nav', 'rail', 'route', 'title']);
   const rail = props.members.find(member => member.name.text === 'rail');
   assert.ok(rail.questionToken, 'rail is optional');
   assert.equal(rail.type.getText(file), "'icon' | 'hover'");
   const agentLink = props.members.find(member => member.name.text === 'agentLink');
   assert.ok(agentLink.questionToken, 'agentLink is optional');
   assert.equal(agentLink.type.getText(file), 'false');
+  const compactNav = props.members.find(member => member.name.text === 'compactNav');
+  assert.ok(compactNav.questionToken, 'compactNav is optional');
+  assert.equal(compactNav.type.getText(file), "'tabs' | 'sheet'");
 });
 
 test('splitNav: up to four screens are all tabs; more give three tabs plus « Plus »', async () => {
@@ -358,6 +361,46 @@ test('useScreenHeader: an ordinary later header replaces the earlier one whole, 
   held.spec.actions[0].onSelect();
   assert.deepEqual(calls, ['new'], 'the header held from before still calls the current callback');
   assert.equal(held.spec.title, 'Détail');
+  await act(async () => root.unmount());
+});
+
+test('ListDetail collapsible: the list folds to railWidth with a toggle, controlled or not; compact and the default never fold', async t => {
+  const window = dom(t);
+  const { ListDetail } = await bundle('list-detail.tsx');
+  const { createElement: h, act } = await import('react');
+  const { createRoot } = await import('react-dom/client');
+  const container = window.document.createElement('div');
+  window.document.body.append(container);
+  const root = createRoot(container);
+  const listeners = new Set();
+  window.matchMedia = query => ({ matches: false, media: query, addEventListener: (_, listener) => listeners.add(listener), removeEventListener: (_, listener) => listeners.delete(listener) });
+  window.innerWidth = 1280;
+  const seen = [];
+  const render = props => act(async () => root.render(h(ListDetail, { list: ({ collapsed }) => { seen.push(collapsed); return h('ul', { 'data-testid': 'rows' }, collapsed ? 'rail' : 'full'); }, detail: null, onBack() {}, ...props })));
+  const pane = () => container.querySelector('[data-testid=list-pane]');
+  const toggle = () => container.querySelector('[data-testid=list-toggle]');
+  await render({});
+  assert.ok(toggle() === null, 'not collapsible by default: no toggle, still 20rem');
+  assert.match(pane().className, /\bw-80\b/);
+  await render({ collapsible: true });
+  assert.equal(toggle().getAttribute('aria-expanded'), 'true');
+  await act(async () => toggle().click());
+  assert.equal(pane().style.width, '3rem', 'folds to the default rail');
+  assert.equal(container.querySelector('[data-testid=rows]').textContent, 'rail', 'the list is told');
+  assert.doesNotMatch(pane().className, /\bw-80\b/);
+  assert.equal(toggle().getAttribute('aria-expanded'), 'false');
+  await act(async () => toggle().click());
+  assert.equal(pane().style.width, '', 'and unfolds');
+  const changes = [];
+  await render({ collapsible: true, collapsed: true, railWidth: '4rem', onCollapsedChange: value => changes.push(value) });
+  assert.equal(pane().style.width, '4rem', 'controlled: the prop wins');
+  await act(async () => toggle().click());
+  assert.deepEqual(changes, [false], 'and the toggle asks');
+  assert.equal(pane().style.width, '4rem', 'a controlled pane waits for its owner');
+  window.innerWidth = 390;
+  await render({ collapsible: true, collapsed: true });
+  await act(async () => { for (const listener of listeners) listener(); });
+  assert.ok(toggle() === null, 'compact never folds');
   await act(async () => root.unmount());
 });
 

@@ -100,9 +100,9 @@ function mergedSpec(entries: readonly Entry[]): ScreenHeaderSpec {
 
 /**
  * The header of the screen on show: the avatar button (compact) or the sidebar trigger (expanded) or « ← », then the title and subtitle,
- * then the slot of the screen's own controls (`slotRef`), up to two actions, « … » and the agent trigger. `avatar` is the compact account button.
+ * then the slot of the screen's own controls (`slotRef`), up to two actions, « … » and the agent trigger. `avatar` is the compact account button. `menu` (compact only) makes the leading button open the sidebar sheet and leaves the account to the sidebar's footer.
  */
-export function ScreenHeader({ fallbackTitle, compact, avatar, text, slotRef }: { readonly fallbackTitle: string; readonly compact: boolean; readonly avatar: ReactNode; readonly text: AppShellText; readonly slotRef?: (element: HTMLElement | null) => void }) {
+export function ScreenHeader({ fallbackTitle, compact, avatar, text, slotRef, menu }: { readonly menu?: boolean; readonly fallbackTitle: string; readonly compact: boolean; readonly avatar: ReactNode; readonly text: AppShellText; readonly slotRef?: (element: HTMLElement | null) => void }) {
   const top = useTopHeader();
   const spec = top?.spec;
   const actions = spec?.actions ?? [];
@@ -110,7 +110,7 @@ export function ScreenHeader({ fallbackTitle, compact, avatar, text, slotRef }: 
   const back = spec?.back ? <Button variant="ghost" size="icon" data-testid="header-back" aria-label={text.goBack} title={text.goBack} onClick={() => top?.spec.back?.()}><ArrowLeftIcon data-icon="inline-start" aria-hidden="true" /></Button> : null;
   return <header data-testid="screen-header" className={`sticky top-0 z-10 flex ${spec?.dense ? 'min-h-12' : 'min-h-14'} shrink-0 items-center gap-1 bg-background px-2 pt-[env(safe-area-inset-top)]`}>
     <Separator className="absolute inset-x-0 bottom-0" />
-    {compact ? (back ?? avatar) : <><SidebarTrigger />{back}</>}
+    {compact ? (back ?? (menu ? <SidebarTrigger /> : avatar)) : <><SidebarTrigger />{back}</>}
     {spec?.leading != null && <div data-testid="header-leading" className="flex shrink-0 items-center gap-1">{spec.leading}</div>}
     <div className="min-w-0 flex-1 px-1">
       <h1 data-testid="header-title" className={`m-0 truncate text-base leading-tight font-semibold ${spec?.titleFace === 'sans' ? 'font-sans' : '[font-family:var(--font-display,var(--font-sans))]'}`}>{spec?.title ?? fallbackTitle}</h1>
@@ -119,7 +119,7 @@ export function ScreenHeader({ fallbackTitle, compact, avatar, text, slotRef }: 
     {/* An embedded page's own controls (`ScreenHeaderSlotContext`, for example AgentWorkspace layout="embedded"), so it needs no second row. */}
     <div ref={slotRef} data-testid="header-slot" className="flex shrink-0 items-center gap-1 empty:hidden" />
     <HeaderActions actions={actions} compact={compact} text={text} prefix="header" run={run} />
-    {compact && back && avatar}
+    {compact && back && !menu && avatar}
     <AgentTrigger />
   </header>;
 }
