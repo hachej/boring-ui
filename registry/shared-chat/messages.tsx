@@ -12,6 +12,7 @@ import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer';
 import { Separator } from '@/components/ui/separator';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { copyText } from '../utils/utils';
 import { useChatText, useSharedView } from './text';
 
 // Text shares one treatment across headings and muted bubbles; only AA-qualified default palette entries colour it.
@@ -263,7 +264,7 @@ export function SharedMessage({ shared, children, avatars = true, remove, canRem
   const answer = !own && !message.card && message.kind !== 'system' && !message.removed;
   const plain = view.answerStyle === 'plain';
   const copyable = answer && Boolean(message.text) && view.messageActions?.includes('copy') === true;
-  const copy = () => { void navigator.clipboard.writeText(message.text ?? '').then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }, () => setError(labels.copyFailed)); };
+  const copy = () => { void copyText(message.text ?? '').then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }, () => setError(labels.copyFailed)); };
   const footer = answer ? view.footer?.(message) : undefined;
   // In a plain answer the copy action is a visible text button under it; in a bubble it is an icon on hover with Reply and Delete.
   const copyInline = copyable && plain, copyOnHover = copyable && !plain;
