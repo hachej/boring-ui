@@ -20,6 +20,34 @@ test('shared reconnect pages across a long gap, in order, without duplicate mess
   assert.deepEqual(chat.getSnapshot().shared.messages.slice(0, 4).map(message => message.id), ['four', 'five', 'six', 'seven']);
 });
 
+test('a card pushed before the first page is not a reconnect: the first page keeps its cursor and earlier pages still load', async t => {
+  // A host that delivers its pending cards as soon as the thread subscribes, before the thread has read any history.
+  const fake = createFakeChannelSource(sharedChatSeed);
+  const card = { id: 'card', conversationId: 'main', author: 'pm', at: '2026-10-21T09:00:00Z', text: 'Try this', card: { id: 'c1', title: 'A fictional request', actions: [] } };
+  const source = { ...fake, subscribe: (id, event, status) => { const off = fake.subscribe(id, event, status); event({ type: 'message', message: card }); return off; } };
+  const chat = createSharedChat(source, { conversationId: 'main', limit: 2 }); t.after(() => chat.dispose());
+  await chat.connect();
+  assert.deepEqual(chat.getSnapshot().shared.messages.map(message => message.id), ['six', 'seven', 'card'], 'one page, not a walk through the whole history');
+  assert.equal(chat.getSnapshot().history.hasMore, true, 'the cursor of the first page is kept');
+  await chat.loadEarlier();
+  assert.deepEqual(chat.getSnapshot().shared.messages.slice(0, 2).map(message => message.id), ['four', 'five']);
+});
+
+test('a page loaded above or a delta keeps every other message object, so only changed rows render again', async t => {
+  const source = createFakeChannelSource(sharedChatSeed);
+  const chat = createSharedChat(source, { conversationId: 'main', limit: 2 }); t.after(() => chat.dispose());
+  await chat.connect();
+  const [six, seven] = chat.getSnapshot().shared.messages;
+  await chat.loadEarlier();
+  const after = chat.getSnapshot().shared.messages;
+  assert.equal(after.find(message => message.id === 'six'), six, 'a kept message keeps its object');
+  assert.equal(after.find(message => message.id === 'seven'), seven);
+  source.emit({ type: 'delta', conversationId: 'main', messageId: 'seven', text: ' more' });
+  const delta = chat.getSnapshot().shared.messages;
+  assert.equal(delta.find(message => message.id === 'six'), six, 'a delta on another message leaves this one alone');
+  assert.notEqual(delta.find(message => message.id === 'seven'), seven, 'the changed message is a new object');
+});
+
 test('a delta arriving during the initial history read wins over its stale page', async t => {
   const fake = createFakeChannelSource({ ...sharedChatSeed, messages: [{ id: 'live', conversationId: 'main', author: 'pm', at: '2026-10-19T12:00:00Z', text: 'One', streaming: true }] });
   let release, reading = false;

@@ -2,14 +2,16 @@
 // 1. Scrolling all of it with the wheel (top and back) renders no message again, gives the scroller one item per run of
 //    rows, and has no long task over BUDGET_MS (1× CPU; CPU=4 throttles like a slow phone and only reports).
 // 2. With the default paging (60, then 40), every page revealed at the top keeps the row the reader sees where it was.
-// Evidence in .cache/evidence/chat-scroll. BUDGET_MS can be raised on a shared, loaded machine; CI keeps 50.
+// 3. SharedChat (the same 500 messages read from a channel source page by page), wheeled fast to the top, loads every page by
+//    itself, each without a long task over PAGE_BUDGET_MS (1× CPU).
+// Evidence in .cache/evidence/chat-scroll. BUDGET_MS and PAGE_BUDGET_MS can be raised on a shared, loaded machine; CI keeps 50 and 200.
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { launch, pause } from '@hachej/boring-testing/browser';
 import { startLongChat } from '../examples/long-chat/server.mjs';
 
-const MESSAGES = 500, CHUNK = 20, BUDGET_MS = Number(process.env.BUDGET_MS ?? 50), cpu = Number(process.env.CPU ?? 1);
+const MESSAGES = 500, CHUNK = 20, BUDGET_MS = Number(process.env.BUDGET_MS ?? 50), PAGE_BUDGET_MS = Number(process.env.PAGE_BUDGET_MS ?? 200), cpu = Number(process.env.CPU ?? 1);
 const evidence = process.env.CHAT_SCROLL_EVIDENCE ?? '.cache/evidence/chat-scroll';
 mkdirSync(evidence, { recursive: true });
 const scroll = `document.querySelector('[data-testid=transcript-scroll]')`;
@@ -58,9 +60,30 @@ try {
     pages.push({ rows: next, anchor: before.key, before: Math.round(before.offset), after: Math.round(offset) });
     count = next;
   }
-  const report = { scrolled, paging: pages };
+  // 3. SharedChat read from its source page by page, scrolled up fast with the wheel: the reader lands on the very top before the
+  //    sentinel is seen, and every page must still load by itself (no button), each without a long task over PAGE_BUDGET_MS.
+  await browser.send('Page.navigate', { url: `${app.url}?shared` });
+  await browser.until('the first shared page', `${rows} > 0`, 60000);
+  await pause(500);
+  if (cpu > 1) await browser.send('Emulation.setCPUThrottlingRate', { rate: cpu });
+  await browser.evaluate(`(() => { window.__longTasks = []; new PerformanceObserver(list => { for (const entry of list.getEntries()) window.__longTasks.push(Math.round(entry.duration)); }).observe({ type: 'longtask' }); })()`);
+  const shared = await browser.evaluate(`(() => { const r = ${scroll}.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+  const sharedStarted = Date.now();
+  let sharedRows = await browser.evaluate(rows);
+  while (sharedRows < MESSAGES && Date.now() - sharedStarted < 90000) {
+    for (let step = 0; step < 6; step++) { await browser.wheel(shared.x, shared.y, -2000); await pause(30); }
+    await pause(400);
+    sharedRows = await browser.evaluate(rows);
+  }
+  const pageTasks = await browser.evaluate('window.__longTasks');
+  if (cpu > 1) await browser.send('Emulation.setCPUThrottlingRate', { rate: 1 });
+  const sharedPaging = { rows: sharedRows, button: false, longTasks: pageTasks, worst: Math.max(0, ...pageTasks), total: pageTasks.reduce((sum, ms) => sum + ms, 0) };
+
+  const report = { scrolled, paging: pages, shared: sharedPaging };
   writeFileSync(join(evidence, `scroll-${cpu}x.json`), JSON.stringify(report, null, 2));
-  console.log(JSON.stringify({ ...scrolled, longTasks: undefined, pages: pages.map(page => `${page.rows}:${page.after - page.before}`).join(' ') }));
+  console.log(JSON.stringify({ ...scrolled, longTasks: undefined, pages: pages.map(page => `${page.rows}:${page.after - page.before}`).join(' '), shared: { ...sharedPaging, longTasks: undefined } }));
+  assert.equal(sharedRows, MESSAGES, `a fast wheel to the top loads every SharedChat page by itself: ${sharedRows} of ${MESSAGES}`);
+  if (cpu === 1) assert.ok(sharedPaging.worst <= PAGE_BUDGET_MS, `no SharedChat page costs a long task over ${PAGE_BUDGET_MS} ms: ${JSON.stringify(pageTasks)}`);
 
   assert.equal(scrolled.textRenders, 0, 'scrolling renders no message again');
   assert.ok(scrolled.reachedBottom, 'the wheel reaches the newest message again');

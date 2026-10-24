@@ -330,6 +330,10 @@ export function sharedItems(shared: SharedChatState): SharedItem[] {
       : previous.kind !== 'system' && previous.author === message.author && previous.via === message.via && elapsed >= 0 && elapsed <= 15 * 60_000)) group.push(message);
     else groups.push([message]);
   }
+  // One pass for what every item reads, instead of a search through the whole thread per message.
+  const cards = new Map<string, Request>(), byId = new Map<string, ChannelMessage>();
+  for (const message of shared.messages) { byId.set(message.id, message); if (message.card) cards.set(message.author, message.card); }
+  const quoteOf = (replyTo: string | undefined) => { const message = replyTo === undefined ? undefined : byId.get(replyTo); return message ? { message, author: memberOf(shared, message.author) } : undefined; };
   return groups.flatMap((group, groupIndex): SharedItem[] => {
     const before = groups[groupIndex - 1]?.at(-1);
     const separator = !before || dayOf(before.at) !== dayOf(group[0]!.at);
@@ -341,6 +345,6 @@ export function sharedItems(shared: SharedChatState): SharedItem[] {
     const lastItem = group.at(-1);
     return group.map((message, index): SharedItem => ({ key: `shared:${message.id}`, message, author: memberOf(shared, message.author), own: message.author === shared.me.id,
       first: index === 0, lastItem: message === lastItem, separator: index === 0 && separator,
-      showSpinner: working.get(message.author) === message.id, latestCard: latestCard(shared, message.author), quote: sharedQuote(shared, message.replyTo) }));
+      showSpinner: working.get(message.author) === message.id, latestCard: cards.get(message.author), quote: quoteOf(message.replyTo) }));
   });
 }

@@ -1,5 +1,17 @@
 # Unreleased
 
+- **Automatic « load earlier » works when the reader lands on the very top.** Reinstall `pi-chat` (and `shared-chat`, `pi-ambient`). A fast scroll reaches the top before the sentinel is seen; earlier pages were then loaded only by the hidden button. Now any scroll near the top, and the check after each page, loads the next page once the reader has left the top at least once (never during the mount). A host that clicked the button as a workaround can drop it. No API change.
+- **Pages loaded above cost far less, above all in SharedChat.** Reinstall `pi-chat`, `shared-chat` and the npm kit (`@hachej/boring-ui-kit`). No API change.
+  - `createSharedChat` copies only the incoming messages: a page, a delta or an event keeps every other message object.
+  - `shared-chat` keeps each unchanged timeline item, so a page renders only its own rows.
+  - `sharedItems` reads each author's latest card and each quote from one index instead of a search per message.
+  - `labels` and `icons` passed inline to `PiChat`/`SharedChat` (and `labels`/`answerActions` to the shared text) are compared key by key, so a host render no longer renders every message through the text context. A label that is a function still compares by identity.
+  - Revealed pages render as a React transition, in small slices.
+  - Measured on 500 fictional messages, 4× CPU: SharedChat's worst task while paging went from 2.9 s to 0.4 s (total 20 s to 6.7 s); PiChat's from 445 to 300 ms.
+- **The first SharedChat page keeps its cursor when cards arrive first.** `createSharedChat` treated messages already in the thread (a card pushed as the thread subscribed) as a reconnect: it walked the whole history and lost the « earlier » cursor. The first read is now always a first read. A host that worked around it can stop.
+- **`AppShell overlayBlur={false}`** drops the backdrop blur behind dialogs, alert dialogs, sheets and drawers (only their dim stays), which costs frames on slow phones. Reinstall `app-shell`. The shell marks `<html data-overlay-blur="off">` while mounted, since overlays render in a portal outside `.app-shell`; the app's own stylesheet carries the one rule that drops the blur there (in [registry/README.md](registry/README.md); the Factory template ships it). A page without AppShell can set the attribute itself. Default unchanged.
+- **`npm run test:chat-scroll`** also wheels a 500-message SharedChat to the top: every page must load by itself, each without a long task over 200 ms at 1× CPU.
+
 # Migrating to 0.4.16
 
 - **Long transcripts scroll without long tasks.** Reinstall `pi-chat`, `pi-ambient` and `shared-chat`. No API change is required; three things change underneath:

@@ -26,7 +26,7 @@ export function createSharedChat(source: ChannelSource, options: { readonly conv
   const listeners = new Set<() => void>();
   const outbox = createChatOutbox<Parameters<ChannelSource['send']>[0], ChannelMessage>();
   const replayable = new Set<string>();
-  let unsubscribe: (() => void) | undefined, opening: Promise<void> | undefined, paging: Promise<void> | undefined, before: string | undefined;
+  let unsubscribe: (() => void) | undefined, opening: Promise<void> | undefined, paging: Promise<void> | undefined, before: string | undefined, loaded = false;
   let revision = 0;
   const changed = new Map<string, number>();
   const publish = (change: Partial<SharedChatSnapshot>) => {
@@ -37,13 +37,15 @@ export function createSharedChat(source: ChannelSource, options: { readonly conv
   const active = () => { if (snapshot.disposed) throw new Error('Chat controller is disposed'); };
   const merge = (messages: readonly ChannelMessage[], prepend = false) => {
     // New stream events always win over an overlapping history read. Replacements keep the row's position and identity.
+    // Only incoming messages are copied: a kept message keeps its object, so the page renders only what changed.
     const existing = snapshot.shared.messages;
+    const incoming = new Set(messages);
     const all = prepend ? [...messages, ...existing] : [...existing, ...messages];
     const byId = new Map<string, ChannelMessage>();
     for (const message of all) {
       if (message.conversationId !== id) continue;
       if (message.clientId) for (const [key, value] of byId) if (value.clientId === message.clientId && key !== message.id) byId.delete(key);
-      byId.set(message.id, structuredClone(message));
+      byId.set(message.id, incoming.has(message) ? structuredClone(message) : message);
     }
     publish({ shared: { ...snapshot.shared, messages: [...byId.values()].sort((a, b) => Date.parse(a.at) - Date.parse(b.at)) } });
   };
@@ -70,7 +72,9 @@ export function createSharedChat(source: ChannelSource, options: { readonly conv
   };
   const replay = () => { for (const call of outbox.values()) if (replayable.has(call.input.clientId)) sendOne(call.input.clientId, call.input); };
   async function refresh() {
-    // Walk backward to the newest known message, not just one page: a long disconnect must not drop a gap.
+    // Walk backward to the newest known message, not just one page: a long disconnect must not drop a gap. The first read is not
+    // a reconnect, even when live events (a card pushed before it) already put messages in the thread: it keeps its cursor.
+    const first = !loaded;
     const known = new Set(snapshot.shared.messages.map(message => message.id));
     let cursor: string | undefined;
     const seen = new Set<string>();
@@ -79,8 +83,8 @@ export function createSharedChat(source: ChannelSource, options: { readonly conv
       const page = await source.history(id, { limit, ...(cursor ? { before: cursor } : {}) });
       if (snapshot.disposed) return;
       merge(page.messages.filter(message => (changed.get(message.id) ?? 0) <= started));
-      if (!known.size && cursor === undefined) before = page.before;
-      if (!page.before || !known.size || page.messages.some(message => known.has(message.id))) break;
+      if (first && cursor === undefined) { before = page.before; loaded = true; }
+      if (first || !page.before || !known.size || page.messages.some(message => known.has(message.id))) break;
       if (seen.has(page.before)) throw new Error('Channel history cursor did not progress');
       seen.add(page.before); cursor = page.before;
     } while (cursor);

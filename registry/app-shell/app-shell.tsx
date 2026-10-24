@@ -6,7 +6,7 @@
 // untouched, below the same sidebar, account menu and header; there is no shell agent (the page is the chat). The shell imports nothing from pi-app: a layout C app installs the `pi-app` item itself. One header per screen
 // (`useScreenHeader`). The AgentLayer is mounted once, here.
 // Host concern: Pi has no layout; the screen on show travels as the agent's context (useAgentContext -> createPromptContext).
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { afterStacksBack } from './back';
 import type { ReactNode } from 'react';
 import { SidebarProvider } from '@/components/ui/sidebar';
@@ -44,6 +44,22 @@ export interface AppShellProps {
   readonly locale?: AppShellLocale;
   /** The app's router owns the URL; the shell only reports the choice. */
   readonly route: { readonly id: string; readonly onChange: (id: string) => void };
+  /**
+   * `false`: no backdrop blur behind dialogs, sheets and drawers (blurring the page costs frames on slow phones), only their dim.
+   * Default `true`. Overlays live in a portal, so the shell marks `<html data-overlay-blur="off">` while it is mounted; the app's
+   * own CSS drops the blur there (the rule is in registry/README.md: an item's CSS stays inside `.app-shell`).
+   */
+  readonly overlayBlur?: boolean;
+}
+
+/** `<html data-overlay-blur="off">` while a shell asks for it. */
+function useOverlayBlur(blur: boolean) {
+  useEffect(() => {
+    if (blur || typeof document === 'undefined') return;
+    const root = document.documentElement;
+    root.dataset.overlayBlur = 'off';
+    return () => { delete root.dataset.overlayBlur; };
+  }, [blur]);
 }
 
 /** Registers what is on show for the agent. A screen's own `useAgentContext` is mounted later and wins. */
@@ -100,6 +116,7 @@ export function AppShell(props: AppShellProps) {
   const { layout, rail = 'icon', compactNav = 'tabs', agent, improve, title, nav, account, route } = props;
   if (layout === 'chat' && agent) throw new Error('AppShell layout "chat" takes no `agent`: the page is the chat (use `improve` for the product manager)');
   const text = appShellText((agent ?? improve)?.chatProps?.locale ?? props.locale);
+  useOverlayBlur(props.overlayBlur ?? true);
   return <AgentLayerProvider agent={agent} improve={improve} locale={props.locale} agentLink={props.agentLink}>
     <HeaderProvider><Shell compactNav={compactNav} layout={layout} rail={rail} title={title} nav={nav} agent={agent} account={account} route={route} improve={Boolean(improve)} text={text} /></HeaderProvider>
   </AgentLayerProvider>;
