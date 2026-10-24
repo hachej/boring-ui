@@ -39,6 +39,9 @@ const channel = createFakeChannelSource({
   messages: Array.from({ length: MESSAGES }, (_, index) => ({ id: `m${index}`, conversationId: 'room', author: people[index % 3].id,
     at: new Date(Date.UTC(2026, 9, 1) + index * 3_600_000).toISOString(), text: index % 3 === 1 ? reply(index) : `Fictional question ${index}: what should we bring?` })),
 });
+// `?sendDelay=` (ms): the channel host confirms a message only after that long, like a slow network or a cold host.
+const sendDelay = Number(search.get('sendDelay')) || 0;
+if (sendDelay) { const send = channel.send; channel.send = async input => { await new Promise(resolve => setTimeout(resolve, sendDelay)); return send(input); }; }
 window.__CHANNEL__ = channel;
 function Shared() {
   const shared = useSharedChat(channel, { limit: paging.more ?? 60 });

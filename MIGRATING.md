@@ -1,5 +1,7 @@
 # Unreleased
 
+- **A message sent in SharedChat shows at once.** Reinstall `shared-chat` and the npm kit (`@hachej/boring-ui-kit`). `createSharedChat().send` puts the sender's own copy in the thread immediately (`ChannelMessage.pending: true`, id `pending:<clientId>`, a small clock instead of the time). The host's message with the same `clientId` replaces it, whether it comes back from `send`, the live socket or a history read; a refused send takes it out again (the text goes back to the composer as before). Before, nothing showed until `ChannelSource.send` resolved, so on a slow host people sent the same message twice. A host never sets `pending`. A `ChannelSource` that returns a message without the sent `clientId` shows a second copy instead of the replacement, so keep returning it. The timeline also scrolls to the person's own new message when it lands, wherever they were. `npm run test:chat-send` measures it in Chromium at 390 px and 1280 px with a host that answers after 1.5 s.
+
 # Migrating to 0.4.17
 
 - **Automatic « load earlier » works when the reader lands on the very top.** Reinstall `pi-chat` (and `shared-chat`, `pi-ambient`). A fast scroll reaches the top before the sentinel is seen; earlier pages were then loaded only by the hidden button. Now any scroll near the top, and the check after each page, loads the next page once the reader has left the top at least once (never during the mount). A host that clicked the button as a workaround can drop it. No API change.
