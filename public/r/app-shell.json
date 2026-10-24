@@ -160,7 +160,7 @@
     },
     "@layer utilities": {
       "@media (max-width: 640px), (pointer: coarse)": {
-        ".app-shell :is([data-slot=\"button\"], [data-slot=\"toggle\"], [class~=\"group/button\"], [class~=\"group/toggle\"])": {
+        ".app-shell :is([data-slot=\"button\"], [data-slot=\"toggle\"], [class~=\"group/button\"], [class~=\"group/toggle\"]):not([data-dense]):not([data-dense] *)": {
           "min-height": "2.75rem",
           "min-width": "2.75rem"
         }
