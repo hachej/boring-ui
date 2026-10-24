@@ -4,16 +4,16 @@
   "title": "Board viewer",
   "description": "A board@1 artifact kind for *.board.json. Lazy native tldraw projection of maquette screens, sandboxed HTML mock-ups, goto arrows and notes. Conditional board-file autosave; phone viewing without accidental frame edits. Hosts supply their resource client, asset URLs and license key.",
   "dependencies": [
-    "@hachej/boring-ui-kit@^0.4.16",
-    "@hachej/boring-files@^0.4.16",
+    "@hachej/boring-ui-kit@^0.4.17",
+    "@hachej/boring-files@^0.4.17",
     "react@^19.0.0",
     "lucide-react@1.51.0",
     "tldraw@5.5.2"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.16/r/maquette-viewer.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.16/r/mockup-viewer.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.16/r/pi-artifacts.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.17/r/maquette-viewer.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.17/r/mockup-viewer.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.17/r/pi-artifacts.json",
     "button",
     "alert",
     "card",
