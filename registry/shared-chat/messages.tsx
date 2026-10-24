@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import { cardActions, channelAvatarStates } from '@hachej/boring-ui-kit/shared-chat';
 import type { Card as Request, ChannelMessage, SharedChatController, Member, SharedChatState } from '@hachej/boring-ui-kit/shared-chat';
-import { CheckIcon, CircleIcon, CopyIcon, PinIcon, ReplyIcon, SparkleIcon, Trash2Icon, XIcon } from 'lucide-react';
+import { CheckIcon, CircleIcon, ClockIcon, CopyIcon, PinIcon, ReplyIcon, SparkleIcon, Trash2Icon, XIcon } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarGroup, AvatarGroupCount, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -121,8 +121,11 @@ export function BubbleTail({ side }: { readonly side: 'start' | 'end' }) {
 export const clockRoom = "[&_:is(p,li):last-child]:after:inline-block [&_:is(p,li):last-child]:after:w-14 [&_:is(p,li):last-child]:after:content-['']";
 
 /** The time inside a bubble (« 14:02 »). `floating` pins it bottom right over the room the text left; otherwise it sits in the line. */
-export function MessageClock({ at, tone, floating = true }: { readonly at: string; readonly tone: 'muted' | 'primary'; readonly floating?: boolean }) {
+export function MessageClock({ at, tone, floating = true, pending = false }: { readonly at: string; readonly tone: 'muted' | 'primary'; readonly floating?: boolean; readonly pending?: boolean | undefined }) {
   const { labels } = useChatText();
+  // Not confirmed by the host yet: a small clock where the time will be, like WhatsApp's.
+  if (pending) return <span data-testid="message-pending" role="img" aria-label={labels.sending} title={labels.sending}
+    className={`${floating ? 'absolute end-3 bottom-1.5' : 'shrink-0 self-end'} leading-none ${tone === 'primary' ? 'opacity-80' : 'text-muted-foreground'}`}><ClockIcon aria-hidden="true" className="size-3" /></span>;
   return <time data-testid="message-time" dateTime={at} title={labels.sharedTimestamp(at)}
     className={`${floating ? 'absolute end-3 bottom-1.5' : 'shrink-0 self-end'} text-[0.6875rem] leading-none whitespace-nowrap tabular-nums ${tone === 'primary' ? 'opacity-80' : 'text-muted-foreground'}`}>{labels.sharedClock(at)}</time>;
 }

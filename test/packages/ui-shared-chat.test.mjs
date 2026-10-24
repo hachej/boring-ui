@@ -82,6 +82,46 @@ test('a committed send with a lost acknowledgement replays the same payload and 
   assert.deepEqual(payloads[0].mentions, ['leo']);
 });
 
+test('a sent message is in the thread at once, pending, and the host confirmation replaces it in place', async t => {
+  const fake = createFakeChannelSource(sharedChatSeed);
+  let release;
+  const source = { ...fake, send: async input => { await new Promise(resolve => { release = resolve; }); return fake.send(input); } };
+  const chat = createSharedChat(source, { conversationId: 'main' }); t.after(() => chat.dispose()); await chat.connect();
+  const before = chat.getSnapshot().shared.messages.length;
+  chat.setText('A fictional question'); const sending = chat.send();
+  const pending = chat.getSnapshot().shared.messages.at(-1);
+  assert.equal(chat.getSnapshot().shared.messages.length, before + 1, 'drawn before the host answered');
+  assert.deepEqual([pending.author, pending.text, pending.pending], ['mira', 'A fictional question', true]);
+  assert.equal(chat.getSnapshot().draft.text, '');
+  await until(() => release); release(); await sending;
+  const messages = chat.getSnapshot().shared.messages;
+  assert.equal(messages.length, before + 1, 'the confirmation replaces the pending copy: one message');
+  assert.equal(messages.at(-1).clientId, pending.clientId);
+  assert.equal(messages.at(-1).pending, undefined);
+  assert.notEqual(messages.at(-1).id, pending.id);
+});
+
+test('a refused send takes its pending copy out and gives the text back', async t => {
+  const fake = createFakeChannelSource(sharedChatSeed);
+  const source = { ...fake, send: async () => { throw new ChannelRequestError('refused', 'Not allowed here', false, { refused: true }); } };
+  const chat = createSharedChat(source, { conversationId: 'main' }); t.after(() => chat.dispose()); await chat.connect();
+  const before = chat.getSnapshot().shared.messages.length;
+  chat.setText('A refused message'); await chat.send();
+  assert.equal(chat.getSnapshot().shared.messages.length, before);
+  assert.equal(chat.getSnapshot().shared.messages.some(message => message.pending), false);
+  assert.equal(chat.getSnapshot().draft.text, 'A refused message');
+  assert.equal(chat.getSnapshot().send.kind, 'blocked');
+});
+
+test('a pending copy sorts last even when this device clock is behind the host', async t => {
+  const future = new Date(Date.now() + 3_600_000).toISOString();
+  const fake = createFakeChannelSource({ ...sharedChatSeed, messages: [...sharedChatSeed.messages, { id: 'ahead', conversationId: 'main', author: 'leo', at: future, text: 'From a host clock an hour ahead' }] });
+  const source = { ...fake, send: () => new Promise(() => {}) };
+  const chat = createSharedChat(source, { conversationId: 'main' }); t.after(() => chat.dispose()); await chat.connect();
+  chat.setText('Mine'); void chat.send();
+  assert.equal(chat.getSnapshot().shared.messages.at(-1).text, 'Mine');
+});
+
 test('an initially offline source is not reported live; disposal releases only its subscription', async () => {
   const source = createFakeChannelSource(sharedChatSeed); source.setStatus('offline');
   const first = createSharedChat(source, { conversationId: 'main' }), second = createSharedChat(source, { conversationId: 'main' });

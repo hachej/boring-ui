@@ -166,14 +166,19 @@ export function createSharedChat(source: ChannelSource, options: { readonly conv
       const mentions = snapshot.shared.members.filter(member => hasMemberMention(selected.text, member)).map(member => member.id);
       const payload = { conversationId: id, text: selected.text, mentions, clientId, ...(snapshot.shared.replyTo ? { replyTo: snapshot.shared.replyTo } : {}), ...(files.length ? { attachments: files } : {}) };
       const result = outbox.enqueue(clientId, payload);
+      // The sender's own copy is in the thread at once, marked pending: the host's message with the same clientId replaces it
+      // (merge), whether it comes back from send, the live socket or a history read. A refusal takes it out again.
+      const local: ChannelMessage = { id: `pending:${clientId}`, conversationId: id, author: source.me.id, at: latestAt(snapshot.shared.messages), text: selected.text, mentions, clientId, pending: true,
+        ...(payload.replyTo ? { replyTo: payload.replyTo } : {}), ...(files.length ? { attachments: files.map(file => ({ path: file.name, title: file.name })) } : {}) };
       publish({ shared: { ...snapshot.shared, files: [], replyTo: undefined }, ...(!input ? { draft: { text: '', attachments: [], version: snapshot.draft.version + 1 } } : {}), send: { kind: 'submitting' } });
+      merge([local]);
       sendOne(clientId, payload);
       try { const message = await result; publish({ send: { kind: 'admitted' } }); return message; }
       catch (error) {
         if (!snapshot.disposed && error instanceof ChannelRequestError && error.refused) {
           const current = snapshot.draft;
           publish({ send: { kind: 'blocked', reason: error.message }, draft: { ...current, text: [input?.restore?.text ?? selected.text, current.text].filter(Boolean).join('\n'), version: current.version + 1 },
-            shared: { ...snapshot.shared, files: [...files, ...snapshot.shared.files], replyTo: snapshot.shared.replyTo ?? payload.replyTo } });
+            shared: { ...snapshot.shared, messages: snapshot.shared.messages.filter(message => message.id !== local.id), files: [...files, ...snapshot.shared.files], replyTo: snapshot.shared.replyTo ?? payload.replyTo } });
         }
         return undefined;
       }
@@ -210,6 +215,12 @@ export function createSharedChat(source: ChannelSource, options: { readonly conv
   return controller;
 }
 export type SharedChatController = ReturnType<typeof createSharedChat>;
+
+/** Now, or just after the newest message when this device's clock is behind the host's: a pending copy always sorts last. */
+function latestAt(messages: readonly ChannelMessage[]): string {
+  const now = Date.now(), newest = Math.max(0, ...messages.map(message => Date.parse(message.at)).filter(Number.isFinite));
+  return new Date(Math.max(now, newest + 1)).toISOString();
+}
 
 /** The composer uses the existing quoted @ token grammar. Tokens carry stable member ids; picker labels show names. */
 export function memberMention(member: Member): string {

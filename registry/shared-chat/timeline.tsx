@@ -1,5 +1,5 @@
 'use client';
-import { Children, memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Children, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode, RefObject } from 'react';
 import type { SharedChatController } from '@hachej/boring-ui-kit/shared-chat';
 import type { MentionsConfig } from '../pi-chat/config';
@@ -47,6 +47,17 @@ export function SharedTimeline({ controller, api, focusComposer, openFile, menti
   useEffect(() => { if (stick.isAtBottom) setScrolledUp(false); }, [stick.isAtBottom]);
   const seenAt = state.shared.messages.findIndex(message => message.id === seen);
   const unseen = stick.isAtBottom ? 0 : state.shared.messages.slice(seenAt + 1).filter(message => message.author !== state.shared.me.id).length;
+  // The reader's own new message lands in view, wherever they were: on Send it is drawn at once (pending), and Send's own scroll
+  // runs before that render. Its confirmation (same clientId) is the same message and does not scroll again.
+  const mine = state.shared.messages.findLast(message => message.author === state.shared.me.id);
+  const mineKey = mine ? mine.clientId ?? mine.id : undefined;
+  const lastMine = useRef(mineKey);
+  useLayoutEffect(() => {
+    if (mineKey === lastMine.current) return;
+    const fresh = lastMine.current !== undefined || mine?.pending;
+    lastMine.current = mineKey;
+    if (fresh && mine === state.shared.messages.at(-1)) { transcript.reset(); void stick.scrollToBottom('instant'); }
+  }, [mineKey]);
   useEffect(() => {
     const value = { reset: () => { transcript.reset(); void stick.scrollToBottom('instant'); }, reveal: setRevealing };
     api.current = value;
@@ -139,9 +150,9 @@ const TimelineRow = memo(function TimelineRow({ item, top, multi, controller, me
           {message.card.kind === 'pin' ? <PinnedComment card={message.card} own={own} at={message.at} /> : <RequestCard card={message.card} action={controller.action} at={message.at} own={own} />}
         </BubbleContent>
       </Bubble></article>;
-    return <article data-row-id={item.key} data-role={person ? 'user' : 'assistant'} data-streaming={message.streaming ? 'true' : undefined} className="group/message"><Message align={own ? 'end' : 'start'}><MessageContent>
+    return <article data-row-id={item.key} data-role={person ? 'user' : 'assistant'} data-streaming={message.streaming ? 'true' : undefined} data-pending={message.pending ? 'true' : undefined} className="group/message"><Message align={own ? 'end' : 'start'}><MessageContent>
       {own ? <div data-testid="own-message" className="contents [&_[data-testid=message-mention]]:text-inherit">
-        <MessageText text={message.text ?? ''} context={context} variant="default" decoration={first ? <BubbleTail side="end" /> : undefined} header={quote} footer={<><ClockSpacer /><MessageClock at={message.at} tone="primary" /></>} /></div>
+        <MessageText text={message.text ?? ''} context={context} variant="default" decoration={first ? <BubbleTail side="end" /> : undefined} header={quote} footer={<><ClockSpacer /><MessageClock at={message.at} tone="primary" pending={message.pending} /></>} /></div>
         : view.answerStyle === 'plain' && !person ? <div data-testid="plain-answer" className="min-w-0">
           {head}{quote}
           {message.text && <Markdown text={message.text} streaming={Boolean(message.streaming)} renderMention={renderMention} />}

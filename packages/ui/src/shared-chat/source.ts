@@ -21,7 +21,9 @@ export const channelAvatarStates: Readonly<Record<string, AvatarState | undefine
   platform: 'blocked', fixing: 'blocked', live: 'done', declined: 'neutral',
 });
 /** `kind: 'system'` marks a host notice (« Léa joined », « Shipped: … »): a small centred line, consecutive ones collapsed into one. */
-export type ChannelMessage = { id: string; conversationId: string; author: string; at: string; via?: string; text?: string; kind?: 'system'; card?: Card; mentions?: string[]; replyTo?: string; attachments?: { path: string; title?: string }[]; steps?: Step[]; streaming?: boolean; removed?: { by: string; at: string }; clientId?: string };
+export type ChannelMessage = { id: string; conversationId: string; author: string; at: string; via?: string; text?: string; kind?: 'system'; card?: Card; mentions?: string[]; replyTo?: string; attachments?: { path: string; title?: string }[]; steps?: Step[]; streaming?: boolean; removed?: { by: string; at: string }; clientId?: string;
+  /** Set only by the controller on the sender's own copy while the host has not confirmed it yet; a host never sends it. */
+  pending?: true };
 export type ChannelEvent =
   | { type: 'message'; message: ChannelMessage }
   | { type: 'delta'; messageId: string; conversationId: string; text: string }
