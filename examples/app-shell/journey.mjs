@@ -318,6 +318,12 @@ try {
     const layer = await browser.evaluate(rect(LAYER));
     assert.ok(layer.y > 200 && layer.y < 600 && Math.round(layer.bottom) >= 844, JSON.stringify(layer));
     assert.ok(await browser.evaluate(`!!document.querySelector('[data-slot=drawer-overlay]')`), 'modal backdrop');
+    // AppShell overlayBlur={false} marks <html data-overlay-blur="off">; the app-shell item's CSS then drops the overlay's blur.
+    const filter = `getComputedStyle(document.querySelector('[data-slot=drawer-overlay]')).backdropFilter`;
+    assert.match(await browser.evaluate(filter), /blur/, 'the overlay blurs the page by default');
+    await browser.evaluate(`document.documentElement.dataset.overlayBlur = 'off'`);
+    assert.equal(await browser.evaluate(filter), 'none', 'overlayBlur off: only the dim, no blur');
+    await browser.evaluate(`delete document.documentElement.dataset.overlayBlur`);
     const before = await browser.evaluate(taps);
     await tapAt(TAB);
     await pause(300);

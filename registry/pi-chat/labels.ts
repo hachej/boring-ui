@@ -3,7 +3,7 @@
  * (or `AmbientChat`, `AgentWorkspace`): what it leaves out keeps the default below. Strings that need a value are functions. No i18n
  * framework: an app that translates passes its own object per language.
  */
-import { createContext, createElement, useContext, useMemo } from 'react';
+import { createContext, createElement, useContext, useMemo, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { ArrowDownIcon, ArrowUpIcon, CameraIcon, GitForkIcon, HistoryIcon, ListEndIcon, MessagesSquareIcon, PaperclipIcon, PlusIcon, RefreshCwIcon, SquareIcon } from 'lucide-react';
 import type { BlockIcon } from '../button/actions';
@@ -336,7 +336,17 @@ export const useChatText = (): ChatText => useContext(ChatTextContext);
 /** Merges the host's partial labels and icons over the defaults (or over `base`), keeping one object while they do not change. */
 export function useMergedText<L extends ChatLabels = ChatLabels, I extends ChatIcons = ChatIcons>(labels: Partial<L> | undefined, icons: Partial<I> | undefined,
   base: { readonly labels: L; readonly icons: I } = DEFAULT_TEXT as { readonly labels: L; readonly icons: I }): { readonly labels: L; readonly icons: I } {
-  return useMemo(() => ({ labels: withDefaults(base.labels, labels), icons: withDefaults(base.icons, icons) }), [labels, icons, base]);
+  const stableLabels = useShallowStable(labels), stableIcons = useShallowStable(icons);
+  return useMemo(() => ({ labels: withDefaults(base.labels, stableLabels), icons: withDefaults(base.icons, stableIcons) }), [stableLabels, stableIcons, base]);
+}
+
+const shallowEqual = (a: unknown, b: unknown): boolean => Object.is(a, b) || (!!a && !!b && typeof a === 'object' && typeof b === 'object' && Array.isArray(a) === Array.isArray(b)
+  && Object.keys(a).length === Object.keys(b).length && Object.keys(a).every(key => Object.is((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key])));
+/** The previous value while the new one is equal key by key (functions by identity): inline `labels={{ title }}` keeps one text context. */
+export function useShallowStable<T>(value: T): T {
+  const previous = useRef(value);
+  if (!shallowEqual(previous.current, value)) previous.current = value;
+  return previous.current;
 }
 
 /** Provides the chat's labels and icons to everything inside (composer, queue, rows, history). */

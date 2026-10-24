@@ -30,7 +30,7 @@ export function SharedTimeline({ controller, api, focusComposer, openFile, menti
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const { labels, icons } = useChatText();
   const view = useSharedView();
-  const items = useMemo(() => sharedItems(state.shared), [state.shared]);
+  const items = useStableItems(useMemo(() => sharedItems(state.shared), [state.shared]));
   const connected = state.connection.kind === 'connected';
   const transcript = useTranscript(items, paging?.first ?? PAGE_FIRST, paging?.more ?? PAGE_MORE, { state: state.history, connected: !state.disposed && connected, load: controller.loadEarlier });
   const { stick, hidden } = transcript;
@@ -91,6 +91,24 @@ export function SharedTimeline({ controller, api, focusComposer, openFile, menti
         <icons.jumpToLatest data-icon="inline-start" aria-hidden="true" />{unseen ? labels.sharedNewMessages(unseen) : labels.jumpToLatest}</Button>
     </div>}
   </MessageScroller>;
+}
+
+/** Same item, field by field (the quote is rebuilt each pass, so it compares by what it points at). */
+const sameItem = (a: SharedItem, b: SharedItem) => a.key === b.key && a.message === b.message && a.author === b.author && a.own === b.own && a.first === b.first
+  && a.lastItem === b.lastItem && a.separator === b.separator && a.showSpinner === b.showSpinner && a.latestCard === b.latestCard
+  && a.quote?.message === b.quote?.message && a.quote?.author === b.quote?.author
+  && (a.system === b.system || (a.system?.length === b.system?.length && a.system!.every((line, index) => line === b.system![index])));
+/**
+ * Keeps the previous object of every item that did not change, so a page loaded above, a delta or a new message renders only the
+ * rows it touches (rows and their runs are memoized by identity).
+ */
+function useStableItems(next: readonly SharedItem[]): readonly SharedItem[] {
+  const previous = useRef(new Map<string, SharedItem>());
+  return useMemo(() => {
+    const items = next.map(item => { const before = previous.current.get(item.key); return before && sameItem(before, item) ? before : item; });
+    previous.current = new Map(items.map(item => [item.key, item]));
+    return items;
+  }, [next]);
 }
 
 type RowProps = {

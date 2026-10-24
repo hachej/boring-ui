@@ -81,6 +81,16 @@ test('no agent: the nav and the header render at once, with the locale prop and 
   await unmount();
 });
 
+test('overlayBlur={false} marks <html data-overlay-blur="off"> while the shell is mounted; the default marks nothing', async t => {
+  const plain = await render(t, {});
+  assert.equal(plain.window.document.documentElement.dataset.overlayBlur, undefined, 'blur stays on by default');
+  await plain.unmount();
+  const { window, unmount } = await render(t, { overlayBlur: false });
+  assert.equal(window.document.documentElement.dataset.overlayBlur, 'off');
+  await unmount();
+  assert.equal(window.document.documentElement.dataset.overlayBlur, undefined, 'unmounting the shell gives the blur back');
+});
+
 test('the hover rail starts collapsed, reveals on pointer hover or focus within, and collapses on leave, blur or Escape', async t => {
   const items = ['Tableau de bord', 'Repas'].map(label => ({ id: label, label, icon: Icon, render: () => null }));
   const chosen = [];

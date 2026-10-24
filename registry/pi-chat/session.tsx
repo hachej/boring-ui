@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { KeyboardEvent, ReactNode } from 'react';
 import type { EntryRecord } from '@earendil-works/pi-durable';
 import type { ImageContent, ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
@@ -471,7 +471,8 @@ export function useTranscript(rows: readonly { readonly key: string }[], page = 
     const state = history?.state;
     if (hidden === 0 && (!history?.connected || !state || state.kind === 'disabled' || state.kind === 'loading' || state.kind === 'ready' && !state.hasMore)) return;
     anchor.current = { length: rows.length, limit };
-    if (hidden > 0) setLimit(value => value + more);
+    // A revealed page renders as a transition: React mounts it in small slices, so scrolling stays responsive meanwhile.
+    if (hidden > 0) startTransition(() => setLimit(value => value + more));
     else if (history) {
       pending.current = true;
       void Promise.resolve().then(history.load).catch(() => { anchor.current = undefined; }).finally(() => { pending.current = false; });
@@ -481,18 +482,30 @@ export function useTranscript(rows: readonly { readonly key: string }[], page = 
     const saved = anchor.current;
     if (!scroller || !saved || history?.state.kind === 'loading') return;
     const added = Math.max(0, rows.length - saved.length);
-    if (limit < saved.limit + added) { setLimit(saved.limit + added); return; }
+    if (limit < saved.limit + added) { startTransition(() => setLimit(saved.limit + added)); return; }
     anchor.current = undefined;
     setLoaded(count => count + Math.max(0, Math.min(rows.length, limit) - Math.min(saved.length, saved.limit)));
   }, [rows, limit, scroller, history?.state]);
+  // Automatic paging: the sentinel near the top, once the reader has been away from the top (so the mount, which starts at the
+  // top before the scroller settles at the end, loads nothing). A fast scroll lands on 0 before the sentinel is seen: the scroll
+  // listener and every new observer (after each page) check again, instead of the reader's distance at that one moment.
+  const near = useRef(false), away = useRef(false), revealNow = useRef(reveal);
+  revealNow.current = reveal;
+  useEffect(() => {
+    if (!automatic || !scroller) return;
+    const onScroll = () => { if (scroller.scrollTop > 8) away.current = true; if (near.current && away.current) revealNow.current(); };
+    scroller.addEventListener('scroll', onScroll, { passive: true });
+    return () => scroller.removeEventListener('scroll', onScroll);
+  }, [automatic, scroller]);
   useEffect(() => {
     if (!automatic || !scroller || !sentinel || typeof IntersectionObserver === 'undefined' || history?.state.kind === 'loading' || history?.state.kind === 'error') return;
     const observer = new IntersectionObserver(entries => {
-      if (entries.some(entry => entry.isIntersecting) && (scroller.scrollHeight <= scroller.clientHeight || scrollable.start)) reveal();
+      near.current = entries.at(-1)?.isIntersecting ?? near.current;
+      if (near.current && (scroller.scrollHeight <= scroller.clientHeight || away.current)) reveal();
     }, { root: scroller, rootMargin: '240px 0px 0px' });
     observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [automatic, scroller, sentinel, reveal, scrollable.start, history?.state]);
+    return () => { observer.disconnect(); near.current = false; };
+  }, [automatic, scroller, sentinel, reveal, history?.state]);
   const revealTo = (key: string) => { const index = rows.findIndex(row => row.key === key); if (index >= 0) setLimit(value => Math.max(value, rows.length - index)); };
   return { stick, hidden, reveal, revealTo, sentinelRef: setSentinel, loaded, visible: <T,>(items: readonly T[]): readonly T[] => hidden ? items.slice(hidden) : items, reset: () => { anchor.current = undefined; setLimit(page); } };
 }

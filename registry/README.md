@@ -540,6 +540,15 @@ The screen layout (`AppShell`) takes an optional `locale` (`'en' | 'fr'`) for it
 
 `AppShell compactNav="sheet"` (default `"tabs"`, the bottom tab bar) drops the tab bar on a phone: the header's leading button (the sidebar trigger) opens the sidebar as the shadcn sheet with the nav items, the active screen's `NavItem.sidebar` content and the account in its footer; choosing a screen or the assistant closes it. A stacked detail's `←` still takes the leading place. The phone is the same `AppSidebar` the wide screen has, so nothing remounts on resize.
 
+`AppShell overlayBlur={false}` (default `true`) keeps only the dim behind dialogs, alert dialogs, sheets and drawers, without the backdrop blur that costs frames on slow phones. The overlays are the app's shadcn components, portalled outside `.app-shell`, and an item's CSS never reaches outside its root, so the shell only marks `<html data-overlay-blur="off">` while mounted and the app's own stylesheet carries the rule (the Factory template has it):
+
+```css
+:root[data-overlay-blur="off"] :is([data-slot="dialog-overlay"], [data-slot="alert-dialog-overlay"], [data-slot="sheet-overlay"], [data-slot="drawer-overlay"]) {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+```
+
 `ListDetail` folds its list on a wide screen with `collapsible`: a toggle on the pane (named by `labels`, English by default) switches it between 20rem and a `railWidth` rail (default `3rem`). `collapsed` and `onCollapsedChange` control it (without them the pane keeps its own state, starting open), and `list` may be a function `({ collapsed }) => ReactNode` so the app renders the rail's content. A phone never folds; without `collapsible` nothing changes.
 
 The account theme appears when the account gives `theme: { value, onChange }` (`value` is the resolved `'light' | 'dark'`: the host resolves `system`). The compact sheet uses the consumer's Switch. The expanded menu uses its registered DropdownMenuCheckboxItem, preserving arrow-key navigation and close-on-selection. Without `theme` there is no row. The shell's root carries the `app-shell` class in every layout, so the item's css reset (`.app-shell :where(button, [role=button])`) reaches its own header and nav buttons and the popups it portals to the body (the sheets, the account menu, the agent drawer and panel) even without preflight. No wrapper is needed. Vendoring by copying files must also copy the item's `css` into the app's global stylesheet; the files alone leave those buttons unstyled.
