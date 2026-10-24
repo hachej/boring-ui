@@ -24,8 +24,8 @@ export interface SharedChatProps extends Omit<PiChatProps, 'controller'>, Shared
  * one `pill` row and, with `voiceMessage`, the microphone in Send's place while empty; `composerLayout` and `voiceReplacesSend` override.
  * `composerStart` puts an app control at the left edge of the composer, `tools` beside Send.
  */
-export function SharedChat({ participantLabels, presence, steps, messageActions, footer, answerStyle, ...props }: SharedChatProps) {
-  const composition = useSharedChatProps(props.controller, { locale: props.locale, labels: participantLabels, presence, steps, messageActions, footer, answerStyle });
+export function SharedChat({ participantLabels, presence, steps, answerActions, footer, answerStyle, ...props }: SharedChatProps) {
+  const composition = useSharedChatProps(props.controller, { locale: props.locale, labels: participantLabels, presence, steps, answerActions, footer, answerStyle });
   return <PiChat {...withChatPlugins({ ...props, ...composition })} controls={<>{composition.controls}{props.controls}</>} composerChips={<>{props.composerChips}{composition.composerChips}</>}
     composerLayout={props.composerLayout ?? composition.composerLayout} voiceReplacesSend={props.voiceReplacesSend ?? composition.voiceReplacesSend} />;
 }

@@ -605,7 +605,7 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
     assert.ok(row().querySelector('[data-slot=bubble]') ?? row().querySelector('[data-testid=message-time]'), 'default: a bubble with its time');
     assert.equal(row().querySelector('[data-testid=message-copy]'), null, 'default: no copy action');
     assert.equal(row().querySelector('[data-testid=message-footer]'), null, 'default: no footer');
-    chatOptions = { presence: false, steps: 'hidden', messageActions: ['copy'], answerStyle: 'plain', footer: message => createElement('span', { 'data-testid': 'generated' }, `Généré ${message.id}`) };
+    chatOptions = { presence: false, steps: 'hidden', answerActions: ['copy'], answerStyle: 'plain', footer: message => createElement('span', { 'data-testid': 'generated' }, `Généré ${message.id}`) };
     await render();
     assert.equal(q('[data-testid=shared-members]'), null, 'presence off: no members control');
     assert.equal(q('[data-testid=message-avatar]'), null, 'presence off: no avatars');

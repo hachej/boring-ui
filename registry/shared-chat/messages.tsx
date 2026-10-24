@@ -265,7 +265,7 @@ export function SharedMessage({ shared, children, avatars = true, remove, canRem
   // An answer: the app agent's own message (not a person's, not a card, not a host notice).
   const answer = !own && author.kind === 'agent' && !message.via && !message.card && message.kind !== 'system' && !message.removed;
   const plain = view.answerStyle === 'plain' && answer;
-  const copyable = answer && Boolean(message.text) && view.messageActions?.includes('copy') === true;
+  const copyable = answer && Boolean(message.text) && view.answerActions?.includes('copy') === true;
   const copy = () => { void copyText(message.text ?? '').then(() => { setCopied(true); clearTimeout(copiedTimer.current); copiedTimer.current = setTimeout(() => setCopied(false), 1500); }, () => setError(labels.copyFailed)); };
   const footer = answer ? view.footer?.(message) : undefined;
   // In a plain answer the copy action is a visible text button under it; in a bubble it is an icon on hover with Reply and Delete.

@@ -27,7 +27,7 @@ function App() {
 }
 /** The block's story: SharedChat alone, as an app shows a channel on a phone, with an app control beside the send button. */
 // `?plain` shows production's plain chrome (presence off, steps hidden, copy, a footer, plain answers); `?answer` adds an answer with steps either way.
-const plainChrome = { presence: false, steps: 'hidden', messageActions: ['copy'], answerStyle: 'plain', footer: message => <span>Generated in 1.0 s · {message.id}</span> };
+const plainChrome = { presence: false, steps: 'hidden', answerActions: ['copy'], answerStyle: 'plain', footer: message => <span>Generated in 1.0 s · {message.id}</span> };
 function Story() {
   const plain = new URLSearchParams(location.search).has('plain');
   const shared = useSharedChat(source, plain ? plainChrome : {});

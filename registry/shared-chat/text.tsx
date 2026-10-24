@@ -14,7 +14,7 @@ export interface SharedViewOptions {
   /** `'hidden'`: the agent's steps are never shown (no « 3 steps » line, no progress). Default `'shown'`. */
   readonly steps?: 'shown' | 'hidden' | undefined;
   /** Actions on an answer; `'copy'` copies its text. Default none. */
-  readonly messageActions?: readonly 'copy'[] | undefined;
+  readonly answerActions?: readonly 'copy'[] | undefined;
   /** A line under each answer (« Generated in 1.0 s »). Keep it stable (memoised or module-level): an inline function changes the view on every render. */
   readonly footer?: ((message: ChannelMessage) => ReactNode) | undefined;
   /** `'plain'`: the agent's answer is plain text, not a bubble; people's messages keep theirs. Default `'bubble'`. */
@@ -23,9 +23,9 @@ export interface SharedViewOptions {
 export interface SharedTextOptions extends SharedViewOptions { readonly locale?: 'en' | 'fr' | undefined; readonly labels?: Partial<SharedLabels> | undefined }
 const Context = createContext(defaultSharedLabels);
 const View = createContext<SharedViewOptions>({});
-export function SharedTextProvider({ children, locale, labels, presence, steps, messageActions, footer, answerStyle }: SharedTextOptions & { readonly children: ReactNode }) {
+export function SharedTextProvider({ children, locale, labels, presence, steps, answerActions, footer, answerStyle }: SharedTextOptions & { readonly children: ReactNode }) {
   const value = useMemo(() => ({ ...(locale === 'fr' ? frenchSharedLabels : defaultSharedLabels), ...labels }), [locale, labels]);
-  const view = useMemo<SharedViewOptions>(() => ({ presence, steps, messageActions, footer, answerStyle }), [presence, steps, messageActions, footer, answerStyle]);
+  const view = useMemo<SharedViewOptions>(() => ({ presence, steps, answerActions, footer, answerStyle }), [presence, steps, answerActions, footer, answerStyle]);
   return <Context.Provider value={value}><View.Provider value={view}>{children}</View.Provider></Context.Provider>;
 }
 export const useSharedView = () => useContext(View);
