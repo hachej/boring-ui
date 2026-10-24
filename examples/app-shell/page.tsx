@@ -74,7 +74,7 @@ function WalkingDay() {
   // `?header=owned`: a screen that owns its row (leading controls after the trigger, sans title, 48 px).
   const owned = new URLSearchParams(location.search).get('header') === 'owned';
   useScreenHeader(owned
-    ? { title: 'Ma journée', leading: <><Button variant="secondary" size="sm">Cabinet</Button><Button variant="ghost" size="sm">Urgences</Button></>, titleFace: 'sans', dense: true, actions: [themeAction] }
+    ? { title: 'Ma journée', leading: <span className="hidden items-center gap-1 md:flex"><Button variant="secondary" size="sm">Cabinet</Button><Button variant="ghost" size="sm">Urgences</Button></span>, titleFace: 'sans', dense: true, actions: [themeAction] }
     : { title: 'Ma journée', subtitle: 'mardi 13 octobre', actions: [themeAction] });
   return <List />;
 }
