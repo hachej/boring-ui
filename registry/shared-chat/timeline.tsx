@@ -1,11 +1,12 @@
 'use client';
-import { Children, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Children, memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode, RefObject } from 'react';
 import type { SharedChatController } from '@hachej/boring-ui-kit/shared-chat';
 import type { MentionsConfig } from '../pi-chat/config';
 import { MessageText } from '../pi-chat/message';
 import { Markdown } from '../pi-chat-markdown/markdown';
-import { useTranscript } from '../pi-chat/session';
+import { PAGE_FIRST, PAGE_MORE, useRowChunks, useTranscript } from '../pi-chat/session';
+import type { ChatPaging } from '../pi-chat/session';
 import { TranscriptHistory } from '../pi-chat/history';
 import { Message, MessageContent } from '@/components/ui/message';
 import { Bubble, BubbleContent } from '@/components/ui/bubble';
@@ -22,17 +23,18 @@ export interface TimelineApi { readonly reset: () => void; readonly reveal: (id:
  * WhatsApp's room: bubbles hug the bottom, a day pill starts each day, host notices collapse into one small line, and a
  * « ↓ 3 new messages » pill appears below the list (never over it) while the reader is scrolled up.
  */
-export function SharedTimeline({ controller, api, focusComposer, openFile, mentions, pendingVoice }: {
+export function SharedTimeline({ controller, api, focusComposer, openFile, mentions, pendingVoice, paging }: {
   readonly controller: SharedChatController; readonly api: RefObject<TimelineApi | undefined>;
-  readonly focusComposer: () => void; readonly openFile?: ((path: string) => void) | undefined; readonly mentions: MentionsConfig; readonly pendingVoice?: ReactNode;
+  readonly focusComposer: () => void; readonly openFile?: ((path: string) => void) | undefined; readonly mentions: MentionsConfig; readonly pendingVoice?: ReactNode; readonly paging?: ChatPaging | undefined;
 }) {
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const { labels, icons } = useChatText();
   const view = useSharedView();
   const items = useMemo(() => sharedItems(state.shared), [state.shared]);
   const connected = state.connection.kind === 'connected';
-  const transcript = useTranscript(items, 60, 40, { state: state.history, connected: !state.disposed && connected, load: controller.loadEarlier });
+  const transcript = useTranscript(items, paging?.first ?? PAGE_FIRST, paging?.more ?? PAGE_MORE, { state: state.history, connected: !state.disposed && connected, load: controller.loadEarlier });
   const { stick, hidden } = transcript;
+  const chunks = useRowChunks(useMemo(() => transcript.visible(items), [items, hidden]));
   const root = useRef<HTMLDivElement>(null);
   const [revealing, setRevealing] = useState<string>();
   // The last message the reader has seen at the bottom; what others posted after it while scrolled up is « new ».
@@ -68,15 +70,50 @@ export function SharedTimeline({ controller, api, focusComposer, openFile, menti
   const hasContent = items.length > 0 || Children.count(pendingVoice) > 0;
   // Avatars and names only where they tell people apart: more than two members.
   const multi = view.presence !== false && state.shared.members.length > 2;
-  const context = { pieces: { mentions: true, skills: [], renderMention: mentions.renderSent }, openFile };
+  const focus = useRef(focusComposer); focus.current = focusComposer;
+  const reply = useCallback((id: string) => { controller.setReplyTo(id); focus.current(); }, [controller]);
+  const open = useRef(openFile); open.current = openFile;
+  const hasOpen = Boolean(openFile);
+  const stableOpen = useMemo(() => hasOpen ? (path: string) => open.current?.(path) : undefined, [hasOpen]);
+  return <MessageScroller>
+    <MessageScrollerViewport ref={node => { root.current = node; stick.scrollRef(node); }} data-testid="transcript-scroll" aria-label={labels.messages} className="min-h-0 flex-1 scrollbar-thumb-border scrollbar-track-transparent"
+      onScroll={event => { const top = event.currentTarget.scrollTop; if (top < lastTop.current - 4) setScrolledUp(true); lastTop.current = top; }}>
+      {items.length > 0 && (hidden > 0 || state.history.kind === 'loading' || state.history.kind === 'error' || state.history.kind === 'ready' && state.history.hasMore) && <TranscriptHistory history={state.history} connected={!state.disposed && connected} onLoad={transcript.reveal} sentinelRef={transcript.sentinelRef} hidden={hidden} loaded={transcript.loaded} />}
+      <div data-testid="transcript-bottom" className="mx-auto flex min-h-full w-full max-w-[720px] flex-col justify-end px-4 pt-4 pb-3 sm:px-6">
+        <MessageScrollerContent aria-label={labels.messages} aria-live="polite" data-testid="transcript" className="h-auto min-h-0 gap-0 [&>[data-local-voice]]:mt-3">
+          {chunks.map((run, index) => <TimelineChunk key={run[0]!.key} items={run} top={index === 0} multi={multi} controller={controller} mentions={mentions} openFile={stableOpen} onReply={reply} onReveal={setRevealing} />)}
+          {pendingVoice}
+        </MessageScrollerContent>
+      </div>
+    </MessageScrollerViewport>
+    {hasContent && !stick.isAtBottom && scrolledUp && <div data-testid="transcript-navigation" className="flex shrink-0 items-center justify-center py-1.5">
+      <Button variant="secondary" size="sm" data-testid="jump-latest" data-unseen={unseen || undefined} aria-label={unseen ? labels.sharedNewMessages(unseen) : labels.jumpToLatest} title={labels.jumpToLatest} className="max-sm:min-h-11 pointer-coarse:min-h-11" onClick={() => api.current?.reset()}>
+        <icons.jumpToLatest data-icon="inline-start" aria-hidden="true" />{unseen ? labels.sharedNewMessages(unseen) : labels.jumpToLatest}</Button>
+    </div>}
+  </MessageScroller>;
+}
+
+type RowProps = {
+  readonly multi: boolean; readonly controller: SharedChatController; readonly mentions: MentionsConfig;
+  readonly openFile: ((path: string) => void) | undefined; readonly onReply: (id: string) => void; readonly onReveal: (id: string) => void;
+};
+/** A run of timeline rows as one scroller item (`useRowChunks`). Memoized, like each row: it renders again only when its own items change. */
+const TimelineChunk = memo(function TimelineChunk({ items, top, ...props }: RowProps & { readonly items: readonly SharedItem[]; readonly top: boolean }) {
+  return <MessageScrollerItem messageId={items[0]!.key} data-transcript-chunk="" className="flex flex-col [content-visibility:visible] [gap:inherit]">
+    {items.map((item, index) => <TimelineRow key={item.key} item={item} top={top && index === 0} {...props} />)}
+  </MessageScrollerItem>;
+});
+const TimelineRow = memo(function TimelineRow({ item, top, multi, controller, mentions, openFile, onReply, onReveal }: RowProps & { readonly item: SharedItem; readonly top: boolean }) {
+  const { labels } = useChatText();
+  const view = useSharedView();
+  const context = useMemo(() => ({ pieces: { mentions: true, skills: [], renderMention: mentions.renderSent }, openFile }), [mentions.renderSent, openFile]);
   const renderMention = (path: string, text: string) => mentions.renderSent?.(path) ?? text;
-  const reply = (id: string) => { controller.setReplyTo(id); focusComposer(); };
-  const bubble = (item: SharedItem) => {
+  const bubble = () => {
     const { message, author, own, first } = item;
     const person = own || author.kind !== 'agent' || message.via !== undefined;
     const head = first && !own && multi ? <AuthorName member={author} via={message.via} /> : undefined;
     const traced = view.steps !== 'hidden' && !message.via && author.kind === 'agent' && Boolean(message.streaming || message.steps?.length);
-    const quote = message.replyTo ? <ReplyQuote targetId={message.replyTo} quote={item.quote} onReveal={setRevealing} /> : undefined;
+    const quote = message.replyTo ? <ReplyQuote targetId={message.replyTo} quote={item.quote} onReveal={onReveal} /> : undefined;
     if (message.card) return <article data-row-id={item.key} data-role="event" className="flex w-full min-w-0 flex-col">
       <Bubble variant={own ? 'default' : 'muted'} align={own ? 'end' : 'start'} data-testid="card-bubble">
         {first && <BubbleTail side={own ? 'end' : 'start'} />}
@@ -102,27 +139,10 @@ export function SharedTimeline({ controller, api, focusComposer, openFile, menti
         </BubbleContent></Bubble>}
     </MessageContent></Message></article>;
   };
-  return <MessageScroller>
-    <MessageScrollerViewport ref={node => { root.current = node; stick.scrollRef(node); }} data-testid="transcript-scroll" aria-label={labels.messages} className="min-h-0 flex-1 scrollbar-thumb-border scrollbar-track-transparent"
-      onScroll={event => { const top = event.currentTarget.scrollTop; if (top < lastTop.current - 4) setScrolledUp(true); lastTop.current = top; }}>
-      {items.length > 0 && (hidden > 0 || state.history.kind === 'loading' || state.history.kind === 'error' || state.history.kind === 'ready' && state.history.hasMore) && <TranscriptHistory history={state.history} connected={!state.disposed && connected} onLoad={transcript.reveal} sentinelRef={transcript.sentinelRef} hidden={hidden} loaded={transcript.loaded} />}
-      <div data-testid="transcript-bottom" className="mx-auto flex min-h-full w-full max-w-[720px] flex-col justify-end px-4 pt-4 pb-3 sm:px-6">
-        <MessageScrollerContent aria-label={labels.messages} aria-live="polite" data-testid="transcript" className="h-auto min-h-0 gap-0 [&>[data-local-voice]]:mt-3">
-          {transcript.visible(items).map((item, index) => {
-            const gap = index === 0 || item.separator ? '' : item.system || item.first ? ' mt-3' : ' mt-0.5';
-            return <MessageScrollerItem key={item.key} messageId={item.key} data-group-start={item.first ? 'true' : undefined} className={`[content-visibility:visible]${gap}`}>
-              {item.separator && <div data-testid="day-separator" className={`flex justify-center pb-3${index > 0 ? ' pt-4' : ''}`}><Badge variant="secondary"><time dateTime={item.message.at} title={labels.sharedTimestamp(item.message.at)}>{labels.sharedDay(item.message.at)}</time></Badge></div>}
-              {item.system ? <SystemLines lines={item.system} />
-                : <SharedMessage shared={item} avatars={multi} remove={controller.remove} canRemove={controller.canRemove} openFile={openFile} onReply={reply} onReveal={setRevealing}>{bubble(item)}</SharedMessage>}
-            </MessageScrollerItem>;
-          })}
-          {pendingVoice}
-        </MessageScrollerContent>
-      </div>
-    </MessageScrollerViewport>
-    {hasContent && !stick.isAtBottom && scrolledUp && <div data-testid="transcript-navigation" className="flex shrink-0 items-center justify-center py-1.5">
-      <Button variant="secondary" size="sm" data-testid="jump-latest" data-unseen={unseen || undefined} aria-label={unseen ? labels.sharedNewMessages(unseen) : labels.jumpToLatest} title={labels.jumpToLatest} className="max-sm:min-h-11 pointer-coarse:min-h-11" onClick={() => api.current?.reset()}>
-        <icons.jumpToLatest data-icon="inline-start" aria-hidden="true" />{unseen ? labels.sharedNewMessages(unseen) : labels.jumpToLatest}</Button>
-    </div>}
-  </MessageScroller>;
-}
+  const gap = top || item.separator ? '' : item.system || item.first ? ' mt-3' : ' mt-0.5';
+  return <div data-row-key={item.key} data-group-start={item.first ? 'true' : undefined} className={`min-w-0 shrink-0${gap}`}>
+    {item.separator && <div data-testid="day-separator" className={`flex justify-center pb-3${top ? '' : ' pt-4'}`}><Badge variant="secondary"><time dateTime={item.message.at} title={labels.sharedTimestamp(item.message.at)}>{labels.sharedDay(item.message.at)}</time></Badge></div>}
+    {item.system ? <SystemLines lines={item.system} />
+      : <SharedMessage shared={item} avatars={multi} remove={controller.remove} canRemove={controller.canRemove} openFile={openFile} onReply={onReply} onReveal={onReveal}>{bubble()}</SharedMessage>}
+  </div>;
+});

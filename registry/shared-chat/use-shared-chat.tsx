@@ -55,8 +55,8 @@ export function useSharedChatProps(controller: SharedChatController | undefined,
   };
 }
 
-/** Owns only the adapters it creates; each adapter borrows the host source. */
-export function useSharedChat(source: ChannelSource, options: SharedTextOptions = {}) {
+/** Owns only the adapters it creates; each adapter borrows the host source. `limit`: messages per history page read from the source (default 60). */
+export function useSharedChat(source: ChannelSource, options: SharedTextOptions & { readonly limit?: number | undefined } = {}) {
   const [list, setList] = useState<{ source: ChannelSource; items: Conversation[] }>();
   const [selection, setSelection] = useState<{ source: ChannelSource; id: string }>();
   const [error, setError] = useState<string>();
@@ -70,10 +70,10 @@ export function useSharedChat(source: ChannelSource, options: SharedTextOptions 
   }, [source]);
   useEffect(() => {
     if (conversationId === undefined) return;
-    const controller = createSharedChat(source, { conversationId });
+    const controller = createSharedChat(source, { conversationId, ...(options.limit === undefined ? {} : { limit: options.limit }) });
     setBinding({ source, id: conversationId, controller });
     return () => { void controller.dispose(); };
-  }, [source, conversationId]);
+  }, [source, conversationId, options.limit]);
   const controller = binding?.source === source && binding.id === conversationId ? binding.controller : undefined;
   const conversations: ConversationsConfig = { items, activeId: conversationId, loading: list?.source !== source, onSelect: id => setSelection({ source, id }) };
   const chat = useSharedChatProps(controller, options);

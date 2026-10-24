@@ -5,7 +5,7 @@ import type { KeyboardEvent, PointerEvent, ReactNode } from 'react';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { BellIcon, ChevronDownIcon, CircleAlertIcon, CircleCheckIcon, ExternalLinkIcon, GripVerticalIcon, Loader2Icon, MessageCircleQuestionIcon, MinusIcon, PanelLeftIcon, ThumbsDownIcon, ThumbsUpIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { MessageScroller, MessageScrollerProvider, MessageScrollerViewport, MessageScrollerContent, MessageScrollerItem, MessageScrollerButton } from '@/components/ui/message-scroller';
+import { MessageScroller, MessageScrollerProvider, MessageScrollerViewport, MessageScrollerContent, MessageScrollerButton } from '@/components/ui/message-scroller';
 import { Toggle } from '@/components/ui/toggle';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -23,7 +23,7 @@ import { notifyPermission, requestNotifyPermission } from './browser-notify';
 import type { NotifyPermission } from './browser-notify';
 import { ConversationHistory, TranscriptHistory } from '../pi-chat/history';
 import { withChatPlugins } from '../pi-chat-plugins/chat-plugins';
-import { RowView } from '../pi-chat/message';
+import { TranscriptChunk } from '../pi-chat/message';
 import type { RowContext } from '../pi-chat/message';
 import { ChatNotices, Notice, PreparingStatus, preparing } from '../pi-chat/notice';
 import { AgentNotifications, KindIcon, createNotificationStore, defaultNotificationLabels, finishNotice, pendingQuestion, useNotifications } from './notifications';
@@ -34,7 +34,7 @@ import { MessageQueue } from '../pi-chat/queue';
 import { artifactKey, collectArtifacts } from '../pi-artifacts/artifact';
 import type { ArtifactDescriptor, ArtifactsConfig } from '../pi-artifacts/artifact';
 import { artifactCards } from '../pi-artifacts/artifact-card';
-import { useChatSession, useTranscript } from '../pi-chat/session';
+import { PAGE_FIRST, PAGE_MORE, useChatSession, useRowChunks, useTranscript } from '../pi-chat/session';
 import type { ChatFeatureProps, ChatSession } from '../pi-chat/session';
 import { ArtifactWorkspace } from '../pi-workspace/workspace';
 import type { WorkspacePanelApi } from '../pi-workspace/workspace';
@@ -260,7 +260,7 @@ type SessionProps = Omit<AmbientChatProps, 'labels' | 'icons'> & { readonly labe
 
 function AmbientSession({ controller, embedded = false, labels, icons, avatar, headerActions, headerTools, messageActions, variant = 'contrast', mode = 'expert', presentation, actions,
   windowState, onWindowState, store, storageKey = 'boring.ambient.position', storage = 'session', tools, belowComposer, composerChips, composerLayout = 'card', onOpenFull, onFeedback, notifications, autoDismissMs, maxToasts, systemNotifications = false,
-  renderEntry, hideLine, displayLimit, historicalMessageActions, unread: replyUnread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept = 'image/*', slash, mentions, attachments, onOpenFile, fileChanges, pasteToFile, model, effort, replyFooter, artifacts: hostArtifacts, artifactPanel, artifactTarget, conversations, onDock, feedback: composerFeedback, className,
+  renderEntry, hideLine, displayLimit, paging, historicalMessageActions, unread: replyUnread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept = 'image/*', slash, mentions, attachments, onOpenFile, fileChanges, pasteToFile, model, effort, replyFooter, artifacts: hostArtifacts, artifactPanel, artifactTarget, conversations, onDock, feedback: composerFeedback, className,
   activeController }: SessionProps) {
   const { title } = labels;
   useChatPlacement(controller, embedded ? 'docked' : 'floating');
@@ -313,7 +313,8 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
     slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => scrollToBottom.current(), rowExtras, feedback: composerFeedback, onOpenFile, fileChanges, pasteToFile, composerChips });
   const { state, derived, rows, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, files, loading } = session;
   const empty = session.empty;
-  const transcript = useTranscript(rows, displayLimit ?? 60, 40, { state: state.history, connected: !state.disposed && connected, load: controller.loadEarlier }, displayLimit === undefined);
+  const transcript = useTranscript(rows, displayLimit ?? paging?.first ?? PAGE_FIRST, paging?.more ?? PAGE_MORE, { state: state.history, connected: !state.disposed && connected, load: controller.loadEarlier }, displayLimit === undefined);
+  const chunks = useRowChunks(useMemo(() => transcript.visible(rows), [rows, transcript.hidden]));
   const versions = useMemo(() => inWindow ? collectArtifacts(state.view, detect).sort((a, b) => (b.ordinal ?? 0) - (a.ordinal ?? 0)) : [], [inWindow, state.view, detect]);
   versionsRef.current = versions;
   const known = opened ? versions.filter(version => artifactKey(version) === artifactKey(opened.descriptor)) : [];
@@ -446,7 +447,6 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
     </div>
   </div>;
 
-  const visibleRows = transcript.visible(rows);
   const conversation = <section className="flex min-h-0 min-w-0 flex-1 flex-col">
       <header hidden={embedded} data-testid="ambient-header" className={cn(embedded && '!hidden','flex h-12 shrink-0 items-center gap-0.5 px-2 max-sm:h-14 max-sm:px-3')}>
         <Button variant="ghost" size="icon" data-testid="ambient-minimize" aria-label={labels.minimize} title={labels.minimize} onClick={() => { setPicking(false); setWindowState(expanded ? 'bar' : 'minimized'); }}><icons.minimize data-icon="inline-start" aria-hidden="true" /></Button>
@@ -479,7 +479,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
               {!empty && <TranscriptHistory history={state.history} connected={!state.disposed && connected} onLoad={transcript.reveal} sentinelRef={transcript.sentinelRef} hidden={hidden} loaded={transcript.loaded} />}
               <div className="px-4 pt-4 pb-6">
               <MessageScrollerContent aria-label={labels.messages} aria-live="polite" data-testid="transcript">
-                {visibleRows.map(row => <MessageScrollerItem key={row.key} messageId={row.key} className="[content-visibility:visible]"><RowView row={row} context={rowContext} /></MessageScrollerItem>)}
+                {chunks.map(run => <TranscriptChunk key={run[0]!.key} rows={run} context={rowContext} />)}
                 {loading && <p role="status" data-testid="loading" className="m-0 flex items-center gap-2 text-sm text-muted-foreground"><Loader2Icon className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />{labels.loading}</p>}
                 {empty && !loading && <p data-testid="ambient-empty" className="m-0 max-w-sm py-8 text-sm leading-6 text-muted-foreground">{labels.empty}</p>}
               </MessageScrollerContent>

@@ -20,23 +20,23 @@ import { displayName } from './config';
 import { EmptyState } from './empty-state';
 import type { Suggestion } from './empty-state';
 import { ConversationHistory, TranscriptHistory } from './history';
-import { RowView } from './message';
+import { TranscriptChunk } from './message';
 import type { Row } from './rows';
 import { MessageQueue } from './queue';
 import { ChatNotices, Notice, PreparingStatus, preparing } from './notice';
 import { Shimmer } from './shimmer';
-import { useChatSession, useTranscript } from './session';
+import { PAGE_FIRST, PAGE_MORE, useChatSession, useRowChunks, useTranscript } from './session';
 import { useChatDraft } from './use-chat-draft';
 import { useChatPlacement } from './use-remote-chat';
 import type { ChatPlacement } from './use-remote-chat';
-import type { ChatFeatureProps, FilesHandler } from './session';
+import type { ChatFeatureProps, ChatPaging, FilesHandler } from './session';
 import { ChatTextProvider, useChatText, useMergedText } from './labels';
 import { chatTextFor } from './locale';
 import type { ChatLocale } from './locale';
 import type { ChatIcons, ChatLabels } from './labels';
 import { cn } from '../utils/utils';
 
-export type { PiChatActions } from './session';
+export type { ChatPaging, PiChatActions } from './session';
 export type { ChatCard, Mode } from './rows';
 export type { AnswerOutcome, ApprovalCardProps, ApprovalDecision, ChatArtifact, ChatArtifactCardProps, ChatArtifactsConfig, ChatCards, QuestionCardProps, SubagentRenderer } from './config';
 export { ASK_USER_TOOL } from './config';
@@ -65,7 +65,7 @@ export type { AudioUrlRead, VoiceMessageConfig, AttachmentsConfig, ConversationI
 
 export interface ChatTimeline {
   readonly count: number;
-  readonly render: (context: { readonly focusComposer: () => void; readonly openFile?: ((path: string) => void) | undefined; readonly pendingVoice?: ReactNode }) => ReactNode;
+  readonly render: (context: { readonly focusComposer: () => void; readonly openFile?: ((path: string) => void) | undefined; readonly pendingVoice?: ReactNode; readonly paging?: ChatPaging | undefined }) => ReactNode;
   readonly afterSend?: () => void;
 }
 
@@ -138,7 +138,6 @@ export interface PiChatProps extends ChatFeatureProps {
   readonly draftKey?: string | undefined;
 }
 
-const PAGE = 60, MORE = 40;
 type TranscriptRow = { readonly key: string; readonly kind: 'native'; readonly row: Row }
   | { readonly key: string; readonly kind: 'voice'; readonly voice: PendingVoice };
 
@@ -167,7 +166,7 @@ const noVoice: VoiceRecorderHook = () => silent;
 /** A shell's pending voice row when no `voiceMessage.Bubble` is plugged in: nothing to draw. */
 function NoVoiceBubble(_: { readonly pending: PendingVoice | undefined }) { return null; }
 
-function PiChatSession({ controller, placement = 'docked', mode = 'expert', presentation, className, keyboardInset = true, actions, avatar, headerActions, header = true, decisions, controls, tools, composerStart, voiceReplacesSend = false, voiceMessage, pendingVoice, belowComposer, composerChips, composerHeader, composerHasContent, onPickFiles, timeline, renderConnectionError, headerStart, renderEntry, hideLine, displayLimit, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions,
+function PiChatSession({ controller, placement = 'docked', mode = 'expert', presentation, className, keyboardInset = true, actions, avatar, headerActions, header = true, decisions, controls, tools, composerStart, voiceReplacesSend = false, voiceMessage, pendingVoice, belowComposer, composerChips, composerHeader, composerHasContent, onPickFiles, timeline, renderConnectionError, headerStart, renderEntry, hideLine, displayLimit, paging, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions,
   onOpenImage, onCopy, onComposerKeyDown, onFiles, camera, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = false, emptyLayout = 'centered', composerLayout = 'card', conversationTitle, onRenameTitle, feedback, draftKey, onOpenFile, fileChanges, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: ChatController } }) {
   const { labels, icons } = useChatText();
   useChatDraft(controller, draftKey);
@@ -198,10 +197,12 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
   }
   const { pinned, retry } = derived;
   const showPreparing = preparing({ natural: session.natural, waitingForAnswer, run: derived.run, retry, compacting: derived.compacting, stop: state.stop });
-  const transcript = useTranscript(transcriptRows, displayLimit ?? PAGE, MORE, { state: state.history, connected: !state.disposed && connected, load: controller.loadEarlier }, displayLimit === undefined);
+  const transcript = useTranscript(transcriptRows, displayLimit ?? paging?.first ?? PAGE_FIRST, paging?.more ?? PAGE_MORE, { state: state.history, connected: !state.disposed && connected, load: controller.loadEarlier }, displayLimit === undefined);
   const { stick, hidden } = transcript;
   scrollToBottom.current = () => { transcript.reset(); void stick.scrollToBottom('instant'); };
   const visible = transcript.visible(transcriptRows);
+  // Native rows come before pending voice rows, so the hidden ones are the oldest native rows.
+  const chunks = useRowChunks(useMemo(() => rows.slice(Math.min(rows.length, hidden)), [rows, hidden]));
   const { barStart, barNote } = session.pickers();
   const connectionKind = state.connection.kind;
   const [renamingTitle, setRenamingTitle] = useState(false);
@@ -244,12 +245,13 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
     {pickingConversation && conversations && historyList && <ConversationHistory conversations={conversations} onClose={() => setPickingConversation(false)} />}
 
     <div data-testid="conversation-content" className={cn('relative min-h-0 flex-1', empty && emptyLayout === 'centered' && 'min-[641px]:min-h-60 min-[641px]:flex-none')}>
-      {timeline ? timeline.render({ focusComposer: () => textarea.current?.focus(), openFile: onOpenFile ?? mentions?.open, pendingVoice: pendingRows }) : <MessageScroller>
+      {timeline ? timeline.render({ focusComposer: () => textarea.current?.focus(), openFile: onOpenFile ?? mentions?.open, pendingVoice: pendingRows, paging }) : <MessageScroller>
         <MessageScrollerViewport ref={stick.scrollRef} data-testid="transcript-scroll" aria-label={labels.messages} className="min-h-0 flex-1 scrollbar-thumb-border scrollbar-track-transparent">
           {!empty && <TranscriptHistory history={state.history} connected={!state.disposed && connected} onLoad={transcript.reveal} sentinelRef={transcript.sentinelRef} hidden={hidden} loaded={transcript.loaded} />}
           <div className="mx-auto w-full max-w-[720px] px-4 pt-6 pb-8 sm:px-6">
           <MessageScrollerContent aria-label={labels.messages} aria-live="polite" data-testid="transcript">
-            {visible.map(item => <MessageScrollerItem key={item.key} messageId={item.key} data-local-voice={item.kind === 'voice' ? '' : undefined} className="[content-visibility:visible]">{item.kind === 'native' ? <RowView row={item.row} context={rowContext} /> : <VoiceBubbleView pending={item.voice} />}</MessageScrollerItem>)}
+            {chunks.map(run => <TranscriptChunk key={run[0]!.key} rows={run} context={rowContext} />)}
+            {visible.map(item => item.kind === 'voice' && <MessageScrollerItem key={item.key} messageId={item.key} data-local-voice="" className="[content-visibility:visible]"><VoiceBubbleView pending={item.voice} /></MessageScrollerItem>)}
           </MessageScrollerContent>
           </div>
         </MessageScrollerViewport>
