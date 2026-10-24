@@ -13,7 +13,6 @@ import { ActivityIcon, ArchiveIcon, CalendarDaysIcon, CalendarPlusIcon, Clipboar
 import { createFeedbackSession } from '@hachej/boring-feedback/ui';
 import { createPrivacyPolicy } from '@hachej/boring-feedback/page';
 import { connectRevisionProvider } from '@hachej/boring-files/revision';
-import { afterBack } from '../../registry/app-shell/back.ts';
 import { AppShell, ListDetail, useAgentContext, readAgentContext, useScreenHeader } from '../../registry/app-shell/index.ts';
 import type { RevisionProvider } from '@hachej/boring-files/revision';
 import { AgentTargetMode } from '../../registry/agent-target/agent-target.tsx';
@@ -75,7 +74,11 @@ function Meals() {
   </section>;
 }
 function WalkingDay() {
-  useScreenHeader({ title: 'Ma journée', subtitle: 'mardi 13 octobre', actions: [themeAction] });
+  // `?header=owned`: a screen that owns its row (leading controls after the trigger, sans title, 48 px).
+  const owned = new URLSearchParams(location.search).get('header') === 'owned';
+  useScreenHeader(owned
+    ? { title: 'Ma journée', leading: <span className="hidden items-center gap-1 md:flex"><Button variant="secondary" size="sm">Cabinet</Button><Button variant="ghost" size="sm">Urgences</Button></span>, titleFace: 'sans', dense: true, actions: [themeAction] }
+    : { title: 'Ma journée', subtitle: 'mardi 13 octobre', actions: [themeAction] });
   return <List />;
 }
 function Day() { return targets ? <Meals /> : <WalkingDay />; }
@@ -246,8 +249,8 @@ function RedactionApp() {
   // The app's router: the URL is a hash and is only ever replaced; the shell's Back layer owns the one history entry of an open detail.
   const go = (next: string) => { history.replaceState(history.state, '', `#${next}`); setHash(next); };
   const selected = /^\d+$/.test(hash) ? Number(hash) : null;
-  // A tab from a detail: the selection changes first, the stack entry then goes back on its own, and only after that is the URL replaced.
-  const onChange = (id: string) => { window.__routes.push(id); setHash(id); afterBack(() => history.replaceState(history.state, '', `#${id}`)); };
+  // A tab from a detail: the shell calls this once the detail's stack entry has gone back, so the URL can simply be replaced.
+  const onChange = (id: string) => { window.__routes.push(id); go(id); };
   const nav = [
     { id: 'consultations', label: 'Consultations', icon: ClipboardListIcon, render: () => <Consultations selected={selected} onSelect={id => go(String(id))} onBack={() => go('')} />,
       ...(inSidebar ? { sidebar: ({ collapsed }: { collapsed: boolean }) => collapsed

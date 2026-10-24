@@ -52,6 +52,24 @@ try {
     for (const id of Object.keys(remembered)) { const actual = await browser.evaluate(rect(id)); assert.deepEqual(actual, remembered[id].rect); }
     await browser.screenshot('desktop-restored.png');
   });
+  await step('every edge resizes from its own side with the opposite edge fixed', async () => {
+    await browser.click(`${panel('notes')}.querySelector('[data-slot=card-title]')`);
+    const edge = name => `${panel('notes')}.querySelector('[data-window-resize="${name}"]')`;
+    const start = await browser.evaluate(rect('notes'));
+    await gesture(edge('w'), -60, 0); const west = await browser.evaluate(rect('notes'));
+    assert.ok(Math.abs(west.x - (start.x - 60)) < 2 && Math.abs(west.width - (start.width + 60)) < 2); assert.ok(Math.abs(west.x + west.width - start.x - start.width) < 2);
+    await gesture(edge('n'), 0, -30); const north = await browser.evaluate(rect('notes'));
+    assert.ok(Math.abs(north.y - (west.y - 30)) < 2 && Math.abs(north.height - (west.height + 30)) < 2); assert.ok(Math.abs(north.y + north.height - west.y - west.height) < 2);
+    await browser.screenshot('desktop-edge-resized-nw.png');
+    await gesture(edge('e'), 40, 0); await gesture(edge('s'), 0, 30);
+    const south = await browser.evaluate(rect('notes')); assert.ok(Math.abs(south.width - (north.width + 40)) < 2 && Math.abs(south.height - (north.height + 30)) < 2);
+    await gesture(edge('w'), 4000, 0); assert.equal((await browser.evaluate(rect('notes'))).width, 240);
+    await gesture(edge('s'), 0, -4000); assert.equal((await browser.evaluate(rect('notes'))).height, 160);
+    await browser.screenshot('desktop-edge-resized-minimum.png');
+    await gesture(edge('nw'), -30, -20); await gesture(edge('se'), 200, 160);
+    await browser.screenshot('desktop-corner-resized.png');
+    remembered = await browser.evaluate(`Object.fromEntries(['notes','calculator','planning'].map(id => [id, JSON.parse(localStorage.getItem('fictional.windows.'+id))]))`);
+  });
   await step('launcher focuses an open window, minimize restores it, Escape closes only the focused window', async () => {
     await browser.click(launcher); await browser.until('open state in launcher', `document.querySelectorAll('[role=menuitem][data-window-open=true]').length === 3`); await browser.screenshot('desktop-launcher-open-windows.png');
     await browser.click(`[...document.querySelectorAll('[role=menuitem]')].find(b => b.textContent.startsWith('Notes'))`);

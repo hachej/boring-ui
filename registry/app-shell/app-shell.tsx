@@ -7,6 +7,7 @@
 // (`useScreenHeader`). The AgentLayer is mounted once, here.
 // Host concern: Pi has no layout; the screen on show travels as the agent's context (useAgentContext -> createPromptContext).
 import { useState } from 'react';
+import { afterStacksBack } from './back';
 import type { ReactNode } from 'react';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
@@ -70,6 +71,9 @@ function Shell({ compactNav, layout, rail, title, nav, agent, improve, account, 
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   const active = nav.find(item => item.id === route.id) ?? nav[0];
   if (!active) return null;
+  // A nav choice waits for an open detail's stack entry to go back, so the app's router can replace the URL without that Back restoring
+  // the detail's. Choosing the screen already on show changes nothing and keeps the detail.
+  const choose = (id: string) => { if (id === active.id) route.onChange(id); else afterStacksBack(() => route.onChange(id)); };
   const hasAccount = Boolean(account) || improve;
   const avatar = hasAccount ? <>
     <Button variant="ghost" size="icon" data-testid="account-button" aria-label={account?.name ?? text.account} title={account?.name ?? text.account} onClick={() => setAccountOpen(true)}><AccountAvatar account={account} /></Button>
@@ -79,13 +83,13 @@ function Shell({ compactNav, layout, rail, title, nav, agent, improve, account, 
   </> : null;
   // The structure is the same compact or expanded, so a resize never remounts a screen.
   return <SidebarProvider data-testid="app-shell" defaultOpen={rail !== 'hover' && layout === 'screen'} className="app-shell h-dvh min-h-0 overflow-hidden">
-    {(!compact || sheet) && <AppSidebar rail={sheet ? 'icon' : rail} title={title} items={nav} activeId={active.id} onChange={route.onChange} agent={agent} account={account} improve={improve} text={text} />}
+    {(!compact || sheet) && <AppSidebar rail={sheet ? 'icon' : rail} title={title} items={nav} activeId={active.id} onChange={choose} agent={agent} account={account} improve={improve} text={text} />}
     <AgentDockLayout>
       <div data-slot="sidebar-inset" className="relative flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden bg-background">
       <ShellContext name={active.label} />
       <ScreenHeader fallbackTitle={active.label} compact={compact} avatar={avatar} menu={sheet} text={text} slotRef={setSlot} />
       <Screens items={nav} activeId={active.id} scrolls={layout === 'screen'} slot={slot} />
-      {compact && !sheet && <TabBar items={nav} activeId={active.id} onChange={route.onChange} text={text} />}
+      {compact && !sheet && <TabBar items={nav} activeId={active.id} onChange={choose} text={text} />}
       </div>
     </AgentDockLayout>
     <AgentLayer />

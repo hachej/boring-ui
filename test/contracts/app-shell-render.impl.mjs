@@ -425,6 +425,35 @@ test('the screen header follows an action whose href, target or rel changes alon
   await act(async () => reactRoot.unmount());
 });
 
+test('the screen header: `leading` renders right after the sidebar trigger and before the title; `titleFace: sans` and `dense` change the title face and the row height; defaults are unchanged', async t => {
+  const { createElement: h, act } = await import('react');
+  const { createRoot } = await import('react-dom/client');
+  const shell = await bundle('screen-header-entry.tsx', `export { AppShell } from '${root}${folder}/app-shell.tsx';\nexport { useScreenHeader } from '${root}${folder}/header.tsx';\n`);
+  const window = dom(t, 1280);
+  const Screen = ({ spec }) => { shell.useScreenHeader(spec); return null; };
+  const container = window.document.createElement('div');
+  window.document.body.append(container);
+  const reactRoot = createRoot(container);
+  const show = spec => act(async () => reactRoot.render(h(shell.AppShell, { layout: 'screen', title: 'Forme', nav: [{ id: 'Jour', label: 'Jour', icon: Icon, render: () => h(Screen, { spec }) }], route: { id: 'Jour', onChange() {} }, locale: 'fr' })));
+  const q = id => window.document.querySelector(`[data-testid=${id}]`);
+  await show({ title: 'Dossier' });
+  assert.equal(q('header-leading'), null, 'no leading, no wrapper');
+  assert.match(q('screen-header').className, /min-h-14/);
+  assert.match(q('header-title').className, /font-display|--font-display/);
+  await show({ title: 'Dossier', leading: h('button', { type: 'button', 'data-testid': 'lead' }, 'Cabinet'), titleFace: 'sans', dense: true });
+  const header = q('screen-header');
+  const order = [...header.querySelectorAll('[data-sidebar=trigger],[data-testid=header-leading],[data-testid=header-title]')].map(el => el.getAttribute('data-sidebar') ?? el.getAttribute('data-testid'));
+  assert.deepEqual(order, ['trigger', 'header-leading', 'header-title'], 'the leading slot sits between the trigger and the title');
+  assert.ok(q('header-leading').querySelector('[data-testid=lead]'));
+  assert.match(header.className, /min-h-12/);
+  assert.doesNotMatch(header.className, /min-h-14/);
+  assert.match(q('header-title').className, /font-sans/);
+  assert.doesNotMatch(q('header-title').className, /font-display/);
+  await show({ title: 'Dossier', leading: h('button', { type: 'button', 'data-testid': 'lead2' }, 'Urgences') });
+  assert.ok(q('header-leading').querySelector('[data-testid=lead2]'), 'a changed leading node shows');
+  await act(async () => reactRoot.unmount());
+});
+
 // The composer microphone on a phone: a fake microphone and recorder (the pattern of test/ui/voice-input.test.mjs), the layer open at half.
 async function talking(t, snap = 'half', options = {}) {
   const tracks = [], transcribed = [], uploads = [], sends = [];
