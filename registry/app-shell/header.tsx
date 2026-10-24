@@ -24,6 +24,12 @@ export interface ScreenHeaderSpec {
   readonly back?: () => void;
   /** At most two are shown; the others go in « … ». */
   readonly actions?: readonly ScreenHeaderAction[];
+  /** Controls rendered right after the sidebar trigger (or « ← »), before the title: a screen that owns its row, left-aligned. */
+  readonly leading?: ReactNode;
+  /** The title's face: `display` (default, the theme's display font) or `sans`. */
+  readonly titleFace?: 'display' | 'sans';
+  /** A dense 48 px row instead of 56 px. */
+  readonly dense?: boolean;
 }
 
 export type { ScreenHeaderAction } from './header-actions';
@@ -59,7 +65,7 @@ export function useScreenHeader(spec: ScreenHeaderSpec, options?: { readonly ove
   const active = useContext(ScreenActiveContext);
   const entry = useRef<Entry>({ spec, overlay: options?.overlay === true });
   entry.current.spec = spec;
-  const key = JSON.stringify([spec.title, spec.subtitle, Boolean(spec.back), spec.actions?.map(action => [action.id, action.label, action.showLabel, action.href, action.target, action.rel, iconId(action.icon)])]);
+  const key = JSON.stringify([spec.title, spec.subtitle, Boolean(spec.back), spec.titleFace, spec.dense, spec.actions?.map(action => [action.id, action.label, action.showLabel, action.href, action.target, action.rel, iconId(action.icon)])]);
   useLayoutEffect(() => {
     if (!store || !active) return;
     const mine = entry.current;
@@ -67,7 +73,7 @@ export function useScreenHeader(spec: ScreenHeaderSpec, options?: { readonly ove
     touch(store);
     return () => { const at = store.entries.indexOf(mine); if (at >= 0) store.entries.splice(at, 1); touch(store); };
   }, [store, active]);
-  useLayoutEffect(() => { if (store && active) touch(store); }, [store, active, key]);
+  useLayoutEffect(() => { if (store && active) touch(store); }, [store, active, key, spec.leading]);
 }
 
 /** The header of the screen on show (the most recently mounted caller), or undefined. Re-renders when screens come and go or change their header. */
@@ -101,11 +107,12 @@ export function ScreenHeader({ fallbackTitle, compact, avatar, text, slotRef }: 
   const actions = spec?.actions ?? [];
   const run = (id: string) => top?.spec.actions?.find(action => action.id === id)?.onSelect();
   const back = spec?.back ? <Button variant="ghost" size="icon" data-testid="header-back" aria-label={text.goBack} title={text.goBack} onClick={() => top?.spec.back?.()}><ArrowLeftIcon data-icon="inline-start" aria-hidden="true" /></Button> : null;
-  return <header data-testid="screen-header" className="sticky top-0 z-10 flex min-h-14 shrink-0 items-center gap-1 bg-background px-2 pt-[env(safe-area-inset-top)]">
+  return <header data-testid="screen-header" className={`sticky top-0 z-10 flex ${spec?.dense ? 'min-h-12' : 'min-h-14'} shrink-0 items-center gap-1 bg-background px-2 pt-[env(safe-area-inset-top)]`}>
     <Separator className="absolute inset-x-0 bottom-0" />
     {compact ? (back ?? avatar) : <><SidebarTrigger />{back}</>}
+    {spec?.leading != null && <div data-testid="header-leading" className="flex shrink-0 items-center gap-1">{spec.leading}</div>}
     <div className="min-w-0 flex-1 px-1">
-      <h1 data-testid="header-title" className="m-0 truncate text-base leading-tight font-semibold [font-family:var(--font-display,var(--font-sans))]">{spec?.title ?? fallbackTitle}</h1>
+      <h1 data-testid="header-title" className={`m-0 truncate text-base leading-tight font-semibold ${spec?.titleFace === 'sans' ? 'font-sans' : '[font-family:var(--font-display,var(--font-sans))]'}`}>{spec?.title ?? fallbackTitle}</h1>
       {spec?.subtitle && <p data-testid="header-subtitle" className="m-0 truncate text-xs text-muted-foreground">{spec.subtitle}</p>}
     </div>
     {/* An embedded page's own controls (`ScreenHeaderSlotContext`, for example AgentWorkspace layout="embedded"), so it needs no second row. */}

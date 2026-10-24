@@ -1,5 +1,7 @@
 # Unreleased
 
+- **The screen header can own its row (boring-factory#499).** No change unless you opt in; reinstall `app-shell`. `useScreenHeader` takes three optional fields: `leading` (controls rendered right after the sidebar trigger or « ← », before the title, left-aligned), `titleFace: 'sans'` (the title in the sans face instead of the display face) and `dense: true` (a 48 px row instead of 56 px).
+
 # Migrating to 0.4.14
 
 - **Voice is recorded as WAV.** `createVoiceCapture` (`@hachej/boring-ui-kit/voice-capture`, re-exported by `@hachej/boring-feedback/page`) records 16 kHz mono WAV through Web Audio where the page has it, and `start()` resolves only at the first sound. No API change: `stop()` returns `mimeType: 'audio/wav'`, so a host that names files or picks a transcription path from the MIME type must accept `audio/wav` (reinstall `pi-chat-voice`: it now names the upload `voice-….wav`). MediaRecorder remains where Web Audio cannot start; pass `audioContext: null` to keep it. A host CSP needs nothing new (a ScriptProcessorNode, no worklet module).
