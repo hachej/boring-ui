@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { ImageContent, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai';
 import { AlertCircleIcon, CircleSlashIcon, FileAudioIcon, FileIcon, FileSpreadsheetIcon, FileTextIcon, ImageIcon, PauseIcon, PlayIcon, PresentationIcon } from 'lucide-react';
@@ -28,6 +28,7 @@ import { cn } from '../utils/utils';
 import type { ReplyRef } from './config';
 import { Message, MessageContent, MessageFooter } from '@/components/ui/message';
 import { Bubble, BubbleContent } from '@/components/ui/bubble';
+import { MessageScrollerItem } from '@/components/ui/message-scroller';
 import { Attachment, AttachmentContent, AttachmentDescription, AttachmentMedia, AttachmentTitle, AttachmentTrigger } from '@/components/ui/attachment';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -295,6 +296,20 @@ function messageImages(row: Row): readonly ImageContent[] {
   if (row.type === 'orphan-result') return images(row.message.content);
   return row.type === 'assistant' ? row.images?.filter(image => thumbnail(image.mimeType, image.data)) ?? row.parts.flatMap(part => part.kind === 'tool' && part.entry.result ? images(part.entry.result.content) : []) : [];
 }
+
+/**
+ * A run of transcript rows as one scroller item (`useRowChunks`). Memoized, like each row: a row renders again only when its own row
+ * or the chat's row context changes, never on a scroll or another row's update. Pass stable callbacks (`messageActions`, `unread`…)
+ * so the context stays the same.
+ */
+export const TranscriptChunk = memo(function TranscriptChunk({ rows, context }: { readonly rows: readonly Row[]; readonly context: RowContext }) {
+  return <MessageScrollerItem messageId={rows[0]!.key} data-transcript-chunk="" className="flex flex-col [content-visibility:visible] [gap:inherit]">
+    {rows.map(row => <TranscriptRow key={row.key} row={row} context={context} />)}
+  </MessageScrollerItem>;
+});
+const TranscriptRow = memo(function TranscriptRow({ row, context }: { readonly row: Row; readonly context: RowContext }) {
+  return <div data-row-key={row.key} className="min-w-0 shrink-0"><RowView row={row} context={context} /></div>;
+});
 
 export function RowView({ row, context }: { readonly row: Row; readonly context: RowContext }) {
   const images = messageImages(row);

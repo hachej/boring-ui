@@ -1,12 +1,21 @@
+// Building an Intl.DateTimeFormat costs far more than formatting with one; every bubble's clock reuses the same few.
+const formats = new Map<string, Intl.DateTimeFormat>();
+function format(locale: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const key = `${locale}|${JSON.stringify(options)}`;
+  let found = formats.get(key);
+  if (!found) { found = new Intl.DateTimeFormat(locale, options); formats.set(key, found); }
+  return found;
+}
+
 export function formatTimestamp(at: string, locale: string) {
   const date = new Date(at);
   if (!Number.isFinite(date.getTime())) return at;
-  return `${new Intl.DateTimeFormat(locale, { weekday: 'short', day: 'numeric', month: 'short' }).format(date)}, ${new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' }).format(date)}`;
+  return `${format(locale, { weekday: 'short', day: 'numeric', month: 'short' }).format(date)}, ${format(locale, { hour: '2-digit', minute: '2-digit' }).format(date)}`;
 }
 /** The time inside a bubble (« 14:02 », « 2:02 PM »). */
 export function formatClock(at: string, locale: string) {
   const date = new Date(at);
-  return Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat(locale, { hour: 'numeric', minute: '2-digit' }).format(date) : '';
+  return Number.isFinite(date.getTime()) ? format(locale, { hour: 'numeric', minute: '2-digit' }).format(date) : '';
 }
 /** A day separator: today and yesterday by name, otherwise « Tue 22 Oct » (with the year when it is not this year). */
 export function formatDay(at: string, locale: string, words: { readonly today: string; readonly yesterday: string }, now = Date.now()) {
@@ -17,7 +26,7 @@ export function formatDay(at: string, locale: string, words: { readonly today: s
   if (days === 0) return words.today;
   if (days === 1) return words.yesterday;
   const sameYear = new Date(now).getFullYear() === date.getFullYear();
-  return new Intl.DateTimeFormat(locale, { weekday: 'short', day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }) }).format(date).replace(/,/g, '');
+  return format(locale, { weekday: 'short', day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }) }).format(date).replace(/,/g, '');
 }
 type RoleOf = { readonly kind: 'person' | 'agent' | 'admin'; readonly role?: string | undefined };
 /** owner, validator and member read as themselves; every agent is the app's agent; the admin keeps its badge instead. */

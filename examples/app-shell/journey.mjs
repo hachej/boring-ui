@@ -475,7 +475,7 @@ try {
       await tap('[data-testid=composer-submit]');
       await browser.until(`reply ${i}`, `document.body.innerText.includes('Réponse ${['', 'un', 'deux', 'trois', 'quatre', 'cinq'][i]}')`, 20000);
       await pause(500);
-      const last = await browser.evaluate(`(() => { const rows = [...document.querySelectorAll('${LAYER} [data-testid=transcript] > *')].filter(e => e.getBoundingClientRect().height); const r = rows.at(-1).getBoundingClientRect(); return r.bottom; })()`);
+      const last = await browser.evaluate(`(() => { const rows = [...document.querySelectorAll('${LAYER} [data-testid=transcript] [data-row-key]')].filter(e => e.getBoundingClientRect().height); const r = rows.at(-1).getBoundingClientRect(); return r.bottom; })()`);
       const top = (await browser.evaluate(rect(INPUT))).y;
       assert.ok(last <= top + 1, `message ${i}: last row bottom ${last} <= composer top ${top}`);
     }
@@ -524,7 +524,7 @@ try {
     assert.equal(await browser.evaluate(`history.state`), null, 'the entry was consumed');
     await tap(TRIGGER); await browser.until('half again', `${snap} === 'half'`); await settle();
     // At half the drawer's lower part is below the screen by design: the chat pads nothing for it, so the messages have room and the last one is on screen.
-    const seen = await browser.evaluate(`(() => { const s = ${q('[data-testid=transcript-scroll]')}.getBoundingClientRect(); const rows = [...document.querySelectorAll('${LAYER} [data-testid=transcript] > *')].filter(e => e.getBoundingClientRect().height); const last = rows.at(-1)?.getBoundingClientRect(); return { height: s.height, rows: rows.length, lastTop: last?.top, lastBottom: last?.bottom, inner: innerHeight }; })()`);
+    const seen = await browser.evaluate(`(() => { const s = ${q('[data-testid=transcript-scroll]')}.getBoundingClientRect(); const rows = [...document.querySelectorAll('${LAYER} [data-testid=transcript] [data-row-key]')].filter(e => e.getBoundingClientRect().height); const last = rows.at(-1)?.getBoundingClientRect(); return { height: s.height, rows: rows.length, lastTop: last?.top, lastBottom: last?.bottom, inner: innerHeight }; })()`);
     assert.ok(seen.height >= 100, `the half drawer's transcript has room: ${JSON.stringify(seen)}`);
     assert.ok(seen.rows > 0 && seen.lastBottom <= seen.inner && seen.lastTop >= 0, `the last message is on screen at half: ${JSON.stringify(seen)}`);
     await tap('[data-testid=agent-layer-close]');

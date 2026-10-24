@@ -144,8 +144,8 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
     assert.equal(q('[data-shared-message=three] [data-testid=shared-message-content]')?.classList.contains('ml-8'), false);
     assert.equal(q('[data-shared-message=three] [data-slot=bubble]')?.dataset.align, 'end');
     assert.ok(q('[data-testid=transcript]').classList.contains('gap-0'));
-    assert.ok(q('[data-shared-message=two]').closest('[data-slot=message-scroller-item]').classList.contains('mt-0.5'), 'tight spacing inside a group');
-    assert.ok(q('[data-shared-message=three]').closest('[data-slot=message-scroller-item]').classList.contains('mt-3'), 'a little more between groups');
+    assert.ok(q('[data-shared-message=two]').closest('[data-row-key]').classList.contains('mt-0.5'), 'tight spacing inside a group');
+    assert.ok(q('[data-shared-message=three]').closest('[data-row-key]').classList.contains('mt-3'), 'a little more between groups');
   });
   await t.test('agent chart tokens match across name, avatar, mention and independent viewers; people have none', async () => {
     await act(async () => {

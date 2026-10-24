@@ -42,6 +42,8 @@ export interface ChatFeatureProps {
   readonly hideLine?: (line: string) => boolean;
   /** Initial number of displayed rows (default 60). An explicit limit uses Show earlier, not automatic paging; nothing is deleted. */
   readonly displayLimit?: number;
+  /** Automatic paging: rows shown first (default 60) and rows added each time the reader reaches the top (default 40). Ignored with `displayLimit`. */
+  readonly paging?: ChatPaging;
   /** Explicitly enable messageActions for paged history too; other historical controls remain inert. */
   readonly historicalMessageActions?: boolean;
   /** Host-rendered unread indicator, keyed by the reply. The host owns seen state and its persistence. */
@@ -406,9 +408,53 @@ export function useChatSession(options: ChatSessionOptions) {
 
 export type ChatSession = ReturnType<typeof useChatSession>;
 
+export interface ChatPaging { readonly first?: number; readonly more?: number }
+export const PAGE_FIRST = 60, PAGE_MORE = 40, CHUNK = 20;
+
+/**
+ * Rows grouped into runs of at most `size` keys, kept stable across renders. Rows already placed never change run: rows revealed
+ * above form new runs (the run nearest the old top is the full one), rows added below fill the last run, then start new ones.
+ */
+export function chunkKeys(previous: readonly (readonly string[])[], keys: readonly string[], size = CHUNK): string[][] {
+  const owner = new Map<string, number>();
+  previous.forEach((run, index) => { for (const key of run) owner.set(key, index); });
+  const known = keys.findIndex(key => owner.has(key));
+  const lead = known < 0 ? keys.length : known;
+  const runs: string[][] = [];
+  for (let end = lead; end > 0; end -= size) runs.unshift(keys.slice(Math.max(0, end - size), end));
+  let current: string[] = [], from: number | undefined;
+  for (const key of keys.slice(lead)) {
+    const placed = owner.get(key);
+    if (!current.length || (placed !== undefined ? placed !== from : current.length >= size)) { current = []; runs.push(current); from = placed; }
+    current.push(key);
+  }
+  return runs;
+}
+
+/**
+ * The scroller measures every one of its items on each scroll event and frame (@shadcn/react 0.3.1), so a long transcript gives it
+ * runs of `CHUNK` rows instead of single rows: 500 messages are 25 measurements, not 500. A run keeps its element while rows are
+ * revealed above it, so the scroller's prepend anchor still holds; a run's array is reused while its rows are unchanged.
+ */
+export function useRowChunks<T extends { readonly key: string }>(rows: readonly T[], size = CHUNK): readonly (readonly T[])[] {
+  const previous = useRef<{ readonly keys: readonly (readonly string[])[]; readonly runs: ReadonlyMap<string, readonly T[]> }>({ keys: [], runs: new Map() });
+  return useMemo(() => {
+    const byKey = new Map(rows.map(row => [row.key, row]));
+    const keys = chunkKeys(previous.current.keys, rows.map(row => row.key), size);
+    const runs = keys.map(run => {
+      const items = run.map(key => byKey.get(key)!);
+      const before = previous.current.runs.get(run[0]!);
+      return before && before.length === items.length && before.every((item, index) => item === items[index]) ? before : items;
+    });
+    previous.current = { keys, runs: new Map(runs.map(run => [run[0]!.key, run])) };
+    return runs;
+  }, [rows, size]);
+}
+
 /** One scroll root for current and archived rows. Native paging stays in the borrowed controller. */
-export function useTranscript(rows: readonly { readonly key: string }[], page = 60, more = 40, history?: { readonly state: ChatHistoryState; readonly connected: boolean; readonly load: () => Promise<void> }, automatic = true) {
+export function useTranscript(rows: readonly { readonly key: string }[], page = PAGE_FIRST, more = PAGE_MORE, history?: { readonly state: ChatHistoryState; readonly connected: boolean; readonly load: () => Promise<void> }, automatic = true) {
   if (!Number.isSafeInteger(page) || page < 1) throw new TypeError('Chat displayLimit must be a positive integer');
+  if (!Number.isSafeInteger(more) || more < 1) throw new TypeError('Chat paging.more must be a positive integer');
   const [limit, setLimit] = useState(page);
   const [sentinel, setSentinel] = useState<HTMLDivElement | null>(null);
   const [loaded, setLoaded] = useState(0);

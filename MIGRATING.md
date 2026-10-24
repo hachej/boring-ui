@@ -1,5 +1,12 @@
 # Unreleased
 
+- **Long transcripts scroll without long tasks.** Reinstall `pi-chat`, `pi-ambient` and `shared-chat`. No API change is required; three things change underneath:
+  - Rows are memoized. A scroll renders no message again, and a row renders again only when it or the row context changes. Pass stable callbacks (`messageActions`, `unread`, `replyFooter`, `renderText`…), for example from `useCallback`, or every row renders on each of the host's renders.
+  - The scroller gets runs of 20 rows (`useRowChunks`) instead of one item per row, because Message Scroller measures each of its items on every scroll event and frame. Each row is now a `div[data-row-key]` inside a `[data-transcript-chunk]` item: a test that counted `[data-testid=transcript] [data-message-id]` to count messages counts `[data-row-key]` (or the existing `[data-row-id]`) instead, and `useMessageScroller().scrollToMessage` takes a run's first row key.
+  - `shared-chat`'s clock, day and timestamp words reuse their `Intl.DateTimeFormat`s instead of building them for every bubble.
+- **Configurable paging.** `PiChat`, `AmbientChat` and `SharedChat` take `paging={{ first, more }}`: the rows shown first (default 60) and the rows added each time the reader reaches the top (default 40), with automatic paging kept (`displayLimit` still turns it off). `useSharedChat(source, { limit })` sets the messages read per history page (default 60). `ChatTimeline.render` receives `paging`.
+- **`npm run test:chat-scroll`** (kit CI): a fictional 500-message conversation (`npm run long-chat`) scrolled with the wheel has no long task over 50 ms at 1× CPU, renders no message again, and each page revealed at the top keeps the reader's row in place.
+
 # Migrating to 0.4.15
 
 - **Shared chat can wear a plain chrome (boring-factory#503).** Reinstall `shared-chat`. `useSharedChatProps` / `useSharedChat` / `<SharedChat>` accept `presence: false` (no members control, avatars or author lines), `steps: 'hidden'`, `answerActions: ['copy']`, `footer: message => ReactNode` (under each answer) and `answerStyle: 'plain'` (answers as plain text; the copy action becomes a visible button under them). Every default is unchanged.
