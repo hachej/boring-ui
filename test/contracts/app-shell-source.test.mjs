@@ -85,6 +85,12 @@ async function bundle(name, extra = {}) {
     writeFileSync(entry, `export * from '${root}${folder}/header.tsx';\nexport { ScreenActiveContext } from '${root}${folder}/agent-context.ts';\n`);
     return bundleEntry(entry, `${out}/header-context.mjs`, extra);
   }
+  // One bundle for the shell and the ListDetail, so both share the one Back manager.
+  if (name === 'app-shell+list-detail') {
+    const entry = `${out}/shell-list-detail.ts`;
+    writeFileSync(entry, `export { AppShell } from '${root}${folder}/app-shell.tsx';\nexport { ListDetail } from '${root}${folder}/list-detail.tsx';\n`);
+    return bundleEntry(entry, `${out}/shell-list-detail.mjs`, extra);
+  }
   return bundleEntry(`${root}${folder}/${name}`, `${out}/${name.replace(/\.tsx?$/, '')}.mjs`, extra);
 }
 let freshModule = 0;
@@ -374,6 +380,41 @@ test('ListDetail: a reload on a compact detail adopts the stack entry that is al
   assert.equal(window.history.length, start, 'no second entry');
   window.dispatchEvent(new window.Event('popstate'));
   assert.deepEqual(backs, ['back'], 'Back still reaches onBack');
+  await act(async () => root.unmount());
+});
+
+test('AppShell: a nav choice from a compact detail keeps the URL the hash router replaced (the stack Back lands first)', async t => {
+  const window = dom(t);
+  const { AppShell, ListDetail } = await bundle('app-shell+list-detail');
+  const { createElement: h, act, useState } = await import('react');
+  const { createRoot } = await import('react-dom/client');
+  window.innerWidth = 390;
+  window.matchMedia = query => ({ matches: false, media: query, addEventListener() {}, removeEventListener() {} });
+  window.history.replaceState(null, '', '#consultations');
+  const settle = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
+  const App = () => {
+    const [hash, setHash] = useState(() => window.location.hash.slice(1));
+    // The hash router replaces the URL in the choice itself; the app knows nothing of the stack layer.
+    const go = next => { window.history.replaceState(window.history.state, '', `#${next}`); setHash(next); };
+    const selected = /^\d+$/.test(hash) ? hash : null;
+    const nav = [
+      { id: 'consultations', label: 'Consultations', icon: () => null, render: () => h(ListDetail, { list: h('button', { 'data-testid': 'open-3', onClick: () => go('3') }), detail: selected === null ? null : h('p', null, 'detail'), onBack: () => go('consultations') }) },
+      { id: 'archives', label: 'Archives', icon: () => null, render: () => h('p', null, 'Archives') },
+    ];
+    return h(AppShell, { layout: 'workspace', title: 'Cabinet', nav, route: { id: selected === null ? hash : 'consultations', onChange: go } });
+  };
+  const container = window.document.createElement('div');
+  window.document.body.append(container);
+  const root = createRoot(container);
+  await act(async () => root.render(h(App)));
+  await act(async () => { container.querySelector('[data-testid=open-3]').click(); });
+  await settle();
+  assert.equal(container.querySelector('[data-testid=list-detail]').dataset.view, 'detail');
+  assert.equal(window.location.hash, '#3');
+  await act(async () => { container.querySelector('[data-testid=tab-archives]').click(); });
+  await settle();
+  assert.equal(window.location.hash, '#archives', 'the stack Back did not restore the detail URL');
+  assert.equal(container.querySelector('[data-testid=screen-archives]').hasAttribute('hidden'), false, 'Archives stays on show');
   await act(async () => root.unmount());
 });
 

@@ -1,5 +1,7 @@
 # Unreleased
 
+- **A nav choice from a phone detail no longer bounces back (boring-factory#507).** `AppShell` now calls `route.onChange` (tabs, « Plus », sidebar) only after an open `ListDetail` detail's history entry has gone back, so an app whose router replaces the URL (a hash router) keeps the URL it just set. Reinstall `app-shell`. No API change; an app that wrapped `onChange` in `afterBack` as a workaround can drop it. Choosing the screen already on show calls `onChange` at once and keeps the detail.
+
 # Migrating to 0.4.14
 
 - **Voice is recorded as WAV.** `createVoiceCapture` (`@hachej/boring-ui-kit/voice-capture`, re-exported by `@hachej/boring-feedback/page`) records 16 kHz mono WAV through Web Audio where the page has it, and `start()` resolves only at the first sound. No API change: `stop()` returns `mimeType: 'audio/wav'`, so a host that names files or picks a transcription path from the MIME type must accept `audio/wav` (reinstall `pi-chat-voice`: it now names the upload `voice-….wav`). MediaRecorder remains where Web Audio cannot start; pass `audioContext: null` to keep it. A host CSP needs nothing new (a ScriptProcessorNode, no worklet module).
