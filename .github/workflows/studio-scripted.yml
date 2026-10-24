@@ -78,6 +78,11 @@ jobs:
         run: node scripts/retry-journey.mjs app-shell:journey:workspace
         env:
           APP_EVIDENCE: ${{ runner.temp }}/evidence/app-shell
+      - name: App shell voice messages, failure, retry and cancellation on a phone and a desktop
+        if: matrix.shard == 'workspace'
+        run: node scripts/retry-journey.mjs app-shell:journey:voice
+        env:
+          VOICE_EVIDENCE: ${{ runner.temp }}/evidence/app-shell-voice
       - name: Workspace app autosave and scrolling during slow history loads
         if: matrix.shard == 'workspace'
         run: node scripts/retry-journey.mjs workspace-app:journey

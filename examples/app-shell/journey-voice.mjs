@@ -135,7 +135,9 @@ try {
   check(failure.uploads === 1 && retainedAudio().length === 1 && /· 1$/.test(failure.files ?? ''), 'clean failure scene contains exactly one uploaded file and file chip');
   check(failure.buttons.every(b => b.slot === 'button') && failure.buttons[2].ghost && Math.max(...failure.buttons.map(b => b.top)) - Math.min(...failure.buttons.map(b => b.top)) < 2, 'Discard is a real ghost Button aligned with Retry and Send audio only');
   await browser.screenshot('phone-failed.png');
-  const next = await point(); await touch('touchStart', next); await pause(500);
+  const next = await point(); await touch('touchStart', next);
+  // Recording starts at the first sound (voice-capture.ts), not on the press: wait for it as the peek hold above does.
+  await browser.until('next recording starts', `${q(mic)}.dataset.state === 'recording'`, 15000).catch(() => {});
   check(await browser.evaluate(`${q(mic)}.dataset.state === 'recording' && document.querySelectorAll('[data-testid=voice-pending]').length === 1`), 'next recording genuinely starts while the earlier failed transcript row remains');
   await browser.press('Escape'); await touch('touchEnd');
   check(await browser.evaluate('window.__voiceUploads') === 1, 'cancelled next recording creates no duplicate upload');

@@ -21,7 +21,7 @@ function script(job, name) {
   return lines.slice(run + 1, end === -1 ? undefined : end).map(line => line.slice(10)).join('\n');
 }
 const journeys = [
-  'test:design', 'test:viewer-chrome', 'app-shell:journey', 'app-shell:journey:workspace', 'workspace-app:journey',
+  'test:design', 'test:viewer-chrome', 'app-shell:journey', 'app-shell:journey:workspace', 'app-shell:journey:voice', 'workspace-app:journey',
   'shared-chat:journey', 'mockup:journey', 'draft-recovery:journey', 'file-tree:journey', 'canvas:journey:commands',
   'canvas:journey:proposals', 'canvas:journey:remote', 'board:journey', 'task-list:journey', 'morning:journey',
   'studio:journey:correctness', 'studio:journey:scripted', 'workspace-demo:journey', 'ambient:journey:scripted',
