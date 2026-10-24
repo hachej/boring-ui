@@ -16,10 +16,14 @@ export async function checkStory(url, { evidence }) {
     try {
       await browser.emulate('phone');
       await browser.send('Emulation.setDeviceMetricsOverride', { width, height: 780, deviceScaleFactor: 1, mobile: true });
+      await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] });
       await browser.reload();
       await browser.until('story room', `!!${message('mine-2')}`);
       await browser.evaluate(`document.documentElement.classList.toggle('dark', ${scheme === 'dark'})`);
-      await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] });
+      // Chromium's emulation sometimes leaves the reloaded phone page zoomed to 980/390 (visualViewport.scale ≈ 2.51, the default mobile
+      // layout width over the earlier phone width). Clicks land in visual-viewport coordinates, so a zoomed page misses the pill: start at 1:1.
+      await browser.send('Emulation.resetPageScaleFactor');
+      await browser.until('page at 1:1', `visualViewport.scale === 1 && innerWidth === ${width}`);
       await pause(300);
       const layout = await browser.evaluate(`(() => {
         const viewport = document.querySelector('[data-testid=transcript-scroll]');
