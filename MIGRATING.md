@@ -1,5 +1,7 @@
 # Unreleased
 
+# Migrating to 0.4.16
+
 - **Long transcripts scroll without long tasks.** Reinstall `pi-chat`, `pi-ambient` and `shared-chat`. No API change is required; three things change underneath:
   - Rows are memoized. A scroll renders no message again, and a row renders again only when it or the row context changes. Pass stable callbacks (`messageActions`, `unread`, `replyFooter`, `renderText`…), for example from `useCallback`, or every row renders on each of the host's renders.
   - The scroller gets runs of 20 rows (`useRowChunks`) instead of one item per row, because Message Scroller measures each of its items on every scroll event and frame. Each row is now a `div[data-row-key]` inside a `[data-transcript-chunk]` item: a test that counted `[data-testid=transcript] [data-message-id]` to count messages counts `[data-row-key]` (or the existing `[data-row-id]`) instead, and `useMessageScroller().scrollToMessage` takes a run's first row key.
