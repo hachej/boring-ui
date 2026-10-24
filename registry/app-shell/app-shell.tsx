@@ -1,6 +1,6 @@
 'use client';
 
-// The app shell. Layout A (`screen`): one screen at a time. Compact: bottom tabs (at most four; more give three plus « Plus »). Expanded:
+// The app shell. Layout A (`screen`): one screen at a time. Compact: bottom tabs (at most four; more give three plus « Plus »), or with `compactNav="sheet"` no bar and the sidebar as a sheet from the header. Expanded:
 // the shadcn sidebar (icon rail plus NavUser). Layout B (`workspace`): the same, with a screen made of a `ListDetail`; the sidebar starts
 // as the icon rail because the list pane is the wide navigation. Layout C (`chat`): the one nav item renders the app's `AgentWorkspace`,
 // untouched, below the same sidebar, account menu and header; there is no shell agent (the page is the chat). The shell imports nothing from pi-app: a layout C app installs the `pi-app` item itself. One header per screen
@@ -31,6 +31,8 @@ export interface AppShellProps {
   readonly nav: readonly NavItem[];
   /** Wide-screen navigation: `hover` reveals labels over the page on hover or keyboard focus. Default: `icon` (the native sidebar toggle). */
   readonly rail?: 'icon' | 'hover';
+  /** Phone navigation: `tabs` (default) is the bottom tab bar; `sheet` has no bar, the header's leading button opens the sidebar (the nav items, a screen's `sidebar` content and the account) as a sheet. */
+  readonly compactNav?: 'tabs' | 'sheet';
   readonly agent?: AgentSpec;
   /** Consume agent/open/input launch parameters on mount (default). `false` leaves the URL and layer untouched. */
   readonly agentLink?: false;
@@ -60,8 +62,9 @@ function Screens({ items, activeId, scrolls, slot }: { readonly items: readonly 
   </div>;
 }
 
-function Shell({ layout, rail, title, nav, agent, improve, account, route, text }: { readonly rail: NonNullable<AppShellProps['rail']>; readonly layout: AppShellProps['layout']; readonly title: string; readonly nav: readonly NavItem[]; readonly agent: AgentSpec | undefined; readonly improve: boolean; readonly account: AccountSpec | undefined; readonly route: AppShellProps['route']; readonly text: AppShellText }) {
+function Shell({ compactNav, layout, rail, title, nav, agent, improve, account, route, text }: { readonly compactNav: NonNullable<AppShellProps['compactNav']>; readonly rail: NonNullable<AppShellProps['rail']>; readonly layout: AppShellProps['layout']; readonly title: string; readonly nav: readonly NavItem[]; readonly agent: AgentSpec | undefined; readonly improve: boolean; readonly account: AccountSpec | undefined; readonly route: AppShellProps['route']; readonly text: AppShellText }) {
   const compact = useIsCompact();
+  const sheet = compact && compactNav === 'sheet';
   const [accountOpen, setAccountOpen] = useState(false);
   // The header's slot for the screen on show (an embedded AgentWorkspace puts its bar's controls there).
   const [slot, setSlot] = useState<HTMLElement | null>(null);
@@ -76,13 +79,13 @@ function Shell({ layout, rail, title, nav, agent, improve, account, route, text 
   </> : null;
   // The structure is the same compact or expanded, so a resize never remounts a screen.
   return <SidebarProvider data-testid="app-shell" defaultOpen={rail !== 'hover' && layout === 'screen'} className="app-shell h-dvh min-h-0 overflow-hidden">
-    {!compact && <AppSidebar rail={rail} title={title} items={nav} activeId={active.id} onChange={route.onChange} agent={agent} account={account} improve={improve} text={text} />}
+    {(!compact || sheet) && <AppSidebar rail={sheet ? 'icon' : rail} title={title} items={nav} activeId={active.id} onChange={route.onChange} agent={agent} account={account} improve={improve} text={text} />}
     <AgentDockLayout>
       <div data-slot="sidebar-inset" className="relative flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden bg-background">
       <ShellContext name={active.label} />
-      <ScreenHeader fallbackTitle={active.label} compact={compact} avatar={avatar} text={text} slotRef={setSlot} />
+      <ScreenHeader fallbackTitle={active.label} compact={compact} avatar={avatar} menu={sheet} text={text} slotRef={setSlot} />
       <Screens items={nav} activeId={active.id} scrolls={layout === 'screen'} slot={slot} />
-      {compact && <TabBar items={nav} activeId={active.id} onChange={route.onChange} text={text} />}
+      {compact && !sheet && <TabBar items={nav} activeId={active.id} onChange={route.onChange} text={text} />}
       </div>
     </AgentDockLayout>
     <AgentLayer />
@@ -90,10 +93,10 @@ function Shell({ layout, rail, title, nav, agent, improve, account, route, text 
 }
 
 export function AppShell(props: AppShellProps) {
-  const { layout, rail = 'icon', agent, improve, title, nav, account, route } = props;
+  const { layout, rail = 'icon', compactNav = 'tabs', agent, improve, title, nav, account, route } = props;
   if (layout === 'chat' && agent) throw new Error('AppShell layout "chat" takes no `agent`: the page is the chat (use `improve` for the product manager)');
   const text = appShellText((agent ?? improve)?.chatProps?.locale ?? props.locale);
   return <AgentLayerProvider agent={agent} improve={improve} locale={props.locale} agentLink={props.agentLink}>
-    <HeaderProvider><Shell layout={layout} rail={rail} title={title} nav={nav} agent={agent} account={account} route={route} improve={Boolean(improve)} text={text} /></HeaderProvider>
+    <HeaderProvider><Shell compactNav={compactNav} layout={layout} rail={rail} title={title} nav={nav} agent={agent} account={account} route={route} improve={Boolean(improve)} text={text} /></HeaderProvider>
   </AgentLayerProvider>;
 }

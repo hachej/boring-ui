@@ -103,19 +103,23 @@ export function AppSidebar({ rail = 'icon', title, items, activeId, onChange, ag
   readonly rail?: 'icon' | 'hover'; readonly title: string; readonly items: readonly NavItem[]; readonly activeId: string; readonly onChange: (id: string) => void;
   readonly agent: AgentSpec | undefined; readonly account: AccountSpec | undefined; readonly improve: boolean; readonly text: AppShellText;
 }) {
-  const { setOpen, state, isMobile } = useSidebar();
+  const { setOpen, setOpenMobile, state, isMobile } = useSidebar();
+  // In the phone sheet, choosing a screen closes it.
+  const choose = (id: string) => { setOpenMobile(false); onChange(id); };
   const own = items.find(item => item.id === activeId)?.sidebar?.({ collapsed: state === 'collapsed' && !isMobile });
   const layer = useAgentLayer();
   const pressed = layer.state !== 'closed' && layer.showing === 'agent';
   const AgentIcon = agent?.icon ?? SparklesIcon;
   const agentLabel = agent?.label ?? agent?.chatProps?.labels?.title ?? text.assistant;
   const sidebar = <Sidebar collapsible="icon" variant="inset" data-testid="app-sidebar">
+    {/* The phone sheet is portaled out of the shell root, so the `.app-shell` reset would not reach its buttons: this wrapper carries it (`contents`: no box of its own). */}
+    <div className="app-shell contents">
     <SidebarHeader><p data-testid="sidebar-title" className="m-0 truncate px-2 py-1 text-base font-semibold group-data-[collapsible=icon]:hidden">{title}</p></SidebarHeader>
     <SidebarContent>
       {own != null && <div data-testid="sidebar-screen" className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{own}</div>}
       {items.length > 1 && <SidebarGroup className={own != null ? 'shrink-0' : undefined}><SidebarGroupContent><SidebarMenu>
         {items.map(item => <SidebarMenuItem key={item.id}>
-          <SidebarMenuButton isActive={item.id === activeId} tooltip={item.label} data-testid={`nav-${item.id}`} className="pointer-coarse:min-h-11 pointer-coarse:min-w-11" onClick={() => onChange(item.id)}>
+          <SidebarMenuButton isActive={item.id === activeId} tooltip={item.label} data-testid={`nav-${item.id}`} className="pointer-coarse:min-h-11 pointer-coarse:min-w-11" onClick={() => choose(item.id)}>
             <item.icon />
             <span>{item.label}</span>
             {item.badge && <Dot className="ml-auto group-data-[collapsible=icon]:hidden" />}
@@ -127,7 +131,7 @@ export function AppSidebar({ rail = 'icon', title, items, activeId, onChange, ag
         {items.length > 1 && <SidebarSeparator />}
         <SidebarGroup><SidebarGroupContent><SidebarMenu><SidebarMenuItem>
           <SidebarMenuButton isActive={pressed} aria-pressed={pressed} tooltip={agentLabel} data-testid="nav-agent" className="pointer-coarse:min-h-11 pointer-coarse:min-w-11"
-            onClick={() => { if (pressed) layer.close(); else layer.open('agent', 'half'); }}>
+            onClick={() => { setOpenMobile(false); if (pressed) layer.close(); else layer.open('agent', 'half'); }}>
             <AgentIcon /><span>{agentLabel}</span>
           </SidebarMenuButton>
         </SidebarMenuItem></SidebarMenu></SidebarGroupContent></SidebarGroup>
@@ -135,6 +139,7 @@ export function AppSidebar({ rail = 'icon', title, items, activeId, onChange, ag
     </SidebarContent>
     <SidebarFooter><NavUser account={account} improve={improve} text={text} /></SidebarFooter>
     <SidebarRail />
+    </div>
   </Sidebar>;
   if (rail !== 'hover') return sidebar;
   // Reserve the native inset icon gap even while the fixed sidebar reveals its labels over the page.

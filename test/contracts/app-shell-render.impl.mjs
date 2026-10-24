@@ -675,3 +675,33 @@ test('NavItem.sidebar: the screen on show puts its own content in the shell\'s s
   assert.equal(seen.at(-1), true);
   await ui.unmount();
 });
+
+test('compactNav="sheet": a phone has no tab bar; the header\'s leading button opens the sidebar as a sheet, and choosing a screen closes it', async t => {
+  const { createElement: h } = await import('react');
+  const items = ['Jour', 'Semaine'].map(label => ({ id: label, label, icon: Icon, render: () => null, sidebar: () => h('p', { 'data-testid': 'own-list' }, 'liste') }));
+  const chosen = [];
+  const ui = await render(t, { compactNav: 'sheet', nav: items, route: { id: 'Jour', onChange: id => chosen.push(id) } });
+  const { act } = await import('react');
+  const doc = ui.window.document;
+  assert.equal(ui.container.querySelector('[role=tablist]'), null, 'no bottom tab bar');
+  assert.equal(doc.querySelector('[data-testid=app-sidebar]'), null, 'closed until asked');
+  const trigger = ui.container.querySelector('[data-testid=screen-header] [data-sidebar=trigger]');
+  assert.ok(trigger, 'the header\'s leading button is the sidebar trigger');
+  await act(async () => trigger.click());
+  for (let tries = 0; tries < 40 && !doc.querySelector('[data-testid=nav-Semaine]'); tries++) await act(async () => new Promise(done => setTimeout(done, 25)));
+  assert.ok(doc.querySelector('[data-testid=nav-Semaine]'), 'the sidebar opens as a sheet with the nav items');
+  assert.ok(doc.querySelector('[data-testid=nav-Semaine]').closest('.app-shell'), 'the portaled sheet is inside .app-shell, so the shell\'s button reset reaches its rows');
+  assert.equal(doc.querySelector('[data-testid=own-list]')?.textContent, 'liste', 'and the screen\'s own sidebar content');
+  await act(async () => doc.querySelector('[data-testid=nav-Semaine]').click());
+  assert.deepEqual(chosen, ['Semaine']);
+  for (let tries = 0; tries < 40 && doc.querySelector('[data-testid=nav-Semaine]'); tries++) await act(async () => new Promise(done => setTimeout(done, 25)));
+  assert.equal(doc.querySelector('[data-testid=nav-Semaine]'), null, 'choosing closes the sheet');
+  await ui.unmount();
+});
+
+test('compactNav defaults to the tab bar on a phone', async t => {
+  const ui = await render(t, {});
+  assert.ok(ui.container.querySelector('[role=tablist]'));
+  assert.equal(ui.container.querySelector('[data-sidebar=trigger]'), null);
+  await ui.unmount();
+});
