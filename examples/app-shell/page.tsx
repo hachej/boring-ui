@@ -31,6 +31,10 @@ const { token, identity, conversations } = window.__APP__;
 const query = new URLSearchParams(location.search);
 const app = ['empty', 'redaction', 'pm', 'placed'].includes(query.get('app')) ? query.get('app') : 'fitness';
 const six = query.get('nav') === '6';
+// `?compactNav=sheet`, `?sidebar=1` (the consultation list lives in the shell's sidebar) and `?fold=1` (ListDetail folds its list) preview the layout-B options of the Redaction app.
+const compactNav = query.get('compactNav') === 'sheet' ? { compactNav: 'sheet' as const } : {};
+const inSidebar = query.get('sidebar') === '1';
+const fold = query.get('fold') === '1';
 const rail = query.get('rail') === 'hover' ? { rail: 'hover' } : {};
 // `?documents=1`: the workspace's Documents screen (the Library, a file and its revisions) and the product manager's « Voir la fiche » sheet.
 const send = query.get('send') === 'message' ? 'message' : query.get('send') === 'draft' ? 'draft' : 'auto';
@@ -220,7 +224,12 @@ function Consultation({ id }: { id: number }) {
 
 function Consultations({ selected, onSelect, onBack }: { selected: number | null; onSelect: (id: number) => void; onBack: () => void }) {
   useScreenHeader({ actions: [newAction, agendaAction] });
-  return <ListDetail list={<ConsultationList selected={selected} onSelect={onSelect} />} detail={selected === null ? null : <Consultation id={selected} />} onBack={onBack} title={selected === null ? undefined : `Consultation ${selected}`} />;
+  const rows = (state: { collapsed: boolean }) => state.collapsed
+    ? <ul className="m-0 grid list-none justify-items-center gap-1 p-0 py-2">{CONSULTATIONS.slice(0, 12).map(row => <li key={row.id}><button type="button" aria-label={row.label} aria-current={row.id === selected} onClick={() => onSelect(row.id)}
+      className={`size-9 rounded-md text-xs outline-none hover:bg-accent focus-visible:bg-accent ${row.id === selected ? 'bg-accent' : ''}`}>{row.id}</button></li>)}</ul>
+    : <ConsultationList selected={selected} onSelect={onSelect} />;
+  if (inSidebar) return selected === null ? <p className="m-0 p-4 text-sm text-muted-foreground">Choisissez une consultation dans la liste du menu.</p> : <Consultation id={selected} />;
+  return <ListDetail {...(fold ? { collapsible: true, labels: { collapse: 'Replier la liste', expand: 'Déplier la liste' } } : {})} list={fold ? rows : <ConsultationList selected={selected} onSelect={onSelect} />} detail={selected === null ? null : <Consultation id={selected} />} onBack={onBack} title={selected === null ? undefined : `Consultation ${selected}`} />;
 }
 
 function Archives() {
@@ -240,13 +249,16 @@ function RedactionApp() {
   // A tab from a detail: the selection changes first, the stack entry then goes back on its own, and only after that is the URL replaced.
   const onChange = (id: string) => { window.__routes.push(id); setHash(id); afterBack(() => history.replaceState(history.state, '', `#${id}`)); };
   const nav = [
-    { id: 'consultations', label: 'Consultations', icon: ClipboardListIcon, render: () => <Consultations selected={selected} onSelect={id => go(String(id))} onBack={() => go('')} /> },
+    { id: 'consultations', label: 'Consultations', icon: ClipboardListIcon, render: () => <Consultations selected={selected} onSelect={id => go(String(id))} onBack={() => go('')} />,
+      ...(inSidebar ? { sidebar: ({ collapsed }: { collapsed: boolean }) => collapsed
+        ? <ul className="m-0 grid list-none justify-items-center gap-1 p-0 py-2">{CONSULTATIONS.slice(0, 12).map(row => <li key={row.id}><button type="button" aria-label={row.label} onClick={() => go(String(row.id))} className={`size-9 rounded-md text-xs hover:bg-accent ${row.id === selected ? 'bg-accent' : ''}`}>{row.id}</button></li>)}</ul>
+        : <ConsultationList selected={selected} onSelect={id => go(String(id))} /> } : {}) },
     { id: 'archives', label: 'Archives', icon: ArchiveIcon, render: () => <Archives /> },
   ];
   const improve = { controller: manager.controller, ...(feedback ? { feedback } : {}), chatProps: { locale: 'fr', showHistory: false, showConnectionStatus: false, actions: manager.actions, labels: { title: 'Chef de produit' } } };
   const account = { name: 'Camille Martin', email: 'camille@example.invalid', menu: [{ label: 'Réglages', onSelect: () => window.__did.push('settings') }, { label: 'Nouveautés', onSelect: () => window.__did.push('news') }] };
   return <div id="app-root" className="contents">
-    <AppShell {...rail} layout="workspace" title="Cabinet" nav={nav} improve={improve} account={account} route={{ id: NAV_IDS.includes(hash) ? hash : 'consultations', onChange }} />
+    <AppShell {...rail} {...compactNav} layout="workspace" title="Cabinet" nav={nav} improve={improve} account={account} route={{ id: NAV_IDS.includes(hash) ? hash : 'consultations', onChange }} />
   </div>;
 }
 
