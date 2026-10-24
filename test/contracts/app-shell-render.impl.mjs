@@ -655,3 +655,23 @@ test('a new microphone refusal reveals its error without replacing an older fail
   assert.equal(ui.uploads.length, 1);
   await ui.opened.unmount();
 });
+
+test('NavItem.sidebar: the screen on show puts its own content in the shell\'s sidebar, which folds with the icon rail', async t => {
+  const { createElement: h } = await import('react');
+  const seen = [];
+  const items = [
+    { id: 'list', label: 'Consultations', icon: Icon, render: () => null, sidebar: ({ collapsed }) => { seen.push(collapsed); return h('p', { 'data-testid': 'own-list' }, collapsed ? 'rail' : 'full'); } },
+    { id: 'settings', label: 'Réglages', icon: Icon, render: () => null, sidebar: () => h('p', { 'data-testid': 'own-settings' }, 'settings') },
+    { id: 'plain', label: 'Autre', icon: Icon, render: () => null },
+  ];
+  const ui = await render(t, { nav: items, route: { id: 'list', onChange() {} } }, { width: 1440 });
+  const { act } = await import('react');
+  const q = id => ui.container.querySelector(`[data-testid=${id}]`);
+  assert.equal(q('own-list')?.textContent, 'full', 'the active screen\'s content is in the sidebar, expanded');
+  assert.equal(q('own-settings'), null, 'only the screen on show');
+  assert.ok(q('sidebar-screen').compareDocumentPosition(q('nav-list')) & ui.window.Node.DOCUMENT_POSITION_FOLLOWING, 'the nav items come after it');
+  await act(async () => ui.container.querySelector('[data-sidebar=trigger]').click());
+  assert.equal(q('own-list')?.textContent, 'rail', 'folding the shell\'s rail tells the content');
+  assert.equal(seen.at(-1), true);
+  await ui.unmount();
+});
