@@ -1,5 +1,6 @@
 # Unreleased
 
+- **The screen header can own its row (boring-factory#499).** No change unless you opt in; reinstall `app-shell`. `useScreenHeader` takes three optional fields: `leading` (controls rendered right after the sidebar trigger or « ← », before the title, left-aligned), `titleFace: 'sans'` (the title in the sans face instead of the display face) and `dense: true` (a 48 px row instead of 56 px).
 - **A nav choice from a phone detail no longer bounces back (boring-factory#507).** `AppShell` now calls `route.onChange` (tabs, « Plus », sidebar) only after an open `ListDetail` detail's history entry has gone back, so an app whose router replaces the URL (a hash router) keeps the URL it just set. Reinstall `app-shell`. No API change; an app that wrapped `onChange` in `afterBack` as a workaround can drop it. Choosing the screen already on show calls `onChange` at once and keeps the detail.
 - **`data-dense` opts a control out of the 44 px phone touch target.** No code change and the default stays 44 px (WCAG 2.5.5): `app-shell` still gives every button and toggle inside `.app-shell` a 44 px minimum on a phone or coarse pointer. Put `data-dense` on a container (or a control) and everything inside it keeps its own size. For dense document cards only; do not use it for navigation or primary actions. Reinstall `app-shell` to get the rule.
 
