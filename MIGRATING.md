@@ -1,4 +1,5 @@
 # Unreleased
+- **Shared chat can wear a plain chrome (boring-factory#503).** Reinstall `shared-chat`. `useSharedChatProps` / `useSharedChat` / `<SharedChat>` accept `presence: false` (no members control, avatars or author lines), `steps: 'hidden'`, `messageActions: ['copy']`, `footer: message => ReactNode` (under each answer) and `answerStyle: 'plain'` (answers as plain text; the copy action becomes a visible button under them). Every default is unchanged.
 
 # Migrating to 0.4.14
 
