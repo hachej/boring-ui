@@ -141,7 +141,8 @@ function App() {
       }
       return saved;
     } },
-    mentions: { search: async () => [], preview: async (path: string, signal: AbortSignal) => {
+    // A conversation's Files menu lists only files with an opener (D-176): retained uploads open in the host's document sheet.
+    mentions: { search: async () => [], open: (path: string) => setSpec(path), preview: async (path: string, signal: AbortSignal) => {
       const read = await docs.read({ target: docs.locate(path), revision: { kind: 'latest' } }, signal);
       return read.kind === 'available' ? { mimeType: read.snapshot.mediaType, data: imageData(read.snapshot.bytes) } : undefined;
     } },
