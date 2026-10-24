@@ -327,7 +327,7 @@ test('the all-documents button is 44px on a coarse pointer, tablets included (no
   assert.match(source, /import \{ Button \} from '@\/components\/ui\/button'/);
   assert.match(source, /className=\{cn\('app-shell /, 'the native control is inside the shell touch-target scope');
   const item = JSON.parse(read(new URL('../../registry.json', import.meta.url), 'utf8')).items.find(item => item.name === 'app-shell');
-  assert.deepEqual(item.css['@layer utilities']['@media (max-width: 640px), (pointer: coarse)']['.app-shell :is([data-slot="button"], [data-slot="toggle"], [class~="group/button"], [class~="group/toggle"])'], { 'min-height': '2.75rem', 'min-width': '2.75rem' }, '44px minimum on coarse pointers, tablets included');
+  assert.deepEqual(item.css['@layer utilities']['@media (max-width: 640px), (pointer: coarse)']['.app-shell :is([data-slot="button"], [data-slot="toggle"], [class~="group/button"], [class~="group/toggle"]):not([data-dense]):not([data-dense] *)'], { 'min-height': '2.75rem', 'min-width': '2.75rem' }, '44px minimum on coarse pointers, tablets included');
   assert.doesNotMatch(source, /md:min-h-8/, 'no md override that shrinks it on a tablet');
 });
 
