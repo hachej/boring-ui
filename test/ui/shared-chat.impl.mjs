@@ -536,6 +536,32 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
       assert.equal(box.querySelector('[data-shared-message=duo-pin] [data-testid=request-card]'), null);
     });
   });
+  await t.test('a question card: the choices answer with one tap (a reply to the question), a free reply opens the composer on it, an answered one has no choices', async () => {
+    const members = sharedChatSeed.members.filter(member => ['mira', 'pm'].includes(member.id));
+    const question = { callId: 'q1', prompt: 'Which format?', options: ['PDF', 'CSV'], allowFreeText: true, answered: false };
+    const messages = [
+      { id: 'q-1', conversationId: 'main', author: 'pm', at: '2026-10-20T10:00:00Z', text: 'Which format?', question },
+      { id: 'q-2', conversationId: 'main', author: 'pm', at: '2026-10-20T10:01:00Z', text: 'Which size?', question: { callId: 'q2', prompt: 'Which size?', options: ['A4'], allowFreeText: false, answered: true } },
+    ];
+    await isolated({ ...sharedChatSeed, members, conversations: [{ ...sharedChatSeed.conversations[0], members: ['mira', 'pm'] }], messages }, async (box, own) => {
+      const open = box.querySelector('[data-shared-message=q-1] [data-testid=question-card]');
+      assert.ok(open, 'the question is a card');
+      assert.deepEqual([...open.querySelectorAll('[data-testid=question-option]')].map(button => button.textContent), ['PDF', 'CSV']);
+      assert.ok(open.querySelector('[data-testid=question-reply]'), 'free text is allowed: Reply');
+      assert.match(open.querySelector('[data-testid=question-prompt]').textContent, /Which format\?/);
+      const done = box.querySelector('[data-shared-message=q-2] [data-testid=question-card]');
+      assert.equal(done.dataset.answered, 'true');
+      assert.equal(done.querySelector('[data-testid=question-option]'), null, 'answered: no choices');
+      assert.equal(done.querySelector('[data-testid=question-reply]'), null);
+      assert.match(done.querySelector('[data-testid=question-answered]').textContent, /Answered/);
+      await act(async () => open.querySelector('[data-testid=question-reply]').click());
+      assert.ok(box.querySelector('[data-testid=composer-reply]'), 'Reply puts the composer on the question');
+      await act(async () => [...open.querySelectorAll('[data-testid=question-option]')].find(button => button.textContent === 'CSV').click());
+      await settle(() => own.sends.length === 1);
+      assert.deepEqual([own.sends[0].text, own.sends[0].replyTo, own.sends[0].conversationId], ['CSV', 'q-1', 'main']);
+      assert.ok(box.querySelector('[data-testid=composer-reply]'), 'answering with a choice leaves the composer\u2019s reply alone');
+    });
+  });
   await t.test('WhatsApp composer: one pill row, the microphone in Send’s place while empty, an app control at the left edge', async () => {
     const own = createFakeChannelSource(sharedChatSeed), chat = createSharedChat(own, { conversationId: 'main' });
     const box = document.createElement('div'); document.body.append(box); const mounted = createRoot(box);

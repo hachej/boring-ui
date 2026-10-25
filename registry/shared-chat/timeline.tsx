@@ -14,7 +14,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { MessageScroller, MessageScrollerViewport, MessageScrollerContent, MessageScrollerItem } from '@/components/ui/message-scroller';
 import { showsAuthors, runHead } from './names';
-import { AuthorName, BubbleTail, ClockSpacer, MessageClock, PinnedComment, ReplyQuote, RequestCard, SharedMessage, SystemLines, ViaLine, clockRoom, sharedItems } from './messages';
+import { AuthorName, BubbleTail, ClockSpacer, MessageClock, PinnedComment, QuestionCard, ReplyQuote, RequestCard, SharedMessage, SystemLines, ViaLine, clockRoom, sharedItems } from './messages';
 import type { SharedItem } from './messages';
 import { HostTrace } from './host-trace';
 import { useChatText, useSharedView } from './text';
@@ -147,7 +147,17 @@ const TimelineRow = memo(function TimelineRow({ item, top, multi, controller, me
     // Who spoke (and via what) sits above the group's first bubble, outside it: the bubble keeps its width. My own messages carry no name;
     // one posted through an outside agent says so on my side.
     const via = headKind === 'via' && message.via ? <ViaLine via={message.via} className="ms-auto block w-fit max-w-full pb-0.5 pe-1" /> : undefined;
+    const live = traced && Boolean(message.streaming);
+    const trace = traced ? <HostTrace participant={author.name} steps={message.steps ?? []} streaming={Boolean(message.streaming)} active={item.showSpinner} /> : undefined;
     const quote = message.replyTo ? <ReplyQuote targetId={message.replyTo} quote={item.quote} onReveal={onReveal} /> : undefined;
+    if (message.question) return <article data-row-id={item.key} data-role="event" className="flex w-full min-w-0 flex-col">
+      {head}{via}
+      <Bubble variant="muted" align="start" data-testid="question-bubble">
+        {first && <BubbleTail side="start" />}
+        <BubbleContent className="relative min-w-52">{quote}
+          <QuestionCard message={message} answer={controller.answer} onReply={onReply} />
+        </BubbleContent>
+      </Bubble></article>;
     if (message.card) return <article data-row-id={item.key} data-role="event" className="flex w-full min-w-0 flex-col">
       {head}{via}
       <Bubble variant={own ? 'default' : 'muted'} align={own ? 'end' : 'start'} data-testid="card-bubble">
@@ -166,10 +176,12 @@ const TimelineRow = memo(function TimelineRow({ item, top, multi, controller, me
         </div>
         : <Bubble variant="muted">{first && <BubbleTail side="start" />}<BubbleContent className="relative">
           {quote}
+          {/* While the agent writes, the working line sits above the growing text and the time waits for the answer: nothing under the text moves as it grows (B5). */}
+          {live && trace}
           {message.text && <div className={traced ? undefined : clockRoom}><Markdown text={message.text} streaming={Boolean(message.streaming)} renderMention={renderMention} /></div>}
           {traced ? <>
-            <HostTrace participant={author.name} steps={message.steps ?? []} streaming={Boolean(message.streaming)} active={item.showSpinner} />
-            <div className="flex justify-end"><MessageClock at={message.at} tone="muted" floating={false} /></div>
+            {!live && trace}
+            {!live && <div className="flex justify-end"><MessageClock at={message.at} tone="muted" floating={false} /></div>}
           </> : <MessageClock at={message.at} tone="muted" />}
         </BubbleContent></Bubble>}
     </MessageContent></Message></article>;

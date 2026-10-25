@@ -11,7 +11,8 @@ const rawLike = (text: string) => /^[\w.-]+:[\w:.-]+$/.test(text) || /^[0-9a-f]{
 export function agentKind(member: Pick<Member, 'id' | 'kind' | 'role'>): AgentKind | undefined {
   if (member.kind !== 'agent') return undefined;
   const words = `${member.role ?? ''} ${member.id}`.toLowerCase().split(/[^a-z0-9]+/);
-  if (words.includes('builder') || words.includes('build')) return 'builder';
+  // The room names its builder agent `worker` (`agent:worker`).
+  if (words.includes('builder') || words.includes('build') || words.includes('worker')) return 'builder';
   if (words.includes('pm') || words.includes('assistant')) return 'assistant';
   return 'agent';
 }

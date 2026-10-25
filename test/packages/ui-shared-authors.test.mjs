@@ -88,3 +88,11 @@ test("every place that shows a member goes through the names (no raw id rendered
   assert.doesNotMatch(messages + hook + read("timeline.tsx"), />\s*\{(?:member|author|message)\.(?:id|author)\}\s*</, "an id is never rendered as text")
   assert.match(hook, /namedMember\(\{ id, name: id, kind: 'person' \}, nameOf\)/, "an unknown mention id reads as a teammate, not as the id")
 })
+
+test("the room's own agents (the host names them by id) read by role: the PM as the assistant, the worker as the builder, the verifier as an agent", () => {
+  const room = [{ id: "agent:pm", name: "agent:pm", kind: "agent", role: "agent:pm" }, { id: "agent:worker", name: "agent:worker", kind: "agent", role: "agent:worker" }, { id: "agent:verifier", name: "agent:verifier", kind: "agent", role: "agent:verifier" }]
+  assert.deepEqual(room.map(agentKind), ["assistant", "builder", "agent"])
+  assert.deepEqual(room.map(member => memberName(member)), ["Your assistant", "Builder", "An agent"])
+  assert.equal(memberName(room[1], frenchSharedLabels.sharedName), "Builder")
+  assert.equal(memberName({ id: "person:dev", name: "user_7c1e92a4", kind: "person", role: "member" }), "A teammate", "a directory entry with an id for a name")
+})

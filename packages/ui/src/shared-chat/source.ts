@@ -12,6 +12,11 @@ export type Card = { requestId: string; kind?: 'request' | 'pin'; title: string;
 export function cardActions(card: Pick<Card, 'action' | 'actions'>): readonly CardAction[] {
   return card.actions ?? (card.action ? [card.action] : []);
 }
+/**
+ * An agent's question to the people in the room (`ask_user`): `prompt`, the choices as buttons and, when `allowFreeText`, a free reply.
+ * A reply to the message (`replyTo`) answers it; `answered` turns the buttons off.
+ */
+export type Question = { callId: string; prompt: string; options: string[]; allowFreeText: boolean; answered: boolean };
 export type Step = { label: string; detail?: string; status: 'running' | 'done' | 'failed' };
 export type AvatarState = 'working' | 'thinking' | 'waiting' | 'blocked' | 'done' | 'neutral';
 /** Host lifecycle ids affect presentation only. Missing and unknown ids have no indicator. */
@@ -21,7 +26,7 @@ export const channelAvatarStates: Readonly<Record<string, AvatarState | undefine
   platform: 'blocked', fixing: 'blocked', live: 'done', declined: 'neutral',
 });
 /** `kind: 'system'` marks a host notice (« Léa joined », « Shipped: … »): a small centred line, consecutive ones collapsed into one. */
-export type ChannelMessage = { id: string; conversationId: string; author: string; at: string; via?: string; text?: string; kind?: 'system'; card?: Card; mentions?: string[]; replyTo?: string; attachments?: { path: string; title?: string }[]; steps?: Step[]; streaming?: boolean; removed?: { by: string; at: string }; clientId?: string;
+export type ChannelMessage = { id: string; conversationId: string; author: string; at: string; via?: string; text?: string; kind?: 'system'; card?: Card; question?: Question; mentions?: string[]; replyTo?: string; attachments?: { path: string; title?: string }[]; steps?: Step[]; streaming?: boolean; removed?: { by: string; at: string }; clientId?: string;
   /** Set only by the controller on the sender's own copy while the host has not confirmed it yet; a host never sends it. */
   pending?: true };
 export type ChannelEvent =

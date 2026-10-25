@@ -93,6 +93,11 @@ jobs:
         run: node scripts/retry-journey.mjs shared-chat:journey
         env:
           SHARED_CHAT_EVIDENCE: ${{ runner.temp }}/evidence/shared-chat
+      - name: Shared conversation on the room source, two people, a question and a resume
+        if: matrix.shard == 'workspace'
+        run: node scripts/retry-journey.mjs shared-chat:journey:room
+        env:
+          SHARED_CHAT_EVIDENCE: ${{ runner.temp }}/evidence/shared-chat-room
       - name: Sandboxed HTML mock-ups, theme and element comments
         if: matrix.shard == 'documents'
         run: node scripts/retry-journey.mjs mockup:journey
