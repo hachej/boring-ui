@@ -1,5 +1,7 @@
 # Unreleased
 
+# Migrating to 0.4.20
+
 - **SharedChat can read a room: `createRoomSource` (channel on pi-durable, R3, kit part).** Opt-in and additive; `createChannelSocket` and every existing source work as before. Reinstall `shared-chat` and the npm kit (`@hachej/boring-ui-kit`).
   - `createRoomSource({ url, locale?, words?, stallMs?, reconnectMs?, fetch?, open? })` (async, like `createChannelSocket`) returns a `ChannelSource` plus `space`, `engine: 'room'` and `cursor(conversationId)`. It talks to the host's room door (`POST <url>/_room/<op>`: `me`, `conversations`, `members`, `history`, `send`, `remove`, `action`, and `retry`) and the space socket `spaces/<space>/live`. Studio adopts it behind the engine flag: call `createRoomSource` when `me` says `engine: 'room'` (`409 engine` from `_room/me` means the space still runs the store: use `createChannelSocket`), then pass it to `useSharedChat` as before.
   - The source makes the explicit `POST _channel/join` first (the directory-role admission check, same on either engine; the web room door never enrols), then `_room/me`. A refusal (404/403 on either) rejects `createRoomSource` with `ChannelRequestError` code `no-access` (`refused`, not retryable): show a calm « no access » state, not an error. `join: false` skips the call for a host that enrols people another way. No silent auto-join anywhere else. Mentions are member ids (`mentions: ['agent:pm']`); a bare `@pm` in the text wakes nobody.
