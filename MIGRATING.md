@@ -1,5 +1,7 @@
 # Unreleased
 
+- **New `@hachej/boring-agent/room`: a shared room of people and agents on pi-durable.** Additive; nothing to change. Entry kinds, the pure `roomView` fold, the pure `wakeFor`, `createRoom` (each entry, its `requestId` record and its wakes in one commit; the resend cap closed by `platform:room`) and the agent-side `createRoomTurn`. See the agent README's « Room ». The WhatsApp example now imports `pendingQuestions` from it.
+
 # Migrating to 0.4.18
 
 - **A message sent in SharedChat shows at once.** Reinstall `shared-chat` and the npm kit (`@hachej/boring-ui-kit`). `createSharedChat().send` puts the sender's own copy in the thread immediately (`ChannelMessage.pending: true`, id `pending:<clientId>`, a small clock instead of the time). The host's message with the same `clientId` replaces it, whether it comes back from `send`, the live socket or a history read; a refused send takes it out again (the text goes back to the composer as before). Before, nothing showed until `ChannelSource.send` resolved, so on a slow host people sent the same message twice. A host never sets `pending`. A `ChannelSource` that returns a message without the sent `clientId` shows a second copy instead of the replacement, so keep returning it. The timeline also scrolls to the person's own new message when it lands, wherever they were. `npm run test:chat-send` measures it in Chromium at 390 px and 1280 px with a host that answers after 1.5 s.

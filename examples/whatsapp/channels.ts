@@ -2,7 +2,9 @@ import { defineDoc } from '@earendil-works/pi-durable';
 import type { Conversation, ConversationId, ConversationView, EntryRecord, Harness, SettledSubmissionRecord } from '@earendil-works/pi-durable';
 import type { Context } from '@earendil-works/chord';
 import { withAbortSignal } from '@earendil-works/chord/context';
-import { ASK_USER_TOOL, answerUserQuestion, askUserQuestionId } from '@hachej/boring-agent/ask-user';
+import { answerUserQuestion } from '@hachej/boring-agent/ask-user';
+import { pendingQuestions } from '@hachej/boring-agent/room';
+import type { PendingQuestion } from '@hachej/boring-agent/room';
 
 /**
  * External messaging channels (WhatsApp, Telegram, Slack, SMS…) for a native durable conversation.
@@ -102,24 +104,8 @@ const reply = (status: number, body: Record<string, unknown>): Response => Respo
 /** The native request ID of a channel message. Pi deduplicates inputs on it per conversation. */
 export const channelRequestId = (message: Pick<ChannelMessage, 'channel' | 'messageId'>): string => `channel:${message.channel}:${message.messageId}`;
 
-export interface PendingQuestion { /** Assistant-entry-bound question ID. */ readonly callId: string; readonly prompt: string; readonly options: readonly string[]; readonly allowFreeText: boolean }
-
-/** `ask_user` calls of the active transcript that have no tool result yet, oldest first. */
-export function pendingQuestions(entries: readonly EntryRecord[]): PendingQuestion[] {
-  const pending = new Map<string, PendingQuestion>();
-  for (const entry of entries) for (const message of entry.model ?? []) {
-    if (message.role === 'toolResult') pending.delete(message.toolCallId);
-    if (message.role !== 'assistant') continue;
-    for (const part of message.content) {
-      if (part.type !== 'toolCall' || part.name !== ASK_USER_TOOL) continue;
-      const args = part.arguments as { question?: unknown; options?: unknown; allowFreeText?: unknown };
-      if (typeof args.question !== 'string') continue;
-      const options = Array.isArray(args.options) ? args.options.filter((option): option is string => typeof option === 'string') : [];
-      pending.set(part.id, { callId: askUserQuestionId(entry.id, part.id), prompt: args.question, options, allowFreeText: args.allowFreeText !== false || options.length === 0 });
-    }
-  }
-  return [...pending.values()];
-}
+export { pendingQuestions };
+export type { PendingQuestion };
 
 /** A typed reply to a question: an exact option, its 1-based number, or free text. */
 export function questionAnswer(question: PendingQuestion, text: string): string {
