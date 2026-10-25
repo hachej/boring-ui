@@ -22,17 +22,18 @@ export async function auditAgentContrast(browser) {
     };
     return [...document.querySelectorAll('[data-shared-message^=audit-]')].map(row => {
       const name = row.querySelector('[data-testid=message-author]'), mention = row.querySelector('[data-testid=message-mention]');
-      const icon = row.querySelector('[data-testid=message-avatar] svg[data-lucide=sparkle]');
+      const icon = row.querySelector('[data-testid=message-author-row] svg[data-lucide=sparkle]');
       const candidate = rgba(getComputedStyle(icon).color);
-      return { token: name.dataset.agentColor, avatar: row.querySelector('[data-testid=message-avatar] [data-testid=member-avatar]').dataset.agentColor, mention: mention.dataset.agentColor,
+      return { token: name.dataset.agentColor, avatar: row.querySelector('[data-testid=message-author-row] [data-testid=member-avatar]').dataset.agentColor, mention: mention.dataset.agentColor ?? null,
+        iconRatio: contrast(candidate, background(icon)),
         headingRatio: contrast(rgba(getComputedStyle(name).color), background(name)), mentionRatio: contrast(rgba(getComputedStyle(mention).color), background(mention)),
         chartHeadingRatio: contrast(candidate, background(name)), chartMentionRatio: contrast(candidate, background(mention)) };
     });
   })()`);
   assert.equal(new Set(result.map(entry => entry.token)).size, 5, 'all five tokens render through the public entry');
   for (const entry of result) {
-    assert.equal(entry.avatar, entry.token); assert.equal(entry.mention, entry.token);
-    assert.ok(entry.headingRatio >= 4.5 && entry.mentionRatio >= 4.5, JSON.stringify(entry));
+    assert.equal(entry.avatar, entry.token); assert.equal(entry.mention, null, 'mentions share the agents’ info colour');
+    assert.ok(entry.headingRatio >= 4.5 && entry.mentionRatio >= 4.5 && entry.iconRatio >= 3, JSON.stringify(entry));
   }
   return result;
 }

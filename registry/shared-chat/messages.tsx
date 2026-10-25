@@ -168,7 +168,7 @@ export function AuthorName({ member, via }: { readonly member: Member; readonly 
   return <div data-testid="message-author-row" className="flex min-h-5 min-w-0 items-center gap-1.5 pb-0.5">
     <MemberAvatar member={author} compact interactive={false} indicator={false} className="size-5 data-[size=sm]:size-5" />
     {role && !(via && agent)
-      ? <Popover><PopoverTrigger nativeButton={false} render={<span role="button" tabIndex={0} data-testid="message-author-toggle" aria-label={`${author.name} · ${role}`} className="-my-3.5 inline-flex min-h-11 min-w-0 cursor-pointer items-center" />}>{name}</PopoverTrigger>
+      ? <Popover><PopoverTrigger nativeButton={false} render={<span role="button" tabIndex={0} data-testid="message-author-toggle" aria-label={`${author.name} · ${role}`} className="-my-3.5 inline-flex min-h-11 min-w-11 cursor-pointer items-center" />}>{name}</PopoverTrigger>
         <PopoverContent data-testid="message-role" side="top" align="start" className="w-auto max-w-[calc(100vw-2rem)]">{author.name} · {role}</PopoverContent></Popover>
       : name}
     {via && <ViaLine via={via} />}
