@@ -21,6 +21,7 @@ import { EmptyState } from './empty-state';
 import type { Suggestion } from './empty-state';
 import { ConversationHistory, TranscriptHistory } from './history';
 import { TranscriptChunk } from './message';
+import { markLeads } from './rows';
 import type { Row } from './rows';
 import { MessageQueue } from './queue';
 import { ChatNotices, Notice, PreparingStatus, preparing } from './notice';
@@ -81,6 +82,12 @@ export interface PiChatProps extends ChatFeatureProps {
   /** The chat's language: `en` (default) or `fr`. `labels` override any of its words. */
   readonly locale?: ChatLocale | undefined;
   readonly labels?: Partial<ChatLabels> | undefined;
+  /**
+   * How a message looks. `default` (today): my message is a muted bubble on the right, the reply plain text. `messaging`: a messenger look
+   * for a one-to-one conversation: my message a primary bubble on the right, the reply a muted bubble on the left, a tail on the first
+   * bubble of each run and the time inside. Tool steps, traces, voice and cards are unchanged. Theme tokens only.
+   */
+  readonly messageStyle?: 'default' | 'messaging' | undefined;
   /** The chat's icons (send, stop, history, attach, …): any component taking `className`, over `defaultChatIcons`. */
   readonly icons?: Partial<ChatIcons> | undefined;
   /** The agent's avatar (an image or an icon) before the title in the header, and in the empty state instead of the agent icon. */
@@ -166,7 +173,7 @@ const noVoice: VoiceRecorderHook = () => silent;
 /** A shell's pending voice row when no `voiceMessage.Bubble` is plugged in: nothing to draw. */
 function NoVoiceBubble(_: { readonly pending: PendingVoice | undefined }) { return null; }
 
-function PiChatSession({ controller, placement = 'docked', mode = 'expert', presentation, className, keyboardInset = true, actions, avatar, headerActions, header = true, decisions, controls, tools, composerStart, voiceReplacesSend = false, voiceMessage, pendingVoice, belowComposer, composerChips, composerHeader, composerHasContent, onPickFiles, timeline, renderConnectionError, headerStart, renderEntry, hideLine, displayLimit, paging, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions,
+function PiChatSession({ controller, placement = 'docked', mode = 'expert', presentation, messageStyle = 'default', className, keyboardInset = true, actions, avatar, headerActions, header = true, decisions, controls, tools, composerStart, voiceReplacesSend = false, voiceMessage, pendingVoice, belowComposer, composerChips, composerHeader, composerHasContent, onPickFiles, timeline, renderConnectionError, headerStart, renderEntry, hideLine, displayLimit, paging, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions,
   onOpenImage, onCopy, onComposerKeyDown, onFiles, camera, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = false, emptyLayout = 'centered', composerLayout = 'card', conversationTitle, onRenameTitle, feedback, draftKey, onOpenFile, fileChanges, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: ChatController } }) {
   const { labels, icons } = useChatText();
   useChatDraft(controller, draftKey);
@@ -178,12 +185,13 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
   // A reply's Fork button calls the host's latest `fork`; the row context changes only when forking is switched on or off.
   const fork = useRef(conversations?.fork); fork.current = conversations?.fork;
   const canFork = Boolean(conversations?.fork);
-  const rowExtras = useMemo(() => canFork ? { onFork: (entryId: string) => { void fork.current?.(entryId).catch(() => {}); } } : undefined, [canFork]);
+  const rowExtras = useMemo(() => canFork || messageStyle === 'messaging' ? { ...(canFork ? { onFork: (entryId: string) => { void fork.current?.(entryId).catch(() => {}); } } : {}), ...(messageStyle === 'messaging' ? { messageStyle } : {}) } : undefined, [canFork, messageStyle]);
   const session = useChatSession({ controller, activeController: active, mode, presentation, actions, renderEntry, hideLine, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, camera, fileAccept,
     slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => timeline ? timeline.afterSend?.() : scrollToBottom.current(), feedback, rowExtras, onOpenFile, fileChanges, pasteToFile, composerChips, composerHeader, composerHasContent, onPickFiles });
-  const { state, derived, rows, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, files, loading } = session;
+  const { state, derived, rows: nativeRows, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, files, loading } = session;
   const voiceRows = pendingVoice ?? voice.pending;
   const VoiceButton = voiceMessage?.Button, VoiceBubbleView = voiceMessage?.Bubble ?? NoVoiceBubble;
+  const rows = useMemo(() => messageStyle === 'messaging' ? markLeads(nativeRows) : nativeRows, [nativeRows, messageStyle]);
   const transcriptRows: readonly TranscriptRow[] = [
     ...rows.map(row => ({ key: row.key, kind: 'native' as const, row })),
     ...voiceRows.map(voice => ({ key: `voice:${voice.id}`, kind: 'voice' as const, voice })),
