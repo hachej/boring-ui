@@ -43,7 +43,7 @@ export function MentionPicker({ query, search, generation, listLabel, renderOpti
         {results.map((item, index) => {
           const name = item.label ?? item.path.split('/').pop() ?? item.path;
           const Icon = item.kind === 'directory' ? FolderIcon : FileTextIcon;
-          return <Item key={item.path} render={<li />} size="xs" variant={index === active ? 'muted' : 'default'} role="option" aria-selected={index === active} data-testid="mention-item" data-path={item.path} title={item.path}
+          return <Item key={item.path} render={<li />} size="xs" variant={index === active ? 'muted' : 'default'} role="option" aria-selected={index === active} data-testid="mention-item" data-path={item.path} title={item.label ?? item.path}
             onMouseEnter={() => setActive(index)} onMouseDown={event => { event.preventDefault(); onSelect(item.path); }}
             className="cursor-pointer flex-nowrap max-sm:min-h-11 pointer-coarse:min-h-11">
             {renderOption ? renderOption(item, query) : <><ItemMedia variant="icon"><Icon aria-hidden="true" /></ItemMedia>

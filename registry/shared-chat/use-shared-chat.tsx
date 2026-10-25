@@ -10,7 +10,8 @@ import { MentionPicker } from '../pi-chat-mentions/mention-menu';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@/components/ui/item';
-import { agentTone, MemberAvatar, SharedMembers, ReplyQuote, sharedQuote } from './messages';
+import { namedMember } from './names';
+import { MemberAvatar, SharedMembers, ReplyQuote, sharedQuote } from './messages';
 import { SharedTimeline } from './timeline';
 import type { TimelineApi } from './timeline';
 import { SharedTextProvider } from './text';
@@ -23,20 +24,28 @@ const subscribeNothing = () => () => {};
 export function useSharedChatProps(controller: SharedChatController | undefined, options: SharedTextOptions = {}): Omit<PiChatProps, 'controller'> {
   const state = useSyncExternalStore(controller?.subscribe ?? subscribeNothing, () => controller?.getSnapshot(), () => controller?.getSnapshot());
   const api = useRef<TimelineApi | undefined>(undefined);
-  const members = state?.shared.members ?? [];
+  const raw = state?.shared.members;
+  // Plain names only: an id or a slug the host sent in a name's place never reaches the picker, a chip or a mention.
+  const meId = state?.shared.me.id;
   const labels = { ...(options.locale === 'fr' ? frenchSharedLabels : defaultSharedLabels), ...options.labels };
+  const nameOf = labels.sharedName;
+  const members = useMemo(() => (raw ?? []).map(member => namedMember(member, nameOf)), [raw, nameOf]);
   const mentions = useMemo<MentionsConfig>(() => ({
     listLabel: labels.sharedMembers, icon: <UserIcon aria-hidden="true" />, Picker: MentionPicker,
-    label: id => members.find(member => member.id === id)?.name ?? id,
-    search: async query => members.filter(member => `${member.name} ${member.id}`.toLowerCase().includes(query.toLowerCase()))
+    label: id => members.find(member => member.id === id)?.name ?? namedMember({ id, name: id, kind: 'person' }, nameOf).name,
+    search: async query => members.filter(member => member.id !== meId && member.name.toLowerCase().includes(query.toLowerCase()))
       .sort((a, b) => Number(b.kind === 'agent') - Number(a.kind === 'agent')).map(member => ({ path: member.id, label: member.name })),
-    render: id => <Badge variant="secondary">@{members.find(member => member.id === id)?.name ?? id}</Badge>,
+    render: id => <Badge variant="secondary">@{(members.find(member => member.id === id) ?? namedMember({ id, name: id, kind: 'person' }, nameOf)).name}</Badge>,
     renderSent: id => {
-      const member = members.find(member => member.id === id) ?? { id, name: id, kind: 'person' };
-      return <span data-testid="message-mention" data-path={id} data-agent-color={agentTone(member)?.token} className={`inline-flex items-baseline gap-1 align-baseline font-medium ${agentTone(member)?.text ?? ''}`}><span aria-hidden="true"><MemberAvatar member={member} compact interactive={false} /></span><span data-testid="mention-name">{member.name}</span></span>;
+      const member = members.find(member => member.id === id) ?? namedMember({ id, name: id, kind: 'person' }, nameOf);
+      return <span data-testid="message-mention" data-path={id} className="inline-flex items-baseline gap-1 align-baseline font-medium"><span aria-hidden="true"><MemberAvatar member={member} compact interactive={false} /></span><span data-testid="mention-name">{member.name}</span></span>;
     },
-    renderOption: item => <><ItemMedia variant="icon"><UserIcon aria-hidden="true" /></ItemMedia><ItemContent className="min-w-0"><ItemTitle>{item.label}</ItemTitle><ItemDescription className="m-0 truncate">{item.path}</ItemDescription></ItemContent></>,
-  }), [members, labels.sharedMembers]);
+    renderOption: item => {
+      const member = members.find(member => member.id === item.path);
+      const role = member ? labels.sharedRole(member) : undefined;
+      return <><ItemMedia variant="icon">{member ? <MemberAvatar member={member} compact interactive={false} indicator={false} /> : <UserIcon aria-hidden="true" />}</ItemMedia><ItemContent className="min-w-0"><ItemTitle>{item.label}</ItemTitle>{role && <ItemDescription className="m-0 truncate">{role}</ItemDescription>}</ItemContent></>;
+    },
+  }), [members, meId, nameOf, labels.sharedMembers, labels.sharedRole]);
   const wrap = (children: ReactNode) => <SharedTextProvider {...options}>{children}</SharedTextProvider>;
   return {
     locale: options.locale,
@@ -45,7 +54,7 @@ export function useSharedChatProps(controller: SharedChatController | undefined,
       afterSend: () => api.current?.reset() },
     controls: controller && options.presence !== false ? wrap(<SharedMembers controller={controller} />) : undefined,
     mentions,
-    composerHeader: controller && state?.shared.replyTo ? wrap(<ReplyQuote targetId={state.shared.replyTo} quote={sharedQuote(state.shared, state.shared.replyTo)} onReveal={id => api.current?.reveal(id)} onRemove={() => controller.setReplyTo(undefined)} />) : undefined,
+    composerHeader: controller && state?.shared.replyTo ? wrap(<ReplyQuote targetId={state.shared.replyTo} quote={sharedQuote(state.shared, state.shared.replyTo, nameOf)} onReveal={id => api.current?.reveal(id)} onRemove={() => controller.setReplyTo(undefined)} />) : undefined,
     composerHasContent: Boolean(state?.shared.files.length),
     onPickFiles: files => { if (controller) controller.setFiles([...controller.getSnapshot().shared.files, ...files]); },
     composerChips: controller && wrap(state?.shared.files.map((file, index) => <Badge key={index} variant="secondary">{file.name}<Button variant="ghost" size="icon" aria-label={`Remove ${file.name}`} onClick={() => controller.setFiles(controller.getSnapshot().shared.files.filter((_, at) => at !== index))}><span aria-hidden="true">×</span></Button></Badge>)),

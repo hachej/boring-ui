@@ -4,11 +4,14 @@
     { "id": "editor-document", "reason": "Markdown document typography, syntax and proposal diff presentation are content, not shadcn controls. Editor toolbars and menus are not exempt." },
     { "id": "pdf-document", "reason": "The browser PDF renderer owns the embedded document's appearance. The pane's toolbar and frame are not exempt." },
     { "id": "layout", "reason": "Layout metrics such as gaps, widths, grid tracks and 44px touch targets arrange content and remain permitted. They cannot set colour, font, shadow, radius, border width or motion." },
+    { "id": "agent-avatar-shape", "reason": "A thread tells agents from people by shape: an agent is a rounded square with a glyph, a person is a circle with an initial. The shape is meaning, not skin; the colour stays on theme tokens (info-soft). Only SharedChat's member avatar may do this." },
     { "id": "theme-definition", "reason": "The optional registry theme defines defaults; the fictional browser fixture defines a host theme. Only these theme definitions may contain visual literals." }
   ],
   "allow": [
     { "file": "registry/mockup-viewer/mockup-tailwind.ts", "rules": ["color", "font", "motion", "radius"], "pattern": ".*", "exception": "mockup-compiler-input" },
     { "file": "registry.json#theme", "rules": ["color", "radius", "font", "shadow", "border-width", "motion"], "pattern": ".*", "exception": "theme-definition" },
-    { "file": "registry/app-shell/app-shell.tsx", "rules": ["shadcn-restyle"], "pattern": "^SidebarProvider className changes appearance: app-shell h-dvh min-h-0 overflow-hidden$", "exception": "layout" }
+    { "file": "registry/app-shell/app-shell.tsx", "rules": ["shadcn-restyle"], "pattern": "^SidebarProvider className changes appearance: app-shell h-dvh min-h-0 overflow-hidden$", "exception": "layout" },
+    { "file": "registry/shared-chat/messages.tsx", "rules": ["radius"], "pattern": "^rounded(?:-md)?$", "exception": "agent-avatar-shape" },
+    { "file": "registry/shared-chat/messages.tsx", "rules": ["shadcn-restyle"], "pattern": "^(?:Avatar|AvatarFallback) className changes appearance: .*rounded-md.*$", "exception": "agent-avatar-shape" }
   ]
 }

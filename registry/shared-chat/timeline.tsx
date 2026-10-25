@@ -13,7 +13,8 @@ import { Bubble, BubbleContent } from '@/components/ui/bubble';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { MessageScroller, MessageScrollerViewport, MessageScrollerContent, MessageScrollerItem } from '@/components/ui/message-scroller';
-import { AuthorName, BubbleTail, ClockSpacer, MessageClock, PinnedComment, ReplyQuote, RequestCard, SharedMessage, SystemLines, clockRoom, sharedItems } from './messages';
+import { showsAuthors, runHead } from './names';
+import { AuthorName, BubbleTail, ClockSpacer, MessageClock, PinnedComment, ReplyQuote, RequestCard, SharedMessage, SystemLines, ViaLine, clockRoom, sharedItems } from './messages';
 import type { SharedItem } from './messages';
 import { HostTrace } from './host-trace';
 import { useChatText, useSharedView } from './text';
@@ -30,7 +31,7 @@ export function SharedTimeline({ controller, api, focusComposer, openFile, menti
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const { labels, icons } = useChatText();
   const view = useSharedView();
-  const items = useStableItems(useMemo(() => sharedItems(state.shared), [state.shared]));
+  const items = useStableItems(useMemo(() => sharedItems(state.shared, labels.sharedName), [state.shared, labels.sharedName]));
   const connected = state.connection.kind === 'connected';
   const transcript = useTranscript(items, paging?.first ?? PAGE_FIRST, paging?.more ?? PAGE_MORE, { state: state.history, connected: !state.disposed && connected, load: controller.loadEarlier });
   const { stick, hidden } = transcript;
@@ -79,8 +80,8 @@ export function SharedTimeline({ controller, api, focusComposer, openFile, menti
     else setRevealing(undefined);
   }, [revealing, items, hidden, state.history]);
   const hasContent = items.length > 0 || Children.count(pendingVoice) > 0;
-  // Avatars and names only where they tell people apart: more than two members.
-  const multi = view.presence !== false && state.shared.members.length > 2;
+  // Names and avatars only where they tell people apart: two or more members besides the reader.
+  const multi = showsAuthors(state.shared.members, state.shared.me.id, view.presence);
   const focus = useRef(focusComposer); focus.current = focusComposer;
   const reply = useCallback((id: string) => { controller.setReplyTo(id); focus.current(); }, [controller]);
   const open = useRef(openFile); open.current = openFile;
@@ -140,26 +141,31 @@ const TimelineRow = memo(function TimelineRow({ item, top, multi, controller, me
   const bubble = () => {
     const { message, author, own, first } = item;
     const person = own || author.kind !== 'agent' || message.via !== undefined;
-    const head = first && !own && multi ? <AuthorName member={author} via={message.via} /> : undefined;
+    const headKind = runHead({ first, own, authors: multi, via: message.via });
+    const head = headKind === 'author' ? <AuthorName member={author} via={message.via} /> : undefined;
     const traced = view.steps !== 'hidden' && !message.via && author.kind === 'agent' && Boolean(message.streaming || message.steps?.length);
+    // Who spoke (and via what) sits above the group's first bubble, outside it: the bubble keeps its width. My own messages carry no name;
+    // one posted through an outside agent says so on my side.
+    const via = headKind === 'via' && message.via ? <ViaLine via={message.via} className="ms-auto block w-fit max-w-full pb-0.5 pe-1" /> : undefined;
     const quote = message.replyTo ? <ReplyQuote targetId={message.replyTo} quote={item.quote} onReveal={onReveal} /> : undefined;
     if (message.card) return <article data-row-id={item.key} data-role="event" className="flex w-full min-w-0 flex-col">
+      {head}{via}
       <Bubble variant={own ? 'default' : 'muted'} align={own ? 'end' : 'start'} data-testid="card-bubble">
         {first && <BubbleTail side={own ? 'end' : 'start'} />}
-        <BubbleContent className="relative min-w-52">{head}{quote}
+        <BubbleContent className="relative min-w-52">{quote}
           {message.card.kind === 'pin' ? <PinnedComment card={message.card} own={own} at={message.at} /> : <RequestCard card={message.card} action={controller.action} at={message.at} own={own} />}
         </BubbleContent>
       </Bubble></article>;
-    return <article data-row-id={item.key} data-role={person ? 'user' : 'assistant'} data-streaming={message.streaming ? 'true' : undefined} data-pending={message.pending ? 'true' : undefined} className="group/message"><Message align={own ? 'end' : 'start'}><MessageContent>
+    return <article data-row-id={item.key} data-role={person ? 'user' : 'assistant'} data-streaming={message.streaming ? 'true' : undefined} data-pending={message.pending ? 'true' : undefined} className="group/message">{head}{via}<Message align={own ? 'end' : 'start'}><MessageContent>
       {own ? <div data-testid="own-message" className="contents [&_[data-testid=message-mention]]:text-inherit">
         <MessageText text={message.text ?? ''} context={context} variant="default" decoration={first ? <BubbleTail side="end" /> : undefined} header={quote} footer={<><ClockSpacer /><MessageClock at={message.at} tone="primary" pending={message.pending} /></>} /></div>
         : view.answerStyle === 'plain' && !person ? <div data-testid="plain-answer" className="min-w-0">
-          {head}{quote}
+          {quote}
           {message.text && <Markdown text={message.text} streaming={Boolean(message.streaming)} renderMention={renderMention} />}
           {traced && <HostTrace participant={author.name} steps={message.steps ?? []} streaming={Boolean(message.streaming)} active={item.showSpinner} />}
         </div>
         : <Bubble variant="muted">{first && <BubbleTail side="start" />}<BubbleContent className="relative">
-          {head}{quote}
+          {quote}
           {message.text && <div className={traced ? undefined : clockRoom}><Markdown text={message.text} streaming={Boolean(message.streaming)} renderMention={renderMention} /></div>}
           {traced ? <>
             <HostTrace participant={author.name} steps={message.steps ?? []} streaming={Boolean(message.streaming)} active={item.showSpinner} />
@@ -172,6 +178,6 @@ const TimelineRow = memo(function TimelineRow({ item, top, multi, controller, me
   return <div data-row-key={item.key} data-group-start={item.first ? 'true' : undefined} className={`min-w-0 shrink-0${gap}`}>
     {item.separator && <div data-testid="day-separator" className={`flex justify-center pb-3${top ? '' : ' pt-4'}`}><Badge variant="secondary"><time dateTime={item.message.at} title={labels.sharedTimestamp(item.message.at)}>{labels.sharedDay(item.message.at)}</time></Badge></div>}
     {item.system ? <SystemLines lines={item.system} />
-      : <SharedMessage shared={item} avatars={multi} remove={controller.remove} canRemove={controller.canRemove} openFile={openFile} onReply={onReply} onReveal={onReveal}>{bubble()}</SharedMessage>}
+      : <SharedMessage shared={item} remove={controller.remove} canRemove={controller.canRemove} openFile={openFile} onReply={onReply} onReveal={onReveal}>{bubble()}</SharedMessage>}
   </div>;
 });

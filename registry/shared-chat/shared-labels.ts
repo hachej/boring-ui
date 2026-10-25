@@ -46,6 +46,8 @@ export const defaultSharedLabels = {
   sharedMoreUpdates: (count: number) => count === 1 ? '1 more update' : `${count} more updates`, sharedFewerUpdates: 'Show less',
   sharedPinned: 'Pinned comment',
   sharedMembers: 'Members', sharedMemberCount: (count: number) => `${count} members`,
+  /** What a thread calls someone with no usable name: the app's assistant, the builder, another agent, a person. Never an id. */
+  sharedName: (who: 'assistant' | 'builder' | 'agent' | 'person') => ({ assistant: 'Your assistant', builder: 'Builder', agent: 'An agent', person: 'A teammate' })[who],
   sharedAgent: 'Agent', sharedVia: (name: string) => `via ${name}`,
   sharedWorking: (name: string) => `${name} is working…`,
   sharedReply: 'Reply', sharedCancelReply: 'Cancel reply', sharedEarlierMessage: 'Earlier message',

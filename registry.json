@@ -1405,6 +1405,11 @@
           "target": "components/shared-chat/text.tsx"
         },
         {
+          "path": "registry/shared-chat/names.ts",
+          "type": "registry:lib",
+          "target": "components/shared-chat/names.ts"
+        },
+        {
           "path": "registry/shared-chat/shared-labels.ts",
           "type": "registry:lib",
           "target": "components/shared-chat/shared-labels.ts"
