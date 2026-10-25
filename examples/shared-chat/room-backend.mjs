@@ -49,6 +49,7 @@ export async function createRoomBackend({ strict = false, latencyMs = 0, streamM
   const audience = () => ({ people: members.filter(m => !isAgent(m.person)).map(m => m.person).sort(), agents: members.filter(m => isAgent(m.person)).map(m => m.person).sort() });
   const cards = {};
   const sockets = new Set();
+  const joined = new Set();   // the web door never enrols: `_channel/join` is a person's first call
   const log = [];
   const control = { blocked: false, cut: new Set() };
   const pending = new Map();   // callId -> the wake waiting for a person's answer
@@ -114,6 +115,8 @@ export async function createRoomBackend({ strict = false, latencyMs = 0, streamM
   const visible = (m, name) => name === 'main' || (name === 'admin' && isAgent(m.person));
   async function call(person, operation, input, key) {
     const member = must(person);
+    if (operation === 'join') { joined.add(person); return { space: 'sp_fictionalroom' }; }
+    if (!joined.has(person)) throw failure(404, 'not-found', 'no such space');
     if (operation === 'me') return { space: 'sp_fictionalroom', me: { ...view(member), engine: 'room' } };
     if (operation === 'conversations') return ['main'].map(id => ({ id, kind: id }));
     if (!['members', 'history', 'send', 'remove', 'pin', 'action', ...(strict ? [] : ['retry'])].includes(operation)) throw failure(404, 'operation', 'no such channel operation');
@@ -154,8 +157,9 @@ export async function createRoomBackend({ strict = false, latencyMs = 0, streamM
 
   async function handle(request, response) {
     const url = new URL(request.url, 'http://room.invalid');
-    if (!url.pathname.startsWith('/_room/')) return false;
-    const operation = url.pathname.slice('/_room/'.length);
+    const door = ['/_room/', '/_channel/'].find(prefix => url.pathname.startsWith(prefix));
+    if (!door || (door === '/_channel/' && url.pathname !== '/_channel/join')) return false;
+    const operation = url.pathname.slice(door.length);
     let body = '';
     for await (const chunk of request) body += chunk;
     const input = body ? JSON.parse(body) : {};

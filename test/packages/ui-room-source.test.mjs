@@ -43,6 +43,17 @@ test('the room entry kinds read as messages, a system line, a card with its acti
   assert.equal((await french.conversations())[0].title, 'Équipe');
 }));
 
+test('a person joins first (the web door never enrols); a refusal is a calm no-access, and nothing else is called', withBackend({}, async ({ backend }) => {
+  const ana = await createRoomSource({ url: backend.url, fetch: async r => { r.headers.set('x-room-person', 'person:ana'); return fetch(r); } });
+  assert.equal(ana.space, 'sp_fictionalroom');
+  assert.deepEqual(backend.log.map(r => r.operation).slice(0, 2), ['join', 'me'], 'join, then the room');
+  const before = backend.log.length;
+  await assert.rejects(createRoomSource({ url: backend.url, fetch: async r => { r.headers.set('x-room-person', 'person:eve'); return fetch(r); } }), error => error.code === 'no-access' && error.refused === true && error.retryable === false);
+  assert.deepEqual(backend.log.slice(before).map(r => r.operation), ['join'], 'a refused join stops there');
+  const bare = await createRoomSource({ url: backend.url, join: false, fetch: async r => { r.headers.set('x-room-person', 'person:ben'); return fetch(r); } }).catch(error => error);
+  assert.equal(bare.code, 'no-access', 'without a join the room door says no such space');
+}));
+
 test('a card action goes through the door and wakes the card\'s agent once', withBackend({}, async ({ backend, as }) => {
   const ana = await as('person:ana');
   await ana.chat.action(ana.messages()[2].card, 'try');

@@ -30,6 +30,8 @@ export interface RoomSourceOptions {
   readonly reconnectMs?: number;
   /** A socket that has not opened after this long is given up and retried. Default 10000. */
   readonly openMs?: number;
+  /** Call `POST _channel/join` before anything else (default). `false` for a host that enrols people another way. */
+  readonly join?: boolean;
   readonly locale?: 'en' | 'fr';
   /** Overrides the words (the stalled line, Retry, the titles of `main` and `admin`). */
   readonly words?: Partial<RoomWords>;
@@ -84,9 +86,9 @@ export async function createRoomSource(options: RoomSourceOptions): Promise<Room
   const stallMs = options.stallMs ?? 8000;
   const url = (path: string) => new URL(path, base);
 
-  async function rpc(op: string, input: unknown = {}): Promise<unknown> {
+  async function rpc(op: string, input: unknown = {}, door = '_room'): Promise<unknown> {
     let response: Response;
-    try { response = await request(new Request(url(`_room/${op}`), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input) })); }
+    try { response = await request(new Request(url(`${door}/${op}`), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input) })); }
     catch (error) { throw new ChannelRequestError('network', error instanceof Error ? error.message : 'Channel connection was lost', true); }
     const body: unknown = await response.json().catch(() => undefined);
     if (isObject(body) && isObject(body.error) && typeof body.error.code === 'string') {
@@ -96,7 +98,14 @@ export async function createRoomSource(options: RoomSourceOptions): Promise<Room
     return body;
   }
 
-  const boot = await rpc('me');
+  // The web door never enrols anyone: a person's first visit is the explicit `_channel/join` (the directory-role admission check, the same on
+  // either engine), before any `_room/*` call. A refusal is `no-access`: the host shows a calm « no access » state, not an error.
+  const noAccess = (error: unknown): never => {
+    if (error instanceof ChannelRequestError && error.refused && ['not-found', 'forbidden', 'unauthorized'].includes(error.code)) throw new ChannelRequestError('no-access', error.message, false, { refused: true });
+    throw error;
+  };
+  if (options.join !== false) await rpc('join', { idempotencyKey: randomUUID() }, '_channel').catch(noAccess);
+  const boot = await rpc('me').catch(noAccess);
   const me = isObject(boot) && typeof boot.space === 'string' && boot.space ? member(boot.me) : undefined;
   if (!me || !isObject(boot) || typeof boot.space !== 'string') throw new ChannelRequestError('invalid-response', 'Room me returned an invalid response', false);
   const space = boot.space;
