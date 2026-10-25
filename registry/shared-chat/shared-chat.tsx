@@ -12,7 +12,8 @@ export type { SharedViewOptions, SharedTextOptions } from './text';
 export { defaultSharedLabels } from './shared-labels';
 export { frenchSharedLabels } from './shared-labels-fr';
 export type { SharedLabels } from './shared-labels';
-export { createSharedChat, createChannelSocket, createFakeChannelSource, channelAvatarStates, cardActions, ChannelRequestError } from '@hachej/boring-ui-kit/shared-chat';
+export { createSharedChat, createChannelSocket, createRoomSource, createFakeChannelSource, channelAvatarStates, cardActions, ChannelRequestError } from '@hachej/boring-ui-kit/shared-chat';
+export type { RoomSource, RoomSourceOptions, RoomWords, Question } from '@hachej/boring-ui-kit/shared-chat';
 export type { ChannelSource, ChannelEvent, ChannelMessage, Member, Conversation, Card, CardAction, Step, AvatarState, SharedChatController } from '@hachej/boring-ui-kit/shared-chat';
 
 export interface SharedChatProps extends Omit<PiChatProps, 'controller'>, SharedViewOptions {

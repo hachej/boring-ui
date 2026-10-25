@@ -22,7 +22,7 @@ function script(job, name) {
 }
 const journeys = [
   'test:design', 'test:viewer-chrome', 'app-shell:journey', 'app-shell:journey:workspace', 'app-shell:journey:voice', 'workspace-app:journey',
-  'shared-chat:journey', 'mockup:journey', 'draft-recovery:journey', 'file-tree:journey', 'canvas:journey:commands',
+  'shared-chat:journey', 'shared-chat:journey:room', 'mockup:journey', 'draft-recovery:journey', 'file-tree:journey', 'canvas:journey:commands',
   'canvas:journey:proposals', 'canvas:journey:remote', 'board:journey', 'task-list:journey', 'morning:journey',
   'studio:journey:correctness', 'studio:journey:scripted', 'workspace-demo:journey', 'ambient:journey:scripted',
 ];

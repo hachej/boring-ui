@@ -118,6 +118,35 @@ export function createSharedChat(source: ChannelSource, options: { readonly conv
       reconnect = refresh().then(replay).catch(error => publish({ connection: { kind: 'error', error } })).finally(() => { reconnect = undefined; });
     }
   };
+  /** One message into the thread. `answering` replies to a question without touching the composer's reply, files or draft. */
+  const post = async (input?: ChatSendInput, answering?: { readonly replyTo: string }): Promise<ChannelMessage | undefined> => {
+    active();
+    const selected = input ?? snapshot.draft;
+    const files = answering ? [] : [...snapshot.shared.files];
+    if (!selected.text.trim() && !selected.attachments?.length && !files.length) return;
+    if (selected.attachments?.length) throw new Error('Use shared file attachments, not native image payloads');
+    const clientId = randomUUID();
+    const mentions = snapshot.shared.members.filter(member => hasMemberMention(selected.text, member)).map(member => member.id);
+    const payload = { conversationId: id, text: selected.text, mentions, clientId, ...(answering ? { replyTo: answering.replyTo } : snapshot.shared.replyTo ? { replyTo: snapshot.shared.replyTo } : {}), ...(files.length ? { attachments: files } : {}) };
+    const result = outbox.enqueue(clientId, payload);
+    // The sender's own copy is in the thread at once, marked pending: the host's message with the same clientId replaces it
+    // (merge), whether it comes back from send, the live socket or a history read. A refusal takes it out again.
+    const local: ChannelMessage = { id: `pending:${clientId}`, conversationId: id, author: source.me.id, at: latestAt(snapshot.shared.messages), text: selected.text, mentions, clientId, pending: true,
+      ...(payload.replyTo ? { replyTo: payload.replyTo } : {}), ...(files.length ? { attachments: files.map(file => ({ path: file.name, title: file.name })) } : {}) };
+    publish({ shared: answering ? snapshot.shared : { ...snapshot.shared, files: [], replyTo: undefined }, ...(!input ? { draft: { text: '', attachments: [], version: snapshot.draft.version + 1 } } : {}), send: { kind: 'submitting' } });
+    merge([local]);
+    sendOne(clientId, payload);
+    try { const message = await result; publish({ send: { kind: 'admitted' } }); return message; }
+    catch (error) {
+      if (!snapshot.disposed && error instanceof ChannelRequestError && error.refused) {
+        const current = snapshot.draft, others = snapshot.shared.messages.filter(message => message.id !== local.id);
+        publish(answering ? { send: { kind: 'blocked', reason: error.message }, shared: { ...snapshot.shared, messages: others } }
+          : { send: { kind: 'blocked', reason: error.message }, draft: { ...current, text: [input?.restore?.text ?? selected.text, current.text].filter(Boolean).join('\n'), version: current.version + 1 },
+            shared: { ...snapshot.shared, messages: others, files: [...files, ...snapshot.shared.files], replyTo: snapshot.shared.replyTo ?? payload.replyTo } });
+      }
+      return undefined;
+    }
+    };
   const controller = {
     getSnapshot: (): SharedChatSnapshot => snapshot,
     subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
@@ -156,32 +185,12 @@ export function createSharedChat(source: ChannelSource, options: { readonly conv
       }).catch(error => { unsubscribe?.(); unsubscribe = undefined; publish({ connection: { kind: 'error', error } }); }).finally(() => { opening = undefined; });
       return opening;
     },
-    send: async (_whenBusy?: ChatAttempt['whenBusy'], input?: ChatSendInput): Promise<ChannelMessage | undefined> => {
+    send: (_whenBusy?: ChatAttempt['whenBusy'], input?: ChatSendInput): Promise<ChannelMessage | undefined> => post(input),
+    /** Answers an agent's question with one of its choices (or any text): a reply to the question, leaving the composer and its reply as they are. */
+    answer: (question: ChannelMessage, text: string): Promise<ChannelMessage | undefined> => {
       active();
-      const selected = input ?? snapshot.draft;
-      const files = [...snapshot.shared.files];
-      if (!selected.text.trim() && !selected.attachments?.length && !files.length) return;
-      if (selected.attachments?.length) throw new Error('Use shared file attachments, not native image payloads');
-      const clientId = randomUUID();
-      const mentions = snapshot.shared.members.filter(member => hasMemberMention(selected.text, member)).map(member => member.id);
-      const payload = { conversationId: id, text: selected.text, mentions, clientId, ...(snapshot.shared.replyTo ? { replyTo: snapshot.shared.replyTo } : {}), ...(files.length ? { attachments: files } : {}) };
-      const result = outbox.enqueue(clientId, payload);
-      // The sender's own copy is in the thread at once, marked pending: the host's message with the same clientId replaces it
-      // (merge), whether it comes back from send, the live socket or a history read. A refusal takes it out again.
-      const local: ChannelMessage = { id: `pending:${clientId}`, conversationId: id, author: source.me.id, at: latestAt(snapshot.shared.messages), text: selected.text, mentions, clientId, pending: true,
-        ...(payload.replyTo ? { replyTo: payload.replyTo } : {}), ...(files.length ? { attachments: files.map(file => ({ path: file.name, title: file.name })) } : {}) };
-      publish({ shared: { ...snapshot.shared, files: [], replyTo: undefined }, ...(!input ? { draft: { text: '', attachments: [], version: snapshot.draft.version + 1 } } : {}), send: { kind: 'submitting' } });
-      merge([local]);
-      sendOne(clientId, payload);
-      try { const message = await result; publish({ send: { kind: 'admitted' } }); return message; }
-      catch (error) {
-        if (!snapshot.disposed && error instanceof ChannelRequestError && error.refused) {
-          const current = snapshot.draft;
-          publish({ send: { kind: 'blocked', reason: error.message }, draft: { ...current, text: [input?.restore?.text ?? selected.text, current.text].filter(Boolean).join('\n'), version: current.version + 1 },
-            shared: { ...snapshot.shared, messages: snapshot.shared.messages.filter(message => message.id !== local.id), files: [...files, ...snapshot.shared.files], replyTo: snapshot.shared.replyTo ?? payload.replyTo } });
-        }
-        return undefined;
-      }
+      if (!question.question || question.question.answered || question.conversationId !== id) return Promise.reject(new Error('This question is not open'));
+      return post({ text, attachments: [] }, { replyTo: question.id });
     },
     reconcile: async () => {
       active(); await refresh();
@@ -211,7 +220,7 @@ export function createSharedChat(source: ChannelSource, options: { readonly conv
     },
     remove: source.remove && source.canRemove ? (message: ChannelMessage) => source.canRemove?.(message) === true ? source.remove!(message.id) : Promise.reject(new Error('Removal refused')) : undefined,
     canRemove: (message: ChannelMessage) => Boolean(source.remove && source.canRemove?.(message)),
-  } satisfies ChatController & { setFiles: (files: readonly File[]) => void; setReplyTo: (id: string | undefined) => void; action: (card: Card, actionId?: string) => Promise<void>; remove: ((message: ChannelMessage) => Promise<void>) | undefined; canRemove: (message: ChannelMessage) => boolean };
+  } satisfies ChatController & { answer: (question: ChannelMessage, text: string) => Promise<ChannelMessage | undefined>; setFiles: (files: readonly File[]) => void; setReplyTo: (id: string | undefined) => void; action: (card: Card, actionId?: string) => Promise<void>; remove: ((message: ChannelMessage) => Promise<void>) | undefined; canRemove: (message: ChannelMessage) => boolean };
   return controller;
 }
 export type SharedChatController = ReturnType<typeof createSharedChat>;
@@ -234,4 +243,6 @@ function hasMemberMention(text: string, member: Member): boolean {
 export { createFakeChannelSource } from './fake.js';
 export type { FakeChannelSeed } from './fake.js';
 export { createChannelSocket } from './socket.js';
+export { createRoomSource } from './room.js';
+export type { RoomSource, RoomSourceOptions, RoomWords } from './room.js';
 export type { ChannelSocketOptions, ChannelSocketSource } from './socket.js';

@@ -50,7 +50,7 @@ export const defaultSharedLabels = {
   sharedName: (who: 'assistant' | 'builder' | 'agent' | 'person') => ({ assistant: 'Your assistant', builder: 'Builder', agent: 'An agent', person: 'A teammate' })[who],
   sharedAgent: 'Agent', sharedVia: (name: string) => `via ${name}`,
   sharedWorking: (name: string) => `${name} is working…`,
-  sharedReply: 'Reply', sharedCancelReply: 'Cancel reply', sharedEarlierMessage: 'Earlier message',
+  sharedAnswered: 'Answered', sharedReply: 'Reply', sharedCancelReply: 'Cancel reply', sharedEarlierMessage: 'Earlier message',
   sharedAdmin: 'Admin', sharedHere: 'Here', sharedAway: 'Away', sharedOffline: 'Offline',
   sharedRemoved: 'Message removed', sharedSince: (time: string) => `Since ${time}`,
   /** The line beside an author (« Léa · member »). Return undefined for none; a member's own `roleLabel` wins. */
