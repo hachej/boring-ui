@@ -12,7 +12,8 @@ let browser;
 const input = q('[data-testid=composer-input]');
 const message = id => q(`[data-shared-message="${id}"]`);
 const trace = `${message('pdf-plan')}.querySelector('[data-testid=activity]')`;
-const avatar = `${message('pdf-card')}.querySelector('[data-testid=message-avatar] [data-slot=avatar]')`;
+// The avatar rides in the author row above the first bubble of a run (here PM's pdf-doing); later bubbles of the run have none.
+const avatar = `${message('pdf-doing')}.querySelector('[data-testid=message-author-row] [data-slot=avatar]')`;
 const noOverflow = 'document.documentElement.scrollWidth <= innerWidth && document.body.scrollWidth <= innerWidth';
 try {
   for (const [device, width, height] of [['phone', 390, 844], ['desktop', 1440, 1000]]) {
@@ -33,7 +34,7 @@ try {
         await pause(250); await browser.screenshot(`${width}-${scheme}-${name}.png`);
       };
       const reveal = async id => { await browser.evaluate(`${message(id)}.scrollIntoView({ block: 'nearest', behavior: 'instant' })`); await pause(150); };
-      const inlineMention = async (selector, name = 'PM') => {
+      const inlineMention = async (selector, name = 'Votre assistant') => {
         assert.equal(await browser.evaluate(`${selector}.querySelector('[data-testid=mention-name]').textContent`), name);
         assert.equal(await browser.evaluate(`${selector}.textContent.includes('@')`), false);
         assert.equal(await browser.evaluate(`!!${selector}.querySelector('[data-slot=avatar]')`), true);
@@ -62,8 +63,9 @@ try {
       assert.equal(await browser.evaluate(`document.body.innerText.includes('Début de la conversation')`), false);
 
       await browser.type(input, '@');
-      await browser.until('host membership picker', `${qa('[data-testid=mention-item]')}.length === 5`);
-      assert.deepEqual(await browser.evaluate(`${qa('[data-testid=mention-item]')}.map(e => e.dataset.path)`), ['pm', 'data', 'mira', 'leo', 'julien']);
+      await browser.until('host membership picker', `${qa('[data-testid=mention-item]')}.length === 4`);
+      assert.deepEqual(await browser.evaluate(`${qa('[data-testid=mention-item]')}.map(e => e.dataset.path)`), ['pm', 'data', 'leo', 'julien'], 'agents first; the reader is not offered to themselves');
+      assert.match(await browser.evaluate(`${qa('[data-testid=mention-item]')}.map(e => e.textContent).join(' ')`), /Votre assistant/, 'the app agent reads as the assistant, never as an id');
       assert.equal(await browser.evaluate(`document.body.innerText.includes('Builder')`), false);
       await browser.press('Enter'); await browser.type(input, '@data ajoute un export PDF');
       await browser.click(q('[data-testid=composer-submit]'));
@@ -77,7 +79,9 @@ try {
         const row = ${message(ownId)}, mentions = [...row.querySelectorAll('[data-testid=message-mention]')];
         const text = [...row.querySelector('[data-testid=user-text] > span').childNodes].findLast(node => node.nodeType === Node.TEXT_NODE && node.textContent.trim());
         const rect = node => { const range = document.createRange(); range.selectNodeContents(node); return range.getBoundingClientRect(); };
-        const gap = e => Math.abs(rect(e.querySelector('[data-testid=mention-name]')).bottom - rect(text).bottom);
+        // A long name (« Votre assistant ») can wrap the text onto a second line: compare with the line of text the mention sits on.
+        const lines = node => { const range = document.createRange(); range.selectNodeContents(node); return [...range.getClientRects()]; };
+        const gap = e => Math.min(...lines(text).map(line => Math.abs(rect(e.querySelector('[data-testid=mention-name]')).bottom - line.bottom)));
         const corrected = mentions.map(gap);
         mentions[0].classList.replace('items-baseline', 'items-center'); const oldGap = gap(mentions[0]); mentions[0].classList.replace('items-center', 'items-baseline');
         return { corrected, oldGap };
@@ -90,18 +94,18 @@ try {
         assert.equal(await browser.evaluate(`${message(id)}.querySelector('[data-slot=bubble]').dataset.align`), 'start');
       }
       assert.equal(await browser.evaluate(`${message(ownId)}.querySelector('[data-slot=bubble]').dataset.align`), 'end');
-      assert.equal(await browser.evaluate(`!!${message(ownId)}.querySelector('[data-testid=message-author], [data-testid=message-avatar]')`), false);
-      assert.equal(await browser.evaluate(`!!${message('pdf-doing')}.querySelector('[data-testid=message-avatar] [data-slot=avatar]')`), false);
-      assert.equal(await browser.evaluate(`!!${message('pdf-plan')}.querySelector('[data-testid=message-author]')`), false);
-      assert.equal(await browser.evaluate(`!!${message('pdf-plan')}.querySelector('[data-testid=message-avatar] svg[data-lucide=sparkle]')`), true);
+      assert.equal(await browser.evaluate(`!!${message(ownId)}.querySelector('[data-testid=message-author-row]')`), false, 'my own messages carry no name');
+      assert.equal(await browser.evaluate(`!!${avatar}`), true, 'the first bubble of the PM run carries its avatar above it');
+      assert.equal(await browser.evaluate(`!!${message('pdf-plan')}.querySelector('[data-testid=message-author-row]')`), false, 'the next bubbles of the run have neither name nor avatar');
+      assert.equal(await browser.evaluate(`!!${avatar}.querySelector('svg[data-lucide=sparkle]') && ${avatar}.dataset.agentKind === 'assistant'`), true);
       assert.equal(await browser.evaluate(`!!document.querySelector('[data-testid=transcript] [data-testid=avatar-indicator], [data-testid=transcript] [data-lucide=bot]')`), false, 'clean glyphs, no state dot');
       assert.equal(await browser.evaluate(`!!${q('[data-testid=author-badge]')}`), false);
       const geometry = await browser.evaluate(`(() => {
         const rect = e => e.getBoundingClientRect();
-        const info = id => { const row = document.querySelector('[data-shared-message="' + id + '"]'), a = rect(row.querySelector('[data-testid=message-avatar] [data-slot=avatar]')), b = rect(row.querySelector('[data-slot=bubble]')); return { avatar: a.width, bottom: Math.abs(a.bottom - b.bottom), before: a.right <= b.left }; };
-        return { person: info('via-person'), agent: info('pdf-plan'), continuationGap: rect(${message('pdf-plan')}).top - rect(${message('pdf-doing')}).bottom };
+        const info = id => { const row = document.querySelector('[data-shared-message="' + id + '"]'), a = rect(row.querySelector('[data-testid=message-author-row] [data-slot=avatar]')), n = rect(row.querySelector('[data-testid=message-author]')), b = rect(row.querySelector('[data-slot=bubble]')); return { avatar: a.width, above: a.bottom <= b.top + 1, before: a.right <= n.left }; };
+        return { person: info('via-person'), agent: info('pdf-doing'), continuationGap: rect(${message('pdf-plan')}).top - rect(${message('pdf-doing')}).bottom };
       })()`);
-      for (const author of [geometry.person, geometry.agent]) { assert.equal(author.avatar, 24); assert.ok(author.bottom <= 1); assert.equal(author.before, true); }
+      for (const author of [geometry.person, geometry.agent]) { assert.equal(author.avatar, 20); assert.equal(author.above, true); assert.equal(author.before, true); }
       assert.ok(geometry.continuationGap > 0 && geometry.continuationGap <= 8);
       writeFileSync(`${evidence}/${width}-${scheme}-geometry.json`, JSON.stringify(geometry, null, 2));
       assert.deepEqual(await browser.evaluate(`${qa('[data-testid=day-separator]')}.map(e => e.textContent)`), ['jeu. 10 sept.', 'Aujourd’hui']);
@@ -114,7 +118,7 @@ try {
       assert.equal(await browser.evaluate(`${trace}.dataset.open`), 'false');
       assert.equal(await browser.evaluate(`${qa('[data-slot=spinner]')}.length`), 1);
       assert.equal(await browser.evaluate(`!!${avatar}.querySelector('[data-slot=spinner]')`), false);
-      assert.equal(await browser.evaluate(`(() => { const a = ${avatar}.getBoundingClientRect(), c = ${message('pdf-card')}.querySelector('[data-testid=card-bubble]').getBoundingClientRect(); return Math.abs(a.bottom - c.bottom) <= 1; })()`), true, 'avatar aligns with the final request card');
+      assert.equal(await browser.evaluate(`(() => { const a = ${avatar}.getBoundingClientRect(), c = ${message('pdf-card')}.querySelector('[data-testid=card-bubble]').getBoundingClientRect(); return a.bottom <= c.top && !${message('pdf-card')}.querySelector('[data-slot=avatar]'); })()`), true, 'the final request card has no avatar of its own: the PM run is named once, above its first bubble');
       await reveal('pdf-card'); await shot('pm-working');
       await browser.click(`${trace}.querySelector('button')`);
       await browser.until('expanded steps', `${trace}.querySelectorAll('[data-testid=activity-step]').length === 3`);

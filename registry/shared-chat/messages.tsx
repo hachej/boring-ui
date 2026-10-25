@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import { cardActions, channelAvatarStates } from '@hachej/boring-ui-kit/shared-chat';
 import type { Card as Request, ChannelMessage, SharedChatController, Member, SharedChatState } from '@hachej/boring-ui-kit/shared-chat';
-import { CheckIcon, CircleIcon, ClockIcon, CopyIcon, PinIcon, ReplyIcon, SparkleIcon, Trash2Icon, XIcon } from 'lucide-react';
+import { CheckIcon, CircleIcon, ClockIcon, CopyIcon, HammerIcon, PinIcon, ReplyIcon, SparkleIcon, Trash2Icon, XIcon } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarGroup, AvatarGroupCount, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,9 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { copyText } from '../utils/utils';
 import { useChatText, useSharedView } from './text';
+import { agentKind, namedMember } from './names';
+import { defaultSharedLabels } from './shared-labels';
+import type { SharedLabels } from './shared-labels';
 
 // Text shares one treatment across headings and muted bubbles; only AA-qualified default palette entries colour it.
 const agentTones = [
@@ -36,10 +39,20 @@ function usePhone() {
   return phone;
 }
 const latestCard = (shared: SharedChatState, id: string) => shared.messages.findLast(message => message.author === id && message.card)?.card;
-const memberOf = (shared: SharedChatState, id: string): Member => shared.members.find(member => member.id === id) ?? { id, name: id, kind: 'person' };
-export function sharedQuote(shared: SharedChatState, id: string | undefined) {
+type NameOf = SharedLabels['sharedName'];
+const unknown = new WeakMap<NameOf, Map<string, Member>>();
+const memberOf = (shared: SharedChatState, id: string, nameOf: NameOf): Member => {
+  const found = shared.members.find(member => member.id === id);
+  if (found) return namedMember(found, nameOf);
+  let guests = unknown.get(nameOf);
+  if (!guests) { guests = new Map(); unknown.set(nameOf, guests); }
+  let guest = guests.get(id);
+  if (!guest) { guest = namedMember({ id, name: id, kind: 'person' }, nameOf); guests.set(id, guest); }
+  return guest;
+};
+export function sharedQuote(shared: SharedChatState, id: string | undefined, nameOf: NameOf = defaultSharedLabels.sharedName) {
   const message = shared.messages.find(message => message.id === id);
-  return message ? { message, author: memberOf(shared, message.author) } : undefined;
+  return message ? { message, author: memberOf(shared, message.author, nameOf) } : undefined;
 }
 
 /** Only https, `data:image/`, `blob:` and same-origin relative addresses load; anything else falls back to the initials. */
@@ -49,7 +62,7 @@ export function safeAvatarUrl(url: string | undefined): string | undefined {
 }
 
 /** People show initials; agents a clean sparkle glyph in their chart token. `indicator={false}` drops the card-state dot (the timeline). */
-export function MemberAvatar({ member, card, interactive = true, size = 'default', compact = false, indicator = true }: { readonly member: Member; readonly card?: Request | undefined; readonly interactive?: boolean; readonly size?: ComponentProps<typeof Avatar>['size']; readonly compact?: boolean; readonly indicator?: boolean }) {
+export function MemberAvatar({ member, card, interactive = true, size = 'default', compact = false, indicator = true, className }: { readonly className?: string | undefined; readonly member: Member; readonly card?: Request | undefined; readonly interactive?: boolean; readonly size?: ComponentProps<typeof Avatar>['size']; readonly compact?: boolean; readonly indicator?: boolean }) {
   const { labels } = useChatText();
   const phone = usePhone();
   const [open, setOpen] = useState(false);
@@ -63,9 +76,12 @@ export function MemberAvatar({ member, card, interactive = true, size = 'default
   const tone = state === 'blocked' ? 'text-destructive' : state === 'waiting' ? 'text-muted-foreground' : 'text-primary';
   const agent = agentTone(member);
   const avatarSrc = safeAvatarUrl(member.avatarUrl);
-  const avatar = <Avatar size={compact ? 'sm' : size} data-agent-color={agent?.token} data-testid="member-avatar" role="img" aria-label={member.kind === 'agent' ? `${member.name}, ${labels.sharedAgent}` : member.name} data-state={state}>
+  const kind = agentKind(member);
+  // Agents are a rounded square with a glyph, in the agents' colour (info); people are a circle with their initial.
+  const avatar = <Avatar size={compact ? 'sm' : size} className={`${kind ? 'rounded-md after:rounded-md ' : ''}${className ?? ''}`} data-agent-kind={kind} data-agent-color={agent?.token} data-testid="member-avatar" role="img" aria-label={member.kind === 'agent' ? `${member.name}, ${labels.sharedAgent}` : member.name} data-state={state}>
     {avatarSrc && <AvatarImage src={avatarSrc} alt={member.name} />}
-    <AvatarFallback>{member.kind === 'agent' ? <SparkleIcon data-lucide="sparkle" className={`${compact ? 'size-3' : 'size-3.5'} fill-current ${agent?.icon ?? ''}`} aria-hidden="true" /> : member.name.replace(/[()]/g, '').split(/\s+/).slice(0, 2).map(word => word[0]).join('').toUpperCase()}</AvatarFallback>
+    <AvatarFallback className={kind ? 'rounded-md bg-info-soft text-info-soft-foreground' : undefined}>{kind === 'builder' ? <HammerIcon data-lucide="hammer" className={compact ? 'size-3' : 'size-3.5'} aria-hidden="true" />
+      : member.kind === 'agent' ? <SparkleIcon data-lucide="sparkle" className={`${compact ? 'size-3' : 'size-3.5'} fill-current`} aria-hidden="true" /> : member.name.replace(/[()]/g, '').split(/\s+/).slice(0, 2).map(word => word[0]).join('').toUpperCase()}</AvatarFallback>
     {indicator && state !== 'neutral' && <span data-testid="avatar-indicator" data-state={state} className={`absolute right-0 bottom-0 ${tone}`}>
       <CircleIcon className="size-2 fill-current" aria-hidden="true" />
     </span>}
@@ -94,13 +110,13 @@ export function SharedMembers({ controller }: { readonly controller: SharedChatC
   if (!shared) return null;
   const name = shared.status === 'live' ? labels.live : shared.status === 'reconnecting' ? labels.reconnecting : labels.sharedOffline;
   const content = <ul data-testid="member-list" className="m-0 flex min-w-0 list-none flex-col gap-3 p-4">
-    {shared.members.map(member => <li key={member.id} data-member-id={member.id} className="flex min-w-0 items-center gap-2">
+    {shared.members.map(member => namedMember(member, labels.sharedName)).map(member => <li key={member.id} data-member-id={member.id} className="flex min-w-0 items-center gap-2">
       <MemberAvatar member={member} card={latestCard(shared, member.id)} /><span className="min-w-0 flex-1 truncate">{member.name}</span>
-      <Badge variant="secondary">{member.role ?? member.kind}</Badge>
+      <Badge variant="secondary">{labels.sharedRole(member) ?? member.role ?? member.kind}</Badge>
       <span data-testid="presence" data-presence={member.presence ?? 'away'} role="img" aria-label={member.presence === 'here' ? labels.sharedHere : labels.sharedAway}><Dot value={member.presence} /></span>
     </li>)}
   </ul>;
-  const stack = <AvatarGroup>{shared.members.slice(0, phone ? 1 : 3).map(member => <MemberAvatar key={member.id} member={member} card={latestCard(shared, member.id)} interactive={false} />)}<AvatarGroupCount>{shared.members.length}</AvatarGroupCount></AvatarGroup>;
+  const stack = <AvatarGroup>{shared.members.slice(0, phone ? 1 : 3).map(member => namedMember(member, labels.sharedName)).map(member => <MemberAvatar key={member.id} member={member} card={latestCard(shared, member.id)} interactive={false} />)}<AvatarGroupCount>{shared.members.length}</AvatarGroupCount></AvatarGroup>;
   const trigger = <Button variant="ghost" data-testid="shared-members" aria-label={labels.sharedMemberCount(shared.members.length)} aria-haspopup="dialog" aria-expanded={open}>{stack}</Button>;
   return <div className="flex shrink-0 items-center gap-2">
     <span data-testid="shared-connection-announcement" className="sr-only" aria-live="polite" aria-atomic="true">{name}</span>
@@ -138,20 +154,32 @@ export function useRoleLine(member: Member): string | undefined {
   return member.roleLabel?.trim() || labels.sharedRole(member);
 }
 
-/** The author's name on the first bubble of a group in a multi-person channel. Its role shows only on tap (or keyboard), never as a line. */
+/**
+ * Who spoke, above the first bubble of a run by someone else in a room of several people: a small avatar (a circle with the
+ * initial for a person, a rounded square with a glyph for an agent) and the name. Its role shows only on tap (or keyboard).
+ * `via`: the outside agent or app that posted with this person's account.
+ */
 export function AuthorName({ member, via }: { readonly member: Member; readonly via?: string | undefined }) {
-  const { labels } = useChatText();
   const role = useRoleLine(member);
-  const tone = agentTone(member);
-  const name = <span data-testid="message-author" data-agent-color={tone?.token} className={`min-w-0 truncate text-xs font-medium ${tone?.text ?? 'text-muted-foreground'}`}>{member.name}</span>;
-  return <div data-testid="message-author-row" className="flex min-w-0 items-center gap-1.5 pb-0.5">
-    {role && !(via && member.kind === 'agent')
-      ? <Popover><PopoverTrigger nativeButton={false} render={<span role="button" tabIndex={0} data-testid="message-author-toggle" aria-label={`${member.name} · ${role}`} className="-my-3.5 inline-flex min-h-11 min-w-11 cursor-pointer items-center" />}>{name}</PopoverTrigger>
-        <PopoverContent data-testid="message-role" side="top" align="start" className="w-auto max-w-[calc(100vw-2rem)]">{member.name} · {role}</PopoverContent></Popover>
+  const { labels } = useChatText();
+  const author = namedMember(member, labels.sharedName);
+  const agent = agentKind(author) !== undefined;
+  const name = <span data-testid="message-author" data-agent-color={agentTone(author)?.token} className={`min-w-0 truncate text-xs font-medium ${agent ? 'text-info' : 'text-muted-foreground'}`}>{author.name}</span>;
+  return <div data-testid="message-author-row" className="flex min-h-5 min-w-0 items-center gap-1.5 pb-0.5">
+    <MemberAvatar member={author} compact interactive={false} indicator={false} className="size-5 data-[size=sm]:size-5" />
+    {role && !(via && agent)
+      ? <Popover><PopoverTrigger nativeButton={false} render={<span role="button" tabIndex={0} data-testid="message-author-toggle" aria-label={`${author.name} · ${role}`} className="-my-3.5 inline-flex min-h-11 min-w-11 cursor-pointer items-center" />}>{name}</PopoverTrigger>
+        <PopoverContent data-testid="message-role" side="top" align="start" className="w-auto max-w-[calc(100vw-2rem)]">{author.name} · {role}</PopoverContent></Popover>
       : name}
-    {via && <span data-testid="message-via" className="min-w-0 truncate text-xs text-muted-foreground">{labels.sharedVia(via)}</span>}
-    {!(via && member.kind === 'agent') && <MemberBadge member={member} />}
+    {via && <ViaLine via={via} />}
+    {!(via && agent) && <MemberBadge member={author} />}
   </div>;
+}
+
+/** « via Claude Code »: the outside agent or app that posted with a person's account. */
+export function ViaLine({ via, className = '' }: { readonly via: string; readonly className?: string }) {
+  const { labels } = useChatText();
+  return <span data-testid="message-via" className={`min-w-0 truncate text-xs text-muted-foreground ${className}`}>{labels.sharedVia(via)}</span>;
 }
 
 /**
@@ -233,9 +261,9 @@ export function SystemLines({ lines }: { readonly lines: readonly ChannelMessage
 }
 
 /** The row around one bubble: the avatar slot in multi-person channels, Reply and Delete on hover, focus or long-press. */
-export function SharedMessage({ shared, children, avatars = true, remove, canRemove, openFile, onReply }: {
+export function SharedMessage({ shared, children, remove, canRemove, openFile, onReply }: {
   readonly shared: SharedItem; readonly children: ReactNode;
-  /** Multi-person channel: an avatar beside the last bubble of each group (and a slot keeping the others aligned). */
+  /** Multi-person channel (kept for hosts passing it): the avatar now rides in the author row above a group's first bubble (AuthorName). */
   readonly avatars?: boolean;
   readonly remove?: ((message: ChannelMessage) => Promise<void>) | undefined;
   readonly canRemove?: ((message: ChannelMessage) => boolean) | undefined;
@@ -262,7 +290,7 @@ export function SharedMessage({ shared, children, avatars = true, remove, canRem
     document.addEventListener('pointerdown', outside);
     return () => document.removeEventListener('pointerdown', outside);
   }, [actionsOpen]);
-  const { message, author, own, lastItem } = shared;
+  const { message, author, own } = shared;
   const replyable = Boolean(onReply && ((author.kind === 'agent' && !message.via) || message.card));
   const removable = Boolean(remove && canRemove?.(message));
   // An answer: the app agent's own message (not a person's, not a card, not a host notice).
@@ -290,7 +318,6 @@ export function SharedMessage({ shared, children, avatars = true, remove, canRem
     onPointerUp={cancelPress} onPointerCancel={cancelPress}
     onContextMenu={event => { if (phone && actionable && event.target instanceof Element && !event.target.closest('button, a, input, textarea, [role=button], [role=link]')) { event.preventDefault(); setActionsOpen(true); } }}>
     <div className="flex min-w-0 items-end gap-2.5">
-    {!own && avatars && <div data-testid="message-avatar" className="flex w-6 shrink-0 items-end">{lastItem && <MemberAvatar member={author} size="sm" interactive={false} indicator={false} />}</div>}
     <div data-testid="shared-message-content" className={`flex min-w-0 flex-1 flex-col gap-1${own ? ' [&>button]:self-end' : ''}`}>
     {message.removed ? <p className="m-0 text-sm text-muted-foreground italic">{labels.sharedRemoved}</p> : children}
     {!message.removed && message.attachments?.map(file => <Button key={file.path} variant="outline" disabled={!openFile} onClick={() => openFile?.(file.path)} className="max-w-full justify-start"><span className="truncate">{file.title ?? file.path}</span></Button>)}
@@ -321,7 +348,7 @@ const dayOf = (at: string) => { const date = new Date(at); return Number.isFinit
  * WhatsApp's grouping: one author (and `via`) within fifteen minutes on the same day is a group; host notices end a group and
  * collapse together. Each day starts with a day pill.
  */
-export function sharedItems(shared: SharedChatState): SharedItem[] {
+export function sharedItems(shared: SharedChatState, nameOf: NameOf = defaultSharedLabels.sharedName): SharedItem[] {
   const working = new Map(shared.messages.filter(message => message.streaming).map(message => [message.author, message.id]));
   const groups: ChannelMessage[][] = [];
   for (const message of shared.messages) {
@@ -336,17 +363,17 @@ export function sharedItems(shared: SharedChatState): SharedItem[] {
   // One pass for what every item reads, instead of a search through the whole thread per message.
   const cards = new Map<string, Request>(), byId = new Map<string, ChannelMessage>();
   for (const message of shared.messages) { byId.set(message.id, message); if (message.card) cards.set(message.author, message.card); }
-  const quoteOf = (replyTo: string | undefined) => { const message = replyTo === undefined ? undefined : byId.get(replyTo); return message ? { message, author: memberOf(shared, message.author) } : undefined; };
+  const quoteOf = (replyTo: string | undefined) => { const message = replyTo === undefined ? undefined : byId.get(replyTo); return message ? { message, author: memberOf(shared, message.author, nameOf) } : undefined; };
   return groups.flatMap((group, groupIndex): SharedItem[] => {
     const before = groups[groupIndex - 1]?.at(-1);
     const separator = !before || dayOf(before.at) !== dayOf(group[0]!.at);
     if (group[0]!.kind === 'system') {
       const message = group.at(-1)!;
-      return [{ key: `shared:${group[0]!.id}`, message, author: memberOf(shared, message.author), own: false, first: true, lastItem: true, separator, system: group,
+      return [{ key: `shared:${group[0]!.id}`, message, author: memberOf(shared, message.author, nameOf), own: false, first: true, lastItem: true, separator, system: group,
         showSpinner: false, latestCard: undefined, quote: undefined }];
     }
     const lastItem = group.at(-1);
-    return group.map((message, index): SharedItem => ({ key: `shared:${message.id}`, message, author: memberOf(shared, message.author), own: message.author === shared.me.id,
+    return group.map((message, index): SharedItem => ({ key: `shared:${message.id}`, message, author: memberOf(shared, message.author, nameOf), own: message.author === shared.me.id,
       first: index === 0, lastItem: message === lastItem, separator: index === 0 && separator,
       showSpinner: working.get(message.author) === message.id, latestCard: cards.get(message.author), quote: quoteOf(message.replyTo) }));
   });

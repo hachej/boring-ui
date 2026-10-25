@@ -291,7 +291,7 @@ export function Composer(props: ComposerProps) {
     {props.quote}
     {feedback && feedback.count > 0 && <div role="list" className="contents"><NotesChip feedback={feedback} /></div>}
     {chips.length > 0 && <div role="list" data-testid="mention-chips" aria-label={labels.mentionedFiles} className="contents">
-      {chips.map(path => <Chip key={path} data-testid="mention-chip" data-path={path} title={path} className="max-w-full sm:max-w-[16rem]"
+      {chips.map(path => <Chip key={path} data-testid="mention-chip" data-path={path} title={props.mentions?.label?.(path) ?? path} className="max-w-full sm:max-w-[16rem]"
         media={props.mentions?.icon ?? <FileTextIcon aria-hidden="true" />}  label={props.mentions?.label?.(path) ?? path} actions={<RemoveChip label={labels.remove(props.mentions?.label?.(path) ?? path)} onClick={() => props.onText(removeMention(text, path))} />} />)}
     </div>}
     {(props.uploads?.length ?? 0) > 0 && <div role="list" data-testid="uploads" aria-label={labels.uploads} className="contents">
