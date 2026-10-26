@@ -5,13 +5,13 @@ import test from 'node:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Harness, MemoryStorage, createRegistry, defineTool } from '@earendil-works/pi-durable';
+import { AssistantEntry, Harness, MemoryStorage, createRegistry, defineTool } from '@earendil-works/pi-durable';
 import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node';
 import { Type } from '@earendil-works/pi-ai';
 import { createModels } from '@earendil-works/pi-ai/models';
 import { fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from '@earendil-works/pi-ai/providers/faux';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
-import { defineAgent } from '@hachej/boring-agent/agents';
+import { createDelegateTool, defineAgent } from '@hachej/boring-agent/agents';
 
 const resultText = message => message.content.filter(part => part.type === 'text').map(part => part.text).join('');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -124,7 +124,7 @@ test('maxRunning is shared by every tool given the same limits object, across pa
   assert.equal((await ask(second, 'ask')).status, 'done');
   const [refused] = await delegateResults(second);
   assert.equal(refused.isError, true);
-  assert.equal(resultText(refused), '1 delegate already running on this host (limit 1).');
+  assert.equal(resultText(refused), '1 delegate already running across the conversations sharing this limit (limit 1).');
   assert.equal((await children(second)).length, 0);
 
   script.release();
@@ -265,4 +265,80 @@ test('a replay that reattaches to its child is never refused and counts once (li
   const third = (await delegateResults(again))[2];
   assert.equal(third.isError, true);
   assert.equal(resultText(third), '2 delegates already started for this conversation in the last hour (limit 2).');
+});
+
+test('maxRunning counts per limits object: a delegate with its own literal has its own budget, as the refusal text says', { timeout: 20000 }, async t => {
+  const script = scriptedModels({ hold: true });
+  const { lead, harness, registry } = await open({ limits: { maxRunning: 1 } }, script);
+  t.after(() => harness.close(context));
+  const first = await lead.createConversation(harness, context);
+  const firstDone = first.submit({ type: 'input', requestId: 'ask', content: 'Research the capital.' }, context).then(submission => submission.wait(context));
+  await until(() => script.calls.waiting === 1, 'the first child runs');
+  // Same numbers, another object: not shared, so this call is not refused.
+  const other = defineAgent({ id: 'other-lead', model: { provider: 'fictional-faux', modelId: 'parent' }, instructions: 'Delegate.', delegates: [{ agent: defineAgent({ id: 'researcher', model: { provider: 'fictional-faux', modelId: 'child' }, tools: [lookup] }), limits: { maxRunning: 1 } }] });
+  other.install(registry);
+  const second = await other.createConversation(harness, context);
+  const secondDone = ask(second, 'ask');
+  await until(() => script.calls.waiting === 2, 'the second child runs too');
+  script.release();
+  assert.equal((await firstDone).status, 'done');
+  assert.equal((await secondDone).status, 'done');
+  assert.equal((await delegateResults(second))[0].isError, false);
+});
+
+/**
+ * The real delegate tool, run by Pi with its own `ToolExecutionApi` except for one fault: `fault(api)` returns overrides of
+ * the api's methods (a commit whose AssistantEntry write throws, a details publish that throws).
+ */
+function faultyLead(meter, fault) {
+  const researcher = defineAgent({ id: 'researcher', model: { provider: 'fictional-faux', modelId: 'child' }, instructions: 'Answer briefly.', tools: [lookup] });
+  const real = createDelegateTool({ agent: researcher, meter });
+  const faulty = { ...real, execute: (args, api, ctx) => {
+    const overrides = fault(api);
+    return real.execute(args, new Proxy(api, { get: (target, key) => key in overrides ? overrides[key] : typeof target[key] === 'function' ? target[key].bind(target) : target[key] }), ctx);
+  } };
+  const lead = defineAgent({ id: 'lead', model: { provider: 'fictional-faux', modelId: 'parent' }, instructions: 'Delegate research.', tools: [faulty] });
+  const registry = createRegistry();
+  lead.install(registry);
+  researcher.install(registry);
+  return { lead, registry };
+}
+
+test('meter: a delegate call that throws closes failed, whether its final commit or an earlier step threw', { timeout: 20000 }, async t => {
+  const faults = {
+    // The AssistantEntry commit that hands the child's answer to the parent fails.
+    commit: api => ({ commit: (change, ctx) => api.commit(tx => change(new Proxy(tx, { get: (target, key) => key === 'entry'
+      ? (doc, ...rest) => { if (doc === AssistantEntry) throw new Error('fictional commit failure'); return target.entry(doc, ...rest); }
+      : typeof target[key] === 'function' ? target[key].bind(target) : target[key] })), ctx) }),
+    // Publishing the running details fails, before the child is asked anything.
+    details: () => ({ details: async () => { throw new Error('fictional details failure'); } }),
+  };
+  for (const [name, fault] of Object.entries(faults)) await t.test(`the ${name} step throws`, async t => {
+    const script = scriptedModels();
+    const { log, meter } = recordingMeter();
+    const { lead, registry } = faultyLead(meter, fault);
+    const harness = await Harness.open(new MemoryStorage(), { registry, models: script.models }, context);
+    t.after(() => harness.close(context));
+    const conversation = await lead.createConversation(harness, context);
+    await ask(conversation, 'ask');
+    const [result] = await delegateResults(conversation);
+    assert.equal(result?.isError, true, `${name}: the call failed`);
+    assert.equal(log.filter(item => item.close).length, 1, `${name}: closed once`);
+    assert.deepEqual(log.at(-1), { close: 'failed' }, `${name}: a thrown call is metered failed, not done or cancelled`);
+  });
+});
+
+test('meter: a delegate call stopped while its child runs closes cancelled', { timeout: 20000 }, async t => {
+  const script = scriptedModels({ hold: true });
+  const { log, meter } = recordingMeter();
+  const { lead, harness } = await open({ meter }, script);
+  t.after(() => harness.close(context));
+  const conversation = await lead.createConversation(harness, context);
+  const submission = await conversation.submit({ type: 'input', requestId: 'ask', content: 'Research the capital.' }, context);
+  await until(() => script.calls.waiting === 1, 'the child request starts');
+  await conversation.abort(context);
+  await submission.wait(context).catch(() => undefined);
+  await until(() => log.some(item => item.close), 'the meter is closed');
+  assert.deepEqual(log.filter(item => item.close), [{ close: 'cancelled' }]);
+  script.release();
 });
