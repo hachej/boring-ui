@@ -6,19 +6,30 @@ import { mkdirSync } from 'node:fs';
 import { build } from 'esbuild';
 import { Window } from 'happy-dom';
 
-/** A change feed the test pushes events into. */
+/**
+ * A change feed the test pushes events into, with the protocol's cursor: a stream without `since` delivers the events after the moment it
+ * is connected; with `since` it replays the retained events after that seq first. `hold()` delays the next connections (a slow network)
+ * until the returned function is called.
+ */
 function pushFeed() {
-  const queued = [], waiting = [];
-  let seq = 100;
+  const log = [], wakers = new Set();
+  let seq = 100, gate;
   return {
-    push: path => { const event = { kind: 'change', path, revision: null, source: 'agent', seq: ++seq, at: Date.now() }; const wake = waiting.shift(); if (wake) wake(event); else queued.push(event); },
-    changes: ({ signal } = {}) => ({ async *[Symbol.asyncIterator]() {
-      while (!signal?.aborted) {
-        // An aborted stream leaves the waiting list, so a later push reaches the stream that replaced it.
-        const event = queued.shift() ?? await new Promise(resolve => { waiting.push(resolve); signal?.addEventListener('abort', () => { const at = waiting.indexOf(resolve); if (at >= 0) waiting.splice(at, 1); resolve(undefined); }, { once: true }); });
-        if (event) yield event;
-      }
-    } }),
+    push: path => { log.push({ kind: 'change', path, revision: null, source: 'agent', seq: ++seq, at: Date.now() }); for (const wake of [...wakers]) wake(); },
+    hold: () => { let open; gate = new Promise(resolve => { open = resolve; }); return () => { gate = undefined; open(); }; },
+    changes: ({ since, signal } = {}) => {
+      const connecting = gate;
+      return { async *[Symbol.asyncIterator]() {
+        if (connecting) await connecting;
+        let cursor = since ?? seq;
+        while (!signal?.aborted) {
+          const next = log.find(event => event.seq > cursor);
+          if (next) { cursor = next.seq; yield next; continue; }
+          // An aborted stream stops waiting, so it never takes events from the stream that replaced it.
+          await new Promise(resolve => { const wake = () => { wakers.delete(wake); resolve(); }; wakers.add(wake); signal?.addEventListener('abort', wake, { once: true }); });
+        }
+      } };
+    },
   };
 }
 
@@ -173,33 +184,43 @@ test('switching the binding while the picker is open hides the previous binding\
   assert.equal(window.document.querySelectorAll('[data-testid=mention-item]').length, 0, 'nothing from alice is selectable');
 });
 
-test('a hidden tab holds no change feed, and shown again it reconnects and reloads the tree once', async t => {
+test('a hidden tab holds no change feed; shown again it resumes from its last event, so no change is missed', async t => {
   const { window, element, root, chat, act, createElement, settle, AgentWorkspace } = await harness(t);
   const feed = pushFeed();
   const streams = { opened: 0, open: 0 };
   const changes = request => { streams.opened++; streams.open++; request.signal.addEventListener('abort', () => streams.open--, { once: true }); return feed.changes(request); };
+  const files = ['notes.md'];
   let listed = 0;
   const locate = path => ({ resource: { providerId: 'fictional', path }, view: { kind: 'published' } });
   const binding = { identity: { scopeId: 'fictional', principalId: 'alice', initiatorId: 'alice' }, workspace: { providerId: 'fictional', instanceId: 'one', incarnation: 'one', viewId: 'one' }, locate,
     read: async () => ({ kind: 'missing' }), publish: async () => ({ kind: 'unavailable', reason: 'fictional' }), lookup: async () => ({ kind: 'not-found' }),
-    list: async () => { listed++; return { entries: [{ path: 'notes.md', kind: 'file', size: 5 }] }; }, search: async () => ({ entries: [] }), history: async () => [], changes };
+    list: async () => { listed++; return { entries: files.map(path => ({ path, kind: 'file', size: 5 })) }; }, search: async () => ({ entries: [] }), history: async () => [], changes };
+  const write = async path => { files.push(path); await act(async () => feed.push(path)); };
+  const shows = path => element.querySelector(`[role=treeitem][data-path="${path}"]`);
   let visibility = 'visible';
   Object.defineProperty(window.document, 'visibilityState', { configurable: true, get: () => visibility });
   const show = async value => { visibility = value; await act(async () => window.document.dispatchEvent(new window.Event('visibilitychange'))); };
   await act(async () => root.render(createElement(AgentWorkspace, { controller: chat, conversationId: '1', revisionProvider: binding })));
   await act(async () => element.querySelector('[data-testid=workspace-library]').click());
-  await settle(() => element.querySelector('[role=treeitem][data-path="notes.md"]') && streams.open === 1, 'the tree lists the file over one open feed');
+  await settle(() => shows('notes.md') && streams.open === 1, 'the tree lists the file over one open feed');
+  await write('seen.md');
+  await settle(() => shows('seen.md'), 'a change on the open feed reloads the tree');
 
   await show('hidden');
   await settle(() => streams.open === 0, `the hidden tab releases its feed (open ${streams.open})`);
-  const before = listed;
+  // A change while the tab is hidden; then the tab is shown on a slow network, and another change lands before the feed is connected.
+  await write('while-hidden.md');
+  const connect = feed.hold();
   await show('visible');
+  await act(async () => new Promise(resolve => setTimeout(resolve, 300)));
+  await write('while-connecting.md');
+  await act(async () => connect());
   await settle(() => streams.open === 1 && streams.opened === 2, `shown again, the feed reconnects (open ${streams.open}, opened ${streams.opened})`);
-  await settle(() => listed > before, 'a change missed while hidden is caught up: the tree reloads');
+  await settle(() => shows('while-hidden.md') && shows('while-connecting.md'), 'the changes made while hidden and while reconnecting both show');
   await act(async () => new Promise(resolve => setTimeout(resolve, 300)));
   const settled = listed;
-  await act(async () => feed.push('notes.md'));
-  await settle(() => listed > settled, 'the reconnected feed still drives reloads');
+  await write('after.md');
+  await settle(() => listed > settled && shows('after.md'), 'the reconnected feed still drives reloads');
 });
 
 test('a file open before the endpoint\'s binding is discovered is not read again when the binding arrives', async t => {

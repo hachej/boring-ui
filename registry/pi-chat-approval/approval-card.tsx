@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
 import { CheckIcon, ShieldAlertIcon, XIcon } from 'lucide-react';
+import { waits, type ApprovalDecision } from '@hachej/boring-ui-kit/chat-view';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Item, ItemActions, ItemContent, ItemDescription, ItemFooter, ItemMedia, ItemTitle } from '@/components/ui/item';
@@ -24,12 +25,12 @@ export function describeArguments(call: ToolCall): { readonly name: string; read
 }
 
 /**
- * The settled state. The wrapper records its decision in the call's details; a call that settled without one was never
- * decided (the run was stopped while it waited), so it is not shown as approved.
+ * The decision, once there is one. The wrapper records it in the call's details as soon as it is made, before the call finishes; a call
+ * that settled without one was never decided (the run was stopped while it waited), so it is not shown as approved.
  */
-function decisionOf(result: ToolResultMessage | undefined, decision: 'approved' | 'denied' | 'cancelled' | undefined): 'pending' | 'denied' | 'approved' | 'cancelled' {
-  if (!result) return 'pending';
+function decisionOf(result: ToolResultMessage | undefined, decision: ApprovalDecision | undefined): ApprovalDecision | undefined {
   if (decision) return decision;
+  if (!result) return undefined;
   const text = result.content.map(part => part.type === 'text' ? part.text : '').join('');
   return result.isError && text.startsWith(DENIED_PREFIX) ? 'denied' : 'cancelled';
 }
@@ -44,9 +45,9 @@ export function ApprovalCard({ call, result, answer, questionId, summary, decisi
   const [refusal, setRefusal] = useState<string | undefined>();
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-  const settled = decisionOf(result, decision);
-  // `pending` means the decision waits on the person; `writing` means the model is still generating the call.
-  const state = settled !== 'pending' ? settled : sent === APPROVE ? 'approved-sent' : sent === DENY ? 'denied-sent' : live ? 'writing' : 'pending';
+  // `pending` is the kit's waiting rule (`waits`, as the chat's status line uses); `writing` means the model is still generating the call.
+  const waiting = waits({ kind: 'approval', key: call.id, call, result, live, questionId, summary: summary ?? '', ...(decision ? { decision } : {}) });
+  const state = decisionOf(result, decision) ?? (sent === APPROVE ? 'approved-sent' : sent === DENY ? 'denied-sent' : waiting ? 'pending' : 'writing');
   const open = state === 'pending' || state === 'writing';
   const args = describeArguments(call);
   const busy = sending !== undefined || live;
@@ -88,7 +89,8 @@ export function ApprovalCard({ call, result, answer, questionId, summary, decisi
       <Button variant="outline" data-testid="approval-deny" disabled={unavailable} onClick={() => { void decide(DENY); }}><XIcon data-icon="inline-start" aria-hidden="true" />{labels.deny}</Button>
     </ItemActions>}
     {(open && (live || !answer || !questionId)) && <ItemFooter><ItemDescription>{live ? labels.stillWritingCall : labels.decidingUnavailable}</ItemDescription></ItemFooter>}
-    {(state === 'approved-sent' || state === 'denied-sent') && <ItemFooter><ItemDescription>{labels.decisionSent(approved)}</ItemDescription></ItemFooter>}
+    {/* Decided, the gated call not finished yet: whoever decided, the run carries on by itself. */}
+    {(approved || denied) && !result && <ItemFooter><ItemDescription>{labels.decisionSent(approved)}</ItemDescription></ItemFooter>}
     {refusal && open && <ItemFooter><p role="alert" data-testid="approval-refusal" className="m-0 text-sm text-destructive">{refusal}</p></ItemFooter>}
   </Item>;
 }
