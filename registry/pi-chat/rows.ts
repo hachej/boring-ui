@@ -49,8 +49,8 @@ export type Part =
   | { readonly kind: 'tool'; readonly key: string; readonly entry: ToolEntry };
 
 export type Row = (
-  | { readonly key: string; readonly type: 'user'; readonly message: UserMessage }
-  | { readonly key: string; readonly type: 'assistant'; readonly parts: readonly Part[]; /** Native result images remain visible when their tool chrome is omitted. */ readonly images?: readonly ImageContent[]; readonly streaming: boolean; /** The turn is still running (the last row while a run is active). */ readonly active?: boolean; readonly stopReason?: AssistantMessage['stopReason']; readonly errorMessage?: string; readonly text: string; /** When the reply was written (the last round of a merged turn), in ms. Absent while it streams. */ readonly timestamp?: number; /** The model that wrote the last round of the reply. */ readonly model?: { readonly provider: string; readonly modelId: string }; /** Sum of the merged rounds' native `durationMs`, when recorded. */ readonly durationMs?: number; /** The native entry of its last committed round: where a fork of the conversation after this reply starts. */ readonly entryId?: string }
+  | { readonly key: string; readonly type: 'user'; readonly message: UserMessage; /** `messageStyle="messaging"`: first of a run (see `markLeads`). */ readonly lead?: boolean }
+  | { readonly key: string; readonly type: 'assistant'; readonly lead?: boolean; readonly parts: readonly Part[]; /** Native result images remain visible when their tool chrome is omitted. */ readonly images?: readonly ImageContent[]; readonly streaming: boolean; /** The turn is still running (the last row while a run is active). */ readonly active?: boolean; readonly stopReason?: AssistantMessage['stopReason']; readonly errorMessage?: string; readonly text: string; /** When the reply was written (the last round of a merged turn), in ms. Absent while it streams. */ readonly timestamp?: number; /** The model that wrote the last round of the reply. */ readonly model?: { readonly provider: string; readonly modelId: string }; /** Sum of the merged rounds' native `durationMs`, when recorded. */ readonly durationMs?: number; /** The native entry of its last committed round: where a fork of the conversation after this reply starts. */ readonly entryId?: string }
   | { readonly key: string; readonly type: 'orphan-result'; readonly message: ToolResultMessage }
   | { readonly key: string; readonly type: 'system'; readonly text: string }
   | { readonly key: string; readonly type: 'event'; readonly label: string }
@@ -301,4 +301,25 @@ export function segments(parts: readonly Part[], groupTool: DeriveOptions['group
 }
 function safe(groupTool: NonNullable<DeriveOptions['groupTool']>, entry: ToolEntry): boolean {
   try { return entry.result !== undefined && !entry.result.isError && groupTool(entry.call, entry.result) === true; } catch { return false; }
+}
+
+const LEAD_GAP_MS = 15 * 60_000;
+const leads = new WeakMap<Row, { readonly yes?: Row; readonly no?: Row }>();
+const stamp = (row: Row): number | undefined => row.type === 'user' ? row.message.timestamp : row.type === 'assistant' ? row.timestamp : undefined;
+/**
+ * `messageStyle="messaging"`: flags the first user or assistant row of each run (a change of side, or more than 15 minutes since the
+ * last message) so only it gets a tail. A row keeps its identity while its flag does not change, so memoized rows stay still.
+ */
+export function markLeads(rows: readonly Row[]): readonly Row[] {
+  return rows.map((row, at) => {
+    if (row.type !== 'user' && row.type !== 'assistant') return row;
+    const before = rows[at - 1], time = stamp(row), last = before && stamp(before);
+    const lead = !before || before.type !== row.type || (time !== undefined && last !== undefined && time - last > LEAD_GAP_MS);
+    if (row.lead === lead) return row;
+    const cached = leads.get(row), hit = lead ? cached?.yes : cached?.no;
+    if (hit) return hit;
+    const next = { ...row, lead } as Row;
+    leads.set(row, { ...cached, [lead ? 'yes' : 'no']: next });
+    return next;
+  });
 }

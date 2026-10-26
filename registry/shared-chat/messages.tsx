@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import { cardActions, channelAvatarStates } from '@hachej/boring-ui-kit/shared-chat';
 import type { Card as Request, ChannelMessage, SharedChatController, Member, SharedChatState } from '@hachej/boring-ui-kit/shared-chat';
-import { CheckIcon, CircleIcon, ClockIcon, CopyIcon, HammerIcon, PinIcon, ReplyIcon, SparkleIcon, Trash2Icon, XIcon } from 'lucide-react';
+import { CheckIcon, CircleIcon, CopyIcon, HammerIcon, PinIcon, ReplyIcon, SparkleIcon, Trash2Icon, XIcon } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarGroup, AvatarGroupCount, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,8 @@ import { Separator } from '@/components/ui/separator';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { copyText } from '../utils/utils';
+import { BubbleTail, ClockSpacer, MessageClock as ChatMessageClock, clockRoom } from '../pi-chat/message';
+export { BubbleTail, ClockSpacer, clockRoom };
 import { useChatText, useSharedView } from './text';
 import { agentKind, namedMember } from './names';
 import { defaultSharedLabels } from './shared-labels';
@@ -127,26 +129,11 @@ export function SharedMembers({ controller }: { readonly controller: SharedChatC
   </div>;
 }
 
-/** WhatsApp's tail on the first bubble of a group. Its square part fills the bubble's top corner under the (positioned) content. */
-export function BubbleTail({ side }: { readonly side: 'start' | 'end' }) {
-  return <svg data-testid="bubble-tail" data-side={side} aria-hidden="true" viewBox="0 0 22 14" width="22" height="14"
-    className={`pointer-events-none absolute top-0 ${side === 'end' ? '-end-2 -scale-x-100 fill-primary' : '-start-2 fill-muted'}`}><path d="M0 0H22V14H8V9C8 5 5 2 0 0Z" /></svg>;
-}
-
-/** Text whose last line leaves room for the time at the bottom right of the bubble (the spacer rides at the end of the last paragraph). */
-export const clockRoom = "[&_:is(p,li):last-child]:after:inline-block [&_:is(p,li):last-child]:after:w-14 [&_:is(p,li):last-child]:after:content-['']";
-
-/** The time inside a bubble (« 14:02 »). `floating` pins it bottom right over the room the text left; otherwise it sits in the line. */
-export function MessageClock({ at, tone, floating = true, pending = false }: { readonly at: string; readonly tone: 'muted' | 'primary'; readonly floating?: boolean; readonly pending?: boolean | undefined }) {
+/** The chat's time inside a bubble, with the shared chat's own clock and date labels. */
+export function MessageClock(props: Omit<ComponentProps<typeof ChatMessageClock>, 'text' | 'title'>) {
   const { labels } = useChatText();
-  // Not confirmed by the host yet: a small clock where the time will be, like WhatsApp's.
-  if (pending) return <span data-testid="message-pending" role="img" aria-label={labels.sending} title={labels.sending}
-    className={`${floating ? 'absolute end-3 bottom-1.5' : 'shrink-0 self-end'} leading-none ${tone === 'primary' ? 'opacity-80' : 'text-muted-foreground'}`}><ClockIcon aria-hidden="true" className="size-3" /></span>;
-  return <time data-testid="message-time" dateTime={at} title={labels.sharedTimestamp(at)}
-    className={`${floating ? 'absolute end-3 bottom-1.5' : 'shrink-0 self-end'} text-[0.6875rem] leading-none whitespace-nowrap tabular-nums ${tone === 'primary' ? 'opacity-80' : 'text-muted-foreground'}`}>{labels.sharedClock(at)}</time>;
+  return <ChatMessageClock {...props} className="text-[0.6875rem]" text={labels.sharedClock(props.at)} title={labels.sharedTimestamp(props.at)} />;
 }
-/** Room for a floating clock after plain inline text. */
-export const ClockSpacer = () => <span aria-hidden="true" className="inline-block w-14" />;
 
 /** The member's role line: the host's own `roleLabel`, else the labels' derivation from kind and role. */
 export function useRoleLine(member: Member): string | undefined {

@@ -1,4 +1,5 @@
 /* The chat's words in French, the `locale="fr"` base of `PiChat`, `AmbientChat` and `AgentWorkspace`. Typed as `ChatLabels`, so a key added in English must be added here too. */
+import { formatClock, formatTimestamp } from './labels';
 import type { ChatLabels } from './labels';
 
 const TOOL_VERBS: Readonly<Record<string, string>> = { read: 'Lecture', write: 'Écriture', edit: 'Modification', ls: 'Liste', list_files: 'Liste', find: 'Recherche', grep: 'Recherche', load_skill: 'Chargement de la compétence', bash: 'Exécution bash' };
@@ -129,6 +130,8 @@ export const frenchChatLabels: ChatLabels = {
   more: 'Plus',
   edit: 'Modifier',
   sending: 'Envoi',
+  messageClock: at => formatClock(at, 'fr'),
+  messageTimestamp: at => formatTimestamp(at, 'fr'),
   images: count => `[${count} image${count === 1 ? '' : 's'}]`,
   historyDialog: 'Historique des conversations',
   newConversation: 'Nouvelle',

@@ -2,7 +2,11 @@
 
 - **Room kit: replies stream word by word (`@hachej/boring-agent/room`).** `createRoomTurn` also reads the run in flight from `pi.live` (`generation.message`, only when the run holds this wake's submission) and sends its text as `text` frames, so the room sees the reply grow instead of arriving once at the end. The settled entry continues after what was sent, so the frames still add up to the reply exactly once. No API change; hosts that append `text` frames (as since the previous entry) need nothing.
 
+# Migrating to 0.4.21
+
 - **Room kit: a queued wake is followed, an unanswered run closes its wake, text streams as growth (`@hachej/boring-agent/room`).** A wake submitted while the conversation was busy was never followed, so its `ask_user` never reached the room and later wakes queued behind it. `createRoomTurn` now follows it once its input is placed, settles an `unanswered` submission with `ROOM.unanswered`, and sends `text` frames as new tails (append them; the first frame is no longer the whole reply). A host that replaced the previous text with each `text` frame must append instead.
+
+- **PiChat `messageStyle: 'messaging'` (`pi-chat` block, kit).** Opt-in and additive; the default look is unchanged. `PiChat` gains `messageStyle?: 'default' | 'messaging'`. In `messaging` my text is a primary bubble on the right with an end tail, the reply a muted bubble on the left with a start tail, and the time sits inside the bubble (tails on the first bubble of a run, time on each message, none while streaming). Reinstall `pi-chat` and `shared-chat` (`npx boring-ui-blocks update`) and the npm kit (`@hachej/boring-ui-kit`); `shared-chat` now imports the bubble tail and clock helpers from `pi-chat/message`. New labels `messageClock` and `messageTimestamp` in the PiChat labels (English and French shipped); a host that passes a hand-built labels object adds them. Evidence: `test/ui/pi-chat-message-style.test.mjs` and `npm run messaging-chat:journey`.
 
 # Migrating to 0.4.20
 

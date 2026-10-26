@@ -9,6 +9,26 @@ import { ArrowDownIcon, ArrowUpIcon, CameraIcon, GitForkIcon, HistoryIcon, ListE
 import type { BlockIcon } from '../button/actions';
 import { withDefaults } from '../utils/utils';
 
+// An Intl.DateTimeFormat costs far more than formatting with one; every bubble's clock reuses the same few.
+const formats = new Map<string, Intl.DateTimeFormat>();
+function intlFormat(locale: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const key = `${locale}|${JSON.stringify(options)}`;
+  let found = formats.get(key);
+  if (!found) { found = new Intl.DateTimeFormat(locale, options); formats.set(key, found); }
+  return found;
+}
+/** « Tue 22 Oct, 14:02 ». */
+export function formatTimestamp(at: string, locale: string) {
+  const date = new Date(at);
+  if (!Number.isFinite(date.getTime())) return at;
+  return `${intlFormat(locale, { weekday: 'short', day: 'numeric', month: 'short' }).format(date)}, ${intlFormat(locale, { hour: '2-digit', minute: '2-digit' }).format(date)}`;
+}
+/** The time inside a bubble (« 14:02 », « 2:02 PM »). */
+export function formatClock(at: string, locale: string) {
+  const date = new Date(at);
+  return Number.isFinite(date.getTime()) ? intlFormat(locale, { hour: 'numeric', minute: '2-digit' }).format(date) : '';
+}
+
 const TOOL_VERBS: Readonly<Record<string, string>> = { read: 'Reading', write: 'Writing', edit: 'Editing', ls: 'Listing', list_files: 'Listing', find: 'Searching', grep: 'Searching', load_skill: 'Loading skill', bash: 'Running bash' };
 const TOOL_NOUNS: Readonly<Record<string, string>> = { bash: 'command', read: 'read', write: 'write', edit: 'edit', find: 'find', grep: 'search', ls: 'list' };
 
@@ -150,6 +170,9 @@ export const defaultChatLabels = {
   more: 'More',
   edit: 'Edit',
   sending: 'Sending',
+  /** The time inside a bubble in the `messaging` style (« 14:02 »), and its full date as the tooltip. */
+  messageClock: (at: string) => formatClock(at, 'en'),
+  messageTimestamp: (at: string) => formatTimestamp(at, 'en'),
   images: (count: number) => `[${count} image${count === 1 ? '' : 's'}]`,
   // Conversation list and history
   historyDialog: 'Conversation history',
