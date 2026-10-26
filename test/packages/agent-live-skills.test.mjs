@@ -144,7 +144,7 @@ test('a static array keeps its snapshot and its errors', async () => {
   assert.equal(await loadSkill(extension)('letters'), 'Sign as the Fictional Clinic.');
 });
 
-// Skills control (D-315): a per-conversation `visible` filter, `companions` beside SKILL.md, a `refresh` handle and an
+// Skills control (D-315, reshaped by D-318): a per-conversation `visible` filter, `companionFiles` beside SKILL.md, a `refresh` handle and an
 // `onPublish` veto. Driven through the real extension: the section Pi renders into the model's system prompt and load_skill
 // calls the model makes, so Pi passes its own conversation id, validates the arguments and runs the tool.
 
@@ -189,7 +189,10 @@ test('visible: each conversation sees only its skills, and a hidden skill answer
   let billing;
   const asked = [];
   const extension = createSkillsExtension('fictional.skills', directorySkillSource(env, 'skills'), {
-    visible: (skill, at) => { asked.push(at); return skill.name !== 'invoices' || at.conversationId === billing.id; },
+    visible: async (conversationId, skills) => {
+      asked.push([conversationId, skills.map(skill => skill.name)]);
+      return conversationId === billing.id ? skills : skills.filter(skill => skill.name !== 'invoices');
+    },
   });
   const { open, ask } = await scriptedHarness(t, extension);
   billing = await open();
@@ -206,10 +209,12 @@ test('visible: each conversation sees only its skills, and a hidden skill answer
   assert.equal(clerked.results[1], 'Unknown skill "nonexistent". Available: letters');
   assert.equal(clerked.results[0], 'Unknown skill "invoices". Available: letters', 'hidden: the same answer as an unknown skill');
   assert.equal(clerked.results[2], 'Unknown skill "broken". Available: letters', 'with a filter, an unreadable skill does not reveal itself either');
-  assert.ok(asked.some(at => at.conversationId === clerk.id && at.context), 'the filter gets the conversation id and context from Pi');
+  // One call per listing and per load_skill, with Pi's conversation id and the whole valid list (never the unreadable one).
+  assert.ok(asked.some(([id]) => id === clerk.id), 'the filter gets the conversation id from Pi');
+  for (const [, names] of asked) assert.deepEqual(names, ['invoices', 'letters']);
 });
 
-test('companions: the files beside SKILL.md are listed by load_skill and read on demand, never outside the folder', async t => {
+test('companionFiles: checked when the listing is read, listed by load_skill and read on demand, never outside the folder', async t => {
   const { root, env } = await workspace(t);
   await skillsFolder(root, { letters: skillText('letters', 'Write a fictional letter', 'Sign as the Fictional Clinic. See references/tone.md.') });
   await mkdir(join(root, 'skills/letters/references'), { recursive: true });
@@ -218,7 +223,15 @@ test('companions: the files beside SKILL.md are listed by load_skill and read on
   await writeFile(join(root, 'skills/letters/scripts/sign.sh'), 'echo fictional-signature\n');
   await writeFile(join(root, 'outside.txt'), 'fictional text outside the skill\n');
   await symlink(join(root, 'outside.txt'), join(root, 'skills/letters/link.md'));
-  const extension = createSkillsExtension('fictional.skills', directorySkillSource(env, 'skills'), { companions: true });
+  await writeFile(join(root, 'skills/letters/references/logo.bin'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0xfe]));
+  const reports = [];
+  const extension = createSkillsExtension('fictional.skills', directorySkillSource(env, 'skills'), { companionFiles: true, onDiagnostics: errors => reports.push(errors) });
+  // The bad files are found when the listing is read, before any load_skill call.
+  assert.match(await extension.sections[0].render({}, context), /- letters: Write a fictional letter/);
+  assert.deepEqual(reports, [[
+    { path: 'skills/letters/link.md', name: 'letters', message: 'Companion file left out: a symbolic link' },
+    { path: 'skills/letters/references/logo.bin', name: 'letters', message: 'Companion file left out: not UTF-8 text' },
+  ]]);
   const { open, ask } = await scriptedHarness(t, extension);
   const turn = await ask(await open(), [
     { name: 'letters' },
@@ -226,19 +239,20 @@ test('companions: the files beside SKILL.md are listed by load_skill and read on
     { name: 'letters', path: './scripts/sign.sh' },
     { name: 'letters', path: '../../outside.txt' },
     { name: 'letters', path: 'link.md' },
+    { name: 'letters', path: 'references/logo.bin' },
   ]);
   assert.match(turn.system, /- letters: Write a fictional letter/);
-  const [loaded, tone, sign, escaped, linked] = turn.results;
+  const [loaded, tone, sign, escaped, linked, binary] = turn.results;
   assert.match(loaded, /^Sign as the Fictional Clinic\./);
   assert.match(loaded, /Companion files of this skill \(read one with load_skill and its path\):\n- references\/tone\.md\n- scripts\/sign\.sh$/);
   assert.equal(tone, 'Warm and fictional.\n');
   assert.equal(sign, 'echo fictional-signature\n');
-  for (const refused of [escaped, linked]) {
+  for (const refused of [escaped, linked, binary]) {
     assert.match(refused, /^Skill "letters" has no companion file ".*"\. Companion files: references\/tone\.md, scripts\/sign\.sh$/);
     assert.doesNotMatch(refused, /fictional text outside/);
   }
   // An array has no FileSystem to read companions through.
-  assert.throws(() => createSkillsExtension('x', [parseSkill(skillText('letters', 'x', 'y'))], { companions: true }), /companions/);
+  assert.throws(() => createSkillsExtension('x', [parseSkill(skillText('letters', 'x', 'y'))], { companionFiles: true }), /companionFiles/);
 });
 
 test('refresh: the host re-reads the source now, one skill or all, without waiting for maxAgeMs', async t => {
@@ -308,4 +322,48 @@ test('onPublish: a refused listing never replaces the current one, and the reaso
   assert.match(await listing(), /- letters: Write a reviewed fictional letter/);
   assert.match(await load('letters'), /^Sign as the Reviewed Clinic\./);
   assert.deepEqual(reports.at(-1), []);
+});
+
+// Skills reshape (D-318): a load_skill miss checks the source now, and the listing intro can be replaced.
+
+test('refresh on miss: load_skill for a name not listed checks the source once now, whatever maxAgeMs, through onPublish', async t => {
+  const { root, env } = await workspace(t);
+  await skillsFolder(root, { letters: skillText('letters', 'Write a fictional letter', 'Sign as the Fictional Clinic.') });
+  const source = directorySkillSource(env, 'skills'), counts = { version: 0, list: 0 }, published = [];
+  const counted = {
+    fs: source.fs,
+    version: async ctx => { counts.version += 1; await new Promise(resolve => setTimeout(resolve, 10)); return source.version(ctx); },
+    list: async ctx => { counts.list += 1; return source.list(ctx); },
+  };
+  const extension = createSkillsExtension('fictional.skills', counted, {
+    maxAgeMs: 60_000,
+    onPublish: next => { published.push(next.map(skill => skill.name)); },
+  });
+  const { open, ask } = await scriptedHarness(t, extension);
+  const conversation = await open();
+  assert.match((await ask(conversation, [{ name: 'letters' }])).results[0], /^Sign as the Fictional Clinic\./);
+  assert.deepEqual(counts, { version: 1, list: 1 });
+
+  // A model asking for names that do not exist: each miss checks version() (concurrent misses share one check), and the
+  // source is listed again only when it changed.
+  const misses = await ask(conversation, [{ name: 'nonexistent' }, { name: 'also-missing' }, { name: 'nope' }]);
+  for (const [index, name] of ['nonexistent', 'also-missing', 'nope'].entries()) assert.equal(misses.results[index], `Unknown skill "${name}". Available: letters`);
+  assert.ok(counts.version >= 2 && counts.version <= 4, `one version() per miss at most, got ${counts.version}`);
+  assert.equal(counts.list, 1, 'an unchanged source is not listed again');
+
+  // Added after the listing was read, well inside maxAgeMs: the miss finds it, through onPublish.
+  await skillsFolder(root, { invoices: skillText('invoices', 'Draft a fictional invoice', 'Use the fictional rate card.') });
+  const found = await ask(conversation, [{ name: 'invoices' }]);
+  assert.match(found.results[0], /^Use the fictional rate card\./);
+  assert.match(found.system, /- invoices: Draft a fictional invoice/, 'the listing shows it from the next request on');
+  assert.equal(counts.list, 2);
+  assert.deepEqual(published.at(-1), ['invoices', 'letters']);
+});
+
+test('intro: replaces the text before the skill lines; the default is unchanged', async t => {
+  const skill = parseSkill(skillText('letters', 'Write a fictional letter', 'Sign as the Fictional Clinic.'));
+  const listing = await conversationWith(t, createSkillsExtension('fictional.intro', [skill], { intro: 'Fictional clinic skills, load one first:' }));
+  assert.equal(await listing(), '<skills>\nFictional clinic skills, load one first:\n- letters: Write a fictional letter\n</skills>');
+  const plain = await createSkillsExtension('fictional.plain', [skill]).sections[0].render({}, context);
+  assert.match(plain, /^Before starting a task that matches a skill, call load_skill with its name .*\/<skill-name>.*\n- letters: Write a fictional letter$/);
 });
