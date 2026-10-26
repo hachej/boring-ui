@@ -28,6 +28,8 @@ visit('file-tree');
 // The documents screen: its Library, revisions and sheet, installed and checked strictly with the rest of the closure.
 visit('documents');
 visit('highlights');
+// The kit's tokens, which this token-less app installs once in its setup; no block depends on them.
+visit('theme');
 const styles = [process.env.BORING_CONSUMER_STYLE ?? 'base-nova'];
 assert.ok(styles.every(style => style === 'base-nova'), 'Registry blocks require the shadcn Base UI style');
 const cache = process.env.npm_config_cache;
@@ -71,7 +73,8 @@ async function testStyle(style) {
     delete installer.NODE_OPTIONS;
     // The documented app setup (registry/README.md, APP_SETUP), then the blocks, which declare no shadcn component of their own.
     addAppComponents(directory, [...SHADCN_BUILTINS], installer, run);
-    run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', `${registry}/pi-app.json`, `${registry}/file-tree.json`, `${registry}/app-shell.json`, `${registry}/documents.json`, `${registry}/highlights.json`, `${registry}/theme.json`, '--cwd', directory, '--yes'], installer);
+    run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', `${registry}/theme.json`, '--cwd', directory, '--yes'], installer);
+    run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', `${registry}/pi-app.json`, `${registry}/file-tree.json`, `${registry}/app-shell.json`, `${registry}/documents.json`, `${registry}/highlights.json`, '--cwd', directory, '--yes'], installer);
     for (const [name, item] of closure) for (const file of item.files ?? []) {
       assert.ok(existsSync(join(directory, 'src', file.target)), `the CLI must create ${file.target} (${name})`);
       const text = readFileSync(join(directory, 'src', file.target), 'utf8');
