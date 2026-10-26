@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { mkdirSync } from 'node:fs';
 import { build } from 'esbuild';
+import { DEFAULT_KINDS_ENTRY, withDefaultKinds } from '../helpers/default-kinds.mjs';
 import { Window } from 'happy-dom';
 import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 
@@ -19,8 +20,8 @@ test('revision workspace preserves file drafts, docked and floating chat mounts,
   const { createElement, act, useState, useEffect } = await import('react'); const { createRoot } = await import('react-dom/client');
   const out = new URL('../../.cache/file-tree-test/', import.meta.url); mkdirSync(out, { recursive: true });
   const output = new URL('workspace.mjs', out);
-  await build({ entryPoints: [new URL('../../registry/pi-app/agent-workspace.tsx', import.meta.url).pathname], outfile: output.pathname, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', plugins: [{ name: 'bundle-file-tree-css', setup(builder) { builder.onResolve({ filter: /^@hachej\/boring-ui-kit\/file-tree\.css$/ }, () => ({ path: new URL(import.meta.resolve('@hachej/boring-ui-kit/file-tree.css')).pathname, external: false })); } }] });
-  const { AgentWorkspace, FileViewer, ArtifactPanel } = await import(output.href);
+  await build({ stdin: DEFAULT_KINDS_ENTRY, tsconfig: new URL('../../tsconfig.json', import.meta.url).pathname, outfile: output.pathname, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', plugins: [{ name: 'bundle-file-tree-css', setup(builder) { builder.onResolve({ filter: /^@hachej\/boring-ui-kit\/file-tree\.css$/ }, () => ({ path: new URL(import.meta.resolve('@hachej/boring-ui-kit/file-tree.css')).pathname, external: false })); } }] });
+  const { AgentWorkspace, FileViewer, ArtifactPanel } = withDefaultKinds(await import(output.href), createElement);
   const element = window.document.createElement('div'); window.document.body.append(element); const root = createRoot(element);
   t.after(async () => {
     await act(async () => root.unmount()); await window.happyDOM.close();

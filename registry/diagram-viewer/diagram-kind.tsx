@@ -11,7 +11,7 @@ const DiagramViewer = lazy(() => import('./diagram-viewer').then(module => ({ de
 
 /**
  * The artifact kind of a diagram file (structurally an `ArtifactKind` of pi-artifacts): it matches `*.diagram.json`, names it, gives its icon
- * and draws it with `DiagramViewer`, loaded on first open. Pass it, or your own, in `artifactKinds`; kinds an app passes are consulted first.
+ * and draws it with `DiagramViewer`, loaded on first open. It is in the pi-app-kinds default list (`defaultKinds`); kinds in `artifactKinds` are consulted in order.
  */
 export interface DiagramKind {
   readonly match: (target: { readonly resource: { readonly path: string } }) => boolean;

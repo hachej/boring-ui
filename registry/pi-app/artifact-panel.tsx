@@ -182,7 +182,7 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose, headerSta
     return result?.kind === 'available' ? readText(result.snapshot.bytes) : undefined;
   }, [client, artifact.target]);
   const fragment = useSyncExternalStore(subscribeHash, readHash, () => '');
-  // A host viewer for the type (`viewers`) wins over a built-in document kind, not over a host's kind.
+  // A host viewer for the type (`viewers`) wins over a document kind (a `fallback` one), not over any other kind.
   const draws = artifactKind(artifact, drawingKinds);
   const custom = draws && !draws.fallback ? undefined : options.viewers?.[type];
   const drawing = custom ? undefined : draws;

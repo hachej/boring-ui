@@ -9,7 +9,8 @@ import { build } from 'esbuild';
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const out = join(root, '.cache/record-viewer-test');
 mkdirSync(out, { recursive: true });
-writeFileSync(join(out, 'entry.tsx'), `export { ArtifactPanel } from '${root}registry/pi-app/artifact-panel.tsx'; export { createRecordsKind, recordsKind } from '${root}registry/record-viewer/records-kind.tsx'; export { RecordTable, RecordList, RecordsViewer } from '${root}registry/record-viewer/record-viewer.tsx';`);
+writeFileSync(join(out, 'entry.tsx'), `export { ArtifactPanel } from '${root}registry/pi-app/artifact-panel.tsx'; export { createRecordsKind, recordsKind } from '${root}registry/record-viewer/records-kind.tsx'; export { RecordTable, RecordList, RecordsViewer } from '${root}registry/record-viewer/record-viewer.tsx';
+export { defaultKinds } from '${root}registry/pi-app-kinds/pi-app-kinds.ts';`);
 await build({ entryPoints: [join(out, 'entry.tsx')], outfile: join(out, 'kit.mjs'), bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
 // Imported once the first test's DOM globals exist: Base UI decides at load time whether it runs in a browser.
 let kit;
@@ -56,7 +57,7 @@ async function panel(t, text, { path = 'flows/booking.diagram.json', kinds, file
     },
     saves: async () => [], search: async () => [],
   };
-  await page.render(page.h(kit.ArtifactPanel, { active: { descriptor: artifact, follow: false }, versions: [artifact], options: { client, identity: { runtimeId: 'fixture' }, ...(kinds ? { kinds } : {}) }, onSelect: () => {}, onClose: () => {} }));
+  await page.render(page.h(kit.ArtifactPanel, { active: { descriptor: artifact, follow: false }, versions: [artifact], options: { client, identity: { runtimeId: 'fixture' }, kinds: kinds ?? kit.defaultKinds() }, onSelect: () => {}, onClose: () => {} }));
   await page.settle();
   const lit = selector => page.$$(`${selector}[data-lit]`);
   return { ...page, reads, lit };
@@ -137,7 +138,7 @@ test('empty rows, missing values and prototype-like keys stay usable', async t =
 });
 
 test('an app kind for records wins over the built-in', async t => {
-  const page = await panel(t, WORKSHOP, { path: 'inventaire-atelier.records.json', kinds: [{ match: target => target.resource.path.endsWith('.records.json'), label: 'Stock', renderer: () => 'Host stock' }] });
+  const page = await panel(t, WORKSHOP, { path: 'inventaire-atelier.records.json', kinds: [{ match: target => target.resource.path.endsWith('.records.json'), label: 'Stock', renderer: () => 'Host stock' }, ...kit.defaultKinds()] });
   assert.equal(page.$('[data-testid=artifact-panel-type]').textContent, 'Stock');
   assert.equal(page.$('[data-boring=records-viewer]'), null);
   assert.match(page.container.textContent, /Host stock/);

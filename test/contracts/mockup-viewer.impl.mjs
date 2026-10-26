@@ -12,7 +12,8 @@ mkdirSync(out, { recursive: true });
 writeFileSync(join(out, 'entry.tsx'), `export { ArtifactPanel } from '${root}registry/pi-app/artifact-panel.tsx';
 export { createMockupKind, mockupKind } from '${root}registry/mockup-viewer/mockup-kind.tsx';
 export { compileMockup } from '${root}registry/mockup-viewer/mockup-compile.ts';
-export { useComposerFeedback, usePointComments } from '${root}registry/feedback/feedback-session.tsx';`);
+export { useComposerFeedback, usePointComments } from '${root}registry/feedback/feedback-session.tsx';
+export { defaultKinds } from '${root}registry/pi-app-kinds/pi-app-kinds.ts';`);
 await build({ entryPoints: [join(out, 'entry.tsx')], outfile: join(out, 'kit.mjs'), bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
 // Imported once the first test's DOM globals exist: Base UI decides at load time whether it runs in a browser.
 let kit;
@@ -52,7 +53,7 @@ async function panel(t, text, { path = 'documents/booking.mockup.html', kinds, u
     target: { resource: { providerId: 'workspace', path }, view: { kind: 'published' } }, revision: 'rev-1' };
   const bytes = new TextEncoder().encode(text);
   const client = { read: async () => ({ kind: 'available', snapshot: { bytes, ref: { revision: 'rev-1', providerId: 'workspace', path } } }), saves: async () => [], search: async () => [] };
-  await page.render(page.h(kit.ArtifactPanel, { active: { descriptor: artifact, follow: false }, versions: [artifact], options: { client, identity: { runtimeId: 'fixture' }, ...(kinds ? { kinds } : {}), onShown }, onSelect: () => {}, onClose: () => {} }));
+  await page.render(page.h(kit.ArtifactPanel, { active: { descriptor: artifact, follow: false }, versions: [artifact], options: { client, identity: { runtimeId: 'fixture' }, kinds: kinds ?? kit.defaultKinds(), onShown }, onSelect: () => {}, onClose: () => {} }));
   await page.settle();
   return page;
 }
@@ -71,7 +72,7 @@ test('a mockup.html file uses the built-in opaque sandbox and host theme', async
 });
 
 test('an app kind overrides the built-in', async t => {
-  const page = await panel(t, BOOKING, { kinds: [{ match: () => true, label: 'Host mock-up', renderer: () => 'Host renderer' }] });
+  const page = await panel(t, BOOKING, { kinds: [{ match: () => true, label: 'Host mock-up', renderer: () => 'Host renderer' }, ...kit.defaultKinds()] });
   assert.equal(page.$('[data-testid=mockup-run-frame]'), null);
   assert.match(page.container.textContent, /Host renderer/);
 });
