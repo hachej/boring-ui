@@ -1,5 +1,7 @@
 # Unreleased
 
+- **Delegate tool: limits, timeout, meter and child tool allow list (`@hachej/boring-agent/agents`).** Opt-in and additive; with none of the new options a delegate behaves as before. `DelegateOptions` (and each `defineAgent` `delegates` entry) gains `limits?: DelegateLimits` (`maxRunningPerConversation`, `maxRunning`, `maxStartsPerHour`, `maxTaskChars`, `timeoutMs`), `meter?: (parent, child) => DelegateMeter` (`record(event)` per child model response, `close(end)` with `done`, `failed`, `cancelled` or `timeout`) and `childTools?: string[]`. A call over a limit returns an error result saying why and creates no child. Counts are per `limits` object in this process: give several delegates the same object for one host-wide cap. New exported types `DelegateLimits`, `DelegateMeter`, `DelegateModelEvent`, `DelegateEnd`. Evidence: `test/packages/agent-delegate-limits.test.mjs`.
+
 - **Room kit: replies stream word by word (`@hachej/boring-agent/room`).** `createRoomTurn` also reads the run in flight from `pi.live` (`generation.message`, only when the run holds this wake's submission) and sends its text as `text` frames, so the room sees the reply grow instead of arriving once at the end. The settled entry continues after what was sent, so the frames still add up to the reply exactly once. No API change; hosts that append `text` frames (as since the previous entry) need nothing.
 
 # Migrating to 0.4.21
