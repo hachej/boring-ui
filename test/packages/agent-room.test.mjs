@@ -47,6 +47,22 @@ function scriptedModel(script) {
           usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
         events.push({ type: 'error', reason: 'error', error: failed }); events.end(failed); return;
       }
+      if (step.chunks) {
+        // A streaming reply: the partial grows with a pause between chunks, so pi commits it into `pi.live` several times.
+        const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+        const partial = { role: 'assistant', content: [], api: model.api, provider: model.provider, model: model.id, timestamp: 1, stopReason: 'stop', usage };
+        events.push({ type: 'start', partial: structuredClone(partial) });
+        let text = '';
+        for (const chunk of step.chunks) {
+          text += chunk;
+          partial.content = [{ type: 'text', text }];
+          events.push({ type: 'text_delta', contentIndex: 0, delta: chunk, partial: structuredClone(partial) });
+          await new Promise(resolve => setTimeout(resolve, 160));
+        }
+        events.push({ type: 'done', reason: 'stop', message: partial });
+        events.end(partial);
+        return;
+      }
       const part = step.ask ? { type: 'toolCall', id: `ask-${calls.length}`, name: 'ask_user', arguments: step.ask } : { type: 'text', text: step.text };
       const message = { role: 'assistant', content: [part], api: model.api, provider: model.provider, model: model.id, timestamp: 1, stopReason: step.ask ? 'toolUse' : 'stop',
         usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
@@ -400,4 +416,36 @@ test('text frames grow: each relay sends only the new tail', async t => {
   await until('settled', () => home.port.settles.length === 1);
   const text = home.port.frames.filter(frame => frame.type === 'text').map(frame => frame.text).join('');
   assert.equal(text, 'Bonjour ana.', 'the deltas add up to the reply once');
+});
+
+test('a reply streams word by word from the live partial, and the settled entry adds nothing twice', async t => {
+  const path = directory(t);
+  const { harness, room } = await openRoom(path);
+  const chunks = ['Bonjour', ' ana,', ' voici', ' la', ' réponse.'];
+  const home = await openHome(path, room, async () => ({ chunks }));
+  t.after(async () => { await home.turn.close(); await home.harness.close(context); await harness.close(context); });
+  const { wakes: [wake] } = await room.write('main', { requestId: 'web:person:ana:1', kind: 'room.message', data: message('person:ana', 'Salut') }, alone);
+  await home.turn.wake({ wakeId: wake.id, input: 'ana: Salut' });
+  await until('settled', () => home.port.settles.length === 1);
+  const texts = home.port.frames.filter(frame => frame.type === 'text').map(frame => frame.text);
+  assert.ok(texts.length >= 3, `several text frames, got ${JSON.stringify(texts)}`);
+  assert.equal(texts.join(''), chunks.join(''), 'the deltas add up to the reply exactly once');
+  assert.equal((await messages(room)).at(-1).data.text, chunks.join(''));
+});
+
+test('a queued wake streams only its own run, not the live partial of the wake ahead of it', async t => {
+  const path = directory(t);
+  const { harness, room } = await openRoom(path);
+  const home = await openHome(path, room, async transcript => ({ chunks: transcript.messages.some(m => JSON.stringify(m).includes('ana: B')) ? ['Bé', 'ta'] : ['Al', 'pha'] }));
+  t.after(async () => { await home.turn.close(); await home.harness.close(context); await harness.close(context); });
+  const { wakes: [a] } = await room.write('main', { requestId: 'web:person:ana:1', kind: 'room.message', data: message('person:ana', 'A') }, alone);
+  const { wakes: [b] } = await room.write('main', { requestId: 'web:person:ana:2', kind: 'room.message', data: message('person:ana', 'B') }, alone);
+  const seen = { a: [], b: [] };
+  const base = home.port.stream;
+  home.port.stream = async (wakeId, frames) => { seen[wakeId === a.id ? 'a' : 'b'].push(...frames.filter(frame => frame.type === 'text').map(frame => frame.text)); return base(wakeId, frames); };
+  await home.turn.wake({ wakeId: a.id, input: 'ana: A' });
+  await home.turn.wake({ wakeId: b.id, input: 'ana: B' });
+  await until('both settled', () => home.port.settles.length === 2);
+  assert.equal(seen.a.join(''), 'Alpha');
+  assert.equal(seen.b.join(''), 'Béta');
 });

@@ -1,5 +1,5 @@
 import { defineDoc } from '@earendil-works/pi-durable';
-import type { Conversation, ConversationId, ConversationView, Cursor, EntryId, EntryRecord, Harness, SettledSubmissionRecord, Tx } from '@earendil-works/pi-durable';
+import type { Conversation, ConversationId, ConversationView, Cursor, EntryId, EntryRecord, Harness, SettledSubmissionRecord, SubmissionId, Tx } from '@earendil-works/pi-durable';
 import type { Context } from '@earendil-works/chord';
 import { withAbortSignal } from '@earendil-works/chord/context';
 import { ASK_USER_TOOL, answerUserQuestion, askUserQuestionId } from './ask-user.js';
@@ -390,28 +390,45 @@ export function createRoomTurn(options: { readonly conversation: Conversation; r
    * lands when the earlier run is done, so follow from the start and learn `from` the first time its entry exists.
    * Nothing is relayed before then, and never anything at or below the input's own entry (that is another wake's run).
    * Text is relayed as growth: per entry the text length and step count already sent are remembered, only the rest goes.
+   * The partial reply of the run in flight lives in the `pi.live` document, not in the entries: when that run is this
+   * wake's (its inputs hold our submission), its text grows through the same path under `live`, and the settled entry
+   * is seeded from it so nothing is sent twice.
    */
   async function follow(wakeId: string, known?: EntryId): Promise<() => Promise<void>> {
     const watch = await conversation.watch(context);
     const sent = new Map<number, { text: number; steps: number }>();
     let from = known;
+    let submission: SubmissionId | undefined;
+    let live = '';
     let queue = Promise.resolve();
     // Port calls are chained off the watch so a slow room never holds native frames.
     const relay = async (view: ConversationView) => {
       queue = queue.then(async () => {
-        if (from === undefined) from = (await conversation.commit(tx => tx.submissionByRequest(conversation.id, requestId(wakeId)), context))?.entry;
+        if (from === undefined || submission === undefined) {
+          const record = await conversation.commit(tx => tx.submissionByRequest(conversation.id, requestId(wakeId)), context);
+          submission = record?.id;
+          from ??= record?.entry;
+        }
         if (from === undefined) return;
         const own = view.entries.filter(entry => entry.id > from!);
         const frames: RoomFrame[] = [];
         for (const entry of own) {
-          const before = sent.get(entry.id) ?? { text: 0, steps: 0 };
           const all = framesOf([entry]);
           const text = all.flatMap(frame => frame.type === 'text' ? [frame.text] : []).join('\n\n');
+          // The first settled text of this run starts after what its live partial already sent.
+          if (!sent.has(entry.id) && text) { sent.set(entry.id, { text: text.startsWith(live) ? live.length : 0, steps: 0 }); live = ''; }
+          const before = sent.get(entry.id) ?? { text: 0, steps: 0 };
           const steps = all.filter(frame => frame.type === 'step');
           // Steps first: a tool call that began after the text belongs after it, but a lost order costs only polish.
           frames.push(...steps.slice(before.steps));
           if (text.length > before.text) frames.push({ type: 'text', text: text.slice(before.text) });
           sent.set(entry.id, { text: Math.max(before.text, text.length), steps: Math.max(before.steps, steps.length) });
+        }
+        const partial = view.docs['pi.live'] as { run?: { inputs?: readonly unknown[] }; generation?: { message?: { role?: string; content?: readonly { type: string; text?: string }[] } } } | undefined;
+        const message = partial?.generation?.message;
+        if (submission !== undefined && partial?.run?.inputs?.includes(submission) && message?.role === 'assistant') {
+          const text = (message.content ?? []).flatMap(part => part.type === 'text' && part.text ? [part.text] : []).join('\n\n');
+          if (text.length > live.length && text.startsWith(live)) { frames.push({ type: 'text', text: text.slice(live.length) }); live = text; }
         }
         const questions = pendingQuestions(own);
         if (frames.length && port.stream) await port.stream(wakeId, frames);
