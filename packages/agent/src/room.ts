@@ -389,10 +389,11 @@ export function createRoomTurn(options: { readonly conversation: Conversation; r
    * Relay the run's frames and each new `ask_user` while the wake is open. A queued wake has no entry yet: its input
    * lands when the earlier run is done, so follow from the start and learn `from` the first time its entry exists.
    * Nothing is relayed before then, and never anything at or below the input's own entry (that is another wake's run).
+   * Text is relayed as growth: per entry the text length and step count already sent are remembered, only the rest goes.
    */
   async function follow(wakeId: string, known?: EntryId): Promise<() => Promise<void>> {
     const watch = await conversation.watch(context);
-    const seen = new Set<number>();
+    const sent = new Map<number, { text: number; steps: number }>();
     let from = known;
     let queue = Promise.resolve();
     // Port calls are chained off the watch so a slow room never holds native frames.
@@ -400,10 +401,19 @@ export function createRoomTurn(options: { readonly conversation: Conversation; r
       queue = queue.then(async () => {
         if (from === undefined) from = (await conversation.commit(tx => tx.submissionByRequest(conversation.id, requestId(wakeId)), context))?.entry;
         if (from === undefined) return;
-        const own = view.entries.filter(entry => entry.id > from! && !seen.has(entry.id));
-        for (const entry of own) seen.add(entry.id);
-        const frames = framesOf(own);
-        const questions = pendingQuestions(view.entries.filter(entry => entry.id > from!));
+        const own = view.entries.filter(entry => entry.id > from!);
+        const frames: RoomFrame[] = [];
+        for (const entry of own) {
+          const before = sent.get(entry.id) ?? { text: 0, steps: 0 };
+          const all = framesOf([entry]);
+          const text = all.flatMap(frame => frame.type === 'text' ? [frame.text] : []).join('\n\n');
+          const steps = all.filter(frame => frame.type === 'step');
+          // Steps first: a tool call that began after the text belongs after it, but a lost order costs only polish.
+          frames.push(...steps.slice(before.steps));
+          if (text.length > before.text) frames.push({ type: 'text', text: text.slice(before.text) });
+          sent.set(entry.id, { text: Math.max(before.text, text.length), steps: Math.max(before.steps, steps.length) });
+        }
+        const questions = pendingQuestions(own);
         if (frames.length && port.stream) await port.stream(wakeId, frames);
         if (!port.question) return;
         const asked = (await owed(wakeId))?.asked ?? [];

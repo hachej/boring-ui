@@ -389,3 +389,15 @@ test('an unanswered submission closes its wake with the room line instead of dro
   assert.equal((await messages(room)).at(-1).data.text, ROOM.unanswered);
   assert.deepEqual(await room.wakes(), []);
 });
+
+test('text frames grow: each relay sends only the new tail', async t => {
+  const path = directory(t);
+  const { harness, room } = await openRoom(path);
+  const home = await openHome(path, room, async () => ({ text: 'Bonjour ana.' }));
+  t.after(async () => { await home.turn.close(); await home.harness.close(context); await harness.close(context); });
+  const { wakes: [wake] } = await room.write('main', { requestId: 'web:person:ana:1', kind: 'room.message', data: message('person:ana', 'Salut') }, alone);
+  await home.turn.wake({ wakeId: wake.id, input: 'ana: Salut' });
+  await until('settled', () => home.port.settles.length === 1);
+  const text = home.port.frames.filter(frame => frame.type === 'text').map(frame => frame.text).join('');
+  assert.equal(text, 'Bonjour ana.', 'the deltas add up to the reply once');
+});
