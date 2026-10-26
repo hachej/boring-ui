@@ -1,5 +1,7 @@
 # Unreleased
 
+- **Room kit: a queued wake is followed, an unanswered run closes its wake, text streams as growth (`@hachej/boring-agent/room`).** A wake submitted while the conversation was busy was never followed, so its `ask_user` never reached the room and later wakes queued behind it. `createRoomTurn` now follows it once its input is placed, settles an `unanswered` submission with `ROOM.unanswered`, and sends `text` frames as new tails (append them; the first frame is no longer the whole reply). A host that replaced the previous text with each `text` frame must append instead.
+
 # Migrating to 0.4.20
 
 - **SharedChat can read a room: `createRoomSource` (channel on pi-durable, R3, kit part).** Opt-in and additive; `createChannelSocket` and every existing source work as before. Reinstall `shared-chat` and the npm kit (`@hachej/boring-ui-kit`).
