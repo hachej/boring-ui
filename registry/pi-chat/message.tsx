@@ -18,7 +18,7 @@ import { displayName, fileKind, isUploadPath, isVoicePath, pieces, visibleParts 
 import type { AudioUrlRead, FileKind, Piece, PreviewRead } from './config';
 import { voiceClock } from './config';
 import { Spinner } from '@/components/ui/spinner';
-import { isFileBlock, segments, targetContent } from './rows';
+import { isFileBlock, segments, targetContent, waits } from './rows';
 import type { DeriveOptions, Row } from './rows';
 import { Button } from '@/components/ui/button';
 import { BlockActions } from '../button/actions';
@@ -415,10 +415,10 @@ function RowBody({ row, images, context: liveContext }: { readonly row: Row; rea
             }
             if (part.kind === 'thinking') return null; // reasoning is a step of an activity block
             if (part.kind === 'approval') return Approval ? <Approval key={part.key} call={part.call} result={part.result} questionId={part.questionId} answer={context.answer} summary={part.summary} decision={part.decision} live={part.live} />
-              : !part.live && !part.result && !part.decision ? <AnswerWaiting key={part.key} kind="approval" /> : null;
+              : waits(part) ? <AnswerWaiting key={part.key} kind="approval" /> : null;
             if (part.kind === 'subagent') return <Fragment key={part.key}>{part.content}</Fragment>;
             if (part.kind === 'question') return Question ? <Question key={part.key} call={part.call} result={part.result} questionId={part.questionId} answer={context.answer} live={part.live} />
-              : !part.live && !part.result ? <AnswerWaiting key={part.key} kind="question" /> : null;
+              : waits(part) ? <AnswerWaiting key={part.key} kind="question" /> : null;
             if (part.kind === 'artifact') {
               const { artifact } = part, artifacts = context.artifacts;
               if (!artifacts || (artifact.path !== undefined && files.has(artifact.path.replace(/^(\.\/)+/, '')))) return null;

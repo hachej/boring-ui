@@ -3,6 +3,9 @@ import { createRoot } from 'react-dom/client';
 import { connectRevisionProvider } from '@hachej/boring-files/revision';
 import { FileTree } from '../../registry/file-tree/file-tree';
 import { AgentWorkspace } from '../../registry/pi-app/agent-workspace';
+import { defaultKinds } from '../../registry/pi-app-kinds/pi-app-kinds';
+
+const kinds = defaultKinds();
 import { MentionPicker } from '../../registry/pi-chat-mentions/mention-menu';
 
 window.fileTreeFixture = { ready: false, dropNextPublish: false, holdNextList: false, holdNextPublish: false, publishCalls: 0, releaseList: undefined, releasePublish: undefined };
@@ -53,7 +56,7 @@ function App() {
     <output aria-label="Selected workspace">{scope}</output>
     {failure && <p role="alert">{failure}</p>}
     <button type="button" onClick={() => setIntegrated(true)}>Open integrated workspace</button>
-    {provider && integrated && <div style={{ height: 700 }}><AgentWorkspace controller={undefined} conversationId={undefined} revisionProvider={provider} libraryPlacement={side ? 'side' : 'center'} /></div>}
+    {provider && integrated && <div style={{ height: 700 }}><AgentWorkspace artifactKinds={kinds} controller={undefined} conversationId={undefined} revisionProvider={provider} libraryPlacement={side ? 'side' : 'center'} /></div>}
     {provider && !integrated && <>
       <FileTree revisionProvider={provider} onOpen={setOpened} selectedPath={opened} />
       <output aria-label="Opened file">{opened}</output>

@@ -1,8 +1,8 @@
 # Page template (`src/App.tsx`)
 
-The whole browser side, adapted from [examples/workspace-app/page.jsx](../../../examples/workspace-app/page.jsx). It needs the `pi-app` block installed (it brings `pi-chat`, `pi-workspace`, `viewers` and `theme`).
+The whole browser side, adapted from [examples/workspace-app/page.jsx](../../../examples/workspace-app/page.jsx). It needs the `pi-app` and `pi-app-kinds` blocks installed (they bring `pi-chat`, `pi-workspace`, the viewers and `theme`).
 
-Verified on 2026-10-22 in a fresh `shadcn init -t vite` app with 0.4.8: `tsc -p tsconfig.app.json --noEmit` reports nothing in this file, `vite build` succeeds, and the page renders the sessions pane, the chat with its suggestion and the Library against `server.mjs`.
+Verified on 2026-10-22 in a fresh `shadcn init -t vite` app with 0.4.8: `tsc -p tsconfig.app.json --noEmit` reports nothing in this file, `vite build` succeeds, and the page renders the sessions pane, the chat with its suggestion and the Library against `server.mjs`. The `pi-app-kinds` import and `artifactKinds` were added after that check, when pi-app stopped drawing kinds of its own.
 
 ```tsx
 // src/App.tsx: the whole browser side. Sessions, chat and artifact viewers come from the pi-app block's AgentWorkspace.
@@ -10,12 +10,15 @@ import { useEffect, useState } from 'react';
 import { connectRevisionProvider } from '@hachej/boring-files/revision';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { AgentWorkspace, useConversations, useRemoteChat } from '@/components/pi-app/agent-workspace';
+import { defaultKinds } from '@/components/pi-app-kinds/pi-app-kinds';
 
 // The person the page acts for. It must match the `access` the server's revision route resolves.
 const identity = { runtimeId: 'app', scopeId: 'demo-team', principalId: 'demo-person', initiatorId: 'demo-person' };
 // Your auth goes here (a cookie needs nothing). In development the Vite proxy adds the bearer token instead.
 const authorized: typeof fetch = (input, init) => fetch(input, init);
 const at = (path: string) => new URL(path, location.href);
+// The files the page draws (Markdown, HTML, PDF, images, mock-ups, diagrams…); put your own kinds first to add one.
+const kinds = defaultKinds();
 
 type RevisionProvider = Awaited<ReturnType<typeof connectRevisionProvider>>;
 
@@ -39,6 +42,7 @@ export default function App() {
       <main className="flex h-svh min-h-0">
         {revisionProvider ? (
           <AgentWorkspace
+            artifactKinds={kinds}
             conversationId={active}
             conversations={conversations}
             revisionProvider={revisionProvider}

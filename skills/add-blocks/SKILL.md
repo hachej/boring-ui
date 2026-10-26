@@ -38,11 +38,13 @@ Pick by placement ([full table](../../registry/README.md#blocks-what-to-install)
 ## Install
 
 ```sh
-npx boring-ui-blocks add https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@<v>/r/pi-app.json
+npx boring-ui-blocks add https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@<v>/r/pi-app.json https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@<v>/r/pi-app-kinds.json
 ```
 
+- `pi-app` draws only the kinds passed in `artifactKinds`; `pi-app-kinds` installs the viewers and `defaultKinds({ locale })`, the default list to pass.
+
 - Use the same `<v>` as the installed `@hachej/boring-ui-kit` (`npm ls @hachej/boring-ui-kit`).
-- `add` runs `npx -y shadcn@4.21.5 add <args>`, then records every file under `components/ui` in `SHADCN-GENERATED.json`. Use it for plain shadcn components too (`npx boring-ui-blocks add dialog`).
+- `add` runs `npx -y shadcn@4.21.5 add <args> --overwrite --yes` with stdin closed (it never prompts), keeps and lists every existing file whose content differs (exit 1) unless you pass `--overwrite`, then records every file under `components/ui` in `SHADCN-GENERATED.json`. Use it for plain shadcn components too (`npx boring-ui-blocks add dialog`).
 - `pi-chat`, `button`, `dock`, `feedback`, `app-shell`, `windows` and `agent-target` install no tokens. If the app has no shadcn tokens yet, add `.../r/theme.json` in the same command. The theme keeps tokens the app already defines.
 - When the CLI installs `tooltip`, wrap the app in `TooltipProvider` from `@/components/ui/tooltip`.
 - After a plain `npx shadcn add`, run `npx boring-ui-blocks manifest` to record the files.
@@ -58,7 +60,7 @@ Change a block only through these extension points ([source](../../registry/READ
 | Colours, radius, fonts, dark mode | The theme tokens in the app's CSS. `--shell` and `--overlay` are the kit's own tokens |
 | Any word, or French | `labels` (partial) and `locale="fr"` |
 | Icons, header, panel, message or row actions | `icons`, `headerActions`, `panelActions`, `messageActions`, `conversations.rowActions` |
-| Your own artifact type and renderer | `artifacts.kinds` on `PiChat`/`AmbientChat`, `artifactKinds` on `AgentWorkspace` |
+| Your own artifact type and renderer | `artifacts.kinds` on `PiChat`/`AmbientChat`, `artifactKinds` on `AgentWorkspace` (`[myKind, ...defaultKinds()]` keeps the default viewers) |
 | A viewer for a file kind | `viewers` on `AgentWorkspace` |
 | Something under or inside the composer | `belowComposer`, `tools` |
 | How a tool result renders | `renderTool`, `renderEntry`, `groupTool`, `replyFooter` |

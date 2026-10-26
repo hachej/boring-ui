@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { SparklesIcon } from 'lucide-react';
 import { AgentWorkspace } from '../../registry/pi-app/agent-workspace';
+import { defaultKinds } from '../../registry/pi-app-kinds/pi-app-kinds';
 import { useSharedChat } from '../../registry/shared-chat/shared-chat';
 import { SharedChat } from '../../registry/shared-chat/shared-chat';
 import { voiceMessagePlugin } from '../../registry/pi-chat-voice/voice-message';
@@ -21,9 +22,10 @@ const revisionProvider = {
   read: async () => ({ kind: 'missing' }), publish: async () => ({ kind: 'unavailable', reason: 'This fictional demo has no files.' }), lookup: async () => ({ kind: 'not-found' }),
   list: async () => ({ entries: [] }), search: async () => ({ entries: [] }), history: async () => [],
 };
+const kinds = defaultKinds({ locale: 'fr' });
 function App() {
   const shared = useSharedChat(source, { locale: 'fr' });
-  return <AgentWorkspace layout="embedded" history="popover" locale="fr" {...shared.workspaceProps} revisionProvider={revisionProvider}
+  return <AgentWorkspace layout="embedded" history="popover" locale="fr" artifactKinds={kinds} {...shared.workspaceProps} revisionProvider={revisionProvider}
     chat={{ ...shared.workspaceProps.chat, labels: { title: 'Équipe fictive', placeholder: 'Écrivez à l’équipe…' }, draftKey: `fictional-shared:${shared.conversationId}` }}
     connecting={<p>Opening the fictional shared conversation…</p>} />;
 }

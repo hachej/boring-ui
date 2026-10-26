@@ -205,7 +205,7 @@ test('add runs the pinned shadcn CLI then records the manifest, so check passes;
   const env = { PATH: `${fake}${delimiter}${process.env.PATH}` };
   const added = run(app, ['add', 'card'], env);
   assert.equal(added.status, 0, added.stdout + added.stderr);
-  assert.equal(readFileSync(join(app, '.npx-args'), 'utf8').trim(), '-y shadcn@4.21.5 add card');
+  assert.equal(readFileSync(join(app, '.npx-args'), 'utf8').trim(), '-y shadcn@4.21.5 add card --overwrite --yes');
   assert.deepEqual(Object.keys(JSON.parse(readFileSync(join(app, 'SHADCN-GENERATED.json'), 'utf8')).files), ['button.tsx', 'card.tsx']);
   const after = run(app, ['check', '--design', 'src']);
   assert.equal(after.status, 0, after.stdout + after.stderr);

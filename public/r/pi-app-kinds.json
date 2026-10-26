@@ -1,0 +1,27 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "pi-app-kinds",
+  "title": "Pi agent app default kinds",
+  "description": "defaultKinds({ locale, comments }): the artifact kinds the pi-app item draws with by default, in order: maquette, diagram, mock-up and records, then Markdown, HTML, SVG, CSV, image and PDF (documentKinds). Pass it as AgentWorkspace's artifactKinds (or ViewerOptions.kinds), with an app's own kinds before it. Each kind loads its viewer on first open.",
+  "registryDependencies": [
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.24/r/pi-app.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.24/r/viewer-markdown.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.24/r/viewer-html.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.24/r/viewer-image.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.24/r/viewer-pdf.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.24/r/viewer-code.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.24/r/maquette-viewer.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.24/r/diagram-viewer.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.24/r/mockup-viewer.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.24/r/record-viewer.json"
+  ],
+  "files": [
+    {
+      "path": "registry/pi-app-kinds/pi-app-kinds.ts",
+      "content": "'use client';\n\n// The default artifact kinds of the pi-app item (D-257), in its resolution order: the domain kinds (maquette, diagram, mock-up, records),\n// then the document kinds (Markdown, HTML, SVG, CSV, image, PDF). `AgentWorkspace` and `ViewerOptions` resolve kinds only from the list a\n// host passes; pass `defaultKinds()` for these, put an app's own kinds before them, or pass a list of your own. Each kind module is cheap\n// (match, label, icon, loader); its view loads the first time an artifact of that kind opens, so no viewer is in the page's first bundle.\nimport { createMaquetteKind } from '../maquette-viewer/maquette-kind';\nimport type { MaquetteComments } from '../maquette-viewer/maquette-viewer';\nimport { createDiagramKind } from '../diagram-viewer/diagram-kind';\nimport { createMockupKind } from '../mockup-viewer/mockup-kind';\nimport type { MockupComments } from '../mockup-viewer/mockup-viewer';\nimport { createRecordsKind } from '../record-viewer/records-kind';\nimport { markdownKind } from '../viewer-markdown/markdown-kind';\nimport { htmlKind } from '../viewer-html/html-kind';\nimport { csvKind, svgKind } from '../viewer-code/code-kinds';\nimport { imageKind } from '../viewer-image/image-kind';\nimport { pdfKind } from '../viewer-pdf/pdf-kind';\nimport type { PanelKind } from '../pi-app/viewer-kinds';\n\n/** The document kinds: each is a host's default for its type, so a `viewers` entry for that type wins over it. */\nexport const documentKinds: readonly PanelKind[] = [markdownKind, htmlKind, svgKind, csvKind, imageKind, pdfKind];\n\nexport interface DefaultKindsOptions {\n  /** The language of the domain kinds' names and viewers (a `.maquette.json` card says « Maquette » in French). Default English. */\n  readonly locale?: 'en' | 'fr' | undefined;\n  /** Comment pins on mock-ups and maquettes: the registry `feedback` item's `usePointComments(session)`. Omit it and no comment icon shows. */\n  readonly comments?: (MaquetteComments & Pick<MockupComments, 'pick' | 'picking' | 'reposition'>) | undefined;\n}\n\n/**\n * The default kinds, in order (the first match wins): maquette, diagram, mock-up and records, then Markdown, HTML, SVG, CSV, image and\n * PDF. A fresh list each call: build it once (a module constant, or `useMemo` on `locale` and `comments`) and pass it as `artifactKinds`.\n */\nexport function defaultKinds({ locale, comments }: DefaultKindsOptions = {}): readonly PanelKind[] {\n  return [createMaquetteKind({ locale, comments }), createDiagramKind({ locale }), createMockupKind({ locale, comments }), createRecordsKind({ locale }), ...documentKinds];\n}\n",
+      "type": "registry:lib",
+      "target": "components/pi-app-kinds/pi-app-kinds.ts"
+    }
+  ],
+  "type": "registry:lib"
+}

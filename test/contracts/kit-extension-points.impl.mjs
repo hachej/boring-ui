@@ -19,7 +19,7 @@ async function load(name, contents) {
 // The chat as the kit's pages build it: core pi-chat with every optional item plugged in by withChatPlugins (D-257).
 const kit = await load('pi-chat', `import { PiChat as CorePiChat } from '${root}registry/pi-chat/pi-chat.tsx'; import { withChatPlugins } from '${root}registry/pi-chat-plugins/chat-plugins.ts';
 export const PiChat = (props: any) => <CorePiChat {...withChatPlugins(props)} />;
-export * from '${root}registry/pi-chat/pi-chat.tsx'; export { ArtifactPanel } from '${root}registry/pi-app/artifact-panel.tsx'; export { markdownText } from '${root}registry/pi-chat-markdown/markdown.tsx'; export { QuestionCard } from '${root}registry/pi-chat-question/question-card.tsx'; export { RunCard, parseRun } from '${root}registry/pi-chat-subagent/run-card.tsx'; export { typeLabel } from '${root}registry/pi-artifacts/artifact.ts';`);
+export * from '${root}registry/pi-chat/pi-chat.tsx'; export { ArtifactPanel } from '${root}registry/pi-app/artifact-panel.tsx'; export { defaultKinds } from '${root}registry/pi-app-kinds/pi-app-kinds.ts'; export { markdownText } from '${root}registry/pi-chat-markdown/markdown.tsx'; export { QuestionCard } from '${root}registry/pi-chat-question/question-card.tsx'; export { RunCard, parseRun } from '${root}registry/pi-chat-subagent/run-card.tsx'; export { typeLabel } from '${root}registry/pi-artifacts/artifact.ts';`);
 
 const DOM = ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node', 'Text', 'Event', 'addEventListener', 'removeEventListener', 'MutationObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'IS_REACT_ACT_ENVIRONMENT', 'ResizeObserver', 'localStorage', 'sessionStorage'];
 async function dom(t) {
@@ -283,7 +283,7 @@ test('a CSV artifact opens as a table', async t => {
   const csv = { ...maquette, title: 'Guests', mediaType: 'text/csv', language: 'csv', target: { ...maquette.target, resource: { providerId: 'workspace', path: 'guests.csv' } } };
   const bytes = new TextEncoder().encode('name;diet\n"Ana, Jr";none\nBo;"no ""nuts"""\n');
   const client = { read: async () => ({ kind: 'available', snapshot: { bytes, ref: { revision: 'rev-1', providerId: 'workspace', path: 'guests.csv' } } }), saves: async () => [], search: async () => [] };
-  await page.render(page.h(kit.ArtifactPanel, { active: { descriptor: csv, follow: false }, versions: [csv], options: { client, identity: { runtimeId: 'fixture' } }, onSelect: () => {}, onClose: () => {} }));
+  await page.render(page.h(kit.ArtifactPanel, { active: { descriptor: csv, follow: false }, versions: [csv], options: { client, identity: { runtimeId: 'fixture' }, kinds: kit.defaultKinds() }, onSelect: () => {}, onClose: () => {} }));
   for (let i = 0; i < 10; i++) await page.act(async () => new Promise(resolve => setTimeout(resolve, 5)));
   const table = page.container.querySelector('[data-testid=artifact-csv]');
   assert.ok(table, 'a table, not code');

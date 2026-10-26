@@ -9,6 +9,7 @@ import { AmbientChat } from '../../registry/pi-ambient/ambient.tsx';
 import { AgentWorkspace, useArtifactVersions, useConversations, useRemoteChat } from '../../registry/pi-app/agent-workspace.tsx';
 import { useRevisionAttachments } from '../../registry/pi-app/use-revision-attachments.ts';
 import { connectRevisionProvider } from '@hachej/boring-files/revision';
+import { defaultKinds } from '../../registry/pi-app-kinds/pi-app-kinds.ts';
 import { ViewerFrame } from '../../registry/viewer-frame/viewer-frame.tsx';
 import { WorkspaceTabs } from './panels.jsx';
 import { Canvas } from './panels/canvas.jsx';
@@ -19,6 +20,7 @@ import { INTERACTIVE_HTML } from './interactive.mjs';
 
 // The bearer token: the page's own (the studio's person), or one a link carried in its fragment (`#token=...`, a fixture token of a
 // team person), kept for this tab and removed from the address bar. The identity is what the server says this token is (/api/studio).
+const KINDS = defaultKinds();
 const token = (() => {
   const carried = new URLSearchParams(location.hash.slice(1)).get('token');
   if (carried) { try { sessionStorage.setItem('studio.token', carried); } catch { /* optional */ } history.replaceState(null, '', location.pathname + location.search); return carried; }
@@ -179,7 +181,7 @@ function App() {
       <label className="studio-mode" title="Show every tool call with its arguments and result"><input type="checkbox" checked={mode === 'developer'} onChange={event => setMode(event.target.checked ? 'developer' : 'expert')} /> Tool calls</label>
     </header>
     <main className="studio-main" data-testid="studio-main" data-conversation={conversationId}>
-      <AgentWorkspace controller={controller} conversationId={active} conversations={conversations} resources={resources} detect={detect} viewers={viewers} interactive={INTERACTIVE_HTML} share={shareStudioLink}
+      <AgentWorkspace artifactKinds={KINDS} controller={controller} conversationId={active} conversations={conversations} resources={resources} detect={detect} viewers={viewers} interactive={INTERACTIVE_HTML} share={shareStudioLink}
         opened={opened} onOpenedChange={setOpened} panels={panels} fileBack={{ label: 'Files', onBack: () => setOpened({ kind: 'workspace', tab: 'files' }) }}
         storageKey="studio" sheetBelow={901} drawerBelow={901} floatBelow={320}
         chat={{ labels: CHAT_LABELS, showHistory: true, mode, actions: chat.actions, ...composer, emptyState: scenarioRun.emptyState, decisions: scenarioRun.decisions }}
