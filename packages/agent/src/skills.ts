@@ -260,9 +260,11 @@ async function companionFiles(fs: SkillFileSystem, skill: Skill, context: Contex
 /** The listing section and `load_skill` over `current`, filtered per conversation by `visible`. */
 function skillsExtension(name: string, current: (context: Context) => Promise<Loaded>, options: SkillsExtensionOptions, fs: SkillFileSystem | undefined): Extension {
   const { visible } = options;
-  async function seen(known: ReadonlyMap<string, Skill>, conversationId: ConversationId, context: Context): Promise<Skill[]> {
+  // `at` is read only with a filter, so direct callers of render/execute without Pi's input or api keep working.
+  async function seen(known: ReadonlyMap<string, Skill>, at: () => ConversationId, context: Context): Promise<Skill[]> {
     const all = [...known.values()];
     if (!visible) return all;
+    const conversationId = at();
     const shown = await Promise.all(all.map(skill => visible(skill, { conversationId, context })));
     return all.filter((_, index) => shown[index]);
   }
@@ -272,7 +274,7 @@ function skillsExtension(name: string, current: (context: Context) => Promise<Lo
   return defineExtension({
     name,
     sections: [{ key: 'skills', render: async (input, context) => {
-      const skills = await seen((await current(context)).known, input.conversationId, context);
+      const skills = await seen((await current(context)).known, () => input.conversationId, context);
       return skills.length ? `${INTRO}\n${skills.map(skill => `- ${skill.name}: ${skill.description}`).join('\n')}` : undefined;
     } }],
     tools: [defineTool({
@@ -283,7 +285,7 @@ function skillsExtension(name: string, current: (context: Context) => Promise<Lo
       execute: async (args: { name: string; path?: string }, api, context) => {
         const text = (value: string) => ({ output: [{ type: 'text' as const, text: value }] });
         const { known, errors } = await current(context);
-        const shown = await seen(known, api.conversationId, context);
+        const shown = await seen(known, () => api.conversationId, context);
         const skill = shown.find(candidate => candidate.name === args.name);
         if (!skill) {
           const failed = visible ? undefined : errors.find(error => error.name === args.name);
