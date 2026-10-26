@@ -20,6 +20,20 @@ export function binding(value: unknown): RevisionBinding {
     incarnation: identifier(workspace.incarnation), viewId: identifier(workspace.viewId),
   } };
 }
+/** The default largest file content one write carries: what the resource transport's 4 MiB request held as base64 before it had a name. */
+export const DEFAULT_MAX_FILE_BYTES = 3_145_728;
+/**
+ * The request and response byte limits that carry `maxFileBytes` of file content: base64 (4 bytes per 3) plus 64 KiB for the envelope,
+ * and at least the transport's usual 4 MiB request and 8 MiB response. A limit whose request would exceed the transport's 64 MiB cap
+ * (about 48 MiB of content) is refused, like zero or a fraction.
+ */
+export function fileTransport(maxFileBytes: number): { readonly maxRequestBytes: number; readonly maxResponseBytes: number } {
+  if (!Number.isSafeInteger(maxFileBytes) || maxFileBytes < 1) throw new RangeError('maxFileBytes must be a positive integer');
+  const wire = Math.ceil(maxFileBytes / 3) * 4 + 65_536;
+  if (wire > 67_108_864) throw new RangeError('maxFileBytes is larger than the resource transport carries (64 MiB with base64)');
+  return { maxRequestBytes: Math.max(4_194_304, wire), maxResponseBytes: Math.max(8_388_608, wire) };
+}
+export const tooLarge = (limit: number): string => `The file is larger than the workspace's ${limit}-byte limit`;
 export const bindingValue = (value: RevisionBinding): string => encodeURIComponent(JSON.stringify(binding(value)));
 export function filePage(value: unknown): FilePage {
   const data = record(value);

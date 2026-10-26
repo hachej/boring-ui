@@ -237,6 +237,11 @@ export function createFileTreeController({ revisionProvider }: { readonly revisi
       update({ ...state, uploads: [...state.uploads, current] });
       const signal = input.signal ? AbortSignal.any([input.signal, lifetime.signal]) : lifetime.signal;
       if (signal.aborted) return uploadState(operationId, { kind: 'unavailable', reason: 'Upload cancelled before publication' });
+      // The host names its file limit in the binding; a larger file is refused here as the server would refuse it, without sending it.
+      const limit = revisionProvider.maxFileBytes;
+      if (limit !== undefined && bytes.byteLength > limit) {
+        return uploadState(operationId, { kind: 'file_too_large', path: input.path, size: bytes.byteLength, limit, reason: `The file is larger than the workspace's ${limit}-byte limit` });
+      }
       try { return uploadState(operationId, checked(operationId, await revisionProvider.publish(request, signal))); }
       catch (error) {
         return uploadState(operationId, error instanceof PublicationNotDispatchedError && error.operationId === operationId

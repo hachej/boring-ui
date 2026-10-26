@@ -14,7 +14,8 @@ function pushFeed() {
     push: path => { const event = { kind: 'change', path, revision: null, source: 'agent', seq: ++seq, at: Date.now() }; const wake = waiting.shift(); if (wake) wake(event); else queued.push(event); },
     changes: ({ signal } = {}) => ({ async *[Symbol.asyncIterator]() {
       while (!signal?.aborted) {
-        const event = queued.shift() ?? await new Promise(resolve => { waiting.push(resolve); signal?.addEventListener('abort', () => resolve(undefined), { once: true }); });
+        // An aborted stream leaves the waiting list, so a later push reaches the stream that replaced it.
+        const event = queued.shift() ?? await new Promise(resolve => { waiting.push(resolve); signal?.addEventListener('abort', () => { const at = waiting.indexOf(resolve); if (at >= 0) waiting.splice(at, 1); resolve(undefined); }, { once: true }); });
         if (event) yield event;
       }
     } }),
@@ -170,4 +171,67 @@ test('switching the binding while the picker is open hides the previous binding\
   await act(async () => new Promise(resolve => setTimeout(resolve, 200)));
   assert.equal(window.document.querySelector('[data-testid=mention-item][data-path="alice-secret.md"]'), null, 'alice\'s rows are not displayed while bob\'s search is pending');
   assert.equal(window.document.querySelectorAll('[data-testid=mention-item]').length, 0, 'nothing from alice is selectable');
+});
+
+test('a hidden tab holds no change feed, and shown again it reconnects and reloads the tree once', async t => {
+  const { window, element, root, chat, act, createElement, settle, AgentWorkspace } = await harness(t);
+  const feed = pushFeed();
+  const streams = { opened: 0, open: 0 };
+  const changes = request => { streams.opened++; streams.open++; request.signal.addEventListener('abort', () => streams.open--, { once: true }); return feed.changes(request); };
+  let listed = 0;
+  const locate = path => ({ resource: { providerId: 'fictional', path }, view: { kind: 'published' } });
+  const binding = { identity: { scopeId: 'fictional', principalId: 'alice', initiatorId: 'alice' }, workspace: { providerId: 'fictional', instanceId: 'one', incarnation: 'one', viewId: 'one' }, locate,
+    read: async () => ({ kind: 'missing' }), publish: async () => ({ kind: 'unavailable', reason: 'fictional' }), lookup: async () => ({ kind: 'not-found' }),
+    list: async () => { listed++; return { entries: [{ path: 'notes.md', kind: 'file', size: 5 }] }; }, search: async () => ({ entries: [] }), history: async () => [], changes };
+  let visibility = 'visible';
+  Object.defineProperty(window.document, 'visibilityState', { configurable: true, get: () => visibility });
+  const show = async value => { visibility = value; await act(async () => window.document.dispatchEvent(new window.Event('visibilitychange'))); };
+  await act(async () => root.render(createElement(AgentWorkspace, { controller: chat, conversationId: '1', revisionProvider: binding })));
+  await act(async () => element.querySelector('[data-testid=workspace-library]').click());
+  await settle(() => element.querySelector('[role=treeitem][data-path="notes.md"]') && streams.open === 1, 'the tree lists the file over one open feed');
+
+  await show('hidden');
+  await settle(() => streams.open === 0, `the hidden tab releases its feed (open ${streams.open})`);
+  const before = listed;
+  await show('visible');
+  await settle(() => streams.open === 1 && streams.opened === 2, `shown again, the feed reconnects (open ${streams.open}, opened ${streams.opened})`);
+  await settle(() => listed > before, 'a change missed while hidden is caught up: the tree reloads');
+  await act(async () => new Promise(resolve => setTimeout(resolve, 300)));
+  const settled = listed;
+  await act(async () => feed.push('notes.md'));
+  await settle(() => listed > settled, 'the reconnected feed still drives reloads');
+});
+
+test('a file open before the endpoint\'s binding is discovered is not read again when the binding arrives', async t => {
+  const { element, root, chat, act, createElement, settle, AgentWorkspace } = await harness(t);
+  const { openNodeConnection } = await import('@hachej/boring-files/sqlite');
+  const { openSqliteFileSystem } = await import('@hachej/boring-files/sqlite-filesystem');
+  const { createWorkspaceJournal } = await import('@hachej/boring-files/journal');
+  const { createWorkspaceProvider } = await import('@hachej/boring-files/workspace');
+  const { createRevisionHandler } = await import('@hachej/boring-files/revision-handler');
+  const db = openNodeConnection(':memory:');
+  t.after(() => db.close());
+  const fs = openSqliteFileSystem({ connection: db, workspace: 'fictional', cwd: '/workspace' });
+  const provider = createWorkspaceProvider({ fs, journal: createWorkspaceJournal(db), identity: { providerId: 'files', instanceId: 'fictional', incarnation: fs.incarnation, viewId: 'published' } });
+  const identity = { principalId: 'alice', scopeId: 'fictional', initiatorId: 'alice' };
+  const locate = path => ({ resource: { providerId: 'files', path }, view: { kind: 'published' } });
+  // A 1x1 PNG: an image view reads its bytes once, it does not poll.
+  const png = Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==', 'base64'));
+  assert.equal((await provider.publication.publish({ operationId: 'seed-badge', atomicity: 'all-or-nothing', changes: [{ kind: 'create', target: locate('badge.png'), expected: { kind: 'absent' }, bytes: png, mediaType: 'image/png' }] }, identity)).kind, 'committed');
+  const handler = createRevisionHandler({ resolve: async () => ({ provider, access: identity, release() {} }) });
+  // The binding answers late, after the file is open; every resource read is counted.
+  let answer; const discovered = new Promise(resolve => { answer = resolve; });
+  const reads = { count: 0 }, bound = { asked: false };
+  const fetch = async request => {
+    if (request.method === 'GET' && !new URL(request.url).searchParams.has('op')) { bound.asked = true; await discovered; }
+    else if (request.method === 'POST' && !request.headers.has('x-boring-catalog') && (await request.clone().json()).kind === 'read') reads.count++;
+    return handler(request);
+  };
+  const resources = { endpoint: 'https://fictional.invalid/api/resources', fetch, identity, locate };
+  await act(async () => root.render(createElement(AgentWorkspace, { controller: chat, conversationId: '1', resources, opened: { kind: 'file', path: 'badge.png' }, onOpenedChange() {} })));
+  await settle(() => reads.count === 1 && bound.asked, `the open file is read once while the binding is pending (reads ${reads.count})`);
+  await act(async () => answer());
+  await settle(() => element.querySelector('[data-testid=workspace-library]'), 'the binding arrived: the Library is offered');
+  await act(async () => new Promise(resolve => setTimeout(resolve, 300)));
+  assert.equal(reads.count, 1, 'the open file is not read again when the binding arrives');
 });

@@ -7,6 +7,8 @@ import { PanelRightOpenIcon } from 'lucide-react';
 import { artifactKey } from '../../registry/pi-artifacts/artifact.ts';
 import { AmbientChat } from '../../registry/pi-ambient/ambient.tsx';
 import { AgentWorkspace, useArtifactVersions, useConversations, useRemoteChat } from '../../registry/pi-app/agent-workspace.tsx';
+import { useRevisionAttachments } from '../../registry/pi-app/use-revision-attachments.ts';
+import { connectRevisionProvider } from '@hachej/boring-files/revision';
 import { defaultKinds } from '../../registry/pi-app-kinds/pi-app-kinds.ts';
 import { ViewerFrame } from '../../registry/viewer-frame/viewer-frame.tsx';
 import { WorkspaceTabs } from './panels.jsx';
@@ -33,6 +35,8 @@ const authorized = request => {
   if (shown) headers.set('x-studio-variant', shown);
   return fetch(new Request(request, { headers }));
 };
+/** `authorized`, pinned to one variant: a revision provider stays bound to the workspace it connected to, whatever the page shows next. */
+const authorizedFor = variant => request => { const headers = new Headers(request.headers); headers.set('authorization', `Bearer ${token}`); headers.set('x-studio-variant', variant); return fetch(new Request(request, { headers })); };
 const api = async (path, init) => { const response = await authorized(new Request(new URL(path, location.href), init)); if (!response.ok) throw new Error(`${path}: ${response.status}`); return response.json(); };
 const remember = (key, value) => { try { sessionStorage.setItem(key, JSON.stringify(value)); } catch { /* optional convenience */ } };
 const recall = key => { try { return JSON.parse(sessionStorage.getItem(key) ?? 'null'); } catch { return null; } };
@@ -53,18 +57,16 @@ const HOST_COMMANDS = {
 };
 
 /** The PiChat composer props for one variant: the `/` menu, mentions and attachments (when it has a workspace), model and effort. */
-function chatProps(variant, chat, host) {
+function chatProps(variant, chat, host, files) {
   const props = {
     slash: { skills: variant.skills, commands: Object.entries(HOST_COMMANDS).filter(([, command]) => !command.when || command.when(variant))
       .map(([name, command]) => ({ name, description: command.description, run: api => command.run(host, api) })) },
   };
   if (variant.capabilities.includes('workspace')) {
-    props.mentions = { search: async (query, signal) => (await api(`/api/search?q=${encodeURIComponent(query)}`, { signal })).results, open: host.openFile };
-    props.attachments = { upload: files => Promise.all(files.map(async file => {
-      const response = await authorized(new Request(new URL(`/api/upload?name=${encodeURIComponent(file.name)}`, location.href), { method: 'POST', body: file, headers: { 'content-type': file.type || 'application/octet-stream' } }));
-      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).reason ?? `Upload failed (${response.status})`);
-      return response.json();
-    })) };
+    // @-search and uploads go through the workspace's revision route (`/api/resources`): the catalog search, and a conditional create
+    // under uploads/ with a receipt (`useRevisionAttachments`).
+    if (files.revisionProvider) props.mentions = { search: async (query, signal) => (await files.revisionProvider.search({ query, limit: 8 }, signal)).entries.map(({ path, kind }) => ({ path, kind })), open: host.openFile };
+    if (files.attachments) props.attachments = files.attachments;
   }
   const refuse = async change => { const result = await chat.configure(change); if (result.kind === 'refused') throw new Error(result.reason ?? 'The change was refused.'); };
   props.model = { options: variant.chat.models, change: model => refuse({ model }) };
@@ -133,7 +135,19 @@ function App() {
   const [reloaded, setReloaded] = useState(null);
   const reload = async () => { const result = await api('/api/reload', { method: 'POST' }); setReloaded(result.text); };
   const openFile = path => setOpened({ kind: 'file', path: path.startsWith('/workspace/') ? path : `/workspace/${path}` });
-  const composer = useMemo(() => variant && chat.status === 'ready' ? chatProps(variant, chat, { newConversation: () => conversations?.onNew?.(), reload, openFile }) : {}, [variant, chat, conversations]); // eslint-disable-line
+  // The workspace's revision provider (`/api/resources`, bound to this person and variant): @-search and uploads.
+  const withFiles = Boolean(variant?.capabilities.includes('workspace'));
+  const [revisionProvider, setRevisionProvider] = useState(undefined);
+  useEffect(() => {
+    setRevisionProvider(undefined);
+    if (!withFiles || !variant) return;
+    const abort = new AbortController();
+    connectRevisionProvider({ endpoint: new URL('/api/resources', location.href), fetch: authorizedFor(variant.id), signal: abort.signal })
+      .then(provider => { if (!abort.signal.aborted) setRevisionProvider(provider); }, () => {});
+    return () => abort.abort();
+  }, [who, variant?.id, withFiles]); // eslint-disable-line react-hooks/exhaustive-deps
+  const attachments = useRevisionAttachments({ revisionProvider, inlineImages: true, maxBytes: revisionProvider?.maxFileBytes, tooLarge: 'The file is larger than 5 MB' });
+  const composer = useMemo(() => variant && chat.status === 'ready' ? chatProps(variant, chat, { newConversation: () => conversations?.onNew?.(), reload, openFile }, { revisionProvider, attachments }) : {}, [variant, chat, conversations, revisionProvider, attachments]); // eslint-disable-line
   const detect = useMemo(() => variant && controller ? savedResource(variant) : undefined, [variant, controller]);
   const versions = useArtifactVersions(controller, detect);
   const typed = useTyped(controller);

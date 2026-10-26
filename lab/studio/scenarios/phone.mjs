@@ -233,7 +233,8 @@ export default [
       }
       await browser.tap(q(`${VIEWER('media/moon-brief.pdf')} [data-testid=viewer-more]`));
       await browser.until('overflow menu', `!!${q('[data-testid=viewer-more-list]')}`);
-      assert.deepEqual(await browser.evaluate(`${k.qa('[data-testid=viewer-more-list] [role=menuitem]')}.map(b => b.textContent)`), ['Share', 'Reload', 'Download', 'Open in new tab']);
+      // `/api/resources` answers the revision binding, so the page offers its Library (the read-only file list) in the same menu.
+      assert.deepEqual(await browser.evaluate(`${k.qa('[data-testid=viewer-more-list] [role=menuitem]')}.map(b => b.textContent)`), ['Share', 'Reload', 'Download', 'Open in new tab', 'Library']);
       await shots('fileviewers-phone-menu');
       await browser.press('Escape');
     },
