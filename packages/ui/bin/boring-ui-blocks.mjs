@@ -158,6 +158,17 @@ export function checkBlocks(app, components = appPaths(app).components) {
 /** The generated shadcn files under the `ui` alias (`.js/.jsx/.ts/.tsx/.css`) and their sha256, by path relative to it. */
 const uiHashes = ui => new Map(files(ui).filter(path => /\.(?:[jt]sx?|css)$/.test(path)).map(path => [posix(relative(ui, path)), { path, hash: sha256(path) }]));
 
+/** Records the given generated ui files in the manifest (`add` after a kept file: only what it created). Other entries and keys are kept. */
+export function recordFiles(app, paths, manifest = MANIFEST) {
+  const { ui } = appPaths(app);
+  const path = resolve(app, manifest);
+  const kept = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : { generatedBy: 'boring-ui-blocks', dir: posix(relative(app, ui)) };
+  const hashes = { ...kept.files };
+  for (const file of paths) hashes[posix(relative(ui, file))] = sha256(file);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${JSON.stringify({ ...kept, files: Object.fromEntries(Object.entries(hashes).sort(([a], [b]) => a.localeCompare(b))) }, null, 2)}\n`);
+}
+
 /** (Re)writes the manifest (`manifest`, default SHADCN-GENERATED.json next to components.json): `files` is replaced, other keys are kept. */
 export function writeManifest(app, manifest = MANIFEST) {
   const { ui } = appPaths(app);
@@ -281,6 +292,7 @@ function snapshotFiles(app) {
 /**
  * Runs the shadcn CLI without a terminal: stdin is closed and the CLI always gets `--overwrite --yes`, so it never asks. With
  * `overwrite` false a file that existed with other content is put back afterwards and returned in `skipped`; identical files are never touched.
+ * `created` is the generated ui files the run newly wrote.
  */
 function shadcnAdd(app, args, log, overwrite) {
   const argv = ['-y', SHADCN, 'add', ...args.filter(arg => !['--yes', '-y', '--overwrite'].includes(arg)), '--overwrite', '--yes'];
@@ -290,7 +302,9 @@ function shadcnAdd(app, args, log, overwrite) {
   restoreSpecifiers(before, app, log);
   const skipped = overwrite ? [] : [...existing].filter(([path, bytes]) => existsSync(path) && !readFileSync(path).equals(bytes));
   for (const [path, bytes] of skipped) writeFileSync(path, bytes);
-  return { status: result.status ?? 1, skipped: skipped.map(([path]) => path) };
+  const { ui } = appPaths(app);
+  const created = files(ui).filter(path => /\.(?:[jt]sx?|css)$/.test(path) && !existing.has(path));
+  return { status: result.status ?? 1, skipped: skipped.map(([path]) => path), created };
 }
 
 const line = v => `${v.check} ${v.rule} ${v.file}${v.line ? `:${v.line}:${v.column}` : ''} ${v.detail}`;
@@ -317,9 +331,11 @@ export function main(argv, cwd = process.cwd(), log = console.log, error = conso
     if (command === 'add') {
       appPaths(app);
       if (!flags.pass.length) throw new Error('add needs shadcn add arguments');
-      const { status, skipped } = shadcnAdd(app, flags.pass, log, flags.overwrite);
+      const { status, skipped, created } = shadcnAdd(app, flags.pass, log, flags.overwrite);
       if (skipped.length) {
-        error(`kept ${skipped.length} existing file(s) that differ from the registry (pass --overwrite to replace them; the manifest was not rewritten):\n${skipped.map(path => `  ${posix(relative(app, path))}`).join('\n')}`);
+        // The files the run created are the app's new generated files: record them, so `check` does not call them unknown. The kept ones stay unrecorded.
+        if (created.length) recordFiles(app, created, flags.manifest ?? MANIFEST);
+        error(`kept ${skipped.length} existing file(s) that differ from the registry (pass --overwrite to replace them; only the files add created were recorded in the manifest):\n${skipped.map(path => `  ${posix(relative(app, path))}`).join('\n')}`);
         return status || 1;
       }
       if (status === 0) log(`${flags.manifest ?? MANIFEST}: ${writeManifest(app, flags.manifest)} file(s)`);

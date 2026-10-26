@@ -31,9 +31,6 @@ import type { DocumentsLabels } from './documents-labels';
 import { documentsLabels, DocumentsWords } from './words';
 import type { DocumentsLocale } from './words';
 
-/** The viewers' kinds: the pi-app default list, in English. */
-const kinds = defaultKinds();
-
 export interface DocumentsProps {
   /** The workspace's revision provider (the files guide's `connectRevisionProvider`, or a host's own binding). Borrowed: the host disposes it. */
   readonly provider: RevisionProvider;
@@ -186,6 +183,8 @@ function DocumentDetail({ provider, path, version, options, labels, locale, olde
 export function Documents({ provider, locale, labels: given, viewers, share, blobBase: givenBase }: DocumentsProps) {
   const labels = documentsLabels(locale, given);
   const language: DocumentsLocale = locale === 'fr' ? 'fr' : 'en';
+  // The viewers' kinds: the pi-app default list in the item's locale.
+  const kinds = useMemo(() => defaultKinds({ locale: language }), [language]);
   const version = useWorkspaceVersion(provider);
   const blobBase = checkBlobBase(givenBase);
   const tree = useFileTree(provider, version, blobBase);
@@ -196,7 +195,7 @@ export function Documents({ provider, locale, labels: given, viewers, share, blo
   const dirty = useRef(false);
   const onDirty = useCallback((unsaved: boolean) => { dirty.current = unsaved; }, []);
   const mayLeave = () => !dirty.current || window.confirm(labels.discardChanges);
-  const options = useMemo<ViewerOptions>(() => ({ client: provider, identity: provider.identity, kinds, blobBase, ...(viewers ? { viewers } : {}), ...(share ? { share } : {}) }), [provider, viewers, share, blobBase]);
+  const options = useMemo<ViewerOptions>(() => ({ client: provider, identity: provider.identity, kinds, blobBase, ...(viewers ? { viewers } : {}), ...(share ? { share } : {}) }), [provider, kinds, viewers, share, blobBase]);
   const choose = (next: string) => {
     if (next === path || !mayLeave()) return;
     setPath(next);

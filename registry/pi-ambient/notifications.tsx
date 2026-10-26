@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { notifyWhenHidden } from './browser-notify';
 import { parseQuestion } from '../pi-chat-question/question-card';
-import { finishNotice, pendingNotice } from '@hachej/boring-ui-kit/chat-view';
+import { defaultNoticeText, finishNotice, pendingNotice } from '@hachej/boring-ui-kit/chat-view';
+import type { NoticeText } from '@hachej/boring-ui-kit/chat-view';
 import { derive, object } from '../pi-chat/rows';
 import type { Row } from '../pi-chat/rows';
 import { cn, withDefaults } from '../utils/utils';
@@ -71,17 +72,21 @@ export function useNotifications(store: NotificationStore): readonly AgentNotifi
 
 export { finishNotice, summaryOf } from '@hachej/boring-ui-kit/chat-view';
 
+/** A surface's run-notice words (`approveNotice`, `runFailed`, `finished`) as the kit's `NoticeText`, which `pendingNotice` and `finishNotice` take. */
+export const noticeTextOf = (labels: Pick<NotificationLabels, 'approveNotice' | 'runFailed' | 'finished'>): NoticeText => ({ approve: labels.approveNotice, runFailed: labels.runFailed, finished: labels.finished });
+
 /** What the newest pending `ask_user` question or approval asks, if one waits for the person (the kit's `waitingPart` rule and notice words). */
-export function pendingQuestion(rows: readonly Row[]): string | undefined {
-  return pendingNotice(rows, call => parseQuestion(call).question);
+export function pendingQuestion(rows: readonly Row[], text?: NoticeText): string | undefined {
+  return pendingNotice(rows, call => parseQuestion(call).question, text);
 }
 
 /**
  * Feeds a store from a conversation the host keeps connected in the background (a task, a subagent, another chat): a toast when its
  * run finishes or fails and while a question waits. Returns the unsubscribe. `AmbientChat` does the same for its own conversation.
  */
-export function watchConversation(controller: NativeChatController, store: NotificationStore, options: { readonly conversationId: string; readonly title: string | (() => string) }): () => void {
+export function watchConversation(controller: NativeChatController, store: NotificationStore, options: { readonly conversationId: string; readonly title: string | (() => string); readonly labels?: Partial<NotificationLabels> | undefined }): () => void {
   const { conversationId } = options;
+  const notice = noticeTextOf({ ...defaultNotificationLabels, ...options.labels });
   const title = () => typeof options.title === 'function' ? options.title() : options.title;
   const state = () => {
     const snapshot = controller.getSnapshot();
@@ -95,13 +100,13 @@ export function watchConversation(controller: NativeChatController, store: Notif
     before = now;
     if (!now.connected || (now.working === was.working && now.entries === was.entries)) return;
     const rows = derive(controller.getSnapshot().view, { mode: 'expert', renderEntry: undefined, renderTool: undefined, groupTool: undefined }).rows;
-    const question = now.working ? pendingQuestion(rows) : undefined;
+    const question = now.working ? pendingQuestion(rows, notice) : undefined;
     if (question !== undefined && !waiting) store.push({ id: `${conversationId}:input`, kind: 'input', title: title(), summary: question, conversationId });
     if (question === undefined && waiting) store.dismiss(`${conversationId}:input`);
     waiting = question !== undefined;
     if (now.working && !was.working) store.dismiss(`${conversationId}:done`);
     if (was.working && !now.working) {
-      const finished = finishNotice(rows);
+      const finished = finishNotice(rows, notice);
       if (finished) store.push({ id: `${conversationId}:done`, kind: finished.kind, title: title(), summary: finished.summary, conversationId });
     }
   });
@@ -115,7 +120,11 @@ const ICONS = {
 
 /** The toasts' words; `AmbientChat`'s `labels` carries them too. */
 export const defaultNotificationLabels = {
-  finished: 'Finished',
+  /** The run notices' words are the kit's (`defaultNoticeText`): one source. */
+  finished: defaultNoticeText.finished,
+  /** What a waiting approval asks, as a notice (`defaultNoticeText.approve`). */
+  approveNotice: defaultNoticeText.approve,
+  runFailed: defaultNoticeText.runFailed,
   needsInput: 'Needs your input',
   failedRun: 'Failed',
   notifications: 'Agent notifications',
@@ -125,6 +134,19 @@ export const defaultNotificationLabels = {
   dismissShort: 'Dismiss',
 };
 export type NotificationLabels = typeof defaultNotificationLabels;
+
+/** The toasts' and run notices' words in French: pass it as `labels` (`AmbientChat`, `AgentNotifications`, `watchConversation`). Typed as `NotificationLabels`, so a key added in English must be added here too. */
+export const frenchNotificationLabels: NotificationLabels = {
+  finished: 'Terminé',
+  approveNotice: summary => `Approbation requise : ${summary}`,
+  runFailed: 'L’exécution a échoué',
+  needsInput: 'En attente de votre réponse',
+  failedRun: 'Échec',
+  notifications: 'Notifications de l’agent',
+  openNotification: (kind, title, summary) => `${kind} : ${title}${summary ? `. ${summary}` : ''}. Ouvrir`,
+  dismissNotification: title => `Fermer : ${title}`,
+  dismissShort: 'Fermer',
+};
 
 /** The status icon of a notification, also used by the ambient header. */
 export function KindIcon({ kind, className }: { readonly kind: NotificationKind; readonly className?: string }) {

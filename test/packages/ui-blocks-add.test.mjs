@@ -43,6 +43,7 @@ if [ -e $target ] && ! cmp -s $target "${join(dir, '.registry-toggle')}"; then
   case " $* " in *" --overwrite "*) ;; *) printf 'The file toggle.tsx already exists. Overwrite? (y/N) '; read answer || exit 1; [ "$answer" = y ] || exit 1;; esac
 fi
 cp "${join(dir, '.registry-toggle')}" $target
+if [ -e "${join(dir, '.registry-extra')}" ]; then cp "${join(dir, '.registry-extra')}" src/components/ui/extra.tsx; fi
 `);
   chmodSync(join(fake, 'npx'), 0o755);
   return { dir, env: { PATH: `${fake}${delimiter}${process.env.PATH}` }, toggle: join(dir, 'src/components/ui/toggle.tsx') };
@@ -87,4 +88,21 @@ test('add leaves a file with identical content alone and exits 0', async t => {
   assert.equal(same.status, 0, same.stdout + same.stderr);
   assert.equal(same.stderr, '');
   assert.equal(readFileSync(toggle, 'utf8'), REGISTRY);
+});
+
+test('add that keeps a differing file still records the files it created, so check does not call them unknown', async t => {
+  const { dir, env, toggle } = app(t);
+  write(join(dir, 'node_modules/@hachej/boring-ui-kit/package.json'), JSON.stringify({ name: '@hachej/boring-ui-kit', version: '9.9.9' }));
+  write(join(dir, 'node_modules/@hachej/boring-ui-kit/r/registry.json'), '{}\n');
+  write(join(dir, '.registry-extra'), 'export const Extra = () => "new"\n');
+  write(toggle, EDITED);
+  const kept = await runOpenStdin(dir, ['add', 'toggle'], env);
+  assert.equal(kept.hung, false, `add waited for an answer on stdin: ${kept.stdout}`);
+  assert.equal(kept.status, 1, kept.stdout + kept.stderr);
+  const manifest = JSON.parse(readFileSync(join(dir, 'SHADCN-GENERATED.json'), 'utf8'));
+  assert.ok('extra.tsx' in manifest.files, `the file add created is not recorded: ${JSON.stringify(manifest.files)}`);
+  assert.equal('toggle.tsx' in manifest.files, false, 'the kept edit is recorded as generated');
+  assert.equal(readFileSync(toggle, 'utf8'), EDITED);
+  const checked = run(dir, ['check'], env);
+  assert.doesNotMatch(checked.stdout, /extra\.tsx/, `check reports the file add created: ${checked.stdout}`);
 });

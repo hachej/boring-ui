@@ -4,7 +4,7 @@
 // `onClose`. The sheet is a full-screen view of the shell (`useShellLayer`): it closes the agent layers when it opens, and Back closes it
 // first. The file is the same viewer the Library opens (editable where the viewer edits). Closing a file with unsaved edits asks first.
 // `onShowAll` adds « Toutes les fiches »: the sheet closes, then the host's navigation runs after the sheet's Back entry is gone.
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer';
 import { afterBack } from '../app-shell/back';
@@ -37,12 +37,11 @@ export interface DocumentSheetProps {
 
 /** The sheet's name in the shell's layers: one sheet of this kind at a time. */
 const LAYER = 'document';
-/** The viewer's kinds: the pi-app default list, in English. */
-const kinds = defaultKinds();
-
 export function DocumentSheet({ provider, path, onClose, onShowAll, locale, labels: given, viewers, share, className }: DocumentSheetProps) {
   const shown = path !== undefined;
   const labels = documentsLabels(locale, given);
+  // The viewer's kinds: the pi-app default list in the item's locale.
+  const kinds = useMemo(() => defaultKinds({ locale: locale === 'fr' ? 'fr' : 'en' }), [locale]);
   // The viewer reports its unsaved edits; a close that would drop them asks first (the Back path too, through the shell layer).
   const dirty = useRef(false);
   const report = useCallback((unsaved: boolean) => { dirty.current = unsaved; }, []);
