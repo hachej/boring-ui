@@ -49,6 +49,17 @@ test('app-shell, agent-target and requests-board closures ship no global tokens:
   for (const name of TOKEN_FREE_CLOSURE()) assert.equal(manifest.items.find(entry => entry.name === name).cssVars, undefined, `${name} ships cssVars`);
 });
 
+test('pi-app installs no viewer: the default kinds and their viewers are the pi-app-kinds item', () => {
+  const viewers = ['viewer-markdown', 'viewer-html', 'viewer-image', 'viewer-pdf', 'viewer-code', 'maquette-viewer', 'diagram-viewer', 'mockup-viewer', 'record-viewer'];
+  const app = closureOf('pi-app');
+  assert.deepEqual(viewers.filter(name => app.has(name)), [], 'pi-app draws only the kinds an app passes, so it installs no viewer item');
+  const kinds = manifest.items.find(item => item.name === 'pi-app-kinds');
+  assert.ok(kinds, 'the pi-app-kinds item exists');
+  assert.deepEqual(viewers.filter(name => !kinds.registryDependencies.includes('@boring-ui/' + name)), [], 'pi-app-kinds installs every default viewer');
+  assert.ok(kinds.registryDependencies.includes('@boring-ui/pi-app'));
+  assert.match(readFileSync(join(root, kinds.files[0].path), 'utf8'), /export function defaultKinds\(/);
+});
+
 test('pi-chat declares Trace as a style-resolved shadcn built-in, never a vendored item', () => {
   const chat = manifest.items.find(item => item.name === 'pi-chat');
   assert.ok(SHADCN_BUILTINS.includes('trace'));

@@ -45,10 +45,12 @@ test('AgentWorkspace embedded: one bar, no left column, and a Library over resou
   const registry = new URL('../../registry/', import.meta.url).pathname;
   // One bundle, so the page and the slot context share one module instance (as an installed app does).
   const slot = existsSync(`${registry}utils/screen-header-slot.ts`);
-  await build({ stdin: { contents: `export * from './pi-app/agent-workspace.tsx';\n${slot ? "export { ScreenHeaderSlotContext } from './utils/screen-header-slot.ts';\n" : ''}`, resolveDir: registry, loader: 'ts' },
+  // The default kinds live in their own item; a revision without it has them built into pi-app (`defaultKinds` is then undefined).
+  const kinds = existsSync(`${registry}pi-app-kinds/pi-app-kinds.ts`);
+  await build({ stdin: { contents: `export * from './pi-app/agent-workspace.tsx';\n${slot ? "export { ScreenHeaderSlotContext } from './utils/screen-header-slot.ts';\n" : ''}${kinds ? "export { defaultKinds } from './pi-app-kinds/pi-app-kinds.ts';\n" : ''}`, resolveDir: registry, loader: 'ts' },
     outfile: output.pathname, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', tsconfig: new URL('../../tsconfig.json', import.meta.url).pathname, loader: { '.css': 'empty' },
     plugins: [{ name: 'file-tree-css', setup(builder) { builder.onResolve({ filter: /^@hachej\/boring-ui-kit\/file-tree\.css$/ }, () => ({ path: new URL(import.meta.resolve('@hachej/boring-ui-kit/file-tree.css')).pathname, external: false })); } }] });
-  const { AgentWorkspace, ScreenHeaderSlotContext } = await import(output.href);
+  const { AgentWorkspace, ScreenHeaderSlotContext, defaultKinds } = await import(output.href);
   const element = document.createElement('div'); document.body.append(element); const root = createRoot(element);
   t.after(async () => {
     await act(async () => root.unmount()); await window.happyDOM.close();
@@ -121,7 +123,7 @@ test('AgentWorkspace embedded: one bar, no left column, and a Library over resou
   for (const [path, viewer] of [['flow.maquette.json', 'maquette-walk'], ['flow.diagram.json', 'diagram']]) {
     await t.test(`a ${path.split('.')[1]} opened from the Library draws its viewer, not raw JSON`, async () => {
       measured = 1440;
-      await render({ key: `kind-${viewer}` });
+      await render({ key: `kind-${viewer}`, artifactKinds: defaultKinds?.() });
       await settle(() => bar('library'));
       await pickFromLibrary(path);
       await settle(() => q(`[data-testid=${viewer}]`));
@@ -133,7 +135,7 @@ test('AgentWorkspace embedded: one bar, no left column, and a Library over resou
 
   await t.test('an app kind for *.maquette.json wins over the built-in one in the Library too', async () => {
     measured = 1440;
-    const artifactKinds = [{ match: target => target.resource.path.endsWith('.maquette.json'), label: 'Fictional kind', renderer: ({ text }) => createElement('div', { 'data-testid': 'app-kind' }, `app:${text.length > 0}`) }];
+    const artifactKinds = [{ match: target => target.resource.path.endsWith('.maquette.json'), label: 'Fictional kind', renderer: ({ text }) => createElement('div', { 'data-testid': 'app-kind' }, `app:${text.length > 0}`) }, ...(defaultKinds?.() ?? [])];
     await render({ key: 'kind-app', artifactKinds });
     await settle(() => bar('library'));
     await pickFromLibrary('flow.maquette.json');
@@ -141,6 +143,20 @@ test('AgentWorkspace embedded: one bar, no left column, and a Library over resou
     assert.equal(q('[data-testid=app-kind]')?.textContent, 'app:true');
     assert.equal(q('[data-testid=maquette-walk]'), null, 'the built-in maquette viewer is not used');
     assert.equal(q('[data-testid=artifact-panel-type]')?.textContent, 'Fictional kind');
+  });
+
+  await t.test('the workspace draws only the kinds the app passes: a diagram outside the list, or with no list, is its text', async () => {
+    measured = 1440;
+    const onlyApp = [{ match: target => target.resource.path.endsWith('.maquette.json'), label: 'Fictional kind', renderer: () => createElement('div', { 'data-testid': 'app-kind' }, 'app') }];
+    for (const [key, extra] of [['kinds-only-app', { artifactKinds: onlyApp }], ['kinds-none', {}]]) {
+      await render({ key, ...extra });
+      await settle(() => bar('library'));
+      await pickFromLibrary('flow.diagram.json');
+      await settle(() => q('[data-testid=file-preview]') || q('[data-testid=diagram]'));
+      assert.equal(q('[data-testid=file-viewer]').dataset.path, 'flow.diagram.json');
+      assert.equal(Boolean(q('[data-testid=diagram]')), false, `${key}: no diagram kind was passed, so no diagram viewer`);
+      assert.equal(Boolean(q('[data-testid=file-preview]')), true, `${key}: the file shows as its text`);
+    }
   });
 
   await t.test('a fixed title stays when the conversation has one; the conversation title follows it, muted, and a phone leaves it to History', async () => {

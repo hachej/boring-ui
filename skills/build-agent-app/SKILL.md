@@ -43,10 +43,10 @@ npm i @hachej/boring-ui-kit@<v> @hachej/boring-agent@<v> @hachej/boring-files@<v
 Pick the block from the table in [registry/README.md](../../registry/README.md#blocks-what-to-install). For a whole agent page:
 
 ```sh
-npx boring-ui-blocks add https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@<v>/r/pi-app.json
+npx boring-ui-blocks add https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@<v>/r/pi-app.json https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@<v>/r/pi-app-kinds.json
 ```
 
-This copies `pi-app`, `pi-chat`, `pi-workspace`, `viewers`, `theme` and their shadcn components into `src/components/`, and writes `SHADCN-GENERATED.json`. Never edit those files; see the [add-blocks skill](../add-blocks/SKILL.md).
+This copies `pi-app`, `pi-app-kinds` (the default artifact kinds and their viewers), `pi-chat`, `pi-workspace`, `theme` and their shadcn components into `src/components/`, and writes `SHADCN-GENERATED.json`. Never edit those files; see the [add-blocks skill](../add-blocks/SKILL.md).
 
 Other placements use the same server:
 
@@ -80,7 +80,7 @@ Copy [references/page.md](references/page.md) to `src/App.tsx`. It:
 - connects the revision provider: `connectRevisionProvider({ endpoint, fetch })` from `@hachej/boring-files/revision`;
 - lists sessions: `useConversations({ endpoint, fetch, activeId, onSelect })`;
 - opens the chat: `useRemoteChat({ conversationId, endpoint: id => ..., fetch, identity })`;
-- renders `<AgentWorkspace conversationId conversations revisionProvider controller chat />` inside `TooltipProvider`.
+- renders `<AgentWorkspace artifactKinds={defaultKinds()} conversationId conversations revisionProvider controller chat />` inside `TooltipProvider` (`defaultKinds` from `pi-app-kinds`, built once outside render).
 
 Pass `controller={chat.status === 'ready' ? chat.controller : undefined}` and `chat.actions` (question and approval answers) only when ready. The `identity` (`runtimeId`, `scopeId`, `principalId`, `initiatorId`) must match the `access` the server resolves.
 

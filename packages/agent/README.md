@@ -74,7 +74,7 @@ const dashboard: ArtifactKind = {
   waitsForReady: true,
   renderer: ({ text, onReady, onFailed }) => <SalesDashboard spec={JSON.parse(text)} onLoaded={onReady} onError={error => onFailed?.(error.message)} />,
 };
-<AgentWorkspace {...workspace} artifactKinds={[dashboard]} />;
+<AgentWorkspace {...workspace} artifactKinds={[dashboard, ...defaultKinds()]} />; // defaultKinds: the pi-app-kinds item
 ```
 
 `workspaceMentionReader(files, access, { maxReadBytes? })` is the reader for a host with a workspace provider: it reads the person's own published view through the provider (the access check the file viewers use) and has no containment check of its own. A host that has no provider has no reader here; it writes a `MentionReader` over whatever it does have.

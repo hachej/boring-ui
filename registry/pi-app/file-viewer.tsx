@@ -3,7 +3,7 @@
 // Opens one workspace file in the viewer its kind names (`ViewerOptions.kinds`), always in the standard viewer frame (viewer-frame item):
 // Markdown and HTML in their editors (revisioned through the host's resource client, so saves go back to the file and an edit made behind
 // the editor's back is a conflict), images and PDFs read-only from the file's bytes, a drawing kind in the artifact panel, anything else as
-// text. Each viewer loads the first time its kind opens. A host viewer (`viewers[kind]`) wins over a built-in document kind.
+// text. Each viewer loads the first time its kind opens. A host viewer (`viewers[kind]`) wins over a document kind.
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { DownloadIcon } from 'lucide-react';
@@ -26,7 +26,7 @@ import { KIND_LABEL, decodeText } from './file-kinds';
 import { ArtifactPanel, useReportShown } from './artifact-panel';
 import { artifactKind } from '../pi-artifacts/artifact';
 import type { ArtifactDescriptor, ArtifactType } from '../pi-artifacts/artifact';
-import { Mounted, ViewLoading, drawsText, isEditorKind, isMediaKind, lazyView, viewerKinds } from './viewer-kinds';
+import { Mounted, ViewLoading, drawsText, isEditorKind, isMediaKind, lazyView, noKinds } from './viewer-kinds';
 import type { EditorKind, MediaKind, PanelKind } from './viewer-kinds';
 import type { ViewerOptions } from './artifact-panel';
 import { useSaved } from './use-saved';
@@ -191,7 +191,7 @@ function FileBytes({ path, kind, locator, options, onClose, back, media }: Commo
   const loading = <ViewerFrame testId="viewer-pending" title={nameOf(path)} subtitle={common.subtitle} onClose={onClose} titleTestId="file-title" headerStart={back}><ViewLoading label={labels.loading} /></ViewerFrame>;
   const shown = <Mounted value={file.revision} onMount={setMounted} />;
   if (blob?.kind === 'blob') {
-    const blobMedia = mediaKindOf(options.kinds ?? viewerKinds, { ...fileArtifact(path, locator), mediaType: blob.item.type });
+    const blobMedia = mediaKindOf(options.kinds ?? noKinds, { ...fileArtifact(path, locator), mediaType: blob.item.type });
     return <Suspense fallback={loading}><BlobFile item={blob.item} media={blobMedia} onRefresh={load} {...common} />{shown}</Suspense>;
   }
   if (media?.media === 'image') { const ImagePane = lazyView(media.load); return <Suspense fallback={loading}><ImagePane name={nameOf(path)} mediaType={mediaTypeOf(path)} bytes={file.bytes} onRefresh={load} {...common} />{shown}</Suspense>; }
@@ -228,9 +228,9 @@ export function FileViewer({ path, locator, options, onClose, onBack, backLabel,
   const common: Common = { path, kind, locator, options, onClose, back, onUnsavedChange, onBeforeLeaveChange };
   const locatorKey = JSON.stringify(locator);
   const artifact = useMemo(() => fileArtifact(path, locator), [path, locatorKey]); // eslint-disable-line react-hooks/exhaustive-deps
-  // One resolution through the kinds, whoever opened the file: a host viewer for the file kind wins over a built-in document kind, not
-  // over a host's kind. A drawing kind (a maquette, a diagram, an app's) shows the file in the artifact panel.
-  const kinds = options.kinds ?? viewerKinds;
+  // One resolution through the kinds, whoever opened the file: a host viewer for the file kind wins over a document kind (a `fallback`
+  // one), not over any other kind. A drawing kind (a maquette, a diagram, an app's) shows the file in the artifact panel.
+  const kinds = options.kinds ?? noKinds;
   const found = artifactKind(artifact, kinds.filter(entry => drawsText(entry) || isMediaKind(entry)));
   const custom = found && !found.fallback ? undefined : options.viewers?.[kind];
   const resolved = custom ? undefined : found;

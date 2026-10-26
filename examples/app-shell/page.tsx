@@ -22,6 +22,7 @@ import { Documents } from '../../registry/documents/documents.tsx';
 import { DocumentSheet } from '../../registry/documents/document-sheet.tsx';
 import { AgentWorkspace, useConversations } from '../../registry/pi-app/agent-workspace.tsx';
 import { PlacedAgentWorkspace, usePlacedAgentState } from '../../registry/placed-agent/placed-agent-workspace.tsx';
+import { defaultKinds } from '../../registry/pi-app-kinds/pi-app-kinds.ts';
 import { useRemoteChat } from '../../registry/pi-chat/use-remote-chat.ts';
 import { attachmentPath, imageData } from '../../registry/pi-app/revision-files.ts';
 import { randomUUID } from '@hachej/boring-files/platform';
@@ -43,6 +44,7 @@ const noAgent = query.get('agent') === 'none';
 const authorized = (request: Request) => { const headers = new Headers(request.headers); headers.set('authorization', `Bearer ${token}`); return fetch(new Request(request, { headers })); };
 const endpoint = (agent: string) => (id: string) => new URL(`/api/chat?agent=${agent}&conversation=${id}`, location.href);
 
+const englishKinds = defaultKinds(), frenchKinds = defaultKinds({ locale: 'fr' });
 const policy = createPrivacyPolicy({ routeOf: ({ pathname }) => pathname });
 const ROWS = Array.from({ length: 40 }, (_, index) => ({ day: `Jour ${index + 1}`, steps: 6000 + ((index * 937) % 5000) }));
 
@@ -280,7 +282,7 @@ function PmApp() {
   const feedback = useManagerFeedback(manager.status === 'ready' && Boolean(revisionProvider));
   if (manager.status !== 'ready' || !revisionProvider) return <p role="status" data-testid="connecting" className="p-4 text-sm text-muted-foreground">Connexion…</p>;
   const nav = [{ id: 'atelier', label: 'Atelier', icon: MessagesSquareIcon, render: () => <main data-testid="app" data-conversation={active} className="flex h-full min-h-0">
-    <AgentWorkspace conversationId={active} controller={chat.status === 'ready' ? chat.controller : undefined} conversations={listed} revisionProvider={revisionProvider} layout={query.has('embedded') ? 'embedded' : 'default'}
+    <AgentWorkspace artifactKinds={englishKinds} conversationId={active} controller={chat.status === 'ready' ? chat.controller : undefined} conversations={listed} revisionProvider={revisionProvider} layout={query.has('embedded') ? 'embedded' : 'default'}
       chat={{ labels: { title: 'Writer' }, ...(chat.status === 'ready' ? { actions: chat.actions } : {}) }} connecting={<p role="status" className="p-4 text-sm text-muted-foreground">Connecting…</p>} />
   </main> }];
   const improve = { controller: manager.controller, ...(feedback ? { feedback } : {}), chatProps: { locale: 'fr', showHistory: false, showConnectionStatus: false, actions: manager.actions, labels: { title: 'Chef de produit' } } };
@@ -309,7 +311,7 @@ function PlacedApp() {
   const go = (id: string) => { history.replaceState(history.state, '', `#${id}`); setRoute(id); };
   const nav = [
     { id: 'agent', label: 'Agent', icon: MessagesSquareIcon, render: () => <main data-testid="app" data-conversation={active} className="flex h-full min-h-0">
-      <PlacedAgentWorkspace conversationId={active} controller={chat.status === 'ready' ? chat.controller : undefined} conversations={listed} revisionProvider={revisionProvider} layout="embedded" title="Agent" locale="fr" storageKey="forme.placed"
+      <PlacedAgentWorkspace artifactKinds={frenchKinds} conversationId={active} controller={chat.status === 'ready' ? chat.controller : undefined} conversations={listed} revisionProvider={revisionProvider} layout="embedded" title="Agent" locale="fr" storageKey="forme.placed"
         collapsed={collapsed} onCollapsedChange={next => go(next ? 'approvals' : 'agent')}
         chat={{ labels: { title: 'Agent' }, ...(chat.status === 'ready' ? { actions: chat.actions } : {}) }} connecting={<p role="status" className="p-4 text-sm text-muted-foreground">Connexion…</p>} />
     </main> },
