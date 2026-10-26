@@ -1,5 +1,7 @@
 # Unreleased
 
+- **Live skills: `createSkillsExtension` takes a `SkillSource` (`@hachej/boring-agent/agents`).** Opt-in and additive; an array of skills works as before (one change: an empty array now omits the listing section instead of rendering an empty one). Pass `directorySkillSource(fs, dir)` (every `<dir>/<name>/SKILL.md`) or `fileSkillSource(fs, path)` with the workspace's Pi `FileSystem`, plus `{ maxAgeMs?, onDiagnostics? }`: the listing and `load_skill` pick up added, edited and removed skills once the cached copy is older than `maxAgeMs` (5000 by default) and the source's version changed. A broken skill file is left out and reported (`onDiagnostics`, and `load_skill` by name) instead of throwing. New types `SkillSource`, `SkillListing`, `SkillError`, `SkillFileSystem`, `SkillsExtensionOptions`. Evidence: `test/packages/agent-live-skills.test.mjs`.
+
 - **Room kit: replies stream word by word (`@hachej/boring-agent/room`).** `createRoomTurn` also reads the run in flight from `pi.live` (`generation.message`, only when the run holds this wake's submission) and sends its text as `text` frames, so the room sees the reply grow instead of arriving once at the end. The settled entry continues after what was sent, so the frames still add up to the reply exactly once. No API change; hosts that append `text` frames (as since the previous entry) need nothing.
 
 # Migrating to 0.4.21

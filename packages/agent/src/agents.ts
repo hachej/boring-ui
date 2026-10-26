@@ -11,8 +11,8 @@ import type { DelegateOptions } from './delegate.js';
 import type { Skill } from './skills.js';
 
 export type { SelfEvolutionError, SelfEvolutionReport } from './self-evolving.js';
-export { createSkillsExtension, parseSkill } from './skills.js';
-export type { Skill } from './skills.js';
+export { createSkillsExtension, directorySkillSource, fileSkillSource, parseSkill } from './skills.js';
+export type { Skill, SkillError, SkillFileSystem, SkillListing, SkillSource, SkillsExtensionOptions } from './skills.js';
 export { jsonSchemaTool } from './json-schema-tool.js';
 export type { JsonObjectSchema, JsonSchemaToolOptions } from './json-schema-tool.js';
 export { createDelegateTool, DELEGATE_DETAILS_KIND, DELEGATE_TOOL } from './delegate.js';
