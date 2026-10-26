@@ -63,7 +63,7 @@ Then add UI blocks to a React app that has shadcn's `components.json` (Base UI, 
 npx boring-ui-blocks add https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.8/r/pi-app.json
 ```
 
-From the release after 0.4.22, also add `.../r/pi-app-kinds.json` and pass its `defaultKinds()` as `artifactKinds`, as above: `pi-app` draws only the kinds it is given. Add `.../r/theme.json` first if your app has no shadcn tokens yet. The full walk-through is the [build-agent-app skill](skills/build-agent-app/SKILL.md).
+From the release after 0.4.23, also add `.../r/pi-app-kinds.json` and pass its `defaultKinds()` as `artifactKinds`, as above: `pi-app` draws only the kinds it is given. Add `.../r/theme.json` first if your app has no shadcn tokens yet. The full walk-through is the [build-agent-app skill](skills/build-agent-app/SKILL.md).
 
 ## Features
 
