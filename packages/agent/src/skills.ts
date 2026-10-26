@@ -129,7 +129,10 @@ export function fileSkillSource(fs: SkillFileSystem, path: string): SkillSource 
 export interface SkillsExtensionOptions {
   /** How long a source's copy is used before `version()` is asked again, in milliseconds. Default 5000. Unused for an array. */
   readonly maxAgeMs?: number;
-  /** Called after each read of a source with every skill it left out (an empty array when none), or with the `onPublish` refusal. */
+  /**
+   * Called after each read of a source with every skill it left out (an empty array when none). When `onPublish` refuses the
+   * read, it gets the errors of the listing still in effect followed by `{ path: '', message: 'Listing refused by onPublish: <reason>' }`.
+   */
   readonly onDiagnostics?: (errors: readonly SkillError[]) => void;
   /**
    * Which skills a conversation sees: called once per listing render and per `load_skill` call with Pi's conversation id and
@@ -141,7 +144,9 @@ export interface SkillsExtensionOptions {
   /**
    * List the files beside each `SKILL.md` (at any depth, at most 200) in `load_skill`'s answer, and let
    * `load_skill({ name, path })` return one of them as text. Each file is checked when the listing is read: a symbolic link,
-   * a file that cannot be read or one that is not UTF-8 text is left out and reported to `onDiagnostics`. Read through the
+   * a file that cannot be read or one that is not UTF-8 text is left out and reported to `onDiagnostics`. `load_skill` checks a
+   * listed file again before returning it (the skill's folder, every folder on the way and the file itself, with `fileInfo`,
+   * which does not follow links), so a file or folder swapped for a link since the listing is refused. Read through the
    * source's `fs`; an array or a source without `fs` throws.
    */
   readonly companionFiles?: boolean;
@@ -149,7 +154,7 @@ export interface SkillsExtensionOptions {
   readonly intro?: string;
   /**
    * Called before a newly read listing of a source replaces the current one, with both listings' skills. Return a reason
-   * (or throw) to refuse it: the current listing stays, and `onDiagnostics` gets `Listing refused by onPublish: <reason>`.
+   * (or throw) to refuse it: the current listing stays, and `onDiagnostics` gets its errors plus `Listing refused by onPublish: <reason>`.
    * A refused listing is offered again only once the source's version changes or `refresh()` is called.
    */
   readonly onPublish?: (next: readonly Skill[], previous: readonly Skill[]) => string | void | Promise<string | void>;
@@ -160,8 +165,9 @@ export interface SkillsController {
   readonly extension: Extension;
   /**
    * Read the source now, whatever `maxAgeMs`, and publish what it holds (through `onPublish`). With `name`, only that skill
-   * is taken from the new read (added, replaced or removed); the others stay as they were. Resolves `true` when published,
-   * `false` when `onPublish` refused it.
+   * is taken from the new read (added, replaced or removed); the others stay as they were until the source's `version()`
+   * changes again, when the next read offers the whole source as usual. Resolves `true` when published, `false` when
+   * `onPublish` refused it.
    */
   readonly refresh: (context: Context, name?: string) => Promise<boolean>;
 }
@@ -207,7 +213,8 @@ function liveSkills(source: SkillSource, options: SkillsExtensionOptions) {
   }
   async function publish(next: Loaded): Promise<boolean> {
     const refused = await refusal(next);
-    if (refused !== undefined) { options.onDiagnostics?.([{ path: '', message: `Listing refused by onPublish: ${refused}` }]); return false; }
+    // The listing in effect stays, so its errors stay too: the refusal is added to them, never replaces them.
+    if (refused !== undefined) { options.onDiagnostics?.([...state.errors, { path: '', message: `Listing refused by onPublish: ${refused}` }]); return false; }
     state = next;
     options.onDiagnostics?.(state.errors);
     return true;
@@ -232,8 +239,9 @@ function liveSkills(source: SkillSource, options: SkillsExtensionOptions) {
     miss: (context: Context): Promise<Loaded> => missing ??= serial(() => check(context)).finally(() => { missing = undefined; }),
     refresh: (context: Context, name?: string): Promise<boolean> => serial(async () => {
       const next = await source.version(context), listing = await read(context);
-      // One skill taken: the copy no longer matches any version, so the next check reads the whole source again.
-      version = name === undefined ? next : undefined;
+      // The read is accounted for at this version, whether all of it or one skill was taken (or onPublish refused it): the
+      // others kept by a one-skill refresh are offered again only once the source changes, not at the next maxAgeMs check.
+      version = next;
       checkedAt = Date.now();
       return publish(name === undefined ? listing : only(name, listing, state));
     }),
@@ -245,6 +253,24 @@ const COMPANION_LIMIT = 200;
 
 /** Each skill's companion files, checked when its listing was read. */
 const companionLists = new WeakMap<Skill, readonly string[]>();
+const notText = (text: string) => /[\u0000\uFFFD]/.test(text);
+
+/**
+ * Why a listed companion may not be read now, or `undefined`: the skill's folder and every folder on the way must still be
+ * directories and the file a regular file (`fileInfo` does not follow links), so a link swapped in since the listing is refused.
+ */
+async function companionChanged(fs: SkillFileSystem, folder: string, relative: string, context: Context): Promise<string | undefined> {
+  const parts = relative.split('/'), base = folder === '.' ? '' : `${folder}/`;
+  const steps = [...(folder === '.' ? [] : [{ path: folder, kind: 'directory' }]),
+    ...parts.map((_, index) => ({ path: base + parts.slice(0, index + 1).join('/'), kind: index === parts.length - 1 ? 'file' : 'directory' }))];
+  for (const step of steps) {
+    const info = await fs.fileInfo(step.path, context);
+    if (!info.ok) return info.error.message;
+    if (info.value.kind === 'symlink') return `${step.path} is a symbolic link`;
+    if (info.value.kind !== step.kind) return `${step.path} is not a ${step.kind === 'file' ? 'regular file' : 'directory'}`;
+  }
+  return undefined;
+}
 
 /**
  * Walk the files beside each skill's `SKILL.md` (relative to its folder, depth first in name order, at most
@@ -272,7 +298,7 @@ async function withCompanions(fs: SkillFileSystem, listing: Loaded, context: Con
         if (files.length >= COMPANION_LIMIT) { over = true; leftOut('', `Companion files left out: more than ${COMPANION_LIMIT}`); return; }
         const text = await fs.readTextFile(at(path), context);
         if (!text.ok) leftOut(path, `Companion file left out: ${text.error.message}`);
-        else if (/[\u0000\uFFFD]/.test(text.value)) leftOut(path, 'Companion file left out: not UTF-8 text');
+        else if (notText(text.value)) leftOut(path, 'Companion file left out: not UTF-8 text');
         else files.push(path);
       }
     };
@@ -325,11 +351,16 @@ function skillsExtension(name: string, live: Live, options: SkillsExtensionOptio
         const folder = skillFolders.get(skill);
         const companions = fs ? companionLists.get(skill) ?? [] : [];
         if (fs && args.path !== undefined) {
-          // Only a listed file is read, so the path cannot leave the folder or follow a symbolic link.
+          // Only a listed file is read, so the path cannot leave the folder; it is checked again now, so a link swapped in
+          // since the listing (the agent may write its own skill folder) is refused rather than followed.
           const path = args.path.replace(/^(\.\/)+/, '');
-          if (!companions.includes(path)) return text(`Skill "${skill.name}" has no companion file "${args.path}". Companion files: ${companions.join(', ') || 'none'}`);
+          if (!companions.includes(path) || folder === undefined) return text(`Skill "${skill.name}" has no companion file "${args.path}". Companion files: ${companions.join(', ') || 'none'}`);
+          const failed = (why: string) => text(`Companion file "${path}" of skill "${skill.name}" could not be read: ${why}`);
+          const changed = await companionChanged(fs, folder, path, context);
+          if (changed !== undefined) return failed(changed);
           const read = await fs.readTextFile(folder === '.' ? path : `${folder}/${path}`, context);
-          return text(read.ok ? read.value : `Companion file "${path}" of skill "${skill.name}" could not be read: ${read.error.message}`);
+          if (!read.ok) return failed(read.error.message);
+          return notText(read.value) ? failed('not UTF-8 text') : text(read.value);
         }
         const location = folder === undefined ? '' : `\n\nThis skill's folder is \`${folder}\`; paths in it are relative to that folder.`;
         const listed = companions.length ? `\n\nCompanion files of this skill (read one with load_skill and its path):\n${companions.map(path => `- ${path}`).join('\n')}` : '';
