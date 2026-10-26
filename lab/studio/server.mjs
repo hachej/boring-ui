@@ -395,7 +395,9 @@ export async function startStudio({ directory, port = 0, provider = process.env.
 
   /**
    * `/api/resources`: `createRevisionHandler` over the workspace of the request (the variant's, or the person's team workspace, borrowed
-   * for the request and for the change feed while it is open), as the workspace's person. A file is at most 5 MB, as uploads were.
+   * for the request), as the workspace's person. A file is at most 5 MB, as uploads were. The studio serves no change feed (501, the
+   * protocol's "no feed" answer): a feed is one more long-lived request per tab beside the chat's, and a few visible tabs of a share
+   * link would exhaust the browser's ~6 connections per host (the composer journey opens four). The Workspace panel lists the files.
    */
   const resources = createRevisionHandler({ maxFileBytes: 5_000_000, resolve: async request => {
     const principal = principalOf(request);
@@ -418,7 +420,7 @@ export async function startStudio({ directory, port = 0, provider = process.env.
       return target.conversationsHandler(request);
     }
     // Reads, saves, uploads (`uploads/`, a conditional create with a receipt), @-search and the file list: the one revision route.
-    if (url.pathname === '/api/resources') return resources(request);
+    if (url.pathname === '/api/resources') return request.method === 'GET' && url.searchParams.get('op') === 'changes' ? new Response(null, { status: 501 }) : resources(request);
     const variant = variantOf(request);
     const borrowed = await workspaceOfRequest(variant, principal);
     if (!borrowed) return Response.json({ reason: 'not-authorized' }, { status: 403 });

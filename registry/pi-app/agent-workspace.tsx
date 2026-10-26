@@ -5,7 +5,7 @@ import '@hachej/boring-ui-kit/file-tree.css';
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
-import type { ResourceLocator } from '@hachej/boring-files';
+import type { ResourceClient, ResourceLocator } from '@hachej/boring-files';
 import { createResourceClient } from '@hachej/boring-files/remote';
 import { connectRevisionProvider } from '@hachej/boring-files/revision';
 import { workspacePath } from '@hachej/boring-files/file-types';
@@ -375,8 +375,22 @@ export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, titl
   const libraryProvider = useMemo(() => revisionProvider ?? (listing && listing.key === listingKey ? { ...listing.provider, history: history ?? listing.provider.history } : undefined),
     [revisionProvider, listing, listingKey, history]);
   // The viewers' client: the Library's binding when there is one (its calls carry the binding the revision protocol checks), else the plain resource client.
-  const client = useMemo(() => libraryProvider ?? createResourceClient({ identity, endpoint: new URL(endpoint!, globalThis.location?.href), publication: true, reconciliation: true,
-    fetch: request => fetcher.current!(request) }), [libraryProvider, endpoint, identityKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // With `resources`, the binding is discovered after the first render on the same endpoint for the same person: it takes over the calls of
+  // one stable client, so a viewer already open keeps its bytes and its editor instead of reloading when the binding arrives.
+  const discovered = useRef(libraryProvider);
+  discovered.current = libraryProvider;
+  const client = useMemo((): ResourceClient => {
+    if (revisionProvider) return revisionProvider;
+    const plain = createResourceClient({ identity, endpoint: new URL(endpoint!, globalThis.location?.href), publication: true, reconciliation: true, fetch: request => fetcher.current!(request) });
+    const current = (): ResourceClient => discovered.current ?? plain;
+    return {
+      read: (request, signal) => current().read(request, signal),
+      publish: (request, signal) => current().publish!(request, signal),
+      lookup: (operationId, signal) => current().lookup!(operationId, signal),
+      rename: (request, signal) => current().rename!(request, signal),
+      delete: (request, signal) => current().delete!(request, signal),
+    };
+  }, [revisionProvider, endpoint, identityKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const [imagePreview, setImagePreview] = useState<{ readonly images: readonly ImageContent[]; readonly index: number; readonly controller: typeof controller; readonly client: typeof client; readonly conversationId: typeof conversationId }>();
   const openImage = useCallback((image: ImageContent, images: readonly ImageContent[] = [image]) => {
     const index = images.indexOf(image);
@@ -688,28 +702,49 @@ function WorkspaceCenter({ libraryOpen, floating, chat, floatingChat, library }:
 }
 
 /**
- * The seq of the provider's latest change event (`RevisionProvider.changes`), coalesced over `settleMs` so a burst (a shell writing
- * many files) reloads once. `live` is false without a feed or after the feed was refused; views then keep their own refresh.
+ * A number that moves when the provider's files change (`RevisionProvider.changes`), coalesced over `settleMs` so a burst (a shell
+ * writing many files) reloads once. `live` is false without a feed or after the feed was refused; views then keep their own refresh.
+ * A hidden tab holds no feed: a browser allows few connections per host, and every tab of a share link holding a stream starves the
+ * others (remote chat releases its stream the same way). Shown again, it reconnects and moves once, since a change may have been missed.
  */
 function useChangeFeed(provider: RevisionProvider | undefined, settleMs = 150): { readonly seq: number | undefined; readonly live: boolean } {
   const [state, setState] = useState<{ readonly provider: RevisionProvider | undefined; readonly seq: number | undefined; readonly live: boolean }>({ provider, seq: undefined, live: false });
+  const shown = usePageShown();
+  const connected = useRef<RevisionProvider | undefined>(undefined);
   useEffect(() => {
     if (!provider?.changes) { setState({ provider, seq: undefined, live: false }); return; }
+    if (!shown) return;
     const stop = new AbortController();
-    let timer: ReturnType<typeof setTimeout> | undefined, latest: number | undefined;
-    setState({ provider, seq: undefined, live: true });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const move = () => setState(current => ({ provider, seq: current.provider === provider ? (current.seq ?? 0) + 1 : 1, live: true }));
+    // A second connection to the same provider follows a hidden period: reload once. A first connection has nothing to catch up.
+    const resumed = connected.current === provider;
+    connected.current = provider;
+    setState(current => ({ provider, seq: current.provider !== provider ? undefined : resumed ? (current.seq ?? 0) + 1 : current.seq, live: true }));
     void (async () => {
       try {
-        for await (const event of provider.changes!({ signal: stop.signal })) {
-          latest = event.seq;
-          timer ??= setTimeout(() => { timer = undefined; if (!stop.signal.aborted) setState({ provider, seq: latest, live: true }); }, settleMs);
+        for await (const _event of provider.changes!({ signal: stop.signal })) {
+          timer ??= setTimeout(() => { timer = undefined; if (!stop.signal.aborted) move(); }, settleMs);
         }
       } catch { /* refused: the views fall back to their own refresh */ }
       clearTimeout(timer);
       timer = undefined;
-      if (!stop.signal.aborted) setState({ provider, seq: latest, live: false });
+      if (!stop.signal.aborted) setState(current => ({ provider, seq: current.provider === provider ? current.seq : undefined, live: false }));
     })();
     return () => { stop.abort(); clearTimeout(timer); };
-  }, [provider, settleMs]);
+  }, [provider, settleMs, shown]);
   return state.provider === provider ? state : { seq: undefined, live: false };
+}
+
+/** Whether the page is shown (`document.visibilityState`); true where there is no document. */
+function usePageShown(): boolean {
+  const [shown, setShown] = useState(() => typeof document === 'undefined' || document.visibilityState !== 'hidden');
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const update = () => setShown(document.visibilityState !== 'hidden');
+    update();
+    document.addEventListener('visibilitychange', update);
+    return () => document.removeEventListener('visibilitychange', update);
+  }, []);
+  return shown;
 }
