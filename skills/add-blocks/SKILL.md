@@ -44,7 +44,7 @@ npx boring-ui-blocks add https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@<v>/
 - `pi-app` draws only the kinds passed in `artifactKinds`; `pi-app-kinds` installs the viewers and `defaultKinds({ locale })`, the default list to pass.
 
 - Use the same `<v>` as the installed `@hachej/boring-ui-kit` (`npm ls @hachej/boring-ui-kit`).
-- `add` runs `npx -y shadcn@4.21.5 add <args>`, then records every file under `components/ui` in `SHADCN-GENERATED.json`. Use it for plain shadcn components too (`npx boring-ui-blocks add dialog`).
+- `add` runs `npx -y shadcn@4.21.5 add <args> --overwrite --yes` with stdin closed (it never prompts), keeps and lists every existing file whose content differs (exit 1) unless you pass `--overwrite`, then records every file under `components/ui` in `SHADCN-GENERATED.json`. Use it for plain shadcn components too (`npx boring-ui-blocks add dialog`).
 - `pi-chat`, `button`, `dock`, `feedback`, `app-shell`, `windows` and `agent-target` install no tokens. If the app has no shadcn tokens yet, add `.../r/theme.json` in the same command. The theme keeps tokens the app already defines.
 - When the CLI installs `tooltip`, wrap the app in `TooltipProvider` from `@/components/ui/tooltip`.
 - After a plain `npx shadcn add`, run `npx boring-ui-blocks manifest` to record the files.

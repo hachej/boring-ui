@@ -4,14 +4,14 @@
 //
 //   npx boring-ui-blocks check [--design <dir>...] [--manifest <path>] [--cwd <app web dir>] [--json]
 //   npx boring-ui-blocks update [--version <v>] [--registry <url>] [--dry-run] [--manifest <path>] [--cwd <dir>]
-//   npx boring-ui-blocks add <shadcn add arguments...> [--manifest <path>] [--cwd <dir>]
+//   npx boring-ui-blocks add <shadcn add arguments...> [--overwrite] [--manifest <path>] [--cwd <dir>]
 //   npx boring-ui-blocks manifest [--manifest <path>] [--cwd <dir>]
 //   npx boring-ui-blocks help    (also --help: the usage and which items to add; exit 0)
 //
 // `check` writes nothing. `add`, `update` and `manifest` write the shadcn files they install and the manifest, nothing else.
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
-import { join, relative, resolve, sep } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -164,6 +164,7 @@ export function writeManifest(app, manifest = MANIFEST) {
   const path = resolve(app, manifest);
   const hashes = Object.fromEntries([...uiHashes(ui)].map(([name, { hash }]) => [name, hash]));
   const kept = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : { generatedBy: 'boring-ui-blocks', dir: posix(relative(app, ui)) };
+  mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify({ ...kept, files: hashes }, null, 2)}\n`);
   return Object.keys(hashes).length;
 }
@@ -215,18 +216,20 @@ export function check(app, design = [], manifest = MANIFEST) {
   return { version, blocks: blocks.map(block => block.name), violations };
 }
 
-const USAGE = `usage: boring-ui-blocks check [--design <dir>...] [--manifest <path>] [--cwd <dir>] [--json] | update [--version <v>] [--registry <url>] [--dry-run] [--manifest <path>] [--cwd <dir>] | add <shadcn add args...> [--manifest <path>] [--cwd <dir>] | manifest [--manifest <path>] [--cwd <dir>] | help\n\n` +
+const USAGE = `usage: boring-ui-blocks check [--design <dir>...] [--manifest <path>] [--cwd <dir>] [--json] | update [--version <v>] [--registry <url>] [--dry-run] [--manifest <path>] [--cwd <dir>] | add <shadcn add args...> [--overwrite] [--manifest <path>] [--cwd <dir>] | manifest [--manifest <path>] [--cwd <dir>] | help\n\n` +
   'Blocks: pi-app is the whole agent app with every chat feature and viewer. pi-chat is the core chat only: add pi-chat-plugins for every ' +
   'feature, or one of pi-chat-markdown, pi-chat-slash, pi-chat-mentions, pi-chat-pickers, pi-chat-voice, pi-chat-attachments, ' +
   'pi-chat-question, pi-chat-approval, pi-chat-subagent and pi-artifacts. Viewers are viewer-frame plus viewer-markdown, viewer-html, ' +
   'viewer-image, viewer-pdf and viewer-code, loaded by kind. update reinstalls only installed items: ' +
-  'add the new ones an app uses once (registry/README.md, "From one item to small items").';
-const FLAGS = { check: ['design', 'manifest', 'json'], update: ['version', 'registry', 'dry-run', 'manifest'], manifest: ['manifest'] };
+  'add the new ones an app uses once (registry/README.md, "From one item to small items"). add never prompts: a file that already exists ' +
+  'with other content is kept and listed (exit 1) unless --overwrite replaces it; identical files are left alone.';
+const FLAGS = { check: ['design', 'manifest', 'json'], update: ['version', 'registry', 'dry-run', 'manifest'], manifest: ['manifest'], add: ['manifest', 'overwrite'] };
 
 function parse(command, rest) {
   const flags = { design: [], pass: [] };
   for (let i = 0; i < rest.length; i++) {
     const name = rest[i].startsWith('--') ? rest[i].slice(2) : null;
+    if (command === 'add' && (name === 'overwrite' || rest[i] === '-o')) { flags.overwrite = true; continue; }
     if (command === 'add' && name !== 'cwd' && name !== 'manifest') { flags.pass.push(rest[i]); continue; }
     if (!name || !FLAGS[command]?.includes(name) && name !== 'cwd') throw new Error(`unknown argument ${rest[i]}`);
     if (name === 'json') flags.json = true;
@@ -267,13 +270,27 @@ function restoreSpecifiers(before, app, log) {
   if (restored.size) log(`kept the version specifiers of ${[...restored].sort().join(', ')} (the CLI had rewritten them)`);
 }
 
-function shadcnAdd(app, args, log) {
-  const argv = ['-y', SHADCN, 'add', ...args];
+/** The files the shadcn CLI may write for a block (the components, ui, lib and hooks aliases) and their bytes, before it runs. */
+function snapshotFiles(app) {
+  const { aliases = {} } = readJson(join(app, 'components.json')) ?? {};
+  const alias = (name, fallback) => join(app, existsSync(join(app, 'src')) ? 'src' : '', (aliases[name] ?? fallback).replace(/^[@~]\//, ''));
+  const { components, ui } = appPaths(app);
+  return new Map([...new Set([components, ui, alias('lib', '@/lib'), alias('hooks', '@/hooks')])].flatMap(dir => files(dir)).map(path => [path, readFileSync(path)]));
+}
+
+/**
+ * Runs the shadcn CLI without a terminal: stdin is closed and the CLI always gets `--overwrite --yes`, so it never asks. With
+ * `overwrite` false a file that existed with other content is put back afterwards and returned in `skipped`; identical files are never touched.
+ */
+function shadcnAdd(app, args, log, overwrite) {
+  const argv = ['-y', SHADCN, 'add', ...args.filter(arg => !['--yes', '-y', '--overwrite'].includes(arg)), '--overwrite', '--yes'];
   log(`npx ${argv.join(' ')}`);
-  const before = specifiers(app);
-  const result = spawnSync('npx', argv, { cwd: app, stdio: 'inherit', shell: process.platform === 'win32' });
+  const before = specifiers(app), existing = snapshotFiles(app);
+  const result = spawnSync('npx', argv, { cwd: app, stdio: ['ignore', 'inherit', 'inherit'], shell: process.platform === 'win32' });
   restoreSpecifiers(before, app, log);
-  return result.status ?? 1;
+  const skipped = overwrite ? [] : [...existing].filter(([path, bytes]) => existsSync(path) && !readFileSync(path).equals(bytes));
+  for (const [path, bytes] of skipped) writeFileSync(path, bytes);
+  return { status: result.status ?? 1, skipped: skipped.map(([path]) => path) };
 }
 
 const line = v => `${v.check} ${v.rule} ${v.file}${v.line ? `:${v.line}:${v.column}` : ''} ${v.detail}`;
@@ -300,7 +317,11 @@ export function main(argv, cwd = process.cwd(), log = console.log, error = conso
     if (command === 'add') {
       appPaths(app);
       if (!flags.pass.length) throw new Error('add needs shadcn add arguments');
-      const status = shadcnAdd(app, flags.pass, log);
+      const { status, skipped } = shadcnAdd(app, flags.pass, log, flags.overwrite);
+      if (skipped.length) {
+        error(`kept ${skipped.length} existing file(s) that differ from the registry (pass --overwrite to replace them; the manifest was not rewritten):\n${skipped.map(path => `  ${posix(relative(app, path))}`).join('\n')}`);
+        return status || 1;
+      }
       if (status === 0) log(`${flags.manifest ?? MANIFEST}: ${writeManifest(app, flags.manifest)} file(s)`);
       return status;
     }
@@ -309,7 +330,7 @@ export function main(argv, cwd = process.cwd(), log = console.log, error = conso
     const base = (flags.registry ?? itemBase(flags.version ?? installed)).replace(/\/$/, '');
     const items = blocks.map(block => `${base}/${block.name}.json`);
     if (flags.dryRun) { log(`npx -y ${SHADCN} add ${items.join(' ')} --overwrite --yes`); return 0; }
-    const status = shadcnAdd(app, [...items, '--overwrite', '--yes'], log);
+    const { status } = shadcnAdd(app, items, log, true);
     if (status === 0) log(`${flags.manifest ?? MANIFEST}: ${writeManifest(app, flags.manifest)} file(s)`);
     return status;
   } catch (cause) {
