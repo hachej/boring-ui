@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { notifyWhenHidden } from './browser-notify';
 import { parseQuestion } from '../pi-chat-question/question-card';
+import { finishNotice, pendingNotice } from '@hachej/boring-ui-kit/chat-view';
 import { derive, object } from '../pi-chat/rows';
 import type { Row } from '../pi-chat/rows';
 import { cn, withDefaults } from '../utils/utils';
@@ -68,28 +69,11 @@ export function useNotifications(store: NotificationStore): readonly AgentNotifi
   return useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
 }
 
-/** One line from a Markdown reply: its first non-empty line without Markdown marks, cut with an ellipsis. */
-export function summaryOf(text: string, limit = 140): string {
-  const line = text.split('\n').map(item => item.trim()).find(item => item && !/^(```|---+$)/.test(item)) ?? '';
-  const plain = line.replace(/^(#{1,6}\s+|>\s*|[-*+]\s+|\d+[.)]\s+)/, '').replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/[*_`~]+/g, '').replace(/\s+/g, ' ').trim();
-  return plain.length > limit ? `${plain.slice(0, limit - 1).trimEnd()}…` : plain;
-}
+export { finishNotice, summaryOf } from '@hachej/boring-ui-kit/chat-view';
 
-/** What the newest pending `ask_user` question or approval asks, if one waits for the person. */
+/** What the newest pending `ask_user` question or approval asks, if one waits for the person (the kit's `waitingPart` rule and notice words). */
 export function pendingQuestion(rows: readonly Row[]): string | undefined {
-  for (const row of [...rows].reverse()) if (row.type === 'assistant') for (const part of row.parts) {
-    if (part.kind === 'question' && !part.live && !part.result) return parseQuestion(part.call).question;
-    if (part.kind === 'approval' && !part.live && !part.result && !part.decision) return `Approve: ${part.summary}`;
-  }
-  return undefined;
-}
-
-/** What a toast says about a run that just ended, from the conversation's rows; `undefined` when the person stopped it. */
-export function finishNotice(rows: readonly Row[]): { readonly kind: 'done' | 'error'; readonly summary: string } | undefined {
-  const last = [...rows].reverse().find((row): row is Extract<Row, { type: 'assistant' }> => row.type === 'assistant');
-  if (last?.stopReason === 'aborted') return undefined;
-  if (last?.stopReason === 'error') return { kind: 'error', summary: last.errorMessage ?? 'The run failed' };
-  return { kind: 'done', summary: summaryOf(last?.text ?? '') || 'Finished' };
+  return pendingNotice(rows, call => parseQuestion(call).question);
 }
 
 /**

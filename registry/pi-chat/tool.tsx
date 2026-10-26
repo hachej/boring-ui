@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import type { ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
+import type { ToolStatus, ToolEntry as ViewToolEntry } from '@hachej/boring-ui-kit/chat-view';
 import { WrenchIcon } from 'lucide-react';
 import { TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceDescription, TraceIcon, TraceLine, TraceTitle } from '@/components/ui/trace';
 import { Card, CardContent } from '@/components/ui/card';
@@ -11,8 +12,8 @@ import { Button } from '@/components/ui/button';
 import { defaultChatLabels, useChatText } from './labels';
 import type { ChatLabels } from './labels';
 
-export type ToolStatus = 'running' | 'completed' | 'failed' | 'unfinished';
-export interface ToolEntry { readonly key: string; readonly call: ToolCall; readonly result: ToolResultMessage | undefined; readonly status: ToolStatus; readonly custom?: ReactNode }
+export type { ToolStatus } from '@hachej/boring-ui-kit/chat-view';
+export type ToolEntry = ViewToolEntry<ReactNode>;
 
 const STATUS_LABEL = { running: 'toolRunning', completed: 'toolCompleted', failed: 'toolFailedStatus', unfinished: 'toolUnfinished' } as const satisfies Record<ToolStatus, keyof ChatLabels>;
 const PREVIEW_KEYS = ['path', 'file_path', 'filePath', 'command', 'query', 'pattern', 'name', 'url', 'id'];

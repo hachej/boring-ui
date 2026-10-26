@@ -33,11 +33,8 @@ export function ChatNotices({ state, error, onReconcile, onRetry, natural = fals
   </>;
 }
 
-/** `presentation="natural"`: whether the one "preparing" status shows. Any work (a run, a retry, a compaction) counts, except a confirmed stop with no run left; a question waiting for the person does not. */
-export function preparing(input: { readonly natural: boolean; readonly waitingForAnswer: boolean; readonly run: unknown; readonly retry: unknown; readonly compacting: boolean; readonly stop: ChatSnapshot['stop'] }): boolean {
-  const { natural, waitingForAnswer, run, retry, compacting, stop } = input;
-  return natural && !waitingForAnswer && Boolean(run || retry || compacting) && !(stop === 'confirmed' && !run);
-}
+/** `presentation="natural"`: whether the one "preparing" status shows (owned by the kit's chat view). */
+export { preparing } from '@hachej/boring-ui-kit/chat-view';
 
 /** The one status line of natural presentation. */
 export function PreparingStatus({ children }: { readonly children?: ReactNode }) {

@@ -1,6 +1,7 @@
 import type { ComponentType, ReactNode } from 'react';
 import type { ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
 import type { ChatController } from '@hachej/boring-ui-kit/native-chat';
+import type { ApprovalDecision, ArtifactDetect, ArtifactRecognise, ChatArtifact, SubagentRenderer as ViewSubagentRenderer } from '@hachej/boring-ui-kit/chat-view';
 import type { BlockAction } from '../button/actions';
 import type { ChatLabels } from './labels';
 
@@ -407,10 +408,9 @@ export const voiceClock = (seconds: number) => `${Math.floor(seconds / 60)}:${St
 
 /** What the host answers when asked to resolve a pending question. */
 export type AnswerOutcome = { readonly kind: 'answered' } | { readonly kind: 'denied' | 'conflict' | 'unknown-question'; readonly reason?: string };
-/** The tool that asks the person a question (`ask_user`). Its calls are question rows. */
-export const ASK_USER_TOOL = 'ask_user';
-/** The decision `requireApproval` records for a gated call. */
-export type ApprovalDecision = 'approved' | 'denied' | 'cancelled';
+/** `ask_user` calls are question rows; `ApprovalDecision` is what `requireApproval` records (both owned by the kit's chat view). */
+export { ASK_USER_TOOL } from '@hachej/boring-ui-kit/chat-view';
+export type { ApprovalDecision } from '@hachej/boring-ui-kit/chat-view';
 
 /** Props of the question card that `ChatCards.question` carries (`QuestionCard` of `pi-chat-question`). */
 export interface QuestionCardProps {
@@ -439,7 +439,7 @@ export interface ApprovalCardProps {
  * Draws a tool call that ran a sub-agent (`subagentCard` of `pi-chat-subagent`), from the details its running slot published (`details`)
  * or that it finished with. Undefined: the call is not a sub-agent call and stays an ordinary tool step.
  */
-export type SubagentRenderer = (call: ToolCall, details: unknown, result: ToolResultMessage | undefined) => ReactNode | undefined;
+export type SubagentRenderer = ViewSubagentRenderer<ReactNode>;
 
 /** The cards the chat draws for a human decision or a sub-agent. Each one left out has no card (see `PiChat`'s `cards`). */
 export interface ChatCards {
@@ -451,21 +451,8 @@ export interface ChatCards {
   readonly subagent?: SubagentRenderer | undefined;
 }
 
-/**
- * An artifact a tool call made (or a running `present` call is making), as the core places it. `descriptor` is the item's own value
- * (`ArtifactDescriptor` of `pi-artifacts`): the core hands it back to the host's `open` and `isOpen` and never reads it.
- */
-export interface ChatArtifact {
-  readonly state: 'presenting' | 'ready';
-  /** One card per id in a reply: the last version, at the place of its last step. */
-  readonly id: string | undefined;
-  readonly title: string | undefined;
-  /** The workspace path, for the conversation's file list. */
-  readonly path: string | undefined;
-  /** The tool's own result carries it, so its card replaces the step; a host-detected one is shown in addition to the step. */
-  readonly own: boolean;
-  readonly descriptor: unknown;
-}
+/** An artifact a tool call made, as the chat places it (owned by the kit's chat view). */
+export type { ChatArtifact };
 /** Props of the artifact card that `ArtifactsConfig.Card` carries (`PluggedArtifactCard` of `pi-artifacts`). */
 export interface ChatArtifactCardProps {
   readonly artifact: ChatArtifact;
@@ -481,8 +468,8 @@ export interface ChatArtifactsConfig {
   readonly kinds?: readonly unknown[] | undefined;
   readonly open: (artifact: never) => void;
   readonly isOpen?: ((artifact: never) => boolean) | undefined;
-  readonly detect?: ((call: ToolCall, result: ToolResultMessage) => unknown) | undefined;
+  readonly detect?: ArtifactDetect | undefined;
   /** The artifact a call made, or that a running call (`running`) is making; undefined for any other call. */
-  readonly recognise?: ((call: ToolCall, result: ToolResultMessage | undefined, running: boolean, detect: ChatArtifactsConfig['detect']) => ChatArtifact | undefined) | undefined;
+  readonly recognise?: ArtifactRecognise | undefined;
   readonly Card?: ComponentType<ChatArtifactCardProps> | undefined;
 }
