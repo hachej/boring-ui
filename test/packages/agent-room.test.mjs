@@ -42,6 +42,11 @@ function scriptedModel(script) {
     calls.push(transcript.messages.length);
     void (async () => {
       const step = await script(transcript);
+      if (step.fail) {
+        const failed = { role: 'assistant', content: [], api: model.api, provider: model.provider, model: model.id, timestamp: 1, stopReason: 'error', errorMessage: step.fail,
+          usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
+        events.push({ type: 'error', reason: 'error', error: failed }); events.end(failed); return;
+      }
       const part = step.ask ? { type: 'toolCall', id: `ask-${calls.length}`, name: 'ask_user', arguments: step.ask } : { type: 'text', text: step.text };
       const message = { role: 'assistant', content: [part], api: model.api, provider: model.provider, model: model.id, timestamp: 1, stopReason: step.ask ? 'toolUse' : 'stop',
         usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
@@ -345,4 +350,42 @@ test('an agent question becomes a room.question and the reply answers the same r
   assert.equal((await messages(room)).at(-1).data.text, 'Export en CSV.');
   assert.deepEqual(home.port.frames.filter(frame => frame.type === 'step'), [{ type: 'step', label: 'ask_user', status: 'running' }, { type: 'step', label: 'ask_user', status: 'done' }]);
   assert.equal(roomView(await room.entries('main'), {}, { id: 'person:ana' }).items.find(item => item.kind === 'question').answered, true);
+});
+
+test('a wake queued behind a running one is followed: its question reaches the room and its answer settles it', async t => {
+  const path = directory(t);
+  const { harness, room } = await openRoom(path);
+  let asks = 0;
+  const home = await openHome(path, room, async transcript => transcript.messages.at(-1)?.role === 'toolResult'
+    ? { text: `Reçu ${JSON.parse(transcript.messages.at(-1).content[0].text).answer}.` }
+    : { ask: { question: `Question ${++asks} ?`, options: ['oui', 'non'] } });
+  t.after(async () => { await home.turn.close(); await home.harness.close(context); await harness.close(context); });
+  const { wakes: [a] } = await room.write('main', { requestId: 'web:person:ana:1', kind: 'room.message', data: message('person:ana', 'A') }, alone);
+  const { wakes: [b] } = await room.write('main', { requestId: 'web:person:ana:2', kind: 'room.message', data: message('person:ana', 'B') }, alone);
+  await home.turn.wake({ wakeId: a.id, input: 'ana: A' });
+  await home.turn.wake({ wakeId: b.id, input: 'ana: B' });
+
+  const questions = async () => (await room.entries('main')).filter(entry => entry.kind === 'room.question');
+  await until('A asks', async () => (await questions()).length === 1);
+  assert.equal((await questions())[0].data.prompt, 'Question 1 ?');
+  assert.deepEqual(await home.turn.answer((await questions())[0].data.callId, 'oui'), { kind: 'answered' });
+  await until('A settled, B asks', async () => (await questions()).length === 2 && home.port.settles.includes(a.id));
+  const second = (await questions())[1];
+  assert.notEqual(second.data.callId, (await questions())[0].data.callId, 'B asks its own question');
+  assert.deepEqual(await home.turn.answer(second.data.callId, 'non'), { kind: 'answered' });
+  await until('B settled', () => home.port.settles.includes(b.id));
+  assert.deepEqual((await messages(room)).filter(entry => entry.data.author === 'agent:pm').map(entry => entry.data.text), ['Reçu oui.', 'Reçu non.']);
+  assert.deepEqual(await room.wakes(), []);
+});
+
+test('an unanswered submission closes its wake with the room line instead of dropping it', async t => {
+  const path = directory(t);
+  const { harness, room } = await openRoom(path);
+  const home = await openHome(path, room, async () => ({ fail: 'fictional model failure' }));
+  t.after(async () => { await home.turn.close(); await home.harness.close(context); await harness.close(context); });
+  const { wakes: [wake] } = await room.write('main', { requestId: 'web:person:ana:1', kind: 'room.message', data: message('person:ana', 'Salut') }, alone);
+  await home.turn.wake({ wakeId: wake.id, input: 'ana: Salut' });
+  await until('closed', async () => (await messages(room)).length === 2);
+  assert.equal((await messages(room)).at(-1).data.text, ROOM.unanswered);
+  assert.deepEqual(await room.wakes(), []);
 });

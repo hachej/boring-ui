@@ -385,18 +385,25 @@ export function createRoomTurn(options: { readonly conversation: Conversation; r
     if (index >= 0) change(items, index);
   }, context);
 
-  /** Relay the run's frames and each new `ask_user` while the wake is open. */
-  async function follow(wakeId: string, from: EntryId): Promise<() => Promise<void>> {
+  /**
+   * Relay the run's frames and each new `ask_user` while the wake is open. A queued wake has no entry yet: its input
+   * lands when the earlier run is done, so follow from the start and learn `from` the first time its entry exists.
+   * Nothing is relayed before then, and never anything at or below the input's own entry (that is another wake's run).
+   */
+  async function follow(wakeId: string, known?: EntryId): Promise<() => Promise<void>> {
     const watch = await conversation.watch(context);
     const seen = new Set<number>();
+    let from = known;
     let queue = Promise.resolve();
     // Port calls are chained off the watch so a slow room never holds native frames.
     const relay = async (view: ConversationView) => {
-      const fresh = view.entries.filter(entry => entry.id > from && !seen.has(entry.id));
-      for (const entry of fresh) seen.add(entry.id);
-      const frames = framesOf(fresh);
-      const questions = pendingQuestions(view.entries);
       queue = queue.then(async () => {
+        if (from === undefined) from = (await conversation.commit(tx => tx.submissionByRequest(conversation.id, requestId(wakeId)), context))?.entry;
+        if (from === undefined) return;
+        const own = view.entries.filter(entry => entry.id > from! && !seen.has(entry.id));
+        for (const entry of own) seen.add(entry.id);
+        const frames = framesOf(own);
+        const questions = pendingQuestions(view.entries.filter(entry => entry.id > from!));
         if (frames.length && port.stream) await port.stream(wakeId, frames);
         if (!port.question) return;
         const asked = (await owed(wakeId))?.asked ?? [];
@@ -421,14 +428,15 @@ export function createRoomTurn(options: { readonly conversation: Conversation; r
       // The same `requestId` returns the first submission: a resend or a restart never starts a second run.
       const submission = await conversation.submit({ type: 'input', requestId: requestId(wakeId), content: item.input, whenBusy: 'followUp' }, context);
       const placed = await conversation.commit(tx => tx.submissionByRequest(conversation.id, requestId(wakeId)), context);
-      const stop = placed?.entry === undefined || placed.status === 'done' || placed.status === 'unanswered' ? async () => {} : await follow(wakeId, placed.entry);
+      // A queued submission has no entry yet; it is followed all the same (see `follow`).
+      const stop = placed?.status === 'done' || placed?.status === 'unanswered' ? async () => {} : await follow(wakeId, placed?.entry);
       let record: SettledSubmissionRecord;
       try { record = await submission.wait(context); } finally { await stop(); }
-      // An unanswered run leaves the wake open: the room's resend cap closes it with its own line.
+      // An unanswered run is closed with the room's own line, never dropped: left open it would only wait for its resends.
       if (record.type === 'input' && record.status === 'done') {
         const entry = (await conversation.entries({ minEntryId: record.answer, maxEntryId: record.answer }, 1, undefined, context)).items[0];
         await port.settle(wakeId, { text: answerText(entry) });
-      }
+      } else if (record.type === 'input' && record.status === 'unanswered') await port.settle(wakeId, { text: ROOM.unanswered });
       await update(wakeId, (items, index) => { items.splice(index, 1); });
     })().catch(report).finally(() => delivering.delete(wakeId));
     delivering.set(wakeId, run);
