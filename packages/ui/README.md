@@ -142,6 +142,10 @@ A submit the host refused before admission (status 402 `submission-refused`, for
 
 `test/packages/ui-native-chat.test.mjs` uses a real native Harness and a fictional local streaming provider.
 
+### Chat view rules
+
+`@hachej/boring-ui-kit/chat-view` holds the chat's presentation rules once, so the registry items (`pi-chat`, `pi-ambient`) keep only their markup. It imports Pi types only: no React, no files or agent code. `derive(view, options)` turns a native `ConversationView` into display rows (cards, activity steps, questions, approvals, artifacts) and the run state; its card content type is generic, and the items fix it to React nodes. `waits(part)`, `waitingPart(rows)` and `waitingForAnswer(rows)` are the one rule for "waiting for the person": a committed question with no result, or an approval with no result and no decision (a decided approval is not waiting). `preparing(...)` is when the natural presentation's single status shows. `pendingNotice` and `finishNotice` give the words of the run toasts and system notifications from one table, `defaultNoticeText`, which a surface can replace to localize them. Evidence: `test/packages/ui-chat-view.test.mjs`.
+
 ### Native conversation history
 
 `loadEarlier()` reads one native page through `Conversation.entries`. `snapshot.history` distinguishes disabled, idle, loading, ready and error states. Each request contains at most 40 native entries. The controller accumulates pages in display order for the person's current browsing session and retains an opaque native continuation cursor. It clears that cache on history invalidation or `clearHistory()`; loading never restores records to model context. The first request captures the greatest observed active entry ID as an inclusive upper bound; later writes do not move that bound. Parent-owned fork entries remain valid native history.
