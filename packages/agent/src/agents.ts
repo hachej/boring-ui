@@ -12,7 +12,7 @@ import type { Skill } from './skills.js';
 
 export type { SelfEvolutionError, SelfEvolutionReport } from './self-evolving.js';
 export { createSkillsController, createSkillsExtension, directorySkillSource, fileSkillSource, parseSkill } from './skills.js';
-export type { Skill, SkillError, SkillFileSystem, SkillListing, SkillSource, SkillsController, SkillsExtensionOptions, SkillVisibility } from './skills.js';
+export type { Skill, SkillError, SkillFileSystem, SkillListing, SkillSource, SkillsController, SkillsExtensionOptions } from './skills.js';
 export { jsonSchemaTool } from './json-schema-tool.js';
 export type { JsonObjectSchema, JsonSchemaToolOptions } from './json-schema-tool.js';
 export { createDelegateTool, DELEGATE_DETAILS_KIND, DELEGATE_TOOL } from './delegate.js';
