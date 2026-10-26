@@ -8,6 +8,7 @@ import { connectRevisionProvider } from '@hachej/boring-files/revision';
 import { createFeedbackSession } from '@hachej/boring-feedback/ui';
 import { createPrivacyPolicy } from '@hachej/boring-feedback/page';
 import { NoteBubble, useComposerFeedback, usePointComments } from '../../registry/feedback/feedback-session.tsx';
+import { defaultKinds } from '../../registry/pi-app-kinds/pi-app-kinds.ts';
 import { CommentBanner } from '../../registry/feedback/point-mode.tsx';
 import { AgentWorkspace, useConversations, useRemoteChat } from '../../registry/pi-app/agent-workspace.tsx';
 import { useRevisionAttachments } from '../../registry/pi-app/use-revision-attachments.ts';
@@ -111,11 +112,13 @@ function App() {
   const session = useFeedbackSession();
   const feedback = useComposerFeedback(session);
   const comments = usePointComments(session);
+  // The app's records kind (`?records=fr`) first, then the default list with the comment pins.
+  const kinds = useMemo(() => [...(recordKinds ?? []), ...defaultKinds({ locale, ...(comments ? { comments } : {}) })], [recordKinds, locale, comments]);
   // Configured: the chat can float over the panel (its "…" menu offers "Pop out chat"); the floating bar carries the dock action.
   const floating = configured ? { floatBelow: 320, floatingChat: ({ headerStart, historyList, emptyState, decisions, controls, className, ...props }, dock) =>
     <AmbientChat {...props} headerActions={config.dockActions} variant="surface" defaultState="expanded" onDock={dock} /> } : {};
   return <main data-testid="app" data-conversation={active} data-configured={configured || undefined} className="flex h-full min-h-0">
-    {revisionProvider ? <AgentWorkspace locale={locale} artifactKinds={recordKinds} conversationId={active} controller={chat.status === 'ready' ? chat.controller : undefined} conversations={conversations}
+    {revisionProvider ? <AgentWorkspace locale={locale} artifactKinds={kinds} conversationId={active} controller={chat.status === 'ready' ? chat.controller : undefined} conversations={conversations}
       {...(resourcesOnly ? { resources: { endpoint: at('/api/resources'), fetch: authorized, identity, history: at('/api/history') } } : { revisionProvider })} {...(embedded ? { layout: 'embedded', ...(appTitle ? { title: appTitle } : {}) } : {})}
       uploads={{ inlineImages, ...(blobs ? { maxBytes: 256 * 1024 } : {}) }}
       {...(blobs && !resourcesOnly ? { resources: { uploadBlob } } : {})}
@@ -123,7 +126,6 @@ function App() {
         { label: 'Draft a plan', text: 'Write a picnic plan and present it.' },
         { label: 'Write a short reply', text: 'Reply with exactly: AMBER-HARBOUR' },
       ], ...config.chat, ...(attachments ? { attachments } : {}), ...(feedback ? { feedback } : {}), ...(chat.status === 'ready' ? { actions: chat.actions } : {}) }}
-      {...(comments ? { comments } : {})}
       labels={{ sessionsTitle: 'Writer', ...config.labels }} panelActions={config.panelActions} {...floating}
       connecting={<p role="status" className="p-4 text-sm text-muted-foreground">{chat.status === 'offline' ? 'Server unreachable. Retrying…' : 'Connecting…'}</p>} />
       : discovery.failed

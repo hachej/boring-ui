@@ -12,6 +12,7 @@ import { useShellLayer } from '../app-shell/shell-layer';
 import { useExclusiveSheet } from '../app-shell/use-exclusive-sheet';
 import { FileViewer } from '../pi-app/file-viewer';
 import type { CustomViewers, ViewerOptions } from '../pi-app/artifact-panel';
+import { defaultKinds } from '../pi-app-kinds/pi-app-kinds';
 import type { RevisionProvider } from '@hachej/boring-files/revision';
 import { cn } from '../utils/utils';
 import { documentsLabels, DocumentsWords } from './words';
@@ -36,6 +37,8 @@ export interface DocumentSheetProps {
 
 /** The sheet's name in the shell's layers: one sheet of this kind at a time. */
 const LAYER = 'document';
+/** The viewer's kinds: the pi-app default list, in English. */
+const kinds = defaultKinds();
 
 export function DocumentSheet({ provider, path, onClose, onShowAll, locale, labels: given, viewers, share, className }: DocumentSheetProps) {
   const shown = path !== undefined;
@@ -65,7 +68,7 @@ export function DocumentSheet({ provider, path, onClose, onShowAll, locale, labe
         </div>}
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden pb-[env(safe-area-inset-bottom)]">
           {path !== undefined && <FileViewer key={path} path={path} locator={provider.locate(path)} onUnsavedChange={report}
-            options={{ client: provider, identity: provider.identity, ...(viewers ? { viewers } : {}), ...(share ? { share } : {}) }} onClose={requestClose} />}
+            options={{ client: provider, identity: provider.identity, kinds, ...(viewers ? { viewers } : {}), ...(share ? { share } : {}) }} onClose={requestClose} />}
         </div>
       </DrawerContent>
     </Drawer>

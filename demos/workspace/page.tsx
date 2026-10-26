@@ -15,6 +15,7 @@ import { useRevisionAttachments } from '../../registry/pi-app/use-revision-attac
 import { useConversations } from '../../registry/pi-chat/use-conversations.ts';
 import { useHistoryColumn } from '../../registry/pi-app/history-column.tsx';
 import { FileViewer } from '../../registry/pi-app/file-viewer.tsx';
+import { defaultKinds } from '../../registry/pi-app-kinds/pi-app-kinds.ts';
 import { BlockActions } from '../../registry/button/actions.tsx';
 import { PdfPane } from '../../registry/viewer-pdf/pdf-pane.tsx';
 import { Button } from '@/components/ui/button';
@@ -30,6 +31,7 @@ import { ChatTools } from './chat-tools';
 import { SCREEN_NAMES } from './screen-names.mjs';
 import { SidebarProvider, SidebarInset, useSidebar } from '../../examples/app-shell/components/ui/sidebar';
 
+const KINDS = defaultKinds();
 const { token, identity, conversation: firstConversation, voice } = window.__APP__;
 // The Node server hands the page a bearer token; the public Worker hands none (its visitor session is an HttpOnly cookie the browser sends itself).
 const authorized = (request: Request) => { if (!token) return fetch(request); const headers = new Headers(request.headers); headers.set('authorization', `Bearer ${token}`); return fetch(new Request(request, { headers })); };
@@ -228,7 +230,7 @@ class ViewerBoundary extends Component {
 /** The agent's file viewer: one flat frame (a single header with the name, path, mode toggle and close) over the editor. `onBack` returns to the chat where the file replaces it. */
 function Document({ path, provider, close, onBack, onUnsaved, setBeforeLeave }) {
   useAgentContext({ name: 'Library document', params: { path } });
-  const options = useMemo(() => ({ client: provider, identity: provider.identity, history: provider.history }), [provider]);
+  const options = useMemo(() => ({ client: provider, identity: provider.identity, history: provider.history, kinds: KINDS }), [provider]);
   return <div data-testid="library-document" data-path={path} role="region" aria-label={`File ${path}`} tabIndex={-1} className="flex min-h-0 min-w-0 flex-1 flex-col outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&>*]:min-h-0 [&>*]:flex-1">
     <ViewerBoundary key={path} onClose={close}>
       <FileViewer path={path} locator={provider.locate(path)} options={options} onClose={close} {...(onBack ? { onBack, backLabel: 'Chat' } : {})} onUnsavedChange={onUnsaved} onBeforeLeaveChange={setBeforeLeave} />

@@ -27,7 +27,7 @@ import type { InteractiveHtml } from '../viewer-frame/interactive-html';
 import { downloadFile } from '../viewer-frame/download';
 import { copyText } from '../utils/utils';
 import { Separator } from '@/components/ui/separator';
-import { Mounted, ViewLoading, drawsText, isEditorKind, isMediaKind, lazyRenderer, lazyView, viewerKinds } from './viewer-kinds';
+import { Mounted, ViewLoading, drawsText, isEditorKind, isMediaKind, lazyRenderer, lazyView, noKinds } from './viewer-kinds';
 import type { PanelKind } from './viewer-kinds';
 import { readText, savedLabel, useSaved } from './use-saved';
 import { useAppText } from './app-labels';
@@ -63,9 +63,10 @@ export interface ViewerOptions {
   readonly viewers?: CustomViewers | undefined;
   /**
    * Every kind the panel and the file viewer resolve through, in order (the first match wins): its label names the artifact in the bar and
-   * its `renderer` or lazily loaded `load` draws it. Default `viewerKinds` (the maquette, diagram, mock-up and records kinds, then the
-   * Markdown, HTML, SVG, CSV, image and PDF kinds). A host passing its own list puts its kinds first and spreads `viewerKinds` after them.
-   * A `viewers` entry wins over a built-in document kind (`fallback`), not over a host's kind.
+   * its `renderer` or lazily loaded `load` draws it. The panel knows no kind of its own: without this list every artifact shows as text.
+   * The pi-app-kinds item's `defaultKinds()` is the default list (maquette, diagram, mock-up and records, then Markdown, HTML, SVG, CSV,
+   * image and PDF); a host puts its own kinds before it, or passes a list of its own. A `viewers` entry wins over a document kind
+   * (`fallback`), not over a host's kind.
    */
   readonly kinds?: readonly PanelKind[] | undefined;
   /** The host's opt-in to running HTML pages in the sandboxed preview. */
@@ -171,7 +172,7 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose, headerSta
   const [kindControls, setKindControls] = useState<ReactNode>();
   // The revision a lazily loaded view has mounted: the panel acknowledges a `present` only once the view is on screen, not while it loads.
   const [mounted, setMounted] = useState<string>();
-  const kinds = options.kinds ?? viewerKinds;
+  const kinds = options.kinds ?? noKinds;
   // The kinds that draw (an editor, a renderer or a lazily loaded view); a label-only kind names the artifact but leaves the drawing to the
   // next match. Image and PDF kinds read bytes: the file viewer draws them, never the artifact panel.
   const drawingKinds = useMemo(() => kinds.filter(kind => drawsText(kind)), [kinds]);
