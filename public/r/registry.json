@@ -153,14 +153,7 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/utils.json",
-        "dropdown-menu",
-        "button",
-        "toggle",
-        "input",
-        "textarea",
-        "card",
-        "separator"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/utils.json"
       ],
       "files": [
         {
@@ -338,10 +331,7 @@
       },
       "docs": "Create and own a MarkdownController from @hachej/boring-ui-kit/markdown. Pass it to MarkdownEditor. The wrapper does not acquire resources or dispose the controller. Check the repository release notes for available npm versions; local tarball tests do not establish registry availability.",
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/button.json",
-        "button",
-        "toggle",
-        "dropdown-menu"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/button.json"
       ]
     },
     {
@@ -424,35 +414,7 @@
       ],
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/utils.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/button.json",
-        "dialog",
-        "tooltip",
-        "trace",
-        "message",
-        "message-scroller",
-        "bubble",
-        "attachment",
-        "badge",
-        "alert",
-        "card",
-        "spinner",
-        "collapsible",
-        "drawer",
-        "button",
-        "toggle",
-        "dropdown-menu",
-        "empty",
-        "input",
-        "input-group",
-        "popover",
-        "scroll-area",
-        "separator",
-        "sidebar",
-        "badge",
-        "item",
-        "drawer",
-        "alert",
-        "avatar"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/button.json"
       ],
       "files": [
         {
@@ -664,10 +626,7 @@
         "entities@^8.1.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat.json",
-        "button",
-        "checkbox",
-        "table"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat.json"
       ],
       "files": [
         {
@@ -687,11 +646,7 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat.json",
-        "badge",
-        "button",
-        "input-group",
-        "item"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat.json"
       ],
       "files": [
         {
@@ -711,8 +666,7 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat.json",
-        "item"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat.json"
       ],
       "files": [
         {
@@ -732,9 +686,7 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat.json",
-        "button",
-        "dropdown-menu"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat.json"
       ],
       "files": [
         {
@@ -755,11 +707,7 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat.json",
-        "bubble",
-        "button",
-        "message",
-        "spinner"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat.json"
       ],
       "files": [
         {
@@ -790,9 +738,7 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat.json",
-        "button",
-        "input"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat.json"
       ],
       "files": [
         {
@@ -813,13 +759,7 @@
         "@earendil-works/pi-ai@~1.2.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat.json",
-        "alert",
-        "button",
-        "card",
-        "input",
-        "item",
-        "spinner"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat.json"
       ],
       "files": [
         {
@@ -840,10 +780,7 @@
         "@earendil-works/pi-ai@~1.2.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat.json",
-        "badge",
-        "button",
-        "item"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat.json"
       ],
       "files": [
         {
@@ -864,12 +801,7 @@
         "@earendil-works/pi-ai@~1.2.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat.json",
-        "alert",
-        "badge",
-        "button",
-        "item",
-        "spinner"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat.json"
       ],
       "files": [
         {
@@ -896,9 +828,7 @@
         "@earendil-works/pi-durable@~1.2.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat.json",
-        "button",
-        "item"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat.json"
       ],
       "files": [
         {
@@ -956,21 +886,13 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/theme.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat-plugins.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat-question.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-artifacts.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-workspace.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/utils.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/button.json",
-        "message-scroller",
-        "button",
-        "toggle",
-        "avatar",
-        "badge",
-        "card",
-        "separator"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/button.json"
       ],
       "files": [
         {
@@ -1019,12 +941,9 @@
         "react-dom@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/theme.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/utils.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/dock.json",
-        "badge",
-        "card"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/dock.json"
       ],
       "files": [
         {
@@ -1051,10 +970,7 @@
         "zod@^4.6.5"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/viewer-frame.json",
-        "badge",
-        "toggle",
-        "tooltip"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/viewer-frame.json"
       ],
       "files": [
         {
@@ -1099,11 +1015,7 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/mockup-viewer.json",
-        "alert",
-        "button",
-        "card",
-        "toggle-group"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/mockup-viewer.json"
       ],
       "files": [
         {
@@ -1131,15 +1043,6 @@
       "dependencies": [
         "react@^19.0.0",
         "lucide-react@^1.51.0"
-      ],
-      "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/theme.json",
-        "table",
-        "badge",
-        "item",
-        "button",
-        "alert",
-        "empty"
       ],
       "files": [
         {
@@ -1172,11 +1075,6 @@
       "dependencies": [
         "react@^19.0.0",
         "lucide-react@^1.51.0"
-      ],
-      "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/theme.json",
-        "alert",
-        "badge"
       ],
       "files": [
         {
@@ -1216,25 +1114,7 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/theme.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/diagram-viewer.json",
-        "alert",
-        "badge",
-        "bubble",
-        "button",
-        "card",
-        "empty",
-        "input",
-        "item",
-        "label",
-        "native-select",
-        "separator",
-        "table",
-        "dialog",
-        "dropdown-menu",
-        "popover",
-        "toggle",
-        "tooltip"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/diagram-viewer.json"
       ],
       "files": [
         {
@@ -1308,11 +1188,7 @@
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/maquette-viewer.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/mockup-viewer.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-artifacts.json",
-        "button",
-        "alert",
-        "card",
-        "tooltip"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-artifacts.json"
       ],
       "files": [
         {
@@ -1357,21 +1233,7 @@
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat-plugins.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat-markdown.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat-mentions.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/theme.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/utils.json",
-        "avatar",
-        "badge",
-        "button",
-        "drawer",
-        "popover",
-        "separator",
-        "tooltip",
-        "trace",
-        "spinner",
-        "item",
-        "message",
-        "bubble",
-        "message-scroller"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/utils.json"
       ],
       "files": [
         {
@@ -1434,7 +1296,6 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/theme.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat-plugins.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-artifacts.json",
@@ -1451,16 +1312,7 @@
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/record-viewer.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/utils.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/button.json",
-        "drawer",
-        "dialog",
-        "button",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/file-tree.json",
-        "dropdown-menu",
-        "scroll-area",
-        "separator",
-        "table",
-        "popover",
-        "tooltip"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/file-tree.json"
       ],
       "files": [
         {
@@ -1554,8 +1406,7 @@
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-app.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-ambient.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/app-shell.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/utils.json",
-        "button"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/utils.json"
       ],
       "files": [
         {
@@ -1585,16 +1436,7 @@
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/dock.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/feedback.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/utils.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/button.json",
-        "drawer",
-        "sidebar",
-        "avatar",
-        "dropdown-menu",
-        "button",
-        "switch",
-        "badge",
-        "card",
-        "separator"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/button.json"
       ],
       "css": {
         "@layer base": {
@@ -1729,17 +1571,9 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/theme.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/utils.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/button.json",
-        "button",
-        "toggle",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/version-history.json",
-        "toggle-group",
-        "dialog",
-        "textarea",
-        "badge",
-        "dropdown-menu"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/version-history.json"
       ],
       "files": [
         {
@@ -2182,9 +2016,7 @@
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/viewer-frame.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/markdown-editor.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/utils.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/button.json",
-        "button",
-        "dropdown-menu"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/button.json"
       ],
       "files": [
         {
@@ -2212,8 +2044,7 @@
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/viewer-frame.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/utils.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/button.json",
-        "button"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/button.json"
       ],
       "files": [
         {
@@ -2239,8 +2070,7 @@
       ],
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/viewer-frame.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/utils.json",
-        "button"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/utils.json"
       ],
       "files": [
         {
@@ -2273,9 +2103,7 @@
       ],
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/viewer-frame.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/viewer-image.json",
-        "badge",
-        "button"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/viewer-image.json"
       ],
       "files": [
         {
@@ -2311,8 +2139,7 @@
       ],
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/viewer-frame.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat.json",
-        "table"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat.json"
       ],
       "files": [
         {
@@ -2358,13 +2185,7 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/theme.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/utils.json",
-        "button",
-        "input",
-        "label",
-        "native-select",
-        "popover"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/utils.json"
       ],
       "files": [
         {
@@ -2852,14 +2673,7 @@
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat-voice.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/utils.json",
-        "button",
-        "toggle",
-        "badge",
-        "item",
-        "card",
-        "textarea",
-        "switch"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/utils.json"
       ]
     },
     {
@@ -2878,12 +2692,6 @@
           "type": "registry:component",
           "target": "components/feedback-preview/preview-banner.tsx"
         }
-      ],
-      "registryDependencies": [
-        "button",
-        "card",
-        "badge",
-        "input"
       ]
     },
     {
@@ -2935,13 +2743,7 @@
           "color": "var(--destructive)"
         }
       },
-      "docs": "The installed task-list schema/controller are trusted consumer code; publication and draft recovery come from @hachej/boring-ui-kit/text-buffer. Construct a feature with a host-authenticated ResourceClient and exact source, then pass its concrete controller to TaskListViewer. Install native tools separately on the server. No host credentials or native kernel are copied into this item. Local tarball qualification only; no hosted release endpoint is advertised.",
-      "registryDependencies": [
-        "button",
-        "card",
-        "input",
-        "checkbox"
-      ]
+      "docs": "The installed task-list schema/controller are trusted consumer code; publication and draft recovery come from @hachej/boring-ui-kit/text-buffer. Construct a feature with a host-authenticated ResourceClient and exact source, then pass its concrete controller to TaskListViewer. Install native tools separately on the server. No host credentials or native kernel are copied into this item. Local tarball qualification only; no hosted release endpoint is advertised."
     },
     {
       "name": "version-history",
@@ -2953,9 +2755,7 @@
         "react@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/theme.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/button.json",
-        "button"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/button.json"
       ],
       "files": [
         {
@@ -2977,18 +2777,8 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/theme.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/utils.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/version-history.json",
-        "button",
-        "dialog",
-        "dropdown-menu",
-        "collapsible",
-        "empty",
-        "input",
-        "progress",
-        "separator",
-        "sidebar"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/version-history.json"
       ],
       "files": [
         {
@@ -3011,7 +2801,6 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/theme.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/utils.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/button.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-artifacts.json",
@@ -3020,11 +2809,7 @@
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/file-tree.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/viewer-frame.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/viewer-image.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/viewer-pdf.json",
-        "drawer",
-        "button",
-        "scroll-area",
-        "separator"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/viewer-pdf.json"
       ],
       "files": [
         {
@@ -3068,11 +2853,7 @@
       ],
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/app-shell.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat.json",
-        "button",
-        "card",
-        "message",
-        "bubble"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat.json"
       ],
       "files": [
         {
@@ -3093,15 +2874,7 @@
       "title": "Requests board",
       "description": "Host-fed compact requests and responsive list/detail with questions and decisions.",
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/utils.json",
-        "badge",
-        "button",
-        "input",
-        "toggle-group",
-        "item",
-        "empty",
-        "textarea",
-        "card"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/utils.json"
       ],
       "files": [
         {
@@ -3136,12 +2909,7 @@
         "react-dom@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/markdown-editor.json",
-        "button",
-        "textarea",
-        "label",
-        "item",
-        "dropdown-menu"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/markdown-editor.json"
       ],
       "files": [
         {
@@ -3162,12 +2930,7 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/utils.json",
-        "button",
-        "card",
-        "badge",
-        "drawer",
-        "dropdown-menu"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/utils.json"
       ],
       "files": [
         {

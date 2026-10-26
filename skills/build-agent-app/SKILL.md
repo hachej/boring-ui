@@ -40,13 +40,14 @@ npm i @hachej/boring-ui-kit@<v> @hachej/boring-agent@<v> @hachej/boring-files@<v
 
 ## 4. Add the UI block
 
-Pick the block from the table in [registry/README.md](../../registry/README.md#blocks-what-to-install). For a whole agent page:
+Blocks use the app's own shadcn components (its `ui` alias) and tokens, so install the components once first ([what the app needs](../../registry/README.md#what-the-app-needs-first)). Then pick the block from the table in [registry/README.md](../../registry/README.md#blocks-what-to-install). For a whole agent page:
 
 ```sh
+npx boring-ui-blocks add alert attachment avatar badge bubble button card checkbox collapsible dialog drawer dropdown-menu empty input input-group item label message message-scroller native-select popover progress scroll-area separator sidebar spinner switch table textarea toggle toggle-group tooltip trace
 npx boring-ui-blocks add https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@<v>/r/pi-app.json
 ```
 
-This copies `pi-app`, `pi-chat`, `pi-workspace`, `viewers`, `theme` and their shadcn components into `src/components/`, and writes `SHADCN-GENERATED.json`. Never edit those files; see the [add-blocks skill](../add-blocks/SKILL.md).
+Add `.../r/theme.json` once if the app has no shadcn tokens. This copies `pi-app`, `pi-chat`, `pi-workspace` and the viewers into `src/components/`, and writes `SHADCN-GENERATED.json`. Never edit those files; see the [add-blocks skill](../add-blocks/SKILL.md).
 
 Other placements use the same server:
 

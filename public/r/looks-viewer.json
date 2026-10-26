@@ -8,11 +8,7 @@
     "lucide-react@^1.51.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/mockup-viewer.json",
-    "alert",
-    "button",
-    "card",
-    "toggle-group"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/mockup-viewer.json"
   ],
   "files": [
     {

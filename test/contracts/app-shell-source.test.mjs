@@ -22,7 +22,7 @@ test('every file of registry/app-shell is listed in the item and equals the comm
   assert.deepEqual(item.files.map(entry => entry.path.replace(`${folder}/`, '')).sort(), files.sort());
   const built = JSON.parse(readFileSync(`${root}public/r/app-shell.json`, 'utf8'));
   for (const entry of item.files) assert.equal(built.files.find(file => file.path === entry.path)?.content, readFileSync(`${root}${entry.path}`, 'utf8'), `${entry.path}: run npm run registry:build`);
-  assert.deepEqual(['sidebar', 'avatar', 'drawer', 'dropdown-menu'].filter(name => !item.registryDependencies.includes(name)), [], 'style-resolved built-ins are declared explicitly');
+  assert.ok(item.registryDependencies.every(name => name.startsWith('@boring-ui/')), 'the app supplies sidebar, avatar, drawer and dropdown-menu; the item lists none');
 });
 
 test('the item compiles strictly against the pinned shadcn fixtures', () => {
@@ -53,22 +53,22 @@ test('colours come only from shadcn semantic utilities: no hex, rgb(, oklch( or 
   }
 });
 
-test('the item pins no shadcn style: bare built-in names, tokens and classes only', () => {
-  assert.ok(item.registryDependencies.every(name => SHADCN_BUILTINS.includes(name) || name.startsWith('@boring-ui/')), 'no style URL in registryDependencies');
+test('the item pins no shadcn style: kit items, tokens and classes only', () => {
+  assert.ok(item.registryDependencies.every(name => name.startsWith('@boring-ui/')), 'no shadcn component or style URL in registryDependencies');
   for (const name of files) assert.doesNotMatch(source(name), /base-(?:nova|vega|lyra|maia|mira)|new-york|radix-(?:nova|vega|lyra)|styles\/[\w-]+\/(?:drawer|sidebar)/i, `${name} names a style`);
   const built = readFileSync(`${root}public/r/app-shell.json`, 'utf8');
   assert.doesNotMatch(built, /ui\.shadcn\.com\/r\/styles|base-nova|base-lyra/i, 'the built item names no style');
 });
 
-test('the item imports only React, its declared packages and the declared shadcn built-ins', () => {
+test('the item imports only React, its declared packages and the app setup shadcn components', () => {
   const allowed = new Set(['react', 'react-dom', 'lucide-react', '@base-ui/react/drawer', '@hachej/boring-feedback/page', '@hachej/boring-feedback/ui', '@hachej/boring-ui-kit/native-chat', '@hachej/boring-ui-kit/voice-capture']);
   for (const name of files) {
     for (const [, imported] of source(name).matchAll(/\bfrom\s+['"]([^'"]+)['"]/g)) {
       if (imported.startsWith('./')) { assert.ok(files.some(file => file.replace(/\.tsx?$/, '') === imported.slice(2)), `${name} imports missing ${imported}`); continue; }
       if (/^\.\.\/(?:pi-chat(?:-[a-z]+)?|feedback|utils|dock)\//.test(imported)) continue;
       const ui = /^@\/components\/ui\/([\w-]+)$/.exec(imported);
-      if (ui) { assert.ok(SHADCN_BUILTINS.includes(ui[1]) && item.registryDependencies.includes(ui[1]), `${name}: ${imported} is not a declared shadcn built-in`); continue; }
-      if (imported === '@/hooks/use-mobile') { assert.ok(item.registryDependencies.includes('sidebar'), 'use-mobile comes with the sidebar'); continue; }
+      if (ui) { assert.ok(SHADCN_BUILTINS.includes(ui[1]), `${name}: ${imported} is not in the app setup`); continue; }
+      if (imported === '@/hooks/use-mobile') { assert.ok(SHADCN_BUILTINS.includes('sidebar'), 'use-mobile comes with the sidebar'); continue; }
       assert.ok(allowed.has(imported), `${name} imports ${imported}`);
     }
   }

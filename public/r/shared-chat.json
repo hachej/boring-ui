@@ -13,21 +13,7 @@
     "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat-plugins.json",
     "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat-markdown.json",
     "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat-mentions.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/theme.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/utils.json",
-    "avatar",
-    "badge",
-    "button",
-    "drawer",
-    "popover",
-    "separator",
-    "tooltip",
-    "trace",
-    "spinner",
-    "item",
-    "message",
-    "bubble",
-    "message-scroller"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/utils.json"
   ],
   "files": [
     {

@@ -14,14 +14,7 @@
   "registryDependencies": [
     "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat.json",
     "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat-voice.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/utils.json",
-    "button",
-    "toggle",
-    "badge",
-    "item",
-    "card",
-    "textarea",
-    "switch"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/utils.json"
   ],
   "files": [
     {

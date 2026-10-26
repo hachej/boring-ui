@@ -12,11 +12,7 @@
   ],
   "registryDependencies": [
     "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/app-shell.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat.json",
-    "button",
-    "card",
-    "message",
-    "bubble"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat.json"
   ],
   "files": [
     {

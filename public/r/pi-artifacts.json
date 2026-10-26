@@ -10,9 +10,7 @@
     "@earendil-works/pi-durable@~1.2.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat.json",
-    "button",
-    "item"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-chat.json"
   ],
   "files": [
     {

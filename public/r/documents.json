@@ -10,7 +10,6 @@
     "lucide-react@^1.51.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/theme.json",
     "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/utils.json",
     "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/button.json",
     "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-artifacts.json",
@@ -19,11 +18,7 @@
     "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/file-tree.json",
     "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/viewer-frame.json",
     "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/viewer-image.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/viewer-pdf.json",
-    "drawer",
-    "button",
-    "scroll-area",
-    "separator"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/viewer-pdf.json"
   ],
   "files": [
     {

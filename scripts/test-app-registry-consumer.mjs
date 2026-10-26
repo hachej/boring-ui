@@ -10,7 +10,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runCaptured } from './run-captured.mjs';
 import { assertConsumerTypeFiles, prepareConsumerIsolation, npmInstallFlags } from './consumer-isolation.mjs';
-import { consumerDependencies, packBoringDependencies, registryItemName, serveRegistry, writeLockedManifest } from './consumer-install.mjs';
+import { addAppComponents, appComponentsJson, consumerDependencies, packBoringDependencies, registryItemName, serveRegistry, writeLockedManifest } from './consumer-install.mjs';
 import { SHADCN_BUILTINS } from './check-registry-blocks.mjs';
 import { createServer } from 'node:http';
 import { launch, q } from '@hachej/boring-testing/browser';
@@ -20,7 +20,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const read = name => JSON.parse(readFileSync(join(root, 'public/r', `${name}.json`), 'utf8'));
 // The block and every item it needs, through registryDependencies.
 const closure = new Map();
-const visit = name => { if (closure.has(name)) return; const item = read(name); closure.set(name, item); for (const dependency of item.registryDependencies ?? []) if (!SHADCN_BUILTINS.includes(dependency)) visit(registryItemName(root, dependency)); };
+const visit = name => { if (closure.has(name)) return; const item = read(name); closure.set(name, item); for (const dependency of item.registryDependencies ?? []) visit(registryItemName(root, dependency)); };
 visit('pi-app');
 // The app shell too: a strict regression in the shell fails here, not only in the monorepo fixture check.
 visit('app-shell');
@@ -62,15 +62,23 @@ async function testStyle(style) {
     ({ url: registry, server } = await serveRegistry(root, directory, closure, archiveByName, join(directory, 'packs'), cache, run));
 
     for (const path of ['src', 'dist']) mkdirSync(join(directory, path), { recursive: true });
-    writeFileSync(join(directory, 'components.json'), JSON.stringify({ $schema: 'https://ui.shadcn.com/schema.json', style, rsc: false, tsx: true, tailwind: { config: '', css: 'src/index.css', baseColor: '', cssVariables: true, prefix: '' },
-      iconLibrary: 'lucide', aliases: { components: '@/components', utils: '@/lib/utils', ui: '@/components/ui', lib: '@/lib', hooks: '@/hooks' } }));
+    // The app keeps its shadcn components somewhere other than the default: blocks must follow its ui alias, not a path of their own.
+    writeFileSync(join(directory, 'components.json'), appComponentsJson({ style, ui: '@/shadcn/ui' }));
     writeFileSync(join(directory, 'src/index.css'), '@import "tailwindcss";\n');
     writeFileSync(join(directory, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'ESNext', moduleResolution: 'Bundler', jsx: 'react-jsx', strict: true, noUnusedLocals: true, noUnusedParameters: true, verbatimModuleSyntax: true, erasableSyntaxOnly: true, noUncheckedIndexedAccess: true, skipLibCheck: false,
       noEmit: true, types: [], lib: ['ES2023', 'DOM', 'DOM.Iterable'], baseUrl: '.', paths: { '@/*': ['./src/*'] } }, include: ['src/components/pi-app/**/*.tsx', 'src/components/pi-app/**/*.ts', 'src/components/app-shell/**/*.tsx', 'src/components/app-shell/**/*.ts', 'src/components/documents/**/*.tsx', 'src/components/documents/**/*.ts', 'src/page.tsx', 'src/pdf-check.tsx', 'src/local-file-check.tsx'] }));
     const installer = { ...process.env, npm_config_cache: cache, npm_config_offline: 'true', npm_config_ignore_scripts: 'true', npm_config_audit: 'false', npm_config_fund: 'false' };
     delete installer.NODE_OPTIONS;
+    // The documented app setup (registry/README.md, APP_SETUP), then the blocks, which declare no shadcn component of their own.
+    addAppComponents(directory, [...SHADCN_BUILTINS], installer, run);
     run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', `${registry}/pi-app.json`, `${registry}/file-tree.json`, `${registry}/app-shell.json`, `${registry}/documents.json`, `${registry}/highlights.json`, `${registry}/theme.json`, '--cwd', directory, '--yes'], installer);
-    for (const [name, item] of closure) for (const file of item.files ?? []) assert.ok(existsSync(join(directory, 'src', file.target)), `the CLI must create ${file.target} (${name})`);
+    for (const [name, item] of closure) for (const file of item.files ?? []) {
+      assert.ok(existsSync(join(directory, 'src', file.target)), `the CLI must create ${file.target} (${name})`);
+      const text = readFileSync(join(directory, 'src', file.target), 'utf8');
+      assert.ok(!text.includes('@/components/ui/'), `${file.target} must import shadcn through the app's ui alias`);
+      if (file.content?.includes('@/components/ui/')) assert.ok(text.includes('@/shadcn/ui/'), `${file.target} imports the app's components from @/shadcn/ui`);
+    }
+    for (const name of SHADCN_BUILTINS) assert.ok(existsSync(join(directory, `src/shadcn/ui/${name}.tsx`)), `the app setup installs ${name} under the ui alias`);
     const css = readFileSync(join(directory, 'src/index.css'), 'utf8');
     assert.ok(css.includes('--background') && css.includes('.pi-chat'), 'theme tokens and the chat\'s scoped css merged into the host stylesheet');
 
@@ -132,7 +140,7 @@ async function testStyle(style) {
   `);
     // The consumer's own shadcn scroll-area ships an unused `import * as React`, which this strict consumer (noUnusedLocals) rejects. That file is
     // host-owned, not ours: drop the import as the consumer's linter autofix would, and keep the strictness for every block file.
-    const scrollArea = join(directory, 'src/components/ui/scroll-area.tsx');
+    const scrollArea = join(directory, 'src/shadcn/ui/scroll-area.tsx');
     if (existsSync(scrollArea) && !/\bReact\./.test(readFileSync(scrollArea, 'utf8'))) writeFileSync(scrollArea, readFileSync(scrollArea, 'utf8').replace(/^import \* as React from ["']react["']\n/m, ''));
     // The installed PDF viewer as a phone sees it (no browser viewer): pdf.js and its worker come from the consumer's own install.
     const pdfBase64 = Buffer.from(fictionalPdf([['Cedar Works', 'A fictional picnic plan.'], ['Page two', 'Pack some sandwiches.']])).toString('base64');

@@ -7,15 +7,7 @@
     "react@^19.0.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/utils.json",
-    "badge",
-    "button",
-    "input",
-    "toggle-group",
-    "item",
-    "empty",
-    "textarea",
-    "card"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/utils.json"
   ],
   "files": [
     {

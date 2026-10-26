@@ -40,14 +40,13 @@ export function checkDesign(root = designRoot, { config = readDesignConfig(root)
     const text = readFileSync(resolve(root, file), 'utf8');
     // Documentation contains syntax examples, not shipped classes. Still report obsolete style support.
     for (const finding of scanDesign(file, text)) if (!file.endsWith('.md') || finding.rule === 'style') add(finding);
-    const item = manifest.items.find(item => item.files?.some(entry => entry.path === file));
     const hostComponents = new Map();
     for (const match of text.matchAll(/\b(?:import|export)\s+([^;]*?)\s+from\s+['"]([^'"]+)['"]/g)) {
       const [, bindings, specifier] = match;
       const ui = /^@\/components\/ui\/([\w-]+)$/.exec(specifier);
       if (ui) for (const [name] of bindings.matchAll(/\b[A-Z]\w*/g)) hostComponents.set(name, ui[1]);
       let reason;
-      if (ui && (!SHADCN_BUILTINS.includes(ui[1]) || !item?.registryDependencies?.includes(ui[1]))) reason = `undeclared shadcn import ${specifier}`;
+      if (ui && !SHADCN_BUILTINS.includes(ui[1])) reason = `shadcn import outside the app setup (SHADCN_BUILTINS): ${specifier}`;
       else if (!ui && !/^type\b/.test(bindings.trim()) && [...bindings.matchAll(/\b[A-Z]\w*/g)].some(([name]) => primitive.test(name))) reason = `UI primitive must come from the host's @/components/ui/*: ${specifier}`;
       if (reason) add({ file, line: text.slice(0, match.index).split('\n').length, column: 1, rule: 'primitive-import', value: reason, ...(/\b(?:Button|IconButton|Toggle|Switch)\b/.test(bindings) ? { group: '1' } : {}) });
     }

@@ -13,11 +13,7 @@
   "registryDependencies": [
     "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/maquette-viewer.json",
     "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/mockup-viewer.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-artifacts.json",
-    "button",
-    "alert",
-    "card",
-    "tooltip"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/pi-artifacts.json"
   ],
   "files": [
     {

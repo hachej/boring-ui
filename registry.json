@@ -153,14 +153,7 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "@boring-ui/utils",
-        "dropdown-menu",
-        "button",
-        "toggle",
-        "input",
-        "textarea",
-        "card",
-        "separator"
+        "@boring-ui/utils"
       ],
       "files": [
         {
@@ -338,10 +331,7 @@
       },
       "docs": "Create and own a MarkdownController from @hachej/boring-ui-kit/markdown. Pass it to MarkdownEditor. The wrapper does not acquire resources or dispose the controller. Check the repository release notes for available npm versions; local tarball tests do not establish registry availability.",
       "registryDependencies": [
-        "@boring-ui/button",
-        "button",
-        "toggle",
-        "dropdown-menu"
+        "@boring-ui/button"
       ]
     },
     {
@@ -424,35 +414,7 @@
       ],
       "registryDependencies": [
         "@boring-ui/utils",
-        "@boring-ui/button",
-        "dialog",
-        "tooltip",
-        "trace",
-        "message",
-        "message-scroller",
-        "bubble",
-        "attachment",
-        "badge",
-        "alert",
-        "card",
-        "spinner",
-        "collapsible",
-        "drawer",
-        "button",
-        "toggle",
-        "dropdown-menu",
-        "empty",
-        "input",
-        "input-group",
-        "popover",
-        "scroll-area",
-        "separator",
-        "sidebar",
-        "badge",
-        "item",
-        "drawer",
-        "alert",
-        "avatar"
+        "@boring-ui/button"
       ],
       "files": [
         {
@@ -664,10 +626,7 @@
         "entities@^8.1.0"
       ],
       "registryDependencies": [
-        "@boring-ui/pi-chat",
-        "button",
-        "checkbox",
-        "table"
+        "@boring-ui/pi-chat"
       ],
       "files": [
         {
@@ -687,11 +646,7 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "@boring-ui/pi-chat",
-        "badge",
-        "button",
-        "input-group",
-        "item"
+        "@boring-ui/pi-chat"
       ],
       "files": [
         {
@@ -711,8 +666,7 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "@boring-ui/pi-chat",
-        "item"
+        "@boring-ui/pi-chat"
       ],
       "files": [
         {
@@ -732,9 +686,7 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "@boring-ui/pi-chat",
-        "button",
-        "dropdown-menu"
+        "@boring-ui/pi-chat"
       ],
       "files": [
         {
@@ -755,11 +707,7 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "@boring-ui/pi-chat",
-        "bubble",
-        "button",
-        "message",
-        "spinner"
+        "@boring-ui/pi-chat"
       ],
       "files": [
         {
@@ -790,9 +738,7 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "@boring-ui/pi-chat",
-        "button",
-        "input"
+        "@boring-ui/pi-chat"
       ],
       "files": [
         {
@@ -813,13 +759,7 @@
         "@earendil-works/pi-ai@~1.2.0"
       ],
       "registryDependencies": [
-        "@boring-ui/pi-chat",
-        "alert",
-        "button",
-        "card",
-        "input",
-        "item",
-        "spinner"
+        "@boring-ui/pi-chat"
       ],
       "files": [
         {
@@ -840,10 +780,7 @@
         "@earendil-works/pi-ai@~1.2.0"
       ],
       "registryDependencies": [
-        "@boring-ui/pi-chat",
-        "badge",
-        "button",
-        "item"
+        "@boring-ui/pi-chat"
       ],
       "files": [
         {
@@ -864,12 +801,7 @@
         "@earendil-works/pi-ai@~1.2.0"
       ],
       "registryDependencies": [
-        "@boring-ui/pi-chat",
-        "alert",
-        "badge",
-        "button",
-        "item",
-        "spinner"
+        "@boring-ui/pi-chat"
       ],
       "files": [
         {
@@ -896,9 +828,7 @@
         "@earendil-works/pi-durable@~1.2.0"
       ],
       "registryDependencies": [
-        "@boring-ui/pi-chat",
-        "button",
-        "item"
+        "@boring-ui/pi-chat"
       ],
       "files": [
         {
@@ -956,21 +886,13 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "@boring-ui/theme",
         "@boring-ui/pi-chat",
         "@boring-ui/pi-chat-plugins",
         "@boring-ui/pi-chat-question",
         "@boring-ui/pi-artifacts",
         "@boring-ui/pi-workspace",
         "@boring-ui/utils",
-        "@boring-ui/button",
-        "message-scroller",
-        "button",
-        "toggle",
-        "avatar",
-        "badge",
-        "card",
-        "separator"
+        "@boring-ui/button"
       ],
       "files": [
         {
@@ -1019,12 +941,9 @@
         "react-dom@^19.0.0"
       ],
       "registryDependencies": [
-        "@boring-ui/theme",
         "@boring-ui/pi-chat",
         "@boring-ui/utils",
-        "@boring-ui/dock",
-        "badge",
-        "card"
+        "@boring-ui/dock"
       ],
       "files": [
         {
@@ -1051,10 +970,7 @@
         "zod@^4.6.5"
       ],
       "registryDependencies": [
-        "@boring-ui/viewer-frame",
-        "badge",
-        "toggle",
-        "tooltip"
+        "@boring-ui/viewer-frame"
       ],
       "files": [
         {
@@ -1099,11 +1015,7 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "@boring-ui/mockup-viewer",
-        "alert",
-        "button",
-        "card",
-        "toggle-group"
+        "@boring-ui/mockup-viewer"
       ],
       "files": [
         {
@@ -1131,15 +1043,6 @@
       "dependencies": [
         "react@^19.0.0",
         "lucide-react@^1.51.0"
-      ],
-      "registryDependencies": [
-        "@boring-ui/theme",
-        "table",
-        "badge",
-        "item",
-        "button",
-        "alert",
-        "empty"
       ],
       "files": [
         {
@@ -1172,11 +1075,6 @@
       "dependencies": [
         "react@^19.0.0",
         "lucide-react@^1.51.0"
-      ],
-      "registryDependencies": [
-        "@boring-ui/theme",
-        "alert",
-        "badge"
       ],
       "files": [
         {
@@ -1216,25 +1114,7 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "@boring-ui/theme",
-        "@boring-ui/diagram-viewer",
-        "alert",
-        "badge",
-        "bubble",
-        "button",
-        "card",
-        "empty",
-        "input",
-        "item",
-        "label",
-        "native-select",
-        "separator",
-        "table",
-        "dialog",
-        "dropdown-menu",
-        "popover",
-        "toggle",
-        "tooltip"
+        "@boring-ui/diagram-viewer"
       ],
       "files": [
         {
@@ -1308,11 +1188,7 @@
       "registryDependencies": [
         "@boring-ui/maquette-viewer",
         "@boring-ui/mockup-viewer",
-        "@boring-ui/pi-artifacts",
-        "button",
-        "alert",
-        "card",
-        "tooltip"
+        "@boring-ui/pi-artifacts"
       ],
       "files": [
         {
@@ -1357,21 +1233,7 @@
         "@boring-ui/pi-chat-plugins",
         "@boring-ui/pi-chat-markdown",
         "@boring-ui/pi-chat-mentions",
-        "@boring-ui/theme",
-        "@boring-ui/utils",
-        "avatar",
-        "badge",
-        "button",
-        "drawer",
-        "popover",
-        "separator",
-        "tooltip",
-        "trace",
-        "spinner",
-        "item",
-        "message",
-        "bubble",
-        "message-scroller"
+        "@boring-ui/utils"
       ],
       "files": [
         {
@@ -1434,7 +1296,6 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "@boring-ui/theme",
         "@boring-ui/pi-chat",
         "@boring-ui/pi-chat-plugins",
         "@boring-ui/pi-artifacts",
@@ -1451,16 +1312,7 @@
         "@boring-ui/record-viewer",
         "@boring-ui/utils",
         "@boring-ui/button",
-        "drawer",
-        "dialog",
-        "button",
-        "@boring-ui/file-tree",
-        "dropdown-menu",
-        "scroll-area",
-        "separator",
-        "table",
-        "popover",
-        "tooltip"
+        "@boring-ui/file-tree"
       ],
       "files": [
         {
@@ -1554,8 +1406,7 @@
         "@boring-ui/pi-app",
         "@boring-ui/pi-ambient",
         "@boring-ui/app-shell",
-        "@boring-ui/utils",
-        "button"
+        "@boring-ui/utils"
       ],
       "files": [
         {
@@ -1585,16 +1436,7 @@
         "@boring-ui/dock",
         "@boring-ui/feedback",
         "@boring-ui/utils",
-        "@boring-ui/button",
-        "drawer",
-        "sidebar",
-        "avatar",
-        "dropdown-menu",
-        "button",
-        "switch",
-        "badge",
-        "card",
-        "separator"
+        "@boring-ui/button"
       ],
       "css": {
         "@layer base": {
@@ -1729,17 +1571,9 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "@boring-ui/theme",
         "@boring-ui/utils",
         "@boring-ui/button",
-        "button",
-        "toggle",
-        "@boring-ui/version-history",
-        "toggle-group",
-        "dialog",
-        "textarea",
-        "badge",
-        "dropdown-menu"
+        "@boring-ui/version-history"
       ],
       "files": [
         {
@@ -2182,9 +2016,7 @@
         "@boring-ui/viewer-frame",
         "@boring-ui/markdown-editor",
         "@boring-ui/utils",
-        "@boring-ui/button",
-        "button",
-        "dropdown-menu"
+        "@boring-ui/button"
       ],
       "files": [
         {
@@ -2212,8 +2044,7 @@
       "registryDependencies": [
         "@boring-ui/viewer-frame",
         "@boring-ui/utils",
-        "@boring-ui/button",
-        "button"
+        "@boring-ui/button"
       ],
       "files": [
         {
@@ -2239,8 +2070,7 @@
       ],
       "registryDependencies": [
         "@boring-ui/viewer-frame",
-        "@boring-ui/utils",
-        "button"
+        "@boring-ui/utils"
       ],
       "files": [
         {
@@ -2273,9 +2103,7 @@
       ],
       "registryDependencies": [
         "@boring-ui/viewer-frame",
-        "@boring-ui/viewer-image",
-        "badge",
-        "button"
+        "@boring-ui/viewer-image"
       ],
       "files": [
         {
@@ -2311,8 +2139,7 @@
       ],
       "registryDependencies": [
         "@boring-ui/viewer-frame",
-        "@boring-ui/pi-chat",
-        "table"
+        "@boring-ui/pi-chat"
       ],
       "files": [
         {
@@ -2358,13 +2185,7 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "@boring-ui/theme",
-        "@boring-ui/utils",
-        "button",
-        "input",
-        "label",
-        "native-select",
-        "popover"
+        "@boring-ui/utils"
       ],
       "files": [
         {
@@ -2852,14 +2673,7 @@
       "registryDependencies": [
         "@boring-ui/pi-chat",
         "@boring-ui/pi-chat-voice",
-        "@boring-ui/utils",
-        "button",
-        "toggle",
-        "badge",
-        "item",
-        "card",
-        "textarea",
-        "switch"
+        "@boring-ui/utils"
       ]
     },
     {
@@ -2878,12 +2692,6 @@
           "type": "registry:component",
           "target": "components/feedback-preview/preview-banner.tsx"
         }
-      ],
-      "registryDependencies": [
-        "button",
-        "card",
-        "badge",
-        "input"
       ]
     },
     {
@@ -2935,13 +2743,7 @@
           "color": "var(--destructive)"
         }
       },
-      "docs": "The installed task-list schema/controller are trusted consumer code; publication and draft recovery come from @hachej/boring-ui-kit/text-buffer. Construct a feature with a host-authenticated ResourceClient and exact source, then pass its concrete controller to TaskListViewer. Install native tools separately on the server. No host credentials or native kernel are copied into this item. Local tarball qualification only; no hosted release endpoint is advertised.",
-      "registryDependencies": [
-        "button",
-        "card",
-        "input",
-        "checkbox"
-      ]
+      "docs": "The installed task-list schema/controller are trusted consumer code; publication and draft recovery come from @hachej/boring-ui-kit/text-buffer. Construct a feature with a host-authenticated ResourceClient and exact source, then pass its concrete controller to TaskListViewer. Install native tools separately on the server. No host credentials or native kernel are copied into this item. Local tarball qualification only; no hosted release endpoint is advertised."
     },
     {
       "name": "version-history",
@@ -2953,9 +2755,7 @@
         "react@^19.0.0"
       ],
       "registryDependencies": [
-        "@boring-ui/theme",
-        "@boring-ui/button",
-        "button"
+        "@boring-ui/button"
       ],
       "files": [
         {
@@ -2977,18 +2777,8 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "@boring-ui/theme",
         "@boring-ui/utils",
-        "@boring-ui/version-history",
-        "button",
-        "dialog",
-        "dropdown-menu",
-        "collapsible",
-        "empty",
-        "input",
-        "progress",
-        "separator",
-        "sidebar"
+        "@boring-ui/version-history"
       ],
       "files": [
         {
@@ -3011,7 +2801,6 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "@boring-ui/theme",
         "@boring-ui/utils",
         "@boring-ui/button",
         "@boring-ui/pi-artifacts",
@@ -3020,11 +2809,7 @@
         "@boring-ui/file-tree",
         "@boring-ui/viewer-frame",
         "@boring-ui/viewer-image",
-        "@boring-ui/viewer-pdf",
-        "drawer",
-        "button",
-        "scroll-area",
-        "separator"
+        "@boring-ui/viewer-pdf"
       ],
       "files": [
         {
@@ -3068,11 +2853,7 @@
       ],
       "registryDependencies": [
         "@boring-ui/app-shell",
-        "@boring-ui/pi-chat",
-        "button",
-        "card",
-        "message",
-        "bubble"
+        "@boring-ui/pi-chat"
       ],
       "files": [
         {
@@ -3093,15 +2874,7 @@
       "title": "Requests board",
       "description": "Host-fed compact requests and responsive list/detail with questions and decisions.",
       "registryDependencies": [
-        "@boring-ui/utils",
-        "badge",
-        "button",
-        "input",
-        "toggle-group",
-        "item",
-        "empty",
-        "textarea",
-        "card"
+        "@boring-ui/utils"
       ],
       "files": [
         {
@@ -3136,12 +2909,7 @@
         "react-dom@^19.0.0"
       ],
       "registryDependencies": [
-        "@boring-ui/markdown-editor",
-        "button",
-        "textarea",
-        "label",
-        "item",
-        "dropdown-menu"
+        "@boring-ui/markdown-editor"
       ],
       "files": [
         {
@@ -3162,12 +2930,7 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "@boring-ui/utils",
-        "button",
-        "card",
-        "badge",
-        "drawer",
-        "dropdown-menu"
+        "@boring-ui/utils"
       ],
       "files": [
         {

@@ -8,25 +8,7 @@
     "lucide-react@^1.51.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/theme.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/diagram-viewer.json",
-    "alert",
-    "badge",
-    "bubble",
-    "button",
-    "card",
-    "empty",
-    "input",
-    "item",
-    "label",
-    "native-select",
-    "separator",
-    "table",
-    "dialog",
-    "dropdown-menu",
-    "popover",
-    "toggle",
-    "tooltip"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/diagram-viewer.json"
   ],
   "files": [
     {

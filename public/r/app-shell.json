@@ -18,16 +18,7 @@
     "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/dock.json",
     "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/feedback.json",
     "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/utils.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/button.json",
-    "drawer",
-    "sidebar",
-    "avatar",
-    "dropdown-menu",
-    "button",
-    "switch",
-    "badge",
-    "card",
-    "separator"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/button.json"
   ],
   "files": [
     {

@@ -10,18 +10,8 @@
     "lucide-react@^1.51.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/theme.json",
     "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/utils.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/version-history.json",
-    "button",
-    "dialog",
-    "dropdown-menu",
-    "collapsible",
-    "empty",
-    "input",
-    "progress",
-    "separator",
-    "sidebar"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/version-history.json"
   ],
   "files": [
     {
