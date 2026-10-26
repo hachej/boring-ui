@@ -18,12 +18,12 @@ import { createRevisionHandler } from '@hachej/boring-files/revision-handler';
 const access = { principalId: 'fictional-person', scopeId: 'fictional-scope', initiatorId: 'fictional-person' };
 
 /** A real workspace provider over one SQLite file, reached through the revision handler exactly as a host serves it. */
-function revisionFixture(t) {
+function revisionFixture(t, handlerOptions = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'boring-attachments-'));
   const db = openNodeConnection(join(directory, 'files.sqlite'));
   const fs = openSqliteFileSystem({ connection: db, workspace: 'fictional', cwd: '/workspace' });
   const provider = createWorkspaceProvider({ fs, journal: createWorkspaceJournal(db), identity: { providerId: 'files', instanceId: 'fictional', incarnation: fs.incarnation, viewId: 'published' } });
-  const handler = createRevisionHandler({ resolve: async () => ({ provider, access, release() {} }) });
+  const handler = createRevisionHandler({ ...handlerOptions, resolve: async () => ({ provider, access, release() {} }) });
   t.after(() => { db.close(); rmSync(directory, { force: true, recursive: true }); });
   return connectRevisionProvider({ endpoint: 'https://fictional.invalid/files', fetch: handler });
 }
@@ -115,6 +115,21 @@ test('attachments saved through any revision provider: under uploads/, refused o
     await assert.rejects(pending, error => error.message === 'The disk read failed');
     assert.deepEqual(reportedA, [['slow.txt', 'The disk read failed']]);
     assert.deepEqual(reportedB, [], 'the failure is not shown under the workspace selected since');
+  });
+
+  await t.test('without maxBytes the host limit applies: over the handler maxFileBytes is refused with it, binary bytes within it are kept exactly', async () => {
+    const limited = await revisionFixture(t, { maxFileBytes: 64 });
+    await render({ revisionProvider: limited });
+    await assert.rejects(config.upload([file('scan.bin', new Uint8Array(65), 'application/octet-stream')], new AbortController().signal), error => {
+      assert.match(error.message, /64-byte limit/);
+      return true;
+    });
+    const bytes = Uint8Array.from({ length: 64 }, (_, index) => (index * 37 + 255) % 256);
+    const results = await config.upload([file('scan.bin', bytes, 'application/octet-stream')], new AbortController().signal);
+    assert.equal(results.length, 1);
+    const read = await limited.read({ target: limited.locate(results[0].path), revision: { kind: 'latest' } });
+    assert.equal(read.kind, 'available');
+    assert.deepEqual(read.snapshot.bytes, bytes);
   });
 
   await t.test('with no provider there are no attachments', async () => {

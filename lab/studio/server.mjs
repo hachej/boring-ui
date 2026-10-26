@@ -25,7 +25,7 @@ import { openNodeConnection } from '@hachej/boring-files/sqlite';
 import { createWorkspaceJournal } from '@hachej/boring-files/journal';
 import { createWorkspaceProvider, isTemporary } from '@hachej/boring-files/workspace';
 import { createWorkspaceCache, rootConversation, withWorkspace } from '@hachej/boring-agent/workspaces';
-import { createResourceHandler } from '@hachej/boring-files/remote';
+import { createRevisionHandler } from '@hachej/boring-files/revision-handler';
 import { withSubmitFaults } from '@hachej/boring-testing/network';
 import { defineStandardAgent } from '../../shared/standard-agent.mjs';
 import { openPiStorage } from '../../shared/pi-storage.mjs';
@@ -153,10 +153,8 @@ export async function startStudio({ directory, port = 0, provider = process.env.
     const caller = await callerOf(target.conversationId, callContext);
     return caller?.variant.team && request.server ? vault(caller.principal)[request.server] : undefined;
   };
-  /** What the viewers of one workspace use: its resource handler (authenticated as the workspace's person only) and @mention reader. */
-  const viewersOf = (ws, allowed) => ({ ...ws,
-    resourceHandler: createResourceHandler({ authenticate: async request => allowed(principalOf(request)) ? ws.person : null, reader: ws.files, publisher: ws.files.publication, lookup: ws.files.reconciliation }),
-    mentions: createMentionResolver({ read: workspaceMentionReader(ws.files, ws.person) }) });
+  /** What the viewers of one workspace use besides `/api/resources`: its @mention reader. */
+  const viewersOf = ws => ({ ...ws, mentions: createMentionResolver({ read: workspaceMentionReader(ws.files, ws.person) }) });
 
   /** The workspace name of a person in a variant: the variant's one workspace, or the person's team workspace. */
   const workspaceName = (variant, principal = human.principalId) => variant.team ? `team-${principal}` : variant.id;
@@ -186,7 +184,7 @@ export async function startStudio({ directory, port = 0, provider = process.env.
       team = createWorkspaceCache({
         key: async (callTarget, callContext) => (await callerOf(callTarget.conversationId, callContext))?.principal,
         open: async (principal, openContext) => {
-          const ws = viewersOf({ ...await infra.workspace(principal, openContext), access: teamAgent(principal), person: teamPerson(principal) }, candidate => candidate === principal);
+          const ws = viewersOf({ ...await infra.workspace(principal, openContext), access: teamAgent(principal), person: teamPerson(principal) });
           // The person's own `.agent/`: their extension, installed in the one registry and selected only by their conversations.
           await evolve(agentOf(variant, principal), ws.env, openContext, `${descriptor.id}/${principal}`);
           return ws;
@@ -199,7 +197,7 @@ export async function startStudio({ directory, port = 0, provider = process.env.
     } else {
       const files = createWorkspaceProvider({ identity: { providerId: 'workspace', instanceId: descriptor.id, incarnation: 'studio', viewId: 'published' }, fs: infra.env, journal });
       single = viewersOf({ id: descriptor.id, files, root, env: infra.env, access: agentAccess, person: human,
-        ...(infra.repository ? { repository: infra.repository } : {}), ...(infra.routes ? { routes: infra.routes } : {}) }, candidate => candidate === human.principalId);
+        ...(infra.repository ? { repository: infra.repository } : {}), ...(infra.routes ? { routes: infra.routes } : {}) });
       withWorkspace(infra.env, single);
     }
     const subagents = createSubagents({ harness: getHarness, context, childModel: { provider, modelId: configured.at(-1).modelId }, childExtensions: capabilities.has('workspace') ? [readFiles] : [] });
@@ -395,6 +393,16 @@ export async function startStudio({ directory, port = 0, provider = process.env.
     variants: descriptors.filter(descriptor => principal === human.principalId || variants.get(descriptor.id)?.team).map(descriptor => describeVariant(descriptor, variants.get(descriptor.id), principal)),
     scenarios: scenarios.map(describeScenario) });
 
+  /**
+   * `/api/resources`: `createRevisionHandler` over the workspace of the request (the variant's, or the person's team workspace, borrowed
+   * for the request and for the change feed while it is open), as the workspace's person. A file is at most 5 MB, as uploads were.
+   */
+  const resources = createRevisionHandler({ maxFileBytes: 5_000_000, resolve: async request => {
+    const principal = principalOf(request);
+    if (principal === null) return null;
+    const borrowed = await workspaceOfRequest(variantOf(request), principal);
+    return borrowed ? { provider: borrowed.ws.files, access: borrowed.ws.person, release: borrowed.release } : null;
+  } });
   async function api(request, url) {
     const principal = principalOf(request);
     if (principal === null) return Response.json({ reason: 'authentication-required' }, { status: 401 });
@@ -409,6 +417,8 @@ export async function startStudio({ directory, port = 0, provider = process.env.
       if (!target) return Response.json({ reason: 'unknown-variant' }, { status: 404 });
       return target.conversationsHandler(request);
     }
+    // Reads, saves, uploads (`uploads/`, a conditional create with a receipt), @-search and the file list: the one revision route.
+    if (url.pathname === '/api/resources') return resources(request);
     const variant = variantOf(request);
     const borrowed = await workspaceOfRequest(variant, principal);
     if (!borrowed) return Response.json({ reason: 'not-authorized' }, { status: 403 });
@@ -416,7 +426,6 @@ export async function startStudio({ directory, port = 0, provider = process.env.
   }
   /** The routes of one workspace: the variant's, or the requesting person's team workspace. */
   async function workspaceApi(request, url, variant, ws, principal) {
-    if (url.pathname === '/api/resources') return ws.resourceHandler(request);
     // The person's fictional credits; POST tops them back up to the starting balance (the stand-in for buying more), or sets them to
     // `{ balanceMicros }` (a fixture for the low-balance scenario).
     if (url.pathname === '/api/credits' && principal === human.principalId) {
@@ -444,24 +453,6 @@ export async function startStudio({ directory, port = 0, provider = process.env.
         'x-content-type-options': 'nosniff', 'content-security-policy': 'sandbox', 'cache-control': 'no-store' } });
       const text = decodeText(path, read.value);
       return Response.json({ path, kind: kindOf(path), mediaType, size: read.value.byteLength, ...(text === undefined ? {} : { text }) });
-    }
-    if (request.method === 'GET' && url.pathname === '/api/search') {
-      const needle = (url.searchParams.get('q') ?? '').toLowerCase();
-      const paths = (await walk(ws)).map(path => virtual(ws, path).slice(VIRTUAL_ROOT.length + 1));
-      const rank = path => path.split('/').pop().toLowerCase().includes(needle) ? 0 : 1;
-      return Response.json({ results: paths.filter(path => path.toLowerCase().includes(needle)).sort((a, b) => rank(a) - rank(b) || a.localeCompare(b)).slice(0, 8).map(path => ({ path, kind: 'file' })) });
-    }
-    // One file per request, always saved under uploads/ (so it survives a restart and opens in the Files tab).
-    if (request.method === 'POST' && url.pathname === '/api/upload') {
-      const name = (url.searchParams.get('name') ?? '').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^[.-]+/, '').slice(0, 80);
-      const mimeType = request.headers.get('content-type') ?? 'application/octet-stream';
-      if (!name) return Response.json({ reason: 'invalid-name' }, { status: 400 });
-      const bytes = new Uint8Array(await request.arrayBuffer());
-      if (bytes.byteLength === 0 || bytes.byteLength > 5_000_000) return Response.json({ reason: bytes.byteLength ? 'file-too-large' : 'file-is-empty' }, { status: 413 });
-      let saved = name;
-      for (let n = 2; !await createFile(ws, `uploads/${saved}`, bytes); n++) saved = name.replace(/(\.[^.]*)?$/, suffix => `-${n}${suffix}`);
-      // An image is also handed back as base64 for the chat to attach; the file is kept either way.
-      return Response.json({ name: saved, path: `uploads/${saved}`, ...(mimeType.startsWith('image/') ? { image: { data: Buffer.from(bytes).toString('base64'), mimeType } } : {}) });
     }
     // A scenario's files and its upload fixtures.
     const scenarioRoute = /^\/api\/scenarios\/([a-z0-9-]+)\/(seed|fixture\/(\d+))$/.exec(url.pathname);

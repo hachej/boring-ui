@@ -95,6 +95,12 @@ export interface RevisionProvider extends ResourceClient {
   readonly search: (request: FileSearchRequest, signal?: AbortSignal) => Promise<FilePage>;
   readonly history: (path: string, signal?: AbortSignal) => Promise<readonly SavedRevision[]>;
   /**
+   * The host's largest file content per write, in bytes, when the binding names one (`createRevisionHandler({ maxFileBytes })`). The
+   * server answers a larger file with the typed `file_too_large` result; a UI may refuse it before sending (the file tree does).
+   * Absent: the host named no limit.
+   */
+  readonly maxFileBytes?: number;
+  /**
    * The workspace's change feed (`GET ?op=changes`, server-sent events), reconnecting after the last `seq` seen until `signal`
    * aborts; a refused binding (another workspace, revoked access) ends it with a `RevisionError`, and so does a route that serves no feed:
    * it answers 501 (the intended signal) or 400 to `?op=changes`, and the views then keep their own refresh. Optional: a hand-built provider

@@ -239,7 +239,8 @@ test('aborted requests and bounded bodies do not publish', async t => {
   await assert.rejects(client().publish(create('pre-aborted', 'notes.md', Uint8Array.of(1)), aborted.signal), PublicationNotDispatchedError);
   assert.equal((await client().lookup('pre-aborted')).kind, 'not-found');
   assert.equal((await client().read(latest('notes.md'), aborted.signal)).kind, 'unavailable');
-  assert.equal((await client().publish(create('too-large', 'large.bin', new Uint8Array(900)))).kind, 'unknown');
+  // A 413 is the server refusing the body before reading it as a write: a definite refusal, not an unconfirmed publication.
+  assert.equal((await client().publish(create('too-large', 'large.bin', new Uint8Array(900)))).kind, 'unavailable');
   assert.equal((await client().read(latest('large.bin'))).kind, 'missing');
   const oversized = new Request('https://fictional.invalid/resources', { method: 'POST', headers: { 'content-type': 'application/json' }, body: 'x'.repeat(900) });
   assert.notEqual((await handler(oversized)).status, 200);

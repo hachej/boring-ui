@@ -1,7 +1,7 @@
 import type { ResourceAccess } from './contracts.js';
 import type { WorkspaceResourceProvider } from './workspace.js';
 import { createResourceHandler } from './remote-handler.js';
-import { binding, bindingHeader, bindingValue, catalogHeader, filePage, record, savedRevisions } from './revision-protocol.js';
+import { binding, bindingHeader, bindingValue, catalogHeader, DEFAULT_MAX_FILE_BYTES, filePage, fileTransport, record, savedRevisions, tooLarge } from './revision-protocol.js';
 import { guardStatus, readJsonBody, RequestGuardError } from './request-guard.js';
 import { accessSnapshot, identifier } from './publication-input.js';
 import { RevisionError } from './revision-contracts.js';
@@ -16,6 +16,15 @@ export interface RevisionHandlerOptions {
   }>;
   /** How often the change feed sends a comment line so proxies keep it open, in milliseconds (default 15 000). */
   readonly heartbeatMs?: number;
+  /**
+   * The largest file one write (an upload, a save) may carry, in bytes. Default 3 MiB (3 145 728), at most about 48 MiB.
+   * A larger file is refused with the typed `file_too_large` result before the provider writes anything, as the provider's own limit
+   * is. The binding (`GET` without `op`) names it as `limits.maxFileBytes`; `connectRevisionProvider` exposes it as `maxFileBytes` and
+   * sizes its requests to it, and the file tree refuses a larger upload before sending it. The resource calls' request and response
+   * limits follow from it (base64 plus the envelope), so a request carrying more in total is answered 413. The provider's file system
+   * may still refuse a smaller file (SQLite: 1 900 000 bytes by default).
+   */
+  readonly maxFileBytes?: number;
 }
 
 const encoder = new TextEncoder();
@@ -91,6 +100,8 @@ function listRequest(value: unknown): FileListRequest {
 export function createRevisionHandler(options: RevisionHandlerOptions): (request: Request) => Promise<Response> {
   const heartbeatMs = options.heartbeatMs ?? 15_000;
   if (!Number.isSafeInteger(heartbeatMs) || heartbeatMs < 1) throw new RangeError('The heartbeat interval must be a positive integer');
+  const maxFileBytes = options.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES;
+  const transport = fileTransport(maxFileBytes);
   return async request => {
     let release: (() => void | Promise<void>) | undefined;
     const operations = new Set<Promise<unknown>>();
@@ -112,7 +123,7 @@ export function createRevisionHandler(options: RevisionHandlerOptions): (request
       const association = binding({ identity: captured, workspace: selected.provider.identity });
       const respond = (value: unknown) => Response.json(value, { headers: { 'cache-control': 'no-store' } });
       const op = new URL(request.url).searchParams.get('op');
-      if (request.method === 'GET' && op === null) return respond(association);
+      if (request.method === 'GET' && op === null) return respond({ ...association, limits: { maxFileBytes } });
       // A resource call (POST without the catalog header) is `createResourceHandler`'s protocol, whose envelope carries and checks
       // the identity, so a plain `createResourceClient` works here too. The listing and the change feed need the binding; a binding
       // that is sent is always checked.
@@ -140,8 +151,17 @@ export function createRevisionHandler(options: RevisionHandlerOptions): (request
       }
       if (resourceCall) return await createResourceHandler({
         authenticate: async () => access,
+        ...transport,
         reader: { read: (value, context) => hold(provider.read(value, context)) },
-        publisher: { publish: (value, context) => hold(provider.publication.publish(value, context)) },
+        publisher: { publish: (value, context) => hold((async () => {
+          // A file over the limit is refused like the provider's own limit, before the provider writes anything. An operation the
+          // journal already knows is left to the provider, so a replay keeps its committed (or unknown) result.
+          const oversized = value.changes.find(change => change.kind !== 'delete' && change.bytes.byteLength > maxFileBytes);
+          if (oversized && oversized.kind !== 'delete' && (await provider.reconciliation.lookup(value.operationId, context)).kind === 'not-found') {
+            return { kind: 'file_too_large', path: oversized.target.resource.path, size: oversized.bytes.byteLength, limit: maxFileBytes, reason: tooLarge(maxFileBytes) } as const;
+          }
+          return provider.publication.publish(value, context);
+        })()) },
         lookup: { lookup: (value, context) => hold(provider.reconciliation.lookup(value, context)) },
         ...(provider.renaming ? { renamer: { rename: (value, context) => hold(provider.renaming.rename(value, context)) } } : {}),
         ...(provider.deletion ? { deleter: { delete: (value, context) => hold(provider.deletion.delete(value, context)) } } : {}),

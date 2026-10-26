@@ -100,7 +100,7 @@ const files = createWorkspaceProvider({ identity, fs: env, journal: createWorksp
 const guard = createFileGuard({ workspace: { files, root, access } });
 ```
 
-See [`@hachej/boring-files`](packages/files/README.md) and [One file tool set](packages/agent/README.md#one-file-tool-set-the-guard).
+The browser reaches it through one route, `createRevisionHandler`: reads, saves, the file list, `@` search and uploads (a conditional create with a receipt, binary-safe, up to `maxFileBytes`) all use the same resolve and access. See [`@hachej/boring-files`](packages/files/README.md) and [One file tool set](packages/agent/README.md#one-file-tool-set-the-guard).
 
 ### Approvals, questions and schedules
 

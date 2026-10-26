@@ -32,24 +32,25 @@ export default [
   },
   {
     id: 'attach-text-failed-upload', group: 'Attachments and mentions', title: 'Attach a text file, with a failed upload first', requires: ['workspace'],
-    description: 'A failed upload is shown and dismissed; the text file is listed in the workspace and the agent answers from it.',
+    description: 'A file over the workspace limit (5 MB) is shown as failed and dismissed; the text file is listed in the workspace and the agent answers from it.',
     steps: [{ upload: { name: 'visit-note.txt', content: 'Fictional harbour clinic visit note.\nThe clinic opens at 07:45 on weekdays.\n' }, prompt: 'At what time does the clinic open? Answer with the time only.' }],
     script: { 0: [ctx => JSON.stringify(ctx.input).match(/opens at (\d\d:\d\d)/)?.[1] ?? 'The file did not reach the model.'] },
-    expect: [{ reply: /07:45/ }, { fileExists: 'uploads/visit-note.txt' }],
+    expect: [{ reply: /07:45/ }, { fileExists: /^uploads\/visit-note-[0-9a-f]{8}\.txt$/ }],
     async verify(t) {
       const { browser, q } = t;
       const directory = resolve('.cache/evidence/scenario-fixtures'); mkdirSync(directory, { recursive: true });
-      const empty = `${directory}/empty.txt`; writeFileSync(empty, '');
-      await browser.attachFiles(q('[data-testid=composer-file]'), [empty]);
-      await browser.until('a failed upload is shown', `${q('[data-testid=upload-chip][data-state=failed]')}?.textContent.includes('empty')`, 10000);
+      const tooBig = `${directory}/too-big.txt`; writeFileSync(tooBig, new Uint8Array(5_000_001).fill(0x61));
+      await browser.attachFiles(q('[data-testid=composer-file]'), [tooBig]);
+      await browser.until('a failed upload is shown', `${q('[data-testid=upload-chip][data-state=failed]')}?.textContent.includes('too-big')`, 10000);
       await browser.screenshot('menus-upload-failed.png');
       await browser.click(`${q('[data-testid=upload-chip]')}.querySelector('button')`);
       await browser.until('dismissed', `!${q('[data-testid=upload-chip]')}`, 3000);
       await t.tab('files');
-      await browser.until('listed in the workspace panel', `[...document.querySelectorAll('.studio-panel li button')].some(b => b.textContent === 'uploads/visit-note.txt')`, 10000);
+      const saved = /^uploads\/visit-note-[0-9a-f]{8}\.txt$/;
+      await browser.until('listed in the workspace panel', `[...document.querySelectorAll('.studio-panel li button')].some(b => ${saved}.test(b.textContent))`, 10000);
       await t.shots('menus-upload');
       // The sent message shows the upload as a card above its text, and the bubble does not repeat the raw mention (run at phone and desktop sizes).
-      await browser.until('the sent upload is a card', `${q('[data-testid=message-mention]')}?.dataset.path === 'uploads/visit-note.txt'`, 10000);
+      await browser.until('the sent upload is a card', `${saved}.test(${q('[data-testid=message-mention]')}?.dataset.path ?? '')`, 10000);
       assert.equal(await browser.evaluate(`${q('[data-testid=user-text]')}?.textContent.includes('@uploads')`), false, 'the bubble hides the raw mention');
       await browser.screenshot('attach-file-card.png');
     },
