@@ -4,9 +4,9 @@
   "title": "Pi chat",
   "description": "A complete Tailwind chat over the borrowed native chat controller: composer, messages, one collapsible activity block per turn (tool calls and reasoning), message queue, history and feedback cards for the opt-in feedback tool (lists, and Show offers that the host page resolves). Chat only: no layout. Owned, editable source; no AI SDK. The question, approval, sub-agent and artifact cards are separate items (pi-chat-question, pi-chat-approval, pi-chat-subagent, pi-artifacts); without them a question or an approval shows a \"waiting for your answer\" notice, a sub-agent call is an ordinary tool step and no artifact is offered. The optional pi-ambient and pi-workspace blocks build on it.",
   "dependencies": [
-    "@hachej/boring-ui-kit@^0.4.22",
-    "@hachej/boring-files@^0.4.22",
-    "@hachej/boring-feedback@^0.4.22",
+    "@hachej/boring-ui-kit@^0.4.23",
+    "@hachej/boring-files@^0.4.23",
+    "@hachej/boring-feedback@^0.4.23",
     "react@^19.0.0",
     "react-dom@^19.0.0",
     "@base-ui/react@1.9.0",
@@ -19,8 +19,8 @@
     "zod@^4.6.5"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.22/r/utils.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.22/r/button.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/utils.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.23/r/button.json",
     "dialog",
     "tooltip",
     "trace",
