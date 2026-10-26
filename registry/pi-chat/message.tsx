@@ -3,7 +3,7 @@
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { ImageContent, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai';
-import { AlertCircleIcon, CircleSlashIcon, FileAudioIcon, FileIcon, FileSpreadsheetIcon, FileTextIcon, ImageIcon, PauseIcon, PlayIcon, PresentationIcon } from 'lucide-react';
+import { AlertCircleIcon, CircleSlashIcon, ClockIcon, FileAudioIcon, FileIcon, FileSpreadsheetIcon, FileTextIcon, ImageIcon, PauseIcon, PlayIcon, PresentationIcon } from 'lucide-react';
 import { CopyButton } from './code-block';
 import type { AnswerOutcome, ChatArtifactsConfig, ChatCards, CommandMentions } from './config';
 import { feedbackContent } from './feedback-content';
@@ -51,6 +51,8 @@ const plainText = ({ text, streaming }: ChatTextPart): ReactNode =>
 export type { ChatCards } from './config';
 
 export interface RowContext {
+  /** `messaging`: primary bubble for me, muted bubble for the reply, a tail on the first bubble of a run and the time inside (`PiChat messageStyle`). */
+  readonly messageStyle?: 'default' | 'messaging' | undefined;
   readonly developer: boolean;
   /** Draws an assistant text part. Default: plain text (`markdownText` of `pi-chat-markdown` draws Markdown). */
   readonly renderText?: ((part: ChatTextPart) => ReactNode) | undefined;
@@ -262,11 +264,38 @@ export function MessageText({ text, context, align = 'end', variant = 'muted', d
   </>;
 }
 
-function UserBubble({ message, images, context, align = 'end' }: { readonly message: UserMessage; readonly images: readonly ImageContent[]; readonly context: RowContext; readonly align?: 'start' | 'end' }) {
+/** A messenger's tail on the first bubble of a run. Its square part fills the bubble's top corner under the (positioned) content. */
+export function BubbleTail({ side }: { readonly side: 'start' | 'end' }) {
+  return <svg data-testid="bubble-tail" data-side={side} aria-hidden="true" viewBox="0 0 22 14" width="22" height="14"
+    className={`pointer-events-none absolute top-0 ${side === 'end' ? '-end-2 -scale-x-100 fill-primary' : '-start-2 fill-muted'}`}><path d="M0 0H22V14H8V9C8 5 5 2 0 0Z" /></svg>;
+}
+/** Text whose last line leaves room for the time at the bottom right of the bubble (the spacer rides at the end of the last paragraph). */
+export const clockRoom = "[&_:is(p,li):last-child]:after:inline-block [&_:is(p,li):last-child]:after:w-14 [&_:is(p,li):last-child]:after:content-['']";
+/** Room for a floating clock after plain inline text. */
+export const ClockSpacer = () => <span aria-hidden="true" className="inline-block w-14" />;
+/**
+ * The time inside a bubble (« 14:02 »). `floating` pins it bottom right over the room the text left; otherwise it sits in the line.
+ * `text` and `title` replace the chat's own clock and date labels, and `className` the size (the shared chat brings its own).
+ */
+export function MessageClock({ at, tone, floating = true, pending = false, text, title, className }: { readonly at: string; readonly tone: 'muted' | 'primary'; readonly floating?: boolean; readonly pending?: boolean | undefined; readonly text?: string | undefined; readonly title?: string | undefined; readonly className?: string | undefined }) {
+  const { labels } = useChatText();
+  // Not confirmed by the host yet: a small clock where the time will be.
+  if (pending) return <span data-testid="message-pending" role="img" aria-label={labels.sending} title={labels.sending}
+    className={`${floating ? 'absolute end-3 bottom-1.5' : 'shrink-0 self-end'} leading-none ${tone === 'primary' ? 'opacity-80' : 'text-muted-foreground'}`}><ClockIcon aria-hidden="true" className="size-3" /></span>;
+  return <time data-testid="message-time" dateTime={at} title={title ?? labels.messageTimestamp(at)}
+    className={cn(floating ? 'absolute end-3 bottom-1.5' : 'shrink-0 self-end', 'text-xs leading-none whitespace-nowrap tabular-nums', tone === 'primary' ? 'opacity-80' : 'text-muted-foreground', className)}>{text ?? labels.messageClock(at)}</time>;
+}
+const isoAt = (ms: number | undefined) => ms !== undefined && Number.isFinite(ms) ? new Date(ms).toISOString() : undefined;
+
+function UserBubble({ message, images, context, align = 'end', lead = false }: { readonly message: UserMessage; readonly images: readonly ImageContent[]; readonly context: RowContext; readonly align?: 'start' | 'end'; readonly lead?: boolean }) {
+  const messaging = context.messageStyle === 'messaging', at = isoAt(message.timestamp);
   const parts = typeof message.content === 'string' ? [{ type: 'text' as const, text: message.content }] : message.content;
   return <Message align={align}><MessageContent>
     <ImageThumbnails images={images} onOpenImage={context.onOpenImage} />
-    {parts.map((part, index) => part.type === 'text' ? (isFileBlock(part.text) ? null : <MessageText key={index} text={part.text} context={context} align={align} />)
+    {parts.map((part, index) => part.type === 'text' ? (isFileBlock(part.text) ? null : messaging
+        ? <MessageText key={index} text={part.text} context={context} align={align} variant="default" decoration={lead ? <BubbleTail side="end" /> : undefined}
+          footer={at ? <><ClockSpacer /><MessageClock at={at} tone="primary" /></> : undefined} />
+        : <MessageText key={index} text={part.text} context={context} align={align} />)
       : null)}
   </MessageContent></Message>;
 }
@@ -333,7 +362,7 @@ function RowBody({ row, images, context: liveContext }: { readonly row: Row; rea
   const { labels, icons } = useChatText();
   const renderMention = useMemo(() => context.pieces?.mentions ? (path: string, text: string) => <UserMention path={path} text={text} open={context.pieces?.openMention} render={context.pieces?.renderMention} /> : undefined, [context.pieces]);
   switch (row.type) {
-    case 'user': return <article data-row-id={row.key} data-role="user" aria-live={row.historical ? 'off' : undefined}><UserBubble message={row.message} images={images} context={context} /></article>;
+    case 'user': return <article data-row-id={row.key} data-role="user" aria-live={row.historical ? 'off' : undefined}><UserBubble message={row.message} images={images} context={context} lead={row.lead === true} /></article>;
     case 'card': return <article data-row-id={row.key} data-role="event">{row.card.content}</article>;
     case 'event': return <article data-row-id={row.key} data-role="event" className="text-center text-xs text-muted-foreground">{labels.event(row.label)}</article>;
     case 'system': return <article data-row-id={row.key} data-role="system"><Collapsible>
@@ -358,6 +387,7 @@ function RowBody({ row, images, context: liveContext }: { readonly row: Row; rea
       const { question: Question, approval: Approval } = context.cards ?? {};
       const active = row.active === true || row.streaming;
       const lastText = [...row.parts].reverse().find(part => part.kind === 'text');
+      const firstText = row.parts.find(part => part.kind === 'text');
       const host = nativeActions && row.text && context.messageActions
         ? <BlockActions iconOnly actions={context.messageActions(replyRef(row))} testId="reply-action" menuLabel={labels.moreActions} />
         : null;
@@ -375,8 +405,14 @@ function RowBody({ row, images, context: liveContext }: { readonly row: Row; rea
             }
             const part = chunk.part;
             if (part.kind === 'card') return <div key={part.key}>{part.content}</div>;
-            if (part.kind === 'text') return <Bubble key={part.key} variant="ghost"><BubbleContent>{(context.renderText ?? plainText)({ text: part.text, renderMention, streaming: row.streaming && part === lastText && row.parts[row.parts.length - 1] === part,
-              ...(settled && context.commandMentions ? { commandMentions: context.commandMentions } : {}), ...(context.onCopy ? { onCopy: context.onCopy } : {}) })}</BubbleContent></Bubble>;
+            if (part.kind === 'text') {
+              const text = (context.renderText ?? plainText)({ text: part.text, renderMention, streaming: row.streaming && part === lastText && row.parts[row.parts.length - 1] === part,
+                ...(settled && context.commandMentions ? { commandMentions: context.commandMentions } : {}), ...(context.onCopy ? { onCopy: context.onCopy } : {}) });
+              if (context.messageStyle !== 'messaging') return <Bubble key={part.key} variant="ghost"><BubbleContent>{text}</BubbleContent></Bubble>;
+              const time = part === lastText ? isoAt(row.timestamp) : undefined;
+              return <Bubble key={part.key} variant="muted" align="start">{row.lead && part === firstText && <BubbleTail side="start" />}
+                <BubbleContent data-testid="reply-text" className="relative"><div className={time ? clockRoom : undefined}>{text}</div>{time && <MessageClock at={time} tone="muted" />}</BubbleContent></Bubble>;
+            }
             if (part.kind === 'thinking') return null; // reasoning is a step of an activity block
             if (part.kind === 'approval') return Approval ? <Approval key={part.key} call={part.call} result={part.result} questionId={part.questionId} answer={context.answer} summary={part.summary} decision={part.decision} live={part.live} />
               : !part.live && !part.result && !part.decision ? <AnswerWaiting key={part.key} kind="approval" /> : null;
