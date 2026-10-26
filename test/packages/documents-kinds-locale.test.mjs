@@ -6,6 +6,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
+import { spawnSync } from 'node:child_process';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const out = join(root, '.cache/documents-kinds-locale-test');
@@ -59,6 +60,17 @@ async function namedKind(t, locale) {
   return page;
 }
 
+const inner = process.env.DOCUMENTS_KINDS_LOCALE_INNER === '1';
+// `npm test` runs every file in one process, where the viewer's module state and DOM globals from other files break this render. The
+// rendering checks therefore run in a child process of this same file; the outer test asserts that child passes.
+if (!inner) {
+  test('the documents sheet names the kind in the item locale (own process)', () => {
+    const env = { ...process.env, DOCUMENTS_KINDS_LOCALE_INNER: '1' };
+    delete env.NODE_TEST_CONTEXT;
+    const run = spawnSync(process.execPath, ['--test', fileURLToPath(import.meta.url)], { env, encoding: 'utf8' });
+    assert.equal(run.status, 0, run.stdout + run.stderr);
+  });
+} else {
 test('the documents sheet names a maquette in French when the item is French', async t => {
   const page = await namedKind(t, 'fr');
   assert.equal(page.$('[data-testid=artifact-panel-type]')?.textContent, 'Maquette');
@@ -68,3 +80,4 @@ test('the documents sheet names a maquette in English by default', async t => {
   const page = await namedKind(t, undefined);
   assert.equal(page.$('[data-testid=artifact-panel-type]')?.textContent, 'Mock-up');
 });
+}
