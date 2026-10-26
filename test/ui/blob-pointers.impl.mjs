@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { mkdirSync } from 'node:fs';
 import { build } from 'esbuild';
+import { DEFAULT_KINDS_ENTRY, withDefaultKinds } from '../helpers/default-kinds.mjs';
 import { Window } from 'happy-dom';
 import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 import { pointer } from '../fixtures/blob-bytes.mjs';
@@ -20,9 +21,9 @@ test('blob pointers: Library rows, viewers from the blob URL, refused bases and 
   const { createElement, act } = await import('react'); const { createRoot } = await import('react-dom/client');
   const out = new URL('../../.cache/blob-pointers-test/', import.meta.url); mkdirSync(out, { recursive: true });
   const output = new URL('workspace.mjs', out);
-  await build({ entryPoints: [new URL('../../registry/pi-app/agent-workspace.tsx', import.meta.url).pathname], outfile: output.pathname, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', loader: { '.css': 'empty' },
+  await build({ stdin: DEFAULT_KINDS_ENTRY, tsconfig: new URL('../../tsconfig.json', import.meta.url).pathname, outfile: output.pathname, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', loader: { '.css': 'empty' },
     plugins: [{ name: 'file-tree-css', setup(builder) { builder.onResolve({ filter: /^@hachej\/boring-ui-kit\/file-tree\.css$/ }, () => ({ path: new URL(import.meta.resolve('@hachej/boring-ui-kit/file-tree.css')).pathname, external: false })); } }] });
-  const { AgentWorkspace } = await import(output.href);
+  const { AgentWorkspace } = withDefaultKinds(await import(output.href), createElement);
   const element = window.document.createElement('div'); window.document.body.append(element);
   const uncaught = [];
   const root = createRoot(element, { onUncaughtError: error => uncaught.push(error) });

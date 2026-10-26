@@ -7,11 +7,13 @@ import { NotebookTextIcon } from 'lucide-react';
 import { artifactKey } from '../../../../registry/pi-artifacts/artifact.ts';
 import { connectRevisionProvider } from '@hachej/boring-files/revision';
 import { AgentWorkspace, useArtifactVersions, useRemoteChat } from '../../../../registry/pi-app/agent-workspace.tsx';
+import { defaultKinds } from '../../../../registry/pi-app-kinds/pi-app-kinds.ts';
 import { useScenarioRun, useTyped } from '../../../../lab/studio/scenarios-ui.jsx';
 import { savedResource } from '../../../../lab/studio/saved-resource.mjs';
 import { setStudioContext, shareStudioLink, takeLink } from '../../../../lab/studio/share-link.mjs';
 
 const KEY = 'recipe.token';
+const KINDS = defaultKinds();
 const readStored = () => { try { return sessionStorage.getItem(KEY) ?? ''; } catch { return ''; } };
 const store = token => { try { sessionStorage.setItem(KEY, token); } catch { /* optional convenience */ } };
 
@@ -112,7 +114,7 @@ function Workspace({ token, onRejected }) {
   // The shared document is the workspace file notes.md: the Document button opens its latest revision.
   const notes = { schema: 'boring.artifact', version: 1, title: 'notes.md', type: 'markdown', mediaType: 'text/markdown', target: agent.notes, revision: 'latest' };
   return <main className="cf" data-testid="studio-main" data-variant={variant.id} data-conversation={conversationId}>
-    <AgentWorkspace controller={controller} conversationId={active} conversations={conversations} revisionProvider={revisionProvider} detect={detect} share={shareStudioLink}
+    <AgentWorkspace artifactKinds={KINDS} controller={controller} conversationId={active} conversations={conversations} revisionProvider={revisionProvider} detect={detect} share={shareStudioLink}
       opened={opened} onOpenedChange={setOpened} storageKey="recipe" sheetBelow={901} drawerBelow={901}
       chat={{ labels: { title: agent.title }, mode: 'developer', actions: chat.actions, ...composer, emptyState: scenarioRun.emptyState, decisions: scenarioRun.decisions }}
       connecting={<p className="cf-loading" role="status">{chat.status === 'offline' ? 'Server unreachable. Retrying…' : 'Connecting…'}</p>}

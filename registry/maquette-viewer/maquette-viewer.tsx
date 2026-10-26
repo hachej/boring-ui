@@ -2,8 +2,8 @@
 
 // The maquette viewer: a PM agent's `*.maquette.json` mock-up, one screen at a time. The screen is the content; the chrome is one thin bar
 // of icons: Back, ‹ 2 / 5 › (also arrow keys and swipe) and a menu holding the guided tours and "How it works" (the workflow, in a dialog).
-// During a tour the bar shows the step dots and ×, with the step's caption under it. `maquetteKind` (maquette-kind.ts) is the kind the pi-app artifact panel
-// uses by default for `.maquette.json` files; an app's own kind in `artifactKinds` wins. It draws data only: nothing in the file runs.
+// During a tour the bar shows the step dots and ×, with the step's caption under it. `maquetteKind` (maquette-kind.ts) is the kind of the pi-app-kinds default
+// list for `.maquette.json` files; an app kind placed before it in `artifactKinds` wins. It draws data only: nothing in the file runs.
 // The workflow is drawn by the diagram-viewer item's `DiagramView`, inline or from a linked `*.diagram.json`. With `comments` (the feedback
 // item's `usePointComments`, structurally) one more icon enters point mode on the screen: a tap on a block pins a note that names the
 // maquette path, the screen id and the block id; the pins of the current screen show as small numbers on their blocks.

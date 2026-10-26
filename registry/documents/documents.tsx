@@ -20,6 +20,7 @@ import type { ArtifactDescriptor } from '../pi-artifacts/artifact';
 import type { CustomViewers, ViewerOptions } from '../pi-app/artifact-panel';
 import { FileViewer } from '../pi-app/file-viewer';
 import { lazyView, ViewLoading } from '../pi-app/viewer-kinds';
+import { defaultKinds } from '../pi-app-kinds/pi-app-kinds';
 import { imageKind } from '../viewer-image/image-kind';
 import { pdfKind } from '../viewer-pdf/pdf-kind';
 import { ViewerFrame } from '../viewer-frame/viewer-frame';
@@ -29,6 +30,9 @@ import { Revisions } from './revisions';
 import type { DocumentsLabels } from './documents-labels';
 import { documentsLabels, DocumentsWords } from './words';
 import type { DocumentsLocale } from './words';
+
+/** The viewers' kinds: the pi-app default list, in English. */
+const kinds = defaultKinds();
 
 export interface DocumentsProps {
   /** The workspace's revision provider (the files guide's `connectRevisionProvider`, or a host's own binding). Borrowed: the host disposes it. */
@@ -192,7 +196,7 @@ export function Documents({ provider, locale, labels: given, viewers, share, blo
   const dirty = useRef(false);
   const onDirty = useCallback((unsaved: boolean) => { dirty.current = unsaved; }, []);
   const mayLeave = () => !dirty.current || window.confirm(labels.discardChanges);
-  const options = useMemo<ViewerOptions>(() => ({ client: provider, identity: provider.identity, blobBase, ...(viewers ? { viewers } : {}), ...(share ? { share } : {}) }), [provider, viewers, share, blobBase]);
+  const options = useMemo<ViewerOptions>(() => ({ client: provider, identity: provider.identity, kinds, blobBase, ...(viewers ? { viewers } : {}), ...(share ? { share } : {}) }), [provider, viewers, share, blobBase]);
   const choose = (next: string) => {
     if (next === path || !mayLeave()) return;
     setPath(next);
