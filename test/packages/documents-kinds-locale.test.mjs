@@ -54,7 +54,8 @@ function provider() {
 async function namedKind(t, locale) {
   const page = await dom(t);
   await page.render(page.h(kit.DocumentSheet, { provider: provider(), path: PATH, onClose: () => {}, ...(locale ? { locale } : {}) }));
-  await page.settle();
+  // The file is read asynchronously: wait for the kind label rather than a fixed settle, which is too short under a full-suite load.
+  for (let i = 0; i < 200 && !page.$('[data-testid=artifact-panel-type]'); i++) await page.settle();
   return page;
 }
 
