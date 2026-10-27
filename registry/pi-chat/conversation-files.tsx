@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Drawer, DrawerContent, DrawerTitle, DrawerTrigger } from '@/components/ui/drawer';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useChatText } from './labels';
+import { usePhone } from '../utils/use-media';
 
 /** A conversation's observed file, opened only through the host's existing callback. */
 export interface ConversationFile {
@@ -18,14 +19,9 @@ export interface ConversationFile {
 export function ConversationFiles({ files }: { readonly files: readonly ConversationFile[] }) {
   const { labels } = useChatText();
   const [open, setOpen] = useState(false);
-  const [phone, setPhone] = useState(() => globalThis.matchMedia?.('(max-width: 640px)').matches === true);
-  useEffect(() => {
-    const media = globalThis.matchMedia?.('(max-width: 640px)');
-    if (!media) return;
-    const change = () => { setPhone(media.matches); setOpen(false); };
-    media.addEventListener('change', change);
-    return () => media.removeEventListener('change', change);
-  }, []);
+  const phone = usePhone();
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- switching presentation closes the old menu once, after commit
+  useEffect(() => { setOpen(false); }, [phone]);
   const available = files.filter(file => file.open);
   if (!available.length) return null;
   const trigger = <Button variant="outline" data-testid="conversation-files" className="mb-3 max-w-full gap-2"><ShapesIcon data-icon="inline-start" aria-hidden="true" />{labels.artifacts}<span className="text-muted-foreground">· {available.length}</span></Button>;

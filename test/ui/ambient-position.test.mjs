@@ -50,6 +50,42 @@ async function moveOnce(t, props) {
   return { key, local: read(window.localStorage), session: read(window.sessionStorage) };
 }
 
+test('Ambient uses the shared below-768 phone layout and releases its media listener', async t => {
+  const { window, element, root, chat, act, createElement, AmbientChat } = await harness(t);
+  window.happyDOM.setWindowSize({ width: 700, height: 800 });
+  const original = globalThis.matchMedia;
+  const listeners = new Set();
+  globalThis.matchMedia = query => {
+    const media = original(query);
+    const add = media.addEventListener.bind(media), remove = media.removeEventListener.bind(media);
+    media.addEventListener = (type, listener, ...rest) => { if (type === 'change') listeners.add(listener); add(type, listener, ...rest); };
+    media.removeEventListener = (type, listener, ...rest) => { if (type === 'change') listeners.delete(listener); remove(type, listener, ...rest); };
+    return media;
+  };
+  await act(async () => root.render(createElement(AmbientChat, { controller: chat })));
+  const phone = () => element.querySelector('[data-boring=ambient-chat]').dataset.phone === 'true';
+  assert.equal(phone(), true, '700px uses the phone layout');
+  const composer = element.querySelector('[data-testid=composer-input]');
+  for (const [width, expected] of [[767, true], [767.5, true], [768, false], [1024, false], [700, true]]) {
+    await act(async () => window.happyDOM.setWindowSize({ width, height: 800 }));
+    assert.equal(phone(), expected, `${width}px phone state`);
+    assert.equal(element.querySelector('[data-testid=composer-input]'), composer, 'resizing preserves the composer');
+  }
+  assert.ok(listeners.size > 0, 'media changes are observed');
+  await act(async () => root.render(null));
+  assert.equal(listeners.size, 0, 'unmount releases every media listener');
+});
+
+test('ambient position remains usable when the browser denies storage access', async t => {
+  const { window, element, root, chat, act, createElement, AmbientChat } = await harness(t);
+  for (const name of ['sessionStorage', 'localStorage']) Object.defineProperty(globalThis, name, { configurable: true, get() { throw new Error('fixture storage denied'); } });
+  for (const storage of ['session', 'local']) {
+    await act(async () => root.render(createElement(AmbientChat, { controller: chat, storage })));
+    await press(window, act, element, 'ArrowUp');
+    assert.ok(element.querySelector('[data-testid=composer-input]'), 'denied persistence does not disable chat');
+  }
+});
+
 test('embedding a pill resets its remembered state before floating again, preserving the page composer and transcript', async t => {
   const { element, root, chat, act, createElement, AmbientChat } = await harness(t);
   const render = embedded => act(async () => root.render(createElement(AmbientChat, { controller: chat, defaultState: 'minimized', embedded })));

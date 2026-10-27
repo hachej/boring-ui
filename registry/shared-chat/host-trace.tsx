@@ -21,7 +21,7 @@ export function HostTrace({ steps, participant, streaming, active }: { readonly 
   const Icon = streaming ? Spinner : state === 'failed' ? AlertCircleIcon : CheckIcon;
   return <Trace data-testid="activity" data-boring="activity" data-state={state} data-open={open ? 'true' : 'false'} className="my-1.5">
     <TraceCollapsible open={open} onOpenChange={setChosen}>
-      <TraceCollapsibleTrigger className="min-h-8 max-sm:min-h-11 pointer-coarse:min-h-11">
+      <TraceCollapsibleTrigger className="min-h-8 max-md:min-h-11 pointer-coarse:min-h-11">
         <TraceLine {...(streaming ? { status: 'running' } : state === 'failed' ? { status: 'error' } : {})}>
           {!(open || streaming && !active) && <TraceIcon><Icon aria-hidden="true" /></TraceIcon>}
           <TraceTitle data-testid="activity-label">{streaming ? `${labels.sharedWorking(participant)}${progress}` : labels.steps(steps.length)}</TraceTitle>

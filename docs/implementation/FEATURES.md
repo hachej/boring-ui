@@ -1,5 +1,11 @@
 # Implemented behavior and evidence
 
+## Shared phone layout and viewer persistence
+
+`registry/utils/use-media.ts` owns the below-768px phone query, generic media subscription, visual viewport and element-relative chat keyboard inset. Phone layout is independent of pointer type; coarse-pointer hit targets remain pointer-specific. `registry/utils/persisted.ts` centralizes safe session/local reads and writes; consumers retain their storage keys, encodings and value validation. Ambient, chat, app-shell, shared chat, viewers and floating windows share the breakpoint; workspace container sheets default to 768px but retain explicit host overrides. Old Ambient and app-shell hook paths and `utils/utils`'s constant remain compatibility exports for one release. No Pi extension point applies: these are browser layout and local viewer conveniences, not conversation or execution state. No kit subpath or package edge is added.
+
+`test/ui/ambient-position.test.mjs` drives the public Ambient component at 700px, across 767 / 767.5 / 768px, through media cleanup and denied storage. The 700px assertion failed before the change. `test/ui/registry-utils.test.mjs` imports bundled source-distributed utility entries and exercises media query replacement, coarse-pointer separation, viewport resize/scroll/zoom, inset cleanup and denied/malformed storage. Existing `test/ui/dock-page.test.mjs`, `test/contracts/windows.test.mjs` and workspace tests protect retained layout persistence. Browser gates: `npm run test:design` and `npm run test:viewer-chrome`; isolated installs: `test:pi-chat-consumer` and `test:registry-consumer`. Browser emulation does not qualify physical keyboards or real-device behavior; global deferrals are unchanged.
+
 ## Shared artifact versions and presentation acknowledgements
 
 `@hachej/boring-ui-kit/chat-view` owns artifact parsing/detection, collection, pending presents and acknowledgement bookkeeping. `artifactVersions` is newest conversation result first and `follows` uses revision equality (retried calls can share ordinals). The opt-in `chat-react/useArtifactFollow` owns the common auto-open, close-in-turn and observed-mount protocol used by Ambient and AgentWorkspace. Ambient auto-open remains off; its host viewer must report the actual loaded revision through `onShown`, unmount through `hidden: true`, or failure through `onFailed`. No render callback manufactures evidence. This is UI view/controller projection and host presentation, not a Pi execution extension.
@@ -24,7 +30,7 @@ The `windows` registry item is host presentation, independent of Pi: `WindowLaye
 `FloatingWindow`, `WindowLauncher`, `useWindow` and the shared `useDraggable` hook.
 Window rectangles and open/minimized/closed status are remembered in session or
 local storage; desktop windows drag, resize and raise on pointer or keyboard focus.
-Below 641px the front window uses the host's full-screen Drawer. The app shell
+Below 768px the front window uses the host's full-screen Drawer. The app shell
 uses the same extracted drag hook without changing its dock/float contract.
 See [the recipe](../../registry/README.md#floating-windows-windows).
 
