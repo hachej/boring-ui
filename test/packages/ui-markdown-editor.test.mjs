@@ -304,8 +304,9 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
       const f = await fixture(t, 'original', { props: { ...props, initialMode: 'source', autosave: { delayMs: 100 } } });
       await f.client.publish({ operationId: `agent-write-${JSON.stringify(props).length}`, atomicity: 'all-or-nothing', changes: [{ kind: 'replace', target: f.controller.getSnapshot().base.target, bytes: new TextEncoder().encode('agent text'), mediaType: 'text/markdown' }] });
       await f.input('human draft');
-      await act(async () => { await new Promise(resolve => setTimeout(resolve, 200)); });
-      const alert = f.container.querySelector('.boring-markdown-alert');
+      for (let attempt = 0; attempt < 100 && f.controller.getSnapshot().save.result?.kind !== 'conflict'; attempt++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)); });
+      assert.equal(f.controller.getSnapshot().save.result?.kind, 'conflict');
+      const alert =f.container.querySelector('.boring-markdown-alert');
       if (!alert) { assert.fail(`no alert for ${JSON.stringify(props)}`); }
       assert.ok(alert.textContent.includes(notice), alert.textContent);
       assert.ok(f.button(button));
