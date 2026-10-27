@@ -170,7 +170,7 @@
     "esbuild": "0.28.2",
     "eslint": "10.12.0",
     "eslint-plugin-react-hooks": "7.1.1",
-    "happy-dom": "20.14.6",
+    "happy-dom": "21.0.4",
     "ignore": "5.3.2",
     "isomorphic-git": "1.44.2",
     "just-bash": "3.6.0",
