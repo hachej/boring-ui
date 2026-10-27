@@ -826,6 +826,7 @@
       "title": "Pi artifacts",
       "description": "Artifact descriptors, kinds and the artifact card that opens generated content in the host's panel. Plug it in with `artifacts={{ ...artifactCards, open, isOpen, kinds }}`; without it pi-chat offers no artifact. pi-app and the viewers import their artifact kinds and types from it.",
       "dependencies": [
+        "@hachej/boring-ui-kit@^0.4.25",
         "react@^19.0.0",
         "lucide-react@^1.51.0",
         "@earendil-works/pi-ai@~1.2.0",
@@ -880,7 +881,7 @@
       "name": "pi-ambient",
       "type": "registry:block",
       "title": "Pi ambient agent",
-      "description": "AmbientChat, a compact floating agent bar that grows into a chat window over an existing page, and AgentNotifications, toasts for finished, failed and waiting tasks (with the one guarded browser Notification helper). A block over the pi-chat item; its in-window artifact panel uses the pi-workspace layout.",
+      "description": "AmbientChat, a compact floating agent bar that grows into a chat window over an existing page, and AgentNotifications, toasts over the kit's shared chat-react run notifications (with the one guarded browser Notification helper). A block over the pi-chat item; its in-window artifact panel uses the pi-workspace layout.",
       "dependencies": [
         "@hachej/boring-ui-kit@^0.4.25",
         "react@^19.0.0",

@@ -40,23 +40,7 @@ export type QueuedMessage = Extract<InboxItem, { readonly mode: 'steer' | 'follo
 export type ToolStatus = 'running' | 'completed' | 'failed' | 'unfinished';
 export interface ToolEntry<Content = unknown> { readonly key: string; readonly call: ToolCall; readonly result: ToolResultMessage | undefined; readonly status: ToolStatus; readonly custom?: Content }
 
-/**
- * An artifact a tool call made (or a running `present` call is making), as the chat places it. `descriptor` is the artifacts item's own
- * value: the chat hands it back to the host's `open` and `isOpen` and never reads it.
- */
-export interface ChatArtifact {
-  readonly state: 'presenting' | 'ready';
-  /** One card per id in a reply: the last version, at the place of its last step. */
-  readonly id: string | undefined;
-  readonly title: string | undefined;
-  /** The workspace path, for the conversation's file list. */
-  readonly path: string | undefined;
-  /** The tool's own result carries it, so its card replaces the step; a host-detected one is shown in addition to the step. */
-  readonly own: boolean;
-  readonly descriptor: unknown;
-}
-/** Finds an artifact descriptor a finished call's result does not carry itself (the host's `detect`). */
-export type ArtifactDetect = (call: ToolCall, result: ToolResultMessage) => unknown;
+import type { ArtifactDetect, ChatArtifact } from './chat-artifacts.js';
 /** The artifact a call made, or that a running call (`running`) is making; undefined for any other call. */
 export type ArtifactRecognise = (call: ToolCall, result: ToolResultMessage | undefined, running: boolean, detect: ArtifactDetect | undefined) => ChatArtifact | undefined;
 /**
@@ -423,3 +407,5 @@ export function finishNotice(rows: readonly Row<unknown>[], text: NoticeText = d
   if (last?.stopReason === 'error') return { kind: 'error', summary: last.errorMessage ?? text.runFailed };
   return { kind: 'done', summary: summaryOf(last?.text ?? '') || text.finished };
 }
+
+export * from './chat-artifacts.js';

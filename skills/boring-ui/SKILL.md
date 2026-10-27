@@ -17,6 +17,7 @@ The agent runs on Pi (`@earendil-works/pi-durable`). The app's server opens Pi's
 | The task | Load |
 | --- | --- |
 | Create an app with an agent, or add an agent to an existing React/Node app | `build-agent-app` |
+| Lay out the app (AppShell layouts, navigation, list and detail), place the agent (shell layer, full page, embedded, ambient), customise the chat (labels, conversations, mentions, cards) | `app-layout-and-agent` |
 | Install, update, restyle or check UI blocks | `add-blocks` |
 | Give the agent tools, file access, approvals, questions, sub-agents or schedules | `agent-capabilities` |
 
@@ -48,6 +49,7 @@ Follow these on every change. They come from [INVARIANTS.md](../../INVARIANTS.md
 
 ## Where to read more
 
+- [features/README.md](../../features/README.md): the feature map. What the kit does, with sub-feature IDs, code paths and how to drive each; start here to find where something lives.
 - [README.md](../../README.md): pitch, quickstart and package overview.
 - [registry/README.md](../../registry/README.md): every block, its props and install command.
 - [packages/agent/README.md](../../packages/agent/README.md): agent tools, transport, approvals, schedules.

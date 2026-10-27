@@ -26,16 +26,17 @@ import { withChatPlugins } from '../pi-chat-plugins/chat-plugins';
 import { TranscriptChunk } from '../pi-chat/message';
 import type { RowContext } from '../pi-chat/message';
 import { ChatNotices, Notice, PreparingStatus, preparing } from '../pi-chat/notice';
-import { AgentNotifications, KindIcon, createNotificationStore, defaultNotificationLabels, finishNotice, noticeTextOf, pendingQuestion, useNotifications } from './notifications';
+import { AgentNotifications, KindIcon, createNotificationStore, defaultNotificationLabels, noticeTextOf, useRunNotifications, useNotifications } from './notifications';
 import type { AgentNotification, NotificationLabels, NotificationStore } from './notifications';
 import { ChatTextProvider, defaultChatIcons, defaultChatLabels, useMergedText } from '../pi-chat/labels';
 import type { ChatIcons, ChatLabels } from '../pi-chat/labels';
 import { MessageQueue } from '../pi-chat/queue';
-import { artifactKey, collectArtifacts } from '../pi-artifacts/artifact';
+import { useArtifactFollow } from '@hachej/boring-ui-kit/chat-react';
+import type { ArtifactShown, ArtifactFailed } from '@hachej/boring-ui-kit/chat-react';
 import type { ArtifactDescriptor, ArtifactsConfig } from '../pi-artifacts/artifact';
 import { artifactCards } from '../pi-artifacts/artifact-card';
 import { PAGE_FIRST, PAGE_MORE, useChatSession, useRowChunks, useTranscript } from '../pi-chat/session';
-import type { ChatFeatureProps, ChatSession } from '../pi-chat/session';
+import type { ChatFeatureProps } from '../pi-chat/session';
 import { ArtifactWorkspace } from '../pi-workspace/workspace';
 import type { WorkspacePanelApi } from '../pi-workspace/workspace';
 import { cn, PHONE_BELOW } from '../utils/utils';
@@ -102,6 +103,10 @@ export interface AmbientArtifactPanelApi extends WorkspacePanelApi {
   readonly follow: boolean;
   /** `'latest'` follows the newest version; a descriptor from `versions` pins that one. */
   readonly select: (version: ArtifactDescriptor | 'latest') => void;
+  /** Forward the viewer's actual loaded revision mount/unmount report. Opening or rendering the panel is not evidence. */
+  readonly onShown: (shown: ArtifactShown) => void;
+  /** Forward a viewer load/render failure; the waiting present is refused. */
+  readonly onFailed: (failed: ArtifactFailed) => void;
 }
 
 export interface AmbientChatProps extends Omit<ChatFeatureProps, 'artifacts'> {
@@ -215,32 +220,6 @@ function useElapsed(active: boolean): number {
   return seconds;
 }
 
-/** Pushes a toast when a run finishes or fails and when a question starts waiting; takes it back when the question is answered or a new run starts. */
-function useRunFeed({ enabled, store, conversationId, title, session, suppress, onOutcome, waiting, notice }: {
-  readonly enabled: boolean; readonly store: NotificationStore; readonly conversationId: string; readonly title: string; readonly session: ChatSession; readonly waiting: string; readonly notice: NoticeText;
-  readonly suppress: () => boolean; readonly onOutcome: (outcome: 'done' | 'error' | null) => void;
-}) {
-  const { working, waitingForAnswer, rows, connected } = session;
-  const before = useRef({ working, waiting: waitingForAnswer });
-  const latest = useRef({ rows, title, suppress, onOutcome, connected, waiting, notice });
-  useLayoutEffect(() => { latest.current = { rows, title, suppress, onOutcome, connected, waiting, notice }; });
-  useEffect(() => {
-    const was = before.current;
-    before.current = { working, waiting: waitingForAnswer };
-    const now = latest.current;
-    if (working && !was.working) { now.onOutcome(null); store.dismiss(`${conversationId}:done`); }
-    if (!enabled) return;
-    if (waitingForAnswer && !was.waiting && !now.suppress()) store.push({ id: `${conversationId}:input`, kind: 'input', title: now.title, summary: pendingQuestion(now.rows, now.notice) ?? now.waiting, conversationId });
-    if (!waitingForAnswer && was.waiting) store.dismiss(`${conversationId}:input`);
-    if (was.working && !working && now.connected) {
-      const finished = finishNotice(now.rows, now.notice);
-      if (!finished) return;
-      now.onOutcome(finished.kind);
-      if (!now.suppress()) store.push({ id: `${conversationId}:done`, kind: finished.kind, title: now.title, summary: finished.summary, conversationId });
-    }
-  }, [working, waitingForAnswer, enabled, store, conversationId]);
-}
-
 /** A compact floating agent bar over an existing page; it grows into a chat window in place. Borrows a concrete native controller like `PiChat`. */
 /** The ambient bar comes with every composer feature item (`withChatPlugins`); a component the host passes is kept. */
 export function AmbientChat(given: AmbientChatProps) {
@@ -304,14 +283,17 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
   const rowExtras = useMemo(() => ({ replyActions }), [replyActions]);
   const inWindow = Boolean(artifactPanel) && artifactTarget !== 'host';
   const detect = hostArtifacts?.detect;
-  const versionsRef = useRef<readonly ArtifactDescriptor[]>([]);
+  const follow = useArtifactFollow({ controller, conversationId: String(conversations?.activeId ?? controller.getSnapshot().conversationId), detect,
+    active: opened, onOpen: setOpened, autoOpen: false, narrow: () => phone,
+    showing: path => expanded && opened?.descriptor.target.resource.path === path,
+    openPresent: () => false, answer: inWindow ? actions?.answer : undefined });
+  const closeArtifact = () => { follow.recordClosed(); setOpened(null); setFullscreen(false); };
   const artifacts = useMemo<ArtifactsConfig | undefined>(() => !inWindow ? hostArtifacts : {
-    open: descriptor => { const newest = versionsRef.current.filter(version => artifactKey(version) === artifactKey(descriptor)).reduce((top, version) => Math.max(top, version.ordinal ?? 0), 0); setOpened({ descriptor, follow: (descriptor.ordinal ?? 0) >= newest }); },
-    isOpen: descriptor => opened !== null && artifactKey(opened.descriptor) === artifactKey(descriptor) && (opened.follow ? (descriptor.ordinal ?? 0) >= (versionsRef.current.find(version => artifactKey(version) === artifactKey(descriptor))?.ordinal ?? 0) : descriptor.revision === opened.descriptor.revision),
+    open: follow.open, isOpen: follow.isOpen,
     ...(detect ? { detect } : {}),
     ...(hostArtifacts?.kinds ? { kinds: hostArtifacts.kinds } : {}),
     recognise: hostArtifacts?.recognise ?? artifactCards.recognise, Card: hostArtifacts?.Card ?? artifactCards.Card,
-  }, [inWindow, hostArtifacts, opened, detect]);
+  }, [inWindow, hostArtifacts, follow.open, follow.isOpen, detect]);
   const session = useChatSession({ controller, activeController, mode, presentation, voiceReplay, actions, renderEntry, hideLine, historicalMessageActions, unread: replyUnread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept,
     slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => scrollToBottom.current(), rowExtras, feedback: composerFeedback, onOpenFile, fileChanges, pasteToFile, composerChips });
   const { state, derived, rows, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, files, loading } = session;
@@ -319,11 +301,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
   const transcript = useTranscript(rows, displayLimit ?? paging?.first ?? PAGE_FIRST, paging?.more ?? PAGE_MORE, { state: state.history, connected: !state.disposed && connected, load: controller.loadEarlier }, displayLimit === undefined);
   const { stick: { scrollRef, isAtBottom, scrollToBottom: stickToBottom }, hidden } = transcript;
   const chunks = useRowChunks(useMemo(() => hidden ? rows.slice(hidden) : rows, [rows, hidden]));
-  const versions = useMemo(() => inWindow ? collectArtifacts(state.view, detect).sort((a, b) => (b.ordinal ?? 0) - (a.ordinal ?? 0)) : [], [inWindow, state.view, detect]);
-  // eslint-disable-next-line react-hooks/refs -- the artifact config reads the versions of the latest render; a ref keeps it from rebuilding on every streamed token
-  versionsRef.current = versions;
-  const known = opened ? versions.filter(version => artifactKey(version) === artifactKey(opened.descriptor)) : [];
-  const shownArtifact = opened ? (opened.follow ? known[0] ?? opened.descriptor : opened.descriptor) : undefined;
+  const known = follow.known, shownArtifact = follow.shown;
   const { reset } = transcript;
   useLayoutEffect(() => { scrollToBottom.current = () => { reset(); void stickToBottom('instant'); }; });
   const { barStart, barNote } = session.pickers();
@@ -333,7 +311,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
   const activeItem = conversations?.items.find(item => item.id === conversations.activeId);
   const shownTitle = activeItem?.title?.trim() || title;
   const toasts = useNotifications(store);
-  useRunFeed({ enabled: notifications !== false, store, conversationId, title: shownTitle, session, onOutcome: setOutcome, waiting: labels.waitingForAnswer, notice: noticeTextOf(labels),
+  useRunNotifications(controller, store, { enabled: notifications !== false, conversationId, title: shownTitle, onOutcome: setOutcome, text: noticeTextOf(labels),
     suppress: () => stateRef.current === 'expanded' && globalThis.document?.visibilityState !== 'hidden' });
   const unread = !expanded && toasts.length > 0;
   const seconds = useElapsed(working);
@@ -414,7 +392,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
     event.preventDefault();
     // Escape steps back: full screen, then the artifact, then the window.
     if (fullscreen) return setFullscreen(false);
-    if (opened) return setOpened(null);
+    if (opened) return closeArtifact();
     refocusTitle.current = true;
     setWindowState('bar');
   };
@@ -522,10 +500,10 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
     {picking && conversations && <ConversationHistory conversations={conversations} placement={expanded ? 'below' : 'above'} onClose={() => setPicking(false)} />}
     <div data-testid="ambient-surface" className={surface}>
       {card && <Card aria-hidden="true" data-boring="chrome" className="pointer-events-none absolute inset-0 -z-10" />}
-      {artifactPanel ? <ArtifactWorkspace open={panelOpen} onClose={() => { setOpened(null); setFullscreen(false); }} fullscreen={fullscreen} onFullscreenChange={setFullscreen} storageKey="boring.ambient.panel-width" panelLabel={labels.artifactPanel}
+      {artifactPanel ? <ArtifactWorkspace open={panelOpen} onClose={closeArtifact} fullscreen={fullscreen} onFullscreenChange={setFullscreen} storageKey="boring.ambient.panel-width" panelLabel={labels.artifactPanel}
         defaultWidth={600} minPanel={320} minChat={300} sheetBelow={720}
         panel={api => shownArtifact ? artifactPanel(shownArtifact, { ...api, versions: known, follow: opened?.follow ?? true,
-          select: version => setOpened(current => current ? (version === 'latest' ? { descriptor: known[0] ?? current.descriptor, follow: true } : { descriptor: version, follow: false }) : current) }) : null}
+          select: follow.select, onShown: follow.onShown, onFailed: follow.onFailed }) : null}
         chat={conversation} /> : conversation}
     </div>
   </div>;

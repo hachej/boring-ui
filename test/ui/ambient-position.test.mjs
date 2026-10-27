@@ -6,7 +6,7 @@ import { mkdirSync } from 'node:fs';
 import { build } from 'esbuild';
 import { Window } from 'happy-dom';
 
-async function harness(t) {
+async function harness(t, view = { conversation: { id: 1 }, entries: [], docs: {} }) {
   const window = new Window({ url: 'https://fictional.invalid/', settings: { disableIframePageLoading: true } });
   const names = ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node', 'Text', 'DOMParser', 'MutationObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'IS_REACT_ACT_ENVIRONMENT', 'confirm', 'sessionStorage', 'localStorage', 'ResizeObserver', 'KeyboardEvent', 'addEventListener', 'removeEventListener', 'matchMedia', 'innerWidth', 'innerHeight'];
   const globals = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
@@ -28,7 +28,7 @@ async function harness(t) {
   const root = createRoot(element);
   const chat = createNativeChatController({ identity: { runtimeId: 'fictional', scopeId: 'fictional', principalId: 'alice' },
     conversation: { id: 1 }, context: { value: () => undefined, toString: () => 'fictional' }, history: false,
-    source: { open: async () => ({ value: { conversation: { id: 1 }, entries: [], docs: {} }, start() {}, closed: new Promise(() => {}), stop: async () => ({ kind: 'stopped' }) }) } });
+    source: { open: async () => ({ value: view, start() {}, closed: new Promise(() => {}), stop: async () => ({ kind: 'stopped' }) }) } });
   t.after(async () => {
     await act(async () => root.unmount());
     chat.dispose();
@@ -100,6 +100,58 @@ test('host header controls stay interactive before Dock and do not replace the c
   assert.equal(element.querySelector('[data-testid=fixture-history]'), null, 'without the option there are no extra header controls');
   assert.equal(element.querySelector('[data-testid=composer-input]'), composer);
   assert.equal(element.querySelector('[data-testid=transcript]'), transcript);
+});
+
+test('Ambient pins the older revision when retried artifact calls reuse an ordinal', async t => {
+  const descriptor = revision => ({ schema: 'boring.artifact', version: 1, id: 'plan', title: 'Plan', type: 'code', mediaType: 'text/plain', ordinal: 1,
+    target: { resource: { providerId: 'fictional', path: 'plan.txt' }, view: { kind: 'published' } }, revision });
+  const entry = (id, revision) => ({ id, model: [
+    { role: 'assistant', content: [{ type: 'toolCall', id: 'retry', name: 'present', arguments: { path: 'plan.txt' } }], stopReason: 'toolUse' },
+    { role: 'toolResult', toolCallId: 'retry', toolName: 'present', content: [{ type: 'text', text: JSON.stringify({ artifact: descriptor(revision) }) }] },
+    { role: 'user', content: `Next ${id}`, timestamp: id },
+  ] });
+  const view = { conversation: { id: 1 }, entries: [entry(1, 'old'), entry(2, 'new')], docs: {} };
+  const { element, root, chat, act, createElement: h, AmbientChat } = await harness(t, view);
+  let panel;
+  await act(async () => root.render(h(AmbientChat, { controller: chat, defaultState: 'expanded', notifications: false,
+    artifactPanel: (artifact, api) => { panel = { artifact, api }; return h('p', null, artifact.revision); } })));
+  const cards = element.querySelectorAll('[data-testid=artifact-card][data-state=ready]');
+  assert.equal(cards.length, 2);
+  await act(async () => cards[0].click());
+  assert.equal(panel.artifact.revision, 'old');
+  assert.equal(panel.api.follow, false, 'equal ordinals do not make an old revision follow');
+  assert.deepEqual(panel.api.versions.map(item => item.revision), ['new', 'old'], 'conversation order breaks ordinal ties');
+  await act(async () => panel.api.select('latest'));
+  assert.equal(panel.artifact.revision, 'new');
+  assert.equal(panel.api.follow, true);
+});
+
+test('Ambient present waits for an observed host mount, reports its revision and refuses a failed view', async t => {
+  const descriptor = { schema: 'boring.artifact', version: 1, id: 'plan', title: 'Plan', type: 'code', mediaType: 'text/plain',
+    target: { resource: { providerId: 'fictional', path: 'plan.txt' }, view: { kind: 'published' } }, revision: 'observed' };
+  const view = { conversation: { id: 1 }, entries: [{ id: 1, model: [
+    { role: 'assistant', content: [{ type: 'toolCall', id: 'ready', name: 'present', arguments: { path: 'plan.txt' } }], stopReason: 'toolUse' },
+    { role: 'toolResult', toolCallId: 'ready', toolName: 'present', content: [{ type: 'text', text: JSON.stringify({ artifact: descriptor }) }] },
+    { role: 'assistant', content: [{ type: 'toolCall', id: 'waiting', name: 'present', arguments: { path: 'plan.txt' } }], stopReason: 'toolUse' },
+  ] }], docs: { 'pi.live': { run: { id: 'fictional' } } } };
+  const { element, root, chat, act, createElement: h, AmbientChat } = await harness(t, view);
+  const sent = []; let panel;
+  await act(async () => root.render(h(AmbientChat, { controller: chat, defaultState: 'expanded', notifications: false,
+    actions: { answer: async (id, body) => { sent.push({ id, ...JSON.parse(body) }); return { kind: 'denied' }; } },
+    artifactPanel: (artifact, api) => { panel = api; return h('p', null, artifact.revision); } })));
+  assert.equal(element.querySelector('[data-testid=artifact-panel]'), null, 'Ambient does not auto-open');
+  assert.deepEqual(sent, [], 'render alone cannot acknowledge');
+  await act(async () => element.querySelector('[data-testid=artifact-card][data-state=ready]').click());
+  assert.deepEqual(sent, [], 'opening a panel is not evidence of the loaded revision');
+  assert.equal(typeof panel.onShown, 'function', 'the host can report a real mount');
+  assert.equal(typeof panel.onFailed, 'function');
+  await act(async () => panel.onShown({ path: 'plan.txt', revision: 'observed' }));
+  assert.equal(sent[0].kind, 'opened');
+  assert.equal(sent[0].revision, 'observed');
+  assert.equal(sent[0].id, '[1,"waiting"]');
+  await act(async () => panel.onFailed({ path: 'plan.txt', revision: 'observed', reason: 'fictional load failed' }));
+  assert.equal(sent.at(-1).kind, 'refused');
+  assert.equal(sent.at(-1).reason, 'fictional load failed');
 });
 
 test('ambient bar remembers its position in localStorage with storage="local"', async t => {
