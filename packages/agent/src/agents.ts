@@ -5,14 +5,14 @@ import type { Context } from '@earendil-works/chord';
 import type { ExecutionEnv } from '@earendil-works/pi-durable/env';
 import { createSelfEvolution } from './self-evolving.js';
 import type { SelfEvolution, SelfEvolutionReport } from './self-evolving.js';
-import { NAME, createSkillsExtension, parseSkill, validSkill } from './skills.js';
+import { NAME, isSkillArray, liveSkills, staticSkills, validSkill } from './skills.js';
 import { createDelegateTool } from './delegate.js';
 import type { DelegateOptions } from './delegate.js';
-import type { Skill } from './skills.js';
+import type { Skill, SkillSource } from './skills.js';
 
 export type { SelfEvolutionError, SelfEvolutionReport } from './self-evolving.js';
-export { createSkillsController, createSkillsExtension, directorySkillSource, fileSkillSource, parseSkill } from './skills.js';
-export type { Skill, SkillError, SkillFileSystem, SkillListing, SkillSource, SkillsController, SkillsExtensionOptions } from './skills.js';
+export { directorySkillSource, fileSkillSource, liveSkills, parseSkill, staticSkills } from './skills.js';
+export type { LiveSkills, LiveSkillsOptions, Skill, SkillError, SkillFileSystem, SkillListing, SkillSource, SkillsOptions } from './skills.js';
 export { jsonSchemaTool } from './json-schema-tool.js';
 export type { JsonObjectSchema, JsonSchemaToolOptions } from './json-schema-tool.js';
 export { createDelegateTool, DELEGATE_DETAILS_KIND, DELEGATE_TOOL } from './delegate.js';
@@ -29,7 +29,11 @@ export interface AgentSpec {
   readonly tools?: readonly ToolRegistration[];
   /** Additional native extensions this agent selects, for example Pi's `CodingTools`. */
   readonly extensions?: readonly Extension[];
-  readonly skills?: readonly Skill[];
+  /**
+   * The agent's skills: an array, or a `SkillSource` (`directorySkillSource`, `fileSkillSource` or a host's own) read on use with
+   * `liveSkills`. A source cannot be combined with `selfEvolving`.
+   */
+  readonly skills?: readonly Skill[] | SkillSource;
   /**
    * Sub-agents this agent may hand a task to: each becomes a `delegate` tool (`createDelegateTool`) among this agent's tools, and
    * `install` installs the child agent's extensions too. The child runs in a conversation owned by the tool call, with only its own tools.
@@ -53,7 +57,7 @@ export interface DefinedAgent {
   readonly id: string;
   /** Every native extension this agent selects, own extension first; with `selfEvolving` the per-workspace extension (as first defined) last. */
   readonly extensions: readonly Extension[];
-  /** Name and description of this agent's skills, for hosts that offer them in a `/` menu. */
+  /** Name and description of this agent's skills (an array given to `skills`), for hosts that offer them in a `/` menu. A source's skills are read at run time and not listed. */
   readonly skills: readonly Pick<Skill, 'name' | 'description'>[];
   /** Native per-conversation agent configuration. */
   readonly agent: AgentChange;
@@ -89,7 +93,12 @@ export function defineAgent(spec: AgentSpec): DefinedAgent {
   // The skills of a self-evolving agent live in its per-workspace extension, so agent-written skills join them on reload. Without a
   // workspace (a self-evolving agent whose workspace is chosen per conversation, before `inWorkspace`) they stay the host's alone.
   const evolving = spec.selfEvolving === true && spec.workspace !== undefined;
-  const hostSkills = spec.skills?.length && !evolving ? [createSkillsExtension(`agent.${spec.id}.skills`, spec.skills)] : [];
+  if (spec.selfEvolving && spec.skills !== undefined && !isSkillArray(spec.skills)) throw new TypeError(`Agent ${spec.id}: selfEvolving takes an array of skills, not a SkillSource`);
+  const fixed: readonly Skill[] = spec.skills === undefined ? [] : isSkillArray(spec.skills) ? spec.skills : [];
+  const skillsName = `agent.${spec.id}.skills`;
+  const hostSkills = spec.skills === undefined || evolving ? [] : isSkillArray(spec.skills)
+    ? (spec.skills.length ? [staticSkills(spec.skills, { name: skillsName }).extension] : [])
+    : [liveSkills(spec.skills, { name: skillsName }).extension];
   const listed = (skills: readonly Skill[]) => Object.freeze(skills.map(skill => Object.freeze({ name: skill.name, description: skill.description.trim() })));
   const reserved = [...tools, ...(spec.extensions ?? []).flatMap(extension => extension.tools ?? [])].map(tool => tool.name);
 
@@ -104,7 +113,7 @@ export function defineAgent(spec: AgentSpec): DefinedAgent {
       ...(spec.thinkingLevel === undefined ? {} : { thinkingLevel: spec.thinkingLevel }),
       ...(spec.cwd === undefined ? {} : { cwd: spec.cwd }),
     });
-    const fixedSkills = listed(spec.skills ?? []);
+    const fixedSkills = listed(fixed);
     return Object.freeze({
       id: spec.id, extensions, agent,
       get skills() { return evolution ? listed(evolution.skills()) : fixedSkills; },
@@ -119,7 +128,7 @@ export function defineAgent(spec: AgentSpec): DefinedAgent {
     });
   }
   const evolutionOf = (workspace: string) => createSelfEvolution({
-    name: `self-evolving:${workspace}`, skills: (spec.skills ?? []).map(validSkill), parseSkill, skillsExtension: createSkillsExtension, reserved,
+    name: `self-evolving:${workspace}`, skills: fixed.map(validSkill), reserved,
   });
   if (!spec.selfEvolving) return assemble([...own, ...hostSkills], undefined);
   if (spec.workspace !== undefined) return assemble(own, evolutionOf(spec.workspace));
