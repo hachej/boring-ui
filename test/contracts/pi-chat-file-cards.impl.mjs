@@ -2,7 +2,7 @@
 // props, and paste-to-file in the composer. Fictional names and text only. Renders the real PiChat over a native controller.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
@@ -13,7 +13,7 @@ const out = join(root, '.cache/pi-chat-file-cards-test');
 mkdirSync(out, { recursive: true });
 async function load(name, contents) {
   writeFileSync(join(out, `${name}-entry.tsx`), contents);
-  await build({ entryPoints: [join(out, `${name}-entry.tsx`)], outfile: join(out, `${name}.mjs`), bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
+  await build({ entryPoints: [join(out, `${name}-entry.tsx`)], outfile: join(out, `${name}.mjs`), bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent', plugins: process.env.TALK_MUTATION ? [{ name: 'mutation', setup(builder) { const mutation = JSON.parse(readFileSync(process.env.TALK_MUTATION, 'utf8')); builder.onLoad({ filter: /registry\/.*\.(ts|tsx)$/ }, args => { if (!args.path.endsWith(mutation.file)) return; const source = readFileSync(args.path, 'utf8'); assert.ok(source.includes(mutation.before), 'mutation guard exists'); return { contents: source.replace(mutation.before, mutation.after), loader: args.path.endsWith('tsx') ? 'tsx' : 'ts' }; }); } }] : [] });
   return import(pathToFileURL(join(out, `${name}.mjs`)).href);
 }
 const { frenchChatLabels } = await load('labels', `export { frenchChatLabels } from '${root}registry/pi-chat/labels-fr.ts';`);
@@ -73,8 +73,15 @@ async function harness(t, { attachments, mentions, onOpenFile, pasteToFile, loca
     ...(onOpenFile ? { onOpenFile } : {}), ...(pasteToFile ? { pasteToFile } : {}), ...(locale ? { locale } : {}), ...extra };
   const Component = component === 'ambient' ? AmbientChat : component ?? PiChat;
   const renderWith = async next => { Object.assign(props, next); await act(async () => ui.render(createElement(Component, props))); };
+  const reload = async () => {
+    const fresh = createNativeChatController({ identity: { runtimeId: 'fixture', scopeId: 'fixture', principalId: 'person' }, context, conversation });
+    await fresh.connect();
+    t.after(() => fresh.dispose());
+    await renderWith({ controller: fresh });
+    return fresh;
+  };
   await renderWith({});
-  return { window, controller, container, act, context, rerender: renderWith, unmount: () => act(async () => ui.unmount()), write: async model => {
+  return { window, controller, container, act, context, rerender: renderWith, reload, unmount: () => act(async () => ui.unmount()), write: async model => {
     await act(async () => { await conversation.submit({ type: 'write', entry: { kind: 'message', model } }, context); });
     await act(async () => new Promise(resolve => setTimeout(resolve, 30)));
   } };
@@ -667,6 +674,7 @@ async function voiceHarness(t, config = {}) {
     return [{ path: `uploads/${files[0].name}`, name: files[0].name }];
   } };
   const ui = await harness(t, { extra: { voiceMessage, ...config.extra }, attachments, beforeSubmit: config.beforeSubmit, lostAdmission: config.lostAdmission, admissionGate: config.admissionGate, stagedFailure: config.stagedFailure });
+  await ui.rerender({ voiceMessage: { ...voiceMessagePlugin, ...voiceMessage } });
   const before = Object.getOwnPropertyDescriptor(globalThis, 'MediaRecorder');
   class Recorder extends EventTarget {
     static isTypeSupported(type) { return !config.mp4 || type === 'audio/mp4'; }
@@ -765,6 +773,33 @@ test('empty transcription needs explicit audio-only confirmation, and Safari rec
   assert.equal(ui.sends.length, 0); assert.equal(ui.uploads[0].files[0].type, 'audio/mp4');
   await ui.click('voice-audio-only'); await ui.until(() => ui.sends.length === 1);
   assert.match(ui.sends[0][1].text, /^@uploads\/voice-.*\.mp4$/);
+  const check = expected => {
+    const bubble = ui.container.querySelector('[data-testid=voice-bubble]');
+    assert.equal(bubble?.textContent, expected, 'audio-only messages have an honest non-playback status');
+    assert.equal(Boolean(bubble?.querySelector('audio, button, [data-testid=voice-duration]')), false);
+    assert.doesNotMatch(bubble.textContent, /@uploads|voice-.*\.mp4|0:00/);
+  };
+  await ui.until(() => ui.container.querySelector('[data-testid=voice-bubble]'));
+  check('Voice message — transcription unavailable.');
+  await ui.rerender({ locale: 'fr' });
+  check('Message vocal — transcription indisponible.');
+  const fresh = await ui.reload();
+  check('Message vocal — transcription indisponible.');
+  assert.match(JSON.stringify(fresh.getSnapshot().view.entries), /@uploads\/voice-.*\.mp4/);
+  await ui.rerender({ voiceReplay: true });
+  assert.ok(ui.container.querySelector('[data-testid=voice-play]'), 'explicit replay still works without transcription');
+});
+
+for (const component of ['ambient', undefined]) test(`retained audio-only default has a localized status after native reload (${component ?? 'PiChat'})`, async t => {
+  const ui = await harness(t, { component, locale: 'fr', extra: { defaultState: 'expanded', ...(component === 'ambient' ? { labels: frenchChatLabels } : {}) } });
+  await ui.write([{ role: 'user', content: '@uploads/voice-fictional.wav', timestamp: 0 }]);
+  const check = () => {
+    const bubble = ui.container.querySelector('[data-testid=voice-bubble]');
+    assert.equal(bubble?.textContent, 'Message vocal — transcription indisponible.');
+    assert.equal(Boolean(bubble?.querySelector('audio, button, [data-testid=voice-duration]')), false);
+    assert.doesNotMatch(bubble.textContent, /@uploads|voice-fictional/);
+  };
+  check(); await ui.reload(); check();
 });
 
 test('upload failure retries only the upload, and Discard abandons pending work', async t => {

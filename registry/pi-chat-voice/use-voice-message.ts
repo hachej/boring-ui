@@ -85,13 +85,15 @@ export function useVoiceMessage({ controller, config, attachments, labels, admit
   useEffect(() => {
     const item = recording;
     if (item?.phase !== 'recording') return;
+    let elapsedMs = 0;
     const timer = setInterval(() => {
       if (!valid(item)) return;
       const progress = item.capture.progress();
       if (!progress) return;
       item.seconds = Math.floor(progress.elapsedMs / 1000);
       item.canPause = progress.canPause; item.paused = progress.paused;
-      if (progress.level !== undefined && !progress.paused) item.levels = [...item.levels.slice(-31), progress.level];
+      if (progress.level !== undefined && !progress.paused && progress.elapsedMs > elapsedMs) item.levels = [...item.levels.slice(-31), progress.level];
+      elapsedMs = progress.elapsedMs;
       update();
     }, 100);
     return () => clearInterval(timer);

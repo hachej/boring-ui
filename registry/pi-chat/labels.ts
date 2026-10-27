@@ -156,6 +156,7 @@ export const defaultChatLabels = {
   voiceTranscribing: 'Transcribing…',
   voiceNothingHeard: 'Nothing was heard. Try again.',
   voiceTranscribeFailed: 'The recording could not be transcribed. Try again.',
+  voiceTranscriptUnavailable: 'Voice message — transcription unavailable.',
   voiceDenied: 'Microphone blocked. Allow it for this site in the browser, then press record again.',
   voiceNoMicrophone: 'No microphone found. Connect one, then press record again.',
   voiceBusy: 'The microphone is busy or could not be opened. Close other apps using it and try again.',

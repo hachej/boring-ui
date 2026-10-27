@@ -49,11 +49,13 @@ export function useDictation(options: DictationOptions): Dictation {
   useEffect(() => () => { current.current?.abort.abort(); current.current?.capture.cancel(); current.current = null; }, []);
   useEffect(() => {
     if (phase !== 'recording') return;
+    let elapsedMs = 0;
     const timer = setInterval(() => {
       const progress = current.current?.capture.progress();
       if (!progress) return;
       setSeconds(Math.floor(progress.elapsedMs / 1000)); setCanPause(progress.canPause); setPaused(progress.paused);
-      if (progress.level !== undefined && !progress.paused) setLevels(values => [...values.slice(-31), progress.level!]);
+      if (progress.level !== undefined && !progress.paused && progress.elapsedMs > elapsedMs) setLevels(values => [...values.slice(-31), progress.level!]);
+      elapsedMs = progress.elapsedMs;
     }, 100);
     return () => clearInterval(timer);
   }, [phase]);

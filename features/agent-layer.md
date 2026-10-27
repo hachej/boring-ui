@@ -7,7 +7,7 @@ The agent the shell mounts once: a bottom drawer on a phone, a right panel on a 
 - `layer-drawer` phone drawer with peek, half and full; swipe and outside tap go to peek, only the handle drags. `registry/app-shell/agent-layer.tsx`.
 - `layer-dock` wide panel docked right, floatable and dockable left or right, remembered per viewer (`boring.app-shell`). `registry/dock/dock.tsx`.
 - `layer-context` the screen on show travels with each message (`useAgentContext`). `registry/app-shell/agent-context.ts`.
-- `layer-voice` single-tap composer recording with the shared trash/timer/waveform/pause/Send row; optional header hold remains. `send: 'auto' | 'draft' | 'message'`. `registry/app-shell/use-dictation.ts`, `registry/pi-chat-voice/voice-message.tsx`.
+- `layer-voice` single-tap composer recording with the shared trash/timer/waveform/pause/Send row; optional header hold remains. Waveform history freezes when no new PCM samples arrive, including the capture cap. `send: 'auto' | 'draft' | 'message'`. `registry/app-shell/use-dictation.ts`, `registry/pi-chat-voice/voice-message.tsx`.
 - `layer-talk-about` a card gesture inserts a removable kind mention, opens the real chat at half or in the panel and can start capture before returning. `registry/app-shell/agent-layer.tsx`.
 - `layer-launch-link` `agentLink` / `parseAgentLink` open the layer from a URL or a home-screen shortcut. `registry/app-shell/agent-link.ts`.
 - `layer-loan` `useAgentLoan` lends a workspace's controller to the layer at peek. `registry/app-shell/agent-layer.tsx`.
@@ -25,7 +25,7 @@ Preconditions: as `app-shell.md`.
 - **Drawer.** `layer-drawer`: at 390px open the trigger, step peek, half, full, press Escape (back to peek). `npm run app-shell:journey`.
 - **Dock.** `layer-dock`: at desktop width open the layer, float it, dock it left, reload; the side is remembered.
 - **Context.** `layer-context`: switch screens and read the `context` of the next submit in the request.
-- **Voice.** `layer-voice`: `npm run app-shell:journey:voice` (fake microphone), tap Record, trash or Send; this fixture explicitly opts into replay after reload.
+- **Voice.** `layer-voice`: `npm run app-shell:journey:voice` (fake microphone), tap Record, trash or Send; this fixture explicitly opts into replay after reload. `node --test test/contracts/talk-about-render.test.mjs` drives capped PCM through both dictation modes and retained voice, checks frozen waveform/time and sends the capped recording.
 - **Talk about a card.** `layer-talk-about`: `node examples/app-shell/journey-talk-about.mjs`; swipe a card at 390px or click its desktop mic, inspect the shared recording row and hidden-code chip, pause/resume and Send; the thread shows the transcript and inline mention without a player.
 - **Launch link.** `layer-launch-link`: open `/?agent=coach&open=full`; the layer opens once and the query is cleaned.
 - **Loan.** `layer-loan`: `npm run app-shell:journey:placed`, collapse the workspace on a phone; the layer opens at peek.

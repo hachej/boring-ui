@@ -164,7 +164,8 @@ interface VoiceBubbleProps {
 }
 /** Voice messages show their transcript by default; the retained audio player is an explicit presentation choice. */
 export function VoiceBubble({ replay = false, ...props }: VoiceBubbleProps) {
-  return replay ? <VoiceReplayBubble {...props} /> : <Bubble variant="muted" align={props.align ?? 'end'} data-testid="voice-bubble"><BubbleContent data-testid="user-text" className="whitespace-pre-wrap">{props.transcript}</BubbleContent></Bubble>;
+  const { labels } = useChatText();
+  return replay ? <VoiceReplayBubble {...props} /> : <Bubble variant="muted" align={props.align ?? 'end'} data-testid="voice-bubble"><BubbleContent data-testid="user-text" className="whitespace-pre-wrap">{props.transcript ?? <span data-testid="voice-transcript-unavailable">{labels.voiceTranscriptUnavailable}</span>}</BubbleContent></Bubble>;
 }
 
 /** Retained audio is read only on Play, through the same authorized workspace preview as file cards. */

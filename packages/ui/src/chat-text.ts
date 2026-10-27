@@ -116,9 +116,12 @@ export function kindMentionDraft<Kind>(text: string, config: { readonly kinds?: 
   return { text: text.split('').filter((_, at) => !hidden.has(at)).join(''), tokens };
 }
 
-/** Prefix complete hidden tokens so unfinished quoted input cannot consume their spelling. */
-export function writeKindMentionDraft(text: string, tokens: readonly string[]): string {
-  return tokens.length ? `${tokens.join(' ')}${text ? ` ${text}` : ''}` : text;
+/** Keep an explicit leading skill first, then complete hidden tokens before any unfinished quoted input. */
+export function writeKindMentionDraft(text: string, tokens: readonly string[], skills: readonly string[] = []): string {
+  if (!tokens.length) return text;
+  const leading = pieces(text, { mentions: false, skills })[0];
+  if (leading?.kind === 'skill') return `${leading.text} ${tokens.join(' ')}${text.slice(leading.text.length)}`;
+  return `${tokens.join(' ')}${text ? ` ${text}` : ''}`;
 }
 
 /** Consume every draft token for voice sends, including repeated references to the same path. */

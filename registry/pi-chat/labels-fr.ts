@@ -82,6 +82,7 @@ export const frenchChatLabels: ChatLabels = {
   voiceTranscribing: 'Transcription…',
   voiceNothingHeard: 'Rien n’a été entendu. Réessayez.',
   voiceTranscribeFailed: 'L’enregistrement n’a pas pu être transcrit. Réessayez.',
+  voiceTranscriptUnavailable: 'Message vocal — transcription indisponible.',
   voiceDenied: 'Microphone bloqué. Autorisez-le pour ce site dans le navigateur, puis appuyez de nouveau sur enregistrer.',
   voiceNoMicrophone: 'Aucun microphone trouvé. Branchez-en un, puis appuyez de nouveau sur enregistrer.',
   voiceBusy: 'Le microphone est occupé ou n’a pas pu être ouvert. Fermez les autres applications qui l’utilisent et réessayez.',

@@ -306,6 +306,71 @@ test('async slash edits use current hidden kind tokens and never restore a remov
   assert.equal(Boolean(f.find('[data-testid=mention-chip]')), false);
 });
 
+test('a selected registered skill stays leading with hidden kind tokens in the native submission', async t => {
+  const f = await fixture(t, { slash: { skills: [{ name: 'plan', description: 'Fictional planning' }] } });
+  await f.talk('@"repas:Meeting notes"');
+  await f.input('/pla');
+  await f.until(() => f.find('[data-testid=slash-item]'), 'registered skill is offered');
+  await f.act(async () => f.find('[data-testid=slash-item]').dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true, cancelable: true })));
+  assert.equal(f.find('[data-testid=composer-input]').value, '/plan ');
+  await f.input('/plan @docs/plan.md @"');
+  await f.click('[data-testid=composer-submit]');
+  await f.until(() => f.controller.getSnapshot().send.kind === 'admitted', 'native skill submission');
+  const { pieces, mentionedPaths } = await import('@hachej/boring-ui-kit/chat-text');
+  const text = f.sent[0][1].text;
+  assert.equal(pieces(text, { mentions: true, skills: ['plan'] })[0].kind, 'skill', 'the selected skill remains an explicit leading request');
+  assert.deepEqual(mentionedPaths(text), ['repas:Meeting notes', 'docs/plan.md']);
+  await f.until(() => f.find('[data-testid=message-skill]'), 'sent skill remains styled');
+});
+
+test('paste-to-file and restoration keep a registered leading skill ahead of hidden kinds', async t => {
+  const f = await fixture(t, { slash: { skills: [{ name: 'plan', description: 'Fictional planning' }] }, upload: async () => new Promise(() => {}) });
+  await f.talk();
+  const text = '/plan before REMOVE after @docs/plan.md';
+  await f.input(text);
+  await f.paste('pasted fictional text', text.indexOf('REMOVE'), text.indexOf('REMOVE') + 6);
+  await f.until(() => f.find('[data-testid=upload-chip]'), 'paste upload pending');
+  assert.match(f.controller.getSnapshot().draft.text, /^\/plan @repas:/, 'paste retains explicit skill');
+  await f.click('[data-testid=upload-chip] button');
+  assert.match(f.controller.getSnapshot().draft.text, /^\/plan @repas:/, 'restoration retains explicit skill');
+  assert.equal(f.find('[data-testid=composer-input]').value, '/plan before pasted fictional text after @docs/plan.md');
+});
+
+test('recording trash remounts an unchanged multiline draft with textarea sizing initialized', async t => {
+  const f = await fixture(t, { nativeVoice: true });
+  const text = 'Fictional first line\nFictional second line\nFictional third line';
+  await f.act(async () => f.controller.setText(text));
+  const before = f.find('[data-testid=composer-input]');
+  assert.notEqual(before.style.height, '', 'initial sizing is applied');
+  await f.click('[data-testid=voice-message-record]');
+  await f.until(() => f.find('[data-testid=voice-message-record]')?.dataset.state === 'recording', 'recording');
+  await f.click('[data-testid=composer-voice-cancel]');
+  const after = f.find('[data-testid=composer-input]');
+  assert.notEqual(after, before, 'the textarea remounted');
+  assert.equal(after.value, text);
+  assert.equal(after.style.height, before.style.height, 'sizing initialized again without a text edit');
+});
+
+for (const send of ['draft', 'auto', 'native']) test(`${send}: capped public recording bar freezes after the last captured PCM samples and still sends`, async t => {
+  const f = await fixture(t, { send: send === 'native' ? 'message' : send, pcm: true, nativeVoice: send === 'native' });
+  const mic = send === 'native' ? '[data-testid=voice-message-record]' : '[data-testid=agent-talk]';
+  if (send !== 'native') await f.talk();
+  await f.click(mic); await f.feed(0.25);
+  await f.until(() => f.find('[data-testid=voice-waveform] span')?.dataset.level === '0.25', 'initial captured level');
+  await f.feed(0.5, 48000 * 301);
+  await f.until(() => f.find('[data-testid=voice-recording]')?.textContent.includes('5:00'), 'sample cap is shown');
+  assert.ok(f.tracks.every(track => track.stopped), 'cap releases the microphone');
+  assert.equal(Boolean(f.find('[data-testid=voice-pause]')), false, 'ended capture cannot pause');
+  const bars = f.find('[data-testid=voice-waveform]').innerHTML;
+  await f.act(async () => new Promise(resolve => setTimeout(resolve, 350)));
+  assert.equal(f.find('[data-testid=voice-waveform]').innerHTML, bars, 'no new waveform bars without new samples');
+  assert.match(f.find('[data-testid=voice-recording]').textContent, /5:00/);
+  await f.click(mic);
+  if (send === 'draft') { await f.until(() => f.controller.getSnapshot().draft.text.includes(WORDS), 'capped draft transcribed'); await f.click('[data-testid=composer-submit]'); }
+  await f.until(() => f.sent.length === 1 && f.controller.getSnapshot().send.kind === 'admitted', 'capped capture sends once');
+  assert.equal(new DataView(await f.captured[0].arrayBuffer()).getUint32(40, true), 16000 * 300 * 2, 'only capped PCM bytes are sent');
+});
+
 test('paste-to-file maps visible selections without deleting hidden kind tokens', async t => {
   const f = await fixture(t, { upload: async () => new Promise(() => {}) });
   await f.talk();

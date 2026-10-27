@@ -203,7 +203,7 @@ export function Composer(props: ComposerProps) {
   const tokens = useRef(draft.tokens);
   useLayoutEffect(() => { tokens.current = draft.tokens; });
   // An asynchronous slash command must use today's tokens, not restore a chip removed since it began.
-  const onText = (next: string) => props.onText(writeKindMentionDraft(next, tokens.current));
+  const onText = (next: string) => props.onText(writeKindMentionDraft(next, tokens.current, props.slash?.skills?.map(skill => skill.name)));
   const { labels, icons } = useChatText();
   const inner = useRef<HTMLTextAreaElement | null>(null);
   const composing = useRef(false);
@@ -223,11 +223,13 @@ export function Composer(props: ComposerProps) {
   const canPhoto = canAttach && coarse && acceptsPhotos(props.fileAccept) && Camera !== undefined;
   const slash = Slash ? props.slash : undefined, mentions = Mention ? props.mentions : undefined;
   const items = useMemo<SlashItem[]>(() => slash ? slashItems(slash) : [], [slash]);
+  const recording = Boolean(props.recording);
   const setRef = (element: HTMLTextAreaElement | null) => {
     inner.current = element;
     assignRef(props.textareaRef, element);
   };
   useLayoutEffect(() => {
+    if (recording) return;
     const element = inner.current;
     if (!element) return;
     const resize = () => {
@@ -246,7 +248,7 @@ export function Composer(props: ComposerProps) {
     });
     observer.observe(element);
     return () => observer.disconnect();
-  }, [text]);
+  }, [text, recording]);
 
   const query = slash && items.length ? slashQuery(text, caret) : null;
   const trigger = query === null && mentions ? mentionTrigger(text, caret) : null;

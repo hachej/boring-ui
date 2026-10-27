@@ -345,13 +345,13 @@ export function useChatSession(options: ChatSessionOptions) {
     // the same place and deletes nothing: whatever was typed since stays.
     const draft = kindMentionDraft(controller.getSnapshot().draft.text, mentions);
     const start = Math.max(0, Math.min(paste.start, draft.text.length)), end = Math.min(Math.max(paste.end, start), draft.text.length);
-    const after = writeKindMentionDraft(`${draft.text.slice(0, start)}${draft.text.slice(end)}`, draft.tokens);
+    const after = writeKindMentionDraft(`${draft.text.slice(0, start)}${draft.text.slice(end)}`, draft.tokens, slash?.skills?.map(skill => skill.name));
     controller.setText(after);
     const restore = () => {
       if (!current()) return;
       const now = kindMentionDraft(controller.getSnapshot().draft.text, mentions);
       const at = Math.min(start, now.text.length);
-      controller.setText(writeKindMentionDraft(`${now.text.slice(0, at)}${paste.text}${now.text.slice(at)}`, now.tokens));
+      controller.setText(writeKindMentionDraft(`${now.text.slice(0, at)}${paste.text}${now.text.slice(at)}`, now.tokens, slash?.skills?.map(skill => skill.name)));
       textarea.current?.focus();
     };
     void upload([file], { restore, after });

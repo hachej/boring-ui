@@ -5,13 +5,15 @@
 ## Sub-features
 
 - `chat-transcript` rows, tool steps, activity, Markdown replies (`pi-chat-markdown`), `presentation="natural"` for readers. `registry/pi-chat/pi-chat.tsx`, `rows.ts`, `message.tsx`.
-- `chat-composer` multi-line composer, queue (steer, edit, remove), draft kept per conversation (`useChatDraft`). `registry/pi-chat/composer.tsx`, `queue.tsx`.
+- `chat-composer` multi-line composer, including sizing/width observation after recording trash, queue (steer, edit, remove), draft kept per conversation (`useChatDraft`). `registry/pi-chat/composer.tsx`, `queue.tsx`.
 - `chat-slash` the `/` menu: commands and skills. `registry/pi-chat-slash/slash-menu.tsx`.
 - `chat-mentions` the `@` menu for files and, through `MentionsConfig`, any catalog of ids. `registry/pi-chat-mentions/mention-menu.tsx`, `registry/pi-chat/config.ts`.
 - `chat-attachments` attach, paste, drop, paste-to-file, phone camera sheet. `registry/pi-chat-attachments/camera-sheet.tsx`.
 - `chat-voice` tap-to-record with one replacement composer row: trash, timer, input waveform and Send. `registry/pi-chat-voice/`.
-- `chat-voice-pause` pause/resume excludes paused PCM samples and freezes the timer; unavailable capabilities are omitted on fallback recorders. `packages/ui/src/voice-capture.ts`.
+- `chat-voice-pause` pause/resume excludes paused PCM samples and freezes the timer; waveform bars advance only with captured samples and stop at the cap; unavailable capabilities are omitted on fallback recorders. `packages/ui/src/voice-capture.ts`.
 - `chat-voice-replay` sent voice is transcript-only by default; explicit `voiceReplay` opts into the retained player without changing stored audio. `registry/pi-chat/message.tsx`.
+- `chat-voice-untranscribed` audio-only recovery shows a localized non-playback missing-transcript status, including retained messages after reload. `registry/pi-chat/message.tsx`, `labels.ts`, `labels-fr.ts`.
+- `chat-kind-skill` a registered leading `/skill` stays first in native submissions ahead of hidden app tokens, including unfinished quoted input. `packages/ui/src/chat-text.ts`, `registry/pi-chat/composer.tsx`.
 - `chat-kind-mentions` registered app kinds show readable removable chips, hide their tokens from editable text and retain them in native submissions; sent kind/file mentions share text-line alignment. `registry/pi-chat/composer.tsx`, `packages/ui/src/chat-text.ts`.
 - `chat-pickers` model and effort menus. `registry/pi-chat-pickers/pickers.tsx`.
 - `chat-cards` question (`ask_user`), approval, sub-agent and artifact cards. `registry/pi-chat-question/`, `pi-chat-approval/`, `pi-chat-subagent/`, `pi-artifacts/`.
@@ -32,6 +34,7 @@ Preconditions: `npm run build`, Chromium; journeys use a scripted fake model unl
 - **Menus.** `chat-slash`, `chat-mentions`, `chat-pickers`: type `/` and `@` in the composer, pick an option; a chip appears.
 - **Attachments and voice.** `chat-attachments`, `chat-voice`: `npm run app-shell:journey:voice`, `APP_ONLY=inline-images npm run workspace-app:journey`.
 - **Cards, pause and replay.** `chat-kind-mentions`, `chat-voice-pause`, `chat-voice-replay`: `node examples/app-shell/journey-talk-about.mjs` at 390px and desktop; start from a card, pause/resume, Send, inspect transcript-only output and one-/three-line alignment. `npm run app-shell:journey:voice` explicitly opts into replay and plays the retained audio after reload.
+- **Recovery and skills.** `chat-voice-untranscribed`, `chat-kind-skill`: `node --test test/contracts/pi-chat-file-cards.test.mjs test/contracts/talk-about-render.test.mjs`; select a skill with a card chip and Send; explicitly send an empty transcription as audio-only, then reload. The same public paths check capped waveform freeze. The talk-about browser journey types a multiline draft, records/trashes it and narrows the host to check restored sizing/observation (`chat-composer`).
 - **Cards.** `chat-cards`: trigger `ask_user` and an approval in the scripted run; answer in the card.
 - **Conversations.** `chat-conversations`: create, rename, archive and fork a conversation from History.
 - **Remote and plug-ins.** `chat-remote`, `chat-plugins`: `npm run test:pi-chat-consumer` installs the block into a clean app and mounts it.

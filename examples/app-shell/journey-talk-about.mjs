@@ -57,6 +57,28 @@ async function transcriptAlignment() {
   await browser.screenshot('phone-file-mention-line.png');
   await browser.evaluate('window.__transcript = undefined');
 }
+async function multilineCancel(device) {
+  const draft = 'A fictional multiline draft keeps its original text and height.\nA second fictional line wraps when its host gets narrower.';
+  await browser.type(q('[data-testid=composer-input]'), draft);
+  await browser.until('multiline draft laid out', `${q('[data-testid=composer-input]')}.getBoundingClientRect().height > 70`);
+  const height = () => browser.evaluate(`${q('[data-testid=composer-input]')}.getBoundingClientRect().height`);
+  const sizedHeight = () => browser.evaluate(`parseFloat(${q('[data-testid=composer-input]')}.style.height) || 0`);
+  const before = await height(), beforeSizing = await sizedHeight();
+  assert.ok(beforeSizing > 70, 'JS sizing initializes the multiline draft');
+  await browser.click(q('[data-testid=agent-talk]'));
+  await browser.until('multiline draft capture', `${q('[data-testid=agent-talk]')}?.dataset.state === 'recording'`, 15000);
+  await browser.click(q('[data-testid=composer-voice-cancel]'));
+  await browser.until('multiline draft restored', `!!${q('[data-testid=composer-input]')}`);
+  assert.equal(await browser.evaluate(`${q('[data-testid=composer-input]')}.value`), draft);
+  assert.equal(await sizedHeight(), beforeSizing, 'remounted textarea restores JS sizing without a text change');
+  assert.ok(Math.abs(await height() - before) <= 2, 'unchanged multiline draft restores its grown height');
+  await browser.evaluate(`${q('[data-testid=composer]')}.style.width = '65%'`);
+  await browser.until('remounted textarea observes its host width', `parseFloat(${q('[data-testid=composer-input]')}.style.height) > ${beforeSizing + 2}`);
+  await browser.evaluate(`${q('[data-testid=composer]')}.style.width = ''`);
+  await browser.evaluate(`${q('[data-testid=composer-input]')}.focus(); ${q('[data-testid=composer-input]')}.select()`);
+  await browser.press('Backspace');
+  console.log(`PASS ${device}: multiline draft sizing and width observation survive recording trash`);
+}
 try {
   browser = await launch('about:blank', { evidence, args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] });
   for (const device of ['phone', 'desktop']) {
@@ -105,6 +127,7 @@ try {
     await browser.screenshot(`${device}-thread-after-send.png`);
     assert.equal(await browser.evaluate(`!!document.querySelector('[data-testid=voice-play], [data-testid=voice-duration], [data-testid=voice-bubble] audio')`), false, 'voice defaults to transcript only');
     assert.equal(await browser.evaluate(`${q('[data-testid=voice-bubble]')}.textContent.includes('@uploads/')`), false, 'stored audio token is hidden');
+    await multilineCancel(device);
     if (device === 'phone') await transcriptAlignment();
     await browser.click(q('[data-testid=agent-layer-close]'));
     await browser.reload();
