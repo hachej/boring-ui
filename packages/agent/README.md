@@ -387,6 +387,27 @@ const agent = defineAgent({ id: 'clerk', model, extensions: [skills.extension] }
 await skills.refresh(context, 'letters'); // after the host saved skills/letters/SKILL.md
 ```
 
+### Versioned skill folders
+
+`directorySkillSource(fs, root, { versioned: true })` reads skills published as whole versions, for example from a bucket mounted read-only into the agent runtime (the library only reads a folder through the workspace `FileSystem`; it does not know where the bytes live):
+
+```
+<root>/v12/<skill>/SKILL.md   (+ companion files)
+<root>/v13/<skill>/SKILL.md
+<root>/current                one line: v13
+```
+
+- **Publish**: write the new version folder completely, then overwrite `current` with its name. A version folder is never changed once written (the library reads each version once and keeps it).
+- **Rollback**: write the old version's name back into `current`.
+- **Which version a conversation sees**: a new conversation starts on the version `current` names (read again once older than `maxAgeMs`). A running conversation keeps the version it started on until the person sends `/reload-skill`, which moves that conversation only to the version `current` names now (reading that version's folder again). `{ flat: true }` applies inside each version folder.
+- **A bad pointer**: `current` missing or unreadable, a value that is not one folder name (`../v1`), or a version with no folder is reported to `onDiagnostics` as `{ path: '<root>/current', message }`; new conversations stay on the last good version, and `/reload-skill` answers `Skills stay on version <v>: <message>`. Before any good version, the agent has no skills.
+
+`/reload-skill` is the skills extension's native tool `reload_skill` (Pi extension point: a tool and the listing section of the extension, over the `SkillSource` on the workspace's `ExecutionEnv` `FileSystem`; no second loader). The listing tells the model that a message `/reload-skill` means calling it, as `/<skill-name>` means `load_skill`; the tool answers `Skills reloaded: version <v> (<names>).` A host command can do the same without the model: `refresh(context, undefined, conversationId)` moves one conversation, `refresh(context)` every conversation, and resolves `false` on a bad pointer. `refresh(context, name)` is refused (versions move whole), and so is `onPublish`. Limit: which version each conversation is on is kept in the process, so after a restart every conversation starts on the version `current` names then.
+
+```ts
+const agent = defineAgent({ id: 'clerk', model, skills: directorySkillSource(env, '/mnt/skills', { versioned: true }) });
+```
+
 ## Sub-agents and schedules
 
 These follow [Pi Durable on Cloudflare](https://earendil.com/posts/pi-durable-on-cloudflare/) and stay host-agnostic: a Node process and a Durable Object mount the same tools.
