@@ -101,6 +101,8 @@
         "@earendil-works/chord",
         "@earendil-works/chord/*",
         "node:crypto",
+        "typebox",
+        "typebox/schema",
         "unpdf",
         "xlsx"
       ],
