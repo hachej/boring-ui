@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { appendToDraft, displayName, fileKind, hasMention, isLongPaste, isVoicePath, looksLikeMarkdown, mentionedPaths, mentionToken, mentionTrigger, pieces, prependToDraft, removeMention, slashGroup, slashItems, slashQuery, visibleParts } from '@hachej/boring-ui-kit/chat-text';
+import { appendToDraft, displayName, fileKind, hasMention, isLongPaste, isVoicePath, kindMentionDraft, looksLikeMarkdown, mentionedPaths, mentionKind, mentionToken, mentionTrigger, pieces, prependToDraft, removeMention, slashGroup, slashItems, slashQuery, visibleParts, withoutKindMentions, withoutMentions, writeKindMentionDraft } from '@hachej/boring-ui-kit/chat-text';
 import { memberMention } from '@hachej/boring-ui-kit/shared-chat';
 import { mentionedPaths as agentMentionedPaths } from '@hachej/boring-agent/mentions';
 
@@ -35,6 +35,50 @@ test('the kit parser agrees with the agent package mention resolver', () => {
     assert.deepEqual(mentionedPaths(text), agentMentionedPaths(text), JSON.stringify(text));
     assert.deepEqual([...new Set(pieces(text, { mentions: true, skills: [] }).filter(piece => piece.kind === 'mention').map(piece => piece.value))], agentMentionedPaths(text), JSON.stringify(text));
   }
+});
+
+test('app kind tokens share the public mention grammar without matching a prefix of another mention', () => {
+  const kind = { label: path => path }, config = { kinds: { repas: kind } };
+  assert.deepEqual(mentionKind('repas:2026-10-27/dejeuner', config), { kind, path: '2026-10-27/dejeuner' });
+  assert.equal(mentionKind('unknown:meal', config), undefined);
+  assert.equal(mentionKind('toString:meal', config), undefined);
+  assert.equal(hasMention('@repas:meal-long', 'repas:meal'), false);
+  assert.equal(removeMention('@repas:meal-long', 'repas:meal'), '@repas:meal-long');
+  assert.equal(removeMention('before @repas:meal after', 'repas:meal'), 'before after');
+  const quoted = mentionToken('repas:Meeting "notes"\\fictional');
+  assert.equal(hasMention(quoted, 'repas:Meeting "notes"\\fictional'), true);
+  assert.equal(removeMention(quoted, 'repas:Meeting "notes"\\fictional'), '');
+});
+
+test('kind mention draft projects only app tokens and keeps editable spacing and files', () => {
+  const config = { kinds: { repas: {} } };
+  assert.deepEqual(kindMentionDraft('@repas:meal ', config), { text: '', tokens: ['@repas:meal'] });
+  assert.deepEqual(kindMentionDraft('@repas:meal my words @docs/plan.md', config), { text: 'my words @docs/plan.md', tokens: ['@repas:meal'] });
+  for (const text of ['my words', 'my words ', 'my words  ', '', '😀 café\nnext']) {
+    const raw = `${text}${text ? ' ' : ''}@repas:meal @repas:dinner`;
+    assert.equal(kindMentionDraft(raw, config).text, text);
+  }
+  assert.deepEqual(kindMentionDraft('@docs/plan.md ', config), { text: '@docs/plan.md ', tokens: [] });
+  const token = mentionToken('repas:Meeting "notes"');
+  assert.deepEqual(kindMentionDraft(`${token} words`, config), { text: 'words', tokens: [token] });
+});
+
+test('hidden kind serialization prefixes complete tokens before unfinished quoted editable input', () => {
+  const config = { kinds: { repas: {} } }, token = mentionToken('repas:Meeting notes');
+  for (const text of ['@"', '@"unfinished', 'my words ', '😀 café\nnext', '']) {
+    const raw = writeKindMentionDraft(text, [token]);
+    assert.deepEqual(kindMentionDraft(raw, config), { text, tokens: [token] });
+    assert.ok(mentionedPaths(raw).includes('repas:Meeting notes'));
+  }
+  assert.equal(writeKindMentionDraft('ordinary @docs/plan.md', []), 'ordinary @docs/plan.md');
+});
+
+test('voice consumption removes every mention while refused text drops only registered kinds', () => {
+  const config = { kinds: { repas: {} } };
+  assert.equal(withoutMentions('@repas:meal @repas:meal @docs/plan.md @docs/plan.md '), '');
+  assert.equal(withoutMentions('@repas:meal @repas:meal my words @docs/plan.md'), 'my words');
+  assert.equal(withoutKindMentions('@repas:meal @repas:meal my words @docs/plan.md', config), 'my words @docs/plan.md');
+  assert.equal(withoutKindMentions('@unknown:meal my words', config), '@unknown:meal my words');
 });
 
 test('slash, mention triggers, pieces and file rules', () => {

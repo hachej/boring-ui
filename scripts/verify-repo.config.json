@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "allowedTopLevel": [
+    ".agent-handoff",
+    ".github",
+    "demos",
+    "docs",
+    "examples",
+    "features",
+    "fixtures",
+    "lab",
+    "packages",
+    "public",
+    "registry",
+    "scripts",
+    "shared",
+    "skills",
+    "test",
+    "tools"
+  ],
+  "additionalSourceRoots": [
+    {
+      "path": "packages/browser/src/shims",
+      "reason": "Build-time esbuild plugin resolves these shims from static builtin names via new URL() in packages/browser/src/build.ts."
+    }
+  ],
+  "sizeWarnings": {
+    "sourceLines": 500,
+    "testLines": 800
+  }
+}

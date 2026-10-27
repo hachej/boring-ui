@@ -78,14 +78,61 @@ export function mentionedPaths(text: string): string[] {
 }
 
 const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const BOUNDARY = '[^A-Za-z0-9_./-]';
 /** Whether the draft already holds a mention of `path`. */
 export function hasMention(text: string, path: string): boolean {
-  return new RegExp(`(^|${BOUNDARY})${escape(mentionToken(path))}($|${BOUNDARY})`).test(text);
+  return pieces(text, { mentions: true, skills: [] }).some(piece => piece.kind === 'mention' && piece.value === path);
 }
 /** The draft without its mention of `path` (and the space after it). */
 export function removeMention(text: string, path: string): string {
-  return text.replace(new RegExp(`(^|${BOUNDARY})${escape(mentionToken(path))}(?=$|${BOUNDARY})[ ]?`), '$1').replace(/^[ ]+/, '');
+  let removed = false, gap = false;
+  return pieces(text, { mentions: true, skills: [] }).map(piece => {
+    if (!removed && piece.kind === 'mention' && piece.value === path) { removed = true; gap = true; return ''; }
+    if (gap) { gap = false; return piece.text.replace(/^ /, ''); }
+    return piece.text;
+  }).join('').replace(/^[ ]+/, '');
+}
+
+/** A registered prefix wins only for that kind; ordinary file paths keep their existing presentation. */
+export function mentionKind<Kind>(value: string, config: { readonly kinds?: Readonly<Record<string, Kind>> | undefined } | undefined): { readonly kind: Kind; readonly path: string } | undefined {
+  const match = /^([a-z][a-z0-9-]*):(.+)$/s.exec(value);
+  const kind = match && config?.kinds && Object.hasOwn(config.kinds, match[1]!) ? config.kinds[match[1]!] : undefined;
+  return kind ? { kind, path: match![2]! } : undefined;
+}
+
+/** The composer's editable text and hidden app tokens, derived only from the full draft. File tokens remain editable text. */
+export function kindMentionDraft<Kind>(text: string, config: { readonly kinds?: Readonly<Record<string, Kind>> | undefined } | undefined): { readonly text: string; readonly tokens: readonly string[] } {
+  const hidden = new Set<number>(), tokens: string[] = [];
+  let offset = 0;
+  for (const piece of pieces(text, { mentions: true, skills: [] })) {
+    const end = offset + piece.text.length;
+    if (piece.kind === 'mention' && mentionKind(piece.value!, config)) {
+      tokens.push(piece.text);
+      for (let at = offset; at < end; at++) hidden.add(at);
+      if (offset > 0 && text[offset - 1] === ' ' && !hidden.has(offset - 1)) hidden.add(offset - 1);
+      else if (text[end] === ' ') hidden.add(end);
+    }
+    offset = end;
+  }
+  return { text: text.split('').filter((_, at) => !hidden.has(at)).join(''), tokens };
+}
+
+/** Keep an explicit leading skill first, then complete hidden tokens before any unfinished quoted input. */
+export function writeKindMentionDraft(text: string, tokens: readonly string[], skills: readonly string[] = []): string {
+  if (!tokens.length) return text;
+  const leading = pieces(text, { mentions: false, skills })[0];
+  if (leading?.kind === 'skill') return `${leading.text} ${tokens.join(' ')}${text.slice(leading.text.length)}`;
+  return `${tokens.join(' ')}${text ? ` ${text}` : ''}`;
+}
+
+/** Consume every draft token for voice sends, including repeated references to the same path. */
+export function withoutMentions(text: string): string {
+  const words = visibleParts(pieces(text, { mentions: true, skills: [] }), piece => piece.kind === 'mention').map(piece => piece.text).join('').replace(/^[ ]+/, '');
+  return words.trim() ? words : '';
+}
+
+/** Refused messages restore the words, never the app card chips. File mentions retain their existing recovery behaviour. */
+export function withoutKindMentions<Kind>(text: string, config: { readonly kinds?: Readonly<Record<string, Kind>> | undefined } | undefined): string {
+  return visibleParts(pieces(text, { mentions: true, skills: [] }), piece => piece.kind === 'mention' && Boolean(mentionKind(piece.value!, config))).map(piece => piece.text).join('').replace(/^[ ]+/, '');
 }
 
 /**

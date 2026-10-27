@@ -43,7 +43,15 @@ export interface SlashConfig {
 }
 
 export interface MentionResult { readonly path: string; readonly kind?: 'file' | 'directory'; readonly label?: string }
+export interface MentionKind {
+  readonly label: (path: string) => string;
+  readonly icon: ReactNode;
+  readonly open?: ((path: string) => void) | undefined;
+  readonly renderSent?: ((path: string) => ReactNode | undefined) | undefined;
+}
 export interface MentionsConfig {
+  /** App mentions use `@prefix:path` (or the existing quoted token for spaces). Prefixes match [a-z][a-z0-9-]*. No picker is required. */
+  readonly kinds?: Readonly<Record<string, MentionKind>> | undefined;
   /** Accessible name and optional option/media presentation for a host catalog. */
   readonly listLabel?: string;
   readonly icon?: ReactNode;
@@ -164,7 +172,7 @@ export interface EffortConfig {
  * The text grammar (slash menu, `@mention` tokens, message pieces, file kinds, paste and draft rules) is the kit's `chat-text`; it is
  * re-exported here so the items that import it from `pi-chat/config` keep compiling.
  */
-export { appendToDraft, displayName, fileKind, hasMention, isLongPaste, isUploadPath, isVoicePath, looksLikeMarkdown, MENTION_TOKEN, mentionedPaths, mentionToken, mentionTrigger, pieces, prependToDraft, removeMention, slashGroup, slashItems, slashQuery, visibleParts } from '@hachej/boring-ui-kit/chat-text';
+export { appendToDraft, displayName, fileKind, hasMention, isLongPaste, isUploadPath, isVoicePath, looksLikeMarkdown, MENTION_TOKEN, mentionedPaths, mentionKind, mentionToken, mentionTrigger, pieces, prependToDraft, removeMention, slashGroup, slashItems, slashQuery, visibleParts, withoutKindMentions, withoutMentions } from '@hachej/boring-ui-kit/chat-text';
 export type { FileKind, MentionTrigger, Piece, SlashItem } from '@hachej/boring-ui-kit/chat-text';
 
 /** Props of the slash picker that `SlashConfig.Picker` carries. */
@@ -211,15 +219,25 @@ export interface VoiceMessageHandle {
   readonly phase: VoicePhase | 'idle';
   readonly seconds: number;
   readonly captureSequence: number;
+  /** Actual PCM input levels; absent on the MediaRecorder fallback. */
+  readonly levels?: readonly number[];
+  readonly paused?: boolean;
+  readonly pause?: (() => void) | undefined;
+  readonly resume?: (() => void) | undefined;
   readonly problem: string | undefined;
   readonly pending: readonly PendingVoice[];
   readonly start: () => void;
   readonly finish: () => void;
   readonly cancel: () => void;
 }
-/** Props of the hold-to-record button that `VoiceMessageConfig.Button` carries. */
+/** Props of the tap-to-record button that `VoiceMessageConfig.Button` carries. */
 /** `primary`: the button stands in for Send (`voiceReplacesSend`), so it takes Send's primary look. */
-export interface VoiceMessageButtonProps { readonly voice: VoiceMessageHandle; readonly disabled?: boolean; readonly primary?: boolean }
+export interface VoiceMessageButtonProps {
+  readonly voice: VoiceMessageHandle;
+  readonly disabled?: boolean;
+  readonly primary?: boolean;
+  readonly testId?: string;
+}
 /** Props of a pending voice message bubble that `VoiceMessageConfig.Bubble` carries. */
 export interface PendingVoiceBubbleProps { readonly pending: PendingVoice | undefined }
 /** What the chat hands its recorder (`VoiceMessageConfig.useRecorder`). `config` is undefined when voice is off. */

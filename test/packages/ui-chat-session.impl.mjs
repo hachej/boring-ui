@@ -137,6 +137,56 @@ test('feedback sends exact restore content; queue edit and steer withdraw first 
   assert.equal(chat.getSnapshot().draft, draft);
 });
 
+test('session preserves upstream kind-mention send/feedback restore and excludes app cards from files', async t => {
+  const chat = controller(), kinds = { meal: {} };
+  const opts = { ...options(chat), mentions: { kinds } };
+  const page = await mount(t, hooks.useChatSession, opts);
+  const text = '/cook @meal:lunch @plan.txt words';
+  await act(async () => { chat.setText(text); chat.setAttachments([image]); });
+  await act(async () => page.api.send());
+  assert.deepEqual(chat.sends[0], { mode: 'followUp', content: { text, attachments: [image], restore: { text: '/cook @plan.txt words', attachments: [image] } } });
+  assert.equal(chat.getSnapshot().draft.text, '');
+  await act(async () => { chat.setText('later'); page.api.putBack(text, [image]); });
+  assert.equal(chat.getSnapshot().draft.text, '/cook @plan.txt words\nlater');
+  await act(async () => chat.update({ view: { ...chat.getSnapshot().view,
+    entries: [{ id: 1, model: [{ role: 'user', content: '@meal:lunch @plan.txt @unknown:card', timestamp: 1 }] }] } }));
+  assert.deepEqual(page.api.files.map(file => file.name), ['fictional.png', 'plan.txt', 'unknown:card']);
+  await page.render({ ...opts, feedback: { count: 1, attach: async value => ({ kind: 'ok', text: `${value} + feedback` }), sent: () => {} } });
+  await act(async () => { chat.setText(text); chat.setAttachments([image]); });
+  await act(async () => page.api.send());
+  assert.deepEqual(chat.sends.at(-1).content, { text: `${text} + feedback`, attachments: [image], restore: { text: '/cook @plan.txt words', attachments: [image] } });
+});
+
+test('native refused kind-mention send restores words/images but not app chips', async t => {
+  const view = { conversation: { id: 1 }, entries: [], docs: {} };
+  const chat = createNativeChatController({ identity: { runtimeId: 'fictional', scopeId: 'team', principalId: 'alice' }, conversation: { id: 1 }, context, history: false,
+    source: { open: async () => ({ value: view, start() {}, closed: new Promise(() => {}), stop: async () => ({ kind: 'stopped' }) }) },
+    beforeSubmit: async () => 'Fictional refusal' });
+  t.after(() => chat.dispose());
+  const page = await mount(t, hooks.useChatSession, { ...options(chat), mentions: { kinds: { meal: {} } } });
+  await act(async () => { chat.setText('@meal:lunch @plan.txt words'); chat.setAttachments([image]); });
+  await act(async () => page.api.send());
+  assert.equal(chat.getSnapshot().send.kind, 'blocked');
+  assert.equal(chat.getSnapshot().draft.text, '@plan.txt words');
+  assert.deepEqual(chat.getSnapshot().draft.attachments, [image]);
+  await page.unmount();
+});
+
+test('paste uses editable coordinates, retains hidden tokens and leading registered skills through cancel', async t => {
+  const chat = controller(), gate = deferred(); let signal;
+  const opts = { ...options(chat), mentions: { kinds: { meal: {} } }, slash: { skills: [{ name: 'cook' }] },
+    attachments: { upload: async (_files, abort) => { signal = abort; return gate.promise; } } };
+  const page = await mount(t, hooks.useChatSession, opts);
+  await act(async () => chat.setText('/cook @meal:lunch before selection after'));
+  await act(async () => page.api.pasteText({ text: '# Fictional paste', start: 13, end: 22 }));
+  assert.equal(chat.getSnapshot().draft.text, '/cook @meal:lunch before  after');
+  const pending = page.api.pending[0]; assert.equal(pending.restoreWhile, chat.getSnapshot().draft.text);
+  await act(async () => { chat.setText('/cook @meal:dinner before  after later'); pending.cancel(); });
+  assert.equal(chat.getSnapshot().draft.text, '/cook @meal:dinner before # Fictional paste after later');
+  assert.equal(signal.aborted, true);
+  await act(async () => gate.resolve([]));
+});
+
 test('uploads become native images or mention paths; paste undo aborts and retains intervening text', async t => {
   const chat = controller(); let signal, saved;
   let gate = deferred();

@@ -5,7 +5,7 @@ import type { ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
 import type { ChatAttachment, ChatController } from './native-chat.js';
 import { derive, isFileBlock, object, queuedMessages, waitingForAnswer as waitsForAnswer } from './chat-view.js';
 import type { ChatCard, DeriveOptions, Mode, QueuedMessage, Row } from './chat-view.js';
-import { appendToDraft, displayName, looksLikeMarkdown, mentionToken, pieces, prependToDraft } from './chat-text.js';
+import { appendToDraft, displayName, kindMentionDraft, looksLikeMarkdown, mentionKind, mentionToken, pieces, prependToDraft, withoutKindMentions, writeKindMentionDraft } from './chat-text.js';
 
 /** A conversation's observed file; opening remains a host operation, not workspace ownership. */
 export interface ConversationFile { readonly id: string; readonly name: string; readonly open: (() => void) | undefined }
@@ -47,7 +47,8 @@ export interface ChatSessionOptions<Content = unknown> extends Partial<DeriveOpt
   readonly actions?: { readonly withdraw?: ((id: QueuedMessage['id']) => Promise<unknown>) | undefined } | undefined;
   readonly toolRenderers?: Readonly<Record<string, (call: ToolCall, result: ToolResultMessage | undefined) => ChatCard<Content> | undefined>> | undefined;
   readonly artifacts?: (NonNullable<DeriveOptions<Content>['artifacts']> & { readonly open?: ((artifact: never) => void) | undefined }) | undefined;
-  readonly mentions?: { readonly open?: ((path: string) => void) | undefined } | undefined;
+  readonly mentions?: { readonly open?: ((path: string) => void) | undefined; readonly kinds?: Readonly<Record<string, unknown>> | undefined } | undefined;
+  readonly slash?: { readonly skills?: readonly { readonly name: string }[] | undefined } | undefined;
   readonly onOpenFile?: ((path: string) => void) | undefined;
   readonly onOpenImage?: ((image: ChatAttachment['content']) => void) | undefined;
   readonly onFiles?: FilesHandler | undefined;
@@ -65,7 +66,7 @@ export interface ChatSessionOptions<Content = unknown> extends Partial<DeriveOpt
 /** Headless session over the public native controller snapshot/commands. Borrows it; cleanup only aborts this hook's uploads. */
 export function useChatSession<Content = unknown>(options: ChatSessionOptions<Content>) {
   const { controller, activeController: active, mode, presentation, actions, renderEntry, hideLine, renderTool: catchAll, toolRenderers, groupTool, subagent,
-    onOpenImage, onFiles, mentions, attachments, model, effort, artifacts, afterSend, feedback, onOpenFile, onPickFiles, commandMentions, onFocus, labels } = options;
+    onOpenImage, onFiles, mentions, slash, attachments, model, effort, artifacts, afterSend, feedback, onOpenFile, onPickFiles, commandMentions, onFocus, labels } = options;
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(0);
@@ -112,6 +113,7 @@ export function useChatSession<Content = unknown>(options: ChatSessionOptions<Co
     const found = new Map<string, ConversationFile>();
     const open = onOpenFile ?? mentions?.open;
     const add = (path: string) => {
+      if (mentionKind(path, mentions)) return;
       const normalized = path.replace(/^\.\//, '');
       const id = `file:${normalized}`;
       if (!found.has(id)) found.set(id, { id, name: displayName(normalized), open: open ? () => open(normalized) : undefined });
@@ -139,7 +141,7 @@ export function useChatSession<Content = unknown>(options: ChatSessionOptions<Co
       }
     }
     return [...found.values()];
-  }, [derived.rows, natural, picked, state.draft.attachments, artifacts, onOpenFile, mentions?.open, onOpenImage, labels.imageAttachment]);
+  }, [derived.rows, natural, picked, state.draft.attachments, artifacts, onOpenFile, mentions, onOpenImage, labels.imageAttachment]);
 
   const report = (cause: unknown) => { if (current()) setError(cause instanceof Error ? cause.message : labels.actionFailedShort); };
   const act = (action: () => Promise<unknown>) => {
@@ -155,7 +157,7 @@ export function useChatSession<Content = unknown>(options: ChatSessionOptions<Co
   const putBack = (text: string, images: readonly ChatAttachment[]) => {
     if (controller.getSnapshot().disposed) return;
     const draft = controller.getSnapshot().draft;
-    controller.setText(prependToDraft(draft.text, text));
+    controller.setText(prependToDraft(draft.text, withoutKindMentions(text, mentions)));
     if (images.length) controller.setAttachments([...images, ...draft.attachments.filter(item => !images.some(image => image.id === item.id))]);
   };
   const working = Boolean(run);
@@ -175,7 +177,7 @@ export function useChatSession<Content = unknown>(options: ChatSessionOptions<Co
         if (attached.kind === 'refused') { putBack(typed.text, typed.attachments); throw new Error(attached.reason); }
         if (!current()) { putBack(typed.text, typed.attachments); return; }
         try {
-          const submission = await controller.send('followUp', { text: attached.text, attachments: typed.attachments, restore: { text: typed.text, attachments: typed.attachments } });
+          const submission = await controller.send('followUp', { text: attached.text, attachments: typed.attachments, restore: { text: withoutKindMentions(typed.text, mentions), attachments: typed.attachments } });
           if (submission) feedback?.sent();
         } catch (cause) { putBack(typed.text, typed.attachments); throw cause; }
       });
@@ -183,7 +185,15 @@ export function useChatSession<Content = unknown>(options: ChatSessionOptions<Co
       onFocus?.();
       return;
     }
-    act(() => controller.send('followUp'));
+    const typed = controller.getSnapshot().draft;
+    const words = withoutKindMentions(typed.text, mentions);
+    if (words !== typed.text) {
+      controller.setText(''); controller.setAttachments([]);
+      act(async () => {
+        try { await controller.send('followUp', { text: typed.text, attachments: typed.attachments, restore: { text: words, attachments: typed.attachments } }); }
+        catch (cause) { putBack(words, typed.attachments); throw cause; }
+      });
+    } else act(() => controller.send('followUp'));
     afterSend?.();
     onFocus?.();
   };
@@ -263,15 +273,15 @@ export function useChatSession<Content = unknown>(options: ChatSessionOptions<Co
     const file = new File([paste.text], `${labels.pastedFileName(stamp)}${markdown ? '.md' : '.txt'}`, { type: markdown ? 'text/markdown' : 'text/plain' });
     // The pasted text replaces its selection when the paste is accepted, so the draft shows what is left. Restoring inserts the text at
     // the same place and deletes nothing: whatever was typed since stays.
-    const draft = controller.getSnapshot().draft.text;
-    const start = Math.min(paste.start, draft.length), end = Math.min(Math.max(paste.end, start), draft.length);
-    const after = `${draft.slice(0, start)}${draft.slice(end)}`;
+    const draft = kindMentionDraft(controller.getSnapshot().draft.text, mentions);
+    const start = Math.max(0, Math.min(paste.start, draft.text.length)), end = Math.min(Math.max(paste.end, start), draft.text.length);
+    const after = writeKindMentionDraft(`${draft.text.slice(0, start)}${draft.text.slice(end)}`, draft.tokens, slash?.skills?.map(skill => skill.name));
     controller.setText(after);
     const restore = () => {
       if (!current()) return;
-      const now = controller.getSnapshot().draft.text;
-      const at = Math.min(start, now.length);
-      controller.setText(`${now.slice(0, at)}${paste.text}${now.slice(at)}`);
+      const now = kindMentionDraft(controller.getSnapshot().draft.text, mentions);
+      const at = Math.min(start, now.text.length);
+      controller.setText(writeKindMentionDraft(`${now.text.slice(0, at)}${paste.text}${now.text.slice(at)}`, now.tokens, slash?.skills?.map(skill => skill.name)));
       onFocus?.();
     };
     void upload([file], { restore, after });

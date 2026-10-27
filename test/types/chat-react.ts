@@ -25,6 +25,7 @@ export function useChatDeclarations(chat: ChatController, shared: SharedChatCont
 export function useHeadlessSessionDeclarations(chat: NativeChatController, labels: import('@hachej/boring-ui-kit/chat-react').ChatSessionLabels) {
   const session = useChatSession<string>({ controller: chat, activeController: { current: chat }, mode: 'expert', labels,
     renderEntry: entry => ({ content: entry.kind, inline: true }), onFocus: () => {},
+    mentions: { kinds: { meal: { label: (path: string) => path } } }, slash: { skills: [{ name: 'cook' }] },
     attachments: { upload: async files => files.map(file => ({ name: file.name, path: `uploads/${file.name}` })) },
     model: { change: async model => { const provider: string = model.provider; void provider; } } });
   const snapshot: ReturnType<ChatController['getSnapshot']> = session.state;
