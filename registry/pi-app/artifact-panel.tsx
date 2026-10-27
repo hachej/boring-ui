@@ -15,6 +15,7 @@ import type { MarkdownController } from '@hachej/boring-ui-kit/markdown';
 import { createHtmlController } from '@hachej/boring-ui-kit/html';
 import type { HtmlController } from '@hachej/boring-ui-kit/html';
 import type { ChatController } from '@hachej/boring-ui-kit/native-chat';
+import { artifactTurn } from '@hachej/boring-ui-kit/chat-view';
 import { artifactKey, artifactKind, collectArtifacts, typeLabel } from '../pi-artifacts/artifact';
 import type { ArtifactDescriptor, ArtifactKindViewProps, ArtifactTarget, ArtifactsConfig } from '../pi-artifacts/artifact';
 import { CodeBlock } from '../pi-chat/code-block';
@@ -121,7 +122,7 @@ export function useArtifactVersions(controller: ChatController | undefined, dete
 /** How many messages the person has sent in the conversation: it changes when a new turn starts. */
 export function useTurn(controller: ChatController | undefined): number {
   const view = useSyncExternalStore(controller ? controller.subscribe : NOOP, () => controller?.getSnapshot().view, () => undefined);
-  return useMemo(() => (view?.entries ?? []).reduce((count, entry) => count + (entry.model ?? []).filter(message => message.role === 'user').length, 0), [view]);
+  return useMemo(() => artifactTurn(view), [view]);
 }
 
 /** The revisions the workspace provider retains for a file with their save times, newest first; followed while the panel is open. */
