@@ -15,6 +15,7 @@ import { downloadFile } from '../../registry/viewer-frame/download.ts';
 import { copyText } from '../../registry/utils/utils.ts';
 import { randomUUID } from '@hachej/boring-files/platform';
 import { savedLabel, useSaved } from '../../registry/pi-app/use-saved.ts';
+import { useReportShown } from '../../registry/pi-app/artifact-panel.tsx';
 
 const NOOP = () => () => {};
 const EXTENSION = /\.([A-Za-z0-9]{1,8})$/;
@@ -31,7 +32,7 @@ function useSavedAt(api, path, revision) {
   return savedAt;
 }
 
-function Version({ artifact, pinned, follow, client, identity, authorized, onClose }) {
+function Version({ artifact, pinned, follow, client, identity, authorized, onClose, onShown, onFailed }) {
   const { type } = artifact;
   const create = useMemo(() => {
     const base = snapshot => ({ identity, client, instanceId: randomUUID(), epoch: 'ambient', source: { kind: 'saved', snapshot } });
@@ -43,7 +44,13 @@ function Version({ artifact, pinned, follow, client, identity, authorized, onClo
   const controller = saved.controller;
   const text = useSyncExternalStore(controller ? controller.subscribe : NOOP, () => controller ? controller.getSnapshot().text : saved.text, () => saved.text);
   const revision = saved.kind === 'open' ? saved.snapshot.ref.revision : undefined;
-  const savedAt = useSavedAt(authorized, artifact.target.resource.path, revision);
+  const path = artifact.target.resource.path;
+  // This effect runs only after the loaded view commits, never from the panel's render callback. Cleanup clears that exact mount.
+  useReportShown(onShown, path, revision);
+  useEffect(() => {
+    if (saved.kind !== 'loading' && saved.kind !== 'open') onFailed?.({ path, revision: artifact.revision, reason: 'This artifact version could not be loaded.' });
+  }, [saved.kind, path, artifact.revision, onFailed]);
+  const savedAt = useSavedAt(authorized, path, revision);
   const frame = {
     title: artifact.title, testId: 'artifact', titleTestId: 'artifact-panel-title', onClose, status: { label: 'Read-only' },
     subtitle: <><span data-testid="artifact-panel-type">{typeLabel(artifact)}</span><span aria-hidden="true">·</span>
@@ -69,7 +76,7 @@ export function createArtifactPanel({ identity, authorized }) {
       <div data-testid="artifact-panel" data-artifact-id={artifact.id} data-artifact-type={artifact.type} data-follow={api.follow ? 'true' : 'false'}
         className="pi-chat flex h-full min-h-0 flex-col">
         <Version key={`${path}@${api.follow ? 'latest' : artifact.revision}`} artifact={artifact} pinned={!api.follow} follow={api.follow} client={client} identity={identity}
-          authorized={authorized} onClose={api.close} />
+          authorized={authorized} onClose={api.close} onShown={api.onShown} onFailed={api.onFailed} />
       </div>
     </ViewerWindowProvider>;
   };
