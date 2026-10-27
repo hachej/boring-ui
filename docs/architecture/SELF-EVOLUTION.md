@@ -19,7 +19,7 @@ host process never imports agent-written code. Off by default: without the optio
 ```
 .agent/
   AGENTS.md        standing instructions the agent writes for itself
-  skills/*.md      flat skills, in the existing skill format (parseSkill), loadable with load_skill or /<skill>
+  skills/*.md      flat skills, in the existing skill format (read by directorySkillSource with flat), loadable with load_skill or /<skill>
   skills/<name>/SKILL.md  folder skills, in the same format
   skills/<name>/...       companion files, named by relative path in SKILL.md (not parsed as skills)
   tools/<name>.json  a tool description: { name, description, parameters (JSON Schema), run } where `run` is the command

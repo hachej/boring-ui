@@ -1,5 +1,23 @@
 # Unreleased
 
+- **Breaking: the skills API is two functions, `staticSkills` and `liveSkills` (`@hachej/boring-agent/agents`).** `createSkillsExtension` and `createSkillsController` are removed. `staticSkills(skills, { name, intro?, visible? })` returns `{ extension }` for an array (an invalid or duplicate skill throws). `liveSkills(source, { name, maxAgeMs?, onDiagnostics?, companionFiles?, onPublish?, intro?, visible? })` returns `{ extension, refresh }` for a `SkillSource`. `name` (the native extension name) is now required in both, and the options that only a source uses (`maxAgeMs`, `onDiagnostics`, `companionFiles`, `onPublish`) are on `liveSkills` only. Types: `SkillsExtensionOptions` is now `SkillsOptions` (the shared part) and `LiveSkillsOptions`; `SkillsController` is now `LiveSkills`. `directorySkillSource(fs, dir, { flat: true })` also lists `<dir>/<name>.md` files beside the `<name>/SKILL.md` folders. `defineAgent({ skills })` takes an array or a `SkillSource` (read on use; with `selfEvolving` only an array). A source's skills are not listed in `DefinedAgent.skills`. Before:
+
+```ts
+import { createSkillsController, createSkillsExtension, directorySkillSource } from '@hachej/boring-agent/agents';
+const extension = createSkillsExtension('app.skills', skills);
+const { extension: live, refresh } = createSkillsController('app.skills', directorySkillSource(fs, 'skills'), { maxAgeMs: 1000 });
+```
+
+After:
+
+```ts
+import { directorySkillSource, liveSkills, staticSkills } from '@hachej/boring-agent/agents';
+const { extension } = staticSkills(skills, { name: 'app.skills' });
+const { extension: live, refresh } = liveSkills(directorySkillSource(fs, 'skills'), { name: 'app.skills', maxAgeMs: 1000 });
+```
+
+Self-evolving behaviour is unchanged: `.agent/skills` is read with `directorySkillSource(env, '.agent/skills', { flat: true })`.
+
 # Migrating to 0.4.25
 
 - **The approval card follows the kit's waiting rule; the Library's change feed resumes without a gap (`pi-chat-approval`, `pi-app`).** `ApprovalCard` now decides whether it waits with `waits` from `@hachej/boring-ui-kit/chat-view`, the rule `PiChat` already used (0.4.24): once a decision is recorded, the card shows Approved or Denied with « Approved. Waiting for the agent… » (or Denied) and no Approve or Deny buttons, even before the gated call finishes and for every viewer (another tab, a reload, a shared conversation). Before, it still said « Needs your approval » with the buttons on, while the status line said the agent was working, and a click there was refused as a conflict. The item now depends on `@hachej/boring-ui-kit` directly. `AgentWorkspace` reconnects the change feed of a tab shown again with `since` (the last event it reloaded for; `0` when none, which the feed answers with a `resnapshot`) instead of reloading before reconnecting, so a change made while the tab was hidden or while it reconnects is no longer missed; its `live` flag is false while hidden. A host-built `RevisionProvider.changes` should honour `since` (replay or `resnapshot`); one that ignores it no longer gets a reload when the tab is shown again. Reinstall `pi-chat-approval` and `pi-app` (`npx boring-ui-blocks update`). Evidence: `test/contracts/pi-chat-decided-approval.test.mjs`, `test/ui/change-feed.test.mjs`.

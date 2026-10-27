@@ -74,33 +74,39 @@ async function readSkillFile(fs: SkillFileSystem, path: string, name: string, co
   try { const skill = skillInFolder(parseSkill(text.value), parent(path)); skillFiles.set(skill, path); return skill; } catch (error) { return { path, name, message: reason(error) }; }
 }
 
-/** Every `<directory>/<name>/SKILL.md`; a missing directory holds no skills. Other files are read only with `companionFiles`. */
-export function directorySkillSource(fs: SkillFileSystem, directory: string): SkillSource {
+/**
+ * Every `<directory>/<name>/SKILL.md`; with `flat`, also each `<directory>/<name>.md`, whose folder is the directory. A missing
+ * directory holds no skills. Other files are read only with `companionFiles`.
+ */
+export function directorySkillSource(fs: SkillFileSystem, directory: string, options: { readonly flat?: boolean } = {}): SkillSource {
   const root = directory.replace(/\/+$/, '');
-  async function folders(context: Context): Promise<{ names: string[]; error?: SkillError }> {
+  /** The skill files the directory holds, each with the name it is reported under. */
+  async function candidates(context: Context): Promise<{ files: readonly { readonly path: string; readonly name: string }[]; error?: SkillError }> {
     const listed = await fs.listDir(root, context);
-    if (!listed.ok) return listed.error.code === 'not_found' ? { names: [] } : { names: [], error: { path: root, message: listed.error.message } };
-    return { names: listed.value.filter(entry => entry.kind === 'directory').map(entry => entry.name).sort() };
+    if (!listed.ok) return listed.error.code === 'not_found' ? { files: [] } : { files: [], error: { path: root, message: listed.error.message } };
+    const folders = listed.value.filter(entry => entry.kind === 'directory').map(entry => ({ path: `${root}/${entry.name}/SKILL.md`, name: entry.name }));
+    const flat = options.flat ? listed.value.filter(entry => entry.kind === 'file' && entry.name.endsWith('.md'))
+      .map(entry => ({ path: `${root}/${entry.name}`, name: entry.name.slice(0, -'.md'.length) })) : [];
+    return { files: [...folders, ...flat].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)) };
   }
-  const info = (name: string, context: Context) => fs.fileInfo(`${root}/${name}/SKILL.md`, context);
   return {
     fs,
     version: async context => {
-      const { names, error } = await folders(context);
+      const { files, error } = await candidates(context);
       if (error) return `error:${error.message}`;
-      const stamps = await Promise.all(names.map(async name => {
-        const found = await info(name, context);
-        return `${name}=${found.ok ? stamp(found.value) : found.error.code}`;
+      const stamps = await Promise.all(files.map(async file => {
+        const found = await fs.fileInfo(file.path, context);
+        return `${file.path}=${found.ok ? stamp(found.value) : found.error.code}`;
       }));
       return stamps.join('|');
     },
     list: async context => {
-      const { names, error } = await folders(context);
+      const { files, error } = await candidates(context);
       const skills: Skill[] = [], errors: SkillError[] = error ? [error] : [];
-      for (const name of names) {
-        const found = await info(name, context);
+      for (const file of files) {
+        const found = await fs.fileInfo(file.path, context);
         if (!found.ok && found.error.code === 'not_found') continue;
-        const read = await readSkillFile(fs, `${root}/${name}/SKILL.md`, name, context);
+        const read = await readSkillFile(fs, file.path, file.name, context);
         if ('body' in read) skills.push(read); else errors.push(read);
       }
       return { skills, errors };
@@ -126,14 +132,10 @@ export function fileSkillSource(fs: SkillFileSystem, path: string): SkillSource 
   };
 }
 
-export interface SkillsExtensionOptions {
-  /** How long a source's copy is used before `version()` is asked again, in milliseconds. Default 5000. Unused for an array. */
-  readonly maxAgeMs?: number;
-  /**
-   * Called after each read of a source with every skill it left out (an empty array when none). When `onPublish` refuses the
-   * read, it gets the errors of the listing still in effect followed by `{ path: '', message: 'Listing refused by onPublish: <reason>' }`.
-   */
-  readonly onDiagnostics?: (errors: readonly SkillError[]) => void;
+/** What both kinds of skills take: the native extension name, the listing text and which skills a conversation sees. */
+export interface SkillsOptions {
+  /** The native extension name, one per registry, for example `agent.<id>.skills`. */
+  readonly name: string;
   /**
    * Which skills a conversation sees: called once per listing render and per `load_skill` call with Pi's conversation id and
    * every valid skill, it returns the subset that conversation sees (matched by name; anything else returned is ignored).
@@ -141,17 +143,28 @@ export interface SkillsExtensionOptions {
    * a skill that could not be read also answers as unknown (its reason still goes to `onDiagnostics`).
    */
   readonly visible?: (conversationId: ConversationId, skills: readonly Skill[]) => readonly Skill[] | Promise<readonly Skill[]>;
+  /** The listing section's text before the `- name: description` lines. Default: call load_skill first, `/<skill-name>` is explicit. */
+  readonly intro?: string;
+}
+
+/** The options of `liveSkills`: a source is read on use, so it also has a cache age, diagnostics, companion files and a veto. */
+export interface LiveSkillsOptions extends SkillsOptions {
+  /** How long a source's copy is used before `version()` is asked again, in milliseconds. Default 5000. */
+  readonly maxAgeMs?: number;
+  /**
+   * Called after each read of a source with every skill it left out (an empty array when none). When `onPublish` refuses the
+   * read, it gets the errors of the listing still in effect followed by `{ path: '', message: 'Listing refused by onPublish: <reason>' }`.
+   */
+  readonly onDiagnostics?: (errors: readonly SkillError[]) => void;
   /**
    * List the files beside each `SKILL.md` (at any depth, at most 200) in `load_skill`'s answer, and let
    * `load_skill({ name, path })` return one of them as text. Each file is checked when the listing is read: a symbolic link,
    * a file that cannot be read or one that is not UTF-8 text is left out and reported to `onDiagnostics`. `load_skill` checks a
    * listed file again before returning it (the skill's folder, every folder on the way and the file itself, with `fileInfo`,
    * which does not follow links), so a file or folder swapped for a link since the listing is refused. Read through the
-   * source's `fs`; an array or a source without `fs` throws.
+   * source's `fs`; a source without `fs` throws.
    */
   readonly companionFiles?: boolean;
-  /** The listing section's text before the `- name: description` lines. Default: call load_skill first, `/<skill-name>` is explicit. */
-  readonly intro?: string;
   /**
    * Called before a newly read listing of a source replaces the current one, with both listings' skills. Return a reason
    * (or throw) to refuse it: the current listing stays, and `onDiagnostics` gets its errors plus `Listing refused by onPublish: <reason>`.
@@ -160,8 +173,8 @@ export interface SkillsExtensionOptions {
   readonly onPublish?: (next: readonly Skill[], previous: readonly Skill[]) => string | void | Promise<string | void>;
 }
 
-/** A skills extension on a source, with a handle to re-read the source now. */
-export interface SkillsController {
+/** A live source's extension, with a handle to re-read the source now. */
+export interface LiveSkills {
   readonly extension: Extension;
   /**
    * Read the source now, whatever `maxAgeMs`, and publish what it holds (through `onPublish`). With `name`, only that skill
@@ -200,7 +213,7 @@ function only(name: string, next: Loaded, current: Loaded): Loaded {
  * The current copy of a source: read again once it is older than `maxAgeMs` and `version()` changed, or when `refresh` asks.
  * Reads run one at a time; concurrent callers of `current` share one.
  */
-function liveSkills(source: SkillSource, options: SkillsExtensionOptions) {
+function copyOf(source: SkillSource, options: LiveSkillsOptions) {
   const maxAgeMs = options.maxAgeMs ?? 5000, fs = options.companionFiles ? source.fs : undefined;
   let state: Loaded = { known: new Map(), errors: [] };
   let version: string | undefined, checkedAt = -Infinity, pending: Promise<Loaded> | undefined, missing: Promise<Loaded> | undefined;
@@ -311,7 +324,7 @@ async function withCompanions(fs: SkillFileSystem, listing: Loaded, context: Con
 interface Live { readonly current: (context: Context) => Promise<Loaded>; readonly miss?: (context: Context) => Promise<Loaded> }
 
 /** The listing section and `load_skill` over `live`, filtered per conversation by `visible`. */
-function skillsExtension(name: string, live: Live, options: SkillsExtensionOptions, fs: SkillFileSystem | undefined): Extension {
+function skillsExtension(live: Live, options: SkillsOptions, fs: SkillFileSystem | undefined): Extension {
   const { visible } = options, intro = options.intro ?? INTRO_TEXT;
   // `at` is read only with a filter, so direct callers of render/execute without Pi's input or api keep working.
   async function seen(known: ReadonlyMap<string, Skill>, at: () => ConversationId): Promise<Skill[]> {
@@ -324,7 +337,7 @@ function skillsExtension(name: string, live: Live, options: SkillsExtensionOptio
     ? Type.Object({ name: Type.String(), path: Type.Optional(Type.String({ description: 'A companion file of the skill, relative to its folder.' })) }, { additionalProperties: false })
     : Type.Object({ name: Type.String() }, { additionalProperties: false });
   return defineExtension({
-    name,
+    name: options.name,
     sections: [{ key: 'skills', render: async (input, context) => {
       const skills = await seen((await live.current(context)).known, () => input.conversationId);
       return skills.length ? `${intro}\n${skills.map(skill => `- ${skill.name}: ${skill.description}`).join('\n')}` : undefined;
@@ -371,28 +384,31 @@ function skillsExtension(name: string, live: Live, options: SkillsExtensionOptio
 }
 
 /**
- * A prompt section listing the skills and a `load_skill` tool returning one body. Usable without `defineAgent`.
- * A fixed array is validated now: an invalid or duplicate skill throws. A `SkillSource` is read on first use and again, once
- * the copy is older than `maxAgeMs`, when its version changed; what it cannot use is left out and reported, never thrown.
- * `createSkillsController` returns the same extension on a source with a `refresh` handle.
+ * A prompt section listing the skills and a `load_skill` tool returning one body. Usable without `defineAgent`. Each skill is
+ * validated now: an invalid or duplicate skill throws.
  */
-export function createSkillsExtension(name: string, skills: readonly Skill[] | SkillSource, options: SkillsExtensionOptions = {}): Extension {
-  if (!isSkillArray(skills)) return createSkillsController(name, skills, options).extension;
-  if (options.companionFiles) throw new TypeError('Skills extension: companionFiles need a SkillSource with fs, not an array');
+export function staticSkills(skills: readonly Skill[], options: SkillsOptions): { readonly extension: Extension } {
   const known = new Map<string, Skill>();
   for (const skill of skills.map(validSkill)) {
     if (known.has(skill.name)) throw new TypeError(`Duplicate skill: ${skill.name}`);
     known.set(skill.name, skill);
   }
   const fixed: Loaded = { known, errors: [] };
-  return skillsExtension(name, { current: async () => fixed }, options, undefined);
+  return { extension: skillsExtension({ current: async () => fixed }, options, undefined) };
 }
 
-/** `createSkillsExtension` on a source, plus `refresh(context, name?)` to re-read it now instead of after `maxAgeMs`. */
-export function createSkillsController(name: string, source: SkillSource, options: SkillsExtensionOptions = {}): SkillsController {
+/**
+ * `staticSkills` over a source, plus `refresh(context, name?)` to re-read it now instead of after `maxAgeMs`. The source is read on
+ * first use and again, once the copy is older than `maxAgeMs`, when its version changed. What it cannot use is left out and
+ * reported, never thrown.
+ */
+export function liveSkills(source: SkillSource, options: LiveSkillsOptions): LiveSkills {
   if (options.companionFiles && !source.fs) throw new TypeError('Skills extension: companionFiles need a SkillSource with fs');
-  const live = liveSkills(source, options);
-  return { extension: skillsExtension(name, live, options, options.companionFiles ? source.fs : undefined), refresh: live.refresh };
+  const live = copyOf(source, options);
+  return { extension: skillsExtension(live, options, options.companionFiles ? source.fs : undefined), refresh: live.refresh };
 }
 
-const isSkillArray = (skills: readonly Skill[] | SkillSource): skills is readonly Skill[] => Array.isArray(skills);
+export const isSkillArray = (skills: readonly Skill[] | SkillSource): skills is readonly Skill[] => Array.isArray(skills);
+
+/** The file a built-in source read this skill from, if any: self-evolution reports a skill it refuses at that path. */
+export const skillFile = (skill: Skill) => skillFiles.get(skill);
