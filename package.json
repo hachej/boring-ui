@@ -12,7 +12,7 @@
     "packages/*"
   ],
   "scripts": {
-    "check": "node scripts/check-docs.mjs && node scripts/check-features.mjs && node scripts/check-platform-apis.mjs && node scripts/check-handlers.mjs && node scripts/check-sqlite-settings.mjs && node scripts/check-registry-blocks.mjs && node scripts/check-block-lint.mjs && node scripts/check-block-hooks.mjs && node scripts/check-design.mjs && node scripts/check-pi-boundary.mjs && node scripts/check-doc-drafts.mjs",
+    "check": "node scripts/verify-repo.mjs && node scripts/check-docs.mjs && node scripts/check-features.mjs && node scripts/check-platform-apis.mjs && node scripts/check-handlers.mjs && node scripts/check-sqlite-settings.mjs && node scripts/check-registry-blocks.mjs && node scripts/check-block-lint.mjs && node scripts/check-block-hooks.mjs && node scripts/check-design.mjs && node scripts/check-pi-boundary.mjs && node scripts/check-doc-drafts.mjs",
     "build": "node scripts/build.mjs",
     "typecheck": "npm run build && tsc --project tsconfig.contract-tests.json --noEmit",
     "pretest": "npm run build",
@@ -120,6 +120,7 @@
     "morning:journey": "node scripts/test-morning-browser.mjs",
     "test:morning-consumer": "node scripts/test-experience-consumer.mjs --morning",
     "check:pack": "node scripts/check-npm-packages.mjs",
+    "verify:repo": "node scripts/verify-repo.mjs",
     "draft-recovery:journey": "node examples/draft-recovery/journey.mjs",
     "release:preflight": "npm run check && npm run typecheck && node scripts/release-preflight.mjs",
     "release:version": "node scripts/release-version.mjs",
