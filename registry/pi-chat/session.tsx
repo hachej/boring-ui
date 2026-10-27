@@ -282,7 +282,7 @@ export function useChatSession(options: ChatSessionOptions) {
     edit: async item => {
       await takeBack(item);
       const { text, images } = queuedContent(item), draft = controller.getSnapshot().draft;
-      controller.setText(prependToDraft(draft.text, withoutKindMentions(text, mentions)));
+      controller.setText(prependToDraft(draft.text, text));
       if (images.length) controller.setAttachments([...draft.attachments, ...images]);
       textarea.current?.focus();
     },
