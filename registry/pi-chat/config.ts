@@ -107,15 +107,9 @@ export interface AttachmentsConfig {
   readonly Camera?: ComponentType<CameraSheetProps> | undefined;
 }
 
-/** One past conversation in the history list. `title` is its name or first message; `updatedAt` is when it last had activity. */
-export interface ConversationItem {
-  readonly id: string;
-  readonly title?: string | undefined;
-  readonly updatedAt?: number | string | Date | undefined;
-  /** A preview of the last message (the row's tooltip). */
-  readonly lastMessage?: string | null | undefined;
-  readonly archived?: boolean | undefined;
-}
+// Compatibility type export for one release.
+export type { ConversationItem } from '@hachej/boring-ui-kit/chat-react';
+import type { ConversationItem } from '@hachej/boring-ui-kit/chat-react';
 /** The host's conversations. Give it to `PiChat` and the header's History button opens a list of them instead of the earlier records of this one. */
 export interface ConversationsConfig {
   readonly items: readonly ConversationItem[];

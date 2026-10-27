@@ -1,5 +1,11 @@
 # Implemented behavior and evidence
 
+## Shared chat React hooks
+
+The existing opt-in `@hachej/boring-ui-kit/chat-react` entry owns view selectors, transcript windows/chunks, draft persistence, placement, remote selection and conversations polling/actions. Remote and shared chat reuse selected-adapter ownership without replacing concrete native controllers, their subscribe/getSnapshot seam or their execution lifecycle. Registry compatibility exports remain for one release; its transcript adapter keeps the app's shadcn MessageScroller as the only scroll owner. Session actions and voice/notification/breakpoint logic are not part of this extraction. API and ownership: [Chat React hooks](../../packages/ui/README.md#chat-react-hooks).
+
+Public-output/StrictMode evidence: `test/packages/ui-chat-react-hooks.test.mjs`, `test/types/chat-react.ts`; compatibility paths: `test/contracts/chat-placement*.test.mjs`, `test/ui/pi-chat-draft.test.mjs`. Integration gates: `test:pi-chat-consumer`, `test:shared-chat-consumer`, `test:registry-consumer`; browser gates: `test:chat-scroll` (the fictional long-chat example), `draft-recovery:journey`, `shared-chat:journey:room`. These commands require actual candidate runs; DOM tests alone do not qualify browser scrolling or a live service. No Pi extension is added: these are host UI projections and adapter ownership over the existing public controllers. Global deferrals remain unchanged.
+
 ## Shared artifact versions and presentation acknowledgements
 
 `@hachej/boring-ui-kit/chat-view` owns artifact parsing/detection, collection, pending presents and acknowledgement bookkeeping. `artifactVersions` is newest conversation result first and `follows` uses revision equality (retried calls can share ordinals). The opt-in `chat-react/useArtifactFollow` owns the common auto-open, close-in-turn and observed-mount protocol used by Ambient and AgentWorkspace. Ambient auto-open remains off; its host viewer must report the actual loaded revision through `onShown`, unmount through `hidden: true`, or failure through `onFailed`. No render callback manufactures evidence. This is UI view/controller projection and host presentation, not a Pi execution extension.
