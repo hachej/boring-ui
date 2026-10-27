@@ -185,3 +185,8 @@ export function pieces(text: string, options: { readonly mentions: boolean; read
   if (cursor < text.length) out.push({ text: text.slice(cursor) });
   return out;
 }
+
+/** The presentation label key for a microphone refusal; labels remain host-owned. */
+export const voiceRefusalLabel = {
+  denied: 'voiceDenied', 'no-microphone': 'voiceNoMicrophone', busy: 'voiceBusy', insecure: 'voiceInsecure', unsupported: 'voiceUnsupported', failed: 'voiceStartFailed',
+} as const satisfies Readonly<Record<import('./voice-capture.js').VoiceRefusal, string>>;
