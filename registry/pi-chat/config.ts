@@ -253,6 +253,12 @@ export function mentionedPaths(text: string): string[] {
   return [...new Set(pieces(text, { mentions: true, skills: [] }).flatMap(piece => piece.kind === 'mention' ? [piece.value!] : []))];
 }
 
+/** Consume every draft token for voice sends, including repeated references to the same path. */
+export function withoutMentions(text: string): string {
+  const words = visibleParts(pieces(text, { mentions: true, skills: [] }), piece => piece.kind === 'mention').map(piece => piece.text).join('');
+  return words.trim() ? words : '';
+}
+
 /** Refused messages restore the words, never the app card chips. File mentions retain their existing recovery behaviour. */
 export function withoutKindMentions(text: string, config: MentionsConfig | undefined): string {
   return visibleParts(pieces(text, { mentions: true, skills: [] }), piece => piece.kind === 'mention' && Boolean(mentionKind(piece.value!, config))).map(piece => piece.text).join('');

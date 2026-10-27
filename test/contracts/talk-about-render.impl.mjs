@@ -38,7 +38,7 @@ async function fixture(t, options = {}) {
   const { BACKGROUND_CONTEXT: context } = await import('@earendil-works/chord/context');
   const { createNativeChatController } = await import('@hachej/boring-ui-kit/native-chat');
   const { createFakeChatModel } = await import('@hachej/boring-testing/model');
-  const { createElement: h, act } = await import('react');
+  const { createElement: h, act, StrictMode, Fragment } = await import('react');
   const { createRoot } = await import('react-dom/client');
   const fake = createFakeChatModel();
   const native = await Harness.open(new MemoryStorage(), { registry: createRegistry(), models: fake.models }, context);
@@ -54,7 +54,7 @@ async function fixture(t, options = {}) {
   function Content() { api = layer.useAgentLayer(); return h(layer.AgentDockLayout, null, h('main', null, 'Fictional meal'), h(layer.AgentLayer)); }
   const mount = document.createElement('div'); document.body.append(mount);
   const ui = createRoot(mount);
-  await act(async () => ui.render(h(layer.AgentLayerProvider, { agent: options.noAgent ? undefined : spec, locale: 'fr', agentLink: false }, h(Content))));
+  await act(async () => ui.render(h(options.strict ? StrictMode : Fragment, null, h(layer.AgentLayerProvider, { agent: options.noAgent ? undefined : spec, locale: 'fr', agentLink: false }, h(Content)))));
   const find = selector => document.querySelector(selector);
   const until = async (predicate, label) => { for (let n = 0; n < 100 && !predicate(); n++) await act(async () => new Promise(resolve => setTimeout(resolve, 15))); assert.ok(predicate(), label); };
   const click = selector => act(async () => find(selector).dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true })));
@@ -122,6 +122,27 @@ for (const throwSend of [false, true]) for (const send of ['typed', 'draft', 'au
   await f.until(() => f.sent.length === 1 && f.controller.getSnapshot().draft.text.includes(WORDS), 'words restored');
   assert.equal(f.controller.getSnapshot().draft.text.includes('@repas:'), false);
   assert.equal(f.find('[data-testid=mention-chip]'), null);
+});
+
+test('StrictMode keeps the first card-gesture recording alive until explicit cancel', async t => {
+  const f = await fixture(t, { send: 'message', strict: true });
+  await f.talk(TOKEN, { voice: true });
+  await f.until(() => f.find('[data-testid=agent-recording]')?.getAttribute('data-phase') === 'recording', 'recording survives effect replay');
+  assert.equal(f.permission(), 1);
+  assert.ok(f.tracks.every(track => !track.stopped));
+  await f.click('[data-testid=agent-recording-cancel]');
+  assert.ok(f.tracks.every(track => track.stopped));
+});
+
+for (const send of ['auto', 'message']) for (const refuse of [false, true]) test(`${send}: repeated draft tokens are consumed on ${refuse ? 'refusal' : 'admission'}`, async t => {
+  const f = await fixture(t, { send, refuse });
+  await f.talk(TOKEN, { voice: true });
+  await f.act(async () => f.controller.setText(`${TOKEN} ${TOKEN} @docs/plan.md @docs/plan.md `));
+  await f.until(() => f.find('[data-testid=agent-recording]')?.getAttribute('data-phase') === 'recording', 'recording');
+  await f.click('[data-testid=agent-recording-send]');
+  await f.until(() => f.sent.length === 1 && f.controller.getSnapshot().send.kind === (refuse ? 'blocked' : 'admitted'), 'native send settles');
+  assert.equal(f.controller.getSnapshot().draft.text.trim(), refuse ? WORDS : '');
+  assert.equal(Boolean(f.find('[data-testid=mention-chip]')), false, 'no duplicate card chip survives');
 });
 
 test('typed send renders a quoted kind beside an unchanged file mention, and its opener receives the kind path', async t => {

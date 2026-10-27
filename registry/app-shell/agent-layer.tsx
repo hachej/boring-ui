@@ -28,7 +28,7 @@ import type { VoiceMessageConfig } from '../pi-chat/config';
 import { useHoldToRecord, useRecordingCancellation } from '../pi-chat-voice/use-hold-to-record';
 import { useVoiceMessage } from '../pi-chat-voice/use-voice-message';
 import type { PendingVoice } from '../pi-chat-voice/use-voice-message';
-import { mentionedPaths, mentionToken, pieces, removeMention, voiceClock } from '../pi-chat/config';
+import { mentionedPaths, mentionToken, pieces, removeMention, voiceClock, withoutMentions } from '../pi-chat/config';
 import { withChatPlugins } from '../pi-chat-plugins/chat-plugins';
 import { PendingVoiceBubble } from '../pi-chat-voice/voice-message';
 import { chatTextFor } from '../pi-chat/locale';
@@ -199,7 +199,7 @@ function useVoice(agent: AgentSpec | undefined, locale: AppShellLocale | undefin
       if (agent.voice?.send !== 'auto') { fill(); return; }
       const draft = agent.controller.getSnapshot().draft.text;
       const paths = mentionedPaths(draft);
-      agent.controller.setText(paths.reduce((text, path) => removeMention(text, path), draft));
+      agent.controller.setText(withoutMentions(draft));
       try {
         const sent = await agent.controller.send(undefined, { text: [...paths.map(mentionToken), spoken].join(' '), restore: { text: spoken } });
         if (!signal.aborted) done(sent ? 'sent' : 'drafted');
@@ -324,6 +324,10 @@ export function AgentLayerProvider({ agent: own, improve, locale, agentLink, chi
     if (outcome === 'drafted') { setShown('agent'); setSnapState('half'); }
   });
   const [talkRecording, setTalkRecording] = useState(false);
+  const cancelTalkRecording = useCallback(() => {
+    if (talkRecording && (voice.phase === 'starting' || voice.phase === 'recording')) voice.cancel();
+  }, [talkRecording, voice]);
+  useRecordingCancellation(cancelTalkRecording);
   const previousTalk = useRef<{ controller: NativeChatController; path: string } | undefined>(undefined);
   const focusTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(focusTimer.current), [agent?.controller]);
@@ -476,8 +480,6 @@ function RecordingBar() {
   const { voice, talkRecording, agent, locale } = useInternal();
   const labels = { ...chatTextFor(agent?.chatProps?.locale ?? locale).labels, ...agent?.chatProps?.labels };
   const active = talkRecording && (voice.phase === 'starting' || voice.phase === 'recording');
-  const cancel = useCallback(() => { if (active) voice.cancel(); }, [active, voice]);
-  useRecordingCancellation(cancel);
   if (!active) return null;
   return <div data-testid="agent-recording" data-phase={voice.phase} className="flex shrink-0 flex-wrap items-center justify-end gap-1.5 px-3 py-1">
     <span role="status" className="w-full text-sm">{labels.voiceRecording} {voiceClock(voice.seconds)}</span>

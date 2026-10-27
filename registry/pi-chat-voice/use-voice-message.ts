@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import { createVoiceCapture, DEFAULT_MAX_VOICE_MS } from '@hachej/boring-ui-kit/voice-capture';
 import type { VoiceCapture, VoiceRecording, VoiceRefusal } from '@hachej/boring-ui-kit/voice-capture';
 import type { ChatController, ChatDraft } from '@hachej/boring-ui-kit/native-chat';
-import { isVoicePath, mentionedPaths, mentionToken, removeMention } from '../pi-chat/config';
+import { isVoicePath, mentionedPaths, mentionToken, withoutMentions } from '../pi-chat/config';
 import type { AttachmentsConfig, PendingVoice, VoiceMessageConfig, VoiceMessageHandle, VoicePhase, VoiceRecorderOptions } from '../pi-chat/config';
 import type { ChatLabels } from '../pi-chat/labels';
 
@@ -151,7 +151,7 @@ export function useVoiceMessage({ controller, config, attachments, labels, admit
     if (item.phase !== 'recording') return;
     const draft = item.controller.getSnapshot().draft.text;
     item.mentions = mentionedPaths(draft);
-    item.controller.setText(item.mentions.reduce((text, path) => removeMention(text, path), draft));
+    item.controller.setText(withoutMentions(draft));
     item.phase = 'processing'; update();
     void (async () => {
       const recording: VoiceRecording | null = await item.capture.stop().catch(() => null);

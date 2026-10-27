@@ -39,8 +39,8 @@ try {
     assert.match(JSON.stringify(app.submits.at(-1).body), /@repas:2026-10-27\/dejeuner @uploads\/voice-[^ ]+\.wav Je mange une salade/);
     assert.equal(await browser.evaluate(`${q('[data-testid=composer-input]')}.value`), '');
     assert.equal(await browser.evaluate(`!!${q('[data-testid=mention-chip]')}`), false);
-    await browser.screenshot(`${device}-thread-after-send.png`);
     if (device === 'phone') { await browser.click(q('[data-testid=agent-layer-expand]')); await pause(600); }
+    await browser.screenshot(`${device}-thread-after-send.png`);
     await browser.click(q('[data-testid=voice-play]'));
     await browser.until('audio still plays with prefixed card mention', `${q('[data-testid=voice-bubble] audio')}.paused === false`, 15000);
     await browser.click(q('[data-testid=agent-layer-close]'));
