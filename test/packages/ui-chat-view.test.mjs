@@ -59,3 +59,23 @@ test('run notices: failure, stop and the one text table', () => {
   assert.equal(summaryOf('\n## A **fictional** [plan](https://fictional.invalid)\nmore'), 'A fictional plan');
   assert.equal(summaryOf('x'.repeat(200), 10), `${'x'.repeat(9)}…`);
 });
+
+test('artifact rules use result order and revision equality, while compatibility collection stays oldest first', async () => {
+  const { artifactVersions, follows, collectArtifacts, parseArtifact, detectArtifact, recogniseArtifact, artifactTurn } = await import('@hachej/boring-ui-kit/chat-view');
+  const descriptor = revision => ({ schema: 'boring.artifact', version: 1, id: 'plan', title: 'Plan', type: 'code', mediaType: 'text/plain', ordinal: 1,
+    target: { resource: { providerId: 'fictional', path: 'plan.txt' }, view: { kind: 'published' } }, revision });
+  const call = { type: 'toolCall', id: 'retry', name: 'present', arguments: { path: 'plan.txt' } };
+  const result = revision => ({ role: 'toolResult', toolCallId: 'retry', content: [{ type: 'text', text: JSON.stringify({ artifact: descriptor(revision) }) }] });
+  const view = { entries: [{ id: 1, model: [{ role: 'user', content: 'A plan', timestamp: 1 }, assistant([call]), result('old'), assistant([call]), result('new')] }], docs: {} };
+  const versions = artifactVersions(view);
+  assert.deepEqual(versions.map(item => item.revision), ['new', 'old']);
+  assert.deepEqual(collectArtifacts(view).map(item => item.revision), ['old', 'new']);
+  assert.equal(follows(descriptor('old'), versions), false);
+  assert.equal(follows(descriptor('new'), versions), true);
+  assert.equal(follows(descriptor('new'), []), false);
+  assert.equal(artifactTurn(view), 1);
+  assert.equal(parseArtifact({ ...descriptor('old'), extra: true }), undefined);
+  assert.equal(detectArtifact({ ...call, name: 'read' }, result('new')), undefined, 'ordinary tool output cannot forge a card');
+  assert.equal(recogniseArtifact(call, result('new'), true, undefined).descriptor.revision, 'new');
+  assert.equal(recogniseArtifact(call, undefined, true, undefined).state, 'presenting');
+});
