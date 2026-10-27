@@ -32,8 +32,8 @@ export const MENTION_LIMITS = Object.freeze({ fileBytes: 100_000, totalBytes: 30
 /** Every part this module adds starts with this prefix, so a viewer can tell it from what the person typed. */
 export const MENTION_FILE_PREFIX = '<file path="';
 
-/** The `@path` tokens of a message: at the start or after whitespace; a bare path drops trailing punctuation, a quoted `@"a b.md"` (escapes `\"`, `\\`) is taken as written. The syntax pi-chat produces. The registry item `pi-chat` cannot import this, so it copies the
- * parser (`MENTION_TOKEN` and `pieces` in `registry/pi-chat/config.ts`); `test/contracts/pi-chat-source.test.mjs` keeps the two equal. */
+/** The `@path` tokens of a message: at the start or after whitespace; a bare path drops trailing punctuation, a quoted `@"a b.md"` (escapes `\"`, `\\`) is taken as written. The syntax the chat writes. The browser cannot import this, so the kit's `chat-text` holds the
+ * same parser (`mentionedPaths`, `MENTION_TOKEN` and `pieces` of `@hachej/boring-ui-kit/chat-text`); `test/packages/ui-chat-text.test.mjs` keeps the two equal. */
 export function mentionedPaths(text: string): string[] {
   const found = new Set<string>();
   for (const match of text.matchAll(/(^|\s)@(?:"((?:[^"\\]|\\.)*)"|([^\s]+))/g)) {

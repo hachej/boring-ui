@@ -17,6 +17,7 @@ import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import type { FeedbackSession } from '@hachej/boring-feedback/ui';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
+import { appendToDraft, mentionedPaths, mentionToken, pieces, removeMention, withoutMentions } from '@hachej/boring-ui-kit/chat-text';
 import { Drawer, DrawerContent } from '@/components/ui/drawer';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Dock, DockLayout, DockMain } from '../dock/dock';
@@ -28,7 +29,7 @@ import type { VoiceMessageConfig } from '../pi-chat/config';
 import { useHoldToRecord, useRecordingCancellation } from '../pi-chat-voice/use-hold-to-record';
 import { useVoiceMessage } from '../pi-chat-voice/use-voice-message';
 import type { PendingVoice } from '../pi-chat-voice/use-voice-message';
-import { mentionedPaths, mentionToken, pieces, removeMention, voiceClock, withoutMentions } from '../pi-chat/config';
+import { voiceClock } from '../pi-chat/config';
 import { withChatPlugins } from '../pi-chat-plugins/chat-plugins';
 import { PendingVoiceBubble } from '../pi-chat-voice/voice-message';
 import { chatTextFor } from '../pi-chat/locale';
@@ -193,7 +194,7 @@ function useVoice(agent: AgentSpec | undefined, locale: AppShellLocale | undefin
       const fill = () => {
         if (signal.aborted) return;
         const draft = agent.controller.getSnapshot().draft.text;
-        agent.controller.setText(`${draft}${draft === '' || /\s$/.test(draft) ? '' : ' '}${spoken}`);
+        agent.controller.setText(appendToDraft(draft, spoken));
         done('drafted');
       };
       if (agent.voice?.send !== 'auto') { fill(); return; }
@@ -341,7 +342,7 @@ export function AgentLayerProvider({ agent: own, improve, locale, agentLink, chi
     const before = previousTalk.current;
     const draft = selected.controller.getSnapshot().draft.text;
     const text = before?.controller === selected.controller ? removeMention(draft, before.path) : draft;
-    selected.controller.setText(`${text}${text && !/\s$/.test(text) ? ' ' : ''}${mentionToken(path)} `);
+    selected.controller.setText(`${appendToDraft(text, mentionToken(path))} `);
     previousTalk.current = { controller: selected.controller, path };
     open('agent', options.at ?? 'half');
     if (options.voice && selected.voice) {

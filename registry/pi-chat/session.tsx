@@ -10,8 +10,9 @@ import { useMessageScroller, useMessageScrollerScrollable } from '@/components/u
 import { Button } from '@/components/ui/button';
 import type { ComposerFeedback, ComposerProps, PendingUpload } from './composer';
 import type { ConversationFile } from './conversation-files';
-import type { AttachmentsConfig, EffortConfig, MentionsConfig, ModelConfig, ModelRef, PastedText, PasteToFile, SlashConfig } from './config';
-import { displayName, looksLikeMarkdown, mentionKind, mentionToken, pieces, withoutKindMentions } from './config';
+import type { AttachmentsConfig, EffortConfig, MentionsConfig, ModelConfig, ModelRef, PastedText, SlashConfig } from './config';
+import { appendToDraft, displayName, looksLikeMarkdown, mentionKind, mentionToken, pieces, prependToDraft, withoutKindMentions } from '@hachej/boring-ui-kit/chat-text';
+import type { PasteToFile } from '@hachej/boring-ui-kit/chat-text';
 import type { CommandMentions } from './config';
 import type { ChatCards, ChatTextPart, RowContext } from './message';
 import type { QueueActions, QueuedMessage } from './queue';
@@ -224,7 +225,7 @@ export function useChatSession(options: ChatSessionOptions) {
   const putBack = (text: string, images: readonly ChatAttachment[]) => {
     if (controller.getSnapshot().disposed) return;
     const draft = controller.getSnapshot().draft;
-    controller.setText([withoutKindMentions(text, mentions), draft.text].filter(value => value.trim()).join('\n'));
+    controller.setText(prependToDraft(draft.text, withoutKindMentions(text, mentions)));
     if (images.length) controller.setAttachments([...images, ...draft.attachments.filter(item => !images.some(image => image.id === item.id))]);
   };
   const working = Boolean(run);
@@ -281,7 +282,7 @@ export function useChatSession(options: ChatSessionOptions) {
     edit: async item => {
       await takeBack(item);
       const { text, images } = queuedContent(item), draft = controller.getSnapshot().draft;
-      controller.setText(draft.text.trim() ? `${text}\n${draft.text}` : text);
+      controller.setText(prependToDraft(draft.text, withoutKindMentions(text, mentions)));
       if (images.length) controller.setAttachments([...draft.attachments, ...images]);
       textarea.current?.focus();
     },
@@ -299,7 +300,7 @@ export function useChatSession(options: ChatSessionOptions) {
   } : undefined;
   const addMentions = (paths: readonly string[]) => {
     const text = controller.getSnapshot().draft.text;
-    controller.setText(`${text}${text && !/\s$/.test(text) ? ' ' : ''}${paths.map(mentionToken).join(' ')} `);
+    controller.setText(`${appendToDraft(text, paths.map(mentionToken).join(' '))} `);
     setPicked(value => [...new Set([...value, ...paths])]);
   };
   /** Uploads files; `restore` (a pasted text) is what their pending cards undo: it abandons the upload and puts the text back. */

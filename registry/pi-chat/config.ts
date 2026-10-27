@@ -1,6 +1,7 @@
 import type { ComponentType, ReactNode } from 'react';
 import type { ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
 import type { ChatController } from '@hachej/boring-ui-kit/native-chat';
+import type { SlashItem } from '@hachej/boring-ui-kit/chat-text';
 import type { ApprovalDecision, ArtifactDetect, ArtifactRecognise, ChatArtifact, SubagentRenderer as ViewSubagentRenderer } from '@hachej/boring-ui-kit/chat-view';
 import type { BlockAction } from '../button/actions';
 import type { ChatLabels } from './labels';
@@ -13,8 +14,8 @@ import type { ChatLabels } from './labels';
  * simply not offered (no menu, no pill, no camera entry, no record button). `withChatPlugins` of `pi-chat-plugins` fills them all in.
  */
 
-/** Where a `/` menu entry comes from. Skills and host commands are grouped separately in the menu. */
-export type SlashSource = 'local' | 'extension' | 'prompt' | 'skill';
+/** Where a `/` menu entry comes from (the kit's `chat-text`). */
+export type { SlashSource } from '@hachej/boring-ui-kit/chat-text';
 
 export interface SlashApi {
   /** Replace the composer text. */
@@ -80,8 +81,8 @@ export type AudioUrlRead = (path: string, signal: AbortSignal) => Promise<string
 /** Reads an upload for its thumbnail or lazy voice playback: its media type and base64 data, or undefined. */
 export type PreviewRead = (path: string, signal: AbortSignal) => Promise<{ readonly mimeType: string; readonly data: string } | undefined>;
 
-/** Paste-to-file thresholds: a paste with more characters or more lines than these becomes a file. Defaults 2000 and 40. */
-export interface PasteToFile { readonly minChars?: number | undefined; readonly minLines?: number | undefined }
+/** Paste-to-file thresholds (the kit's `chat-text`): a paste with more characters or more lines than these becomes a file. */
+export type { PasteToFile } from '@hachej/boring-ui-kit/chat-text';
 /** A paste the composer took, with the textarea range it replaces (restored if the upload is cancelled). */
 export interface PastedText { readonly text: string; readonly start: number; readonly end: number }
 
@@ -180,173 +181,12 @@ export interface EffortConfig {
   readonly Picker?: ComponentType<ModelEffortPickerProps> | undefined;
 }
 
-/** The unified, internal menu entry. */
-export interface SlashItem {
-  readonly name: string;
-  readonly description: string;
-  readonly source: SlashSource;
-  readonly sourcePlugin?: string;
-}
-
-export function slashItems(config: SlashConfig): SlashItem[] {
-  return [
-    ...(config.commands ?? []).map((command): SlashItem => ({ name: command.name, description: command.description ?? '', source: 'local', ...(command.sourcePlugin ? { sourcePlugin: command.sourcePlugin } : {}) })),
-    ...(config.skills ?? []).map((skill): SlashItem => ({ name: skill.name, description: skill.description, source: 'skill', ...(skill.sourcePlugin ? { sourcePlugin: skill.sourcePlugin } : {}) })),
-  ];
-}
-
-/** The group an item lives under in the filter chips: skills, its plugin, or `built-in`. */
-export function slashGroup(item: Pick<SlashItem, 'source' | 'sourcePlugin'>): string {
-  if (item.source === 'skill') return 'skills';
-  return item.sourcePlugin || 'built-in';
-}
-
-/** `/` opens the menu only when the text before the caret is one `/token`, as in v2. */
-export function slashQuery(text: string, caret: number): string | null {
-  const match = /^\/(\S*)$/.exec(text.slice(0, caret));
-  return match ? match[1]! : null;
-}
-
-export interface MentionTrigger { readonly query: string; readonly start: number; readonly end: number }
-/** An `@` at the start or after whitespace, up to the caret. */
-export function mentionTrigger(text: string, caret: number): MentionTrigger | null {
-  const before = text.slice(0, caret);
-  const match = /(^|\s)@(\S*)$/.exec(before);
-  // A typed opening quote (`@"Meeting`) is not part of the search; the token starts at the `@` either way.
-  return match ? { query: match[2]!.replace(/^"/, ''), start: before.length - match[2]!.length - 1, end: caret } : null;
-}
-
-/**
- * The text of a mention of `path`. A path with whitespace or a quote is written in double quotes, `@"docs/Meeting notes.md"`, with `\`
- * and `"` escaped, because a bare mention ends at a space. Any other path stays bare (`@docs/plan.md`), as it always was.
+/*
+ * The text grammar (slash menu, `@mention` tokens, message pieces, file kinds, paste and draft rules) is the kit's `chat-text`; it is
+ * re-exported here so the items that import it from `pi-chat/config` keep compiling.
  */
-export function mentionToken(path: string): string {
-  return /[\s"]/.test(path) ? `@"${path.replace(/[\\"]/g, '\\$&')}"` : `@${path}`;
-}
-/**
- * The `@` tokens of a message, bare or quoted: group 1 is the character before the `@` (or the start), group 2 the quoted body (escapes
- * still in it), group 3 the bare path. `test/contracts/pi-chat-source.test.mjs` keeps `mentionedPaths` in the agent package equal to this.
- */
-export const MENTION_TOKEN = /(^|\s)@(?:"((?:[^"\\]|\\.)*)"|([^\s]+))/g;
-
-const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-export function hasMention(text: string, path: string): boolean {
-  return pieces(text, { mentions: true, skills: [] }).some(piece => piece.kind === 'mention' && piece.value === path);
-}
-export function removeMention(text: string, path: string): string {
-  let removed = false, gap = false;
-  return pieces(text, { mentions: true, skills: [] }).map(piece => {
-    if (!removed && piece.kind === 'mention' && piece.value === path) { removed = true; gap = true; return ''; }
-    if (gap) { gap = false; return piece.text.replace(/^ /, ''); }
-    return piece.text;
-  }).join('').replace(/^[ ]+/, '');
-}
-
-/** A registered prefix wins only for that kind; ordinary file paths keep their existing presentation. */
-export function mentionKind(value: string, config: Pick<MentionsConfig, 'kinds'> | undefined): { readonly kind: MentionKind; readonly path: string } | undefined {
-  const match = /^([a-z][a-z0-9-]*):(.+)$/s.exec(value);
-  const kind = match && config?.kinds && Object.hasOwn(config.kinds, match[1]!) ? config.kinds[match[1]!] : undefined;
-  return kind ? { kind, path: match![2]! } : undefined;
-}
-
-export function mentionedPaths(text: string): string[] {
-  return [...new Set(pieces(text, { mentions: true, skills: [] }).flatMap(piece => piece.kind === 'mention' ? [piece.value!] : []))];
-}
-
-/** Consume every draft token for voice sends, including repeated references to the same path. */
-export function withoutMentions(text: string): string {
-  const words = visibleParts(pieces(text, { mentions: true, skills: [] }), piece => piece.kind === 'mention').map(piece => piece.text).join('');
-  return words.trim() ? words : '';
-}
-
-/** Refused messages restore the words, never the app card chips. File mentions retain their existing recovery behaviour. */
-export function withoutKindMentions(text: string, config: MentionsConfig | undefined): string {
-  return visibleParts(pieces(text, { mentions: true, skills: [] }), piece => piece.kind === 'mention' && Boolean(mentionKind(piece.value!, config))).map(piece => piece.text).join('');
-}
-
-export type Piece = { readonly text: string; readonly kind?: 'mention' | 'skill'; readonly value?: string };
-
-/** Upload paths are `uploads/<name>`: the attachments of a message, shown as cards rather than as text. */
-export const isUploadPath = (path: string): boolean => path.startsWith('uploads/');
-
-export type FileKind = 'document' | 'image' | 'pdf' | 'sheet' | 'slides' | 'audio' | 'file';
-const KIND_BY_EXTENSION: Readonly<Record<string, FileKind>> = {
-  png: 'image', jpg: 'image', jpeg: 'image', gif: 'image', webp: 'image', svg: 'image', bmp: 'image', avif: 'image',
-  pdf: 'pdf',
-  webm: 'audio', ogg: 'audio', m4a: 'audio', mp4: 'audio', mp3: 'audio', wav: 'audio',
-  csv: 'sheet', tsv: 'sheet', xls: 'sheet', xlsx: 'sheet', xlsm: 'sheet', ods: 'sheet', numbers: 'sheet',
-  ppt: 'slides', pptx: 'slides', odp: 'slides', key: 'slides',
-  md: 'document', markdown: 'document', txt: 'document', doc: 'document', docx: 'document', odt: 'document', rtf: 'document',
-};
-/** The card's kind, from the extension alone. */
-export function fileKind(path: string): FileKind {
-  const extension = /\.([^./]+)$/.exec(path)?.[1]?.toLowerCase() ?? '';
-  return KIND_BY_EXTENSION[extension] ?? 'file';
-}
-/** Recorded voice uses a reserved upload filename prefix; other audio remains a plain file card. */
-export const isVoicePath = (path: string): boolean => /^uploads\/voice-[^/]+$/.test(path) && fileKind(path) === 'audio';
-
-/** The name a card shows: the upload's file name without the random suffix `uploadPath` adds (`report-1a2b3c4d.pdf` is `report.pdf`). */
-export function displayName(path: string): string {
-  const name = path.slice(path.lastIndexOf('/') + 1);
-  return name.replace(/-[0-9a-f]{8}(?=\.[^.]*$|$)/i, '');
-}
-
-/**
- * The pieces a message shows once `hidden` ones are taken out: a space that a removed piece leaves at a join is dropped, and the ends are
- * trimmed where it was. The message's own text is not changed, only what the bubble draws.
- */
-export function visibleParts(parts: readonly Piece[], hidden: (part: Piece) => boolean): Piece[] {
-  const out: Piece[] = [];
-  let gap = false;
-  for (const part of parts) {
-    if (hidden(part)) { gap = true; continue; }
-    const prev = out[out.length - 1];
-    const joins = gap && part.kind === undefined && (prev === undefined || (prev.kind === undefined && /\s$/.test(prev.text)));
-    out.push(joins ? { text: part.text.replace(/^\s+/, '') } : part);
-    gap = false;
-  }
-  const last = out[out.length - 1];
-  if (gap && last && last.kind === undefined) out[out.length - 1] = { text: last.text.replace(/\s+$/, '') };
-  return out.filter(part => part.kind !== undefined || part.text !== '');
-}
-
-/** Whether pasted text is long enough to become a file. `more` than the limits: the characters, or the lines, of the text. */
-export function isLongPaste(text: string, limits: PasteToFile = {}): boolean {
-  const { minChars = 2000, minLines = 40 } = limits;
-  return text.length > minChars || text.split('\n').length > minLines;
-}
-/** Markdown in pasted text: a heading, a list or quote item, a fence, a table row, emphasis or a link. Anything else is plain text. */
-export function looksLikeMarkdown(text: string): boolean {
-  return /^\s{0,3}(#{1,6}\s|[-*+]\s|\d+[.)]\s|>\s|```|~~~)/m.test(text) || /\*\*[^*\n]+\*\*|\]\([^)\n]+\)|^\|.*\|\s*$/m.test(text);
-}
-/** Split a sent message into plain text, `@path` mentions and a leading `/skill` token. */
-export function pieces(text: string, options: { readonly mentions: boolean; readonly skills: readonly string[]; readonly uploads?: boolean }): Piece[] {
-  const found: { start: number; end: number; kind: 'mention' | 'skill'; value: string }[] = [];
-  const skill = options.skills.length ? new RegExp(`^/(${options.skills.map(escape).join('|')})(?=\\s|$)`).exec(text) : null;
-  if (skill) found.push({ start: 0, end: skill[0].length, kind: 'skill', value: skill[1]! });
-  if (options.mentions || options.uploads) {
-    for (const match of text.matchAll(MENTION_TOKEN)) {
-      // A quoted path keeps its punctuation (the closing quote ends it); a bare one drops trailing punctuation, as a sentence would.
-      const quoted = match[2] !== undefined;
-      const path = quoted ? match[2]!.replace(/\\(.)/g, '$1') : match[3]!.replace(/[.,;:!?)\]}'"]+$/, '');
-      if (!path || (!options.mentions && !isUploadPath(path))) continue;
-      const start = match.index! + match[1]!.length;
-      const end = quoted ? match.index! + match[0].length : start + 1 + path.length;
-      found.push({ start, end, kind: 'mention', value: path });
-    }
-  }
-  const out: Piece[] = [];
-  let cursor = 0;
-  for (const item of found.sort((a, b) => a.start - b.start)) {
-    if (item.start < cursor) continue;
-    if (item.start > cursor) out.push({ text: text.slice(cursor, item.start) });
-    out.push({ text: text.slice(item.start, item.end), kind: item.kind, value: item.value });
-    cursor = item.end;
-  }
-  if (cursor < text.length) out.push({ text: text.slice(cursor) });
-  return out;
-}
+export { appendToDraft, displayName, fileKind, hasMention, isLongPaste, isUploadPath, isVoicePath, looksLikeMarkdown, MENTION_TOKEN, mentionedPaths, mentionKind, mentionToken, mentionTrigger, pieces, prependToDraft, removeMention, slashGroup, slashItems, slashQuery, visibleParts, withoutKindMentions, withoutMentions } from '@hachej/boring-ui-kit/chat-text';
+export type { FileKind, MentionTrigger, Piece, SlashItem } from '@hachej/boring-ui-kit/chat-text';
 
 /** Props of the slash picker that `SlashConfig.Picker` carries. */
 export interface SlashPickerProps {

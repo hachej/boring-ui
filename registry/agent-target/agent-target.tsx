@@ -6,6 +6,7 @@ import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState }
 import type { CSSProperties } from 'react';
 import type { EntryRecord, JsonObject, Submission } from '@earendil-works/pi-durable';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
+import { appendToDraft } from '@hachej/boring-ui-kit/chat-text';
 import { createPicker, createPrivacyPolicy, isExcluded } from '@hachej/boring-feedback/page';
 import type { Picker } from '@hachej/boring-feedback/page';
 import { Button } from '@/components/ui/button';
@@ -134,7 +135,7 @@ export function AgentTargetMode({ enabled, transcribe, onSettled, labels, attrib
       const snapshot = selected.controller.getSnapshot();
       if (!snapshot.disposed) {
         const draft = snapshot.draft.text;
-        selected.controller.setText(`${draft}${draft && !/\s$/.test(draft) ? ' ' : ''}${spoken}`);
+        selected.controller.setText(appendToDraft(draft, spoken));
       }
       settle(selected, '', false, snapshot.disposed ? selected.labels.unavailable : selected.labels.sendFailed);
       return;

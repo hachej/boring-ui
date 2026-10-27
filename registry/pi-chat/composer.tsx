@@ -9,8 +9,9 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Input } from '@/components/ui/input';
 import { InputGroup, InputGroupAddon, InputGroupTextarea } from '@/components/ui/input-group';
 import { Toggle } from '@/components/ui/toggle';
-import { hasMention, isLongPaste, mentionedPaths, mentionKind, mentionToken, mentionTrigger, removeMention, slashItems, slashQuery } from './config';
-import type { AttachmentsConfig, MentionsConfig, PastedText, PasteToFile, SlashConfig, SlashItem } from './config';
+import { hasMention, isLongPaste, mentionedPaths, mentionKind, mentionToken, mentionTrigger, removeMention, slashItems, slashQuery } from '@hachej/boring-ui-kit/chat-text';
+import type { PasteToFile, SlashItem } from '@hachej/boring-ui-kit/chat-text';
+import type { AttachmentsConfig, MentionsConfig, PastedText, SlashConfig } from './config';
 import { useChatText } from './labels';
 import { cn } from '../utils/utils';
 
