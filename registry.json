@@ -709,6 +709,7 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
+        "@boring-ui/utils",
         "@boring-ui/pi-chat"
       ],
       "files": [

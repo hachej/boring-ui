@@ -118,6 +118,19 @@ for (const send of ['draft', 'auto', 'message']) test(`${send}: synchronous gest
   assert.ok(f.find('[data-testid=user-text]')?.textContent.includes(WORDS));
   if (send === 'message') assert.ok(f.find('[data-testid=voice-play]'), 'mention prefix preserves audio rendering');
 });
+test('ordinary composer hold keeps the shell compact while card-started recording uses inline status', async t => {
+  const f = await fixture(t, { send: 'message' });
+  await f.talk();
+  const mic = f.find('[data-testid=agent-talk]');
+  await f.act(async () => mic.dispatchEvent(new window.PointerEvent('pointerdown', { button: 0, pointerId: 1, bubbles: true, cancelable: true })));
+  await f.until(() => mic.getAttribute('data-state') === 'recording', 'ordinary hold recording');
+  assert.equal(Boolean(f.find('[data-testid=voice-recording]')), false, 'ordinary shell hold adds no width-changing status');
+  assert.equal(Boolean(f.find('[data-testid=composer-voice-cancel]')), false);
+  await f.act(async () => window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+  assert.ok(f.tracks.every(track => track.stopped));
+  assert.equal(f.sent.length, 0);
+});
+
 for (const throwSend of [false, true]) for (const send of ['typed', 'draft', 'auto', 'message']) test(`${send}: ${throwSend ? 'thrown' : 'refused'} native send restores words without the card token`, async t => {
   const f = await fixture(t, { send: send === 'typed' ? undefined : send, refuse: !throwSend, throwSend });
   await f.talk(TOKEN, { voice: send !== 'typed' });

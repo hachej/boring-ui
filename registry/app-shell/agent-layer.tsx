@@ -468,7 +468,7 @@ export function AgentTrigger({ className, children }: { readonly className?: str
 function TalkButton() {
   const { voice, talkRecording } = useInternal();
   const busy = voice.phase === 'transcribing';
-  return <VoiceMessageButton testId="agent-talk" tapToFinish={talkRecording} disabled={busy || (voice.phase === 'idle' && voice.canStart === false)} voice={{
+  return <VoiceMessageButton testId="agent-talk" tapToFinish={talkRecording} showStatus={talkRecording} disabled={busy || (voice.phase === 'idle' && voice.canStart === false)} voice={{
     ...voice, phase: busy ? 'processing' : voice.phase, canStart: voice.canStart !== false,
     pending: voice.pending ?? [], captureSequence: voice.captureSequence ?? 0,
   }} />;

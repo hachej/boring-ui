@@ -246,6 +246,8 @@ export interface VoiceMessageButtonProps {
   readonly primary?: boolean;
   /** A gesture elsewhere already started capture: tap the mic to finish, with inline cancel while it records. */
   readonly tapToFinish?: boolean;
+  /** A shell with its own hold feedback can keep the held microphone's geometry fixed. Default true. */
+  readonly showStatus?: boolean;
   readonly testId?: string;
 }
 /** Props of a pending voice message bubble that `VoiceMessageConfig.Bubble` carries. */

@@ -14,7 +14,7 @@ import { cn } from '../utils/utils';
 
 export { voiceClock } from '../pi-chat/config';
 
-export function VoiceMessageButton({ voice, disabled, primary = false, tapToFinish = false, testId = 'voice-message-record' }: VoiceMessageButtonProps) {
+export function VoiceMessageButton({ voice, disabled, primary = false, tapToFinish = false, showStatus = true, testId = 'voice-message-record' }: VoiceMessageButtonProps) {
   const { labels } = useChatText();
   const active = voice.phase === 'starting' || voice.phase === 'recording';
   const blocked = !active && (disabled || voice.phase !== 'idle');
@@ -24,7 +24,7 @@ export function VoiceMessageButton({ voice, disabled, primary = false, tapToFini
     {tap && <Button variant="ghost" size="icon" data-testid="composer-voice-cancel" aria-label={labels.voiceCancel} title={labels.voiceCancel} onClick={voice.cancel} className="min-h-11 min-w-11 shrink-0"><XIcon data-icon="inline-start" aria-hidden="true" /></Button>}
     <Button {...(tap ? { onPointerDown: (event: { preventDefault: () => void }) => event.preventDefault(), onClick: voice.finish } : hold)} variant={primary ? 'default' : 'ghost'} size="icon" className={cn('touch-none shrink-0', tap && 'min-h-11 min-w-11')} data-testid={testId} data-state={voice.phase} disabled={blocked} aria-label={tap ? labels.send : labels.voiceHold} title={tap ? labels.send : labels.voiceHold} aria-pressed={voice.phase === 'recording'}>
       <MicIcon data-icon="inline-start" aria-hidden="true" />
-    </Button>{active && <span role="status" data-testid="voice-recording" className="min-w-0">{labels.voiceRecording} {voiceClock(voice.seconds)}</span>}
+    </Button>{active && showStatus && <span role="status" data-testid="voice-recording" className="min-w-0">{labels.voiceRecording} {voiceClock(voice.seconds)}</span>}
   </div>;
 }
 
