@@ -4,15 +4,15 @@
   "title": "Viewer frame",
   "description": "The standard viewer top bar every viewer draws in (title, status, viewer controls, Refresh, Share, Copy, Download, Open in new tab, Close, overflow menu), its window labels, download, share and media helpers and the sandboxed interactive HTML frame. The viewers' styles live here. Each viewer is its own item (viewer-markdown, viewer-html, viewer-image, viewer-pdf, viewer-code) with a cheap kind module and a view loaded on first open.",
   "dependencies": [
-    "@hachej/boring-ui-kit@^0.4.25",
+    "@hachej/boring-ui-kit@^0.4.26",
     "react@^19.0.0",
     "react-dom@^19.0.0",
     "lucide-react@^1.51.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.25/r/utils.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.25/r/button.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.25/r/version-history.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.26/r/utils.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.26/r/button.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.26/r/version-history.json"
   ],
   "files": [
     {

@@ -8,16 +8,17 @@
 // @ts-nocheck: an example page, bundled by esbuild and not part of the typechecked sources.
 import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIcon, ArchiveIcon, CalendarDaysIcon, CalendarPlusIcon, ClipboardListIcon, DatabaseIcon, HomeIcon, MessageCircleIcon, MessagesSquareIcon, Share2Icon, MicIcon, MoonIcon, MoonStarIcon, PlusIcon, TargetIcon, UsersIcon, UploadIcon } from 'lucide-react';
 import { createFeedbackSession } from '@hachej/boring-feedback/ui';
 import { createPrivacyPolicy } from '@hachej/boring-feedback/page';
 import { connectRevisionProvider } from '@hachej/boring-files/revision';
-import { AppShell, ListDetail, useAgentContext, readAgentContext, useScreenHeader } from '../../registry/app-shell/index.ts';
+import { AppShell, ListDetail, useAgentContext, useAgentLayer, readAgentContext, useScreenHeader } from '../../registry/app-shell/index.ts';
 import type { RevisionProvider } from '@hachej/boring-files/revision';
 import { AgentTargetMode } from '../../registry/agent-target/agent-target.tsx';
 import { agentTargetLabelsFr } from '../../registry/agent-target/agent-target-labels.ts';
 import { Button } from './components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from './components/ui/card';
 import { Documents } from '../../registry/documents/documents.tsx';
 import { DocumentSheet } from '../../registry/documents/document-sheet.tsx';
 import { AgentWorkspace, useConversations } from '../../registry/pi-app/agent-workspace.tsx';
@@ -83,7 +84,22 @@ function WalkingDay() {
     : { title: 'Ma journée', subtitle: 'mardi 13 octobre', actions: [themeAction] });
   return <List />;
 }
-function Day() { return targets ? <Meals /> : <WalkingDay />; }
+function TalkAboutMeal() {
+  const { talkAbout } = useAgentLayer();
+  const start = useRef<number | null>(null);
+  useScreenHeader({ title: 'Mes repas fictifs', actions: [themeAction] });
+  const talk = () => talkAbout('@repas:2026-10-27/dejeuner', { voice: true });
+  return <section className="p-4">
+    <Card data-testid="talk-about-card" className="touch-pan-y" onPointerDown={event => { start.current = event.clientX; event.currentTarget.setPointerCapture(event.pointerId); }}
+      onPointerCancel={() => { start.current = null; }} onPointerUp={event => { if (start.current !== null && Math.abs(event.clientX - start.current) > 60) talk(); start.current = null; }}>
+      <CardHeader><CardTitle>Déjeuner · mardi</CardTitle></CardHeader>
+      <CardContent className="flex items-center justify-between gap-3"><span>Une salade et du pain</span>
+        <Button variant="ghost" size="icon" data-testid="card-mic" aria-label="Parler de ce repas" onPointerDown={event => event.stopPropagation()} onClick={talk}><MicIcon data-icon="inline-start" aria-hidden="true" /></Button>
+      </CardContent>
+    </Card>
+  </section>;
+}
+function Day() { return query.get('talkAbout') === '1' ? <TalkAboutMeal /> : targets ? <Meals /> : <WalkingDay />; }
 function Progress() {
   useAgentContext({ name: 'Progrès', params: { range: 30 } });
   useScreenHeader({ actions: [themeAction] });
@@ -171,7 +187,7 @@ function App() {
       { id: 'share', label: 'Partager ma semaine', icon: Share2Icon, onSelect: () => window.__did.push('share') },
       { id: 'invite', label: 'Inviter un ami', icon: UsersIcon, href: '/invite?app=fitness', onSelect: () => window.__did.push('invite') },
     ],
-    chatProps: { ...common, ...audioFiles, actions: coach.actions, labels: { title: 'Coach', placeholder: 'Parle au coach…' },
+    chatProps: { ...common, ...audioFiles, voiceReplay: query.get('replay') === '1', mentions: { ...audioFiles.mentions, search: async () => [], kinds: { repas: { label: (path: string) => path === '2026-10-27/dejeuner' ? 'Déjeuner · mardi' : path, icon: <ClipboardListIcon aria-hidden="true" className="size-4" /> } } }, actions: coach.actions, labels: { title: 'Coach', placeholder: 'Parle au coach…' },
       // Photos and picked images become draft attachments (the phone camera and the "+" menu both land here).
       onFiles: async files => Promise.all(files.map(async (file, index) => {
         const bytes = new Uint8Array(await file.arrayBuffer());

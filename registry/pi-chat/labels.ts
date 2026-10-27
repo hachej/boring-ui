@@ -139,6 +139,9 @@ export const defaultChatLabels = {
   // Voice input (the microphone button beside the composer)
   voiceRecord: 'Record a message',
   voiceHold: 'Hold to record, release to send',
+  voicePauseRecording: 'Pause recording',
+  voiceResumeRecording: 'Resume recording',
+  voicePaused: 'Recording paused',
   voiceRecording: 'Recording',
   voicePreparing: 'Preparing voice message…',
   voiceAudioOnly: 'Send audio only',
@@ -153,6 +156,7 @@ export const defaultChatLabels = {
   voiceTranscribing: 'Transcribing…',
   voiceNothingHeard: 'Nothing was heard. Try again.',
   voiceTranscribeFailed: 'The recording could not be transcribed. Try again.',
+  voiceTranscriptUnavailable: 'Voice message — transcription unavailable.',
   voiceDenied: 'Microphone blocked. Allow it for this site in the browser, then press record again.',
   voiceNoMicrophone: 'No microphone found. Connect one, then press record again.',
   voiceBusy: 'The microphone is busy or could not be opened. Close other apps using it and try again.',

@@ -2,7 +2,7 @@
 // props, and paste-to-file in the composer. Fictional names and text only. Renders the real PiChat over a native controller.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
@@ -13,7 +13,7 @@ const out = join(root, '.cache/pi-chat-file-cards-test');
 mkdirSync(out, { recursive: true });
 async function load(name, contents) {
   writeFileSync(join(out, `${name}-entry.tsx`), contents);
-  await build({ entryPoints: [join(out, `${name}-entry.tsx`)], outfile: join(out, `${name}.mjs`), bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
+  await build({ entryPoints: [join(out, `${name}-entry.tsx`)], outfile: join(out, `${name}.mjs`), bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent', plugins: process.env.TALK_MUTATION ? [{ name: 'mutation', setup(builder) { const mutation = JSON.parse(readFileSync(process.env.TALK_MUTATION, 'utf8')); builder.onLoad({ filter: /registry\/.*\.(ts|tsx)$/ }, args => { if (!args.path.endsWith(mutation.file)) return; const source = readFileSync(args.path, 'utf8'); assert.ok(source.includes(mutation.before), 'mutation guard exists'); return { contents: source.replace(mutation.before, mutation.after), loader: args.path.endsWith('tsx') ? 'tsx' : 'ts' }; }); } }] : [] });
   return import(pathToFileURL(join(out, `${name}.mjs`)).href);
 }
 const { frenchChatLabels } = await load('labels', `export { frenchChatLabels } from '${root}registry/pi-chat/labels-fr.ts';`);
@@ -73,8 +73,15 @@ async function harness(t, { attachments, mentions, onOpenFile, pasteToFile, loca
     ...(onOpenFile ? { onOpenFile } : {}), ...(pasteToFile ? { pasteToFile } : {}), ...(locale ? { locale } : {}), ...extra };
   const Component = component === 'ambient' ? AmbientChat : component ?? PiChat;
   const renderWith = async next => { Object.assign(props, next); await act(async () => ui.render(createElement(Component, props))); };
+  const reload = async () => {
+    const fresh = createNativeChatController({ identity: { runtimeId: 'fixture', scopeId: 'fixture', principalId: 'person' }, context, conversation });
+    await fresh.connect();
+    t.after(() => fresh.dispose());
+    await renderWith({ controller: fresh });
+    return fresh;
+  };
   await renderWith({});
-  return { window, controller, container, act, context, rerender: renderWith, unmount: () => act(async () => ui.unmount()), write: async model => {
+  return { window, controller, container, act, context, rerender: renderWith, reload, unmount: () => act(async () => ui.unmount()), write: async model => {
     await act(async () => { await conversation.submit({ type: 'write', entry: { kind: 'message', model } }, context); });
     await act(async () => new Promise(resolve => setTimeout(resolve, 30)));
   } };
@@ -215,20 +222,34 @@ test('a sent upload mention is a card above the bubble, the raw mention is hidde
   assert.ok(sent.includes('@uploads/report-1a2b3c4d.pdf'), 'the content still carries the mention');
 });
 
-test('a voice upload renders a replayable bubble with its transcript, while ordinary audio stays a card', async t => {
+test('a voice upload defaults to transcript only and explicitly opts into replay, while ordinary audio stays a card', async t => {
   const reads = [];
   const { container, write, rerender } = await harness(t, { mentions: { search: async () => [], preview: async path => { reads.push(path); return { mimeType: 'audio/webm', data: 'ZmFrZQ==' }; } } });
   await write([{ role: 'user', content: '@uploads/voice-20261020-101500.webm Je mange une salade', timestamp: 0 }]);
   const bubble = container.querySelector('[data-testid=voice-bubble]');
-  assert.ok(bubble, 'voice recordings are one replayable bubble');
+  assert.ok(bubble, 'voice recordings retain one transcript bubble');
   assert.match(bubble.textContent, /Je mange une salade/);
-  assert.ok(bubble.querySelector('[data-testid=voice-play]'));
+  assert.equal(bubble.querySelector('audio, [data-testid=voice-play], [data-testid=voice-duration]'), null);
+  assert.equal(bubble.textContent.includes('@uploads/'), false);
+  await rerender({ voiceReplay: true });
+  assert.ok(container.querySelector('[data-testid=voice-play]'));
   assert.deepEqual(reads, [], 'replay bytes are lazy');
   assert.equal(container.querySelector('[data-testid=message-file]'), null, 'no duplicate file card');
   await write([{ role: 'user', content: '@uploads/song.mp3 An ordinary upload', timestamp: 1 }]);
   assert.match(container.querySelector('[data-testid=message-file]').textContent, /Audio/);
   await rerender({ locale: 'fr' });
   assert.equal(frenchChatLabels.fileKind.audio, 'Audio');
+});
+
+test('ambient voice transcripts also require explicit replay opt-in', async t => {
+  const { container, write, rerender } = await harness(t, { component: 'ambient', extra: { defaultState: 'expanded' } });
+  await write([{ role: 'user', content: '@uploads/voice-fictional.webm A retained fictional transcript', timestamp: 0 }]);
+  assert.match(container.querySelector('[data-testid=voice-bubble]').textContent, /A retained fictional transcript/);
+  assert.equal(container.querySelector('[data-testid=voice-play], [data-testid=voice-duration], audio'), null);
+  await rerender({ voiceReplay: true });
+  assert.ok(container.querySelector('[data-testid=voice-play]'));
+  await rerender({ voiceReplay: false });
+  assert.equal(container.querySelector('[data-testid=voice-play], [data-testid=voice-duration], audio'), null);
 });
 
 test('a card with onOpenFile is a button that opens the path; without it the card is not clickable', async t => {
@@ -653,6 +674,7 @@ async function voiceHarness(t, config = {}) {
     return [{ path: `uploads/${files[0].name}`, name: files[0].name }];
   } };
   const ui = await harness(t, { extra: { voiceMessage, ...config.extra }, attachments, beforeSubmit: config.beforeSubmit, lostAdmission: config.lostAdmission, admissionGate: config.admissionGate, stagedFailure: config.stagedFailure });
+  await ui.rerender({ voiceMessage: { ...voiceMessagePlugin, ...voiceMessage } });
   const before = Object.getOwnPropertyDescriptor(globalThis, 'MediaRecorder');
   class Recorder extends EventTarget {
     static isTypeSupported(type) { return !config.mp4 || type === 'audio/mp4'; }
@@ -679,14 +701,14 @@ async function voiceHarness(t, config = {}) {
   };
 }
 
-test('voice release starts upload and transcription in parallel, then admits one text entry and preserves the draft', async t => {
+test('voice Send starts upload and transcription in parallel, then admits one text entry and preserves the draft', async t => {
   const ui = await voiceHarness(t, { gated: true });
   await ui.act(async () => ui.controller.setText('A later typed draft'));
   const field = ui.container.querySelector('[data-testid=composer-input]'); field.focus();
-  await ui.pointer('pointerdown');
-  assert.equal(ui.window.document.activeElement, field, 'holding never moves focus');
+  await ui.click('voice-message-record');
+  assert.equal(ui.container.querySelector('[data-testid=composer-input]'), null, 'recording replaces editable input');
   assert.equal(ui.uploads.length, 0);
-  await ui.pointer('pointerup');
+  await ui.click('voice-message-record');
   assert.equal(ui.uploads.length, 1); assert.equal(ui.transcriptions.length, 1);
   assert.ok(ui.container.querySelector('[data-testid=voice-pending]'));
   assert.equal(ui.sends.length, 0);
@@ -699,37 +721,35 @@ test('voice release starts upload and transcription in parallel, then admits one
   assert.equal(ui.container.querySelector('[data-testid=voice-bubble]').textContent.includes('Je mange une salade'), true);
 });
 
-test('slide, Escape, blur and hidden document cancel without upload or send; pointercancel keeps audio', async t => {
+test('trash, Escape, blur and hidden document cancel without upload or send; pointercancel alone never sends', async t => {
   const ui = await voiceHarness(t);
-  await ui.pointer('pointerdown');
-  await ui.act(async () => ui.button().dispatchEvent(new ui.window.PointerEvent('pointermove', { bubbles: true, pointerId: 7, clientX: -100, clientY: -100 })));
-  await ui.pointer('pointerup');
-  await ui.pointer('pointerdown'); await ui.key('keydown', 'Escape'); await ui.pointer('pointerup');
-  await ui.pointer('pointerdown'); await ui.act(async () => ui.window.dispatchEvent(new ui.window.Event('blur'))); await ui.pointer('pointerup');
-  await ui.pointer('pointerdown');
+  await ui.click('voice-message-record'); await ui.click('composer-voice-cancel');
+  await ui.click('voice-message-record'); await ui.key('keydown', 'Escape');
+  await ui.click('voice-message-record'); await ui.act(async () => ui.window.dispatchEvent(new ui.window.Event('blur')));
+  await ui.click('voice-message-record');
   await ui.act(async () => { Object.defineProperty(ui.window.document, 'hidden', { configurable: true, value: true }); ui.window.document.dispatchEvent(new ui.window.Event('visibilitychange')); });
-  await ui.pointer('pointerup');
   assert.equal(ui.uploads.length, 0); assert.equal(ui.sends.length, 0); assert.ok(ui.tracks.every(track => track.stopped));
   Object.defineProperty(ui.window.document, 'hidden', { configurable: true, value: false });
-  await ui.pointer('pointerdown'); await ui.pointer('pointercancel');
-  await ui.until(() => ui.sends.length === 1);
+  await ui.click('voice-message-record'); await ui.pointer('pointercancel');
+  assert.equal(ui.uploads.length, 0, 'only explicit Send finishes a tap recording');
+  assert.equal(ui.button().dataset.state, 'recording');
+  await ui.click('voice-message-record'); await ui.until(() => ui.sends.length === 1);
 });
 
-test('Escape cancels held audio even when a picker consumes the key in capture', async t => {
+test('Escape cancels tapped audio even when a picker consumes the key in capture', async t => {
   const ui = await voiceHarness(t);
   // SlashMenu and host popovers consume Escape during the window capture phase.
   const picker = event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); } };
   ui.window.addEventListener('keydown', picker, { capture: true });
   t.after(() => ui.window.removeEventListener('keydown', picker, { capture: true }));
-  await ui.pointer('pointerdown'); await ui.key('keydown', 'Escape');
+  await ui.click('voice-message-record'); await ui.key('keydown', 'Escape');
   assert.ok(ui.tracks.length > 0 && ui.tracks.every(track => track.stopped), 'Escape releases this recording even when its bubble listener cannot run');
-  await ui.pointer('pointerup');
   assert.equal(ui.uploads.length, 0); assert.equal(ui.transcriptions.length, 0); assert.equal(ui.sends.length, 0);
 });
 
 test('a failed transcription stays failed until Retry, reusing the uploaded audio', async t => {
   const ui = await voiceHarness(t); ui.failTranscribe(true);
-  await ui.pointer('pointerdown'); await ui.pointer('pointerup');
+  await ui.click('voice-message-record'); await ui.click('voice-message-record');
   await ui.until(() => !!ui.container.querySelector('[data-testid=voice-retry]'));
   assert.equal(ui.sends.length, 0); assert.ok(ui.container.querySelector('[data-testid=voice-audio-only]'));
   assert.doesNotMatch(ui.container.querySelector('[data-testid=voice-pending]').textContent, /0:00/, 'a zero-second failure never claims a known duration');
@@ -748,28 +768,55 @@ test('a failed transcription stays failed until Retry, reusing the uploaded audi
 
 test('empty transcription needs explicit audio-only confirmation, and Safari recordings keep mp4', async t => {
   const ui = await voiceHarness(t, { mp4: true }); ui.spoken('   ');
-  await ui.key('keydown', ' '); await ui.key('keyup', ' ');
+  await ui.click('voice-message-record'); await ui.click('voice-message-record');
   await ui.until(() => !!ui.container.querySelector('[data-testid=voice-audio-only]'));
   assert.equal(ui.sends.length, 0); assert.equal(ui.uploads[0].files[0].type, 'audio/mp4');
   await ui.click('voice-audio-only'); await ui.until(() => ui.sends.length === 1);
   assert.match(ui.sends[0][1].text, /^@uploads\/voice-.*\.mp4$/);
+  const check = expected => {
+    const bubble = ui.container.querySelector('[data-testid=voice-bubble]');
+    assert.equal(bubble?.textContent, expected, 'audio-only messages have an honest non-playback status');
+    assert.equal(Boolean(bubble?.querySelector('audio, button, [data-testid=voice-duration]')), false);
+    assert.doesNotMatch(bubble.textContent, /@uploads|voice-.*\.mp4|0:00/);
+  };
+  await ui.until(() => ui.container.querySelector('[data-testid=voice-bubble]'));
+  check('Voice message — transcription unavailable.');
+  await ui.rerender({ locale: 'fr' });
+  check('Message vocal — transcription indisponible.');
+  const fresh = await ui.reload();
+  check('Message vocal — transcription indisponible.');
+  assert.match(JSON.stringify(fresh.getSnapshot().view.entries), /@uploads\/voice-.*\.mp4/);
+  await ui.rerender({ voiceReplay: true });
+  assert.ok(ui.container.querySelector('[data-testid=voice-play]'), 'explicit replay still works without transcription');
+});
+
+for (const component of ['ambient', undefined]) test(`retained audio-only default has a localized status after native reload (${component ?? 'PiChat'})`, async t => {
+  const ui = await harness(t, { component, locale: 'fr', extra: { defaultState: 'expanded', ...(component === 'ambient' ? { labels: frenchChatLabels } : {}) } });
+  await ui.write([{ role: 'user', content: '@uploads/voice-fictional.wav', timestamp: 0 }]);
+  const check = () => {
+    const bubble = ui.container.querySelector('[data-testid=voice-bubble]');
+    assert.equal(bubble?.textContent, 'Message vocal — transcription indisponible.');
+    assert.equal(Boolean(bubble?.querySelector('audio, button, [data-testid=voice-duration]')), false);
+    assert.doesNotMatch(bubble.textContent, /@uploads|voice-fictional/);
+  };
+  check(); await ui.reload(); check();
 });
 
 test('upload failure retries only the upload, and Discard abandons pending work', async t => {
   const ui = await voiceHarness(t); ui.failUpload(true);
-  await ui.pointer('pointerdown'); await ui.pointer('pointerup');
+  await ui.click('voice-message-record'); await ui.click('voice-message-record');
   await ui.until(() => !!ui.container.querySelector('[data-testid=voice-retry]'));
   assert.equal(ui.sends.length, 0); assert.equal(ui.container.querySelector('[data-testid=voice-audio-only]'), null);
   ui.failUpload(false); await ui.click('voice-retry'); await ui.until(() => ui.sends.length === 1 && !ui.container.querySelector('[data-testid=voice-pending]'));
   assert.equal(ui.transcriptions.length, 1); assert.equal(ui.uploads.length, 2);
-  ui.failTranscribe(true); await ui.pointer('pointerdown'); await ui.pointer('pointerup');
+  ui.failTranscribe(true); await ui.click('voice-message-record'); await ui.click('voice-message-record');
   await ui.until(() => !!ui.container.querySelector('[data-testid=voice-discard]'));
   await ui.click('voice-discard'); assert.equal(ui.container.querySelector('[data-testid=voice-pending]'), null);
 });
 
 test('a stale controller or removed voice capability aborts pending work and never sends late results', async t => {
   const ui = await voiceHarness(t, { gated: true });
-  await ui.pointer('pointerdown'); await ui.pointer('pointerup');
+  await ui.click('voice-message-record'); await ui.click('voice-message-record');
   const signal = ui.transcriptions[0].signal;
   await ui.rerender({ controller: { ...ui.controller } });
   await ui.release();
@@ -787,7 +834,7 @@ test('without the voiceMessage prop PiChat adds no microphone', async t => {
 test('blocked voice admission restores only the transcript beside later typing, and offers no automatic resend', async t => {
   const ui = await voiceHarness(t, { beforeSubmit: async () => 'Fictional host refusal' });
   await ui.act(async () => ui.controller.setText('Keep this typed draft'));
-  await ui.pointer('pointerdown'); await ui.pointer('pointerup');
+  await ui.click('voice-message-record'); await ui.click('voice-message-record');
   await ui.until(() => ui.controller.getSnapshot().send.kind === 'blocked');
   const draft = ui.controller.getSnapshot().draft.text;
   assert.ok(draft.includes('Keep this typed draft') && draft.includes('Je mange une salade'));
@@ -798,7 +845,7 @@ test('blocked voice admission restores only the transcript beside later typing, 
 
 test('unknown voice admission delegates reconciliation to the native controller, never fresh Retry', async t => {
   const ui = await voiceHarness(t, { lostAdmission: true });
-  await ui.pointer('pointerdown'); await ui.pointer('pointerup');
+  await ui.click('voice-message-record'); await ui.click('voice-message-record');
   await ui.until(() => ui.container.querySelector('[data-testid=voice-pending]')?.dataset.state === 'unconfirmed');
   assert.equal(ui.sends.length, 1); assert.equal(ui.container.querySelector('[data-testid=voice-retry]'), null);
   await ui.act(async () => ui.controller.reconcile());
@@ -808,10 +855,10 @@ test('unknown voice admission delegates reconciliation to the native controller,
 
 test('maxMs caps microphone capture but still waits for release; unmount aborts pending work', async t => {
   const ui = await voiceHarness(t, { gated: true, voiceMessage: { maxMs: 40 } });
-  await ui.pointer('pointerdown');
+  await ui.click('voice-message-record');
   await ui.until(() => ui.tracks[0].stopped);
   assert.equal(ui.transcriptions.length, 0, 'the duration cap does not send before release');
-  await ui.pointer('pointerup');
+  await ui.click('voice-message-record');
   await ui.until(() => ui.transcriptions.length === 1);
   assert.equal(ui.tracks[0].stopped, true);
   await ui.unmount(); await ui.release();
@@ -823,7 +870,7 @@ test('voice replay fetches lazily, drives play/pause and duration, and revokes i
   const realRevoke = URL.revokeObjectURL;
   URL.revokeObjectURL = url => { revoked.push(url); realRevoke(url); };
   t.after(() => { URL.revokeObjectURL = realRevoke; });
-  const ui = await harness(t, { mentions: { search: async () => [], preview: async path => { reads.push(path); return { mimeType: 'audio/webm', data: 'ZmFrZQ==' }; } } });
+  const ui = await harness(t, { extra: { voiceReplay: true }, mentions: { search: async () => [], preview: async path => { reads.push(path); return { mimeType: 'audio/webm', data: 'ZmFrZQ==' }; } } });
   await ui.write([{ role: 'user', content: '@uploads/voice-20261020-101500.webm A fictional transcript', timestamp: 0 }]);
   const audio = ui.container.querySelector('[data-testid=voice-bubble] audio');
   assert.ok(audio); assert.equal(reads.length, 0);
@@ -846,24 +893,22 @@ test('voice replay fetches lazily, drives play/pause and duration, and revokes i
   assert.deepEqual(revoked, [src]);
 });
 
-test('Enter ignores repeat and a release while permission is opening discards the late microphone', async t => {
+test('Send waits for permission and trash discards a microphone that opens late', async t => {
   const ui = await voiceHarness(t);
-  await ui.key('keydown', 'Enter');
-  await ui.act(async () => ui.button().dispatchEvent(new ui.window.KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Enter', repeat: true })));
-  assert.equal(ui.tracks.length, 1);
-  await ui.key('keyup', 'Enter'); await ui.until(() => ui.sends.length === 1);
-  await ui.until(() => !ui.container.querySelector('[data-testid=voice-pending]'));
+  await ui.click('voice-message-record'); await ui.click('voice-message-record');
+  await ui.until(() => ui.sends.length === 1 && !ui.container.querySelector('[data-testid=voice-pending]'));
   let allow;
   const track = { stopped: false, stop() { this.stopped = true; } };
   Object.defineProperty(ui.window.navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: () => new Promise(resolve => { allow = () => resolve({ getTracks: () => [track] }); }) } });
-  await ui.pointer('pointerdown'); await ui.pointer('pointerup');
-  await ui.act(async () => allow());
+  await ui.click('voice-message-record');
+  assert.equal(ui.button().disabled, true, 'Send cannot discard a permission-pending take');
+  await ui.click('composer-voice-cancel'); await ui.act(async () => allow());
   assert.equal(track.stopped, true); assert.equal(ui.sends.length, 1); assert.equal(ui.uploads.length, 1);
 });
 
 test('a signed audio URL is requested only on Play and superseded preview work is aborted', async t => {
   const urls = [], reads = [];
-  const ui = await harness(t, { mentions: { search: async () => [], audioUrl: async path => { urls.push(path); return 'https://media.example.invalid/fictional-signed.webm'; }, preview: async path => { reads.push(path); } } });
+  const ui = await harness(t, { extra: { voiceReplay: true }, mentions: { search: async () => [], audioUrl: async path => { urls.push(path); return 'https://media.example.invalid/fictional-signed.webm'; }, preview: async path => { reads.push(path); } } });
   await ui.write([{ role: 'user', content: '@uploads/voice-20261020-101500.webm Signed replay', timestamp: 0 }]);
   assert.deepEqual(urls, []);
   const audio = ui.container.querySelector('[data-testid=voice-bubble] audio');
@@ -882,7 +927,7 @@ test('a signed audio URL is requested only on Play and superseded preview work i
 
 test('a different uncertain submission cannot be mistaken for the pending recording', async t => {
   const ui = await voiceHarness(t, { gated: true, lostAdmission: true });
-  await ui.pointer('pointerdown'); await ui.pointer('pointerup');
+  await ui.click('voice-message-record'); await ui.click('voice-message-record');
   await ui.act(async () => ui.controller.send(undefined, { text: 'An earlier fictional request' }));
   assert.equal(ui.controller.getSnapshot().send.kind, 'unknown');
   await ui.release();
@@ -903,7 +948,7 @@ test('changing the public principal fences late voice results on the same contro
     return cached;
   };
   await ui.rerender({});
-  await ui.pointer('pointerdown'); await ui.pointer('pointerup');
+  await ui.click('voice-message-record'); await ui.click('voice-message-record');
   identity = { ...identity, principalId: 'fictional-second' };
   await ui.rerender({}); await ui.release();
   assert.equal(ui.transcriptions[0].signal.aborted, true); assert.equal(ui.sends.length, 0);
@@ -916,7 +961,7 @@ test('a voice queued behind uncertain admission is restored, never bound to that
   let prior;
   await ui.act(async () => { prior = ui.controller.send(undefined, { text: 'An earlier fictional request' }); });
   await ui.until(() => ui.controller.getSnapshot().send.kind === 'submitting');
-  await ui.pointer('pointerdown'); await ui.pointer('pointerup');
+  await ui.click('voice-message-record'); await ui.click('voice-message-record');
   await ui.until(() => ui.controller.getSnapshot().outbox.length === 1);
   await ui.act(async () => { release(); await prior; });
   await ui.until(() => ui.container.querySelector('[data-testid=voice-pending]')?.dataset.state === 'blocked');
@@ -930,7 +975,7 @@ for (const lost of [true, 2]) test(`identical content behind earlier validation 
   let unblock, first = true;
   const validation = new Promise(resolve => { unblock = resolve; });
   const ui = await voiceHarness(t, { gated: true, lostAdmission: lost, beforeSubmit: () => { if (first) { first = false; return validation; } } });
-  await ui.pointer('pointerdown'); await ui.pointer('pointerup');
+  await ui.click('voice-message-record'); await ui.click('voice-message-record');
   const text = `@uploads/${ui.uploads[0].files[0].name} Je mange une salade`;
   let prior;
   await ui.act(async () => { prior = ui.controller.send(undefined, { text }); });
@@ -953,13 +998,13 @@ test('retained voice recognition works with slash-only configuration without sty
   assert.equal(ui.container.querySelector('[data-testid=message-files]'), null, 'ordinary uploads keep their prior plain treatment');
 });
 
-test('an admission becoming uncertain during a hold cannot disable the release that stops the microphone', async t => {
+test('an admission becoming uncertain during recording cannot disable Send that stops the microphone', async t => {
   const ui = await voiceHarness(t, { lostAdmission: true });
-  await ui.pointer('pointerdown');
+  await ui.click('voice-message-record');
   await ui.act(async () => ui.controller.send(undefined, { text: 'An earlier fictional request' }));
   assert.equal(ui.controller.getSnapshot().send.kind, 'unknown');
-  assert.equal(ui.button().disabled, false, 'the held control still receives release');
-  await ui.pointer('pointerup');
+  assert.equal(ui.button().disabled, false, 'the recording control still allows Send');
+  await ui.click('voice-message-record');
   await ui.until(() => ui.container.querySelector('[data-testid=voice-pending]')?.dataset.state === 'blocked');
   assert.equal(ui.tracks[0].stopped, true); assert.equal(ui.sends.length, 1);
   assert.equal(ui.controller.getSnapshot().draft.text, 'Je mange une salade');
@@ -967,7 +1012,7 @@ test('an admission becoming uncertain during a hold cannot disable the release t
 
 test('failed voice is a transcript row and leaves the mic available for another retained recording', async t => {
   const ui = await voiceHarness(t, { extra: { onOpenFile: () => {} } }); ui.failTranscribe(true);
-  await ui.pointer('pointerdown'); await ui.pointer('pointerup');
+  await ui.click('voice-message-record'); await ui.click('voice-message-record');
   await ui.until(() => !!ui.container.querySelector('[data-testid=voice-retry]'));
   const failed = ui.container.querySelector('[data-testid=voice-pending]');
   assert.equal(failed.closest('[data-testid=transcript]')?.getAttribute('data-testid'), 'transcript');
@@ -979,10 +1024,10 @@ test('failed voice is a transcript row and leaves the mic available for another 
   assert.equal(ui.button().disabled, false);
   assert.equal(ui.button().dataset.state, 'idle');
   assert.match(ui.container.querySelector('[data-testid=conversation-files]').textContent, /· 1$/);
-  await ui.pointer('pointerdown');
+  await ui.click('voice-message-record');
   assert.equal(ui.button().dataset.state, 'recording');
   assert.equal(ui.container.querySelector('[data-testid=voice-pending]'), failed);
-  await ui.pointer('pointerup');
+  await ui.click('voice-message-record');
   await ui.until(() => ui.container.querySelectorAll('[data-testid=voice-retry]').length === 2);
   assert.equal(ui.uploads.length, 2); assert.equal(ui.sends.length, 0);
   await ui.click('voice-discard');
@@ -995,11 +1040,11 @@ test('an explicit display limit counts pending voice rows and Show earlier retai
   const ui = await voiceHarness(t, { extra: { displayLimit: 1 } });
   await ui.write([{ role: 'user', content: 'An earlier fictional message', timestamp: 0 }]);
   ui.failTranscribe(true);
-  await ui.pointer('pointerdown'); await ui.pointer('pointerup');
+  await ui.click('voice-message-record'); await ui.click('voice-message-record');
   await ui.until(() => !!ui.container.querySelector('[data-testid=voice-retry]'));
   assert.equal(ui.container.querySelectorAll('[data-row-id], [data-local-voice]').length, 1, 'the pending message uses the same display-row budget as native rows');
   assert.doesNotMatch(ui.container.querySelector('[data-testid=transcript]').textContent, /An earlier fictional message/);
-  await ui.pointer('pointerdown'); await ui.pointer('pointerup');
+  await ui.click('voice-message-record'); await ui.click('voice-message-record');
   await ui.until(() => ui.uploads.length === 2 && ui.container.querySelector('[data-testid=voice-pending]')?.dataset.state === 'transcribe-failed');
   assert.equal(ui.container.querySelectorAll('[data-row-id], [data-local-voice]').length, 1);
   assert.equal(ui.container.querySelector('[data-testid=voice-pending]').dataset.voiceId, '2', 'the newest pending row remains visible');
@@ -1015,7 +1060,7 @@ for (const failure of [0, 1, 2]) test(`recorded voice composes with native stage
     renderEntry: entry => entry.kind === 'fictional.triage.stage' ? { inline: true, content: `Stage ${entry.data.stage}: ${entry.data.state}`, status: entry.data.state === 'running' ? 'Validating fictional note' : null } : undefined,
   } });
   await ui.act(async () => ui.controller.setText('A later typed draft'));
-  await ui.pointer('pointerdown'); await ui.pointer('pointerup');
+  await ui.click('voice-message-record'); await ui.click('voice-message-record');
   await ui.until(() => ui.sends.length === 1 && ui.controller.getSnapshot().send.kind === 'admitted');
   await ui.act(async () => ui.controller.conversation.waitForIdle(ui.context));
   await ui.until(() => failure ? !!ui.container.querySelector('[data-testid=response-error]') : ui.container.textContent.includes('Synthèse fictive'));
