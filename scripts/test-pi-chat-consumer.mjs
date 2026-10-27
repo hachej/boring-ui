@@ -66,10 +66,10 @@ try {
   }
   // Exercise the packed public hooks, not a source alias or a monorepo dependency.
   writeFileSync(join(directory, 'src/chat-react-contract.ts'), readFileSync(join(root, 'test/types/chat-react.ts'), 'utf8'));
-  for (const name of ['ui-chat-react-hooks.test.mjs', 'ui-chat-react-hooks.impl.mjs']) {
+  for (const name of ['ui-chat-react-hooks.test.mjs', 'ui-chat-react-hooks.impl.mjs', 'ui-chat-session.test.mjs', 'ui-chat-session.impl.mjs']) {
     writeFileSync(join(directory, name), readFileSync(join(root, 'test/packages', name), 'utf8'));
   }
-  run(process.execPath, ['--test', 'ui-chat-react-hooks.test.mjs'], isolated);
+  run(process.execPath, ['--test', 'ui-chat-react-hooks.test.mjs', 'ui-chat-session.test.mjs'], isolated);
 
   const blocks = 'node_modules/@hachej/boring-ui-kit/bin/boring-ui-blocks.mjs';
   run(process.execPath, [blocks, 'manifest']);

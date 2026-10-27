@@ -38,3 +38,5 @@ Preconditions: `npm ci`; run from the repository root.
 - Keep every `@hachej/boring-*` package on one version; Pi packages are peers at `~1.2.0`.
 - The host owns the Harness, policy and credentials; kit packages never open a Harness.
 - Change `ARCHITECTURE.json` before a new package or edge.
+
+The opt-in kit `chat-react` entry also owns `useChatSession` (state/files/send/restore/queue/upload/paste/model-effort); the root stays free of files/Pi/agent imports. Drive `node --test test/packages/ui-chat-session.test.mjs` and `npm run test:pi-chat-consumer`; see [chat-session](chat.md).

@@ -1,5 +1,11 @@
 # Implemented behavior and evidence
 
+## Headless chat session and shared connection/status presentation
+
+`chat-react/useChatSession` owns the session's native snapshot projection, observed files, connection/errors, send/feedback restore, queue edit/steer, uploads/paste undo and optimistic model/effort state. `registry/pi-chat/session.tsx` is the row context, picker JSX and composer-prop adapter. Public native controller commands and borrowed ownership are unchanged; no Pi execution extension is needed for host presentation over `subscribe/getSnapshot`. [API and lifecycle](../../packages/ui/README.md#chat-react-hooks) are owned by the UI guide.
+
+`test/packages/ui-chat-session.test.mjs` drives the built public hook in StrictMode, including later drafts, feedback refusal, queue withdrawal, upload/paste cancellation, native-watch reconciliation and independent cleanup. `test/ui/ambient-position.test.mjs` reproduces the missing host connection renderer and missing developer status before the fix, then drives compact/expanded recovery and working/waiting/retry/compaction/natural presentation through the public Ambient component. `ChatConnectionNotice` / `ChatStatusLine` are shared registry presentation, not a new state machine. Existing staged/natural/plug-point suites remain integration coverage. Installed gates: `test:pi-chat-consumer`, `test:registry-consumer`, `test:ambient-consumer`; browser gates include staged/shared/messaging/workspace/Ambient/app-shell chat journeys and the unchanged `test:chat-scroll`. Actual command results belong in the candidate evidence; no global proof or live-provider qualification is promoted.
+
 ## Shared chat React hooks
 
 The existing opt-in `@hachej/boring-ui-kit/chat-react` entry owns view selectors, transcript windows/chunks, draft persistence, placement, remote selection and conversations polling/actions. Remote and shared chat reuse selected-adapter ownership without replacing concrete native controllers, their subscribe/getSnapshot seam or their execution lifecycle. Registry compatibility exports remain for one release; its transcript adapter keeps the app's shadcn MessageScroller as the only scroll owner. Session actions and voice/notification/breakpoint logic are not part of this extraction. API and ownership: [Chat React hooks](../../packages/ui/README.md#chat-react-hooks).
