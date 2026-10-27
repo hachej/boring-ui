@@ -11,6 +11,9 @@ export type VoiceAttempt<Data, Phase extends string = never> = Data & {
   readonly maxMs: number;
   phase: 'starting' | 'recording' | 'processing' | Phase;
   seconds: number;
+  levels: readonly number[];
+  paused: boolean;
+  canPause: boolean;
 };
 export interface VoiceAttemptOptions<Data, Phase extends string> {
   readonly valid?: (item: VoiceAttempt<Data, Phase>) => boolean;
@@ -33,22 +36,43 @@ export function useVoiceAttempt<Data extends object, Phase extends string = neve
     stopTimer(item); item.abort.abort(); item.capture.cancel(); update();
   };
   const clear = () => { for (const item of [...owned.current]) remove(item); };
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+    const cancelRecording = () => {
+      for (const item of [...owned.current]) if (item.phase === 'starting' || item.phase === 'recording') remove(item);
+    };
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') cancelRecording(); };
+    const hidden = () => { if (document.hidden) cancelRecording(); };
+    window.addEventListener('keydown', escape, true); window.addEventListener('blur', cancelRecording); document.addEventListener('visibilitychange', hidden);
+    return () => {
+      window.removeEventListener('keydown', escape, true); window.removeEventListener('blur', cancelRecording); document.removeEventListener('visibilitychange', hidden);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- handlers cancel only the currently owned captures, not admitted or processing work
+  }, []);
+  const pause = (item: Attempt) => { if (valid(item) && item.phase === 'recording' && item.capture.pause()) { item.paused = true; update(); } };
+  const resume = (item: Attempt) => { if (valid(item) && item.phase === 'recording' && item.capture.resume()) { item.paused = false; update(); } };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- teardown releases the attempts owned at unmount, including ones created after mount
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; clear(); }; }, []);
   const start = (data: Data, configuredMaxMs = DEFAULT_MAX_VOICE_MS): Attempt => {
     const maxMs = Number.isFinite(configuredMaxMs) && configuredMaxMs > 0 ? configuredMaxMs : Infinity;
-    const item: Attempt = { ...data, id: ++sequence.current, maxMs, abort: new AbortController(), capture: createVoiceCapture({ maxMs }), phase: 'starting', seconds: 0 };
+    const item: Attempt = { ...data, id: ++sequence.current, maxMs, abort: new AbortController(), capture: createVoiceCapture({ maxMs }), phase: 'starting', seconds: 0, levels: [], paused: false, canPause: false };
     owned.current = [...owned.current, item]; update();
     // No await before start: microphone permission belongs to the initiating gesture.
     void item.capture.start().then(result => {
       if (!valid(item)) { remove(item); return; }
       if (result.kind === 'refused') { remove(item); latest.current.refused?.(result); return; }
       item.phase = 'recording'; update();
-      const started = performance.now();
+      let elapsedMs = 0;
       timers.current.set(item, setInterval(() => {
         if (!valid(item)) { remove(item); return; }
-        item.seconds = Math.floor(Math.min(performance.now() - started, item.maxMs) / 1000); update();
-      }, 250));
+        const progress = item.capture.progress();
+        if (!progress) return;
+        item.seconds = Math.floor(progress.elapsedMs / 1000);
+        item.canPause = progress.canPause; item.paused = progress.paused;
+        if (progress.level !== undefined && !progress.paused && progress.elapsedMs > elapsedMs) item.levels = [...item.levels.slice(-31), progress.level];
+        elapsedMs = progress.elapsedMs;
+        update();
+      }, 100));
     }).catch(() => {
       if (!valid(item)) { remove(item); return; }
       remove(item); latest.current.refused?.({ kind: 'refused', code: 'failed', reason: 'The microphone could not be started.' });
@@ -65,5 +89,5 @@ export function useVoiceAttempt<Data extends object, Phase extends string = neve
     if (recording) item.seconds = Math.max(0, Math.round((recording.endedAt - recording.startedAt) / 1000));
     update(); return recording;
   };
-  return { attempts: owned.current as readonly Attempt[], captureSequence: sequence.current, current: () => owned.current as readonly Attempt[], start, stop, remove, clear, valid, update };
+  return { attempts: owned.current as readonly Attempt[], captureSequence: sequence.current, current: () => owned.current as readonly Attempt[], start, stop, pause, resume, remove, clear, valid, update };
 }

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ChatController, ChatDraft } from './native-chat.js';
-import { appendToDraft, isVoicePath, mentionToken, voiceRefusalLabel } from './chat-text.js';
+import { appendToDraft, isVoicePath, mentionedPaths, mentionToken, voiceRefusalLabel, withoutMentions } from './chat-text.js';
 import { useVoiceAttempt } from './voice-attempt.js';
 import type { VoiceAttempt } from './voice-attempt.js';
 import { useDictation } from './chat-dictation.js';
@@ -23,6 +23,10 @@ export interface VoiceMessageHandle {
   readonly phase: VoicePhase | 'idle';
   readonly seconds: number;
   readonly captureSequence: number;
+  readonly levels?: readonly number[];
+  readonly paused?: boolean;
+  readonly pause?: (() => void) | undefined;
+  readonly resume?: (() => void) | undefined;
   readonly problem: string | undefined;
   readonly pending: readonly PendingVoice[];
   readonly start: () => void;
@@ -47,6 +51,7 @@ interface AttemptData {
   readonly target: string;
   readonly transcribe: VoiceMessageConfig['transcribe'];
   readonly upload: VoiceMessageConfig['upload'];
+  mentions: readonly string[];
   file?: File;
   path?: string;
   transcript?: string;
@@ -97,7 +102,7 @@ export function useVoiceMessage({ controller, config, attachments, labels, admit
   const send = async (item: Attempt, audioOnly = false) => {
     if (!valid(item) || !item.path || item.phase === 'sending' || item.phase === 'unconfirmed') return;
     const transcript = audioOnly ? '' : item.transcript ?? '';
-    const text = `${mentionToken(item.path)}${transcript ? ` ${transcript}` : ''}`;
+    const text = [...item.mentions.map(mentionToken), mentionToken(item.path), transcript].filter(Boolean).join(' ');
     const before = item.controller.getSnapshot();
     if (before.send.kind === 'unknown') {
       // This recording was never submitted. Do not bind it to another message's uncertain request.
@@ -116,7 +121,11 @@ export function useVoiceMessage({ controller, config, attachments, labels, admit
       const result = await pending;
       if (!valid(item)) return;
       if (result) { remove(item); latest.current.admitted?.(); return; }
-    } catch { if (!valid(item)) return; }
+    } catch {
+      if (!valid(item)) return;
+      const draft = item.controller.getSnapshot().draft.text;
+      if (transcript) item.controller.setText(appendToDraft(draft, transcript));
+    }
     const native = item.controller.getSnapshot().send;
     if (native.kind === 'admitted' && 'attempt' in native && submittedDraft !== undefined && native.attempt.draft === submittedDraft) {
       remove(item); latest.current.admitted?.(); return;
@@ -153,6 +162,9 @@ export function useVoiceMessage({ controller, config, attachments, labels, admit
     if (!item || !valid(item)) return;
     if (item.phase === 'starting') { cancel(); return; }
     if (item.phase !== 'recording') return;
+    const draft = item.controller.getSnapshot().draft.text;
+    item.mentions = mentionedPaths(draft);
+    item.controller.setText(withoutMentions(draft));
     void (async () => {
       const recording = await core.stop(item);
       if (!valid(item)) return;
@@ -166,7 +178,7 @@ export function useVoiceMessage({ controller, config, attachments, labels, admit
   const start = () => {
     if (!controller || !config || active() || controller.getSnapshot().disposed || controller.getSnapshot().send.kind === 'unknown') return;
     setProblem(undefined);
-    core.start({ controller, transcribe: config.transcribe.bind(config), upload: config.upload?.bind(config) ?? attachments?.upload.bind(attachments), target: targetOf(controller) }, config.maxMs);
+    core.start({ controller, mentions: [], transcribe: config.transcribe.bind(config), upload: config.upload?.bind(config) ?? attachments?.upload.bind(attachments), target: targetOf(controller) }, config.maxMs);
   };
   // eslint-disable-next-line react-hooks/refs -- the attempts live in a ref that every change pairs with update(); render reads the list as of that update
   const item = active();
@@ -178,7 +190,10 @@ export function useVoiceMessage({ controller, config, attachments, labels, admit
     discard: () => { if (valid(item)) remove(item); },
   }));
   // eslint-disable-next-line react-hooks/refs -- the capture sequence is a ref bumped with update(); render reads it as of that update
-  return { canStart: Boolean(controller && config && !item && !controller.getSnapshot().disposed && controller.getSnapshot().send.kind !== 'unknown'), phase: item?.phase ?? 'idle', seconds: item?.seconds ?? 0, captureSequence: core.captureSequence, problem, pending, start, finish, cancel };
+  return { canStart: Boolean(controller && config && !item && !controller.getSnapshot().disposed && controller.getSnapshot().send.kind !== 'unknown'), phase: item?.phase ?? 'idle', seconds: item?.seconds ?? 0, levels: item?.levels ?? [], paused: item?.paused ?? false,
+    pause: item?.phase === 'recording' && item.canPause ? () => core.pause(item) : undefined,
+    resume: item?.phase === 'recording' && item.canPause ? () => core.resume(item) : undefined,
+    captureSequence: core.captureSequence, problem, pending, start, finish, cancel };
 }
 
 export interface ChatVoiceOptions {
@@ -206,8 +221,11 @@ export function useChatVoice({ controller, voice, attachments, labels, onDone }:
         controller.setText(appendToDraft(controller.getSnapshot().draft.text, spoken)); onDone('drafted');
       };
       if (voice?.send !== 'auto') { fill(); return; }
+      const draft = controller.getSnapshot().draft.text;
+      const paths = mentionedPaths(draft);
+      controller.setText(withoutMentions(draft));
       try {
-        const sent = await controller.send(undefined, { text: spoken });
+        const sent = await controller.send(undefined, { text: [...paths.map(mentionToken), spoken].join(' '), restore: { text: spoken } });
         if (!signal.aborted) onDone(sent ? 'sent' : 'drafted');
       } catch { fill(); }
     },
@@ -215,5 +233,5 @@ export function useChatVoice({ controller, voice, attachments, labels, onDone }:
   const { cancel } = dictation, send = voice?.send, configured = Boolean(voice);
   useEffect(() => () => cancel(), [controller, send, configured, cancel]);
   const phase: Dictation['phase'] = message.phase === 'starting' || message.phase === 'recording' ? message.phase : message.phase === 'processing' || message.phase === 'sending' ? 'transcribing' : 'idle';
-  return send === 'message' ? { ...message, phase } : dictation;
+  return send === 'message' ? { ...message, phase, levels: message.levels ?? [], paused: message.paused ?? false, pause: message.pause, resume: message.resume } : dictation;
 }

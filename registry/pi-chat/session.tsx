@@ -1,9 +1,11 @@
 'use client';
 
-import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { KeyboardEvent, ReactNode } from 'react';
 import type { EntryRecord } from '@earendil-works/pi-durable';
 import type { ImageContent, ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
+import { PAGE_FIRST, PAGE_MORE, useTranscriptWindow } from '@hachej/boring-ui-kit/chat-react';
+import type { ChatPaging } from '@hachej/boring-ui-kit/chat-react';
 import type { ChatAttachment, ChatHistoryState } from '@hachej/boring-ui-kit/native-chat';
 import type { ChatController } from '@hachej/boring-ui-kit/native-chat';
 import { useMessageScroller, useMessageScrollerScrollable } from '@/components/ui/message-scroller';
@@ -11,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import type { ComposerFeedback, ComposerProps, PendingUpload } from './composer';
 import type { ConversationFile } from './conversation-files';
 import type { AttachmentsConfig, EffortConfig, MentionsConfig, ModelConfig, ModelRef, PastedText, SlashConfig } from './config';
-import { appendToDraft, displayName, looksLikeMarkdown, mentionToken, pieces, prependToDraft } from '@hachej/boring-ui-kit/chat-text';
+import { appendToDraft, displayName, kindMentionDraft, looksLikeMarkdown, mentionKind, mentionToken, pieces, prependToDraft, withoutKindMentions, writeKindMentionDraft } from '@hachej/boring-ui-kit/chat-text';
 import type { PasteToFile } from '@hachej/boring-ui-kit/chat-text';
 import type { CommandMentions } from './config';
 import type { ChatCards, ChatTextPart, RowContext } from './message';
@@ -37,6 +39,8 @@ export interface ChatFeatureProps {
   readonly mode?: Mode;
   /** `natural` shows only messages, replies and question, approval and artifact cards, with one "Preparing…" status while the agent works: no tool steps, reasoning, file discovery or raw error text. Omit it and nothing changes. */
   readonly presentation?: 'natural';
+  /** Show a retained voice message's audio player. Default false: transcript only; uploaded audio and stored tokens are unchanged. */
+  readonly voiceReplay?: boolean;
   readonly actions?: PiChatActions;
   readonly renderEntry?: (entry: EntryRecord) => ChatCard | undefined;
   /** Omit complete assistant lines from display, copy and actions. Live trailing fragments wait for a newline or settlement. Not transport redaction. */
@@ -129,7 +133,7 @@ export interface ChatSessionOptions extends Readonly<{ [Key in keyof ChatFeature
 }
 
 export function useChatSession(options: ChatSessionOptions) {
-  const { controller, activeController: active, mode, presentation, actions, renderEntry, hideLine, historicalMessageActions, unread, replyError, renderTool: catchAll, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept,
+  const { controller, activeController: active, mode, presentation, voiceReplay, actions, renderEntry, hideLine, historicalMessageActions, unread, replyError, renderTool: catchAll, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept,
     slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend, rowExtras, feedback, onOpenFile, fileChanges, pasteToFile, composerChips, composerHeader, composerHasContent, onPickFiles } = options;
   const { labels } = useChatText();
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
@@ -181,6 +185,7 @@ export function useChatSession(options: ChatSessionOptions) {
     const found = new Map<string, ConversationFile>();
     const open = onOpenFile ?? mentions?.open;
     const add = (path: string) => {
+      if (mentionKind(path, mentions)) return;
       const normalized = path.replace(/^\.\//, '');
       const id = `file:${normalized}`;
       if (!found.has(id)) found.set(id, { id, name: displayName(normalized), open: open ? () => open(normalized) : undefined });
@@ -208,7 +213,7 @@ export function useChatSession(options: ChatSessionOptions) {
       }
     }
     return [...found.values()];
-  }, [derived.rows, natural, picked, state.draft.attachments, artifacts, onOpenFile, mentions?.open, onOpenImage, labels.imageAttachment]);
+  }, [derived.rows, natural, picked, state.draft.attachments, artifacts, onOpenFile, mentions, onOpenImage, labels.imageAttachment]);
 
   const report = (cause: unknown) => { if (current()) setError(cause instanceof Error ? cause.message : labels.actionFailedShort); };
   const act = (action: () => Promise<unknown>) => {
@@ -224,7 +229,7 @@ export function useChatSession(options: ChatSessionOptions) {
   const putBack = (text: string, images: readonly ChatAttachment[]) => {
     if (controller.getSnapshot().disposed) return;
     const draft = controller.getSnapshot().draft;
-    controller.setText(prependToDraft(draft.text, text));
+    controller.setText(prependToDraft(draft.text, withoutKindMentions(text, mentions)));
     if (images.length) controller.setAttachments([...images, ...draft.attachments.filter(item => !images.some(image => image.id === item.id))]);
   };
   const working = Boolean(run);
@@ -243,14 +248,24 @@ export function useChatSession(options: ChatSessionOptions) {
         catch (cause) { putBack(typed.text, typed.attachments); throw cause; }
         if (attached.kind === 'refused') { putBack(typed.text, typed.attachments); throw new Error(attached.reason); }
         if (!current()) { putBack(typed.text, typed.attachments); return; }
-        const submission = await controller.send('followUp', { text: attached.text, attachments: typed.attachments, restore: { text: typed.text, attachments: typed.attachments } });
-        if (submission) feedback?.sent();
+        try {
+          const submission = await controller.send('followUp', { text: attached.text, attachments: typed.attachments, restore: { text: withoutKindMentions(typed.text, mentions), attachments: typed.attachments } });
+          if (submission) feedback?.sent();
+        } catch (cause) { putBack(typed.text, typed.attachments); throw cause; }
       });
       afterSend?.();
       textarea.current?.focus();
       return;
     }
-    act(() => controller.send('followUp'));
+    const typed = controller.getSnapshot().draft;
+    const words = withoutKindMentions(typed.text, mentions);
+    if (words !== typed.text) {
+      controller.setText(''); controller.setAttachments([]);
+      act(async () => {
+        try { await controller.send('followUp', { text: typed.text, attachments: typed.attachments, restore: { text: words, attachments: typed.attachments } }); }
+        catch (cause) { putBack(words, typed.attachments); throw cause; }
+      });
+    } else act(() => controller.send('followUp'));
     afterSend?.();
     textarea.current?.focus();
   };
@@ -330,15 +345,15 @@ export function useChatSession(options: ChatSessionOptions) {
     const file = new File([paste.text], `${labels.pastedFileName(stamp)}${markdown ? '.md' : '.txt'}`, { type: markdown ? 'text/markdown' : 'text/plain' });
     // The pasted text replaces its selection when the paste is accepted, so the draft shows what is left. Restoring inserts the text at
     // the same place and deletes nothing: whatever was typed since stays.
-    const draft = controller.getSnapshot().draft.text;
-    const start = Math.min(paste.start, draft.length), end = Math.min(Math.max(paste.end, start), draft.length);
-    const after = `${draft.slice(0, start)}${draft.slice(end)}`;
+    const draft = kindMentionDraft(controller.getSnapshot().draft.text, mentions);
+    const start = Math.max(0, Math.min(paste.start, draft.text.length)), end = Math.min(Math.max(paste.end, start), draft.text.length);
+    const after = writeKindMentionDraft(`${draft.text.slice(0, start)}${draft.text.slice(end)}`, draft.tokens, slash?.skills?.map(skill => skill.name));
     controller.setText(after);
     const restore = () => {
       if (!current()) return;
-      const now = controller.getSnapshot().draft.text;
-      const at = Math.min(start, now.length);
-      controller.setText(`${now.slice(0, at)}${paste.text}${now.slice(at)}`);
+      const now = kindMentionDraft(controller.getSnapshot().draft.text, mentions);
+      const at = Math.min(start, now.text.length);
+      controller.setText(writeKindMentionDraft(`${now.text.slice(0, at)}${paste.text}${now.text.slice(at)}`, now.tokens, slash?.skills?.map(skill => skill.name)));
       textarea.current?.focus();
     };
     void upload([file], { restore, after });
@@ -370,16 +385,16 @@ export function useChatSession(options: ChatSessionOptions) {
     if (catalog && selected) act(async () => catalog.onActivate({ name: selected.name, behavior: selected.behavior }));
   };
   const rowContext = useMemo<RowContext>(() => ({
-    developer, natural, renderText, cards, groupTool, onOpenImage, onCopy, openFile: onOpenFile ?? mentions?.open, fileChanges,
+    developer, natural, voiceReplay, renderText, cards, groupTool, onOpenImage, onCopy, openFile: onOpenFile ?? mentions?.open, fileChanges,
     commandMentions: commandMentions ? { commands: commandMentions.commands, onActivate: activateMention } : undefined,
     answer: actions?.answer,
     artifacts: offered?.Card ? { open: offered.open, isOpen: offered.isOpen, kinds: offered.kinds, Card: offered.Card } : undefined,
     messageActions, historicalMessageActions, unread, replyError,
     replyFooter,
-    pieces: slash?.skills?.length || mentions || attachments ? { mentions: Boolean(mentions), uploads: Boolean(attachments), skills: (slash?.skills ?? []).map(skill => skill.name), openMention: mentions?.open, renderMention: mentions?.renderSent ?? mentions?.render, preview: mentions?.preview, audioUrl: mentions?.audioUrl } : undefined,
+    pieces: slash?.skills?.length || mentions || attachments ? { kinds: mentions?.kinds, mentions: Boolean(mentions), uploads: Boolean(attachments), skills: (slash?.skills ?? []).map(skill => skill.name), openMention: mentions?.open, renderMention: mentions?.renderSent ?? mentions?.render, preview: mentions?.preview, audioUrl: mentions?.audioUrl } : undefined,
     ...rowExtras,
   // eslint-disable-next-line react-hooks/exhaustive-deps -- lists the fields rows read, not whole objects: activateMention changes every render and must not rebuild every row.
-  }), [controller, developer, natural, renderText, cards, groupTool, onOpenImage, onCopy, onOpenFile, fileChanges, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, mentions?.renderSent, mentions?.preview, mentions?.audioUrl, attachments, offered?.open, offered?.isOpen, offered?.kinds, offered?.Card, messageActions, historicalMessageActions, unread, replyError, replyFooter, rowExtras]);
+  }), [controller, developer, natural, voiceReplay, renderText, cards, groupTool, onOpenImage, onCopy, onOpenFile, fileChanges, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, mentions?.renderSent, mentions?.preview, mentions?.audioUrl, attachments, offered?.open, offered?.isOpen, offered?.kinds, offered?.Card, messageActions, historicalMessageActions, unread, replyError, replyFooter, rowExtras]);
 
   /** The model-and-effort pill and the note that reports a refused change. */
   const pickers = () => {
@@ -419,109 +434,15 @@ export function useChatSession(options: ChatSessionOptions) {
 
 export type ChatSession = ReturnType<typeof useChatSession>;
 
-export interface ChatPaging { readonly first?: number; readonly more?: number }
-export const PAGE_FIRST = 60, PAGE_MORE = 40, CHUNK = 20;
+// Compatibility exports for one release; MessageScroller remains the only scroll owner.
+export { chunkKeys, useRowChunks, PAGE_FIRST, PAGE_MORE, CHUNK } from '@hachej/boring-ui-kit/chat-react';
+export type { ChatPaging } from '@hachej/boring-ui-kit/chat-react';
 
-/**
- * Rows grouped into runs of at most `size` keys, kept stable across renders. Rows already placed never change run: rows revealed
- * above form new runs (the run nearest the old top is the full one), rows added below fill the last run, then start new ones.
- */
-export function chunkKeys(previous: readonly (readonly string[])[], keys: readonly string[], size = CHUNK): string[][] {
-  const owner = new Map<string, number>();
-  previous.forEach((run, index) => { for (const key of run) owner.set(key, index); });
-  const known = keys.findIndex(key => owner.has(key));
-  const lead = known < 0 ? keys.length : known;
-  const runs: string[][] = [];
-  for (let end = lead; end > 0; end -= size) runs.unshift(keys.slice(Math.max(0, end - size), end));
-  let current: string[] = [], from: number | undefined;
-  for (const key of keys.slice(lead)) {
-    const placed = owner.get(key);
-    if (!current.length || (placed !== undefined ? placed !== from : current.length >= size)) { current = []; runs.push(current); from = placed; }
-    current.push(key);
-  }
-  return runs;
-}
-
-/**
- * The scroller measures every one of its items on each scroll event and frame (@shadcn/react 0.3.1), so a long transcript gives it
- * runs of `CHUNK` rows instead of single rows: 500 messages are 25 measurements, not 500. A run keeps its element while rows are
- * revealed above it, so the scroller's prepend anchor still holds; a run's array is reused while its rows are unchanged.
- */
-export function useRowChunks<T extends { readonly key: string }>(rows: readonly T[], size = CHUNK): readonly (readonly T[])[] {
-  // A derived cache of the last runs, read and replaced inside the memo only: the same rows always give the same runs.
-  const previous = useRef<{ readonly keys: readonly (readonly string[])[]; readonly runs: ReadonlyMap<string, readonly T[]> }>({ keys: [], runs: new Map() });
-  return useMemo(() => {
-    const byKey = new Map(rows.map(row => [row.key, row]));
-    // eslint-disable-next-line react-hooks/refs -- reads the run cache to keep run boundaries and arrays stable; no setState, no render loop
-    const keys = chunkKeys(previous.current.keys, rows.map(row => row.key), size);
-    // eslint-disable-next-line react-hooks/refs -- the mapper reuses the cached array of an unchanged run (see above)
-    const runs = keys.map(run => {
-      const items = run.map(key => byKey.get(key)!);
-      const before = previous.current.runs.get(run[0]!);
-      return before && before.length === items.length && before.every((item, index) => item === items[index]) ? before : items;
-    });
-    // eslint-disable-next-line react-hooks/refs -- stores the runs for the next rows; a cache write, not state, so it triggers no render
-    previous.current = { keys, runs: new Map(runs.map(run => [run[0]!.key, run])) };
-    return runs;
-  }, [rows, size]);
-}
-
-/** One scroll root for current and archived rows. Native paging stays in the borrowed controller. */
+/** Thin presentation adapter to the host's shadcn MessageScroller. */
 export function useTranscript(rows: readonly { readonly key: string }[], page = PAGE_FIRST, more = PAGE_MORE, history?: { readonly state: ChatHistoryState; readonly connected: boolean; readonly load: () => Promise<void> }, automatic = true) {
-  if (!Number.isSafeInteger(page) || page < 1) throw new TypeError('Chat displayLimit must be a positive integer');
-  if (!Number.isSafeInteger(more) || more < 1) throw new TypeError('Chat paging.more must be a positive integer');
-  const [limit, setLimit] = useState(page);
-  const [sentinel, setSentinel] = useState<HTMLDivElement | null>(null);
-  const [loaded, setLoaded] = useState(0);
-  const pending = useRef(false);
-  const anchor = useRef<{ readonly length: number; readonly limit: number } | undefined>(undefined);
+  const window = useTranscriptWindow(rows, page, more, history, automatic);
   const { scrollToEnd } = useMessageScroller();
   const scrollable = useMessageScrollerScrollable();
-  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
   const scrollToBottom = useCallback((behavior?: 'instant') => scrollToEnd({ behavior: behavior === 'instant' ? 'instant' : 'smooth' }), [scrollToEnd]);
-  const stick = { scrollRef: setScroller, scrollToBottom, isAtBottom: !scrollable.end };
-  const hidden = Math.max(0, rows.length - limit);
-  const historyState = history?.state, historyConnected = history?.connected, historyLoad = history?.load;
-  const reveal = useCallback(() => {
-    if (pending.current || anchor.current) return;
-    const state = historyState;
-    if (hidden === 0 && (!historyConnected || !state || state.kind === 'disabled' || state.kind === 'loading' || state.kind === 'ready' && !state.hasMore)) return;
-    anchor.current = { length: rows.length, limit };
-    // A revealed page renders as a transition: React mounts it in small slices, so scrolling stays responsive meanwhile.
-    if (hidden > 0) startTransition(() => setLimit(value => value + more));
-    else if (historyLoad) {
-      pending.current = true;
-      void Promise.resolve().then(historyLoad).catch(() => { anchor.current = undefined; }).finally(() => { pending.current = false; });
-    }
-  }, [hidden, historyState, historyConnected, historyLoad, rows.length, limit, more]);
-  useLayoutEffect(() => {
-    const saved = anchor.current;
-    if (!scroller || !saved || history?.state.kind === 'loading') return;
-    const added = Math.max(0, rows.length - saved.length);
-    if (limit < saved.limit + added) { startTransition(() => setLimit(saved.limit + added)); return; }
-    anchor.current = undefined;
-    setLoaded(count => count + Math.max(0, Math.min(rows.length, limit) - Math.min(saved.length, saved.limit)));
-  }, [rows, limit, scroller, history?.state]);
-  // Automatic paging: the sentinel near the top, once the reader has been away from the top (so the mount, which starts at the
-  // top before the scroller settles at the end, loads nothing). A fast scroll lands on 0 before the sentinel is seen: the scroll
-  // listener and every new observer (after each page) check again, instead of the reader's distance at that one moment.
-  const near = useRef(false), away = useRef(false), revealNow = useRef(reveal);
-  useLayoutEffect(() => { revealNow.current = reveal; });
-  useEffect(() => {
-    if (!automatic || !scroller) return;
-    const onScroll = () => { if (scroller.scrollTop > 8) away.current = true; if (near.current && away.current) revealNow.current(); };
-    scroller.addEventListener('scroll', onScroll, { passive: true });
-    return () => scroller.removeEventListener('scroll', onScroll);
-  }, [automatic, scroller]);
-  useEffect(() => {
-    if (!automatic || !scroller || !sentinel || typeof IntersectionObserver === 'undefined' || history?.state.kind === 'loading' || history?.state.kind === 'error') return;
-    const observer = new IntersectionObserver(entries => {
-      near.current = entries.at(-1)?.isIntersecting ?? near.current;
-      if (near.current && (scroller.scrollHeight <= scroller.clientHeight || away.current)) reveal();
-    }, { root: scroller, rootMargin: '240px 0px 0px' });
-    observer.observe(sentinel);
-    return () => { observer.disconnect(); near.current = false; };
-  }, [automatic, scroller, sentinel, reveal, history?.state]);
-  const revealTo = (key: string) => { const index = rows.findIndex(row => row.key === key); if (index >= 0) setLimit(value => Math.max(value, rows.length - index)); };
-  return { stick, hidden, reveal, revealTo, sentinelRef: setSentinel, loaded, visible: <T,>(items: readonly T[]): readonly T[] => hidden ? items.slice(hidden) : items, reset: () => { anchor.current = undefined; setLimit(page); } };
+  return { ...window, stick: { scrollRef: window.scrollRef, scrollToBottom, isAtBottom: !scrollable.end } };
 }

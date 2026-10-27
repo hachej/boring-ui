@@ -8,6 +8,10 @@ export type DictationPhase = 'idle' | 'starting' | 'recording' | 'transcribing';
 export interface Dictation {
   readonly phase: DictationPhase;
   readonly seconds: number;
+  readonly levels: readonly number[];
+  readonly paused: boolean;
+  readonly pause: (() => void) | undefined;
+  readonly resume: (() => void) | undefined;
   readonly problem: string | undefined;
   readonly start: () => void;
   readonly finish: () => void;
@@ -63,5 +67,9 @@ export function useDictation(options: DictationOptions): Dictation {
     })();
   }, [cancel]);
   const item = core.attempts[0];
-  return { phase: item?.phase === 'processing' ? 'transcribing' : item?.phase ?? 'idle', seconds: item?.seconds ?? 0, problem, start, finish, cancel };
+  return { phase: item?.phase === 'processing' ? 'transcribing' : item?.phase ?? 'idle', seconds: item?.seconds ?? 0,
+    levels: item?.levels ?? [], paused: item?.paused ?? false,
+    pause: item?.phase === 'recording' && item.canPause ? () => core.pause(item) : undefined,
+    resume: item?.phase === 'recording' && item.canPause ? () => core.resume(item) : undefined,
+    problem, start, finish, cancel };
 }

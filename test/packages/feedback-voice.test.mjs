@@ -341,3 +341,37 @@ test('the page and ui browser bundle holds the voice capture and no server code'
   // Only the shared capture reaches getUserMedia; the platform guard preserves its feature-detection contract.
   assert.deepEqual(checkPlatformApis(root).errors, []);
 });
+
+test('createVoiceCapture: real PCM levels, pause excludes samples and elapsed time, resume and sample limit', async t => {
+  const audio = fakeAudio(), { track, stream } = fakeStream();
+  const capture = createVoiceCapture({ getUserMedia: async () => stream, audioContext: audio.audioContext, maxMs: 250 });
+  t.after(() => capture.cancel());
+  const starting = capture.start(); await tick(); await tick(); audio.feed(4800, 0.25); await starting;
+  assert.deepEqual(capture.progress(), { elapsedMs: 100, level: 0.25, paused: false, canPause: true });
+  assert.equal(capture.pause(), true);
+  audio.feed(4800, 1); audio.feed(4800, 1);
+  assert.deepEqual(capture.progress(), { elapsedMs: 100, level: 0.25, paused: true, canPause: true });
+  assert.equal(track.stopped, false);
+  assert.equal(capture.resume(), true); audio.feed(4800, 0.5);
+  assert.equal(capture.progress().level, 0.5);
+  assert.equal(capture.progress().elapsedMs, 200);
+  audio.feed(4800, 0.75);
+  assert.equal(track.stopped, true);
+  assert.equal(capture.pause(), false, 'ended capture cannot pause');
+  const result = await capture.stop();
+  assert.equal(result.truncated, true);
+  assert.equal(result.endedAt - result.startedAt, 250);
+  assert.equal(new DataView(await result.audio.arrayBuffer()).getUint32(40, true), 8000, 'paused samples never enter the WAV');
+  assert.equal(capture.progress(), null);
+});
+
+test('createVoiceCapture: MediaRecorder fallback advertises no invented level or pause capability', async t => {
+  withRecorder(t);
+  const { stream } = fakeStream(); let time = 1000;
+  const capture = createVoiceCapture({ getUserMedia: async () => stream, audioContext: null, now: () => time });
+  t.after(() => capture.cancel());
+  await capture.start(); time += 1250;
+  assert.deepEqual(capture.progress(), { elapsedMs: 1250, level: undefined, paused: false, canPause: false });
+  assert.equal(capture.pause(), false); assert.equal(capture.resume(), false);
+  capture.cancel(); assert.equal(capture.progress(), null);
+});

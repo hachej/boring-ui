@@ -14,5 +14,7 @@ export const SOURCES = [{ name: 'app-shell', entries: Object.entries({
   'Dis bonjour': ['Bonjour ! Que veux-tu écrire ?'],
   'Combien de pas hier': ['Hier : 8 200 pas, soit 94 % de ton objectif.'],
   'Je mange une salade': ['Tu as choisi une salade. Une réponse fictive au texte transcrit.'],
+  'Merci.': ['Avec plaisir.'],
+  'Une salade et du pain, puis des légumes pour le dîner.': ['Le repas fictif est noté.'],
   'Dis-moi ce qui manque': ['Il manque un graphique de la semaine sur l\'écran Progrès.'],
 }).map(([match, turns]) => ({ match, turns })) }];

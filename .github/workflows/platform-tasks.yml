@@ -1,0 +1,39 @@
+# Ties each pull request to its task in the platform's `ui` task space (hachej/boring-factory has the same file for `factory`; docs/TARGET.md there, section 3). scripts/platform-task-sync.mjs
+# reads the event only: the task is named by the branch (d-<n>-slug) or a line "Task: D-<n>" in the body. Opened -> the task is working; merged -> done by merge; closed unmerged -> open again.
+# It runs on pull_request_target so that the workflow is always the one on main (a pull request cannot change what holds the secret), checks out main only (never the pull request's code),
+# and ignores a fork's pull request: this repository is public, and an outside contributor's pull request never touches a task. PLATFORM_TASKS_TOKEN is the tasks Worker's `ci` credential:
+# it reads and records pull requests on the two platform spaces and can do nothing else.
+name: platform-tasks
+
+on:
+  pull_request_target:
+    types: [opened, reopened, ready_for_review, edited, closed]
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: platform-tasks-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: scripts/platform-task-sync.mjs
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.22.1
+      - name: Record the pull request on its task
+        env:
+          PLATFORM_TASKS_SPACE: ui
+          PLATFORM_TASKS_URL: https://boring-factory-tasks.julien-hurault.workers.dev
+          PLATFORM_TASKS_TOKEN: ${{ secrets.PLATFORM_TASKS_TOKEN }}
+        run: node scripts/platform-task-sync.mjs
