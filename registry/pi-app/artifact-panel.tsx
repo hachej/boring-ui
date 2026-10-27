@@ -1,5 +1,7 @@
 'use client';
 
+import { useChatView } from '@hachej/boring-ui-kit/chat-react';
+
 // The artifact panel: the standard viewer bar (title, type, version switcher, Refresh, Share, copy, download, close) over the viewer for
 // the artifact's type. It follows the latest saved revision while nothing is unsaved ("Latest") or pins one older version, read-only. It
 // lists the versions the host's workspace provider retains for the file (`history`) and reads through the host's resource client. It never
@@ -115,14 +117,12 @@ class KindBoundary extends Component<{ readonly revision: string; readonly onErr
 
 /** Every artifact version the conversation's tool results produced (the version switcher's source), oldest first. */
 export function useArtifactVersions(controller: ChatController | undefined, detect?: ArtifactsConfig['detect']): ArtifactDescriptor[] {
-  const view = useSyncExternalStore(controller ? controller.subscribe : NOOP, () => controller?.getSnapshot().view, () => undefined);
-  return useMemo(() => collectArtifacts(view, detect), [view, detect]);
+  return useChatView(controller, useCallback(view => collectArtifacts(view, detect), [detect]));
 }
 
 /** How many messages the person has sent in the conversation: it changes when a new turn starts. */
 export function useTurn(controller: ChatController | undefined): number {
-  const view = useSyncExternalStore(controller ? controller.subscribe : NOOP, () => controller?.getSnapshot().view, () => undefined);
-  return useMemo(() => artifactTurn(view), [view]);
+  return useChatView(controller, artifactTurn);
 }
 
 /** The revisions the workspace provider retains for a file with their save times, newest first; followed while the panel is open. */

@@ -4,8 +4,8 @@
 
 ## Sub-features
 
-- `chat-transcript` rows, tool steps, activity, Markdown replies (`pi-chat-markdown`), `presentation="natural"` for readers. `registry/pi-chat/pi-chat.tsx`, `rows.ts`, `message.tsx`.
-- `chat-composer` multi-line composer, including sizing/width observation after recording trash, queue (steer, edit, remove), draft kept per conversation (`useChatDraft`). `registry/pi-chat/composer.tsx`, `queue.tsx`.
+- `chat-transcript` rows, tool steps, activity, Markdown replies (`pi-chat-markdown`), `presentation="natural"` for readers. Paging/chunks live in `packages/ui/src/chat-react-transcript.ts`; `registry/pi-chat/session.tsx` adapts the host's shadcn MessageScroller. Rendering: `registry/pi-chat/pi-chat.tsx`, `rows.ts`, `message.tsx`.
+- `chat-composer` multi-line composer, including sizing/width observation after recording trash, queue (steer, edit, remove), draft kept per conversation (`useChatDraft`, `packages/ui/src/chat-react-draft.ts`). `registry/pi-chat/composer.tsx`, `queue.tsx`.
 - `chat-slash` the `/` menu: commands and skills. `registry/pi-chat-slash/slash-menu.tsx`.
 - `chat-mentions` the `@` menu for files and, through `MentionsConfig`, any catalog of ids. `registry/pi-chat-mentions/mention-menu.tsx`, `registry/pi-chat/config.ts`.
 - `chat-attachments` attach, paste, drop, paste-to-file, phone camera sheet. `registry/pi-chat-attachments/camera-sheet.tsx`.
@@ -17,8 +17,8 @@
 - `chat-kind-mentions` registered app kinds show readable removable chips, hide their tokens from editable text and retain them in native submissions; sent kind/file mentions share text-line alignment. `registry/pi-chat/composer.tsx`, `packages/ui/src/chat-text.ts`.
 - `chat-pickers` model and effort menus. `registry/pi-chat-pickers/pickers.tsx`.
 - `chat-cards` question (`ask_user`), approval, sub-agent and artifact cards. `registry/pi-chat-question/`, `pi-chat-approval/`, `pi-chat-subagent/`, `pi-artifacts/`.
-- `chat-conversations` History with New, rename, archive, fork over the host's conversations handler (`useConversations`). `registry/pi-chat/use-conversations.ts`, `history.tsx`.
-- `chat-remote` `useRemoteChat` connects a controller to the host's chat transport, with `requestContext`. `registry/pi-chat/use-remote-chat.ts`.
+- `chat-conversations` History with New, rename, archive, fork over the host's conversations handler (`useConversationsClient`). `packages/ui/src/chat-react-conversations.ts`, `registry/pi-chat/history.tsx`; old hook imports re-export for one release.
+- `chat-remote` `useRemoteChat` connects a concrete controller to the host's chat transport, with `requestContext` and placement. `packages/ui/src/chat-react-remote.ts`, `chat-react-controller.ts`; old hook imports re-export for one release.
 - `chat-plugins` `withChatPlugins(props)` fills every missing component and card. `registry/pi-chat-plugins/chat-plugins.ts`.
 
 ## How to get to it (user POV)
@@ -38,6 +38,7 @@ Preconditions: `npm run build`, Chromium; journeys use a scripted fake model unl
 - **Cards.** `chat-cards`: trigger `ask_user` and an approval in the scripted run; answer in the card.
 - **Conversations.** `chat-conversations`: create, rename, archive and fork a conversation from History.
 - **Remote and plug-ins.** `chat-remote`, `chat-plugins`: `npm run test:pi-chat-consumer` installs the block into a clean app and mounts it.
+- **Paging and drafts.** `chat-transcript`, `chat-composer`: `npm run test:chat-scroll` drives the 500-row long-chat example; `npm run draft-recovery:journey` checks reload recovery.
 - **Proof.** Transcript ARIA snapshot and screenshot per ID, plus the stored conversation read again after reload.
 
 ## Gotchas
