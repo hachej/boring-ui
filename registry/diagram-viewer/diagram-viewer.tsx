@@ -1,7 +1,7 @@
 'use client';
 
 // The diagram viewer: an agent's `*.diagram.json` (format v1) drawn by `DiagramView`, with its highlighted path and note. `diagramKind` (diagram-kind.ts) is
-// the kind the pi-app artifact panel uses by default for `.diagram.json` files; an app's own kind in `artifactKinds` wins. The maquette
+// the kind of the pi-app-kinds default list for `.diagram.json` files; an app kind placed before it in `artifactKinds` wins. The maquette
 // viewer draws its workflow ("How it works") with the same `DiagramView`. It draws data only: nothing in the file runs.
 import { useMemo } from 'react';
 import { InfoIcon, TriangleAlertIcon } from 'lucide-react';

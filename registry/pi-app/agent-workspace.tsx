@@ -5,7 +5,7 @@ import '@hachej/boring-ui-kit/file-tree.css';
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
-import type { ResourceLocator } from '@hachej/boring-files';
+import type { ResourceClient, ResourceLocator } from '@hachej/boring-files';
 import { createResourceClient } from '@hachej/boring-files/remote';
 import { connectRevisionProvider } from '@hachej/boring-files/revision';
 import { workspacePath } from '@hachej/boring-files/file-types';
@@ -25,7 +25,7 @@ import type { ChatController } from '@hachej/boring-ui-kit/native-chat';
 import { PiChat } from '../pi-chat/pi-chat';
 import { withChatPlugins } from '../pi-chat-plugins/chat-plugins';
 import { artifactKey, createPresentAcks, pendingPresents } from '../pi-artifacts/artifact';
-import type { ArtifactDescriptor, ArtifactKind, ArtifactsConfig, PresentAcks } from '../pi-artifacts/artifact';
+import type { ArtifactDescriptor, ArtifactsConfig, PresentAcks } from '../pi-artifacts/artifact';
 import type { ConversationsConfig, PiChatProps } from '../pi-chat/pi-chat';
 import { Dock, DockLayout, DockMain } from '../pi-workspace/dock';
 import { ArtifactWorkspace } from '../pi-workspace/workspace';
@@ -33,13 +33,7 @@ import type { WorkspacePanelApi } from '../pi-workspace/workspace';
 import { ViewerWindowProvider } from '../viewer-frame/viewer-frame';
 import type { ViewerShare } from '../viewer-frame/viewer-frame';
 import type { InteractiveHtml } from '../viewer-frame/interactive-html';
-import { createMaquetteKind } from '../maquette-viewer/maquette-kind';
-import { createMockupKind } from '../mockup-viewer/mockup-kind';
-import type { MockupComments } from '../mockup-viewer/mockup-viewer';
-import type { MaquetteComments } from '../maquette-viewer/maquette-viewer';
-import { createDiagramKind } from '../diagram-viewer/diagram-kind';
-import { createRecordsKind } from '../record-viewer/records-kind';
-import { documentKinds } from './viewer-kinds';
+import { noKinds } from './viewer-kinds';
 import type { PanelKind } from './viewer-kinds';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -214,10 +208,14 @@ interface AgentWorkspaceBaseProps {
   readonly history?: HistoryPlacement | undefined;
   /** Recognise artifacts in tool results that carry no descriptor (`ArtifactsConfig.detect`). */
   readonly detect?: ArtifactsConfig['detect'] | undefined;
-  /** The app's own artifact kinds (`ArtifactKind`: match, label, icon, and a `renderer` or a lazily loaded `load`): the chat's cards and the artifact panel consult them before the built-in kinds (maquette, diagram, mock-up, records, then Markdown, HTML, SVG, CSV, image and PDF), so an app kind for those files wins. */
-  readonly artifactKinds?: readonly ArtifactKind[] | undefined;
-  /** Comment pins on mock-ups: the registry `feedback` item's `usePointComments(session)`. The maquette viewer then shows a comment icon that enters point mode on its screen. Omit it (no feedback session) and no icon shows. */
-  readonly comments?: (MaquetteComments & Pick<MockupComments, 'pick' | 'picking' | 'reposition'>) | undefined;
+  /**
+   * Every artifact kind the chat's cards, the artifact panel and the file viewer resolve through, in order (the first match wins): an
+   * `ArtifactKind` (match, label, icon, and a `renderer` or a lazily loaded `load`) or a document kind. The workspace knows no kind of its
+   * own. The pi-app-kinds item's `defaultKinds({ locale, comments })` is the default list (maquette, diagram, mock-up, records, then
+   * Markdown, HTML, SVG, CSV, image and PDF): pass it, put the app's own kinds before it (`[...mine, ...defaultKinds()]`) so they win, or
+   * pass a list of your own. Build it once (`useMemo`): a new list re-resolves every open view.
+   */
+  readonly artifactKinds?: readonly PanelKind[] | undefined;
   /** Host viewers by artifact type or file kind, for example `{ canvas: props => <MyCanvas {...props} /> }`. */
   readonly viewers?: CustomViewers | undefined;
   /** Run HTML pages in the viewers' sandboxed preview, loading scripts only from these origins. Off without it. */
@@ -283,7 +281,7 @@ const defaultLocate = (path: string): ResourceLocator => ({ resource: { provider
  * its versions, the file viewer and the host's own views). Agent artifacts open the panel as they appear. Every prop is data or a callback:
  * the host owns the routes, authentication, the controller and what is open (when controlled).
  */
-export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, title, controller, conversationId, chat = {}, labels, icons, panelActions, connecting, conversations, sessions, history: historyPlacement = 'column', resources, revisionProvider, libraryPlacement = 'panel', locale, fileTree: treeOptions, uploads, agents, detect, artifactKinds, comments, viewers, interactive, share, opened: controlled,
+export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, title, controller, conversationId, chat = {}, labels, icons, panelActions, connecting, conversations, sessions, history: historyPlacement = 'column', resources, revisionProvider, libraryPlacement = 'panel', locale, fileTree: treeOptions, uploads, agents, detect, artifactKinds, viewers, interactive, share, opened: controlled,
   defaultOpened = null, onOpenedChange, onUnsavedChange, panels, autoOpen = true, fileBack, floatingChat, chatTop, controls, storageKey = 'boring.agent-workspace', sheetBelow = PHONE_BELOW, drawerBelow = PHONE_BELOW, floatBelow, className }: AgentWorkspaceProps) {
   const [own, setOwn] = useState<OpenedView | null>(defaultOpened);
   const [panelLibrary, setPanelLibrary] = useState(false);
@@ -380,9 +378,24 @@ export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, titl
   const libraryProvider = useMemo(() => revisionProvider ?? (listing && listing.key === listingKey ? { ...listing.provider, history: history ?? listing.provider.history } : undefined),
     [revisionProvider, listing, listingKey, history]);
   // The viewers' client: the Library's binding when there is one (its calls carry the binding the revision protocol checks), else the plain resource client.
-  // eslint-disable-next-line react-hooks/refs -- the functions built here read refs only when a request, an event or an effect calls them, never during render
-  const client = useMemo(() => libraryProvider ?? createResourceClient({ identity, endpoint: new URL(endpoint!, globalThis.location?.href), publication: true, reconciliation: true,
-    fetch: request => fetcher.current!(request) }), [libraryProvider, endpoint, identityKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // With `resources`, the binding is discovered after the first render on the same endpoint for the same person: it takes over the calls of
+  // one stable client, so a viewer already open keeps its bytes and its editor instead of reloading when the binding arrives.
+  const discovered = useRef(libraryProvider);
+  // eslint-disable-next-line react-hooks/refs -- latest-value ref: a viewer may read through the client during its own render or layout effect, before this component's effects run
+  discovered.current = libraryProvider;
+  const client = useMemo((): ResourceClient => {
+    if (revisionProvider) return revisionProvider;
+    // eslint-disable-next-line react-hooks/refs -- the client's functions read refs only when a request calls them, never during render
+    const plain = createResourceClient({ identity, endpoint: new URL(endpoint!, globalThis.location?.href), publication: true, reconciliation: true, fetch: request => fetcher.current!(request) });
+    const current = (): ResourceClient => discovered.current ?? plain;
+    return {
+      read: (request, signal) => current().read(request, signal),
+      publish: (request, signal) => current().publish!(request, signal),
+      lookup: (operationId, signal) => current().lookup!(operationId, signal),
+      rename: (request, signal) => current().rename!(request, signal),
+      delete: (request, signal) => current().delete!(request, signal),
+    };
+  }, [revisionProvider, endpoint, identityKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const [imagePreview, setImagePreview] = useState<{ readonly images: readonly ImageContent[]; readonly index: number; readonly controller: typeof controller; readonly client: typeof client; readonly conversationId: typeof conversationId }>();
   const openImage = useCallback((image: ImageContent, images: readonly ImageContent[] = [image]) => {
     const index = images.indexOf(image);
@@ -407,9 +420,7 @@ export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, titl
   }, []);
   // A kind that could not show the file (a dashboard whose data failed): the waiting `present` is refused with its reason.
   const onFailed = useCallback((view: { readonly path: string; readonly reason: string }) => { presentAcks.current?.failed(view); }, []);
-  // The app's kinds first, then the built-in domain kinds in the workspace's language (a `.maquette.json` card and panel say « Maquette » in
-  // French), then the document kinds. Each kind's view loads the first time an artifact of that kind opens.
-  const kinds = useMemo((): readonly PanelKind[] => [...(artifactKinds ?? []), createMaquetteKind({ locale, comments }), createDiagramKind({ locale }), createMockupKind({ locale, comments }), createRecordsKind({ locale }), ...documentKinds], [artifactKinds, locale, comments]);
+  const kinds = artifactKinds ?? noKinds;
   const options: ViewerOptions = useMemo(() => ({ client, identity, history, viewers, kinds, interactive, share, onShown, onFailed, onUnsavedChange: noteUnsaved, onBeforeLeaveChange: registerBeforeLeave, blobBase }), [client, identityKey, history, viewers, kinds, interactive, share, onShown, onFailed, noteUnsaved, registerBeforeLeave, blobBase]); // eslint-disable-line react-hooks/exhaustive-deps
   const locate = revisionProvider?.locate ?? remote?.locate ?? defaultLocate;
   const readOnlyLibrary = !revisionProvider;
@@ -711,29 +722,56 @@ function WorkspaceCenter({ libraryOpen, floating, chat, floatingChat, library }:
 }
 
 /**
- * The seq of the provider's latest change event (`RevisionProvider.changes`), coalesced over `settleMs` so a burst (a shell writing
- * many files) reloads once. `live` is false without a feed or after the feed was refused; views then keep their own refresh.
+ * A number that moves when the provider's files change (`RevisionProvider.changes`), coalesced over `settleMs` so a burst (a shell
+ * writing many files) reloads once. `live` is false without a feed or after the feed was refused; views then keep their own refresh.
+ * A hidden tab holds no feed: a browser allows few connections per host, and every tab of a share link holding a stream starves the
+ * others (remote chat releases its stream the same way); `live` is false meanwhile. Shown again, it reconnects after the last event it
+ * acted on (`since`; 0 when it had none, which the feed answers with a `resnapshot`), so a change made while hidden or while reconnecting
+ * arrives on the new feed and moves the number then, after the feed is connected.
  */
 function useChangeFeed(provider: RevisionProvider | undefined, settleMs = 150): { readonly seq: number | undefined; readonly live: boolean } {
   const [state, setState] = useState<{ readonly provider: RevisionProvider | undefined; readonly seq: number | undefined; readonly live: boolean }>({ provider, seq: undefined, live: false });
+  const shown = usePageShown();
+  // The provider connected last, and the protocol seq of the last event the views reloaded for.
+  const connected = useRef<{ readonly provider: RevisionProvider; seen: number | undefined } | undefined>(undefined);
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- the feed's state is reset for the new provider when this effect subscribes to it
     if (!provider?.changes) { setState({ provider, seq: undefined, live: false }); return; }
+    if (!shown) { setState(current => current.provider === provider && current.live ? { ...current, live: false } : current); return; }
     const stop = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined, latest: number | undefined;
-    setState({ provider, seq: undefined, live: true });
+    // A second connection to the same provider follows a hidden period: it resumes after the last event acted on. A first connection has nothing to catch up.
+    const since = connected.current?.provider === provider ? connected.current.seen ?? 0 : undefined;
+    const cursor = connected.current?.provider === provider ? connected.current : { provider, seen: undefined };
+    connected.current = cursor;
+    const move = () => { cursor.seen = latest; setState(current => ({ provider, seq: current.provider === provider ? (current.seq ?? 0) + 1 : 1, live: true })); };
+    setState(current => ({ provider, seq: current.provider === provider ? current.seq : undefined, live: true }));
     void (async () => {
       try {
-        for await (const event of provider.changes!({ signal: stop.signal })) {
+        for await (const event of provider.changes!({ ...(since === undefined ? {} : { since }), signal: stop.signal })) {
           latest = event.seq;
-          timer ??= setTimeout(() => { timer = undefined; if (!stop.signal.aborted) setState({ provider, seq: latest, live: true }); }, settleMs);
+          // An event still settling when the feed closes is not acted on, so the next connection asks for it again.
+          timer ??= setTimeout(() => { timer = undefined; if (!stop.signal.aborted) move(); }, settleMs);
         }
       } catch { /* refused: the views fall back to their own refresh */ }
       clearTimeout(timer);
       timer = undefined;
-      if (!stop.signal.aborted) setState({ provider, seq: latest, live: false });
+      if (!stop.signal.aborted) setState(current => ({ provider, seq: current.provider === provider ? current.seq : undefined, live: false }));
     })();
     return () => { stop.abort(); clearTimeout(timer); };
-  }, [provider, settleMs]);
+  }, [provider, settleMs, shown]);
   return state.provider === provider ? state : { seq: undefined, live: false };
+}
+
+/** Whether the page is shown (`document.visibilityState`); true where there is no document. */
+function usePageShown(): boolean {
+  const [shown, setShown] = useState(() => typeof document === 'undefined' || document.visibilityState !== 'hidden');
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const update = () => setShown(document.visibilityState !== 'hidden');
+    update();
+    document.addEventListener('visibilitychange', update);
+    return () => document.removeEventListener('visibilitychange', update);
+  }, []);
+  return shown;
 }

@@ -24,6 +24,8 @@ export type ResourceClientOptions = ResourceClientBase & (
   | { readonly publication: true; readonly reconciliation: true }
   | { readonly publication?: false; readonly reconciliation?: boolean });
 
+const tooLarge = new Error('Resource request too large');
+
 export function createResourceClient(options: ResourceClientOptions): ResourceClient {
   if (options.publication && !options.reconciliation) throw new TypeError('A publishing resource client needs reconciliation: a lost save acknowledgement could otherwise never be resolved');
   const selected = identity(options.identity), endpoint = new URL(options.endpoint);
@@ -46,13 +48,15 @@ export function createResourceClient(options: ResourceClientOptions): ResourceCl
       const response = await observe(pending, combined);
       if (response.redirected || response.status !== 200) {
         void response.body?.cancel().catch(() => {});
+        if (response.status === 413 && !response.redirected) throw tooLarge;
         throw new Error('Remote resource response unavailable');
       }
       const result = envelope(await jsonBody(response, responseLimit, combined));
       if (result.requestId !== requestId || result.kind !== call.kind || !sameIdentity(result.identity, selected)) throw new TypeError('Resource response association mismatch');
       return result.value;
-    } catch {
+    } catch (error) {
       if ((call.kind === 'publish' || call.kind === 'rename' || call.kind === 'delete') && !dispatched) throw new PublicationNotDispatchedError(call.value.operationId);
+      if (error === tooLarge) throw error;
       throw new Error('Remote resource operation is unconfirmed');
     } finally { abort.abort(); }
   }
@@ -74,6 +78,8 @@ export function createResourceClient(options: ResourceClientOptions): ResourceCl
           return publicationResult(await invoke({ kind: 'publish', value: captured }, signal), captured.operationId, selected, captured, digest);
         } catch (error) {
           if (error instanceof PublicationNotDispatchedError) throw error;
+          // 413: the server refused the body before reading it as a write (the revision handler's `maxFileBytes`), so nothing was written.
+          if (error === tooLarge) return { kind: 'unavailable', reason: 'The workspace refused the file as too large' };
           return { kind: 'unknown', operationId: captured.operationId, reason: 'Remote publication is unconfirmed; reconcile the original operation without automatic replay' };
         }
       },

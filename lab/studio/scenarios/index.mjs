@@ -28,7 +28,7 @@
 //       { reply: /regex/ },                     // some assistant message matches; { toolResult: /regex/ } the real output of tool calls (native messages)
 //       { toolCalled: 'present' }, { toolNotCalled: 'bash' }, { toolCalls: { name: 'run_code', min: 1, max: 2 } },
 //       { artifact: { type: 'html', frameHas: 'svg', count: 1 } },
-//       { panelOpen: true }, { fileExists: 'notes/todo.md' }, { fileContains: { path, text } },
+//       { panelOpen: true }, { fileExists: 'notes/todo.md' } (or a RegExp over the path), { fileContains: { path, text } },
 //       { question: { answered: 2 } }, { userMessages: 3 }, { nativeInputHasFile: 'uploads/' },
 //     ],
 //     verify?: async t => {},                   // the escape hatch, for the few that need custom driving

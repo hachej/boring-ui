@@ -13,7 +13,7 @@ const MaquetteViewer = lazy(() => import('./maquette-viewer').then(module => ({ 
 
 /**
  * The artifact kind of a maquette file (structurally an `ArtifactKind` of pi-artifacts): it matches `*.maquette.json`, names it, gives its icon
- * and draws it with `MaquetteViewer`, loaded on first open. Pass it, or your own, in `artifactKinds`; kinds an app passes are consulted first.
+ * and draws it with `MaquetteViewer`, loaded on first open. It is in the pi-app-kinds default list (`defaultKinds`); kinds in `artifactKinds` are consulted in order.
  */
 export interface MaquetteKind {
   readonly match: (target: { readonly resource: { readonly path: string } }) => boolean;

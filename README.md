@@ -11,10 +11,13 @@ Chat, files, document viewers, approvals and background work for React and Node 
 ```tsx
 // Browser: a whole agent app (sessions, chat, artifact viewers) from one registry block.
 import { AgentWorkspace, useConversations, useRemoteChat } from '@/components/pi-app/agent-workspace';
+import { defaultKinds } from '@/components/pi-app-kinds/pi-app-kinds';
+
+const kinds = defaultKinds(); // the viewers it draws: Markdown, HTML, PDF, images, mock-ups, diagrams…
 
 const conversations = useConversations({ endpoint: '/api/conversations', fetch, activeId, onSelect });
 const chat = useRemoteChat({ conversationId: activeId, endpoint: id => `/api/chat?conversation=${id}`, fetch, identity });
-<AgentWorkspace conversationId={activeId} conversations={conversations} revisionProvider={revisionProvider}
+<AgentWorkspace artifactKinds={kinds} conversationId={activeId} conversations={conversations} revisionProvider={revisionProvider}
   controller={chat.status === 'ready' ? chat.controller : undefined} />;
 ```
 
@@ -61,7 +64,7 @@ npx shadcn@4.21.5 add alert attachment avatar badge bubble button card checkbox 
 npx boring-ui-blocks add https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.8/r/pi-app.json
 ```
 
-Add `.../r/theme.json` once if your app has no shadcn tokens yet. The full walk-through is the [build-agent-app skill](skills/build-agent-app/SKILL.md).
+From the release after 0.4.23, also add `.../r/pi-app-kinds.json` and pass its `defaultKinds()` as `artifactKinds`, as above: `pi-app` draws only the kinds it is given. Add `.../r/theme.json` once if your app has no shadcn tokens yet. The full walk-through is the [build-agent-app skill](skills/build-agent-app/SKILL.md).
 
 ## Features
 
@@ -101,7 +104,7 @@ const files = createWorkspaceProvider({ identity, fs: env, journal: createWorksp
 const guard = createFileGuard({ workspace: { files, root, access } });
 ```
 
-See [`@hachej/boring-files`](packages/files/README.md) and [One file tool set](packages/agent/README.md#one-file-tool-set-the-guard).
+The browser reaches it through one route, `createRevisionHandler`: reads, saves, the file list, `@` search and uploads (a conditional create with a receipt, binary-safe, up to `maxFileBytes`) all use the same resolve and access. See [`@hachej/boring-files`](packages/files/README.md) and [One file tool set](packages/agent/README.md#one-file-tool-set-the-guard).
 
 ### Approvals, questions and schedules
 

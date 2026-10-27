@@ -71,7 +71,8 @@ async function attach(t, upload) {
   if (upload.mimeType?.startsWith('image/')) { await t.browser.until('the image is attached', `${qa('[data-testid=attachment]')}.length === 1`, 20000); return; }
   const escape = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const extension = /(\.[^.]*)?$/.exec(upload.name)[0], stem = upload.name.slice(0, upload.name.length - extension.length);
-  const pattern = `^uploads/${escape(stem)}(-\\d+)?${escape(extension)}$`;
+  // The kit saves an attachment as `uploads/<name>-<8 hex>.<ext>` (`attachmentPath`), so a second file of the same name is a new file.
+  const pattern = `^uploads/${escape(stem)}-[0-9a-f]{8}${escape(extension)}$`;
   await t.browser.until('the upload became a mention chip', `new RegExp(${JSON.stringify(pattern)}).test(${q('[data-testid=mention-chip]')}?.dataset.path ?? '')`, 20000);
 }
 
@@ -215,7 +216,9 @@ export async function expectations(t, expectation, scenario) {
     case 'artifact': await artifactExpectation(t, value, label); break;
     case 'fileExists': {
       const files = (await (await t.api('/api/files')).json()).files;
-      assert.ok(files.some(path => path === `/workspace/${value}` || (value.endsWith('/') && path.startsWith(`/workspace/${value}`))), `${label} ${value}; files: ${files.join(', ')}`);
+      // A path, a folder (ending in `/`) or a pattern over the workspace path (an upload's name has a random suffix).
+      const matches = path => value instanceof RegExp ? value.test(path.slice('/workspace/'.length)) : path === `/workspace/${value}` || (value.endsWith('/') && path.startsWith(`/workspace/${value}`));
+      assert.ok(files.some(matches), `${label} ${value}; files: ${files.join(', ')}`);
       break;
     }
     case 'fileContains': {

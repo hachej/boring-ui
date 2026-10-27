@@ -56,8 +56,9 @@ Item and file types follow the shadcn schema: the multi-file chat items are `reg
 | `pi-chat-plugins` | `... add <registry>/pi-chat-plugins.json` (installs the ten items above) | every composer feature and reply card at once: `<PiChat {...withChatPlugins(props)} />` fills each missing component and card; `pi-app`, `pi-ambient`, `app-shell` and `shared-chat` already use it |
 | `pi-ambient` | `... add <registry>/pi-ambient.json` (also installs `pi-chat` and `pi-workspace`) | an agent sits beside an existing site: `AmbientChat` bar and `AgentNotifications` toasts |
 | `pi-workspace` | `... add <registry>/pi-workspace.json` (also installs `pi-chat`) | the page is the chat plus a resizable artifact panel (`ArtifactWorkspace`); add `viewer-frame` and the `viewer-*` items for the panel contents and `pi-ambient` for float-when-narrow |
-| `pi-app` | `... add <registry>/pi-app.json` (also installs `pi-chat`, `pi-workspace` and the `viewer-*` items) | the page is a whole agent app: sessions, chat and artifact viewers in one `AgentWorkspace` (see [below](#whole-agent-app-pi-app-agentworkspace)) |
-| `maquette-viewer` | `... add <registry>/maquette-viewer.json` (installed with `pi-app`) | you show a PM agent's `*.maquette.json` mock-ups outside `AgentWorkspace` (`MaquetteViewer`, `maquetteKind`; see [below](#maquette-viewer-maquette-viewer)) |
+| `pi-app` | `... add <registry>/pi-app.json` (also installs `pi-chat` and `pi-workspace`) | the page is a whole agent app: sessions, chat and artifact viewers in one `AgentWorkspace` (see [below](#whole-agent-app-pi-app-agentworkspace)); it draws the kinds you pass in `artifactKinds` |
+| `pi-app-kinds` | `... add <registry>/pi-app-kinds.json` (installs `pi-app` and the `viewer-*`, maquette, diagram, mock-up and records items) | the default artifact kinds: `defaultKinds({ locale, comments })` for `artifactKinds` (see [below](#default-kinds-pi-app-kinds)) |
+| `maquette-viewer` | `... add <registry>/maquette-viewer.json` (installed with `pi-app-kinds`) | you show a PM agent's `*.maquette.json` mock-ups outside `AgentWorkspace` (`MaquetteViewer`, `maquetteKind`; see [below](#maquette-viewer-maquette-viewer)) |
 | `app-shell` | `... add <registry>/app-shell.json` (also installs `pi-chat` and `feedback`; uses the app's `sidebar`, `avatar`, `drawer` and `dropdown-menu`) | one agent above any app: a bottom drawer with peek, half and full on a phone, a right panel on a wide screen (see [below](#agent-layer-app-shell)) |
 | `windows` | `... add <registry>/windows.json` (the app's Base UI controls only) | independent floating utilities and a keyboard launcher (see [below](#floating-windows-windows)) |
 | `agent-target` | `... add <registry>/agent-target.json` (also installs `app-shell`; requires the coordinated kit patch, not the older published 0.4.3) | point and dictate on explicitly marked app JSON without opening chat (see [below](#point-and-dictate-on-app-data-agent-target)) |
@@ -80,7 +81,7 @@ Item and file types follow the shadcn schema: the multi-file chat items are `reg
 | `pi-chat` `artifact.ts`, `artifact-card.tsx` | `pi-artifacts` | `artifacts={{ ...artifactCards, open, isOpen, kinds }}` |
 | all of the above | `pi-chat-plugins` | `<PiChat {...withChatPlugins(props)} />` |
 | `viewers` (frame, menu, share, download) | `viewer-frame` | imported by the viewer items |
-| `viewers` `markdown-pane`, `html-pane`, `image-pane`, `pdf-pane`/`pdf-pages`/`local-file-viewer`, SVG and CSV | `viewer-markdown`, `viewer-html`, `viewer-image`, `viewer-pdf`, `viewer-code` | loaded by kind (`viewerKinds` from `pi-app/viewer-kinds`); `viewers` remains, empty, and installs the five |
+| `viewers` `markdown-pane`, `html-pane`, `image-pane`, `pdf-pane`/`pdf-pages`/`local-file-viewer`, SVG and CSV | `viewer-markdown`, `viewer-html`, `viewer-image`, `viewer-pdf`, `viewer-code` | loaded by kind (`defaultKinds()` from `pi-app-kinds`, passed as `artifactKinds`); `viewers` remains, empty, and installs the five |
 | `maquette-viewer`, `diagram-viewer`, `mockup-viewer`, `record-viewer`, `looks-viewer`, `board-viewer` views | the same items, plus a `*-kind` module | pass the kind (`maquetteKind`, …) in `artifactKinds`; its view loads lazily |
 
 [MIGRATING.md](../MIGRATING.md) has the release notes of each step.
@@ -184,7 +185,7 @@ Apps also run their own `lint` (oxlint with the app template's rules) over the b
 ```sh
 npx boring-ui-blocks check [--design <dir>...] [--manifest <path>] [--cwd <app web dir>] [--json]
 npx boring-ui-blocks update [--version <v>] [--registry <url>] [--dry-run] [--manifest <path>] [--cwd <dir>]
-npx boring-ui-blocks add <shadcn add arguments...> [--manifest <path>] [--cwd <dir>]
+npx boring-ui-blocks add <shadcn add arguments...> [--overwrite] [--manifest <path>] [--cwd <dir>]
 npx boring-ui-blocks manifest [--manifest <path>] [--cwd <dir>]
 npx boring-ui-blocks help
 ```
@@ -210,14 +211,14 @@ fail @hachej/boring-ui-kit@0.4.1: 3 violation(s) (blocks 1, design 1, ui 1). …
 
 The line format is `<check> <rule> <file>[:<line>:<column>] <detail>` with paths relative to the app (detail: the block name, the matched text or the manifest name). `--json` prints `{ ok, kit, version, blocks, violations: [{ check, rule, file, line?, column?, detail }] }` instead, or `{ ok: false, error }`. Exit codes: `0` all checks pass; `1` rule violations; `2` usage or configuration error (unknown command or flag, no `components.json`, the kit not installed or shipping no `r/`, a `--design` directory that does not exist), with `error: …` on stderr.
 
-`add` runs `npx -y shadcn@4.21.5 add <arguments>` in the app and, when it succeeds, rewrites the manifest (only its `files` map; other keys of an existing manifest are kept); add shadcn components with it. After a deliberate `npx shadcn add`, run `manifest` to record the files. `update` reinstalls every installed block from `https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@<version>/r/` with `npx -y shadcn@4.21.5 add <items> --overwrite --yes` (default: the installed version; `--registry <url>` for another host; `--dry-run` prints the command) and rewrites the manifest, which also moves the package dependencies the items pin and the shadcn components they depend on. The app's own version specifiers are kept: the CLI installs dependencies by name and npm then saves `^<version>` over an exact pin, so `add` and `update` put back the specifier of every dependency that was in `package.json` (and in the lockfile's root entry) before they ran; dependencies the CLI added keep what it wrote. Run `check` first: `update` overwrites edited copies. Only `add`, `update` and `manifest` write into the app, and only the shadcn files and the manifest.
+`add` runs `npx -y shadcn@4.21.5 add <arguments> --overwrite --yes` in the app with stdin closed, so it never waits for an answer (CI, agents). Files it did not change are left alone; a file under the `components`, `ui`, `lib` or `hooks` alias that already exists with other content (an app edit, or a shadcn component such as `toggle.tsx` that a block depends on) is put back as it was and listed on stderr, and `add` exits `1` without rewriting the manifest. `--overwrite` replaces those files with the registry's copy. When nothing differs, `add` rewrites the manifest (only its `files` map; other keys of an existing manifest are kept, and `--manifest` names it); add shadcn components with it. After a deliberate `npx shadcn add`, run `manifest` to record the files. `update` reinstalls every installed block from `https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@<version>/r/` with `npx -y shadcn@4.21.5 add <items> --overwrite --yes` (default: the installed version; `--registry <url>` for another host; `--dry-run` prints the command) and rewrites the manifest, which also moves the package dependencies the items pin and the shadcn components they depend on. The app's own version specifiers are kept: the CLI installs dependencies by name and npm then saves `^<version>` over an exact pin, so `add` and `update` put back the specifier of every dependency that was in `package.json` (and in the lockfile's root entry) before they ran; dependencies the CLI added keep what it wrote. Run `check` first: `update` overwrites edited copies. Only `add`, `update` and `manifest` write into the app, and only the shadcn files and the manifest.
 
 | An app wants to | Extension point |
 | --- | --- |
 | rebrand any block | the theme tokens only ([Styling](#styling)) |
 | change any word, or speak French | `labels` (partial, over `defaultChatLabels` and each block's defaults) and `locale="fr"` (`frenchChatLabels`, `frenchAppLabels`, …) |
 | change icons, add header, panel, message or row actions | `icons`, `headerActions`, `panelActions`, `messageActions`, `conversations.rowActions` ([Labels, icons and host actions](#labels-icons-and-host-actions)) |
-| name and draw its own artifact type (`.maquette.json` as « Maquette » with its renderer) | `artifacts.kinds` on `PiChat` / `AmbientChat`, `artifactKinds` on `AgentWorkspace`: `ArtifactKind { match(target, artifact), label, icon?, renderer?({ artifact, text, onReady, onFailed }), waitsForReady? }` (with `waitsForReady` a `present` of the file is confirmed only after `onReady`, and refused on `onFailed` or a throw), consulted before the built-in types by the card, the panel bar and the panel, and by a file opened from the Library, the file tree or a link (one resolution by path, `resolveKind` in `pi-app/artifact-panel.tsx`: the app's kinds first, then the built-in maquette and diagram kinds) |
+| name and draw its own artifact type (`.maquette.json` as « Maquette » with its renderer) | `artifacts.kinds` on `PiChat` / `AmbientChat`, `artifactKinds` on `AgentWorkspace`: `ArtifactKind { match(target, artifact), label, icon?, renderer?({ artifact, text, onReady, onFailed }), waitsForReady? }` (with `waitsForReady` a `present` of the file is confirmed only after `onReady`, and refused on `onFailed` or a throw), consulted in order by the card, the panel bar and the panel, and by a file opened from the Library, the file tree or a link (one resolution by path, `resolveKind` in `pi-app/artifact-panel.tsx`: the first kind that matches). `artifactKinds` is the whole list: pass `[myKind, ...defaultKinds()]` to keep the defaults; without it a file shows as text |
 | open a presented artifact in its own panel | `artifacts.open(descriptor)` (the descriptor carries the exact `revision`), or `AgentWorkspace` with its artifact panel |
 | a viewer for a type or file kind | an artifact kind in `artifactKinds` with `load: () => import('./my-view')` (lazily loaded) or `renderer`; `viewers` on `AgentWorkspace` (`CustomViewers`, for example `canvas`) still works and is deprecated |
 | show a headless run (`runs/<id>`) | `RunCard` of `pi-chat-subagent` (`run`, optional `fetchRun`), from `renderTool` / `renderEntry` or the page |
@@ -602,6 +603,20 @@ The app owns its manifest, shortcut icons, and install flow. Real iPhone and And
 
 - `AppShell` gained the optional `locale` prop, and the account sheet's title is the generic « Compte » instead of the person's name. Hosts that relied on the name as the sheet title will see « Compte » there.
 
+## Default kinds (`pi-app-kinds`)
+
+`AgentWorkspace` (and `ViewerOptions.kinds` of `ArtifactPanel` and `FileViewer`) draws a file only with the kinds the app passes in `artifactKinds`; it knows none of its own, so without the prop every file shows as text. `pi-app-kinds` (`components/pi-app-kinds/pi-app-kinds.ts`) holds the default list and installs its viewers: `defaultKinds({ locale?, comments? })` returns, in order (the first match wins), the maquette, diagram, mock-up and records kinds, then Markdown, HTML, SVG, CSV, image and PDF. `documentKinds` is the last six alone. Each view loads lazily, the first time a file of its kind opens.
+
+```tsx
+import { defaultKinds } from '@/components/pi-app-kinds/pi-app-kinds';
+
+const kinds = defaultKinds({ locale: 'fr' }); // once, outside render (or useMemo on locale and comments)
+<AgentWorkspace {...props} locale="fr" artifactKinds={kinds} />
+// An app's own kinds go first: artifactKinds={[reportKind, ...defaultKinds()]}. Or pass only the kinds the app wants.
+```
+
+`comments` (the `feedback` item's `usePointComments(session)`) puts comment pins on mock-ups and maquettes; it was an `AgentWorkspace` prop before.
+
 ## Placed agent (`placed-agent`: `PlacedAgentWorkspace`)
 
 `PlacedAgentWorkspace` takes every `AgentWorkspace` prop and keeps ONE controller in two places: the page (the app's « Agent » tab) or collapsed beside the app. Extra props: `placement` (`'tab'` is a plain `AgentWorkspace`; `'tab+ambient'`, the default, and `'ambient'` add the collapse and expand actions), `collapsed` and `onCollapsedChange` (controlled; the app moves to another screen or back to the tab there), and `storageKey` (placement remembered in `localStorage` under `${storageKey}.placement`). `usePlacedAgentState(storageKey)` is that remembered flag for an app that sets it from its own navigation; `usePlacedAgent()` gives `{ mode, collapsible, collapse, expand }` to buttons inside the workspace (the bar's `controls`).
@@ -907,6 +922,14 @@ import type { ComponentProps } from 'react';
 import { AgentWorkspace } from '@/components/pi-app/agent-workspace';
 import type { OpenedView } from '@/components/pi-app/agent-workspace';
 import { LocalFileViewer } from '@/components/viewer-pdf/local-file-viewer';
+import { defaultKinds } from '@/components/pi-app-kinds/pi-app-kinds';
+
+// The app's kind first (the first match wins), then the default list. Built once, outside render.
+const kinds = [{
+	match: (target: { readonly resource: { readonly path: string } }) => target.resource.path.endsWith('.report.json'),
+	label: 'Report',
+	renderer: ({ text }: { readonly text: string }) => <pre>{text}</pre>,
+}, ...defaultKinds()];
 
 export function ReportWorkspace(host: ComponentProps<typeof AgentWorkspace>) {
 	const [local, setLocal] = useState<File>();
@@ -918,11 +941,7 @@ export function ReportWorkspace(host: ComponentProps<typeof AgentWorkspace>) {
 			if (file) { setLocal(file); setOpened({ kind: 'local-file' }); }
 		}}>
 		<AgentWorkspace {...host} opened={opened} onOpenedChange={setOpened}
-			artifactKinds={[{
-				match: target => target.resource.path.endsWith('.report.json'),
-				label: 'Report',
-				renderer: ({ text }) => <pre>{text}</pre>,
-			}]}
+			artifactKinds={kinds}
 			panels={{ 'local-file': (_view, panel) => local
 				? <LocalFileViewer name={local.name} blob={local}
 					onClose={() => { setLocal(undefined); panel.close(); }} />
@@ -953,9 +972,9 @@ This is trusted-host opt-in for untrusted content, not a claim of qualification:
 
 ## Maquette viewer (`maquette-viewer`)
 
-A PM agent writes a mock-up as `<name>.maquette.json` and presents it. The `pi-app` artifact panel draws it with `MaquetteViewer` by default (no prop needed). The screen is the content, drawn with your own shadcn `Button`, `Input`, `NativeSelect`, `Card`, `Table`, `Badge`, `Item`, `Bubble` and `Empty`; the chrome is one thin bar of icons: Back (also Alt+Left) once the person has moved, ‹ `2 / 5` › (also arrow keys and swipe on a phone) and a menu holding the guided tours (`cases[].steps`: the step's caption on one compact line and step dots, × to leave) and "How it works" (the workflow diagram, its numbered legend and the cases' `path` highlights, in a dialog). Blocks with a `goto` get a soft ring on hover and focus and pulse once (the host's `--animate-pulse`) the first time their screen is shown. A screen's `note` is one truncated muted line under it, in full behind its info button. A page URL fragment `#screen=<id>` opens that screen (the panel passes the fragment to a kind's renderer as `fragment`, so a link the PM gives can say "see screen 2"). The file is data: nothing in it runs.
+A PM agent writes a mock-up as `<name>.maquette.json` and presents it. The `pi-app` artifact panel draws it with `MaquetteViewer` when the app passes the `pi-app-kinds` default list (`artifactKinds={defaultKinds()}`). The screen is the content, drawn with your own shadcn `Button`, `Input`, `NativeSelect`, `Card`, `Table`, `Badge`, `Item`, `Bubble` and `Empty`; the chrome is one thin bar of icons: Back (also Alt+Left) once the person has moved, ‹ `2 / 5` › (also arrow keys and swipe on a phone) and a menu holding the guided tours (`cases[].steps`: the step's caption on one compact line and step dots, × to leave) and "How it works" (the workflow diagram, its numbered legend and the cases' `path` highlights, in a dialog). Blocks with a `goto` get a soft ring on hover and focus and pulse once (the host's `--animate-pulse`) the first time their screen is shown. A screen's `note` is one truncated muted line under it, in full behind its info button. A page URL fragment `#screen=<id>` opens that screen (the panel passes the fragment to a kind's renderer as `fragment`, so a link the PM gives can say "see screen 2"). The file is data: nothing in it runs.
 
-`maquetteKind` (`match`, `label`, `icon`, `renderer`) is the built-in kind, in English ("Mock-up"); `createMaquetteKind({ locale: 'fr' })` gives "Maquette" and the French words, `labels` overrides any word. `AgentWorkspace` uses the kind in its `locale`. Kinds an app passes in `artifactKinds` (or `ViewerOptions.kinds`) are consulted first, so an app's own kind for `.maquette.json` wins.
+`maquetteKind` (`match`, `label`, `icon`, `renderer`) is the built-in kind, in English ("Mock-up"); `createMaquetteKind({ locale: 'fr' })` gives "Maquette" and the French words, `labels` overrides any word. `defaultKinds({ locale })` includes it in that locale. Kinds are consulted in order, so an app kind for `.maquette.json` placed before the defaults in `artifactKinds` (or `ViewerOptions.kinds`) wins.
 
 ### Format v1
 
@@ -1043,7 +1062,7 @@ digits in a row or an `@`, so keep maquette paths and ids free of those for the 
 
 ## HTML mock-ups (`mockup-viewer`)
 
-An agent writes `booking.mockup.html` in its workspace and presents it. `AgentWorkspace` and `ArtifactPanel` render this suffix by default, before the ordinary HTML viewer. Other `.html` files keep their existing passive default. App kinds in `artifactKinds` still win. For standalone use, import `MockupViewer`, `mockupKind` or `createMockupKind({ locale, comments })` from the installed `components/mockup-viewer/mockup-viewer`.
+An agent writes `booking.mockup.html` in its workspace and presents it. The `pi-app-kinds` default list renders this suffix before the ordinary HTML viewer. Other `.html` files keep their existing passive default. App kinds placed before the defaults in `artifactKinds` still win. For standalone use, import `MockupViewer`, `mockupKind` or `createMockupKind({ locale, comments })` from the installed `components/mockup-viewer/mockup-viewer`.
 
 The renderer ports the HTML implementation from `spike/canvas-board` at `3b838e3a5`. It reuses `InteractiveFrame` with `sandbox="allow-scripts"`, `allow=""`, an opaque origin, no-referrer and the existing CSP with no allowed origins. Artifact scripts run only inside that sandbox. The host never parses artifact markup into its DOM or imports artifact code. Files are still read through the workspace provider, with no new storage.
 
@@ -1087,7 +1106,7 @@ colour, length and font-family values; anything else is an issue, never kept. `n
 
 ## Diagram viewer (`diagram-viewer`)
 
-An agent writes boxes and arrows as `<name>.diagram.json` and presents it; the `pi-app` artifact panel draws it with `DiagramViewer` by default.
+An agent writes boxes and arrows as `<name>.diagram.json` and presents it; the `pi-app` artifact panel draws it with `DiagramViewer` when the app passes the `pi-app-kinds` default list.
 Nodes sit in layers by distance from the first node, one numbered arrow per edge, with a legend under it that says what happens and who acts.
 Layers run left to right while they fit and top to bottom in a narrow box (a phone); a diagram still wider than its box scrolls inside it,
 never the page. No layout library: the layered layout is a breadth-first pass, so no dependency was added. `diagramKind` ("Diagram") and
@@ -1113,7 +1132,7 @@ and `parseDiagram(textOrValue)` are exported: the maquette viewer draws its work
 
 ## Typed records (`record-viewer`)
 
-`record-viewer` exports `RecordTable`, `RecordList`, `RecordsViewer` and `createRecordsKind` from `components/record-viewer/record-viewer`. It composes the host's shadcn table, badge, item, button, alert and empty components. `AgentWorkspace` opens `*.records.json` by default; app `artifactKinds` win. This is host presentation, not a Pi execution extension.
+`record-viewer` exports `RecordTable`, `RecordList`, `RecordsViewer` and `createRecordsKind` from `components/record-viewer/record-viewer`. It composes the host's shadcn table, badge, item, button, alert and empty components. The `pi-app-kinds` default list opens `*.records.json`; app kinds placed before it in `artifactKinds` win. This is host presentation, not a Pi execution extension.
 
 ```json
 {

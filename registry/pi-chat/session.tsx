@@ -16,7 +16,7 @@ import type { CommandMentions } from './config';
 import type { ChatCards, ChatTextPart, RowContext } from './message';
 import type { QueueActions, QueuedMessage } from './queue';
 import type { AnswerOutcome, ChatArtifactsConfig } from './config';
-import { derive, isFileBlock, object, queuedMessages } from './rows';
+import { derive, isFileBlock, object, queuedMessages, waitingForAnswer as waitsForAnswer } from './rows';
 import type { ChatCard, Mode, Row } from './rows';
 import { useChatText } from './labels';
 import type { BlockAction } from '../button/actions';
@@ -227,7 +227,7 @@ export function useChatSession(options: ChatSessionOptions) {
     if (images.length) controller.setAttachments([...images, ...draft.attachments.filter(item => !images.some(image => image.id === item.id))]);
   };
   const working = Boolean(run);
-  const waitingForAnswer = derived.rows.some(row => row.type === 'assistant' && row.parts.some(part => (part.kind === 'question' || part.kind === 'approval') && !part.live && !part.result));
+  const waitingForAnswer = waitsForAnswer(derived.rows);
   const send = () => {
     if (sendBlocked || !current()) return;
     const attach = feedback && feedback.count > 0 ? feedback.attach : undefined;

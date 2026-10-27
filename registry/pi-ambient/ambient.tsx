@@ -26,7 +26,7 @@ import { withChatPlugins } from '../pi-chat-plugins/chat-plugins';
 import { TranscriptChunk } from '../pi-chat/message';
 import type { RowContext } from '../pi-chat/message';
 import { ChatNotices, Notice, PreparingStatus, preparing } from '../pi-chat/notice';
-import { AgentNotifications, KindIcon, createNotificationStore, defaultNotificationLabels, finishNotice, pendingQuestion, useNotifications } from './notifications';
+import { AgentNotifications, KindIcon, createNotificationStore, defaultNotificationLabels, finishNotice, noticeTextOf, pendingQuestion, useNotifications } from './notifications';
 import type { AgentNotification, NotificationLabels, NotificationStore } from './notifications';
 import { ChatTextProvider, defaultChatIcons, defaultChatLabels, useMergedText } from '../pi-chat/labels';
 import type { ChatIcons, ChatLabels } from '../pi-chat/labels';
@@ -40,7 +40,7 @@ import { ArtifactWorkspace } from '../pi-workspace/workspace';
 import type { WorkspacePanelApi } from '../pi-workspace/workspace';
 import { cn, PHONE_BELOW } from '../utils/utils';
 
-export { AgentNotifications, createNotificationStore, defaultNotificationLabels, summaryOf, useNotifications, watchConversation } from './notifications';
+export { AgentNotifications, createNotificationStore, defaultNotificationLabels, frenchNotificationLabels, noticeTextOf, summaryOf, useNotifications, watchConversation } from './notifications';
 export type { AgentNotification, AgentNotificationsProps, NewNotification, NotificationKind, NotificationLabels, NotificationStore } from './notifications';
 
 const elapsedText = (seconds: number) => seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, '0')}s`;
@@ -216,24 +216,24 @@ function useElapsed(active: boolean): number {
 }
 
 /** Pushes a toast when a run finishes or fails and when a question starts waiting; takes it back when the question is answered or a new run starts. */
-function useRunFeed({ enabled, store, conversationId, title, session, suppress, onOutcome, waiting }: {
-  readonly enabled: boolean; readonly store: NotificationStore; readonly conversationId: string; readonly title: string; readonly session: ChatSession; readonly waiting: string;
+function useRunFeed({ enabled, store, conversationId, title, session, suppress, onOutcome, waiting, notice }: {
+  readonly enabled: boolean; readonly store: NotificationStore; readonly conversationId: string; readonly title: string; readonly session: ChatSession; readonly waiting: string; readonly notice: NoticeText;
   readonly suppress: () => boolean; readonly onOutcome: (outcome: 'done' | 'error' | null) => void;
 }) {
   const { working, waitingForAnswer, rows, connected } = session;
   const before = useRef({ working, waiting: waitingForAnswer });
-  const latest = useRef({ rows, title, suppress, onOutcome, connected, waiting });
-  useLayoutEffect(() => { latest.current = { rows, title, suppress, onOutcome, connected, waiting }; });
+  const latest = useRef({ rows, title, suppress, onOutcome, connected, waiting, notice });
+  useLayoutEffect(() => { latest.current = { rows, title, suppress, onOutcome, connected, waiting, notice }; });
   useEffect(() => {
     const was = before.current;
     before.current = { working, waiting: waitingForAnswer };
     const now = latest.current;
     if (working && !was.working) { now.onOutcome(null); store.dismiss(`${conversationId}:done`); }
     if (!enabled) return;
-    if (waitingForAnswer && !was.waiting && !now.suppress()) store.push({ id: `${conversationId}:input`, kind: 'input', title: now.title, summary: pendingQuestion(now.rows) ?? now.waiting, conversationId });
+    if (waitingForAnswer && !was.waiting && !now.suppress()) store.push({ id: `${conversationId}:input`, kind: 'input', title: now.title, summary: pendingQuestion(now.rows, now.notice) ?? now.waiting, conversationId });
     if (!waitingForAnswer && was.waiting) store.dismiss(`${conversationId}:input`);
     if (was.working && !working && now.connected) {
-      const finished = finishNotice(now.rows);
+      const finished = finishNotice(now.rows, now.notice);
       if (!finished) return;
       now.onOutcome(finished.kind);
       if (!now.suppress()) store.push({ id: `${conversationId}:done`, kind: finished.kind, title: now.title, summary: finished.summary, conversationId });
@@ -333,7 +333,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
   const activeItem = conversations?.items.find(item => item.id === conversations.activeId);
   const shownTitle = activeItem?.title?.trim() || title;
   const toasts = useNotifications(store);
-  useRunFeed({ enabled: notifications !== false, store, conversationId, title: shownTitle, session, onOutcome: setOutcome, waiting: labels.waitingForAnswer,
+  useRunFeed({ enabled: notifications !== false, store, conversationId, title: shownTitle, session, onOutcome: setOutcome, waiting: labels.waitingForAnswer, notice: noticeTextOf(labels),
     suppress: () => stateRef.current === 'expanded' && globalThis.document?.visibilityState !== 'hidden' });
   const unread = !expanded && toasts.length > 0;
   const seconds = useElapsed(working);

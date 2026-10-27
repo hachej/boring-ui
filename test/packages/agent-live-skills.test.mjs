@@ -367,3 +367,84 @@ test('intro: replaces the text before the skill lines; the default is unchanged'
   const plain = await createSkillsExtension('fictional.plain', [skill]).sections[0].render({}, context);
   assert.match(plain, /^Before starting a task that matches a skill, call load_skill with its name .*\/<skill-name>.*\n- letters: Write a fictional letter$/);
 });
+
+// Review fixes (2026-10-26), each through load_skill as the model calls it.
+
+test('refresh(name): the other skills stay as they were past maxAgeMs and misses, until the source changes again', async t => {
+  const { root, env } = await workspace(t);
+  await skillsFolder(root, {
+    letters: skillText('letters', 'Write a fictional letter', 'Sign as the Fictional Clinic.'),
+    invoices: skillText('invoices', 'Draft a fictional invoice', 'Use the fictional rate card.'),
+  });
+  const controller = agents.createSkillsController('fictional.skills', directorySkillSource(env, 'skills'), { maxAgeMs: MAX_AGE });
+  const { open, ask } = await scriptedHarness(t, controller.extension);
+  const conversation = await open();
+  const calls = [{ name: 'letters' }, { name: 'invoices' }];
+  assert.match((await ask(conversation, calls)).results[0], /^Sign as the Fictional Clinic\./);
+
+  await skillsFolder(root, {
+    letters: skillText('letters', 'Write a fictional letter in French', 'Sign as la Clinique Fictive.'),
+    invoices: skillText('invoices', 'Draft a fictional invoice in euros', 'Use the fictional euro rate card.'),
+  });
+  assert.equal(await controller.refresh(context, 'invoices'), true);
+  await settle();
+  const later = await ask(conversation, [...calls, { name: 'nonexistent' }]);
+  assert.match(later.results[0], /^Sign as the Fictional Clinic\./, 'past maxAgeMs and after a miss, letters is still the copy refresh kept');
+  assert.match(later.results[1], /^Use the fictional euro rate card\./);
+  assert.match(later.system, /- letters: Write a fictional letter$/m);
+
+  // The source changes again: the next read offers all of it.
+  await skillsFolder(root, { invoices: skillText('invoices', 'Draft a fictional invoice in yen', 'Use the fictional yen rate card.') });
+  await settle();
+  const changed = await ask(conversation, calls);
+  assert.match(changed.results[0], /^Sign as la Clinique Fictive\./);
+  assert.match(changed.results[1], /^Use the fictional yen rate card\./);
+});
+
+test('onPublish: a refused listing reports the errors still in effect, then the refusal', async t => {
+  const { root, env } = await workspace(t);
+  await skillsFolder(root, { letters: skillText('letters', 'Write a fictional letter', 'Sign as the Fictional Clinic.'), broken: 'no front matter here' });
+  const reports = [];
+  const extension = createSkillsExtension('fictional.skills', directorySkillSource(env, 'skills'), {
+    maxAgeMs: MAX_AGE,
+    onDiagnostics: errors => reports.push(errors),
+    onPublish: next => next.some(skill => /unreviewed/.test(skill.body)) ? 'fictional review refused an unreviewed body' : undefined,
+  });
+  const { open, ask } = await scriptedHarness(t, extension);
+  const conversation = await open();
+  const broken = { path: 'skills/broken/SKILL.md', name: 'broken', message: 'Skill needs front matter with name and description' };
+  assert.match((await ask(conversation, [{ name: 'broken' }])).results[0], /^Skill "broken" could not be loaded/);
+  assert.deepEqual(reports.at(-1), [broken]);
+
+  await skillsFolder(root, { letters: skillText('letters', 'Write a fictional letter fast', 'An unreviewed body.') });
+  await settle();
+  const turn = await ask(conversation, [{ name: 'letters' }, { name: 'broken' }]);
+  assert.match(turn.results[0], /^Sign as the Fictional Clinic\./, 'the listing in effect stays');
+  assert.match(turn.results[1], /^Skill "broken" could not be loaded/);
+  assert.deepEqual(reports.at(-1), [broken, { path: '', message: 'Listing refused by onPublish: fictional review refused an unreviewed body' }]);
+});
+
+test('companionFiles: a listed file or folder swapped for a link after the listing is refused when load_skill reads it', async t => {
+  const { root, env } = await workspace(t);
+  await skillsFolder(root, { letters: skillText('letters', 'Write a fictional letter', 'Sign as the Fictional Clinic.') });
+  await mkdir(join(root, 'skills/letters/references'), { recursive: true });
+  await writeFile(join(root, 'skills/letters/references/tone.md'), 'Warm and fictional.\n');
+  await writeFile(join(root, 'skills/letters/style.md'), 'Short and fictional.\n');
+  await mkdir(join(root, 'outside'), { recursive: true });
+  await writeFile(join(root, 'outside/tone.md'), 'fictional secret outside the skill\n');
+  await writeFile(join(root, 'outside.txt'), 'fictional secret outside the skill\n');
+  const extension = createSkillsExtension('fictional.skills', directorySkillSource(env, 'skills'), { companionFiles: true, maxAgeMs: 60_000 });
+  const { open, ask } = await scriptedHarness(t, extension);
+  const conversation = await open();
+  const reads = [{ name: 'letters', path: 'references/tone.md' }, { name: 'letters', path: 'style.md' }];
+  assert.deepEqual((await ask(conversation, reads)).results, ['Warm and fictional.\n', 'Short and fictional.\n']);
+
+  // The agent rewrites its own skill folder: a file becomes a link, a folder becomes a link to a folder outside.
+  await rm(join(root, 'skills/letters/style.md'));
+  await symlink(join(root, 'outside.txt'), join(root, 'skills/letters/style.md'));
+  await rm(join(root, 'skills/letters/references'), { recursive: true });
+  await symlink(join(root, 'outside'), join(root, 'skills/letters/references'));
+  const [tone, style] = (await ask(conversation, reads)).results;
+  assert.equal(tone, 'Companion file "references/tone.md" of skill "letters" could not be read: skills/letters/references is a symbolic link');
+  assert.equal(style, 'Companion file "style.md" of skill "letters" could not be read: skills/letters/style.md is a symbolic link');
+});

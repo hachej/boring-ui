@@ -1,5 +1,5 @@
 import { createResourceClient } from './remote.js';
-import { binding, bindingHeader, bindingValue, catalogHeader, changeEvent, filePage, record, savedRevisions, serverEvents } from './revision-protocol.js';
+import { binding, bindingHeader, bindingValue, catalogHeader, changeEvent, filePage, fileTransport, record, savedRevisions, serverEvents } from './revision-protocol.js';
 import { readJsonBody } from './request-guard.js';
 import { RevisionError } from './revision-contracts.js';
 import type { ChangeFeedRequest, RevisionProvider, WorkspaceChangeEvent } from './revision-contracts.js';
@@ -32,9 +32,15 @@ export async function connectRevisionProvider(options: {
       throw new RevisionError('unavailable', 'The file request could not be completed');
     }
   }
-  const selected = binding(await send(new Request(endpoint, { method: 'GET', redirect: 'error', ...(options.signal ? { signal: options.signal } : {}) })));
-  const bound = bindingValue(selected);
-  const client = createResourceClient({ endpoint, identity: selected.identity, publication: true, reconciliation: true,
+  const discovered = record(await send(new Request(endpoint, { method: 'GET', redirect: 'error', ...(options.signal ? { signal: options.signal } : {}) })));
+  const selected = binding(discovered), bound = bindingValue(selected);
+  // The host's file size limit (`createRevisionHandler({ maxFileBytes })`); a host that names none keeps the transport's defaults.
+  const maxFileBytes = discovered.limits === undefined ? undefined : record(discovered.limits).maxFileBytes;
+  let transport: ReturnType<typeof fileTransport> | undefined;
+  if (maxFileBytes !== undefined) {
+    try { transport = fileTransport(maxFileBytes as number); } catch { throw new RevisionError('invalid', 'Invalid file size limit'); }
+  }
+  const client = createResourceClient({ endpoint, identity: selected.identity, publication: true, reconciliation: true, ...transport,
     fetch: request => { const headers = new Headers(request.headers); headers.set(bindingHeader, bound); return fetch(new Request(request, { headers })); } });
   async function invoke(kind: string, value: unknown, signal?: AbortSignal): Promise<unknown> {
     const requestId = randomUUID();
@@ -99,7 +105,8 @@ export async function connectRevisionProvider(options: {
   }
   if (!client.publish || !client.lookup) throw new Error('Publishing client lacks reconciliation');
   return {
-    ...client, publish: client.publish, lookup: client.lookup, identity: Object.freeze(selected.identity), workspace: Object.freeze(selected.workspace),
+    ...client, publish: client.publish, lookup: client.lookup, ...(transport ? { maxFileBytes: maxFileBytes as number } : {}),
+    identity: Object.freeze(selected.identity), workspace: Object.freeze(selected.workspace),
     locate: path => locator({ resource: { providerId: selected.workspace.providerId, path }, view: { kind: 'published' } }),
     list: async (request, signal) => filePage(await invoke('list', request, signal)),
     search: async (request, signal) => filePage(await invoke('search', request, signal)),

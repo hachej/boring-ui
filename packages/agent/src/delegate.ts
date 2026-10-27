@@ -125,7 +125,8 @@ export interface DelegateOptions {
  * child's final text. The child inherits the parent's approval and sandbox extensions (appended after its own, in the parent's order, so a
  * sandbox stays last), so a delegate cannot escape the parent's gate; `details` is a `DelegateDetails` (live while the child runs) for a UI that shows it.
  * `onChild` lets the host write the parent's identity onto the child in the same commit that creates it.
- * Host policy, all optional (Pi has no extension point for these): `limits` (running children per conversation and per host,
+ * Host policy, all optional (Pi has no extension point for these): `limits` (running children per conversation and across
+ * the conversations sharing one `limits` object in this process,
  * starts per hour, task size, a child deadline; a refusal is an error result, never a throw, and creates no child), `meter`
  * (the host's flight-log handle, fed each child model response and closed when the call ends) and `childTools` (an allow list
  * applied through Pi's own tool filter). With none of them set the tool behaves as before.
@@ -161,7 +162,8 @@ export function createDelegateTool(options: DelegateOptions): ToolRegistration {
       } catch (error) { ledger?.running.delete(api.taskId); ledger?.starts.delete(api.taskId); throw error; }
       if ('refused' in opened) return { output: [{ type: 'text', text: opened.refused }], isError: true };
       const childId = opened.id;
-      let meter: DelegateMeter | undefined, end: DelegateEnd = 'cancelled', timer: ReturnType<typeof setTimeout> | undefined;
+      // `end` is set where the call's outcome is known; a throw ends `cancelled` only when the call itself was aborted.
+      let meter: DelegateMeter | undefined, end: DelegateEnd = 'failed', timer: ReturnType<typeof setTimeout> | undefined;
       try {
         meter = await options.meter?.(parent, childId);
         const startedAt = await api.memo('delegate.startedAt', Date.now(), context);
@@ -194,11 +196,14 @@ export function createDelegateTool(options: DelegateOptions): ToolRegistration {
           end = reason === 'aborted' ? 'cancelled' : 'failed';
           return { output: [{ type: 'text', text: error }], isError: true, details: reason === 'aborted' ? details('cancelled', counts) : details('failed', counts, error) };
         }
-        end = 'done';
         const answer = await api.commit(tx => tx.entry(AssistantEntry, settled.answer), context);
+        end = 'done';
         const message = answer?.model?.find(part => part.role === 'assistant');
         const text = message?.role === 'assistant' ? message.content.flatMap(part => part.type === 'text' ? [part.text] : []).join('\n') : '';
         return { output: [{ type: 'text', text }], details: details('done', counts) };
+      } catch (error) {
+        end = context.abortSignal?.aborted ? 'cancelled' : 'failed';
+        throw error;
       } finally {
         clearTimeout(timer);
         ledger?.running.delete(api.taskId);
@@ -304,7 +309,7 @@ function admit(limits: DelegateLimits, ledger: Ledger, taskId: TaskId, parent: C
   const others = [...ledger.running].filter(([id]) => id !== taskId);
   const here = others.filter(([, owner]) => owner === parent).length;
   if (limits.maxRunningPerConversation !== undefined && here >= limits.maxRunningPerConversation) return `${delegates(here)} already running for this conversation (limit ${limits.maxRunningPerConversation}).`;
-  if (limits.maxRunning !== undefined && others.length >= limits.maxRunning) return `${delegates(others.length)} already running on this host (limit ${limits.maxRunning}).`;
+  if (limits.maxRunning !== undefined && others.length >= limits.maxRunning) return `${delegates(others.length)} already running across the conversations sharing this limit (limit ${limits.maxRunning}).`;
   const started = [...ledger.starts].filter(([id, start]) => id !== taskId && start.parent === parent).length;
   if (limits.maxStartsPerHour !== undefined && started >= limits.maxStartsPerHour) return `${delegates(started)} already started for this conversation in the last hour (limit ${limits.maxStartsPerHour}).`;
   ledger.running.set(taskId, parent);
