@@ -47,11 +47,13 @@ function useRecordingTime(recording: boolean): string {
   const [since, setSince] = useState<number | undefined>(undefined);
   const [, tick] = useState(0);
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the start time is taken when the bar sees the recording start (after commit), once per change of recording
     if (!recording) { setSince(undefined); return; }
     setSince(Date.now());
     const timer = setInterval(() => tick(value => value + 1), 500);
     return () => clearInterval(timer);
   }, [recording]);
+  // eslint-disable-next-line react-hooks/purity -- a running clock: each tick re-renders to read the current time
   return elapsed(since === undefined ? 0 : Date.now() - since);
 }
 
@@ -120,6 +122,9 @@ function bubblePlace(element: Element, size = 120): CSSProperties {
   const top = Math.min(below + size <= height ? below : above >= 8 ? above : lowest, lowest);
   return { position: 'fixed', top, left, width: Math.min(BUBBLE_WIDTH, width - 16), maxHeight: Math.max(0, height - top), overflowY: 'auto', boxSizing: 'border-box' };
 }
+
+/** The bubble's natural height (its content plus borders), not the height it is clamped to, so it grows back when there is room. */
+const naturalHeight = (node: HTMLElement | null): number | undefined => (node ? node.scrollHeight + node.offsetHeight - node.clientHeight : 0) || undefined;
 
 type PinVoice = 'idle' | 'starting' | 'recording' | 'transcribing';
 
@@ -202,24 +207,24 @@ export function NoteBubble({ session, labels, transcribe }: { readonly session: 
   const [, redraw] = useState(0);
   const [announce, setAnnounce] = useState('');
   const box = useRef<HTMLDivElement>(null);
-  // The bubble's natural height (its content plus borders), not the height it is clamped to, so it grows back when there is room.
-  const size = (): number | undefined => (box.current ? box.current.scrollHeight + box.current.offsetHeight - box.current.clientHeight : 0) || undefined;
-  useLayoutEffect(() => { if (bubble) setPlace(bubblePlace(bubble.element, size())); }, [bubble?.noteId, bubble?.element]);
+  const noteId = bubble?.noteId, element = bubble?.element;
+  useLayoutEffect(() => { if (element) setPlace(bubblePlace(element, naturalHeight(box.current))); }, [noteId, element]);
   // Once drawn, place it again with its real height (taller with 44px touch targets and wrapped buttons).
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- measures after every commit on purpose (content, labels and voice state change the height); it sets state only when the place moved, so it settles
   useLayoutEffect(() => {
     if (!bubble || !place || !box.current) return;
-    const next = bubblePlace(bubble.element, size());
+    const next = bubblePlace(bubble.element, naturalHeight(box.current));
     if (next.top !== place.top || next.left !== place.left) setPlace(next);
   });
-  useEffect(() => { if (bubble) field.current?.focus({ preventScroll: true }); }, [bubble?.noteId]);
+  useEffect(() => { if (noteId !== undefined) field.current?.focus({ preventScroll: true }); }, [noteId]);
   useEffect(() => {
-    if (!bubble) return;
-    const view = bubble.element.ownerDocument.defaultView;
-    const follow = () => { setPlace(bubblePlace(bubble.element, size())); redraw(value => value + 1); };
+    if (!element) return;
+    const view = element.ownerDocument.defaultView;
+    const follow = () => { setPlace(bubblePlace(element, naturalHeight(box.current))); redraw(value => value + 1); };
     view?.addEventListener('scroll', follow, { capture: true, passive: true });
     view?.addEventListener('resize', follow);
     return () => { view?.removeEventListener('scroll', follow, { capture: true }); view?.removeEventListener('resize', follow); };
-  }, [bubble?.noteId, bubble?.element]);
+  }, [noteId, element]);
   // A polite live region outlives the bubble, so the cancellation is heard even though the dialog is gone.
   const cancel = (): void => { session.cancelSelection(); setAnnounce(words.selectionCancelled); };
   const live = <span data-boring="feedback" data-feedback-ignore="" role="status" aria-live="polite" className="boring-feedback-sr" data-testid="feedback-bubble-announce"
@@ -271,6 +276,7 @@ export function FeedbackChip({ session, defaultOpen = false, copy = false }: Fee
     {state.problem && <span className="boring-feedback-warning" role="alert" data-testid="feedback-chip-voice">{state.problem}</span>}
     {refusal && <span className="boring-feedback-warning" role="alert" data-testid="feedback-chip-problem">{refusal}</span>}
     {/* In the page's body: the chip may sit in a transformed chat bar, where a fixed panel would not be placed against the viewport. */}
+    {/* eslint-disable-next-line react-hooks/refs -- the chip element is read when the review opens (after a click, so it is attached); reading it does not drive a re-render */}
     {open && createPortal(<FeedbackReview session={session} anchor={chip.current} copy={copy} onClose={() => setOpen(false)} />, chip.current?.ownerDocument.body ?? document.body)}
   </span>;
 }
@@ -289,6 +295,7 @@ export function FeedbackReview({ session, anchor = null, copy = false, onClose }
   const state = useExternal(session);
   const [where, setWhere] = useState<Readonly<Record<number, 'shown' | 'not-on-page'>>>({});
   const [place, setPlace] = useState<CSSProperties | undefined>(undefined);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- the place is measured from the anchor's layout, which exists only after commit; set before paint, once per anchor
   useLayoutEffect(() => { setPlace(reviewPlace(anchor)); }, [anchor]);
   useEffect(() => () => { session.highlight(undefined); }, [session]);
   const hover = (id: number | undefined): void => {

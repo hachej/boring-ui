@@ -109,7 +109,7 @@ export function AgentTargetMode({ enabled, transcribe, onSettled, labels, attrib
   const picker = useRef<Picker | null>(null);
   const box = useRef<HTMLDivElement>(null);
   const latest = useRef({ onSettled, words });
-  latest.current = { onSettled, words };
+  useLayoutEffect(() => { latest.current = { onSettled, words }; });
   const [shown, setShown] = useState<Presentation | null>(null);
   const [place, setPlace] = useState<CSSProperties>();
   const settle = (selected: Session, reply: string, ok: boolean, problem?: string) => {

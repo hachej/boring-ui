@@ -21,6 +21,7 @@ export function usePickerOverlay(styles: string = pickerOverlayStyles): PickerOv
   const [overlay, setOverlay] = useState<PickerOverlay>();
   useEffect(() => {
     const created = createOverlay({ document, styles });
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the overlay is a DOM resource created after mount (and disposed on unmount); its handle has to reach render.
     setOverlay(created);
     return () => { created.dispose(); };
   }, [styles]);

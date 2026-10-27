@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ConversationItem, ConversationsConfig } from './config';
 
 /** One row as `createConversationsHandler` of `@hachej/boring-agent/conversations` returns it. */
@@ -29,7 +29,7 @@ export function useConversations({ endpoint, fetch, activeId, onSelect, onChange
 }): (ConversationsConfig & { readonly reload: () => Promise<void> }) | undefined {
   const [items, setItems] = useState<readonly ConversationItem[] | undefined>();
   const latest = useRef({ fetch, onSelect, onChange, activeId });
-  latest.current = { fetch, onSelect, onChange, activeId };
+  useLayoutEffect(() => { latest.current = { fetch, onSelect, onChange, activeId }; });
   const base = endpoint === undefined ? undefined : String(endpoint);
   const call = useCallback(async (params: Record<string, string>, body?: unknown, signal?: AbortSignal) => {
     if (base === undefined) throw new Error('No conversations endpoint');
@@ -42,6 +42,7 @@ export function useConversations({ endpoint, fetch, activeId, onSelect, onChange
   }, [base]);
   const reload = useCallback(async () => { const result = await call({}); setItems((result.conversations ?? []).map(item)); }, [call]);
   // Another endpoint (another owner's list) starts empty; switching conversations only reloads.
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- a new endpoint clears the old owner's list once, after commit
   useEffect(() => { setItems(undefined); }, [base]);
   useEffect(() => {
     if (base === undefined) return;
@@ -50,7 +51,7 @@ export function useConversations({ endpoint, fetch, activeId, onSelect, onChange
     void load();
     const timer = setInterval(load, pollMs);
     return () => { off = true; clearInterval(timer); };
-  }, [call, pollMs, activeId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [base, call, pollMs, activeId]);
   return useMemo(() => {
     if (!items) return undefined;
     const changed = async () => { await reload().catch(() => {}); await latest.current.onChange?.(); };

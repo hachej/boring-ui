@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ResourceLocator } from '@hachej/boring-files';
 import { randomUUID } from '@hachej/boring-files/platform';
 import type { MarkdownController } from '@hachej/boring-ui-kit/markdown';
@@ -46,14 +46,17 @@ export function Highlights({ controller, resource, locator, store: supplied, mar
   const client = resource?.client, scope = resource?.identity.scopeId, principal = resource?.identity.principalId, initiator = resource?.identity.initiatorId;
   const ownerKey = JSON.stringify([scope, principal, initiator, path, providerId, view]);
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the owned store is a resource acquired by this effect run (disposed in the cleanup); a new owner key clears the previous one first
     if (supplied || !resource || !locator) { setOwned(null); return; }
     let live = true, acquired: MarkStore | undefined;
     setOwned(null); setError(null);
     void createMarkStore(resource, locator).then(store => { acquired = store; if (live) setOwned({ store, client: resource.client, key: ownerKey }); else store.dispose(); }, () => { if (live) setError(l.unavailable); });
     return () => { live = false; acquired?.dispose(); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the store follows the resource's identity and the locator's place by value, not their object identity
   }, [supplied, client, scope, principal, initiator, path, providerId, view]);
   const store = supplied ?? (owned?.client === client && owned?.key === ownerKey ? owned.store : null);
-  const binding = useRef({ controller, store }); binding.current = { controller, store };
+  const binding = useRef({ controller, store });
+  useLayoutEffect(() => { binding.current = { controller, store }; });
   const live = useRef(false);
   useEffect(() => { live.current = true; return () => { live.current = false; }; }, []);
   const snapshot = useSyncExternalStore(store?.subscribe ?? idleSubscribe, store?.getSnapshot ?? (() => empty), store?.getSnapshot ?? (() => empty));
@@ -68,6 +71,7 @@ export function Highlights({ controller, resource, locator, store: supplied, mar
   const decorations = useMemo(() => marks.map(mark => ({ ...mark, active: mark.id === active, commented: !!mark.note?.trim(), commentLabel: l.commented, ...(choices[mark.id]?.source === state.text ? { confirmed: choices[mark.id] } : {}) })), [marks, active, l.commented, choices, state.text]);
   const current = marks.find(m => m.id === active);
   const activate = useCallback((id: string) => { setActive(id); setNote(store?.getSnapshot().marks.find(m => m.id === id)?.note ?? ''); }, [store]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- a new controller or store drops the previous binding's selection and choices, once per change
   useEffect(() => { setActive(null); setCapture(null); setChoices({}); setError(null); }, [controller, store]);
   const run = async (operation: () => Promise<unknown>) => {
     if (!currentBinding()) return;

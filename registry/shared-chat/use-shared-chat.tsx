@@ -28,10 +28,10 @@ export function useSharedChatProps(controller: SharedChatController | undefined,
   // Plain names only: an id or a slug the host sent in a name's place never reaches the picker, a chip or a mention.
   const meId = state?.shared.me.id;
   const labels = { ...(options.locale === 'fr' ? frenchSharedLabels : defaultSharedLabels), ...options.labels };
-  const nameOf = labels.sharedName;
+  const nameOf = labels.sharedName, sharedMembers = labels.sharedMembers, sharedRole = labels.sharedRole;
   const members = useMemo(() => (raw ?? []).map(member => namedMember(member, nameOf)), [raw, nameOf]);
   const mentions = useMemo<MentionsConfig>(() => ({
-    listLabel: labels.sharedMembers, icon: <UserIcon aria-hidden="true" />, Picker: MentionPicker,
+    listLabel: sharedMembers, icon: <UserIcon aria-hidden="true" />, Picker: MentionPicker,
     label: id => members.find(member => member.id === id)?.name ?? namedMember({ id, name: id, kind: 'person' }, nameOf).name,
     search: async query => members.filter(member => member.id !== meId && member.name.toLowerCase().includes(query.toLowerCase()))
       .sort((a, b) => Number(b.kind === 'agent') - Number(a.kind === 'agent')).map(member => ({ path: member.id, label: member.name })),
@@ -42,10 +42,10 @@ export function useSharedChatProps(controller: SharedChatController | undefined,
     },
     renderOption: item => {
       const member = members.find(member => member.id === item.path);
-      const role = member ? labels.sharedRole(member) : undefined;
+      const role = member ? sharedRole(member) : undefined;
       return <><ItemMedia variant="icon">{member ? <MemberAvatar member={member} compact interactive={false} indicator={false} /> : <UserIcon aria-hidden="true" />}</ItemMedia><ItemContent className="min-w-0"><ItemTitle>{item.label}</ItemTitle>{role && <ItemDescription className="m-0 truncate">{role}</ItemDescription>}</ItemContent></>;
     },
-  }), [members, meId, nameOf, labels.sharedMembers, labels.sharedRole]);
+  }), [members, meId, nameOf, sharedMembers, sharedRole]);
   const wrap = (children: ReactNode) => <SharedTextProvider {...options}>{children}</SharedTextProvider>;
   return {
     locale: options.locale,
@@ -68,18 +68,21 @@ export function useSharedChatProps(controller: SharedChatController | undefined,
 export function useSharedChat(source: ChannelSource, options: SharedTextOptions & { readonly limit?: number | undefined } = {}) {
   const [list, setList] = useState<{ source: ChannelSource; items: Conversation[] }>();
   const [selection, setSelection] = useState<{ source: ChannelSource; id: string }>();
-  const [error, setError] = useState<string>();
+  // A failure belongs to the source that raised it: another source starts clean.
+  const [failure, setFailure] = useState<{ source: ChannelSource; message: string }>();
+  const error = failure?.source === source ? failure.message : undefined;
   const items = list?.source === source ? list.items : [];
   const conversationId = selection?.source === source ? selection.id : items[0]?.id;
   const [binding, setBinding] = useState<{ source: ChannelSource; id: string; controller: SharedChatController }>();
   useEffect(() => {
-    let off = false; setError(undefined);
-    void source.conversations().then(items => { if (!off) setList({ source, items }); }, cause => { if (!off) setError(String(cause)); });
+    let off = false;
+    void source.conversations().then(items => { if (!off) setList({ source, items }); }, cause => { if (!off) setFailure({ source, message: String(cause) }); });
     return () => { off = true; };
   }, [source]);
   useEffect(() => {
     if (conversationId === undefined) return;
     const controller = createSharedChat(source, { conversationId, ...(options.limit === undefined ? {} : { limit: options.limit }) });
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the controller is an external resource this effect creates and disposes; render reads it only once bound to this source and conversation.
     setBinding({ source, id: conversationId, controller });
     return () => { void controller.dispose(); };
   }, [source, conversationId, options.limit]);

@@ -3,7 +3,7 @@
 // A full-screen app view (a document sheet, a pushed view of the app) that takes part in the shell's one-layer-at-a-time rule: opening it
 // closes the agent and product manager layers, and opening either of those closes it. Its Back is the shared Back manager's `sheet` layer
 // (`useBackLayer`), so the browser's Back closes it first. Host concern: Pi has no layers; this is the shell's own presentation rule.
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useBackLayer } from './back';
 
 /** The shell's agent and product manager layers share one close; the agent layer registers it while mounted. */
@@ -85,7 +85,8 @@ export function useShellLayer(id: string, options?: ShellLayerOptions): ShellLay
     };
   }, [id, owner, me, close]);
   const confirmBack = useRef(options?.confirmBack);
-  confirmBack.current = options?.confirmBack;
+  const wanted = options?.confirmBack;
+  useLayoutEffect(() => { confirmBack.current = wanted; });
   const back = useCallback(() => {
     // A refused Back keeps the view and its entry: the entry the browser just popped is pushed again.
     if (confirmBack.current && !confirmBack.current()) { history.pushState({ appShell: 'sheet' }, ''); return; }

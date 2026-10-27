@@ -201,7 +201,8 @@ function useVoice(agent: AgentSpec | undefined, locale: AppShellLocale | undefin
     },
   });
   const { cancel } = voice;
-  useEffect(() => () => cancel(), [agent?.controller, agent?.voice?.send, Boolean(agent?.voice), cancel]);
+  const controller = agent?.controller, send = agent?.voice?.send, hasVoice = Boolean(agent?.voice);
+  useEffect(() => () => cancel(), [controller, send, hasVoice, cancel]);
   const phase: Dictation['phase'] = message.phase === 'starting' || message.phase === 'recording' ? message.phase : message.phase === 'processing' || message.phase === 'sending' ? 'transcribing' : 'idle';
   return agent?.voice?.send === 'message' ? { ...message, phase } : voice;
 }
@@ -242,9 +243,11 @@ export function AgentLayerProvider({ agent: own, improve, locale, agentLink, chi
   const restoreFocus = useRef(false);
   const [side, setSideState] = useState<DockSide>('right');
   // The side is the viewer's, remembered beside the Dock's own placement; read after mount so server and client markup agree.
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage exists only after mount; reading it before paint keeps server and client markup equal without a flash
   useLayoutEffect(() => { try { const saved = globalThis.localStorage?.getItem(SIDE_KEY); if (saved === 'left' || saved === 'right') setSideState(saved); } catch { /* a convenience */ } }, []);
   const setSide = useCallback((next: DockSide) => { setSideState(next); try { globalThis.localStorage?.setItem(SIDE_KEY, next); } catch { /* a convenience */ } }, []);
   const specs = useRef({ agent, improve, snap, shown });
+  // eslint-disable-next-line react-hooks/refs -- latest-value ref: open/lend/showAgent may be called from a child's layout effect, before this component's own effects run
   specs.current = { agent, improve, snap, shown };
   const lentRef = useRef<AgentSpec | undefined>(undefined);
 
@@ -271,20 +274,23 @@ export function AgentLayerProvider({ agent: own, improve, locale, agentLink, chi
 
   // A spec that goes away takes the layer with it.
   const shownSpec = shown === 'agent' ? agent : improve;
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- closes the layer once after its spec goes away; the guard (!shownSpec) settles after one pass
   useEffect(() => { if (!shownSpec) { setSnapState('closed'); if (shown === 'improve' && agent) setShown('agent'); else if (shown === 'agent' && improve) setShown('improve'); } }, [shownSpec, shown, agent, improve]);
 
   // The chats live in one element that is moved into the open drawer or panel; React keeps them mounted (and so their presentation state
   // and uploads) while the layer is closed, on a phone and on a wide screen. Nothing is mounted before the layer is first opened.
   const [host] = useState(() => typeof document === 'undefined' ? null : Object.assign(document.createElement('div'), { className: 'flex min-h-0 flex-1 flex-col [&_[data-boring=pi-chat]>header]:hidden' }));
   const opened = useRef(false);
+  // eslint-disable-next-line react-hooks/refs -- a monotonic "ever opened" latch for this render: no re-render, no setState during render
   if (snap !== 'closed') opened.current = true;
 
   // Consume the launch URL before an open layer pushes its Back entry. Keep the parsed request through StrictMode's effect replay.
   const launch = useRef<ReturnType<typeof parseAgentLink> | undefined>(undefined);
+  const [firstAgentLink] = useState(agentLink);
   useEffect(() => {
     if (launch.current === undefined) {
-      launch.current = agentLink === false ? null : parseAgentLink(window.location.search);
-      if (agentLink !== false) {
+      launch.current = firstAgentLink === false ? null : parseAgentLink(window.location.search);
+      if (firstAgentLink !== false) {
         const url = new URL(window.location.href);
         if (['agent', 'open', 'input'].some(key => url.searchParams.has(key))) {
           for (const key of ['agent', 'open', 'input']) url.searchParams.delete(key);
@@ -306,21 +312,24 @@ export function AgentLayerProvider({ agent: own, improve, locale, agentLink, chi
       }
     }, 520);
     return () => clearTimeout(timer);
-  }, [host, open]);
+  }, [host, open, firstAgentLink]);
 
   const voice = useVoice(agent, locale, outcome => {
     if (outcome === 'drafted') { setShown('agent'); setSnapState('half'); }
   });
   const revealedFailures = useRef(new Set<number>());
+  const voiceSend = agent?.voice?.send, pendingKey = voice.pending?.map(item => `${item.id}:${item.phase}`).join(',');
   useEffect(() => {
     const failure = voice.pending?.findLast(item => item.phase === 'transcribe-failed' || item.phase === 'upload-failed' || item.phase === 'blocked' || item.phase === 'unconfirmed');
-    const captureProblem = agent?.voice?.send === 'message' && voice.problem;
+    const captureProblem = voiceSend === 'message' && voice.problem;
     const failureId = captureProblem ? voice.captureSequence : failure?.id;
     if (failureId === undefined) { revealedFailures.current.clear(); return; }
     if (revealedFailures.current.has(failureId)) return;
     revealedFailures.current.add(failureId);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reveals a new voice failure once per failure id (the ref guards repeats), so it settles after one pass
     if (!expanded && shown === 'agent' && snap === 'peek') setSnapState('half');
-  }, [expanded, shown, snap, agent?.voice?.send, voice.captureSequence, voice.problem, voice.pending?.map(item => `${item.id}:${item.phase}`).join(',')]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when a pending item's id or phase changes (pendingKey), not on every new pending array
+  }, [expanded, shown, snap, voiceSend, voice.captureSequence, voice.problem, pendingKey]);
 
   const state: AgentLayerState = snap === 'closed' ? 'closed' : expanded ? 'open' : snap;
   const value = useMemo<Internal>(() => ({
@@ -334,6 +343,7 @@ export function AgentLayerProvider({ agent: own, improve, locale, agentLink, chi
       <div data-app-shell="" className="contents" style={scale}>
         <div ref={probe} aria-hidden="true" className="pointer-events-none invisible fixed top-0 left-0 w-0" style={{ height: 'var(--app-shell-tabbar, 0px)' }} />
         {children}
+        {/* eslint-disable-next-line react-hooks/refs -- reads the "ever opened" latch set above in this same render */}
         {host && opened.current && createPortal(<Chats showing={shown} />, host)}
       </div>
     </LoanContext.Provider></LayerContext.Provider>
@@ -346,19 +356,23 @@ export function AgentTrigger({ className, children }: { readonly className?: str
   const { agent, voice } = layer;
   const text = appShellText(agent?.chatProps?.locale ?? layer.locale);
   const hold = useRef<{ timer: ReturnType<typeof setTimeout> | undefined; held: boolean; id: number } | null>(null);
-  const cancelHold = () => {
+  const voiceRef = useRef(voice);
+  useLayoutEffect(() => { voiceRef.current = voice; });
+  const cancelHold = useCallback(() => {
     const current = hold.current;
     hold.current = null;
     if (!current) return;
     clearTimeout(current.timer);
-    if (current.held) voice.cancel();
-  };
+    if (current.held) voiceRef.current.cancel();
+  }, []);
   useRecordingCancellation(cancelHold);
-  useEffect(() => () => cancelHold(), [agent?.controller]);
+  const controller = agent?.controller;
+  useEffect(() => () => cancelHold(), [controller, cancelHold]);
+  const { triggerUntil: triggerUntilRef } = layer;
   if (!agent) return null;
 
   const toggle = () => {
-    layer.triggerUntil.current = Date.now() + 500;
+    triggerUntilRef.current = Date.now() + 500;
     if (layer.state !== 'closed' && layer.showing === 'agent' && layer.expanded) layer.close();
     else layer.open('agent', 'half');
   };
@@ -459,10 +473,13 @@ function ChatSlot() {
 function Chats({ showing }: { readonly showing: Which }) {
   const { agent, improve } = useInternal();
   const seen = useRef(new Set<Which>());
+  // eslint-disable-next-line react-hooks/refs -- a monotonic "ever shown" set filled during render: no setState, no re-render
   seen.current.add(showing);
+  // eslint-disable-next-line react-hooks/refs -- reads the "ever shown" set filled above in this same render
+  const seenAgent = seen.current.has('agent'), seenImprove = seen.current.has('improve');
   return <>
-    {agent && seen.current.has('agent') && <SpecChat spec={agent} visible={showing === 'agent'} role="agent" />}
-    {improve && seen.current.has('improve') && <SpecChat spec={improve} visible={showing === 'improve'} role="improve" />}
+    {agent && seenAgent && <SpecChat spec={agent} visible={showing === 'agent'} role="agent" />}
+    {improve && seenImprove && <SpecChat spec={improve} visible={showing === 'improve'} role="improve" />}
   </>;
 }
 
@@ -513,7 +530,9 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
   // began, the composer takes no focus and no keyboard, so nothing moves under the finger on the microphone.
   const sheet = useRef<HTMLDivElement>(null);
   const idleViewport = useRef(liveViewport);
+  // eslint-disable-next-line react-hooks/refs -- ref cache: the last viewport seen while not recording, pinned during a recording; no setState during render
   if (!recording) idleViewport.current = liveViewport;
+  // eslint-disable-next-line react-hooks/refs -- reads the pinned viewport cached above in this same render
   const vv = recording ? idleViewport.current : liveViewport;
   const [pinnedBottom, setPinnedBottom] = useState<string | undefined>();
   useLayoutEffect(() => {
@@ -625,14 +644,17 @@ function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSi
     return () => document.removeEventListener('keydown', onKey);
   }, [open, layer]);
   // A dock control (or the divider's Alt+Arrow) moves or removes the element that had focus: it goes to the panel's first dock control instead of the page.
+  const { restoreFocus: restoreFocusRef } = layer;
+  const openRef = useRef(open);
+  useLayoutEffect(() => { openRef.current = open; });
   useLayoutEffect(() => {
     const lost = !document.activeElement || document.activeElement === document.body;
-    const wanted = layer.restoreFocus.current || (open && lost && api.placement !== 'closed');
-    layer.restoreFocus.current = false;
+    const wanted = restoreFocusRef.current || (openRef.current && lost && api.placement !== 'closed');
+    restoreFocusRef.current = false;
     if (wanted) box.current?.querySelector<HTMLElement>('[data-dock-control]')?.focus({ preventScroll: true });
-  }, [api.placement, side, layer.restoreFocus]);
+  }, [api.placement, side, restoreFocusRef]);
   const drag = useDraggable({ box, position: open ? pos : null, onPositionChange: setPos, enabled: floating });
-  const act = (run: () => void) => () => { layer.restoreFocus.current = true; run(); };
+  const act = (run: () => void) => () => { restoreFocusRef.current = true; run(); };
   const control = (id: string, label: string, Icon: ComponentType<{ className?: string }>, run: () => void) =>
     <Button variant="ghost" size="icon" key={id} data-testid={`agent-layer-${id}`} data-dock-control="" aria-label={label} title={label} onClick={act(run)}><Icon data-icon="inline-start" aria-hidden="true" /></Button>;
   const controls = <>

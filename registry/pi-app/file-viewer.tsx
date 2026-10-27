@@ -26,7 +26,7 @@ import { KIND_LABEL, decodeText } from './file-kinds';
 import { ArtifactPanel, useReportShown } from './artifact-panel';
 import { artifactKind } from '../pi-artifacts/artifact';
 import type { ArtifactDescriptor, ArtifactType } from '../pi-artifacts/artifact';
-import { Mounted, ViewLoading, drawsText, isEditorKind, isMediaKind, lazyView, viewerKinds } from './viewer-kinds';
+import { LazyPane, Mounted, ViewLoading, drawsText, isEditorKind, isMediaKind, viewerKinds } from './viewer-kinds';
 import type { EditorKind, MediaKind, PanelKind } from './viewer-kinds';
 import type { ViewerOptions } from './artifact-panel';
 import { useSaved } from './use-saved';
@@ -95,11 +95,9 @@ function FileDocument({ path, editor, locator, options, onClose, back, onUnsaved
   // The preview selector the journeys use keeps working: the wrapper holds the document's text.
   let pane: ReactNode;
   if (editor.editor === 'markdown') {
-    const MarkdownPane = lazyView(editor.load);
-    pane = <MarkdownPane key={revision} controller={saved.controller as MarkdownController} revision={revision} initialMode={mode as 'rich'} onModeChange={setMode} formattingToolbar={formattingToolbar} onFormattingToolbarChange={setFormattingToolbar} onAutosaveChange={registerAutosave} onBeforeLeaveChange={onBeforeLeaveChange} {...common} />;
+    pane = <LazyPane load={editor.load} key={revision} controller={saved.controller as MarkdownController} revision={revision} initialMode={mode as 'rich'} onModeChange={setMode} formattingToolbar={formattingToolbar} onFormattingToolbarChange={setFormattingToolbar} onAutosaveChange={registerAutosave} onBeforeLeaveChange={onBeforeLeaveChange} {...common} />;
   } else {
-    const HtmlPane = lazyView(editor.load);
-    pane = <HtmlPane key={revision} controller={saved.controller as HtmlController} revision={revision} initialMode={mode as 'preview'} onModeChange={setMode} {...(options.interactive ? { interactive: options.interactive } : {})} {...common} />;
+    pane = <LazyPane load={editor.load} key={revision} controller={saved.controller as HtmlController} revision={revision} initialMode={mode as 'preview'} onModeChange={setMode} {...(options.interactive ? { interactive: options.interactive } : {})} {...common} />;
   }
   return <div data-testid="file-preview" className="h-full min-h-0" data-revision={revision}>
     <Suspense fallback={<ViewerFrame testId="viewer-pending" title={common.title} subtitle={common.subtitle} onClose={onClose} headerStart={back}><ViewLoading label={labels.loading} /></ViewerFrame>}>
@@ -127,8 +125,8 @@ function VideoPreview({ item }: { readonly item: BlobItem }) {
 function BlobFile({ item, subtitle, media, ...common }: { readonly item: BlobItem; readonly subtitle: ReactNode; readonly media: MediaKind | undefined; readonly onClose: () => void; readonly onRefresh: () => unknown; readonly target: unknown; readonly titleTestId: string; readonly headerStart: ReactNode; readonly onShare?: NonNullable<ViewerOptions['share']> }) {
   const { labels } = useAppText();
   const details = <>{subtitle}<span aria-hidden="true">·</span><span>{formatBytes(item.size)}</span></>;
-  if (media?.media === 'image') { const ImagePane = lazyView(media.load); return <ImagePane name={item.name} mediaType={item.type} url={item.url} subtitle={details} {...common} />; }
-  if (media?.media === 'pdf') { const PdfPane = lazyView(media.load); return <PdfPane name={item.name} url={item.url} subtitle={subtitle} {...common} />; }
+  if (media?.media === 'image') return <LazyPane load={media.load} name={item.name} mediaType={item.type} url={item.url} subtitle={details} {...common} />;
+  if (media?.media === 'pdf') return <LazyPane load={media.load} name={item.name} url={item.url} subtitle={subtitle} {...common} />;
   if (item.type.startsWith('video/')) return <ViewerFrame title={item.name} subtitle={details} {...common} onDownload={() => {
     const link = Object.assign(document.createElement('a'), { href: item.url, download: item.name });
     document.body.append(link); link.click(); link.remove();
@@ -142,6 +140,7 @@ function BlobFile({ item, subtitle, media, ...common }: { readonly item: BlobIte
 }
 
 type Loaded = { readonly kind: 'loading' | 'missing' } | { readonly kind: 'ready'; readonly bytes: Uint8Array; readonly revision: string; readonly text: string | undefined };
+const LOADING: Loaded = { kind: 'loading' };
 
 /** Image, PDF and text files: read through the resource client, refreshed on demand (and followed while open, for text). */
 function FileBytes({ path, kind, locator, options, onClose, back, media }: Common & { readonly media: MediaKind | undefined }) {
@@ -151,7 +150,7 @@ function FileBytes({ path, kind, locator, options, onClose, back, media }: Commo
   const targetKey = JSON.stringify(locator);
   const binding = useMemo(() => ({ client: options.client, locator, path }), [options.client, targetKey, path]); // eslint-disable-line react-hooks/exhaustive-deps
   const [stored, setStored] = useState<{ readonly binding: typeof binding; readonly value: Loaded }>();
-  const file: Loaded = stored?.binding === binding ? stored.value : { kind: 'loading' };
+  const file: Loaded = stored?.binding === binding ? stored.value : LOADING;
   const running = useRef<AbortController | undefined>(undefined);
   const load = useCallback(async () => {
     running.current?.abort();
@@ -170,6 +169,7 @@ function FileBytes({ path, kind, locator, options, onClose, back, media }: Commo
     }
   }, [binding]);
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- load is async: it sets state when the read settles, not during the effect
     void load();
     const timer = kind === 'text' ? setInterval(() => { void load(); }, POLL_MS) : undefined;
     return () => { running.current?.abort(); clearInterval(timer); };
@@ -194,8 +194,8 @@ function FileBytes({ path, kind, locator, options, onClose, back, media }: Commo
     const blobMedia = mediaKindOf(options.kinds ?? viewerKinds, { ...fileArtifact(path, locator), mediaType: blob.item.type });
     return <Suspense fallback={loading}><BlobFile item={blob.item} media={blobMedia} onRefresh={load} {...common} />{shown}</Suspense>;
   }
-  if (media?.media === 'image') { const ImagePane = lazyView(media.load); return <Suspense fallback={loading}><ImagePane name={nameOf(path)} mediaType={mediaTypeOf(path)} bytes={file.bytes} onRefresh={load} {...common} />{shown}</Suspense>; }
-  if (media?.media === 'pdf') { const PdfPane = lazyView(media.load); return <Suspense fallback={loading}><PdfPane name={nameOf(path)} bytes={file.bytes} onRefresh={load} {...common} />{shown}</Suspense>; }
+  if (media?.media === 'image') return <Suspense fallback={loading}><LazyPane load={media.load} name={nameOf(path)} mediaType={mediaTypeOf(path)} bytes={file.bytes} onRefresh={load} {...common} />{shown}</Suspense>;
+  if (media?.media === 'pdf') return <Suspense fallback={loading}><LazyPane load={media.load} name={nameOf(path)} bytes={file.bytes} onRefresh={load} {...common} />{shown}</Suspense>;
   const { text } = file, size = file.bytes.byteLength;
   return <ViewerFrame title={nameOf(path)} {...common} subtitle={<>{subtitleOf(locator)}<span aria-hidden="true">·</span><span>{formatBytes(size)}</span></>}
     onRefresh={load} {...(text === undefined ? {} : { onCopy: () => copyText(text), onDownload: () => downloadFile(nameOf(path), text, 'text/plain;charset=utf-8') })}>

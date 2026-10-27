@@ -16,15 +16,18 @@ export function mediaBlob(source: MediaSource, mediaType: string): Blob | undefi
 
 /** An object URL for the source, revoked when the source changes or the viewer unmounts. A host `url` is passed through untouched. */
 export function useMediaUrl(source: MediaSource, mediaType: string): { url: string | undefined; size: number | undefined; blob: Blob | undefined } {
-  const blob = useMemo(() => mediaBlob(source, mediaType), [source.blob, source.bytes, mediaType]); // eslint-disable-line react-hooks/exhaustive-deps
-  const [made, setMade] = useState<string>();
+  const { blob: given, bytes } = source;
+  const blob = useMemo(() => mediaBlob({ blob: given, bytes }, mediaType), [given, bytes, mediaType]);
+  // The object URL of the current blob only: a URL made for an earlier blob is never returned, and is revoked with it.
+  const [made, setMade] = useState<{ readonly blob: Blob; readonly url: string }>();
   useEffect(() => {
-    if (!blob) { setMade(undefined); return; }
+    if (!blob) return undefined;
     const url = URL.createObjectURL(blob);
-    setMade(url);
-    return () => { URL.revokeObjectURL(url); setMade(current => current === url ? undefined : current); };
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the object URL is an external resource owned by this effect run; it exists only after commit and is revoked in the cleanup
+    setMade({ blob, url });
+    return () => { URL.revokeObjectURL(url); setMade(current => current?.url === url ? undefined : current); };
   }, [blob]);
-  return { url: blob ? made : source.url, size: blob?.size, blob };
+  return { url: blob ? (made?.blob === blob ? made.url : undefined) : source.url, size: blob?.size, blob };
 }
 
 export function formatBytes(size: number): string {

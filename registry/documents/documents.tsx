@@ -64,6 +64,7 @@ function useFileTree(provider: RevisionProvider, version: number, blobBase: stri
   const [tree, setTree] = useState<FileTreeController>();
   useEffect(() => {
     const next = createFileTreeController({ revisionProvider: withBlobPointers(provider, blobBase) });
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the tree controller is a resource owned by this effect run: created after commit, disposed in the cleanup
     setTree(next);
     void next.refresh();
     return () => next.dispose();
@@ -85,6 +86,9 @@ function pinnedProviderOf(provider: RevisionProvider, revision: string): Revisio
   return { ...provider, read: (request, signal) => provider.read({ target: request.target, revision: { kind: 'exact', value: revision } }, signal) };
 }
 
+// The panes load the first time an image or a PDF revision opens (D-257), like the file viewer's.
+const ImagePane = lazyView(imageKind.load), PdfPane = lazyView(pdfKind.load);
+
 /** An image or PDF revision, read exactly and shown in the viewer's read-only pane. */
 function BinaryRevision({ provider, path, revision, kind, labels, onClose }: {
   readonly provider: RevisionProvider;
@@ -94,22 +98,23 @@ function BinaryRevision({ provider, path, revision, kind, labels, onClose }: {
   readonly labels: DocumentsLabels;
   readonly onClose: () => void;
 }) {
-  const [state, setState] = useState<{ readonly kind: 'loading' } | { readonly kind: 'failed' } | { readonly kind: 'ready'; readonly bytes: Uint8Array; readonly mediaType: string }>({ kind: 'loading' });
+  type Read = { readonly kind: 'failed' } | { readonly kind: 'ready'; readonly bytes: Uint8Array; readonly mediaType: string };
+  // The read of this provider, path and revision; any other is still loading.
+  const [read, setRead] = useState<{ readonly provider: RevisionProvider; readonly path: string; readonly revision: string; readonly result: Read }>();
+  const state: { readonly kind: 'loading' } | Read = read && read.provider === provider && read.path === path && read.revision === revision ? read.result : { kind: 'loading' };
   const { labels: viewer } = useViewerText();
   useEffect(() => {
     const abort = new AbortController();
-    setState({ kind: 'loading' });
+    const settle = (result: Read) => { if (!abort.signal.aborted) setRead({ provider, path, revision, result }); };
     provider.read({ target: provider.locate(path), revision: { kind: 'exact', value: revision } }, abort.signal).then(result => {
-      if (!abort.signal.aborted) setState(result.kind === 'available' ? { kind: 'ready', bytes: result.snapshot.bytes, mediaType: result.snapshot.mediaType } : { kind: 'failed' });
-    }, () => { if (!abort.signal.aborted) setState({ kind: 'failed' }); });
+      settle(result.kind === 'available' ? { kind: 'ready', bytes: result.snapshot.bytes, mediaType: result.snapshot.mediaType } : { kind: 'failed' });
+    }, () => settle({ kind: 'failed' }));
     return () => abort.abort();
   }, [provider, path, revision]);
   const status = { label: viewer.readOnly, kind: 'read-only' as const };
   if (state.kind !== 'ready') return <ViewerFrame title={nameOf(path)} status={status} onClose={onClose}>
     <p role="status" className="m-0 p-4 text-sm text-muted-foreground">{state.kind === 'loading' ? labels.revisionsLoading : labels.revisionLoadFailed}</p>
   </ViewerFrame>;
-  // The panes load the first time an image or a PDF revision opens (D-257), like the file viewer's.
-  const ImagePane = lazyView(imageKind.load), PdfPane = lazyView(pdfKind.load);
   return <Suspense fallback={<ViewerFrame testId="viewer-pending" title={nameOf(path)} status={status} onClose={onClose}><ViewLoading label={viewer.loading} /></ViewerFrame>}>
     {kind === 'image'
       ? <ImagePane name={nameOf(path)} mediaType={state.mediaType} bytes={state.bytes} status={status} onClose={onClose} />

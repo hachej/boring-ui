@@ -124,15 +124,15 @@ function FileGlyph({ kind }: { readonly kind: FileKind }) {
 function FileCard({ path, open, preview, change }: { readonly path: string; readonly open: ((path: string) => void) | undefined; readonly preview: PreviewRead | undefined; readonly change?: 'created' | 'edited' }) {
   const { labels } = useChatText();
   const kind = fileKind(path), name = change ? path.split('/').pop() || path : displayName(path);
-  const [src, setSrc] = useState<string | undefined>();
+  const [thumb, setThumb] = useState<{ readonly path: string; readonly preview: PreviewRead; readonly src: string | undefined }>();
   // A thumbnail belongs to the provider that read it: a new provider, or a read that is refused or unavailable, shows the icon.
+  const src = kind === 'image' && thumb?.path === path && thumb.preview === preview ? thumb.src : undefined;
   useEffect(() => {
-    setSrc(undefined);
     if (kind !== 'image' || !preview) return;
     const abort = new AbortController();
     preview(path, abort.signal).then(
-      read => { if (!abort.signal.aborted) setSrc(read ? thumbnail(read.mimeType, read.data) : undefined); },
-      () => { if (!abort.signal.aborted) setSrc(undefined); });
+      read => { if (!abort.signal.aborted) setThumb({ path, preview, src: read ? thumbnail(read.mimeType, read.data) : undefined }); },
+      () => { if (!abort.signal.aborted) setThumb({ path, preview, src: undefined }); });
     return () => abort.abort();
   }, [kind, path, preview]);
   return <Attachment className="max-w-64" {...(!open ? { 'data-testid': 'message-mention', 'data-path': path } : {})}>
@@ -161,6 +161,7 @@ export function VoiceBubble({ path, transcript, preview, audioUrl, align = 'end'
   useEffect(() => {
     const element = audio.current;
     let objectUrl: string | undefined;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- another recording or provider resets the player this effect owns, once per source
     source.current = undefined; loadingRequest.current = false; setPlaying(false); setLoading(false); setFailed(false); setDuration(undefined);
     const release = () => { if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = undefined; } };
     const abort = new AbortController(); work.current = abort;
@@ -345,6 +346,7 @@ export function RowView({ row, context }: { readonly row: Row; readonly context:
   const [selection, setSelection] = useState<{ readonly index: number; readonly images: readonly ImageContent[]; readonly key: string; readonly opener: RowContext['onOpenImage'] }>();
   const current = selection && selection.key === row.key && selection.opener === context.onOpenImage && selection.images.length === images.length
     && selection.images.every((image, at) => image.mimeType === images[at]?.mimeType && image.data === images[at]?.data) ? selection : undefined;
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- a stale selection (other row, opener or images) is dropped once, after commit
   useEffect(() => { if (selection && !current) setSelection(undefined); }, [selection, current]);
   const openImage: NonNullable<RowContext['onOpenImage']> = image => {
     if (!thumbnail(image.mimeType, image.data)) return;

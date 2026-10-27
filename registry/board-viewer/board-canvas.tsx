@@ -1,7 +1,7 @@
 'use client';
 
 // Ported from spike/canvas-board. Native shapes are a disposable projection of board@1, never a saved tldraw store.
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { HTMLContainer, Rectangle2d, ShapeUtil, T, createShapeId, renderPlaintextFromRichText, toRichText, useValue } from 'tldraw';
 import type { Editor, TLBaseShape } from 'tldraw';
 import { CanvasProjection } from '@hachej/boring-ui-kit/canvas-editor';
@@ -118,7 +118,8 @@ export default function BoardCanvas({ buffer, files, assetUrls, licenseKey, onEd
   const projected = useRef(state.text);
   const [editor, setEditor] = useState<Editor | null>(null);
   const blocked = state.readOnly || phone;
-  const mode = useRef(blocked); mode.current = blocked;
+  const mode = useRef(blocked);
+  useLayoutEffect(() => { mode.current = blocked; });
   const [problem, setProblem] = useState<string>();
   const attach = useCallback((native: Editor) => {
     editorRef.current = native;

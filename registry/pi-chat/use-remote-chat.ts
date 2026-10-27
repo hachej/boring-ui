@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createNativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import type { ChatIdentity, NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import type { ChatController } from '@hachej/boring-ui-kit/native-chat';
@@ -59,22 +59,24 @@ export function useRemoteChat({ conversationId, endpoint, fetch, identity, reque
 }): RemoteChatState {
   const url = conversationId === undefined ? undefined : String(endpoint(conversationId));
   const key = JSON.stringify([conversationId, url, identity?.runtimeId, identity?.scopeId, identity?.principalId, transport]);
-  const binding = useMemo(() => ({ key, fetch, requestContext, webSocket }), [key]); // eslint-disable-line react-hooks/exhaustive-deps
-  useLayoutEffect(() => { binding.fetch = fetch; binding.requestContext = requestContext; binding.webSocket = webSocket; }, [binding, fetch, requestContext, webSocket]);
+  const binding = useMemo(() => ({ key }), [key]);
+  // The latest host callbacks, read by the connection the binding owns.
+  const latest = useRef({ fetch, requestContext, webSocket });
+  useLayoutEffect(() => { latest.current = { fetch, requestContext, webSocket }; });
   const [stored, setStored] = useState<{ readonly binding: typeof binding; readonly chat: RemoteChatState }>();
   useEffect(() => {
     if (conversationId === undefined || !identity || url === undefined) return;
     const setChat = (chat: RemoteChatState) => setStored({ binding, chat });
     let disposed = false, controller: NativeChatController | undefined, remote: RemoteChat | undefined;
     const context = () => {
-      const placement = readChatPlacement(controller), screen = binding.requestContext?.();
+      const placement = readChatPlacement(controller), screen = latest.current.requestContext?.();
       return placement || screen ? { ...screen, ...(placement && { placement }) } : undefined;
     };
     setChat({ status: 'connecting', conversationId });
     void (async () => {
       while (!disposed) {
         try {
-          remote = await createRemoteChat({ endpoint: url, fetch: request => binding.fetch(request), requestContext: context, ...(transport ? { transport } : {}), ...(binding.webSocket ? { webSocket: binding.webSocket } : {}) });
+          remote = await createRemoteChat({ endpoint: url, fetch: request => latest.current.fetch(request), requestContext: context, ...(transport ? { transport } : {}), ...(latest.current.webSocket ? { webSocket: latest.current.webSocket } : {}) });
           if (disposed) return void remote.close();
           controller = createNativeChatController({ identity, ...remote });
           await controller.connect();
@@ -94,6 +96,7 @@ export function useRemoteChat({ conversationId, endpoint, fetch, identity, reque
       }
     })();
     return () => { disposed = true; controller?.dispose(); void remote?.close(); };
-  }, [binding]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- binding changes exactly when its key (conversation, url, identity ids, transport) does; a new identity object alone must not reconnect.
+  }, [binding]);
   return identity && stored?.binding === binding ? stored.chat : { status: 'connecting', conversationId };
 }

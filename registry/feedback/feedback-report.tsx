@@ -31,8 +31,10 @@ const outcomeText = (outcome: ShowOutcome): string => {
 export function FeedbackReport({ report, page, onClose }: FeedbackReportProps) {
   const view = reportView(report);
   const [shown, setShown] = useState<Shown | null>(null);
-  useEffect(() => () => { page?.overlay?.clear(); }, [page?.overlay]);
-  useEffect(() => { setShown(null); page?.overlay?.clear(); }, [report.id]);
+  const overlay = page?.overlay;
+  useEffect(() => () => { overlay?.clear(); }, [overlay]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- another report starts with nothing shown; runs once per report id
+  useEffect(() => { setShown(null); overlay?.clear(); }, [report.id]); // eslint-disable-line react-hooks/exhaustive-deps -- clears on a new report only; a new overlay is cleared by the effect above
 
   const show = async (index: number): Promise<void> => {
     const root = page?.root();

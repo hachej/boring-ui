@@ -368,7 +368,9 @@ const shallowEqual = (a: unknown, b: unknown): boolean => Object.is(a, b) || (!!
 /** The previous value while the new one is equal key by key (functions by identity): inline `labels={{ title }}` keeps one text context. */
 export function useShallowStable<T>(value: T): T {
   const previous = useRef(value);
+  // eslint-disable-next-line react-hooks/refs -- a render-time identity cache: it only swaps in a value equal key by key, so any render reads the same result
   if (!shallowEqual(previous.current, value)) previous.current = value;
+  // eslint-disable-next-line react-hooks/refs -- returns the cached identity (see above); never setState in render
   return previous.current;
 }
 

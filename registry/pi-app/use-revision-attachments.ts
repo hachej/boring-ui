@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { RevisionProvider } from '@hachej/boring-files/revision';
 import { createFileTreeController } from '@hachej/boring-ui-kit/file-tree';
 import type { FileTreeController } from '@hachej/boring-ui-kit/file-tree';
@@ -36,13 +36,15 @@ export function useRevisionAttachments({ revisionProvider, fileTree, accept, max
   useEffect(() => {
     if (fileTree || !revisionProvider) return;
     const tree = createFileTreeController({ revisionProvider });
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- this effect owns the disposable tree (created and disposed here, StrictMode-safe); state only publishes it
     setBinding({ provider: revisionProvider, tree });
     return () => tree.dispose();
   }, [fileTree, revisionProvider]);
   const tree = fileTree ?? (binding?.provider === revisionProvider ? binding?.tree : undefined);
   // The failure callback is read when an upload starts, so a new callback does not rebuild the config, and a late failure of an upload
   // reports to the workspace it was started in (not the one selected since).
-  const failure = useRef(onPreparationFailure); failure.current = onPreparationFailure;
+  const failure = useRef(onPreparationFailure);
+  useLayoutEffect(() => { failure.current = onPreparationFailure; });
   return useMemo<AttachmentsConfig | undefined>(() => tree ? {
     ...(accept !== undefined ? { accept } : {}),
     upload: (files: File[], signal: AbortSignal) => {

@@ -143,12 +143,18 @@ export function useChatSession(options: ChatSessionOptions) {
   const uploads = useRef(new Set<AbortController>()), mounted = useRef(false);
   const textarea = useRef<HTMLTextAreaElement | null>(null);
   const current = () => mounted.current && active.current === controller && !controller.getSnapshot().disposed;
+  // The latest text, for a connection failure that lands after the labels changed.
+  const latestLabels = useRef(labels);
+  useLayoutEffect(() => { latestLabels.current = labels; });
   useEffect(() => {
     mounted.current = true;
+    const live = uploads.current;
     // A controller disposed before mount throws synchronously; the chat then renders its disposed state.
-    if (!controller.getSnapshot().disposed) void controller.connect().catch(cause => { if (current()) setError(cause instanceof Error ? cause.message : labels.connectionFailed); });
-    return () => { mounted.current = false; for (const upload of uploads.current) upload.abort(); uploads.current.clear(); };
-  }, [controller]);
+    if (!controller.getSnapshot().disposed) void controller.connect().catch(cause => {
+      if (mounted.current && active.current === controller && !controller.getSnapshot().disposed) setError(cause instanceof Error ? cause.message : latestLabels.current.connectionFailed);
+    });
+    return () => { mounted.current = false; for (const upload of live) upload.abort(); live.clear(); };
+  }, [controller, active]);
 
   const natural = presentation === 'natural';
   // A tool's own renderer comes first; `renderTool` stays the catch-all.
@@ -156,7 +162,8 @@ export function useChatSession(options: ChatSessionOptions) {
   const developer = mode === 'developer' && !natural;
   // Only the recogniser takes part in deriving rows; which card is open changes without rebuilding them.
   const offered = artifacts?.recognise && artifacts.Card ? artifacts : undefined;
-  const artifactDetect = useMemo(() => offered?.recognise ? { recognise: offered.recognise, detect: offered.detect } : undefined, [offered?.recognise, offered?.detect]);
+  const recognise = offered?.recognise, detect = offered?.detect;
+  const artifactDetect = useMemo(() => recognise ? { recognise, detect } : undefined, [recognise, detect]);
   const subagent = cards?.subagent;
   const derived = useMemo(() => derive(state.view, { mode, presentation, hideLine, renderEntry, renderTool, groupTool, artifacts: artifactDetect, subagent }), [state.view, mode, presentation, hideLine, renderEntry, renderTool, groupTool, artifactDetect, subagent]);
   const queued = useMemo(() => queuedMessages(state.view), [state.view]);
@@ -200,7 +207,7 @@ export function useChatSession(options: ChatSessionOptions) {
       }
     }
     return [...found.values()];
-  }, [rows, picked, state.draft.attachments, artifacts, onOpenFile, mentions?.open, onOpenImage, labels.imageAttachment]);
+  }, [derived.rows, natural, picked, state.draft.attachments, artifacts, onOpenFile, mentions?.open, onOpenImage, labels.imageAttachment]);
 
   const report = (cause: unknown) => { if (current()) setError(cause instanceof Error ? cause.message : labels.actionFailedShort); };
   const act = (action: () => Promise<unknown>) => {
@@ -342,8 +349,11 @@ export function useChatSession(options: ChatSessionOptions) {
   // Show the accepted choice until the watch delivers it, so the label does not flicker back.
   useEffect(() => {
     const same = optimistic.model && viewModel && optimistic.model.provider === viewModel.provider && optimistic.model.modelId === viewModel.modelId;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- drops the optimistic choice once the watch delivers it; runs only when it matches, so it settles
     if (same || (optimistic.effort !== undefined && optimistic.effort === viewEffort)) setOptimistic(value => ({ ...(same ? {} : value.model ? { model: value.model } : {}), ...(optimistic.effort === viewEffort ? {} : value.effort ? { effort: value.effort } : {}) }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- viewModel is rebuilt every render; its provider and modelId are what it compares
   }, [optimistic, viewModel?.provider, viewModel?.modelId, viewEffort]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- cleared text drops the picked mentions once, after commit; the updater keeps an empty list as is
   useEffect(() => { if (!state.draft.text) setPicked(value => value.length ? [] : value); }, [state.draft.text]);
   async function change(kind: 'model' | 'effort', apply: () => Promise<void>, accepted: () => void, rejected: () => void) {
     if (changing || !current()) return;
@@ -367,7 +377,7 @@ export function useChatSession(options: ChatSessionOptions) {
     replyFooter,
     pieces: slash?.skills?.length || mentions || attachments ? { mentions: Boolean(mentions), uploads: Boolean(attachments), skills: (slash?.skills ?? []).map(skill => skill.name), openMention: mentions?.open, renderMention: mentions?.renderSent ?? mentions?.render, preview: mentions?.preview, audioUrl: mentions?.audioUrl } : undefined,
     ...rowExtras,
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- lists the fields rows read, not whole objects: activateMention changes every render and must not rebuild every row.
   }), [controller, developer, natural, renderText, cards, groupTool, onOpenImage, onCopy, onOpenFile, fileChanges, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, mentions?.renderSent, mentions?.preview, mentions?.audioUrl, attachments, offered?.open, offered?.isOpen, offered?.kinds, offered?.Card, messageActions, historicalMessageActions, unread, replyError, replyFooter, rowExtras]);
 
   /** The model-and-effort pill and the note that reports a refused change. */
@@ -437,15 +447,19 @@ export function chunkKeys(previous: readonly (readonly string[])[], keys: readon
  * revealed above it, so the scroller's prepend anchor still holds; a run's array is reused while its rows are unchanged.
  */
 export function useRowChunks<T extends { readonly key: string }>(rows: readonly T[], size = CHUNK): readonly (readonly T[])[] {
+  // A derived cache of the last runs, read and replaced inside the memo only: the same rows always give the same runs.
   const previous = useRef<{ readonly keys: readonly (readonly string[])[]; readonly runs: ReadonlyMap<string, readonly T[]> }>({ keys: [], runs: new Map() });
   return useMemo(() => {
     const byKey = new Map(rows.map(row => [row.key, row]));
+    // eslint-disable-next-line react-hooks/refs -- reads the run cache to keep run boundaries and arrays stable; no setState, no render loop
     const keys = chunkKeys(previous.current.keys, rows.map(row => row.key), size);
+    // eslint-disable-next-line react-hooks/refs -- the mapper reuses the cached array of an unchanged run (see above)
     const runs = keys.map(run => {
       const items = run.map(key => byKey.get(key)!);
       const before = previous.current.runs.get(run[0]!);
       return before && before.length === items.length && before.every((item, index) => item === items[index]) ? before : items;
     });
+    // eslint-disable-next-line react-hooks/refs -- stores the runs for the next rows; a cache write, not state, so it triggers no render
     previous.current = { keys, runs: new Map(runs.map(run => [run[0]!.key, run])) };
     return runs;
   }, [rows, size]);
@@ -466,18 +480,19 @@ export function useTranscript(rows: readonly { readonly key: string }[], page = 
   const scrollToBottom = useCallback((behavior?: 'instant') => scrollToEnd({ behavior: behavior === 'instant' ? 'instant' : 'smooth' }), [scrollToEnd]);
   const stick = { scrollRef: setScroller, scrollToBottom, isAtBottom: !scrollable.end };
   const hidden = Math.max(0, rows.length - limit);
+  const historyState = history?.state, historyConnected = history?.connected, historyLoad = history?.load;
   const reveal = useCallback(() => {
     if (pending.current || anchor.current) return;
-    const state = history?.state;
-    if (hidden === 0 && (!history?.connected || !state || state.kind === 'disabled' || state.kind === 'loading' || state.kind === 'ready' && !state.hasMore)) return;
+    const state = historyState;
+    if (hidden === 0 && (!historyConnected || !state || state.kind === 'disabled' || state.kind === 'loading' || state.kind === 'ready' && !state.hasMore)) return;
     anchor.current = { length: rows.length, limit };
     // A revealed page renders as a transition: React mounts it in small slices, so scrolling stays responsive meanwhile.
     if (hidden > 0) startTransition(() => setLimit(value => value + more));
-    else if (history) {
+    else if (historyLoad) {
       pending.current = true;
-      void Promise.resolve().then(history.load).catch(() => { anchor.current = undefined; }).finally(() => { pending.current = false; });
+      void Promise.resolve().then(historyLoad).catch(() => { anchor.current = undefined; }).finally(() => { pending.current = false; });
     }
-  }, [hidden, history?.state, history?.connected, history?.load, rows.length, limit, more]);
+  }, [hidden, historyState, historyConnected, historyLoad, rows.length, limit, more]);
   useLayoutEffect(() => {
     const saved = anchor.current;
     if (!scroller || !saved || history?.state.kind === 'loading') return;
@@ -490,7 +505,7 @@ export function useTranscript(rows: readonly { readonly key: string }[], page = 
   // top before the scroller settles at the end, loads nothing). A fast scroll lands on 0 before the sentinel is seen: the scroll
   // listener and every new observer (after each page) check again, instead of the reader's distance at that one moment.
   const near = useRef(false), away = useRef(false), revealNow = useRef(reveal);
-  revealNow.current = reveal;
+  useLayoutEffect(() => { revealNow.current = reveal; });
   useEffect(() => {
     if (!automatic || !scroller) return;
     const onScroll = () => { if (scroller.scrollTop > 8) away.current = true; if (near.current && away.current) revealNow.current(); };

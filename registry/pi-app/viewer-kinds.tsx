@@ -55,6 +55,11 @@ export function lazyView<Props>(load: () => Promise<{ readonly default: Componen
   return view;
 }
 
+/** A kind's lazy view as an element (`lazyView` gives one component per loader, so its identity holds across renders). */
+const lazyElement = <Props extends object>(load: () => Promise<{ readonly default: ComponentType<Props> }>, props: Props): ReactNode => { const View = lazyView(load); return <View {...props} />; };
+/** Draws a kind's `load` with the given props; a host can key it like any element. */
+export function LazyPane<Props extends object>({ load, ...props }: { readonly load: () => Promise<{ readonly default: ComponentType<Props> }> } & Props) { return lazyElement(load, props as unknown as Props); }
+
 const renderers = new WeakMap<object, (props: ArtifactKindViewProps) => ReactNode>();
 
 /** A kind's `load` as a renderer (one per loader): the panel draws it like a kind's own `renderer`, inside its `Suspense`. */

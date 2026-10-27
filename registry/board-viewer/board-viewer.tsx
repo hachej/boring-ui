@@ -1,6 +1,6 @@
 'use client';
 
-import { lazy, Suspense, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ResourceLocator } from '@hachej/boring-files';
 import { createTextBuffer } from '@hachej/boring-ui-kit/text-buffer';
 import type { TextBuffer } from '@hachej/boring-ui-kit/text-buffer';
@@ -30,14 +30,17 @@ export function BoardViewer(props: BoardViewerProps) {
 
 function BoardSession({ text, revision, target, pinned, client, identity, ...host }: BoardViewerProps) {
   const [buffer, setBuffer] = useState<TextBuffer>();
+  // A changed revision refreshes the existing buffer below; it must not replace a dirty canvas. A new buffer starts from the latest text.
+  const saved = useRef({ text, revision });
+  useLayoutEffect(() => { saved.current = { text, revision }; });
   useEffect(() => {
+    const { text, revision } = saved.current;
     const next = createTextBuffer({ client, identity, instanceId: 'board', epoch: revision, readOnly: pinned || !client.publish,
       source: { kind: 'saved', snapshot: { ref: { ...target, revision }, bytes: new TextEncoder().encode(text), mediaType: 'application/json' } },
       mediaType: 'application/json', readText });
     setBuffer(next);
     return () => next.dispose();
-    // A changed revision refreshes the existing buffer below; it must not replace a dirty canvas.
-  }, [client, identity, target, pinned]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [client, identity, target, pinned]);
   useEffect(() => {
     if (!buffer || pinned) return;
     const state = buffer.getSnapshot();
@@ -55,6 +58,7 @@ function BoardDocument({ buffer, client, target, pinned, ...host }: Omit<BoardHo
   const [error, setError] = useState<string>();
   useEffect(() => {
     let live = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- a new read (client, target or sources) clears the previous read's error once; the effect then reads asynchronously
     setError(undefined);
     const paths: string[] = JSON.parse(sources);
     const folder = target.resource.path.slice(0, target.resource.path.lastIndexOf('/') + 1);
