@@ -7,7 +7,7 @@ import { Harness, MemoryStorage, createRegistry } from '@earendil-works/pi-durab
 import { NodeExecutionEnv } from '@earendil-works/pi-durable/env/node';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { createFakeChatModel, createScriptedModel } from '@hachej/boring-testing/model';
-import { createSkillsExtension, defineAgent, directorySkillSource, fileSkillSource, parseSkill } from '@hachej/boring-agent/agents';
+import { defineAgent, directorySkillSource, fileSkillSource, liveSkills, parseSkill, staticSkills } from '@hachej/boring-agent/agents';
 import * as agents from '@hachej/boring-agent/agents';
 
 // Live skills (D-313): a skills extension built on a source sees skills added, edited and removed after it started, once its
@@ -58,7 +58,7 @@ test('a directory source: added, edited and removed skills reach the listing and
   await mkdir(join(root, 'skills/letters'), { recursive: true });
   await writeFile(join(root, 'skills/letters/SKILL.md'), skillText('letters', 'Write a fictional letter', 'Sign as the Fictional Clinic.'));
   const reports = [];
-  const extension = createSkillsExtension('fictional.skills', directorySkillSource(env, 'skills'), { maxAgeMs: MAX_AGE, onDiagnostics: errors => reports.push(errors) });
+  const extension = liveSkills(directorySkillSource(env, 'skills'), { name: 'fictional.skills', maxAgeMs: MAX_AGE, onDiagnostics: errors => reports.push(errors) }).extension;
   const listing = await conversationWith(t, extension);
   const load = loadSkill(extension);
 
@@ -107,7 +107,7 @@ test('a directory source: added, edited and removed skills reach the listing and
 test('a file source: one skill file added, edited, broken and removed', async t => {
   const { root, env } = await workspace(t);
   const reports = [];
-  const extension = createSkillsExtension('fictional.skill', fileSkillSource(env, 'notes/triage.md'), { maxAgeMs: MAX_AGE, onDiagnostics: errors => reports.push(errors) });
+  const extension = liveSkills(fileSkillSource(env, 'notes/triage.md'), { name: 'fictional.skill', maxAgeMs: MAX_AGE, onDiagnostics: errors => reports.push(errors) }).extension;
   const listing = await conversationWith(t, extension);
   const load = loadSkill(extension);
 
@@ -138,8 +138,8 @@ test('a file source: one skill file added, edited, broken and removed', async t 
 
 test('a static array keeps its snapshot and its errors', async () => {
   const skill = parseSkill(skillText('letters', 'Write a fictional letter', 'Sign as the Fictional Clinic.'));
-  assert.throws(() => createSkillsExtension('x', [skill, skill]), /Duplicate skill/);
-  const extension = createSkillsExtension('fictional.static', [skill]);
+  assert.throws(() => staticSkills([skill, skill], { name: 'x' }), /Duplicate skill/);
+  const extension = staticSkills([skill], { name: 'fictional.static' }).extension;
   assert.match(await extension.sections[0].render({}, context), /- letters: Write a fictional letter/);
   assert.equal(await loadSkill(extension)('letters'), 'Sign as the Fictional Clinic.');
 });
@@ -149,13 +149,13 @@ test('a static array keeps its snapshot and its errors', async () => {
 // calls the model makes, so Pi passes its own conversation id, validates the arguments and runs the tool.
 
 /** Each `ask(calls)` is one turn of a new conversation: the model calls load_skill with each of `calls`, in order. */
-async function scriptedHarness(t, extension) {
+async function scriptedHarness(t, selection) {
   const turns = [];
   const scripted = createScriptedModel({ script: { 'use the fictional skills': [
     ctx => ({ tools: turns.at(-1).calls.map(args => ({ name: 'load_skill', args })) }),
     ctx => { turns.at(-1).system = ctx.system; turns.at(-1).results = ctx.results.map(result => result.text); return 'Done.'; },
   ] } });
-  const agent = defineAgent({ id: 'fictional-clerk', model: scripted.model, instructions: 'You file fictional letters.', extensions: [extension] });
+  const agent = defineAgent({ id: 'fictional-clerk', model: scripted.model, instructions: 'You file fictional letters.', ...selection });
   const registry = createRegistry();
   agent.install(registry);
   const harness = await Harness.open(new MemoryStorage(), { registry, models: scripted.models }, context);
@@ -188,13 +188,14 @@ test('visible: each conversation sees only its skills, and a hidden skill answer
   });
   let billing;
   const asked = [];
-  const extension = createSkillsExtension('fictional.skills', directorySkillSource(env, 'skills'), {
+  const extension = liveSkills(directorySkillSource(env, 'skills'), {
+    name: 'fictional.skills',
     visible: async (conversationId, skills) => {
       asked.push([conversationId, skills.map(skill => skill.name)]);
       return conversationId === billing.id ? skills : skills.filter(skill => skill.name !== 'invoices');
     },
-  });
-  const { open, ask } = await scriptedHarness(t, extension);
+  }).extension;
+  const { open, ask } = await scriptedHarness(t, { extensions: [extension] });
   billing = await open();
   const clerk = await open();
   const calls = [{ name: 'invoices' }, { name: 'nonexistent' }, { name: 'broken' }];
@@ -225,14 +226,14 @@ test('companionFiles: checked when the listing is read, listed by load_skill and
   await symlink(join(root, 'outside.txt'), join(root, 'skills/letters/link.md'));
   await writeFile(join(root, 'skills/letters/references/logo.bin'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0xfe]));
   const reports = [];
-  const extension = createSkillsExtension('fictional.skills', directorySkillSource(env, 'skills'), { companionFiles: true, onDiagnostics: errors => reports.push(errors) });
+  const extension = liveSkills(directorySkillSource(env, 'skills'), { name: 'fictional.skills', companionFiles: true, onDiagnostics: errors => reports.push(errors) }).extension;
   // The bad files are found when the listing is read, before any load_skill call.
   assert.match(await extension.sections[0].render({}, context), /- letters: Write a fictional letter/);
   assert.deepEqual(reports, [[
     { path: 'skills/letters/link.md', name: 'letters', message: 'Companion file left out: a symbolic link' },
     { path: 'skills/letters/references/logo.bin', name: 'letters', message: 'Companion file left out: not UTF-8 text' },
   ]]);
-  const { open, ask } = await scriptedHarness(t, extension);
+  const { open, ask } = await scriptedHarness(t, { extensions: [extension] });
   const turn = await ask(await open(), [
     { name: 'letters' },
     { name: 'letters', path: 'references/tone.md' },
@@ -251,14 +252,15 @@ test('companionFiles: checked when the listing is read, listed by load_skill and
     assert.match(refused, /^Skill "letters" has no companion file ".*"\. Companion files: references\/tone\.md, scripts\/sign\.sh$/);
     assert.doesNotMatch(refused, /fictional text outside/);
   }
-  // An array has no FileSystem to read companions through.
-  assert.throws(() => createSkillsExtension('x', [parseSkill(skillText('letters', 'x', 'y'))], { companionFiles: true }), /companionFiles/);
+  // A source without a FileSystem has none to read companions through.
+  const source = directorySkillSource(env, 'skills'), bare = { list: source.list, version: source.version };
+  assert.throws(() => liveSkills(bare, { name: 'x', companionFiles: true }), /companionFiles/);
 });
 
 test('refresh: the host re-reads the source now, one skill or all, without waiting for maxAgeMs', async t => {
   const { root, env } = await workspace(t);
   await skillsFolder(root, { letters: skillText('letters', 'Write a fictional letter', 'Sign as the Fictional Clinic.') });
-  const controller = agents.createSkillsController('fictional.skills', directorySkillSource(env, 'skills'), { maxAgeMs: 60_000 });
+  const controller = agents.liveSkills(directorySkillSource(env, 'skills'), { name: 'fictional.skills', maxAgeMs: 60_000 });
   const listing = await conversationWith(t, controller.extension);
   const load = loadSkill(controller.extension);
   assert.match(await listing(), /- letters: Write a fictional letter$/m);
@@ -290,7 +292,8 @@ test('onPublish: a refused listing never replaces the current one, and the reaso
   await skillsFolder(root, { letters: skillText('letters', 'Write a fictional letter', 'Sign as the Fictional Clinic.') });
   const reports = [], published = [];
   const names = skills => skills.map(skill => `${skill.name}: ${skill.description}`);
-  const controller = agents.createSkillsController('fictional.skills', directorySkillSource(env, 'skills'), {
+  const controller = agents.liveSkills(directorySkillSource(env, 'skills'), {
+    name: 'fictional.skills',
     maxAgeMs: MAX_AGE,
     onDiagnostics: errors => reports.push(errors),
     onPublish: async (next, previous) => {
@@ -335,11 +338,12 @@ test('refresh on miss: load_skill for a name not listed checks the source once n
     version: async ctx => { counts.version += 1; await new Promise(resolve => setTimeout(resolve, 10)); return source.version(ctx); },
     list: async ctx => { counts.list += 1; return source.list(ctx); },
   };
-  const extension = createSkillsExtension('fictional.skills', counted, {
+  const extension = liveSkills(counted, {
+    name: 'fictional.skills',
     maxAgeMs: 60_000,
     onPublish: next => { published.push(next.map(skill => skill.name)); },
-  });
-  const { open, ask } = await scriptedHarness(t, extension);
+  }).extension;
+  const { open, ask } = await scriptedHarness(t, { extensions: [extension] });
   const conversation = await open();
   assert.match((await ask(conversation, [{ name: 'letters' }])).results[0], /^Sign as the Fictional Clinic\./);
   assert.deepEqual(counts, { version: 1, list: 1 });
@@ -362,9 +366,9 @@ test('refresh on miss: load_skill for a name not listed checks the source once n
 
 test('intro: replaces the text before the skill lines; the default is unchanged', async t => {
   const skill = parseSkill(skillText('letters', 'Write a fictional letter', 'Sign as the Fictional Clinic.'));
-  const listing = await conversationWith(t, createSkillsExtension('fictional.intro', [skill], { intro: 'Fictional clinic skills, load one first:' }));
+  const listing = await conversationWith(t, staticSkills([skill], { name: 'fictional.intro', intro: 'Fictional clinic skills, load one first:' }).extension);
   assert.equal(await listing(), '<skills>\nFictional clinic skills, load one first:\n- letters: Write a fictional letter\n</skills>');
-  const plain = await createSkillsExtension('fictional.plain', [skill]).sections[0].render({}, context);
+  const plain = await staticSkills([skill], { name: 'fictional.plain' }).extension.sections[0].render({}, context);
   assert.match(plain, /^Before starting a task that matches a skill, call load_skill with its name .*\/<skill-name>.*\n- letters: Write a fictional letter$/);
 });
 
@@ -376,8 +380,8 @@ test('refresh(name): the other skills stay as they were past maxAgeMs and misses
     letters: skillText('letters', 'Write a fictional letter', 'Sign as the Fictional Clinic.'),
     invoices: skillText('invoices', 'Draft a fictional invoice', 'Use the fictional rate card.'),
   });
-  const controller = agents.createSkillsController('fictional.skills', directorySkillSource(env, 'skills'), { maxAgeMs: MAX_AGE });
-  const { open, ask } = await scriptedHarness(t, controller.extension);
+  const controller = agents.liveSkills(directorySkillSource(env, 'skills'), { name: 'fictional.skills', maxAgeMs: MAX_AGE });
+  const { open, ask } = await scriptedHarness(t, { extensions: [controller.extension] });
   const conversation = await open();
   const calls = [{ name: 'letters' }, { name: 'invoices' }];
   assert.match((await ask(conversation, calls)).results[0], /^Sign as the Fictional Clinic\./);
@@ -405,12 +409,13 @@ test('onPublish: a refused listing reports the errors still in effect, then the 
   const { root, env } = await workspace(t);
   await skillsFolder(root, { letters: skillText('letters', 'Write a fictional letter', 'Sign as the Fictional Clinic.'), broken: 'no front matter here' });
   const reports = [];
-  const extension = createSkillsExtension('fictional.skills', directorySkillSource(env, 'skills'), {
+  const extension = liveSkills(directorySkillSource(env, 'skills'), {
+    name: 'fictional.skills',
     maxAgeMs: MAX_AGE,
     onDiagnostics: errors => reports.push(errors),
     onPublish: next => next.some(skill => /unreviewed/.test(skill.body)) ? 'fictional review refused an unreviewed body' : undefined,
-  });
-  const { open, ask } = await scriptedHarness(t, extension);
+  }).extension;
+  const { open, ask } = await scriptedHarness(t, { extensions: [extension] });
   const conversation = await open();
   const broken = { path: 'skills/broken/SKILL.md', name: 'broken', message: 'Skill needs front matter with name and description' };
   assert.match((await ask(conversation, [{ name: 'broken' }])).results[0], /^Skill "broken" could not be loaded/);
@@ -433,8 +438,8 @@ test('companionFiles: a listed file or folder swapped for a link after the listi
   await mkdir(join(root, 'outside'), { recursive: true });
   await writeFile(join(root, 'outside/tone.md'), 'fictional secret outside the skill\n');
   await writeFile(join(root, 'outside.txt'), 'fictional secret outside the skill\n');
-  const extension = createSkillsExtension('fictional.skills', directorySkillSource(env, 'skills'), { companionFiles: true, maxAgeMs: 60_000 });
-  const { open, ask } = await scriptedHarness(t, extension);
+  const extension = liveSkills(directorySkillSource(env, 'skills'), { name: 'fictional.skills', companionFiles: true, maxAgeMs: 60_000 }).extension;
+  const { open, ask } = await scriptedHarness(t, { extensions: [extension] });
   const conversation = await open();
   const reads = [{ name: 'letters', path: 'references/tone.md' }, { name: 'letters', path: 'style.md' }];
   assert.deepEqual((await ask(conversation, reads)).results, ['Warm and fictional.\n', 'Short and fictional.\n']);
@@ -447,4 +452,44 @@ test('companionFiles: a listed file or folder swapped for a link after the listi
   const [tone, style] = (await ask(conversation, reads)).results;
   assert.equal(tone, 'Companion file "references/tone.md" of skill "letters" could not be read: skills/letters/references is a symbolic link');
   assert.equal(style, 'Companion file "style.md" of skill "letters" could not be read: skills/letters/style.md is a symbolic link');
+});
+
+// One loader (D-322): `flat` also reads `<name>.md` directly in the directory, next to the `<name>/SKILL.md` folders.
+
+test('a flat directory source: <name>.md files and <name>/SKILL.md folders in one listing, other files ignored', async t => {
+  const { root, env } = await workspace(t);
+  await mkdir(join(root, 'skills/nested'), { recursive: true });
+  await writeFile(join(root, 'skills/flat.md'), skillText('flat', 'A flat fictional skill', 'Flat body.'));
+  await writeFile(join(root, 'skills/nested/SKILL.md'), skillText('nested', 'A folder fictional skill', 'Folder body.'));
+  await writeFile(join(root, 'skills/notes.txt'), 'Not a skill.\n');
+  const extension = liveSkills(directorySkillSource(env, 'skills', { flat: true }), { name: 'fictional.flat' }).extension;
+  const listing = await conversationWith(t, extension);
+  const load = loadSkill(extension);
+
+  assert.match(await listing(), /- flat: A flat fictional skill\n- nested: A folder fictional skill/);
+  assert.match(await load('flat'), /^Flat body\.\n\nThis skill's folder is `skills`;/, 'a flat skill is paths-relative to the directory');
+  assert.match(await load('nested'), /^Folder body\.\n\nThis skill's folder is `skills\/nested`;/);
+  assert.match(await load('notes'), /Unknown skill "notes"/);
+});
+
+test('defineAgent({ skills }) takes a SkillSource: the agent loads skills it finds in the source, read on use', async t => {
+  const { root, env } = await workspace(t);
+  await skillsFolder(root, { letters: skillText('letters', 'Write a fictional letter', 'Sign as the Fictional Clinic.') });
+  const turns = [];
+  const scripted = createScriptedModel({ script: { 'use the fictional skills': [
+    ctx => ({ tools: turns.at(-1).calls.map(args => ({ name: 'load_skill', args })) }),
+    ctx => { turns.at(-1).system = ctx.system; turns.at(-1).results = ctx.results.map(result => result.text); return 'Done.'; },
+  ] } });
+  const agent = defineAgent({ id: 'fictional-clerk', model: scripted.model, instructions: 'You file fictional letters.', skills: directorySkillSource(env, 'skills') });
+  assert.deepEqual(agent.extensions.map(extension => extension.name), ['agent.fictional-clerk.skills']);
+  const registry = createRegistry();
+  agent.install(registry);
+  const harness = await Harness.open(new MemoryStorage(), { registry, models: scripted.models }, context);
+  t.after(() => harness.close(context).catch(() => {}));
+  const conversation = await agent.createConversation(harness, context);
+  turns.push({ calls: [{ name: 'letters' }] });
+  assert.equal((await (await conversation.submit({ type: 'input', content: 'use the fictional skills' }, context)).wait(context)).status, 'done');
+  assert.match(turns.at(-1).system, /- letters: Write a fictional letter/);
+  assert.match(turns.at(-1).results[0], /^Sign as the Fictional Clinic\./);
+  assert.deepEqual(scripted.misses, []);
 });

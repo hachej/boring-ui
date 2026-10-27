@@ -3,7 +3,7 @@ import type { Extension, PromptSection, Registry, ToolExecutionResult, ToolRegis
 import type { ExecutionEnv } from '@earendil-works/pi-durable/env';
 import { Type } from '@earendil-works/pi-ai';
 import type { Context } from '@earendil-works/chord';
-import { skillInFolder } from './skills.js';
+import { directorySkillSource, skillFile, staticSkills } from './skills.js';
 import type { Skill } from './skills.js';
 import { jsonSchemaTool } from './json-schema-tool.js';
 
@@ -42,8 +42,6 @@ export interface SelfEvolutionOptions {
   readonly skills: readonly Skill[];
   /** Tool names the agent already has from the host; an agent-written tool may not take one. */
   readonly reserved: readonly string[];
-  readonly parseSkill: (markdown: string) => Skill;
-  readonly skillsExtension: (name: string, skills: readonly Skill[]) => Extension;
 }
 
 export interface SelfEvolution {
@@ -129,25 +127,8 @@ async function filesIn(env: ExecutionEnv, directory: string, suffix: string, con
   return listed.value.filter(entry => entry.kind === 'file' && entry.name.endsWith(suffix)).map(entry => `${directory}/${entry.name}`).sort();
 }
 
-/** Flat Markdown skills and `SKILL.md` in immediate child folders; companion files are not definitions. */
-async function skillFilesIn(env: ExecutionEnv, context: Context, errors: SelfEvolutionError[]): Promise<string[]> {
-  const listed = await env.listDir(SKILLS, context);
-  if (!listed.ok) {
-    if (listed.error.code !== 'not_found') errors.push({ path: SKILLS, message: listed.error.message });
-    return [];
-  }
-  const paths = listed.value.filter(entry => entry.kind === 'file' && entry.name.endsWith('.md')).map(entry => `${SKILLS}/${entry.name}`);
-  for (const entry of listed.value.filter(entry => entry.kind === 'directory')) {
-    const folder = `${SKILLS}/${entry.name}`;
-    const contents = await env.listDir(folder, context);
-    if (!contents.ok) { errors.push({ path: folder, message: contents.error.message }); continue; }
-    if (contents.value.some(file => file.kind === 'file' && file.name === 'SKILL.md')) paths.push(`${folder}/SKILL.md`);
-  }
-  return paths.sort();
-}
-
 export function createSelfEvolution(options: SelfEvolutionOptions): SelfEvolution {
-  const { name, parseSkill, skillsExtension } = options;
+  const { name } = options;
   const hostSkills = [...options.skills];
   const registries = new Set<Registry>();
   let agentSkills: Skill[] = [];
@@ -173,7 +154,7 @@ export function createSelfEvolution(options: SelfEvolutionOptions): SelfEvolutio
 
   function build(tools: readonly ToolDescription[]): Extension {
     const skills = [...hostSkills, ...agentSkills];
-    const offered = skills.length ? skillsExtension(`${name}.skills`, skills) : undefined;
+    const offered = skills.length ? staticSkills(skills, { name: `${name}.skills` }).extension : undefined;
     return defineExtension({
       name,
       tools: [reloadTool, ...(offered?.tools ?? []), ...tools.map(toolOf)],
@@ -191,14 +172,11 @@ export function createSelfEvolution(options: SelfEvolutionOptions): SelfEvolutio
     else if (read.error.code !== 'not_found') errors.push({ path: INSTRUCTIONS, message: read.error.message });
 
     const skills: Skill[] = [];
-    const skillFiles = await skillFilesIn(env, context, errors);
-    for (const path of skillFiles) {
-      const text = await env.readTextFile(path, context);
-      if (!text.ok) { errors.push({ path, message: text.error.message }); continue; }
-      let skill: Skill;
-      try { skill = parseSkill(text.value); } catch (error) { errors.push({ path, message: reason(error) }); continue; }
-      if ([...hostSkills, ...skills].some(other => other.name === skill.name)) { errors.push({ path, message: `a skill named ${skill.name} already exists` }); continue; }
-      skills.push(skillInFolder(skill, path.slice(0, path.lastIndexOf('/'))));
+    const listing = await directorySkillSource(env, SKILLS, { flat: true }).list(context);
+    errors.push(...listing.errors.map(({ path, message }) => ({ path, message })));
+    for (const skill of listing.skills) {
+      if ([...hostSkills, ...skills].some(other => other.name === skill.name)) { errors.push({ path: skillFile(skill) ?? SKILLS, message: `a skill named ${skill.name} already exists` }); continue; }
+      skills.push(skill);
     }
 
     const available = typeof env.exec === 'function';

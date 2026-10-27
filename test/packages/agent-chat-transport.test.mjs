@@ -4,7 +4,7 @@ import { Harness, MemoryStorage, createRegistry, defineTool, UserEntry } from '@
 import { Type } from '@earendil-works/pi-ai';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { createChatTransportHandler } from '@hachej/boring-agent/chat-transport';
-import { defineAgent, parseSkill, createSkillsExtension } from '@hachej/boring-agent/agents';
+import { defineAgent, parseSkill, staticSkills } from '@hachej/boring-agent/agents';
 import { createRemoteChat } from '@hachej/boring-ui-kit/remote-chat';
 import { createNativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { createModels, createProvider } from '@earendil-works/pi-ai/models';
@@ -212,7 +212,7 @@ test('defineAgent maps data to native extensions, agent configuration and on-dem
   const skill = parseSkill('---\nname: fictional-letter\ndescription: "Write a fictional letter"\n---\nAlways sign as the Fictional Clinic.\n');
   assert.deepEqual(skill, { name: 'fictional-letter', description: 'Write a fictional letter', body: 'Always sign as the Fictional Clinic.' });
   assert.throws(() => parseSkill('no front matter'), TypeError);
-  assert.throws(() => createSkillsExtension('x', [skill, skill]), /Duplicate skill/);
+  assert.throws(() => staticSkills([skill, skill], { name: 'x' }), /Duplicate skill/);
   assert.throws(() => defineAgent({ id: 'Bad Id', model: fake.model }), /Invalid agent id/);
   const writer = defineAgent({ id: 'writer', model: fake.model, instructions: 'You write fictional letters.', tools: [echo], skills: [skill] });
   const reviewer = defineAgent({ id: 'reviewer', model: fake.model, instructions: 'You review only.' });
