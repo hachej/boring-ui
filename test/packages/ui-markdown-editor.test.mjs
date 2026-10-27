@@ -313,6 +313,18 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
     }
   });
 
+  await t.test('the placeholder reaches the source textarea, a components.textarea override, and stays on the rich surface', async t => {
+    const source = await fixture(t, '', { props: { initialMode: 'source', placeholder: 'Notes cliniques…' } });
+    assert.equal(source.container.querySelector('textarea').getAttribute('placeholder'), 'Notes cliniques…');
+    let seen;
+    const Custom = props => { seen = props.placeholder; return createElement('textarea', props); };
+    await fixture(t, '', { props: { initialMode: 'source', placeholder: 'Via override', components: { textarea: Custom } } });
+    assert.equal(seen, 'Via override');
+    const rich = await fixture(t, '', { props: { placeholder: 'Rich hint' } });
+    assert.equal(rich.container.querySelector('textarea'), null);
+    assert.ok(rich.container.querySelector('[data-placeholder="Rich hint"]'), 'rich placeholder unchanged');
+  });
+
   await t.test('French draws the source-only notice with translated reasons', async t => {
     const f = await fixture(t, 'a\rb\r', { props: { locale: 'fr' } });
     const notice = f.container.querySelector('[data-testid="markdown-source-only"]');

@@ -435,7 +435,7 @@ function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActiva
       <Control type="button" onClick={() => controller.actions.reject(proposal.id)}>{text.dismissProposal}</Control>
     </article>)}
     {mode === 'source'
-      ? <Source ref={sourceInput} className="boring-markdown-source" aria-label={text.sourceName(title)} value={state.text} readOnly={unavailable} spellCheck={false} onSelect={event => onQuoteSelection?.(captureMarkdownQuote(state.text, { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd }))} onChange={event => controller.actions.edit(event.currentTarget.value)} />
+      ? <Source ref={sourceInput} className="boring-markdown-source" aria-label={text.sourceName(title)} placeholder={placeholder} value={state.text} readOnly={unavailable} spellCheck={false} onSelect={event => onQuoteSelection?.(captureMarkdownQuote(state.text, { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd }))} onChange={event => controller.actions.edit(event.currentTarget.value)} />
       : <div className="boring-markdown-surface" onKeyDownCapture={markInteraction} onBeforeInputCapture={markInteraction} onInputCapture={markInteraction} onPasteCapture={markInteraction} onDropCapture={markInteraction}
         onChangeCapture={markInteraction}
         onClickCapture={event => { markInteraction(); if (event.target instanceof Element && event.target.closest('a')) event.preventDefault(); }}
