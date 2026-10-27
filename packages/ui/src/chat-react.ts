@@ -15,6 +15,18 @@ export { useChatPlacement, readChatPlacement, useRemoteChat } from './chat-react
 export type { ChatPlacement, RemoteChatState, RemoteChatHookOptions } from './chat-react-remote.js';
 export { useConversationsClient, useConversations } from './chat-react-conversations.js';
 export type { ConversationItem, ConversationsClient, ConversationsClientOptions } from './chat-react-conversations.js';
+import { watchConversation } from './run-notifications.js';
+import type { NotificationStore, RunNotificationOptions, RunNotificationSource } from './run-notifications.js';
+
+export { createNotificationStore, watchConversation } from './run-notifications.js';
+export type { AgentNotification, NewNotification, NotificationKind, NotificationStore, RunNotificationOptions, RunNotificationSource } from './run-notifications.js';
+
+/** The foreground adapter of watchConversation, with the same connected-only transition rules and borrowed lifecycle. */
+export function useRunNotifications(controller: RunNotificationSource, store: NotificationStore, options: RunNotificationOptions): void {
+  const latest = useRef(options);
+  useLayoutEffect(() => { latest.current = options; });
+  useEffect(() => watchConversation(controller, store, () => latest.current), [controller, store, options.conversationId]);
+}
 
 const subscribeNothing = () => () => {};
 /** Selects the authorized native view using the controller's own cached snapshot and subscription. Borrows its lifetime. */
