@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import { createVoiceCapture, DEFAULT_MAX_VOICE_MS } from '@hachej/boring-ui-kit/voice-capture';
 import type { VoiceCapture, VoiceRecording, VoiceRefusal } from '@hachej/boring-ui-kit/voice-capture';
 import type { ChatController, ChatDraft } from '@hachej/boring-ui-kit/native-chat';
-import { isVoicePath, mentionToken } from '../pi-chat/config';
+import { isVoicePath, mentionedPaths, mentionToken, removeMention } from '../pi-chat/config';
 import type { AttachmentsConfig, PendingVoice, VoiceMessageConfig, VoiceMessageHandle, VoicePhase, VoiceRecorderOptions } from '../pi-chat/config';
 import type { ChatLabels } from '../pi-chat/labels';
 
@@ -17,6 +17,7 @@ interface Attempt {
   readonly abort: AbortController;
   readonly capture: VoiceCapture;
   readonly maxMs: number;
+  mentions: readonly string[];
   phase: VoicePhase;
   seconds: number;
   file?: File;
@@ -88,7 +89,7 @@ export function useVoiceMessage({ controller, config, attachments, labels, admit
   const send = async (item: Attempt, audioOnly = false) => {
     if (!valid(item) || !item.path || item.phase === 'sending' || item.phase === 'unconfirmed') return;
     const transcript = audioOnly ? '' : item.transcript ?? '';
-    const text = `${mentionToken(item.path)}${transcript ? ` ${transcript}` : ''}`;
+    const text = [...item.mentions.map(mentionToken), mentionToken(item.path), transcript].filter(Boolean).join(' ');
     const before = item.controller.getSnapshot();
     if (before.send.kind === 'unknown') {
       // This recording was never submitted. Do not bind it to another message's uncertain request.
@@ -107,7 +108,11 @@ export function useVoiceMessage({ controller, config, attachments, labels, admit
       const result = await pending;
       if (!valid(item)) return;
       if (result) { remove(item); latest.current.admitted?.(); return; }
-    } catch { if (!valid(item)) return; }
+    } catch {
+      if (!valid(item)) return;
+      const draft = item.controller.getSnapshot().draft.text;
+      if (transcript) item.controller.setText(`${draft}${draft && !/\s$/.test(draft) ? ' ' : ''}${transcript}`);
+    }
     const native = item.controller.getSnapshot().send;
     if (native.kind === 'admitted' && 'attempt' in native && submittedDraft !== undefined && native.attempt.draft === submittedDraft) {
       remove(item); latest.current.admitted?.(); return;
@@ -144,6 +149,9 @@ export function useVoiceMessage({ controller, config, attachments, labels, admit
     if (!item || !valid(item)) return;
     if (item.phase === 'starting') { cancel(); return; }
     if (item.phase !== 'recording') return;
+    const draft = item.controller.getSnapshot().draft.text;
+    item.mentions = mentionedPaths(draft);
+    item.controller.setText(item.mentions.reduce((text, path) => removeMention(text, path), draft));
     item.phase = 'processing'; update();
     void (async () => {
       const recording: VoiceRecording | null = await item.capture.stop().catch(() => null);
@@ -160,7 +168,7 @@ export function useVoiceMessage({ controller, config, attachments, labels, admit
     if (!controller || !config || active() || controller.getSnapshot().disposed || controller.getSnapshot().send.kind === 'unknown') return;
     captureSequence.current += 1; setProblem(undefined);
     const maxMs = config.maxMs ?? DEFAULT_MAX_VOICE_MS;
-    const item: Attempt = { id: captureSequence.current, maxMs: Number.isFinite(maxMs) && maxMs > 0 ? maxMs : Infinity, controller, transcribe: config.transcribe.bind(config), upload: config.upload?.bind(config) ?? attachments?.upload.bind(attachments), target: targetOf(controller), abort: new AbortController(), capture: createVoiceCapture({ ...(config.maxMs !== undefined ? { maxMs: config.maxMs } : {}) }), phase: 'starting', seconds: 0 };
+    const item: Attempt = { id: captureSequence.current, maxMs: Number.isFinite(maxMs) && maxMs > 0 ? maxMs : Infinity, controller, mentions: [], transcribe: config.transcribe.bind(config), upload: config.upload?.bind(config) ?? attachments?.upload.bind(attachments), target: targetOf(controller), abort: new AbortController(), capture: createVoiceCapture({ ...(config.maxMs !== undefined ? { maxMs: config.maxMs } : {}) }), phase: 'starting', seconds: 0 };
     attempts.current = [...attempts.current, item]; update();
     void item.capture.start().then(result => {
       if (!valid(item)) { item.capture.cancel(); return; }

@@ -9,7 +9,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Input } from '@/components/ui/input';
 import { InputGroup, InputGroupAddon, InputGroupTextarea } from '@/components/ui/input-group';
 import { Toggle } from '@/components/ui/toggle';
-import { hasMention, isLongPaste, mentionToken, mentionTrigger, removeMention, slashItems, slashQuery } from './config';
+import { hasMention, isLongPaste, mentionedPaths, mentionKind, mentionToken, mentionTrigger, removeMention, slashItems, slashQuery } from './config';
 import type { AttachmentsConfig, MentionsConfig, PastedText, PasteToFile, SlashConfig, SlashItem } from './config';
 import { useChatText } from './labels';
 import { cn } from '../utils/utils';
@@ -263,7 +263,7 @@ export function Composer(props: ComposerProps) {
     props.onMentionPicked?.(path);
   };
   const openCommands = () => edit(`${text}${text && !/\s$/.test(text) ? ' ' : ''}/`, text.length + (text && !/\s$/.test(text) ? 2 : 1));
-  const chips = (props.mentionPaths ?? []).filter(path => hasMention(text, path));
+  const chips = [...new Set([...(props.mentionPaths ?? []), ...mentionedPaths(text).filter(path => mentionKind(path, props.mentions))])].filter(path => hasMention(text, path));
   const onChange = (event: ChangeEvent<HTMLTextAreaElement>) => { trackCaret(event.currentTarget); props.onText(event.currentTarget.value); };
 
   const { feedback } = props;
@@ -298,8 +298,13 @@ export function Composer(props: ComposerProps) {
     {props.quote}
     {feedback && feedback.count > 0 && <div role="list" className="contents"><NotesChip feedback={feedback} /></div>}
     {chips.length > 0 && <div role="list" data-testid="mention-chips" aria-label={labels.mentionedFiles} className="contents">
-      {chips.map(path => <Chip key={path} data-testid="mention-chip" data-path={path} title={props.mentions?.label?.(path) ?? path} className="max-w-full sm:max-w-[16rem]"
-        media={props.mentions?.icon ?? <FileTextIcon aria-hidden="true" />}  label={props.mentions?.label?.(path) ?? path} actions={<RemoveChip label={labels.remove(props.mentions?.label?.(path) ?? path)} onClick={() => props.onText(removeMention(text, path))} />} />)}
+      {chips.map(path => {
+        const registered = mentionKind(path, props.mentions);
+        const label = registered ? registered.kind.label(registered.path) : props.mentions?.label?.(path) ?? path;
+        return <Chip key={path} data-testid="mention-chip" data-path={path} title={label} className="max-w-full sm:max-w-[16rem]"
+          media={registered?.kind.icon ?? props.mentions?.icon ?? <FileTextIcon aria-hidden="true" />} label={label}
+          actions={<RemoveChip label={labels.remove(label)} onClick={() => props.onText(removeMention(text, path))} />} />;
+      })}
     </div>}
     {(props.uploads?.length ?? 0) > 0 && <div role="list" data-testid="uploads" aria-label={labels.uploads} className="contents">
       {props.uploads!.map(item => <Chip key={item.id} data-testid="upload-chip" state={item.state === 'failed' ? 'error' : 'uploading'} data-state={item.state} title={item.error ?? item.name} className="max-w-full sm:max-w-[20rem]"

@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import type { ComposerFeedback, ComposerProps, PendingUpload } from './composer';
 import type { ConversationFile } from './conversation-files';
 import type { AttachmentsConfig, EffortConfig, MentionsConfig, ModelConfig, ModelRef, PastedText, PasteToFile, SlashConfig } from './config';
-import { displayName, looksLikeMarkdown, mentionToken, pieces } from './config';
+import { displayName, looksLikeMarkdown, mentionKind, mentionToken, pieces, withoutKindMentions } from './config';
 import type { CommandMentions } from './config';
 import type { ChatCards, ChatTextPart, RowContext } from './message';
 import type { QueueActions, QueuedMessage } from './queue';
@@ -180,6 +180,7 @@ export function useChatSession(options: ChatSessionOptions) {
     const found = new Map<string, ConversationFile>();
     const open = onOpenFile ?? mentions?.open;
     const add = (path: string) => {
+      if (mentionKind(path, mentions)) return;
       const normalized = path.replace(/^\.\//, '');
       const id = `file:${normalized}`;
       if (!found.has(id)) found.set(id, { id, name: displayName(normalized), open: open ? () => open(normalized) : undefined });
@@ -207,7 +208,7 @@ export function useChatSession(options: ChatSessionOptions) {
       }
     }
     return [...found.values()];
-  }, [derived.rows, natural, picked, state.draft.attachments, artifacts, onOpenFile, mentions?.open, onOpenImage, labels.imageAttachment]);
+  }, [derived.rows, natural, picked, state.draft.attachments, artifacts, onOpenFile, mentions, onOpenImage, labels.imageAttachment]);
 
   const report = (cause: unknown) => { if (current()) setError(cause instanceof Error ? cause.message : labels.actionFailedShort); };
   const act = (action: () => Promise<unknown>) => {
@@ -223,7 +224,7 @@ export function useChatSession(options: ChatSessionOptions) {
   const putBack = (text: string, images: readonly ChatAttachment[]) => {
     if (controller.getSnapshot().disposed) return;
     const draft = controller.getSnapshot().draft;
-    controller.setText([text, draft.text].filter(value => value.trim()).join('\n'));
+    controller.setText([withoutKindMentions(text, mentions), draft.text].filter(value => value.trim()).join('\n'));
     if (images.length) controller.setAttachments([...images, ...draft.attachments.filter(item => !images.some(image => image.id === item.id))]);
   };
   const working = Boolean(run);
@@ -242,14 +243,24 @@ export function useChatSession(options: ChatSessionOptions) {
         catch (cause) { putBack(typed.text, typed.attachments); throw cause; }
         if (attached.kind === 'refused') { putBack(typed.text, typed.attachments); throw new Error(attached.reason); }
         if (!current()) { putBack(typed.text, typed.attachments); return; }
-        const submission = await controller.send('followUp', { text: attached.text, attachments: typed.attachments, restore: { text: typed.text, attachments: typed.attachments } });
-        if (submission) feedback?.sent();
+        try {
+          const submission = await controller.send('followUp', { text: attached.text, attachments: typed.attachments, restore: { text: withoutKindMentions(typed.text, mentions), attachments: typed.attachments } });
+          if (submission) feedback?.sent();
+        } catch (cause) { putBack(typed.text, typed.attachments); throw cause; }
       });
       afterSend?.();
       textarea.current?.focus();
       return;
     }
-    act(() => controller.send('followUp'));
+    const typed = controller.getSnapshot().draft;
+    const words = withoutKindMentions(typed.text, mentions);
+    if (words !== typed.text) {
+      controller.setText(''); controller.setAttachments([]);
+      act(async () => {
+        try { await controller.send('followUp', { text: typed.text, attachments: typed.attachments, restore: { text: words, attachments: typed.attachments } }); }
+        catch (cause) { putBack(words, typed.attachments); throw cause; }
+      });
+    } else act(() => controller.send('followUp'));
     afterSend?.();
     textarea.current?.focus();
   };
@@ -375,7 +386,7 @@ export function useChatSession(options: ChatSessionOptions) {
     artifacts: offered?.Card ? { open: offered.open, isOpen: offered.isOpen, kinds: offered.kinds, Card: offered.Card } : undefined,
     messageActions, historicalMessageActions, unread, replyError,
     replyFooter,
-    pieces: slash?.skills?.length || mentions || attachments ? { mentions: Boolean(mentions), uploads: Boolean(attachments), skills: (slash?.skills ?? []).map(skill => skill.name), openMention: mentions?.open, renderMention: mentions?.renderSent ?? mentions?.render, preview: mentions?.preview, audioUrl: mentions?.audioUrl } : undefined,
+    pieces: slash?.skills?.length || mentions || attachments ? { kinds: mentions?.kinds, mentions: Boolean(mentions), uploads: Boolean(attachments), skills: (slash?.skills ?? []).map(skill => skill.name), openMention: mentions?.open, renderMention: mentions?.renderSent ?? mentions?.render, preview: mentions?.preview, audioUrl: mentions?.audioUrl } : undefined,
     ...rowExtras,
   // eslint-disable-next-line react-hooks/exhaustive-deps -- lists the fields rows read, not whole objects: activateMention changes every render and must not rebuild every row.
   }), [controller, developer, natural, renderText, cards, groupTool, onOpenImage, onCopy, onOpenFile, fileChanges, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, mentions?.renderSent, mentions?.preview, mentions?.audioUrl, attachments, offered?.open, offered?.isOpen, offered?.kinds, offered?.Card, messageActions, historicalMessageActions, unread, replyError, replyFooter, rowExtras]);

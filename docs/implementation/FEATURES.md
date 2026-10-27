@@ -1,5 +1,11 @@
 # Implemented behavior and evidence
 
+## Card mentions in the real agent chat
+
+The app shell's `talkAbout` gesture inserts an app-kind mention in the borrowed controller's draft and opens the existing half drawer or panel. `MentionsConfig.kinds` owns domain labels/icons/openers; tokens remain ordinary durable message text. Capture starts in the caller's gesture, with explicit cancel/send recording actions. Typed, dictated, automatic and retained-audio sends carry mentions; failure restores words without app chips. This is browser presentation over the existing native controller, not a new Pi execution seam. The inline agent-target path is unchanged.
+
+`test/contracts/talk-about-render.test.mjs` drives the public React layer and real native controller; `node examples/app-shell/journey-talk-about.mjs` drives phone swipe and desktop mic, recording controls, native submission, lazy audio and reload with a fake microphone/model. See [the API](../../registry/README.md#talk-about-a-card). Physical-device microphone permissions and real speech/model judgment remain host qualification; no global proof deferral is removed.
+
 ## Placed workspace phone peek
 
 `PlacedAgentWorkspace` lends its existing controller to the app shell's native Base UI drawer on phones. The 8rem peek above the measured tab bar fits the conversation file chip, input and Send; its snap point and clipping boundary share one height. This is host layout, not a Pi execution extension.

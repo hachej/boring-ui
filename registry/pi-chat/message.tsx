@@ -14,8 +14,8 @@ import { Shimmer } from './shimmer';
 import { ToolCard } from './tool';
 import { thumbnail } from './composer';
 import { ImageViewer } from './image-viewer';
-import { displayName, fileKind, isUploadPath, isVoicePath, pieces, visibleParts } from './config';
-import type { AudioUrlRead, FileKind, Piece, PreviewRead } from './config';
+import { displayName, fileKind, isUploadPath, isVoicePath, mentionKind, pieces, visibleParts } from './config';
+import type { AudioUrlRead, FileKind, MentionsConfig, Piece, PreviewRead } from './config';
 import { voiceClock } from './config';
 import { Spinner } from '@/components/ui/spinner';
 import { isFileBlock, segments, targetContent, waits } from './rows';
@@ -65,7 +65,7 @@ export interface RowContext {
   readonly onOpenImage: ((image: ImageContent, gallery?: readonly ImageContent[]) => void) | undefined;
   readonly onCopy: ((text: string) => Promise<void>) | undefined;
   /** Which tokens of a sent message get a styled treatment (`@path` mentions, a leading `/skill`). */
-  readonly pieces: { readonly mentions: boolean; readonly uploads?: boolean; readonly skills: readonly string[]; readonly openMention?: ((path: string) => void) | undefined; readonly renderMention?: ((path: string) => ReactNode | undefined) | undefined;
+  readonly pieces: { readonly kinds?: MentionsConfig['kinds']; readonly mentions: boolean; readonly uploads?: boolean; readonly skills: readonly string[]; readonly openMention?: ((path: string) => void) | undefined; readonly renderMention?: ((path: string) => ReactNode | undefined) | undefined;
     readonly preview?: PreviewRead | undefined; readonly audioUrl?: AudioUrlRead | undefined } | undefined;
   readonly fileChanges?: boolean | undefined;
   /** Opens a file card through the host's workspace opener. */
@@ -100,8 +100,16 @@ function ImageThumbnails({ images, onOpenImage }: { readonly images: readonly Im
 }
 
 /** Inline sent mention; workspace openers and host renderers keep their existing authority. */
-function UserMention({ path, text, open, render }: { readonly path: string; readonly text: string; readonly open: ((path: string) => void) | undefined; readonly render: ((path: string) => ReactNode | undefined) | undefined }) {
-  const custom = render?.(path);
+function UserMention({ path, text, open, render, kinds }: { readonly path: string; readonly text: string; readonly open: ((path: string) => void) | undefined; readonly render: ((path: string) => ReactNode | undefined) | undefined; readonly kinds?: MentionsConfig['kinds'] }) {
+  const registered = mentionKind(path, { kinds });
+  const custom = registered ? registered.kind.renderSent?.(registered.path) : render?.(path);
+  if (registered) {
+    if (custom !== undefined) return <>{custom}</>;
+    const label = registered.kind.label(registered.path);
+    return registered.kind.open
+      ? <Button variant="link" size="sm" data-testid="message-mention" data-path={path} onClick={() => registered.kind.open!(registered.path)}>{registered.kind.icon}{label}</Button>
+      : <span className="inline-flex items-center gap-1 font-medium text-primary" data-testid="message-mention" data-path={path}>{registered.kind.icon}{label}</span>;
+  }
   if (custom !== undefined) return <>{custom}</>;
   return open
     ? <span role="link" tabIndex={0} className="font-medium text-primary" data-testid="message-mention" data-path={path} aria-label={`Open ${path}`} onClick={() => open(path)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); open(path); } }}>{text}</span>
@@ -255,7 +263,7 @@ export function MessageText({ text, context, align = 'end', variant = 'muted', d
   const shown = files.length ? visibleParts(all, isFile) : all;
   const empty = shown.every(piece => piece.kind === undefined && piece.text === '');
   const content = shown.map((piece, at) => piece.kind === 'mention'
-    ? <UserMention key={at} path={piece.value!} text={piece.text} open={open} render={render} />
+    ? <UserMention key={at} path={piece.value!} text={piece.text} open={open} render={render} kinds={context.pieces?.kinds} />
     : piece.kind === 'skill' ? <Badge key={at} variant="secondary" data-testid="message-skill" data-skill={piece.value}>{piece.text}</Badge>
     : piece.text);
   return <>
@@ -362,7 +370,7 @@ export function RowView({ row, context }: { readonly row: Row; readonly context:
 function RowBody({ row, images, context: liveContext }: { readonly row: Row; readonly images: readonly ImageContent[]; readonly context: RowContext }) {
   const context: RowContext = row.historical ? { ...liveContext, answer: undefined, onFork: undefined, messageActions: liveContext.historicalMessageActions ? liveContext.messageActions : undefined, replyActions: undefined, commandMentions: undefined } : liveContext;
   const { labels, icons } = useChatText();
-  const renderMention = useMemo(() => context.pieces?.mentions ? (path: string, text: string) => <UserMention path={path} text={text} open={context.pieces?.openMention} render={context.pieces?.renderMention} /> : undefined, [context.pieces]);
+  const renderMention = useMemo(() => context.pieces?.mentions ? (path: string, text: string) => <UserMention path={path} text={text} open={context.pieces?.openMention} render={context.pieces?.renderMention} kinds={context.pieces?.kinds} /> : undefined, [context.pieces]);
   switch (row.type) {
     case 'user': return <article data-row-id={row.key} data-role="user" aria-live={row.historical ? 'off' : undefined}><UserBubble message={row.message} images={images} context={context} lead={row.lead === true} /></article>;
     case 'card': return <article data-row-id={row.key} data-role="event">{row.card.content}</article>;

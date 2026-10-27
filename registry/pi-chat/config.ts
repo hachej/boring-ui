@@ -42,7 +42,15 @@ export interface SlashConfig {
 }
 
 export interface MentionResult { readonly path: string; readonly kind?: 'file' | 'directory'; readonly label?: string }
+export interface MentionKind {
+  readonly label: (path: string) => string;
+  readonly icon: ReactNode;
+  readonly open?: ((path: string) => void) | undefined;
+  readonly renderSent?: ((path: string) => ReactNode | undefined) | undefined;
+}
 export interface MentionsConfig {
+  /** App mentions use `@prefix:path` (or the existing quoted token for spaces). Prefixes match [a-z][a-z0-9-]*. No picker is required. */
+  readonly kinds?: Readonly<Record<string, MentionKind>> | undefined;
   /** Accessible name and optional option/media presentation for a host catalog. */
   readonly listLabel?: string;
   readonly icon?: ReactNode;
@@ -222,12 +230,32 @@ export function mentionToken(path: string): string {
 export const MENTION_TOKEN = /(^|\s)@(?:"((?:[^"\\]|\\.)*)"|([^\s]+))/g;
 
 const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const BOUNDARY = '[^A-Za-z0-9_./-]';
 export function hasMention(text: string, path: string): boolean {
-  return new RegExp(`(^|${BOUNDARY})${escape(mentionToken(path))}($|${BOUNDARY})`).test(text);
+  return pieces(text, { mentions: true, skills: [] }).some(piece => piece.kind === 'mention' && piece.value === path);
 }
 export function removeMention(text: string, path: string): string {
-  return text.replace(new RegExp(`(^|${BOUNDARY})${escape(mentionToken(path))}(?=$|${BOUNDARY})[ ]?`), '$1').replace(/^[ ]+/, '');
+  let removed = false, gap = false;
+  return pieces(text, { mentions: true, skills: [] }).map(piece => {
+    if (!removed && piece.kind === 'mention' && piece.value === path) { removed = true; gap = true; return ''; }
+    if (gap) { gap = false; return piece.text.replace(/^ /, ''); }
+    return piece.text;
+  }).join('').replace(/^[ ]+/, '');
+}
+
+/** A registered prefix wins only for that kind; ordinary file paths keep their existing presentation. */
+export function mentionKind(value: string, config: Pick<MentionsConfig, 'kinds'> | undefined): { readonly kind: MentionKind; readonly path: string } | undefined {
+  const match = /^([a-z][a-z0-9-]*):(.+)$/s.exec(value);
+  const kind = match && config?.kinds && Object.hasOwn(config.kinds, match[1]!) ? config.kinds[match[1]!] : undefined;
+  return kind ? { kind, path: match![2]! } : undefined;
+}
+
+export function mentionedPaths(text: string): string[] {
+  return [...new Set(pieces(text, { mentions: true, skills: [] }).flatMap(piece => piece.kind === 'mention' ? [piece.value!] : []))];
+}
+
+/** Refused messages restore the words, never the app card chips. File mentions retain their existing recovery behaviour. */
+export function withoutKindMentions(text: string, config: MentionsConfig | undefined): string {
+  return visibleParts(pieces(text, { mentions: true, skills: [] }), piece => piece.kind === 'mention' && Boolean(mentionKind(piece.value!, config))).map(piece => piece.text).join('');
 }
 
 export type Piece = { readonly text: string; readonly kind?: 'mention' | 'skill'; readonly value?: string };

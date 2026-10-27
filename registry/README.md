@@ -479,6 +479,26 @@ Pass `actions.answer` to `PiChat`. A call to a tool wrapped with `requireApprova
 
 `@` mentions name workspace files; a path with whitespace or a quote is written quoted (`@"docs/Meeting notes.md"`, with `\"` and `\\` escaped), and bare paths keep their form. `mentionToken(path)` writes the text, `pieces` and `mentionedPaths` (the agent package, which must match it) read it back, and the composer chip and `removeMention` treat the quoted form as one token. A bare mention ends at whitespace, so the composer never inserts a bare path that contains a space.
 
+### App mention kinds
+
+`MentionsConfig.kinds` adds app-owned mentions beside files, without another picker or message format:
+
+```tsx
+const mentions = {
+  search: searchFiles, // existing file search, or async () => [] for a card-only app
+  kinds: {
+    repas: {
+      label: (path: string) => meals.get(path)?.label ?? path,
+      icon: <UtensilsIcon aria-hidden="true" />,
+      open: (path: string) => openMeal(path), // optional
+      renderSent: (path: string) => undefined, // optional; undefined keeps the label and icon
+    },
+  },
+};
+```
+
+Use `@repas:2026-10-27/dejeuner`: a lowercase prefix matching `[a-z][a-z0-9-]*`, a colon, then the app's stable path. Reserve registered prefixes for that app domain; unregistered prefixes retain file behaviour. For portable bare paths use letters, digits, `_`, `-`, `.`, `/` and percent-encoded characters, and do not end in sentence punctuation. Spaces and quotes use the existing quoted syntax, e.g. `@"repas:Meeting notes"`; `mentionToken('repas:Meeting notes')` escapes quotes and backslashes. The parser imposes no new length limit (the host's normal message budget applies). The token, not its label, is the durable model-visible text. Labels and openers receive the path **without** `repas:`. Registered kinds get composer chips directly from the draft, even without a `Picker`; removing a chip removes its token. Sent messages use the kind's label/icon/open or `renderSent`, independently of the file renderer. A refused or thrown send restores words without app-kind tokens; existing file recovery is unchanged. No server or conversation-format change is needed. Apps resolve the domain token with their normal agent instructions/tools; a file resolver does not resolve a meal.
+
 ## Docks (`dock`)
 
 `dock/dock.tsx` (the `dock` item; `pi-workspace/dock.tsx` re-exports it, so existing imports keep working) lays out any host content as a row of docks around the app. It is layout only: what a dock shows is the host's, and `ArtifactWorkspace` is unchanged (it keeps its own panel, and the two do not know about each other).
@@ -544,6 +564,23 @@ The fictional [app-shell journey](../examples/app-shell/journey-target.mjs) driv
 ## Agent layer (`app-shell`)
 
 `AgentLayerProvider` takes `agent` (one assistant) and `improve` (the product manager, shown from the account menu); each is `{ controller, chatProps?, voice?, feedback? }`, a borrowed `NativeChatController` rendered by `PiChat`. `AgentLayer` is placed once; `AgentTrigger` opens it; `useAgentLayer()` gives `{ agent, state, showing, open(which?, at?), close(), expanded }` (`agent` is the app’s existing controller, even while the product manager is showing). Nothing else is configurable (the layer's words: the agent's `chatProps.locale`, then the shell's `locale`, then English). On a phone (below 768px, the shadcn `useIsMobile`) it is the explicitly installed `drawer` recipe (public Base UI) with three fixed snap points: a peek (8rem above the tab bar `--app-shell-tabbar`, one composer row and a line of the last reply, the page stays usable), half and full. A swipe, an outside tap and a lost focus never close it: they go to peek (half without an `agent`), so the coach stays reachable; only the handle and the title row drag, the transcript scrolls; the close button and Back close it; Escape steps it down to peek like a swipe (half without an `agent`), so the coach stays reachable, and at peek there is no close button, so it is closed from half or full; focusing the composer goes to full and keeps it above the soft keyboard. On a wide screen it is the `sidebar` on the right, not modal. `voice` adds push-to-talk (hold the trigger or the hero button; `send: 'auto'` submits the transcript, `'draft'` (default) fills the composer). `useAgentContext({ name, params })` registers the current screen; `useRemoteChat({ ..., requestContext: readAgentContext })` sends it as the submit's `context` (with a `placement` beside it: `PiChat` reports `docked` unless its `placement` prop says otherwise, `AmbientChat` `floating`, and the layer reports `floating` for the phone drawer and the floating panel; see [PAGE-TOOLS.md](../docs/architecture/PAGE-TOOLS.md)) and the host renders it with `createPromptContext` (see `packages/agent/README.md`). `useBackLayer` is the one Back manager (`point < sheet < agent < stack`). Point mode for `improve` is wired: « Montrer dans l’app » hides the sheet and the feedback item's `CommentBanner` sits above the tab bar; Back ends comment mode. Example and journey: `examples/app-shell/` (`npm run app-shell:journey`); the shadcn components there are pinned fixtures for type-checking only. Reply actions use 44px touch targets.
+
+### Talk about a card
+
+`useAgentLayer().talkAbout(mention: string, options?: { voice?: boolean; at?: 'half' | 'full' }): boolean` inserts one `@` token into the existing agent draft, replacing a previous unsent talk-about token while keeping other words and mentions. It opens the compact drawer at half by default (full with `at: 'full'`), or the existing wide panel. With no agent it returns `false` and changes nothing. Invalid tokens throw. No card is highlighted and the existing drawer overlay does the dimming.
+
+```tsx
+const { talkAbout } = useAgentLayer();
+// Inside the host card's swipe-release handler (not an effect or a timer):
+const onSwipeRelease = () => {
+  if (!talkAbout('@repas:2026-10-27/dejeuner', { voice: true })) showAgentUnavailable();
+};
+// The desktop card's mic button calls the same handler onClick.
+```
+
+Register the kind in `agent.chatProps.mentions`. Configure `agent.voice` as usual: `send: 'message'` retains audio plus transcript (requires upload), `'auto'` sends transcript text, and `'draft'` fills the composer for review. Capture starts synchronously inside `talkAbout`, before it returns, so the click/swipe release grants permission even before the chat mounts. Without voice config, or without `voice: true`, it focuses the composer instead. A gesture-started recording shows the existing localized recording status, Cancel and Send buttons at half, full and in the panel; hold-to-record controls are unchanged. Typed, dictated, automatic and audio-message sends carry draft mentions; audio retains its normal playback renderer. The mention leaves the draft when sent and is not restored on send refusal/failure. No `context.target`, target block or inline agent-target reply is used.
+
+Fictional consumer: `examples/app-shell/?talkAbout=1&send=message#jour`; `node examples/app-shell/journey-talk-about.mjs` drives swipe on phone and mic click on desktop, voice send/playback and reload.
 
 **Dense opt-out (touch targets).** Under 640px or on a coarse pointer, `app-shell` gives every button and toggle inside `.app-shell` a 44px minimum (WCAG 2.5.5). Put `data-dense` on a container (or on a control) and it and everything inside keep their own size. For dense document cards only; the default stays 44px. Do not use it for navigation or primary actions.
 

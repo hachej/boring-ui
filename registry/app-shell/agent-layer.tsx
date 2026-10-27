@@ -28,7 +28,7 @@ import type { VoiceMessageConfig } from '../pi-chat/config';
 import { useHoldToRecord, useRecordingCancellation } from '../pi-chat-voice/use-hold-to-record';
 import { useVoiceMessage } from '../pi-chat-voice/use-voice-message';
 import type { PendingVoice } from '../pi-chat-voice/use-voice-message';
-import { voiceClock } from '../pi-chat/config';
+import { mentionedPaths, mentionToken, pieces, removeMention, voiceClock } from '../pi-chat/config';
 import { withChatPlugins } from '../pi-chat-plugins/chat-plugins';
 import { PendingVoiceBubble } from '../pi-chat-voice/voice-message';
 import { chatTextFor } from '../pi-chat/locale';
@@ -74,6 +74,8 @@ export interface AgentLayerApi {
   readonly showing: Which | null;
   open(which?: Which, at?: 'peek' | 'half' | 'full'): void;
   close(): void;
+  /** Open the real chat with one card mention. Call directly from a click or swipe release to grant microphone permission. False without an agent. */
+  readonly talkAbout: (mention: string, options?: { readonly voice?: boolean; readonly at?: 'half' | 'full' }) => boolean;
   readonly expanded: boolean;
 }
 
@@ -127,6 +129,7 @@ interface Internal extends Omit<AgentLayerApi, 'agent'> {
   /** Until this time (ms) an outside press is the AgentTrigger's own click. */
   readonly triggerUntil: { current: number };
   readonly voice: Voice;
+  readonly talkRecording: boolean;
   /** The peek height in px: `PEEK_REM` plus the tab bar the peek sits above. */
   readonly peekPoint: string;
   /** The measured tab bar height in px, given explicitly to the parts portalled to the body (they cannot inherit the shell's variables). */
@@ -174,9 +177,9 @@ export function useAgentLoan(): (AgentLoan & { readonly compact: boolean }) | nu
 
 /** The layer's state and controls. */
 export function useAgentLayer(): AgentLayerApi {
-  const { state, showing, open, close, expanded, agent: spec } = useInternal();
+  const { state, showing, open, close, talkAbout, expanded, agent: spec } = useInternal();
   const agent = spec?.controller;
-  return useMemo(() => ({ state, showing, open, close, expanded, agent }), [state, showing, open, close, expanded, agent]);
+  return useMemo(() => ({ state, showing, open, close, talkAbout, expanded, agent }), [state, showing, open, close, talkAbout, expanded, agent]);
 }
 
 /** Push-to-talk uses the same dictation lifecycle as page targeting, over the existing composer/controller. */
@@ -194,8 +197,11 @@ function useVoice(agent: AgentSpec | undefined, locale: AppShellLocale | undefin
         done('drafted');
       };
       if (agent.voice?.send !== 'auto') { fill(); return; }
+      const draft = agent.controller.getSnapshot().draft.text;
+      const paths = mentionedPaths(draft);
+      agent.controller.setText(paths.reduce((text, path) => removeMention(text, path), draft));
       try {
-        const sent = await agent.controller.send(undefined, { text: spoken });
+        const sent = await agent.controller.send(undefined, { text: [...paths.map(mentionToken), spoken].join(' '), restore: { text: spoken } });
         if (!signal.aborted) done(sent ? 'sent' : 'drafted');
       } catch { fill(); }
     },
@@ -317,6 +323,36 @@ export function AgentLayerProvider({ agent: own, improve, locale, agentLink, chi
   const voice = useVoice(agent, locale, outcome => {
     if (outcome === 'drafted') { setShown('agent'); setSnapState('half'); }
   });
+  const [talkRecording, setTalkRecording] = useState(false);
+  const previousTalk = useRef<{ controller: NativeChatController; path: string } | undefined>(undefined);
+  const focusTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(focusTimer.current), [agent?.controller]);
+  const talkAbout = useCallback<AgentLayerApi['talkAbout']>((token, options = {}) => {
+    const selected = specs.current.agent;
+    if (!selected) return false;
+    clearTimeout(focusTimer.current);
+    const parsed = pieces(token, { mentions: true, skills: [] });
+    if (parsed.length !== 1 || parsed[0]?.kind !== 'mention') throw new TypeError('talkAbout requires one @mention token');
+    const path = parsed[0].value!;
+    const before = previousTalk.current;
+    const draft = selected.controller.getSnapshot().draft.text;
+    const text = before?.controller === selected.controller ? removeMention(draft, before.path) : draft;
+    selected.controller.setText(`${text}${text && !/\s$/.test(text) ? ' ' : ''}${mentionToken(path)} `);
+    previousTalk.current = { controller: selected.controller, path };
+    open('agent', options.at ?? 'half');
+    if (options.voice && selected.voice) {
+      setTalkRecording(true);
+      // No await or effect: permission belongs to the caller's click or swipe release, even before the chat mounts.
+      voice.start();
+    } else {
+      focusTimer.current = setTimeout(() => {
+        if (specs.current.agent?.controller === selected.controller && specs.current.snap !== 'closed' && specs.current.shown === 'agent') host?.querySelector<HTMLElement>('[data-spec=agent] [data-testid=composer-input]')?.focus({ preventScroll: true });
+      }, 520);
+    }
+    return true;
+  }, [open, voice, host]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- a completed or refused capture resets this gesture's presentation once
+  useEffect(() => { if (voice.phase === 'idle') setTalkRecording(false); }, [voice.phase]);
   const revealedFailures = useRef(new Set<number>());
   const voiceSend = agent?.voice?.send, pendingKey = voice.pending?.map(item => `${item.id}:${item.phase}`).join(',');
   useEffect(() => {
@@ -333,8 +369,8 @@ export function AgentLayerProvider({ agent: own, improve, locale, agentLink, chi
 
   const state: AgentLayerState = snap === 'closed' ? 'closed' : expanded ? 'open' : snap;
   const value = useMemo<Internal>(() => ({
-    state, showing: snap === 'closed' ? null : shown, open, close, expanded, agent, improve, snap, setSnap, dockFloating, setDockFloating, showAgent, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, restoreFocus,
-  }), [state, snap, shown, open, close, expanded, agent, improve, setSnap, dockFloating, showAgent, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide]);
+    state, showing: snap === 'closed' ? null : shown, open, close, talkAbout, talkRecording, expanded, agent, improve, snap, setSnap, dockFloating, setDockFloating, showAgent, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, restoreFocus,
+  }), [state, snap, shown, open, close, talkAbout, talkRecording, expanded, agent, improve, setSnap, dockFloating, showAgent, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide]);
 
   // The shell's z-scale (tabs 20, peek 30, drawer and panel 40, other sheets 50, point bar 60) as custom properties; `display: contents` keeps the box tree unchanged.
   const scale = { '--app-shell-z-tabs': Z.tabs, '--app-shell-z-peek': Z.peek, '--app-shell-z-layer': Z.layer, '--app-shell-z-sheet': Z.sheet, '--app-shell-z-point': Z.point } as CSSProperties;
@@ -435,6 +471,21 @@ function TalkButton({ text }: { readonly text: AppShellText }) {
   </Button>;
 }
 
+/** Explicit controls for a recording started by a card gesture rather than a hold. */
+function RecordingBar() {
+  const { voice, talkRecording, agent, locale } = useInternal();
+  const labels = { ...chatTextFor(agent?.chatProps?.locale ?? locale).labels, ...agent?.chatProps?.labels };
+  const active = talkRecording && (voice.phase === 'starting' || voice.phase === 'recording');
+  const cancel = useCallback(() => { if (active) voice.cancel(); }, [active, voice]);
+  useRecordingCancellation(cancel);
+  if (!active) return null;
+  return <div data-testid="agent-recording" data-phase={voice.phase} className="flex shrink-0 flex-wrap items-center justify-end gap-1.5 px-3 py-1">
+    <span role="status" className="w-full text-sm">{labels.voiceRecording} {voiceClock(voice.seconds)}</span>
+    <Button variant="ghost" data-testid="agent-recording-cancel" aria-label={labels.voiceCancel} onClick={voice.cancel} className="min-h-11 min-w-11">{labels.voiceCancel}</Button>
+    <Button data-testid="agent-recording-send" disabled={voice.phase === 'starting'} onClick={voice.finish} className="min-h-11 min-w-11">{labels.send}</Button>
+  </div>;
+}
+
 /** What went wrong with the microphone, in the flow under the title row (never over the messages). */
 function VoiceProblem() {
   const { voice } = useInternal();
@@ -452,6 +503,7 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const transcribe = (spec.voice ?? layer.agent?.voice)?.transcribe;
   const fr = locale === 'fr';
   return <div data-spec={role} hidden={!visible} className={cn('min-h-0 min-w-0 flex-1', visible ? 'flex flex-col' : 'hidden')}>
+    {role === 'agent' && <RecordingBar />}
     <PiChat {...withChatPlugins(spec.chatProps ?? {})} {...(locale ? { locale } : {})} controller={spec.controller} keyboardInset={false} placement={layer.expanded && !layer.dockFloating ? 'docked' : 'floating'} {...(feedback ? { feedback } : {})}
       {...(role === 'agent' && spec.voice ? { voiceMessage: { transcribe: spec.voice.transcribe, Bubble: PendingVoiceBubble }, tools: <>{spec.chatProps?.tools}<TalkButton text={appShellText(locale)} /></>, pendingVoice: layer.voice.pending } : {})} />
     {/* The note editor of ordinary feedback lives inside the layer, in the modal's focus tree; while pointing the layer steps aside and AgentLayer renders it. */}

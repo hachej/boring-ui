@@ -43,12 +43,13 @@ async function fixture(t, options = {}) {
   const fake = createFakeChatModel();
   const native = await Harness.open(new MemoryStorage(), { registry: createRegistry(), models: fake.models }, context);
   const conversation = await native.createConversation({ ownership: { kind: 'ownerless' }, agent: { model: fake.model } }, context);
-  const controller = createNativeChatController({ conversation, context, identity: { runtimeId: 'fictional', scopeId: 'fictional', principalId: 'fictional' }, ...(options.refuse ? { validate: () => { throw new Error('Fictional refusal'); } } : {}) });
+  const controller = createNativeChatController({ conversation, context, identity: { runtimeId: 'fictional', scopeId: 'fictional', principalId: 'fictional' }, ...(options.refuse ? { beforeSubmit: async () => 'Fictional refusal' } : {}) });
   await controller.connect();
   let api;
   const sent = [], realSend = controller.send;
-  controller.send = (...args) => { sent.push(args); return realSend(...args); };
-  const mentions = { search: async () => [], kinds: { repas: { label: path => path === '2026-10-27/dejeuner' ? LABEL : path, icon: h('span', { 'data-testid': 'meal-icon' }, 'meal') } } };
+  controller.send = (...args) => { sent.push(args); if (options.throwSend) throw new Error('Fictional thrown send'); return realSend(...args); };
+  const opened = [];
+  const mentions = { search: async () => [], kinds: { repas: { label: path => path === '2026-10-27/dejeuner' ? LABEL : path, icon: h('span', { 'data-testid': 'meal-icon' }, 'meal'), ...(options.open ? { open: path => opened.push(path) } : {}), ...(options.renderSent ? { renderSent: path => h('em', { 'data-testid': 'custom-meal' }, path) } : {}) } } };
   const spec = { controller, chatProps: { mentions, locale: 'fr' }, ...(options.send ? { voice: { send: options.send, transcribe: async () => WORDS, upload: async () => [{ path: 'uploads/voice-fictional.webm', name: 'voice-fictional.webm' }] } } : {}) };
   function Content() { api = layer.useAgentLayer(); return h(layer.AgentDockLayout, null, h('main', null, 'Fictional meal'), h(layer.AgentLayer)); }
   const mount = document.createElement('div'); document.body.append(mount);
@@ -59,7 +60,7 @@ async function fixture(t, options = {}) {
   const click = selector => act(async () => find(selector).dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true })));
   t.after(async () => { await act(async () => ui.unmount()); await controller.dispose(); await native.close(context); for (const [name, descriptor] of saved) descriptor ? Object.defineProperty(globalThis, name, descriptor) : delete globalThis[name]; window.close(); });
   const talk = async (token = TOKEN, options = {}) => { let result; await act(async () => { result = api.talkAbout(token, options); }); return result; };
-  return { controller, find, until, click, act, talk, api: () => api, permission: () => permission, tracks, sent };
+  return { controller, find, until, click, act, talk, api: () => api, permission: () => permission, tracks, sent, opened };
 }
 
 test('no agent returns false without changing the layer or requesting a microphone', async t => {
@@ -92,6 +93,7 @@ for (const send of ['draft', 'auto', 'message']) test(`${send}: synchronous gest
   await f.click('[data-testid=agent-recording-cancel]');
   assert.equal(f.sent.length, 0); assert.ok(f.tracks.every(track => track.stopped));
   await f.talk(TOKEN, { voice: true, at: 'full' });
+  await f.act(async () => f.controller.setText(`${f.controller.getSnapshot().draft.text}@docs/plan.md `));
   await f.until(() => f.find('[data-testid=agent-recording]')?.getAttribute('data-phase') === 'recording', 'recording again');
   assert.equal(f.api().state, 'full');
   await f.click('[data-testid=agent-recording-send]');
@@ -102,12 +104,13 @@ for (const send of ['draft', 'auto', 'message']) test(`${send}: synchronous gest
   }
   await f.until(() => f.sent.length === 1 && f.controller.getSnapshot().send.kind === 'admitted', 'native admission');
   assert.equal(f.controller.getSnapshot().draft.text, '');
+  assert.ok(f.sent[0][1].text.includes('@docs/plan.md'), 'draft file mentions travel alongside card mentions');
   await f.until(() => f.find('[data-testid=message-mention]')?.textContent.includes(LABEL), 'sent kind mention');
   assert.ok(f.find('[data-testid=user-text]')?.textContent.includes(WORDS));
   if (send === 'message') assert.ok(f.find('[data-testid=voice-play]'), 'mention prefix preserves audio rendering');
 });
-for (const send of ['typed', 'draft', 'auto', 'message']) test(`${send}: failed native send restores words without the card token`, async t => {
-  const f = await fixture(t, { send: send === 'typed' ? undefined : send, refuse: true });
+for (const throwSend of [false, true]) for (const send of ['typed', 'draft', 'auto', 'message']) test(`${send}: ${throwSend ? 'thrown' : 'refused'} native send restores words without the card token`, async t => {
+  const f = await fixture(t, { send: send === 'typed' ? undefined : send, refuse: !throwSend, throwSend });
   await f.talk(TOKEN, { voice: send !== 'typed' });
   if (send === 'typed') await f.act(async () => f.controller.setText(`${TOKEN} ${WORDS}`));
   else {
@@ -119,4 +122,47 @@ for (const send of ['typed', 'draft', 'auto', 'message']) test(`${send}: failed 
   await f.until(() => f.sent.length === 1 && f.controller.getSnapshot().draft.text.includes(WORDS), 'words restored');
   assert.equal(f.controller.getSnapshot().draft.text.includes('@repas:'), false);
   assert.equal(f.find('[data-testid=mention-chip]'), null);
+});
+
+test('typed send renders a quoted kind beside an unchanged file mention, and its opener receives the kind path', async t => {
+  const f = await fixture(t, { open: true });
+  const path = 'Meeting "notes"';
+  await f.talk('@"repas:Meeting \\"notes\\""');
+  assert.ok(f.find('[data-testid=mention-chip]').textContent.includes(path));
+  await f.act(async () => f.controller.setText(`${f.controller.getSnapshot().draft.text} ${WORDS} @docs/plan.md`));
+  await f.click('[data-testid=composer-submit]');
+  await f.until(() => f.find('[data-testid="message-mention"][data-path="docs/plan.md"]'), 'file mention still rendered');
+  assert.equal(f.find('[data-testid="message-mention"][data-path="docs/plan.md"]').textContent, '@docs/plan.md');
+  const kind = [...document.querySelectorAll('[data-testid=message-mention]')].find(element => element.dataset.path.startsWith('repas:'));
+  await f.act(async () => kind.click());
+  assert.deepEqual(f.opened, [path]);
+  assert.equal(f.controller.getSnapshot().draft.text, '');
+});
+
+test('a kind renderSent overrides only sent presentation, not the composer chip', async t => {
+  const f = await fixture(t, { renderSent: true });
+  await f.talk();
+  assert.ok(f.find('[data-testid=mention-chip]').textContent.includes(LABEL));
+  assert.equal(f.find('[data-testid=custom-meal]'), null);
+  await f.click('[data-testid=composer-submit]');
+  await f.until(() => f.find('[data-testid=custom-meal]'), 'custom sent renderer');
+  assert.equal(f.find('[data-testid=custom-meal]').textContent, '2026-10-27/dejeuner');
+});
+
+test('removing the card while recording removes it from the eventual audio message', async t => {
+  const f = await fixture(t, { send: 'message' });
+  await f.talk(TOKEN, { voice: true });
+  await f.until(() => f.find('[data-testid=agent-recording]')?.getAttribute('data-phase') === 'recording', 'recording');
+  await f.click('[data-testid=mention-chip] button');
+  await f.click('[data-testid=agent-recording-send]');
+  await f.until(() => f.find('[data-testid=voice-bubble]'), 'audio message');
+  assert.equal(Boolean(f.find('[data-testid=message-mention]')), false, 'removed chip cannot travel in the send');
+  assert.equal(f.sent[0][1].text.includes(TOKEN), false);
+});
+
+for (const send of [undefined, 'message']) test(`focus without capture when ${send ? 'voice option is off' : 'agent has no voice config'}`, async t => {
+  const f = await fixture(t, { send });
+  await f.talk(TOKEN, { voice: !send });
+  await f.until(() => document.activeElement?.getAttribute('data-testid') === 'composer-input', 'composer focused');
+  assert.equal(f.permission(), 0);
 });
