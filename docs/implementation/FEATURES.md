@@ -1,5 +1,11 @@
 # Implemented behavior and evidence
 
+## Shared run notifications
+
+Foreground `useRunNotifications` and background `watchConversation` in the optional kit `chat-react` entry share one connected-observation transition and transient store. The registry supplies localized words, question parsing and toast presentation only. This is host UI policy over native views, not a Pi execution extension; detach only unsubscribes. [The UI guide](../../packages/ui/README.md#optional-native-chat) describes the public composition.
+
+`test/packages/ui-run-notifications.test.mjs` drives the built public hook/watch/store and the legacy registry adapter: a question without a run, doc-only approval decisions, disconnected completion/reconnect, localized failure, confirmed stop, suppression, StrictMode, controller replacement and independent teardown. `npm run test:ambient-consumer` installs the recipe and actual kit tarball outside the repo, checks strict source declarations and excludes server/native code from the browser bundle. `npm run ambient:journey:scripted` drives the fictional example in headless Chromium; screenshots are local evidence, not physical-device or durable-delivery qualification. Global proof deferrals are unchanged.
+
 ## Placed workspace phone peek
 
 `PlacedAgentWorkspace` lends its existing controller to the app shell's native Base UI drawer on phones. The 8rem peek above the measured tab bar fits the conversation file chip, input and Send; its snap point and clipping boundary share one height. This is host layout, not a Pi execution extension.
