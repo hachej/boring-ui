@@ -17,6 +17,7 @@ import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import type { FeedbackSession } from '@hachej/boring-feedback/ui';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
+import { appendToDraft } from '@hachej/boring-ui-kit/chat-text';
 import { Drawer, DrawerContent } from '@/components/ui/drawer';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Dock, DockLayout, DockMain } from '../dock/dock';
@@ -190,7 +191,7 @@ function useVoice(agent: AgentSpec | undefined, locale: AppShellLocale | undefin
       const fill = () => {
         if (signal.aborted) return;
         const draft = agent.controller.getSnapshot().draft.text;
-        agent.controller.setText(`${draft}${draft === '' || /\s$/.test(draft) ? '' : ' '}${spoken}`);
+        agent.controller.setText(appendToDraft(draft, spoken));
         done('drafted');
       };
       if (agent.voice?.send !== 'auto') { fill(); return; }

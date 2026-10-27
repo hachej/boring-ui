@@ -8,7 +8,7 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/in
 import { Item, ItemContent, ItemDescription, ItemTitle } from '@/components/ui/item';
 import { usePickerKeyboard } from '../pi-chat/picker-keyboard';
 import { ComposerSuggestions } from '../pi-chat/suggestions';
-import { slashGroup } from '../pi-chat/config';
+import { slashGroup } from '@hachej/boring-ui-kit/chat-text';
 import type { SlashPickerProps } from '../pi-chat/config';
 import { useChatText } from '../pi-chat/labels';
 
