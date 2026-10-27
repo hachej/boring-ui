@@ -4,13 +4,13 @@
   "title": "Anchored highlights",
   "description": "Exact Markdown highlights and comments in a conditional workspace sidecar.",
   "dependencies": [
-    "@hachej/boring-ui-kit@^0.4.25",
-    "@hachej/boring-files@^0.4.25",
+    "@hachej/boring-ui-kit@^0.4.26",
+    "@hachej/boring-files@^0.4.26",
     "react@^19.0.0",
     "react-dom@^19.0.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.25/r/markdown-editor.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.26/r/markdown-editor.json"
   ],
   "files": [
     {
