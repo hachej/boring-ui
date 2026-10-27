@@ -10,7 +10,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runCaptured } from './run-captured.mjs';
 import { assertConsumerTypeFiles, prepareConsumerIsolation, npmInstallFlags } from './consumer-isolation.mjs';
-import { consumerDependencies, packBoringDependencies, registryClosure, serveRegistry, writeLockedManifest } from './consumer-install.mjs';
+import { addAppComponents, appComponents, appComponentsJson, consumerDependencies, packBoringDependencies, registryClosure, serveRegistry, writeLockedManifest } from './consumer-install.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const shared = process.argv.includes('--shared');
@@ -42,16 +42,17 @@ try {
   ({ url: registry, server } = await serveRegistry(root, directory, closure, archiveByName, join(directory, 'packs'), cache, run));
 
   for (const path of ['src', 'dist']) mkdirSync(join(directory, path), { recursive: true });
-  writeFileSync(join(directory, 'components.json'), JSON.stringify({ $schema: 'https://ui.shadcn.com/schema.json', style: 'base-nova', rsc: false, tsx: true, tailwind: { config: '', css: 'src/index.css', baseColor: '', cssVariables: true, prefix: '' },
-    iconLibrary: 'lucide', aliases: { components: '@/components', utils: '@/lib/utils', ui: '@/components/ui', lib: '@/lib', hooks: '@/hooks' } }));
+  writeFileSync(join(directory, 'components.json'), appComponentsJson());
   writeFileSync(join(directory, 'src/index.css'), '@import "tailwindcss";\n');
   writeFileSync(join(directory, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'ESNext', moduleResolution: 'Bundler', jsx: 'react-jsx', strict: true, noUncheckedIndexedAccess: true, skipLibCheck: false,
     noEmit: true, types: [], lib: ['ES2023', 'DOM', 'DOM.Iterable'], baseUrl: '.', paths: { '@/*': ['./src/*'] } }, include: ['src/components/pi-chat*/**/*.tsx', 'src/components/pi-chat*/**/*.ts', 'src/components/shared-chat/**/*.tsx', 'src/components/shared-chat/**/*.ts', 'src/page.tsx'] }));
   const installer = { ...process.env, npm_config_cache: cache, npm_config_offline: 'true', npm_config_ignore_scripts: 'true', npm_config_audit: 'false', npm_config_fund: 'false' };
   delete installer.NODE_OPTIONS;
+  // The app's shadcn setup comes first; the items list no shadcn component and import them through the app's ui alias.
+  addAppComponents(directory, appComponents(closure), installer, run);
   run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', `${registry}/${itemName}.json`, '--cwd', directory, '--yes'], installer);
   for (const [name, item] of closure) for (const file of item.files ?? []) assert.ok(existsSync(join(directory, 'src', file.target)), `the CLI must create ${file.target} (${name})`);
-  for (const name of ['trace', 'collapsible']) assert.ok(existsSync(join(directory, `src/components/ui/${name}.tsx`)), `the CLI installs the declared ${name} built-in`);
+  for (const name of ['trace', 'collapsible']) assert.ok(existsSync(join(directory, `src/components/ui/${name}.tsx`)), `the app setup installs the ${name} component`);
   assert.ok(existsSync(join(directory, 'src/components/pi-chat/use-remote-chat.ts')), 'the moved hook is installed with pi-chat alone');
   if (!shared) {
     assert.equal(existsSync(join(directory, 'src/components/shared-chat')), false);

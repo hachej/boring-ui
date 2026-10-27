@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { ChatController } from '@hachej/boring-ui-kit/native-chat';
 import { Loader2Icon } from 'lucide-react';
@@ -150,7 +150,8 @@ type TranscriptRow = { readonly key: string; readonly kind: 'native'; readonly r
 
 /** Borrows a concrete native controller; unmount releases presentation and uploads only. */
 export function PiChat(props: PiChatProps) {
-  const active = useRef(props.controller); active.current = props.controller;
+  const active = useRef(props.controller);
+  useLayoutEffect(() => { active.current = props.controller; });
   // A new controller or a new voice recorder hook starts a fresh session, so the recorder's hooks keep their order.
   const recorder = props.voiceMessage?.useRecorder ?? noVoice;
   const [mount, setMount] = useState({ controller: props.controller, recorder, sequence: 0 });
@@ -181,9 +182,12 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
   const { title } = labels;
   const [pickingConversation, setPickingConversation] = useState(false);
   const scrollToBottom = useRef<() => void>(() => {});
-  const voice = (voiceMessage?.useRecorder ?? noVoice)({ controller, config: voiceMessage, attachments, labels, activeController: active, admitted: () => timeline ? timeline.afterSend?.() : scrollToBottom.current() });
+  const useRecorder = voiceMessage?.useRecorder ?? noVoice;
+  // eslint-disable-next-line react-hooks/refs -- the recorder is the host's hook, picked by prop, so the compiler cannot see it calls admitted only after a recording is admitted, never during render.
+  const voice = useRecorder({ controller, config: voiceMessage, attachments, labels, activeController: active, admitted: () => timeline ? timeline.afterSend?.() : scrollToBottom.current() });
   // A reply's Fork button calls the host's latest `fork`; the row context changes only when forking is switched on or off.
-  const fork = useRef(conversations?.fork); fork.current = conversations?.fork;
+  const fork = useRef(conversations?.fork);
+  useLayoutEffect(() => { fork.current = conversations?.fork; });
   const canFork = Boolean(conversations?.fork);
   const rowExtras = useMemo(() => canFork || messageStyle === 'messaging' ? { ...(canFork ? { onFork: (entryId: string) => { void fork.current?.(entryId).catch(() => {}); } } : {}), ...(messageStyle === 'messaging' ? { messageStyle } : {}) } : undefined, [canFork, messageStyle]);
   const session = useChatSession({ controller, activeController: active, mode, presentation, actions, renderEntry, hideLine, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, camera, fileAccept,
@@ -206,8 +210,8 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
   const { pinned, retry } = derived;
   const showPreparing = preparing({ natural: session.natural, waitingForAnswer, run: derived.run, retry, compacting: derived.compacting, stop: state.stop });
   const transcript = useTranscript(transcriptRows, displayLimit ?? paging?.first ?? PAGE_FIRST, paging?.more ?? PAGE_MORE, { state: state.history, connected: !state.disposed && connected, load: controller.loadEarlier }, displayLimit === undefined);
-  const { stick, hidden } = transcript;
-  scrollToBottom.current = () => { transcript.reset(); void stick.scrollToBottom('instant'); };
+  const { stick, hidden } = transcript, { scrollRef, isAtBottom } = stick;
+  useLayoutEffect(() => { scrollToBottom.current = () => { transcript.reset(); void stick.scrollToBottom('instant'); }; });
   const visible = transcript.visible(transcriptRows);
   // Native rows come before pending voice rows, so the hidden ones are the oldest native rows.
   const chunks = useRowChunks(useMemo(() => rows.slice(Math.min(rows.length, hidden)), [rows, hidden]));
@@ -226,7 +230,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
     observer?.observe(element);
     measure(); viewport.addEventListener('resize', measure); viewport.addEventListener('scroll', measure);
     return () => { observer?.disconnect(); viewport.removeEventListener('resize', measure); viewport.removeEventListener('scroll', measure); };
-  }, []);
+  }, [keyboardInset]);
 
   return <section ref={page} data-boring="pi-chat" data-connection={connectionKind} data-empty={empty && !loading ? emptyLayout : undefined} aria-label={title} className={cn('pi-chat relative box-border flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background text-foreground ', keyboardInset && 'max-[641px]:pb-(--composer-keyboard-inset)', empty && emptyLayout === 'centered' && 'min-[641px]:justify-center', className)}>
     {header && <header className={cn(empty && emptyLayout === 'centered' && 'min-[641px]:absolute min-[641px]:inset-x-0 min-[641px]:top-0', 'flex h-13 shrink-0 items-center gap-2 px-3 sm:gap-3 sm:px-4')}>
@@ -254,7 +258,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
 
     <div data-testid="conversation-content" className={cn('relative min-h-0 flex-1', empty && emptyLayout === 'centered' && 'min-[641px]:min-h-60 min-[641px]:flex-none')}>
       {timeline ? timeline.render({ focusComposer: () => textarea.current?.focus(), openFile: onOpenFile ?? mentions?.open, pendingVoice: pendingRows, paging }) : <MessageScroller>
-        <MessageScrollerViewport ref={stick.scrollRef} data-testid="transcript-scroll" aria-label={labels.messages} className="min-h-0 flex-1 scrollbar-thumb-border scrollbar-track-transparent">
+        <MessageScrollerViewport ref={scrollRef} data-testid="transcript-scroll" aria-label={labels.messages} className="min-h-0 flex-1 scrollbar-thumb-border scrollbar-track-transparent">
           {!empty && <TranscriptHistory history={state.history} connected={!state.disposed && connected} onLoad={transcript.reveal} sentinelRef={transcript.sentinelRef} hidden={hidden} loaded={transcript.loaded} />}
           <div className="mx-auto w-full max-w-[720px] px-4 pt-6 pb-8 sm:px-6">
           <MessageScrollerContent aria-label={labels.messages} aria-live="polite" data-testid="transcript">
@@ -263,7 +267,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
           </MessageScrollerContent>
           </div>
         </MessageScrollerViewport>
-        {!empty && <div data-testid="transcript-navigation" className="flex h-12 shrink-0 items-center justify-center">{!stick.isAtBottom && <MessageScrollerButton className="static inset-auto translate-x-0" data-testid="jump-latest" aria-label={labels.jumpToLatest} title={labels.jumpToLatest} onClick={transcript.reset}><icons.jumpToLatest aria-hidden="true" /></MessageScrollerButton>}</div>}
+        {!empty && <div data-testid="transcript-navigation" className="flex h-12 shrink-0 items-center justify-center">{!isAtBottom && <MessageScrollerButton className="static inset-auto translate-x-0" data-testid="jump-latest" aria-label={labels.jumpToLatest} title={labels.jumpToLatest} onClick={transcript.reset}><icons.jumpToLatest aria-hidden="true" /></MessageScrollerButton>}</div>}
       </MessageScroller>}
       {(empty || loading) && <div className="pointer-events-none absolute inset-0">
         <div className="pointer-events-auto h-full">

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createVoiceCapture } from '@hachej/boring-ui-kit/voice-capture';
 import type { VoiceCapture, VoiceRefusal } from '@hachej/boring-ui-kit/voice-capture';
 import { chatTextFor } from '../pi-chat/locale';
@@ -34,7 +34,7 @@ export function useDictation(options: DictationOptions): Dictation {
   const [seconds, setSeconds] = useState(0);
   const [problem, setProblem] = useState<string | undefined>();
   const latest = useRef(options);
-  latest.current = options;
+  useLayoutEffect(() => { latest.current = options; });
   const phaseRef = useRef<DictationPhase>('idle');
   const current = useRef<{ readonly capture: VoiceCapture; readonly abort: AbortController; readonly options: DictationOptions } | null>(null);
   const set = (next: DictationPhase) => { phaseRef.current = next; setPhase(next); };

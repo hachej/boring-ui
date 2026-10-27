@@ -19,6 +19,7 @@ export function ModelEffortPicker({ model, effort, currentModel, currentEffort, 
   const { labels } = useChatText();
   const name = labels.effortName;
   const [open, setOpen] = useState(false);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- the menu closes when the picker becomes disabled (a run starts), once per change
   useEffect(() => { if (disabled) setOpen(false); }, [disabled]);
   const models: Choice[] = (model?.options ?? []).map(option => ({ section: 'model', value: key(option), label: option.label ?? option.modelId, detail: option.provider }));
   // A model or level outside the offered list is still shown, so the label never lies about what runs.

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { PDFDocumentProxy, PDFWorker, RenderTask } from 'pdfjs-dist';
 import { useViewerText } from '../viewer-frame/viewer-window';
 
@@ -58,12 +58,12 @@ export interface PdfPagesProps {
  */
 export function PdfPages({ url, name, zoom, testId, onLoad, onPage, onError, onKey }: PdfPagesProps) {
   const { labels } = useViewerText();
-  const scroller = useRef<HTMLDivElement>(null);
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
   const [document, setDocument] = useState<PDFDocumentProxy>();
   const [ratio, setRatio] = useState(Math.SQRT2);
   const [width, setWidth] = useState(0);
   const latest = useRef({ onLoad, onError });
-  latest.current = { onLoad, onError };
+  useLayoutEffect(() => { latest.current = { onLoad, onError }; });
   useEffect(() => {
     const abort = new AbortController();
     let close: (() => void) | undefined;
@@ -79,7 +79,7 @@ export function PdfPages({ url, name, zoom, testId, onLoad, onPage, onError, onK
     return () => { abort.abort(); close?.(); };
   }, [url]);
   useEffect(() => {
-    const box = scroller.current;
+    const box = scroller;
     if (!box) return;
     const measure = () => setWidth(Math.max(0, box.clientWidth - 16));
     measure();
@@ -87,9 +87,9 @@ export function PdfPages({ url, name, zoom, testId, onLoad, onPage, onError, onK
     const observer = new ResizeObserver(measure);
     observer.observe(box);
     return () => observer.disconnect();
-  }, []);
+  }, [scroller]);
   const scrolled = () => {
-    const box = scroller.current;
+    const box = scroller;
     if (!box) return;
     const line = box.scrollTop + box.clientHeight / 3;
     let page = 1;
@@ -97,11 +97,11 @@ export function PdfPages({ url, name, zoom, testId, onLoad, onPage, onError, onK
     onPage(page);
   };
   const pageWidth = Math.floor(width * zoom);
-  return <div ref={scroller} data-testid={`${testId}-pdf-pages`} aria-label={name} role="document" tabIndex={0} onScroll={scrolled}
+  return <div ref={setScroller} data-testid={`${testId}-pdf-pages`} aria-label={name} role="document" tabIndex={0} onScroll={scrolled}
     onKeyDown={event => onKey?.(event.key)} className="relative min-h-0 min-w-0 flex-1 overflow-auto p-2">
     {!document ? <p role="status" className="m-0 p-6 text-center text-sm text-muted-foreground">{labels.loading}</p>
       : <div className="flex w-max min-w-full flex-col items-center gap-2">
-        {Array.from({ length: document.numPages }, (_, index) => <PdfPage key={index} document={document} number={index + 1} width={pageWidth} ratio={ratio} root={scroller.current} testId={testId} />)}
+        {Array.from({ length: document.numPages }, (_, index) => <PdfPage key={index} document={document} number={index + 1} width={pageWidth} ratio={ratio} root={scroller} testId={testId} />)}
       </div>}
   </div>;
 }

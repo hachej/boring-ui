@@ -32,6 +32,9 @@
     "happy-dom": "20.14.6",
     "esbuild": "0.28.2",
     "oxlint": "1.86.0",
+    "eslint": "10.12.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "@typescript-eslint/parser": "8.71.2",
     "marked": "17.0.6",
     "just-bash": "3.6.0",
     "isomorphic-git": "1.44.2",
@@ -587,7 +590,7 @@
     "artifactViewer": "@hachej/boring-ui-kit/artifact-viewer -> src/artifact-viewer.tsx; read-only host presentation of supplied content or media URLs. React and private Marked parsing over the shared passive HTML allowlist; no files, controllers, Tiptap, canvas, pdfjs or agent imports. Native browser PDF by default, with an optional trusted host renderer. No Pi execution or resource authority.",
     "fileTreeControls": "required host presentation binding; registry supplies the consumer shadcn Button, dropdown-menu and shared version-history rows, never a package-owned control skin",
     "versionHistory": "shared registry version-history presentation owns relative time, provenance and Current rows for viewer menus and Library panels; no publication or execution authority",
-    "chatActivity": "shadcn built-in trace, resolved by the consumer style; host presentation over native Pi views, no execution state",
+    "chatActivity": "the app's shadcn trace (its ui alias, installed in the app setup); host presentation over native Pi views, no execution state",
     "chatComposition": {
       "pi-chat": "regular native renderer; optional generic transcript, composer-content, file-pick and mention-option seams; no dependency on shared-chat",
       "sentFeedback": "pi-chat -> @hachej/boring-feedback/format for strict page-report parsing and readable element labels; host presentation only, no feedback capture, store, agent or Pi execution authority",

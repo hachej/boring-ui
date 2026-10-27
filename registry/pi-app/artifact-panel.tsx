@@ -27,7 +27,7 @@ import type { InteractiveHtml } from '../viewer-frame/interactive-html';
 import { downloadFile } from '../viewer-frame/download';
 import { copyText } from '../utils/utils';
 import { Separator } from '@/components/ui/separator';
-import { Mounted, ViewLoading, drawsText, isEditorKind, isMediaKind, lazyRenderer, lazyView, noKinds } from './viewer-kinds';
+import { LazyPane, Mounted, ViewLoading, drawsText, isEditorKind, isMediaKind, lazyRenderer, noKinds } from './viewer-kinds';
 import type { PanelKind } from './viewer-kinds';
 import { readText, savedLabel, useSaved } from './use-saved';
 import { useAppText } from './app-labels';
@@ -187,12 +187,10 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose, headerSta
   const custom = draws && !draws.fallback ? undefined : options.viewers?.[type];
   const drawing = custom ? undefined : draws;
   const editor = isEditorKind(drawing) ? drawing.editor : undefined;
-  const create = useMemo(() => {
-    const base = (snapshot: ResourceSnapshot) => ({ identity, client, instanceId: randomUUID(), epoch: 'workspace', source: { kind: 'saved' as const, snapshot } });
-    if (editor === 'markdown') return (snapshot: ResourceSnapshot): DocumentController => createMarkdownController({ ...base(snapshot), readOnly: pinned });
-    if (editor === 'html') return (snapshot: ResourceSnapshot): DocumentController => createHtmlController({ ...base(snapshot), readOnly: true });
-    return undefined;
-  }, [editor, pinned, client, identity]);
+  // useSaved reads the latest factory when it opens a revision, so it need not be memoized.
+  const base = (snapshot: ResourceSnapshot) => ({ identity, client, instanceId: randomUUID(), epoch: 'workspace', source: { kind: 'saved' as const, snapshot } });
+  const create = editor === 'markdown' ? (snapshot: ResourceSnapshot): DocumentController => createMarkdownController({ ...base(snapshot), readOnly: pinned })
+    : editor === 'html' ? (snapshot: ResourceSnapshot): DocumentController => createHtmlController({ ...base(snapshot), readOnly: true }) : undefined;
   const autosave = useRef<{ controller: DocumentController; flush: () => Promise<boolean> } | null>(null);
   const saved = useSaved<DocumentController>({ client, target: artifact.target, revision: pinned ? artifact.revision : undefined, create,
     beforeDispose: controller => autosave.current?.controller === controller ? autosave.current.flush() : undefined });
@@ -200,15 +198,16 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose, headerSta
   const registerAutosave = useCallback((flush: (() => Promise<boolean>) | null) => {
     autosave.current = flush && controller ? { controller, flush } : null;
   }, [controller]);
+  const onUnsavedChange = options.onUnsavedChange;
   useLayoutEffect(() => {
     if (!controller) return;
     const notify = () => {
       const state = controller.getSnapshot();
-      options.onUnsavedChange?.(state.dirty || state.save.kind === 'pending' || state.save.kind === 'settled' && state.save.result.kind === 'unknown');
+      onUnsavedChange?.(state.dirty || state.save.kind === 'pending' || state.save.kind === 'settled' && state.save.result.kind === 'unknown');
     };
     notify(); const stop = controller.subscribe(notify);
-    return () => { stop(); options.onUnsavedChange?.(false); };
-  }, [controller, options.onUnsavedChange]);
+    return () => { stop(); onUnsavedChange?.(false); };
+  }, [controller, onUnsavedChange]);
   // The text to copy and download is the buffer when a viewer holds one, so the person's unsaved edits are included.
   const text = useSyncExternalStore(controller ? controller.subscribe : NOOP, () => controller ? controller.getSnapshot().text : saved.text, () => saved.text);
   const extension = EXTENSION.exec(path)?.[1] ?? 'txt';
@@ -235,7 +234,7 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose, headerSta
       <span title={path}>{path}</span><span aria-hidden="true">·</span>
       <span data-testid="artifact-panel-type">{typeLabel(artifact, kinds, chatText.labels.artifactTypes)}</span>
       <span aria-hidden="true">·</span>
-      <span data-testid="artifact-panel-version">{pinned ? (menu.savedAt !== undefined ? labels.savedAt(savedLabel(menu.savedAt, Date.now(), labels.earlierVersion)) : labels.olderVersion) : menu.savedAt ? labels.latestSavedAt(savedLabel(menu.savedAt, Date.now(), labels.earlierVersion)) : labels.latest}</span>
+      <span data-testid="artifact-panel-version">{pinned ? (menu.savedAt !== undefined ? labels.savedAt(savedLabel(menu.savedAt, undefined, labels.earlierVersion)) : labels.olderVersion) : menu.savedAt ? labels.latestSavedAt(savedLabel(menu.savedAt, undefined, labels.earlierVersion)) : labels.latest}</span>
     </>,
     ...(pinned ? { status: { label: labels.readOnly, kind: 'read-only' as const } } : {}),
   };
@@ -258,11 +257,9 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose, headerSta
     const { onShare: _, ...waiting } = { ...frame, testId: 'artifact-pending' };
     let pane: ReactNode;
     if (drawing.editor === 'markdown') {
-      const MarkdownPane = lazyView(drawing.load);
-      pane = <MarkdownPane controller={controller as MarkdownController} initialMode="rich" onAutosaveChange={registerAutosave} onBeforeLeaveChange={options.onBeforeLeaveChange} {...frame} />;
+      pane = <LazyPane load={drawing.load} controller={controller as MarkdownController} initialMode="rich" onAutosaveChange={registerAutosave} onBeforeLeaveChange={options.onBeforeLeaveChange} {...frame} />;
     } else {
-      const HtmlPane = lazyView(drawing.load);
-      pane = <HtmlPane controller={controller as HtmlController} {...(options.interactive ? { interactive: options.interactive } : {})} {...frame} />;
+      pane = <LazyPane load={drawing.load} controller={controller as HtmlController} {...(options.interactive ? { interactive: options.interactive } : {})} {...frame} />;
     }
     return body(document(<Suspense fallback={<ViewerFrame {...waiting}>{loading}</ViewerFrame>}>{pane}<Mounted value={saved.snapshot.ref.revision} onMount={setMounted} /></Suspense>));
   }

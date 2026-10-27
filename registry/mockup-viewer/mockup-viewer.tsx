@@ -92,12 +92,14 @@ export function MockupViewer({ text, path = '', comments, locale, onReady, theme
     if (!themeOverride) return dark === host.dark ? host : { ...host, dark };
     const own = themeDeclarations(themeOverride, dark);
     return { variables: [host.variables, own].filter(Boolean).join(';'), dark };
-  }, [host, overrideKey, forced]); // eslint-disable-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the override by value (overrideKey): a new object with the same theme does not restyle the frame
+  }, [host, overrideKey, forced]);
   const [compiled, setCompiled] = useState<{ text: string; css: string } | { text: string; error: true }>();
   const [picks, setPicks] = useState<readonly MockupPick[]>([]);
   const label = locale === 'fr' ? 'Commenter un élément' : 'Comment on an element';
   useEffect(() => {
     let off = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- a new mock-up or path starts with no picks, once per change
     setPicks([]);
     void import('./mockup-compile').then(({ compileMockup }) => compileMockup(text)).then(css => { if (!off) setCompiled({ text, css }); }, () => { if (!off) setCompiled({ text, error: true }); });
     return () => { off = true; };
@@ -107,6 +109,7 @@ export function MockupViewer({ text, path = '', comments, locale, onReady, theme
   const picking = comments?.picking ?? comments?.active ?? false;
   const mode = () => frame.current?.contentWindow?.postMessage({ type: 'mockup:pick-mode', on: picking, theme }, '*');
   useEffect(mode, [picking, content, theme]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- a newly compiled page starts with no picks, before paint, once per content
   useLayoutEffect(() => { pending.current = undefined; setPicks([]); }, [content]);
   useEffect(() => {
     const view = root.current?.ownerDocument.defaultView;
@@ -124,13 +127,14 @@ export function MockupViewer({ text, path = '', comments, locale, onReady, theme
     view?.addEventListener('message', onMessage);
     return () => view?.removeEventListener('message', onMessage);
   }, [comments, picking]);
+  const pickProxy = comments?.pick, reposition = comments?.reposition;
   useLayoutEffect(() => {
     const selector = pending.current;
     pending.current = undefined;
     const proxy = selector === undefined ? undefined : proxies.current.get(selector);
-    if (proxy) comments?.pick?.(proxy);
-    else comments?.reposition?.();
-  }, [picks, comments?.pick, comments?.reposition]);
+    if (proxy) pickProxy?.(proxy);
+    else reposition?.();
+  }, [picks, pickProxy, reposition]);
   return <div ref={root} data-boring="mockup-viewer" className="flex h-full min-h-0 min-w-0 flex-col">
     {comments?.pick && <nav data-feedback-ignore="" className="flex shrink-0 justify-end px-2 py-1">
       <Tooltip><TooltipTrigger render={<Toggle aria-label={label} pressed={comments.active} onPressedChange={comments.point} data-testid="mockup-comment" className="pointer-coarse:min-h-11 pointer-coarse:min-w-11" />}><MessageSquarePlusIcon aria-hidden="true" /></TooltipTrigger><TooltipContent>{label}</TooltipContent></Tooltip>

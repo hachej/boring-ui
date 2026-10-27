@@ -83,6 +83,7 @@ export function ProviderSetup({ providers, value, onSave, onLogin, loginState = 
   const chosen = providers.find(item => item.id === provider) ?? providers[0];
 
   // A new value from the host (after a save or a sign-in) replaces the form's draft.
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- the host's new value resets the draft once per change, after commit
   useEffect(() => { setProvider(value.provider); setModelId(value.modelId); setGateway(value.gateway ?? ''); }, [value.provider, value.modelId, value.gateway]);
 
   if (!chosen) return null;

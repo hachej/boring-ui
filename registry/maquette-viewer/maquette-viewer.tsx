@@ -7,7 +7,7 @@
 // The workflow is drawn by the diagram-viewer item's `DiagramView`, inline or from a linked `*.diagram.json`. With `comments` (the feedback
 // item's `usePointComments`, structurally) one more icon enters point mode on the screen: a tap on a block pins a note that names the
 // maquette path, the screen id and the block id; the pins of the current screen show as small numbers on their blocks.
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent, ReactNode, TouchEvent } from 'react';
 import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, CompassIcon, EllipsisIcon, InfoIcon, MessageSquarePlusIcon, TriangleAlertIcon, WorkflowIcon, XIcon } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -153,7 +153,9 @@ function Walkthrough({ maquette, labels, fragment, path, comments, read, publish
   // Goto blocks pulse once, the first time their screen is shown.
   // Decided once per shown screen, so a re-render of the same screen (the host menu updating) does not end the pulse.
   const shown = useRef<{ readonly id: string; readonly first: boolean } | undefined>(undefined);
+  // eslint-disable-next-line react-hooks/refs -- ref cache of the decision for the shown screen (no setState during render); a re-render of the same screen reuses it
   const view = shown.current?.id === current.id ? shown.current : { id: current.id, first: !seen.current.has(current.id) };
+  // eslint-disable-next-line react-hooks/refs -- stores the decision above in the same ref cache
   shown.current = view;
   const firstView = view.first;
   useEffect(() => { seen.current.add(current.id); }, [current.id]);
@@ -172,7 +174,8 @@ function Walkthrough({ maquette, labels, fragment, path, comments, read, publish
   const back = () => { if (walk.history.length > 1) move({ history: walk.history.slice(0, -1), tour: null }); };
   const startTour = (item: MaquetteCase) => move({ history: [...walk.history, item.steps[0]!.screen], tour: { name: item.name, index: 0 } });
   // A later `#screen=<id>` (the PM's "see screen 2" link) opens that screen.
-  useEffect(() => { if (exists(linked) && linked !== walk.history.at(-1)) setWalk(previous => ({ history: [...previous.history, linked], tour: null })); }, [linked]); // eslint-disable-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- follows a new fragment link once per change of `linked`; the guard skips the screen already shown
+  useEffect(() => { if (exists(linked) && linked !== walk.history.at(-1)) setWalk(previous => ({ history: [...previous.history, linked], tour: null })); }, [linked]); // eslint-disable-line react-hooks/exhaustive-deps -- only a new link moves; the walk and the screen list are read as they are
   // After a move, keyboard focus starts on the new screen, so Tab continues inside the screen just opened.
   useEffect(() => { if (moved.current) { moved.current = false; heading.current?.focus(); } }, [walk]);
 
@@ -186,7 +189,8 @@ function Walkthrough({ maquette, labels, fragment, path, comments, read, publish
   // Inside a host bar with its own "…" menu, the tours and "How it works" go there (one menu, not two).
   const fromContext = useContext(MaquetteMenuContext);
   const publish = publishMenu ?? fromContext;
-  const latestTour = useRef(startTour); latestTour.current = startTour;
+  const latestTour = useRef(startTour);
+  useLayoutEffect(() => { latestTour.current = startTour; });
   useEffect(() => {
     if (!publish) return undefined;
     const items: MaquetteMenuEntry[] = [

@@ -58,13 +58,14 @@ export function RequestsBoard(props: RequestsBoardProps) {
     setAnnouncement(moved.map(view => labels.changed(view.number, labels.states[view.state])).join('; '));
     observed.current = { token: changeToken, views: views.map(view => ({ number: view.number, state: view.state, line: view.line, since: view.since })) };
   }, [changeToken, views, labels]);
+  const detailNumber = detail?.number;
   useEffect(() => {
-    if (detail) heading.current?.focus();
+    if (detailNumber !== undefined) heading.current?.focus();
     else if (returning.current !== undefined) {
       (rows.current.get(returning.current) ?? rows.current.values().next().value)?.focus();
       returning.current = undefined;
     }
-  }, [detail?.number]);
+  }, [detailNumber]);
   const open = (number: string) => { if (mode === 'full') setSelected(number); onOpen(number); };
   const back = () => { returning.current = selected; setSelected(undefined); };
   const navigate = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {

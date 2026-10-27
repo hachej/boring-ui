@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -77,7 +77,8 @@ export function RunCard({ run: given, fetchRun, pollMs = 2000, now: clock = Date
   const run = fetched?.id === given.id ? fetched : given;
   const settled = run.status === 'completed' || run.status === 'failed';
   const [now, setNow] = useState(clock);
-  const latest = useRef(fetchRun); latest.current = fetchRun;
+  const latest = useRef(fetchRun);
+  useLayoutEffect(() => { latest.current = fetchRun; });
 
   const refresh = (signal: AbortSignal) => latest.current?.(given.id, signal).then(value => {
     if (signal.aborted) return;
@@ -86,13 +87,16 @@ export function RunCard({ run: given, fetchRun, pollMs = 2000, now: clock = Date
     if (parsed?.id === given.id) setFetched(parsed);
   }).catch(() => { if (!signal.aborted) setFailed(true); });
   const polling = Boolean(fetchRun) && !settled;
+  // The latest refresh, so polling restarts only when it starts, stops, or the run or interval changes.
+  const refresher = useRef(refresh);
+  useLayoutEffect(() => { refresher.current = refresh; });
   useEffect(() => {
     if (!polling) return;
     const abort = new AbortController();
-    void refresh(abort.signal);
-    const timer = setInterval(() => { void refresh(abort.signal); }, pollMs);
+    void refresher.current(abort.signal);
+    const timer = setInterval(() => { void refresher.current(abort.signal); }, pollMs);
     return () => { abort.abort(); clearInterval(timer); };
-  }, [polling, given.id, pollMs]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [polling, given.id, pollMs]);
   useEffect(() => {
     if (settled || run.startedAt === undefined) return;
     const timer = setInterval(() => setNow(clock()), 1000);

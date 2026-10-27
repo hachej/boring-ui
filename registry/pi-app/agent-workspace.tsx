@@ -286,10 +286,13 @@ export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, titl
   const [own, setOwn] = useState<OpenedView | null>(defaultOpened);
   const [panelLibrary, setPanelLibrary] = useState(false);
   const opened = controlled !== undefined ? controlled : own;
+  // eslint-disable-next-line react-hooks/refs -- latest-value ref assigned in render, read only by event handlers, effects and async callbacks
   const change = useRef(onOpenedChange); change.current = onOpenedChange;
   const isControlled = controlled !== undefined;
   const unsaved = useRef(false);
+  // eslint-disable-next-line react-hooks/refs -- latest-value ref assigned in render, read only by event handlers, effects and async callbacks
   const currentView = useRef(opened); currentView.current = opened;
+  // eslint-disable-next-line react-hooks/refs -- latest-value ref assigned in render, read only by event handlers, effects and async callbacks
   const unsavedChange = useRef(onUnsavedChange); unsavedChange.current = onUnsavedChange;
   const noteUnsaved = useCallback((value: boolean) => { if (unsaved.current !== value) { unsaved.current = value; unsavedChange.current?.(value); } }, []);
   const beforeLeave = useRef<(() => Promise<boolean>) | null>(null);
@@ -335,6 +338,7 @@ export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, titl
 
   // With a revision provider, `resources` carries only the blob options; without one it is the resource handler too.
   const remote = revisionProvider ? undefined : resources as WorkspaceResources;
+  // eslint-disable-next-line react-hooks/refs -- the host's latest fetch, read when a request goes out; clients built once keep calling the current one
   const fetcher = useRef(remote?.fetch); fetcher.current = remote?.fetch;
   const endpoint = remote ? String(remote.endpoint) : undefined;
   const historyEndpoint = remote?.history === undefined ? undefined : String(remote.history);
@@ -370,15 +374,18 @@ export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, titl
     return () => abort.abort();
   }, [listingKey]); // eslint-disable-line react-hooks/exhaustive-deps
   // The Library's binding: the host's revision provider, or the listing above with the versions of `resources.history`.
+  // eslint-disable-next-line react-hooks/refs -- the functions built here read refs only when a request, an event or an effect calls them, never during render
   const libraryProvider = useMemo(() => revisionProvider ?? (listing && listing.key === listingKey ? { ...listing.provider, history: history ?? listing.provider.history } : undefined),
     [revisionProvider, listing, listingKey, history]);
   // The viewers' client: the Library's binding when there is one (its calls carry the binding the revision protocol checks), else the plain resource client.
   // With `resources`, the binding is discovered after the first render on the same endpoint for the same person: it takes over the calls of
   // one stable client, so a viewer already open keeps its bytes and its editor instead of reloading when the binding arrives.
   const discovered = useRef(libraryProvider);
+  // eslint-disable-next-line react-hooks/refs -- latest-value ref: a viewer may read through the client during its own render or layout effect, before this component's effects run
   discovered.current = libraryProvider;
   const client = useMemo((): ResourceClient => {
     if (revisionProvider) return revisionProvider;
+    // eslint-disable-next-line react-hooks/refs -- the client's functions read refs only when a request calls them, never during render
     const plain = createResourceClient({ identity, endpoint: new URL(endpoint!, globalThis.location?.href), publication: true, reconciliation: true, fetch: request => fetcher.current!(request) });
     const current = (): ResourceClient => discovered.current ?? plain;
     return {
@@ -394,14 +401,18 @@ export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, titl
     const index = images.indexOf(image);
     if (index >= 0 && images.every(item => thumbnail(item.mimeType, item.data))) setImagePreview({ images: images.slice(), index, controller, client, conversationId });
   }, [controller, client, conversationId]);
+  // eslint-disable-next-line react-hooks/refs -- the functions built here read refs only when a request, an event or an effect calls them, never during render
   const preview = imagePreview && !chat.onOpenImage && imagePreview.controller === controller && imagePreview.client === client && imagePreview.conversationId === conversationId ? imagePreview : undefined;
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- a new controller, client, conversation or host image handler drops the preview, once per change
   useEffect(() => { setImagePreview(undefined); }, [controller, client, conversationId, chat.onOpenImage]);
   // ---- Presented files: the page confirms a `present` call only once its panel has mounted the revision (`onShown`, from the viewers).
   // The bookkeeping is `createPresentAcks` (pi-artifacts/artifact.ts); the answer goes through the chat's own `answer` (the transport's
   // `?op=answer`) and the server checks the path and revision.
+  // eslint-disable-next-line react-hooks/refs -- latest-value ref assigned in render, read only by event handlers, effects and async callbacks
   const answerPresent = useRef(chat.actions?.answer); answerPresent.current = chat.actions?.answer;
   const openForPresent = useRef<(path: string) => boolean>(() => false);
   const presentAcks = useRef<PresentAcks | undefined>(undefined);
+  // eslint-disable-next-line react-hooks/refs -- the present acknowledgements are created once per workspace on first render; their callbacks read refs only when called
   if (!presentAcks.current) presentAcks.current = createPresentAcks({ answer: (id, body) => answerPresent.current?.(id, body),
     open: path => openForPresent.current(path), instanceId: randomUUID() });
   const onShown = useCallback((view: { readonly path: string; readonly revision: string; readonly hidden?: true }) => {
@@ -418,15 +429,18 @@ export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, titl
     if (!libraryProvider) return;
     // The Library reads its listings through `withBlobPointers`: each pointer file is resolved there, once, to the file it stands for.
     const tree = createFileTreeController({ revisionProvider: withBlobPointers(libraryProvider, blobBase) });
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- this effect owns the disposable tree (created and disposed here, StrictMode-safe); state only publishes it
     setFileBinding({ provider: libraryProvider, tree });
     void tree.refresh();
     return () => tree.dispose();
   }, [libraryProvider, blobBase]);
+  // eslint-disable-next-line react-hooks/refs -- the functions built here read refs only when a request, an event or an effect calls them, never during render
   const libraryController = fileBinding?.provider === libraryProvider ? fileBinding?.tree : undefined;
   // Uploads and the upload notice belong to a revision provider only; the resources Library is read-only.
   const fileTree = revisionProvider ? libraryController : undefined;
   const embedded = layout === 'embedded';
   // Where the Library opens (`libraryPlacement`); embedded, it is the bar's Library button instead.
+  // eslint-disable-next-line react-hooks/refs -- the functions built here read refs only when a request, an event or an effect calls them, never during render
   const placed = Boolean(libraryProvider) && !embedded;
   const libraryInPane = placed && libraryPlacement === 'pane';
   const librarySide = placed && libraryPlacement === 'side';
@@ -457,12 +471,15 @@ export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, titl
   };
   // @ search: results are reused while the feed reports nothing new (typing back and forth), and dropped at the next change event.
   // One cache per provider instance (one workspace binding), so another binding never sees these results.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- one mention cache per provider instance: revisionProvider is the cache's identity, not an input
   const mentionResults = useMemo(() => ({ seq: undefined as number | undefined, results: new Map<string, readonly FileEntry[]>() }), [revisionProvider]);
+  // eslint-disable-next-line react-hooks/refs -- latest-value ref assigned in render, read only by event handlers, effects and async callbacks
   const feedState = useRef(feed); feedState.current = feed;
   const mentions = useMemo(() => revisionProvider ? {
     search: async (query: string, signal: AbortSignal) => {
       const { live, seq } = feedState.current;
       const cache = mentionResults;
+      // eslint-disable-next-line react-hooks/immutability -- the mention cache is this binding's own mutable holder, reset when the feed reports a change
       if (cache.seq !== seq || !live) { cache.seq = seq; cache.results = new Map(); }
       const known = live ? cache.results.get(query) : undefined;
       if (known) return known;
@@ -480,6 +497,7 @@ export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, titl
     },
   } : undefined, [revisionProvider, openFile, mentionResults]);
   // The search function changes only with the binding; the feed's seq rides along as the picker's generation.
+  // eslint-disable-next-line react-hooks/refs -- the functions built here read refs only when a request, an event or an effect calls them, never during render
   const mentionsForChat = useMemo(() => mentions && { ...mentions, generation: feed.seq }, [mentions, feed.seq]);
   const [attachmentFailure, setAttachmentFailure] = useState<{ readonly tree: FileTreeController; readonly reasons: readonly string[] }>();
   // Primitives only in the memo: a host's inline `labels` object would otherwise rebuild the chat's attachments on every render.
@@ -518,6 +536,7 @@ export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, titl
   }, [versions, controller, conversationId, turn]); // eslint-disable-line react-hooks/exhaustive-deps
   // A `present` call waiting for the page: decided by `createPresentAcks` (refused when the person closed the panel this turn, has unsaved
   // edits or is on a phone; otherwise its file is opened unless `autoOpen` is off, and the acknowledgement follows the mount).
+  // eslint-disable-next-line react-hooks/refs -- the present acknowledgements call the latest opener only when a present call is considered, in an effect
   openForPresent.current = path => { if (unsaved.current) return false; void setOpened({ kind: 'file', path }); return true; };
   const liveView = useSyncExternalStore(controller ? controller.subscribe : subscribeNothing, () => controller?.getSnapshot().view, () => undefined);
   const presentCalls = useMemo(() => pendingPresents(liveView), [liveView]);
@@ -561,6 +580,7 @@ export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, titl
     changePaneView('library');
     if (narrow) setDrawer(true); else setPaneOpen(true);
   };
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- widening past the drawer breakpoint closes the drawer, once per change
   useEffect(() => { if (!narrow) setDrawer(false); }, [narrow]);
   const toggleSide = useCallback(() => setSideOpen(!sideOpen), [setSideOpen, sideOpen]);
   // The Library tree, one view for the side column, the center and the pane; `onOpen` is what choosing a file does there.
@@ -597,6 +617,7 @@ export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, titl
   const header = <>{conversations?.onNew && <Button variant="ghost" size="icon-sm" data-testid="workspace-new-chat" aria-label={text.labels.newChat} title={text.labels.newChat} className="min-[641px]:hidden" onClick={conversations.onNew}><text.icons.newChat data-icon="inline-start" aria-hidden="true" /></Button>}{hostControls}</>;
   const conversationTitle = conversations?.items.find(item => item.id === conversationId)?.title;
   // pi-app ships every composer feature item: Markdown, the `/` menu, `@` mentions, the model pill, voice messages, the phone camera.
+  // eslint-disable-next-line react-hooks/refs -- the functions built here read refs only when a request, an event or an effect calls them, never during render
   const chatProps: PiChatProps | undefined = controller && withChatPlugins({ ...(mentionsForChat ? { mentions: mentionsForChat } : {}), ...(attachments ? { attachments } : {}), ...(locale ? { locale } : {}), ...chat, controller, artifacts, onOpenFile: chat.onOpenFile ?? chat.mentions?.open ?? openFile, onOpenImage: chat.onOpenImage ?? openImage, ...(conversations ? { conversations, historyList: popoverHistory, showHistory: chat.showHistory ?? popoverHistory, conversationTitle, onRenameTitle: conversations.rename && conversationId ? (title: string) => conversations.rename!(conversationId, title) : undefined } : {}),
     headerStart: <>{toggle}{chat.headerStart}</>, ...(header === undefined ? {} : { controls: header }),
     // Embedded: the bar above replaces the chat's header (History, New and the host's controls are in it); conversations stay for Fork.
@@ -633,6 +654,7 @@ export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, titl
   return <AppTextProvider value={text}><ChatTextProvider value={chatText}><div ref={root} data-boring="agent-workspace" data-layout={layout} data-sessions={!hasNavigation ? undefined : narrow ? (drawer ? 'drawer' : 'closed') : docked ? 'docked' : 'hidden'}
     className={cn('pi-chat relative flex h-full min-h-0 min-w-0 flex-1 overflow-hidden', className)}>
     <DockLayout storageKey={`${storageKey}.dock`} minMain={SESSIONS_WIDTH + 480}>
+    {/* eslint-disable-next-line react-hooks/refs -- the functions built here read refs only when a request, an event or an effect calls them, never during render */}
     {hasNavigation && (docked || (narrow && drawer)) && (sessions ? sessions(sessionProps) : <SessionsPane {...sessionProps} />)}
     <DockMain><ArtifactWorkspace open={panelOpen && !(panelLibrary && narrow)} onClose={close} panelLabel={text.labels.artifactPanel} labels={{ resize: text.labels.resizePanel, floatHint: text.labels.floatHint }} fullscreen={fullscreen} onFullscreenChange={setFullscreen} storageKey={`${storageKey}.panel-width`} {...(panelWidth === undefined ? {} : { defaultWidth: panelWidth })}
       sheetBelow={Math.max(CHAT_MIN + VIEWER_MIN, docked ? sheetBelow - SESSIONS_WIDTH : sheetBelow)} {...(floatBelow === undefined || libraryOpen ? {} : { floatBelow })}
@@ -663,6 +685,7 @@ export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, titl
     </DockLayout>
     {preview && <ImageViewer images={preview.images} index={preview.index} labels={chatText.labels} testId="conversation-image"
       onIndexChange={index => setImagePreview({ ...preview, index })} onClose={() => setImagePreview(undefined)} />}
+    {/* eslint-disable-next-line react-hooks/refs -- the functions built here read refs only when a request, an event or an effect calls them, never during render */}
     {panelLibrary && narrow && <Drawer open showSwipeHandle onOpenChange={next => { if (!next) setPanelLibrary(false); }}><DrawerContent aria-label={text.labels.library} className="pi-chat min-h-[80dvh] max-h-[80dvh]"><DrawerTitle className="sr-only">{text.labels.library}</DrawerTitle><div data-testid="workspace-library-side" className="min-h-0 flex-1 overflow-auto pb-[env(safe-area-inset-bottom)]">{libraryTree(openFile, () => setPanelLibrary(false))}</div></DrawerContent></Drawer>}
   </div></ChatTextProvider></AppTextProvider>;
 }
@@ -688,6 +711,7 @@ function WorkspaceCenter({ libraryOpen, floating, chat, floatingChat, library }:
 }) {
   const lastFloating = useRef(floating);
   useLayoutEffect(() => { if (!libraryOpen) lastFloating.current = floating; }, [libraryOpen, floating]);
+  // eslint-disable-next-line react-hooks/refs -- the floating choice is held while the Library covers the chat; the layout effect above keeps it current
   const showFloating = libraryOpen ? lastFloating.current : floating;
   return <div className="flex min-h-0 flex-1 flex-col">
     <div data-testid="workspace-chat-surface" hidden={libraryOpen} inert={libraryOpen} aria-hidden={libraryOpen || undefined} className={cn('min-h-0 flex-1 flex-col', libraryOpen ? 'hidden' : 'flex')}>
@@ -711,6 +735,7 @@ function useChangeFeed(provider: RevisionProvider | undefined, settleMs = 150): 
   // The provider connected last, and the protocol seq of the last event the views reloaded for.
   const connected = useRef<{ readonly provider: RevisionProvider; seen: number | undefined } | undefined>(undefined);
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the feed's state is reset for the new provider when this effect subscribes to it
     if (!provider?.changes) { setState({ provider, seq: undefined, live: false }); return; }
     if (!shown) { setState(current => current.provider === provider && current.live ? { ...current, live: false } : current); return; }
     const stop = new AbortController();

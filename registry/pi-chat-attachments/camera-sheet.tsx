@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { CameraIcon, XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -39,7 +39,7 @@ export function CameraSheet({ onCapture, onClose, getUserMedia }: CameraSheetPro
   const [encoding, setEncoding] = useState(false);
   // The latest callbacks, so the stream effect runs once per mount.
   const latest = useRef({ onClose, getUserMedia });
-  latest.current = { onClose, getUserMedia };
+  useLayoutEffect(() => { latest.current = { onClose, getUserMedia }; });
 
   const release = () => { stream.current?.getTracks().forEach(track => track.stop()); stream.current = null; };
   useEffect(() => {

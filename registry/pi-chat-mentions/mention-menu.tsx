@@ -24,15 +24,16 @@ export function MentionPicker({ query, search, generation, listLabel, renderOpti
   const failure = shown?.failure ?? null;
   const [active, setActive] = useState(0);
   const list = useRef<HTMLUListElement>(null);
-  const searcher = useRef(search); searcher.current = search;
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- a new query, search or generation starts at the first row, together with the search it starts
     setActive(0);
     const abort = new AbortController();
     const timer = setTimeout(() => {
-      searcher.current(query, abort.signal).then(found => { if (!abort.signal.aborted) setOutcome({ search, results: found.slice(0, 8), failure: null }); },
+      search(query, abort.signal).then(found => { if (!abort.signal.aborted) setOutcome({ search, results: found.slice(0, 8), failure: null }); },
         cause => { if (!abort.signal.aborted) setOutcome({ search, results: [], failure: cause instanceof Error ? cause.message : labels.searchFailed }); });
     }, 120);
     return () => { clearTimeout(timer); abort.abort(); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the failure text is read when a search fails; a new label must not search again
   }, [query, search, generation]);
   usePickerKeyboard({ count: results.length, activeIdx: active, setActiveIdx: setActive, listRef: list, onSelect: index => { const item = results[index]; if (item) onSelect(item.path); }, onDismiss });
 

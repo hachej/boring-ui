@@ -81,6 +81,7 @@ export function SubagentCard({ details, onOpen, now: clock = Date.now }: {
   const [now, setNow] = useState(clock);
   useEffect(() => {
     if (!running) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- a run that starts (again) reads the clock at once, not a second later
     setNow(clock());
     const timer = setInterval(() => setNow(clock()), 1000);
     return () => clearInterval(timer);

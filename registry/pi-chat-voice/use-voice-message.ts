@@ -43,6 +43,7 @@ export function useVoiceMessage({ controller, config, attachments, labels, admit
     return JSON.stringify([targetOf(selected), snapshot.disposed, send.kind, 'attempt' in send ? send.attempt.requestId : undefined]);
   }, [selected]);
   const observation = useSyncExternalStore(selected?.subscribe ?? noSubscribe, readObservation, readObservation);
+  // eslint-disable-next-line react-hooks/refs -- async capture and send callbacks check the props of the latest render; assigned in render so they never see the previous controller
   const latest = useRef({ controller, config, admitted, activeController }); latest.current = { controller, config, admitted, activeController };
   const mounted = useRef(false), attempts = useRef<Attempt[]>([]), captureSequence = useRef(0);
   const [, changed] = useState(0), [problem, setProblem] = useState<string>();
@@ -57,8 +58,11 @@ export function useVoiceMessage({ controller, config, attachments, labels, admit
   const cancel = () => { const item = active(); if (item) remove(item); };
   const clear = () => { for (const item of [...attempts.current]) remove(item); };
   const target = selected ? targetOf(selected) : undefined;
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mount/unmount only: unmounting drops whatever attempts exist then
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; clear(); }; }, []);
-  useEffect(() => { clear(); setProblem(undefined); }, [controller, target, Boolean(config)]);
+  const configured = Boolean(config);
+  // eslint-disable-next-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect -- another controller, conversation or config drops the attempts and the problem, once per change
+  useEffect(() => { clear(); setProblem(undefined); }, [controller, target, configured]);
   useEffect(() => {
     for (const item of [...attempts.current]) {
       if (!valid(item)) { remove(item); continue; }
@@ -66,9 +70,12 @@ export function useVoiceMessage({ controller, config, attachments, labels, admit
       const snapshot = selected?.getSnapshot();
       if (snapshot?.send.kind === 'admitted' && 'attempt' in snapshot.send && snapshot.send.attempt.requestId === item.requestId) {
         remove(item); latest.current.admitted?.();
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- the chat's send state settles an unconfirmed attempt; update() republishes the attempt ref
       } else if (snapshot?.send.kind === 'blocked') { item.phase = 'blocked'; update(); }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when the chat's observation changes; remove/update are per-render closures over refs
   }, [selected, observation]);
+  // eslint-disable-next-line react-hooks/refs -- the attempts live in a ref that every change pairs with update(); render reads the list as of that update
   const recording = active(), phase = recording?.phase ?? 'idle';
   useEffect(() => {
     const item = recording;
@@ -161,12 +168,15 @@ export function useVoiceMessage({ controller, config, attachments, labels, admit
       item.phase = 'recording'; update();
     });
   };
+  // eslint-disable-next-line react-hooks/refs -- the attempts live in a ref that every change pairs with update(); render reads the list as of that update
   const item = active();
+  // eslint-disable-next-line react-hooks/refs -- the attempts live in a ref that every change pairs with update(); render reads the list as of that update
   const pending: readonly PendingVoice[] = attempts.current.filter(item => item.phase !== 'starting' && item.phase !== 'recording').map(item => ({
     id: item.id, path: item.path, phase: item.phase, seconds: item.seconds,
     retry: () => { if (item.phase === 'upload-failed' || item.phase === 'transcribe-failed') void process(item); },
     audioOnly: item.phase === 'transcribe-failed' && item.path ? () => { if (item.phase === 'transcribe-failed') void send(item, true); } : undefined,
     discard: () => { if (valid(item)) remove(item); },
   }));
+  // eslint-disable-next-line react-hooks/refs -- the capture sequence is a ref bumped with update(); render reads it as of that update
   return { canStart: Boolean(controller && config && !item && !controller.getSnapshot().disposed && controller.getSnapshot().send.kind !== 'unknown'), phase: item?.phase ?? 'idle', seconds: item?.seconds ?? 0, captureSequence: captureSequence.current, problem, pending, start, finish, cancel };
 }

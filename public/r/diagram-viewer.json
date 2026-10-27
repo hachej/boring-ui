@@ -7,11 +7,6 @@
     "react@^19.0.0",
     "lucide-react@^1.51.0"
   ],
-  "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.25/r/theme.json",
-    "alert",
-    "badge"
-  ],
   "files": [
     {
       "path": "registry/diagram-viewer/diagram.ts",

@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { registrySchema, registryItemSchema } from 'shadcn/schema';
 import { buildRegistry } from '../../scripts/build-registry.mjs';
-import { checkRegistryBlocks, SHADCN_BUILTINS } from '../../scripts/check-registry-blocks.mjs';
+import { APP_SETUP, checkRegistryBlocks, SHADCN_BUILTINS } from '../../scripts/check-registry-blocks.mjs';
 import { viewersCss } from '../../registry/viewer-frame/build-css.mjs';
 import { feedbackCss } from '../../scripts/build-feedback-css.mjs';
 
@@ -22,10 +22,10 @@ const FEEDBACK_IMPORTS = new Set(['react', 'react-dom', 'lucide-react', '@hachej
 // The feedback item is a plug-in of its host pi-chat (owner ruling 6): its card and voice button import pi-chat's rows and labels and utils
 // (`../pi-chat/`, `../utils/`), and the host's model and chat types, which are type-only imports and never installed as a direct dependency.
 const HOST_IMPORTS = ['../pi-chat/', '../utils/'];
-/** The `@boring-ui/` items a block reaches through registryDependencies, transitively (shadcn built-ins excluded). */
+/** The `@boring-ui/` items a block reaches through registryDependencies, transitively. */
 const closureOf = name => {
   const closure = new Set();
-  const visit = from => { for (const dependency of (manifest.items.find(entry => entry.name === from).registryDependencies ?? []).filter(dependency => !SHADCN_BUILTINS.includes(dependency))) { const next = dependency.slice('@boring-ui/'.length); if (!closure.has(next)) { closure.add(next); visit(next); } } };
+  const visit = from => { for (const dependency of manifest.items.find(entry => entry.name === from).registryDependencies ?? []) { const next = dependency.slice('@boring-ui/'.length); if (!closure.has(next)) { closure.add(next); visit(next); } } };
   visit(name);
   return closure;
 };
@@ -60,10 +60,10 @@ test('pi-app installs no viewer: the default kinds and their viewers are the pi-
   assert.match(readFileSync(join(root, kinds.files[0].path), 'utf8'), /export function defaultKinds\(/);
 });
 
-test('pi-chat declares Trace as a style-resolved shadcn built-in, never a vendored item', () => {
+test('pi-chat imports Trace from the app ui alias: in the app setup, never listed by the item, never vendored', () => {
   const chat = manifest.items.find(item => item.name === 'pi-chat');
   assert.ok(SHADCN_BUILTINS.includes('trace'));
-  assert.ok(chat.registryDependencies.includes('trace'));
+  assert.ok(!chat.registryDependencies.includes('trace'));
   assert.ok(!chat.files.some(file => /\/trace\.tsx$/.test(file.path)));
   for (const name of ['activity', 'tool', 'queue']) assert.match(readFileSync(join(root, `registry/pi-chat/${name}.tsx`), 'utf8'), /from '@\/components\/ui\/trace'/);
 });
@@ -115,11 +115,8 @@ test('registry dependency pins and scoped styles preserve the declared source di
       for (const token of ['background', 'foreground', 'muted', 'muted-foreground', 'border', 'ring', 'primary', 'primary-foreground', 'destructive', 'radius']) assert.ok(token in light, token);
       continue;
     }
-    // Every Tailwind item depends on the theme (directly or through pi-chat).
-    if (item.name in TAILWIND && item.name !== 'utils') {
-      // The shell and targeting closures ship no global tokens; every other Tailwind item still depends on the theme.
-      assert.equal(closureOf(item.name).has('theme'), !TOKEN_FREE_CLOSURE().has(item.name), `${item.name} depends on @boring-ui/theme`);
-    }
+    // No item installs the theme: blocks use the app's shadcn tokens, and an app without them adds the theme once (registry/README.md).
+    assert.ok(!closureOf(item.name).has('theme'), `${item.name} depends on @boring-ui/theme`);
     const declared = new Set();
     for (const dependency of item.dependencies ?? []) {
       const split = dependency.lastIndexOf('@'), name = dependency.slice(0, split), spec = dependency.slice(split + 1);
@@ -137,8 +134,8 @@ test('registry dependency pins and scoped styles preserve the declared source di
       assert.equal(version, expected, dependency);
     }
     // Blocks may depend only on other items of this registry (pi-ambient and pi-workspace build on pi-chat); nothing from a remote registry.
-    // ... or one of the fixed shadcn built-ins by bare name (scripts/check-registry-blocks.mjs), which the consumer's own style resolves.
-    for (const dependency of item.registryDependencies ?? []) assert.ok(SHADCN_BUILTINS.includes(dependency) || manifest.items.some(other => '@boring-ui/' + other.name === dependency), 'No implicit unpinned child items: ' + dependency);
+    // Never a shadcn component: the app installs those once, and blocks import them through its ui alias (scripts/check-registry-blocks.mjs).
+    for (const dependency of item.registryDependencies ?? []) assert.ok(manifest.items.some(other => '@boring-ui/' + other.name === dependency), 'No implicit unpinned child items: ' + dependency);
     assert.equal(item.cssVars, undefined, 'No registry theme replacement');
     if (item.name in TAILWIND) {
       const { scope, keyframes, folder } = TAILWIND[item.name];
@@ -159,9 +156,9 @@ test('registry dependency pins and scoped styles preserve the declared source di
         const source = readFileSync(join(root, file.path), 'utf8');
         for (const imported of [...source.matchAll(/\bfrom\s+['"]([^'"]+)['"]/g)].map(match => match[1])) {
           if (imported.startsWith('./')) { assert.ok([...names].some(name => name.replace(/\.tsx?$/, '') === imported.slice(2)), `${file.path} imports missing ${imported}`); continue; }
-          // The shadcn components of the host's own style (`@/components/ui/<built-in>`, and the `use-mobile` hook that the sidebar brings), only when declared.
+          // The app's shadcn components (`@/components/ui/<name>`, and the `use-mobile` hook that the sidebar brings), from the app setup.
           const shadcn = /^@\/(?:components\/ui\/([\w-]+)|hooks\/use-mobile)$/.exec(imported);
-          if (shadcn) { assert.ok((item.registryDependencies ?? []).includes(shadcn[1] ?? 'sidebar') && SHADCN_BUILTINS.includes(shadcn[1] ?? 'sidebar'), `${file.path} imports ${imported} without declaring the shadcn built-in`); continue; }
+          if (shadcn) { assert.ok(SHADCN_BUILTINS.includes(shadcn[1] ?? 'sidebar'), `${file.path} imports ${imported}, which is not in the app setup`); continue; }
           // A block imports the item it depends on by its installed sibling folder (`../utils/utils`, `../pi-chat/rows`); scripts/check-registry-blocks.mjs enforces the direction.
           const sibling = /^\.\.\/([\w-]+)\/([\w-]+)$/.exec(imported);
           if (sibling) { const other = manifest.items.find(entry => entry.name === sibling[1]); assert.ok(other && (item.registryDependencies ?? []).includes('@boring-ui/' + other.name) && other.files.some(entry => entry.path.replace(/\.tsx?$/, '') === `registry/${other.name}/${sibling[2]}`), `${file.path} imports ${imported} outside its registryDependencies`); continue; }
@@ -199,7 +196,7 @@ test('registry dependency pins and scoped styles preserve the declared source di
         for (const imported of [...source.matchAll(/\bfrom\s+['"]([^'"]+)['"]/g)].map(match => match[1])) {
           if (imported.startsWith('./')) { assert.ok(names.includes(imported.slice(2)), `${file.path} imports missing ${imported}`); continue; }
           const hostUi = /^@\/components\/ui\/([\w-]+)$/.exec(imported);
-          if (hostUi) { assert.ok(SHADCN_BUILTINS.includes(hostUi[1]) && item.registryDependencies?.includes(hostUi[1]), `${file.path} imports undeclared host ${imported}`); continue; }
+          if (hostUi) { assert.ok(SHADCN_BUILTINS.includes(hostUi[1]), `${file.path} imports ${imported}, which is not in the app setup`); continue; }
           if (HOST_IMPORTS.some(prefix => imported.startsWith(prefix))) { assert.ok(item.registryDependencies.includes('@boring-ui/pi-chat') && item.registryDependencies.includes('@boring-ui/utils'), `${file.path} imports its host ${imported} without depending on it`); continue; }
           // The hold-to-record hook is the optional voice item's, declared like the host.
           if (imported.startsWith('../pi-chat-voice/')) { assert.ok(item.registryDependencies.includes('@boring-ui/pi-chat-voice'), `${file.path} imports ${imported} without depending on @boring-ui/pi-chat-voice`); continue; }
@@ -226,7 +223,7 @@ test('registry dependency pins and scoped styles preserve the declared source di
       assert.ok(imports.length > 0);
       for (const imported of imports) {
         const hostUi = /^@\/components\/ui\/([\w-]+)$/.exec(imported);
-        if (hostUi) { assert.ok(SHADCN_BUILTINS.includes(hostUi[1]) && item.registryDependencies?.includes(hostUi[1]), `${file.path} imports undeclared host ${imported}`); continue; }
+        if (hostUi) { assert.ok(SHADCN_BUILTINS.includes(hostUi[1]), `${file.path} imports ${imported}, which is not in the app setup`); continue; }
         const sibling = /^\.\.\/([\w-]+)\/([\w-]+)$/.exec(imported);
         if (sibling) {
           const dependency = manifest.items.find(entry => entry.name === sibling[1]);
@@ -274,7 +271,7 @@ test('the block check rejects an import cycle in a registry block or a package s
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
-test('the block check accepts the fixed shadcn built-ins by bare name and rejects any other bare name or an undeclared @/components/ui import', () => {
+test('the block check refuses any shadcn component or the theme in registryDependencies, an import outside the app setup, and a stale setup command', () => {
   const directory = mkdtempSync(join(tmpdir(), 'boring-registry-builtins-'));
   try {
     cpSync(join(root, 'registry.json'), join(directory, 'registry.json'));
@@ -283,11 +280,19 @@ test('the block check accepts the fixed shadcn built-ins by bare name and reject
     assert.deepEqual(checkRegistryBlocks(directory).errors, [], 'the committed app-shell item passes');
     const manifestPath = join(directory, 'registry.json');
     const edit = change => { const value = JSON.parse(readFileSync(manifestPath, 'utf8')); change(value.items.find(item => item.name === 'app-shell')); writeFileSync(manifestPath, JSON.stringify(value)); };
-    edit(item => item.registryDependencies.push('carousel'));
-    assert.deepEqual(checkRegistryBlocks(directory).errors.filter(error => error.includes('carousel')).length, 1, 'a bare name outside the list is refused');
+    for (const name of ['sidebar', 'carousel', '@boring-ui/theme']) {
+      cpSync(join(root, 'registry.json'), manifestPath);
+      edit(item => item.registryDependencies.push(name));
+      assert.equal(checkRegistryBlocks(directory).errors.filter(error => error.includes(`(found ${name})`) || error.includes(`depends on ${name}`)).length, 1, `${name} in registryDependencies is refused`);
+    }
     cpSync(join(root, 'registry.json'), manifestPath);
-    edit(item => { item.registryDependencies = item.registryDependencies.filter(dependency => dependency !== 'sidebar'); });
-    assert.ok(checkRegistryBlocks(directory).errors.some(error => /registry\/app-shell\/[^:]+: imports @\/components\/ui\/sidebar, but item app-shell does not declare/.test(error)), 'an import of an undeclared built-in is refused');
+    const account = join(directory, 'registry/app-shell/account.tsx');
+    writeFileSync(account, readFileSync(account, 'utf8').replace("'@/components/ui/avatar'", "'@/components/ui/carousel'"));
+    assert.ok(checkRegistryBlocks(directory).errors.some(error => /registry\/app-shell\/account\.tsx: imports @\/components\/ui\/carousel, which is not one of the shadcn components the app installs/.test(error)), 'an import outside the app setup is refused');
+    cpSync(join(root, 'registry/app-shell/account.tsx'), account);
+    const readme = join(directory, 'registry/README.md');
+    writeFileSync(readme, readFileSync(readme, 'utf8').replace(APP_SETUP, APP_SETUP.replace(' trace', '')));
+    assert.ok(checkRegistryBlocks(directory).errors.some(error => error.includes('quote the app\'s shadcn setup exactly')), 'the README command must equal the list');
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 

@@ -168,6 +168,7 @@ function PlusActions({ disabled, onAttach, onTakePhoto, onCommands, textarea }: 
   const [open, setOpen] = useState(false);
   // Commands puts `/` in the message: focus goes back to the text, not to the "+" button.
   const toText = useRef(false);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- a menu left open when the composer gets disabled closes once, after commit
   useEffect(() => { if (disabled) setOpen(false); }, [disabled]);
   return <DropdownMenu open={open} onOpenChange={setOpen}>
     <DropdownMenuTrigger render={<Button variant="ghost" size="icon" />} data-testid="composer-plus" aria-label={labels.add} title={labels.add} disabled={disabled}>
@@ -186,6 +187,11 @@ function PlusActions({ disabled, onAttach, onTakePhoto, onCommands, textarea }: 
 
 const MAX_HEIGHT = 208;
 
+/** Hands the textarea to the caller's ref, a callback or an object. */
+function assignRef(ref: Ref<HTMLTextAreaElement>, element: HTMLTextAreaElement | null) {
+  if (typeof ref === 'function') ref(element); else if (ref) (ref as { current: HTMLTextAreaElement | null }).current = element;
+}
+
 /** Prompt composer: auto-growing textarea, Enter to send, one primary Send/Stop button. While the agent works a message is queued. */
 export function Composer(props: ComposerProps) {
   const { text, attachments, working, sendBlocked, disabled, stopRequested, uploading, canAttach, layout = 'card' } = props;
@@ -196,6 +202,7 @@ export function Composer(props: ComposerProps) {
   const [caret, setCaret] = useState(0);
   // A menu closed with Escape stays closed until the text changes.
   const [dismissed, setDismissed] = useState<string | null>(null);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- new text re-arms a dismissed menu once, after commit; the updater keeps the value when nothing changed
   useEffect(() => { setDismissed(value => value === null || value === text ? value : null); }, [text]);
   const pendingCaret = useRef<number | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -209,7 +216,7 @@ export function Composer(props: ComposerProps) {
   const items = useMemo<SlashItem[]>(() => slash ? slashItems(slash) : [], [slash]);
   const setRef = (element: HTMLTextAreaElement | null) => {
     inner.current = element;
-    if (typeof props.textareaRef === 'function') props.textareaRef(element); else if (props.textareaRef) (props.textareaRef as { current: HTMLTextAreaElement | null }).current = element;
+    assignRef(props.textareaRef, element);
   };
   useLayoutEffect(() => {
     const element = inner.current;

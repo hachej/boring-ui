@@ -19,8 +19,11 @@ export interface TaskListViewerProps {
 
 export function TaskListViewer({ controller, title = 'Tasks', className }: TaskListViewerProps) {
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
+  // A fresh owner per controller: drafts and notices of another controller are dropped, and a late result of one is ignored.
   const current = useRef({ controller });
+  // eslint-disable-next-line react-hooks/refs -- an identity cache keyed by controller: a new controller swaps in a new owner object, never setState in render
   if (current.current.controller !== controller) current.current = { controller };
+  // eslint-disable-next-line react-hooks/refs -- the owner token for this controller (see above); late results compare against it
   const owner = current.current;
   const [form, setForm] = useState({ owner, draftTitle: '', notice: '' });
   const draftTitle = form.owner === owner ? form.draftTitle : '';

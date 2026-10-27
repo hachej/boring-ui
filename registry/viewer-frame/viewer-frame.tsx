@@ -153,8 +153,6 @@ export function ViewerFrame({ title, subtitle, status, showSavedStatus = false, 
   const [manual, setManual] = useState<{ readonly text: string; readonly link: boolean } | undefined>();
   const host = useViewerWindow();
   const { labels, icons } = useViewerText(ownLabels, ownIcons);
-  const mounted = useRef(true);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useLayoutEffect(() => {
     const element = bar.current;
     if (!element || typeof ResizeObserver === 'undefined') return;
@@ -174,27 +172,27 @@ export function ViewerFrame({ title, subtitle, status, showSavedStatus = false, 
     return () => clearTimeout(timer);
   }, [notice]);
 
+  // A result after unmount updates nothing: React ignores a state update on an unmounted component.
   const guarded = useCallback(async (kind: 'refresh' | 'share', run: () => unknown, failed: string) => {
     setBusy(kind);
     setNotice(undefined);
     try { return await run(); }
-    catch (error) { if (mounted.current) { if (needsManualCopy(error)) setManual({ text: error.text, link: kind === 'share' }); else setNotice({ text: failed, tone: 'danger' }); } return undefined; }
-    finally { if (mounted.current) setBusy(undefined); }
+    catch (error) { if (needsManualCopy(error)) setManual({ text: error.text, link: kind === 'share' }); else setNotice({ text: failed, tone: 'danger' }); return undefined; }
+    finally { setBusy(undefined); }
   }, []);
   const refresh = () => { if (onRefresh) void guarded('refresh', onRefresh, labels.refreshFailed); };
   const share = () => {
     if (!onShare) return;
     void guarded('share', () => onShare({ title, target, revision }), labels.shareFailed).then(result => {
-      if (!mounted.current) return;
       if (result === 'copied') setNotice({ text: labels.linkCopied, tone: 'success' });
       else if (result === 'shared') setNotice({ text: labels.shared, tone: 'success' });
     });
   };
   const copy = () => {
-    void Promise.resolve().then(onCopy).then(() => { if (mounted.current) { setCopied(true); setNotice({ text: labels.copied, tone: 'success' }); setTimeout(() => { if (mounted.current) setCopied(false); }, 1500); } })
-      .catch(error => { if (!mounted.current) return; if (needsManualCopy(error)) setManual({ text: error.text, link: false }); else setNotice({ text: labels.copyFailed, tone: 'danger' }); });
+    void Promise.resolve().then(onCopy).then(() => { setCopied(true); setNotice({ text: labels.copied, tone: 'success' }); setTimeout(() => setCopied(false), 1500); })
+      .catch(error => { if (needsManualCopy(error)) setManual({ text: error.text, link: false }); else setNotice({ text: labels.copyFailed, tone: 'danger' }); });
   };
-  const run = (action: (() => unknown) | undefined) => { void Promise.resolve().then(action).catch(() => { if (mounted.current) setNotice({ text: labels.actionFailed, tone: 'danger' }); }); };
+  const run = (action: (() => unknown) | undefined) => { void Promise.resolve().then(action).catch(() => setNotice({ text: labels.actionFailed, tone: 'danger' })); };
   // The host's actions: the window's (every viewer in the panel), then this frame's. Each runs through `run`, so a failure shows as a notice.
   const hostActions = [...host?.actions ?? [], ...actions ?? []].map(action => ({ ...action, onSelect: () => run(action.onSelect) }));
 

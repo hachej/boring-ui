@@ -9,6 +9,12 @@ Blocks are shadcn registry items: React source the shadcn CLI copies into the ap
 
 Prerequisites: React 19, Tailwind v4, a `components.json` with a Base UI style (only `base-nova` is supported), and `@hachej/boring-ui-kit` installed (the `boring-ui-blocks` command is its `bin`). A new app starts with `npx shadcn@4.21.5 init -t vite -b base -p nova -n app -y --no-monorepo`.
 
+Blocks import the app's shadcn components through its `ui` alias (`components.json`) and use its tokens; no block lists them. Install them once, before any block ([what the app needs](../../registry/README.md#what-the-app-needs-first)):
+
+```sh
+npx boring-ui-blocks add alert attachment avatar badge bubble button card checkbox collapsible dialog drawer dropdown-menu empty input input-group item label message message-scroller native-select popover progress scroll-area separator sidebar spinner switch table textarea toggle toggle-group tooltip trace
+```
+
 Run every command in the directory that holds `components.json`, or pass `--cwd <dir>`.
 
 ## Find a block
@@ -45,8 +51,8 @@ npx boring-ui-blocks add https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@<v>/
 
 - Use the same `<v>` as the installed `@hachej/boring-ui-kit` (`npm ls @hachej/boring-ui-kit`).
 - `add` runs `npx -y shadcn@4.21.5 add <args> --overwrite --yes` with stdin closed (it never prompts), keeps and lists every existing file whose content differs (exit 1) unless you pass `--overwrite`, then records every file under `components/ui` in `SHADCN-GENERATED.json`. Use it for plain shadcn components too (`npx boring-ui-blocks add dialog`).
-- `pi-chat`, `button`, `dock`, `feedback`, `app-shell`, `windows` and `agent-target` install no tokens. If the app has no shadcn tokens yet, add `.../r/theme.json` in the same command. The theme keeps tokens the app already defines.
-- When the CLI installs `tooltip`, wrap the app in `TooltipProvider` from `@/components/ui/tooltip`.
+- No block installs tokens. If the app has no shadcn tokens yet, add `.../r/theme.json` once. The theme keeps tokens the app already defines.
+- The app setup installs `tooltip`: wrap the app in `TooltipProvider` from `@/components/ui/tooltip`.
 - After a plain `npx shadcn add`, run `npx boring-ui-blocks manifest` to record the files.
 
 Files land in `src/components/<item>/` (one folder per item) and `src/components/ui/`.

@@ -12,8 +12,7 @@
     "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.25/r/pi-app.json",
     "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.25/r/pi-ambient.json",
     "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.25/r/app-shell.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.25/r/utils.json",
-    "button"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.25/r/utils.json"
   ],
   "files": [
     {

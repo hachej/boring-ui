@@ -97,11 +97,14 @@ export function ConversationList({ conversations, onPicked, autoFocus = false, s
   const [confirming, setConfirming] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const search = useRef<HTMLInputElement>(null);
-  const now = useMemo(() => Date.now(), [conversations.items]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The time the list arrived: rows group and age against it until the host sends new items.
+  // eslint-disable-next-line react-hooks/purity, react-hooks/exhaustive-deps -- read once per items list on purpose, so rows keep one clock between list updates
+  const now = useMemo(() => Date.now(), [conversations.items]);
   useEffect(() => { if (autoFocus && !globalThis.matchMedia?.('(pointer: coarse)').matches) search.current?.focus(); }, [autoFocus]);
   const serverSearch = conversations.search;
   useEffect(() => {
     const needle = query.trim();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- leaving server search drops its results once, after commit
     if (!serverSearch || (!needle && !archived)) { setFound(null); return; }
     const controller = new AbortController();
     setFound(previous => ({ items: previous?.items ?? [], loading: true }));

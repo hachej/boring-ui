@@ -197,7 +197,7 @@ export function usePhone(): boolean {
     update();
     list.addEventListener('change', update);
     return () => list.removeEventListener('change', update);
-  }, []);
+  }, [query]);
   return phone;
 }
 
@@ -205,6 +205,7 @@ export function usePhone(): boolean {
 function useElapsed(active: boolean): number {
   const [seconds, setSeconds] = useState(0);
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the count restarts at 0 whenever `active` flips; the interval below owns it after that
     if (!active) { setSeconds(0); return; }
     const started = Date.now();
     setSeconds(0);
@@ -222,7 +223,7 @@ function useRunFeed({ enabled, store, conversationId, title, session, suppress, 
   const { working, waitingForAnswer, rows, connected } = session;
   const before = useRef({ working, waiting: waitingForAnswer });
   const latest = useRef({ rows, title, suppress, onOutcome, connected, waiting, notice });
-  latest.current = { rows, title, suppress, onOutcome, connected, waiting, notice };
+  useLayoutEffect(() => { latest.current = { rows, title, suppress, onOutcome, connected, waiting, notice }; });
   useEffect(() => {
     const was = before.current;
     before.current = { working, waiting: waitingForAnswer };
@@ -244,13 +245,14 @@ function useRunFeed({ enabled, store, conversationId, title, session, suppress, 
 /** The ambient bar comes with every composer feature item (`withChatPlugins`); a component the host passes is kept. */
 export function AmbientChat(given: AmbientChatProps) {
   const props = withChatPlugins(given);
+  // eslint-disable-next-line react-hooks/refs -- the session's async callbacks compare against the controller of the latest render; assigned in render so a child's effects never see the previous one
   const active = useRef(props.controller); active.current = props.controller;
   const [mount, setMount] = useState({ controller: props.controller, sequence: 0 });
   if (mount.controller !== props.controller) setMount({ controller: props.controller, sequence: mount.sequence + 1 });
   // The window state and the toasts belong to the bar, not to one conversation: they survive switching conversations.
   const [local, setLocal] = useState<AmbientState>(props.defaultState ?? 'bar');
   if (props.embedded && local !== 'expanded') setLocal('expanded');
-  const internalStore = useMemo(createNotificationStore, []);
+  const internalStore = useMemo(() => createNotificationStore(), []);
   const text = useMergedText<AmbientLabels, AmbientIcons>(props.labels, props.icons, AMBIENT_TEXT);
   return <ChatTextProvider value={text}><MessageScrollerProvider key={mount.sequence} autoScroll><AmbientSession {...props} labels={text.labels} icons={text.icons} activeController={active} windowState={props.embedded ? 'expanded' : props.state ?? local} store={props.notifications || internalStore}
     onWindowState={next => { if (props.state === undefined) setLocal(next); props.onStateChange?.(next); }} /></MessageScrollerProvider></ChatTextProvider>;
@@ -264,7 +266,8 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
   activeController }: SessionProps) {
   const { title } = labels;
   useChatPlacement(controller, embedded ? 'docked' : 'floating');
-  const stateRef = useRef(windowState); stateRef.current = windowState;
+  const stateRef = useRef(windowState);
+  useLayoutEffect(() => { stateRef.current = windowState; });
   // The artifact open inside the window, and whether it follows the newest version. It belongs to the expanded window: leaving that state closes it.
   const [opened, setOpened] = useState<{ readonly descriptor: ArtifactDescriptor; readonly follow: boolean } | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
@@ -279,6 +282,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
   const [feedback, setFeedback] = useState<Readonly<Record<string, 'up' | 'down'>>>({});
   const [outcome, setOutcome] = useState<'done' | 'error' | null>(null);
   const [permission, setPermission] = useState<NotifyPermission>('unsupported');
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- the browser's permission is read once after mount, so the server render and hydration agree on 'unsupported'
   useEffect(() => { setPermission(notifyPermission()); }, []);
   useEffect(() => { if (!outcome) return; const timer = setTimeout(() => setOutcome(null), 8000); return () => clearTimeout(timer); }, [outcome]);
 
@@ -307,24 +311,25 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
     ...(detect ? { detect } : {}),
     ...(hostArtifacts?.kinds ? { kinds: hostArtifacts.kinds } : {}),
     recognise: hostArtifacts?.recognise ?? artifactCards.recognise, Card: hostArtifacts?.Card ?? artifactCards.Card,
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inWindow, hostArtifacts, opened, detect]);
   const session = useChatSession({ controller, activeController, mode, presentation, actions, renderEntry, hideLine, historicalMessageActions, unread: replyUnread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept,
     slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => scrollToBottom.current(), rowExtras, feedback: composerFeedback, onOpenFile, fileChanges, pasteToFile, composerChips });
   const { state, derived, rows, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, files, loading } = session;
   const empty = session.empty;
   const transcript = useTranscript(rows, displayLimit ?? paging?.first ?? PAGE_FIRST, paging?.more ?? PAGE_MORE, { state: state.history, connected: !state.disposed && connected, load: controller.loadEarlier }, displayLimit === undefined);
-  const chunks = useRowChunks(useMemo(() => transcript.visible(rows), [rows, transcript.hidden]));
+  const { stick: { scrollRef, isAtBottom, scrollToBottom: stickToBottom }, hidden } = transcript;
+  const chunks = useRowChunks(useMemo(() => hidden ? rows.slice(hidden) : rows, [rows, hidden]));
   const versions = useMemo(() => inWindow ? collectArtifacts(state.view, detect).sort((a, b) => (b.ordinal ?? 0) - (a.ordinal ?? 0)) : [], [inWindow, state.view, detect]);
+  // eslint-disable-next-line react-hooks/refs -- the artifact config reads the versions of the latest render; a ref keeps it from rebuilding on every streamed token
   versionsRef.current = versions;
   const known = opened ? versions.filter(version => artifactKey(version) === artifactKey(opened.descriptor)) : [];
   const shownArtifact = opened ? (opened.follow ? known[0] ?? opened.descriptor : opened.descriptor) : undefined;
-  const { stick, hidden } = transcript;
-  scrollToBottom.current = () => { transcript.reset(); void stick.scrollToBottom('instant'); };
+  const { reset } = transcript;
+  useLayoutEffect(() => { scrollToBottom.current = () => { reset(); void stickToBottom('instant'); }; });
   const { barStart, barNote } = session.pickers();
 
   const conversationId = String(conversations?.activeId ?? state.conversationId);
-  conversationRef.current = conversationId;
+  useLayoutEffect(() => { conversationRef.current = conversationId; });
   const activeItem = conversations?.items.find(item => item.id === conversations.activeId);
   const shownTitle = activeItem?.title?.trim() || title;
   const toasts = useNotifications(store);
@@ -351,9 +356,11 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
     return () => observer.disconnect();
   }, [minimized, expanded]);
   // The size and the viewport also follow every render, so the clamp below never works from a stale measurement (the title or status icon can change the pill's width; a scrollbar can appear without a resize event).
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- measures after every commit on purpose; both setters return the current value when nothing changed, so it settles
   useLayoutEffect(() => {
     const element = root.current;
     const fresh = viewportSize();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- layout reads (viewport, own size) exist only after commit and must land before paint
     setViewport(current => current.w === fresh.w && current.h === fresh.h ? current : fresh);
     if (element) setSize(current => current.w === element.offsetWidth && current.h === element.offsetHeight ? current : { w: element.offsetWidth, h: element.offsetHeight });
   });
@@ -394,6 +401,8 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
     className={cn('touch-none', className)}><icons.grip data-icon="inline-start" aria-hidden="true" /></Button>;
 
   const expand = () => { setOutcome(null); store.dismissConversation(conversationId); setWindowState('expanded'); };
+  const latestExpand = useRef(expand);
+  useLayoutEffect(() => { latestExpand.current = expand; });
   useEffect(() => {
     if (expanded && !globalThis.matchMedia?.('(pointer: coarse)').matches) textarea.current?.focus();
   }, [expanded, textarea]);
@@ -411,8 +420,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
   };
   const onActivate = useCallback((item: AgentNotification) => {
     if (item.conversationId !== undefined && item.conversationId !== conversationId) conversations?.onSelect(item.conversationId);
-    expand();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    latestExpand.current();
   }, [conversationId, conversations]);
 
   const connectionKind = state.connection.kind;
@@ -475,7 +483,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
         {derived.pinned.length > 0 && <aside aria-label={labels.requiredActions} className="shrink-0 space-y-2 px-4 pb-2">{derived.pinned.map(card => <div key={card.key}>{card.content}</div>)}</aside>}
         <div className="relative flex min-h-0 flex-1 flex-col">
           <MessageScroller>
-            <MessageScrollerViewport ref={stick.scrollRef} data-testid="transcript-scroll" aria-label={labels.messages} className="scrollbar-thumb-border scrollbar-track-transparent">
+            <MessageScrollerViewport ref={scrollRef} data-testid="transcript-scroll" aria-label={labels.messages} className="scrollbar-thumb-border scrollbar-track-transparent">
               {!empty && <TranscriptHistory history={state.history} connected={!state.disposed && connected} onLoad={transcript.reveal} sentinelRef={transcript.sentinelRef} hidden={hidden} loaded={transcript.loaded} />}
               <div className="px-4 pt-4 pb-6">
               <MessageScrollerContent aria-label={labels.messages} aria-live="polite" data-testid="transcript">
@@ -485,7 +493,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
               </MessageScrollerContent>
               </div>
             </MessageScrollerViewport>
-            {!stick.isAtBottom && <MessageScrollerButton data-testid="jump-latest" aria-label={labels.jumpToLatest} title={labels.jumpToLatest} onClick={transcript.reset}><icons.jumpToLatest aria-hidden="true" /></MessageScrollerButton>}
+            {!isAtBottom && <MessageScrollerButton data-testid="jump-latest" aria-label={labels.jumpToLatest} title={labels.jumpToLatest} onClick={transcript.reset}><icons.jumpToLatest aria-hidden="true" /></MessageScrollerButton>}
           </MessageScroller>
         </div>
       </div>}

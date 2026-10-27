@@ -10,6 +10,8 @@ import { useChatText } from './text';
 export function HostTrace({ steps, participant, streaming, active }: { readonly steps: readonly Step[]; readonly participant: string; readonly streaming: boolean; readonly active: boolean }) {
   const { labels } = useChatText();
   const [chosen, setChosen] = useState<boolean | undefined>();
+  // Another participant or a run that starts or ends drops the reader's choice.
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- resets the choice once per participant or run change, after commit
   useEffect(() => setChosen(undefined), [participant, streaming]);
   const open = chosen ?? false;
   const state = streaming ? 'running' : steps.some(step => step.status === 'failed') ? 'failed' : 'done';

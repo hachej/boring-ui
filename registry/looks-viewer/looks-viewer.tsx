@@ -92,6 +92,7 @@ export function LooksViewer({ text, path = '', read, onPick, locale = 'en', onRe
   useEffect(() => {
     if (!sources.length) return undefined;
     let live = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- a new read (sources, path or reader) shows loading until it settles; once per change
     setFiles(undefined);
     void Promise.all(sources.map(async relative => [relative, read ? await read(besideLooks(path, relative)).catch(() => undefined) : undefined] as const)).then(entries => {
       if (!live) return;
@@ -99,11 +100,12 @@ export function LooksViewer({ text, path = '', read, onPick, locale = 'en', onRe
       setFiles({ key, texts: new Map(entries as [string, string][]) });
     });
     return () => { live = false; };
-  }, [key, read]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [key, read]); // eslint-disable-line react-hooks/exhaustive-deps -- key covers path and sources by value; onFailed is a notification, not a reason to read again
   const [mode, setMode] = useState<'light' | 'dark' | undefined>();
   const [look, setLook] = useState<string | undefined>(spec?.look);
   const [layout, setLayout] = useState<string>();
-  useEffect(() => { setLook(spec?.look); setLayout(undefined); }, [text]); // eslint-disable-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- a new looks file resets the chosen look and layout, once per text
+  useEffect(() => { setLook(spec?.look); setLayout(undefined); }, [text]); // eslint-disable-line react-hooks/exhaustive-deps -- spec derives from text
   const frames = spec ? (spec.looks.length > 1 ? spec.looks.length : 0) + spec.layouts.length : 0;
   const ready = useRef(new Set<string>());
   useEffect(() => { ready.current = new Set(); }, [text]);
@@ -111,7 +113,7 @@ export function LooksViewer({ text, path = '', read, onPick, locale = 'en', onRe
     ready.current.add(id);
     if (ready.current.size === frames) onReady?.();
   }, [frames, onReady]);
-  useEffect(() => { if (parsed.kind === 'invalid') onFailed?.(`invalid looks file: ${parsed.issues.slice(0, 3).join('; ')}`); }, [parsed]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (parsed.kind === 'invalid') onFailed?.(`invalid looks file: ${parsed.issues.slice(0, 3).join('; ')}`); }, [parsed]); // eslint-disable-line react-hooks/exhaustive-deps -- reports once per parse; a new onFailed callback alone does not report again
   if (parsed.kind === 'invalid' || !spec) return <Alert role="alert" data-testid="looks-invalid"><AlertTitle>{labels.invalid}</AlertTitle>
     <AlertDescription>{parsed.kind === 'invalid' ? parsed.issues.slice(0, 6).join('; ') : ''}</AlertDescription></Alert>;
   if (files === 'missing') return <Alert role="alert"><AlertTitle>{labels.missing}</AlertTitle></Alert>;

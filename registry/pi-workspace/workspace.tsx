@@ -84,7 +84,7 @@ export function ArtifactWorkspace({ chat, open, panel, onClose, fullscreen: cont
   const root = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState(0);
   const [stored, setStored] = useState<number | undefined>(() => read(storageKey) ?? (defaultWidth !== undefined && defaultWidth > 1 ? defaultWidth : undefined));
-  const closeRef = useRef(onClose); closeRef.current = onClose;
+  const closeRef = useRef(onClose);
   const fullscreenRef = useRef(false);
   const opener = useRef<HTMLElement | null>(null);
   const swipe = useRef<{ x: number; y: number } | null>(null);
@@ -97,7 +97,7 @@ export function ArtifactWorkspace({ chat, open, panel, onClose, fullscreen: cont
   const sheet = size > 0 && size < sheetBelow;
   const floating = open && !sheet && floatBelow !== undefined && floatState;
   const fullscreen = open && !sheet && (controlled ? controlledFullscreen : local);
-  fullscreenRef.current = fullscreen;
+  useLayoutEffect(() => { closeRef.current = onClose; fullscreenRef.current = fullscreen; });
   const setFullscreen = useCallback((next: boolean) => { if (controlled) onFullscreenChange!(next); else setLocal(next); }, [controlled, onFullscreenChange]);
 
   useLayoutEffect(() => {
@@ -113,6 +113,7 @@ export function ArtifactWorkspace({ chat, open, panel, onClose, fullscreen: cont
   const setFloating = useCallback((next: boolean) => { setFloatState(next); setFloatHint(false); writeFlag(`${storageKey}.floating`, next); }, [storageKey]);
   useEffect(() => {
     // With the panel closed there is nothing to float over: the chat docks back.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- closing resets the panel's entry, fullscreen and floating once, after commit
     if (!open) { setEntered(false); setLocal(false); setFloating(false); return; }
     const frame = requestAnimationFrame(() => setEntered(true));
     return () => cancelAnimationFrame(frame);
@@ -126,6 +127,7 @@ export function ArtifactWorkspace({ chat, open, panel, onClose, fullscreen: cont
 
   useEffect(() => {
     if (!open) return;
+    const element = root.current;
     opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const escape = (event: globalThis.KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented || fullscreenRef.current) return;
@@ -135,7 +137,7 @@ export function ArtifactWorkspace({ chat, open, panel, onClose, fullscreen: cont
     return () => {
       document.removeEventListener('keydown', escape);
       const previous = opener.current;
-      const target = previous?.isConnected && previous !== document.body ? previous : root.current?.querySelector<HTMLElement>('[data-testid=composer-input]');
+      const target = previous?.isConnected && previous !== document.body ? previous : element?.querySelector<HTMLElement>('[data-testid=composer-input]');
       target?.focus({ preventScroll: true });
       // A shadcn Button transitions its inherited visibility, so it stays hidden (unfocusable) briefly after the sheet closes: retry per frame.
       if (target) { let frames = 30; const retry = () => { if (document.activeElement === target || document.activeElement !== document.body || frames-- <= 0) return; target.focus({ preventScroll: true }); requestAnimationFrame(retry); }; requestAnimationFrame(retry); }

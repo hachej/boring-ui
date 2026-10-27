@@ -1,5 +1,4 @@
-import { workspaceDirectory, registryPin, registryItemName, serveRegistry } from './consumer-install.mjs';
-import { SHADCN_BUILTINS } from './check-registry-blocks.mjs';
+import { addAppComponents, appComponents, appComponentsJson, workspaceDirectory, registryPin, registryItemName, serveRegistry } from './consumer-install.mjs';
 import semver from 'semver';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
@@ -21,7 +20,7 @@ const visit = name => {
   if (closure.has(name)) return;
   const item = JSON.parse(readFileSync(join(root, 'public/r', name + '.json'), 'utf8'));
   closure.set(name, item);
-  for (const dependency of item.registryDependencies ?? []) if (!SHADCN_BUILTINS.includes(dependency)) visit(registryItemName(root, dependency));
+  for (const dependency of item.registryDependencies ?? []) visit(registryItemName(root, dependency));
 };
 visit(recipe.name);
 const item = closure.get(recipe.name);
@@ -117,11 +116,12 @@ try {
   writeFileSync(join(directory, recipe.name + '.json'), JSON.stringify(localItem));
   ({ url: registry, server } = await serveRegistry(root, directory, closure, archiveByName, join(directory, 'packs'), cache, run));
   for (const path of ['src', 'test/fixtures', 'dist']) mkdirSync(join(directory, path), { recursive: true });
-  writeFileSync(join(directory, 'components.json'), JSON.stringify({ $schema: 'https://ui.shadcn.com/schema.json', style: 'base-nova', rsc: false, tsx: true, tailwind: { config: '', css: 'src/index.css', baseColor: '', cssVariables: true, prefix: '' }, iconLibrary: 'lucide', aliases: { components: '@/components', utils: '@/lib/utils', ui: '@/components/ui', lib: '@/lib', hooks: '@/hooks' } }));
+  writeFileSync(join(directory, 'components.json'), appComponentsJson());
   writeFileSync(join(directory, 'src/index.css'), '');
   writeFileSync(join(directory, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'ESNext', moduleResolution: 'Bundler', jsx: 'react-jsx', strict: true, exactOptionalPropertyTypes: true, skipLibCheck: false, noEmit: true, types: [], lib: ['ES2023', 'DOM'], baseUrl: '.', paths: { '@/*': ['./src/*'] } }, include: ['src/**/*.tsx', 'src/**/*.ts', 'consumer.ts'] }));
   const installer = { ...process.env, npm_config_cache: cache, npm_config_offline: 'true', npm_config_ignore_scripts: 'true', npm_config_audit: 'false', npm_config_fund: 'false' };
   delete installer.NODE_OPTIONS;
+  addAppComponents(directory, appComponents(closure), installer, run);
   run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', `${registry}/${recipe.name}.json`, '--cwd', directory, '--yes'], installer);
   for (const [name, range] of Object.entries(dependencies)) {
     const entry = sourceLock.packages['node_modules/' + name];

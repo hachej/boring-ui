@@ -3,7 +3,7 @@
 // One header per screen. A screen calls `useScreenHeader` and the shell renders it; the most recently mounted caller wins as a whole
 // (a `ListDetail` inside a screen overlays « ← » and a title and keeps the screen's actions) and unmounting restores the previous one. A
 // screen the shell has hidden does not count (ScreenActiveContext). Host concern: Pi has no layout.
-import { createContext, createElement, useContext, useLayoutEffect, useRef, useSyncExternalStore } from 'react';
+import { createContext, createElement, useContext, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ComponentType, ReactNode } from 'react';
 import { ArrowLeftIcon } from 'lucide-react';
 import { SidebarTrigger } from '@/components/ui/sidebar';
@@ -52,8 +52,8 @@ const touch = (store: Store) => { store.version += 1; for (const listener of [..
 
 /** Holds the screens' headers. `AppShell` mounts one. */
 export function HeaderProvider({ children }: { readonly children: ReactNode }) {
-  const store = useRef<Store>({ entries: [], version: 0, listeners: new Set() });
-  return createElement(HeaderContext.Provider, { value: store.current }, children);
+  const [store] = useState<Store>(() => ({ entries: [], version: 0, listeners: new Set() }));
+  return createElement(HeaderContext.Provider, { value: store }, children);
 }
 
 /**
@@ -64,7 +64,7 @@ export function useScreenHeader(spec: ScreenHeaderSpec, options?: { readonly ove
   const store = useContext(HeaderContext);
   const active = useContext(ScreenActiveContext);
   const entry = useRef<Entry>({ spec, overlay: options?.overlay === true });
-  entry.current.spec = spec;
+  useLayoutEffect(() => { entry.current.spec = spec; });
   const key = JSON.stringify([spec.title, spec.subtitle, Boolean(spec.back), spec.titleFace, spec.dense, spec.actions?.map(action => [action.id, action.label, action.showLabel, action.href, action.target, action.rel, iconId(action.icon)])]);
   useLayoutEffect(() => {
     if (!store || !active) return;

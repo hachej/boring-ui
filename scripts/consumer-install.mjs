@@ -1,6 +1,6 @@
 // Shared install machinery for isolated consumers of a registry item: pack the item's @boring dependencies, lock every other dependency
 // to the exact entries of this repository's package-lock.json, and rewrite the item so the shadcn CLI installs integrity-checked archives.
-// Used by scripts/test-feedback-registry-consumer.mjs and scripts/feedback-scenario.mjs.
+// Used by the registry consumer tests (scripts/test-*-consumer.mjs) and scripts/feedback-scenario.mjs.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
@@ -9,6 +9,25 @@ import { join } from 'node:path';
 import semver from 'semver';
 import { kitVersion, releaseItemBase } from './build-registry.mjs';
 import { SHADCN_BUILTINS } from './check-registry-blocks.mjs';
+
+/** The components.json of an isolated consumer app: shadcn's Base UI style, with its `ui` alias where the app keeps its shadcn components. */
+export function appComponentsJson({ style = 'base-nova', ui = '@/components/ui' } = {}) {
+  return JSON.stringify({ $schema: 'https://ui.shadcn.com/schema.json', style, rsc: false, tsx: true, tailwind: { config: '', css: 'src/index.css', baseColor: '', cssVariables: true, prefix: '' },
+    iconLibrary: 'lucide', aliases: { components: '@/components', utils: '@/lib/utils', ui, lib: '@/lib', hooks: '@/hooks' } });
+}
+
+/** The shadcn components the closure's files import (`@/components/ui/<name>`): the part of the app setup (SHADCN_BUILTINS) these items need. */
+export function appComponents(closure) {
+  const names = new Set();
+  for (const item of closure.values()) for (const file of item.files ?? []) for (const [, name] of (file.content ?? '').matchAll(/['"]@\/components\/ui\/([\w-]+)['"]/g)) names.add(name);
+  for (const name of names) assert.ok(SHADCN_BUILTINS.includes(name), `${name} is not in the documented app setup`);
+  return [...names].sort();
+}
+
+/** The app's own shadcn setup, before any block: the real CLI adds these components under the app's `ui` alias. Blocks then import them. */
+export function addAppComponents(directory, names, installer, run) {
+  if (names.length) run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', ...names, '--cwd', directory, '--yes'], installer);
+}
 
 const split = pin => { const at = pin.lastIndexOf('@'); return [pin.slice(0, at), pin.slice(at + 1)]; };
 
@@ -111,8 +130,7 @@ export function registryItemName(root, dependency) {
 
 /** The item with its registryDependencies served from `base` (the harness's stand-in for the CDN), so the CLI never leaves the machine. */
 export function localRegistryDependencies(root, item, base) {
-  // A shadcn built-in (a bare name such as `drawer`) stays a bare name: the consumer's own style resolves it.
-  return item.registryDependencies ? { ...item, registryDependencies: item.registryDependencies.map(dependency => SHADCN_BUILTINS.includes(dependency) ? dependency : `${base}/${registryItemName(root, dependency)}.json`) } : item;
+  return item.registryDependencies ? { ...item, registryDependencies: item.registryDependencies.map(dependency => `${base}/${registryItemName(root, dependency)}.json`) } : item;
 }
 
 /** An item and every item it needs through registryDependencies, read from public/r. */
@@ -122,7 +140,7 @@ export function registryClosure(root, name) {
     if (closure.has(item)) return;
     const read = JSON.parse(readFileSync(join(root, 'public/r', `${item}.json`), 'utf8'));
     closure.set(item, read);
-    for (const dependency of read.registryDependencies ?? []) if (!SHADCN_BUILTINS.includes(dependency)) visit(registryItemName(root, dependency));
+    for (const dependency of read.registryDependencies ?? []) visit(registryItemName(root, dependency));
   };
   visit(name);
   return closure;
