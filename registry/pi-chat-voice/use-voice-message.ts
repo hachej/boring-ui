@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import { createVoiceCapture, DEFAULT_MAX_VOICE_MS } from '@hachej/boring-ui-kit/voice-capture';
 import type { VoiceCapture, VoiceRecording, VoiceRefusal } from '@hachej/boring-ui-kit/voice-capture';
 import type { ChatController, ChatDraft } from '@hachej/boring-ui-kit/native-chat';
-import { isVoicePath, mentionToken } from '../pi-chat/config';
+import { appendToDraft, isVoicePath, mentionToken } from '@hachej/boring-ui-kit/chat-text';
 import type { AttachmentsConfig, PendingVoice, VoiceMessageConfig, VoiceMessageHandle, VoicePhase, VoiceRecorderOptions } from '../pi-chat/config';
 import type { ChatLabels } from '../pi-chat/labels';
 
@@ -93,7 +93,7 @@ export function useVoiceMessage({ controller, config, attachments, labels, admit
     if (before.send.kind === 'unknown') {
       // This recording was never submitted. Do not bind it to another message's uncertain request.
       const draft = item.controller.getSnapshot().draft.text;
-      if (transcript) item.controller.setText(`${draft}${draft && !/\s$/.test(draft) ? ' ' : ''}${transcript}`);
+      if (transcript) item.controller.setText(appendToDraft(draft, transcript));
       item.phase = 'blocked'; update(); return;
     }
     item.phase = 'sending'; update();
