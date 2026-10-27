@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Window } from 'happy-dom';
-import { useChatVoice, useDictation, useVoiceAttempt, useVoiceMessage } from '@hachej/boring-ui-kit/chat-react';
+import { useChatVoice, useDictation, useVoiceAttempt, useVoiceMessage } from '@hachej/boring-ui-kit/chat-react/voice';
 import { voiceRefusalLabel } from '@hachej/boring-ui-kit/chat-text';
 import { DEFAULT_MAX_VOICE_MS } from '@hachej/boring-ui-kit/voice-capture';
 

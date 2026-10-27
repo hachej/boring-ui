@@ -2,7 +2,7 @@
   "$schema": "https://ui.shadcn.com/schema/registry-item.json",
   "name": "pi-chat-voice",
   "title": "Pi chat voice messages",
-  "description": "Hold-to-record voice messages: a compatibility export of the kit's chat-react recorder hook, the composer's record button and the pending voice bubble, plus useHoldToRecord. Plug it in with `voiceMessage={{ ...config, ...voiceMessagePlugin }}`; without it pi-chat has no voice button.",
+  "description": "Tap-to-record voice messages: a compatibility export of the kit's chat-react/voice recorder hook, the composer's record button and the pending voice bubble, plus useHoldToRecord. Plug it in with `voiceMessage={{ ...config, ...voiceMessagePlugin }}`; without it pi-chat has no voice button.",
   "dependencies": [
     "@hachej/boring-ui-kit@^0.4.26",
     "react@^19.0.0",
@@ -21,7 +21,7 @@
     },
     {
       "path": "registry/pi-chat-voice/use-voice-message.ts",
-      "content": "'use client';\n\nexport { useVoiceMessage } from '@hachej/boring-ui-kit/chat-react';\nexport type { PendingVoice } from '@hachej/boring-ui-kit/chat-react';\n",
+      "content": "'use client';\n\nexport { useVoiceMessage } from '@hachej/boring-ui-kit/chat-react/voice';\nexport type { PendingVoice } from '@hachej/boring-ui-kit/chat-react/voice';\n",
       "type": "registry:hook",
       "target": "components/pi-chat-voice/use-voice-message.ts"
     },

@@ -1,8 +1,8 @@
 import type { ComponentType, ReactNode } from 'react';
 import type { ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
 import type { SlashItem } from '@hachej/boring-ui-kit/chat-text';
-import type { VoiceMessageConfig as KitVoiceMessageConfig, PendingVoice, VoiceMessageHandle, VoiceRecorderOptions as KitVoiceRecorderOptions } from '@hachej/boring-ui-kit/chat-react';
-export type { PendingVoice, VoiceMessageHandle, VoicePhase } from '@hachej/boring-ui-kit/chat-react';
+import type { VoiceMessageConfig as KitVoiceMessageConfig, PendingVoice, VoiceMessageHandle, VoiceRecorderOptions as KitVoiceRecorderOptions } from '@hachej/boring-ui-kit/chat-react/voice';
+export type { PendingVoice, VoiceMessageHandle, VoicePhase } from '@hachej/boring-ui-kit/chat-react/voice';
 import type { ApprovalDecision, ArtifactDetect, ArtifactRecognise, ChatArtifact, SubagentRenderer as ViewSubagentRenderer } from '@hachej/boring-ui-kit/chat-view';
 import type { BlockAction } from '../button/actions';
 import type { ChatLabels } from './labels';

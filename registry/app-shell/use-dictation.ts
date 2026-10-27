@@ -1,11 +1,11 @@
 'use client';
 
-import { useDictation as useKitDictation } from '@hachej/boring-ui-kit/chat-react';
-import type { DictationOptions as KitDictationOptions } from '@hachej/boring-ui-kit/chat-react';
+import { useDictation as useKitDictation } from '@hachej/boring-ui-kit/chat-react/voice';
+import type { DictationOptions as KitDictationOptions } from '@hachej/boring-ui-kit/chat-react/voice';
 import { chatTextFor } from '../pi-chat/locale';
 import type { ChatLocale } from '../pi-chat/locale';
 
-export type { Dictation, DictationPhase, DictationLabels } from '@hachej/boring-ui-kit/chat-react';
+export type { Dictation, DictationPhase, DictationLabels } from '@hachej/boring-ui-kit/chat-react/voice';
 export interface DictationOptions extends Omit<KitDictationOptions, 'labels'> {
   readonly locale?: ChatLocale | undefined;
   readonly labels?: Partial<KitDictationOptions['labels']> | undefined;

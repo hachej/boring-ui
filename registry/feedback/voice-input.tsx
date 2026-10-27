@@ -1,6 +1,6 @@
 // A microphone button for the composer: records on the first click, stops on the second, transcribes the recording and appends the
 // text to the composer draft. It never sends: the person reads the transcript and presses Send. Pass it to `PiChat` as `tools`.
-import { useDictation } from '@hachej/boring-ui-kit/chat-react';
+import { useDictation } from '@hachej/boring-ui-kit/chat-react/voice';
 import { Loader2Icon, MicIcon, SquareIcon, XIcon } from 'lucide-react';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { appendToDraft } from '@hachej/boring-ui-kit/chat-text';
