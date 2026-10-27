@@ -149,6 +149,7 @@ Every example uses fictional data. Run it with `npm run <name>` after `npm run b
 
 | Example | What it shows |
 | --- | --- |
+| [`task-board`](examples/task-board/README.md) | Read-only business tasks in kanban or sections, with a phone fallback and safe Markdown details |
 | [`workspace-app`](examples/workspace-app/server.mjs) | The smallest whole agent app: sessions, chat, artifact panel, about 120 lines of server |
 | [`ambient`](examples/ambient/README.md) | An agent floating over an existing settings console |
 | [`app-shell`](examples/app-shell/README.md) | A phone-first app with one agent in a bottom drawer |

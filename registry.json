@@ -2959,6 +2959,38 @@
           "target": "components/windows/windows.tsx"
         }
       ]
+    },
+    {
+      "name": "task-board",
+      "type": "registry:block",
+      "title": "Task board",
+      "description": "Read-only five-state tasks in kanban or sections, viewer-first ordering, local search and filters, phone fallback, optional layout persistence and a safe Markdown detail panel. Host owns data and open actions.",
+      "dependencies": [
+        "react@^19.0.0",
+        "lucide-react@^1.51.0"
+      ],
+      "registryDependencies": [
+        "@boring-ui/utils",
+        "@boring-ui/pi-chat-markdown",
+        "@boring-ui/pi-chat"
+      ],
+      "files": [
+        {
+          "path": "registry/task-board/model.ts",
+          "type": "registry:lib",
+          "target": "components/task-board/model.ts"
+        },
+        {
+          "path": "registry/task-board/task-board.tsx",
+          "type": "registry:component",
+          "target": "components/task-board/task-board.tsx"
+        },
+        {
+          "path": "registry/task-board/task-detail.tsx",
+          "type": "registry:component",
+          "target": "components/task-board/task-detail.tsx"
+        }
+      ]
     }
   ]
 }

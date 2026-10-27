@@ -30,6 +30,7 @@ visit('file-tree');
 // The documents screen: its Library, revisions and sheet, installed and checked strictly with the rest of the closure.
 visit('documents');
 visit('highlights');
+visit('task-board');
 // The kit's tokens, which this token-less app installs once in its setup; no block depends on them.
 visit('theme');
 const styles = [process.env.BORING_CONSUMER_STYLE ?? 'base-nova'];
@@ -76,7 +77,7 @@ async function testStyle(style) {
     // The documented app setup (registry/README.md, APP_SETUP), then the blocks, which declare no shadcn component of their own.
     addAppComponents(directory, [...SHADCN_BUILTINS], installer, run);
     run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', `${registry}/theme.json`, '--cwd', directory, '--yes'], installer);
-    run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', `${registry}/pi-app.json`, `${registry}/pi-app-kinds.json`, `${registry}/file-tree.json`, `${registry}/app-shell.json`, `${registry}/documents.json`, `${registry}/highlights.json`, '--cwd', directory, '--yes'], installer);
+    run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', `${registry}/pi-app.json`, `${registry}/pi-app-kinds.json`, `${registry}/file-tree.json`, `${registry}/app-shell.json`, `${registry}/documents.json`, `${registry}/highlights.json`, `${registry}/task-board.json`, '--cwd', directory, '--yes'], installer);
     for (const [name, item] of closure) for (const file of item.files ?? []) {
       assert.ok(existsSync(join(directory, 'src', file.target)), `the CLI must create ${file.target} (${name})`);
       const text = readFileSync(join(directory, 'src', file.target), 'utf8');
@@ -94,6 +95,8 @@ async function testStyle(style) {
     // A consumer page: only the block, its hooks and the host's own routes.
     writeFileSync(join(directory, 'src/page.tsx'), `export { ReportWorkspace } from './local-file-check';
   export { Highlights } from './components/highlights/highlights';
+  export { TaskBoard, TaskDetail } from './components/task-board/task-board';
+  export type { TaskCard, TaskSource, TaskLayout } from './components/task-board/task-board';
   import { useEffect, useState } from 'react';
   import { createRoot } from 'react-dom/client';
   import { AgentWorkspace, useConversations, useRemoteChat } from './components/pi-app/agent-workspace';
@@ -167,7 +170,7 @@ async function testStyle(style) {
     assert.ok(bundledCss.includes('file-tree-row-button') && bundledCss.includes('file-tree'), 'portable tree styles ship without scanning package internals');
     const inputs = Object.keys(JSON.parse(readFileSync(join(directory, 'dist/meta.json'), 'utf8')).inputs);
     assertConsumerTypeFiles(inputs.map(path => resolve(directory, path)).join('\n'), directory);
-    for (const file of ['file-tree/file-tree.tsx', 'pi-app/agent-workspace.tsx', 'pi-app/artifact-panel.tsx', 'pi-app/file-viewer.tsx', 'pi-app/sessions.tsx', 'pi-chat/pi-chat.tsx', 'pi-workspace/workspace.tsx', 'viewer-frame/viewer-frame.tsx', 'viewer-pdf/local-file-viewer.tsx', 'documents/documents.tsx', 'documents/document-sheet.tsx', 'highlights/highlights.tsx'])
+    for (const file of ['file-tree/file-tree.tsx', 'pi-app/agent-workspace.tsx', 'pi-app/artifact-panel.tsx', 'pi-app/file-viewer.tsx', 'pi-app/sessions.tsx', 'pi-chat/pi-chat.tsx', 'pi-workspace/workspace.tsx', 'viewer-frame/viewer-frame.tsx', 'viewer-pdf/local-file-viewer.tsx', 'documents/documents.tsx', 'documents/document-sheet.tsx', 'highlights/highlights.tsx', 'task-board/task-board.tsx', 'task-board/task-detail.tsx'])
       assert.ok(inputs.some(path => path.endsWith(`src/components/${file}`)), `the bundle uses the CLI-installed ${file}`);
     assert.deepEqual(inputs.filter(path => /@hachej\/boring-agent|pi-durable\/dist\/(storage|env)|sqlite|node:|tldraw/.test(path)), [], 'browser bundle holds no agent, storage, Node or canvas code');
     // D-257 step 4: bundled with code splitting, as the app's bundler does, the installed views sit in chunks the page reaches only by a

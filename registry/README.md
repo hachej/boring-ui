@@ -1333,3 +1333,46 @@ The host passes `readonly RequestView[]`: `number`, `title`, `state`, `line`, `s
 The host bumps `changeToken` alongside fresh views. A polite live region compares those views with the last announced snapshot and announces moved rows (number and localized state). Locale defaults to English; `locale="fr"` and `labels` overrides follow the diagram labels pattern. Colours and appearance come entirely from the host's shadcn components and tokens.
 
 Run `node --test test/contracts/requests.test.mjs test/contracts/requests-board.test.mjs` for pure transforms and real-shadcn Happy DOM callbacks. After `npm run build`, open `npm run workspace-app` with `?requests` for the fictional Atelier Exemple demo, or run `npm run requests:journey` with Chromium for desktop/phone light/dark screenshots under `.cache/evidence/D141/`. The demo logs intent; it does not call a production endpoint or persist approvals. D-140 endpoint wiring and release remain consumer/owner work.
+
+## Task board
+
+`task-board` is a read-only business-task view, not the canvas `board-viewer`, the file-backed `task-list-viewer`, or a Pi task scheduler. Install it with the registry URL for your kit release, after the [app setup](#what-the-app-needs-first):
+
+```sh
+npx boring-ui-blocks add <registry>/task-board.json
+```
+
+This item is a candidate for the next kit release. During review, serve this checkout's generated `public/r/` as `<registry>`; do not assume the current published version contains it.
+
+```tsx
+import { TaskBoard, TaskDetail } from '@/components/task-board/task-board';
+import type { TaskCard, TaskSource } from '@/components/task-board/task-board';
+
+<TaskBoard tasks={tasks} viewerId={user.id} defaultLayout="kanban"
+  storageKey="my-app.tasks.layout" onOpen={task => setSelected(task)} />;
+// Place inside your own Sheet, drawer, side panel or page:
+selected && <TaskDetail task={selected} viewerId={user.id} />;
+```
+
+| Prop/export | Contract |
+| --- | --- |
+| `tasks: readonly TaskCard[]` | Host-authorized data; stable unique IDs. The board does not fetch, subscribe, mutate, drag or dispatch. |
+| `TASK_STATES`, `TaskState` | `open` (To do), `working` (In progress), `waiting`, `done`, `closed`, in Factory order pinned at `40f71e9cf5c242278b4f55edc5d68eca30f62bfb`. Within a group, waiting on the viewer comes first, then `updated_at` descending; equal dates retain input order, invalid/missing dates last with stable ties. |
+| `TaskCard` | Required `id`, `title`, `state`. Optional `waiting_on: { who: string; question?: string }`, `risk`, `route`, `updated_at`, `parent`, `labels: readonly string[]`, `createdBy`, `children: { done: number; total: number }`, Markdown `spec`, and `history: readonly { id?: string; at: string; text: string }[]`. `who` is compared exactly to `viewerId`; other values are displayed as supplied. Only `risk === 'high'` gets a risk badge. |
+| `layout`, `onLayoutChange` | Controlled preference (`'kanban'` or `'sections'`); callback requests changes, never takes control from the prop. |
+| `defaultLayout` | Uncontrolled initial preference, default `kanban`. |
+| `storageKey` | Optional localStorage key; raw layout string only, all accesses guarded. Stored valid layout wins over `defaultLayout`. A new key reads that key (or the current default), without copying the old preference over it. Controlled prop remains authoritative and persists its accepted value. No cross-tab synchronization. |
+| Phone layout | Below 641px, sections are forced and the layout toggle is absent. No callback or persistence of the forced layout; returning wide restores the preference. Collapse choices survive every layout/viewport switch. |
+| Folding | Done/closed start collapsed. Kanban uses slim count rails; sections show “Show n done/closed”. Every group can be toggled with native shadcn Collapsible controls. |
+| `showToolbar` | Defaults to `true`: layout toggle, title/ID search, combinable Waiting on me / High risk / Mine filters. Viewer filters are absent and inactive without `viewerId`. Counts reflect filters. |
+| `onOpen(task)` | Optional host action. Default cards become keyboard-operable controls when supplied; otherwise they are passive cards. |
+| `renderCard(task)` | Optional replacement used identically in both layouts; owns its own interaction/accessibility and receives no automatic wrapper action. |
+| `emptyAction` | Optional host action slot for the whole-board empty state. Each empty group uses a quiet dash. |
+| `labels: Partial<TaskBoardLabels>` | Every board string, state label, count, fold label and relative-time formatter has an English default in `defaultTaskBoardLabels`. Supply functions for counts, waiting names, progress and time to localize grammar. |
+| `now` | Optional host clock (milliseconds), useful for deterministic examples. Otherwise relative times refresh once a minute. Server markup starts with `unknownTime` and restores the clock and optional stored preference after hydration. |
+| `TaskDetail` | `{ task, viewerId?, labels? }`. Read-only title, state, full question, metadata, Markdown spec and history. Uses the existing safe kit `Markdown`: literal HTML, no loaded images, http(s) links only. Its `labels.markdown` can override the native Markdown/code-copy labels; otherwise it inherits the host chat text context. It does not open a panel itself. Default history dates use UTC for server/browser consistency; override `labels.dateTime` for the host's locale/timezone. |
+| `TaskSource` | Type only: `{ list: () => Promise<TaskCard[]>; subscribe?: (cb: (tasks: TaskCard[]) => void) => () => void }`. Host owns fetching/subscriptions, authorization and cleanup. |
+
+The item explicitly installs `pi-chat-markdown`, its `pi-chat` context, and shared `utils`; this reuses the renderer rather than introducing another parser. It imports the app's real shadcn Card, Button, Badge, Collapsible, ScrollArea, Toggle/ToggleGroup, Input and Empty components and reads the host theme, including optional `--warning`/`--success` tokens for waiting/done dots with shadcn foreground/primary fallbacks. No new theme, visual override, npm dependency, agent execution or motion framework is installed. Cards use the same dense surface in both layouts. There is no positional animation; native controls supply hover/focus and the board adds no motion (including under reduced-motion preferences).
+
+Run the [fictional example and browser journey](../examples/task-board/README.md). Public React/shadcn tests live in `test/contracts/task-board*.mjs`; the copied registry consumer is checked with strict TypeScript, including `exactOptionalPropertyTypes` and without `skipLibCheck`. `npm run test:app-registry-consumer` also installs this item with the real CLI into an isolated app with a non-default UI alias and bundles the installed components.

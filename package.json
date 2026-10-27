@@ -125,7 +125,9 @@
     "file-tree:journey": "node examples/file-tree/journey.mjs && node examples/file-tree/journey-library.mjs",
     "requests:journey": "node examples/workspace-app/journey-requests.mjs",
     "windows": "node examples/windows/server.mjs",
-    "windows:journey": "node examples/windows/journey.mjs"
+    "windows:journey": "node examples/windows/journey.mjs",
+    "task-board": "node examples/task-board/server.mjs",
+    "task-board:journey": "node examples/task-board/journey.mjs"
   },
   "devDependencies": {
     "@aws-sdk/client-bedrock-agentcore": "3.1151.0",
