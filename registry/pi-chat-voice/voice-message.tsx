@@ -1,6 +1,6 @@
 'use client';
 
-import { MicIcon, XIcon } from 'lucide-react';
+import { CircleIcon, MicIcon, PauseIcon, PlayIcon, Trash2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { Bubble, BubbleContent } from '@/components/ui/bubble';
@@ -8,24 +8,31 @@ import { Message, MessageContent } from '@/components/ui/message';
 import { useChatText } from '../pi-chat/labels';
 import { voiceClock } from '../pi-chat/config';
 import type { PendingVoiceBubbleProps, VoiceMessageButtonProps } from '../pi-chat/config';
-import { useHoldToRecord } from './use-hold-to-record';
 import { useVoiceMessage } from './use-voice-message';
-import { cn } from '../utils/utils';
 
 export { voiceClock } from '../pi-chat/config';
 
-export function VoiceMessageButton({ voice, disabled, primary = false, tapToFinish = false, showStatus = true, testId = 'voice-message-record' }: VoiceMessageButtonProps) {
-  const { labels } = useChatText();
-  const active = voice.phase === 'starting' || voice.phase === 'recording';
-  const blocked = !active && (disabled || voice.phase !== 'idle');
-  const hold = useHoldToRecord(voice, Boolean(blocked));
-  const tap = tapToFinish && active;
-  return <div className="flex min-w-0 items-center gap-2">
-    {tap && <Button variant="ghost" size="icon" data-testid="composer-voice-cancel" aria-label={labels.voiceCancel} title={labels.voiceCancel} onClick={voice.cancel} className="min-h-11 min-w-11 shrink-0"><XIcon data-icon="inline-start" aria-hidden="true" /></Button>}
-    <Button {...(tap ? { onPointerDown: (event: { preventDefault: () => void }) => event.preventDefault(), onClick: voice.finish } : hold)} variant={primary ? 'default' : 'ghost'} size="icon" className={cn('touch-none shrink-0', tap && 'min-h-11 min-w-11')} data-testid={testId} data-state={voice.phase} disabled={blocked} aria-label={tap ? labels.send : labels.voiceHold} title={tap ? labels.send : labels.voiceHold} aria-pressed={voice.phase === 'recording'}>
-      <MicIcon data-icon="inline-start" aria-hidden="true" />
-    </Button>{active && showStatus && <span role="status" data-testid="voice-recording" className="min-w-0">{labels.voiceRecording} {voiceClock(voice.seconds)}</span>}
+/** The same recording row for native chat and a shell-owned capture. It replaces the editable composer controls. */
+export function RecordingBar({ voice, testId = 'voice-message-record' }: Pick<VoiceMessageButtonProps, 'voice' | 'testId'>) {
+  const { labels, icons } = useChatText();
+  return <div data-testid="voice-recording-bar" data-state={voice.paused ? 'paused' : voice.phase} className="flex w-full min-w-0 items-center gap-2">
+    <Button variant="ghost" size="icon" data-testid="composer-voice-cancel" aria-label={labels.voiceCancel} title={labels.voiceCancel} onClick={voice.cancel} className="min-h-11 min-w-11 shrink-0"><Trash2Icon aria-hidden="true" /></Button>
+    <div className="flex min-w-0 flex-1 items-center gap-2">
+      <CircleIcon className="size-3 shrink-0 fill-current text-destructive" aria-hidden="true" />
+      <span role="status" aria-live="polite" aria-atomic="true" data-testid="voice-recording" className="shrink-0 tabular-nums"><span className="sr-only">{voice.paused ? labels.voicePaused : labels.voiceRecording} </span>{voiceClock(voice.seconds)}</span>
+      {!!voice.levels?.length && <div data-testid="voice-waveform" aria-hidden="true" className="flex h-8 min-w-0 flex-1 items-center justify-end gap-0.5 overflow-hidden">
+        {voice.levels.map((level, index) => <span key={index} data-level={level} className="w-1 shrink-0 bg-muted-foreground" style={{ height: `${Math.max(5, Math.sqrt(Math.min(1, level)) * 100)}%` }} />)}
+      </div>}
+    </div>
+    {voice.pause && voice.resume && <Button variant="ghost" size="icon" data-testid="voice-pause" aria-label={voice.paused ? labels.voiceResumeRecording : labels.voicePauseRecording} title={voice.paused ? labels.voiceResumeRecording : labels.voicePauseRecording} onClick={voice.paused ? voice.resume : voice.pause} className="min-h-11 min-w-11 shrink-0">{voice.paused ? <PlayIcon aria-hidden="true" /> : <PauseIcon aria-hidden="true" />}</Button>}
+    <Button variant="default" size="icon" data-testid={testId} data-state={voice.phase} aria-label={labels.send} title={labels.send} onClick={voice.finish} disabled={voice.phase === 'starting'} className="min-h-11 min-w-11 shrink-0"><icons.send aria-hidden="true" /></Button>
   </div>;
+}
+
+export function VoiceMessageButton({ voice, disabled, primary = false, testId = 'voice-message-record' }: VoiceMessageButtonProps) {
+  const { labels } = useChatText();
+  if (voice.phase === 'starting' || voice.phase === 'recording') return <RecordingBar voice={voice} testId={testId} />;
+  return <Button onClick={voice.start} variant={primary ? 'default' : 'ghost'} size="icon" className="min-h-11 min-w-11 shrink-0" data-testid={testId} data-state={voice.phase} disabled={disabled || !voice.canStart || voice.phase !== 'idle'} aria-label={labels.voiceRecord} title={labels.voiceRecord}><MicIcon aria-hidden="true" /></Button>;
 }
 
 export function PendingVoiceBubble({ pending }: PendingVoiceBubbleProps) {
@@ -47,5 +54,5 @@ export function PendingVoiceBubble({ pending }: PendingVoiceBubbleProps) {
   </BubbleContent></Bubble></MessageContent></Message>;
 }
 
-/** Hold-to-record voice messages for the chat: `voiceMessage={{ ...config, ...voiceMessagePlugin }}`. */
+/** Tap-to-record voice messages for the chat: `voiceMessage={{ ...config, ...voiceMessagePlugin }}`. */
 export const voiceMessagePlugin = { useRecorder: useVoiceMessage, Button: VoiceMessageButton, Bubble: PendingVoiceBubble } as const;

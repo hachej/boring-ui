@@ -8,19 +8,20 @@ import { Window } from 'happy-dom';
 const project = fileURLToPath(new URL('../../', import.meta.url));
 const out = `${project}.cache/talk-about-render-test`;
 mkdirSync(out, { recursive: true });
-writeFileSync(`${out}/entry.tsx`, `export { AgentLayerProvider, AgentLayer, AgentDockLayout, useAgentLayer } from '${project}registry/app-shell/agent-layer.tsx';`);
+writeFileSync(`${out}/entry.tsx`, `export { AgentLayerProvider, AgentLayer, AgentDockLayout, useAgentLayer } from '${project}registry/app-shell/agent-layer.tsx'; export { PiChat } from '${project}registry/pi-chat/pi-chat.tsx'; export { voiceMessagePlugin } from '${project}registry/pi-chat-voice/voice-message.tsx';`);
 const TOKEN = '@repas:2026-10-27/dejeuner', LABEL = 'Déjeuner · mardi', WORDS = 'Je mange une salade';
 let sequence = 0;
 async function fixture(t, options = {}) {
   const window = new Window({ url: 'https://fictional.invalid/' });
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: options.width ?? 390 });
-  const names = ['window', 'document', 'navigator', 'history', 'location', 'HTMLElement', 'Element', 'Node', 'Event', 'EventTarget', 'KeyboardEvent', 'MouseEvent', 'PointerEvent', 'MutationObserver', 'ResizeObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'matchMedia', 'getSelection', 'IS_REACT_ACT_ENVIRONMENT', 'MediaRecorder'];
+  const names = ['window', 'document', 'navigator', 'history', 'location', 'HTMLElement', 'Element', 'Node', 'Event', 'EventTarget', 'KeyboardEvent', 'MouseEvent', 'PointerEvent', 'MutationObserver', 'ResizeObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'matchMedia', 'getSelection', 'IS_REACT_ACT_ENVIRONMENT', 'MediaRecorder', 'AudioContext'];
   const saved = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
   for (const name of names) Object.defineProperty(globalThis, name, { configurable: true, writable: true, value: name === 'window' ? window : name === 'IS_REACT_ACT_ENVIRONMENT' ? true : /^(getComputedStyle|requestAnimationFrame|cancelAnimationFrame|matchMedia|getSelection)$/.test(name) ? window[name].bind(window) : window[name] });
   let permission = 0;
   const tracks = [];
   Object.defineProperty(window.navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: async () => {
     permission++;
+    if (options.permission) await options.permission;
     const track = { stopped: false, stop() { this.stopped = true; } }; tracks.push(track);
     return { getTracks: () => [track], getAudioTracks: () => [track] };
   } } });
@@ -31,6 +32,16 @@ async function fixture(t, options = {}) {
     stop() { if (this.state === 'inactive') return; this.state = 'inactive'; const event = new window.Event('dataavailable'); event.data = new Blob(['fictional audio']); this.dispatchEvent(event); this.dispatchEvent(new window.Event('stop')); }
   }
   globalThis.MediaRecorder = Recorder;
+  let audioNode;
+  const contexts = [];
+  if (options.pcm) globalThis.AudioContext = class {
+    constructor() { this.sampleRate = 48000; this.state = 'suspended'; this.destination = {}; contexts.push(this); }
+    resume() { this.state = 'running'; return Promise.resolve(); }
+    close() { this.state = 'closed'; return Promise.resolve(); }
+    createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
+    createScriptProcessor() { audioNode = { onaudioprocess: null, connect() {}, disconnect() {} }; return audioNode; }
+  };
+
   const outfile = `${out}/layer-${++sequence}.mjs`;
   await build({ entryPoints: [`${out}/entry.tsx`], outfile, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', alias: { '@': `${project}examples/app-shell` }, logLevel: 'silent', plugins: process.env.TALK_MUTATION ? [{ name: 'mutation', setup(builder) { const mutation = JSON.parse(readFileSync(process.env.TALK_MUTATION, 'utf8')); builder.onLoad({ filter: /registry\/.*\.(ts|tsx)$/ }, args => { if (!args.path.endsWith(mutation.file)) return; const source = readFileSync(args.path, 'utf8'); assert.ok(source.includes(mutation.before), 'mutation guard exists'); return { contents: source.replace(mutation.before, mutation.after), loader: args.path.endsWith('tsx') ? 'tsx' : 'ts' }; }); } }] : [] });
   const layer = await import(pathToFileURL(outfile).href);
@@ -48,10 +59,12 @@ async function fixture(t, options = {}) {
   let api;
   const sent = [], realSend = controller.send;
   controller.send = (...args) => { sent.push(args); if (options.throwSend) throw new Error('Fictional thrown send'); return realSend(...args); };
-  const opened = [];
+  const opened = [], captured = [];
+  const transcribe = async audio => { captured.push(audio); return WORDS; };
+  const upload = async () => [{ path: 'uploads/voice-fictional.webm', name: 'voice-fictional.webm' }];
   const mentions = { search: async () => [], kinds: { repas: { label: path => path === '2026-10-27/dejeuner' ? LABEL : path, icon: h('span', { 'data-testid': 'meal-icon' }, 'meal'), ...(options.open ? { open: path => opened.push(path) } : {}), ...(options.renderSent ? { renderSent: path => h('em', { 'data-testid': 'custom-meal' }, path) } : {}) } } };
-  const spec = { controller, chatProps: { mentions, locale: 'fr', ...(options.upload ? { attachments: { upload: options.upload }, pasteToFile: { minChars: 4 } } : {}), ...(options.slash ? { slash: options.slash } : {}) }, ...(options.send ? { voice: { send: options.send, transcribe: async () => WORDS, upload: async () => [{ path: 'uploads/voice-fictional.webm', name: 'voice-fictional.webm' }] } } : {}) };
-  function Content() { api = layer.useAgentLayer(); return h(layer.AgentDockLayout, null, h('main', null, 'Fictional meal'), h(layer.AgentLayer)); }
+  const spec = { controller, chatProps: { mentions, locale: 'fr', voiceReplay: options.replay,  ...(options.upload ? { attachments: { upload: options.upload }, pasteToFile: { minChars: 4 } } : {}), ...(options.slash ? { slash: options.slash } : {}) }, ...(options.send ? { voice: { send: options.send, transcribe, upload } } : {}) };
+  function Content() { api = layer.useAgentLayer(); if (options.nativeVoice) return h(layer.PiChat, { controller, locale: 'fr', mentions, voiceMessage: { ...layer.voiceMessagePlugin, transcribe, upload } }); return h(layer.AgentDockLayout, null, h('main', null, 'Fictional meal'), h(layer.AgentLayer)); }
   const mount = document.createElement('div'); document.body.append(mount);
   const ui = createRoot(mount);
   await act(async () => ui.render(h(options.strict ? StrictMode : Fragment, null, h(layer.AgentLayerProvider, { agent: options.noAgent ? undefined : spec, locale: 'fr', agentLink: false }, h(Content)))));
@@ -59,14 +72,18 @@ async function fixture(t, options = {}) {
   const until = async (predicate, label) => { for (let n = 0; n < 100 && !predicate(); n++) await act(async () => new Promise(resolve => setTimeout(resolve, 15))); assert.ok(predicate(), label); };
   const input = value => act(async () => { const element = find('[data-testid=composer-input]'); Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(element, value); element.setSelectionRange(value.length, value.length); element.dispatchEvent(new window.Event('input', { bubbles: true })); element.dispatchEvent(new window.Event('change', { bubbles: true })); });
   const click = selector => act(async () => find(selector).dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true })));
-  t.after(async () => { await act(async () => ui.unmount()); await controller.dispose(); await native.close(context); for (const [name, descriptor] of saved) descriptor ? Object.defineProperty(globalThis, name, descriptor) : delete globalThis[name]; window.close(); });
+  t.after(async () => { await act(async () => window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))); await act(async () => ui.unmount()); await controller.dispose(); await native.close(context); for (const [name, descriptor] of saved) descriptor ? Object.defineProperty(globalThis, name, descriptor) : delete globalThis[name]; window.close(); });
   const talk = async (token = TOKEN, options = {}) => { let result; await act(async () => { result = api.talkAbout(token, options); }); return result; };
   const paste = (value, start, end) => act(async () => {
     const element = find('[data-testid=composer-input]'); element.setSelectionRange(start, end);
     const event = new window.Event('paste', { bubbles: true, cancelable: true });
     event.clipboardData = { files: [], getData: () => value }; element.dispatchEvent(event);
   });
-  return { controller, find, until, click, act, talk, api: () => api, permission: () => permission, tracks, sent, opened, input, paste };
+  const feed = async (value, length = 48000) => {
+    await until(() => audioNode?.onaudioprocess, 'PCM node ready');
+    await act(async () => audioNode.onaudioprocess({ inputBuffer: { getChannelData: () => new Float32Array(length).fill(value) } }));
+  };
+  return { controller, find, until, click, act, talk, feed, contexts, captured, api: () => api, permission: () => permission, tracks, sent, opened, input, paste };
 }
 
 test('no agent returns false without changing the layer or requesting a microphone', async t => {
@@ -116,19 +133,32 @@ for (const send of ['draft', 'auto', 'message']) test(`${send}: synchronous gest
   assert.ok(f.sent[0][1].text.includes('@docs/plan.md'), 'draft file mentions travel alongside card mentions');
   await f.until(() => f.find('[data-testid=message-mention]')?.textContent.includes(LABEL), 'sent kind mention');
   assert.ok(f.find('[data-testid=user-text]')?.textContent.includes(WORDS));
-  if (send === 'message') assert.ok(f.find('[data-testid=voice-play]'), 'mention prefix preserves audio rendering');
+  if (send === 'message') {
+    assert.ok(f.find('[data-testid=voice-bubble]'), 'retained voice renders its transcript');
+    assert.equal(Boolean(f.find('[data-testid=voice-play], [data-testid=voice-duration], [data-testid=voice-bubble] audio')), false, 'default voice has no player');
+  }
 });
-test('ordinary composer hold keeps the shell compact while card-started recording uses inline status', async t => {
+test('voice replay renders only with explicit presentation opt-in', async t => {
+  const f = await fixture(t, { send: 'message', replay: true });
+  await f.talk(TOKEN, { voice: true });
+  await f.until(() => f.find('[data-testid=agent-talk]')?.dataset.state === 'recording', 'recording');
+  await f.click('[data-testid=agent-talk]');
+  await f.until(() => f.find('[data-testid=voice-bubble]'), 'retained voice message');
+  assert.ok(f.find('[data-testid=user-text]').textContent.includes(WORDS));
+  assert.ok(f.find('[data-testid=voice-play]'));
+  assert.ok(f.find('[data-testid=voice-duration]'));
+  assert.ok(f.find('[data-testid=voice-bubble] audio'));
+});
+
+test('ordinary composer tap uses the same replacement row as card-started capture and Escape discards', async t => {
   const f = await fixture(t, { send: 'message' });
-  await f.talk();
-  const mic = f.find('[data-testid=agent-talk]');
-  await f.act(async () => mic.dispatchEvent(new window.PointerEvent('pointerdown', { button: 0, pointerId: 1, bubbles: true, cancelable: true })));
-  await f.until(() => mic.getAttribute('data-state') === 'recording', 'ordinary hold recording');
-  assert.equal(Boolean(f.find('[data-testid=voice-recording]')), false, 'ordinary shell hold adds no width-changing status');
-  assert.equal(Boolean(f.find('[data-testid=composer-voice-cancel]')), false);
+  await f.talk(); await f.click('[data-testid=agent-talk]');
+  await f.until(() => f.find('[data-testid=agent-talk]')?.dataset.state === 'recording', 'ordinary tap recording');
+  assert.ok(f.find('[data-testid=voice-recording-bar]'));
+  assert.equal(Boolean(f.find('[data-testid=composer-input]')), false);
+  assert.ok(f.find('[data-testid=composer-voice-cancel]'));
   await f.act(async () => window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
-  assert.ok(f.tracks.every(track => track.stopped));
-  assert.equal(f.sent.length, 0);
+  assert.ok(f.tracks.every(track => track.stopped)); assert.equal(f.sent.length, 0);
 });
 
 for (const throwSend of [false, true]) for (const send of ['typed', 'draft', 'auto', 'message']) test(`${send}: ${throwSend ? 'thrown' : 'refused'} native send restores words without the card token`, async t => {
@@ -143,7 +173,7 @@ for (const throwSend of [false, true]) for (const send of ['typed', 'draft', 'au
   if (send === 'typed' || send === 'draft') await f.click('[data-testid=composer-submit]');
   await f.until(() => f.sent.length === 1 && f.controller.getSnapshot().draft.text.includes(WORDS), 'words restored');
   assert.equal(f.controller.getSnapshot().draft.text.includes('@repas:'), false);
-  assert.equal(f.find('[data-testid=mention-chip]'), null);
+  assert.equal(Boolean(f.find('[data-testid=mention-chip]')), false);
 });
 
 for (const reason of ['Escape', 'blur', 'hidden']) test(`card-started composer recording keeps ${reason} cancellation`, async t => {
@@ -191,6 +221,11 @@ test('typed send renders a quoted kind beside an unchanged file mention, and its
   await f.until(() => f.find('[data-testid="message-mention"][data-path="docs/plan.md"]'), 'file mention still rendered');
   assert.equal(f.find('[data-testid="message-mention"][data-path="docs/plan.md"]').textContent, '@docs/plan.md');
   const kind = [...document.querySelectorAll('[data-testid=message-mention]')].find(element => element.dataset.path.startsWith('repas:'));
+  const file = f.find('[data-testid="message-mention"][data-path="docs/plan.md"]');
+  for (const mention of [kind, file]) {
+    assert.ok(mention.classList.contains('inline-flex') && mention.classList.contains('align-middle'), 'sent card and file mentions share text-line alignment');
+    assert.equal(mention.tagName, 'SPAN', 'inline mentions do not add a padded control height');
+  }
   await f.act(async () => kind.click());
   assert.deepEqual(f.opened, [path]);
   assert.equal(f.controller.getSnapshot().draft.text, '');
@@ -200,7 +235,7 @@ test('a kind renderSent overrides only sent presentation, not the composer chip'
   const f = await fixture(t, { renderSent: true });
   await f.talk();
   assert.ok(f.find('[data-testid=mention-chip]').textContent.includes(LABEL));
-  assert.equal(f.find('[data-testid=custom-meal]'), null);
+  assert.equal(Boolean(f.find('[data-testid=custom-meal]')), false);
   await f.click('[data-testid=composer-submit]');
   await f.until(() => f.find('[data-testid=custom-meal]'), 'custom sent renderer');
   assert.equal(f.find('[data-testid=custom-meal]').textContent, '2026-10-27/dejeuner');
@@ -284,6 +319,49 @@ test('paste-to-file maps visible selections without deleting hidden kind tokens'
   assert.ok(f.controller.getSnapshot().draft.text.includes(TOKEN));
 });
 
+test('an unfinished quoted file mention cannot consume a hidden quoted kind token', async t => {
+  const f = await fixture(t);
+  const token = '@"repas:Meeting notes"';
+  await f.talk(token);
+  await f.input('@"');
+  assert.equal(f.find('[data-testid=composer-input]').value, '@"');
+  assert.ok(f.find('[data-testid=mention-chip]')?.textContent.includes('Meeting notes'));
+  await f.click('[data-testid=composer-submit]');
+  await f.until(() => f.controller.getSnapshot().send.kind === 'admitted', 'native send');
+  const { mentionedPaths } = await import('@hachej/boring-ui-kit/chat-text');
+  assert.ok(mentionedPaths(f.sent[0][1].text).includes('repas:Meeting notes'));
+});
+
+test('paste restoration after clearing editable text preserves hidden kind identity', async t => {
+  const f = await fixture(t, { upload: async () => new Promise(() => {}) });
+  await f.talk();
+  await f.input('before REMOVE after');
+  await f.paste('pasted fictional text', 7, 13);
+  await f.until(() => f.find('[data-testid=upload-chip]'), 'upload pending');
+  await f.input('');
+  await f.click('[data-testid=upload-chip] button');
+  assert.equal(f.find('[data-testid=composer-input]').value, 'pasted fictional text');
+  const { mentionedPaths } = await import('@hachej/boring-ui-kit/chat-text');
+  assert.ok(mentionedPaths(f.controller.getSnapshot().draft.text).includes(TOKEN.slice(1)));
+  assert.ok(f.find('[data-testid=mention-chip]')?.textContent.includes(LABEL));
+});
+
+for (const send of ['auto', 'message']) test(`${send}: tap finish waits for microphone permission while inline cancel remains available`, async t => {
+  let allow;
+  const permission = new Promise(resolve => { allow = resolve; });
+  t.after(() => allow());
+  const f = await fixture(t, { send, permission });
+  await f.talk(TOKEN, { voice: true });
+  assert.equal(f.find('[data-testid=agent-talk]').dataset.state, 'starting');
+  assert.equal(f.find('[data-testid=agent-talk]').disabled, true);
+  assert.equal(f.find('[data-testid=composer-voice-cancel]').disabled, false);
+  await f.act(async () => allow());
+  await f.until(() => f.find('[data-testid=agent-talk]').dataset.state === 'recording', 'permission granted');
+  assert.equal(f.find('[data-testid=agent-talk]').disabled, false);
+  await f.click('[data-testid=composer-voice-cancel]');
+  assert.equal(f.sent.length, 0);
+});
+
 test('kind removal preserves visible words and file text', async t => {
   const f = await fixture(t);
   await f.talk();
@@ -292,4 +370,66 @@ test('kind removal preserves visible words and file text', async t => {
   await f.click('[data-testid=mention-chip] button');
   assert.equal(f.controller.getSnapshot().draft.text, `${WORDS} @docs/plan.md`);
   assert.equal(f.find('[data-testid=composer-input]').value, `${WORDS} @docs/plan.md`);
+});
+
+for (const width of [390, 1280]) test(`single tap starts the same replacement recording bar at ${width}, trash discards, Send uses native admission`, async t => {
+  const f = await fixture(t, { width, send: 'message' });
+  await f.talk();
+  await f.click('[data-testid=agent-talk]');
+  await f.until(() => f.find('[data-testid=agent-talk]')?.dataset.state === 'recording', 'a single click records without hold');
+  assert.equal(f.permission(), 1);
+  assert.ok(f.find('[data-testid=composer] [data-testid=voice-recording-bar]'));
+  assert.equal(Boolean(f.find('[data-testid=composer-input]')), false, 'recording replaces editable row');
+  assert.equal(Boolean(f.find('[data-testid=composer-submit]')), false, 'no competing Send');
+  assert.equal(Boolean(f.find('[data-testid=composer-plus]')), false, 'ordinary controls are replaced');
+  assert.equal(Boolean(f.find('[data-testid=voice-pause]')), false, 'fallback never invents pause');
+  assert.equal(Boolean(f.find('[data-testid=voice-waveform]')), false, 'fallback never invents input levels');
+  await f.click('[data-testid=composer-voice-cancel]');
+  assert.equal(f.sent.length, 0); assert.ok(f.tracks.every(track => track.stopped));
+  assert.ok(f.find('[data-testid=composer-input]'));
+  await f.click('[data-testid=agent-talk]');
+  await f.until(() => f.find('[data-testid=agent-talk]')?.dataset.state === 'recording', 'second tap records');
+  await f.click('[data-testid=agent-talk]');
+  await f.until(() => f.sent.length === 1 && f.controller.getSnapshot().send.kind === 'admitted', 'Send admits one native message');
+});
+
+
+for (const send of ['draft', 'auto', 'message', 'native']) test(`${send}: public recording bar uses real PCM levels, freezes paused time, resumes and sends without paused samples`, async t => {
+  const f = await fixture(t, { send: send === 'native' ? 'message' : send, pcm: true, nativeVoice: send === 'native' });
+  const mic = send === 'native' ? '[data-testid=voice-message-record]' : '[data-testid=agent-talk]';
+  if (send !== 'native') await f.talk();
+  await f.click(mic); await f.feed(0.25);
+  await f.until(() => f.find('[data-testid=voice-waveform] span')?.dataset.level === '0.25', 'waveform comes from the real PCM level');
+  assert.ok(f.find('[data-testid=voice-recording-bar]'));
+  assert.equal(Boolean(f.find('[data-testid=composer-input]')), false);
+  assert.match(f.find('[data-testid=voice-recording]').textContent, /0:01/);
+  await f.click('[data-testid=voice-pause]');
+  assert.equal(f.find('[data-testid=voice-recording-bar]').dataset.state, 'paused');
+  assert.equal(f.find('[data-testid=voice-pause]').getAttribute('aria-label'), 'Reprendre l’enregistrement');
+  const bars = f.find('[data-testid=voice-waveform]').innerHTML;
+  await f.feed(0.9); await f.act(async () => new Promise(resolve => setTimeout(resolve, 250)));
+  assert.match(f.find('[data-testid=voice-recording]').textContent, /0:01/);
+  assert.equal(f.find('[data-testid=voice-waveform]').innerHTML, bars, 'waveform freezes while paused');
+  await f.click('[data-testid=voice-pause]'); await f.feed(0.5);
+  await f.until(() => f.find('[data-testid=voice-waveform]')?.lastElementChild?.dataset.level === '0.5', 'resumed level');
+  assert.match(f.find('[data-testid=voice-recording]').textContent, /0:02/);
+  await f.click(mic);
+  if (send === 'draft') { await f.until(() => f.controller.getSnapshot().draft.text.includes(WORDS), 'draft transcribed'); await f.click('[data-testid=composer-submit]'); }
+  await f.until(() => f.sent.length === 1 && f.controller.getSnapshot().send.kind === 'admitted', 'one native admission');
+  assert.equal(new DataView(await f.captured[0].arrayBuffer()).getUint32(40, true), 64000, 'exactly two seconds of PCM, no paused samples');
+  assert.ok(f.tracks.every(track => track.stopped)); assert.ok(f.contexts.every(context => context.state === 'closed'));
+});
+
+for (const action of ['send', 'trash']) test(`paused native capture: ${action} releases the microphone and excludes paused samples`, async t => {
+  const f = await fixture(t, { send: 'message', pcm: true, nativeVoice: true });
+  await f.click('[data-testid=voice-message-record]'); await f.feed(0.25);
+  await f.until(() => f.find('[data-testid=voice-pause]'), 'PCM pause available');
+  await f.click('[data-testid=voice-pause]'); await f.feed(0.9);
+  await f.click(action === 'send' ? '[data-testid=voice-message-record]' : '[data-testid=composer-voice-cancel]');
+  if (action === 'send') {
+    await f.until(() => f.sent.length === 1 && f.controller.getSnapshot().send.kind === 'admitted', 'paused Send admits once');
+    assert.equal(new DataView(await f.captured[0].arrayBuffer()).getUint32(40, true), 32000, 'one second kept, paused second excluded');
+  } else { assert.equal(f.sent.length, 0); assert.equal(f.captured.length, 0); }
+  assert.ok(f.tracks.every(track => track.stopped));
+  assert.ok(f.contexts.every(context => context.state === 'closed'));
 });

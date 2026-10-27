@@ -116,6 +116,11 @@ export function kindMentionDraft<Kind>(text: string, config: { readonly kinds?: 
   return { text: text.split('').filter((_, at) => !hidden.has(at)).join(''), tokens };
 }
 
+/** Prefix complete hidden tokens so unfinished quoted input cannot consume their spelling. */
+export function writeKindMentionDraft(text: string, tokens: readonly string[]): string {
+  return tokens.length ? `${tokens.join(' ')}${text ? ` ${text}` : ''}` : text;
+}
+
 /** Consume every draft token for voice sends, including repeated references to the same path. */
 export function withoutMentions(text: string): string {
   const words = visibleParts(pieces(text, { mentions: true, skills: [] }), piece => piece.kind === 'mention').map(piece => piece.text).join('').replace(/^[ ]+/, '');

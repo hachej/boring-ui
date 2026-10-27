@@ -139,6 +139,9 @@ export const defaultChatLabels = {
   // Voice input (the microphone button beside the composer)
   voiceRecord: 'Record a message',
   voiceHold: 'Hold to record, release to send',
+  voicePauseRecording: 'Pause recording',
+  voiceResumeRecording: 'Resume recording',
+  voicePaused: 'Recording paused',
   voiceRecording: 'Recording',
   voicePreparing: 'Preparing voice message…',
   voiceAudioOnly: 'Send audio only',

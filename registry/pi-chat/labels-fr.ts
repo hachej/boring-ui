@@ -65,6 +65,9 @@ export const frenchChatLabels: ChatLabels = {
   // Voice input (the microphone button beside the composer)
   voiceRecord: 'Enregistrer un message',
   voiceHold: 'Maintenir pour enregistrer, relâcher pour envoyer',
+  voicePauseRecording: 'Mettre l’enregistrement en pause',
+  voiceResumeRecording: 'Reprendre l’enregistrement',
+  voicePaused: 'Enregistrement en pause',
   voiceRecording: 'Enregistrement',
   voicePreparing: 'Préparation du message vocal…',
   voiceAudioOnly: 'Envoyer l’audio seul',

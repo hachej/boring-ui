@@ -38,8 +38,20 @@ export interface VoiceRecording {
   /** The recording reached `maxMs` and stopped on its own. */
   readonly truncated: boolean;
 }
+/** Live capture facts. PCM elapsed time and level come from kept samples, never a synthetic waveform. */
+export interface VoiceCaptureProgress {
+  readonly elapsedMs: number;
+  /** Root mean square amplitude in [0, 1]; unavailable on the MediaRecorder fallback. */
+  readonly level: number | undefined;
+  readonly paused: boolean;
+  readonly canPause: boolean;
+}
 export interface VoiceCapture {
   readonly start: () => Promise<VoiceStart>;
+  readonly progress: () => VoiceCaptureProgress | null;
+  /** PCM only: pauses/resumes appending samples. False when unavailable or already ended. */
+  readonly pause: () => boolean;
+  readonly resume: () => boolean;
   /** Ends the recording and returns it; null when nothing was recorded (never started, cancelled, or empty). */
   readonly stop: () => Promise<VoiceRecording | null>;
   /** Ends the recording, releases the microphone and discards the audio. */
@@ -158,7 +170,7 @@ export function createVoiceCapture(options: VoiceCaptureOptions = {}): VoiceCapt
   const firstSoundMs = options.firstSoundMs ?? 5_000;
   interface WavSession {
     stream: MediaStream; context: AudioContext; source: MediaStreamAudioSourceNode | null; node: ScriptProcessorNode | null;
-    chunks: Float32Array[]; samples: number; maxSamples: number; startedAt: number | null; truncated: boolean; cancelled: boolean; ended: boolean;
+    chunks: Float32Array[]; samples: number; maxSamples: number; startedAt: number | null; truncated: boolean; cancelled: boolean; ended: boolean; paused: boolean; level: number;
     cancel: () => void;
   }
   let wav: WavSession | null = null;
@@ -209,7 +221,7 @@ export function createVoiceCapture(options: VoiceCaptureOptions = {}): VoiceCapt
     catch (error) { opening = false; void context.close().catch(() => {}); return refusalOf(error); }
     let cancelled!: () => void;
     const current: WavSession = {
-      stream, context, source: null, node: null, chunks: [], samples: 0, startedAt: null, truncated: false, cancelled: false, ended: false,
+      stream, context, source: null, node: null, chunks: [], samples: 0, startedAt: null, truncated: false, cancelled: false, ended: false, paused: false, level: 0,
       maxSamples: Number.isFinite(maxMs) && maxMs > 0 ? Math.floor((maxMs / 1000) * WAV_RATE) : Number.POSITIVE_INFINITY,
       cancel: () => cancelled(),
     };
@@ -233,12 +245,15 @@ export function createVoiceCapture(options: VoiceCaptureOptions = {}): VoiceCapt
       current.node = context.createScriptProcessor(4096, 1, 1);
     } catch (error) { opening = false; endWav(current, false); return refused('unsupported', error instanceof Error ? error.message : String(error)); }
     current.node.onaudioprocess = event => {
-      if (current.ended) return;
+      if (current.ended || current.paused) return;
       const input = event.inputBuffer.getChannelData(0);
       if (current.startedAt === null) { current.startedAt = now() - (input.length / context.sampleRate) * 1000; heard(); }
       const chunk = downsample(input, context.sampleRate);
       const room = current.maxSamples - current.samples;
       const kept = chunk.length > room ? chunk.subarray(0, room) : chunk;
+      let squares = 0;
+      for (const sample of kept) squares += sample * sample;
+      current.level = kept.length ? Math.min(1, Math.sqrt(squares / kept.length)) : 0;
       current.chunks.push(kept);
       current.samples += kept.length;
       if (current.samples >= current.maxSamples) endWav(current, true);
@@ -266,6 +281,13 @@ export function createVoiceCapture(options: VoiceCaptureOptions = {}): VoiceCapt
   };
 
   return {
+    progress() {
+      if (wav) return { elapsedMs: wav.samples / WAV_RATE * 1000, level: wav.level, paused: wav.paused, canPause: !wav.ended && wav.startedAt !== null };
+      if (!session || session.startedAt === null) return null;
+      return { elapsedMs: Math.min(Math.max(0, (session.stoppedAt ?? now()) - session.startedAt), maxMs > 0 ? maxMs : Infinity), level: undefined, paused: false, canPause: false };
+    },
+    pause() { if (!wav || wav.ended || wav.startedAt === null) return false; wav.paused = true; return true; },
+    resume() { if (!wav || wav.ended || wav.startedAt === null) return false; wav.paused = false; return true; },
     async start() {
       if (session || wav || opening) return { kind: 'refused', code: 'failed', reason: 'Already recording.' };
       const Recorder = (globalThis as { MediaRecorder?: typeof MediaRecorder }).MediaRecorder;

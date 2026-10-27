@@ -9,7 +9,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Input } from '@/components/ui/input';
 import { InputGroup, InputGroupAddon, InputGroupTextarea } from '@/components/ui/input-group';
 import { Toggle } from '@/components/ui/toggle';
-import { hasMention, isLongPaste, kindMentionDraft, mentionedPaths, mentionKind, mentionToken, mentionTrigger, removeMention, slashItems, slashQuery } from '@hachej/boring-ui-kit/chat-text';
+import { hasMention, isLongPaste, kindMentionDraft, mentionedPaths, mentionKind, mentionToken, mentionTrigger, removeMention, slashItems, slashQuery, writeKindMentionDraft } from '@hachej/boring-ui-kit/chat-text';
 import type { PasteToFile, SlashItem } from '@hachej/boring-ui-kit/chat-text';
 import type { AttachmentsConfig, MentionsConfig, PastedText, SlashConfig } from './config';
 import { useChatText } from './labels';
@@ -107,6 +107,8 @@ export interface ComposerProps {
   readonly start?: ReactNode;
   /** A control shown in place of Send while there is nothing to send (WhatsApp's microphone): Send comes back as soon as there is text or a file. */
   readonly whenEmpty?: ReactNode;
+  /** An active capture replaces the editable input and ordinary controls with this one recording row. */
+  readonly recording?: ReactNode;
   /** The optional Feedback button and chip. */
   readonly feedback?: ComposerFeedback | undefined;
 }
@@ -201,7 +203,7 @@ export function Composer(props: ComposerProps) {
   const tokens = useRef(draft.tokens);
   useLayoutEffect(() => { tokens.current = draft.tokens; });
   // An asynchronous slash command must use today's tokens, not restore a chip removed since it began.
-  const onText = (next: string) => props.onText(tokens.current.length ? `${next}${next ? ' ' : ''}${tokens.current.join(' ')}` : next);
+  const onText = (next: string) => props.onText(writeKindMentionDraft(next, tokens.current));
   const { labels, icons } = useChatText();
   const inner = useRef<HTMLTextAreaElement | null>(null);
   const composing = useRef(false);
@@ -275,7 +277,7 @@ export function Composer(props: ComposerProps) {
 
   const { feedback } = props;
   const hasContent = props.text.trim().length > 0 || attachments.length > 0 || props.hasFiles || (feedback?.count ?? 0) > 0;
-  const canSubmit = hasContent && !sendBlocked && !disabled;
+  const canSubmit = hasContent && !sendBlocked && !disabled && !props.recording;
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     props.onKeyDown?.(event);
     if (event.defaultPrevented) return;
@@ -296,8 +298,6 @@ export function Composer(props: ComposerProps) {
     const pasted = event.clipboardData.getData('text/plain');
     if (!isLongPaste(pasted, props.pasteToFile)) return;
     event.preventDefault();
-    // Put hidden tokens after the editable text before the upload captures native draft offsets.
-    if (draft.tokens.length) onText(text);
     props.onPasteText({ text: pasted, start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd });
   };
   const drag = (event: DragEvent) => { if (canAttach) { event.preventDefault(); setDragging(event.type === 'dragover'); } };
@@ -370,8 +370,11 @@ export function Composer(props: ComposerProps) {
     {fileEl}
     {slashOpen && Slash && <Slash query={query!} items={items} onSelect={pickSlash} onDismiss={dismiss} />}
     {mentionOpen && mentions && Mention && <Mention query={trigger!.query} listLabel={mentions.listLabel} renderOption={mentions.renderOption} search={mentions.search} generation={mentions.generation} onSelect={pickMention} onDismiss={dismiss} />}
-    {pill && chipList && <div className="flex flex-wrap gap-2">{chipList}</div>}
-    {pill ? <InputGroup>
+    {pill && !props.recording && chipList && <div className="flex flex-wrap gap-2">{chipList}</div>}
+    {props.recording ? <InputGroup>
+      {chipList && <InputGroupAddon align="block-start" className="flex-wrap">{chipList}</InputGroupAddon>}
+      <InputGroupAddon align="block-end" data-testid="composer-controls" className="w-full">{props.recording}</InputGroupAddon>
+    </InputGroup> : pill ? <InputGroup>
       <InputGroupAddon>{startAndPlus}{feedback && <AnnotateButton feedback={feedback} disabled={disabled} />}</InputGroupAddon>
       {textareaEl}
       <InputGroupAddon align="inline-end" data-testid="composer-controls">{end}</InputGroupAddon>

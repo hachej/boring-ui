@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { appendToDraft, displayName, fileKind, hasMention, isLongPaste, isVoicePath, kindMentionDraft, looksLikeMarkdown, mentionedPaths, mentionKind, mentionToken, mentionTrigger, pieces, prependToDraft, removeMention, slashGroup, slashItems, slashQuery, visibleParts, withoutKindMentions, withoutMentions } from '@hachej/boring-ui-kit/chat-text';
+import { appendToDraft, displayName, fileKind, hasMention, isLongPaste, isVoicePath, kindMentionDraft, looksLikeMarkdown, mentionedPaths, mentionKind, mentionToken, mentionTrigger, pieces, prependToDraft, removeMention, slashGroup, slashItems, slashQuery, visibleParts, withoutKindMentions, withoutMentions, writeKindMentionDraft } from '@hachej/boring-ui-kit/chat-text';
 import { memberMention } from '@hachej/boring-ui-kit/shared-chat';
 import { mentionedPaths as agentMentionedPaths } from '@hachej/boring-agent/mentions';
 
@@ -61,6 +61,16 @@ test('kind mention draft projects only app tokens and keeps editable spacing and
   assert.deepEqual(kindMentionDraft('@docs/plan.md ', config), { text: '@docs/plan.md ', tokens: [] });
   const token = mentionToken('repas:Meeting "notes"');
   assert.deepEqual(kindMentionDraft(`${token} words`, config), { text: 'words', tokens: [token] });
+});
+
+test('hidden kind serialization prefixes complete tokens before unfinished quoted editable input', () => {
+  const config = { kinds: { repas: {} } }, token = mentionToken('repas:Meeting notes');
+  for (const text of ['@"', '@"unfinished', 'my words ', '😀 café\nnext', '']) {
+    const raw = writeKindMentionDraft(text, [token]);
+    assert.deepEqual(kindMentionDraft(raw, config), { text, tokens: [token] });
+    assert.ok(mentionedPaths(raw).includes('repas:Meeting notes'));
+  }
+  assert.equal(writeKindMentionDraft('ordinary @docs/plan.md', []), 'ordinary @docs/plan.md');
 });
 
 test('voice consumption removes every mention while refused text drops only registered kinds', () => {

@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import type { ComposerFeedback, ComposerProps, PendingUpload } from './composer';
 import type { ConversationFile } from './conversation-files';
 import type { AttachmentsConfig, EffortConfig, MentionsConfig, ModelConfig, ModelRef, PastedText, SlashConfig } from './config';
-import { appendToDraft, displayName, looksLikeMarkdown, mentionKind, mentionToken, pieces, prependToDraft, withoutKindMentions } from '@hachej/boring-ui-kit/chat-text';
+import { appendToDraft, displayName, kindMentionDraft, looksLikeMarkdown, mentionKind, mentionToken, pieces, prependToDraft, withoutKindMentions, writeKindMentionDraft } from '@hachej/boring-ui-kit/chat-text';
 import type { PasteToFile } from '@hachej/boring-ui-kit/chat-text';
 import type { CommandMentions } from './config';
 import type { ChatCards, ChatTextPart, RowContext } from './message';
@@ -37,6 +37,8 @@ export interface ChatFeatureProps {
   readonly mode?: Mode;
   /** `natural` shows only messages, replies and question, approval and artifact cards, with one "Preparing…" status while the agent works: no tool steps, reasoning, file discovery or raw error text. Omit it and nothing changes. */
   readonly presentation?: 'natural';
+  /** Show a retained voice message's audio player. Default false: transcript only; uploaded audio and stored tokens are unchanged. */
+  readonly voiceReplay?: boolean;
   readonly actions?: PiChatActions;
   readonly renderEntry?: (entry: EntryRecord) => ChatCard | undefined;
   /** Omit complete assistant lines from display, copy and actions. Live trailing fragments wait for a newline or settlement. Not transport redaction. */
@@ -129,7 +131,7 @@ export interface ChatSessionOptions extends Readonly<{ [Key in keyof ChatFeature
 }
 
 export function useChatSession(options: ChatSessionOptions) {
-  const { controller, activeController: active, mode, presentation, actions, renderEntry, hideLine, historicalMessageActions, unread, replyError, renderTool: catchAll, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept,
+  const { controller, activeController: active, mode, presentation, voiceReplay, actions, renderEntry, hideLine, historicalMessageActions, unread, replyError, renderTool: catchAll, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept,
     slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend, rowExtras, feedback, onOpenFile, fileChanges, pasteToFile, composerChips, composerHeader, composerHasContent, onPickFiles } = options;
   const { labels } = useChatText();
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
@@ -341,15 +343,15 @@ export function useChatSession(options: ChatSessionOptions) {
     const file = new File([paste.text], `${labels.pastedFileName(stamp)}${markdown ? '.md' : '.txt'}`, { type: markdown ? 'text/markdown' : 'text/plain' });
     // The pasted text replaces its selection when the paste is accepted, so the draft shows what is left. Restoring inserts the text at
     // the same place and deletes nothing: whatever was typed since stays.
-    const draft = controller.getSnapshot().draft.text;
-    const start = Math.min(paste.start, draft.length), end = Math.min(Math.max(paste.end, start), draft.length);
-    const after = `${draft.slice(0, start)}${draft.slice(end)}`;
+    const draft = kindMentionDraft(controller.getSnapshot().draft.text, mentions);
+    const start = Math.max(0, Math.min(paste.start, draft.text.length)), end = Math.min(Math.max(paste.end, start), draft.text.length);
+    const after = writeKindMentionDraft(`${draft.text.slice(0, start)}${draft.text.slice(end)}`, draft.tokens);
     controller.setText(after);
     const restore = () => {
       if (!current()) return;
-      const now = controller.getSnapshot().draft.text;
-      const at = Math.min(start, now.length);
-      controller.setText(`${now.slice(0, at)}${paste.text}${now.slice(at)}`);
+      const now = kindMentionDraft(controller.getSnapshot().draft.text, mentions);
+      const at = Math.min(start, now.text.length);
+      controller.setText(writeKindMentionDraft(`${now.text.slice(0, at)}${paste.text}${now.text.slice(at)}`, now.tokens));
       textarea.current?.focus();
     };
     void upload([file], { restore, after });
@@ -381,7 +383,7 @@ export function useChatSession(options: ChatSessionOptions) {
     if (catalog && selected) act(async () => catalog.onActivate({ name: selected.name, behavior: selected.behavior }));
   };
   const rowContext = useMemo<RowContext>(() => ({
-    developer, natural, renderText, cards, groupTool, onOpenImage, onCopy, openFile: onOpenFile ?? mentions?.open, fileChanges,
+    developer, natural, voiceReplay, renderText, cards, groupTool, onOpenImage, onCopy, openFile: onOpenFile ?? mentions?.open, fileChanges,
     commandMentions: commandMentions ? { commands: commandMentions.commands, onActivate: activateMention } : undefined,
     answer: actions?.answer,
     artifacts: offered?.Card ? { open: offered.open, isOpen: offered.isOpen, kinds: offered.kinds, Card: offered.Card } : undefined,
@@ -390,7 +392,7 @@ export function useChatSession(options: ChatSessionOptions) {
     pieces: slash?.skills?.length || mentions || attachments ? { kinds: mentions?.kinds, mentions: Boolean(mentions), uploads: Boolean(attachments), skills: (slash?.skills ?? []).map(skill => skill.name), openMention: mentions?.open, renderMention: mentions?.renderSent ?? mentions?.render, preview: mentions?.preview, audioUrl: mentions?.audioUrl } : undefined,
     ...rowExtras,
   // eslint-disable-next-line react-hooks/exhaustive-deps -- lists the fields rows read, not whole objects: activateMention changes every render and must not rebuild every row.
-  }), [controller, developer, natural, renderText, cards, groupTool, onOpenImage, onCopy, onOpenFile, fileChanges, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, mentions?.renderSent, mentions?.preview, mentions?.audioUrl, attachments, offered?.open, offered?.isOpen, offered?.kinds, offered?.Card, messageActions, historicalMessageActions, unread, replyError, replyFooter, rowExtras]);
+  }), [controller, developer, natural, voiceReplay, renderText, cards, groupTool, onOpenImage, onCopy, onOpenFile, fileChanges, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, mentions?.renderSent, mentions?.preview, mentions?.audioUrl, attachments, offered?.open, offered?.isOpen, offered?.kinds, offered?.Card, messageActions, historicalMessageActions, unread, replyError, replyFooter, rowExtras]);
 
   /** The model-and-effort pill and the note that reports a refused change. */
   const pickers = () => {

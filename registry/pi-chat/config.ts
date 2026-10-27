@@ -232,22 +232,23 @@ export interface VoiceMessageHandle {
   readonly phase: VoicePhase | 'idle';
   readonly seconds: number;
   readonly captureSequence: number;
+  /** Actual PCM input levels; absent on the MediaRecorder fallback. */
+  readonly levels?: readonly number[];
+  readonly paused?: boolean;
+  readonly pause?: (() => void) | undefined;
+  readonly resume?: (() => void) | undefined;
   readonly problem: string | undefined;
   readonly pending: readonly PendingVoice[];
   readonly start: () => void;
   readonly finish: () => void;
   readonly cancel: () => void;
 }
-/** Props of the hold-to-record button that `VoiceMessageConfig.Button` carries. */
+/** Props of the tap-to-record button that `VoiceMessageConfig.Button` carries. */
 /** `primary`: the button stands in for Send (`voiceReplacesSend`), so it takes Send's primary look. */
 export interface VoiceMessageButtonProps {
   readonly voice: VoiceMessageHandle;
   readonly disabled?: boolean;
   readonly primary?: boolean;
-  /** A gesture elsewhere already started capture: tap the mic to finish, with inline cancel while it records. */
-  readonly tapToFinish?: boolean;
-  /** A shell with its own hold feedback can keep the held microphone's geometry fixed. Default true. */
-  readonly showStatus?: boolean;
   readonly testId?: string;
 }
 /** Props of a pending voice message bubble that `VoiceMessageConfig.Bubble` carries. */

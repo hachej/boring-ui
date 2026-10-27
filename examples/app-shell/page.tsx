@@ -187,7 +187,7 @@ function App() {
       { id: 'share', label: 'Partager ma semaine', icon: Share2Icon, onSelect: () => window.__did.push('share') },
       { id: 'invite', label: 'Inviter un ami', icon: UsersIcon, href: '/invite?app=fitness', onSelect: () => window.__did.push('invite') },
     ],
-    chatProps: { ...common, ...audioFiles, mentions: { ...audioFiles.mentions, search: async () => [], kinds: { repas: { label: (path: string) => path === '2026-10-27/dejeuner' ? 'Déjeuner · mardi' : path, icon: <ClipboardListIcon aria-hidden="true" className="size-4" /> } } }, actions: coach.actions, labels: { title: 'Coach', placeholder: 'Parle au coach…' },
+    chatProps: { ...common, ...audioFiles, voiceReplay: query.get('replay') === '1', mentions: { ...audioFiles.mentions, search: async () => [], kinds: { repas: { label: (path: string) => path === '2026-10-27/dejeuner' ? 'Déjeuner · mardi' : path, icon: <ClipboardListIcon aria-hidden="true" className="size-4" /> } } }, actions: coach.actions, labels: { title: 'Coach', placeholder: 'Parle au coach…' },
       // Photos and picked images become draft attachments (the phone camera and the "+" menu both land here).
       onFiles: async files => Promise.all(files.map(async (file, index) => {
         const bytes = new Uint8Array(await file.arrayBuffer());
