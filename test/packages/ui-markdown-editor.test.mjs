@@ -278,6 +278,48 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
     assert.equal(f.writes(), 0);
   });
 
+  await t.test('locale fr translates the status, the save button and the accessible names; labels override single words', async t => {
+    const f = await fixture(t, 'fictional text\n', { props: { locale: 'fr', initialMode: 'source', header: true } });
+    assert.ok(f.container.querySelector('textarea[aria-label="Notes, source Markdown"]'), 'the source box is named in French');
+    assert.equal(f.container.querySelector('[role=status]').textContent, 'Enregistré');
+    assert.ok(f.button('Enregistrer'), 'explicit-save button');
+    await f.input('changed\n');
+    assert.equal(f.container.querySelector('[role=status]').textContent, 'Modifications non enregistrées');
+    assert.equal(f.writes(), 0);
+    assert.doesNotMatch(f.container.textContent, /\b(Saved|Unsaved changes|Read only|Markdown source)\b/);
+    const g = await fixture(t, 'fictional text\n', { props: { locale: 'fr', initialMode: 'source', labels: { saved: 'Enregistré !', sourceName: title => title } } });
+    assert.equal(g.container.querySelector('[role=status]').textContent, 'Enregistré !');
+    assert.ok(g.container.querySelector('textarea[aria-label="Notes"]'), 'the source box is named exactly the title');
+    const en = await fixture(t, 'fictional text\n', { props: { initialMode: 'source' } });
+    assert.ok(en.container.querySelector('textarea[aria-label="Notes Markdown source"]'), 'English names are unchanged');
+    assert.equal(en.container.querySelector('[role=status]').textContent, 'Saved');
+  });
+
+  await t.test('the conflict alert and its buttons follow the locale and the labels', async t => {
+    for (const [props, notice, button] of [
+      [{ locale: 'fr' }, 'Le document enregistré a changé. Votre texte local a été conservé.', 'Vérifier la version enregistrée'],
+      [{ locale: 'fr', labels: { conflictNotice: 'Modifié ailleurs.', checkSavedVersion: 'Voir' } }, 'Modifié ailleurs.', 'Voir'],
+      [{}, 'The saved document changed. Your local text has been kept.', 'Check saved version'],
+    ]) {
+      const f = await fixture(t, 'original', { props: { ...props, initialMode: 'source', autosave: { delayMs: 100 } } });
+      await f.client.publish({ operationId: `agent-write-${JSON.stringify(props).length}`, atomicity: 'all-or-nothing', changes: [{ kind: 'replace', target: f.controller.getSnapshot().base.target, bytes: new TextEncoder().encode('agent text'), mediaType: 'text/markdown' }] });
+      await f.input('human draft');
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 200)); });
+      const alert = f.container.querySelector('.boring-markdown-alert');
+      if (!alert) { assert.fail(`no alert for ${JSON.stringify(props)}`); }
+      assert.ok(alert.textContent.includes(notice), alert.textContent);
+      assert.ok(f.button(button));
+    }
+  });
+
+  await t.test('French draws the source-only notice with translated reasons', async t => {
+    const f = await fixture(t, 'a\rb\r', { props: { locale: 'fr' } });
+    const notice = f.container.querySelector('[data-testid="markdown-source-only"]');
+    assert.ok(notice, 'a bare-CR document is source-only');
+    assert.match(notice.textContent, /des retours chariot isolés/);
+    assert.doesNotMatch(notice.textContent, /Rich editing is off/);
+  });
+
   await t.test('every automatic flush leaves an untouched new buffer absent; explicit Ctrl+S can create it', async t => {
     for (const trigger of ['blur', 'visibilitychange', 'pagehide', 'navigation', 'unmount']) {
       let flush;
