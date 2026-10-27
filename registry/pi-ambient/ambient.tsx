@@ -26,7 +26,7 @@ import { withChatPlugins } from '../pi-chat-plugins/chat-plugins';
 import { TranscriptChunk } from '../pi-chat/message';
 import type { RowContext } from '../pi-chat/message';
 import { ChatNotices, Notice, PreparingStatus, preparing } from '../pi-chat/notice';
-import { AgentNotifications, KindIcon, createNotificationStore, defaultNotificationLabels, finishNotice, noticeTextOf, pendingQuestion, useNotifications } from './notifications';
+import { AgentNotifications, KindIcon, createNotificationStore, defaultNotificationLabels, noticeTextOf, useRunNotifications, useNotifications } from './notifications';
 import type { AgentNotification, NotificationLabels, NotificationStore } from './notifications';
 import { ChatTextProvider, defaultChatIcons, defaultChatLabels, useMergedText } from '../pi-chat/labels';
 import type { ChatIcons, ChatLabels } from '../pi-chat/labels';
@@ -36,7 +36,7 @@ import type { ArtifactShown, ArtifactFailed } from '@hachej/boring-ui-kit/chat-r
 import type { ArtifactDescriptor, ArtifactsConfig } from '../pi-artifacts/artifact';
 import { artifactCards } from '../pi-artifacts/artifact-card';
 import { PAGE_FIRST, PAGE_MORE, useChatSession, useRowChunks, useTranscript } from '../pi-chat/session';
-import type { ChatFeatureProps, ChatSession } from '../pi-chat/session';
+import type { ChatFeatureProps } from '../pi-chat/session';
 import { ArtifactWorkspace } from '../pi-workspace/workspace';
 import type { WorkspacePanelApi } from '../pi-workspace/workspace';
 import { cn, PHONE_BELOW } from '../utils/utils';
@@ -220,32 +220,6 @@ function useElapsed(active: boolean): number {
   return seconds;
 }
 
-/** Pushes a toast when a run finishes or fails and when a question starts waiting; takes it back when the question is answered or a new run starts. */
-function useRunFeed({ enabled, store, conversationId, title, session, suppress, onOutcome, waiting, notice }: {
-  readonly enabled: boolean; readonly store: NotificationStore; readonly conversationId: string; readonly title: string; readonly session: ChatSession; readonly waiting: string; readonly notice: NoticeText;
-  readonly suppress: () => boolean; readonly onOutcome: (outcome: 'done' | 'error' | null) => void;
-}) {
-  const { working, waitingForAnswer, rows, connected } = session;
-  const before = useRef({ working, waiting: waitingForAnswer });
-  const latest = useRef({ rows, title, suppress, onOutcome, connected, waiting, notice });
-  useLayoutEffect(() => { latest.current = { rows, title, suppress, onOutcome, connected, waiting, notice }; });
-  useEffect(() => {
-    const was = before.current;
-    before.current = { working, waiting: waitingForAnswer };
-    const now = latest.current;
-    if (working && !was.working) { now.onOutcome(null); store.dismiss(`${conversationId}:done`); }
-    if (!enabled) return;
-    if (waitingForAnswer && !was.waiting && !now.suppress()) store.push({ id: `${conversationId}:input`, kind: 'input', title: now.title, summary: pendingQuestion(now.rows, now.notice) ?? now.waiting, conversationId });
-    if (!waitingForAnswer && was.waiting) store.dismiss(`${conversationId}:input`);
-    if (was.working && !working && now.connected) {
-      const finished = finishNotice(now.rows, now.notice);
-      if (!finished) return;
-      now.onOutcome(finished.kind);
-      if (!now.suppress()) store.push({ id: `${conversationId}:done`, kind: finished.kind, title: now.title, summary: finished.summary, conversationId });
-    }
-  }, [working, waitingForAnswer, enabled, store, conversationId]);
-}
-
 /** A compact floating agent bar over an existing page; it grows into a chat window in place. Borrows a concrete native controller like `PiChat`. */
 /** The ambient bar comes with every composer feature item (`withChatPlugins`); a component the host passes is kept. */
 export function AmbientChat(given: AmbientChatProps) {
@@ -337,7 +311,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
   const activeItem = conversations?.items.find(item => item.id === conversations.activeId);
   const shownTitle = activeItem?.title?.trim() || title;
   const toasts = useNotifications(store);
-  useRunFeed({ enabled: notifications !== false, store, conversationId, title: shownTitle, session, onOutcome: setOutcome, waiting: labels.waitingForAnswer, notice: noticeTextOf(labels),
+  useRunNotifications(controller, store, { enabled: notifications !== false, conversationId, title: shownTitle, onOutcome: setOutcome, text: noticeTextOf(labels),
     suppress: () => stateRef.current === 'expanded' && globalThis.document?.visibilityState !== 'hidden' });
   const unread = !expanded && toasts.length > 0;
   const seconds = useElapsed(working);

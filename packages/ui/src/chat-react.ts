@@ -6,6 +6,19 @@ import type { ChatController } from './native-chat.js';
 import { artifactKey, artifactTurn, artifactVersions, createPresentAcks, follows, pendingPresents, presentPath } from './chat-view.js';
 import type { ArtifactDescriptor, ArtifactDetect, PresentAcksHost } from './chat-view.js';
 
+import { watchConversation } from './run-notifications.js';
+import type { NotificationStore, RunNotificationOptions, RunNotificationSource } from './run-notifications.js';
+
+export { createNotificationStore, watchConversation } from './run-notifications.js';
+export type { AgentNotification, NewNotification, NotificationKind, NotificationStore, RunNotificationOptions, RunNotificationSource } from './run-notifications.js';
+
+/** The foreground adapter of watchConversation, with the same connected-only transition rules and borrowed lifecycle. */
+export function useRunNotifications(controller: RunNotificationSource, store: NotificationStore, options: RunNotificationOptions): void {
+  const latest = useRef(options);
+  useLayoutEffect(() => { latest.current = options; });
+  useEffect(() => watchConversation(controller, store, () => latest.current), [controller, store, options.conversationId]);
+}
+
 const subscribeNothing = () => () => {};
 export interface ArtifactSelection { readonly descriptor: ArtifactDescriptor; readonly follow: boolean }
 export interface ArtifactShown { readonly path: string; readonly revision: string; readonly hidden?: true }

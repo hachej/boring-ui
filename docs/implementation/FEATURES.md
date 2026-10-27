@@ -1,5 +1,11 @@
 # Implemented behavior and evidence
 
+## Shared run notifications
+
+Foreground `useRunNotifications` and background `watchConversation` in the optional kit `chat-react` entry share one connected-observation transition and transient store. The registry supplies localized words, question parsing and toast presentation only. This is host UI policy over native views, not a Pi execution extension; detach only unsubscribes. [The UI guide](../../packages/ui/README.md#optional-native-chat) describes the public composition.
+
+`test/packages/ui-run-notifications.test.mjs` drives the built public hook/watch/store and the legacy registry adapter: a question without a run, doc-only approval decisions, disconnected completion/reconnect, localized failure, confirmed stop, suppression, StrictMode, controller replacement and independent teardown. `npm run test:ambient-consumer` installs the recipe and actual kit tarball outside the repo, checks strict source declarations and excludes server/native code from the browser bundle. `npm run ambient:journey:scripted` drives the fictional example in headless Chromium; screenshots are local evidence, not physical-device or durable-delivery qualification. Global proof deferrals are unchanged.
+
 ## Shared artifact versions and presentation acknowledgements
 
 `@hachej/boring-ui-kit/chat-view` owns artifact parsing/detection, collection, pending presents and acknowledgement bookkeeping. `artifactVersions` is newest conversation result first and `follows` uses revision equality (retried calls can share ordinals). The opt-in `chat-react/useArtifactFollow` owns the common auto-open, close-in-turn and observed-mount protocol used by Ambient and AgentWorkspace. Ambient auto-open remains off; its host viewer must report the actual loaded revision through `onShown`, unmount through `hidden: true`, or failure through `onFailed`. No render callback manufactures evidence. This is UI view/controller projection and host presentation, not a Pi execution extension.
