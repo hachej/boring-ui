@@ -9,7 +9,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Input } from '@/components/ui/input';
 import { InputGroup, InputGroupAddon, InputGroupTextarea } from '@/components/ui/input-group';
 import { Toggle } from '@/components/ui/toggle';
-import { hasMention, isLongPaste, mentionedPaths, mentionKind, mentionToken, mentionTrigger, removeMention, slashItems, slashQuery } from '@hachej/boring-ui-kit/chat-text';
+import { hasMention, isLongPaste, kindMentionDraft, mentionedPaths, mentionKind, mentionToken, mentionTrigger, removeMention, slashItems, slashQuery } from '@hachej/boring-ui-kit/chat-text';
 import type { PasteToFile, SlashItem } from '@hachej/boring-ui-kit/chat-text';
 import type { AttachmentsConfig, MentionsConfig, PastedText, SlashConfig } from './config';
 import { useChatText } from './labels';
@@ -195,7 +195,13 @@ function assignRef(ref: Ref<HTMLTextAreaElement>, element: HTMLTextAreaElement |
 
 /** Prompt composer: auto-growing textarea, Enter to send, one primary Send/Stop button. While the agent works a message is queued. */
 export function Composer(props: ComposerProps) {
-  const { text, attachments, working, sendBlocked, disabled, stopRequested, uploading, canAttach, layout = 'card' } = props;
+  const { attachments, working, sendBlocked, disabled, stopRequested, uploading, canAttach, layout = 'card' } = props;
+  const draft = kindMentionDraft(props.text, props.mentions);
+  const text = draft.text;
+  const tokens = useRef(draft.tokens);
+  useLayoutEffect(() => { tokens.current = draft.tokens; });
+  // An asynchronous slash command must use today's tokens, not restore a chip removed since it began.
+  const onText = (next: string) => props.onText(tokens.current.length ? `${next}${next ? ' ' : ''}${tokens.current.join(' ')}` : next);
   const { labels, icons } = useChatText();
   const inner = useRef<HTMLTextAreaElement | null>(null);
   const composing = useRef(false);
@@ -244,17 +250,17 @@ export function Composer(props: ComposerProps) {
   const trigger = query === null && mentions ? mentionTrigger(text, caret) : null;
   const slashOpen = query !== null && dismissed !== text, mentionOpen = trigger !== null && dismissed !== text;
   const menuOpen = slashOpen || mentionOpen;
-  const edit = (next: string, position: number) => { pendingCaret.current = position; setCaret(position); props.onText(next); };
+  const edit = (next: string, position: number) => { pendingCaret.current = position; setCaret(position); onText(next); };
   const trackCaret = (element: HTMLTextAreaElement) => setCaret(element.selectionStart ?? element.value.length);
   const dismiss = () => setDismissed(text);
   const pickSlash = (item: SlashItem) => {
     const rest = text.slice(caret).replace(/^\s+/, '');
     if (item.source === 'skill') return edit(`/${item.name} ${rest}`, item.name.length + 2);
     const command = slash?.commands?.find(candidate => candidate.name === item.name);
-    props.onText(rest); setCaret(0);
+    onText(rest); setCaret(0);
     inner.current?.focus();
     if (!command) return;
-    try { void Promise.resolve(command.run({ text: rest, setText: value => props.onText(value) })).catch(cause => props.onSlashError?.(cause)); }
+    try { void Promise.resolve(command.run({ text: rest, setText: value => onText(value) })).catch(cause => props.onSlashError?.(cause)); }
     catch (cause) { props.onSlashError?.(cause); }
   };
   const pickMention = (path: string) => {
@@ -264,11 +270,11 @@ export function Composer(props: ComposerProps) {
     props.onMentionPicked?.(path);
   };
   const openCommands = () => edit(`${text}${text && !/\s$/.test(text) ? ' ' : ''}/`, text.length + (text && !/\s$/.test(text) ? 2 : 1));
-  const chips = [...new Set([...(props.mentionPaths ?? []), ...mentionedPaths(text).filter(path => mentionKind(path, props.mentions))])].filter(path => hasMention(text, path));
-  const onChange = (event: ChangeEvent<HTMLTextAreaElement>) => { trackCaret(event.currentTarget); props.onText(event.currentTarget.value); };
+  const chips = [...new Set([...(props.mentionPaths ?? []), ...mentionedPaths(props.text).filter(path => mentionKind(path, props.mentions))])].filter(path => hasMention(props.text, path));
+  const onChange = (event: ChangeEvent<HTMLTextAreaElement>) => { trackCaret(event.currentTarget); onText(event.currentTarget.value); };
 
   const { feedback } = props;
-  const hasContent = text.trim().length > 0 || attachments.length > 0 || props.hasFiles || (feedback?.count ?? 0) > 0;
+  const hasContent = props.text.trim().length > 0 || attachments.length > 0 || props.hasFiles || (feedback?.count ?? 0) > 0;
   const canSubmit = hasContent && !sendBlocked && !disabled;
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     props.onKeyDown?.(event);
@@ -290,6 +296,8 @@ export function Composer(props: ComposerProps) {
     const pasted = event.clipboardData.getData('text/plain');
     if (!isLongPaste(pasted, props.pasteToFile)) return;
     event.preventDefault();
+    // Put hidden tokens after the editable text before the upload captures native draft offsets.
+    if (draft.tokens.length) onText(text);
     props.onPasteText({ text: pasted, start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd });
   };
   const drag = (event: DragEvent) => { if (canAttach) { event.preventDefault(); setDragging(event.type === 'dragover'); } };
@@ -304,7 +312,7 @@ export function Composer(props: ComposerProps) {
         const label = registered ? registered.kind.label(registered.path) : props.mentions?.label?.(path) ?? path;
         return <Chip key={path} data-testid="mention-chip" data-path={path} title={label} className="max-w-full sm:max-w-[16rem]"
           media={registered?.kind.icon ?? props.mentions?.icon ?? <FileTextIcon aria-hidden="true" />} label={label}
-          actions={<RemoveChip label={labels.remove(label)} onClick={() => props.onText(removeMention(text, path))} />} />;
+          actions={<RemoveChip label={labels.remove(label)} onClick={() => props.onText(removeMention(props.text, path))} />} />;
       })}
     </div>}
     {(props.uploads?.length ?? 0) > 0 && <div role="list" data-testid="uploads" aria-label={labels.uploads} className="contents">
@@ -349,7 +357,7 @@ export function Composer(props: ComposerProps) {
     {props.barNote}
     {uploading && !(props.uploads?.length) && <span role="status" className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2Icon className="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />{labels.preparingAttachments}</span>}
     {!pill && <span className="min-w-0 flex-1" />}
-    {props.barEnd && <div data-testid="composer-tools" className="flex shrink-0 items-center gap-2">{props.barEnd}</div>}
+    {props.barEnd && <div data-testid="composer-tools" className="flex min-w-0 items-center gap-2">{props.barEnd}</div>}
     {working && hasContent && <Button variant="ghost" size="icon" data-testid="composer-queue" aria-label={labels.queue} title={labels.queue} disabled={!canSubmit} onClick={props.onSend} className="shrink-0">
       <icons.queue data-icon="inline-start" aria-hidden="true" /></Button>}
     {send}

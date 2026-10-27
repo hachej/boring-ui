@@ -240,7 +240,14 @@ export interface VoiceMessageHandle {
 }
 /** Props of the hold-to-record button that `VoiceMessageConfig.Button` carries. */
 /** `primary`: the button stands in for Send (`voiceReplacesSend`), so it takes Send's primary look. */
-export interface VoiceMessageButtonProps { readonly voice: VoiceMessageHandle; readonly disabled?: boolean; readonly primary?: boolean }
+export interface VoiceMessageButtonProps {
+  readonly voice: VoiceMessageHandle;
+  readonly disabled?: boolean;
+  readonly primary?: boolean;
+  /** A gesture elsewhere already started capture: tap the mic to finish, with inline cancel while it records. */
+  readonly tapToFinish?: boolean;
+  readonly testId?: string;
+}
 /** Props of a pending voice message bubble that `VoiceMessageConfig.Bubble` carries. */
 export interface PendingVoiceBubbleProps { readonly pending: PendingVoice | undefined }
 /** What the chat hands its recorder (`VoiceMessageConfig.useRecorder`). `config` is undefined when voice is off. */

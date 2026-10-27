@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { appendToDraft, displayName, fileKind, hasMention, isLongPaste, isVoicePath, looksLikeMarkdown, mentionedPaths, mentionKind, mentionToken, mentionTrigger, pieces, prependToDraft, removeMention, slashGroup, slashItems, slashQuery, visibleParts, withoutKindMentions, withoutMentions } from '@hachej/boring-ui-kit/chat-text';
+import { appendToDraft, displayName, fileKind, hasMention, isLongPaste, isVoicePath, kindMentionDraft, looksLikeMarkdown, mentionedPaths, mentionKind, mentionToken, mentionTrigger, pieces, prependToDraft, removeMention, slashGroup, slashItems, slashQuery, visibleParts, withoutKindMentions, withoutMentions } from '@hachej/boring-ui-kit/chat-text';
 import { memberMention } from '@hachej/boring-ui-kit/shared-chat';
 import { mentionedPaths as agentMentionedPaths } from '@hachej/boring-agent/mentions';
 
@@ -48,6 +48,19 @@ test('app kind tokens share the public mention grammar without matching a prefix
   const quoted = mentionToken('repas:Meeting "notes"\\fictional');
   assert.equal(hasMention(quoted, 'repas:Meeting "notes"\\fictional'), true);
   assert.equal(removeMention(quoted, 'repas:Meeting "notes"\\fictional'), '');
+});
+
+test('kind mention draft projects only app tokens and keeps editable spacing and files', () => {
+  const config = { kinds: { repas: {} } };
+  assert.deepEqual(kindMentionDraft('@repas:meal ', config), { text: '', tokens: ['@repas:meal'] });
+  assert.deepEqual(kindMentionDraft('@repas:meal my words @docs/plan.md', config), { text: 'my words @docs/plan.md', tokens: ['@repas:meal'] });
+  for (const text of ['my words', 'my words ', 'my words  ', '', '😀 café\nnext']) {
+    const raw = `${text}${text ? ' ' : ''}@repas:meal @repas:dinner`;
+    assert.equal(kindMentionDraft(raw, config).text, text);
+  }
+  assert.deepEqual(kindMentionDraft('@docs/plan.md ', config), { text: '@docs/plan.md ', tokens: [] });
+  const token = mentionToken('repas:Meeting "notes"');
+  assert.deepEqual(kindMentionDraft(`${token} words`, config), { text: 'words', tokens: [token] });
 });
 
 test('voice consumption removes every mention while refused text drops only registered kinds', () => {

@@ -20,3 +20,5 @@ Run `CHROMIUM=<binary> node examples/app-shell/journey-talk-about.mjs`; screensh
 Open `?targets=1#jour` for a fictional meal list. The header's microphone toggles targeting; touch the lunch to start recording, then Stop and send. The fake transcription is “remplace le riz par 150 g de pâtes”; a scripted native coach reply appears beside the meal while chat stays closed. `onSettled` refetches `/api/meals` once. The fixture list is static: this journey proves contextual submission, reply attribution and refresh wiring, not a real meal mutation or speech provider.
 
 Run `npm run app-shell:journey:target` with `CHROMIUM` set. The journey covers 390×844 and 1280×800, a shortened visual viewport, normal unmarked/disabled taps, one send, refresh and track cleanup. Screenshots go to `.cache/evidence/D108/`.
+
+Card mention kinds are chip-only in the composer: their tokens stay in the native draft but never appear in its text box. The card starts the regular composer microphone/status; tap the mic to finish and send (or fill the draft in draft mode), and the inline X cancels. There is no separate recording bar.

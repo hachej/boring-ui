@@ -99,6 +99,23 @@ export function mentionKind<Kind>(value: string, config: { readonly kinds?: Read
   return kind ? { kind, path: match![2]! } : undefined;
 }
 
+/** The composer's editable text and hidden app tokens, derived only from the full draft. File tokens remain editable text. */
+export function kindMentionDraft<Kind>(text: string, config: { readonly kinds?: Readonly<Record<string, Kind>> | undefined } | undefined): { readonly text: string; readonly tokens: readonly string[] } {
+  const hidden = new Set<number>(), tokens: string[] = [];
+  let offset = 0;
+  for (const piece of pieces(text, { mentions: true, skills: [] })) {
+    const end = offset + piece.text.length;
+    if (piece.kind === 'mention' && mentionKind(piece.value!, config)) {
+      tokens.push(piece.text);
+      for (let at = offset; at < end; at++) hidden.add(at);
+      if (offset > 0 && text[offset - 1] === ' ' && !hidden.has(offset - 1)) hidden.add(offset - 1);
+      else if (text[end] === ' ') hidden.add(end);
+    }
+    offset = end;
+  }
+  return { text: text.split('').filter((_, at) => !hidden.has(at)).join(''), tokens };
+}
+
 /** Consume every draft token for voice sends, including repeated references to the same path. */
 export function withoutMentions(text: string): string {
   const words = visibleParts(pieces(text, { mentions: true, skills: [] }), piece => piece.kind === 'mention').map(piece => piece.text).join('').replace(/^[ ]+/, '');

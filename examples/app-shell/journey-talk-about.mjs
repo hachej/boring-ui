@@ -24,16 +24,20 @@ try {
       for (let n = 1; n <= 8; n++) { await browser.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: box.x - n * 28, y: box.y }] }); await pause(30); }
       await browser.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
     } else await browser.click(q('[data-testid=card-mic]'));
-    await browser.until('talkAbout recording bar', `${q('[data-testid=agent-recording]')}?.dataset.phase === 'recording'`, 15000);
+    await browser.until('talkAbout composer recording', `${q('[data-testid=agent-talk]')}?.dataset.state === 'recording'`, 15000);
     await pause(1200);
     assert.equal(await browser.evaluate(`${q('[data-testid=agent-layer]')}.dataset.state`), device === 'phone' ? 'half' : 'open');
     assert.equal(await browser.evaluate(`${q('[data-testid=mention-chip]')}.textContent.includes('Déjeuner · mardi')`), true);
     assert.equal(await browser.evaluate('document.querySelectorAll("[data-testid=composer-input]").length'), 1, 'one real chat composer');
     assert.equal(await browser.evaluate('document.documentElement.scrollWidth <= innerWidth'), true);
-    const buttons = await browser.evaluate(`[...${q('[data-testid=agent-recording]')}.querySelectorAll('button')].map(button => { const r = button.getBoundingClientRect(); return { height: r.height, width: r.width }; })`);
+    assert.equal(await browser.evaluate(`${q('[data-testid=composer-input]')}.value.includes('@repas:')`), false, 'kind token hidden from textarea');
+    assert.equal(await browser.evaluate(`!!${q('[data-testid=agent-recording]')}`), false, 'no separate recording bar');
+    assert.equal(await browser.evaluate(`${q('[data-testid=composer]')}.contains(${q('[data-testid=voice-recording]')})`), true);
+    const buttons = await browser.evaluate(`[${q('[data-testid=agent-talk]')}, ${q('[data-testid=composer-voice-cancel]')}].map(button => { const r = button.getBoundingClientRect(); return { height: r.height, width: r.width }; })`);
     assert.ok(buttons.every(button => button.height >= 44 && button.width >= 44), '44px recording actions');
+    assert.equal(await browser.evaluate(`(() => { const composer = ${q('[data-testid=composer]')}.getBoundingClientRect(); return [...${q('[data-testid=composer-controls]')}.querySelectorAll('button')].every(button => { const r = button.getBoundingClientRect(); return r.left >= composer.left && r.right <= composer.right; }); })()`), true, 'all composer actions stay inside the composer');
     await browser.screenshot(`${device}-${device === 'phone' ? 'half-sheet' : 'panel'}-recording.png`);
-    await browser.click(q('[data-testid=agent-recording-send]'));
+    await browser.click(q('[data-testid=agent-talk]'));
     await browser.until('native voice message with card mention', `document.querySelectorAll('[data-testid=voice-bubble]').length === ${device === 'phone' ? 1 : 2} && ${q('[data-testid=voice-bubble]')}.textContent.includes('Déjeuner · mardi') && ${q('[data-testid=voice-bubble]')}.textContent.includes('Je mange une salade') && !${q('[data-testid=voice-pending]')}`, 30000);
     assert.equal(app.submits.length, before + 1, 'one native send');
     assert.match(JSON.stringify(app.submits.at(-1).body), /@repas:2026-10-27\/dejeuner @uploads\/voice-[^ ]+\.wav Je mange une salade/);

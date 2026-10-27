@@ -26,12 +26,12 @@ import type { DockApi } from '../dock/dock';
 import { PiChat } from '../pi-chat/pi-chat';
 import type { PiChatProps } from '../pi-chat/pi-chat';
 import type { VoiceMessageConfig } from '../pi-chat/config';
-import { useHoldToRecord, useRecordingCancellation } from '../pi-chat-voice/use-hold-to-record';
+import { useRecordingCancellation } from '../pi-chat-voice/use-hold-to-record';
 import { useVoiceMessage } from '../pi-chat-voice/use-voice-message';
 import type { PendingVoice } from '../pi-chat-voice/use-voice-message';
 import { voiceClock } from '../pi-chat/config';
 import { withChatPlugins } from '../pi-chat-plugins/chat-plugins';
-import { PendingVoiceBubble } from '../pi-chat-voice/voice-message';
+import { PendingVoiceBubble, VoiceMessageButton } from '../pi-chat-voice/voice-message';
 import { chatTextFor } from '../pi-chat/locale';
 import { NoteBubble, useComposerFeedback } from '../feedback/feedback-session';
 import { feedbackLabelsFr } from '../feedback/feedback-labels';
@@ -465,28 +465,13 @@ export function AgentTrigger({ className, children }: { readonly className?: str
  * Push-to-talk in the composer row (PiChat's `tools` slot): press and hold, release to send or fill; a slide off cancels. Pressing never moves
  * focus (no keyboard opens or closes under the finger), and a browser `pointercancel` once recording keeps the audio like a release: only the slide off cancels.
  */
-function TalkButton({ text }: { readonly text: AppShellText }) {
-  const { voice } = useInternal();
+function TalkButton() {
+  const { voice, talkRecording } = useInternal();
   const busy = voice.phase === 'transcribing';
-  const disabled = busy || (voice.phase === 'idle' && voice.canStart === false);
-  const hold = useHoldToRecord(voice, disabled);
-  return <Button {...hold} variant="ghost" size="icon" data-testid="agent-talk" data-state={voice.phase} disabled={disabled} aria-label={text.holdToTalk} title={text.holdToTalk}
-    className="touch-none">
-    {busy ? <Loader2Icon data-icon="inline-start" className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <MicIcon data-icon="inline-start" aria-hidden="true" />}
-  </Button>;
-}
-
-/** Explicit controls for a recording started by a card gesture rather than a hold. */
-function RecordingBar() {
-  const { voice, talkRecording, agent, locale } = useInternal();
-  const labels = { ...chatTextFor(agent?.chatProps?.locale ?? locale).labels, ...agent?.chatProps?.labels };
-  const active = talkRecording && (voice.phase === 'starting' || voice.phase === 'recording');
-  if (!active) return null;
-  return <div data-testid="agent-recording" data-phase={voice.phase} className="flex shrink-0 flex-wrap items-center justify-end gap-1.5 px-3 py-1">
-    <span role="status" className="w-full text-sm">{labels.voiceRecording} {voiceClock(voice.seconds)}</span>
-    <Button variant="ghost" data-testid="agent-recording-cancel" aria-label={labels.voiceCancel} onClick={voice.cancel} className="min-h-11 min-w-11">{labels.voiceCancel}</Button>
-    <Button data-testid="agent-recording-send" disabled={voice.phase === 'starting'} onClick={voice.finish} className="min-h-11 min-w-11">{labels.send}</Button>
-  </div>;
+  return <VoiceMessageButton testId="agent-talk" tapToFinish={talkRecording} disabled={busy || (voice.phase === 'idle' && voice.canStart === false)} voice={{
+    ...voice, phase: busy ? 'processing' : voice.phase, canStart: voice.canStart !== false,
+    pending: voice.pending ?? [], captureSequence: voice.captureSequence ?? 0,
+  }} />;
 }
 
 /** What went wrong with the microphone, in the flow under the title row (never over the messages). */
@@ -506,9 +491,8 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const transcribe = (spec.voice ?? layer.agent?.voice)?.transcribe;
   const fr = locale === 'fr';
   return <div data-spec={role} hidden={!visible} className={cn('min-h-0 min-w-0 flex-1', visible ? 'flex flex-col' : 'hidden')}>
-    {role === 'agent' && <RecordingBar />}
     <PiChat {...withChatPlugins(spec.chatProps ?? {})} {...(locale ? { locale } : {})} controller={spec.controller} keyboardInset={false} placement={layer.expanded && !layer.dockFloating ? 'docked' : 'floating'} {...(feedback ? { feedback } : {})}
-      {...(role === 'agent' && spec.voice ? { voiceMessage: { transcribe: spec.voice.transcribe, Bubble: PendingVoiceBubble }, tools: <>{spec.chatProps?.tools}<TalkButton text={appShellText(locale)} /></>, pendingVoice: layer.voice.pending } : {})} />
+      {...(role === 'agent' && spec.voice ? { voiceMessage: { transcribe: spec.voice.transcribe, Bubble: PendingVoiceBubble }, tools: <>{spec.chatProps?.tools}<TalkButton /></>, pendingVoice: layer.voice.pending } : {})} />
     {/* The note editor of ordinary feedback lives inside the layer, in the modal's focus tree; while pointing the layer steps aside and AgentLayer renders it. */}
     {/* In the flow, inside the visible content box: the popup is transformed (a fixed element would be placed against its off-screen bottom). */}
     {spec.feedback && visible && !pointing && <div className="shrink-0 px-2 pb-2 empty:hidden">
