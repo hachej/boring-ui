@@ -69,7 +69,7 @@ export class Assistant extends DurableObject {
   });
   agent = this.standard.agent.inWorkspace('workspace');
   harness = new PiHarness({
-    harness: async ({ storage, context: opening }) => {
+    harness: async ({ storage, context: opening, onWake }) => {
       this.agent.install(this.registry);
       const models = createModels();
       models.setProvider(this.ai.provider);
@@ -77,7 +77,7 @@ export class Assistant extends DurableObject {
       // The same scan as the agent's `reload`, so what the agent wrote in `.agent/` survives the object's restarts.
       await this.agent.reload(env, opening);
       // Nothing kept in memory on a timer: a pending timer keeps a Durable Object from hibernating, and hibernation drops memory anyway.
-      return Harness.open(storage, { models, registry: this.registry, env: () => env, settings: HIBERNATABLE }, opening);
+      return Harness.open(storage, { models, registry: this.registry, env: () => env, settings: HIBERNATABLE, onWake }, opening);
     },
     defaults: { model: this.ai(MODELS[0].modelId) },
   });
