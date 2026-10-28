@@ -29,23 +29,23 @@ try {
   };
   const fresh = async () => {
     await app.close(); directory = mkdtempSync(join(tmpdir(), 'fictional-voice-scene-')); app = await startAppShell({ directory });
-    const previous = await browser.evaluate('performance.timeOrigin'); await browser.send('Page.navigate', { url: `${app.url}?send=message` }); await mounted(previous);
+    const previous = await browser.evaluate('performance.timeOrigin'); await browser.send('Page.navigate', { url: `${app.url}?send=message&replay=1` }); await mounted(previous);
   };
   for (const device of ['phone', 'desktop']) {
     await browser.emulate(device);
     if (device === 'desktop') await fresh();
     const previous = await browser.evaluate('performance.timeOrigin');
-    await browser.send('Page.navigate', { url: `${app.url}?send=message` });
+    await browser.send('Page.navigate', { url: `${app.url}?send=message&replay=1` });
     await mounted(previous);
     await browser.click(q('[data-testid=agent-trigger]')); await ready(); await pause(800);
     if (device === 'phone') { await browser.click(q('[data-testid=agent-layer-expand]')); await pause(800); }
     assert.equal(await browser.evaluate(`document.querySelectorAll('[data-testid=agent-talk]').length`), 1);
     assert.equal(await browser.evaluate(`!!${q('[data-testid=voice-message-record]')}`), false, 'one shared agent microphone');
     const before = app.submits.length, p = await point();
-    if (device === 'phone') await touch('touchStart', p); else await mouse('mousePressed', p, 1);
-    await browser.until('recording from the hold', `${q(mic)}.dataset.state === 'recording'`);
+    await browser.click(q(mic));
+    await browser.until('recording from one tap', `${q(mic)}.dataset.state === 'recording'`);
     await pause(10000);
-    if (device === 'phone') await touch('touchEnd'); else await mouse('mouseReleased', p, 0);
+    await browser.click(q(mic));
     await browser.until('one local pending bubble', `!!${q(pending)}`);
     await reviewPending();
     check(await browser.evaluate(`${q(pending)}.textContent.includes('0:10')`), 'the known ten-second recording keeps its duration');
@@ -90,12 +90,12 @@ try {
     check(position.distance < 2 && !position.arrow, 'jump-to-bottom is hidden at actual bottom');
     check(await browser.evaluate(`${play}.getAttribute('aria-label') === 'Lire' && ${q(bubble)}.querySelector('audio').paused && !['--:--', '0:00'].includes(${q(bubble)}.querySelector('[data-testid=voice-duration]').textContent)`), 'idle replay shows play control and total duration');
     await browser.screenshot(`${device}-replay.png`);
-    console.log(`PASS ${device}: 10s hold, pending, one native transcript turn, durable reload/replay/duration, no overflow`);
+    console.log(`PASS ${device}: 10s tap recording, pending, one native transcript turn, durable reload/replay/duration, no overflow`);
   }
   await fresh(); await browser.click(q('[data-testid=agent-trigger]')); await ready(); await pause(800);
   await browser.evaluate('window.__voiceFail = true');
   const beforeFailure = app.submits.length, p = await point();
-  await mouse('mousePressed', p, 1); await pause(500); await mouse('mouseReleased', p, 0);
+  await browser.click(q(mic)); await browser.until('failure take recording', `${q(mic)}.dataset.state === 'recording'`, 15000); await pause(500); await browser.click(q(mic));
   await browser.until('explicit transcription failure', `!!${q('[data-testid=voice-retry]')}`);
   assert.equal(app.submits.length, beforeFailure);
   await reviewPending();
@@ -107,11 +107,11 @@ try {
   assert.equal(app.submits.length, beforeFailure + 1);
   assert.equal(await browser.evaluate('window.__voiceUploads'), uploads, 'transcription retry reuses uploaded bytes');
   assert.deepEqual(retainedAudio(), retained, 'retry keeps the exact one persisted upload path');
-  for (const reason of ['slide', 'Escape']) {
+  for (const reason of ['trash', 'Escape']) {
     const before = app.submits.length, uploads = await browser.evaluate('window.__voiceUploads'), p = await point();
-    await mouse('mousePressed', p, 1); await pause(400);
-    if (reason === 'slide') await mouse('mouseMoved', { x: p.x - 150, y: p.y - 100 }, 1); else await browser.press('Escape');
-    await mouse('mouseReleased', p, 0); await pause(1500);
+    await browser.click(q(mic)); await browser.until('cancellable take recording', `${q(mic)}.dataset.state === 'recording'`, 15000); await pause(400);
+    if (reason === 'trash') await browser.click(q('[data-testid=composer-voice-cancel]')); else await browser.press('Escape');
+    await pause(1500);
     assert.equal(app.submits.length, before); assert.equal(await browser.evaluate('window.__voiceUploads'), uploads);
   }
   await browser.emulate('phone');
@@ -135,11 +135,11 @@ try {
   check(failure.uploads === 1 && retainedAudio().length === 1 && /· 1$/.test(failure.files ?? ''), 'clean failure scene contains exactly one uploaded file and file chip');
   check(failure.buttons.every(b => b.slot === 'button') && failure.buttons[2].ghost && Math.max(...failure.buttons.map(b => b.top)) - Math.min(...failure.buttons.map(b => b.top)) < 2, 'Discard is a real ghost Button aligned with Retry and Send audio only');
   await browser.screenshot('phone-failed.png');
-  const next = await point(); await touch('touchStart', next);
+  await browser.click(q(mic));
   // Recording starts at the first sound (voice-capture.ts), not on the press: wait for it as the peek hold above does.
   await browser.until('next recording starts', `${q(mic)}.dataset.state === 'recording'`, 15000).catch(() => {});
   check(await browser.evaluate(`${q(mic)}.dataset.state === 'recording' && document.querySelectorAll('[data-testid=voice-pending]').length === 1`), 'next recording genuinely starts while the earlier failed transcript row remains');
-  await browser.press('Escape'); await touch('touchEnd');
+  await browser.press('Escape');
   check(await browser.evaluate('window.__voiceUploads') === 1, 'cancelled next recording creates no duplicate upload');
   await browser.press('Escape');
   await browser.until('failed recording can be collapsed', `${q('[data-testid=agent-layer]')}?.dataset.state === 'peek'`);
@@ -150,7 +150,7 @@ try {
   await pause(700); await browser.click(q('[data-testid=voice-discard]'));
   for (const reason of ['Escape', 'blur', 'hidden']) {
     const previous = await browser.evaluate('performance.timeOrigin');
-    await browser.send('Page.navigate', { url: `${app.url}?send=message` }); await mounted(previous);
+    await browser.send('Page.navigate', { url: `${app.url}?send=message&replay=1` }); await mounted(previous);
     const before = app.submits.length, uploads = await browser.evaluate('window.__voiceUploads ?? 0');
     const point = await browser.evaluate(`(() => { const r = ${q('[data-testid=agent-trigger]')}.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
     await touch('touchStart', point);
@@ -165,5 +165,5 @@ try {
   console.log('PASS trigger Escape/blur/hidden cancel before release: no upload or native send');
   assert.deepEqual(findings, [], 'screenshot review assertions');
   assert.deepEqual(browser.problems, []);
-  console.log('PASS failure/retry with no duplicate upload; slide and Escape upload/send nothing; no browser errors');
+  console.log('PASS failure/retry with no duplicate upload; trash and Escape upload/send nothing; no browser errors');
 } finally { await browser?.close(); await app.close(); }

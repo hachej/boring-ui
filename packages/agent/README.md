@@ -327,6 +327,17 @@ The resource must be UTF-8 `application/json`, optionally with `charset=utf-8`. 
 
 Run `node fixtures/agent-definitions.mjs` after building for a fictional definition, explicit native configuration and real document publication. `npm run test:definitions-consumer` installs files/agent archives with pinned registry dependencies, checks strict declarations and repeats exact-read, native publication, reopen and registry-replacement tests. Like the question consumer, this strict fixture explicitly installs the pinned optional model SDK declaration dependencies.
 
+## One-call runs
+
+A run is one agent asked once, in its own native conversation, for a result: the host starts it by a key, the agent answers by calling a result tool (or in text), the host checks the answer, asks for a corrected one while the repair budget lasts, and hands the end to the operation that started the run. Every home needs the same parts, so they are here once. Pi still owns the turns, the transcript and recovery; these read the transcript and submit native follow-up inputs, and the host keeps its data and its budgets.
+
+- `@hachej/boring-agent/run-result` (optional peer `typebox`): `resultConfig` (the card's `result: { schema?, validate?, repairs? }`), `resultParameters`, `resultExecutor` (the result tool's `execute`: checks the call against the schema and the card's validator operation, spends the budget), `settleResult` (wait for the answer, read it, repair it in the run's own conversation with `repair:<conversation>:<n>` inputs, check it once more with `phase: "delivery"`), `runMessage`, `runResult`, `resultState`, `evidenceOf`, `withEvidence`. The validator is an operation the host calls through `invoke(operation, input, key)` as the person whose run it is. `ResultBudget` keeps the stored document shape of the homes that ran this first.
+- `@hachej/boring-agent/runs`: the run ends (`completed`, `invalid_output`, `cancelled`, `interrupted`, `revoked`, `error`), `RunView`, `sumUsage`, `OVER_BUDGET` and `isOverBudget`, and `deliverRunEnd`: bounded attempts under one `deliver:<key>` receipt key, a completed end checked again first and delivered as `invalid_output` when it no longer passes. A delivery that fails is reported, not dropped.
+- `@hachej/boring-agent/run-ledger`: `createRunLedger(sql)` keeps `_host_agent_runs` in the person's own SQLite file; an end happens once (`UPDATE ... RETURNING`), so a cancel and the run's own end can race. `createRunner({ ledger, person, context, has, prepare, invoke, admit?, usage? })` gives `start(agent, input, key, deliverTo)` (the same key is the same run), `status`, `cancel` and `recover`: a run a stopped process left ends `interrupted`, and one that ended without being delivered is delivered. `admit` is the host's spend meter: a refused run is never started and ends `error: over_budget`. The cap, the spend ledger and the prices stay the host's.
+- `@hachej/boring-agent/run-outbox`: `stageStarts(sql, ...)` in the app operation's own transaction, `drainStarts` after the commit. A row is removed only when the run is acknowledged, retried with backoff when it may pass, dropped when it never will.
+
+Stores are a synchronous `SyncSql` function (`node:sqlite` `prepare(sql).all(...params)`, a Durable Object's `sql.exec`); nothing here opens a connection or a transaction. Not here, by design: the card parser and its front matter, the app operations a run calls, the schedule and alarm of a Durable Object home, and anything clinical or app specific.
+
 ## Structured output and native tool evidence
 
 `@hachej/boring-agent/validation` exports `createOutputValidation`. Install its native extension explicitly. A producer returns `{ text, evidence }`, where `evidence` contains retained native tool-result entry IDs. Create the returned validation task with `{ producer }` through ordinary `tx.createTask`; it waits for the producer and returns `valid`, `invalid` or `producer-failed`. Only a `valid` result may feed application delivery. The host supplies a stable task name and definition version; incompatible stored versions require native migration or refusal.
@@ -385,6 +396,27 @@ const skills = liveSkills(directorySkillSource(env, 'skills'), {
 });
 const agent = defineAgent({ id: 'clerk', model, extensions: [skills.extension] });
 await skills.refresh(context, 'letters'); // after the host saved skills/letters/SKILL.md
+```
+
+### Versioned skill folders
+
+`directorySkillSource(fs, root, { versioned: true })` reads skills published as whole versions, for example from a bucket mounted read-only into the agent runtime (the library only reads a folder through the workspace `FileSystem`; it does not know where the bytes live):
+
+```
+<root>/v12/<skill>/SKILL.md   (+ companion files)
+<root>/v13/<skill>/SKILL.md
+<root>/current                one line: v13
+```
+
+- **Publish**: write the new version folder completely, then overwrite `current` with its name. A version folder is never changed once written (the library reads each version once and keeps it).
+- **Rollback**: write the old version's name back into `current`.
+- **Which version a conversation sees**: a new conversation starts on the version `current` names (read again once older than `maxAgeMs`). A running conversation keeps the version it started on until the person sends `/reload-skill`, which moves that conversation only to the version `current` names now (reading that version's folder again). `{ flat: true }` applies inside each version folder.
+- **A bad pointer**: `current` missing or unreadable, a value that is not one folder name (`../v1`), or a version with no folder is reported to `onDiagnostics` as `{ path: '<root>/current', message }`; new conversations stay on the last good version, and `/reload-skill` answers `Skills stay on version <v>: <message>`. Before any good version, the agent has no skills.
+
+`/reload-skill` is the skills extension's native tool `reload_skill` (Pi extension point: a tool and the listing section of the extension, over the `SkillSource` on the workspace's `ExecutionEnv` `FileSystem`; no second loader). The listing tells the model that a message `/reload-skill` means calling it, as `/<skill-name>` means `load_skill`; the tool answers `Skills reloaded: version <v> (<names>).` A host command can do the same without the model: `refresh(context, undefined, conversationId)` moves one conversation, `refresh(context)` every conversation, and resolves `false` on a bad pointer. `refresh(context, name)` is refused (versions move whole), and so is `onPublish`. Limit: which version each conversation is on is kept in the process, so after a restart every conversation starts on the version `current` names then.
+
+```ts
+const agent = defineAgent({ id: 'clerk', model, skills: directorySkillSource(env, '/mnt/skills', { versioned: true }) });
 ```
 
 ## Sub-agents and schedules

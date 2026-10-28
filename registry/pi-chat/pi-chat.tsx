@@ -16,7 +16,7 @@ import { Composer } from './composer';
 import type { ComposerFeedback, ComposerProps } from './composer';
 import { ConversationFiles } from './conversation-files';
 import type { AttachmentsConfig, ConversationsConfig, PendingVoice, VoiceMessageConfig, VoiceMessageHandle, VoiceRecorderHook } from './config';
-import { displayName } from './config';
+import { displayName } from '@hachej/boring-ui-kit/chat-text';
 import { EmptyState } from './empty-state';
 import type { Suggestion } from './empty-state';
 import { ConversationHistory, TranscriptHistory } from './history';
@@ -24,8 +24,7 @@ import { TranscriptChunk } from './message';
 import { markLeads } from './rows';
 import type { Row } from './rows';
 import { MessageQueue } from './queue';
-import { ChatNotices, Notice, PreparingStatus, preparing } from './notice';
-import { Shimmer } from './shimmer';
+import { ChatNotices, ChatConnectionNotice, ChatStatusLine } from './notice';
 import { PAGE_FIRST, PAGE_MORE, useChatSession, useRowChunks, useTranscript } from './session';
 import { useChatDraft } from './use-chat-draft';
 import { useChatPlacement } from './use-remote-chat';
@@ -134,6 +133,8 @@ export interface PiChatProps extends ChatFeatureProps {
   readonly emptyLayout?: 'centered' | 'docked';
   /** Two-row reference composer by default. Explicitly select `pill`, `stacked` or `inline` for the earlier layouts. */
   readonly composerLayout?: ComposerProps['layout'];
+  /** A shell-owned capture uses the same recording-row replacement as native voice messages. */
+  readonly composerRecording?: ReactNode;
   /** A conversation title, separate from the agent name, with optional click-to-rename. */
   readonly conversationTitle?: string | undefined;
   readonly onRenameTitle?: ((title: string) => void | Promise<void>) | undefined;
@@ -174,8 +175,8 @@ const noVoice: VoiceRecorderHook = () => silent;
 /** A shell's pending voice row when no `voiceMessage.Bubble` is plugged in: nothing to draw. */
 function NoVoiceBubble(_: { readonly pending: PendingVoice | undefined }) { return null; }
 
-function PiChatSession({ controller, placement = 'docked', mode = 'expert', presentation, messageStyle = 'default', className, keyboardInset = true, actions, avatar, headerActions, header = true, decisions, controls, tools, composerStart, voiceReplacesSend = false, voiceMessage, pendingVoice, belowComposer, composerChips, composerHeader, composerHasContent, onPickFiles, timeline, renderConnectionError, headerStart, renderEntry, hideLine, displayLimit, paging, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions,
-  onOpenImage, onCopy, onComposerKeyDown, onFiles, camera, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = false, emptyLayout = 'centered', composerLayout = 'card', conversationTitle, onRenameTitle, feedback, draftKey, onOpenFile, fileChanges, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: ChatController } }) {
+function PiChatSession({ controller, placement = 'docked', mode = 'expert', presentation, voiceReplay, messageStyle = 'default', className, keyboardInset = true, actions, avatar, headerActions, header = true, decisions, controls, tools, composerStart, voiceReplacesSend = false, voiceMessage, pendingVoice, belowComposer, composerChips, composerHeader, composerHasContent, onPickFiles, timeline, renderConnectionError, headerStart, renderEntry, hideLine, displayLimit, paging, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions,
+  onOpenImage, onCopy, onComposerKeyDown, onFiles, camera, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = false, emptyLayout = 'centered', composerLayout = 'card', composerRecording, conversationTitle, onRenameTitle, feedback, draftKey, onOpenFile, fileChanges, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: ChatController } }) {
   const { labels, icons } = useChatText();
   useChatDraft(controller, draftKey);
   useChatPlacement(controller, placement);
@@ -190,7 +191,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
   useLayoutEffect(() => { fork.current = conversations?.fork; });
   const canFork = Boolean(conversations?.fork);
   const rowExtras = useMemo(() => canFork || messageStyle === 'messaging' ? { ...(canFork ? { onFork: (entryId: string) => { void fork.current?.(entryId).catch(() => {}); } } : {}), ...(messageStyle === 'messaging' ? { messageStyle } : {}) } : undefined, [canFork, messageStyle]);
-  const session = useChatSession({ controller, activeController: active, mode, presentation, actions, renderEntry, hideLine, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, camera, fileAccept,
+  const session = useChatSession({ controller, activeController: active, mode, presentation, voiceReplay, actions, renderEntry, hideLine, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, camera, fileAccept,
     slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => timeline ? timeline.afterSend?.() : scrollToBottom.current(), feedback, rowExtras, onOpenFile, fileChanges, pasteToFile, composerChips, composerHeader, composerHasContent, onPickFiles });
   const { state, derived, rows: nativeRows, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, files, loading } = session;
   const voiceRows = pendingVoice ?? voice.pending;
@@ -207,8 +208,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
     const path = item.path, open = onOpenFile ?? mentions?.open;
     conversationFiles.set(`file:${path}`, { id: `file:${path}`, name: displayName(path), open: open ? () => open(path) : undefined });
   }
-  const { pinned, retry } = derived;
-  const showPreparing = preparing({ natural: session.natural, waitingForAnswer, run: derived.run, retry, compacting: derived.compacting, stop: state.stop });
+  const { pinned } = derived;
   const transcript = useTranscript(transcriptRows, displayLimit ?? paging?.first ?? PAGE_FIRST, paging?.more ?? PAGE_MORE, { state: state.history, connected: !state.disposed && connected, load: controller.loadEarlier }, displayLimit === undefined);
   const { stick, hidden } = transcript, { scrollRef, isAtBottom } = stick;
   useLayoutEffect(() => { scrollToBottom.current = () => { transcript.reset(); void stick.scrollToBottom('instant'); }; });
@@ -250,10 +250,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
     {decisions && <><div data-boring="required-decisions" className="shrink-0 px-4 py-2">{decisions}</div><Separator /></>}
     {pinned.length > 0 && <><aside aria-label={labels.requiredActions} className="shrink-0 space-y-2 px-4 py-2">{pinned.map(card => <div key={card.key}>{card.content}</div>)}</aside><Separator /></>}
     {(connectionKind === 'error' || connectionKind === 'closed') && <div className="shrink-0 px-4 pt-2">
-      <Notice tone={connectionKind === 'error' ? 'error' : 'info'} testid="connection-notice">
-        <span className="flex-1">{connectionKind === 'error' ? state.connection.kind === 'error' && renderConnectionError ? renderConnectionError(state.connection.error) : labels.loadFailed : labels.disconnected}</span>
-        {!state.disposed && <Button size="sm" variant="outline" onClick={() => act(controller.connect)}><icons.reconnect data-icon="inline-start" aria-hidden="true" />{labels.reconnect}</Button>}
-      </Notice></div>}
+      <ChatConnectionNotice state={state} renderConnectionError={renderConnectionError} onReconnect={() => act(controller.connect)} /></div>}
     {pickingConversation && conversations && historyList && <ConversationHistory conversations={conversations} onClose={() => setPickingConversation(false)} />}
 
     <div data-testid="conversation-content" className={cn('relative min-h-0 flex-1', empty && emptyLayout === 'centered' && 'min-[641px]:min-h-60 min-[641px]:flex-none')}>
@@ -279,16 +276,14 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
     <footer data-testid="composer-dock" className="shrink-0 px-4 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6">
       <div className="mx-auto w-full max-w-[720px] space-y-2">
         <div {...(session.natural ? {} : { 'aria-live': 'polite' as const })} className="space-y-2 empty:hidden">
-          {session.natural ? showPreparing && <PreparingStatus>{derived.stageStatus}</PreparingStatus> : working && <p role="status" data-testid="agent-status" className="m-0 flex items-center gap-2 px-1 text-xs text-muted-foreground">
-            <Shimmer active={!waitingForAnswer}>{waitingForAnswer ? labels.waitingForAnswer : retry ? labels.retryPending : labels.agentWorking}</Shimmer></p>}
-          {!session.natural && derived.compacting && <p role="status" className="m-0 px-1 text-xs text-muted-foreground">{labels.compacting}</p>}
+          <ChatStatusLine natural={session.natural} working={working} waitingForAnswer={waitingForAnswer} derived={derived} stop={state.stop} />
           <ChatNotices natural={session.natural} state={state} error={error} onReconcile={() => act(controller.reconcile)} onRetry={() => act(controller.retrySameRequest)} />
         </div>
         <div>
           <ConversationFiles files={[...conversationFiles.values()]} />
           <MessageQueue items={queued} sending={state.outbox} withdraw={actions?.withdraw} actions={queueActions} />
           {voice.problem && <p role="alert" data-testid="voice-message-problem">{voice.problem}</p>}
-          <Composer {...composer} layout={composerLayout} placeholder={labels.placeholder === 'Message the agent…' ? `Message ${title}…` : labels.placeholder} barStart={barStart} barNote={barNote} start={composerStart}
+          <Composer {...composer} recording={composerRecording ?? (VoiceButton && (voice.phase === 'starting' || voice.phase === 'recording') ? <VoiceButton voice={voice} /> : undefined)} layout={composerLayout} placeholder={labels.placeholder === 'Message the agent…' ? `Message ${title}…` : labels.placeholder} barStart={barStart} barNote={barNote} start={composerStart}
             {...(voiceMessage && VoiceButton && voiceReplacesSend ? { barEnd: tools, whenEmpty: <VoiceButton voice={voice} primary disabled={state.disposed || !connected || state.send.kind === 'unknown'} /> }
               : { barEnd: voiceMessage && VoiceButton ? <>{tools}<VoiceButton voice={voice} disabled={state.disposed || !connected || state.send.kind === 'unknown'} /></> : tools })} />
           {belowComposer !== undefined && <div data-testid="below-composer" className="pt-2">{belowComposer}</div>}
