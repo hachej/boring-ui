@@ -19,14 +19,19 @@ import { BubbleMenu } from '@tiptap/react/menus';
 import type { SelectionBookmark } from '@tiptap/pm/state';
 import type { MarkdownController } from './markdown.js';
 import { createMarkdownExtensions, type MarkdownImageResolver } from './markdown-extensions.js';
-import { checkMarkdownRichSafety, describeUnsafe, finishRichMarkdown, type MarkdownRichSafety } from './markdown-safety.js';
+import { checkMarkdownRichSafety, finishRichMarkdown, type MarkdownRichSafety } from './markdown-safety.js';
 import { captureMarkdownSource, serializeMarkdownEdit, type MarkdownSource } from './markdown-source.js';
 import { MarkdownIcon, type MarkdownIconName } from './markdown-icons.js';
 import { MarkdownProposalDiff } from './markdown-proposal-diff.js';
+import { updatePreservedMarkdownLabels } from './markdown-preserved.js';
+import { resolveMarkdownEditorLabels, type MarkdownEditorLabelOverrides } from './markdown-editor-labels.js';
 import { createMountedMarkdownTools, type MarkdownMountedTools } from './markdown-mounted.js';
 export { checkMarkdownRichSafety } from './markdown-safety.js';
 export type { MarkdownRichSafety } from './markdown-safety.js';
 export type { MarkdownImageResolver } from './markdown-extensions.js';
+export { markdownEditorLabels } from './markdown-editor-labels.js';
+export type { MarkdownEditorLabels, MarkdownEditorLabelOverrides } from './markdown-editor-labels.js';
+export type { TextDraftLabels } from './text-draft-labels.js';
 export type { MarkdownMountedTools, MarkdownMountedSubject, MarkdownMountedSelection, MarkdownMountedInspection } from './markdown-mounted.js';
 
 export interface MarkdownEditorProps {
@@ -59,8 +64,10 @@ export interface MarkdownEditorProps {
   readonly onSaveResult?: (result: SaveResult) => void;
   /** Selection formatting by default. Pinned shows the full row on desktop or above the phone keyboard while editing. */
   readonly formattingToolbar?: 'selection' | 'pinned';
-  /** Locale of the built-in view menu. */
+  /** Language of everything the editor draws itself: status, alerts, buttons, accessible names. */
   readonly locale?: 'en' | 'fr';
+  /** Overrides single words of the `locale` set, e.g. `{ saved: 'Enregistré', sourceName: title => title }`. */
+  readonly labels?: MarkdownEditorLabelOverrides;
 }
 
 /** Borrows the controller. The host owns document selection, access and disposal. */
@@ -111,11 +118,6 @@ function useKeyboardInset(active: boolean): number {
   return inset;
 }
 
-const menuLabels: Record<'en' | 'fr', MarkdownEditorMenuLabels> = {
-  en: { moreActions: 'More actions', editorMode: 'Editor mode', formatted: 'Formatted', markdown: 'Markdown', showOutline: 'Show outline' },
-  fr: { moreActions: 'Plus d’actions', editorMode: 'Mode d’édition', formatted: 'Mis en forme', markdown: 'Markdown', showOutline: 'Afficher le plan' },
-};
-
 /** Unstyled native fallback. Installed recipes bind the host's shadcn dropdown. */
 function NativeMarkdownViewOptions({ labels, mode, onModeChange, richDisabledReason, outline, input }: MarkdownEditorMenuProps & { readonly input?: ViewerComponents['input'] | undefined }) {
   const InputControl = input ?? 'input';
@@ -131,7 +133,10 @@ function NativeMarkdownViewOptions({ labels, mode, onModeChange, richDisabledRea
   </details>;
 }
 
-function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActivate, components, controller, title = 'Document', initialMode = 'rich', placeholder = 'Start writing', className, onMountedTools, header = true, showOutline = header, mode: controlledMode, onModeChange, onRichSafety, resolveImage, formattingToolbar = 'selection', locale = 'en', autosave = true, onAutosaveChange, onSaveResult, activeController: active }: MarkdownEditorProps & { readonly activeController: { readonly current: MarkdownController } }) {
+function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActivate, components, controller, title: titleProp, initialMode = 'rich', placeholder: placeholderProp, className, onMountedTools, header = true, showOutline = header, mode: controlledMode, onModeChange, onRichSafety, resolveImage, formattingToolbar = 'selection', locale = 'en', labels: labelOverrides, autosave = true, onAutosaveChange, onSaveResult, activeController: active }: MarkdownEditorProps & { readonly activeController: { readonly current: MarkdownController } }) {
+  const text = useMemo(() => resolveMarkdownEditorLabels(locale, labelOverrides), [locale, labelOverrides]);
+  const title = titleProp ?? text.defaultTitle;
+  const placeholder = placeholderProp ?? text.defaultPlaceholder;
   const Control = components?.button ?? 'button';
   const FormattingControl = components?.formattingControl ?? 'button';
   const Bubble = components?.bubble ?? Fragment;
@@ -158,6 +163,8 @@ function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActiva
   const mode = richOffered ? requestedMode : 'source';
   const activeMode = useRef(mode); activeMode.current = mode;
   const images = useRef(resolveImage); images.current = resolveImage;
+  const preservedLabels = useRef(text); preservedLabels.current = text;
+  const richPlaceholder = useRef(placeholder); richPlaceholder.current = placeholder;
   useEffect(() => { onRichSafety?.(safety); }, [safety, onRichSafety]);
   const [error, setError] = useState<string | null>(null);
   const interaction = useRef(false);
@@ -171,10 +178,10 @@ function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActiva
   };
   const editor = useEditor({
     immediatelyRender: false,
-    extensions: createMarkdownExtensions({ placeholder, images: () => images.current, source: () => controller.getSnapshot().text.replace(/\r\n/g, '\n') }),
+    extensions: createMarkdownExtensions({ placeholder: () => richPlaceholder.current, images: () => images.current, preservedLabels: () => preservedLabels.current, source: () => controller.getSnapshot().text.replace(/\r\n/g, '\n') }),
     content: '',
     editable: !state.readOnly && state.lifecycle === 'active',
-    editorProps: { attributes: { role: 'textbox', 'aria-label': `${title} rich text`, 'aria-multiline': 'true', tabindex: '0', class: 'boring-markdown-content' } },
+    editorProps: { attributes: { role: 'textbox', 'aria-label': text.richName(title), 'aria-multiline': 'true', tabindex: '0', class: 'boring-markdown-content' } },
     onUpdate: ({ editor: current, transaction }) => {
       if (active.current !== controller || !interaction.current || !transaction.docChanged || controller.getSnapshot().lifecycle !== 'active' || controller.getSnapshot().readOnly) return;
       interaction.current = false;
@@ -204,6 +211,8 @@ function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActiva
     projected.current = state.text;
   }, [editor, state.text]);
   useEffect(() => { editor?.setEditable(!state.readOnly && state.lifecycle === 'active'); }, [editor, state.readOnly, state.lifecycle]);
+  useEffect(() => { if (editor && !editor.isDestroyed) updatePreservedMarkdownLabels(editor.view.dom, text); }, [editor, text]);
+  useEffect(() => { if (editor && !editor.isDestroyed) editor.view.dispatch(editor.state.tr.setMeta('addToHistory', false)); }, [editor, placeholder]);
 
   const mounted = useMemo(() => {
     if (mode === 'rich' && !editor) return null;
@@ -293,18 +302,18 @@ function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActiva
     if (active.current !== controller || !result || typeof result !== 'object') return;
     const { kind, reason } = result as { kind?: unknown; reason?: unknown };
     if (kind === 'saved') setError(null);
-    if (kind === 'denied' || kind === 'conflict' || kind === 'unavailable' || kind === 'file_too_large') setError(typeof reason === 'string' && reason ? reason : kind === 'conflict' ? 'The document changed elsewhere. Your text is still available.' : 'The document could not be saved. Your text is still available.');
+    if (kind === 'denied' || kind === 'conflict' || kind === 'unavailable' || kind === 'file_too_large') setError(typeof reason === 'string' && reason ? reason : kind === 'conflict' ? text.conflictFallback : text.saveFallback);
   };
   const saving = useMarkdownAutosave(controller, autosave, result => { report(result); onSaveResult?.(result); });
   useEffect(() => { onAutosaveChange?.(saving.enabled ? saving.immediate : null); return () => onAutosaveChange?.(null); }, [onAutosaveChange, saving.enabled, saving.immediate]);
   const save = () => {
     setError(null);
     if (saving.enabled) void saving.manual();
-    else void controller.flush(controller.actions.selection()).then(report, () => { if (active.current === controller) setError('The save could not be completed. Your text is still available.'); });
+    else void controller.flush(controller.actions.selection()).then(report, () => { if (active.current === controller) setError(text.saveFailed); });
   };
   const run = (operation: () => Promise<unknown>) => {
     setError(null);
-    void operation().then(report, () => { if (active.current === controller) setError('The operation could not be completed. Your text is still available.'); });
+    void operation().then(report, () => { if (active.current === controller) setError(text.operationFailed); });
   };
   const richOnly = unavailable || mode === 'source' || !editor;
   const [linkDraft, setLinkDraft] = useState<string | null>(null);
@@ -334,33 +343,33 @@ function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActiva
   };
 
   const formatTools = <>
-    {tool('Bold', 'Bold', marks?.bold, () => chain().toggleBold().run())}
-    {tool('Italic', 'Italic', marks?.italic, () => chain().toggleItalic().run())}
-    {tool('Strikethrough', 'Strike', marks?.strike, () => chain().toggleStrike().run())}
-    {tool('Highlight', 'Highlight', marks?.highlight, () => chain().toggleHighlight().run())}
-    {tool('Code', 'Code', marks?.code, () => chain().toggleCode().run())}
+    {tool(text.bold, 'Bold', marks?.bold, () => chain().toggleBold().run())}
+    {tool(text.italic, 'Italic', marks?.italic, () => chain().toggleItalic().run())}
+    {tool(text.strike, 'Strike', marks?.strike, () => chain().toggleStrike().run())}
+    {tool(text.highlight, 'Highlight', marks?.highlight, () => chain().toggleHighlight().run())}
+    {tool(text.code, 'Code', marks?.code, () => chain().toggleCode().run())}
     {separator}
-    {tool('Heading 1', 'Heading1', marks?.h1, () => chain().toggleHeading({ level: 1 }).run())}
-    {tool('Heading 2', 'Heading2', marks?.h2, () => chain().toggleHeading({ level: 2 }).run())}
-    {tool('Heading 3', 'Heading3', marks?.h3, () => chain().toggleHeading({ level: 3 }).run())}
+    {tool(text.heading(1), 'Heading1', marks?.h1, () => chain().toggleHeading({ level: 1 }).run())}
+    {tool(text.heading(2), 'Heading2', marks?.h2, () => chain().toggleHeading({ level: 2 }).run())}
+    {tool(text.heading(3), 'Heading3', marks?.h3, () => chain().toggleHeading({ level: 3 }).run())}
     {separator}
-    {tool('Bullet list', 'BulletList', marks?.bullet, () => chain().toggleBulletList().run())}
-    {tool('Numbered list', 'OrderedList', marks?.ordered, () => chain().toggleOrderedList().run())}
-    {tool('Task list', 'TaskList', marks?.task, () => chain().toggleTaskList().run())}
+    {tool(text.bulletList, 'BulletList', marks?.bullet, () => chain().toggleBulletList().run())}
+    {tool(text.numberedList, 'OrderedList', marks?.ordered, () => chain().toggleOrderedList().run())}
+    {tool(text.taskList, 'TaskList', marks?.task, () => chain().toggleTaskList().run())}
     {separator}
-    {tool('Quote', 'Quote', marks?.quote, () => chain().toggleBlockquote().run())}
-    {tool('Code block', 'CodeBlock', marks?.codeBlock, () => chain().toggleCodeBlock().run())}
-    {tool('Link', 'Link', marks?.link || linkDraft !== null, openLink)}
-    {tool('Table', 'Table', marks?.table, () => marks?.table ? chain().deleteTable().run() : chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run())}
-    {tool('Horizontal rule', 'Rule', false, () => chain().setHorizontalRule().run())}
+    {tool(text.quote, 'Quote', marks?.quote, () => chain().toggleBlockquote().run())}
+    {tool(text.codeBlock, 'CodeBlock', marks?.codeBlock, () => chain().toggleCodeBlock().run())}
+    {tool(text.link, 'Link', marks?.link || linkDraft !== null, openLink)}
+    {tool(text.table, 'Table', marks?.table, () => marks?.table ? chain().deleteTable().run() : chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run())}
+    {tool(text.horizontalRule, 'Rule', false, () => chain().setHorizontalRule().run())}
     {marks?.table && <>{separator}
-      {tool('Add table row', 'Rows', false, () => chain().addRowAfter().run())}
-      {tool('Add table column', 'Columns', false, () => chain().addColumnAfter().run())}
-      {tool('Delete table', 'Trash', false, () => chain().deleteTable().run())}</>}
+      {tool(text.addTableRow, 'Rows', false, () => chain().addRowAfter().run())}
+      {tool(text.addTableColumn, 'Columns', false, () => chain().addColumnAfter().run())}
+      {tool(text.deleteTable, 'Trash', false, () => chain().deleteTable().run())}</>}
   </>;
 
   const viewOptions: MarkdownEditorMenuProps = {
-    labels: menuLabels[locale], mode, onModeChange: switchMode, richDisabledReason: richOffered ? undefined : describeUnsafe(safety),
+    labels: text, mode, onModeChange: switchMode, richDisabledReason: richOffered || safety.safe ? undefined : text.richOff(safety.reasons),
     outline: showOutline ? { shown: outlineShown, onChange: setOutlineShown } : undefined,
   };
 
@@ -371,36 +380,36 @@ function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActiva
     }}>
     {header && <header>
       <strong>{title}</strong>
-      {state.readOnly && <span>Read only</span>}
-      <span role="status">{state.lifecycle === 'disposed' ? 'Closed' : pending ? 'Saving…' : uncertain ? 'Save unconfirmed' : conflict ? 'Changed elsewhere' : state.dirty ? 'Unsaved changes' : 'Saved'}</span>
+      {state.readOnly && <span>{text.readOnly}</span>}
+      <span role="status">{state.lifecycle === 'disposed' ? text.closed : pending ? text.saving : uncertain ? text.saveUnconfirmed : conflict ? text.changedElsewhere : state.dirty ? text.unsaved : text.saved}</span>
       {ViewOptions ? <ViewOptions {...viewOptions} /> : <NativeMarkdownViewOptions {...viewOptions} input={components?.input} />}
-      {mode === 'rich' && <FormattingControl type="button" aria-label={locale === 'fr' ? 'Mise en forme' : 'Formatting'} title={locale === 'fr' ? 'Mise en forme' : 'Formatting'} aria-pressed={toolbar === 'pinned'} onClick={() => setToolbar(toolbar === 'pinned' ? 'selection' : 'pinned')}><MarkdownIcon name="Type" /></FormattingControl>}
-      {!saving.enabled && <Control type="button" disabled={unavailable || !state.dirty || pending || uncertain} onClick={save}>Save</Control>}
+      {mode === 'rich' && <FormattingControl type="button" aria-label={text.formatting} title={text.formatting} aria-pressed={toolbar === 'pinned'} onClick={() => setToolbar(toolbar === 'pinned' ? 'selection' : 'pinned')}><MarkdownIcon name="Type" /></FormattingControl>}
+      {!saving.enabled && <Control type="button" disabled={unavailable || !state.dirty || pending || uncertain} onClick={save}>{text.save}</Control>}
     </header>}
-    <TextDraftControls components={components} recovery={state.recovery} actions={controller.actions} readOnly={state.readOnly} blocked={state.lifecycle !== 'active' || state.save.kind === 'pending' || (state.save.kind === 'settled' && state.save.result.kind === 'unknown')} />
-    {mode === 'rich' && showPinned && <div role="toolbar" aria-label="Text formatting" className="boring-markdown-toolbar">{formatTools}</div>}
-    {mode === 'rich' && dockVisible && createPortal(<div role="toolbar" aria-label="Text formatting" className="boring-viewer boring-markdown-dock" data-testid="markdown-dock" data-keyboard={keyboardInset > 0 || undefined}
+    <TextDraftControls labels={text} components={components} recovery={state.recovery} actions={controller.actions} readOnly={state.readOnly} blocked={state.lifecycle !== 'active' || state.save.kind === 'pending' || (state.save.kind === 'settled' && state.save.result.kind === 'unknown')} />
+    {mode === 'rich' && showPinned && <div role="toolbar" aria-label={text.textFormatting} className="boring-markdown-toolbar">{formatTools}</div>}
+    {mode === 'rich' && dockVisible && createPortal(<div role="toolbar" aria-label={text.textFormatting} className="boring-viewer boring-markdown-dock" data-testid="markdown-dock" data-keyboard={keyboardInset > 0 || undefined}
       style={{ bottom: keyboardInset }} onPointerDown={event => event.preventDefault()}>{Rule && <Rule className="boring-markdown-dock-rule" />}{formatTools}</div>, document.body)}
     {mode === 'rich' && editor && !showPinned && !unavailable && <BubbleMenu editor={editor} updateDelay={0} options={BUBBLE_OPTIONS} appendTo={bubbleContainer}
-      role="toolbar" aria-label="Text formatting" className="boring-viewer boring-markdown-bubble">
+      role="toolbar" aria-label={text.textFormatting} className="boring-viewer boring-markdown-bubble">
       <Bubble>
-      {tool('Bold', 'Bold', marks?.bold, () => chain().toggleBold().run())}
-      {tool('Italic', 'Italic', marks?.italic, () => chain().toggleItalic().run())}
-      {tool('Highlight', 'Highlight', marks?.highlight, () => chain().toggleHighlight().run())}
-      {tool('Code', 'Code', marks?.code, () => chain().toggleCode().run())}
-      {tool('Link', 'Link', marks?.link || linkDraft !== null, openLink)}
+      {tool(text.bold, 'Bold', marks?.bold, () => chain().toggleBold().run())}
+      {tool(text.italic, 'Italic', marks?.italic, () => chain().toggleItalic().run())}
+      {tool(text.highlight, 'Highlight', marks?.highlight, () => chain().toggleHighlight().run())}
+      {tool(text.code, 'Code', marks?.code, () => chain().toggleCode().run())}
+      {tool(text.link, 'Link', marks?.link || linkDraft !== null, openLink)}
       </Bubble>
     </BubbleMenu>}
-    {mode === 'rich' && linkDraft !== null && <form className="boring-markdown-link" aria-label="Link address" onSubmit={event => { event.preventDefault(); applyLink(); }}>
-      <LinkInput type="text" inputMode="url" autoFocus aria-label="Link address" placeholder="https://" value={linkDraft} onChange={event => setLinkDraft(event.currentTarget.value)}
+    {mode === 'rich' && linkDraft !== null && <form className="boring-markdown-link" aria-label={text.linkAddress} onSubmit={event => { event.preventDefault(); applyLink(); }}>
+      <LinkInput type="text" inputMode="url" autoFocus aria-label={text.linkAddress} placeholder="https://" value={linkDraft} onChange={event => setLinkDraft(event.currentTarget.value)}
         onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); setLinkDraft(null); editor?.commands.focus(); } }} />
-      <Control type="submit">{linkDraft.trim() === '' && marks?.link ? 'Remove link' : 'Apply link'}</Control>
-      <Control type="button" onClick={() => { setLinkDraft(null); editor?.commands.focus(); }}>Cancel</Control>
+      <Control type="submit">{linkDraft.trim() === '' && marks?.link ? text.removeLink : text.applyLink}</Control>
+      <Control type="button" onClick={() => { setLinkDraft(null); editor?.commands.focus(); }}>{text.cancel}</Control>
     </form>}
-    {!richOffered && <p role="note" className="boring-markdown-notice" data-testid="markdown-source-only">{describeUnsafe(safety)}</p>}
-    {showOutline && outlineShown && mode === 'rich' && outline && outline.headings.length > 0 && <nav aria-label="Document outline">
+    {!richOffered && <p role="note" className="boring-markdown-notice" data-testid="markdown-source-only">{safety.safe ? '' : text.richOff(safety.reasons)}</p>}
+    {showOutline && outlineShown && mode === 'rich' && outline && outline.headings.length > 0 && <nav aria-label={text.documentOutline}>
       <ol>{outline.headings.map((heading, index) => <li key={heading.position} data-heading-level={heading.level}>
-        <Control type="button" aria-label={`Go to heading: ${heading.text || 'Untitled heading'}`} disabled={state.lifecycle !== 'active'} onClick={() => {
+        <Control type="button" aria-label={text.goToHeading(heading.text || text.untitledHeading)} disabled={state.lifecycle !== 'active'} onClick={() => {
           if (!editor || editor.isDestroyed || active.current !== controller || controller.getSnapshot().lifecycle !== 'active'
             || controller.getSnapshot().bufferVersion !== state.bufferVersion || editor.state.doc !== outline.document) return;
           const node = editor.state.doc.nodeAt(heading.position);
@@ -408,30 +417,30 @@ function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActiva
           const target = mounted?.tools.getTarget();
           if (target) void mounted?.tools.revealHeading.invoke(target, { index, expiresAt: Date.now() + 5000 }).then(result => {
             if (active.current === controller && result.kind !== 'applied' && result.kind !== 'proposed') setError(result.reason);
-          }).catch(() => { if (active.current === controller) setError('The heading could not be selected'); });
-        }}>{heading.text || 'Untitled heading'}</Control>
+          }).catch(() => { if (active.current === controller) setError(text.headingNotSelected); });
+        }}>{heading.text || text.untitledHeading}</Control>
       </li>)}</ol>
     </nav>}
-    {uncertain && <div role="alert" className="boring-markdown-alert">Save acknowledgement was lost. Keep editing while its outcome is checked.
-      <Control type="button" onClick={() => run(controller.actions.reconcile)}>Check save outcome</Control>
-      <Control type="button" onClick={() => run(controller.actions.abandon)}>Stop checking and refresh, keeping my draft</Control>
+    {uncertain && <div role="alert" className="boring-markdown-alert">{text.uncertainNotice}
+      <Control type="button" onClick={() => run(controller.actions.reconcile)}>{text.checkSaveOutcome}</Control>
+      <Control type="button" onClick={() => run(controller.actions.abandon)}>{text.stopChecking}</Control>
     </div>}
-    {conflict && <div role="alert" className="boring-markdown-alert">The saved document changed. Your local text has been kept.
-      <Control type="button" disabled={pending || uncertain} onClick={() => run(controller.actions.refresh)}>Check saved version</Control>
-      <Control type="button" disabled={pending || uncertain} onClick={() => run(controller.actions.discardToRemote)}>Discard local changes and reload</Control>
+    {conflict && <div role="alert" className="boring-markdown-alert">{text.conflictNotice}
+      <Control type="button" disabled={pending || uncertain} onClick={() => run(controller.actions.refresh)}>{text.checkSavedVersion}</Control>
+      <Control type="button" disabled={pending || uncertain} onClick={() => run(controller.actions.discardToRemote)}>{text.discardLocal}</Control>
     </div>}
     {(outcome?.kind === 'denied' || outcome?.kind === 'unavailable' || outcome?.kind === 'file_too_large') && <p role="alert" className="boring-markdown-alert">{outcome.reason}</p>}
     {error && <p role="alert" className="boring-markdown-alert">{error}</p>}
     {state.proposals.map(proposal => <article key={proposal.id} data-boring="proposal" className="boring-markdown-proposal">
-      <h3>{proposal.summary || 'Proposed edit'}</h3>
-      <details><summary>Review text changes</summary><MarkdownProposalDiff components={components} proposal={proposal} />
-        <details><summary>Exact before and after</summary><h4>Before</h4><pre>{proposal.before}</pre><h4>After</h4><pre>{proposal.after}</pre></details>
+      <h3>{proposal.summary || text.proposedEdit}</h3>
+      <details><summary>{text.reviewChanges}</summary><MarkdownProposalDiff components={components} proposal={proposal} labels={text} />
+        <details><summary>{text.exactBeforeAfter}</summary><h4>{text.before}</h4><pre>{proposal.before}</pre><h4>{text.after}</h4><pre>{proposal.after}</pre></details>
       </details>
-      <Control type="button" disabled={unavailable || pending || uncertain || proposal.adopted} onClick={() => run(() => controller.actions.accept(proposal.id))}>{proposal.adopted ? 'Adopted' : 'Accept and save'}</Control>
-      <Control type="button" onClick={() => controller.actions.reject(proposal.id)}>Dismiss proposal</Control>
+      <Control type="button" disabled={unavailable || pending || uncertain || proposal.adopted} onClick={() => run(() => controller.actions.accept(proposal.id))}>{proposal.adopted ? text.adopted : text.acceptAndSave}</Control>
+      <Control type="button" onClick={() => controller.actions.reject(proposal.id)}>{text.dismissProposal}</Control>
     </article>)}
     {mode === 'source'
-      ? <Source ref={sourceInput} className="boring-markdown-source" aria-label={`${title} Markdown source`} value={state.text} readOnly={unavailable} spellCheck={false} onSelect={event => onQuoteSelection?.(captureMarkdownQuote(state.text, { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd }))} onChange={event => controller.actions.edit(event.currentTarget.value)} />
+      ? <Source ref={sourceInput} className="boring-markdown-source" aria-label={text.sourceName(title)} placeholder={placeholder} value={state.text} readOnly={unavailable} spellCheck={false} onSelect={event => onQuoteSelection?.(captureMarkdownQuote(state.text, { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd }))} onChange={event => controller.actions.edit(event.currentTarget.value)} />
       : <div className="boring-markdown-surface" onKeyDownCapture={markInteraction} onBeforeInputCapture={markInteraction} onInputCapture={markInteraction} onPasteCapture={markInteraction} onDropCapture={markInteraction}
         onChangeCapture={markInteraction}
         onClickCapture={event => { markInteraction(); if (event.target instanceof Element && event.target.closest('a')) event.preventDefault(); }}
