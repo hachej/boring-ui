@@ -62,10 +62,10 @@ export class DemoSession extends DurableObject {
   #opened;
   #touched = 0;
   harness = new PiHarness({
-    harness: async ({ storage, context: opening }) => {
+    harness: async ({ storage, context: opening, onWake }) => {
       const { demo, env, models } = await this.#prepare();
       demo.agent.install(this.registry);
-      return Harness.open(storage, { models, registry: this.registry, env: () => env }, opening);
+      return Harness.open(storage, { models, registry: this.registry, env: () => env, onWake }, opening);
     },
   });
   lifecycle = Lifecycle.install(this).use(this.harness);
