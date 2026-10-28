@@ -6,6 +6,9 @@ import { fileURLToPath } from 'node:url';
 import { runCaptured } from './run-captured.mjs';
 import { prepareConsumerIsolation, assertConsumerTypeFiles, npmInstallFlags } from './consumer-isolation.mjs';
 
+const args = process.argv.slice(2);
+if (args.length > 1 || args.some(arg => arg !== '--actions')) throw new Error('Expected no arguments or --actions');
+const actionsOnly = args.includes('--actions');
 const root = fileURLToPath(new URL('../', import.meta.url));
 const temporary = mkdtempSync(join(tmpdir(), 'boring-definitions-consumer-'));
 // The pinned native SDK probes ten ancestor node_modules paths even when local types exist.
@@ -85,6 +88,16 @@ await conversation.commit(tx => delivery.admit(tx, producer, guarded, { ownershi
 createDocumentDelivery({ ...deliveryOptions, resolveAccess: async (...args) => deliveryOptions.resolveAccess(...args) });
 import { createOutputValidation, type OutputProposal, type NativeToolEvidence } from '@hachej/boring-agent/validation';
 import type { Harness } from '@earendil-works/pi-durable';
+import { withActionModels, type StructuredAction } from '@hachej/boring-agent/actions';
+import type { MutableModels } from '@earendil-works/pi-ai';
+declare const models: MutableModels;
+declare const action: StructuredAction;
+const composed: MutableModels = withActionModels(models, { resolve: () => action });
+composed.clearProviders();
+// @ts-expect-error A decision must return a boolean, not classifier data.
+const invalid: StructuredAction = { ...action, decide: async () => ({ confidence: 1 }) };
+void invalid;
+
 declare const harness: Harness;
 declare const proposed: TaskId<OutputProposal>;
 const validation = createOutputValidation<{ total: number }>({ name: 'consumer.validate', version: 1,
@@ -98,7 +111,7 @@ if (checked.kind === 'valid') { const total: number = checked.value.total; void 
   writeFileSync(join(directory, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, exactOptionalPropertyTypes: true, skipLibCheck: false, noEmit: true, types: ['node'], lib: ['ES2023', 'DOM'] }, include: ['consumer.ts'] }));
   assertConsumerTypeFiles(run(process.execPath, ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.json', '--listFiles'], isolated), directory);
   for (const path of ['test/packages', 'test/fixtures', 'test/compatibility', 'test/contracts', 'fixtures/current-hub', 'fixtures/validated-output', 'shared']) mkdirSync(join(directory, path), { recursive: true });
-  const tests = ['test/packages/agent-validation.test.mjs', 'test/compatibility/validated-output.test.mjs',
+  const tests = ['test/packages/agent-actions.test.mjs', 'test/packages/agent-validation.test.mjs', 'test/compatibility/validated-output.test.mjs',
     'test/contracts/validation-repair-crash.test.mjs', 'test/packages/agent-definitions.test.mjs', 'test/packages/agent-definitions-native.test.mjs',
     'test/packages/agent.test.mjs', 'test/packages/agent-delivery.test.mjs', 'test/compatibility/current-hub.test.mjs',
     'test/compatibility/current-hub-definitions.test.mjs', 'test/compatibility/current-hub-crash.test.mjs',
@@ -120,6 +133,7 @@ const { loadAgentDefinition } = await import('@hachej/boring-agent/definitions')
 if (typeof loadAgentDefinition !== 'function') throw new Error('Missing public definition loader');
 `);
   run(process.execPath, ['pure-import.mjs'], isolated);
-  run(process.execPath, ['--test', '--experimental-test-isolation=none', ...tests], isolated);
-  console.log('PASS: isolated files and agent archives, strict declarations, data-only import, exact definition loading and native configuration/publication/reopen, pinned current-hub execution, structured validation/native repair, guarded delivery and actual SIGKILL recovery/version cases; no UI or execution packages installed');
+  run(process.execPath, ['--test', '--experimental-test-isolation=none', ...(actionsOnly ? ['test/packages/agent-actions.test.mjs'] : tests)], isolated);
+  if (actionsOnly) console.log('PASS: isolated structured actions, strict native Models types, native tools, permissions and SQLite reopen');
+  else console.log('PASS: isolated files and agent archives, strict declarations, data-only import, exact definition loading and native configuration/publication/reopen, pinned current-hub execution, structured validation/native repair, guarded delivery and actual SIGKILL recovery/version cases; no UI or execution packages installed');
 } finally { rmSync(temporary, { recursive: true, force: true }); }
