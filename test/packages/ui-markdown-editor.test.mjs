@@ -373,6 +373,25 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
     assert.equal(expired.writes(), 0);
   });
 
+  await t.test('rich placeholders follow locale and label changes without remounting or saving', async t => {
+    const props = { locale: 'fr', labels: {} };
+    const f = await fixture(t, '', { props });
+    const rich = f.container.querySelector('[contenteditable=true]');
+    assert.ok(f.container.querySelector('[data-placeholder="Commencez à écrire"]'));
+    props.locale = 'en';
+    await f.render();
+    assert.ok(f.container.querySelector('[data-placeholder="Start writing"]'));
+    props.labels = { defaultPlaceholder: 'Write here' };
+    await f.render();
+    assert.ok(f.container.querySelector('[data-placeholder="Write here"]'));
+    props.placeholder = 'Host placeholder';
+    await f.render();
+    assert.ok(f.container.querySelector('[data-placeholder="Host placeholder"]'));
+    assert.equal(f.container.querySelector('[contenteditable=true]'), rich);
+    assert.equal(f.controller.getSnapshot().text, '');
+    assert.equal(f.writes(), 0);
+  });
+
   await t.test('French draws the source-only notice with translated reasons', async t => {
     const f = await fixture(t, 'a\rb\r', { props: { locale: 'fr' } });
     const notice = f.container.querySelector('[data-testid="markdown-source-only"]');
