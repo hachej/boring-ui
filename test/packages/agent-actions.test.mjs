@@ -156,3 +156,15 @@ test('late decision after timeout cannot trigger extraction', async () => {
   release(true); await new Promise(resolve => setImmediate(resolve));
   assert.equal(fixture.provider.state.callCount, 1);
 });
+
+test('split text parts preserve exact input and tool JSON without inserting characters', async t => {
+  const fixture = setup([extraction()]);
+  const run = await open(fixture, { execute: async () => ({ output: [
+    { type: 'text', text: '{"text":"fictional ' }, { type: 'text', text: 'picnic"}' },
+  ] }) });
+  t.after(() => run.harness.close(ctx));
+  await say(run.conversation, [{ type: 'text', text: 'Remember the fictional ' }, { type: 'text', text: 'picnic' }]);
+  assert.equal(fixture.decisions[0].message, 'Remember the fictional picnic');
+  assert.equal(await text(run.conversation), 'Saved fictional picnic.');
+  assert.equal(fixture.provider.state.callCount, 1);
+});

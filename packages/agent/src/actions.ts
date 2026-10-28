@@ -28,7 +28,7 @@ export interface ActionModelsOptions {
 }
 
 const zeroUsage = (): AssistantMessage['usage'] => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } });
-const inputText = (content: Message['content']): string => typeof content === 'string' ? content : content.filter(p => p.type === 'text').map(p => p.text).join('\n');
+const inputText = (content: Message['content']): string => typeof content === 'string' ? content : content.filter(p => p.type === 'text').map(p => p.text).join('');
 
 /** Substitute actual scalar results only. Missing values cannot become invented confirmations. */
 export function actionReply(template: string, result: unknown): string {
