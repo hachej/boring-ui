@@ -26,12 +26,8 @@ export function queuedText(item: QueuedMessage, imagesLabel: (count: number) => 
 }
 
 /** What a queued message can be taken back for. Both take the message out of the queue first and throw when it is too late. */
-export interface QueueActions {
-  /** Take it out of the queue and put its text (and images) back in the composer. */
-  readonly edit?: ((item: QueuedMessage) => Promise<void>) | undefined;
-  /** Take it out of the queue and send it into the running turn now. */
-  readonly steer?: ((item: QueuedMessage) => Promise<void>) | undefined;
-}
+export type { QueueActions } from '@hachej/boring-ui-kit/chat-react';
+import type { QueueActions } from '@hachej/boring-ui-kit/chat-react';
 
 /** The "…" button of one queued message: a small menu of the secondary actions (Edit). */
 function QueueEditAction({ disabled, onEdit }: { readonly disabled: boolean; readonly onEdit: () => void }) {

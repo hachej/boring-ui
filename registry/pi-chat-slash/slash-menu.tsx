@@ -8,7 +8,7 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/in
 import { Item, ItemContent, ItemDescription, ItemTitle } from '@/components/ui/item';
 import { usePickerKeyboard } from '../pi-chat/picker-keyboard';
 import { ComposerSuggestions } from '../pi-chat/suggestions';
-import { slashGroup } from '../pi-chat/config';
+import { slashGroup } from '@hachej/boring-ui-kit/chat-text';
 import type { SlashPickerProps } from '../pi-chat/config';
 import { useChatText } from '../pi-chat/labels';
 
@@ -25,6 +25,7 @@ export function SlashPicker({ query, items, onSelect, onDismiss }: SlashPickerPr
   const [active, setActive] = useState(0);
   const list = useRef<HTMLUListElement>(null);
   // Follow the composer text.
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- the search box follows the composer's query when it changes, and stays editable in between
   useEffect(() => { setSearch(query); setActive(0); }, [query]);
   const groups = useMemo(() => [...new Set(items.map(slashGroup))].sort((a, b) => a.localeCompare(b)), [items]);
   const filtered = useMemo(() => {
@@ -32,6 +33,7 @@ export function SlashPicker({ query, items, onSelect, onDismiss }: SlashPickerPr
     return items.filter(item => (group === ALL || slashGroup(item) === group)
       && (!needle || item.name.toLowerCase().includes(needle) || item.description.toLowerCase().includes(needle)));
   }, [items, search, group]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- a shorter list pulls the highlighted row back inside it; the updater returns the same index when it already fits
   useEffect(() => { setActive(index => filtered.length === 0 ? 0 : Math.min(index, filtered.length - 1)); }, [filtered.length]);
   usePickerKeyboard({ count: filtered.length, activeIdx: active, setActiveIdx: setActive, listRef: list, onSelect: index => { const item = filtered[index]; if (item) onSelect(item); }, onDismiss });
 

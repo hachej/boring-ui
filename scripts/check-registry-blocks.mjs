@@ -5,8 +5,10 @@
 // 2. A file may import another item (`../<item>/<file>`) only when that item is in its own item's registryDependencies
 //    (transitively) and lists the file. pi-chat declares none, so the chat never imports pi-ambient or pi-workspace, and
 //    pi-workspace never imports pi-ambient (the host swaps AmbientChat in when the chat floats).
-// 3. Declared registryDependencies name items of this registry, or one of the shadcn built-ins in SHADCN_BUILTINS (a bare name; the
-//    consumer's own shadcn style resolves it). A source file imports `@/components/ui/<name>` only for a bare name its item declares.
+// 3. Declared registryDependencies name only items of this registry (`@boring-ui/<item>`), never a shadcn component and never the theme:
+//    a block takes shadcn components and tokens from the app. A source file imports `@/components/ui/<name>` (the shadcn CLI rewrites it
+//    to the app's `ui` alias from components.json) only for a name in SHADCN_BUILTINS, and `@/hooks/<name>` only for SHADCN_HOOKS. That one
+//    kit-wide list is the app's prerequisite, documented as one command in registry/README.md (APP_SETUP), and every name in it is used.
 // 4. File types and targets: a `use*.ts` file is `registry:hook`, any other `.ts` is `registry:lib` (or a declared `registry:hook`), a
 //    `.tsx` is a component (`registry:ui` for a shared primitive such as the button); every file has the target
 //    `components/<item>/<file>`, so the installed folders mirror registry/ and the sibling imports above resolve.
@@ -32,8 +34,15 @@ const source = /\.(?:tsx?|jsx?|mjs)$/;
 /** The source registryDependencies use the `@boring-ui/<item>` shorthand; scripts/build-registry.mjs writes them as absolute release URLs. */
 const namespace = '@boring-ui/';
 const local = (dependency) => dependency.startsWith(namespace) ? dependency.slice(namespace.length) : dependency;
-/** The shadcn built-in components a registry item may depend on by bare name. Fixed: a new one is a decision, not a convenience. */
-export const SHADCN_BUILTINS = Object.freeze(['button', 'toggle', 'switch', 'drawer', 'sidebar', 'avatar', 'dropdown-menu', 'separator', 'tooltip', 'trace', 'message', 'bubble', 'attachment', 'badge', 'alert', 'collapsible', 'checkbox', 'table', 'card', 'spinner', 'message-scroller', 'empty', 'input', 'input-group', 'popover', 'scroll-area', 'native-select', 'label', 'item', 'toggle-group', 'tabs', 'textarea', 'dialog', 'progress']);
+/**
+ * The shadcn components (Base UI `base-nova` style) the blocks import through the app's `ui` alias. The app installs them once, before any
+ * block (APP_SETUP); no item lists them. Fixed: a new one is a decision, not a convenience, and it lands with its README command.
+ */
+export const SHADCN_BUILTINS = Object.freeze(['alert', 'attachment', 'avatar', 'badge', 'bubble', 'button', 'card', 'checkbox', 'collapsible', 'dialog', 'drawer', 'dropdown-menu', 'empty', 'input', 'input-group', 'item', 'label', 'message', 'message-scroller', 'native-select', 'popover', 'progress', 'scroll-area', 'separator', 'sidebar', 'spinner', 'switch', 'table', 'textarea', 'toggle', 'toggle-group', 'tooltip', 'trace']);
+/** The hooks the shadcn components above install under the app's `hooks` alias (sidebar's use-mobile) that blocks may import too. */
+export const SHADCN_HOOKS = Object.freeze(['use-mobile']);
+/** The app's one-time shadcn setup, quoted verbatim in registry/README.md. */
+export const APP_SETUP = `npx shadcn@4.21.5 add ${SHADCN_BUILTINS.join(' ')}`;
 /** npm packages (or package subpaths) only the optional composer feature items use: Markdown and voice capture. */
 export const CORE_EXCLUDED = Object.freeze(['marked', 'entities', '@hachej/boring-ui-kit/voice-capture']);
 /** The optional items the core chat must not depend on besides the `pi-chat-*` ones. */
@@ -44,8 +53,8 @@ export const LAZY_VIEWS = Object.freeze(['viewer-markdown/markdown-pane', 'viewe
 const staticValueImport = /^\s*(?:import\s+(?!type\b)(?:[^'";]*?\sfrom\s*)?|export\s+(?!type\b)[^'";]*?\sfrom\s*)['"]([^'"]+)['"]/gm;
 /** The npm packages the core chat may declare: the borrowed native chat, the Pi types it renders, React, icons and the shadcn runtime. */
 export const CORE_PACKAGES = Object.freeze(['@hachej/boring-ui-kit', '@hachej/boring-files', '@hachej/boring-feedback', 'react', 'react-dom', '@base-ui/react', '@earendil-works/pi-durable', '@earendil-works/chord', '@earendil-works/pi-ai', '@modelcontextprotocol/sdk', 'lucide-react', '@shadcn/react', 'zod']);
-/** The core chat's size: its listed files and their lines (26 files and 4110 lines after D-257 step 4, from 38 files and ~5.4k before). */
-export const CORE_BUDGET = Object.freeze({ files: 26, lines: 4200 });
+/** The core chat's size: its listed files and their lines (26 files and 4110 lines after D-257 step 4, from 38 files and ~5.4k before; 4330 lines with the `messaging` message style). */
+export const CORE_BUDGET = Object.freeze({ files: 26, lines: 4330 });
 /** The card modules that live in their optional items, never in the core chat (D-257 step 3). */
 export const CORE_EXCLUDED_FILES = Object.freeze(['question-card', 'approval-card', 'subagent-card', 'run-card', 'artifact-card', 'artifact']);
 const packageName = (dependency) => dependency.replace(/(.)@[^@]*$/, '$1');
@@ -105,15 +114,15 @@ export function checkRegistryBlocks(root) {
   const items = new Map(manifest.items.map((item) => [item.name, item]));
   const listed = (item) => new Set(item.files.map((file) => file.path));
   const closure = (name, seen = new Set()) => {
-    for (const dependency of (items.get(name)?.registryDependencies ?? []).filter(dependency => !SHADCN_BUILTINS.includes(dependency)).map(local)) if (!seen.has(dependency)) { seen.add(dependency); closure(dependency, seen); }
+    for (const dependency of (items.get(name)?.registryDependencies ?? []).map(local)) if (!seen.has(dependency)) { seen.add(dependency); closure(dependency, seen); }
     return seen;
   };
   let files = 0;
-  const owners = new Map();
+  const owners = new Map(), used = new Set();
   for (const item of items.values()) {
     for (const dependency of item.registryDependencies ?? []) {
-      if (SHADCN_BUILTINS.includes(dependency)) continue;
-      if (!dependency.startsWith(namespace) || !items.has(local(dependency))) errors.push(`BORING-BLOCKS ${item.name}: registryDependencies must be ${namespace}<item of this registry> or one of ${SHADCN_BUILTINS.join(', ')} (found ${dependency})`);
+      if (!dependency.startsWith(namespace) || !items.has(local(dependency))) errors.push(`BORING-BLOCKS ${item.name}: registryDependencies name only ${namespace}<item of this registry>; shadcn components come from the app's ui alias (found ${dependency})`);
+      else if (local(dependency) === 'theme') errors.push(`BORING-BLOCKS ${item.name}: depends on ${dependency}; blocks use the app's shadcn tokens, and an app without them installs the theme once`);
     }
     for (const file of item.files ?? []) {
       const base = posix.basename(file.path);
@@ -141,10 +150,11 @@ export function checkRegistryBlocks(root) {
       const text = readFileSync(resolve(root, path), 'utf8');
       // build-css.mjs and similar tooling stay in the folder but ship nothing; only files that import or are imported matter for the item's code.
       if (!own.has(path) && !/\.mjs$/.test(name)) errors.push(`BORING-BLOCKS ${path}: not listed in item ${item.name} of registry.json`);
-      const builtins = (item.registryDependencies ?? []).filter((dependency) => SHADCN_BUILTINS.includes(dependency));
       for (const [, specifier] of text.matchAll(importPattern)) {
         const ui = /^@\/components\/ui\/([\w-]+)$/.exec(specifier);
-        if (ui) { if (!builtins.includes(ui[1])) errors.push(`BORING-BLOCKS ${path}: imports ${specifier}, but item ${item.name} does not declare the shadcn built-in ${ui[1]} in registryDependencies (allowed: ${SHADCN_BUILTINS.join(', ')})`); continue; }
+        if (ui) { used.add(ui[1]); if (!SHADCN_BUILTINS.includes(ui[1])) errors.push(`BORING-BLOCKS ${path}: imports ${specifier}, which is not one of the shadcn components the app installs (SHADCN_BUILTINS: ${SHADCN_BUILTINS.join(', ')})`); continue; }
+        const hook = /^@\/hooks\/([\w-]+)$/.exec(specifier);
+        if (hook) { if (!SHADCN_HOOKS.includes(hook[1])) errors.push(`BORING-BLOCKS ${path}: imports ${specifier}, which no shadcn component of SHADCN_BUILTINS installs (allowed: ${SHADCN_HOOKS.join(', ')})`); continue; }
         if (!specifier.startsWith('.')) continue;
         const target = posix.normalize(posix.join('registry', directory.name, specifier));
         const match = /^registry\/([^/]+)\/([^/]+)$/.exec(target);
@@ -158,6 +168,8 @@ export function checkRegistryBlocks(root) {
     }
     for (const file of own) if (!existsSync(resolve(root, file))) errors.push(`BORING-BLOCKS ${item.name}: listed file ${file} does not exist`);
   }
+  for (const name of SHADCN_BUILTINS) if (!used.has(name)) errors.push(`BORING-BLOCKS SHADCN_BUILTINS: no block imports @/components/ui/${name}; drop it from the list and from the app setup command`);
+  if (!readFileSync(resolve(root, 'registry/README.md'), 'utf8').includes(APP_SETUP)) errors.push(`BORING-BLOCKS registry/README.md: quote the app's shadcn setup exactly: ${APP_SETUP}`);
   const core = items.get('pi-chat');
   if (core) {
     for (const dependency of closure('pi-chat')) if (dependency.startsWith('pi-chat-') || CORE_EXCLUDED_ITEMS.includes(dependency)) errors.push(`BORING-BLOCKS pi-chat: the core chat must not depend on the optional feature item ${dependency}; the host plugs it in through the chat's props`);

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { ChatController } from '@hachej/boring-ui-kit/native-chat';
 import { Loader2Icon } from 'lucide-react';
@@ -16,27 +16,27 @@ import { Composer } from './composer';
 import type { ComposerFeedback, ComposerProps } from './composer';
 import { ConversationFiles } from './conversation-files';
 import type { AttachmentsConfig, ConversationsConfig, PendingVoice, VoiceMessageConfig, VoiceMessageHandle, VoiceRecorderHook } from './config';
-import { displayName } from './config';
+import { displayName } from '@hachej/boring-ui-kit/chat-text';
 import { EmptyState } from './empty-state';
 import type { Suggestion } from './empty-state';
 import { ConversationHistory, TranscriptHistory } from './history';
-import { RowView } from './message';
+import { TranscriptChunk } from './message';
+import { markLeads } from './rows';
 import type { Row } from './rows';
 import { MessageQueue } from './queue';
-import { ChatNotices, Notice, PreparingStatus, preparing } from './notice';
-import { Shimmer } from './shimmer';
-import { useChatSession, useTranscript } from './session';
+import { ChatNotices, ChatConnectionNotice, ChatStatusLine } from './notice';
+import { PAGE_FIRST, PAGE_MORE, useChatSession, useRowChunks, useTranscript } from './session';
 import { useChatDraft } from './use-chat-draft';
 import { useChatPlacement } from './use-remote-chat';
 import type { ChatPlacement } from './use-remote-chat';
-import type { ChatFeatureProps, FilesHandler } from './session';
+import type { ChatFeatureProps, ChatPaging, FilesHandler } from './session';
 import { ChatTextProvider, useChatText, useMergedText } from './labels';
 import { chatTextFor } from './locale';
 import type { ChatLocale } from './locale';
 import type { ChatIcons, ChatLabels } from './labels';
 import { cn } from '../utils/utils';
 
-export type { PiChatActions } from './session';
+export type { ChatPaging, PiChatActions } from './session';
 export type { ChatCard, Mode } from './rows';
 export type { AnswerOutcome, ApprovalCardProps, ApprovalDecision, ChatArtifact, ChatArtifactCardProps, ChatArtifactsConfig, ChatCards, QuestionCardProps, SubagentRenderer } from './config';
 export { ASK_USER_TOOL } from './config';
@@ -65,7 +65,7 @@ export type { AudioUrlRead, VoiceMessageConfig, AttachmentsConfig, ConversationI
 
 export interface ChatTimeline {
   readonly count: number;
-  readonly render: (context: { readonly focusComposer: () => void; readonly openFile?: ((path: string) => void) | undefined; readonly pendingVoice?: ReactNode }) => ReactNode;
+  readonly render: (context: { readonly focusComposer: () => void; readonly openFile?: ((path: string) => void) | undefined; readonly pendingVoice?: ReactNode; readonly paging?: ChatPaging | undefined }) => ReactNode;
   readonly afterSend?: () => void;
 }
 
@@ -81,6 +81,12 @@ export interface PiChatProps extends ChatFeatureProps {
   /** The chat's language: `en` (default) or `fr`. `labels` override any of its words. */
   readonly locale?: ChatLocale | undefined;
   readonly labels?: Partial<ChatLabels> | undefined;
+  /**
+   * How a message looks. `default` (today): my message is a muted bubble on the right, the reply plain text. `messaging`: a messenger look
+   * for a one-to-one conversation: my message a primary bubble on the right, the reply a muted bubble on the left, a tail on the first
+   * bubble of each run and the time inside. Tool steps, traces, voice and cards are unchanged. Theme tokens only.
+   */
+  readonly messageStyle?: 'default' | 'messaging' | undefined;
   /** The chat's icons (send, stop, history, attach, …): any component taking `className`, over `defaultChatIcons`. */
   readonly icons?: Partial<ChatIcons> | undefined;
   /** The agent's avatar (an image or an icon) before the title in the header, and in the empty state instead of the agent icon. */
@@ -127,6 +133,8 @@ export interface PiChatProps extends ChatFeatureProps {
   readonly emptyLayout?: 'centered' | 'docked';
   /** Two-row reference composer by default. Explicitly select `pill`, `stacked` or `inline` for the earlier layouts. */
   readonly composerLayout?: ComposerProps['layout'];
+  /** A shell-owned capture uses the same recording-row replacement as native voice messages. */
+  readonly composerRecording?: ReactNode;
   /** A conversation title, separate from the agent name, with optional click-to-rename. */
   readonly conversationTitle?: string | undefined;
   readonly onRenameTitle?: ((title: string) => void | Promise<void>) | undefined;
@@ -138,13 +146,13 @@ export interface PiChatProps extends ChatFeatureProps {
   readonly draftKey?: string | undefined;
 }
 
-const PAGE = 60, MORE = 40;
 type TranscriptRow = { readonly key: string; readonly kind: 'native'; readonly row: Row }
   | { readonly key: string; readonly kind: 'voice'; readonly voice: PendingVoice };
 
 /** Borrows a concrete native controller; unmount releases presentation and uploads only. */
 export function PiChat(props: PiChatProps) {
-  const active = useRef(props.controller); active.current = props.controller;
+  const active = useRef(props.controller);
+  useLayoutEffect(() => { active.current = props.controller; });
   // A new controller or a new voice recorder hook starts a fresh session, so the recorder's hooks keep their order.
   const recorder = props.voiceMessage?.useRecorder ?? noVoice;
   const [mount, setMount] = useState({ controller: props.controller, recorder, sequence: 0 });
@@ -167,24 +175,28 @@ const noVoice: VoiceRecorderHook = () => silent;
 /** A shell's pending voice row when no `voiceMessage.Bubble` is plugged in: nothing to draw. */
 function NoVoiceBubble(_: { readonly pending: PendingVoice | undefined }) { return null; }
 
-function PiChatSession({ controller, placement = 'docked', mode = 'expert', presentation, className, keyboardInset = true, actions, avatar, headerActions, header = true, decisions, controls, tools, composerStart, voiceReplacesSend = false, voiceMessage, pendingVoice, belowComposer, composerChips, composerHeader, composerHasContent, onPickFiles, timeline, renderConnectionError, headerStart, renderEntry, hideLine, displayLimit, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions,
-  onOpenImage, onCopy, onComposerKeyDown, onFiles, camera, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = false, emptyLayout = 'centered', composerLayout = 'card', conversationTitle, onRenameTitle, feedback, draftKey, onOpenFile, fileChanges, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: ChatController } }) {
+function PiChatSession({ controller, placement = 'docked', mode = 'expert', presentation, voiceReplay, messageStyle = 'default', className, keyboardInset = true, actions, avatar, headerActions, header = true, decisions, controls, tools, composerStart, voiceReplacesSend = false, voiceMessage, pendingVoice, belowComposer, composerChips, composerHeader, composerHasContent, onPickFiles, timeline, renderConnectionError, headerStart, renderEntry, hideLine, displayLimit, paging, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions,
+  onOpenImage, onCopy, onComposerKeyDown, onFiles, camera, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = false, emptyLayout = 'centered', composerLayout = 'card', composerRecording, conversationTitle, onRenameTitle, feedback, draftKey, onOpenFile, fileChanges, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: ChatController } }) {
   const { labels, icons } = useChatText();
   useChatDraft(controller, draftKey);
   useChatPlacement(controller, placement);
   const { title } = labels;
   const [pickingConversation, setPickingConversation] = useState(false);
   const scrollToBottom = useRef<() => void>(() => {});
-  const voice = (voiceMessage?.useRecorder ?? noVoice)({ controller, config: voiceMessage, attachments, labels, activeController: active, admitted: () => timeline ? timeline.afterSend?.() : scrollToBottom.current() });
+  const useRecorder = voiceMessage?.useRecorder ?? noVoice;
+  // eslint-disable-next-line react-hooks/refs -- the recorder is the host's hook, picked by prop, so the compiler cannot see it calls admitted only after a recording is admitted, never during render.
+  const voice = useRecorder({ controller, config: voiceMessage, attachments, labels, activeController: active, admitted: () => timeline ? timeline.afterSend?.() : scrollToBottom.current() });
   // A reply's Fork button calls the host's latest `fork`; the row context changes only when forking is switched on or off.
-  const fork = useRef(conversations?.fork); fork.current = conversations?.fork;
+  const fork = useRef(conversations?.fork);
+  useLayoutEffect(() => { fork.current = conversations?.fork; });
   const canFork = Boolean(conversations?.fork);
-  const rowExtras = useMemo(() => canFork ? { onFork: (entryId: string) => { void fork.current?.(entryId).catch(() => {}); } } : undefined, [canFork]);
-  const session = useChatSession({ controller, activeController: active, mode, presentation, actions, renderEntry, hideLine, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, camera, fileAccept,
+  const rowExtras = useMemo(() => canFork || messageStyle === 'messaging' ? { ...(canFork ? { onFork: (entryId: string) => { void fork.current?.(entryId).catch(() => {}); } } : {}), ...(messageStyle === 'messaging' ? { messageStyle } : {}) } : undefined, [canFork, messageStyle]);
+  const session = useChatSession({ controller, activeController: active, mode, presentation, voiceReplay, actions, renderEntry, hideLine, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, camera, fileAccept,
     slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => timeline ? timeline.afterSend?.() : scrollToBottom.current(), feedback, rowExtras, onOpenFile, fileChanges, pasteToFile, composerChips, composerHeader, composerHasContent, onPickFiles });
-  const { state, derived, rows, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, files, loading } = session;
+  const { state, derived, rows: nativeRows, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, files, loading } = session;
   const voiceRows = pendingVoice ?? voice.pending;
   const VoiceButton = voiceMessage?.Button, VoiceBubbleView = voiceMessage?.Bubble ?? NoVoiceBubble;
+  const rows = useMemo(() => messageStyle === 'messaging' ? markLeads(nativeRows) : nativeRows, [nativeRows, messageStyle]);
   const transcriptRows: readonly TranscriptRow[] = [
     ...rows.map(row => ({ key: row.key, kind: 'native' as const, row })),
     ...voiceRows.map(voice => ({ key: `voice:${voice.id}`, kind: 'voice' as const, voice })),
@@ -196,12 +208,13 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
     const path = item.path, open = onOpenFile ?? mentions?.open;
     conversationFiles.set(`file:${path}`, { id: `file:${path}`, name: displayName(path), open: open ? () => open(path) : undefined });
   }
-  const { pinned, retry } = derived;
-  const showPreparing = preparing({ natural: session.natural, waitingForAnswer, run: derived.run, retry, compacting: derived.compacting, stop: state.stop });
-  const transcript = useTranscript(transcriptRows, displayLimit ?? PAGE, MORE, { state: state.history, connected: !state.disposed && connected, load: controller.loadEarlier }, displayLimit === undefined);
-  const { stick, hidden } = transcript;
-  scrollToBottom.current = () => { transcript.reset(); void stick.scrollToBottom('instant'); };
+  const { pinned } = derived;
+  const transcript = useTranscript(transcriptRows, displayLimit ?? paging?.first ?? PAGE_FIRST, paging?.more ?? PAGE_MORE, { state: state.history, connected: !state.disposed && connected, load: controller.loadEarlier }, displayLimit === undefined);
+  const { stick, hidden } = transcript, { scrollRef, isAtBottom } = stick;
+  useLayoutEffect(() => { scrollToBottom.current = () => { transcript.reset(); void stick.scrollToBottom('instant'); }; });
   const visible = transcript.visible(transcriptRows);
+  // Native rows come before pending voice rows, so the hidden ones are the oldest native rows.
+  const chunks = useRowChunks(useMemo(() => rows.slice(Math.min(rows.length, hidden)), [rows, hidden]));
   const { barStart, barNote } = session.pickers();
   const connectionKind = state.connection.kind;
   const [renamingTitle, setRenamingTitle] = useState(false);
@@ -217,7 +230,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
     observer?.observe(element);
     measure(); viewport.addEventListener('resize', measure); viewport.addEventListener('scroll', measure);
     return () => { observer?.disconnect(); viewport.removeEventListener('resize', measure); viewport.removeEventListener('scroll', measure); };
-  }, []);
+  }, [keyboardInset]);
 
   return <section ref={page} data-boring="pi-chat" data-connection={connectionKind} data-empty={empty && !loading ? emptyLayout : undefined} aria-label={title} className={cn('pi-chat relative box-border flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background text-foreground ', keyboardInset && 'max-[641px]:pb-(--composer-keyboard-inset)', empty && emptyLayout === 'centered' && 'min-[641px]:justify-center', className)}>
     {header && <header className={cn(empty && emptyLayout === 'centered' && 'min-[641px]:absolute min-[641px]:inset-x-0 min-[641px]:top-0', 'flex h-13 shrink-0 items-center gap-2 px-3 sm:gap-3 sm:px-4')}>
@@ -237,23 +250,21 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
     {decisions && <><div data-boring="required-decisions" className="shrink-0 px-4 py-2">{decisions}</div><Separator /></>}
     {pinned.length > 0 && <><aside aria-label={labels.requiredActions} className="shrink-0 space-y-2 px-4 py-2">{pinned.map(card => <div key={card.key}>{card.content}</div>)}</aside><Separator /></>}
     {(connectionKind === 'error' || connectionKind === 'closed') && <div className="shrink-0 px-4 pt-2">
-      <Notice tone={connectionKind === 'error' ? 'error' : 'info'} testid="connection-notice">
-        <span className="flex-1">{connectionKind === 'error' ? state.connection.kind === 'error' && renderConnectionError ? renderConnectionError(state.connection.error) : labels.loadFailed : labels.disconnected}</span>
-        {!state.disposed && <Button size="sm" variant="outline" onClick={() => act(controller.connect)}><icons.reconnect data-icon="inline-start" aria-hidden="true" />{labels.reconnect}</Button>}
-      </Notice></div>}
+      <ChatConnectionNotice state={state} renderConnectionError={renderConnectionError} onReconnect={() => act(controller.connect)} /></div>}
     {pickingConversation && conversations && historyList && <ConversationHistory conversations={conversations} onClose={() => setPickingConversation(false)} />}
 
     <div data-testid="conversation-content" className={cn('relative min-h-0 flex-1', empty && emptyLayout === 'centered' && 'min-[641px]:min-h-60 min-[641px]:flex-none')}>
-      {timeline ? timeline.render({ focusComposer: () => textarea.current?.focus(), openFile: onOpenFile ?? mentions?.open, pendingVoice: pendingRows }) : <MessageScroller>
-        <MessageScrollerViewport ref={stick.scrollRef} data-testid="transcript-scroll" aria-label={labels.messages} className="min-h-0 flex-1 scrollbar-thumb-border scrollbar-track-transparent">
+      {timeline ? timeline.render({ focusComposer: () => textarea.current?.focus(), openFile: onOpenFile ?? mentions?.open, pendingVoice: pendingRows, paging }) : <MessageScroller>
+        <MessageScrollerViewport ref={scrollRef} data-testid="transcript-scroll" aria-label={labels.messages} className="min-h-0 flex-1 scrollbar-thumb-border scrollbar-track-transparent">
           {!empty && <TranscriptHistory history={state.history} connected={!state.disposed && connected} onLoad={transcript.reveal} sentinelRef={transcript.sentinelRef} hidden={hidden} loaded={transcript.loaded} />}
           <div className="mx-auto w-full max-w-[720px] px-4 pt-6 pb-8 sm:px-6">
           <MessageScrollerContent aria-label={labels.messages} aria-live="polite" data-testid="transcript">
-            {visible.map(item => <MessageScrollerItem key={item.key} messageId={item.key} data-local-voice={item.kind === 'voice' ? '' : undefined} className="[content-visibility:visible]">{item.kind === 'native' ? <RowView row={item.row} context={rowContext} /> : <VoiceBubbleView pending={item.voice} />}</MessageScrollerItem>)}
+            {chunks.map(run => <TranscriptChunk key={run[0]!.key} rows={run} context={rowContext} />)}
+            {visible.map(item => item.kind === 'voice' && <MessageScrollerItem key={item.key} messageId={item.key} data-local-voice="" className="[content-visibility:visible]"><VoiceBubbleView pending={item.voice} /></MessageScrollerItem>)}
           </MessageScrollerContent>
           </div>
         </MessageScrollerViewport>
-        {!empty && <div data-testid="transcript-navigation" className="flex h-12 shrink-0 items-center justify-center">{!stick.isAtBottom && <MessageScrollerButton className="static inset-auto translate-x-0" data-testid="jump-latest" aria-label={labels.jumpToLatest} title={labels.jumpToLatest} onClick={transcript.reset}><icons.jumpToLatest aria-hidden="true" /></MessageScrollerButton>}</div>}
+        {!empty && <div data-testid="transcript-navigation" className="flex h-12 shrink-0 items-center justify-center">{!isAtBottom && <MessageScrollerButton className="static inset-auto translate-x-0" data-testid="jump-latest" aria-label={labels.jumpToLatest} title={labels.jumpToLatest} onClick={transcript.reset}><icons.jumpToLatest aria-hidden="true" /></MessageScrollerButton>}</div>}
       </MessageScroller>}
       {(empty || loading) && <div className="pointer-events-none absolute inset-0">
         <div className="pointer-events-auto h-full">
@@ -265,16 +276,14 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
     <footer data-testid="composer-dock" className="shrink-0 px-4 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6">
       <div className="mx-auto w-full max-w-[720px] space-y-2">
         <div {...(session.natural ? {} : { 'aria-live': 'polite' as const })} className="space-y-2 empty:hidden">
-          {session.natural ? showPreparing && <PreparingStatus>{derived.stageStatus}</PreparingStatus> : working && <p role="status" data-testid="agent-status" className="m-0 flex items-center gap-2 px-1 text-xs text-muted-foreground">
-            <Shimmer active={!waitingForAnswer}>{waitingForAnswer ? labels.waitingForAnswer : retry ? labels.retryPending : labels.agentWorking}</Shimmer></p>}
-          {!session.natural && derived.compacting && <p role="status" className="m-0 px-1 text-xs text-muted-foreground">{labels.compacting}</p>}
+          <ChatStatusLine natural={session.natural} working={working} waitingForAnswer={waitingForAnswer} derived={derived} stop={state.stop} />
           <ChatNotices natural={session.natural} state={state} error={error} onReconcile={() => act(controller.reconcile)} onRetry={() => act(controller.retrySameRequest)} />
         </div>
         <div>
           <ConversationFiles files={[...conversationFiles.values()]} />
           <MessageQueue items={queued} sending={state.outbox} withdraw={actions?.withdraw} actions={queueActions} />
           {voice.problem && <p role="alert" data-testid="voice-message-problem">{voice.problem}</p>}
-          <Composer {...composer} layout={composerLayout} placeholder={labels.placeholder === 'Message the agent…' ? `Message ${title}…` : labels.placeholder} barStart={barStart} barNote={barNote} start={composerStart}
+          <Composer {...composer} recording={composerRecording ?? (VoiceButton && (voice.phase === 'starting' || voice.phase === 'recording') ? <VoiceButton voice={voice} /> : undefined)} layout={composerLayout} placeholder={labels.placeholder === 'Message the agent…' ? `Message ${title}…` : labels.placeholder} barStart={barStart} barNote={barNote} start={composerStart}
             {...(voiceMessage && VoiceButton && voiceReplacesSend ? { barEnd: tools, whenEmpty: <VoiceButton voice={voice} primary disabled={state.disposed || !connected || state.send.kind === 'unknown'} /> }
               : { barEnd: voiceMessage && VoiceButton ? <>{tools}<VoiceButton voice={voice} disabled={state.disposed || !connected || state.send.kind === 'unknown'} /></> : tools })} />
           {belowComposer !== undefined && <div data-testid="below-composer" className="pt-2">{belowComposer}</div>}

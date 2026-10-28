@@ -2,7 +2,7 @@
 import { createContext, useContext, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import type { ChannelMessage } from '@hachej/boring-ui-kit/shared-chat';
-import { useChatText as useNativeText } from '../pi-chat/labels';
+import { useChatText as useNativeText, useShallowStable } from '../pi-chat/labels';
 import { defaultSharedLabels } from './shared-labels';
 import type { SharedLabels } from './shared-labels';
 import { frenchSharedLabels } from './shared-labels-fr';
@@ -23,7 +23,9 @@ export interface SharedViewOptions {
 export interface SharedTextOptions extends SharedViewOptions { readonly locale?: 'en' | 'fr' | undefined; readonly labels?: Partial<SharedLabels> | undefined }
 const Context = createContext(defaultSharedLabels);
 const View = createContext<SharedViewOptions>({});
-export function SharedTextProvider({ children, locale, labels, presence, steps, answerActions, footer, answerStyle }: SharedTextOptions & { readonly children: ReactNode }) {
+export function SharedTextProvider({ children, locale, labels: given, presence, steps, answerActions: actions, footer, answerStyle }: SharedTextOptions & { readonly children: ReactNode }) {
+  // Inline `labels` or `answerActions` keep one context while their content is the same (see useShallowStable).
+  const labels = useShallowStable(given), answerActions = useShallowStable(actions);
   const value = useMemo(() => ({ ...(locale === 'fr' ? frenchSharedLabels : defaultSharedLabels), ...labels }), [locale, labels]);
   const view = useMemo<SharedViewOptions>(() => ({ presence, steps, answerActions, footer, answerStyle }), [presence, steps, answerActions, footer, answerStyle]);
   return <Context.Provider value={value}><View.Provider value={view}>{children}</View.Provider></Context.Provider>;
@@ -31,5 +33,5 @@ export function SharedTextProvider({ children, locale, labels, presence, steps, 
 export const useSharedView = () => useContext(View);
 export function useChatText() {
   const native = useNativeText(), labels = useContext(Context);
-  return { ...native, labels: { ...native.labels, ...labels } };
+  return useMemo(() => ({ ...native, labels: { ...native.labels, ...labels } }), [native, labels]);
 }

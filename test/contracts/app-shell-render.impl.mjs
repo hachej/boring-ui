@@ -81,6 +81,16 @@ test('no agent: the nav and the header render at once, with the locale prop and 
   await unmount();
 });
 
+test('overlayBlur={false} marks <html data-overlay-blur="off"> while the shell is mounted; the default marks nothing', async t => {
+  const plain = await render(t, {});
+  assert.equal(plain.window.document.documentElement.dataset.overlayBlur, undefined, 'blur stays on by default');
+  await plain.unmount();
+  const { window, unmount } = await render(t, { overlayBlur: false });
+  assert.equal(window.document.documentElement.dataset.overlayBlur, 'off');
+  await unmount();
+  assert.equal(window.document.documentElement.dataset.overlayBlur, undefined, 'unmounting the shell gives the blur back');
+});
+
 test('the hover rail starts collapsed, reveals on pointer hover or focus within, and collapses on leave, blur or Escape', async t => {
   const items = ['Tableau de bord', 'Repas'].map(label => ({ id: label, label, icon: Icon, render: () => null }));
   const chosen = [];
@@ -488,50 +498,39 @@ async function talking(t, snap = 'half', options = {}) {
     return event;
   };
   const until = async (condition, label) => { for (let tries = 0; tries < 60 && !condition(); tries++) await opened.act(async () => new Promise(done => setTimeout(done, 25))); assert.ok(condition(), label); };
-  return { opened, find, talk, fire, until, tracks, transcribed, uploads, sends };
+  return { opened, find, get talk() { return find('[data-testid=agent-talk]'); }, fire, until, tracks, transcribed, uploads, sends };
 }
 
-for (const snap of ['half', 'full']) test(`the composer microphone at ${snap}: a press keeps focus where it was, a browser pointercancel while recording keeps the audio, the composer takes no focus and the snap holds`, async t => {
+for (const snap of ['half', 'full']) test(`the composer microphone at ${snap}: tap replaces editing with the recording row, keeps the snap, and Send finishes`, async t => {
   const ui = await talking(t, snap);
-  assert.equal(ui.find('[data-testid=below-composer]'), null, 'legacy dictation adds no empty footer row');
-  const input = ui.find('[data-testid=composer-input]');
-  const down = await ui.fire(ui.talk, 'pointerdown', { button: 0 });
-  assert.equal(down.defaultPrevented, true, 'pressing the microphone cannot move focus (no keyboard opens or closes)');
-  assert.equal((await ui.fire(ui.talk, 'mousedown', { button: 0 })).defaultPrevented, true, 'nor does the compatibility mousedown');
+  assert.equal(ui.find('[data-testid=below-composer]'), null, 'no empty footer row');
+  await ui.fire(ui.talk, 'click');
   await ui.until(() => ui.talk.dataset.state === 'recording', 'recording');
-  assert.equal(input.readOnly, true, 'the composer is read-only while recording');
-  assert.equal(input.getAttribute('inputmode'), 'none', 'and asks for no keyboard');
-  const before = ui.find('[data-testid=agent-layer]').dataset.state;
-  await ui.opened.act(async () => input.focus());
-  await ui.fire(input, 'focusin');
-  assert.equal(ui.find('[data-testid=agent-layer]').dataset.state, before, 'focusing the composer while recording does not change the snap');
-  await ui.fire(ui.talk, 'pointercancel');
-  await ui.until(() => ui.transcribed.length === 1, 'a browser pointercancel finishes the recording: the audio is transcribed');
-  assert.equal(ui.tracks[0].stopped, true, 'the microphone is released');
+  assert.equal(ui.find('[data-testid=composer-input]'), null, 'editable row is replaced');
+  assert.ok(ui.find('[data-testid=voice-recording-bar]'));
+  assert.equal(ui.find('[data-testid=agent-layer]').dataset.state, snap, 'the snap holds');
+  await ui.fire(ui.talk, 'click');
+  await ui.until(() => ui.transcribed.length === 1, 'Send transcribes');
+  assert.equal(ui.tracks[0].stopped, true);
   await ui.until(() => ui.talk.dataset.state === 'idle', 'back to idle');
-  assert.equal(input.readOnly, false, 'the composer is editable again');
-  assert.equal(input.hasAttribute('inputmode'), false, 'with its own inputmode back');
+  assert.equal(ui.find('[data-testid=composer-input]').readOnly, false);
   await ui.opened.unmount();
 });
 
-test('the composer microphone: sliding more than 24px off the button still cancels (nothing is transcribed)', async t => {
+test('the composer microphone: trash discards without transcription', async t => {
   const ui = await talking(t);
-  await ui.fire(ui.talk, 'pointerdown', { button: 0, clientX: 0, clientY: 0 });
+  await ui.fire(ui.talk, 'click');
   await ui.until(() => ui.talk.dataset.state === 'recording', 'recording');
-  await ui.fire(ui.talk, 'pointermove', { clientX: 400, clientY: 400 });
-  await ui.until(() => ui.talk.dataset.state === 'idle', 'the slide off cancelled');
-  await ui.fire(ui.talk, 'pointerup');
-  assert.equal(ui.transcribed.length, 0, 'a cancelled recording is not transcribed');
-  assert.equal(ui.tracks[0].stopped, true, 'the microphone is released');
+  await ui.fire(ui.find('[data-testid=composer-voice-cancel]'), 'click');
+  await ui.until(() => ui.talk.dataset.state === 'idle', 'discarded');
+  assert.equal(ui.transcribed.length, 0); assert.equal(ui.tracks[0].stopped, true);
   await ui.opened.unmount();
 });
 
-test('the composer microphone: a release (pointerup) still sends the audio for transcription', async t => {
-  const ui = await talking(t);
-  await ui.fire(ui.talk, 'pointerdown', { button: 0 });
+test('the composer microphone: single tap starts and Send transcribes', async t => {
+  const ui = await talking(t); await ui.fire(ui.talk, 'click');
   await ui.until(() => ui.talk.dataset.state === 'recording', 'recording');
-  await ui.fire(ui.talk, 'pointerup');
-  await ui.until(() => ui.transcribed.length === 1, 'transcribed');
+  await ui.fire(ui.talk, 'click'); await ui.until(() => ui.transcribed.length === 1, 'transcribed');
   await ui.opened.unmount();
 });
 
@@ -587,10 +586,10 @@ test('agent message mode uses one composer microphone and sends one retained upl
   assert.equal(ui.find('[data-testid=voice-message-record]'), null, 'no second PiChat microphone');
   const input = ui.find('[data-testid=composer-input]');
   await ui.opened.act(async () => input.focus());
-  await ui.fire(ui.talk, 'pointerdown', { button: 0 });
-  assert.equal(ui.opened.window.document.activeElement, input, 'the recording press keeps focus');
+  await ui.fire(ui.talk, 'click');
+  assert.equal(ui.find('[data-testid=composer-input]'), null, 'the editable input is replaced while recording');
   await ui.until(() => ui.talk.dataset.state === 'recording', 'recording');
-  await ui.fire(ui.talk, 'pointercancel');
+  await ui.fire(ui.talk, 'click');
   await ui.until(() => ui.sends.length === 1, 'one message admitted');
   assert.equal(ui.uploads.length, 1);
   assert.match(ui.sends[0][1].text, /^@uploads\/voice-.*\.webm fictional words$/);
@@ -662,7 +661,7 @@ test('useAgentLayer exposes the same app controller while closed, never the prod
 test('a new microphone refusal reveals its error without replacing an older failed voice row', async t => {
   const options = { send: 'message', failTranscribe: true };
   const ui = await talking(t, 'half', options);
-  await ui.fire(ui.talk, 'pointerdown', { button: 0 }); await ui.fire(ui.talk, 'pointerup');
+  await ui.fire(ui.talk, 'click'); await ui.fire(ui.talk, 'click');
   await ui.until(() => !!ui.find('[data-testid=voice-retry]'), 'the earlier failed recording is retained');
   const old = ui.find('[data-testid=voice-pending]');
   await ui.opened.act(async () => ui.opened.window.document.dispatchEvent(new ui.opened.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));

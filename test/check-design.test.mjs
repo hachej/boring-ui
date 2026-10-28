@@ -45,10 +45,8 @@ test('REPORT inventory becomes blocking when its group flips to FAIL; new nested
   assert.equal(checkDesign(f.root, f).findings.filter(finding => finding.mode === 'FAIL').length, 2);
 });
 
-test('host primitives require both SHADCN_BUILTINS and the item dependency; owned imports are refused', t => {
+test('host primitives come from the app ui alias (SHADCN_BUILTINS, no item dependency); owned imports are refused', t => {
   const f = fixture(t, 'import { Tooltip } from "@/components/ui/tooltip";');
-  assert.ok(checkDesign(f.root, f).findings.some(finding => finding.rule === 'primitive-import'));
-  f.write('registry.json', JSON.stringify({ items: [{ name: 'button', files: [{ path: 'registry/button/button.tsx' }], registryDependencies: ['tooltip'] }] }));
   assert.deepEqual(checkDesign(f.root, f).findings, []);
   f.write('registry/button/button.tsx', 'import { Tooltip } from "@/components/ui/made-up";');
   assert.ok(checkDesign(f.root, f).findings.some(finding => finding.rule === 'primitive-import'));

@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createVoiceCapture } from '@hachej/boring-ui-kit/voice-capture';
 import type { VoiceCapture, VoiceRefusal } from '@hachej/boring-ui-kit/voice-capture';
+import { useRecordingCancellation } from '../pi-chat-voice/use-hold-to-record';
 import { chatTextFor } from '../pi-chat/locale';
 import type { ChatLocale } from '../pi-chat/locale';
 
@@ -10,6 +11,10 @@ export type DictationPhase = 'idle' | 'starting' | 'recording' | 'transcribing';
 export interface Dictation {
   readonly phase: DictationPhase;
   readonly seconds: number;
+  readonly levels: readonly number[];
+  readonly paused: boolean;
+  readonly pause: (() => void) | undefined;
+  readonly resume: (() => void) | undefined;
   readonly problem: string | undefined;
   readonly start: () => void;
   readonly finish: () => void;
@@ -32,9 +37,11 @@ const REFUSAL: Readonly<Record<VoiceRefusal, 'voiceDenied' | 'voiceNoMicrophone'
 export function useDictation(options: DictationOptions): Dictation {
   const [phase, setPhase] = useState<DictationPhase>('idle');
   const [seconds, setSeconds] = useState(0);
+  const [levels, setLevels] = useState<readonly number[]>([]);
+  const [paused, setPaused] = useState(false), [canPause, setCanPause] = useState(false);
   const [problem, setProblem] = useState<string | undefined>();
   const latest = useRef(options);
-  latest.current = options;
+  useLayoutEffect(() => { latest.current = options; });
   const phaseRef = useRef<DictationPhase>('idle');
   const current = useRef<{ readonly capture: VoiceCapture; readonly abort: AbortController; readonly options: DictationOptions } | null>(null);
   const set = (next: DictationPhase) => { phaseRef.current = next; setPhase(next); };
@@ -42,8 +49,14 @@ export function useDictation(options: DictationOptions): Dictation {
   useEffect(() => () => { current.current?.abort.abort(); current.current?.capture.cancel(); current.current = null; }, []);
   useEffect(() => {
     if (phase !== 'recording') return;
-    const started = Date.now();
-    const timer = setInterval(() => setSeconds(Math.floor((Date.now() - started) / 1000)), 250);
+    let elapsedMs = 0;
+    const timer = setInterval(() => {
+      const progress = current.current?.capture.progress();
+      if (!progress) return;
+      setSeconds(Math.floor(progress.elapsedMs / 1000)); setCanPause(progress.canPause); setPaused(progress.paused);
+      if (progress.level !== undefined && !progress.paused && progress.elapsedMs > elapsedMs) setLevels(values => [...values.slice(-31), progress.level!]);
+      elapsedMs = progress.elapsedMs;
+    }, 100);
     return () => clearInterval(timer);
   }, [phase]);
 
@@ -55,12 +68,13 @@ export function useDictation(options: DictationOptions): Dictation {
     setProblem(undefined);
     set('idle');
   }, []);
+  useRecordingCancellation(() => { if (phaseRef.current === 'starting' || phaseRef.current === 'recording') cancel(); });
   const start = useCallback(() => {
     const selected = latest.current;
     if (!selected.transcribe || phaseRef.current !== 'idle') return;
     const attempt = { capture: createVoiceCapture(), abort: new AbortController(), options: selected };
     current.current = attempt;
-    setSeconds(0);
+    setSeconds(0); setLevels([]); setPaused(false); setCanPause(false);
     setProblem(undefined);
     set('starting');
     // No await before start: permission belongs to this gesture. A fresh capture cannot cancel a later attempt when permission arrives late.
@@ -102,5 +116,7 @@ export function useDictation(options: DictationOptions): Dictation {
       finally { if (current.current === attempt) { current.current = null; set('idle'); } }
     })();
   }, [cancel]);
-  return useMemo(() => ({ phase, seconds, problem, start, finish, cancel }), [phase, seconds, problem, start, finish, cancel]);
+  const pause = useCallback(() => { if (current.current?.capture.pause()) setPaused(true); }, []);
+  const resume = useCallback(() => { if (current.current?.capture.resume()) setPaused(false); }, []);
+  return useMemo(() => ({ phase, seconds, levels, paused, pause: phase === 'recording' && canPause ? pause : undefined, resume: phase === 'recording' && canPause ? resume : undefined, problem, start, finish, cancel }), [phase, seconds, levels, paused, canPause, pause, resume, problem, start, finish, cancel]);
 }

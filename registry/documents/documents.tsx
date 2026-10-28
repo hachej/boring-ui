@@ -20,6 +20,7 @@ import type { ArtifactDescriptor } from '../pi-artifacts/artifact';
 import type { CustomViewers, ViewerOptions } from '../pi-app/artifact-panel';
 import { FileViewer } from '../pi-app/file-viewer';
 import { lazyView, ViewLoading } from '../pi-app/viewer-kinds';
+import { defaultKinds } from '../pi-app-kinds/pi-app-kinds';
 import { imageKind } from '../viewer-image/image-kind';
 import { pdfKind } from '../viewer-pdf/pdf-kind';
 import { ViewerFrame } from '../viewer-frame/viewer-frame';
@@ -64,6 +65,7 @@ function useFileTree(provider: RevisionProvider, version: number, blobBase: stri
   const [tree, setTree] = useState<FileTreeController>();
   useEffect(() => {
     const next = createFileTreeController({ revisionProvider: withBlobPointers(provider, blobBase) });
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the tree controller is a resource owned by this effect run: created after commit, disposed in the cleanup
     setTree(next);
     void next.refresh();
     return () => next.dispose();
@@ -85,6 +87,9 @@ function pinnedProviderOf(provider: RevisionProvider, revision: string): Revisio
   return { ...provider, read: (request, signal) => provider.read({ target: request.target, revision: { kind: 'exact', value: revision } }, signal) };
 }
 
+// The panes load the first time an image or a PDF revision opens (D-257), like the file viewer's.
+const ImagePane = lazyView(imageKind.load), PdfPane = lazyView(pdfKind.load);
+
 /** An image or PDF revision, read exactly and shown in the viewer's read-only pane. */
 function BinaryRevision({ provider, path, revision, kind, labels, onClose }: {
   readonly provider: RevisionProvider;
@@ -94,22 +99,23 @@ function BinaryRevision({ provider, path, revision, kind, labels, onClose }: {
   readonly labels: DocumentsLabels;
   readonly onClose: () => void;
 }) {
-  const [state, setState] = useState<{ readonly kind: 'loading' } | { readonly kind: 'failed' } | { readonly kind: 'ready'; readonly bytes: Uint8Array; readonly mediaType: string }>({ kind: 'loading' });
+  type Read = { readonly kind: 'failed' } | { readonly kind: 'ready'; readonly bytes: Uint8Array; readonly mediaType: string };
+  // The read of this provider, path and revision; any other is still loading.
+  const [read, setRead] = useState<{ readonly provider: RevisionProvider; readonly path: string; readonly revision: string; readonly result: Read }>();
+  const state: { readonly kind: 'loading' } | Read = read && read.provider === provider && read.path === path && read.revision === revision ? read.result : { kind: 'loading' };
   const { labels: viewer } = useViewerText();
   useEffect(() => {
     const abort = new AbortController();
-    setState({ kind: 'loading' });
+    const settle = (result: Read) => { if (!abort.signal.aborted) setRead({ provider, path, revision, result }); };
     provider.read({ target: provider.locate(path), revision: { kind: 'exact', value: revision } }, abort.signal).then(result => {
-      if (!abort.signal.aborted) setState(result.kind === 'available' ? { kind: 'ready', bytes: result.snapshot.bytes, mediaType: result.snapshot.mediaType } : { kind: 'failed' });
-    }, () => { if (!abort.signal.aborted) setState({ kind: 'failed' }); });
+      settle(result.kind === 'available' ? { kind: 'ready', bytes: result.snapshot.bytes, mediaType: result.snapshot.mediaType } : { kind: 'failed' });
+    }, () => settle({ kind: 'failed' }));
     return () => abort.abort();
   }, [provider, path, revision]);
   const status = { label: viewer.readOnly, kind: 'read-only' as const };
   if (state.kind !== 'ready') return <ViewerFrame title={nameOf(path)} status={status} onClose={onClose}>
     <p role="status" className="m-0 p-4 text-sm text-muted-foreground">{state.kind === 'loading' ? labels.revisionsLoading : labels.revisionLoadFailed}</p>
   </ViewerFrame>;
-  // The panes load the first time an image or a PDF revision opens (D-257), like the file viewer's.
-  const ImagePane = lazyView(imageKind.load), PdfPane = lazyView(pdfKind.load);
   return <Suspense fallback={<ViewerFrame testId="viewer-pending" title={nameOf(path)} status={status} onClose={onClose}><ViewLoading label={viewer.loading} /></ViewerFrame>}>
     {kind === 'image'
       ? <ImagePane name={nameOf(path)} mediaType={state.mediaType} bytes={state.bytes} status={status} onClose={onClose} />
@@ -182,6 +188,8 @@ function DocumentDetail({ provider, path, version, options, labels, locale, olde
 export function Documents({ provider, locale, labels: given, viewers, share, blobBase: givenBase }: DocumentsProps) {
   const labels = documentsLabels(locale, given);
   const language: DocumentsLocale = locale === 'fr' ? 'fr' : 'en';
+  // The viewers' kinds: the pi-app default list in the item's locale.
+  const kinds = useMemo(() => defaultKinds({ locale: language }), [language]);
   const version = useWorkspaceVersion(provider);
   const blobBase = checkBlobBase(givenBase);
   const tree = useFileTree(provider, version, blobBase);
@@ -192,7 +200,7 @@ export function Documents({ provider, locale, labels: given, viewers, share, blo
   const dirty = useRef(false);
   const onDirty = useCallback((unsaved: boolean) => { dirty.current = unsaved; }, []);
   const mayLeave = () => !dirty.current || window.confirm(labels.discardChanges);
-  const options = useMemo<ViewerOptions>(() => ({ client: provider, identity: provider.identity, blobBase, ...(viewers ? { viewers } : {}), ...(share ? { share } : {}) }), [provider, viewers, share, blobBase]);
+  const options = useMemo<ViewerOptions>(() => ({ client: provider, identity: provider.identity, kinds, blobBase, ...(viewers ? { viewers } : {}), ...(share ? { share } : {}) }), [provider, kinds, viewers, share, blobBase]);
   const choose = (next: string) => {
     if (next === path || !mayLeave()) return;
     setPath(next);

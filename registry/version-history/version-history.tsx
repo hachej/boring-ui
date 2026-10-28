@@ -91,6 +91,7 @@ export function VersionHistoryRows({ versions, current, onSelect, labels: given,
   readonly testId?: string;
 }) {
   const labels = { ...defaultVersionHistoryLabels, ...given };
+  // eslint-disable-next-line react-hooks/purity -- relative times ("2 min ago") read the clock each render on purpose
   const items = versionHistoryItems({ versions, current, onSelect, labels, now: Date.now(), testId });
   return <ul data-boring="version-history" className="m-0 list-none p-0">
     {items.map((item, index) => <li key={item.id}>

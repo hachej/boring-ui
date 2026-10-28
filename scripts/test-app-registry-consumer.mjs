@@ -10,7 +10,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runCaptured } from './run-captured.mjs';
 import { assertConsumerTypeFiles, prepareConsumerIsolation, npmInstallFlags } from './consumer-isolation.mjs';
-import { consumerDependencies, packBoringDependencies, registryItemName, serveRegistry, writeLockedManifest } from './consumer-install.mjs';
+import { addAppComponents, appComponentsJson, consumerDependencies, packBoringDependencies, registryItemName, serveRegistry, writeLockedManifest } from './consumer-install.mjs';
 import { SHADCN_BUILTINS } from './check-registry-blocks.mjs';
 import { createServer } from 'node:http';
 import { launch, q } from '@hachej/boring-testing/browser';
@@ -20,14 +20,18 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const read = name => JSON.parse(readFileSync(join(root, 'public/r', `${name}.json`), 'utf8'));
 // The block and every item it needs, through registryDependencies.
 const closure = new Map();
-const visit = name => { if (closure.has(name)) return; const item = read(name); closure.set(name, item); for (const dependency of item.registryDependencies ?? []) if (!SHADCN_BUILTINS.includes(dependency)) visit(registryItemName(root, dependency)); };
+const visit = name => { if (closure.has(name)) return; const item = read(name); closure.set(name, item); for (const dependency of item.registryDependencies ?? []) visit(registryItemName(root, dependency)); };
 visit('pi-app');
+// The default kinds and their viewers: pi-app itself installs none.
+visit('pi-app-kinds');
 // The app shell too: a strict regression in the shell fails here, not only in the monorepo fixture check.
 visit('app-shell');
 visit('file-tree');
 // The documents screen: its Library, revisions and sheet, installed and checked strictly with the rest of the closure.
 visit('documents');
 visit('highlights');
+// The kit's tokens, which this token-less app installs once in its setup; no block depends on them.
+visit('theme');
 const styles = [process.env.BORING_CONSUMER_STYLE ?? 'base-nova'];
 assert.ok(styles.every(style => style === 'base-nova'), 'Registry blocks require the shadcn Base UI style');
 const cache = process.env.npm_config_cache;
@@ -62,15 +66,24 @@ async function testStyle(style) {
     ({ url: registry, server } = await serveRegistry(root, directory, closure, archiveByName, join(directory, 'packs'), cache, run));
 
     for (const path of ['src', 'dist']) mkdirSync(join(directory, path), { recursive: true });
-    writeFileSync(join(directory, 'components.json'), JSON.stringify({ $schema: 'https://ui.shadcn.com/schema.json', style, rsc: false, tsx: true, tailwind: { config: '', css: 'src/index.css', baseColor: '', cssVariables: true, prefix: '' },
-      iconLibrary: 'lucide', aliases: { components: '@/components', utils: '@/lib/utils', ui: '@/components/ui', lib: '@/lib', hooks: '@/hooks' } }));
+    // The app keeps its shadcn components somewhere other than the default: blocks must follow its ui alias, not a path of their own.
+    writeFileSync(join(directory, 'components.json'), appComponentsJson({ style, ui: '@/shadcn/ui' }));
     writeFileSync(join(directory, 'src/index.css'), '@import "tailwindcss";\n');
     writeFileSync(join(directory, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'ESNext', moduleResolution: 'Bundler', jsx: 'react-jsx', strict: true, noUnusedLocals: true, noUnusedParameters: true, verbatimModuleSyntax: true, erasableSyntaxOnly: true, noUncheckedIndexedAccess: true, skipLibCheck: false,
-      noEmit: true, types: [], lib: ['ES2023', 'DOM', 'DOM.Iterable'], baseUrl: '.', paths: { '@/*': ['./src/*'] } }, include: ['src/components/pi-app/**/*.tsx', 'src/components/pi-app/**/*.ts', 'src/components/app-shell/**/*.tsx', 'src/components/app-shell/**/*.ts', 'src/components/documents/**/*.tsx', 'src/components/documents/**/*.ts', 'src/page.tsx', 'src/pdf-check.tsx', 'src/local-file-check.tsx'] }));
+      noEmit: true, types: [], lib: ['ES2023', 'DOM', 'DOM.Iterable'], baseUrl: '.', paths: { '@/*': ['./src/*'] } }, include: ['src/components/pi-app/**/*.tsx', 'src/components/pi-app/**/*.ts', 'src/components/pi-app-kinds/**/*.ts', 'src/components/app-shell/**/*.tsx', 'src/components/app-shell/**/*.ts', 'src/components/documents/**/*.tsx', 'src/components/documents/**/*.ts', 'src/page.tsx', 'src/pdf-check.tsx', 'src/local-file-check.tsx'] }));
     const installer = { ...process.env, npm_config_cache: cache, npm_config_offline: 'true', npm_config_ignore_scripts: 'true', npm_config_audit: 'false', npm_config_fund: 'false' };
     delete installer.NODE_OPTIONS;
-    run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', `${registry}/pi-app.json`, `${registry}/file-tree.json`, `${registry}/app-shell.json`, `${registry}/documents.json`, `${registry}/highlights.json`, `${registry}/theme.json`, '--cwd', directory, '--yes'], installer);
-    for (const [name, item] of closure) for (const file of item.files ?? []) assert.ok(existsSync(join(directory, 'src', file.target)), `the CLI must create ${file.target} (${name})`);
+    // The documented app setup (registry/README.md, APP_SETUP), then the blocks, which declare no shadcn component of their own.
+    addAppComponents(directory, [...SHADCN_BUILTINS], installer, run);
+    run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', `${registry}/theme.json`, '--cwd', directory, '--yes'], installer);
+    run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', `${registry}/pi-app.json`, `${registry}/pi-app-kinds.json`, `${registry}/file-tree.json`, `${registry}/app-shell.json`, `${registry}/documents.json`, `${registry}/highlights.json`, '--cwd', directory, '--yes'], installer);
+    for (const [name, item] of closure) for (const file of item.files ?? []) {
+      assert.ok(existsSync(join(directory, 'src', file.target)), `the CLI must create ${file.target} (${name})`);
+      const text = readFileSync(join(directory, 'src', file.target), 'utf8');
+      assert.ok(!text.includes('@/components/ui/'), `${file.target} must import shadcn through the app's ui alias`);
+      if (file.content?.includes('@/components/ui/')) assert.ok(text.includes('@/shadcn/ui/'), `${file.target} imports the app's components from @/shadcn/ui`);
+    }
+    for (const name of SHADCN_BUILTINS) assert.ok(existsSync(join(directory, `src/shadcn/ui/${name}.tsx`)), `the app setup installs ${name} under the ui alias`);
     const css = readFileSync(join(directory, 'src/index.css'), 'utf8');
     assert.ok(css.includes('--background') && css.includes('.pi-chat'), 'theme tokens and the chat\'s scoped css merged into the host stylesheet');
 
@@ -84,6 +97,7 @@ async function testStyle(style) {
   import { useEffect, useState } from 'react';
   import { createRoot } from 'react-dom/client';
   import { AgentWorkspace, useConversations, useRemoteChat } from './components/pi-app/agent-workspace';
+  import { defaultKinds } from './components/pi-app-kinds/pi-app-kinds';
   import type { OpenedView } from './components/pi-app/agent-workspace';
   import type { BlockAction, ChatLabels, ConversationsConfig } from './components/pi-chat/pi-chat';
   import { HistoryColumnToggle, useHistoryColumn } from './components/pi-app/agent-workspace';
@@ -113,6 +127,7 @@ async function testStyle(style) {
   // The configurable surface, checked strictly: partial labels (a function among them), a host icon, actions on each surface.
   const SparkIcon = ({ className }: { readonly className?: string | undefined }) => <svg className={className} viewBox="0 0 16 16" />;
   const chatLabels: Partial<ChatLabels> = { title: 'Writer', placeholder: 'Ask anything…', noMatch: query => 'Nothing for ' + query };
+  const kinds = defaultKinds({ locale: 'fr' });
   const exportChat: BlockAction = { id: 'export', label: 'Export chat', icon: DownloadIcon, onSelect: () => {} };
 
   export function App() {
@@ -122,7 +137,7 @@ async function testStyle(style) {
     const items = conversations?.items;
     useEffect(() => { if (items?.length && !items.some(item => item.id === selected)) setSelected(items[0]!.id); }, [items, selected]);
     const chat = useRemoteChat({ conversationId: selected, endpoint: id => at('/api/chat?conversation=' + id), fetch: request => fetch(request), identity });
-    return <AgentWorkspace conversationId={selected} controller={chat.status === 'ready' ? chat.controller : undefined} resources={resources}
+    return <AgentWorkspace artifactKinds={kinds} conversationId={selected} controller={chat.status === 'ready' ? chat.controller : undefined} resources={resources}
       conversations={conversations && { ...conversations, rowActions: item => [{ id: 'star', label: 'Star ' + (item.title ?? ''), placement: 'menu', onSelect: () => {} }] }}
       labels={{ sessionsTitle: 'Projects', share: 'Send a link' }} icons={{ newChat: SparkIcon }} panelActions={view => view.kind === 'artifact' ? [exportChat] : []}
       opened={opened} onOpenedChange={setOpened} connecting={<p>Connecting…</p>}
@@ -132,7 +147,7 @@ async function testStyle(style) {
   `);
     // The consumer's own shadcn scroll-area ships an unused `import * as React`, which this strict consumer (noUnusedLocals) rejects. That file is
     // host-owned, not ours: drop the import as the consumer's linter autofix would, and keep the strictness for every block file.
-    const scrollArea = join(directory, 'src/components/ui/scroll-area.tsx');
+    const scrollArea = join(directory, 'src/shadcn/ui/scroll-area.tsx');
     if (existsSync(scrollArea) && !/\bReact\./.test(readFileSync(scrollArea, 'utf8'))) writeFileSync(scrollArea, readFileSync(scrollArea, 'utf8').replace(/^import \* as React from ["']react["']\n/m, ''));
     // The installed PDF viewer as a phone sees it (no browser viewer): pdf.js and its worker come from the consumer's own install.
     const pdfBase64 = Buffer.from(fictionalPdf([['Cedar Works', 'A fictional picnic plan.'], ['Page two', 'Pack some sandwiches.']])).toString('base64');

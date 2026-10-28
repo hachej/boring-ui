@@ -9,8 +9,9 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Input } from '@/components/ui/input';
 import { InputGroup, InputGroupAddon, InputGroupTextarea } from '@/components/ui/input-group';
 import { Toggle } from '@/components/ui/toggle';
-import { hasMention, isLongPaste, mentionToken, mentionTrigger, removeMention, slashItems, slashQuery } from './config';
-import type { AttachmentsConfig, MentionsConfig, PastedText, PasteToFile, SlashConfig, SlashItem } from './config';
+import { hasMention, isLongPaste, kindMentionDraft, mentionedPaths, mentionKind, mentionToken, mentionTrigger, removeMention, slashItems, slashQuery, writeKindMentionDraft } from '@hachej/boring-ui-kit/chat-text';
+import type { PasteToFile, SlashItem } from '@hachej/boring-ui-kit/chat-text';
+import type { AttachmentsConfig, MentionsConfig, PastedText, SlashConfig } from './config';
 import { useChatText } from './labels';
 import { cn } from '../utils/utils';
 
@@ -28,7 +29,7 @@ export function thumbnail(mimeType: string, data: string): string | undefined {
  * and one count chip for the notes taken. Send attaches them. The host owns everything else (the registry `feedback` item's
  * `useComposerFeedback` returns this shape). Absent: the composer is unchanged.
  */
-export interface ComposerFeedback {
+export interface ComposerFeedback extends ChatSessionFeedback {
   /** The annotate toggle: arms targeting on the page (point mode on touch and compact screens), or stops it when it is on. */
   readonly annotate: () => void;
   /** Annotating is on: the toggle shows pressed. */
@@ -37,20 +38,12 @@ export interface ComposerFeedback {
   readonly count: number;
   /** Removes the notes (the count chip's remove button). */
   readonly clear: () => void;
-  /** Send: the text to send instead, with the notes attached, or why they cannot be sent yet. */
-  readonly attach: (text: string) => Promise<{ readonly kind: 'ok'; readonly text: string } | { readonly kind: 'refused'; readonly reason: string }>;
-  /** The message carrying the notes was accepted. */
-  readonly sent: () => void;
+
 }
 
 /** One file being uploaded (or that failed to upload), shown as a chip until it settles or is dismissed. */
-export interface PendingUpload {
-  readonly id: string; readonly name: string; readonly state: 'uploading' | 'failed'; readonly error?: string;
-  /** A pasted text file: abandons the upload and puts the text back in the message (its restore button, or Ctrl+Z). */
-  readonly cancel?: (() => void) | undefined;
-  /** The message text right after the paste was accepted: Ctrl+Z restores only while the text is still this (any later edit leaves it alone). */
-  readonly restoreWhile?: string | undefined;
-}
+export type { PendingUpload } from '@hachej/boring-ui-kit/chat-react';
+import type { PendingUpload, ChatSessionFeedback } from '@hachej/boring-ui-kit/chat-react';
 
 export interface ComposerProps {
   /** `/` menu of commands and skills. Absent: no menu and no keyboard trigger. */
@@ -106,6 +99,8 @@ export interface ComposerProps {
   readonly start?: ReactNode;
   /** A control shown in place of Send while there is nothing to send (WhatsApp's microphone): Send comes back as soon as there is text or a file. */
   readonly whenEmpty?: ReactNode;
+  /** An active capture replaces the editable input and ordinary controls with this one recording row. */
+  readonly recording?: ReactNode;
   /** The optional Feedback button and chip. */
   readonly feedback?: ComposerFeedback | undefined;
 }
@@ -168,6 +163,7 @@ function PlusActions({ disabled, onAttach, onTakePhoto, onCommands, textarea }: 
   const [open, setOpen] = useState(false);
   // Commands puts `/` in the message: focus goes back to the text, not to the "+" button.
   const toText = useRef(false);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- a menu left open when the composer gets disabled closes once, after commit
   useEffect(() => { if (disabled) setOpen(false); }, [disabled]);
   return <DropdownMenu open={open} onOpenChange={setOpen}>
     <DropdownMenuTrigger render={<Button variant="ghost" size="icon" />} data-testid="composer-plus" aria-label={labels.add} title={labels.add} disabled={disabled}>
@@ -186,9 +182,20 @@ function PlusActions({ disabled, onAttach, onTakePhoto, onCommands, textarea }: 
 
 const MAX_HEIGHT = 208;
 
+/** Hands the textarea to the caller's ref, a callback or an object. */
+function assignRef(ref: Ref<HTMLTextAreaElement>, element: HTMLTextAreaElement | null) {
+  if (typeof ref === 'function') ref(element); else if (ref) (ref as { current: HTMLTextAreaElement | null }).current = element;
+}
+
 /** Prompt composer: auto-growing textarea, Enter to send, one primary Send/Stop button. While the agent works a message is queued. */
 export function Composer(props: ComposerProps) {
-  const { text, attachments, working, sendBlocked, disabled, stopRequested, uploading, canAttach, layout = 'card' } = props;
+  const { attachments, working, sendBlocked, disabled, stopRequested, uploading, canAttach, layout = 'card' } = props;
+  const draft = kindMentionDraft(props.text, props.mentions);
+  const text = draft.text;
+  const tokens = useRef(draft.tokens);
+  useLayoutEffect(() => { tokens.current = draft.tokens; });
+  // An asynchronous slash command must use today's tokens, not restore a chip removed since it began.
+  const onText = (next: string) => props.onText(writeKindMentionDraft(next, tokens.current, props.slash?.skills?.map(skill => skill.name)));
   const { labels, icons } = useChatText();
   const inner = useRef<HTMLTextAreaElement | null>(null);
   const composing = useRef(false);
@@ -196,6 +203,7 @@ export function Composer(props: ComposerProps) {
   const [caret, setCaret] = useState(0);
   // A menu closed with Escape stays closed until the text changes.
   const [dismissed, setDismissed] = useState<string | null>(null);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- new text re-arms a dismissed menu once, after commit; the updater keeps the value when nothing changed
   useEffect(() => { setDismissed(value => value === null || value === text ? value : null); }, [text]);
   const pendingCaret = useRef<number | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -207,11 +215,13 @@ export function Composer(props: ComposerProps) {
   const canPhoto = canAttach && coarse && acceptsPhotos(props.fileAccept) && Camera !== undefined;
   const slash = Slash ? props.slash : undefined, mentions = Mention ? props.mentions : undefined;
   const items = useMemo<SlashItem[]>(() => slash ? slashItems(slash) : [], [slash]);
+  const recording = Boolean(props.recording);
   const setRef = (element: HTMLTextAreaElement | null) => {
     inner.current = element;
-    if (typeof props.textareaRef === 'function') props.textareaRef(element); else if (props.textareaRef) (props.textareaRef as { current: HTMLTextAreaElement | null }).current = element;
+    assignRef(props.textareaRef, element);
   };
   useLayoutEffect(() => {
+    if (recording) return;
     const element = inner.current;
     if (!element) return;
     const resize = () => {
@@ -230,23 +240,23 @@ export function Composer(props: ComposerProps) {
     });
     observer.observe(element);
     return () => observer.disconnect();
-  }, [text]);
+  }, [text, recording]);
 
   const query = slash && items.length ? slashQuery(text, caret) : null;
   const trigger = query === null && mentions ? mentionTrigger(text, caret) : null;
   const slashOpen = query !== null && dismissed !== text, mentionOpen = trigger !== null && dismissed !== text;
   const menuOpen = slashOpen || mentionOpen;
-  const edit = (next: string, position: number) => { pendingCaret.current = position; setCaret(position); props.onText(next); };
+  const edit = (next: string, position: number) => { pendingCaret.current = position; setCaret(position); onText(next); };
   const trackCaret = (element: HTMLTextAreaElement) => setCaret(element.selectionStart ?? element.value.length);
   const dismiss = () => setDismissed(text);
   const pickSlash = (item: SlashItem) => {
     const rest = text.slice(caret).replace(/^\s+/, '');
     if (item.source === 'skill') return edit(`/${item.name} ${rest}`, item.name.length + 2);
     const command = slash?.commands?.find(candidate => candidate.name === item.name);
-    props.onText(rest); setCaret(0);
+    onText(rest); setCaret(0);
     inner.current?.focus();
     if (!command) return;
-    try { void Promise.resolve(command.run({ text: rest, setText: value => props.onText(value) })).catch(cause => props.onSlashError?.(cause)); }
+    try { void Promise.resolve(command.run({ text: rest, setText: value => onText(value) })).catch(cause => props.onSlashError?.(cause)); }
     catch (cause) { props.onSlashError?.(cause); }
   };
   const pickMention = (path: string) => {
@@ -256,12 +266,12 @@ export function Composer(props: ComposerProps) {
     props.onMentionPicked?.(path);
   };
   const openCommands = () => edit(`${text}${text && !/\s$/.test(text) ? ' ' : ''}/`, text.length + (text && !/\s$/.test(text) ? 2 : 1));
-  const chips = (props.mentionPaths ?? []).filter(path => hasMention(text, path));
-  const onChange = (event: ChangeEvent<HTMLTextAreaElement>) => { trackCaret(event.currentTarget); props.onText(event.currentTarget.value); };
+  const chips = [...new Set([...(props.mentionPaths ?? []), ...mentionedPaths(props.text).filter(path => mentionKind(path, props.mentions))])].filter(path => hasMention(props.text, path));
+  const onChange = (event: ChangeEvent<HTMLTextAreaElement>) => { trackCaret(event.currentTarget); onText(event.currentTarget.value); };
 
   const { feedback } = props;
-  const hasContent = text.trim().length > 0 || attachments.length > 0 || props.hasFiles || (feedback?.count ?? 0) > 0;
-  const canSubmit = hasContent && !sendBlocked && !disabled;
+  const hasContent = props.text.trim().length > 0 || attachments.length > 0 || props.hasFiles || (feedback?.count ?? 0) > 0;
+  const canSubmit = hasContent && !sendBlocked && !disabled && !props.recording;
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     props.onKeyDown?.(event);
     if (event.defaultPrevented) return;
@@ -291,8 +301,13 @@ export function Composer(props: ComposerProps) {
     {props.quote}
     {feedback && feedback.count > 0 && <div role="list" className="contents"><NotesChip feedback={feedback} /></div>}
     {chips.length > 0 && <div role="list" data-testid="mention-chips" aria-label={labels.mentionedFiles} className="contents">
-      {chips.map(path => <Chip key={path} data-testid="mention-chip" data-path={path} title={path} className="max-w-full sm:max-w-[16rem]"
-        media={props.mentions?.icon ?? <FileTextIcon aria-hidden="true" />}  label={props.mentions?.label?.(path) ?? path} actions={<RemoveChip label={labels.remove(props.mentions?.label?.(path) ?? path)} onClick={() => props.onText(removeMention(text, path))} />} />)}
+      {chips.map(path => {
+        const registered = mentionKind(path, props.mentions);
+        const label = registered ? registered.kind.label(registered.path) : props.mentions?.label?.(path) ?? path;
+        return <Chip key={path} data-testid="mention-chip" data-path={path} title={label} className="max-w-full sm:max-w-[16rem]"
+          media={registered?.kind.icon ?? props.mentions?.icon ?? <FileTextIcon aria-hidden="true" />} label={label}
+          actions={<RemoveChip label={labels.remove(label)} onClick={() => props.onText(removeMention(props.text, path))} />} />;
+      })}
     </div>}
     {(props.uploads?.length ?? 0) > 0 && <div role="list" data-testid="uploads" aria-label={labels.uploads} className="contents">
       {props.uploads!.map(item => <Chip key={item.id} data-testid="upload-chip" state={item.state === 'failed' ? 'error' : 'uploading'} data-state={item.state} title={item.error ?? item.name} className="max-w-full sm:max-w-[20rem]"
@@ -336,7 +351,7 @@ export function Composer(props: ComposerProps) {
     {props.barNote}
     {uploading && !(props.uploads?.length) && <span role="status" className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2Icon className="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />{labels.preparingAttachments}</span>}
     {!pill && <span className="min-w-0 flex-1" />}
-    {props.barEnd && <div data-testid="composer-tools" className="flex shrink-0 items-center gap-2">{props.barEnd}</div>}
+    {props.barEnd && <div data-testid="composer-tools" className="flex min-w-0 items-center gap-2">{props.barEnd}</div>}
     {working && hasContent && <Button variant="ghost" size="icon" data-testid="composer-queue" aria-label={labels.queue} title={labels.queue} disabled={!canSubmit} onClick={props.onSend} className="shrink-0">
       <icons.queue data-icon="inline-start" aria-hidden="true" /></Button>}
     {send}
@@ -349,8 +364,11 @@ export function Composer(props: ComposerProps) {
     {fileEl}
     {slashOpen && Slash && <Slash query={query!} items={items} onSelect={pickSlash} onDismiss={dismiss} />}
     {mentionOpen && mentions && Mention && <Mention query={trigger!.query} listLabel={mentions.listLabel} renderOption={mentions.renderOption} search={mentions.search} generation={mentions.generation} onSelect={pickMention} onDismiss={dismiss} />}
-    {pill && chipList && <div className="flex flex-wrap gap-2">{chipList}</div>}
-    {pill ? <InputGroup>
+    {pill && !props.recording && chipList && <div className="flex flex-wrap gap-2">{chipList}</div>}
+    {props.recording ? <InputGroup>
+      {chipList && <InputGroupAddon align="block-start" className="flex-wrap">{chipList}</InputGroupAddon>}
+      <InputGroupAddon align="block-end" data-testid="composer-controls" className="w-full">{props.recording}</InputGroupAddon>
+    </InputGroup> : pill ? <InputGroup>
       <InputGroupAddon>{startAndPlus}{feedback && <AnnotateButton feedback={feedback} disabled={disabled} />}</InputGroupAddon>
       {textareaEl}
       <InputGroupAddon align="inline-end" data-testid="composer-controls">{end}</InputGroupAddon>

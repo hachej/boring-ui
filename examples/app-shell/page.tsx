@@ -8,20 +8,22 @@
 // @ts-nocheck: an example page, bundled by esbuild and not part of the typechecked sources.
 import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIcon, ArchiveIcon, CalendarDaysIcon, CalendarPlusIcon, ClipboardListIcon, DatabaseIcon, HomeIcon, MessageCircleIcon, MessagesSquareIcon, Share2Icon, MicIcon, MoonIcon, MoonStarIcon, PlusIcon, TargetIcon, UsersIcon, UploadIcon } from 'lucide-react';
 import { createFeedbackSession } from '@hachej/boring-feedback/ui';
 import { createPrivacyPolicy } from '@hachej/boring-feedback/page';
 import { connectRevisionProvider } from '@hachej/boring-files/revision';
-import { AppShell, ListDetail, useAgentContext, readAgentContext, useScreenHeader } from '../../registry/app-shell/index.ts';
+import { AppShell, ListDetail, useAgentContext, useAgentLayer, readAgentContext, useScreenHeader } from '../../registry/app-shell/index.ts';
 import type { RevisionProvider } from '@hachej/boring-files/revision';
 import { AgentTargetMode } from '../../registry/agent-target/agent-target.tsx';
 import { agentTargetLabelsFr } from '../../registry/agent-target/agent-target-labels.ts';
 import { Button } from './components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from './components/ui/card';
 import { Documents } from '../../registry/documents/documents.tsx';
 import { DocumentSheet } from '../../registry/documents/document-sheet.tsx';
 import { AgentWorkspace, useConversations } from '../../registry/pi-app/agent-workspace.tsx';
 import { PlacedAgentWorkspace, usePlacedAgentState } from '../../registry/placed-agent/placed-agent-workspace.tsx';
+import { defaultKinds } from '../../registry/pi-app-kinds/pi-app-kinds.ts';
 import { useRemoteChat } from '../../registry/pi-chat/use-remote-chat.ts';
 import { attachmentPath, imageData } from '../../registry/pi-app/revision-files.ts';
 import { randomUUID } from '@hachej/boring-files/platform';
@@ -43,6 +45,7 @@ const noAgent = query.get('agent') === 'none';
 const authorized = (request: Request) => { const headers = new Headers(request.headers); headers.set('authorization', `Bearer ${token}`); return fetch(new Request(request, { headers })); };
 const endpoint = (agent: string) => (id: string) => new URL(`/api/chat?agent=${agent}&conversation=${id}`, location.href);
 
+const englishKinds = defaultKinds(), frenchKinds = defaultKinds({ locale: 'fr' });
 const policy = createPrivacyPolicy({ routeOf: ({ pathname }) => pathname });
 const ROWS = Array.from({ length: 40 }, (_, index) => ({ day: `Jour ${index + 1}`, steps: 6000 + ((index * 937) % 5000) }));
 
@@ -81,7 +84,22 @@ function WalkingDay() {
     : { title: 'Ma journée', subtitle: 'mardi 13 octobre', actions: [themeAction] });
   return <List />;
 }
-function Day() { return targets ? <Meals /> : <WalkingDay />; }
+function TalkAboutMeal() {
+  const { talkAbout } = useAgentLayer();
+  const start = useRef<number | null>(null);
+  useScreenHeader({ title: 'Mes repas fictifs', actions: [themeAction] });
+  const talk = () => talkAbout('@repas:2026-10-27/dejeuner', { voice: true });
+  return <section className="p-4">
+    <Card data-testid="talk-about-card" className="touch-pan-y" onPointerDown={event => { start.current = event.clientX; event.currentTarget.setPointerCapture(event.pointerId); }}
+      onPointerCancel={() => { start.current = null; }} onPointerUp={event => { if (start.current !== null && Math.abs(event.clientX - start.current) > 60) talk(); start.current = null; }}>
+      <CardHeader><CardTitle>Déjeuner · mardi</CardTitle></CardHeader>
+      <CardContent className="flex items-center justify-between gap-3"><span>Une salade et du pain</span>
+        <Button variant="ghost" size="icon" data-testid="card-mic" aria-label="Parler de ce repas" onPointerDown={event => event.stopPropagation()} onClick={talk}><MicIcon data-icon="inline-start" aria-hidden="true" /></Button>
+      </CardContent>
+    </Card>
+  </section>;
+}
+function Day() { return query.get('talkAbout') === '1' ? <TalkAboutMeal /> : targets ? <Meals /> : <WalkingDay />; }
 function Progress() {
   useAgentContext({ name: 'Progrès', params: { range: 30 } });
   useScreenHeader({ actions: [themeAction] });
@@ -141,7 +159,8 @@ function App() {
       }
       return saved;
     } },
-    mentions: { search: async () => [], preview: async (path: string, signal: AbortSignal) => {
+    // A conversation's Files menu lists only files with an opener (D-176): retained uploads open in the host's document sheet.
+    mentions: { search: async () => [], open: (path: string) => setSpec(path), preview: async (path: string, signal: AbortSignal) => {
       const read = await docs.read({ target: docs.locate(path), revision: { kind: 'latest' } }, signal);
       return read.kind === 'available' ? { mimeType: read.snapshot.mediaType, data: imageData(read.snapshot.bytes) } : undefined;
     } },
@@ -168,7 +187,7 @@ function App() {
       { id: 'share', label: 'Partager ma semaine', icon: Share2Icon, onSelect: () => window.__did.push('share') },
       { id: 'invite', label: 'Inviter un ami', icon: UsersIcon, href: '/invite?app=fitness', onSelect: () => window.__did.push('invite') },
     ],
-    chatProps: { ...common, ...audioFiles, actions: coach.actions, labels: { title: 'Coach', placeholder: 'Parle au coach…' },
+    chatProps: { ...common, ...audioFiles, voiceReplay: query.get('replay') === '1', mentions: { ...audioFiles.mentions, search: async () => [], kinds: { repas: { label: (path: string) => path === '2026-10-27/dejeuner' ? 'Déjeuner · mardi' : path, icon: <ClipboardListIcon aria-hidden="true" className="size-4" /> } } }, actions: coach.actions, labels: { title: 'Coach', placeholder: 'Parle au coach…' },
       // Photos and picked images become draft attachments (the phone camera and the "+" menu both land here).
       onFiles: async files => Promise.all(files.map(async (file, index) => {
         const bytes = new Uint8Array(await file.arrayBuffer());
@@ -279,7 +298,7 @@ function PmApp() {
   const feedback = useManagerFeedback(manager.status === 'ready' && Boolean(revisionProvider));
   if (manager.status !== 'ready' || !revisionProvider) return <p role="status" data-testid="connecting" className="p-4 text-sm text-muted-foreground">Connexion…</p>;
   const nav = [{ id: 'atelier', label: 'Atelier', icon: MessagesSquareIcon, render: () => <main data-testid="app" data-conversation={active} className="flex h-full min-h-0">
-    <AgentWorkspace conversationId={active} controller={chat.status === 'ready' ? chat.controller : undefined} conversations={listed} revisionProvider={revisionProvider} layout={query.has('embedded') ? 'embedded' : 'default'}
+    <AgentWorkspace artifactKinds={englishKinds} conversationId={active} controller={chat.status === 'ready' ? chat.controller : undefined} conversations={listed} revisionProvider={revisionProvider} layout={query.has('embedded') ? 'embedded' : 'default'}
       chat={{ labels: { title: 'Writer' }, ...(chat.status === 'ready' ? { actions: chat.actions } : {}) }} connecting={<p role="status" className="p-4 text-sm text-muted-foreground">Connecting…</p>} />
   </main> }];
   const improve = { controller: manager.controller, ...(feedback ? { feedback } : {}), chatProps: { locale: 'fr', showHistory: false, showConnectionStatus: false, actions: manager.actions, labels: { title: 'Chef de produit' } } };
@@ -308,7 +327,7 @@ function PlacedApp() {
   const go = (id: string) => { history.replaceState(history.state, '', `#${id}`); setRoute(id); };
   const nav = [
     { id: 'agent', label: 'Agent', icon: MessagesSquareIcon, render: () => <main data-testid="app" data-conversation={active} className="flex h-full min-h-0">
-      <PlacedAgentWorkspace conversationId={active} controller={chat.status === 'ready' ? chat.controller : undefined} conversations={listed} revisionProvider={revisionProvider} layout="embedded" title="Agent" locale="fr" storageKey="forme.placed"
+      <PlacedAgentWorkspace artifactKinds={frenchKinds} conversationId={active} controller={chat.status === 'ready' ? chat.controller : undefined} conversations={listed} revisionProvider={revisionProvider} layout="embedded" title="Agent" locale="fr" storageKey="forme.placed"
         collapsed={collapsed} onCollapsedChange={next => go(next ? 'approvals' : 'agent')}
         chat={{ labels: { title: 'Agent' }, ...(chat.status === 'ready' ? { actions: chat.actions } : {}) }} connecting={<p role="status" className="p-4 text-sm text-muted-foreground">Connexion…</p>} />
     </main> },

@@ -1,7 +1,7 @@
 // The one Back manager of the app shell. A layer that is open (the agent sheet, another sheet, point mode, a pushed screen) asks for one
 // history entry with the same URL; the browser's Back closes the topmost layer instead of leaving the page, and closing a layer any
 // other way removes its entry, so the history stays as it was. Hosts: the AgentLayer (order `agent`) and, later, sheets and stacks.
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 
 /** The fixed priority of Back: `point` is handled first, then an open `sheet`, then the `agent` layer, then the `stack`, then the browser. */
 export type BackOrder = 'point' | 'sheet' | 'agent' | 'stack';
@@ -61,7 +61,7 @@ function onPopState(): void {
  */
 export function useBackLayer(open: boolean, close: () => void, order: BackOrder): void {
   const latest = useRef(close);
-  latest.current = close;
+  useLayoutEffect(() => { latest.current = close; });
   useEffect(() => {
     if (!open) return;
     const layer: Layer = { order, close: () => latest.current(), popped: false };

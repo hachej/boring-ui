@@ -66,6 +66,7 @@ export function ImagePane({ name, mediaType, bytes, blob, url: hostUrl, subtitle
   const stage = useRef<HTMLDivElement>(null);
   const image = useRef<HTMLImageElement>(null);
   const drag = useRef<{ x: number; y: number; left: number; top: number } | undefined>(undefined);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- another image resets its size and error once, after commit
   useEffect(() => { setNatural(undefined); setFailed(false); }, [url]);
   const measure = () => {
     const box = stage.current, img = image.current;
@@ -86,6 +87,7 @@ export function ImagePane({ name, mediaType, bytes, blob, url: hostUrl, subtitle
   };
   const label = IMAGE_TYPES[mediaType] ?? mediaType;
   const facts = [label, natural && `${natural.width} × ${natural.height}`, size !== undefined && formatBytes(size)].filter(Boolean) as string[];
+  // eslint-disable-next-line react-hooks/refs -- reads the stage's current size while rendering the zoomed image; a DOM read, no state, no render loop
   const panning = zoom.kind === 'scale' && natural !== undefined && (natural.width * zoom.value > (stage.current?.clientWidth ?? 0) || natural.height * zoom.value > (stage.current?.clientHeight ?? 0));
   const begin = (event: PointerEvent<HTMLDivElement>) => {
     const box = stage.current;

@@ -199,6 +199,7 @@ export function Dock({ id, side, children, defaultWidth = 400, minWidth = 280, f
     dock: () => setPlacement('docked'),
     setWidth: (next: number) => resize(next),
   };
+  // eslint-disable-next-line react-hooks/refs -- latest-value ref: useDock's stable actions may run from a consumer's layout effect, before this component's own effects
   const latest = useRef(api); latest.current = api;
   // What `useDock` hands out: the current state, with actions that always reach this render's dock.
   const actions = useMemo(() => ({ setPlacement: (next: 'page' | 'docked' | 'floating') => latest.current.setPlacement(next), setOpen: (next: boolean) => latest.current.setOpen(next), toggle: () => latest.current.toggle(), float: () => latest.current.float(), dock: () => latest.current.dock(), setWidth: (next: number) => latest.current.setWidth(next) }), []);

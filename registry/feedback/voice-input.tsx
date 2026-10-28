@@ -5,6 +5,7 @@ import { Loader2Icon, MicIcon, SquareIcon, XIcon } from 'lucide-react';
 import { createVoiceCapture } from '@hachej/boring-feedback/page';
 import type { VoiceCapture, VoiceRefusal } from '@hachej/boring-feedback/page';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
+import { appendToDraft } from '@hachej/boring-ui-kit/chat-text';
 import { useChatText } from '../pi-chat/labels';
 import type { ChatLabels } from '../pi-chat/labels';
 import { Button } from '@/components/ui/button';
@@ -48,7 +49,7 @@ export function VoiceInput({ controller, transcribe }: VoiceInputProps) {
 
   const append = (spoken: string) => {
     const draft = controller.getSnapshot().draft.text;
-    controller.setText(`${draft}${draft === '' || /\s$/.test(draft) ? '' : ' '}${spoken}`);
+    controller.setText(appendToDraft(draft, spoken));
   };
 
   const start = async () => {

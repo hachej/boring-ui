@@ -1,6 +1,6 @@
 // PointButton: enters pick mode on the application root. Picking itself (events captured and stopped, keys, touch, labels) is
 // `createPicker` from `@hachej/boring-feedback/page`; this file is the button and the hint people see while they point.
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPicker, type Picker, type PickerOverlay, type PickerState, type PrivacyPolicy } from '@hachej/boring-feedback/page';
 import { Toggle } from '@/components/ui/toggle';
 
@@ -23,7 +23,7 @@ export function PointButton({ root, policy, overlay, onPinned, onCancel, multipl
   const picker = useRef<Picker | null>(null);
   const [state, setState] = useState<PickerState | null>(null);
   const callbacks = useRef({ onPinned, onCancel });
-  callbacks.current = { onPinned, onCancel };
+  useLayoutEffect(() => { callbacks.current = { onPinned, onCancel }; });
   useEffect(() => () => { picker.current?.dispose(); picker.current = null; }, []);
 
   const picking = state?.mode === 'picking';

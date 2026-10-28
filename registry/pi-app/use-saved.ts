@@ -29,6 +29,7 @@ export function useSaved<C extends SavedController = SavedController>({ client, 
 }): SavedState<C> {
   const key = JSON.stringify([target.resource.providerId, target.resource.path, target.view.kind, target.view.kind === 'working' ? target.view.viewId : null, revision]);
   const binding = useMemo(() => ({ client, key, create, beforeDispose }), [client, key]); // eslint-disable-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/immutability -- the binding is this hook's own mutable holder (one per client and key); the open revision reads the latest callbacks from it
   useLayoutEffect(() => { binding.create = create; binding.beforeDispose = beforeDispose; }, [binding, create, beforeDispose]);
   const [stored, setStored] = useState<{ readonly binding: typeof binding; readonly state: SavedState<C> }>();
   useEffect(() => {

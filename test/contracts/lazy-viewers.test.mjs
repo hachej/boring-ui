@@ -5,6 +5,7 @@
 // tree before step 4, where the panel imported every pane statically).
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { existsSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
@@ -41,7 +42,9 @@ function upFront(outputs, entry) {
   return [...seen].map(path => outputs.get(path));
 }
 
-const PAGES = ['registry/pi-app/agent-workspace.tsx', 'registry/pi-app/artifact-panel.tsx', 'registry/pi-app/file-viewer.tsx', 'registry/documents/documents.tsx'];
+// The default kinds (the pi-app-kinds item an app passes to the page) are bundled as a consumer's page bundles them; older trees had them in pi-app.
+const PAGES = ['registry/pi-app/agent-workspace.tsx', 'registry/pi-app/artifact-panel.tsx', 'registry/pi-app/file-viewer.tsx', 'registry/documents/documents.tsx', 'registry/pi-app-kinds/pi-app-kinds.ts']
+  .filter(page => existsSync(resolve(source, page)));
 
 test('the agent page loads no view up front: every view is its own lazily imported chunk (D-257 step 4)', async () => {
   const outputs = await bundle(PAGES);

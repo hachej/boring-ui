@@ -31,10 +31,10 @@ export function MarkdownMenuItems({ labels, mode, onModeChange, richDisabledReas
 }
 
 function MarkdownViewOptions(props: MarkdownEditorMenuProps) {
-  const portal = useMenuPortal();
+  const { ref: portalRef, container: portalContainer } = useMenuPortal();
   return <DropdownMenu>
-    <DropdownMenuTrigger render={<Button ref={portal.ref} variant="ghost" size="icon-sm" aria-label={props.labels.moreActions} title={props.labels.moreActions}><EllipsisIcon data-icon="inline-start" aria-hidden="true" /></Button>} />
-    <ActionMenuContent label={props.labels.moreActions} testId="markdown-more" items={[]} container={portal.container}><MarkdownMenuItems {...props} /></ActionMenuContent>
+    <DropdownMenuTrigger render={<Button ref={portalRef} variant="ghost" size="icon-sm" aria-label={props.labels.moreActions} title={props.labels.moreActions}><EllipsisIcon data-icon="inline-start" aria-hidden="true" /></Button>} />
+    <ActionMenuContent label={props.labels.moreActions} testId="markdown-more" items={[]} container={portalContainer}><MarkdownMenuItems {...props} /></ActionMenuContent>
   </DropdownMenu>;
 }
 

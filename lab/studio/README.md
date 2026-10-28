@@ -15,6 +15,8 @@ The studio is the one reference page that assembles the full workspace. Each blo
 | `viewers` | the panes inside the panel (Markdown, HTML, image, PDF) |
 | variants and scenarios | below: where tools run, and what a person can ask |
 
+Files go through one route, `/api/resources` (`createRevisionHandler` over the workspace of the request, as its person): the viewers' reads and saves, the `@` picker's search (`revisionProvider.search`) and chat uploads (`useRevisionAttachments`: a conditional create under `uploads/<name>-<8 hex>.<ext>`, at most 5 MB). There is no separate search or upload route. The route answers the change feed (`?op=changes`) 501, the protocol's "no feed": a feed is one more long-lived request per tab beside the chat's, and a few visible tabs of a share link would exhaust the browser's connections per host; the studio's Workspace panel lists the files. Because the route answers the binding, `AgentWorkspace` also offers its read-only Library in the viewer menu.
+
 To embed an agent beside an existing site instead, see [`examples/ambient`](../../examples/ambient/README.md).
 
 The studio used to be thirteen demos, each with its own agent, tools and panel; they drifted apart. It is now three separate things:

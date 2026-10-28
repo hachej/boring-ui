@@ -112,15 +112,15 @@ export function BlockActions({ actions, testId, menuLabel, size = 'icon-sm', cla
   readonly className?: string;
   readonly iconOnly?: boolean;
 }) {
-  const portal = useMenuPortal();
+  const { container, ref: portalRef } = useMenuPortal();
   const buttons = headerActions(actions), menu = menuActions(actions);
   if (!buttons.length && !menu.length) return null;
   const moreId = `${testId}-more`;
   return <div data-boring="block-actions" data-actions={testId} className={cn('flex shrink-0 items-center gap-0.5', className)}>
     {buttons.map(action => <ActionButton key={action.id} action={action} testId={testId} size={size} iconOnly={iconOnly} />)}
     {menu.length > 0 && <DropdownMenu>
-      <DropdownMenuTrigger render={<Button ref={portal.ref} variant="ghost" aria-label={menuLabel} title={menuLabel} size={size} data-testid={moreId}><EllipsisIcon data-icon="inline-start" aria-hidden="true" /></Button>} />
-      <ActionMenuContent label={menuLabel} testId={moreId} container={portal.container} items={menu.map(action => actionMenuItem(action, testId))} />
+      <DropdownMenuTrigger render={<Button ref={portalRef} variant="ghost" aria-label={menuLabel} title={menuLabel} size={size} data-testid={moreId}><EllipsisIcon data-icon="inline-start" aria-hidden="true" /></Button>} />
+      <ActionMenuContent label={menuLabel} testId={moreId} container={container} items={menu.map(action => actionMenuItem(action, testId))} />
     </DropdownMenu>}
   </div>;
 }

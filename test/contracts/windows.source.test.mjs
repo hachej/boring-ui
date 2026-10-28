@@ -7,12 +7,12 @@ import ts from 'typescript';
 const root = process.cwd();
 const files = ['registry/windows/windows.tsx', 'registry/utils/use-draggable.ts'];
 
-test('windows ships its component and shared hook with only host shadcn dependencies; the shell uses that hook', () => {
+test('windows ships its component and shared hook, depends only on utils (shadcn comes from the app); the shell uses that hook', () => {
   const manifest = JSON.parse(readFileSync(resolve(root, 'registry.json'), 'utf8'));
   const item = manifest.items.find(entry => entry.name === 'windows'); assert.ok(item, 'windows registry item');
   assert.deepEqual(item.files, [{ path: files[0], type: 'registry:component', target: 'components/windows/windows.tsx' }]);
   assert.ok(manifest.items.find(entry => entry.name === 'utils').files.some(file => file.path === files[1] && file.type === 'registry:hook'));
-  assert.deepEqual(item.registryDependencies, ['@boring-ui/utils', 'button', 'card', 'badge', 'drawer', 'dropdown-menu']);
+  assert.deepEqual(item.registryDependencies, ['@boring-ui/utils']);
   assert.equal(item.cssVars, undefined); assert.equal(item.css, undefined);
   const artifact = JSON.parse(readFileSync(resolve(root, 'public/r/windows.json'), 'utf8'));
   assert.equal(artifact.files.find(entry => entry.path === files[0])?.content, readFileSync(resolve(root, files[0]), 'utf8'));

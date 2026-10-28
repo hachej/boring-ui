@@ -1,9 +1,9 @@
 'use client';
 
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { ImageContent, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai';
-import { AlertCircleIcon, CircleSlashIcon, FileAudioIcon, FileIcon, FileSpreadsheetIcon, FileTextIcon, ImageIcon, PauseIcon, PlayIcon, PresentationIcon } from 'lucide-react';
+import { AlertCircleIcon, CircleSlashIcon, ClockIcon, FileAudioIcon, FileIcon, FileSpreadsheetIcon, FileTextIcon, ImageIcon, PauseIcon, PlayIcon, PresentationIcon } from 'lucide-react';
 import { CopyButton } from './code-block';
 import type { AnswerOutcome, ChatArtifactsConfig, ChatCards, CommandMentions } from './config';
 import { feedbackContent } from './feedback-content';
@@ -14,11 +14,12 @@ import { Shimmer } from './shimmer';
 import { ToolCard } from './tool';
 import { thumbnail } from './composer';
 import { ImageViewer } from './image-viewer';
-import { displayName, fileKind, isUploadPath, isVoicePath, pieces, visibleParts } from './config';
-import type { AudioUrlRead, FileKind, Piece, PreviewRead } from './config';
+import { displayName, fileKind, isUploadPath, isVoicePath, mentionKind, pieces, visibleParts } from '@hachej/boring-ui-kit/chat-text';
+import type { FileKind, Piece } from '@hachej/boring-ui-kit/chat-text';
+import type { AudioUrlRead, MentionsConfig, PreviewRead } from './config';
 import { voiceClock } from './config';
 import { Spinner } from '@/components/ui/spinner';
-import { isFileBlock, segments, targetContent } from './rows';
+import { isFileBlock, segments, targetContent, waits } from './rows';
 import type { DeriveOptions, Row } from './rows';
 import { Button } from '@/components/ui/button';
 import { BlockActions } from '../button/actions';
@@ -28,6 +29,7 @@ import { cn } from '../utils/utils';
 import type { ReplyRef } from './config';
 import { Message, MessageContent, MessageFooter } from '@/components/ui/message';
 import { Bubble, BubbleContent } from '@/components/ui/bubble';
+import { MessageScrollerItem } from '@/components/ui/message-scroller';
 import { Attachment, AttachmentContent, AttachmentDescription, AttachmentMedia, AttachmentTitle, AttachmentTrigger } from '@/components/ui/attachment';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -50,6 +52,8 @@ const plainText = ({ text, streaming }: ChatTextPart): ReactNode =>
 export type { ChatCards } from './config';
 
 export interface RowContext {
+  /** `messaging`: primary bubble for me, muted bubble for the reply, a tail on the first bubble of a run and the time inside (`PiChat messageStyle`). */
+  readonly messageStyle?: 'default' | 'messaging' | undefined;
   readonly developer: boolean;
   /** Draws an assistant text part. Default: plain text (`markdownText` of `pi-chat-markdown` draws Markdown). */
   readonly renderText?: ((part: ChatTextPart) => ReactNode) | undefined;
@@ -62,8 +66,9 @@ export interface RowContext {
   readonly onOpenImage: ((image: ImageContent, gallery?: readonly ImageContent[]) => void) | undefined;
   readonly onCopy: ((text: string) => Promise<void>) | undefined;
   /** Which tokens of a sent message get a styled treatment (`@path` mentions, a leading `/skill`). */
-  readonly pieces: { readonly mentions: boolean; readonly uploads?: boolean; readonly skills: readonly string[]; readonly openMention?: ((path: string) => void) | undefined; readonly renderMention?: ((path: string) => ReactNode | undefined) | undefined;
+  readonly pieces: { readonly kinds?: MentionsConfig['kinds']; readonly mentions: boolean; readonly uploads?: boolean; readonly skills: readonly string[]; readonly openMention?: ((path: string) => void) | undefined; readonly renderMention?: ((path: string) => ReactNode | undefined) | undefined;
     readonly preview?: PreviewRead | undefined; readonly audioUrl?: AudioUrlRead | undefined } | undefined;
+  readonly voiceReplay?: boolean | undefined;
   readonly fileChanges?: boolean | undefined;
   /** Opens a file card through the host's workspace opener. */
   readonly openFile?: ((path: string) => void) | undefined;
@@ -97,12 +102,17 @@ function ImageThumbnails({ images, onOpenImage }: { readonly images: readonly Im
 }
 
 /** Inline sent mention; workspace openers and host renderers keep their existing authority. */
-function UserMention({ path, text, open, render }: { readonly path: string; readonly text: string; readonly open: ((path: string) => void) | undefined; readonly render: ((path: string) => ReactNode | undefined) | undefined }) {
-  const custom = render?.(path);
+function UserMention({ path, text, open, render, kinds }: { readonly path: string; readonly text: string; readonly open: ((path: string) => void) | undefined; readonly render: ((path: string) => ReactNode | undefined) | undefined; readonly kinds?: MentionsConfig['kinds'] }) {
+  const registered = mentionKind(path, { kinds });
+  const custom = registered ? registered.kind.renderSent?.(registered.path) : render?.(path);
   if (custom !== undefined) return <>{custom}</>;
-  return open
-    ? <span role="link" tabIndex={0} className="font-medium text-primary" data-testid="message-mention" data-path={path} aria-label={`Open ${path}`} onClick={() => open(path)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); open(path); } }}>{text}</span>
-    : <span className="font-medium text-primary" data-testid="message-mention" data-path={path}>{text}</span>;
+  const label = registered ? registered.kind.label(registered.path) : text;
+  const activate = registered ? registered.kind.open ? () => registered.kind.open!(registered.path) : undefined : open ? () => open(path) : undefined;
+  const content = <>{registered?.kind.icon}{label}</>;
+  const className = 'inline-flex items-center gap-1 align-middle font-medium text-primary';
+  return activate
+    ? <span role="link" tabIndex={0} className={className} data-testid="message-mention" data-path={path} aria-label={`Open ${label}`} onClick={activate} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); activate(); } }}>{content}</span>
+    : <span className={className} data-testid="message-mention" data-path={path}>{content}</span>;
 }
 
 /** The icon a file card shows for its kind. */
@@ -121,15 +131,15 @@ function FileGlyph({ kind }: { readonly kind: FileKind }) {
 function FileCard({ path, open, preview, change }: { readonly path: string; readonly open: ((path: string) => void) | undefined; readonly preview: PreviewRead | undefined; readonly change?: 'created' | 'edited' }) {
   const { labels } = useChatText();
   const kind = fileKind(path), name = change ? path.split('/').pop() || path : displayName(path);
-  const [src, setSrc] = useState<string | undefined>();
+  const [thumb, setThumb] = useState<{ readonly path: string; readonly preview: PreviewRead; readonly src: string | undefined }>();
   // A thumbnail belongs to the provider that read it: a new provider, or a read that is refused or unavailable, shows the icon.
+  const src = kind === 'image' && thumb?.path === path && thumb.preview === preview ? thumb.src : undefined;
   useEffect(() => {
-    setSrc(undefined);
     if (kind !== 'image' || !preview) return;
     const abort = new AbortController();
     preview(path, abort.signal).then(
-      read => { if (!abort.signal.aborted) setSrc(read ? thumbnail(read.mimeType, read.data) : undefined); },
-      () => { if (!abort.signal.aborted) setSrc(undefined); });
+      read => { if (!abort.signal.aborted) setThumb({ path, preview, src: read ? thumbnail(read.mimeType, read.data) : undefined }); },
+      () => { if (!abort.signal.aborted) setThumb({ path, preview, src: undefined }); });
     return () => abort.abort();
   }, [kind, path, preview]);
   return <Attachment className="max-w-64" {...(!open ? { 'data-testid': 'message-mention', 'data-path': path } : {})}>
@@ -149,8 +159,17 @@ function FileCards({ paths, open, preview }: { readonly paths: readonly string[]
   </ul>;
 }
 
+interface VoiceBubbleProps {
+  readonly path: string; readonly transcript: ReactNode; readonly preview: PreviewRead | undefined; readonly audioUrl: AudioUrlRead | undefined; readonly align?: 'start' | 'end'; readonly replay?: boolean | undefined;
+}
+/** Voice messages show their transcript by default; the retained audio player is an explicit presentation choice. */
+export function VoiceBubble({ replay = false, ...props }: VoiceBubbleProps) {
+  const { labels } = useChatText();
+  return replay ? <VoiceReplayBubble {...props} /> : <Bubble variant="muted" align={props.align ?? 'end'} data-testid="voice-bubble"><BubbleContent data-testid="user-text" className="whitespace-pre-wrap">{props.transcript ?? <span data-testid="voice-transcript-unavailable">{labels.voiceTranscriptUnavailable}</span>}</BubbleContent></Bubble>;
+}
+
 /** Retained audio is read only on Play, through the same authorized workspace preview as file cards. */
-export function VoiceBubble({ path, transcript, preview, audioUrl, align = 'end' }: { readonly path: string; readonly transcript: ReactNode; readonly preview: PreviewRead | undefined; readonly audioUrl: AudioUrlRead | undefined; readonly align?: 'start' | 'end' }) {
+function VoiceReplayBubble({ path, transcript, preview, audioUrl, align = 'end' }: VoiceBubbleProps) {
   const { labels } = useChatText();
   const audio = useRef<HTMLAudioElement>(null), work = useRef<AbortController | null>(null), loadingRequest = useRef(false);
   const [playing, setPlaying] = useState(false), [loading, setLoading] = useState(false), [failed, setFailed] = useState(false), [duration, setDuration] = useState<number>();
@@ -158,6 +177,7 @@ export function VoiceBubble({ path, transcript, preview, audioUrl, align = 'end'
   useEffect(() => {
     const element = audio.current;
     let objectUrl: string | undefined;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- another recording or provider resets the player this effect owns, once per source
     source.current = undefined; loadingRequest.current = false; setPlaying(false); setLoading(false); setFailed(false); setDuration(undefined);
     const release = () => { if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = undefined; } };
     const abort = new AbortController(); work.current = abort;
@@ -225,7 +245,7 @@ export function VoiceBubble({ path, transcript, preview, audioUrl, align = 'end'
  */
 /** `variant` picks the bubble: `muted` (the chat's user bubble) or `default` (the theme's primary, used for my own messages in a shared chat). */
 /** `decoration` sits inside the Bubble before its content (a tail); `header` and `footer` inside the content, around the text (a quote, the time). */
-export function MessageText({ text, context, align = 'end', variant = 'muted', decoration, header, footer }: { readonly text: string; readonly context: Pick<RowContext, 'pieces' | 'openFile'>; readonly align?: 'start' | 'end'; readonly variant?: 'muted' | 'default'; readonly decoration?: ReactNode; readonly header?: ReactNode; readonly footer?: ReactNode }) {
+export function MessageText({ text, context, align = 'end', variant = 'muted', decoration, header, footer }: { readonly text: string; readonly context: Pick<RowContext, 'pieces' | 'openFile' | 'voiceReplay'>; readonly align?: 'start' | 'end'; readonly variant?: 'muted' | 'default'; readonly decoration?: ReactNode; readonly header?: ReactNode; readonly footer?: ReactNode }) {
   const framed = decoration !== undefined || header !== undefined || footer !== undefined;
   const wrap = (body: ReactNode) => <Bubble variant={variant} align={align}>{decoration}<BubbleContent data-testid="user-text" className={framed ? 'relative' : undefined}>{header}{body}{footer}</BubbleContent></Bubble>;
   const target = targetContent(text);
@@ -251,21 +271,48 @@ export function MessageText({ text, context, align = 'end', variant = 'muted', d
   const shown = files.length ? visibleParts(all, isFile) : all;
   const empty = shown.every(piece => piece.kind === undefined && piece.text === '');
   const content = shown.map((piece, at) => piece.kind === 'mention'
-    ? <UserMention key={at} path={piece.value!} text={piece.text} open={open} render={render} />
+    ? <UserMention key={at} path={piece.value!} text={piece.text} open={open} render={render} kinds={context.pieces?.kinds} />
     : piece.kind === 'skill' ? <Badge key={at} variant="secondary" data-testid="message-skill" data-skill={piece.value}>{piece.text}</Badge>
     : piece.text);
   return <>
     {cards.length > 0 && <FileCards paths={cards} open={context.openFile ?? open} preview={context.pieces?.preview} />}
-    {voice ? <VoiceBubble path={voice} transcript={empty ? null : content} preview={context.pieces?.preview} audioUrl={context.pieces?.audioUrl} align={align} />
+    {voice ? <VoiceBubble path={voice} transcript={empty ? null : content} preview={context.pieces?.preview} audioUrl={context.pieces?.audioUrl} align={align} replay={context.voiceReplay} />
       : !(files.length > 0 && empty) && wrap(<span className="whitespace-pre-wrap">{content}</span>)}
   </>;
 }
 
-function UserBubble({ message, images, context, align = 'end' }: { readonly message: UserMessage; readonly images: readonly ImageContent[]; readonly context: RowContext; readonly align?: 'start' | 'end' }) {
+/** A messenger's tail on the first bubble of a run. Its square part fills the bubble's top corner under the (positioned) content. */
+export function BubbleTail({ side }: { readonly side: 'start' | 'end' }) {
+  return <svg data-testid="bubble-tail" data-side={side} aria-hidden="true" viewBox="0 0 22 14" width="22" height="14"
+    className={`pointer-events-none absolute top-0 ${side === 'end' ? '-end-2 -scale-x-100 fill-primary' : '-start-2 fill-muted'}`}><path d="M0 0H22V14H8V9C8 5 5 2 0 0Z" /></svg>;
+}
+/** Text whose last line leaves room for the time at the bottom right of the bubble (the spacer rides at the end of the last paragraph). */
+export const clockRoom = "[&_:is(p,li):last-child]:after:inline-block [&_:is(p,li):last-child]:after:w-14 [&_:is(p,li):last-child]:after:content-['']";
+/** Room for a floating clock after plain inline text. */
+export const ClockSpacer = () => <span aria-hidden="true" className="inline-block w-14" />;
+/**
+ * The time inside a bubble (« 14:02 »). `floating` pins it bottom right over the room the text left; otherwise it sits in the line.
+ * `text` and `title` replace the chat's own clock and date labels, and `className` the size (the shared chat brings its own).
+ */
+export function MessageClock({ at, tone, floating = true, pending = false, text, title, className }: { readonly at: string; readonly tone: 'muted' | 'primary'; readonly floating?: boolean; readonly pending?: boolean | undefined; readonly text?: string | undefined; readonly title?: string | undefined; readonly className?: string | undefined }) {
+  const { labels } = useChatText();
+  // Not confirmed by the host yet: a small clock where the time will be.
+  if (pending) return <span data-testid="message-pending" role="img" aria-label={labels.sending} title={labels.sending}
+    className={`${floating ? 'absolute end-3 bottom-1.5' : 'shrink-0 self-end'} leading-none ${tone === 'primary' ? 'opacity-80' : 'text-muted-foreground'}`}><ClockIcon aria-hidden="true" className="size-3" /></span>;
+  return <time data-testid="message-time" dateTime={at} title={title ?? labels.messageTimestamp(at)}
+    className={cn(floating ? 'absolute end-3 bottom-1.5' : 'shrink-0 self-end', 'text-xs leading-none whitespace-nowrap tabular-nums', tone === 'primary' ? 'opacity-80' : 'text-muted-foreground', className)}>{text ?? labels.messageClock(at)}</time>;
+}
+const isoAt = (ms: number | undefined) => ms !== undefined && Number.isFinite(ms) ? new Date(ms).toISOString() : undefined;
+
+function UserBubble({ message, images, context, align = 'end', lead = false }: { readonly message: UserMessage; readonly images: readonly ImageContent[]; readonly context: RowContext; readonly align?: 'start' | 'end'; readonly lead?: boolean }) {
+  const messaging = context.messageStyle === 'messaging', at = isoAt(message.timestamp);
   const parts = typeof message.content === 'string' ? [{ type: 'text' as const, text: message.content }] : message.content;
   return <Message align={align}><MessageContent>
     <ImageThumbnails images={images} onOpenImage={context.onOpenImage} />
-    {parts.map((part, index) => part.type === 'text' ? (isFileBlock(part.text) ? null : <MessageText key={index} text={part.text} context={context} align={align} />)
+    {parts.map((part, index) => part.type === 'text' ? (isFileBlock(part.text) ? null : messaging
+        ? <MessageText key={index} text={part.text} context={context} align={align} variant="default" decoration={lead ? <BubbleTail side="end" /> : undefined}
+          footer={at ? <><ClockSpacer /><MessageClock at={at} tone="primary" /></> : undefined} />
+        : <MessageText key={index} text={part.text} context={context} align={align} />)
       : null)}
   </MessageContent></Message>;
 }
@@ -296,11 +343,26 @@ function messageImages(row: Row): readonly ImageContent[] {
   return row.type === 'assistant' ? row.images?.filter(image => thumbnail(image.mimeType, image.data)) ?? row.parts.flatMap(part => part.kind === 'tool' && part.entry.result ? images(part.entry.result.content) : []) : [];
 }
 
+/**
+ * A run of transcript rows as one scroller item (`useRowChunks`). Memoized, like each row: a row renders again only when its own row
+ * or the chat's row context changes, never on a scroll or another row's update. Pass stable callbacks (`messageActions`, `unread`…)
+ * so the context stays the same.
+ */
+export const TranscriptChunk = memo(function TranscriptChunk({ rows, context }: { readonly rows: readonly Row[]; readonly context: RowContext }) {
+  return <MessageScrollerItem messageId={rows[0]!.key} data-transcript-chunk="" className="flex flex-col [content-visibility:visible] [gap:inherit]">
+    {rows.map(row => <TranscriptRow key={row.key} row={row} context={context} />)}
+  </MessageScrollerItem>;
+});
+const TranscriptRow = memo(function TranscriptRow({ row, context }: { readonly row: Row; readonly context: RowContext }) {
+  return <div data-row-key={row.key} className="min-w-0 shrink-0"><RowView row={row} context={context} /></div>;
+});
+
 export function RowView({ row, context }: { readonly row: Row; readonly context: RowContext }) {
   const images = messageImages(row);
   const [selection, setSelection] = useState<{ readonly index: number; readonly images: readonly ImageContent[]; readonly key: string; readonly opener: RowContext['onOpenImage'] }>();
   const current = selection && selection.key === row.key && selection.opener === context.onOpenImage && selection.images.length === images.length
     && selection.images.every((image, at) => image.mimeType === images[at]?.mimeType && image.data === images[at]?.data) ? selection : undefined;
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- a stale selection (other row, opener or images) is dropped once, after commit
   useEffect(() => { if (selection && !current) setSelection(undefined); }, [selection, current]);
   const openImage: NonNullable<RowContext['onOpenImage']> = image => {
     if (!thumbnail(image.mimeType, image.data)) return;
@@ -316,9 +378,9 @@ export function RowView({ row, context }: { readonly row: Row; readonly context:
 function RowBody({ row, images, context: liveContext }: { readonly row: Row; readonly images: readonly ImageContent[]; readonly context: RowContext }) {
   const context: RowContext = row.historical ? { ...liveContext, answer: undefined, onFork: undefined, messageActions: liveContext.historicalMessageActions ? liveContext.messageActions : undefined, replyActions: undefined, commandMentions: undefined } : liveContext;
   const { labels, icons } = useChatText();
-  const renderMention = useMemo(() => context.pieces?.mentions ? (path: string, text: string) => <UserMention path={path} text={text} open={context.pieces?.openMention} render={context.pieces?.renderMention} /> : undefined, [context.pieces]);
+  const renderMention = useMemo(() => context.pieces?.mentions ? (path: string, text: string) => <UserMention path={path} text={text} open={context.pieces?.openMention} render={context.pieces?.renderMention} kinds={context.pieces?.kinds} /> : undefined, [context.pieces]);
   switch (row.type) {
-    case 'user': return <article data-row-id={row.key} data-role="user" aria-live={row.historical ? 'off' : undefined}><UserBubble message={row.message} images={images} context={context} /></article>;
+    case 'user': return <article data-row-id={row.key} data-role="user" aria-live={row.historical ? 'off' : undefined}><UserBubble message={row.message} images={images} context={context} lead={row.lead === true} /></article>;
     case 'card': return <article data-row-id={row.key} data-role="event">{row.card.content}</article>;
     case 'event': return <article data-row-id={row.key} data-role="event" className="text-center text-xs text-muted-foreground">{labels.event(row.label)}</article>;
     case 'system': return <article data-row-id={row.key} data-role="system"><Collapsible>
@@ -343,6 +405,7 @@ function RowBody({ row, images, context: liveContext }: { readonly row: Row; rea
       const { question: Question, approval: Approval } = context.cards ?? {};
       const active = row.active === true || row.streaming;
       const lastText = [...row.parts].reverse().find(part => part.kind === 'text');
+      const firstText = row.parts.find(part => part.kind === 'text');
       const host = nativeActions && row.text && context.messageActions
         ? <BlockActions iconOnly actions={context.messageActions(replyRef(row))} testId="reply-action" menuLabel={labels.moreActions} />
         : null;
@@ -360,14 +423,20 @@ function RowBody({ row, images, context: liveContext }: { readonly row: Row; rea
             }
             const part = chunk.part;
             if (part.kind === 'card') return <div key={part.key}>{part.content}</div>;
-            if (part.kind === 'text') return <Bubble key={part.key} variant="ghost"><BubbleContent>{(context.renderText ?? plainText)({ text: part.text, renderMention, streaming: row.streaming && part === lastText && row.parts[row.parts.length - 1] === part,
-              ...(settled && context.commandMentions ? { commandMentions: context.commandMentions } : {}), ...(context.onCopy ? { onCopy: context.onCopy } : {}) })}</BubbleContent></Bubble>;
+            if (part.kind === 'text') {
+              const text = (context.renderText ?? plainText)({ text: part.text, renderMention, streaming: row.streaming && part === lastText && row.parts[row.parts.length - 1] === part,
+                ...(settled && context.commandMentions ? { commandMentions: context.commandMentions } : {}), ...(context.onCopy ? { onCopy: context.onCopy } : {}) });
+              if (context.messageStyle !== 'messaging') return <Bubble key={part.key} variant="ghost"><BubbleContent>{text}</BubbleContent></Bubble>;
+              const time = part === lastText ? isoAt(row.timestamp) : undefined;
+              return <Bubble key={part.key} variant="muted" align="start">{row.lead && part === firstText && <BubbleTail side="start" />}
+                <BubbleContent data-testid="reply-text" className="relative"><div className={time ? clockRoom : undefined}>{text}</div>{time && <MessageClock at={time} tone="muted" />}</BubbleContent></Bubble>;
+            }
             if (part.kind === 'thinking') return null; // reasoning is a step of an activity block
             if (part.kind === 'approval') return Approval ? <Approval key={part.key} call={part.call} result={part.result} questionId={part.questionId} answer={context.answer} summary={part.summary} decision={part.decision} live={part.live} />
-              : !part.live && !part.result && !part.decision ? <AnswerWaiting key={part.key} kind="approval" /> : null;
+              : waits(part) ? <AnswerWaiting key={part.key} kind="approval" /> : null;
             if (part.kind === 'subagent') return <Fragment key={part.key}>{part.content}</Fragment>;
             if (part.kind === 'question') return Question ? <Question key={part.key} call={part.call} result={part.result} questionId={part.questionId} answer={context.answer} live={part.live} />
-              : !part.live && !part.result ? <AnswerWaiting key={part.key} kind="question" /> : null;
+              : waits(part) ? <AnswerWaiting key={part.key} kind="question" /> : null;
             if (part.kind === 'artifact') {
               const { artifact } = part, artifacts = context.artifacts;
               if (!artifacts || (artifact.path !== undefined && files.has(artifact.path.replace(/^(\.\/)+/, '')))) return null;

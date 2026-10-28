@@ -3,11 +3,31 @@
  * (or `AmbientChat`, `AgentWorkspace`): what it leaves out keeps the default below. Strings that need a value are functions. No i18n
  * framework: an app that translates passes its own object per language.
  */
-import { createContext, createElement, useContext, useMemo } from 'react';
+import { createContext, createElement, useContext, useMemo, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { ArrowDownIcon, ArrowUpIcon, CameraIcon, GitForkIcon, HistoryIcon, ListEndIcon, MessagesSquareIcon, PaperclipIcon, PlusIcon, RefreshCwIcon, SquareIcon } from 'lucide-react';
 import type { BlockIcon } from '../button/actions';
 import { withDefaults } from '../utils/utils';
+
+// An Intl.DateTimeFormat costs far more than formatting with one; every bubble's clock reuses the same few.
+const formats = new Map<string, Intl.DateTimeFormat>();
+function intlFormat(locale: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const key = `${locale}|${JSON.stringify(options)}`;
+  let found = formats.get(key);
+  if (!found) { found = new Intl.DateTimeFormat(locale, options); formats.set(key, found); }
+  return found;
+}
+/** « Tue 22 Oct, 14:02 ». */
+export function formatTimestamp(at: string, locale: string) {
+  const date = new Date(at);
+  if (!Number.isFinite(date.getTime())) return at;
+  return `${intlFormat(locale, { weekday: 'short', day: 'numeric', month: 'short' }).format(date)}, ${intlFormat(locale, { hour: '2-digit', minute: '2-digit' }).format(date)}`;
+}
+/** The time inside a bubble (« 14:02 », « 2:02 PM »). */
+export function formatClock(at: string, locale: string) {
+  const date = new Date(at);
+  return Number.isFinite(date.getTime()) ? intlFormat(locale, { hour: 'numeric', minute: '2-digit' }).format(date) : '';
+}
 
 const TOOL_VERBS: Readonly<Record<string, string>> = { read: 'Reading', write: 'Writing', edit: 'Editing', ls: 'Listing', list_files: 'Listing', find: 'Searching', grep: 'Searching', load_skill: 'Loading skill', bash: 'Running bash' };
 const TOOL_NOUNS: Readonly<Record<string, string>> = { bash: 'command', read: 'read', write: 'write', edit: 'edit', find: 'find', grep: 'search', ls: 'list' };
@@ -119,6 +139,9 @@ export const defaultChatLabels = {
   // Voice input (the microphone button beside the composer)
   voiceRecord: 'Record a message',
   voiceHold: 'Hold to record, release to send',
+  voicePauseRecording: 'Pause recording',
+  voiceResumeRecording: 'Resume recording',
+  voicePaused: 'Recording paused',
   voiceRecording: 'Recording',
   voicePreparing: 'Preparing voice message…',
   voiceAudioOnly: 'Send audio only',
@@ -133,6 +156,7 @@ export const defaultChatLabels = {
   voiceTranscribing: 'Transcribing…',
   voiceNothingHeard: 'Nothing was heard. Try again.',
   voiceTranscribeFailed: 'The recording could not be transcribed. Try again.',
+  voiceTranscriptUnavailable: 'Voice message — transcription unavailable.',
   voiceDenied: 'Microphone blocked. Allow it for this site in the browser, then press record again.',
   voiceNoMicrophone: 'No microphone found. Connect one, then press record again.',
   voiceBusy: 'The microphone is busy or could not be opened. Close other apps using it and try again.',
@@ -150,6 +174,9 @@ export const defaultChatLabels = {
   more: 'More',
   edit: 'Edit',
   sending: 'Sending',
+  /** The time inside a bubble in the `messaging` style (« 14:02 »), and its full date as the tooltip. */
+  messageClock: (at: string) => formatClock(at, 'en'),
+  messageTimestamp: (at: string) => formatTimestamp(at, 'en'),
   images: (count: number) => `[${count} image${count === 1 ? '' : 's'}]`,
   // Conversation list and history
   historyDialog: 'Conversation history',
@@ -336,7 +363,19 @@ export const useChatText = (): ChatText => useContext(ChatTextContext);
 /** Merges the host's partial labels and icons over the defaults (or over `base`), keeping one object while they do not change. */
 export function useMergedText<L extends ChatLabels = ChatLabels, I extends ChatIcons = ChatIcons>(labels: Partial<L> | undefined, icons: Partial<I> | undefined,
   base: { readonly labels: L; readonly icons: I } = DEFAULT_TEXT as { readonly labels: L; readonly icons: I }): { readonly labels: L; readonly icons: I } {
-  return useMemo(() => ({ labels: withDefaults(base.labels, labels), icons: withDefaults(base.icons, icons) }), [labels, icons, base]);
+  const stableLabels = useShallowStable(labels), stableIcons = useShallowStable(icons);
+  return useMemo(() => ({ labels: withDefaults(base.labels, stableLabels), icons: withDefaults(base.icons, stableIcons) }), [stableLabels, stableIcons, base]);
+}
+
+const shallowEqual = (a: unknown, b: unknown): boolean => Object.is(a, b) || (!!a && !!b && typeof a === 'object' && typeof b === 'object' && Array.isArray(a) === Array.isArray(b)
+  && Object.keys(a).length === Object.keys(b).length && Object.keys(a).every(key => Object.is((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key])));
+/** The previous value while the new one is equal key by key (functions by identity): inline `labels={{ title }}` keeps one text context. */
+export function useShallowStable<T>(value: T): T {
+  const previous = useRef(value);
+  // eslint-disable-next-line react-hooks/refs -- a render-time identity cache: it only swaps in a value equal key by key, so any render reads the same result
+  if (!shallowEqual(previous.current, value)) previous.current = value;
+  // eslint-disable-next-line react-hooks/refs -- returns the cached identity (see above); never setState in render
+  return previous.current;
 }
 
 /** Provides the chat's labels and icons to everything inside (composer, queue, rows, history). */

@@ -4,7 +4,7 @@ These cross-package laws have one definition here. [docs/LAWS.md](docs/LAWS.md) 
 
 ## BORING-UI-1 — shadcn first; blocks carry no visual value
 
-Registry blocks compose the host's real shadcn components through `@/components/ui/*`, declared in `registryDependencies` and `SHADCN_BUILTINS`. Only the Base UI `base-nova` style is supported. Blocks never ship a primitive shadcn provides and never restyle a shadcn component. Classes added to those components arrange layout only.
+Registry blocks compose the host's real shadcn components through `@/components/ui/*`, which the shadcn CLI rewrites to the app's `ui` alias. The app installs them once (`SHADCN_BUILTINS`, quoted as one command in registry/README.md); no item lists a shadcn component or the theme in `registryDependencies`. Only the Base UI `base-nova` style is supported. Blocks never ship a primitive shadcn provides and never restyle a shadcn component. Classes added to those components arrange layout only.
 
 Blocks carry no visual value of their own: colour, font, shadow, radius, border width or motion. They read shadcn tokens and the documented kit tokens `--shell` and `--overlay`. An app restyles every block by setting its core theme tokens, never the derived tokens, following boring-stack's `boring-design-system` skill. Presentation is a host concern, not a Pi execution extension.
 

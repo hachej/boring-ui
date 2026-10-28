@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import type { KeyboardEvent, PointerEvent } from 'react';
 
 export interface HoldToRecordActions {
@@ -11,7 +11,8 @@ export interface HoldToRecordActions {
 
 /** The immediate microphone and delayed shell trigger share cancellation, but retain ownership of their own held gesture. */
 export function useRecordingCancellation(cancel: () => void) {
-  const latest = useRef(cancel); latest.current = cancel;
+  const latest = useRef(cancel);
+  useLayoutEffect(() => { latest.current = cancel; });
   useEffect(() => {
     const stop = () => latest.current();
     const escape = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') stop(); };
@@ -27,7 +28,8 @@ export function useRecordingCancellation(cancel: () => void) {
 /** Gesture policy shared by the chat and shell. Pointer cancellation keeps audio; deliberate slide/Escape/lost visibility discards it. */
 export function useHoldToRecord(actions: HoldToRecordActions, disabled = false) {
   const ref = useRef<HTMLButtonElement>(null);
-  const latest = useRef({ actions, disabled }); latest.current = { actions, disabled };
+  const latest = useRef({ actions, disabled });
+  useLayoutEffect(() => { latest.current = { actions, disabled }; });
   const held = useRef<number | string | null>(null);
   const cancel = () => { if (held.current === null) return; held.current = null; latest.current.actions.cancel(); };
   useRecordingCancellation(cancel);

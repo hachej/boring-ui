@@ -1,4 +1,5 @@
 /* The chat's words in French, the `locale="fr"` base of `PiChat`, `AmbientChat` and `AgentWorkspace`. Typed as `ChatLabels`, so a key added in English must be added here too. */
+import { formatClock, formatTimestamp } from './labels';
 import type { ChatLabels } from './labels';
 
 const TOOL_VERBS: Readonly<Record<string, string>> = { read: 'Lecture', write: 'Écriture', edit: 'Modification', ls: 'Liste', list_files: 'Liste', find: 'Recherche', grep: 'Recherche', load_skill: 'Chargement de la compétence', bash: 'Exécution bash' };
@@ -64,6 +65,9 @@ export const frenchChatLabels: ChatLabels = {
   // Voice input (the microphone button beside the composer)
   voiceRecord: 'Enregistrer un message',
   voiceHold: 'Maintenir pour enregistrer, relâcher pour envoyer',
+  voicePauseRecording: 'Mettre l’enregistrement en pause',
+  voiceResumeRecording: 'Reprendre l’enregistrement',
+  voicePaused: 'Enregistrement en pause',
   voiceRecording: 'Enregistrement',
   voicePreparing: 'Préparation du message vocal…',
   voiceAudioOnly: 'Envoyer l’audio seul',
@@ -78,6 +82,7 @@ export const frenchChatLabels: ChatLabels = {
   voiceTranscribing: 'Transcription…',
   voiceNothingHeard: 'Rien n’a été entendu. Réessayez.',
   voiceTranscribeFailed: 'L’enregistrement n’a pas pu être transcrit. Réessayez.',
+  voiceTranscriptUnavailable: 'Message vocal — transcription indisponible.',
   voiceDenied: 'Microphone bloqué. Autorisez-le pour ce site dans le navigateur, puis appuyez de nouveau sur enregistrer.',
   voiceNoMicrophone: 'Aucun microphone trouvé. Branchez-en un, puis appuyez de nouveau sur enregistrer.',
   voiceBusy: 'Le microphone est occupé ou n’a pas pu être ouvert. Fermez les autres applications qui l’utilisent et réessayez.',
@@ -129,6 +134,8 @@ export const frenchChatLabels: ChatLabels = {
   more: 'Plus',
   edit: 'Modifier',
   sending: 'Envoi',
+  messageClock: at => formatClock(at, 'fr'),
+  messageTimestamp: at => formatTimestamp(at, 'fr'),
   images: count => `[${count} image${count === 1 ? '' : 's'}]`,
   historyDialog: 'Historique des conversations',
   newConversation: 'Nouvelle',

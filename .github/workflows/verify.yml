@@ -45,6 +45,10 @@ jobs:
       - name: Allow the Chromium sandbox
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: npm run test:design
+      - name: Transcript scroll budget (500 messages, no long task over 50 ms)
+        run: npm run test:chat-scroll
+      - name: Sending shows the message at once and scrolls to it (slow host, phone and desktop)
+        run: npm run test:chat-send
       - name: Design evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

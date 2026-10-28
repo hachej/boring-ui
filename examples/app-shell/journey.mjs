@@ -318,6 +318,12 @@ try {
     const layer = await browser.evaluate(rect(LAYER));
     assert.ok(layer.y > 200 && layer.y < 600 && Math.round(layer.bottom) >= 844, JSON.stringify(layer));
     assert.ok(await browser.evaluate(`!!document.querySelector('[data-slot=drawer-overlay]')`), 'modal backdrop');
+    // AppShell overlayBlur={false} marks <html data-overlay-blur="off">; the app-shell item's CSS then drops the overlay's blur.
+    const filter = `getComputedStyle(document.querySelector('[data-slot=drawer-overlay]')).backdropFilter`;
+    assert.match(await browser.evaluate(filter), /blur/, 'the overlay blurs the page by default');
+    await browser.evaluate(`document.documentElement.dataset.overlayBlur = 'off'`);
+    assert.equal(await browser.evaluate(filter), 'none', 'overlayBlur off: only the dim, no blur');
+    await browser.evaluate(`delete document.documentElement.dataset.overlayBlur`);
     const before = await browser.evaluate(taps);
     await tapAt(TAB);
     await pause(300);
@@ -475,7 +481,7 @@ try {
       await tap('[data-testid=composer-submit]');
       await browser.until(`reply ${i}`, `document.body.innerText.includes('Réponse ${['', 'un', 'deux', 'trois', 'quatre', 'cinq'][i]}')`, 20000);
       await pause(500);
-      const last = await browser.evaluate(`(() => { const rows = [...document.querySelectorAll('${LAYER} [data-testid=transcript] > *')].filter(e => e.getBoundingClientRect().height); const r = rows.at(-1).getBoundingClientRect(); return r.bottom; })()`);
+      const last = await browser.evaluate(`(() => { const rows = [...document.querySelectorAll('${LAYER} [data-testid=transcript] [data-row-key]')].filter(e => e.getBoundingClientRect().height); const r = rows.at(-1).getBoundingClientRect(); return r.bottom; })()`);
       const top = (await browser.evaluate(rect(INPUT))).y;
       assert.ok(last <= top + 1, `message ${i}: last row bottom ${last} <= composer top ${top}`);
     }
@@ -524,7 +530,7 @@ try {
     assert.equal(await browser.evaluate(`history.state`), null, 'the entry was consumed');
     await tap(TRIGGER); await browser.until('half again', `${snap} === 'half'`); await settle();
     // At half the drawer's lower part is below the screen by design: the chat pads nothing for it, so the messages have room and the last one is on screen.
-    const seen = await browser.evaluate(`(() => { const s = ${q('[data-testid=transcript-scroll]')}.getBoundingClientRect(); const rows = [...document.querySelectorAll('${LAYER} [data-testid=transcript] > *')].filter(e => e.getBoundingClientRect().height); const last = rows.at(-1)?.getBoundingClientRect(); return { height: s.height, rows: rows.length, lastTop: last?.top, lastBottom: last?.bottom, inner: innerHeight }; })()`);
+    const seen = await browser.evaluate(`(() => { const s = ${q('[data-testid=transcript-scroll]')}.getBoundingClientRect(); const rows = [...document.querySelectorAll('${LAYER} [data-testid=transcript] [data-row-key]')].filter(e => e.getBoundingClientRect().height); const last = rows.at(-1)?.getBoundingClientRect(); return { height: s.height, rows: rows.length, lastTop: last?.top, lastBottom: last?.bottom, inner: innerHeight }; })()`);
     assert.ok(seen.height >= 100, `the half drawer's transcript has room: ${JSON.stringify(seen)}`);
     assert.ok(seen.rows > 0 && seen.lastBottom <= seen.inner && seen.lastTop >= 0, `the last message is on screen at half: ${JSON.stringify(seen)}`);
     await tap('[data-testid=agent-layer-close]');
@@ -573,46 +579,33 @@ try {
     assert.equal(app.submits.length, before);
   });
 
-  await step('9c the composer microphone at peek, half and full: a hold survives the keyboard, the viewport shrinking and a pointercancel; only a slide off cancels', async () => {
+  await step('9c tap at peek, half and full: shared replacement recording bar stays stable when viewport shrinks; Send or trash finishes', async () => {
     const MIC = '[data-testid=agent-talk]', state = `${q(MIC)}?.dataset.state`;
-    const active = `document.activeElement?.getAttribute('data-testid') ?? document.activeElement?.tagName`;
-    /** Hold the microphone, shrink the visual viewport mid-hold (the keyboard), and check nothing moved under the finger. */
-    const hold = async (where, finish) => {
-      const mic = await browser.evaluate(rect(MIC)), focus = await browser.evaluate(active), sheet = await browser.evaluate(snap);
-      const r = await center(MIC);
-      await touch('touchStart', [[r.x, r.y]]);
-      await browser.until(`${where}: recording`, `${state} === 'recording'`, 8000);
-      assert.equal(await browser.evaluate(`${q(INPUT)}.readOnly`), true, `${where}: the composer is read-only while recording`);
-      await browser.evaluate(`window.__vv.set(500)`);
-      await pause(700);
-      assert.equal(await browser.evaluate(state), 'recording', `${where}: still recording after the viewport shrank`);
-      assert.deepEqual(await browser.evaluate(rect(MIC)), mic, `${where}: the microphone did not move under the finger`);
-      assert.equal(await browser.evaluate(snap), sheet, `${where}: the snap holds`);
-      assert.equal(await browser.evaluate(active), focus, `${where}: pressing the microphone moved no focus`);
-      await finish(r);
+    const take = async (where, discard = false) => {
+      const sheet = await browser.evaluate(snap);
+      await tap(MIC); await browser.until(`${where}: tap records`, `${state} === 'recording'`, 15000);
+      assert.equal(await browser.evaluate(`!!${q(INPUT)}`), false, 'editable row replaced');
+      await browser.until('live input waveform', `!!${q('[data-testid=voice-waveform]')}`);
+      const bar = await browser.evaluate(rect('[data-testid=voice-recording-bar]'));
+      assert.ok(bar.x >= 0 && bar.right <= 390, 'recording bar fits phone');
+      await browser.evaluate(`window.__vv.set(500)`); await pause(700);
+      assert.deepEqual(await browser.evaluate(rect('[data-testid=voice-recording-bar]')), bar, 'recording bar stays fixed');
+      assert.equal(await browser.evaluate(snap), sheet, 'snap holds');
+      await tap(discard ? '[data-testid=composer-voice-cancel]' : MIC);
       await browser.evaluate(`window.__vv.set(844)`);
-      await browser.until(`${where}: the composer is editable again`, `${q(INPUT)}.readOnly === false`, 5000);
-      await settle();
+      await browser.until('editable again', `!!${q(INPUT)} && ${state} === 'idle'`, 15000); await settle();
     };
-    const away = async r => { await touch('touchMove', [[r.x - 150, r.y - 200]]); await browser.until('cancelled', `${state} === 'idle'`, 5000); await touch('touchEnd', []); };
     const submits = app.submits.length;
-    // Peek: the browser takes the touch back (pointercancel): the recording is kept and sent.
-    assert.equal(await browser.evaluate(snap), 'peek');
-    await hold('peek', async () => { await pause(600); await touch('touchCancel', []); });
+    assert.equal(await browser.evaluate(snap), 'peek'); await take('peek');
     for (let i = 0; i < 100 && app.submits.length === submits; i++) await pause(100);
-    assert.equal(app.submits.length, submits + 1, 'a pointercancel while recording keeps the audio');
-    await browser.until('idle', `${state} === 'idle'`, 20000);
-    // Half, then full with the composer focused: a slide off the button cancels, nothing is sent.
+    assert.equal(app.submits.length, submits + 1, 'Send admits once');
     const sent = app.submits.length;
     await tap(TRIGGER); await browser.until('half', `${snap} === 'half'`); await settle();
-    await hold('half', away);
+    await take('half', true);
     await tap(INPUT); await browser.until('full', `${snap} === 'full'`); await settle();
-    assert.equal(await browser.evaluate(active), 'composer-input', 'the composer is focused');
-    await hold('full', away);
-    await browser.evaluate(`document.activeElement.blur()`);
-    await pause(400);
-    assert.equal(app.submits.length, sent, 'a slide off sent nothing');
-    assert.equal(await browser.evaluate(`${q(INPUT)}.readOnly`), false, 'the composer is editable again');
+    await take('full', true);
+    await browser.evaluate(`document.activeElement.blur()`); await pause(400);
+    assert.equal(app.submits.length, sent, 'trash sends nothing');
     // Back to peek, where the next step starts.
     const layer = await browser.evaluate(rect(LAYER));
     await touch('touchStart', [[195, layer.y / 2]]); await touch('touchEnd', []);

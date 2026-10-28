@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import { Marked } from 'marked';
 import { decodeHTML } from 'entities';
 import { CodeBlock } from '../pi-chat/code-block';
-import { pieces } from '../pi-chat/config';
+import { pieces } from '@hachej/boring-ui-kit/chat-text';
 import type { CommandMention, CommandMentions } from '../pi-chat/config';
 import { useChatText } from '../pi-chat/labels';
 import type { ChatLabels } from '../pi-chat/labels';

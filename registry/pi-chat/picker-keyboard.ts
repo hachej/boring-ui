@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
 
 /**
@@ -16,7 +16,7 @@ export function usePickerKeyboard({ count, activeIdx, setActiveIdx, listRef, onS
   readonly onDismiss: () => void;
 }) {
   const select = useRef(onSelect), dismiss = useRef(onDismiss);
-  select.current = onSelect; dismiss.current = onDismiss;
+  useLayoutEffect(() => { select.current = onSelect; dismiss.current = onDismiss; });
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if (event.isComposing) return;

@@ -1,5 +1,7 @@
 'use client';
 
+import { useChatView } from '@hachej/boring-ui-kit/chat-react';
+
 // The artifact panel: the standard viewer bar (title, type, version switcher, Refresh, Share, copy, download, close) over the viewer for
 // the artifact's type. It follows the latest saved revision while nothing is unsaved ("Latest") or pins one older version, read-only. It
 // lists the versions the host's workspace provider retains for the file (`history`) and reads through the host's resource client. It never
@@ -15,6 +17,7 @@ import type { MarkdownController } from '@hachej/boring-ui-kit/markdown';
 import { createHtmlController } from '@hachej/boring-ui-kit/html';
 import type { HtmlController } from '@hachej/boring-ui-kit/html';
 import type { ChatController } from '@hachej/boring-ui-kit/native-chat';
+import { artifactTurn } from '@hachej/boring-ui-kit/chat-view';
 import { artifactKey, artifactKind, collectArtifacts, typeLabel } from '../pi-artifacts/artifact';
 import type { ArtifactDescriptor, ArtifactKindViewProps, ArtifactTarget, ArtifactsConfig } from '../pi-artifacts/artifact';
 import { CodeBlock } from '../pi-chat/code-block';
@@ -27,7 +30,7 @@ import type { InteractiveHtml } from '../viewer-frame/interactive-html';
 import { downloadFile } from '../viewer-frame/download';
 import { copyText } from '../utils/utils';
 import { Separator } from '@/components/ui/separator';
-import { Mounted, ViewLoading, drawsText, isEditorKind, isMediaKind, lazyRenderer, lazyView, viewerKinds } from './viewer-kinds';
+import { LazyPane, Mounted, ViewLoading, drawsText, isEditorKind, isMediaKind, lazyRenderer, noKinds } from './viewer-kinds';
 import type { PanelKind } from './viewer-kinds';
 import { readText, savedLabel, useSaved } from './use-saved';
 import { useAppText } from './app-labels';
@@ -63,9 +66,10 @@ export interface ViewerOptions {
   readonly viewers?: CustomViewers | undefined;
   /**
    * Every kind the panel and the file viewer resolve through, in order (the first match wins): its label names the artifact in the bar and
-   * its `renderer` or lazily loaded `load` draws it. Default `viewerKinds` (the maquette, diagram, mock-up and records kinds, then the
-   * Markdown, HTML, SVG, CSV, image and PDF kinds). A host passing its own list puts its kinds first and spreads `viewerKinds` after them.
-   * A `viewers` entry wins over a built-in document kind (`fallback`), not over a host's kind.
+   * its `renderer` or lazily loaded `load` draws it. The panel knows no kind of its own: without this list every artifact shows as text.
+   * The pi-app-kinds item's `defaultKinds()` is the default list (maquette, diagram, mock-up and records, then Markdown, HTML, SVG, CSV,
+   * image and PDF); a host puts its own kinds before it, or passes a list of its own. A `viewers` entry wins over a document kind
+   * (`fallback`), not over a host's kind.
    */
   readonly kinds?: readonly PanelKind[] | undefined;
   /** The host's opt-in to running HTML pages in the sandboxed preview. */
@@ -113,14 +117,12 @@ class KindBoundary extends Component<{ readonly revision: string; readonly onErr
 
 /** Every artifact version the conversation's tool results produced (the version switcher's source), oldest first. */
 export function useArtifactVersions(controller: ChatController | undefined, detect?: ArtifactsConfig['detect']): ArtifactDescriptor[] {
-  const view = useSyncExternalStore(controller ? controller.subscribe : NOOP, () => controller?.getSnapshot().view, () => undefined);
-  return useMemo(() => collectArtifacts(view, detect), [view, detect]);
+  return useChatView(controller, useCallback(view => collectArtifacts(view, detect), [detect]));
 }
 
 /** How many messages the person has sent in the conversation: it changes when a new turn starts. */
 export function useTurn(controller: ChatController | undefined): number {
-  const view = useSyncExternalStore(controller ? controller.subscribe : NOOP, () => controller?.getSnapshot().view, () => undefined);
-  return useMemo(() => (view?.entries ?? []).reduce((count, entry) => count + (entry.model ?? []).filter(message => message.role === 'user').length, 0), [view]);
+  return useChatView(controller, artifactTurn);
 }
 
 /** The revisions the workspace provider retains for a file with their save times, newest first; followed while the panel is open. */
@@ -171,7 +173,7 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose, headerSta
   const [kindControls, setKindControls] = useState<ReactNode>();
   // The revision a lazily loaded view has mounted: the panel acknowledges a `present` only once the view is on screen, not while it loads.
   const [mounted, setMounted] = useState<string>();
-  const kinds = options.kinds ?? viewerKinds;
+  const kinds = options.kinds ?? noKinds;
   // The kinds that draw (an editor, a renderer or a lazily loaded view); a label-only kind names the artifact but leaves the drawing to the
   // next match. Image and PDF kinds read bytes: the file viewer draws them, never the artifact panel.
   const drawingKinds = useMemo(() => kinds.filter(kind => drawsText(kind)), [kinds]);
@@ -181,17 +183,15 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose, headerSta
     return result?.kind === 'available' ? readText(result.snapshot.bytes) : undefined;
   }, [client, artifact.target]);
   const fragment = useSyncExternalStore(subscribeHash, readHash, () => '');
-  // A host viewer for the type (`viewers`) wins over a built-in document kind, not over a host's kind.
+  // A host viewer for the type (`viewers`) wins over a document kind (a `fallback` one), not over any other kind.
   const draws = artifactKind(artifact, drawingKinds);
   const custom = draws && !draws.fallback ? undefined : options.viewers?.[type];
   const drawing = custom ? undefined : draws;
   const editor = isEditorKind(drawing) ? drawing.editor : undefined;
-  const create = useMemo(() => {
-    const base = (snapshot: ResourceSnapshot) => ({ identity, client, instanceId: randomUUID(), epoch: 'workspace', source: { kind: 'saved' as const, snapshot } });
-    if (editor === 'markdown') return (snapshot: ResourceSnapshot): DocumentController => createMarkdownController({ ...base(snapshot), readOnly: pinned });
-    if (editor === 'html') return (snapshot: ResourceSnapshot): DocumentController => createHtmlController({ ...base(snapshot), readOnly: true });
-    return undefined;
-  }, [editor, pinned, client, identity]);
+  // useSaved reads the latest factory when it opens a revision, so it need not be memoized.
+  const base = (snapshot: ResourceSnapshot) => ({ identity, client, instanceId: randomUUID(), epoch: 'workspace', source: { kind: 'saved' as const, snapshot } });
+  const create = editor === 'markdown' ? (snapshot: ResourceSnapshot): DocumentController => createMarkdownController({ ...base(snapshot), readOnly: pinned })
+    : editor === 'html' ? (snapshot: ResourceSnapshot): DocumentController => createHtmlController({ ...base(snapshot), readOnly: true }) : undefined;
   const autosave = useRef<{ controller: DocumentController; flush: () => Promise<boolean> } | null>(null);
   const saved = useSaved<DocumentController>({ client, target: artifact.target, revision: pinned ? artifact.revision : undefined, create,
     beforeDispose: controller => autosave.current?.controller === controller ? autosave.current.flush() : undefined });
@@ -199,15 +199,16 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose, headerSta
   const registerAutosave = useCallback((flush: (() => Promise<boolean>) | null) => {
     autosave.current = flush && controller ? { controller, flush } : null;
   }, [controller]);
+  const onUnsavedChange = options.onUnsavedChange;
   useLayoutEffect(() => {
     if (!controller) return;
     const notify = () => {
       const state = controller.getSnapshot();
-      options.onUnsavedChange?.(state.dirty || state.save.kind === 'pending' || state.save.kind === 'settled' && state.save.result.kind === 'unknown');
+      onUnsavedChange?.(state.dirty || state.save.kind === 'pending' || state.save.kind === 'settled' && state.save.result.kind === 'unknown');
     };
     notify(); const stop = controller.subscribe(notify);
-    return () => { stop(); options.onUnsavedChange?.(false); };
-  }, [controller, options.onUnsavedChange]);
+    return () => { stop(); onUnsavedChange?.(false); };
+  }, [controller, onUnsavedChange]);
   // The text to copy and download is the buffer when a viewer holds one, so the person's unsaved edits are included.
   const text = useSyncExternalStore(controller ? controller.subscribe : NOOP, () => controller ? controller.getSnapshot().text : saved.text, () => saved.text);
   const extension = EXTENSION.exec(path)?.[1] ?? 'txt';
@@ -234,7 +235,7 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose, headerSta
       <span title={path}>{path}</span><span aria-hidden="true">·</span>
       <span data-testid="artifact-panel-type">{typeLabel(artifact, kinds, chatText.labels.artifactTypes)}</span>
       <span aria-hidden="true">·</span>
-      <span data-testid="artifact-panel-version">{pinned ? (menu.savedAt !== undefined ? labels.savedAt(savedLabel(menu.savedAt, Date.now(), labels.earlierVersion)) : labels.olderVersion) : menu.savedAt ? labels.latestSavedAt(savedLabel(menu.savedAt, Date.now(), labels.earlierVersion)) : labels.latest}</span>
+      <span data-testid="artifact-panel-version">{pinned ? (menu.savedAt !== undefined ? labels.savedAt(savedLabel(menu.savedAt, undefined, labels.earlierVersion)) : labels.olderVersion) : menu.savedAt ? labels.latestSavedAt(savedLabel(menu.savedAt, undefined, labels.earlierVersion)) : labels.latest}</span>
     </>,
     ...(pinned ? { status: { label: labels.readOnly, kind: 'read-only' as const } } : {}),
   };
@@ -257,11 +258,9 @@ function Version({ artifact, pinned, menu, options, onSelect, onClose, headerSta
     const { onShare: _, ...waiting } = { ...frame, testId: 'artifact-pending' };
     let pane: ReactNode;
     if (drawing.editor === 'markdown') {
-      const MarkdownPane = lazyView(drawing.load);
-      pane = <MarkdownPane controller={controller as MarkdownController} initialMode="rich" onAutosaveChange={registerAutosave} onBeforeLeaveChange={options.onBeforeLeaveChange} {...frame} />;
+      pane = <LazyPane load={drawing.load} controller={controller as MarkdownController} initialMode="rich" onAutosaveChange={registerAutosave} onBeforeLeaveChange={options.onBeforeLeaveChange} {...frame} />;
     } else {
-      const HtmlPane = lazyView(drawing.load);
-      pane = <HtmlPane controller={controller as HtmlController} {...(options.interactive ? { interactive: options.interactive } : {})} {...frame} />;
+      pane = <LazyPane load={drawing.load} controller={controller as HtmlController} {...(options.interactive ? { interactive: options.interactive } : {})} {...frame} />;
     }
     return body(document(<Suspense fallback={<ViewerFrame {...waiting}>{loading}</ViewerFrame>}>{pane}<Mounted value={saved.snapshot.ref.revision} onMount={setMounted} /></Suspense>));
   }

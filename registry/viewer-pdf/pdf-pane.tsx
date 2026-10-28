@@ -64,6 +64,7 @@ export function PdfPane({ name, bytes, blob, url: hostUrl, subtitle, status, tar
   const [zoom, setZoom] = useState(1);
   const [pages, setPages] = useState<{ readonly count: number; readonly current: number }>();
   const [failed, setFailed] = useState(false);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- another document resets its page count and error once, after commit
   useEffect(() => { setPages(undefined); setFailed(false); }, [url]);
   const step = (direction: 1 | -1) => setZoom(now => (direction > 0 ? STEPS.find(value => value > now) : [...STEPS].reverse().find(value => value < now)) ?? now);
   const drawn = Boolean(url) && isPdf && !canShow && !failed;

@@ -78,6 +78,11 @@ jobs:
         run: node scripts/retry-journey.mjs app-shell:journey:workspace
         env:
           APP_EVIDENCE: ${{ runner.temp }}/evidence/app-shell
+      - name: App shell voice messages, failure, retry and cancellation on a phone and a desktop
+        if: matrix.shard == 'workspace'
+        run: node scripts/retry-journey.mjs app-shell:journey:voice
+        env:
+          VOICE_EVIDENCE: ${{ runner.temp }}/evidence/app-shell-voice
       - name: Workspace app autosave and scrolling during slow history loads
         if: matrix.shard == 'workspace'
         run: node scripts/retry-journey.mjs workspace-app:journey
@@ -88,6 +93,11 @@ jobs:
         run: node scripts/retry-journey.mjs shared-chat:journey
         env:
           SHARED_CHAT_EVIDENCE: ${{ runner.temp }}/evidence/shared-chat
+      - name: Shared conversation on the room source, two people, a question and a resume
+        if: matrix.shard == 'workspace'
+        run: node scripts/retry-journey.mjs shared-chat:journey:room
+        env:
+          SHARED_CHAT_EVIDENCE: ${{ runner.temp }}/evidence/shared-chat-room
       - name: Sandboxed HTML mock-ups, theme and element comments
         if: matrix.shard == 'documents'
         run: node scripts/retry-journey.mjs mockup:journey

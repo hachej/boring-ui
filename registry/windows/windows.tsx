@@ -139,7 +139,7 @@ export function FloatingWindow({ id, title, children, defaultRect = DEFAULT_RECT
   const focus = () => box.current?.querySelector<HTMLElement>('button, input, textarea, select, a[href], [tabindex="0"]') ?? box.current;
   useLayoutEffect(() => { if (visible && state.focus === id) focus()?.focus({ preventScroll: true }); }, [visible, state.focus, state.request, id, phone]);
   const sizing = useRef<{ x: number; y: number; rect: WindowRect; edges: Edges } | null>(null);
-  const startResize = (edges: Edges) => (event: PointerEvent<HTMLElement>) => {
+  const startResize = (edges: Edges, event: PointerEvent<HTMLElement>) => {
     if (event.button !== 0) return;
     event.preventDefault(); event.currentTarget.focus(); event.currentTarget.setPointerCapture?.(event.pointerId);
     sizing.current = { x: event.clientX, y: event.clientY, rect, edges };
@@ -171,11 +171,11 @@ export function FloatingWindow({ id, title, children, defaultRect = DEFAULT_RECT
     </CardHeader>
     <CardContent className="min-h-0 flex-1 overflow-auto">{children}</CardContent>
     <Button variant="ghost" size="icon-sm" data-window-resize="se" aria-label={`Resize ${title}`} className="absolute bottom-0 right-0 cursor-se-resize touch-none"
-      onPointerDown={startResize('se')} onPointerMove={moveResize} onPointerUp={endResize} onPointerCancel={endResize} onKeyDown={resizeKey}>
+      onPointerDown={event => startResize('se', event)} onPointerMove={moveResize} onPointerUp={endResize} onPointerCancel={endResize} onKeyDown={resizeKey}>
       <GripIcon data-icon="inline-start" aria-hidden="true" />
     </Button>
     {HANDLES.map(handle => <div key={handle.edges} data-window-resize={handle.edges} aria-hidden="true" className={`absolute touch-none ${handle.className}`}
-      onPointerDown={startResize(handle.edges)} onPointerMove={moveResize} onPointerUp={endResize} onPointerCancel={endResize} />)}
+      onPointerDown={event => startResize(handle.edges, event)} onPointerMove={moveResize} onPointerUp={endResize} onPointerCancel={endResize} />)}
   </Card>, host) : null;
 }
 

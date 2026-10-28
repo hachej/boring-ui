@@ -229,9 +229,24 @@ refresh after concurrent changes. Traversal over the configured `maxEntries`
 (default 100,000) fails explicitly. History contains revisions retained by the
 workspace journal, not Git commits or an imported filesystem's prior history.
 
-The existing resource transport limits still apply: requests default to 4 MiB
-and responses to 8 MiB, including their serialized envelope. This API does not
-provide streaming uploads.
+File search (the `@` picker, the tree's filter) and uploads use this one route
+too: `search` is a catalog request, and an upload is a conditional create
+(`expected: absent`) with a receipt, like any other publication. There is no
+separate search or upload route to serve.
+
+`createRevisionHandler({ resolve, maxFileBytes })` names the largest file one
+write may carry, in bytes (default 3 MiB; at most
+about 48 MiB). Bytes travel as base64, so the handler sizes its resource
+requests and responses to that limit (at least 4 MiB and 8 MiB). A larger file
+gets the typed `file_too_large` result (`{ path, size, limit, reason }`) and
+nothing is written; a replay of an operation the journal already has keeps its
+recorded result. A request larger than the transport carries is answered 413,
+which the client reports as `unavailable` (a definite refusal). The binding
+(`GET` without `op`) names the limit as `limits.maxFileBytes`;
+`connectRevisionProvider` sizes its requests to it and exposes it as
+`maxFileBytes`, and the file tree refuses a larger upload before sending it.
+The provider's own file system may refuse a smaller file (SQLite: 1 900 000
+bytes by default). This API does not provide streaming uploads.
 
 ### Durable Object apps
 

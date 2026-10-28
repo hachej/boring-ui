@@ -32,6 +32,9 @@
     "happy-dom": "20.14.6",
     "esbuild": "0.28.2",
     "oxlint": "1.86.0",
+    "eslint": "10.12.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "@typescript-eslint/parser": "8.71.2",
     "marked": "17.0.6",
     "just-bash": "3.6.0",
     "isomorphic-git": "1.44.2",
@@ -98,6 +101,8 @@
         "@earendil-works/chord",
         "@earendil-works/chord/*",
         "node:crypto",
+        "typebox",
+        "typebox/schema",
         "unpdf",
         "xlsx"
       ],
@@ -587,7 +592,7 @@
     "artifactViewer": "@hachej/boring-ui-kit/artifact-viewer -> src/artifact-viewer.tsx; read-only host presentation of supplied content or media URLs. React and private Marked parsing over the shared passive HTML allowlist; no files, controllers, Tiptap, canvas, pdfjs or agent imports. Native browser PDF by default, with an optional trusted host renderer. No Pi execution or resource authority.",
     "fileTreeControls": "required host presentation binding; registry supplies the consumer shadcn Button, dropdown-menu and shared version-history rows, never a package-owned control skin",
     "versionHistory": "shared registry version-history presentation owns relative time, provenance and Current rows for viewer menus and Library panels; no publication or execution authority",
-    "chatActivity": "shadcn built-in trace, resolved by the consumer style; host presentation over native Pi views, no execution state",
+    "chatActivity": "the app's shadcn trace (its ui alias, installed in the app setup); host presentation over native Pi views, no execution state",
     "chatComposition": {
       "pi-chat": "regular native renderer; optional generic transcript, composer-content, file-pick and mention-option seams; no dependency on shared-chat",
       "sentFeedback": "pi-chat -> @hachej/boring-feedback/format for strict page-report parsing and readable element labels; host presentation only, no feedback capture, store, agent or Pi execution authority",
@@ -595,6 +600,10 @@
       "shared-chat": "optional registry item depending on pi-chat and the existing theme tokens; owns multi-party headers, cards, quotes, member mentions, host traces and localized labels; AgentWorkspace is composed through its existing chat and controls props",
       "agentColour": "shared-chat hashes agent IDs into the five standard shadcn chart tokens; icons use the token and text uses only default-theme AA-qualified palette entries. The theme owns the missing standard chart defaults/bindings, not a feature palette; no host override or new semantic token.",
       "controllerTypes": "native-chat exports the structural presentation contract; concrete native controller APIs and recovery are unchanged",
+      "chatReact": "@hachej/boring-ui-kit/chat-react -> src/chat-react.ts; opt-in React hooks over the existing controller subscribe/getSnapshot: selectors, transcript windows and row chunks (host shadcn MessageScroller remains the scroll owner), draft persistence, placement, remote chat and conversations clients, common per-selection controller ownership, headless useChatSession state/files/send/restore/queue/uploads/paste/model-effort (src/chat-react-session.ts; injected labels and host callbacks, registry session adapter owns JSX only), artifact follow and present mount acknowledgements; src/chat-react-*.ts holds the implementations. Uses existing native-chat/remote-chat runtime and shared-chat types; no new store or Pi execution lifecycle, never exported by the headless root",
+      "chatView": "@hachej/boring-ui-kit/chat-view -> src/chat-view.ts and src/chat-artifacts.ts; artifact descriptors, parsing, versions (newest conversation result first), revision-equality follow and present acknowledgement rules; the pure chat view rules (native view to rows, the waiting-for-the-person predicate, natural preparing status, run notice words) over Pi types only, generic in card content; no React, files, agent or controller runtime, never exported by the headless root. pi-chat and pi-ambient import it and keep no copy",
+      "chatText": "@hachej/boring-ui-kit/chat-text -> src/chat-text.ts; the pure chat text grammar (slash menu entries, @mention token writing and parsing, message pieces, file kinds, paste and append-to-draft rules); no React, files, agent or controller runtime, never exported by the headless root. The kit's shared-chat writes and finds member mentions with it; pi-chat, pi-chat-slash, pi-chat-markdown, pi-chat-voice, app-shell, feedback and agent-target import it and keep no copy",
+      "runNotifications": "@hachej/boring-ui-kit/chat-react -> src/chat-react.ts; foreground useRunNotifications and background watchConversation share one run-notice transition over the existing controller subscribe/getSnapshot. Transient notification store only; no Pi execution authority or lifecycle ownership. Localized notice text and question parsing are injected by presentation; never exported by the headless root",
       "dataEntry": "@hachej/boring-ui-kit/shared-chat -> src/shared-chat/index.ts; host log/source/socket/fake/errors only, never exported by the headless root; imports the existing transport outbox"
     },
     "runtimeImports": [
@@ -603,6 +612,9 @@
       "@hachej/boring-ui-kit/canvas-editor",
       "@hachej/boring-ui-kit/text-buffer",
       "@hachej/boring-ui-kit/native-chat",
+      "@hachej/boring-ui-kit/chat-view",
+      "@hachej/boring-ui-kit/chat-react",
+      "@hachej/boring-ui-kit/chat-text",
       "@hachej/boring-ui-kit/voice-capture",
       "@hachej/boring-ui-kit/remote-chat",
       "@hachej/boring-ui-kit/shared-chat",

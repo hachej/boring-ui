@@ -343,22 +343,27 @@ export default [
       const fixtures = resolve('.cache/evidence/fileviewers/fixtures'); mkdirSync(fixtures, { recursive: true });
       const png = `${fixtures}/fv-swatch.png`, pdf = `${fixtures}/fv-note.pdf`;
       writeFileSync(png, solidPng(48, [20, 90, 200])); writeFileSync(pdf, briefPdf());
-      for (const [file, rel] of [[png, 'uploads/fv-swatch.png'], [pdf, 'uploads/fv-note.pdf']]) {
+      // The kit names an attachment `uploads/<name>-<8 hex>.<ext>`; the listed name is read back.
+      const saved = {};
+      for (const [file, stem, extension] of [[png, 'fv-swatch', 'png'], [pdf, 'fv-note', 'pdf']]) {
         await browser.attachFiles(q('[data-testid=composer-file]'), [file]);
         await toList();
-        await browser.until(`${rel} listed`, `${k.qa('.studio-panel li button')}.some(b => b.textContent === ${JSON.stringify(rel)})`, 15000);
+        const listed = `${k.qa('.studio-panel li button')}.map(b => b.textContent).find(text => /^uploads\\/${stem}-[0-9a-f]{8}\\.${extension}$/.test(text))`;
+        await browser.until(`${stem} listed`, `!!${listed}`, 15000);
+        saved[stem] = await browser.evaluate(listed);
       }
-      const before = await readBytes('uploads/fv-swatch.png');
+      const swatch = saved['fv-swatch'], note = saved['fv-note'];
+      const before = await readBytes(swatch);
       await t.restartHost();
       await t.reload();
-      assert.deepEqual(Buffer.from(await readBytes('uploads/fv-swatch.png')), Buffer.from(before), 'the bytes are intact after the restart');
-      assert.equal(Buffer.from(await readBytes('uploads/fv-note.pdf')).subarray(0, 5).toString(), '%PDF-');
+      assert.deepEqual(Buffer.from(await readBytes(swatch)), Buffer.from(before), 'the bytes are intact after the restart');
+      assert.equal(Buffer.from(await readBytes(note)).subarray(0, 5).toString(), '%PDF-');
       await toList();
-      await browser.until('file list again', `${k.qa('.studio-panel li button')}.some(b => b.textContent === 'uploads/fv-swatch.png')`, 20000);
-      await openFile('uploads/fv-swatch.png', 'image');
-      await browser.until('uploaded image opens', `${q(`${VIEWER('uploads/fv-swatch.png')} [data-testid=viewer-image]`)}?.naturalWidth === 48`, 15000);
-      await openFile('uploads/fv-note.pdf', 'pdf');
-      await browser.until('uploaded pdf opens', `!!${q(`${VIEWER('uploads/fv-note.pdf')} [data-testid=viewer-stage][data-pdf]`)}`, 15000);
+      await browser.until('file list again', `${k.qa('.studio-panel li button')}.some(b => b.textContent === ${JSON.stringify(swatch)})`, 20000);
+      await openFile(swatch, 'image');
+      await browser.until('uploaded image opens', `${q(`${VIEWER(swatch)} [data-testid=viewer-image]`)}?.naturalWidth === 48`, 15000);
+      await openFile(note, 'pdf');
+      await browser.until('uploaded pdf opens', `!!${q(`${VIEWER(note)} [data-testid=viewer-stage][data-pdf]`)}`, 15000);
       await openFile('media/moon-badge.png', 'image');
       await browser.until('seeded image survived too', `${q(`${VIEWER('media/moon-badge.png')} [data-testid=viewer-image]`)}?.naturalWidth === 96`, 15000);
       void pause;

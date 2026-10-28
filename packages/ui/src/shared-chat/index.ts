@@ -1,6 +1,7 @@
 import type { ChatAttempt, ChatController, ChatDraft, ChatSendInput, NativeChatSnapshot } from '../native-chat.js';
 import { randomUUID } from '@hachej/boring-files/platform';
 import { createChatOutbox } from '../chat-outbox.js';
+import { mentionedPaths, mentionToken } from '../chat-text.js';
 import { ChannelRequestError } from './error.js';
 export { ChannelRequestError } from './error.js';
 import { cardActions } from './source.js';
@@ -26,7 +27,7 @@ export function createSharedChat(source: ChannelSource, options: { readonly conv
   const listeners = new Set<() => void>();
   const outbox = createChatOutbox<Parameters<ChannelSource['send']>[0], ChannelMessage>();
   const replayable = new Set<string>();
-  let unsubscribe: (() => void) | undefined, opening: Promise<void> | undefined, paging: Promise<void> | undefined, before: string | undefined;
+  let unsubscribe: (() => void) | undefined, opening: Promise<void> | undefined, paging: Promise<void> | undefined, before: string | undefined, loaded = false;
   let revision = 0;
   const changed = new Map<string, number>();
   const publish = (change: Partial<SharedChatSnapshot>) => {
@@ -37,13 +38,15 @@ export function createSharedChat(source: ChannelSource, options: { readonly conv
   const active = () => { if (snapshot.disposed) throw new Error('Chat controller is disposed'); };
   const merge = (messages: readonly ChannelMessage[], prepend = false) => {
     // New stream events always win over an overlapping history read. Replacements keep the row's position and identity.
+    // Only incoming messages are copied: a kept message keeps its object, so the page renders only what changed.
     const existing = snapshot.shared.messages;
+    const incoming = new Set(messages);
     const all = prepend ? [...messages, ...existing] : [...existing, ...messages];
     const byId = new Map<string, ChannelMessage>();
     for (const message of all) {
       if (message.conversationId !== id) continue;
       if (message.clientId) for (const [key, value] of byId) if (value.clientId === message.clientId && key !== message.id) byId.delete(key);
-      byId.set(message.id, structuredClone(message));
+      byId.set(message.id, incoming.has(message) ? structuredClone(message) : message);
     }
     publish({ shared: { ...snapshot.shared, messages: [...byId.values()].sort((a, b) => Date.parse(a.at) - Date.parse(b.at)) } });
   };
@@ -70,7 +73,9 @@ export function createSharedChat(source: ChannelSource, options: { readonly conv
   };
   const replay = () => { for (const call of outbox.values()) if (replayable.has(call.input.clientId)) sendOne(call.input.clientId, call.input); };
   async function refresh() {
-    // Walk backward to the newest known message, not just one page: a long disconnect must not drop a gap.
+    // Walk backward to the newest known message, not just one page: a long disconnect must not drop a gap. The first read is not
+    // a reconnect, even when live events (a card pushed before it) already put messages in the thread: it keeps its cursor.
+    const first = !loaded;
     const known = new Set(snapshot.shared.messages.map(message => message.id));
     let cursor: string | undefined;
     const seen = new Set<string>();
@@ -79,8 +84,8 @@ export function createSharedChat(source: ChannelSource, options: { readonly conv
       const page = await source.history(id, { limit, ...(cursor ? { before: cursor } : {}) });
       if (snapshot.disposed) return;
       merge(page.messages.filter(message => (changed.get(message.id) ?? 0) <= started));
-      if (!known.size && cursor === undefined) before = page.before;
-      if (!page.before || !known.size || page.messages.some(message => known.has(message.id))) break;
+      if (first && cursor === undefined) { before = page.before; loaded = true; }
+      if (first || !page.before || !known.size || page.messages.some(message => known.has(message.id))) break;
       if (seen.has(page.before)) throw new Error('Channel history cursor did not progress');
       seen.add(page.before); cursor = page.before;
     } while (cursor);
@@ -114,6 +119,35 @@ export function createSharedChat(source: ChannelSource, options: { readonly conv
       reconnect = refresh().then(replay).catch(error => publish({ connection: { kind: 'error', error } })).finally(() => { reconnect = undefined; });
     }
   };
+  /** One message into the thread. `answering` replies to a question without touching the composer's reply, files or draft. */
+  const post = async (input?: ChatSendInput, answering?: { readonly replyTo: string }): Promise<ChannelMessage | undefined> => {
+    active();
+    const selected = input ?? snapshot.draft;
+    const files = answering ? [] : [...snapshot.shared.files];
+    if (!selected.text.trim() && !selected.attachments?.length && !files.length) return;
+    if (selected.attachments?.length) throw new Error('Use shared file attachments, not native image payloads');
+    const clientId = randomUUID();
+    const mentions = snapshot.shared.members.filter(member => hasMemberMention(selected.text, member)).map(member => member.id);
+    const payload = { conversationId: id, text: selected.text, mentions, clientId, ...(answering ? { replyTo: answering.replyTo } : snapshot.shared.replyTo ? { replyTo: snapshot.shared.replyTo } : {}), ...(files.length ? { attachments: files } : {}) };
+    const result = outbox.enqueue(clientId, payload);
+    // The sender's own copy is in the thread at once, marked pending: the host's message with the same clientId replaces it
+    // (merge), whether it comes back from send, the live socket or a history read. A refusal takes it out again.
+    const local: ChannelMessage = { id: `pending:${clientId}`, conversationId: id, author: source.me.id, at: latestAt(snapshot.shared.messages), text: selected.text, mentions, clientId, pending: true,
+      ...(payload.replyTo ? { replyTo: payload.replyTo } : {}), ...(files.length ? { attachments: files.map(file => ({ path: file.name, title: file.name })) } : {}) };
+    publish({ shared: answering ? snapshot.shared : { ...snapshot.shared, files: [], replyTo: undefined }, ...(!input ? { draft: { text: '', attachments: [], version: snapshot.draft.version + 1 } } : {}), send: { kind: 'submitting' } });
+    merge([local]);
+    sendOne(clientId, payload);
+    try { const message = await result; publish({ send: { kind: 'admitted' } }); return message; }
+    catch (error) {
+      if (!snapshot.disposed && error instanceof ChannelRequestError && error.refused) {
+        const current = snapshot.draft, others = snapshot.shared.messages.filter(message => message.id !== local.id);
+        publish(answering ? { send: { kind: 'blocked', reason: error.message }, shared: { ...snapshot.shared, messages: others } }
+          : { send: { kind: 'blocked', reason: error.message }, draft: { ...current, text: [input?.restore?.text ?? selected.text, current.text].filter(Boolean).join('\n'), version: current.version + 1 },
+            shared: { ...snapshot.shared, messages: others, files: [...files, ...snapshot.shared.files], replyTo: snapshot.shared.replyTo ?? payload.replyTo } });
+      }
+      return undefined;
+    }
+    };
   const controller = {
     getSnapshot: (): SharedChatSnapshot => snapshot,
     subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
@@ -152,27 +186,12 @@ export function createSharedChat(source: ChannelSource, options: { readonly conv
       }).catch(error => { unsubscribe?.(); unsubscribe = undefined; publish({ connection: { kind: 'error', error } }); }).finally(() => { opening = undefined; });
       return opening;
     },
-    send: async (_whenBusy?: ChatAttempt['whenBusy'], input?: ChatSendInput): Promise<ChannelMessage | undefined> => {
+    send: (_whenBusy?: ChatAttempt['whenBusy'], input?: ChatSendInput): Promise<ChannelMessage | undefined> => post(input),
+    /** Answers an agent's question with one of its choices (or any text): a reply to the question, leaving the composer and its reply as they are. */
+    answer: (question: ChannelMessage, text: string): Promise<ChannelMessage | undefined> => {
       active();
-      const selected = input ?? snapshot.draft;
-      const files = [...snapshot.shared.files];
-      if (!selected.text.trim() && !selected.attachments?.length && !files.length) return;
-      if (selected.attachments?.length) throw new Error('Use shared file attachments, not native image payloads');
-      const clientId = randomUUID();
-      const mentions = snapshot.shared.members.filter(member => hasMemberMention(selected.text, member)).map(member => member.id);
-      const payload = { conversationId: id, text: selected.text, mentions, clientId, ...(snapshot.shared.replyTo ? { replyTo: snapshot.shared.replyTo } : {}), ...(files.length ? { attachments: files } : {}) };
-      const result = outbox.enqueue(clientId, payload);
-      publish({ shared: { ...snapshot.shared, files: [], replyTo: undefined }, ...(!input ? { draft: { text: '', attachments: [], version: snapshot.draft.version + 1 } } : {}), send: { kind: 'submitting' } });
-      sendOne(clientId, payload);
-      try { const message = await result; publish({ send: { kind: 'admitted' } }); return message; }
-      catch (error) {
-        if (!snapshot.disposed && error instanceof ChannelRequestError && error.refused) {
-          const current = snapshot.draft;
-          publish({ send: { kind: 'blocked', reason: error.message }, draft: { ...current, text: [input?.restore?.text ?? selected.text, current.text].filter(Boolean).join('\n'), version: current.version + 1 },
-            shared: { ...snapshot.shared, files: [...files, ...snapshot.shared.files], replyTo: snapshot.shared.replyTo ?? payload.replyTo } });
-        }
-        return undefined;
-      }
+      if (!question.question || question.question.answered || question.conversationId !== id) return Promise.reject(new Error('This question is not open'));
+      return post({ text, attachments: [] }, { replyTo: question.id });
     },
     reconcile: async () => {
       active(); await refresh();
@@ -202,21 +221,29 @@ export function createSharedChat(source: ChannelSource, options: { readonly conv
     },
     remove: source.remove && source.canRemove ? (message: ChannelMessage) => source.canRemove?.(message) === true ? source.remove!(message.id) : Promise.reject(new Error('Removal refused')) : undefined,
     canRemove: (message: ChannelMessage) => Boolean(source.remove && source.canRemove?.(message)),
-  } satisfies ChatController & { setFiles: (files: readonly File[]) => void; setReplyTo: (id: string | undefined) => void; action: (card: Card, actionId?: string) => Promise<void>; remove: ((message: ChannelMessage) => Promise<void>) | undefined; canRemove: (message: ChannelMessage) => boolean };
+  } satisfies ChatController & { answer: (question: ChannelMessage, text: string) => Promise<ChannelMessage | undefined>; setFiles: (files: readonly File[]) => void; setReplyTo: (id: string | undefined) => void; action: (card: Card, actionId?: string) => Promise<void>; remove: ((message: ChannelMessage) => Promise<void>) | undefined; canRemove: (message: ChannelMessage) => boolean };
   return controller;
 }
 export type SharedChatController = ReturnType<typeof createSharedChat>;
 
-/** The composer uses the existing quoted @ token grammar. Tokens carry stable member ids; picker labels show names. */
-export function memberMention(member: Member): string {
-  return /[\s"\\]/.test(member.id) ? `@"${member.id.replace(/[\\"]/g, '\\$&')}"` : `@${member.id}`;
+/** Now, or just after the newest message when this device's clock is behind the host's: a pending copy always sorts last. */
+function latestAt(messages: readonly ChannelMessage[]): string {
+  const now = Date.now(), newest = Math.max(0, ...messages.map(message => Date.parse(message.at)).filter(Number.isFinite));
+  return new Date(Math.max(now, newest + 1)).toISOString();
 }
+
+/** A member is mentioned with the chat's one `@` token grammar (`mentionToken` of `chat-text`). Tokens carry stable member ids; picker labels show names. */
+export function memberMention(member: Member): string {
+  return mentionToken(member.id);
+}
+/** Whether the text mentions the member, parsed as the composer and the agent parse mentions (`mentionedPaths` of `chat-text`). */
 function hasMemberMention(text: string, member: Member): boolean {
-  const token = memberMention(member);
-  return [...text.matchAll(/(^|\s)(@"(?:[^"\\]|\\.)*"|@[^\s]+)/g)].some(match => match[2] === token);
+  return mentionedPaths(text).includes(member.id);
 }
 
 export { createFakeChannelSource } from './fake.js';
 export type { FakeChannelSeed } from './fake.js';
 export { createChannelSocket } from './socket.js';
+export { createRoomSource } from './room.js';
+export type { RoomSource, RoomSourceOptions, RoomWords } from './room.js';
 export type { ChannelSocketOptions, ChannelSocketSource } from './socket.js';

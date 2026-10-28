@@ -1,5 +1,7 @@
 import { defineExtension, defineTool } from '@earendil-works/pi-durable';
-import type { Extension } from '@earendil-works/pi-durable';
+import type { ConversationId, Extension } from '@earendil-works/pi-durable';
+import type { FileInfo, FileSystem } from '@earendil-works/pi-durable/env';
+import type { Context } from '@earendil-works/chord';
 import { Type } from '@earendil-works/pi-ai';
 
 /** Names of skills and agents: a lowercase letter or digit, then lowercase letters, digits, `.`, `_` or `-` (at most 64). */
@@ -41,28 +43,519 @@ export function validSkill(skill: Skill): Skill {
   return folder === undefined ? valid : skillInFolder(valid, folder);
 }
 
-/** A prompt section listing the skills and a `load_skill` tool returning one body. Usable without `defineAgent`. */
-export function createSkillsExtension(name: string, skills: readonly Skill[]): Extension {
+/** A skill a live source left out, and why. `name` is the folder or file name when the skill itself could not be read. */
+export interface SkillError { readonly path: string; readonly name?: string; readonly message: string }
+/** What a source holds now: skills not yet validated, and the files it could not read. */
+export interface SkillListing { readonly skills: readonly Skill[]; readonly errors: readonly SkillError[] }
+
+/**
+ * Skills that can change while the agent runs. `version()` is a cheap token that changes when the skills change; `list()`
+ * reads them. The built-in sources read through the workspace's Pi `FileSystem`; a host may write its own.
+ */
+export interface SkillSource {
+  readonly list: (context: Context) => Promise<SkillListing>;
+  readonly version: (context: Context) => Promise<string>;
+  /** The FileSystem the skills' folders live in; the built-in sources set it. `companionFiles` reads through it. */
+  readonly fs?: SkillFileSystem;
+  /**
+   * A versioned source only (`directorySkillSource(fs, root, { versioned: true })`): `liveSkills` then keeps each conversation on
+   * the version it started with until it is reloaded, instead of following `version()`.
+   */
+  readonly versions?: SkillVersions;
+}
+
+/** The versions of a versioned source. A version's folder never changes once written, so it is read once. */
+export interface SkillVersions {
+  /**
+   * Read the pointer now: the version new conversations start on. When it cannot be used, `error` says why and `version` is the
+   * last good one (absent when there was none).
+   */
+  readonly current: (context: Context) => Promise<{ readonly version?: string; readonly error?: SkillError }>;
+  /** The skills of one version. */
+  readonly list: (version: string, context: Context) => Promise<SkillListing>;
+}
+
+/** The part of Pi's `FileSystem` the built-in sources read through (an `ExecutionEnv` is one). */
+export type SkillFileSystem = Pick<FileSystem, 'readTextFile' | 'listDir' | 'fileInfo'>;
+
+const reason = (error: unknown) => error instanceof Error ? error.message : String(error);
+const parent = (path: string) => { const at = path.lastIndexOf('/'); return at < 0 ? '.' : path.slice(0, at); };
+const stamp = (info: FileInfo) => `${info.mtimeMs}:${info.size}`;
+/** The file a built-in source read each skill from, so a skill left out later is reported at its file. */
+const skillFiles = new WeakMap<Skill, string>();
+
+async function readSkillFile(fs: SkillFileSystem, path: string, name: string, context: Context): Promise<Skill | SkillError> {
+  const text = await fs.readTextFile(path, context);
+  if (!text.ok) return { path, name, message: text.error.message };
+  try { const skill = skillInFolder(parseSkill(text.value), parent(path)); skillFiles.set(skill, path); return skill; } catch (error) { return { path, name, message: reason(error) }; }
+}
+
+/**
+ * Every `<directory>/<name>/SKILL.md`; with `flat`, also each `<directory>/<name>.md`, whose folder is the directory. A missing
+ * directory holds no skills. Other files are read only with `companionFiles`.
+ *
+ * With `versioned`, the skills are in `<directory>/<version>/` and the file `<directory>/current` names the version (one line,
+ * for example `v13`). A pointer that is missing, unreadable or names no folder is reported as an error at `<directory>/current`,
+ * and the source keeps the last good version.
+ */
+export function directorySkillSource(fs: SkillFileSystem, directory: string, options: { readonly flat?: boolean; readonly versioned?: boolean } = {}): SkillSource {
+  const root = directory.replace(/\/+$/, '');
+  if (options.versioned) return versionedSource(fs, root, options.flat === true);
+  /** The skill files the directory holds, each with the name it is reported under. */
+  async function candidates(context: Context): Promise<{ files: readonly { readonly path: string; readonly name: string }[]; error?: SkillError }> {
+    const listed = await fs.listDir(root, context);
+    if (!listed.ok) return listed.error.code === 'not_found' ? { files: [] } : { files: [], error: { path: root, message: listed.error.message } };
+    const folders = listed.value.filter(entry => entry.kind === 'directory').map(entry => ({ path: `${root}/${entry.name}/SKILL.md`, name: entry.name }));
+    const flat = options.flat ? listed.value.filter(entry => entry.kind === 'file' && entry.name.endsWith('.md'))
+      .map(entry => ({ path: `${root}/${entry.name}`, name: entry.name.slice(0, -'.md'.length) })) : [];
+    return { files: [...folders, ...flat].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)) };
+  }
+  return {
+    fs,
+    version: async context => {
+      const { files, error } = await candidates(context);
+      if (error) return `error:${error.message}`;
+      const stamps = await Promise.all(files.map(async file => {
+        const found = await fs.fileInfo(file.path, context);
+        return `${file.path}=${found.ok ? stamp(found.value) : found.error.code}`;
+      }));
+      return stamps.join('|');
+    },
+    list: async context => {
+      const { files, error } = await candidates(context);
+      const skills: Skill[] = [], errors: SkillError[] = error ? [error] : [];
+      for (const file of files) {
+        const found = await fs.fileInfo(file.path, context);
+        if (!found.ok && found.error.code === 'not_found') continue;
+        const read = await readSkillFile(fs, file.path, file.name, context);
+        if ('body' in read) skills.push(read); else errors.push(read);
+      }
+      return { skills, errors };
+    },
+  };
+}
+
+/** A version is one folder name: no separator, no control character, not `.` or `..`. */
+const VERSION = /^(?!\.\.?$)[^/\\\u0000-\u001f]{1,128}$/;
+
+function versionedSource(fs: SkillFileSystem, root: string, flat: boolean): SkillSource {
+  const pointer = `${root}/current`;
+  let good: string | undefined;
+  const folder = (version: string) => directorySkillSource(fs, `${root}/${version}`, { flat });
+  const versions: SkillVersions = {
+    current: async context => {
+      const kept = (message: string) => ({ ...(good === undefined ? {} : { version: good }), error: { path: pointer, message } });
+      const text = await fs.readTextFile(pointer, context);
+      if (!text.ok) return kept(`Skill version pointer could not be read: ${text.error.message}`);
+      const version = text.value.trim();
+      if (!VERSION.test(version)) return kept(`Skill version pointer names no version folder: ${JSON.stringify(version.slice(0, 80))}`);
+      const info = await fs.fileInfo(`${root}/${version}`, context);
+      if (!info.ok || info.value.kind !== 'directory') return kept(`Skill version ${version} has no folder ${root}/${version}${info.ok ? '' : `: ${info.error.message}`}`);
+      good = version;
+      return { version };
+    },
+    list: (version, context) => folder(version).list(context),
+  };
+  return {
+    fs, versions,
+    version: async context => { const read = await versions.current(context); return `${read.version ?? ''}|${read.error?.message ?? ''}`; },
+    list: async context => {
+      const read = await versions.current(context);
+      const listing = read.version === undefined ? { skills: [], errors: [] } : await versions.list(read.version, context);
+      return read.error ? { skills: listing.skills, errors: [...listing.errors, read.error] } : listing;
+    },
+  };
+}
+
+/** One skill file (`SKILL.md` front matter); a missing file holds no skill. Its folder is the file's directory. */
+export function fileSkillSource(fs: SkillFileSystem, path: string): SkillSource {
+  const name = path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/i, '');
+  return {
+    fs,
+    version: async context => {
+      const found = await fs.fileInfo(path, context);
+      return found.ok ? stamp(found.value) : found.error.code;
+    },
+    list: async context => {
+      const read = await readSkillFile(fs, path, name, context);
+      if ('body' in read) return { skills: [read], errors: [] };
+      const found = await fs.fileInfo(path, context);
+      return !found.ok && found.error.code === 'not_found' ? { skills: [], errors: [] } : { skills: [], errors: [read] };
+    },
+  };
+}
+
+/** What both kinds of skills take: the native extension name, the listing text and which skills a conversation sees. */
+export interface SkillsOptions {
+  /** The native extension name, one per registry, for example `agent.<id>.skills`. */
+  readonly name: string;
+  /**
+   * Which skills a conversation sees: called once per listing render and per `load_skill` call with Pi's conversation id and
+   * every valid skill, it returns the subset that conversation sees (matched by name; anything else returned is ignored).
+   * A hidden skill is left out of the listing and `load_skill` answers for it exactly as for an unknown name. With a filter,
+   * a skill that could not be read also answers as unknown (its reason still goes to `onDiagnostics`).
+   */
+  readonly visible?: (conversationId: ConversationId, skills: readonly Skill[]) => readonly Skill[] | Promise<readonly Skill[]>;
+  /** The listing section's text before the `- name: description` lines. Default: call load_skill first, `/<skill-name>` is explicit. */
+  readonly intro?: string;
+}
+
+/** The options of `liveSkills`: a source is read on use, so it also has a cache age, diagnostics, companion files and a veto. */
+export interface LiveSkillsOptions extends SkillsOptions {
+  /** How long a source's copy is used before `version()` is asked again, in milliseconds. Default 5000. */
+  readonly maxAgeMs?: number;
+  /**
+   * Called after each read of a source with every skill it left out (an empty array when none). When `onPublish` refuses the
+   * read, it gets the errors of the listing still in effect followed by `{ path: '', message: 'Listing refused by onPublish: <reason>' }`.
+   */
+  readonly onDiagnostics?: (errors: readonly SkillError[]) => void;
+  /**
+   * List the files beside each `SKILL.md` (at any depth, at most 200) in `load_skill`'s answer, and let
+   * `load_skill({ name, path })` return one of them as text. Each file is checked when the listing is read: a symbolic link,
+   * a file that cannot be read or one that is not UTF-8 text is left out and reported to `onDiagnostics`. `load_skill` checks a
+   * listed file again before returning it (the skill's folder, every folder on the way and the file itself, with `fileInfo`,
+   * which does not follow links), so a file or folder swapped for a link since the listing is refused. Read through the
+   * source's `fs`; a source without `fs` throws.
+   */
+  readonly companionFiles?: boolean;
+  /**
+   * Called before a newly read listing of a source replaces the current one, with both listings' skills. Return a reason
+   * (or throw) to refuse it: the current listing stays, and `onDiagnostics` gets its errors plus `Listing refused by onPublish: <reason>`.
+   * A refused listing is offered again only once the source's version changes or `refresh()` is called.
+   */
+  readonly onPublish?: (next: readonly Skill[], previous: readonly Skill[]) => string | void | Promise<string | void>;
+}
+
+/** A live source's extension, with a handle to re-read the source now. */
+export interface LiveSkills {
+  readonly extension: Extension;
+  /**
+   * Read the source now, whatever `maxAgeMs`, and publish what it holds (through `onPublish`). With `name`, only that skill
+   * is taken from the new read (added, replaced or removed); the others stay as they were until the source's `version()`
+   * changes again, when the next read offers the whole source as usual. Resolves `true` when published, `false` when
+   * `onPublish` refused it.
+   *
+   * A versioned source: read its pointer now and move conversation `conversationId` (every conversation when absent) to that
+   * version; `name` is refused. Resolves `false` when the pointer could not be used (the conversations keep their version).
+   */
+  readonly refresh: (context: Context, name?: string, conversationId?: ConversationId) => Promise<boolean>;
+}
+
+interface Loaded { readonly known: ReadonlyMap<string, Skill>; readonly errors: readonly SkillError[] }
+
+/** Validate what a source returned with `validSkill` and the duplicate rule: what fails is left out and reported, never thrown. */
+function loaded(listing: SkillListing): Loaded {
+  const known = new Map<string, Skill>(), errors = [...listing.errors];
+  for (const raw of listing.skills) {
+    const path = skillFiles.get(raw) ?? skillFolders.get(raw) ?? '';
+    let skill: Skill;
+    try { skill = validSkill(raw); } catch (error) { errors.push({ path, name: raw.name, message: reason(error) }); continue; }
+    if (known.has(skill.name)) { errors.push({ path, name: skill.name, message: `Duplicate skill: ${skill.name}` }); continue; }
+    const file = skillFiles.get(raw);
+    if (file !== undefined) skillFiles.set(skill, file);
+    known.set(skill.name, skill);
+  }
+  return { known, errors };
+}
+
+/** `next` with only `name` taken from it; the rest of `current` is kept. */
+function only(name: string, next: Loaded, current: Loaded): Loaded {
+  const known = new Map(current.known), skill = next.known.get(name);
+  if (skill) known.set(name, skill); else known.delete(name);
+  return { known, errors: [...current.errors.filter(error => error.name !== name), ...next.errors.filter(error => error.name === name)] };
+}
+
+/**
+ * The current copy of a source: read again once it is older than `maxAgeMs` and `version()` changed, or when `refresh` asks.
+ * Reads run one at a time; concurrent callers of `current` share one.
+ */
+function copyOf(source: SkillSource, options: LiveSkillsOptions) {
+  const maxAgeMs = options.maxAgeMs ?? 5000, fs = options.companionFiles ? source.fs : undefined;
+  let state: Loaded = { known: new Map(), errors: [] };
+  let version: string | undefined, checkedAt = -Infinity, pending: Promise<Loaded> | undefined, missing: Promise<Loaded> | undefined;
+  let queue: Promise<unknown> = Promise.resolve();
+  const read = async (context: Context) => { const next = loaded(await source.list(context)); return fs ? withCompanions(fs, next, context) : next; };
+  const serial = <T>(run: () => Promise<T>): Promise<T> => { const next = queue.then(run, run); queue = next.catch(() => {}); return next; };
+  async function refusal(next: Loaded): Promise<string | undefined> {
+    if (!options.onPublish) return undefined;
+    try { return (await options.onPublish([...next.known.values()], [...state.known.values()])) ?? undefined; } catch (error) { return reason(error); }
+  }
+  async function publish(next: Loaded): Promise<boolean> {
+    const refused = await refusal(next);
+    // The listing in effect stays, so its errors stay too: the refusal is added to them, never replaces them.
+    if (refused !== undefined) { options.onDiagnostics?.([...state.errors, { path: '', message: `Listing refused by onPublish: ${refused}` }]); return false; }
+    state = next;
+    options.onDiagnostics?.(state.errors);
+    return true;
+  }
+  async function check(context: Context): Promise<Loaded> {
+    const next = await source.version(context);
+    if (next !== version) {
+      const listing = await read(context);
+      version = next;
+      await publish(listing);
+    }
+    checkedAt = Date.now();
+    return state;
+  }
+  return {
+    current: (context: Context): Promise<Loaded> => {
+      if (Date.now() - checkedAt < maxAgeMs) return Promise.resolve(state);
+      return pending ??= serial(() => check(context)).finally(() => { pending = undefined; });
+    },
+    // A load_skill miss: the maxAgeMs check now. One at a time, shared by concurrent misses; `list()` and `onPublish` run
+    // only when `version()` changed, so a model asking for names that do not exist costs one `version()` per miss.
+    miss: (context: Context): Promise<Loaded> => missing ??= serial(() => check(context)).finally(() => { missing = undefined; }),
+    refresh: (context: Context, name?: string): Promise<boolean> => serial(async () => {
+      const next = await source.version(context), listing = await read(context);
+      // The read is accounted for at this version, whether all of it or one skill was taken (or onPublish refused it): the
+      // others kept by a one-skill refresh are offered again only once the source changes, not at the next maxAgeMs check.
+      version = next;
+      checkedAt = Date.now();
+      return publish(name === undefined ? listing : only(name, listing, state));
+    }),
+  };
+}
+
+/**
+ * A versioned source: each conversation is pinned to the version it first read and keeps it until `reload` or `refresh` moves
+ * it. The pointer is read again once older than `maxAgeMs`; each version is read once (a reload reads its version again).
+ * Pins live in this process: after a restart a conversation starts on the version current then.
+ */
+function versionsOf(versions: SkillVersions, sourceFs: SkillFileSystem | undefined, options: LiveSkillsOptions) {
+  const maxAgeMs = options.maxAgeMs ?? 5000, fs = options.companionFiles ? sourceFs : undefined;
+  const empty: Loaded = { known: new Map(), errors: [] };
+  const read = new Map<string, Promise<Loaded>>(), pins = new Map<ConversationId, string>();
+  let latest: string | undefined, checkedAt = -Infinity, reported: string | undefined, pending: Promise<unknown> | undefined;
+  function load(version: string, context: Context): Promise<Loaded> {
+    let found = read.get(version);
+    if (!found) {
+      const next = (async () => { const listing = loaded(await versions.list(version, context)); return fs ? withCompanions(fs, listing, context) : listing; })();
+      read.set(version, next);
+      next.catch(() => { if (read.get(version) === next) read.delete(version); });
+      found = next;
+    }
+    return found;
+  }
+  /** Read the pointer now; `again` reads its version's folder again too. Reports diagnostics when what was read changed. */
+  async function check(context: Context, again = false) {
+    const pointed = await versions.current(context);
+    if (again && pointed.version !== undefined) read.delete(pointed.version);
+    latest = pointed.version;
+    checkedAt = Date.now();
+    const state = latest === undefined ? empty : await load(latest, context);
+    const errors = pointed.error ? [...state.errors, pointed.error] : state.errors;
+    const token = JSON.stringify([latest, errors]);
+    if (token !== reported) { reported = token; options.onDiagnostics?.(errors); }
+    return { ...pointed, state };
+  }
+  async function newest(context: Context): Promise<string | undefined> {
+    if (Date.now() - checkedAt >= maxAgeMs) await (pending ??= check(context).finally(() => { pending = undefined; }));
+    return latest;
+  }
+  async function move(context: Context, conversationId: ConversationId | undefined) {
+    const pointed = await check(context, true);
+    if (pointed.version !== undefined && pointed.error === undefined) {
+      if (conversationId !== undefined) pins.set(conversationId, pointed.version);
+      else for (const id of pins.keys()) pins.set(id, pointed.version);
+    }
+    return pointed;
+  }
+  return {
+    current: async (context: Context, conversationId: ConversationId | undefined): Promise<Loaded> => {
+      let version = conversationId === undefined ? undefined : pins.get(conversationId);
+      if (version === undefined) {
+        version = await newest(context);
+        if (version !== undefined && conversationId !== undefined) pins.set(conversationId, version);
+      }
+      return version === undefined ? empty : load(version, context);
+    },
+    reload: async (context: Context, conversationId: ConversationId | undefined): Promise<string> => {
+      const pointed = await move(context, conversationId);
+      if (pointed.error) {
+        const kept = conversationId === undefined ? pointed.version : pins.get(conversationId) ?? pointed.version;
+        return `${kept === undefined ? 'No skill version is in use' : `Skills stay on version ${kept}`}: ${pointed.error.message}`;
+      }
+      const names = [...pointed.state.known.keys()];
+      return `Skills reloaded: version ${pointed.version} (${names.length ? names.join(', ') : 'no skills'}).`;
+    },
+    refresh: async (context: Context, name?: string, conversationId?: ConversationId): Promise<boolean> => {
+      if (name !== undefined) throw new TypeError('A versioned skill source moves whole versions: refresh takes no skill name');
+      return (await move(context, conversationId)).error === undefined;
+    },
+  };
+}
+
+const INTRO_TEXT = 'Before starting a task that matches a skill, call load_skill with its name and follow the returned instructions. A user message that starts with /<skill-name> naming one of these skills is an explicit request: call load_skill for that skill first and follow it for the rest of the message.';
+const COMPANION_LIMIT = 200;
+
+/** Each skill's companion files, checked when its listing was read. */
+const companionLists = new WeakMap<Skill, readonly string[]>();
+const notText = (text: string) => /[\u0000\uFFFD]/.test(text);
+
+/**
+ * Why a listed companion may not be read now, or `undefined`: the skill's folder and every folder on the way must still be
+ * directories and the file a regular file (`fileInfo` does not follow links), so a link swapped in since the listing is refused.
+ */
+async function companionChanged(fs: SkillFileSystem, folder: string, relative: string, context: Context): Promise<string | undefined> {
+  const parts = relative.split('/'), base = folder === '.' ? '' : `${folder}/`;
+  const steps = [...(folder === '.' ? [] : [{ path: folder, kind: 'directory' }]),
+    ...parts.map((_, index) => ({ path: base + parts.slice(0, index + 1).join('/'), kind: index === parts.length - 1 ? 'file' : 'directory' }))];
+  for (const step of steps) {
+    const info = await fs.fileInfo(step.path, context);
+    if (!info.ok) return info.error.message;
+    if (info.value.kind === 'symlink') return `${step.path} is a symbolic link`;
+    if (info.value.kind !== step.kind) return `${step.path} is not a ${step.kind === 'file' ? 'regular file' : 'directory'}`;
+  }
+  return undefined;
+}
+
+/**
+ * Walk the files beside each skill's `SKILL.md` (relative to its folder, depth first in name order, at most
+ * `COMPANION_LIMIT`) and keep those that read as UTF-8 text. A symbolic link, an unreadable or non-text file, and files past
+ * the limit are left out and reported with the skill's name. A skill file not named `SKILL.md` has none.
+ */
+async function withCompanions(fs: SkillFileSystem, listing: Loaded, context: Context): Promise<Loaded> {
+  const errors = [...listing.errors];
+  for (const skill of listing.known.values()) {
+    const folder = skillFolders.get(skill), file = skillFiles.get(skill), files: string[] = [];
+    companionLists.set(skill, files);
+    if (folder === undefined || (file !== undefined && !/(^|\/)SKILL\.md$/.test(file))) continue;
+    const at = (relative: string) => relative === '' ? folder : folder === '.' ? relative : `${folder}/${relative}`;
+    const leftOut = (relative: string, message: string) => { errors.push({ path: at(relative), name: skill.name, message }); };
+    let over = false;
+    const walk = async (relative: string): Promise<void> => {
+      const listed = await fs.listDir(at(relative), context);
+      if (!listed.ok) { leftOut(relative, `Companion files could not be listed: ${listed.error.message}`); return; }
+      for (const entry of [...listed.value].sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)) {
+        if (over) return;
+        const path = relative === '' ? entry.name : `${relative}/${entry.name}`;
+        if (entry.kind === 'directory') { await walk(path); continue; }
+        if (path === 'SKILL.md') continue;
+        if (entry.kind === 'symlink') { leftOut(path, 'Companion file left out: a symbolic link'); continue; }
+        if (files.length >= COMPANION_LIMIT) { over = true; leftOut('', `Companion files left out: more than ${COMPANION_LIMIT}`); return; }
+        const text = await fs.readTextFile(at(path), context);
+        if (!text.ok) leftOut(path, `Companion file left out: ${text.error.message}`);
+        else if (notText(text.value)) leftOut(path, 'Companion file left out: not UTF-8 text');
+        else files.push(path);
+      }
+    };
+    await walk('');
+  }
+  return { known: listing.known, errors };
+}
+
+/**
+ * What the extension reads: the copy a conversation sees, and for a plain source, a check now after a `load_skill` miss. A
+ * versioned source adds `reload`, the `reload_skill` tool: move one conversation to the current version and say what happened.
+ */
+interface Live {
+  readonly current: (context: Context, conversationId: ConversationId | undefined) => Promise<Loaded>;
+  readonly miss?: (context: Context) => Promise<Loaded>;
+  readonly reload?: (context: Context, conversationId: ConversationId | undefined) => Promise<string>;
+}
+
+/** The listing section and `load_skill` over `live`, filtered per conversation by `visible`. */
+function skillsExtension(live: Live, options: SkillsOptions, fs: SkillFileSystem | undefined): Extension {
+  const { visible } = options, intro = options.intro ?? INTRO_TEXT;
+  // `at` is read only with a filter, so direct callers of render/execute without Pi's input or api keep working.
+  async function seen(known: ReadonlyMap<string, Skill>, at: () => ConversationId): Promise<Skill[]> {
+    const all = [...known.values()];
+    if (!visible) return all;
+    const names = new Set((await visible(at(), all)).map(skill => skill.name));
+    return all.filter(skill => names.has(skill.name));
+  }
+  const parameters = fs
+    ? Type.Object({ name: Type.String(), path: Type.Optional(Type.String({ description: 'A companion file of the skill, relative to its folder.' })) }, { additionalProperties: false })
+    : Type.Object({ name: Type.String() }, { additionalProperties: false });
+  return defineExtension({
+    name: options.name,
+    sections: [{ key: 'skills', render: async (input, context) => {
+      const skills = await seen((await live.current(context, input?.conversationId)).known, () => input.conversationId);
+      const lines = [...skills.length ? [intro] : [], ...live.reload ? [RELOAD_TEXT] : [], ...skills.map(skill => `- ${skill.name}: ${skill.description}`)];
+      return lines.length ? lines.join('\n') : undefined;
+    } }],
+    tools: [defineTool({
+      name: 'load_skill',
+      description: fs ? 'Load the full instructions of one listed skill, or with `path` one of its companion files.' : 'Load the full instructions of one listed skill.',
+      parameters,
+      replay: 'safe',
+      execute: async (args: { name: string; path?: string }, api, context) => {
+        const text = (value: string) => ({ output: [{ type: 'text' as const, text: value }] });
+        let { known, errors } = await live.current(context, api?.conversationId);
+        let shown = await seen(known, () => api.conversationId);
+        if (!shown.some(candidate => candidate.name === args.name) && live.miss) {
+          // Not in this conversation's listing: the skill may have been added since, so check the source once now.
+          ({ known, errors } = await live.miss(context));
+          shown = await seen(known, () => api.conversationId);
+        }
+        const skill = shown.find(candidate => candidate.name === args.name);
+        if (!skill) {
+          const failed = visible ? undefined : errors.find(error => error.name === args.name);
+          return text(failed ? `Skill "${args.name}" could not be loaded (${failed.path}): ${failed.message}` : `Unknown skill "${args.name}". Available: ${shown.map(entry => entry.name).join(', ')}`);
+        }
+        const folder = skillFolders.get(skill);
+        const companions = fs ? companionLists.get(skill) ?? [] : [];
+        if (fs && args.path !== undefined) {
+          // Only a listed file is read, so the path cannot leave the folder; it is checked again now, so a link swapped in
+          // since the listing (the agent may write its own skill folder) is refused rather than followed.
+          const path = args.path.replace(/^(\.\/)+/, '');
+          if (!companions.includes(path) || folder === undefined) return text(`Skill "${skill.name}" has no companion file "${args.path}". Companion files: ${companions.join(', ') || 'none'}`);
+          const failed = (why: string) => text(`Companion file "${path}" of skill "${skill.name}" could not be read: ${why}`);
+          const changed = await companionChanged(fs, folder, path, context);
+          if (changed !== undefined) return failed(changed);
+          const read = await fs.readTextFile(folder === '.' ? path : `${folder}/${path}`, context);
+          if (!read.ok) return failed(read.error.message);
+          return notText(read.value) ? failed('not UTF-8 text') : text(read.value);
+        }
+        const location = folder === undefined ? '' : `\n\nThis skill's folder is \`${folder}\`; paths in it are relative to that folder.`;
+        const listed = companions.length ? `\n\nCompanion files of this skill (read one with load_skill and its path):\n${companions.map(path => `- ${path}`).join('\n')}` : '';
+        return text(skill.body + location + listed);
+      },
+    }), ...live.reload ? [reloadTool(live.reload)] : []],
+  });
+}
+
+const RELOAD_TEXT = 'A user message that is /reload-skill asks to move this conversation to the latest published skills: call reload_skill and tell the person its answer.';
+
+/** The `reload_skill` tool of a versioned source: the person's `/reload-skill`, for the calling conversation only. */
+function reloadTool(reload: NonNullable<Live['reload']>) {
+  return defineTool({
+    name: 'reload_skill',
+    description: 'Move this conversation to the latest published version of the skills. Call it only when the person sends /reload-skill.',
+    parameters: Type.Object({}, { additionalProperties: false }),
+    replay: 'safe',
+    execute: async (_args, api, context) => ({ output: [{ type: 'text' as const, text: await reload(context, api?.conversationId) }] }),
+  });
+}
+
+/**
+ * A prompt section listing the skills and a `load_skill` tool returning one body. Usable without `defineAgent`. Each skill is
+ * validated now: an invalid or duplicate skill throws.
+ */
+export function staticSkills(skills: readonly Skill[], options: SkillsOptions): { readonly extension: Extension } {
   const known = new Map<string, Skill>();
   for (const skill of skills.map(validSkill)) {
     if (known.has(skill.name)) throw new TypeError(`Duplicate skill: ${skill.name}`);
     known.set(skill.name, skill);
   }
-  const listing = [...known.values()].map(skill => `- ${skill.name}: ${skill.description}`).join('\n');
-  return defineExtension({
-    name,
-    sections: [{ key: 'skills', render: () => `Before starting a task that matches a skill, call load_skill with its name and follow the returned instructions. A user message that starts with /<skill-name> naming one of these skills is an explicit request: call load_skill for that skill first and follow it for the rest of the message.\n${listing}` }],
-    tools: [defineTool({
-      name: 'load_skill',
-      description: 'Load the full instructions of one listed skill.',
-      parameters: Type.Object({ name: Type.String() }, { additionalProperties: false }),
-      replay: 'safe',
-      execute: async args => {
-        const skill = known.get(args.name);
-        const folder = skill && skillFolders.get(skill);
-        const location = folder === undefined ? '' : `\n\nThis skill's folder is \`${folder}\`; paths in it are relative to that folder.`;
-        return { output: [{ type: 'text', text: skill ? skill.body + location : `Unknown skill "${args.name}". Available: ${[...known.keys()].join(', ')}` }] };
-      },
-    })],
-  });
+  const fixed: Loaded = { known, errors: [] };
+  return { extension: skillsExtension({ current: async () => fixed }, options, undefined) };
 }
+
+/**
+ * `staticSkills` over a source, plus `refresh(context, name?)` to re-read it now instead of after `maxAgeMs`. The source is read on
+ * first use and again, once the copy is older than `maxAgeMs`, when its version changed. What it cannot use is left out and
+ * reported, never thrown.
+ */
+export function liveSkills(source: SkillSource, options: LiveSkillsOptions): LiveSkills {
+  if (options.companionFiles && !source.fs) throw new TypeError('Skills extension: companionFiles need a SkillSource with fs');
+  if (source.versions && options.onPublish) throw new TypeError('Skills extension: onPublish does not apply to a versioned source');
+  const live = source.versions ? versionsOf(source.versions, source.fs, options) : copyOf(source, options);
+  return { extension: skillsExtension(live, options, options.companionFiles ? source.fs : undefined), refresh: live.refresh };
+}
+
+export const isSkillArray = (skills: readonly Skill[] | SkillSource): skills is readonly Skill[] => Array.isArray(skills);
+
+/** The file a built-in source read this skill from, if any: self-evolution reports a skill it refuses at that path. */
+export const skillFile = (skill: Skill) => skillFiles.get(skill);

@@ -10,6 +10,7 @@ const cardAction = z.object({ id: z.string(), label: z.string(), variant: z.enum
 // An unknown `kind` from a newer host reads as absent (a plain message, a request card), never as a refused event.
 const message = z.object({ id: z.string(), conversationId: z.string(), author: z.string(), at: z.string(), via: z.string().optional(), text: z.string().optional(),
   kind: z.enum(['system']).optional().catch(undefined),
+  question: z.object({ callId: z.string(), prompt: z.string(), options: z.array(z.string()), allowFreeText: z.boolean(), answered: z.boolean() }).optional(),
   card: z.object({ requestId: z.string(), kind: z.enum(['request', 'pin']).optional().catch(undefined), title: z.string(), line: z.string(), since: z.string().optional(), state: z.string().optional(), action: cardAction.optional(), actions: z.array(cardAction).optional() }).optional(),
   mentions: z.array(z.string()).optional(), replyTo: z.string().optional(), attachments: z.array(z.object({ path: z.string(), title: z.string().optional() })).optional(), steps: z.array(step).optional(), streaming: z.boolean().optional(),
   removed: z.object({ by: z.string(), at: z.string() }).optional(), clientId: z.string().optional() });

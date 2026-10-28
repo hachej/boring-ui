@@ -22,7 +22,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { launch, pause } from '@hachej/boring-testing/browser';
-import { consumerDependencies, packBoringDependencies, registryClosure, serveRegistry, writeLockedManifest } from './consumer-install.mjs';
+import { addAppComponents, appComponents, appComponentsJson, consumerDependencies, packBoringDependencies, registryClosure, serveRegistry, writeLockedManifest } from './consumer-install.mjs';
 import { prepareConsumerIsolation } from './consumer-isolation.mjs';
 import { runCaptured } from './run-captured.mjs';
 
@@ -82,15 +82,16 @@ async function installLedgerly() {
     run('npm', ['ci', '--prefer-offline', '--ignore-scripts', '--no-audit', '--no-fund', '--cache', cache]);
     mkdirSync(join(app, 'src'), { recursive: true });
     const { url: registry, server } = await serveRegistry(root, app, closure, moved, join(app, 'packs'), cache, run);
-    writeFileSync(join(app, 'components.json'), JSON.stringify({ $schema: 'https://ui.shadcn.com/schema.json', style, rsc: false, tsx: true, tailwind: { config: '', css: 'src/index.css', baseColor: '', cssVariables: true, prefix: '' }, iconLibrary: 'lucide', aliases: { components: '@/components', utils: '@/lib/utils', ui: '@/components/ui', lib: '@/lib', hooks: '@/hooks' } }));
+    writeFileSync(join(app, 'components.json'), appComponentsJson({ style }));
     writeFileSync(join(app, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'ESNext', moduleResolution: 'Bundler', jsx: 'react-jsx', strict: true, noEmit: true, baseUrl: '.', paths: { '@/*': ['./src/*'] } }, include: ['src'] }));
     writeFileSync(join(app, 'src/index.css'), '@import "tailwindcss";\n');
     const installer = { ...process.env, npm_config_prefer_offline: 'true', npm_config_ignore_scripts: 'true', npm_config_audit: 'false', npm_config_fund: 'false' };
     delete installer.NODE_OPTIONS;
+    addAppComponents(app, appComponents(closure), installer, run);
     run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', `${registry}/feedback.json`, '--cwd', app, '--yes'], installer);
     server.kill();
     for (const [name, entry] of closure) for (const file of entry.files ?? []) assert.ok(existsSync(join(app, 'src', file.target)), `the shadcn CLI must create src/${file.target} (${name})`);
-    for (const name of ['trace', 'collapsible']) assert.ok(existsSync(join(app, `src/components/ui/${name}.tsx`)), `the feedback host installs the ${name} built-in`);
+    for (const name of ['trace', 'collapsible']) assert.ok(existsSync(join(app, `src/components/ui/${name}.tsx`)), `the feedback host's app setup installs the ${name} component`);
     assert.ok(readFileSync(join(app, 'src/index.css'), 'utf8').includes('[data-boring="feedback"]'), 'the CLI merges the scoped feedback CSS into the host stylesheet');
     writeFileSync(join(app, '.installed'), new Date().toISOString());
     timings.installMs = Date.now() - at; at = Date.now();

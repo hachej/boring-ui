@@ -26,10 +26,10 @@ export type ViewerVersion = VersionHistoryEntry;
 
 /** The consumer's shadcn Base UI dropdown supplies positioning, dismissal and keyboard navigation. */
 export function ViewerActions({ label, icon, items, testId = 'viewer-menu', align = 'end', className, children, onOpenChange }: ViewerActionsProps) {
-  const portal = useMenuPortal();
+  const { ref: portalRef, container: portalContainer } = useMenuPortal();
   return <DropdownMenu onOpenChange={open => onOpenChange?.(open)}>
-    <DropdownMenuTrigger render={<Button ref={portal.ref} variant="ghost" size="icon-sm" aria-label={label} title={label} data-testid={testId} className={className}>{icon}</Button>} />
-    <ActionMenuContent label={label} testId={testId} items={items} align={align} container={portal.container}>{children}</ActionMenuContent>
+    <DropdownMenuTrigger render={<Button ref={portalRef} variant="ghost" size="icon-sm" aria-label={label} title={label} data-testid={testId} className={className}>{icon}</Button>} />
+    <ActionMenuContent label={label} testId={testId} items={items} align={align} container={portalContainer}>{children}</ActionMenuContent>
   </DropdownMenu>;
 }
 

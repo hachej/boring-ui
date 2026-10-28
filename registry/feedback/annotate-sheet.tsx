@@ -66,10 +66,11 @@ export function AnnotateSheet({ annotation, onClose, near, protection, title, la
   const heading = state.selected ? (title ?? words.title) : words.askGeneral;
   const note = useRef<HTMLTextAreaElement>(null);
   const [place, setPlace] = useState<CSSProperties | undefined>(undefined);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- placed from the page's layout after commit and before paint, once per anchor
   useLayoutEffect(() => { setPlace(placeNear(near)); }, [near]);
   const [cancelled, setCancelled] = useState(false);
   const callbacks = useRef({ onCancelSelection });
-  callbacks.current = { onCancelSelection };
+  useLayoutEffect(() => { callbacks.current = { onCancelSelection }; });
   useEffect(() => { note.current?.focus({ preventScroll: true }); }, []);
   // Focus goes back to where it was when the sheet opened (the Point button, after the picker restored it), not to the top of the page.
   useEffect(() => {

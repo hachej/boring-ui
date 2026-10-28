@@ -17,6 +17,7 @@ import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import type { FeedbackSession } from '@hachej/boring-feedback/ui';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
+import { appendToDraft, mentionedPaths, mentionToken, pieces, removeMention, withoutMentions } from '@hachej/boring-ui-kit/chat-text';
 import { Drawer, DrawerContent } from '@/components/ui/drawer';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Dock, DockLayout, DockMain } from '../dock/dock';
@@ -25,12 +26,12 @@ import type { DockApi } from '../dock/dock';
 import { PiChat } from '../pi-chat/pi-chat';
 import type { PiChatProps } from '../pi-chat/pi-chat';
 import type { VoiceMessageConfig } from '../pi-chat/config';
-import { useHoldToRecord, useRecordingCancellation } from '../pi-chat-voice/use-hold-to-record';
+import { useRecordingCancellation } from '../pi-chat-voice/use-hold-to-record';
 import { useVoiceMessage } from '../pi-chat-voice/use-voice-message';
 import type { PendingVoice } from '../pi-chat-voice/use-voice-message';
 import { voiceClock } from '../pi-chat/config';
 import { withChatPlugins } from '../pi-chat-plugins/chat-plugins';
-import { PendingVoiceBubble } from '../pi-chat-voice/voice-message';
+import { PendingVoiceBubble, VoiceMessageButton } from '../pi-chat-voice/voice-message';
 import { chatTextFor } from '../pi-chat/locale';
 import { NoteBubble, useComposerFeedback } from '../feedback/feedback-session';
 import { feedbackLabelsFr } from '../feedback/feedback-labels';
@@ -74,6 +75,8 @@ export interface AgentLayerApi {
   readonly showing: Which | null;
   open(which?: Which, at?: 'peek' | 'half' | 'full'): void;
   close(): void;
+  /** Open the real chat with one card mention. Call directly from a click or swipe release to grant microphone permission. False without an agent. */
+  readonly talkAbout: (mention: string, options?: { readonly voice?: boolean; readonly at?: 'half' | 'full' }) => boolean;
   readonly expanded: boolean;
 }
 
@@ -127,6 +130,7 @@ interface Internal extends Omit<AgentLayerApi, 'agent'> {
   /** Until this time (ms) an outside press is the AgentTrigger's own click. */
   readonly triggerUntil: { current: number };
   readonly voice: Voice;
+  readonly talkRecording: boolean;
   /** The peek height in px: `PEEK_REM` plus the tab bar the peek sits above. */
   readonly peekPoint: string;
   /** The measured tab bar height in px, given explicitly to the parts portalled to the body (they cannot inherit the shell's variables). */
@@ -174,9 +178,9 @@ export function useAgentLoan(): (AgentLoan & { readonly compact: boolean }) | nu
 
 /** The layer's state and controls. */
 export function useAgentLayer(): AgentLayerApi {
-  const { state, showing, open, close, expanded, agent: spec } = useInternal();
+  const { state, showing, open, close, talkAbout, expanded, agent: spec } = useInternal();
   const agent = spec?.controller;
-  return useMemo(() => ({ state, showing, open, close, expanded, agent }), [state, showing, open, close, expanded, agent]);
+  return useMemo(() => ({ state, showing, open, close, talkAbout, expanded, agent }), [state, showing, open, close, talkAbout, expanded, agent]);
 }
 
 /** Push-to-talk uses the same dictation lifecycle as page targeting, over the existing composer/controller. */
@@ -190,20 +194,24 @@ function useVoice(agent: AgentSpec | undefined, locale: AppShellLocale | undefin
       const fill = () => {
         if (signal.aborted) return;
         const draft = agent.controller.getSnapshot().draft.text;
-        agent.controller.setText(`${draft}${draft === '' || /\s$/.test(draft) ? '' : ' '}${spoken}`);
+        agent.controller.setText(appendToDraft(draft, spoken));
         done('drafted');
       };
       if (agent.voice?.send !== 'auto') { fill(); return; }
+      const draft = agent.controller.getSnapshot().draft.text;
+      const paths = mentionedPaths(draft);
+      agent.controller.setText(withoutMentions(draft));
       try {
-        const sent = await agent.controller.send(undefined, { text: spoken });
+        const sent = await agent.controller.send(undefined, { text: [...paths.map(mentionToken), spoken].join(' '), restore: { text: spoken } });
         if (!signal.aborted) done(sent ? 'sent' : 'drafted');
       } catch { fill(); }
     },
   });
   const { cancel } = voice;
-  useEffect(() => () => cancel(), [agent?.controller, agent?.voice?.send, Boolean(agent?.voice), cancel]);
+  const controller = agent?.controller, send = agent?.voice?.send, hasVoice = Boolean(agent?.voice);
+  useEffect(() => () => cancel(), [controller, send, hasVoice, cancel]);
   const phase: Dictation['phase'] = message.phase === 'starting' || message.phase === 'recording' ? message.phase : message.phase === 'processing' || message.phase === 'sending' ? 'transcribing' : 'idle';
-  return agent?.voice?.send === 'message' ? { ...message, phase } : voice;
+  return agent?.voice?.send === 'message' ? { ...message, phase, levels: message.levels ?? [], paused: message.paused ?? false, pause: message.pause, resume: message.resume } : voice;
 }
 
 /** The height in px of the tab bar the peek sits above (`--app-shell-tabbar` on the shell root), and one rem. */
@@ -242,9 +250,11 @@ export function AgentLayerProvider({ agent: own, improve, locale, agentLink, chi
   const restoreFocus = useRef(false);
   const [side, setSideState] = useState<DockSide>('right');
   // The side is the viewer's, remembered beside the Dock's own placement; read after mount so server and client markup agree.
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage exists only after mount; reading it before paint keeps server and client markup equal without a flash
   useLayoutEffect(() => { try { const saved = globalThis.localStorage?.getItem(SIDE_KEY); if (saved === 'left' || saved === 'right') setSideState(saved); } catch { /* a convenience */ } }, []);
   const setSide = useCallback((next: DockSide) => { setSideState(next); try { globalThis.localStorage?.setItem(SIDE_KEY, next); } catch { /* a convenience */ } }, []);
   const specs = useRef({ agent, improve, snap, shown });
+  // eslint-disable-next-line react-hooks/refs -- latest-value ref: open/lend/showAgent may be called from a child's layout effect, before this component's own effects run
   specs.current = { agent, improve, snap, shown };
   const lentRef = useRef<AgentSpec | undefined>(undefined);
 
@@ -271,20 +281,23 @@ export function AgentLayerProvider({ agent: own, improve, locale, agentLink, chi
 
   // A spec that goes away takes the layer with it.
   const shownSpec = shown === 'agent' ? agent : improve;
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- closes the layer once after its spec goes away; the guard (!shownSpec) settles after one pass
   useEffect(() => { if (!shownSpec) { setSnapState('closed'); if (shown === 'improve' && agent) setShown('agent'); else if (shown === 'agent' && improve) setShown('improve'); } }, [shownSpec, shown, agent, improve]);
 
   // The chats live in one element that is moved into the open drawer or panel; React keeps them mounted (and so their presentation state
   // and uploads) while the layer is closed, on a phone and on a wide screen. Nothing is mounted before the layer is first opened.
   const [host] = useState(() => typeof document === 'undefined' ? null : Object.assign(document.createElement('div'), { className: 'flex min-h-0 flex-1 flex-col [&_[data-boring=pi-chat]>header]:hidden' }));
   const opened = useRef(false);
+  // eslint-disable-next-line react-hooks/refs -- a monotonic "ever opened" latch for this render: no re-render, no setState during render
   if (snap !== 'closed') opened.current = true;
 
   // Consume the launch URL before an open layer pushes its Back entry. Keep the parsed request through StrictMode's effect replay.
   const launch = useRef<ReturnType<typeof parseAgentLink> | undefined>(undefined);
+  const [firstAgentLink] = useState(agentLink);
   useEffect(() => {
     if (launch.current === undefined) {
-      launch.current = agentLink === false ? null : parseAgentLink(window.location.search);
-      if (agentLink !== false) {
+      launch.current = firstAgentLink === false ? null : parseAgentLink(window.location.search);
+      if (firstAgentLink !== false) {
         const url = new URL(window.location.href);
         if (['agent', 'open', 'input'].some(key => url.searchParams.has(key))) {
           for (const key of ['agent', 'open', 'input']) url.searchParams.delete(key);
@@ -306,26 +319,63 @@ export function AgentLayerProvider({ agent: own, improve, locale, agentLink, chi
       }
     }, 520);
     return () => clearTimeout(timer);
-  }, [host, open]);
+  }, [host, open, firstAgentLink]);
 
   const voice = useVoice(agent, locale, outcome => {
     if (outcome === 'drafted') { setShown('agent'); setSnapState('half'); }
   });
+  const [talkRecording, setTalkRecording] = useState(false);
+  const cancelTalkRecording = useCallback(() => {
+    if (talkRecording && (voice.phase === 'starting' || voice.phase === 'recording')) voice.cancel();
+  }, [talkRecording, voice]);
+  useRecordingCancellation(cancelTalkRecording);
+  const previousTalk = useRef<{ controller: NativeChatController; path: string } | undefined>(undefined);
+  const focusTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(focusTimer.current), [agent?.controller]);
+  const talkAbout = useCallback<AgentLayerApi['talkAbout']>((token, options = {}) => {
+    const selected = specs.current.agent;
+    if (!selected) return false;
+    clearTimeout(focusTimer.current);
+    const parsed = pieces(token, { mentions: true, skills: [] });
+    if (parsed.length !== 1 || parsed[0]?.kind !== 'mention') throw new TypeError('talkAbout requires one @mention token');
+    const path = parsed[0].value!;
+    const before = previousTalk.current;
+    const draft = selected.controller.getSnapshot().draft.text;
+    const text = before?.controller === selected.controller ? removeMention(draft, before.path) : draft;
+    selected.controller.setText(`${appendToDraft(text, mentionToken(path))} `);
+    previousTalk.current = { controller: selected.controller, path };
+    open('agent', options.at ?? 'half');
+    if (options.voice && selected.voice) {
+      setTalkRecording(true);
+      // No await or effect: permission belongs to the caller's click or swipe release, even before the chat mounts.
+      voice.start();
+    } else {
+      focusTimer.current = setTimeout(() => {
+        if (specs.current.agent?.controller === selected.controller && specs.current.snap !== 'closed' && specs.current.shown === 'agent') host?.querySelector<HTMLElement>('[data-spec=agent] [data-testid=composer-input]')?.focus({ preventScroll: true });
+      }, 520);
+    }
+    return true;
+  }, [open, voice, host]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- a completed or refused capture resets this gesture's presentation once
+  useEffect(() => { if (voice.phase === 'idle') setTalkRecording(false); }, [voice.phase]);
   const revealedFailures = useRef(new Set<number>());
+  const voiceSend = agent?.voice?.send, pendingKey = voice.pending?.map(item => `${item.id}:${item.phase}`).join(',');
   useEffect(() => {
     const failure = voice.pending?.findLast(item => item.phase === 'transcribe-failed' || item.phase === 'upload-failed' || item.phase === 'blocked' || item.phase === 'unconfirmed');
-    const captureProblem = agent?.voice?.send === 'message' && voice.problem;
+    const captureProblem = voiceSend === 'message' && voice.problem;
     const failureId = captureProblem ? voice.captureSequence : failure?.id;
     if (failureId === undefined) { revealedFailures.current.clear(); return; }
     if (revealedFailures.current.has(failureId)) return;
     revealedFailures.current.add(failureId);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reveals a new voice failure once per failure id (the ref guards repeats), so it settles after one pass
     if (!expanded && shown === 'agent' && snap === 'peek') setSnapState('half');
-  }, [expanded, shown, snap, agent?.voice?.send, voice.captureSequence, voice.problem, voice.pending?.map(item => `${item.id}:${item.phase}`).join(',')]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when a pending item's id or phase changes (pendingKey), not on every new pending array
+  }, [expanded, shown, snap, voiceSend, voice.captureSequence, voice.problem, pendingKey]);
 
   const state: AgentLayerState = snap === 'closed' ? 'closed' : expanded ? 'open' : snap;
   const value = useMemo<Internal>(() => ({
-    state, showing: snap === 'closed' ? null : shown, open, close, expanded, agent, improve, snap, setSnap, dockFloating, setDockFloating, showAgent, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, restoreFocus,
-  }), [state, snap, shown, open, close, expanded, agent, improve, setSnap, dockFloating, showAgent, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide]);
+    state, showing: snap === 'closed' ? null : shown, open, close, talkAbout, talkRecording, expanded, agent, improve, snap, setSnap, dockFloating, setDockFloating, showAgent, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, restoreFocus,
+  }), [state, snap, shown, open, close, talkAbout, talkRecording, expanded, agent, improve, setSnap, dockFloating, showAgent, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide]);
 
   // The shell's z-scale (tabs 20, peek 30, drawer and panel 40, other sheets 50, point bar 60) as custom properties; `display: contents` keeps the box tree unchanged.
   const scale = { '--app-shell-z-tabs': Z.tabs, '--app-shell-z-peek': Z.peek, '--app-shell-z-layer': Z.layer, '--app-shell-z-sheet': Z.sheet, '--app-shell-z-point': Z.point } as CSSProperties;
@@ -334,6 +384,7 @@ export function AgentLayerProvider({ agent: own, improve, locale, agentLink, chi
       <div data-app-shell="" className="contents" style={scale}>
         <div ref={probe} aria-hidden="true" className="pointer-events-none invisible fixed top-0 left-0 w-0" style={{ height: 'var(--app-shell-tabbar, 0px)' }} />
         {children}
+        {/* eslint-disable-next-line react-hooks/refs -- reads the "ever opened" latch set above in this same render */}
         {host && opened.current && createPortal(<Chats showing={shown} />, host)}
       </div>
     </LoanContext.Provider></LayerContext.Provider>
@@ -346,19 +397,23 @@ export function AgentTrigger({ className, children }: { readonly className?: str
   const { agent, voice } = layer;
   const text = appShellText(agent?.chatProps?.locale ?? layer.locale);
   const hold = useRef<{ timer: ReturnType<typeof setTimeout> | undefined; held: boolean; id: number } | null>(null);
-  const cancelHold = () => {
+  const voiceRef = useRef(voice);
+  useLayoutEffect(() => { voiceRef.current = voice; });
+  const cancelHold = useCallback(() => {
     const current = hold.current;
     hold.current = null;
     if (!current) return;
     clearTimeout(current.timer);
-    if (current.held) voice.cancel();
-  };
+    if (current.held) voiceRef.current.cancel();
+  }, []);
   useRecordingCancellation(cancelHold);
-  useEffect(() => () => cancelHold(), [agent?.controller]);
+  const controller = agent?.controller;
+  useEffect(() => () => cancelHold(), [controller, cancelHold]);
+  const { triggerUntil: triggerUntilRef } = layer;
   if (!agent) return null;
 
   const toggle = () => {
-    layer.triggerUntil.current = Date.now() + 500;
+    triggerUntilRef.current = Date.now() + 500;
     if (layer.state !== 'closed' && layer.showing === 'agent' && layer.expanded) layer.close();
     else layer.open('agent', 'half');
   };
@@ -406,19 +461,14 @@ export function AgentTrigger({ className, children }: { readonly className?: str
   </Button>;
 }
 
-/**
- * Push-to-talk in the composer row (PiChat's `tools` slot): press and hold, release to send or fill; a slide off cancels. Pressing never moves
- * focus (no keyboard opens or closes under the finger), and a browser `pointercancel` once recording keeps the audio like a release: only the slide off cancels.
- */
-function TalkButton({ text }: { readonly text: AppShellText }) {
+/** Tap to start; while active, this same control is the composer's replacement recording row. */
+function TalkButton() {
   const { voice } = useInternal();
   const busy = voice.phase === 'transcribing';
-  const disabled = busy || (voice.phase === 'idle' && voice.canStart === false);
-  const hold = useHoldToRecord(voice, disabled);
-  return <Button {...hold} variant="ghost" size="icon" data-testid="agent-talk" data-state={voice.phase} disabled={disabled} aria-label={text.holdToTalk} title={text.holdToTalk}
-    className="touch-none">
-    {busy ? <Loader2Icon data-icon="inline-start" className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <MicIcon data-icon="inline-start" aria-hidden="true" />}
-  </Button>;
+  return <VoiceMessageButton testId="agent-talk" disabled={busy || (voice.phase === 'idle' && voice.canStart === false)} voice={{
+    ...voice, phase: busy ? 'processing' : voice.phase, canStart: voice.canStart !== false,
+    pending: voice.pending ?? [], captureSequence: voice.captureSequence ?? 0,
+  }} />;
 }
 
 /** What went wrong with the microphone, in the flow under the title row (never over the messages). */
@@ -439,7 +489,7 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const fr = locale === 'fr';
   return <div data-spec={role} hidden={!visible} className={cn('min-h-0 min-w-0 flex-1', visible ? 'flex flex-col' : 'hidden')}>
     <PiChat {...withChatPlugins(spec.chatProps ?? {})} {...(locale ? { locale } : {})} controller={spec.controller} keyboardInset={false} placement={layer.expanded && !layer.dockFloating ? 'docked' : 'floating'} {...(feedback ? { feedback } : {})}
-      {...(role === 'agent' && spec.voice ? { voiceMessage: { transcribe: spec.voice.transcribe, Bubble: PendingVoiceBubble }, tools: <>{spec.chatProps?.tools}<TalkButton text={appShellText(locale)} /></>, pendingVoice: layer.voice.pending } : {})} />
+      {...(role === 'agent' && spec.voice ? { voiceMessage: { transcribe: spec.voice.transcribe, Bubble: PendingVoiceBubble }, tools: <>{spec.chatProps?.tools}<TalkButton /></>, composerRecording: layer.voice.phase === 'starting' || layer.voice.phase === 'recording' ? <TalkButton /> : undefined, pendingVoice: layer.voice.pending } : {})} />
     {/* The note editor of ordinary feedback lives inside the layer, in the modal's focus tree; while pointing the layer steps aside and AgentLayer renders it. */}
     {/* In the flow, inside the visible content box: the popup is transformed (a fixed element would be placed against its off-screen bottom). */}
     {spec.feedback && visible && !pointing && <div className="shrink-0 px-2 pb-2 empty:hidden">
@@ -459,10 +509,13 @@ function ChatSlot() {
 function Chats({ showing }: { readonly showing: Which }) {
   const { agent, improve } = useInternal();
   const seen = useRef(new Set<Which>());
+  // eslint-disable-next-line react-hooks/refs -- a monotonic "ever shown" set filled during render: no setState, no re-render
   seen.current.add(showing);
+  // eslint-disable-next-line react-hooks/refs -- reads the "ever shown" set filled above in this same render
+  const seenAgent = seen.current.has('agent'), seenImprove = seen.current.has('improve');
   return <>
-    {agent && seen.current.has('agent') && <SpecChat spec={agent} visible={showing === 'agent'} role="agent" />}
-    {improve && seen.current.has('improve') && <SpecChat spec={improve} visible={showing === 'improve'} role="improve" />}
+    {agent && seenAgent && <SpecChat spec={agent} visible={showing === 'agent'} role="agent" />}
+    {improve && seenImprove && <SpecChat spec={improve} visible={showing === 'improve'} role="improve" />}
   </>;
 }
 
@@ -513,7 +566,9 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
   // began, the composer takes no focus and no keyboard, so nothing moves under the finger on the microphone.
   const sheet = useRef<HTMLDivElement>(null);
   const idleViewport = useRef(liveViewport);
+  // eslint-disable-next-line react-hooks/refs -- ref cache: the last viewport seen while not recording, pinned during a recording; no setState during render
   if (!recording) idleViewport.current = liveViewport;
+  // eslint-disable-next-line react-hooks/refs -- reads the pinned viewport cached above in this same render
   const vv = recording ? idleViewport.current : liveViewport;
   const [pinnedBottom, setPinnedBottom] = useState<string | undefined>();
   useLayoutEffect(() => {
@@ -592,11 +647,11 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
               '[&_[data-testid=transcript]]:gap-0 [&_[data-testid=transcript]]:p-0 [&_[data-testid=transcript]]:px-3 [&_[data-testid=transcript]>*]:max-h-5 [&_[data-testid=transcript]>*]:truncate [&_[data-testid=transcript]_button]:hidden',
               '[&_[data-testid=composer]_[data-slot=input-group]]:flex-row! [&_[data-testid=composer]_[data-slot=input-group]]:items-center',
               '[&_[data-testid=composer-input]]:min-h-11 [&_[data-testid=composer-input]]:max-h-11 [&_[data-testid=composer-input]]:flex-1 [&_[data-testid=composer-input]]:px-4 [&_[data-testid=composer-input]]:py-2.5',
-              '[&_[data-testid=composer-controls]]:w-auto [&_[data-testid=composer-controls]]:shrink-0 [&_[data-testid=composer-controls]]:py-0 [&_[data-testid=composer-controls]>span.flex-1]:hidden',
+              voice.phase !== 'starting' && voice.phase !== 'recording' && '[&_[data-testid=composer-controls]]:w-auto [&_[data-testid=composer-controls]]:shrink-0 [&_[data-testid=composer-controls]]:py-0 [&_[data-testid=composer-controls]>span.flex-1]:hidden',
               '[&_[data-testid=composer-plus]]:hidden [&_[data-testid=composer-annotate]]:hidden'])}>
           {!peek && <Header text={text} title={title} compactSnap={snap} closeRef={closeRef} />}
           {!peek && <VoiceProblem />}
-          {peek && recording && <div role="status" data-testid="agent-listening" data-phase={voice.phase} className="absolute inset-0 z-20 flex items-center justify-center gap-2 bg-popover text-sm font-medium">
+          {peek && recording && <div aria-hidden="true" data-testid="agent-listening" data-phase={voice.phase} className="sr-only">
             <MicIcon className="size-4 text-destructive" aria-hidden="true" />{voice.phase === 'transcribing' ? <><Loader2Icon className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />{voiceClock(voice.seconds)}</> : `${text.listening} ${voiceClock(voice.seconds)}`}
           </div>}
           {/* The transcript scrolls and never drags the sheet: only the handle and the title row swipe. */}
@@ -625,14 +680,17 @@ function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSi
     return () => document.removeEventListener('keydown', onKey);
   }, [open, layer]);
   // A dock control (or the divider's Alt+Arrow) moves or removes the element that had focus: it goes to the panel's first dock control instead of the page.
+  const { restoreFocus: restoreFocusRef } = layer;
+  const openRef = useRef(open);
+  useLayoutEffect(() => { openRef.current = open; });
   useLayoutEffect(() => {
     const lost = !document.activeElement || document.activeElement === document.body;
-    const wanted = layer.restoreFocus.current || (open && lost && api.placement !== 'closed');
-    layer.restoreFocus.current = false;
+    const wanted = restoreFocusRef.current || (openRef.current && lost && api.placement !== 'closed');
+    restoreFocusRef.current = false;
     if (wanted) box.current?.querySelector<HTMLElement>('[data-dock-control]')?.focus({ preventScroll: true });
-  }, [api.placement, side, layer.restoreFocus]);
+  }, [api.placement, side, restoreFocusRef]);
   const drag = useDraggable({ box, position: open ? pos : null, onPositionChange: setPos, enabled: floating });
-  const act = (run: () => void) => () => { layer.restoreFocus.current = true; run(); };
+  const act = (run: () => void) => () => { restoreFocusRef.current = true; run(); };
   const control = (id: string, label: string, Icon: ComponentType<{ className?: string }>, run: () => void) =>
     <Button variant="ghost" size="icon" key={id} data-testid={`agent-layer-${id}`} data-dock-control="" aria-label={label} title={label} onClick={act(run)}><Icon data-icon="inline-start" aria-hidden="true" /></Button>;
   const controls = <>

@@ -84,6 +84,7 @@ export function MarkdownPane({ controller, title: givenTitle, labels: ownLabels,
   const [requested, setRequestedState] = useState<'rich' | 'source'>(initialMode);
   const setRequested = (next: 'rich' | 'source') => { setRequestedState(next); onModeChange?.(next); };
   const [toolbar, setToolbar] = useState(formattingToolbar);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- the host's new toolbar choice replaces the local one once, before paint
   useLayoutEffect(() => setToolbar(formattingToolbar), [formattingToolbar]);
   const setFormatting = (next: 'selection' | 'pinned') => { setToolbar(next); onFormattingToolbarChange?.(next); };
   const [safety, setSafety] = useState<MarkdownRichSafety>({ safe: true });

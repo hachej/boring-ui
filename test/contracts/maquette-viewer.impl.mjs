@@ -14,7 +14,8 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 const out = join(root, '.cache/maquette-viewer-test');
 mkdirSync(out, { recursive: true });
 writeFileSync(join(out, 'entry.tsx'), `export { ArtifactPanel } from '${root}registry/pi-app/artifact-panel.tsx'; export { createMaquetteKind, maquetteKind } from '${root}registry/maquette-viewer/maquette-kind.tsx';
-export { useComposerFeedback, usePointComments } from '${root}registry/feedback/feedback-session.tsx';`);
+export { useComposerFeedback, usePointComments } from '${root}registry/feedback/feedback-session.tsx';
+export { defaultKinds } from '${root}registry/pi-app-kinds/pi-app-kinds.ts';`);
 await build({ entryPoints: [join(out, 'entry.tsx')], outfile: join(out, 'kit.mjs'), bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
 // Imported once the first test's DOM globals exist: Base UI decides at load time whether it runs in a browser.
 let kit;
@@ -54,7 +55,7 @@ async function panel(t, text, { path = 'documents/booking.maquette.json', kinds,
     target: { resource: { providerId: 'workspace', path }, view: { kind: 'published' } }, revision: 'rev-1' };
   const bytes = new TextEncoder().encode(text);
   const client = { read: async () => ({ kind: 'available', snapshot: { bytes, ref: { revision: 'rev-1', providerId: 'workspace', path } } }), saves: async () => [], search: async () => [] };
-  await page.render(page.h(kit.ArtifactPanel, { active: { descriptor: artifact, follow }, versions: [artifact], options: { client, identity: { runtimeId: 'fixture' }, ...(kinds ? { kinds } : {}) }, onSelect: () => {}, onClose: () => {} }));
+  await page.render(page.h(kit.ArtifactPanel, { active: { descriptor: artifact, follow }, versions: [artifact], options: { client, identity: { runtimeId: 'fixture' }, kinds: kinds ?? kit.defaultKinds() }, onSelect: () => {}, onClose: () => {} }));
   await page.settle();
   const screen = () => page.$('[data-testid=maquette-walk]')?.dataset.screen;
   const key = async (key, init = {}) => { const walk = page.$('[data-testid=maquette-walk]'); await page.act(async () => walk.dispatchEvent(new page.window.KeyboardEvent('keydown', { key, bubbles: true, ...init }))); };
@@ -216,7 +217,7 @@ test('a file without screens shows the shape error', async t => {
 });
 
 test('an app kind for .maquette.json wins over the built-in', async t => {
-  const page = await panel(t, BOOKING, { kinds: [{ match: target => target.resource.path.endsWith('.maquette.json'), label: 'Wireframe', renderer: ({ text }) => JSON.parse(text).title }] });
+  const page = await panel(t, BOOKING, { kinds: [{ match: target => target.resource.path.endsWith('.maquette.json'), label: 'Wireframe', renderer: ({ text }) => JSON.parse(text).title }, ...kit.defaultKinds()] });
   assert.equal(page.$('[data-testid=artifact-panel-type]').textContent, 'Wireframe');
   assert.equal(page.$('[data-testid=maquette-walk]'), null, 'the built-in viewer is not drawn');
   assert.equal(page.$('[data-testid=artifact-kind-view]').textContent, 'Tidewater Studio: class booking');
@@ -224,13 +225,13 @@ test('an app kind for .maquette.json wins over the built-in', async t => {
 
 test('an app kind gets the revision it shows and that it is pinned (read-only) when the panel pins a version', async t => {
   const seen = [];
-  await panel(t, BOOKING, { kinds: [{ match: target => target.resource.path.endsWith('.maquette.json'), label: 'Wireframe', renderer: props => { seen.push({ revision: props.revision, pinned: props.pinned }); return 'x'; } }] });
+  await panel(t, BOOKING, { kinds: [{ match: target => target.resource.path.endsWith('.maquette.json'), label: 'Wireframe', renderer: props => { seen.push({ revision: props.revision, pinned: props.pinned }); return 'x'; } }, ...kit.defaultKinds()] });
   assert.deepEqual(seen.at(-1), { revision: 'rev-1', pinned: true });
 });
 
 test('an app kind following the latest version gets pinned false', async t => {
   const seen = [];
-  await panel(t, BOOKING, { follow: true, kinds: [{ match: target => target.resource.path.endsWith('.maquette.json'), label: 'Wireframe', renderer: props => { seen.push({ revision: props.revision, pinned: props.pinned }); return 'x'; } }] });
+  await panel(t, BOOKING, { follow: true, kinds: [{ match: target => target.resource.path.endsWith('.maquette.json'), label: 'Wireframe', renderer: props => { seen.push({ revision: props.revision, pinned: props.pinned }); return 'x'; } }, ...kit.defaultKinds()] });
   assert.deepEqual(seen.at(-1), { revision: 'rev-1', pinned: false });
 });
 

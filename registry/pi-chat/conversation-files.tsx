@@ -8,11 +8,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem,
 import { useChatText } from './labels';
 
 /** A conversation's observed file, opened only through the host's existing callback. */
-export interface ConversationFile {
-  readonly id: string;
-  readonly name: string;
-  readonly open: (() => void) | undefined;
-}
+export type { ConversationFile } from '@hachej/boring-ui-kit/chat-react';
+import type { ConversationFile } from '@hachej/boring-ui-kit/chat-react';
 
 /** Conversation files, not a second workspace: the native menu on desktop and the installed drawer on phones. */
 export function ConversationFiles({ files }: { readonly files: readonly ConversationFile[] }) {

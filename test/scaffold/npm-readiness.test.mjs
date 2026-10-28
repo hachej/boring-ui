@@ -122,8 +122,8 @@ test('UI archive ships the shadcn registry under r/ and nothing else may', () =>
   assert.deepEqual(checkShippedRegistry(ui, packed, withDependency(release('0.2.2', 'missing'))), [
     `Registry dependency not shipped in r/: button -> ${release('0.2.2', 'missing')}`,
   ], 'an item URL must name a shipped item');
-  // A shadcn built-in is a bare name the consumer's own style resolves: it needs no shipped item.
-  assert.deepEqual(checkShippedRegistry(ui, packed, withDependency('drawer')), []);
+  // shadcn components come from the app's ui alias, never as an item dependency: every bare name is refused.
+  assert.deepEqual(checkShippedRegistry(ui, packed, withDependency('drawer')), ['Registry dependency not shipped in r/: button -> drawer'], 'a shadcn component is the app setup, not an item dependency');
   assert.deepEqual(checkShippedRegistry(ui, packed, withDependency('carousel')), ['Registry dependency not shipped in r/: button -> carousel'], 'any other bare name is refused');
   // The registry index lists items too: its dependencies are audited the same way.
   assert.deepEqual(checkShippedRegistry(ui, packed, { items: ['theme', 'button'], read: path => path === 'r/registry.json' ? { items: [{ name: 'theme' }, { name: 'button', registryDependencies: ['@boring-ui/theme'] }] } : read(path) }), [

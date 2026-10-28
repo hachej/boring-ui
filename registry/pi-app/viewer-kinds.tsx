@@ -1,48 +1,87 @@
 'use client';
 
-// The kinds the artifact panel and the file viewer resolve through (D-257): the domain kinds (maquette, diagram, mock-up, records) and the
-// document kinds (Markdown, HTML, SVG, CSV, image, PDF). Each kind module is cheap (match, label, icon, loader); its view is loaded the
-// first time an artifact of that kind opens, so none of the viewers (tiptap, pdf.js, the maquette...) is in the page's first bundle.
+// What a kind is to the artifact panel and the file viewer (D-257): an app's `ArtifactKind`, or a document kind (Markdown and HTML edited
+// over a revisioned controller; image and PDF read as bytes). These are contracts only: the kinds themselves come from the host, through
+// `AgentWorkspace`'s `artifactKinds` or `ViewerOptions.kinds`. The pi-app-kinds item exports the default list (`defaultKinds`), whose
+// kinds (the viewer items' `markdownKind`, `imageKind`...) satisfy these types structurally; none of the viewers is in this item.
 import { lazy, useEffect } from 'react';
 import type { ComponentType, ReactNode } from 'react';
 import { LoaderCircleIcon } from 'lucide-react';
+import type { MarkdownController } from '@hachej/boring-ui-kit/markdown';
+import type { HtmlController } from '@hachej/boring-ui-kit/html';
+import type { MarkdownEditorProps } from '@hachej/boring-ui-kit/markdown-editor';
 import type { ArtifactKind, ArtifactKindViewProps } from '../pi-artifacts/artifact';
-import { maquetteKind } from '../maquette-viewer/maquette-kind';
-import { diagramKind } from '../diagram-viewer/diagram-kind';
-import { mockupKind } from '../mockup-viewer/mockup-kind';
-import { recordsKind } from '../record-viewer/records-kind';
-import { markdownKind } from '../viewer-markdown/markdown-kind';
-import type { MarkdownKind } from '../viewer-markdown/markdown-kind';
-import { htmlKind } from '../viewer-html/html-kind';
-import type { HtmlKind } from '../viewer-html/html-kind';
-import { csvKind, svgKind } from '../viewer-code/code-kinds';
-import type { CodeKind } from '../viewer-code/code-kinds';
-import { imageKind } from '../viewer-image/image-kind';
-import type { ImageKind } from '../viewer-image/image-kind';
-import { pdfKind } from '../viewer-pdf/pdf-kind';
-import type { PdfKind } from '../viewer-pdf/pdf-kind';
+import type { ViewerShare } from '../viewer-frame/viewer-frame';
+import type { InteractiveHtml } from '../viewer-frame/interactive-html';
+import type { MediaSource } from '../viewer-frame/media';
 
-/** Any kind the panel and the file viewer take: an app's `ArtifactKind`, or a built-in document kind. */
-export type PanelKind = ArtifactKind | MarkdownKind | HtmlKind | CodeKind | ImageKind | PdfKind;
-/** A document kind edited over a revisioned controller (Markdown, HTML). */
-export type EditorKind = MarkdownKind | HtmlKind;
+/** The viewer bar's props the panel and the file viewer give every pane a document or media kind loads. */
+export interface PaneBarProps {
+  readonly title?: string;
+  readonly subtitle?: ReactNode;
+  readonly target?: unknown;
+  readonly revision?: string;
+  readonly headerStart?: ReactNode;
+  readonly controls?: ReactNode;
+  readonly onRefresh?: () => unknown;
+  readonly onShare?: ViewerShare;
+  readonly onClose?: () => unknown;
+  readonly testId?: string;
+  readonly titleTestId?: string;
+}
+
+/** What a Markdown kind's pane receives (the viewer-markdown item's `MarkdownPane` takes these and more). */
+export interface MarkdownPaneInput extends PaneBarProps {
+  readonly controller: MarkdownController;
+  readonly initialMode?: 'rich' | 'source';
+  readonly onModeChange?: (mode: 'rich' | 'source') => void;
+  readonly formattingToolbar?: MarkdownEditorProps['formattingToolbar'];
+  readonly onFormattingToolbarChange?: (toolbar: 'selection' | 'pinned') => void;
+  readonly onAutosaveChange?: MarkdownEditorProps['onAutosaveChange'];
+  readonly onBeforeLeaveChange?: MarkdownEditorProps['onAutosaveChange'];
+}
+
+/** What an HTML kind's pane receives (the viewer-html item's `HtmlPane`). */
+export interface HtmlPaneInput extends PaneBarProps {
+  readonly controller: HtmlController;
+  readonly initialMode?: 'preview' | 'source';
+  readonly onModeChange?: (mode: 'preview' | 'source') => void;
+  readonly interactive?: InteractiveHtml;
+}
+
+/** What an image kind's pane receives (the viewer-image item's `ImagePane`): the bytes, a blob or the host's URL of a large file. */
+export interface ImagePaneInput extends PaneBarProps, MediaSource { readonly name: string; readonly mediaType: string }
+
+/** What a PDF kind's pane receives (the viewer-pdf item's `PdfPane`). */
+export interface PdfPaneInput extends PaneBarProps, MediaSource { readonly name: string }
+
+/** What a code kind's view receives (the viewer-code item's SVG and CSV views): of the panel's kind props, these. */
+export interface CodeViewInput {
+  readonly text: string;
+  readonly artifact: { readonly title: string };
+  readonly setControls?: ((controls: ReactNode) => void) | undefined;
+}
+
+type KindHead = Pick<ArtifactKind, 'match' | 'label' | 'icon' | 'fallback'>;
+type Loads<Props> = { readonly load: () => Promise<{ readonly default: ComponentType<Props> }> };
+
+/** A kind drawn by a view of the panel's text that reads fewer props than an `ArtifactKind` view (SVG, CSV). */
+export type CodeKind = KindHead & Loads<CodeViewInput>;
+/** A document kind edited over a revisioned controller (Markdown, HTML): the panel and the file viewer create the controller. */
+export type EditorKind = KindHead & ((Loads<MarkdownPaneInput> & { readonly editor: 'markdown' }) | (Loads<HtmlPaneInput> & { readonly editor: 'html' }));
 /** A kind that reads a file's bytes rather than its text (image, PDF): the file viewer draws it. */
-export type MediaKind = ImageKind | PdfKind;
+export type MediaKind = KindHead & ((Loads<ImagePaneInput> & { readonly media: 'image' }) | (Loads<PdfPaneInput> & { readonly media: 'pdf' }));
+/** Any kind the panel and the file viewer take: an app's `ArtifactKind`, a code kind, an editor kind or a media kind. */
+export type PanelKind = ArtifactKind | CodeKind | EditorKind | MediaKind;
+
+/** What the panel and the file viewer resolve through when the host passes no kinds: none, so every file shows as text. */
+export const noKinds: readonly PanelKind[] = [];
 
 export const isEditorKind = (kind: PanelKind | undefined): kind is EditorKind => !!kind && 'editor' in kind;
 export const isMediaKind = (kind: PanelKind | undefined): kind is MediaKind => !!kind && 'media' in kind;
 
 /** A kind that draws an artifact's text in the panel: an editor kind, or one with a renderer or a lazily loaded view (not image or PDF). */
 export const drawsText = (kind: PanelKind): boolean => !isMediaKind(kind) && (isEditorKind(kind) || ('renderer' in kind && !!kind.renderer) || !!kind.load);
-
-/** The built-in document kinds: each is a host's default for its type, so a `viewers` entry for that type wins over it. */
-export const documentKinds: readonly PanelKind[] = [markdownKind, htmlKind, svgKind, csvKind, imageKind, pdfKind];
-
-/**
- * Every built-in kind, in English: the domain kinds, then the document kinds. `ViewerOptions.kinds` defaults to it; a host passing its own
- * list puts its kinds first and spreads this after them (`AgentWorkspace` does, in the workspace's language).
- */
-export const viewerKinds: readonly PanelKind[] = [maquetteKind, diagramKind, mockupKind, recordsKind, ...documentKinds];
 
 // One lazy component per loader, for the life of the page: a kind recreated on each render (a fresh comments object) keeps its loader
 // identity when it is a module constant, and a loader seen again never re-suspends.
@@ -54,6 +93,11 @@ export function lazyView<Props>(load: () => Promise<{ readonly default: Componen
   if (!view) { view = lazy(load) as unknown as ComponentType<Props>; views.set(load, view); }
   return view;
 }
+
+/** A kind's lazy view as an element (`lazyView` gives one component per loader, so its identity holds across renders). */
+const lazyElement = <Props extends object>(load: () => Promise<{ readonly default: ComponentType<Props> }>, props: Props): ReactNode => { const View = lazyView(load); return <View {...props} />; };
+/** Draws a kind's `load` with the given props; a host can key it like any element. */
+export function LazyPane<Props extends object>({ load, ...props }: { readonly load: () => Promise<{ readonly default: ComponentType<Props> }> } & Props) { return lazyElement(load, props as unknown as Props); }
 
 const renderers = new WeakMap<object, (props: ArtifactKindViewProps) => ReactNode>();
 

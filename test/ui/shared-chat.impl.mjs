@@ -97,8 +97,8 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
   });
   await t.test('author grouping, avatars, agent bubbles; my own bubble takes the theme primary', async () => {
     assert.equal(q('[data-shared-message="one"] [data-testid=message-author]')?.textContent, 'Leo');
-    assert.equal(Boolean(q('[data-shared-message="one"] [data-testid=member-avatar]')), false);
-    assert.equal(q('[data-shared-message="two"] [data-testid=member-avatar]')?.dataset.size, 'sm');
+    assert.equal(q('[data-shared-message="one"] [data-testid=message-author-row] [data-testid=member-avatar]')?.dataset.size, 'sm', 'the avatar rides with the name above the first bubble of a run');
+    assert.equal(q('[data-shared-message="two"] [data-testid=member-avatar]'), null, 'the next bubbles of the run carry neither name nor avatar');
     for (const id of ['one', 'two']) {
       const bubble = q(`[data-shared-message="${id}"] [data-slot=bubble]`);
       assert.equal(bubble?.dataset.variant, 'muted'); assert.equal(bubble?.dataset.align, 'start');
@@ -106,7 +106,8 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
     }
     assert.ok(q('[data-shared-message="one"] [data-testid=message-author]')?.classList.contains('text-xs'));
     assert.ok(q('[data-shared-message="one"] [data-testid=message-author]')?.classList.contains('text-muted-foreground'));
-    assert.ok(q('[data-shared-message="one"] [data-slot=bubble-content] [data-testid=message-author]'), 'the name sits inside the first bubble');
+    assert.ok(q('[data-shared-message="one"] [data-testid=message-author-row] [data-testid=message-author]'), 'the name sits in the row above the first bubble');
+    assert.equal(q('[data-shared-message="one"] [data-slot=bubble-content] [data-testid=message-author]'), null, 'and not inside the bubble');
     assert.ok(q('[data-shared-message="one"] [data-slot=bubble] > [data-testid=bubble-tail][data-side=start]'), 'the first bubble of a group has a tail');
     assert.equal(q('[data-shared-message="two"] [data-testid=bubble-tail]'), null, 'the next ones in the group have none');
     assert.ok(q('[data-shared-message="three"] [data-slot=bubble] > [data-testid=bubble-tail][data-side=end]'));
@@ -128,15 +129,14 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
     assert.equal(q('[data-shared-message="three"] [data-testid=message-author]'), null);
   });
   await t.test('people and agents place their avatar beside the last item, including a final request card', async () => {
-    for (const id of ['two', 'seven']) {
-      const row = q(`[data-shared-message="${id}"]`);
-      assert.ok(row.querySelector('[data-testid=message-avatar] [data-testid=member-avatar]'));
-      assert.equal(Boolean(row.querySelector('[data-testid=message-author-row] [data-testid=member-avatar]')), false);
-    }
-    assert.ok(q('[data-shared-message=seven] [data-testid=member-avatar] svg[data-lucide=sparkle]'), 'agents show a clean glyph');
+    assert.equal(q('[data-testid=transcript] [data-testid=message-avatar]'), null, 'no avatar column beside the bubbles');
+    for (const id of ['two', 'six', 'seven']) assert.equal(q(`[data-shared-message="${id}"] [data-testid=member-avatar]`), null, `${id}: not the first bubble of its run`);
+    const five = q('[data-shared-message=five] [data-testid=message-author-row] [data-testid=member-avatar]');
+    assert.ok(five, 'the first bubble of the assistant run carries its avatar above the bubble');
+    assert.equal(five.dataset.agentKind, 'assistant');
+    assert.ok(five.querySelector('svg[data-lucide=sparkle]'), 'agents show a clean glyph');
     assert.equal(q('[data-testid=transcript] [data-lucide=bot]'), null, 'no robot icon');
     assert.equal(q('[data-testid=transcript] [data-testid=avatar-indicator]'), null, 'no status dot on timeline avatars');
-    assert.equal(Boolean(q('[data-shared-message=five] [data-testid=message-avatar] [data-testid=member-avatar]')), false);
     assert.equal(q('[data-shared-message=three] [data-testid=member-avatar]'), null);
     for (const id of ['one', 'two', 'five', 'six']) assert.ok(q(`[data-shared-message="${id}"] [data-testid=shared-message-content]`));
     assert.equal(q('[data-shared-message=two] [data-testid=message-author-row]'), null);
@@ -144,8 +144,8 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
     assert.equal(q('[data-shared-message=three] [data-testid=shared-message-content]')?.classList.contains('ml-8'), false);
     assert.equal(q('[data-shared-message=three] [data-slot=bubble]')?.dataset.align, 'end');
     assert.ok(q('[data-testid=transcript]').classList.contains('gap-0'));
-    assert.ok(q('[data-shared-message=two]').closest('[data-slot=message-scroller-item]').classList.contains('mt-0.5'), 'tight spacing inside a group');
-    assert.ok(q('[data-shared-message=three]').closest('[data-slot=message-scroller-item]').classList.contains('mt-3'), 'a little more between groups');
+    assert.ok(q('[data-shared-message=two]').closest('[data-row-key]').classList.contains('mt-0.5'), 'tight spacing inside a group');
+    assert.ok(q('[data-shared-message=three]').closest('[data-row-key]').classList.contains('mt-3'), 'a little more between groups');
   });
   await t.test('agent chart tokens match across name, avatar, mention and independent viewers; people have none', async () => {
     await act(async () => {
@@ -157,12 +157,12 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
     assert.match(pm ?? '', /^chart-[1-5]$/); assert.match(data ?? '', /^chart-[1-5]$/); assert.notEqual(pm, data);
     for (const [id, token, target] of [['colour-pm', pm, data], ['colour-data', data, pm]]) {
       const row = q(`[data-shared-message="${id}"]`);
-      assert.equal(row.querySelector('[data-testid=message-avatar] [data-testid=member-avatar]').dataset.agentColor, token);
-      assert.equal(row.querySelector('[data-testid=message-mention]').dataset.agentColor, target);
+      assert.equal(row.querySelector('[data-testid=message-author-row] [data-testid=member-avatar]').dataset.agentColor, token);
+      assert.equal(row.querySelector('[data-testid=message-mention]').getAttribute('data-agent-color'), null, 'the mention text shares the agents’ info colour; the avatar inside keeps the chart token');
       assert.equal(row.querySelector('[data-testid=message-mention] [data-testid=member-avatar]').dataset.agentColor, target);
       assert.ok(row.querySelector('[data-testid=message-mention]').classList.contains('items-baseline'));
     }
-    for (const selector of ['[data-testid=message-author]', '[data-testid=message-avatar] [data-testid=member-avatar]', '[data-testid=message-mention]']) assert.equal(q(`[data-shared-message=colour-person] ${selector}`).getAttribute('data-agent-color'), null);
+    for (const selector of ['[data-testid=message-author]', '[data-testid=message-author-row] [data-testid=member-avatar]', '[data-testid=message-mention]']) assert.equal(q(`[data-shared-message=colour-person] ${selector}`).getAttribute('data-agent-color'), null);
     const viewer = document.createElement('div'); document.body.append(viewer); const other = createRoot(viewer);
     const independent = createSharedChat(source, { conversationId: 'main' });
     try {
@@ -193,7 +193,7 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
     assert.equal(q('[data-testid=transcript] [data-testid=message-role]'), null, 'no role line by default');
     const toggle = id => q(`[data-shared-message="${id}"] [data-testid=message-author-toggle]`);
     assert.equal(toggle('one')?.getAttribute('aria-label'), 'Leo · validator');
-    assert.equal(toggle('five')?.getAttribute('aria-label'), 'PM · the app’s agent');
+    assert.equal(toggle('five')?.getAttribute('aria-label'), 'Your assistant · the app’s agent');
     assert.equal(toggle('four'), null, 'the admin keeps its badge, no role to show');
     assert.equal(q('[data-shared-message="three"] [data-testid=message-author-row]'), null, 'my own messages have no author row');
     assert.ok(toggle('one').classList.contains('min-h-11'), 'the name is a 44px target');
@@ -318,9 +318,10 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
       Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(textarea, '@');
       textarea.setSelectionRange(1, 1); textarea.dispatchEvent(new window.Event('input', { bubbles: true }));
     });
-    await settle(() => document.querySelectorAll('[data-testid=mention-item]').length === 5);
+    await settle(() => document.querySelectorAll('[data-testid=mention-item]').length === 4);
     assert.deepEqual([...document.querySelectorAll('[data-testid=mention-item]')].slice(0, 2).map(item => item.dataset.path), ['pm', 'data']);
     assert.equal(document.querySelector('[data-testid=mention-item][data-path=worker]'), null);
+    assert.equal(document.querySelector('[data-testid=mention-item][data-path=mira]'), null, 'the reader is not offered to themselves');
     assert.doesNotMatch([...document.querySelectorAll('[data-testid=mention-item]')].map(item => item.textContent).join(' '), /Builder/);
     await act(async () => textarea.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
   });
@@ -360,7 +361,7 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
       source.emit({ type: 'step', messageId: worker.id, conversationId: 'main', index: 0, step: { label: 'Préparer les données', status: 'running' } });
     });
     const pm = () => q('[data-shared-message=pm-plan]'); const builder = () => q('[data-shared-message=worker-plan]');
-    assert.match(pm().textContent, /PM is working/);
+    assert.match(pm().textContent, /Your assistant is working/);
     for (const message of [pm(), builder()]) {
       assert.equal(message.querySelector('[data-testid=activity]').dataset.open, 'false');
       assert.equal(message.querySelectorAll('[data-slot=spinner]').length, 1, 'one collapsed summary spinner per working agent');
@@ -408,13 +409,13 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
     assert.equal(document.querySelectorAll('[data-shared-message=six] [data-testid=request-card]').length, 1);
     assert.match(old.textContent, /Une version à essayer/); assert.match(old.textContent, /Essayer cette version/);
     await act(async () => old.querySelector('[data-testid=shared-reply]').click());
-    assert.match(q('[data-testid=composer-reply]').textContent, /PM.*Export PDF/);
+    assert.match(q('[data-testid=composer-reply]').textContent, /Your assistant.*Export PDF/);
     await act(async () => controller.setText('Ajoute la date, merci.'));
     await act(async () => q('[data-testid=composer-submit]').click());
     await settle(() => source.sends.at(-1)?.replyTo === 'six');
     const sent = controller.getSnapshot().shared.messages.find(message => message.clientId === source.sends.at(-1).clientId);
     const row = q(`[data-shared-message="${sent.id}"]`);
-    assert.match(row.querySelector('[data-testid=message-quote]').textContent, /PM.*Export PDF/);
+    assert.match(row.querySelector('[data-testid=message-quote]').textContent, /Your assistant.*Export PDF/);
     let scrolled = false; old.scrollIntoView = () => { scrolled = true; };
     await act(async () => row.querySelector('[data-testid=message-quote] button').click());
     assert.equal(scrolled, true);
@@ -503,7 +504,7 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
       assert.match(days[0].textContent, /^[A-Z][a-z]{2} \d{1,2} [A-Z][a-z]{2}$/, 'older days read « Tue 22 Oct »');
       assert.equal(days[0].querySelector('[data-slot=badge]') ? true : days[0].firstElementChild?.dataset.slot === 'badge', true, 'a centred pill');
       const author = id => box.querySelector(`[data-shared-message="${id}"] [data-testid=message-author]`)?.textContent ?? null;
-      assert.equal(author('y-first'), 'PM'); assert.equal(author('y-close'), null); assert.equal(author('y-boundary'), null); assert.equal(author('y-late'), 'PM');
+      assert.equal(author('y-first'), 'Your assistant'); assert.equal(author('y-close'), null); assert.equal(author('y-boundary'), null); assert.equal(author('y-late'), 'Your assistant');
       const lines = box.querySelector('[data-testid=system-lines]');
       assert.equal(lines.dataset.count, '3');
       assert.deepEqual([...lines.querySelectorAll('[data-testid=system-line]')].map(line => line.textContent), ['Reverted: Reminder wording'], 'only the latest notice shows');
@@ -512,7 +513,7 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
       assert.equal(lines.querySelectorAll('[data-testid=system-line]').length, 3);
       assert.equal(lines.querySelector('[data-testid=system-lines-toggle]').getAttribute('aria-expanded'), 'true');
       assert.equal(box.querySelector('[data-testid=system-lines] [data-slot=bubble]'), null, 'notices are not bubbles');
-      assert.equal(author('t-after'), 'PM', 'a notice ends a group');
+      assert.equal(author('t-after'), 'Your assistant', 'a notice ends a group');
     });
   });
   await t.test('a two-person channel shows neither avatars nor names; a pinned comment is a quoted bubble with a pin', async () => {
@@ -533,6 +534,32 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
       assert.ok(pin.querySelector('[data-testid=pin-quote] svg[data-lucide], [data-testid=pin-quote] svg'));
       assert.match(pin.textContent, /White bg/);
       assert.equal(box.querySelector('[data-shared-message=duo-pin] [data-testid=request-card]'), null);
+    });
+  });
+  await t.test('a question card: the choices answer with one tap (a reply to the question), a free reply opens the composer on it, an answered one has no choices', async () => {
+    const members = sharedChatSeed.members.filter(member => ['mira', 'pm'].includes(member.id));
+    const question = { callId: 'q1', prompt: 'Which format?', options: ['PDF', 'CSV'], allowFreeText: true, answered: false };
+    const messages = [
+      { id: 'q-1', conversationId: 'main', author: 'pm', at: '2026-10-20T10:00:00Z', text: 'Which format?', question },
+      { id: 'q-2', conversationId: 'main', author: 'pm', at: '2026-10-20T10:01:00Z', text: 'Which size?', question: { callId: 'q2', prompt: 'Which size?', options: ['A4'], allowFreeText: false, answered: true } },
+    ];
+    await isolated({ ...sharedChatSeed, members, conversations: [{ ...sharedChatSeed.conversations[0], members: ['mira', 'pm'] }], messages }, async (box, own) => {
+      const open = box.querySelector('[data-shared-message=q-1] [data-testid=question-card]');
+      assert.ok(open, 'the question is a card');
+      assert.deepEqual([...open.querySelectorAll('[data-testid=question-option]')].map(button => button.textContent), ['PDF', 'CSV']);
+      assert.ok(open.querySelector('[data-testid=question-reply]'), 'free text is allowed: Reply');
+      assert.match(open.querySelector('[data-testid=question-prompt]').textContent, /Which format\?/);
+      const done = box.querySelector('[data-shared-message=q-2] [data-testid=question-card]');
+      assert.equal(done.dataset.answered, 'true');
+      assert.equal(done.querySelector('[data-testid=question-option]'), null, 'answered: no choices');
+      assert.equal(done.querySelector('[data-testid=question-reply]'), null);
+      assert.match(done.querySelector('[data-testid=question-answered]').textContent, /Answered/);
+      await act(async () => open.querySelector('[data-testid=question-reply]').click());
+      assert.ok(box.querySelector('[data-testid=composer-reply]'), 'Reply puts the composer on the question');
+      await act(async () => [...open.querySelectorAll('[data-testid=question-option]')].find(button => button.textContent === 'CSV').click());
+      await settle(() => own.sends.length === 1);
+      assert.deepEqual([own.sends[0].text, own.sends[0].replyTo, own.sends[0].conversationId], ['CSV', 'q-1', 'main']);
+      assert.ok(box.querySelector('[data-testid=composer-reply]'), 'answering with a choice leaves the composer\u2019s reply alone');
     });
   });
   await t.test('WhatsApp composer: one pill row, the microphone in Send’s place while empty, an app control at the left edge', async () => {
