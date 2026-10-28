@@ -1,5 +1,7 @@
 'use client';
 
+import { usePhone } from '../utils/use-media';
+
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { ChatHistoryState } from '@hachej/boring-ui-kit/native-chat';
@@ -61,7 +63,7 @@ function RowActions({ label, items }: { readonly label: string; readonly items: 
       <DropdownMenuContent align="end" aria-label={label} data-testid="conversation-action-more-list" className="w-64 max-w-[calc(100vw-1rem)]">
         {items.map(item => <Fragment key={item.id}>
           {item.separatorBefore && <DropdownMenuSeparator />}
-          <DropdownMenuItem variant={item.destructive ? 'destructive' : 'default'} disabled={item.disabled} data-testid={item.testId ?? `conversation-action-more-${item.id}`} data-item={item.id} onClick={item.onSelect} className="min-h-8 max-sm:min-h-10 pointer-coarse:min-h-10">
+          <DropdownMenuItem variant={item.destructive ? 'destructive' : 'default'} disabled={item.disabled} data-testid={item.testId ?? `conversation-action-more-${item.id}`} data-item={item.id} onClick={item.onSelect} className="min-h-8 max-md:min-h-10 pointer-coarse:min-h-10">
             {item.icon}{item.label}
           </DropdownMenuItem>
         </Fragment>)}
@@ -180,7 +182,7 @@ export function ConversationList({ conversations, onPicked, autoFocus = false, s
                 <Button type="button" variant={active ? 'secondary' : 'ghost'} data-testid="conversation-row" data-conversation-id={item.id} data-active={active ? 'true' : undefined} aria-current={active ? 'true' : undefined}
                   title={item.lastMessage ?? undefined}
                   onClick={() => { if (!active) conversations.onSelect(item.id); onPicked?.(); }}
-                  className="h-auto min-h-10 min-w-0 flex-1 justify-start max-sm:min-h-12">
+                  className="h-auto min-h-10 min-w-0 flex-1 justify-start max-md:min-h-12">
                   <MessageSquareIcon data-icon="inline-start" aria-hidden="true" />
                   <span className="min-w-0 flex-1 truncate text-left">{title}</span>
                   {active ? <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground"><CheckIcon className="size-3.5" aria-hidden="true" /><span className="sr-only">{labels.current}</span></span>
@@ -219,19 +221,18 @@ export function ConversationHistory({ conversations, onClose, placement = 'below
   readonly placement?: 'below' | 'above';
 }) {
   const { labels, icons } = useChatText();
-  const [phone, setPhone] = useState(() => globalThis.matchMedia?.('(max-width: 640px)').matches === true);
-  useEffect(() => { const media = globalThis.matchMedia?.('(max-width: 640px)'); if (!media) return; const change = () => setPhone(media.matches); media.addEventListener('change', change); return () => media.removeEventListener('change', change); }, []);
+  const phone = usePhone();
   useEffect(() => {
     const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
     document.addEventListener('keydown', escape);
     return () => document.removeEventListener('keydown', escape);
   }, [onClose]);
   const content = <>
-      <header className="flex shrink-0 items-center gap-2 px-3 py-2.5 max-sm:pt-[max(0.625rem,env(safe-area-inset-top))]">
-        <Button size="icon-sm" variant="ghost" aria-label={labels.closeHistory} title={labels.close} data-testid="conversations-close" onClick={onClose} className="sm:hidden"><ArrowLeftIcon data-icon="inline-start" aria-hidden="true" /></Button>
+      <header className="flex shrink-0 items-center gap-2 px-3 py-2.5 max-md:pt-[max(0.625rem,env(safe-area-inset-top))]">
+        <Button size="icon-sm" variant="ghost" aria-label={labels.closeHistory} title={labels.close} data-testid="conversations-close" onClick={onClose} className="md:hidden"><ArrowLeftIcon data-icon="inline-start" aria-hidden="true" /></Button>
         <h3 className="m-0 min-w-0 flex-1 text-sm font-semibold">{labels.history}</h3>
         {conversations.onNew && <Button size="sm" variant="outline" data-testid="conversation-new" onClick={() => { conversations.onNew!(); onClose(); }}><icons.newChat data-icon="inline-start" aria-hidden="true" />{labels.newConversation}</Button>}
-        <Button size="icon-sm" variant="ghost" aria-label={labels.closeHistory} title={labels.close} onClick={onClose} className="max-sm:hidden"><XIcon data-icon="inline-start" aria-hidden="true" /></Button>
+        <Button size="icon-sm" variant="ghost" aria-label={labels.closeHistory} title={labels.close} onClick={onClose} className="max-md:hidden"><XIcon data-icon="inline-start" aria-hidden="true" /></Button>
       </header>
       <Separator />
       <ConversationList conversations={conversations} onPicked={onClose} autoFocus />

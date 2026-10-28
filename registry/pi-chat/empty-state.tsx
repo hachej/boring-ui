@@ -10,7 +10,7 @@ export function EmptyState({ title, description, avatar, suggestions, onSelect, 
   readonly title: string; readonly description?: string; readonly avatar?: ReactNode; readonly suggestions?: readonly Suggestion[]; readonly onSelect?: (text: string) => void; readonly children?: ReactNode;
 }) {
   const { labels } = useChatText();
-  return <Empty data-testid="empty-state" className="mx-auto min-h-full w-full max-w-[720px] max-sm:mb-24">
+  return <Empty data-testid="empty-state" className="mx-auto min-h-full w-full max-w-[720px] max-md:mb-24">
     <EmptyHeader>
       {avatar && <EmptyMedia data-testid="empty-state-icon"><span className="flex size-8 items-center justify-center overflow-hidden [&>img]:size-full [&>img]:object-cover [&>svg]:size-5">{avatar}</span></EmptyMedia>}
       <EmptyTitle>{title}</EmptyTitle>

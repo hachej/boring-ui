@@ -34,7 +34,7 @@ export function ImageViewer({ images, index, onIndexChange, onClose, labels: sup
   const move = (offset: number) => onIndexChange((index + offset + images.length) % images.length);
   if (!src) return null;
   return <Dialog open onOpenChange={open => { if (!open) onClose(); }}><DialogContent showCloseButton={false} aria-describedby={undefined} data-testid="image-viewer"
-    className="pi-chat flex min-h-0 flex-col overflow-hidden max-sm:inset-0 max-sm:max-h-dvh max-sm:min-h-dvh max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 sm:max-h-[90dvh] sm:min-h-[80dvh] sm:max-w-5xl"
+    className="pi-chat flex min-h-0 flex-col overflow-hidden max-md:inset-0 max-md:max-h-dvh max-md:min-h-dvh max-md:max-w-none max-md:translate-x-0 max-md:translate-y-0 md:max-h-[90dvh] md:min-h-[80dvh] md:max-w-5xl"
     onKeyDown={event => {
       if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); event.stopPropagation(); move(event.key === 'ArrowLeft' ? -1 : 1); }
     }}>
@@ -93,7 +93,7 @@ function ImageSurface({ src, alt, onClose, testId }: { readonly src: string; rea
     } else state.tap = undefined;
     rebase(basis.mode === 'pinch' || basis.mode === 'pinch-pan' ? 'pinch-pan' : 'pan');
   };
-  return <div data-testid="image-viewer-surface" data-scale={view.scale} className="relative min-h-0 flex-1 touch-none overflow-hidden max-sm:-mx-4 max-sm:-mb-4"
+  return <div data-testid="image-viewer-surface" data-scale={view.scale} className="relative min-h-0 flex-1 touch-none overflow-hidden max-md:-mx-4 max-md:-mb-4"
     onDoubleClick={event => { if (gesture.current.pointerType === 'touch') return; event.preventDefault(); zoom({ x: event.clientX, y: event.clientY }, event.currentTarget); }}
     onPointerDown={event => {
       if (event.pointerType === 'mouse' && event.button !== 0) return;

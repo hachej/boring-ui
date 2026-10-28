@@ -21,3 +21,4 @@ Harness for every file: the example journeys (`npm run <name>:journey`, headless
 | Shared chat | the room: people and agents in one conversation | [shared-chat.md](shared-chat.md) |
 | Feedback | comment mode, pins, reports | [feedback.md](feedback.md) |
 | Packages | agent, files, execution, ui kit and the `boring-ui-blocks` CLI | [packages.md](packages.md) |
+| Viewer utilities | shared phone breakpoint, media/keyboard viewport and local layout persistence | [viewer-utilities.md](viewer-utilities.md) |

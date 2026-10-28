@@ -6,6 +6,12 @@ The opt-in `@hachej/boring-ui-kit/chat-react/voice` exports `useVoiceAttempt`, `
 
 Fail-first component evidence: `test/ui/voice-input.test.mjs` drives a configured dictation cap and finishing during pending permission. Public built output evidence: `test/packages/ui-chat-react-voice.test.mjs` drives default/configured limits, independent attempts, late permission, target replacement, suspended target renders, late transcription, refusal labels, per-half retry caching and unknown native admission. Existing native/DOM integration evidence remains `test/contracts/pi-chat-file-cards.test.mjs` and `test/contracts/app-shell-render.test.mjs`. Browser integration commands are `app-shell:journey:voice`, `app-shell:journey:target` and `feedback:journey`; physical-device microphone behavior and live transcription remain host qualifications. The existing five-minute capture default was already implemented; this increment forwards configurable limits to dictation and adds permission-time cancellation to the feedback button. No global proof is promoted.
 
+## Shared phone layout and viewer persistence
+
+`registry/utils/use-media.ts` owns the below-768px phone query, generic media subscription, visual viewport and element-relative chat keyboard inset. Phone layout is independent of pointer type; coarse-pointer hit targets remain pointer-specific. `registry/utils/persisted.ts` centralizes safe session/local reads and writes; consumers retain their storage keys, encodings and value validation. Ambient, chat, app-shell, shared chat, viewers and floating windows share the breakpoint; workspace container sheets default to 768px but retain explicit host overrides. Old Ambient and app-shell hook paths and `utils/utils`'s constant remain compatibility exports for one release. No Pi extension point applies: these are browser layout and local viewer conveniences, not conversation or execution state. No kit subpath or package edge is added.
+
+`test/ui/ambient-position.test.mjs` drives the public Ambient component at 700px, across 767 / 767.5 / 768px, through media cleanup and denied storage. The 700px assertion failed before the change. `test/ui/registry-utils.test.mjs` imports bundled source-distributed utility entries and exercises media query replacement, coarse-pointer separation, viewport resize/scroll/zoom, inset cleanup and denied/malformed storage. Existing `test/ui/dock-page.test.mjs`, `test/contracts/windows.test.mjs` and workspace tests protect retained layout persistence. Browser gates: `npm run test:design` and `npm run test:viewer-chrome`; isolated installs: `test:pi-chat-consumer` and `test:registry-consumer`. Browser emulation does not qualify physical keyboards or real-device behavior; global deferrals are unchanged.
+
 ## Headless chat session and shared connection/status presentation
 
 `chat-react/useChatSession` owns the session's native snapshot projection, observed files, connection/errors, send/feedback restore, queue edit/steer, uploads/paste undo and optimistic model/effort state. `registry/pi-chat/session.tsx` is the row context, picker JSX and composer-prop adapter. Public native controller commands and borrowed ownership are unchanged; no Pi execution extension is needed for host presentation over `subscribe/getSnapshot`. [API and lifecycle](../../packages/ui/README.md#chat-react-hooks) are owned by the UI guide.
@@ -54,7 +60,7 @@ The `windows` registry item is host presentation, independent of Pi: `WindowLaye
 `FloatingWindow`, `WindowLauncher`, `useWindow` and the shared `useDraggable` hook.
 Window rectangles and open/minimized/closed status are remembered in session or
 local storage; desktop windows drag, resize and raise on pointer or keyboard focus.
-Below 641px the front window uses the host's full-screen Drawer. The app shell
+Below 768px the front window uses the host's full-screen Drawer. The app shell
 uses the same extracted drag hook without changing its dock/float contract.
 See [the recipe](../../registry/README.md#floating-windows-windows).
 

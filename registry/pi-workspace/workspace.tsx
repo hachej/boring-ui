@@ -1,5 +1,8 @@
 'use client';
 
+import { PHONE_BELOW } from '../utils/use-media';
+import { readFlag, writeFlag, readPersisted, writePersisted } from '../utils/persisted';
+
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { KeyboardEvent, PointerEvent, ReactNode } from 'react';
 import { Badge } from '@/components/ui/badge';
@@ -69,10 +72,8 @@ export interface ArtifactWorkspaceProps {
 }
 
 const STEP = 24, BIG_STEP = 96;
-const read = (key: string): number | undefined => { try { const value = Number(sessionStorage.getItem(key)); return Number.isFinite(value) && value > 0 ? value : undefined; } catch { return undefined; } };
-const write = (key: string, value: number) => { try { sessionStorage.setItem(key, String(Math.round(value))); } catch { /* the width is a convenience */ } };
-const readFlag = (key: string): boolean => { try { return sessionStorage.getItem(key) === '1'; } catch { return false; } };
-const writeFlag = (key: string, on: boolean) => { try { if (on) sessionStorage.setItem(key, '1'); else sessionStorage.removeItem(key); } catch { /* the layout is a convenience */ } };
+const read = (key: string): number | undefined => { const value = Number(readPersisted(key)); return Number.isFinite(value) && value > 0 ? value : undefined; };
+const write = (key: string, value: number) => writePersisted(key, String(Math.round(value)));
 
 /**
  * Chat with an artifact panel beside it, as in Claude's chat apps. The panel opens on the right at full height and the chat
@@ -80,7 +81,7 @@ const writeFlag = (key: string, on: boolean) => { try { if (on) sessionStorage.s
  * (Escape leaves) and on a phone it is a full-screen sheet. With `floatBelow` the chat can float over a full-width panel instead of sitting beside it. The workspace owns layout only: what is open, and the viewer in it, are the host's.
  */
 export function ArtifactWorkspace({ chat, open, panel, onClose, fullscreen: controlledFullscreen, onFullscreenChange, storageKey = 'boring.artifact-panel.width', defaultWidth,
-  minPanel = 360, minChat = 360, sheetBelow = 641, floatBelow, panelLabel = 'Artifact panel', variant = 'split', labels, className }: ArtifactWorkspaceProps) {
+  minPanel = 360, minChat = 360, sheetBelow = PHONE_BELOW, floatBelow, panelLabel = 'Artifact panel', variant = 'split', labels, className }: ArtifactWorkspaceProps) {
   const root = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState(0);
   const [stored, setStored] = useState<number | undefined>(() => read(storageKey) ?? (defaultWidth !== undefined && defaultWidth > 1 ? defaultWidth : undefined));

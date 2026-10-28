@@ -95,7 +95,7 @@ export function SharedTimeline({ controller, api, focusComposer, openFile, menti
     <MessageScrollerViewport ref={node => { root.current = node; stick.scrollRef(node); }} data-testid="transcript-scroll" aria-label={labels.messages} className="min-h-0 flex-1 scrollbar-thumb-border scrollbar-track-transparent"
       onScroll={event => { const top = event.currentTarget.scrollTop; if (top < lastTop.current - 4) setScrolledUp(true); lastTop.current = top; }}>
       {items.length > 0 && (hidden > 0 || state.history.kind === 'loading' || state.history.kind === 'error' || state.history.kind === 'ready' && state.history.hasMore) && <TranscriptHistory history={state.history} connected={!state.disposed && connected} onLoad={transcript.reveal} sentinelRef={transcript.sentinelRef} hidden={hidden} loaded={transcript.loaded} />}
-      <div data-testid="transcript-bottom" className="mx-auto flex min-h-full w-full max-w-[720px] flex-col justify-end px-4 pt-4 pb-3 sm:px-6">
+      <div data-testid="transcript-bottom" className="mx-auto flex min-h-full w-full max-w-[720px] flex-col justify-end px-4 pt-4 pb-3 md:px-6">
         <MessageScrollerContent aria-label={labels.messages} aria-live="polite" data-testid="transcript" className="h-auto min-h-0 gap-0 [&>[data-local-voice]]:mt-3">
           {chunks.map((run, index) => <TimelineChunk key={run[0]!.key} items={run} top={index === 0} multi={multi} controller={controller} mentions={mentions} openFile={stableOpen} onReply={reply} onReveal={setRevealing} />)}
           {pendingVoice}
@@ -103,7 +103,7 @@ export function SharedTimeline({ controller, api, focusComposer, openFile, menti
       </div>
     </MessageScrollerViewport>
     {hasContent && !stick.isAtBottom && scrolledUp && <div data-testid="transcript-navigation" className="flex shrink-0 items-center justify-center py-1.5">
-      <Button variant="secondary" size="sm" data-testid="jump-latest" data-unseen={unseen || undefined} aria-label={unseen ? labels.sharedNewMessages(unseen) : labels.jumpToLatest} title={labels.jumpToLatest} className="max-sm:min-h-11 pointer-coarse:min-h-11" onClick={() => api.current?.reset()}>
+      <Button variant="secondary" size="sm" data-testid="jump-latest" data-unseen={unseen || undefined} aria-label={unseen ? labels.sharedNewMessages(unseen) : labels.jumpToLatest} title={labels.jumpToLatest} className="max-md:min-h-11 pointer-coarse:min-h-11" onClick={() => api.current?.reset()}>
         <icons.jumpToLatest data-icon="inline-start" aria-hidden="true" />{unseen ? labels.sharedNewMessages(unseen) : labels.jumpToLatest}</Button>
     </div>}
   </MessageScroller>;
