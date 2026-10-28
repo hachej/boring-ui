@@ -4,7 +4,7 @@ The npm side of the kit: Pi-based agent definitions and handlers, the workspace 
 
 ## Sub-features
 
-- `pkg-agent-actions` optional decision, structured extraction, native tool and result-derived reply. `packages/agent/src/actions.ts`.
+- `pkg-agent-actions` optional decision, structured extraction, native tool and result-derived reply, with native unavailable-model outcomes and deferred fallback polling/cancellation. `packages/agent/src/actions.ts`.
 
 - `pkg-agent-define` `defineAgent`, tools, extensions, delegates. `packages/agent/src/agents.ts`.
 - `pkg-agent-transport` chat transport and conversations handlers. `packages/agent/src/chat-transport.ts`, `conversations.ts`.

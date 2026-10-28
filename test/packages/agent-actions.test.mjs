@@ -26,13 +26,13 @@ function setup(responses, overrides = {}) {
     decide: async input => { decisions.push(input); return true; }, reply: 'Saved {text}.', uncertainReply: uncertain, ...overrides };
   return { provider, models: withActionModels(models, { resolve: id => id === 'clerk' ? action : undefined }), action, decisions };
 }
-async function open(fixture, { storage = new MemoryStorage(), execute, extensions = [] } = {}) {
+async function open(fixture, { storage = new MemoryStorage(), execute, extensions = [], settings } = {}) {
   const writes = [];
   const tool = defineTool({ name: 'remember', description: 'Save note.', parameters: schema, replay: 'safe', execute: execute ?? (async args => { writes.push(args); return { output: [{ type: 'text', text: JSON.stringify(args) }] }; }) });
   const registry = createRegistry();
   const domain = defineExtension({ name: 'fictional.notes', tools: [tool] }); registry.install(domain);
   for (const extension of extensions) registry.install(extension);
-  const harness = await Harness.open(storage, { registry, models: fixture.models }, ctx);
+  const harness = await Harness.open(storage, { registry, models: fixture.models, settings }, ctx);
   const conversation = await harness.createConversation({ ownership: { kind: 'ownerless' }, agent: { model: virtual, extensions: [domain, ...extensions] } }, ctx);
   return { harness, conversation, writes };
 }
@@ -115,9 +115,12 @@ test('native configuration updates do not hide the last user message; removed to
   assert.equal(await text(run.conversation), 'Saved fictional picnic.'); assert.equal(run.writes.length, 1);
 });
 
-test('compaction delegates without a decision or extraction', async () => {
+test('native summarization-shaped requests delegate without a decision or extraction', async () => {
   const fixture = setup([answer('Compacted.')]);
-  const result = await fixture.models.complete(fixture.models.getModel(ACTION_PROVIDER, 'clerk'), { messages: [{ role: 'user', content: 'Summarize.', timestamp: 0 }] });
+  const result = await fixture.models.completeSimple(fixture.models.getModel(ACTION_PROVIDER, 'clerk'), { messages: [
+    { role: 'system', content: 'Summarize this conversation.', timestamp: 0 },
+    { role: 'user', content: 'Summarize.', timestamp: 0 },
+  ] });
   assert.equal(result.content[0].text, 'Compacted.'); assert.equal(fixture.decisions.length, 0);
 });
 
@@ -167,4 +170,46 @@ test('split text parts preserve exact input and tool JSON without inserting char
   assert.equal(fixture.decisions[0].message, 'Remember the fictional picnic');
   assert.equal(await text(run.conversation), 'Saved fictional picnic.');
   assert.equal(fixture.provider.state.callCount, 1);
+});
+
+test('unavailable action models preserve native model lookup semantics', () => {
+  const fixture = setup([]);
+  assert.equal(fixture.models.getModel(ACTION_PROVIDER, 'removed'), undefined);
+  fixture.action.model = { ...ref, modelId: 'removed' };
+  assert.equal(fixture.models.getModel(ACTION_PROVIDER, 'clerk'), undefined);
+});
+
+test('deferred full-model responses can be fetched and cancelled through the adapter', async () => {
+  const fixture = setup([answer('Deferred answer.'), answer('Cancelled answer.')], { decide: async () => false });
+  const model = fixture.models.getModel(ACTION_PROVIDER, 'clerk');
+  const context = { messages: [{ role: 'user', content: 'Hello', timestamp: 0 }] };
+  const first = await fixture.models.completeSimple(model, context, { deferred: true });
+  assert.equal(first.stopReason, 'deferred');
+  const completed = await fixture.models.fetchDeferred(model, first.deferred);
+  assert.equal(completed.stopReason, 'stop');
+  assert.equal(completed.content[0].text, 'Deferred answer.');
+  const second = await fixture.models.completeSimple(model, context, { deferred: true });
+  await fixture.models.cancelDeferred(model, second.deferred);
+  assert.deepEqual(fixture.provider.state.cancelledDeferred, [second.deferred]);
+});
+
+test('a throwing rejection predicate leaves an uncertain reply without another request', async t => {
+  const fixture = setup([extraction()], { rejectedWithoutEffect: () => { throw new Error('Unexpected details'); } });
+  const run = await open(fixture, { execute: async () => ({ isError: true, output: [{ type: 'text', text: 'Unknown outcome' }] }) });
+  t.after(() => run.harness.close(ctx));
+  await say(run.conversation);
+  assert.equal(await text(run.conversation), uncertain);
+  assert.equal(fixture.provider.state.callCount, 1);
+});
+
+test('native deferred generation skips extraction and completes through polling', async t => {
+  const fixture = setup([answer('Deferred answer.')]);
+  const run = await open(fixture, { settings: { stream: { deferred: true } } });
+  t.after(() => run.harness.close(ctx));
+  await say(run.conversation);
+  assert.equal(await text(run.conversation), 'Deferred answer.');
+  assert.equal(fixture.decisions.length, 0);
+  assert.equal(fixture.provider.state.callCount, 1);
+  assert.equal(fixture.provider.state.deferredFetchCount, 1);
+  assert.equal(run.writes.length, 0);
 });

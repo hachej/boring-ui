@@ -64,8 +64,8 @@ async function admitted(action: StructuredAction, message: string, history: Mess
 }
 
 /** Compose at HarnessOptions.models, outside the host's admitted/metered real Models.
- * Pi still owns generation, tool execution, hooks, history and recovery. `stream` (compaction)
- * delegates to the full model. No tool is executed here and no second journal is created.
+ * Pi still owns generation, tool execution, hooks, history and recovery. Tool-free requests
+ * (including native compaction) delegate to the full model. No tool is executed here.
  */
 export function withActionModels<T extends Models>(models: T, options: ActionModelsOptions): T {
   const now = options.now ?? Date.now;
@@ -79,10 +79,12 @@ export function withActionModels<T extends Models>(models: T, options: ActionMod
     if (!action) throw new Error(`No action agent ${id}`);
     return action;
   };
-  const wrapped: Pick<Models, 'getModel' | 'streamSimple' | 'completeSimple' | 'stream' | 'complete'> = {
+  const wrapped: Pick<Models, 'getModel' | 'streamSimple' | 'completeSimple' | 'stream' | 'complete' | 'streamDeferred' | 'fetchDeferred' | 'cancelDeferred'> = {
     getModel(provider, id) {
       if (provider !== ACTION_PROVIDER) return models.getModel(provider, id);
-      return { ...required(resolve(id).model), provider, id };
+      const action = options.resolve(id);
+      const model = action && models.getModel(action.model.provider, action.model.modelId);
+      return model && model.provider !== ACTION_PROVIDER ? { ...model, provider, id } : undefined;
     },
     streamSimple(model, context, requestOptions) {
       if (model.provider !== ACTION_PROVIDER) return models.streamSimple(model, context, requestOptions);
@@ -101,7 +103,11 @@ export function withActionModels<T extends Models>(models: T, options: ActionMod
         const calls = previous?.role === 'assistant' ? previous.content.filter(p => p.type === 'toolCall') : [];
         const call = calls.length === 1 ? calls[0] : undefined;
         if (last?.role === 'toolResult' && call?.id === last.toolCallId && call.name === action.extraction.tool.name && call.id.startsWith(PREFIX)) {
-          if (last.isError && action.rejectedWithoutEffect?.(last) === true) return full();
+          if (last.isError) {
+            let rejected = false;
+            try { rejected = action.rejectedWithoutEffect?.(last) === true; } catch { /* Unknown outcomes remain uncertain. */ }
+            if (rejected) return full();
+          }
           let text = action.uncertainReply;
           if (!last.isError) {
             try { text = actionReply(action.reply, JSON.parse(inputText(last.content))); } catch { /* A possible effect must not be repeated. */ }
@@ -110,7 +116,7 @@ export function withActionModels<T extends Models>(models: T, options: ActionMod
           return;
         }
         const tool = getCurrentTools(normalizeContext(context).messages).find(tool => tool.name === action.extraction.tool.name);
-        if (!tool || last?.role !== 'user' || requestOptions?.signal?.aborted) return full();
+        if (!tool || last?.role !== 'user' || requestOptions?.signal?.aborted || requestOptions?.deferred) return full();
         const raw = inputText(last.content);
         if (!raw.trim() || raw.length > (action.maxInputCharacters ?? 1500) || (Array.isArray(last.content) && last.content.some(p => p.type !== 'text'))) return full();
         if (!await admitted(action, raw, messages.slice(0, -1), requestOptions?.signal) || requestOptions?.signal?.aborted) return full();
@@ -136,6 +142,13 @@ export function withActionModels<T extends Models>(models: T, options: ActionMod
     },
     completeSimple: (model, context, requestOptions) => wrapped.streamSimple(model, context, requestOptions).result(),
     complete: (model, context, requestOptions) => wrapped.stream(model, context, requestOptions).result(),
+    streamDeferred(model, handle, requestOptions) {
+      return models.streamDeferred(model.provider === ACTION_PROVIDER ? required(resolve(model.id).model) : model, handle, requestOptions);
+    },
+    fetchDeferred: (model, handle, requestOptions) => wrapped.streamDeferred(model, handle, requestOptions).result(),
+    cancelDeferred(model, handle, requestOptions) {
+      return models.cancelDeferred(model.provider === ACTION_PROVIDER ? required(resolve(model.id).model) : model, handle, requestOptions);
+    },
   };
   return new Proxy(models, { get(target, key) {
     if (Object.hasOwn(wrapped, key)) return Reflect.get(wrapped, key);
