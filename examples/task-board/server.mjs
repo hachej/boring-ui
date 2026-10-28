@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
-import { Harness, MemoryStorage, createRegistry } from '@earendil-works/pi-durable';
+import { Harness, MemoryStorage, createRegistry, defineTool } from '@earendil-works/pi-durable';
+import { Type } from '@earendil-works/pi-ai';
 import { NodeExecutionEnv } from '@earendil-works/pi-durable/env/node';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { defineAgent } from '@hachej/boring-agent/agents';
@@ -41,7 +42,14 @@ export async function startTaskBoard({ port = 0 } = {}) {
   }
   const { models } = await createScriptedModels({ sources: taskSources });
   const registry = createRegistry();
-  const agent = defineAgent({ id: 'village-pm', model: { provider: 'openai', modelId: 'gpt-5-mini' }, instructions: 'Show the requested fictional host task, then report the actual presentation result.', tools: [createPresentTool({ ack: { timeoutMs: 15000 } })] });
+  const answers = new Map();
+  const settle = (task, question, value, actor) => {
+    const options = { route: ['river', 'hill'], supplies: ['water', 'snacks'] };
+    if (task !== 'D-201' || !options[question]?.includes(value)) return { kind: 'denied', reason: 'Unknown task question or option' };
+    const answer = { answer: value, answeredBy: actor, answeredAt: new Date().toISOString() }; answers.set(question, answer); return { kind: 'answered', question, ...answer };
+  };
+  const answerQuestion = defineTool({ name: 'answer_task_question', description: 'Settle a fictional host question. Not an approval or task execution.', replay: 'safe', parameters: Type.Object({ task: Type.String(), question: Type.String(), value: Type.String() }), execute: async args => ({ output: [{ type: 'text', text: JSON.stringify(settle(args.task, args.question, args.value, 'PM')) }] }) });
+  const agent = defineAgent({ id: 'village-pm', model: { provider: 'openai', modelId: 'gpt-5-mini' }, instructions: 'Show the requested fictional host task, then report the actual presentation result.', tools: [createPresentTool({ ack: { timeoutMs: 15000 } }), answerQuestion] });
   agent.install(registry);
   const harness = await Harness.open(new MemoryStorage(), { registry, models }, context);
   const conversation = await agent.createConversation(harness, context); harness.resume();
@@ -66,7 +74,7 @@ export async function startTaskBoard({ port = 0 } = {}) {
       if (fixed) return void outgoing.writeHead(200, { 'content-type': fixed[0], 'cache-control': 'no-store' }).end(fixed[1]);
       const request = await webRequest(incoming, url, { signal: closed.signal });
       if (!request) return void outgoing.writeHead(413).end();
-      const response = url.pathname === '/api/chat' ? await chat(request) : url.pathname === '/api/resources' ? await resources(request) : Response.json({ reason: 'not-found' }, { status: 404 });
+      const response = url.pathname === '/api/answers' && authenticated(request) ? request.method === 'POST' ? await (async () => { const input = await request.json(); return Response.json(settle(input.task, input.question, input.value, 'Alice')); })() : Response.json(Object.fromEntries(answers)) : url.pathname === '/api/chat' ? await chat(request) : url.pathname === '/api/resources' ? await resources(request) : Response.json({ reason: 'not-found' }, { status: 404 });
       await sendWebResponse(response, outgoing, { signal: closed.signal });
     } catch (error) { if (!closed.signal.aborted) console.error(error); if (!outgoing.headersSent) outgoing.writeHead(500); outgoing.end(); }
   });

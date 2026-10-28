@@ -24,11 +24,13 @@ test('answered questions name their actor, Other is a distinct host intent, file
     renderFile: (task, file, api) => f.h('div', { 'data-host-viewer': task.id }, file.path,
       f.h('button', { onClick: api.onShowFile }, 'Montrer'), f.h('button', { onClick: api.onClose }, 'Close file')) });
   await f.click('[data-task-open=orchard]');
-  assert.match(document.querySelector('[data-task-question=time]').textContent, /Noon.*Sam/);
+  assert.match(document.querySelector('[data-task-answered=time]').textContent, /Sam: Noon/);
   await f.click('[data-task-other=route]'); assert.equal(other[0][1].id, 'route');
   await f.click('[data-task-file]');
   assert.equal(opened[0][0].id, 'orchard');
-  assert.equal(document.querySelector('[data-task-file-pane]').previousElementSibling.getAttribute('aria-label'), 'Task detail');
+  assert.ok(document.querySelector('[data-task-side]').isConnected);
+  assert.ok(document.querySelector('[data-task-list]').isConnected);
+  assert.equal(document.querySelector('[data-task-list]').classList.contains('hidden'), false);
   assert.equal(document.querySelector('[data-task-detail]').dataset.taskDetail, 'orchard');
   await f.click('[data-host-viewer] button'); assert.equal(shown[0][1].path, record.files[0].path);
   await f.click('[data-host-viewer] button:last-child'); assert.equal(document.querySelector('[data-task-file-pane]'), null);
@@ -71,6 +73,25 @@ test('board orders columns and folds terminal tasks, URL selection supports deep
   await f.run(() => document.activeElement.dispatchEvent(new f.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
   assert.equal(new URL(f.window.location.href).searchParams.get('task'), null);
   assert.equal(document.activeElement.dataset.taskOpen, 'orchard');
+});
+
+test('open questions precede bounded latest-three answers; full huge answers mount only on expansion; discussion is a distinct host intent', async t => {
+  const discussed = [], answered = [];
+  const huge = 'Fictional answer '.repeat(20000) + 'TAIL_SENTINEL';
+  const record = { ...tasks[0], questions: [...Array.from({ length: 7 }, (_, i) => ({ id: `answer-${i}`, text: `Answered question ${i}`, answer: huge, answeredBy: 'Sam' })), tasks[0].questions[0]] };
+  const f = await fixture(t, { tasks: [record], onAnswer: (...args) => answered.push(args), onDiscussQuestion: (...args) => discussed.push(args) });
+  await f.click('[data-task-open=orchard]');
+  assert.equal(document.querySelectorAll('[data-task-answered]').length, 3);
+  assert.equal(document.querySelector('[data-task-answered]').dataset.taskAnswered, 'answer-6');
+  assert.equal(document.querySelector('[data-task-answer-full]'), null);
+  assert.ok(document.querySelector('[data-task-detail]').textContent.length < 5000);
+  assert.equal(document.querySelector('[data-task-question]').compareDocumentPosition(document.querySelector('[aria-label="Answered questions"]')) & 4, 4);
+  await f.click('[data-task-question] button'); assert.equal(answered.length, 1); assert.equal(discussed.length, 0);
+  await f.click('[data-task-discuss]'); assert.equal(discussed[0][0].id, 'orchard'); assert.equal(discussed[0][1].id, 'route');
+  await f.click('[data-task-answered] button'); assert.match(document.querySelector('[data-task-answer-full]').textContent, /TAIL_SENTINEL/);
+  await f.click('[data-task-answered] button'); assert.equal(document.querySelector('[data-task-answer-full]'), null);
+  await f.click('[data-task-show-answers]'); assert.equal(document.querySelectorAll('[data-task-answered]').length, 7);
+  assert.equal(document.querySelector('[data-task-answer-full]'), null);
 });
 
 test('compact mine renders only newest two own title/chip rows and uses the host open path', async t => {

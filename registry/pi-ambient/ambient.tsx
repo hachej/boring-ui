@@ -280,6 +280,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
     showing: path => !inWindow || (expanded && opened?.descriptor.type !== 'task' && opened?.descriptor.target.resource.path === path),
     showingTask: subject => !inWindow || (expanded && opened?.descriptor.type === 'task' && taskSubjectKey(opened.descriptor.subject) === taskSubjectKey(subject)),
     openPresent: () => false, answer: actions?.answer });
+  const { onShown, onFailed, open: openArtifact, isOpen: isArtifactOpen } = follow;
   const pendingTasks = useChatView(controller, pendingPresents);
   const requestedTasks = useRef(new WeakMap<NativeChatController, Set<string>>());
   useEffect(() => {
@@ -289,17 +290,17 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
     for (const call of pendingTasks) {
       if (!('subject' in call) || requested.has(call.id)) continue;
       requested.add(call.id);
-      hostArtifacts.open(createTaskArtifact(call.subject), { onShown: follow.onShown, onFailed: follow.onFailed });
+      hostArtifacts.open(createTaskArtifact(call.subject), { onShown, onFailed });
     }
-  }, [controller, inWindow, hostArtifacts, pendingTasks, follow.onShown, follow.onFailed]);
+  }, [controller, inWindow, hostArtifacts, pendingTasks, onShown, onFailed]);
   const closeArtifact = () => { follow.recordClosed(); setOpened(null); setFullscreen(false); };
   const artifacts = useMemo<ArtifactsConfig | undefined>(() => !inWindow ? hostArtifacts && { ...hostArtifacts,
-    open: artifact => hostArtifacts.open(artifact, { onShown: follow.onShown, onFailed: follow.onFailed }) } : {
-    open: artifact => artifact.type === 'task' ? hostArtifacts?.open(artifact, { onShown: follow.onShown, onFailed: follow.onFailed }) : follow.open(artifact), isOpen: follow.isOpen,
+    open: artifact => hostArtifacts.open(artifact, { onShown, onFailed }) } : {
+    open: artifact => artifact.type === 'task' ? hostArtifacts?.open(artifact, { onShown, onFailed }) : openArtifact(artifact), isOpen: isArtifactOpen,
     ...(detect ? { detect } : {}),
     ...(hostArtifacts?.kinds ? { kinds: hostArtifacts.kinds } : {}),
     recognise: hostArtifacts?.recognise ?? artifactCards.recognise, Card: hostArtifacts?.Card ?? artifactCards.Card,
-  }, [inWindow, hostArtifacts, follow.open, follow.isOpen, follow.onShown, follow.onFailed, detect]);
+  }, [inWindow, hostArtifacts, openArtifact, isArtifactOpen, onShown, onFailed, detect]);
   const session = useChatSession({ controller, activeController, mode, presentation, voiceReplay, actions, renderEntry, hideLine, historicalMessageActions, unread: replyUnread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept,
     slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => scrollToBottom.current(), rowExtras, feedback: composerFeedback, onOpenFile, fileChanges, pasteToFile, composerChips });
   const { state, derived, rows, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, files, loading } = session;

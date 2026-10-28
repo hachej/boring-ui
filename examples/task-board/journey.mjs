@@ -9,7 +9,7 @@ const app = await startTaskBoard(); let browser;
 const stage = `document.querySelector('[aria-label="Right stage"]')`;
 const board = `${stage}.querySelector('[data-boring="task-board"]')`;
 const card = id => `${board}.querySelector('[data-task-open="${id}"]')`;
-const detail = `${board}.querySelector('[data-task-detail]')`;
+const detail = `document.querySelector('[data-task-detail]')`;
 const list = `${board}.querySelector('[data-task-list]')`;
 const steps = [];
 const nativeEvidence = [];
@@ -62,14 +62,17 @@ try {
     assert.equal(await browser.evaluate(`document.querySelector('[data-variant=compact] [role=list]').children.length`), 2);
     await browser.screenshot('desktop-wide-light.png');
   });
-  await step('keyboard opens task; wide detail is alongside board; choices use host callback; Back restores focus and browser history', async () => {
+  await step('keyboard opens right task overlay without squeezing kanban; choices use host callback; Back restores focus and history', async () => {
+    const widthBefore = await browser.evaluate(`${board}.getBoundingClientRect().width`);
     await browser.evaluate(`${card('D-201')}.focus()`); await browser.press('Enter');
     await browser.until('detail mounted', `!!${detail}`);
     assert.equal(await browser.evaluate(`new URL(location.href).searchParams.get('task')`), 'D-201');
     assert.notEqual(await browser.evaluate(`getComputedStyle(${list}).display`), 'none');
-    assert.equal(await browser.evaluate(`document.activeElement.textContent`), 'Back to tasks');
+    assert.equal(await browser.evaluate(`${board}.getBoundingClientRect().width`), widthBefore);
+    assert.equal(await browser.evaluate(`getComputedStyle(${board}.querySelector('[data-task-column="waiting"]').parentElement).gridTemplateColumns.split(' ').length`), 3);
+    await browser.until('back receives overlay focus', 'document.activeElement.textContent === "Back to tasks"');
     await browser.screenshot('desktop-detail-light.png');
-    assert.match(await browser.evaluate(`${detail}.querySelector('[data-task-answer=time]').textContent`), /Noon.*Sam/);
+    assert.match(await browser.evaluate(`${detail}.querySelector('[data-task-answer=time]').textContent`), /Sam: Noon/);
     await browser.click(`${detail}.querySelector('[data-task-question] button')`);
     await browser.until('host choice received', `document.querySelector('output').textContent.includes('river')`);
     await browser.press('Escape'); await browser.until('board returned', `!${detail}`);
@@ -77,7 +80,35 @@ try {
     await browser.evaluate('history.back()'); await browser.until('back restored detail', `!!${detail}`);
     await browser.evaluate('history.forward()'); await browser.until('forward restored board', `!${detail}`);
   });
-  await step('regular markdown/html/image viewers stay right of the same task; existing back close fullscreen zoom/more controls work', async () => {
+  await step('task @ picker uses the existing composer; Discuss posts a task mention and settles through the same host answer service', async () => {
+    await browser.type('document.querySelector("textarea")', '@D-201');
+    await browser.until('task search result', '!!document.querySelector("[data-testid=mention-item][data-path=\\"task:D-201\\"]")');
+    assert.match(await browser.evaluate('document.querySelector("[data-testid=mention-item]").textContent'), /Waiting on you/);
+    await browser.click('document.querySelector("[data-testid=mention-item][data-path=\\"task:D-201\\"]")');
+    await browser.until('task kind chip in ambient composer', '!!document.querySelector("[data-testid=mention-chip][data-path=\\"task:D-201\\"]")');
+    assert.match(await browser.evaluate('document.querySelector("[data-testid=mention-chip]").textContent'), /@ D-201.*picnic/);
+    assert.equal(await browser.evaluate('document.querySelectorAll("[data-testid=composer]").length'), 1);
+    assert.doesNotMatch(await browser.evaluate('document.querySelector("textarea").value'), /task:D-201/);
+    await browser.screenshot('ambient-task-picker-chip.png');
+    await browser.click(card('D-201')); await browser.until('question overlay', `!!${detail}`);
+    assert.equal(await browser.evaluate('document.querySelectorAll("[data-task-answered]").length'), 3);
+    assert.ok(await browser.evaluate(`${detail}.textContent.length < 6000`));
+    await browser.screenshot('questions-latest-three.png');
+    await browser.click('document.querySelector("[data-task-show-answers]")');
+    assert.ok(await browser.evaluate('document.querySelectorAll("[data-task-answered]").length > 3'));
+    await browser.click('document.querySelector("[data-task-show-answers]")');
+    await browser.click('document.querySelector("[data-task-discuss=supplies]")');
+    await browser.until('native PM answer written to host projection', 'document.querySelector("[data-task-answer=supplies]")?.textContent.includes("PM: water")');
+    const settled = (await app.view()).entries.flatMap(entry => entry.model ?? []).filter(message => message.role === 'toolResult' && message.toolName === 'answer_task_question');
+    assert.equal(settled.length, 1);
+    await browser.click('document.querySelector("[data-task-side] > button")');
+    await browser.click('document.querySelector("[data-testid=message-mention][data-path=\\"task:D-201\\"]")');
+    await browser.until('sent task chip opens same overlay', `!!${detail}`);
+    assert.equal(await browser.evaluate('new URL(location.href).searchParams.get("task")'), 'D-201');
+    await browser.screenshot('discuss-question-native-settled.png');
+    await browser.press('Escape');
+  });
+  await step('regular markdown/html/image file overlay stacks wider over the task; back close fullscreen zoom/more controls work', async () => {
     await browser.click(card('D-201')); await browser.until('files task detail', `!!${detail}`);
     for (const [file, kind] of [['brief.md', 'markdown'], ['mockup.html', 'html'], ['evidence.png', 'image']]) {
       await browser.click(`${detail}.querySelector('[data-task-file$="${file}"]')`);
@@ -85,14 +116,14 @@ try {
       if (kind === 'markdown') await browser.until('regular markdown loaded', `!!document.querySelector('[data-testid=file-preview] .tiptap')`);
       if (kind === 'html') await browser.until('regular html loaded', `!!document.querySelector('[data-testid=file-preview] iframe')`);
       if (kind === 'image') await browser.until('regular image loaded', `document.querySelector('[data-testid=viewer-stage] img')?.naturalWidth > 0`);
-      const geometry = await browser.evaluate(`(() => { const d=${detail}.getBoundingClientRect(), v=document.querySelector('[data-task-file-pane]').getBoundingClientRect(); return {left:d.x,right:v.x,task:${detail}.dataset.taskDetail,path:document.querySelector('[data-testid=file-viewer]').dataset.path}; })()`);
-      assert.ok(geometry.left < geometry.right); assert.equal(geometry.task, 'D-201'); assert.equal(geometry.path, `docs/tasks/D-201/${file}`);
+      const geometry = await browser.evaluate(`(() => { const d=document.querySelector('[data-task-side]').getBoundingClientRect(), v=document.querySelector('[data-task-file-pane]').getBoundingClientRect(); return {taskLeft:d.x,fileLeft:v.x,taskWidth:d.width,fileWidth:v.width,task:${detail}.dataset.taskDetail,path:document.querySelector('[data-testid=file-viewer]').dataset.path}; })()`);
+      assert.ok(geometry.fileLeft < geometry.taskLeft); assert.ok(geometry.fileWidth > geometry.taskWidth); assert.equal(geometry.task, 'D-201'); assert.equal(geometry.path, `docs/tasks/D-201/${file}`);
       if (kind === 'image') {
         await browser.click('document.querySelector("[data-testid=viewer-zoom-in]")');
         assert.notEqual(await browser.evaluate('document.querySelector("[data-testid=viewer-stage]").dataset.zoom'), 'fit');
       }
       await browser.evaluate('window.scrollTo(0, 0)');
-      await browser.screenshot(`file-right-${kind}-light.png`);
+      await browser.screenshot(`file-overlay-${kind}-light.png`);
       await browser.click('document.querySelector("[data-testid=viewer-more]")');
       await browser.until('existing viewer menu', '!!document.querySelector("[data-testid=viewer-fullscreen]")');
       await browser.click('document.querySelector("[data-testid=viewer-fullscreen]")');
@@ -101,9 +132,10 @@ try {
       await browser.click('document.querySelector("[data-testid=viewer-fullscreen]")');
       await browser.click('document.querySelector("[data-testid=viewer-show-file]")');
       await browser.until('exact host Montrer target', `document.querySelector('output').textContent.includes('docs/tasks/D-201/${file}')`);
-      await browser.evaluate(`document.documentElement.classList.add('dark')`); await pause(200); await browser.screenshot(`file-right-${kind}-dark.png`);
+      await browser.evaluate(`document.documentElement.classList.add('dark')`); await pause(200); await browser.screenshot(`file-overlay-${kind}-dark.png`);
       await browser.evaluate(`document.documentElement.classList.remove('dark')`);
-      await browser.click(kind === 'html' ? 'document.querySelector("[data-testid=viewer-close]")' : 'document.querySelector("[data-testid=file-back]")');
+      if (kind === 'image') await browser.press('Escape');
+      else await browser.click(kind === 'html' ? 'document.querySelector("[data-testid=viewer-close]")' : 'document.querySelector("[data-testid=file-back]")');
       await browser.until('task survives viewer close/back', `!document.querySelector('[data-task-file-pane]') && !!${detail}`);
     }
     await browser.press('Escape');
@@ -121,7 +153,7 @@ try {
     assert.equal(await browser.evaluate(`getComputedStyle(${board}.querySelector('[data-task-column="waiting"]').parentElement).gridTemplateColumns.split(' ').length`), 1);
     await browser.screenshot('desktop-narrow-light.png');
     await browser.click(card('D-201')); await browser.until('narrow detail', `!!${detail}`);
-    assert.equal(await browser.evaluate(`getComputedStyle(${list}).display`), 'none');
+    assert.notEqual(await browser.evaluate(`getComputedStyle(${list}).display`), 'none');
     await browser.screenshot('desktop-narrow-detail.png');
     await browser.press('Escape');
     await browser.evaluate(`document.documentElement.classList.add('dark')`); await pause(200); await browser.screenshot('desktop-narrow-dark.png');
@@ -132,7 +164,7 @@ try {
     await browser.screenshot('phone-light.png');
     assert.equal(await browser.evaluate('document.documentElement.scrollWidth <= innerWidth'), true);
     await browser.click(card('D-201')); await browser.until('phone detail', `!!${detail}`);
-    assert.equal(await browser.evaluate(`getComputedStyle(${list}).display`), 'none');
+    assert.notEqual(await browser.evaluate(`getComputedStyle(${list}).display`), 'none');
     await browser.evaluate(`${stage}.scrollIntoView()`); await browser.screenshot('phone-detail-light.png');
     const snapshot = await browser.send('Accessibility.getFullAXTree');
     writeFileSync(resolve(evidence, 'phone-accessibility.json'), JSON.stringify(snapshot, null, 2));

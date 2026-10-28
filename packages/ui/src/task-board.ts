@@ -10,6 +10,8 @@ export interface TaskQuestion {
   readonly answer?: string;
   /** Display identity supplied by the host, not inferred from the current viewer. */
   readonly answeredBy?: string;
+  /** Optional host answer timestamp; newest answers first, otherwise latest source entries first. */
+  readonly answeredAt?: string;
 }
 export interface TaskFile {
   /** Authorized workspace path supplied by the host adapter; never derived from the task id. */

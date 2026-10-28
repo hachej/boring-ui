@@ -2975,13 +2975,23 @@
       ]
     },
     {
+      "name": "task-mentions",
+      "type": "registry:component",
+      "title": "Task mentions",
+      "description": "Optional authorized task catalog for the existing PM composer, composed with host file search.",
+      "dependencies": ["@hachej/boring-ui-kit@^0.4.26", "react@^19.0.0", "lucide-react@^1.51.0"],
+      "registryDependencies": ["@boring-ui/task-board", "@boring-ui/pi-chat-mentions"],
+      "files": [{ "path": "registry/task-mentions/task-mentions.tsx", "type": "registry:component", "target": "components/task-mentions/task-mentions.tsx" }]
+    },
+    {
       "name": "task-board",
       "type": "registry:block",
       "title": "Task board",
-      "description": "Host-owned business requests: board, responsive detail and compact own-request rows. No agent or task backend required.",
+      "description": "Host-owned business requests: board, stacked task/file overlays and compact own-request rows. No agent or task backend required.",
       "dependencies": [
         "@hachej/boring-ui-kit@^0.4.26",
-        "react@^19.0.0"
+        "react@^19.0.0",
+        "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
         "@boring-ui/utils"
