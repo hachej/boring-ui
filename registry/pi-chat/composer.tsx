@@ -29,7 +29,7 @@ export function thumbnail(mimeType: string, data: string): string | undefined {
  * and one count chip for the notes taken. Send attaches them. The host owns everything else (the registry `feedback` item's
  * `useComposerFeedback` returns this shape). Absent: the composer is unchanged.
  */
-export interface ComposerFeedback {
+export interface ComposerFeedback extends ChatSessionFeedback {
   /** The annotate toggle: arms targeting on the page (point mode on touch and compact screens), or stops it when it is on. */
   readonly annotate: () => void;
   /** Annotating is on: the toggle shows pressed. */
@@ -38,20 +38,12 @@ export interface ComposerFeedback {
   readonly count: number;
   /** Removes the notes (the count chip's remove button). */
   readonly clear: () => void;
-  /** Send: the text to send instead, with the notes attached, or why they cannot be sent yet. */
-  readonly attach: (text: string) => Promise<{ readonly kind: 'ok'; readonly text: string } | { readonly kind: 'refused'; readonly reason: string }>;
-  /** The message carrying the notes was accepted. */
-  readonly sent: () => void;
+
 }
 
 /** One file being uploaded (or that failed to upload), shown as a chip until it settles or is dismissed. */
-export interface PendingUpload {
-  readonly id: string; readonly name: string; readonly state: 'uploading' | 'failed'; readonly error?: string;
-  /** A pasted text file: abandons the upload and puts the text back in the message (its restore button, or Ctrl+Z). */
-  readonly cancel?: (() => void) | undefined;
-  /** The message text right after the paste was accepted: Ctrl+Z restores only while the text is still this (any later edit leaves it alone). */
-  readonly restoreWhile?: string | undefined;
-}
+export type { PendingUpload } from '@hachej/boring-ui-kit/chat-react';
+import type { PendingUpload, ChatSessionFeedback } from '@hachej/boring-ui-kit/chat-react';
 
 export interface ComposerProps {
   /** `/` menu of commands and skills. Absent: no menu and no keyboard trigger. */
