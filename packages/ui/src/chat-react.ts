@@ -110,3 +110,6 @@ export function useArtifactFollow(options: ArtifactFollowOptions) {
   }, [active, known]);
   return { versions, turn, known, shown, open, isOpen, select, recordClosed, onShown, onFailed };
 }
+
+export { useChatSession } from './chat-react-session.js';
+export type { ChatSession, ChatSessionOptions, ChatSessionLabels, ChatSessionFeedback, ConversationFile, ModelRef, PastedText, UploadResult, PendingUpload, FilesHandler, QueueActions } from './chat-react-session.js';

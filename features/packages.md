@@ -10,6 +10,7 @@ The npm side of the kit: Pi-based agent definitions and handlers, the workspace 
 - `pkg-agent-context` request context and mention resolver. `packages/agent/src/prompt-context.ts`, `mentions.ts`.
 - `pkg-agent-questions-delivery` optional native questions, validation and durable application-result delivery. `packages/agent/src/questions.ts`, `validation.ts`, `delivery.ts`.
 - `pkg-agent-room-metering` shared-room entries, native usage metering and per-request context; host policy remains external. `packages/agent/src/room/`, `metering.ts`.
+- `pkg-agent-runs` one-call runs: the result protocol (schema, validator, repair budget), the run ends and their delivery once, the outbox of starts, and the runner over a person's SQLite store. `packages/agent/src/run-result.ts`, `runs.ts`, `run-ledger.ts`, `run-outbox.ts`. Drive: `test/packages/agent-runs.test.mjs`.
 - `pkg-files-workspace` one workspace provider, journal, SQLite, revision handler. `packages/files/src/workspace.ts`, `revision-handler.ts`.
 - `pkg-execution` virtual bash and git, remote shell and files, AWS interpreter. `packages/execution/src/`.
 - `pkg-ui-kit` headless controllers, editors and viewers, registry items under `r/`. `packages/ui/src/`.
@@ -31,7 +32,7 @@ The npm side of the kit: Pi-based agent definitions and handlers, the workspace 
 Preconditions: `npm ci`; run from the repository root.
 
 - **All.** `npm run check` then `npm test` then `npm run verify`.
-- **Agent.** `pkg-agent-define`, `pkg-agent-transport`, `pkg-agent-capabilities`, `pkg-agent-context`, `pkg-agent-questions-delivery`, `pkg-agent-room-metering`: `npm test`, files `test/packages/agent-*.test.mjs`; background task composition is driven by `npm run workspace-demo:journey` and the native question/delivery tests.
+- **Agent.** `pkg-agent-define`, `pkg-agent-transport`, `pkg-agent-capabilities`, `pkg-agent-context`, `pkg-agent-questions-delivery`, `pkg-agent-room-metering`, `pkg-agent-runs`: `npm test`, files `test/packages/agent-*.test.mjs`; background task composition is driven by `npm run workspace-demo:journey` and the native question/delivery tests.
 - **Files.** `pkg-files-workspace`: `npm test`, files `test/packages/files-*.test.mjs`.
 - **Execution.** `pkg-execution`: `npm test`, files `test/packages/execution-*.test.mjs`.
 - **UI kit.** `pkg-ui-kit`, `pkg-ui-experiences`, `pkg-ui-remote-chat`: `npm test`, files `test/packages/ui-*.test.mjs`; drive the experience flow with `npm run morning:journey` and remote chat with `npm run workspace-app:journey`.
@@ -48,3 +49,5 @@ Preconditions: `npm ci`; run from the repository root.
 - Keep every `@hachej/boring-*` package on one version; Pi packages are peers at `~1.2.0`.
 - The host owns the Harness, policy and credentials; kit packages never open a Harness.
 - Change `ARCHITECTURE.json` before a new package or edge.
+
+The opt-in kit `chat-react` entry also owns `useChatSession` (state/files/send/restore/queue/upload/paste/model-effort); the root stays free of files/Pi/agent imports. Drive `node --test test/packages/ui-chat-session.test.mjs` and `npm run test:pi-chat-consumer`; see [chat-session](chat.md).

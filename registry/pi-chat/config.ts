@@ -85,15 +85,9 @@ export type PreviewRead = (path: string, signal: AbortSignal) => Promise<{ reado
 /** Paste-to-file thresholds (the kit's `chat-text`): a paste with more characters or more lines than these becomes a file. */
 export type { PasteToFile } from '@hachej/boring-ui-kit/chat-text';
 /** A paste the composer took, with the textarea range it replaces (restored if the upload is cancelled). */
-export interface PastedText { readonly text: string; readonly start: number; readonly end: number }
-
-export interface UploadResult {
-  /** The host saved the file in the workspace: it becomes an `@path` mention. */
-  readonly path?: string;
-  /** Sent as a native image attachment instead of a path mention when both are supplied. */
-  readonly image?: { readonly data: string; readonly mimeType: string };
-  readonly name: string;
-}
+// Compatibility exports for one release; session contracts are owned by the kit.
+export type { PastedText, UploadResult, ModelRef } from '@hachej/boring-ui-kit/chat-react';
+import type { UploadResult, ModelRef } from '@hachej/boring-ui-kit/chat-react';
 export interface VoiceMessageConfig extends KitVoiceMessageConfig {
   /** Same workspace upload contract as `attachments.upload`, used instead when supplied. Preserve the voice- filename prefix. */
   readonly upload?: AttachmentsConfig['upload'];
@@ -158,7 +152,6 @@ export interface ReplyRef {
   readonly durationMs?: number | undefined;
 }
 
-export interface ModelRef { readonly provider: string; readonly modelId: string }
 export interface ModelConfig {
   readonly options: readonly (ModelRef & { readonly label?: string })[];
   /** Reject to refuse: the message is shown inline. */

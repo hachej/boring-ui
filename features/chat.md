@@ -5,6 +5,8 @@
 ## Sub-features
 
 - `chat-transcript` rows, tool steps, activity, Markdown replies (`pi-chat-markdown`), `presentation="natural"` for readers. Paging/chunks live in `packages/ui/src/chat-react-transcript.ts`; `registry/pi-chat/session.tsx` adapts the host's shadcn MessageScroller. Rendering: `registry/pi-chat/pi-chat.tsx`, `rows.ts`, `message.tsx`.
+- `chat-session` headless state/files, connect/errors, send/restore, queue, uploads/paste and model/effort reconciliation, preserving existing app-kind send recovery and hidden-token paste coordinates. `packages/ui/src/chat-react-session.ts`; `registry/pi-chat/session.tsx` builds JSX/context/composer props only. Old contract imports remain re-exports for one release.
+- `chat-connection-status` reusable `ChatConnectionNotice` / `ChatStatusLine` in `registry/pi-chat/notice.tsx`; PiChat and Ambient retain host connection recovery and identical developer/natural status choices. Compact Ambient keeps `loadFailedShort`/`disconnectedShort` overrides unless the host error renderer is supplied.
 - `chat-composer` multi-line composer, including sizing/width observation after recording trash, queue (steer, edit, remove), draft kept per conversation (`useChatDraft`, `packages/ui/src/chat-react-draft.ts`). `registry/pi-chat/composer.tsx`, `queue.tsx`.
 - `chat-slash` the `/` menu: commands and skills. `registry/pi-chat-slash/slash-menu.tsx`.
 - `chat-mentions` the `@` menu for files and, through `MentionsConfig`, any catalog of ids. `registry/pi-chat-mentions/mention-menu.tsx`, `registry/pi-chat/config.ts`.
@@ -41,6 +43,7 @@ Preconditions: `npm run build`, Chromium; journeys use a scripted fake model unl
 - **Conversations.** `chat-conversations`: create, rename, archive and fork a conversation from History.
 - **Remote and plug-ins.** `chat-remote`, `chat-plugins`: `npm run test:pi-chat-consumer` installs the block into a clean app and mounts it.
 - **Paging and drafts.** `chat-transcript`, `chat-composer`: `npm run test:chat-scroll` drives the 500-row long-chat example; `npm run draft-recovery:journey` checks reload recovery.
+- **Headless session and recovery.** `chat-session`, `chat-connection-status`: `node --test test/packages/ui-chat-session.test.mjs test/ui/ambient-position.test.mjs` drives public send/restore/queue/upload/paste/pickers (including overlapping feedback with actual native unknown admission) and compact/expanded Ambient errors/status, short-label overrides and host-renderer precedence. `npm run staged-chat:journey` and `npm run ambient:journey:scripted` drive the browser controls.
 - **Proof.** Transcript ARIA snapshot and screenshot per ID, plus the stored conversation read again after reload.
 
 ## Gotchas
