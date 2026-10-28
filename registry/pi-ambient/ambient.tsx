@@ -149,6 +149,9 @@ export interface AmbientChatProps extends Omit<ChatFeatureProps, 'artifacts'> {
   readonly belowComposer?: ReactNode;
   /** Two-row reference composer by default; older layouts require an explicit choice. */
   readonly composerLayout?: ComposerProps['layout'];
+  /** Host-shared composer presentation, also accepted by PiChat. */
+  readonly renderComposer?: (props: ComposerProps) => ReactNode;
+  readonly sendContext?: import('@hachej/boring-ui-kit/chat-react').ChatSessionFeedback;
   /** Hand the conversation to a full `PiChat` or `ArtifactWorkspace`. Adds an "Open in full chat" action to replies. */
   readonly onOpenFull?: (conversationId: string) => void;
   /** Adds thumbs up and down to replies. `value` is `null` when the person takes the rating back. */
@@ -231,7 +234,7 @@ export function AmbientChat(given: AmbientChatProps) {
 type SessionProps = Omit<AmbientChatProps, 'labels' | 'icons'> & { readonly labels: AmbientLabels; readonly icons: AmbientIcons; readonly activeController: { readonly current: NativeChatController }; readonly windowState: AmbientState; readonly store: NotificationStore; readonly onWindowState: (state: AmbientState) => void };
 
 function AmbientSession({ controller, embedded = false, labels, icons, avatar, headerActions, headerTools, messageActions, variant = 'contrast', mode = 'expert', presentation, voiceReplay, actions,
-  windowState, onWindowState, store, storageKey = 'boring.ambient.position', storage = 'session', tools, belowComposer, composerChips, composerLayout = 'card', onOpenFull, onFeedback, notifications, autoDismissMs, maxToasts, systemNotifications = false,
+  windowState, onWindowState, store, storageKey = 'boring.ambient.position', storage = 'session', tools, belowComposer, composerChips, composerLayout = 'card', renderComposer, sendContext, onOpenFull, onFeedback, notifications, autoDismissMs, maxToasts, systemNotifications = false,
   renderConnectionError, renderEntry, hideLine, displayLimit, paging, historicalMessageActions, unread: replyUnread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept = 'image/*', slash, mentions, attachments, onOpenFile, fileChanges, pasteToFile, model, effort, replyFooter, artifacts: hostArtifacts, artifactPanel, artifactTarget, conversations, onDock, feedback: composerFeedback, className,
   activeController }: SessionProps) {
   const { title } = labels;
@@ -286,7 +289,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
     recognise: hostArtifacts?.recognise ?? artifactCards.recognise, Card: hostArtifacts?.Card ?? artifactCards.Card,
   }, [inWindow, hostArtifacts, follow.open, follow.isOpen, detect]);
   const session = useChatSession({ controller, activeController, mode, presentation, voiceReplay, actions, renderEntry, hideLine, historicalMessageActions, unread: replyUnread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept,
-    slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => scrollToBottom.current(), rowExtras, feedback: composerFeedback, onOpenFile, fileChanges, pasteToFile, composerChips });
+    slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => scrollToBottom.current(), rowExtras, feedback: composerFeedback, sendContext, onOpenFile, fileChanges, pasteToFile, composerChips });
   const { state, derived, rows, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, files, loading } = session;
   const empty = session.empty;
   const transcript = useTranscript(rows, displayLimit ?? paging?.first ?? PAGE_FIRST, paging?.more ?? PAGE_MORE, { state: state.history, connected: !state.disposed && connected, load: controller.loadEarlier }, displayLimit === undefined);
@@ -475,7 +478,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
         <div className="px-3 pt-2 pb-3">
           <ConversationFiles files={files} />
           <MessageQueue items={queued} sending={state.outbox} withdraw={actions?.withdraw} actions={queueActions} />
-          <Composer {...composer} layout={composerLayout} placeholder={working || waitingForAnswer ? label : labels.placeholder} barStart={barStart} barNote={barNote} barEnd={tools} />
+          {(renderComposer ?? (value => <Composer {...value} />))({ ...composer, layout: composerLayout, placeholder: working || waitingForAnswer ? label : labels.placeholder, barStart, barNote, barEnd: tools })}
           {belowComposer !== undefined && <div data-testid="below-composer" className="pt-2">{belowComposer}</div>}
         </div>
       </div>

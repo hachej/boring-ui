@@ -15,6 +15,8 @@ import { AccountAvatar, AccountChoices } from './account';
 import type { AccountSpec } from './account';
 import { AgentDockLayout, AgentLayer, AgentLayerProvider } from './agent-layer';
 import type { AgentSpec } from './agent-layer';
+import { ImproveLayout } from '../pm-panel/pm-panel';
+import type { ImproveSpec } from '../pm-panel/pm-panel';
 import { ScreenActiveContext, useAgentContext } from './agent-context';
 import { useIsCompact } from './compact';
 import { HeaderProvider, ScreenHeader } from './header';
@@ -38,7 +40,7 @@ export interface AppShellProps {
   /** Consume agent/open/input launch parameters on mount (default). `false` leaves the URL and layer untouched. */
   readonly agentLink?: false;
   /** The product manager: adds « Améliorer l’app » to the account menu. */
-  readonly improve?: AgentSpec;
+  readonly improve?: ImproveSpec;
   readonly account?: AccountSpec;
   /** The language of the shell's own words and the layer's (« Se déconnecter », « Plus », « Ouvrir l’assistant »…). The agent's `chatProps.locale` wins when it sets one; else this; else English. */
   readonly locale?: AppShellLocale;
@@ -102,10 +104,11 @@ function Shell({ compactNav, layout, rail, title, nav, agent, improve, account, 
     {(!compact || sheet) && <AppSidebar rail={sheet ? 'icon' : rail} title={title} items={nav} activeId={active.id} onChange={choose} agent={agent} account={account} improve={improve} text={text} />}
     <AgentDockLayout>
       <div data-slot="sidebar-inset" className="relative flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden bg-background">
-      <ShellContext name={active.label} />
-      <ScreenHeader fallbackTitle={active.label} compact={compact} avatar={avatar} menu={sheet} text={text} slotRef={setSlot} />
-      <Screens items={nav} activeId={active.id} scrolls={layout === 'screen'} slot={slot} />
-      {compact && !sheet && <TabBar items={nav} activeId={active.id} onChange={choose} text={text} />}
+      <ImproveLayout screen={active.id} navigation={compact && !sheet ? <TabBar items={nav} activeId={active.id} onChange={choose} text={text} /> : undefined}>
+        <ShellContext name={active.label} />
+        <ScreenHeader fallbackTitle={active.label} compact={compact} avatar={avatar} menu={sheet} text={text} slotRef={setSlot} />
+        <Screens items={nav} activeId={active.id} scrolls={layout === 'screen'} slot={slot} />
+      </ImproveLayout>
       </div>
     </AgentDockLayout>
     <AgentLayer />

@@ -57,6 +57,7 @@ export interface MentionsConfig {
   readonly listLabel?: string;
   readonly icon?: ReactNode;
   readonly renderOption?: (item: MentionResult, query: string) => ReactNode;
+  readonly pickerHeader?: ReactNode;
   readonly label?: (id: string) => string;
   /** Workspace search for the `@` picker. Empty `query` asks for a default listing. Abort `signal` when the query changes. */
   readonly search: (query: string, signal: AbortSignal) => Promise<readonly MentionResult[]>;
@@ -186,6 +187,7 @@ export interface MentionPickerProps {
   readonly query: string;
   readonly listLabel?: MentionsConfig['listLabel'];
   readonly renderOption?: MentionsConfig['renderOption'];
+  readonly header?: ReactNode;
   readonly generation?: MentionsConfig['generation'];
   readonly search: MentionsConfig['search'];
   readonly onSelect: (path: string) => void;

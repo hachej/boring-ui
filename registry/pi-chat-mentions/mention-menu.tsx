@@ -15,7 +15,7 @@ function highlight(text: string, query: string) {
 }
 
 /** The `@` file picker, ported from v2's `MentionPicker`: debounced search, one highlighted row, name over path. */
-export function MentionPicker({ query, search, generation, listLabel, renderOption, onSelect, onDismiss }: MentionPickerProps) {
+export function MentionPicker({ query, search, generation, listLabel, renderOption, header, onSelect, onDismiss }: MentionPickerProps) {
   const { labels } = useChatText();
   // Results are tagged with the search function that produced them: a binding switch hides the previous binding's rows at once.
   const [outcome, setOutcome] = useState<{ readonly search: MentionsConfig['search']; readonly results: readonly MentionResult[]; readonly failure: string | null }>();
@@ -37,8 +37,9 @@ export function MentionPicker({ query, search, generation, listLabel, renderOpti
   }, [query, search, generation]);
   usePickerKeyboard({ count: results.length, activeIdx: active, setActiveIdx: setActive, listRef: list, onSelect: index => { const item = results[index]; if (item) onSelect(item.path); }, onDismiss });
 
-  if (results.length === 0 && !failure) return null;
+  if (results.length === 0 && !failure && !header) return null;
   return <ComposerSuggestions testId="mention-menu" onDismiss={onDismiss}>
+    {header}
     {failure ? <div role="alert" data-testid="mention-error" className="text-xs text-destructive">{failure}</div>
       : <ul ref={list} role="listbox" aria-label={listLabel ?? labels.workspaceFiles} className="m-0 flex max-h-[min(14rem,40dvh)] list-none flex-col overflow-y-auto p-0">
         {results.map((item, index) => {

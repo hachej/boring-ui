@@ -130,12 +130,13 @@ export interface ChatSessionOptions extends Readonly<{ [Key in keyof ChatFeature
   readonly rowExtras?: Partial<RowContext> | undefined;
   /** The optional annotate toggle: when notes are pending (`count` > 0), Send attaches them to the message first. */
   readonly feedback?: ComposerFeedback | undefined;
+  readonly sendContext?: import('@hachej/boring-ui-kit/chat-react').ChatSessionFeedback | undefined;
 }
 
 /** Presentation adapter; all session state and controller protocols live in the kit. */
 export function useChatSession(options: ChatSessionOptions) {
   const { controller, activeController, mode, presentation, voiceReplay, actions, renderEntry, hideLine, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept,
-    slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend, rowExtras, feedback, onOpenFile, fileChanges, composerChips, composerHeader, composerHasContent, onPickFiles, pasteToFile } = options;
+    slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend, rowExtras, feedback, sendContext, onOpenFile, fileChanges, composerChips, composerHeader, composerHasContent, onPickFiles, pasteToFile } = options;
   const { labels } = useChatText();
   const textarea = useRef<HTMLTextAreaElement | null>(null);
   const offered = artifacts?.recognise && artifacts.Card ? artifacts : undefined;
@@ -143,7 +144,7 @@ export function useChatSession(options: ChatSessionOptions) {
   const session = useHeadlessChatSession<ReactNode>({ controller, activeController, mode, presentation, actions, renderEntry, hideLine, renderTool, toolRenderers,
     groupTool, subagent: cards?.subagent, onOpenImage, onFiles, mentions, slash, attachments, model, effort,
     artifacts: sessionArtifacts,
-    afterSend, feedback, onOpenFile, onPickFiles, commandMentions, labels, onFocus: () => textarea.current?.focus() });
+    afterSend, feedback: sendContext ?? feedback, onOpenFile, onPickFiles, commandMentions, labels, onFocus: () => textarea.current?.focus() });
   const { state, developer, natural, connected, working, sendBlocked, act } = session;
   const rowContext = useMemo<RowContext>(() => ({
     developer, natural, voiceReplay, renderText, cards, groupTool, onOpenImage, onCopy, openFile: onOpenFile ?? mentions?.open, fileChanges,

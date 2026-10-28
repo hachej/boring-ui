@@ -1467,6 +1467,7 @@
         "@boring-ui/pi-chat-plugins",
         "@boring-ui/pi-chat-voice",
         "@boring-ui/dock",
+        "@boring-ui/pm-panel",
         "@boring-ui/feedback",
         "@boring-ui/utils",
         "@boring-ui/button"
@@ -2900,6 +2901,24 @@
           "type": "registry:lib",
           "target": "components/agent-target/agent-target-labels.ts"
         }
+      ]
+    },
+    {
+      "name": "pm-panel",
+      "type": "registry:block",
+      "title": "Shared PM composer and in-app panel",
+      "description": "Host-agnostic PmComposer for a sheet, conversation column or ambient bar. AppShell improve composes an in-flow PM sheet and point/navigate strip over the public feedback picker and regular kit chat/voice. StudioTaskBoardSeam awaits D-417; no competing task card or board.",
+      "registryDependencies": ["@boring-ui/pi-chat", "@boring-ui/pi-chat-plugins", "@boring-ui/pi-chat-voice", "@boring-ui/feedback", "@boring-ui/utils"],
+      "dependencies": ["@hachej/boring-ui-kit@^0.4.26", "@hachej/boring-feedback@^0.4.26", "@base-ui/react@1.9.0", "lucide-react@^1.51.0", "react@^19.0.0"],
+      "files": [
+        { "path": "registry/pm-panel/pm-panel.tsx", "type": "registry:component", "target": "components/pm-panel/pm-panel.tsx" },
+        { "path": "registry/pm-panel/pm-composer.tsx", "type": "registry:component", "target": "components/pm-panel/pm-composer.tsx" },
+        { "path": "registry/pm-panel/use-pm-panel.ts", "type": "registry:hook", "target": "components/pm-panel/use-pm-panel.ts" },
+        { "path": "registry/pm-panel/point-state.ts", "type": "registry:lib", "target": "components/pm-panel/point-state.ts" },
+        { "path": "registry/pm-panel/capture.ts", "type": "registry:lib", "target": "components/pm-panel/capture.ts" },
+        { "path": "registry/pm-panel/point-message.tsx", "type": "registry:component", "target": "components/pm-panel/point-message.tsx" },
+        { "path": "registry/pm-panel/inline-point-input.tsx", "type": "registry:component", "target": "components/pm-panel/inline-point-input.tsx" },
+        { "path": "registry/pm-panel/task-mentions.tsx", "type": "registry:component", "target": "components/pm-panel/task-mentions.tsx" }
       ]
     },
     {

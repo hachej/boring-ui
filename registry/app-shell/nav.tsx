@@ -12,6 +12,7 @@ import { Separator } from '@/components/ui/separator';
 import { afterBack } from './back';
 import { NavUser } from './account';
 import { useAgentLayer } from './agent-layer';
+import { usePmSelecting } from '../pm-panel/pm-panel';
 import type { AgentSpec } from './agent-layer';
 import type { AccountSpec } from './account';
 import { AppSheet, SHEET_ROW } from './app-sheet';
@@ -68,6 +69,7 @@ const arrows = (event: KeyboardEvent<HTMLElement>) => {
 /** The compact tab bar. With one item there is none. Exported for tests. */
 export function TabBar({ items, activeId, onChange, text }: { readonly items: readonly NavItem[]; readonly activeId: string; readonly onChange: (id: string) => void; readonly text: AppShellText }) {
   const bar = useRef<HTMLElement>(null);
+  const pickable = usePmSelecting();
   const [plusOpen, setPlusOpen] = useState(false);
   const shown = items.length > 1;
   useTabbarHeight(bar, shown);
@@ -79,7 +81,7 @@ export function TabBar({ items, activeId, onChange, text }: { readonly items: re
     <item.icon />{item.label}{item.badge && <Dot className="absolute top-1 left-1/2 ml-2" />}
   </Button>;
   const Plus = overflow.length ? (inOverflow?.icon ?? EllipsisIcon) : undefined;
-  return <nav ref={bar} role="tablist" aria-label={text.tabs} data-testid="tabbar" data-feedback-ignore="" onKeyDown={arrows}
+  return <nav ref={bar} role="tablist" aria-label={text.tabs} data-testid="tabbar" data-feedback-ignore={pickable ? undefined : ''} onKeyDown={arrows}
     className="relative z-(--app-shell-z-tabs) box-border flex min-h-[calc(3.5rem+env(safe-area-inset-bottom))] shrink-0 bg-background pb-[env(safe-area-inset-bottom)]">
     <Separator className="absolute inset-x-0 top-0" />
     {tabs.map(tab)}
