@@ -44,7 +44,7 @@
     "@tldraw/store": "5.5.2",
     "entities": "8.1.0",
     "semver": "7.8.5",
-    "shadcn": "4.21.5",
+    "shadcn": "4.23.0",
     "cn": "0.5.0",
     "tailwindcss": "4.3.3",
     "@json-render/core": "0.21.3",
@@ -581,7 +581,7 @@
   ],
   "sourceDistribution": {
     "manifest": "registry.json",
-    "format": "shadcn@4.21.5",
+    "format": "shadcn@4.23.0",
     "nativePresentationPrimitives": {
       "drawer": "@base-ui/react/drawer@1.9.0; owned source recipe independent of the consumer's shadcn style",
       "dropdown-menu": "@base-ui/react/menu@1.9.0; explicit app-shell dependency, not a style-selected built-in"

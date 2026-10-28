@@ -120,7 +120,7 @@ installs tarballs. The pinned item cannot be added as is.
 npm run build
 npm run feedback:scenario -- --kit /path/to/app/vendor/boring-feedback
 # in the application (a shadcn components.json is present)
-npx shadcn@4.21.5 add /path/to/app/vendor/boring-feedback/feedback.json
+npx shadcn@4.23.0 add /path/to/app/vendor/boring-feedback/feedback.json
 ```
 
 The CLI installs the three tarballs plus `react`/`react-dom`, copies the

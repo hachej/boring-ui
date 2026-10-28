@@ -25,11 +25,11 @@ Use that version (written `<v>` below) for every `@hachej/boring-*` package and 
 A new app uses the pinned shadcn CLI with Base UI and the `nova` preset (blocks support the Base UI `base-nova` style only):
 
 ```sh
-npx shadcn@4.21.5 init -t vite -b base -p nova -n app -y --no-monorepo
+npx shadcn@4.23.0 init -t vite -b base -p nova -n app -y --no-monorepo
 cd app
 ```
 
-An existing app needs React 19, Tailwind v4 and a `components.json` with a Base UI style. Without one, run `npx shadcn@4.21.5 init` in it first.
+An existing app needs React 19, Tailwind v4 and a `components.json` with a Base UI style. Without one, run `npx shadcn@4.23.0 init` in it first.
 
 ## 3. Install the packages
 
