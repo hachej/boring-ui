@@ -17,7 +17,9 @@ import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import type { FeedbackSession } from '@hachej/boring-feedback/ui';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
-import { appendToDraft, mentionedPaths, mentionToken, pieces, removeMention, withoutMentions } from '@hachej/boring-ui-kit/chat-text';
+import { useChatVoice } from '@hachej/boring-ui-kit/chat-react/voice';
+import type { ChatVoiceHandle as Voice } from '@hachej/boring-ui-kit/chat-react/voice';
+import { appendToDraft, mentionToken, pieces, removeMention } from '@hachej/boring-ui-kit/chat-text';
 import { Drawer, DrawerContent } from '@/components/ui/drawer';
 import { usePhone } from '../utils/use-media';
 import { Dock, DockLayout, DockMain } from '../dock/dock';
@@ -27,8 +29,6 @@ import { PiChat } from '../pi-chat/pi-chat';
 import type { PiChatProps } from '../pi-chat/pi-chat';
 import type { VoiceMessageConfig } from '../pi-chat/config';
 import { useRecordingCancellation } from '../pi-chat-voice/use-hold-to-record';
-import { useVoiceMessage } from '../pi-chat-voice/use-voice-message';
-import type { PendingVoice } from '../pi-chat-voice/use-voice-message';
 import { voiceClock } from '../pi-chat/config';
 import { withChatPlugins } from '../pi-chat-plugins/chat-plugins';
 import { PendingVoiceBubble, VoiceMessageButton } from '../pi-chat-voice/voice-message';
@@ -46,8 +46,6 @@ import { useVisualViewport } from './use-visual-viewport';
 import { AgentContextProvider } from './agent-context';
 import { HeaderActions } from './header-actions';
 import type { ScreenHeaderAction } from './header-actions';
-import { useDictation } from './use-dictation';
-import type { Dictation } from './use-dictation';
 
 export interface AgentSpec {
   readonly controller: NativeChatController;
@@ -97,12 +95,6 @@ const HOLD_MS = 350;
  */
 export function nextSnapOnClose(reason: string, hasPeek: boolean): 'peek' | 'half' | 'close' {
   return reason === 'swipe' || reason === 'outside-press' || reason === 'focus-out' || reason === 'escape-key' ? (hasPeek ? 'peek' : 'half') : 'close';
-}
-
-interface Voice extends Dictation {
-  readonly pending?: readonly PendingVoice[] | undefined;
-  readonly captureSequence?: number;
-  readonly canStart?: boolean;
 }
 
 /**
@@ -185,33 +177,8 @@ export function useAgentLayer(): AgentLayerApi {
 
 /** Push-to-talk uses the same dictation lifecycle as page targeting, over the existing composer/controller. */
 function useVoice(agent: AgentSpec | undefined, locale: AppShellLocale | undefined, done: (outcome: 'sent' | 'drafted') => void): Voice {
-  const message = useVoiceMessage({ controller: agent?.controller, config: agent?.voice?.send === 'message' ? agent.voice : undefined, attachments: agent?.chatProps?.attachments, labels: chatTextFor(agent?.chatProps?.locale ?? locale).labels, admitted: () => done('sent') });
-  const voice = useDictation({
-    transcribe: agent?.voice?.send === 'message' ? undefined : agent?.voice?.transcribe,
-    locale: agent?.chatProps?.locale ?? locale,
-    onText: async (spoken, signal) => {
-      if (!agent || signal.aborted) return;
-      const fill = () => {
-        if (signal.aborted) return;
-        const draft = agent.controller.getSnapshot().draft.text;
-        agent.controller.setText(appendToDraft(draft, spoken));
-        done('drafted');
-      };
-      if (agent.voice?.send !== 'auto') { fill(); return; }
-      const draft = agent.controller.getSnapshot().draft.text;
-      const paths = mentionedPaths(draft);
-      agent.controller.setText(withoutMentions(draft));
-      try {
-        const sent = await agent.controller.send(undefined, { text: [...paths.map(mentionToken), spoken].join(' '), restore: { text: spoken } });
-        if (!signal.aborted) done(sent ? 'sent' : 'drafted');
-      } catch { fill(); }
-    },
-  });
-  const { cancel } = voice;
-  const controller = agent?.controller, send = agent?.voice?.send, hasVoice = Boolean(agent?.voice);
-  useEffect(() => () => cancel(), [controller, send, hasVoice, cancel]);
-  const phase: Dictation['phase'] = message.phase === 'starting' || message.phase === 'recording' ? message.phase : message.phase === 'processing' || message.phase === 'sending' ? 'transcribing' : 'idle';
-  return agent?.voice?.send === 'message' ? { ...message, phase, levels: message.levels ?? [], paused: message.paused ?? false, pause: message.pause, resume: message.resume } : voice;
+  return useChatVoice({ controller: agent?.controller, voice: agent?.voice, attachments: agent?.chatProps?.attachments,
+    labels: chatTextFor(agent?.chatProps?.locale ?? locale).labels, onDone: done });
 }
 
 /** The height in px of the tab bar the peek sits above (`--app-shell-tabbar` on the shell root), and one rem. */

@@ -63,6 +63,10 @@
       "types": "./dist/chat-react.d.ts",
       "import": "./dist/chat-react.js"
     },
+    "./chat-react/voice": {
+      "types": "./dist/chat-voice.d.ts",
+      "import": "./dist/chat-voice.js"
+    },
     "./chat-text": {
       "types": "./dist/chat-text.d.ts",
       "import": "./dist/chat-text.js"
