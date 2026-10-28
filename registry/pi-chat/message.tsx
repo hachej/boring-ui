@@ -456,7 +456,7 @@ function RowBody({ row, images, context: liveContext }: { readonly row: Row; rea
         {row.stopReason === 'aborted' && <Notice tone="muted" testid="interrupted" icon={<CircleSlashIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />}>{labels.interrupted}</Notice>}
         {unread != null && unread !== false && <div data-testid="reply-unread" className="flex flex-col items-start">{unread}</div>}
         {nativeActions && row.text && context.replyActions?.({ key: row.key, text: row.text, timestamp: row.timestamp }, host)}
-        {nativeActions && row.text && !context.replyActions && <div className="mt-1 -ml-2 flex opacity-0 transition-opacity group-focus-within/message:opacity-100 group-hover/message:opacity-100 pointer-coarse:opacity-100 max-sm:opacity-100 motion-reduce:transition-none">
+        {nativeActions && row.text && !context.replyActions && <div className="mt-1 -ml-2 flex opacity-0 transition-opacity group-focus-within/message:opacity-100 group-hover/message:opacity-100 pointer-coarse:opacity-100 max-md:opacity-100 motion-reduce:transition-none">
           <CopyButton iconOnly text={row.text} label={labels.copyResponse} {...(context.onCopy ? { onCopy: context.onCopy } : {})} />
           {context.onFork && row.entryId && <Button size="icon-sm" variant="ghost" aria-label={labels.fork} title={labels.forkHint} data-testid="fork-reply"
             onClick={() => context.onFork!(row.entryId!)}><icons.fork data-icon="inline-start" aria-hidden="true" /></Button>}

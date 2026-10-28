@@ -122,7 +122,7 @@ function Chip({ media, image = false, label, actions, ...props }: ComponentProps
   return <Attachment size="xs" role="listitem" {...props}>
     <AttachmentMedia variant={image ? 'image' : 'icon'}>{media}</AttachmentMedia>
     <AttachmentContent><AttachmentTitle>{label}</AttachmentTitle></AttachmentContent>
-    {actions && <AttachmentActions className="max-sm:-my-2.5 pointer-coarse:-my-2.5">{actions}</AttachmentActions>}
+    {actions && <AttachmentActions className="max-md:-my-2.5 pointer-coarse:-my-2.5">{actions}</AttachmentActions>}
   </Attachment>;
 }
 
@@ -170,11 +170,11 @@ function PlusActions({ disabled, onAttach, onTakePhoto, onCommands, textarea }: 
       <icons.add data-icon="inline-start" aria-hidden="true" /></DropdownMenuTrigger>
     <DropdownMenuContent side="top" align="start" aria-label={labels.add} data-testid="composer-plus-menu" className="w-52"
       finalFocus={() => { const text = toText.current; toText.current = false; return text ? textarea.current : true; }}>
-      {onAttach && <DropdownMenuItem data-testid="composer-attach" onClick={onAttach} className="max-sm:min-h-11 pointer-coarse:min-h-11">
+      {onAttach && <DropdownMenuItem data-testid="composer-attach" onClick={onAttach} className="max-md:min-h-11 pointer-coarse:min-h-11">
         <icons.attach aria-hidden="true" />{labels.attachFiles}</DropdownMenuItem>}
-      {onTakePhoto && <DropdownMenuItem data-testid="composer-take-photo" onClick={onTakePhoto} className="max-sm:min-h-11 pointer-coarse:min-h-11">
+      {onTakePhoto && <DropdownMenuItem data-testid="composer-take-photo" onClick={onTakePhoto} className="max-md:min-h-11 pointer-coarse:min-h-11">
         <icons.camera aria-hidden="true" />{labels.takePhoto}</DropdownMenuItem>}
-      {onCommands && <DropdownMenuItem data-testid="composer-commands" onClick={() => { toText.current = true; onCommands(); }} className="max-sm:min-h-11 pointer-coarse:min-h-11">
+      {onCommands && <DropdownMenuItem data-testid="composer-commands" onClick={() => { toText.current = true; onCommands(); }} className="max-md:min-h-11 pointer-coarse:min-h-11">
         <SlashIcon aria-hidden="true" />{labels.commands}</DropdownMenuItem>}
     </DropdownMenuContent>
   </DropdownMenu>;
@@ -304,13 +304,13 @@ export function Composer(props: ComposerProps) {
       {chips.map(path => {
         const registered = mentionKind(path, props.mentions);
         const label = registered ? registered.kind.label(registered.path) : props.mentions?.label?.(path) ?? path;
-        return <Chip key={path} data-testid="mention-chip" data-path={path} title={label} className="max-w-full sm:max-w-[16rem]"
+        return <Chip key={path} data-testid="mention-chip" data-path={path} title={label} className="max-w-full md:max-w-[16rem]"
           media={registered?.kind.icon ?? props.mentions?.icon ?? <FileTextIcon aria-hidden="true" />} label={label}
           actions={<RemoveChip label={labels.remove(label)} onClick={() => props.onText(removeMention(props.text, path))} />} />;
       })}
     </div>}
     {(props.uploads?.length ?? 0) > 0 && <div role="list" data-testid="uploads" aria-label={labels.uploads} className="contents">
-      {props.uploads!.map(item => <Chip key={item.id} data-testid="upload-chip" state={item.state === 'failed' ? 'error' : 'uploading'} data-state={item.state} title={item.error ?? item.name} className="max-w-full sm:max-w-[20rem]"
+      {props.uploads!.map(item => <Chip key={item.id} data-testid="upload-chip" state={item.state === 'failed' ? 'error' : 'uploading'} data-state={item.state} title={item.error ?? item.name} className="max-w-full md:max-w-[20rem]"
         media={item.state === 'failed' ? <AlertCircleIcon className="text-destructive" aria-hidden="true" /> : <Loader2Icon className="animate-spin motion-reduce:animate-none" aria-hidden="true" />}
         label={item.state === 'failed' ? labels.uploadFailed(item.name, item.error) : labels.uploading(item.name)}
         actions={<>
@@ -321,7 +321,7 @@ export function Composer(props: ComposerProps) {
     {attachments.length > 0 && <div role="list" data-testid="attachments" aria-label={labels.attachments} className="contents">
       {attachments.map(attachment => {
         const src = thumbnail(attachment.mimeType, attachment.data);
-        return <Chip key={attachment.id} data-testid="attachment" className="max-w-full sm:max-w-[14rem]" image={!!src}
+        return <Chip key={attachment.id} data-testid="attachment" className="max-w-full md:max-w-[14rem]" image={!!src}
           media={src ? <img src={src} alt="" /> : <FileTextIcon aria-hidden="true" />} label={attachment.name}
           actions={<RemoveChip label={labels.remove(attachment.name)} onClick={() => props.onRemoveAttachment(attachment.id)} />} />;
       })}

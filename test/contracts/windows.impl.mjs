@@ -15,7 +15,7 @@ async function fixture(t, { width = 1440, persist = 'session', saved, storageKey
   const names = ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node', 'Text', 'MutationObserver', 'ResizeObserver', 'Event', 'KeyboardEvent', 'MouseEvent', 'PointerEvent', 'FocusEvent', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'IS_REACT_ACT_ENVIRONMENT'];
   const previous = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
   for (const name of names) Object.defineProperty(globalThis, name, { configurable: true, writable: true, value: name === 'window' ? window : name === 'IS_REACT_ACT_ENVIRONMENT' ? true : /^(getComputedStyle|requestAnimationFrame|cancelAnimationFrame)$/.test(name) ? window[name].bind(window) : window[name] });
-  window.innerWidth = width; window.innerHeight = 900;
+  window.happyDOM.setWindowSize({ width, height: 900 });
   if (saved) for (const [key, value] of Object.entries(saved)) window[persist === 'local' ? 'localStorage' : 'sessionStorage'].setItem(key, value);
   const { createElement: h, act } = await import('react'); const { createRoot } = await import('react-dom/client');
   const { WindowLayer, FloatingWindow, WindowLauncher, useWindow } = await import(pathToFileURL(outfile));
@@ -69,8 +69,8 @@ test('resize is pointer and keyboard operable, bounded by the viewport and re-cl
   assert.equal(panel.style.width, '500px'); assert.equal(panel.style.height, '350px');
   await f.run(() => handle.dispatchEvent(new f.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true })));
   assert.equal(panel.style.width, '524px');
-  await f.run(() => { f.window.innerWidth = 700; f.window.innerHeight = 400; f.window.dispatchEvent(new f.window.Event('resize')); });
-  assert.ok(parseFloat(panel.style.left) + parseFloat(panel.style.width) <= 700); assert.ok(parseFloat(panel.style.top) + parseFloat(panel.style.height) <= 400);
+  await f.run(() => f.window.happyDOM.setWindowSize({ width: 800, height: 400 }));
+  assert.ok(parseFloat(panel.style.left) + parseFloat(panel.style.width) <= 800); assert.ok(parseFloat(panel.style.top) + parseFloat(panel.style.height) <= 400);
 });
 
 test('every edge and corner resizes from the opposite side, keeping the minimum and the viewport', async t => {
@@ -110,7 +110,9 @@ test('session and local persistence restore rectangle and open/minimized status,
 test('phone windows fill the viewport while preserving desktop rectangles through breakpoint changes', async t => {
   const f = await fixture(t, { width: 390 }); await f.open('notes');
   const phone = f.panel('notes'); assert.equal(phone.getAttribute('data-placement'), 'fullscreen'); assert.equal(parseFloat(phone.style.inset), 0); assert.ok(phone.contains(document.activeElement));
-  await f.run(() => { f.window.innerWidth = 641; f.window.dispatchEvent(new f.window.Event('resize')); });
+  await f.run(() => f.window.happyDOM.setWindowSize({ width: 767, height: 900 }));
+  assert.equal(f.panel('notes').getAttribute('data-placement'), 'fullscreen');
+  await f.run(() => f.window.happyDOM.setWindowSize({ width: 768, height: 900 }));
   const desktop = f.panel('notes'); assert.equal(desktop.getAttribute('data-placement'), 'floating'); assert.equal(desktop.style.left, '60px'); assert.equal(desktop.style.width, '400px');
 });
 

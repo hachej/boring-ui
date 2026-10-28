@@ -39,7 +39,10 @@ import { PAGE_FIRST, PAGE_MORE, useChatSession, useRowChunks, useTranscript } fr
 import type { ChatFeatureProps } from '../pi-chat/session';
 import { ArtifactWorkspace } from '../pi-workspace/workspace';
 import type { WorkspacePanelApi } from '../pi-workspace/workspace';
-import { cn, PHONE_BELOW } from '../utils/utils';
+import { cn } from '../utils/utils';
+import { usePhone } from '../utils/use-media';
+import { readPersistedJson, writePersistedJson } from '../utils/persisted';
+export { usePhone } from '../utils/use-media';
 
 export { AgentNotifications, createNotificationStore, defaultNotificationLabels, frenchNotificationLabels, noticeTextOf, summaryOf, useNotifications, watchConversation } from './notifications';
 export type { AgentNotification, AgentNotificationsProps, NewNotification, NotificationKind, NotificationLabels, NotificationStore } from './notifications';
@@ -176,16 +179,15 @@ export interface AmbientChatProps extends Omit<ChatFeatureProps, 'artifacts'> {
 interface Position { readonly right: number; readonly bottom: number }
 const MARGIN = 8, DEFAULT_POSITION: Position = { right: 16, bottom: 16 };
 
-function storageFor(persist: 'session' | 'local'): Storage | undefined { try { return persist === 'local' ? globalThis.localStorage : globalThis.sessionStorage; } catch { return undefined; } }
 function readPosition(key: string, persist: 'session' | 'local'): Position | undefined {
   try {
-    const value: unknown = JSON.parse(storageFor(persist)?.getItem(key) ?? 'null');
+    const value: unknown = readPersistedJson(key, persist);
     const { right, bottom } = (value ?? {}) as { right?: unknown; bottom?: unknown };
     return typeof right === 'number' && typeof bottom === 'number' && Number.isFinite(right) && Number.isFinite(bottom) ? { right, bottom } : undefined;
   } catch { return undefined; }
 }
 function writePosition(key: string, persist: 'session' | 'local', position: Position) {
-  try { storageFor(persist)?.setItem(key, JSON.stringify(position)); } catch { /* the position is a convenience */ }
+  writePersistedJson(key, position, persist);
 }
 const clamp = (position: Position, size: { w: number; h: number }, viewport: { w: number; h: number }): Position => ({
   right: Math.round(Math.min(Math.max(MARGIN, position.right), Math.max(MARGIN, viewport.w - size.w - MARGIN))),
@@ -194,19 +196,6 @@ const clamp = (position: Position, size: { w: number; h: number }, viewport: { w
 
 // The layout viewport that fixed positioning uses (without scrollbars), not the window's outer size.
 const viewportSize = () => { const root = globalThis.document?.documentElement; return { w: root?.clientWidth || globalThis.innerWidth || 1024, h: root?.clientHeight || globalThis.innerHeight || 768 }; };
-export function usePhone(): boolean {
-  const query = `(max-width: ${PHONE_BELOW - 1}px)`;
-  const [phone, setPhone] = useState(() => globalThis.matchMedia?.(query).matches === true);
-  useEffect(() => {
-    const list = globalThis.matchMedia?.(query);
-    if (!list) return;
-    const update = () => setPhone(list.matches);
-    update();
-    list.addEventListener('change', update);
-    return () => list.removeEventListener('change', update);
-  }, [query]);
-  return phone;
-}
 
 /** Whole seconds since `active` became true; 0 while inactive. */
 function useElapsed(active: boolean): number {
@@ -269,7 +258,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
 
   // Replies get copy, optional feedback and the time; the host may hand the conversation to its full chat.
   const conversationRef = useRef('');
-  const replyActions = useMemo<NonNullable<RowContext['replyActions']>>(() => (reply, host) => <div data-testid="reply-actions" className="mt-2 -ml-2 flex items-center gap-0.5 opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 max-sm:opacity-100 pointer-coarse:opacity-100 motion-reduce:transition-none">
+  const replyActions = useMemo<NonNullable<RowContext['replyActions']>>(() => (reply, host) => <div data-testid="reply-actions" className="mt-2 -ml-2 flex items-center gap-0.5 opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 max-md:opacity-100 pointer-coarse:opacity-100 motion-reduce:transition-none">
     <CopyButton text={reply.text} label={labels.copyResponse} iconOnly {...(onCopy ? { onCopy } : {})} />
     {onFeedback && <>
       {(['up', 'down'] as const).map(value => <Toggle key={value} data-testid={`feedback-${value}`} pressed={feedback[reply.key] === value} aria-label={value === 'up' ? labels.goodResponse : labels.badResponse}
@@ -436,7 +425,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
   </div>;
 
   const conversation = <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <header hidden={embedded} data-testid="ambient-header" className={cn(embedded && '!hidden','flex h-12 shrink-0 items-center gap-0.5 px-2 max-sm:h-14 max-sm:px-3')}>
+      <header hidden={embedded} data-testid="ambient-header" className={cn(embedded && '!hidden','flex h-12 shrink-0 items-center gap-0.5 px-2 max-md:h-14 max-md:px-3')}>
         <Button variant="ghost" size="icon" data-testid="ambient-minimize" aria-label={labels.minimize} title={labels.minimize} onClick={() => { setPicking(false); setWindowState(expanded ? 'bar' : 'minimized'); }}><icons.minimize data-icon="inline-start" aria-hidden="true" /></Button>
         <span data-testid="ambient-status" data-status={status ?? 'idle'} role="img" aria-label={status === 'working' ? labels.statusWorking : status === 'input' ? labels.needsInput : status === 'done' ? labels.finished : status === 'error' ? labels.failedRun : undefined}
           aria-hidden={status ? undefined : 'true'} className={cn('flex shrink-0 items-center justify-center', status ? 'mx-1.5 w-5' : 'w-1.5')}>
@@ -499,7 +488,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
     <div data-testid="ambient-surface" className={surface}>
       {card && <Card aria-hidden="true" data-boring="chrome" className="pointer-events-none absolute inset-0 -z-10" />}
       {artifactPanel ? <ArtifactWorkspace open={panelOpen} onClose={closeArtifact} fullscreen={fullscreen} onFullscreenChange={setFullscreen} storageKey="boring.ambient.panel-width" panelLabel={labels.artifactPanel}
-        defaultWidth={600} minPanel={320} minChat={300} sheetBelow={720}
+        defaultWidth={600} minPanel={320} minChat={300}
         panel={api => shownArtifact ? artifactPanel(shownArtifact, { ...api, versions: known, follow: opened?.follow ?? true,
           select: follow.select, onShown: follow.onShown, onFailed: follow.onFailed }) : null}
         chat={conversation} /> : conversation}

@@ -13,6 +13,7 @@ import { Separator } from '@/components/ui/separator';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { copyText } from '../utils/utils';
+import { usePhone } from '../utils/use-media';
 import { BubbleTail, ClockSpacer, MessageClock as ChatMessageClock, clockRoom } from '../pi-chat/message';
 export { BubbleTail, ClockSpacer, clockRoom };
 import { useChatText, useSharedView } from './text';
@@ -35,11 +36,6 @@ export function agentTone(member: Pick<Member, 'id' | 'kind'>) {
   return agentTones[hash % agentTones.length];
 }
 
-function usePhone() {
-  const [phone, setPhone] = useState(() => globalThis.matchMedia?.('(max-width: 640px)').matches === true);
-  useEffect(() => { const media = globalThis.matchMedia?.('(max-width: 640px)'); if (!media) return; const change = () => setPhone(media.matches); media.addEventListener('change', change); return () => media.removeEventListener('change', change); }, []);
-  return phone;
-}
 const latestCard = (shared: SharedChatState, id: string) => shared.messages.findLast(message => message.author === id && message.card)?.card;
 type NameOf = SharedLabels['sharedName'];
 const unknown = new WeakMap<NameOf, Map<string, Member>>();
@@ -269,7 +265,7 @@ export function SystemLines({ lines }: { readonly lines: readonly ChannelMessage
   const shown = open ? lines : lines.slice(-1);
   return <div data-testid="system-lines" data-count={lines.length} role="group" className="flex min-w-0 flex-col items-center gap-0.5 text-center text-xs text-muted-foreground">
     {shown.map(line => <p key={line.id} data-shared-message={line.id} data-testid="system-line" className="m-0 max-w-[85%] [overflow-wrap:anywhere]">{line.removed ? labels.sharedRemoved : line.text}</p>)}
-    {lines.length > 1 && <Button variant="ghost" size="sm" data-testid="system-lines-toggle" aria-expanded={open} className="max-sm:min-h-11 pointer-coarse:min-h-11" onClick={() => setOpen(value => !value)}>
+    {lines.length > 1 && <Button variant="ghost" size="sm" data-testid="system-lines-toggle" aria-expanded={open} className="max-md:min-h-11 pointer-coarse:min-h-11" onClick={() => setOpen(value => !value)}>
       {open ? labels.sharedFewerUpdates : labels.sharedMoreUpdates(lines.length - 1)}</Button>}
   </div>;
 }
