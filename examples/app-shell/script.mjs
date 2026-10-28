@@ -4,6 +4,8 @@ const call = (name, args) => ({ tools: [{ name, args }] });
 const NOTES = '# Picnic plan\n\nA fictional picnic by the invented Lake Placeholder.\n\n- Blanket and baskets\n- Lemonade\n';
 
 export const SOURCES = [{ name: 'app-shell', entries: Object.entries({
+  'pm.points@1': ['Je retiens la demande fictive. La carte de demande sera fournie par le composant partagé D-417.'],
+  'description fictive': ['Merci, je note cette amélioration fictive.'],
   'remplace le riz par 150 g de pâtes': ['Le repas fictif est mis à jour : 150 g de pâtes à la place du riz.'],
   'message 1': ['Réponse un : tu as marché 8 200 pas hier.'],
   'message 2': ['Réponse deux : la moyenne de la semaine est de 7 400 pas.'],

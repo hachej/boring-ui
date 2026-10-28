@@ -50,7 +50,7 @@ const SIDEBAR_TOKENS = `:root{--sidebar:var(--background);--sidebar-foreground:v
 /** The few Tailwind preflight rules the shell's own markup relies on (a host's shadcn app has the whole preflight); in the base layer, so utilities win. */
 const BASE = '@layer base{*,::before,::after{box-sizing:border-box}ul{list-style:none;margin:0;padding:0}h1,p{margin:0}}';
 
-export async function startAppShell({ directory, port = 0, token = randomUUID(), scripted = process.env.STUDIO_MODEL === 'scripted' } = {}) {
+export async function startAppShell({ directory, port = 0, token = randomUUID(), scripted = process.env.STUDIO_MODEL === 'scripted', pageFile = here('./page.tsx'), browserPlugins = [] } = {}) {
   mkdirSync(join(directory, 'workspace'), { recursive: true });
   const models = scripted ? (await (await import('../../lab/studio/scripted-model.mjs')).createScriptedModels({ sources: (await import('./script.mjs')).SOURCES })).models : createModels();
   if (!scripted) models.setProvider((await import('@earendil-works/pi-ai/providers/openai')).openaiProvider());
@@ -93,9 +93,9 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
     } }),
   };
 
-  const bundle = await build({ entryPoints: [here('./page.tsx')], bundle: true, write: false, outdir: here('./out'), format: 'esm', platform: 'browser', jsx: 'automatic',
+  const bundle = await build({ entryPoints: [pageFile], plugins: browserPlugins, bundle: true, write: false, outdir: here('./out'), format: 'esm', platform: 'browser', jsx: 'automatic',
     alias: { '@': here('.') }, define: { 'process.env.NODE_ENV': '"production"' }, logLevel: 'silent' });
-  const css = [await buildTailwind({ extraDirectories: ['examples/app-shell', 'registry/app-shell', 'registry/agent-target', 'registry/documents'], extraCss: SIDEBAR_TOKENS }), BASE, ...bundle.outputFiles.filter(file => file.path.endsWith('.css')).map(file => file.text),
+  const css = [await buildTailwind({ extraDirectories: ['examples/app-shell', 'examples/pm-panel', 'registry/pm-panel', 'registry/app-shell', 'registry/agent-target', 'registry/documents'], extraCss: SIDEBAR_TOKENS }), BASE, ...bundle.outputFiles.filter(file => file.path.endsWith('.css')).map(file => file.text),
     readFileSync(here('../../registry/feedback/feedback.css'), 'utf8'),
     'html,body,#root{min-height:100%;margin:0}body{background:var(--background);color:var(--foreground);font:15px/1.5 ui-sans-serif,system-ui,sans-serif}',
     // The app's own rule for AppShell overlayBlur={false} (an item's CSS stays inside .app-shell; overlays are portalled outside it).
