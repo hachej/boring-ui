@@ -1,12 +1,12 @@
 'use client';
 
 import type { ComponentType } from 'react';
-import { CheckIcon, ChevronRightIcon, FileCodeIcon, FileTextIcon, GlobeIcon, ImageIcon, PenToolIcon } from 'lucide-react';
+import { CheckIcon, ChevronRightIcon, FileCodeIcon, FileTextIcon, GlobeIcon, ImageIcon, PenToolIcon, ListTodoIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@/components/ui/item';
 import { Shimmer } from '../pi-chat/shimmer';
 import { artifactKey, artifactKind, recogniseArtifact, typeLabel } from './artifact';
-import type { ArtifactDescriptor, ArtifactType, KindMatch } from './artifact';
+import type { PresentedArtifact, ArtifactType, KindMatch } from './artifact';
 import { useChatText } from '../pi-chat/labels';
 import type { ChatArtifactCardProps } from '../pi-chat/config';
 
@@ -20,11 +20,11 @@ const ICONS: Record<ArtifactType, ComponentType<{ readonly 'aria-hidden'?: boole
  * "opening" card with a shimmer. Rendered outside the activity block, like the question card.
  */
 export function ArtifactCard({ artifact, pending, title, open = false, onOpen, kinds }: {
-  readonly artifact?: ArtifactDescriptor | undefined;
+  readonly artifact?: PresentedArtifact | undefined;
   readonly pending?: 'presenting';
   readonly title?: string | undefined;
   readonly open?: boolean;
-  readonly onOpen?: ((artifact: ArtifactDescriptor) => void) | undefined;
+  readonly onOpen?: ((artifact: PresentedArtifact) => void) | undefined;
   /** The app's artifact kinds (`ArtifactsConfig.kinds`): their label and icon win over the type's. */
   readonly kinds?: readonly KindMatch[] | undefined;
 }) {
@@ -39,15 +39,16 @@ export function ArtifactCard({ artifact, pending, title, open = false, onOpen, k
     </Item>;
   }
   const kind = artifactKind(artifact, kinds);
-  const Icon = kind?.icon ?? ICONS[artifact.type];
+  const Icon = kind?.icon ?? (artifact.type === 'task' ? ListTodoIcon : ICONS[artifact.type]);
+  const ordinal = artifact.type === 'task' ? undefined : artifact.ordinal;
   return <Button variant={open ? 'secondary' : 'outline'} disabled={!onOpen} onClick={() => onOpen?.(artifact)}
-    data-testid="artifact-card" data-state="ready" data-artifact-id={artifactKey(artifact)} data-artifact-revision={artifact.revision} data-artifact-version={artifact.ordinal} data-artifact-type={artifact.type} data-artifact-kind={kind?.label}
-    data-open={open ? 'true' : undefined} aria-pressed={onOpen ? open : undefined} aria-label={labels.openArtifact(artifact.title, artifact.ordinal)}
+    data-testid="artifact-card" data-state="ready" data-artifact-id={artifactKey(artifact)} data-artifact-revision={artifact.type === 'task' ? undefined : artifact.revision} data-artifact-version={ordinal} data-artifact-type={artifact.type} data-artifact-kind={kind?.label}
+    data-open={open ? 'true' : undefined} aria-pressed={onOpen ? open : undefined} aria-label={labels.openArtifact(artifact.title, ordinal)}
     className="my-2 h-auto min-h-12! w-full max-w-md justify-start gap-2.5 text-left">
     <ItemMedia variant="image"><Item variant="muted" size="xs" className="min-h-full justify-center"><Icon aria-hidden="true" /></Item></ItemMedia>
     <span className="flex min-w-0 flex-1 flex-col">
       <span data-testid="artifact-title" className="truncate">{artifact.title}</span>
-      <span className="truncate text-xs text-muted-foreground"><span data-testid="artifact-type">{typeLabel(artifact, kinds, labels.artifactTypes)}</span>{artifact.ordinal !== undefined && <> · <span data-testid="artifact-version">{labels.version(artifact.ordinal)}</span></>}</span>
+      <span className="truncate text-xs text-muted-foreground"><span data-testid="artifact-type">{typeLabel(artifact, kinds, labels.artifactTypes)}</span>{ordinal !== undefined && <> · <span data-testid="artifact-version">{labels.version(ordinal)}</span></>}</span>
     </span>
     {open ? <CheckIcon data-icon="inline-end" aria-hidden="true" /> : <ChevronRightIcon data-icon="inline-end" aria-hidden="true" />}
   </Button>;
@@ -55,7 +56,7 @@ export function ArtifactCard({ artifact, pending, title, open = false, onOpen, k
 
 /** `ArtifactCard` as the chat's `artifacts.Card`: the chat hands back the descriptor `recogniseArtifact` found. */
 export function PluggedArtifactCard({ artifact, open, onOpen, kinds }: ChatArtifactCardProps) {
-  const descriptor = artifact.state === 'ready' ? artifact.descriptor as ArtifactDescriptor : undefined;
+  const descriptor = artifact.state === 'ready' ? artifact.descriptor as PresentedArtifact : undefined;
   return <ArtifactCard artifact={descriptor} title={artifact.title} {...(artifact.state === 'ready' ? {} : { pending: artifact.state })}
     open={open} onOpen={onOpen ? () => onOpen() : undefined} kinds={kinds as readonly KindMatch[] | undefined} />;
 }

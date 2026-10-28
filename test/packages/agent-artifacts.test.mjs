@@ -3,7 +3,7 @@ import test from 'node:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { createArtifactDescriptor, createPresentTool, parseArtifact } from '@hachej/boring-agent/artifacts';
+import { createArtifactDescriptor, createPresentTool, parseArtifact, parsePresentedArtifact, parseTaskSubject, createTaskArtifact } from '@hachej/boring-agent/artifacts';
 import { openNodeConnection } from '@hachej/boring-files/sqlite';
 import { openSqliteFileSystem } from '@hachej/boring-files/sqlite-filesystem';
 import { createWorkspaceJournal } from '@hachej/boring-files/journal';
@@ -69,4 +69,26 @@ test('parseArtifact accepts a built descriptor and rejects malformed ones', () =
   for (const value of bad) assert.equal(parseArtifact(value), undefined, JSON.stringify(value));
   assert.throws(() => createArtifactDescriptor({ ...good, ordinal: 0 }), /Invalid artifact descriptor/);
   assert.ok(parseArtifact({ ...good, target: { resource: good.target.resource, view: { kind: 'working', viewId: 'v' } } }));
+});
+
+
+test('task artifact parsing stays strict and browser/server descriptors agree without file metadata', async () => {
+  const browser = await import('@hachej/boring-ui-kit/chat-view');
+  for (const subject of [{ task: 'D-201' }, { task: '417' }, { tasks: { filter: 'all' } }, { tasks: { filter: 'mine' } }, { tasks: { filter: 'waiting-on-me' } }]) {
+    const artifact = createTaskArtifact(subject);
+    assert.deepEqual(parsePresentedArtifact(artifact), artifact);
+    assert.deepEqual(browser.parsePresentedArtifact(artifact), artifact);
+    assert.notEqual(parsePresentedArtifact(artifact).subject, artifact.subject, 'the parser detaches the reference');
+    assert.equal(parseArtifact(artifact), undefined, 'the old parser remains file-only');
+  }
+  const good = createTaskArtifact({ task: 'D-201' });
+  const malformed = [null, {}, { ...good, version: 2 }, { ...good, title: '' }, { ...good, revision: 'r1' }, { ...good, type: 'markdown' },
+    { ...good, subject: { task: '../D-201' } }, { ...good, subject: { task: '' } }, { ...good, subject: { task: 'D-201', extra: true } },
+    { ...good, subject: { task: 'D-201', tasks: { filter: 'mine' } } }, { ...good, subject: { tasks: {} } }, { ...good, subject: { tasks: { filter: 'other' } } },
+    { ...good, subject: { tasks: { filter: 'mine', principal: 'another-person' } } }, { ...good, subject: { tasks: { filter: 'mine' }, extra: true } }];
+  for (const value of malformed) {
+    assert.equal(parsePresentedArtifact(value), undefined, JSON.stringify(value));
+    assert.equal(browser.parsePresentedArtifact(value), undefined, JSON.stringify(value));
+  }
+  assert.equal(parseTaskSubject({ task: 'D-201', path: 'pretend.md' }), undefined);
 });

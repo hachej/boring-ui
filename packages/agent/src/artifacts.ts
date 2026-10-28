@@ -6,7 +6,15 @@ import type { ResourceAccess, ResourceLocator } from '@hachej/boring-files';
 import { workspacePath } from '@hachej/boring-files/file-types';
 import { asWorkspaceResolver, workspaceFor } from './workspaces.js';
 import type { WorkspaceBinding, WorkspaceResolver } from './workspaces.js';
-import { PRESENT_TOOL, awaitViewOpen } from './view-open.js';
+import { createTaskArtifact, parseTaskArtifact, parseTaskSubject } from './task-artifacts.js';
+import type { TaskArtifactDescriptor } from './task-artifacts.js';
+export { createTaskArtifact, parseTaskArtifact, parseTaskSubject, taskSubjectKey } from './task-artifacts.js';
+export type { TaskArtifactDescriptor, TaskSubject } from './task-artifacts.js';
+export type PresentedArtifact = ArtifactDescriptor | TaskArtifactDescriptor;
+/** Parse file or host-task presentation without treating a record as a workspace file. */
+export function parsePresentedArtifact(value: unknown): PresentedArtifact | undefined { return parseArtifact(value) ?? parseTaskArtifact(value); }
+
+import { PRESENT_TOOL, awaitTaskViewOpen, awaitViewOpen } from './view-open.js';
 import type { ViewOpenOptions, ViewOpenOutcome } from './view-open.js';
 
 export { answerViewOpen, parseViewOpenAnswer, VIEW_OPEN_TIMEOUT_MS } from './view-open.js';
@@ -133,14 +141,27 @@ export function createPresentTool(options: PresentToolOptions = {}) {
     name: PRESENT_TOOL,
     // How to use it travels with the tool, so every host that offers `present` gets the same rules without repeating them in its prompt.
     description: [
+      'Show a host task with { task: "D-201" }, or a task list with { tasks: { filter: "all", "mine" or "waiting-on-me" } }. Tasks are host records, not workspace files; the host checks access when it opens them.',
       'Show a file of the workspace to the person in a side panel instead of pasting it in your reply.',
       'When the person asks for something substantial and self-contained (a report, document, HTML page, SVG image or program), write it to a file with the write tool, using a short descriptive path with the right extension (.md, .html, .svg with a viewBox, or the language\'s own), then call present with that path; never put that content in your reply. After present, reply with one or two short sentences and never repeat the content.',
       'Short answers stay in the chat, and so does anything the person asks to have in the chat or without tools or artifacts: then call no tool.',
       'To change, extend or fix something you presented: read the file again first (the person may have edited it; keep their changes), change it with edit (or write the whole new content) at the same path, never a second file, and call present again. If you do not remember the path, list the files.',
     ].join(' '),
-    parameters: Type.Object({ path: Type.String({ minLength: 1, maxLength: 512, description: 'The file path, relative to the workspace.' }) }, { additionalProperties: false }),
+    parameters: Type.Object({
+      path: Type.Optional(Type.String({ minLength: 1, maxLength: 512, description: 'A workspace file path. Supply exactly one of path, task or tasks.' })),
+      task: Type.Optional(Type.String({ minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9][A-Za-z0-9_-]*$', description: 'A host task id or number, such as D-201.' })),
+      tasks: Type.Optional(Type.Object({ filter: Type.Union([Type.Literal('all'), Type.Literal('mine'), Type.Literal('waiting-on-me')]) }, { additionalProperties: false })),
+    }, { additionalProperties: false }),
     replay: 'safe',
     execute: async (args, api, context) => {
+      if (Object.keys(args).length !== 1) return reply({ kind: 'denied', reason: 'Supply exactly one of path, task or tasks' });
+      if (args.path === undefined) {
+        const subject = parseTaskSubject(args);
+        if (!subject) return reply({ kind: 'denied', reason: 'Invalid task reference' });
+        if (!options.ack) return reply({ kind: 'presented', artifact: createTaskArtifact(subject) });
+        const shown = await awaitTaskViewOpen(api, context, { tool: PRESENT_TOOL, subject }, options.ack);
+        return reply({ kind: 'presented', artifact: createTaskArtifact(shown.subject), ...viewFields(shown.outcome) });
+      }
       // An absolute path is refused, not normalised: `/workspace/a.md` must never be read as `workspace/a.md` under the root.
       if (args.path.startsWith('/')) return reply({ kind: 'denied', reason: 'The path must be relative to the workspace' });
       const path = workspacePath(args.path);
