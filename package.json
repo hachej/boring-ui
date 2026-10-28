@@ -132,14 +132,14 @@
   "devDependencies": {
     "@aws-sdk/client-bedrock-agentcore": "3.1156.0",
     "@base-ui/react": "1.9.0",
-    "@earendil-works/chord": "1.4.0",
-    "@earendil-works/pi-ai": "1.4.0",
-    "@earendil-works/pi-codemode": "1.4.0",
-    "@earendil-works/pi-durable": "1.4.0",
-    "@earendil-works/pi-mcp": "1.4.0",
+    "@earendil-works/chord": "1.2.0",
+    "@earendil-works/pi-ai": "1.2.0",
+    "@earendil-works/pi-codemode": "1.2.0",
+    "@earendil-works/pi-durable": "1.2.0",
+    "@earendil-works/pi-mcp": "1.2.0",
     "@json-render/core": "0.21.3",
     "@json-render/react": "0.21.3",
-    "@modelcontextprotocol/sdk": "1.32.2",
+    "@modelcontextprotocol/sdk": "1.32.1",
     "@shadcn/react": "0.3.1",
     "@sqlite.org/sqlite-wasm": "3.53.4-build2",
     "@tiptap/core": "3.32.0",
@@ -163,7 +163,7 @@
     "@types/react-dom": "19.3.0",
     "@typescript-eslint/parser": "8.72.0",
     "@vercel/sandbox": "3.9.0",
-    "agents": "0.30.1",
+    "agents": "0.28.1",
     "buffer": "6.0.3",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
@@ -192,9 +192,9 @@
     "zod": "4.6.7"
   },
   "overrides": {
-    "@earendil-works/pi-durable": "1.4.0",
-    "@earendil-works/pi-ai": "1.4.0",
-    "@earendil-works/chord": "1.4.0",
+    "@earendil-works/pi-durable": "1.2.0",
+    "@earendil-works/pi-ai": "1.2.0",
+    "@earendil-works/chord": "1.2.0",
     "undici": "7.29.1",
     "agents": {
       "@modelcontextprotocol/sdk": "1.32.1"
