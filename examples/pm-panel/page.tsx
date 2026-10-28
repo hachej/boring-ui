@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { useEffect, useState } from 'react';
 import { AppShell } from '../../registry/app-shell/app-shell';
 import { useRemoteChat } from '../../registry/pi-chat/use-remote-chat';
-import { TASKS, TASKS_EN, renderTaskBoard, renderRequest } from './tasks';
+import { RequestCard, TASKS, TASKS_EN, VIEWER, confirmed } from './tasks';
 import { coachAccount, coachNav, note } from './coach-max';
 import { segments, segmentsEn, words, wordsEn } from './speech.mjs';
 import { StudioStory } from './studio';
@@ -24,18 +24,19 @@ const query = new URLSearchParams(location.search);
 
 function Ready({ remote }: { readonly remote: Extract<ReturnType<typeof useRemoteChat>, { status: 'ready' }> }) {
   const [screen, setScreen] = useState('day');
+  const [tasks, setTasks] = useState(TASKS);
   return <AppShell layout="screen" title="Coach Max" locale="fr" route={{ id: screen, onChange: setScreen }}
     account={coachAccount} nav={coachNav}
     improve={{ controller: remote.controller, appName: 'Coach Max', chatProps: { actions: remote.actions, showHistory: false },
       pointVoice: { transcribe: async () => { if (controls.__holdTranscription) await new Promise<void>(resolve => { controls.__releaseTranscription = resolve; }); if ((window as unknown as { __failVoice?: boolean }).__failVoice) throw new Error('Fictional refusal'); return { text: words, segments: query.has('untimed') ? undefined : segments }; } },
-      taskMentions: { title: id => TASKS.find(task => task.id === id)?.title, present: id => note('__presented', id), search: async (text, { filter }) => { note('__taskFilters', filter); return TASKS.filter(task => (filter === 'all' || task.mine) && (task.id.toLowerCase().startsWith(text.toLowerCase()) || task.title.toLowerCase().includes(text.toLowerCase()))); } },
-      tasks: { renderBoard: renderTaskBoard, renderRequest: ({ edit }) => renderRequest(id => note('__confirmed', id), text => { note('__modify', text); edit(text); }) },
+      tasks: { tasks, currentUser: VIEWER, onOpen: task => note('__presented', task.id),
+        renderRequest: ({ edit }) => <RequestCard task={tasks[0]!} onConfirm={id => { note('__confirmed', id); setTasks(current => confirmed(current, id)); }} onModify={text => { note('__modify', text); edit(text); }} /> },
     }} />;
 }
 function Studio({ remote }: { readonly remote: Extract<ReturnType<typeof useRemoteChat>, { status: 'ready' }> }) {
   return <StudioStory note={value => note('__activated', value)} spec={{ controller: remote.controller, appName: 'Coach Max', chatProps: { actions: remote.actions, showHistory: false, locale: 'en' },
     pointVoice: { transcribe: async () => ({ text: wordsEn, segments: segmentsEn }) },
-    taskMentions: { title: id => TASKS_EN.find(task => task.id === id)?.title, present: id => note('__presented', id), search: async text => TASKS_EN.filter(task => task.mine && (task.id.toLowerCase().startsWith(text.toLowerCase()) || task.title.toLowerCase().includes(text.toLowerCase()))) },
+    tasks: { tasks: TASKS_EN, currentUser: VIEWER, onOpen: task => note('__presented', task.id) },
   }} />;
 }
 function App() {

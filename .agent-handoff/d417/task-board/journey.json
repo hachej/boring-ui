@@ -1,0 +1,104 @@
+{
+  "steps": [
+    "real ambient prompt waits for task mount; native opened result and artifact card share the board URL path",
+    "native task lists use actual mine/waiting filters and missing/denied tasks report failure",
+    "wide host has three rails, folded terminal columns and two own request rows",
+    "keyboard opens right task overlay without squeezing kanban; choices use host callback; Back restores focus and history",
+    "task @ picker uses the existing composer; Discuss posts a task mention and settles through the same host answer service",
+    "regular markdown/html/image file overlay stacks wider over the task; back close fullscreen zoom/more controls work",
+    "host theme reaches cards and detail, without component dark overrides",
+    "a narrow right panel on the same desktop uses a list and in-place detail",
+    "375px phone has no horizontal overflow, in-place detail, accessible links and back"
+  ],
+  "nativeEvidence": [
+    {
+      "kind": "presented",
+      "artifact": {
+        "schema": "boring.task",
+        "version": 1,
+        "type": "task",
+        "title": "D-201",
+        "subject": {
+          "task": "D-201"
+        }
+      },
+      "opened": true,
+      "viewer": "_r_2_"
+    },
+    {
+      "kind": "presented",
+      "artifact": {
+        "schema": "boring.task",
+        "version": 1,
+        "type": "task",
+        "title": "Waiting on me",
+        "subject": {
+          "tasks": {
+            "filter": "waiting-on-me"
+          }
+        }
+      },
+      "opened": true,
+      "viewer": "_r_2_"
+    },
+    {
+      "kind": "presented",
+      "artifact": {
+        "schema": "boring.task",
+        "version": 1,
+        "type": "task",
+        "title": "My requests",
+        "subject": {
+          "tasks": {
+            "filter": "mine"
+          }
+        }
+      },
+      "opened": true,
+      "viewer": "_r_2_"
+    },
+    {
+      "kind": "presented",
+      "artifact": {
+        "schema": "boring.task",
+        "version": 1,
+        "type": "task",
+        "title": "D-403",
+        "subject": {
+          "task": "D-403"
+        }
+      },
+      "opened": false,
+      "refused": "Task access denied"
+    },
+    {
+      "kind": "presented",
+      "artifact": {
+        "schema": "boring.task",
+        "version": 1,
+        "type": "task",
+        "title": "D-999",
+        "subject": {
+          "task": "D-999"
+        }
+      },
+      "opened": false,
+      "refused": "Task not found"
+    },
+    {
+      "kind": "presented",
+      "artifact": {
+        "schema": "boring.task",
+        "version": 1,
+        "type": "task",
+        "title": "D-201",
+        "subject": {
+          "task": "D-201"
+        }
+      },
+      "opened": true,
+      "viewer": "_r_2_"
+    }
+  ],
+  "errors": []
+}

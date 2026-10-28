@@ -3,8 +3,8 @@
 /** Opt-in UI projection over the native controller; owns no Pi execution or controller lifetime. */
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import type { ChatController } from './native-chat.js';
-import { artifactKey, artifactTurn, artifactVersions, createPresentAcks, follows, pendingPresents, presentPath } from './chat-view.js';
-import type { ArtifactDescriptor, ArtifactDetect, PresentAcksHost } from './chat-view.js';
+import { artifactKey, artifactVersionKey, artifactTurn, artifactVersions, createPresentAcks, follows, pendingPresents, presentPath } from './chat-view.js';
+import type { PresentedArtifact, ArtifactDetect, PresentAcksHost, PresentationShown, PresentationFailed, TaskSubject } from './chat-view.js';
 
 export { useChatDraft } from './chat-react-draft.js';
 export { useControllerPerConversation } from './chat-react-controller.js';
@@ -37,9 +37,9 @@ export function useChatView<T>(controller: ChatController | undefined, select: (
 }
 const identityView = (view: ReturnType<ChatController['getSnapshot']>['view']) => view;
 
-export interface ArtifactSelection { readonly descriptor: ArtifactDescriptor; readonly follow: boolean }
-export interface ArtifactShown { readonly path: string; readonly revision: string; readonly hidden?: true }
-export interface ArtifactFailed { readonly path: string; readonly revision: string; readonly reason: string }
+export interface ArtifactSelection { readonly descriptor: PresentedArtifact; readonly follow: boolean }
+export type ArtifactShown = PresentationShown & { readonly hidden?: true };
+export type ArtifactFailed = PresentationFailed & { readonly revision?: string };
 export interface ArtifactFollowOptions {
   readonly controller: ChatController | undefined;
   readonly conversationId?: string | undefined;
@@ -52,6 +52,8 @@ export interface ArtifactFollowOptions {
   readonly narrow?: (() => boolean) | undefined;
   readonly showing: (path: string) => boolean;
   readonly openPresent: (path: string) => boolean;
+  readonly openTask?: ((subject: TaskSubject) => boolean) | undefined;
+  readonly showingTask?: ((subject: TaskSubject) => boolean) | undefined;
   readonly answer?: PresentAcksHost['answer'] | undefined;
 }
 
@@ -75,11 +77,12 @@ export function useArtifactFollow(options: ArtifactFollowOptions) {
   const acks = useMemo(() => createPresentAcks({ instanceId,
     answer: (id, body) => current() ? latest.current.answer?.(id, body) : undefined,
     open: path => current() && latest.current.openPresent(path),
+    openTask: subject => current() && latest.current.openTask?.(subject) !== false,
   }), [current, instanceId]);
   useLayoutEffect(() => { binding.active = true; return () => { binding.active = false; }; }, [binding]);
   useEffect(() => {
     if (!controller || conversationId === undefined) return;
-    const keys = versions.map(version => JSON.stringify([artifactKey(version), version.revision]));
+    const keys = versions.map(artifactVersionKey);
     const known = seen.current.get(conversationId);
     if (!known) { seen.current.set(conversationId, new Set(keys)); return; }
     const fresh = versions.filter((_, index) => !known.has(keys[index]!));
@@ -91,21 +94,21 @@ export function useArtifactFollow(options: ArtifactFollowOptions) {
     if (!options.answer || conversationId === undefined) return;
     acks.consider(calls, { closedThisTurn: closedInTurn.current.get(conversationId) === turn,
       unsaved: latest.current.unsaved?.() === true, narrow: latest.current.narrow?.() === true, autoOpen,
-      showing: path => latest.current.showing(path) });
+      showing: path => latest.current.showing(path), showingTask: subject => latest.current.showingTask?.(subject) === true });
   }, [acks, calls, conversationId, turn, autoOpen, options.answer]);
   const onShown = useCallback((shown: ArtifactShown) => {
     if (!current()) return;
-    const report = { path: presentPath(shown.path), revision: shown.revision };
+    const report = 'subject' in shown ? { subject: shown.subject } : { path: presentPath(shown.path), revision: shown.revision };
     if (shown.hidden) acks.hidden(report); else acks.shown(report);
   }, [acks, current]);
-  const onFailed = useCallback((failed: ArtifactFailed) => { if (current()) acks.failed({ ...failed, path: presentPath(failed.path) }); }, [acks, current]);
+  const onFailed = useCallback((failed: ArtifactFailed) => { if (current()) acks.failed('subject' in failed ? failed : { ...failed, path: presentPath(failed.path) }); }, [acks, current]);
   const recordClosed = useCallback(() => { if (conversationId !== undefined) closedInTurn.current.set(conversationId, turn); }, [conversationId, turn]);
-  const open = useCallback((descriptor: ArtifactDescriptor) => latest.current.onOpen({ descriptor, follow: follows(descriptor, versions) }), [versions]);
-  const isOpen = useCallback((descriptor: ArtifactDescriptor) => Boolean(active && artifactKey(active.descriptor) === artifactKey(descriptor) &&
-    (active.follow ? follows(descriptor, versions) : descriptor.revision === active.descriptor.revision)), [active, versions]);
+  const open = useCallback((descriptor: PresentedArtifact) => latest.current.onOpen({ descriptor, follow: follows(descriptor, versions) }), [versions]);
+  const isOpen = useCallback((descriptor: PresentedArtifact) => Boolean(active && artifactKey(active.descriptor) === artifactKey(descriptor) &&
+    (active.follow ? follows(descriptor, versions) : artifactVersionKey(descriptor) === artifactVersionKey(active.descriptor))), [active, versions]);
   const known = useMemo(() => active ? versions.filter(version => artifactKey(version) === artifactKey(active.descriptor)) : [], [active, versions]);
   const shown = active ? active.follow ? known[0] ?? active.descriptor : active.descriptor : undefined;
-  const select = useCallback((version: ArtifactDescriptor | 'latest') => {
+  const select = useCallback((version: PresentedArtifact | 'latest') => {
     if (active) latest.current.onOpen(version === 'latest' ? { descriptor: known[0] ?? active.descriptor, follow: true } : { descriptor: version, follow: false });
   }, [active, known]);
   return { versions, turn, known, shown, open, isOpen, select, recordClosed, onShown, onFailed };

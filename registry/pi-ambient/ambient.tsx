@@ -31,9 +31,10 @@ import type { AgentNotification, NotificationLabels, NotificationStore } from '.
 import { ChatTextProvider, defaultChatIcons, defaultChatLabels, useMergedText } from '../pi-chat/labels';
 import type { ChatIcons, ChatLabels } from '../pi-chat/labels';
 import { MessageQueue } from '../pi-chat/queue';
-import { useArtifactFollow } from '@hachej/boring-ui-kit/chat-react';
+import { useChatView, useArtifactFollow } from '@hachej/boring-ui-kit/chat-react';
 import type { ArtifactShown, ArtifactFailed } from '@hachej/boring-ui-kit/chat-react';
-import type { ArtifactDescriptor, ArtifactsConfig } from '../pi-artifacts/artifact';
+import { createTaskArtifact, pendingPresents, taskSubjectKey } from '../pi-artifacts/artifact';
+import type { ArtifactDescriptor, PresentedArtifact, ArtifactsConfig } from '../pi-artifacts/artifact';
 import { artifactCards } from '../pi-artifacts/artifact-card';
 import { PAGE_FIRST, PAGE_MORE, useChatSession, useRowChunks, useTranscript } from '../pi-chat/session';
 import type { ChatFeatureProps } from '../pi-chat/session';
@@ -242,7 +243,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
   const stateRef = useRef(windowState);
   useLayoutEffect(() => { stateRef.current = windowState; });
   // The artifact open inside the window, and whether it follows the newest version. It belongs to the expanded window: leaving that state closes it.
-  const [opened, setOpened] = useState<{ readonly descriptor: ArtifactDescriptor; readonly follow: boolean } | null>(null);
+  const [opened, setOpened] = useState<{ readonly descriptor: PresentedArtifact; readonly follow: boolean } | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
   const setWindowState = (next: AmbientState) => {
     if (next !== 'expanded') { setOpened(null); setFullscreen(false); }
@@ -279,15 +280,30 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
   const detect = hostArtifacts?.detect;
   const follow = useArtifactFollow({ controller, conversationId: String(conversations?.activeId ?? controller.getSnapshot().conversationId), detect,
     active: opened, onOpen: setOpened, autoOpen: false, narrow: () => phone,
-    showing: path => expanded && opened?.descriptor.target.resource.path === path,
-    openPresent: () => false, answer: inWindow ? actions?.answer : undefined });
+    showing: path => !inWindow || (expanded && opened?.descriptor.type !== 'task' && opened?.descriptor.target.resource.path === path),
+    showingTask: subject => !inWindow || (expanded && opened?.descriptor.type === 'task' && taskSubjectKey(opened.descriptor.subject) === taskSubjectKey(subject)),
+    openPresent: () => false, answer: actions?.answer });
+  const { onShown, onFailed, open: openArtifact, isOpen: isArtifactOpen } = follow;
+  const pendingTasks = useChatView(controller, pendingPresents);
+  const requestedTasks = useRef(new WeakMap<NativeChatController, Set<string>>());
+  useEffect(() => {
+    if (inWindow || !hostArtifacts?.autoOpenTasks) return;
+    let requested = requestedTasks.current.get(controller);
+    if (!requested) { requested = new Set(); requestedTasks.current.set(controller, requested); }
+    for (const call of pendingTasks) {
+      if (!('subject' in call) || requested.has(call.id)) continue;
+      requested.add(call.id);
+      hostArtifacts.open(createTaskArtifact(call.subject), { onShown, onFailed });
+    }
+  }, [controller, inWindow, hostArtifacts, pendingTasks, onShown, onFailed]);
   const closeArtifact = () => { follow.recordClosed(); setOpened(null); setFullscreen(false); };
-  const artifacts = useMemo<ArtifactsConfig | undefined>(() => !inWindow ? hostArtifacts : {
-    open: follow.open, isOpen: follow.isOpen,
+  const artifacts = useMemo<ArtifactsConfig | undefined>(() => !inWindow ? hostArtifacts && { ...hostArtifacts,
+    open: artifact => hostArtifacts.open(artifact, { onShown, onFailed }) } : {
+    open: artifact => artifact.type === 'task' ? hostArtifacts?.open(artifact, { onShown, onFailed }) : openArtifact(artifact), isOpen: isArtifactOpen,
     ...(detect ? { detect } : {}),
     ...(hostArtifacts?.kinds ? { kinds: hostArtifacts.kinds } : {}),
     recognise: hostArtifacts?.recognise ?? artifactCards.recognise, Card: hostArtifacts?.Card ?? artifactCards.Card,
-  }, [inWindow, hostArtifacts, follow.open, follow.isOpen, detect]);
+  }, [inWindow, hostArtifacts, openArtifact, isArtifactOpen, onShown, onFailed, detect]);
   const session = useChatSession({ controller, activeController, mode, presentation, voiceReplay, actions, renderEntry, hideLine, historicalMessageActions, unread: replyUnread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept,
     slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => scrollToBottom.current(), rowExtras, feedback: composerFeedback, sendContext, onOpenFile, fileChanges, pasteToFile, composerChips });
   const { state, derived, rows, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, files, loading } = session;
@@ -492,7 +508,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
       {card && <Card aria-hidden="true" data-boring="chrome" className="pointer-events-none absolute inset-0 -z-10" />}
       {artifactPanel ? <ArtifactWorkspace open={panelOpen} onClose={closeArtifact} fullscreen={fullscreen} onFullscreenChange={setFullscreen} storageKey="boring.ambient.panel-width" panelLabel={labels.artifactPanel}
         defaultWidth={600} minPanel={320} minChat={300}
-        panel={api => shownArtifact ? artifactPanel(shownArtifact, { ...api, versions: known, follow: opened?.follow ?? true,
+        panel={api => shownArtifact && shownArtifact.type !== 'task' ? artifactPanel(shownArtifact, { ...api, versions: known.filter((artifact): artifact is ArtifactDescriptor => artifact.type !== 'task'), follow: opened?.follow ?? true,
           select: follow.select, onShown: follow.onShown, onFailed: follow.onFailed }) : null}
         chat={conversation} /> : conversation}
     </div>

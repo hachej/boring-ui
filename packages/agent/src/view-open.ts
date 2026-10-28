@@ -9,6 +9,8 @@ import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import type { Context } from '@earendil-works/chord';
 import { AmbiguousCall, UnknownCall, callBinding, ownBindingKey, waitForDocument } from './durable-wait.js';
 import type { AskUserAnswer } from './ask-user.js';
+import { parseTaskSubject, taskSubjectKey } from './task-artifacts.js';
+import type { TaskSubject } from './task-artifacts.js';
 
 /** How long a view may take to be confirmed by a page before the result says `unconfirmed` (a UI ack, not a person's decision). */
 export const VIEW_OPEN_TIMEOUT_MS = 15_000;
@@ -18,6 +20,7 @@ export const PRESENT_TOOL = 'present';
 /** What the page reports after its panel mounted the revision, or that it refused to open it. */
 export type ViewOpenAnswer =
   | { readonly kind: 'opened'; readonly instanceId: string; readonly path: string; readonly revision: string }
+  | { readonly kind: 'opened'; readonly instanceId: string; readonly subject: TaskSubject }
   | { readonly kind: 'refused'; readonly reason: string };
 
 /** What `present` reports for the view: the result's `opened`, `refused` or `viewer` fields (see ./artifacts.ts). */
@@ -35,7 +38,8 @@ export interface ViewOpenOptions {
 }
 
 type ViewState = { kind: 'pending' } | { kind: 'opened'; viewer: string } | { kind: 'refused'; reason: string } | { kind: 'unconfirmed' } | { kind: 'cancelled' };
-type ViewRecord = { tool: string; taskId: TaskId; path: string; revision: string; startedAt: number; timeoutMs: number; state: ViewState };
+type ViewBinding = { readonly path: string; readonly revision: string } | { readonly subject: TaskSubject };
+type ViewRecord = { tool: string; taskId: TaskId; startedAt: number; timeoutMs: number; state: ViewState } & ViewBinding;
 type ViewDocument = { view: ViewRecord | null };
 
 /** One member per assistant entry and tool call, in the calling conversation. */
@@ -58,6 +62,11 @@ export function parseViewOpenAnswer(value: unknown): ViewOpenAnswer | undefined 
     if (typeof revision !== 'string' || !revision || revision.length > 256) return undefined;
     return { kind: 'opened', instanceId, path, revision };
   }
+  if (value['kind'] === 'opened' && Object.keys(value).every(key => ['kind', 'instanceId', 'subject'].includes(key))) {
+    const instanceId = value['instanceId'], subject = parseTaskSubject(value['subject']);
+    if (typeof instanceId !== 'string' || !instanceId || instanceId.length > MAX_ID || !subject) return undefined;
+    return { kind: 'opened', instanceId, subject };
+  }
   if (value['kind'] === 'refused' && Object.keys(value).every(key => ['kind', 'reason'].includes(key))) {
     const { reason } = value;
     if (typeof reason !== 'string' || !reason || reason.length > MAX_REASON) return undefined;
@@ -74,13 +83,28 @@ export function parseViewOpenAnswer(value: unknown): ViewOpenAnswer | undefined 
  */
 export async function awaitViewOpen(api: ToolExecutionApi, context: Context, view: { readonly tool: string; readonly path: string; readonly revision: string },
   options: ViewOpenOptions = {}): Promise<{ readonly outcome: ViewOpenOutcome; readonly revision: string }> {
+  const result = await awaitPresentation(api, context, view, options);
+  if (!('revision' in result.binding)) throw new Error('The presentation belongs to a task reference');
+  return { outcome: result.outcome, revision: result.binding.revision };
+}
+
+/** A record viewer confirms the exact task or filter, never a fabricated file revision. */
+export async function awaitTaskViewOpen(api: ToolExecutionApi, context: Context, view: { readonly tool: string; readonly subject: TaskSubject },
+  options: ViewOpenOptions = {}): Promise<{ readonly outcome: ViewOpenOutcome; readonly subject: TaskSubject }> {
+  const result = await awaitPresentation(api, context, view, options);
+  if (!('subject' in result.binding)) throw new Error('The presentation belongs to a file');
+  return { outcome: result.outcome, subject: result.binding.subject };
+}
+
+async function awaitPresentation(api: ToolExecutionApi, context: Context, view: ViewBinding & { readonly tool: string },
+  options: ViewOpenOptions): Promise<{ readonly outcome: ViewOpenOutcome; readonly binding: ViewBinding }> {
   const timeoutMs = options.timeoutMs ?? VIEW_OPEN_TIMEOUT_MS;
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) throw new TypeError('The view-open timeout must be a positive integer of milliseconds');
-  if (options.viewers && !(await options.viewers(api, context))) return { outcome: { kind: 'none' }, revision: view.revision };
+  if (options.viewers && !(await options.viewers(api, context))) return { outcome: { kind: 'none' }, binding: view };
   const { key, startedAt, duration } = await api.commit(async tx => {
     const key = await ownBindingKey(tx, api);
     const document = await tx.doc(documents, api.conversationId, key, null);
-    if (!document.view) document.view = { tool: view.tool, taskId: api.taskId, path: view.path, revision: view.revision, startedAt: Date.now(), timeoutMs, state: { kind: 'pending' } };
+    if (!document.view) document.view = { ...view, taskId: api.taskId, startedAt: Date.now(), timeoutMs, state: { kind: 'pending' } };
     if (document.view.taskId !== api.taskId) throw new Error('View-open identity belongs to another task');
     return { key, startedAt: document.view.startedAt, duration: document.view.timeoutMs };
   }, context);
@@ -94,10 +118,10 @@ export async function awaitViewOpen(api: ToolExecutionApi, context: Context, vie
     if (document.view?.state.kind === 'pending') document.view.state = { kind: 'cancelled' };
   }, 'View open', { at: startedAt + duration, expire });
   const state = final?.view?.state;
-  const revision = final?.view?.revision ?? view.revision;
-  if (state?.kind === 'opened') return { outcome: { kind: 'opened', viewer: state.viewer }, revision };
-  if (state?.kind === 'refused') return { outcome: { kind: 'refused', reason: state.reason }, revision };
-  if (state?.kind === 'unconfirmed') return { outcome: { kind: 'unconfirmed', timeoutMs: duration }, revision };
+  const binding = final?.view ?? view;
+  if (state?.kind === 'opened') return { outcome: { kind: 'opened', viewer: state.viewer }, binding };
+  if (state?.kind === 'refused') return { outcome: { kind: 'refused', reason: state.reason }, binding };
+  if (state?.kind === 'unconfirmed') return { outcome: { kind: 'unconfirmed', timeoutMs: duration }, binding };
   throw new Error('View open cancelled');
 }
 
@@ -116,7 +140,7 @@ export async function answerViewOpen(conversation: Conversation, id: string, ans
   let value: unknown;
   try { value = JSON.parse(answer); } catch { return { kind: 'denied', reason: 'The answer is not JSON' }; }
   const parsed = parseViewOpenAnswer(value);
-  if (!parsed) return { kind: 'denied', reason: 'The answer must be { kind: "opened", instanceId, path, revision } or { kind: "refused", reason }' };
+  if (!parsed) return { kind: 'denied', reason: 'The answer must name an opened file revision or task subject with instanceId, or be { kind: "refused", reason }' };
   const next: ViewState = parsed.kind === 'opened' ? { kind: 'opened', viewer: parsed.instanceId } : { kind: 'refused', reason: parsed.reason };
   try {
     return await conversation.commit(async tx => {
@@ -128,12 +152,14 @@ export async function answerViewOpen(conversation: Conversation, id: string, ans
       if (!document.view || document.view.tool !== tool) throw new UnknownCall();
       const record = document.view;
       if (record.taskId !== task.id) return { kind: 'conflict', reason: 'The view belongs to another task' };
+      if (parsed.kind === 'opened' && ('subject' in parsed
+        ? !('subject' in record) || taskSubjectKey(parsed.subject) !== taskSubjectKey(record.subject)
+        : !('path' in record) || parsed.path.replace(/^\.\//, '') !== record.path || parsed.revision !== record.revision)) {
+        return { kind: 'denied', reason: 'The acknowledgement names another subject or revision than the one presented' };
+      }
       if (record.state.kind !== 'pending') return same(record.state, next) ? { kind: 'answered' } : { kind: 'conflict', reason: 'The view was already decided' };
       if (task.abortRequested || task.state.status === 'terminal') { record.state = { kind: 'cancelled' }; return { kind: 'conflict', reason: 'The view was cancelled' }; }
       if (Date.now() >= record.startedAt + record.timeoutMs) { record.state = { kind: 'unconfirmed' }; return { kind: 'conflict', reason: 'The view was not confirmed in time' }; }
-      if (parsed.kind === 'opened' && (parsed.path.replace(/^\.\//, '') !== record.path || parsed.revision !== record.revision)) {
-        return { kind: 'denied', reason: 'The acknowledgement names another file or revision than the one presented' };
-      }
       record.state = next;
       return { kind: 'answered' };
     }, options.context ?? BACKGROUND_CONTEXT) as AskUserAnswer;

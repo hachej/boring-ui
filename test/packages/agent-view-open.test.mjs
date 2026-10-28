@@ -23,6 +23,9 @@ import { mkdirSync as mkdirOut } from 'node:fs';
 import { openNodeConnection } from '@hachej/boring-files/sqlite';
 import { createWorkspaceJournal } from '@hachej/boring-files/journal';
 import { blobRevision, createWorkspaceProvider } from '@hachej/boring-files/workspace';
+import { Window } from 'happy-dom';
+import { spawnSync } from 'node:child_process';
+import { createNativeChatController } from '@hachej/boring-ui-kit/native-chat';
 
 const endpoint = 'https://fixture.invalid/chat';
 const access = { principalId: 'agent', initiatorId: 'agent', scopeId: 'fictional-project' };
@@ -85,9 +88,9 @@ function workspace(directory) {
   return { files, root, env, db, workspace: { files, root }, resolveAccess: () => access };
 }
 
-async function open(storage, ws, { ack, args = { path: 'doc.md' } } = {}) {
+async function open(storage, ws, { ack, args = { path: 'doc.md' }, noWorkspace = false } = {}) {
   const caller = callingModel(args);
-  const agent = defineAgent({ id: 'view-open', model: caller.model, tools: [createPresentTool({ workspace: ws.workspace, resolveAccess: ws.resolveAccess, ...(ack === undefined ? {} : { ack }) })], instructions: 'Present, then report.' });
+  const agent = defineAgent({ id: 'view-open', model: caller.model, tools: [createPresentTool({ ...(noWorkspace ? {} : { workspace: ws.workspace, resolveAccess: ws.resolveAccess }), ...(ack === undefined ? {} : { ack }) })], instructions: 'Present, then report.' });
   const registry = createRegistry();
   agent.install(registry);
   const harness = await Harness.open(storage, { registry, models: caller.models }, context);
@@ -99,6 +102,76 @@ function serve(harness, conversation) {
     ? { conversation, context, abortSubmission: id => harness.abortSubmission(id, context, conversation.id), answer: (id, value) => answerViewOpen(conversation, id, value) } : null });
   return request => { const headers = new Headers(request.headers); headers.set('authorization', 'Bearer fictional-token'); return handler(new Request(request, { headers })); };
 }
+
+test('native file presentation retains its mount when an independent task viewer also mounts', async t => {
+  const f = await fixture(t, { ack: { timeoutMs: 5000 } });
+  const { createPresentAcks } = await loadPageAcks();
+  const acks = createPresentAcks({ answer: (id, body) => f.remote.answer(id, body), open: () => true, instanceId: 'two-views' });
+  acks.shown({ path: 'doc.md', revision: REVISION });
+  acks.shown({ subject: { task: 'D-201' } });
+  await f.submit();
+  const call = await f.waitPending();
+  acks.consider([{ id: call.answerId, callId: call.id, path: 'doc.md' }], { closedThisTurn: false, unsaved: false, narrow: false, autoOpen: false, showing: () => true });
+  await until('the still-mounted file is acknowledged', async () => !!resultOf(await view(f.remote), call.id), 2000);
+  assert.equal(JSON.parse(resultOf(await view(f.remote), call.id).content[0].text).opened, true);
+});
+
+test('native task mount survives an independent file mounting and hiding', async t => {
+  const f = await fixture(t, { noWorkspace: true, args: { task: 'D-201' }, ack: { timeoutMs: 5000 } });
+  const { createPresentAcks } = await loadPageAcks();
+  const acks = createPresentAcks({ answer: (id, body) => f.remote.answer(id, body), open: () => true, instanceId: 'two-views' });
+  acks.shown({ subject: { task: 'D-201' } });
+  acks.shown({ path: 'doc.md', revision: REVISION });
+  acks.hidden({ path: 'doc.md', revision: REVISION });
+  await f.submit();
+  const call = await f.waitPending();
+  acks.consider([{ id: call.answerId, callId: call.id, subject: { task: 'D-201' } }], { closedThisTurn: false, unsaved: false, narrow: false, autoOpen: false, showing: () => false, showingTask: () => true });
+  await until('the still-mounted task is acknowledged', async () => !!resultOf(await view(f.remote), call.id), 2000);
+  assert.equal(JSON.parse(resultOf(await view(f.remote), call.id).content[0].text).opened, true);
+});
+
+test('native task presentation on a phone is host-decided, not refused by the file sheet guard', async t => {
+  const f = await fixture(t, { noWorkspace: true, args: { task: 'D-201' }, ack: { timeoutMs: 5000 } });
+  await f.submit();
+  const call = await f.waitPending();
+  const { createPresentAcks } = await loadPageAcks();
+  const acks = createPresentAcks({ answer: (id, body) => f.remote.answer(id, body), open: () => false, instanceId: 'phone' });
+  acks.consider([{ id: call.answerId, callId: call.id, subject: { task: 'D-201' } }], { closedThisTurn: false, unsaved: false, narrow: true, autoOpen: false, showing: () => false });
+  acks.shown({ subject: { task: 'D-201' } });
+  await until('phone acknowledgement', async () => !!resultOf(await view(f.remote), call.id));
+  assert.equal(JSON.parse(resultOf(await view(f.remote), call.id).content[0].text).opened, true);
+});
+
+test('AgentWorkspace opens a pending native task in its registered host panel before the tool returns', async t => {
+  if (process.env['BORING_TASK_WORKSPACE_PROBE'] !== '1') {
+    const env = { ...process.env, BORING_TASK_WORKSPACE_PROBE: '1' }; delete env.NODE_TEST_CONTEXT;
+    const child = spawnSync(process.execPath, ['--import', fileURLToPath(new URL('../../scripts/css-stub-register.mjs', import.meta.url)), '--test', '--test-name-pattern', '^AgentWorkspace opens a pending native task', fileURLToPath(import.meta.url)], { env, encoding: 'utf8', timeout: 30000, maxBuffer: 2 * 1024 * 1024 });
+    assert.equal(child.status, 0, `${child.stdout}\n${child.stderr}`);
+    return;
+  }
+  const f = await fixture(t, { noWorkspace: true, args: { task: 'D-201' }, ack: { timeoutMs: 5000 } });
+  const window = new Window({ url: 'https://fictional.invalid/' });
+  const names = ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node', 'Text', 'DOMParser', 'MutationObserver', 'ResizeObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'sessionStorage', 'matchMedia', 'IS_REACT_ACT_ENVIRONMENT'];
+  const globals = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
+  for (const name of names) { const value = name === 'window' ? window : name === 'IS_REACT_ACT_ENVIRONMENT' ? true : window[name]; Object.defineProperty(globalThis, name, { configurable: true, writable: true, value: typeof value === 'function' && /^[a-z]/.test(name) ? value.bind(window) : value }); }
+  const { createElement: h, useEffect, act } = await import('react');
+  const { createRoot } = await import('react-dom/client');
+  const output = fileURLToPath(new URL('../../.cache/task-workspace-test.mjs', import.meta.url));
+  await build({ entryPoints: [fileURLToPath(new URL('../../registry/pi-app/agent-workspace.tsx', import.meta.url))], outfile: output, bundle: true, format: 'esm', platform: 'node', packages: 'external', jsx: 'automatic', loader: { '.css': 'empty' }, logLevel: 'silent' });
+  const { AgentWorkspace } = await import(pathToFileURL(output).href);
+  const controller = createNativeChatController({ identity: { runtimeId: 'fictional', scopeId: 'fictional', principalId: 'alice' }, ...f.remote });
+  await controller.connect();
+  const element = document.createElement('div'); document.body.append(element); const root = createRoot(element);
+  function TaskPanel({ subject, reports }) { useEffect(() => { reports.onShown({ subject }); return () => reports.onShown({ subject, hidden: true }); }, [subject, reports.onShown]); return h('p', { 'data-pending-task': '' }, subject.task); }
+  try {
+    await act(async () => root.render(h(AgentWorkspace, { controller, conversationId: String(f.conversation.id), storageKey: false,
+      resources: { identity: { scopeId: 'fictional', principalId: 'alice', initiatorId: 'alice' }, endpoint: 'https://fictional.invalid/resources', fetch: async () => new Response(null, { status: 404 }) },
+      chat: { actions: { answer: f.remote.answer } }, panels: { task: (opened, reports) => h(TaskPanel, { subject: opened.descriptor.subject, reports }) } })));
+    await act(async () => { await f.submit(); await new Promise(resolve => setTimeout(resolve, 400)); });
+    assert.ok(document.querySelector('[data-pending-task]'), 'pending task must open without waiting for the final tool result');
+    await until('host mounted task acknowledged', async () => finalText(await view(f.remote))?.includes('"opened":true'));
+  } finally { await act(async () => root.unmount()); await controller.dispose(); await window.happyDOM.close(); for (const [name, descriptor] of globals) descriptor ? Object.defineProperty(globalThis, name, descriptor) : delete globalThis[name]; }
+});
 
 const REVISION = await blobRevision(encoder.encode(text));
 const revision = () => REVISION;
@@ -379,4 +452,103 @@ test('ack: a dashboard view (an app kind that waits for ready) is opened only on
   const refused = JSON.parse(finalText(await view(g.remote)).slice(4));
   assert.equal(refused.opened, false);
   assert.equal(refused.refused, 'the sales query failed');
+});
+
+
+test('host task references and filtered lists present through the native tool without a workspace', async t => {
+  for (const args of [{ task: 'D-201' }, { tasks: { filter: 'mine' } }, { tasks: { filter: 'waiting-on-me' } }, { tasks: { filter: 'all' } }]) {
+    const f = await fixture(t, { args, noWorkspace: true });
+    await f.submit();
+    await until('native task present result', async () => finalText(await view(f.remote))?.startsWith('Got '));
+    const message = finalText(await view(f.remote));
+    assert.ok(!message.startsWith('Got error'), message);
+    const result = JSON.parse(message.slice(4));
+    assert.equal(result.kind, 'presented');
+    assert.equal(result.artifact.schema, 'boring.task');
+    assert.deepEqual(result.artifact.subject, args);
+    assert.equal(result.artifact.target, undefined, 'a task is not a fake workspace file');
+    assert.equal(result.artifact.revision, undefined, 'presenting a record claims no saved revision');
+  }
+});
+
+test('task present acknowledgement requires the exact mounted subject through the real chat transport', async t => {
+  const subject = { task: 'D-201' };
+  const f = await fixture(t, { args: subject, noWorkspace: true, ack: { timeoutMs: 5000 } });
+  await f.submit();
+  const call = await f.waitPending();
+  const { createPresentAcks, pendingPresents } = await loadPageAcks();
+  const calls = pendingPresents(await view(f.remote));
+  assert.deepEqual(calls, [{ id: call.answerId, callId: call.id, subject }]);
+  const page = createPresentAcks({ answer: (id, body) => f.remote.answer(id, body), open: () => { throw new Error('a record must not open as a file'); }, instanceId: 'host-task-viewer' });
+  page.consider(calls, { closedThisTurn: false, unsaved: false, narrow: false, autoOpen: false, showing: () => false });
+  assert.deepEqual(f.caller.requests, ['call'], 'a descriptor or open intent does not confirm a mount');
+  const other = await f.answer(call.answerId, { kind: 'opened', instanceId: 'host-task-viewer', subject: { task: 'D-202' } });
+  assert.equal(other.kind, 'denied', 'another task cannot confirm the original subject');
+  const file = await f.answer(call.answerId, { kind: 'opened', instanceId: 'host-task-viewer', path: 'D-201', revision: 'fictional' });
+  assert.equal(file.kind, 'denied', 'a file-shaped report cannot confirm a task');
+  page.shown({ subject });
+  await until('model continues after exact task mount', async () => finalText(await view(f.remote))?.startsWith('Got {'));
+  const result = JSON.parse(finalText(await view(f.remote)).slice(4));
+  assert.deepEqual(result.artifact.subject, subject);
+  assert.equal(result.opened, true);
+  assert.equal(result.viewer, 'host-task-viewer');
+  const changedRepeat = await f.answer(call.answerId, { kind: 'opened', instanceId: 'host-task-viewer', subject: { task: 'D-202' } });
+  assert.equal(changedRepeat.kind, 'denied', 'a repeat from the same viewer cannot claim a different task was shown');
+});
+
+test('task list failures refuse the native wait and missing viewers or mounts stay honest', async t => {
+  const subject = { tasks: { filter: 'waiting-on-me' } };
+  const f = await fixture(t, { args: subject, noWorkspace: true, ack: { timeoutMs: 5000 } });
+  await f.submit();
+  await f.waitPending();
+  const { createPresentAcks, pendingPresents } = await loadPageAcks();
+  const page = createPresentAcks({ answer: (id, body) => f.remote.answer(id, body), open: () => false, instanceId: 'host-task-viewer' });
+  page.consider(pendingPresents(await view(f.remote)), { closedThisTurn: false, unsaved: false, narrow: false, autoOpen: false, showing: () => false });
+  page.failed({ subject, reason: 'Access to this task list was revoked' });
+  await until('task refusal result', async () => finalText(await view(f.remote))?.startsWith('Got {'));
+  assert.equal(JSON.parse(finalText(await view(f.remote)).slice(4)).refused, 'Access to this task list was revoked');
+  for (const ack of [{ timeoutMs: 30 }, { viewers: () => false }]) {
+    const g = await fixture(t, { args: subject, noWorkspace: true, ack });
+    await g.submit();
+    await until('unmounted task result', async () => finalText(await view(g.remote))?.startsWith('Got {'));
+    const result = JSON.parse(finalText(await view(g.remote)).slice(4));
+    if (ack.viewers) assert.equal(result.viewer, 'none'); else assert.equal(result.opened, 'unconfirmed');
+  }
+});
+
+
+test('native present refuses ambiguous file/task inputs before reading a workspace', async t => {
+  const f = await fixture(t, { args: { path: 'doc.md', task: 'D-201' }, noWorkspace: true });
+  await f.submit();
+  await until('ambiguous subject result', async () => finalText(await view(f.remote))?.startsWith('Got {'));
+  const result = JSON.parse(finalText(await view(f.remote)).slice(4));
+  assert.equal(result.kind, 'denied');
+  assert.match(result.reason, /exactly one/);
+  assert.equal(result.artifact, undefined);
+});
+
+test('task presentation survives native SQLite reopen and acknowledges only its retained reference', { timeout: 60000 }, async t => {
+  const directory = mkdtempSync(join(tmpdir(), 'boring-task-view-restart-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const file = join(directory, 'native.sqlite'), subject = { task: 'D-201' };
+  let opened = await open(await openNodeSqliteStorage(file), {}, { args: subject, noWorkspace: true, ack: { timeoutMs: 15000 } });
+  t.after(() => opened.harness.close(context).catch(() => {}));
+  const conversation = await opened.agent.createConversation(opened.harness, context);
+  let remote = await createRemoteChat({ endpoint, fetch: serve(opened.harness, conversation), pollMs: 10 });
+  await remote.conversation.submit({ type: 'input', requestId: 'task-view-restart', content: 'Present this task.' }, remote.context);
+  let call;
+  await until('task wait before close', async () => (call = pending(await view(remote))[0]));
+  await new Promise(resolve => setTimeout(resolve, 200));
+  await opened.harness.close(context);
+  opened = await open(await openNodeSqliteStorage(file), {}, { args: { task: 'D-202' }, noWorkspace: true, ack: { timeoutMs: 15000 } });
+  const again = await opened.harness.conversation(conversation.id, context);
+  assert.equal((await answerViewOpen(again, call.answerId, JSON.stringify({ kind: 'opened', instanceId: 'host-after-restart', subject: { task: 'D-202' } }))).kind, 'denied');
+  assert.deepEqual(await answerViewOpen(again, call.answerId, JSON.stringify({ kind: 'opened', instanceId: 'host-after-restart', subject })), { kind: 'answered' });
+  remote = await createRemoteChat({ endpoint, fetch: serve(opened.harness, again), pollMs: 10 });
+  opened.harness.resume();
+  await until('task result after native reopen', async () => finalText(await view(remote))?.startsWith('Got {'), 15000);
+  const result = JSON.parse(finalText(await view(remote)).slice(4));
+  assert.equal(result.opened, true);
+  assert.equal(result.viewer, 'host-after-restart');
+  assert.deepEqual(result.artifact.subject, subject);
 });

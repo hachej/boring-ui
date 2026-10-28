@@ -94,6 +94,8 @@ try {
   await open();
   await browser.type(q('[data-testid=composer-input]'), 'Before you start, about @d-2');
   await browser.until('D9 listbox', `document.querySelectorAll('[data-testid=pm-mention-row]').length === 3`);
+  assert.deepEqual(await browser.evaluate(`[...document.querySelectorAll('[data-testid=pm-mention-row]')].map(row => row.textContent)`),
+    ['D-201Protein before calories on meal cardsOn you', 'D-202Day plan: lunch photo', 'D-203Sunday weigh-in reminder'], 'the viewer\'s tasks, « On you » where one waits on them');
   await browser.hover(q('nav[aria-label=Apps]'));
   // The mouse passed over the list on its way out; ↑ brings the highlight back to the first row (keyboard, spec 1 §8).
   const active = () => browser.evaluate(`[...document.querySelectorAll('[data-testid=mention-item]')].findIndex(row => row.getAttribute('aria-selected') === 'true')`);

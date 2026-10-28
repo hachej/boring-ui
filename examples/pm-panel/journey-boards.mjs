@@ -61,7 +61,7 @@ try {
   await browser.until('C6 review', `${mode('sheet')} && ${visible('[data-testid=pm-review-hint]')} && document.querySelectorAll('[data-testid=pm-chip]').length === 2`, 15000);
   await shot('C6');
   await browser.tap(q('[data-testid=composer-submit]'));
-  await browser.until('C7 thread', `${mode('full')} && ${visible('[data-testid=pm-sent-message]')} && ${visible('[data-testid=pm-request-card]')}`, 20000);
+  await browser.until('C7 thread', `${mode('full')} && ${visible('[data-testid=pm-sent-message]')} && ${visible('[data-task-card=D-201][data-variant=compact]')}`, 20000);
   await shot('C7');
   await browser.tap(q('[data-testid=pm-requests]'));
   await browser.until('Mes demandes', visible('[data-testid=pm-task-board-seam]'));

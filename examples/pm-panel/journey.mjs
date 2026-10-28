@@ -213,7 +213,7 @@ try {
     // Send: text, capture and pick metadata travel together; the draft and pins clear; C7 opens.
     const sent = app.submits.length;
     await press('[data-testid=composer-submit]');
-    await browser.until('C7', `${mode('full')} && ${visible('[data-testid=pm-sent-message]')} && ${visible(oneLine ? '[data-testid=pm-reply]' : '[data-testid=pm-request-card]')}`, 20000);
+    await browser.until('C7', `${mode('full')} && ${visible('[data-testid=pm-sent-message]')} && ${visible(oneLine ? '[data-testid=pm-reply]' : '[data-task-card=D-201][data-variant=compact]')}`, 20000);
     assert.equal(app.submits.length, sent + 1, 'one native admission');
     const body = JSON.stringify(app.submits.at(-1).body);
     for (const field of ['pm.points@1', 'dictatedMs', '\\"t\\":', 'selector', 'imageIndex', 'image/png', 'Jauge']) assert.ok(body.includes(field), `the message carries ${field}`);
@@ -227,11 +227,13 @@ try {
       // « Modifier » puts the request text in the composer; « Confirmer » changes the status pill.
       await press('[data-testid=pm-request-modify]');
       await browser.until('modify', `${q('[data-testid=pm-panel] [data-testid=composer-input]')}.value === 'Protéines avant les calories sur les cartes repas'`);
+      // The shared compact card (task-board): « À confirmer » until the host takes the request off the viewer.
+      assert.equal(await browser.evaluate(`${q('[data-task-card=D-201][data-variant=compact] [data-task-status]')}.textContent`), 'À confirmer');
       await press('[data-testid=pm-request-confirm]');
-      await browser.until('confirmed', `${q('[data-testid=pm-request-status]')}.textContent === 'Confirmée'`);
+      await browser.until('confirmed', `!${q('[data-task-card=D-201] [data-task-status]')} && !${q('[data-testid=pm-request-confirm]')}`);
       // « Mes demandes »: the shared board, compact, with « ‹ Retour ».
       await press('[data-testid=pm-requests]');
-      await browser.until('Mes demandes', `${visible('[data-testid=pm-task-board-seam]')} && ${q('[data-testid=studio-task-board-seam]')}.dataset.variant === 'compact'`);
+      await browser.until('Mes demandes', `${visible('[data-testid=pm-task-board-seam]')} && JSON.stringify([...document.querySelectorAll('[data-testid=pm-task-board-seam] [data-boring=task-board][data-variant=compact] [data-task-card]')].map(card => card.dataset.taskCard)) === '["D-201","D-202","D-203"]'`);
       await press('[data-testid=pm-requests-back]');
       await browser.until('thread again', visible('[data-testid=pm-sent-message]'));
 
@@ -242,7 +244,8 @@ try {
       await browser.until('listbox', `document.querySelectorAll('[data-testid=pm-mention-row]').length === 3`);
       assert.equal(await browser.evaluate(`${q('[data-testid=pm-mention-header]')}.textContent`), 'TÂCHES · d-2');
       assert.equal(await browser.evaluate(`${q('[data-testid=mention-menu]')}.getBoundingClientRect().bottom <= ${q(input)}.getBoundingClientRect().top`), true, 'the listbox opens above the composer');
-      assert.match(await browser.evaluate(`${q('[data-testid=pm-mention-row]')}.textContent`), /^D-201Protéines avant les calories sur les cartes repasÀ vous$/);
+      // D-201 was just confirmed, so it no longer waits on the viewer: no « À vous » (D9 in journey-studio checks the marker).
+      assert.match(await browser.evaluate(`${q('[data-testid=pm-mention-row]')}.textContent`), /^D-201Protéines avant les calories sur les cartes repas$/);
       // The first row is the highlighted one; a mouse resting over the list moves it, ↑ brings it back (keyboard, spec 1 §8).
       for (let index = 1; index > 0;) {
         index = await browser.evaluate(`[...document.querySelectorAll('[data-testid=mention-item]')].findIndex(row => row.getAttribute('aria-selected') === 'true')`);

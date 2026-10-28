@@ -24,6 +24,8 @@ export interface StructuredAction {
 export interface ActionModelsOptions {
   /** Resolve trusted configuration; this never registers tools or grants permissions. */
   readonly resolve: (id: string) => StructuredAction | undefined;
+  /** Prepare memory only when a real full-model request is needed; errors fail closed. */
+  readonly prepareFullContext?: (context: Parameters<Models['streamSimple']>[1], options: Parameters<Models['streamSimple']>[2]) => Promise<Parameters<Models['streamSimple']>[1]>;
   readonly now?: () => number;
 }
 
@@ -91,7 +93,11 @@ export function withActionModels<T extends Models>(models: T, options: ActionMod
       const action = resolve(model.id);
       const original = required(action.model);
       const out = createAssistantMessageEventStream();
-      const full = async () => { for await (const event of models.streamSimple(original, context, requestOptions)) out.push(event); };
+      const full = async () => {
+        const prepared = options.prepareFullContext ? await options.prepareFullContext(context, requestOptions) : context;
+        requestOptions?.signal?.throwIfAborted();
+        for await (const event of models.streamSimple(original, prepared, requestOptions)) out.push(event);
+      };
       const emit = (message: AssistantMessage) => {
         if (message.stopReason === 'error' || message.stopReason === 'aborted') out.push({ type: 'error', reason: message.stopReason, error: message });
         else if (message.stopReason !== 'pending') out.push({ type: 'done', reason: message.stopReason, message });

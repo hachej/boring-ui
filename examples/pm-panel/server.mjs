@@ -12,7 +12,7 @@ export const COACH_THEME = `:root{--background:#fff;--foreground:#18181b;--card:
 --destructive:#ef4444;--border:#e4e4e7;--input:#d4d4d8;--ring:#a1a1aa;--radius:0.5rem;
 --pm-mark:#18181b;--pm-mark-foreground:#fff;--pm-mic:transparent;--pm-mic-foreground:#18181b;--pm-send-idle:#a1a1aa;--pm-line:#d4d4d8;--pm-strip-line:#71717a;
 --pm-radius-box:14px;--pm-radius-sheet:20px;--pm-shadow-sheet:0 -8px 24px rgba(0,0,0,0.12);--pm-shadow-panel:0 -8px 24px rgba(0,0,0,0.1);--pm-weight-title:650;--pm-hint:#71717a;--pm-radius-round:9999px;--pm-radius-toggle:22px;--pm-radius-segment:19px;--pm-radius-control:8px;--pm-bubble:#f4f4f5;--pm-bubble-foreground:#18181b;--pm-reply:transparent;--pm-radius-bubble:16px;--pm-radius-tail:4px;--pm-radius-token:6px;--pm-mark-line:35%;--pm-mark-width:2px;
---coach-subtle:#52525b;--coach-warning:#fef3c7;--coach-warning-foreground:#92400e;--coach-ok:#dcfce7;--coach-ok-foreground:#166534;color-scheme:light}
+--coach-subtle:#52525b;--warning-soft:#fef3c7;--warning-soft-foreground:#92400e;color-scheme:light}
 body{font-family:system-ui,-apple-system,sans-serif}`;
 
 /** `oneLine`: the app whose only PM code is `improve={{ agent: 'pm' }}`, served through the fake PM door (#854). */

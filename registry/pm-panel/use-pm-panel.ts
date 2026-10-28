@@ -35,12 +35,20 @@ export interface ImproveSpec {
   readonly policy?: PrivacyPolicy;
   readonly pointVoice?: PmVoice;
   readonly tasks?: StudioTaskBoardSeam;
-  readonly taskMentions?: import('./task-mentions').TaskMentionSource;
 }
-/** D-417 / PR #1900 owns these components; this is deliberately not another card or board. */
+/**
+ * The app's task board (`task-board` item): the host's authorized records. The panel draws « Mes demandes » with `TaskBoard` and the @
+ * picker with `task-mentions` from them; it owns no card, board or task store.
+ */
 export interface StudioTaskBoardSeam {
-  readonly renderBoard: (options: { readonly filter: 'mine'; readonly variant: 'full' | 'compact'; readonly limit?: number }) => import('react').ReactNode;
-  /** The request card under a PM reply (C7), or undefined when that reply carries no request. `edit` puts the request text back in the composer (« Modifier »). */
+  readonly tasks: readonly import('@hachej/boring-ui-kit/task-board').TaskRecord[];
+  /** The viewer: « Mes demandes » and @ show the tasks they requested (`requesterId`). */
+  readonly currentUser: string;
+  /** Opens a task: the @ chip, a card in « Mes demandes ». */
+  readonly onOpen: (task: import('@hachej/boring-ui-kit/task-board').TaskRecord) => void;
+  /** Host-authorized compact card actions in « Mes demandes » (`TaskBoard cardActions`). */
+  readonly cardActions?: (task: import('@hachej/boring-ui-kit/task-board').TaskRecord) => import('react').ReactNode;
+  /** The request card under a PM reply (C7, `TaskRequestCard variant="compact"`), or undefined when that reply carries no request. `edit` puts the request text back in the composer (« Modifier »). */
   readonly renderRequest?: (context: { readonly entry: import('@earendil-works/pi-durable').EntryRecord; readonly edit: (text: string) => void }) => import('react').ReactNode;
 }
 

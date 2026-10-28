@@ -15,7 +15,8 @@ import { PmComposer } from './pm-composer';
 import { PointComment } from './point-comment';
 import { usePmPanel } from './use-pm-panel';
 import { POINT_PREFACE, pointMessage } from './point-message';
-import { useTaskMentions } from './task-mentions';
+import { usePmMentions } from './pm-mentions';
+import { TaskBoard } from '../task-board/task-board';
 import type { ImproveSpec, StudioTaskBoardSeam } from './use-pm-panel';
 import { useImproveAgent } from './use-improve-agent';
 import type { ImproveProp } from './use-improve-agent';
@@ -30,8 +31,7 @@ export type { PmComposerProps, PmPreset } from './pm-composer';
 export { usePmPanel } from './use-pm-panel';
 export type { PmComment, PmPanelState } from './use-pm-panel';
 export { PointComment } from './point-comment';
-export { useTaskMentions } from './task-mentions';
-export type { TaskMention, TaskMentionSource } from './task-mentions';
+export { usePmMentions } from './pm-mentions';
 export { pmTextEn, pmTextFor, pmTextFr } from './pm-text';
 export type { PmText } from './pm-text';
 export { PointChipView } from './inline-point-input';
@@ -167,7 +167,7 @@ export function pmEntries({ preset, text, mentions, renderEntry, renderRequest, 
 export function PmChat({ spec, page, screen, preset = 'desktop' }: { readonly spec: ImproveSpec; readonly page: HTMLElement | null; readonly screen?: string; readonly preset?: PmPreset }) {
   const pm = usePmPanel(spec, true, page, screen, { comment: preset === 'desktop' });
   const { text } = pm;
-  const mentions = useTaskMentions(spec.taskMentions, spec.chatProps?.mentions, text);
+  const mentions = usePmMentions(spec.tasks, spec.chatProps?.mentions, text);
   const edit = useCallback((value: string) => { spec.controller.setText(value); }, [spec.controller]);
   const strip = pm.state.mode === 'point' || pm.state.mode === 'navigate';
   const props = { preset, text, selections: pm.state.chips, onRemove: pm.remove, show: pm.state.show, onShow: (value: boolean) => pm.dispatch({ type: 'show', value }),
@@ -189,7 +189,7 @@ function Panel({ binding, pm, strip, full }: { readonly binding: Binding; readon
   const [requests, setRequests] = useState(false);
   // Closing leaves « Mes demandes »: the next full panel opens on the thread.
   const close = () => { setRequests(false); closeLayer(); };
-  const mentions = useTaskMentions(spec.taskMentions, spec.chatProps?.mentions, pm.text);
+  const mentions = usePmMentions(spec.tasks, spec.chatProps?.mentions, pm.text);
   const sheet = useRef<HTMLDivElement | null>(null);
   const submit = pm.sendContext;
   const { dispatch, text } = pm;
@@ -247,7 +247,8 @@ function Panel({ binding, pm, strip, full }: { readonly binding: Binding; readon
         {requests && full ? <>
           <div className="flex shrink-0 items-center py-1 pr-2 pl-2"><Button variant="ghost" data-testid="pm-requests-back" onClick={() => setRequests(false)} className="min-h-11">{text.back}</Button></div>
           <Separator />
-          <div className="min-h-0 flex-1 overflow-auto" data-testid="pm-task-board-seam">{spec.tasks?.renderBoard({ filter: 'mine', variant: 'compact' })}</div>
+          <div className="min-h-0 flex-1 overflow-auto" data-testid="pm-task-board-seam">{spec.tasks && <TaskBoard tasks={spec.tasks.tasks} variant="compact" filter="mine" currentUser={spec.tasks.currentUser} bar={false} title={text.requests}
+            onOpen={spec.tasks.onOpen} cardActions={spec.tasks.cardActions} locale={text.locale} viewerAction="confirmation" className="p-4" />}</div>
         </> : header}
         {pm.problem && <p role="alert" className="m-0 px-4 text-sm">{pm.problem}</p>}
         <div hidden={requests && full} className={cn('min-h-0 flex-1 flex-col', requests && full ? 'hidden' : 'flex',

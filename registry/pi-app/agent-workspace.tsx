@@ -24,8 +24,8 @@ import type { ChatController } from '@hachej/boring-ui-kit/native-chat';
 import { useArtifactFollow } from '@hachej/boring-ui-kit/chat-react';
 import { PiChat } from '../pi-chat/pi-chat';
 import { withChatPlugins } from '../pi-chat-plugins/chat-plugins';
-import { artifactKey } from '../pi-artifacts/artifact';
-import type { ArtifactDescriptor, ArtifactsConfig } from '../pi-artifacts/artifact';
+import { artifactKey, createTaskArtifact, parseTaskArtifact, taskSubjectKey } from '../pi-artifacts/artifact';
+import type { ArtifactDescriptor, ArtifactHostViewApi, ArtifactsConfig } from '../pi-artifacts/artifact';
 import type { ConversationsConfig, PiChatProps } from '../pi-chat/pi-chat';
 import { Dock, DockLayout, DockMain } from '../pi-workspace/dock';
 import { ArtifactWorkspace } from '../pi-workspace/workspace';
@@ -233,7 +233,7 @@ interface AgentWorkspaceBaseProps {
    */
   readonly onUnsavedChange?: ((unsaved: boolean) => void) | undefined;
   /** Renderers for host views, by `kind`. */
-  readonly panels?: Readonly<Record<string, (view: HostView, panel: WorkspacePanelApi) => ReactNode>> | undefined;
+  readonly panels?: Readonly<Record<string, (view: HostView, panel: WorkspacePanelApi & ArtifactHostViewApi) => ReactNode>> | undefined;
   /** Open the panel on each artifact (or new version) the agent makes, unless the person closed it during this turn. Not on a phone. Default true. */
   readonly autoOpen?: boolean;
   /** A back button in a file's viewer bar (for example to the host's file list). */
@@ -405,11 +405,21 @@ export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, titl
   useEffect(() => { setImagePreview(undefined); }, [controller, client, conversationId, chat.onOpenImage]);
   const active = isArtifact(opened) && opened.conversation === conversationId ? opened : null;
   const follow = useArtifactFollow({ controller, conversationId, detect, active, autoOpen,
-    onOpen: selection => { if (conversationId !== undefined) void setOpened({ kind: 'artifact', conversation: conversationId, ...selection }); },
+    onOpen: selection => { if (conversationId !== undefined) void setOpened({ kind: selection.descriptor.type === 'task' ? 'task' : 'artifact', conversation: conversationId, ...selection }); },
     unsaved: () => unsaved.current,
     narrow: () => globalThis.matchMedia?.(`(width < ${sheetBelow}px)`).matches === true,
     showing: path => showsPath(currentView.current, path),
     openPresent: path => { if (unsaved.current) return false; void setOpened({ kind: 'file', path }); return true; },
+    openTask: subject => {
+      if (unsaved.current || conversationId === undefined || !panels?.['task']) return false;
+      void setOpened({ kind: 'task', conversation: conversationId, descriptor: createTaskArtifact(subject), follow: true });
+      return true;
+    },
+    showingTask: subject => {
+      const current = currentView.current;
+      const descriptor = current?.kind === 'task' && current['conversation'] === conversationId ? parseTaskArtifact(current['descriptor']) : undefined;
+      return descriptor !== undefined && taskSubjectKey(descriptor.subject) === taskSubjectKey(subject);
+    },
     answer: chat.actions?.answer });
   const { onShown, onFailed } = follow;
   const kinds = artifactKinds ?? noKinds;
@@ -510,7 +520,7 @@ export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, titl
   const panelOpen = Boolean(active || file || host || panelLibrary);
   // Record a close only after the host's unsaved-changes guard accepted it.
   const close = async () => { if (panelLibrary) { setPanelLibrary(false); return true; } if (!await setOpened(null)) return false; follow.recordClosed(); setFullscreen(false); return true; };
-  const newestOf = (key: string) => follow.versions.filter(version => artifactKey(version) === key);
+  const newestOf = (key: string) => follow.versions.filter((version): version is ArtifactDescriptor => version.type !== 'task' && artifactKey(version) === key);
   const artifacts: ArtifactsConfig = useMemo(() => ({
     open: follow.open, isOpen: follow.isOpen, ...(detect ? { detect } : {}), kinds,
   }), [follow.open, follow.isOpen, detect, kinds]);
@@ -634,7 +644,7 @@ export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, titl
                   setOpened({ kind: 'artifact', conversation: active.conversation, follow: value === 'latest', descriptor: value === 'latest' ? (known[0] ?? active.descriptor) : { ...active.descriptor, revision: value } });
                 }} />
             : file ? <FileViewer key={JSON.stringify([revisionProvider?.workspace, identity, file.path])} onBeforeLeaveChange={registerBeforeLeave} onUnsavedChange={noteUnsaved} path={file.path} locator={locate(file.path)} options={options} onClose={win.close} {...(fileBack ? { onBack: fileBack.onBack, backLabel: fileBack.label } : {})} />
-            : host ? panels![host.kind]!(host, win) : null}
+            : host ? panels![host.kind]!(host, { ...win, onShown, onFailed }) : null}
         </div></ViewerWindowProvider>} /></DockMain>
     {librarySide && <Dock id="library" side="right" open={sideOpen} onOpenChange={setSideOpen} defaultWidth={LIBRARY_WIDTH} minWidth={240} narrowBelow={Math.max(drawerBelow, (docked ? SESSIONS_WIDTH : 0) + (panelOpen ? VIEWER_MIN + CHAT_MIN : CHAT_MIN) + libraryWidth)} narrow="sheet"
       labels={{ region: text.labels.library, resize: text.labels.resizePanel }} >
