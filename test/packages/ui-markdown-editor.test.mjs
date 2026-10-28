@@ -39,7 +39,7 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
     await provider.publication.publish({ operationId: 'seed', atomicity: 'all-or-nothing', changes: [{ kind: 'create', target, expected: { kind: 'absent' }, bytes: new TextEncoder().encode(initial), mediaType: 'text/markdown' }] }, identity);
     const snapshot = (await client.read({ target, revision: { kind: 'latest' } })).snapshot;
     const selectedTarget = options.newDocument ? { ...target, resource: { ...target.resource, path: 'new.md' } } : target;
-    const controller = createMarkdownController({ source: options.newDocument ? { kind: 'new', target: selectedTarget } : { kind: 'saved', snapshot }, identity, client, instanceId: `editor-${++sequence}`, epoch: 'page', readOnly: options.readOnly });
+    const controller = createMarkdownController({ source: options.newDocument ? { kind: 'new', target: selectedTarget } : { kind: 'saved', snapshot }, identity, client, instanceId: `editor-${++sequence}`, epoch: 'page', readOnly: options.readOnly, drafts: options.drafts });
     const container = document.createElement('div'); document.body.append(container);
     const root = createRoot(container);
     const render = async (selected = controller) => { await act(async () => { root.render(createElement(MarkdownEditor, { controller: selected, title: 'Notes', autosave: false, ...(options.props ?? {}) })); }); };
@@ -323,6 +323,54 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
     const rich = await fixture(t, '', { props: { placeholder: 'Rich hint' } });
     assert.equal(rich.container.querySelector('textarea'), null);
     assert.ok(rich.container.querySelector('[data-placeholder="Rich hint"]'), 'rich placeholder unchanged');
+  });
+
+  await t.test('French preserved-block labels and accessible names retain exact source bytes', async t => {
+    const props = { locale: 'fr' };
+    const raw = '---\ntitle: Fictional\n---\n\nA paragraph.\n\n[^one]: A footnote.\n\n[ref]: https://fictional.invalid/\n';
+    const f = await fixture(t, raw, { props });
+    assert.equal(f.container.querySelector('[data-preserved="Front matter"] small').textContent, 'Métadonnées');
+    assert.ok(f.container.querySelector('[aria-label="Code des métadonnées"]'));
+    assert.equal(f.container.querySelector('[data-preserved="Footnote"] small').textContent, 'Note de bas de page');
+    assert.equal(f.container.querySelector('[data-preserved="Reference"] small').textContent, 'Référence');
+    assert.equal(f.controller.getSnapshot().text, raw);
+    assert.equal(f.writes(), 0);
+    const code = f.container.querySelector('[aria-label="Code des métadonnées"]');
+    props.locale = 'en';
+    await f.render();
+    assert.equal(f.container.querySelector('[aria-label="Front matter code"]'), code, 'a locale change retains the native editor and its document');
+    assert.equal(f.controller.getSnapshot().text, raw);
+    const custom = await fixture(t, raw, { props: { locale: 'fr', labels: { preservedBlockName: name => `Bloc ${name}`, frontMatterCode: 'Code YAML' } } });
+    assert.equal(custom.container.querySelector('[data-preserved="Front matter"] small').textContent, 'Bloc Front matter');
+    assert.ok(custom.container.querySelector('[aria-label="Code YAML"]'));
+  });
+
+  await t.test('French proposal diff labels include folds and exact line-ending notices', async t => {
+    const before = Array.from({ length: 12 }, (_, i) => `Ligne ${i}\r\n`).join('') + 'fin';
+    const g = await fixture(t, before, { props: { locale: 'fr' } });
+    await act(async () => g.controller.actions.propose(g.controller.actions.selection(), [{ find: 'Ligne 6', replace: 'Changement' }], ''));
+    assert.ok(g.container.querySelector('[aria-label="Changements de lignes proposés"]'));
+    assert.match(g.container.querySelector('[data-diff-fold]').textContent, /^Afficher \d+ lignes inchangées$/);
+    assert.match(g.container.querySelector('[data-diff-crlf]').textContent, /Fin de ligne CRLF/);
+    await act(async () => { for (const fold of g.container.querySelectorAll('[data-diff-fold]')) fold.click(); });
+    assert.match(g.container.querySelector('[data-diff-no-newline]').textContent, /Aucun saut de ligne à la fin/);
+    const custom = await fixture(t, before, { props: { locale: 'fr', labels: { proposedLineChanges: 'Comparaison', showUnchangedLines: count => `Voir ${count}` } } });
+    await act(async () => custom.controller.actions.propose(custom.controller.actions.selection(), [{ find: 'Ligne 6', replace: 'Changement' }], ''));
+    assert.ok(custom.container.querySelector('[aria-label="Comparaison"]'));
+    assert.match(custom.container.querySelector('[data-diff-fold]').textContent, /^Voir \d+$/);
+  });
+
+  await t.test('French recovery panels translate native revoked, expired and disposed states', async t => {
+    const signal = new AbortController();
+    const f = await fixture(t, 'draft', { drafts: { store: {}, signal: signal.signal, expiresAt: Date.now() + 60_000, retentionMs: 60_000, providerInstanceId: 'fictional-instance' }, props: { locale: 'fr' } });
+    await act(async () => signal.abort());
+    assert.match(f.container.querySelector('[data-boring="text-draft-controls"]').textContent, /Récupération de brouillon : accès révoqué/);
+    await act(async () => f.controller.dispose());
+    assert.match(f.container.querySelector('[data-boring="text-draft-controls"]').textContent, /Récupération de brouillon : fermée/);
+    const expired = await fixture(t, 'draft', { drafts: { store: {}, signal: new AbortController().signal, expiresAt: Date.now() - 1000, retentionMs: 60_000, providerInstanceId: 'fictional-instance' }, props: { locale: 'fr' } });
+    assert.match(expired.container.querySelector('[data-boring="text-draft-controls"]').textContent, /Récupération de brouillon : expirée/);
+    assert.equal(f.writes(), 0);
+    assert.equal(expired.writes(), 0);
   });
 
   await t.test('French draws the source-only notice with translated reasons', async t => {
