@@ -90,6 +90,13 @@ export interface ComposerProps {
   readonly onKeyDown?: ((event: KeyboardEvent<HTMLTextAreaElement>) => void) | undefined;
   readonly textareaRef: Ref<HTMLTextAreaElement>;
   readonly placeholder?: string;
+  /** Optional visual placeholder (for an inline icon); the textarea keeps its accessible label. */
+  readonly placeholderContent?: ReactNode;
+  /** While the `@` picker is open, mark the typed query (`@d-2`) as an inline token behind the text (`data-slot="composer-mention-query"`). */
+  readonly markMentionQuery?: boolean;
+  /** An optional host input editor; normal textarea/IME behavior is unchanged when omitted. */
+  readonly input?: ReactNode;
+  readonly renderInput?: ((input: { readonly text: string; readonly onText: (text: string) => void; readonly onCaret: (offset: number) => void; readonly onSend: () => void }) => ReactNode) | undefined;
   /** `card` (default): chips, then full-width text, then a row of controls, in the host's shadcn InputGroup. `pill` puts the text between
    * the controls on one row. `stacked` and `inline` are compatibility values that render as `card`. */
   readonly layout?: 'card' | 'pill' | 'stacked' | 'inline';
@@ -178,6 +185,27 @@ function PlusActions({ disabled, onAttach, onTakePhoto, onCommands, textarea }: 
         <SlashIcon aria-hidden="true" />{labels.commands}</DropdownMenuItem>}
     </DropdownMenuContent>
   </DropdownMenu>;
+}
+
+/** Draws the text with `start..end` wrapped in a mark, at the textarea's exact font, padding and scroll, under its (transparent) background. */
+function QueryBackdrop({ text, start, end }: { readonly text: string; readonly start: number; readonly end: number }) {
+  const layer = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const node = layer.current, field = node?.parentElement?.querySelector('textarea');
+    if (!node || !field) return;
+    const copy = () => {
+      const style = getComputedStyle(field);
+      for (const name of ['fontFamily', 'fontSize', 'fontWeight', 'letterSpacing', 'lineHeight', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'textIndent', 'wordSpacing'] as const) node.style[name] = style[name];
+      node.style.top = `${field.offsetTop}px`; node.style.left = `${field.offsetLeft}px`; node.style.width = `${field.clientWidth}px`; node.style.height = `${field.clientHeight}px`;
+      node.scrollTop = field.scrollTop;
+    };
+    copy();
+    field.addEventListener('scroll', copy);
+    return () => field.removeEventListener('scroll', copy);
+  });
+  return <div ref={layer} aria-hidden="true" data-slot="composer-mention-backdrop" className="pointer-events-none absolute overflow-hidden whitespace-pre-wrap break-words text-transparent">
+    {text.slice(0, start)}<mark data-slot="composer-mention-query" className="bg-muted text-transparent">{text.slice(start, end)}</mark>{text.slice(end)}
+  </div>;
 }
 
 const MAX_HEIGHT = 208;
@@ -305,7 +333,7 @@ export function Composer(props: ComposerProps) {
         const registered = mentionKind(path, props.mentions);
         const label = registered ? registered.kind.label(registered.path) : props.mentions?.label?.(path) ?? path;
         return <Chip key={path} data-testid="mention-chip" data-path={path} title={label} className="max-w-full md:max-w-[16rem]"
-          media={registered?.kind.icon ?? props.mentions?.icon ?? <FileTextIcon aria-hidden="true" />} label={label}
+          media={registered?.kind.icon ?? props.mentions?.icon ?? <FileTextIcon aria-hidden="true" />} label={registered?.kind.open ? <Button variant="link" size="sm" onClick={() => registered.kind.open?.(registered.path)} className="min-w-0 max-w-full justify-start truncate">{label}</Button> : label}
           actions={<RemoveChip label={labels.remove(label)} onClick={() => props.onText(removeMention(props.text, path))} />} />;
       })}
     </div>}
@@ -329,11 +357,15 @@ export function Composer(props: ComposerProps) {
   </>;
   const pill = layout === 'pill';
   const textareaEl = <InputGroupTextarea ref={setRef} data-testid="composer-input" aria-label={labels.messageInput} rows={1} value={text} disabled={disabled}
-      placeholder={props.placeholder ?? (working ? labels.placeholderWorking : labels.placeholder)}
+      placeholder={props.placeholderContent ? '' : props.placeholder ?? (working ? labels.placeholderWorking : labels.placeholder)}
       {...(slash || mentions ? { role: 'combobox', 'aria-expanded': menuOpen, 'aria-haspopup': 'listbox', 'aria-autocomplete': 'list' } as const : {})}
       onChange={onChange} onKeyDown={onKeyDown} onPaste={onPaste} onKeyUp={event => trackCaret(event.currentTarget)} onClick={event => trackCaret(event.currentTarget)}
       onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }}
-      className={pill ? 'max-h-52 min-h-0 min-w-0' : 'max-h-52 min-h-11'} />;
+      className={cn(props.markMentionQuery && 'relative', pill ? 'max-h-52 min-h-0 min-w-0' : 'max-h-52 min-h-11')} />;
+  // The query mark is a backdrop with the textarea's own metrics behind its transparent text: the text the person edits stays the textarea's.
+  const marked = props.markMentionQuery && mentionOpen && trigger ? <QueryBackdrop text={text} start={trigger.start} end={trigger.end} /> : null;
+  // eslint-disable-next-line react-hooks/refs -- renderInput receives event callbacks, not ref values; an input calls them only on interaction
+  const input = props.renderInput?.({ text, onText, onCaret: setCaret, onSend: () => { if (canSubmit && !menuOpen) props.onSend(); } }) ?? props.input ?? (props.placeholderContent || marked ? <div data-slot="composer-field" className="relative flex min-h-16 w-full min-w-0 flex-1">{marked}{textareaEl}{!text && props.placeholderContent && <span aria-hidden="true" data-slot="composer-placeholder" className="pointer-events-none absolute inset-x-3 top-2 text-sm text-muted-foreground">{props.placeholderContent}</span>}</div> : textareaEl);
   const plus = (canAttach || items.length > 0) && <PlusActions disabled={disabled} textarea={inner} onAttach={canAttach ? () => fileInput.current?.click() : undefined} onTakePhoto={canPhoto ? () => setCameraOpen(true) : undefined} onCommands={items.length > 0 ? openCommands : undefined} />;
   // One child slot either way, so a composer without `start` keeps its exact markup (React ids included).
   const startAndPlus = props.start ? <><div data-testid="composer-start" className="flex shrink-0 items-center gap-1">{props.start}</div>{plus}</> : plus;
@@ -363,18 +395,18 @@ export function Composer(props: ComposerProps) {
     className={cn('relative flex flex-col gap-2', pill && '@container/composer')}>
     {fileEl}
     {slashOpen && Slash && <Slash query={query!} items={items} onSelect={pickSlash} onDismiss={dismiss} />}
-    {mentionOpen && mentions && Mention && <Mention query={trigger!.query} listLabel={mentions.listLabel} renderOption={mentions.renderOption} search={mentions.search} generation={mentions.generation} onSelect={pickMention} onDismiss={dismiss} />}
+    {mentionOpen && mentions && Mention && <Mention query={trigger!.query} listLabel={mentions.listLabel} renderOption={mentions.renderOption} header={typeof mentions.pickerHeader === 'function' ? mentions.pickerHeader(trigger!.query) : mentions.pickerHeader} search={mentions.search} generation={mentions.generation} onSelect={pickMention} onDismiss={dismiss} />}
     {pill && !props.recording && chipList && <div className="flex flex-wrap gap-2">{chipList}</div>}
     {props.recording ? <InputGroup>
       {chipList && <InputGroupAddon align="block-start" className="flex-wrap">{chipList}</InputGroupAddon>}
       <InputGroupAddon align="block-end" data-testid="composer-controls" className="w-full">{props.recording}</InputGroupAddon>
     </InputGroup> : pill ? <InputGroup>
       <InputGroupAddon>{startAndPlus}{feedback && <AnnotateButton feedback={feedback} disabled={disabled} />}</InputGroupAddon>
-      {textareaEl}
+      {input}
       <InputGroupAddon align="inline-end" data-testid="composer-controls">{end}</InputGroupAddon>
     </InputGroup> : <InputGroup>
       {chipList && <InputGroupAddon align="block-start" className="flex-wrap">{chipList}</InputGroupAddon>}
-      {textareaEl}
+      {input}
       <InputGroupAddon align="block-end" data-testid="composer-controls">
         {startAndPlus}
         {feedback && <AnnotateButton feedback={feedback} disabled={disabled} />}

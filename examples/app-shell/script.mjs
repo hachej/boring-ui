@@ -4,6 +4,10 @@ const call = (name, args) => ({ tools: [{ name, args }] });
 const NOTES = '# Picnic plan\n\nA fictional picnic by the invented Lake Placeholder.\n\n- Blanket and baskets\n- Lemonade\n';
 
 export const SOURCES = [{ name: 'app-shell', entries: Object.entries({
+  'On this card': ['Noted as D-201. One question for you: grams in large, or the percentage of the target?'],
+  'The day plan works well.': ['Thanks.'],
+  'pm.points@1': ["C'est noté. Sur les cartes repas de Ma journée, les protéines passeront avant les calories."],
+  'description fictive': ['Merci, je note cette amélioration fictive.'],
   'remplace le riz par 150 g de pâtes': ['Le repas fictif est mis à jour : 150 g de pâtes à la place du riz.'],
   'message 1': ['Réponse un : tu as marché 8 200 pas hier.'],
   'message 2': ['Réponse deux : la moyenne de la semaine est de 7 400 pas.'],

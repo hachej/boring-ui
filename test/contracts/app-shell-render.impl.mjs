@@ -304,9 +304,13 @@ for (const [width, agent, input] of [[390, 'coach', 'text'], [1280, 'agent', 'te
     assert.deepEqual(opened.replaced[0][0], { router: { fictional: 7 } }, 'replaceState keeps the host state');
     await opened.act(async () => new Promise(done => setTimeout(done, 800)));
     const find = selector => opened.window.document.querySelector(selector);
-    const composer = find(`[data-spec=${agent === 'improve' ? 'improve' : 'agent'}] [data-testid=composer-input]`);
+    // « Améliorer l'app » is the PM panel (spec 2), in flow under the page, not a second chat in the agent layer.
+    const composer = find(agent === 'improve' ? '[data-testid=pm-panel]:not([hidden]) [data-testid=composer-input]' : '[data-spec=agent] [data-testid=composer-input]');
     assert.ok(composer?.isConnected, 'the selected composer is mounted in the visible layer');
-    if (input === 'text') {
+    if (agent === 'improve') {
+      assert.equal(find('[data-spec=improve]'), null, 'no improve chat in the agent layer');
+      assert.equal(find('[data-testid=pm-panel]')?.dataset.mode, 'sheet', 'the sheet (C2) opens, never point mode');
+    } else if (input === 'text') {
       assert.equal(opened.window.document.activeElement, composer, 'focus remains on the composer after the drawer settles');
       assert.equal(opened.latest().state, width === 1280 ? 'open' : 'full', 'composer focus promotes half to full');
     } else {
@@ -357,7 +361,7 @@ for (const width of [390, 1280]) {
       { id: 'go', label: 'Ouvrir la boutique', icon: Icon, onSelect: () => calls.push('go') },
       { id: 'wa', label: 'Discuter avec Max sur WhatsApp', icon: Icon, href: '/whatsapp/open?app=fitness', onSelect: () => calls.push('wa') },
     ] };
-    const opened = await openedLayer(t, width, { agent, improve: { ...agentWith(), headerActions: [{ id: 'ask', label: 'Demander', icon: Icon, onSelect: () => calls.push('ask') }] } });
+    const opened = await openedLayer(t, width, { agent, improve: agentWith() });
     const header = await headerOf(opened, 'agent');
     const button = header.querySelector('[data-testid=agent-layer-action-go]');
     assert.equal(button?.tagName, 'BUTTON');
@@ -370,9 +374,12 @@ for (const width of [390, 1280]) {
     assert.equal(link?.hasAttribute('rel'), false, 'no rel unless the host passes one');
     await opened.act(async () => button.dispatchEvent(new opened.window.MouseEvent('click', { bubbles: true, cancelable: true })));
     assert.deepEqual(calls, ['go'], 'the click runs onSelect');
-    const improve = await headerOf(opened, 'improve');
-    assert.ok(improve.querySelector('[data-testid=agent-layer-action-ask]'), 'the product manager has its own actions');
-    assert.equal(improve.querySelector('[data-testid=agent-layer-action-go]'), null, 'and not the coach\'s');
+    // The product manager is the PM panel (spec 2): its header is ^ and × (C2), never the coach's actions.
+    await opened.act(async () => opened.latest().open('improve', 'half'));
+    await opened.act(async () => new Promise(done => setTimeout(done, 50)));
+    const pm = opened.window.document.querySelector('[data-testid=pm-panel]');
+    assert.ok(pm && !pm.hidden, 'the PM sheet opens');
+    assert.equal(pm.querySelector('[data-testid^=agent-layer-action-]'), null, 'and not the coach\'s actions');
     await opened.unmount();
 
     const bare = await openedLayer(t, width, { agent: agentWith() });

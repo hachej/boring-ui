@@ -102,7 +102,7 @@ function ImageThumbnails({ images, onOpenImage }: { readonly images: readonly Im
 }
 
 /** Inline sent mention; workspace openers and host renderers keep their existing authority. */
-function UserMention({ path, text, open, render, kinds }: { readonly path: string; readonly text: string; readonly open: ((path: string) => void) | undefined; readonly render: ((path: string) => ReactNode | undefined) | undefined; readonly kinds?: MentionsConfig['kinds'] }) {
+export function UserMention({ path, text, open, render, kinds }: { readonly path: string; readonly text: string; readonly open: ((path: string) => void) | undefined; readonly render: ((path: string) => ReactNode | undefined) | undefined; readonly kinds?: MentionsConfig['kinds'] }) {
   const registered = mentionKind(path, { kinds });
   const custom = registered ? registered.kind.renderSent?.(registered.path) : render?.(path);
   if (custom !== undefined) return <>{custom}</>;

@@ -3,7 +3,8 @@
 // The account choices: the compact sheet's content (`AccountChoices`) and the expanded sidebar's footer (`NavUser`, the sidebar-07 pattern).
 // Both list « Améliorer l’app » (when the app has an `improve` agent, opened in the AgentLayer), the app's own `menu`, then sign out.
 import { useId } from 'react';
-import { ChevronsUpDownIcon, LogOutIcon, MoonIcon, SparklesIcon } from 'lucide-react';
+import type { CSSProperties } from 'react';
+import { ChevronsUpDownIcon, LogOutIcon, MessageSquarePlusIcon, MoonIcon } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -23,6 +24,9 @@ export interface AccountSpec {
   /** The app's resolved theme: one « Mode sombre » switch in the account menu. The host resolves `system` (its preference) to `light` or `dark` before it gets here. Absent: no row. */
   readonly theme?: { readonly value: 'light' | 'dark'; readonly onChange: (value: 'light' | 'dark') => void };
 }
+
+/** « Améliorer l’app »'s row radius: the theme's large radius plus one step (12px on a 8px theme). */
+const IMPROVE_ROW = { '--radius': 'var(--app-shell-row-radius)' } as CSSProperties;
 
 /** The switch's state: on is dark. */
 const darkOn = (theme: NonNullable<AccountSpec['theme']>) => theme.value === 'dark';
@@ -49,12 +53,13 @@ export function AccountAvatar({ account, size }: { readonly account: AccountSpec
 export function AccountChoices({ account, improve, text, done }: { readonly account: AccountSpec | undefined; readonly improve: boolean; readonly text: AppShellText; readonly done: () => void }) {
   const layer = useAgentLayer();
   const choose = (action: () => void) => () => { done(); afterBack(action); };
-  return <div data-testid="account-menu" className="flex flex-col">
+  return <div data-testid="account-menu" className="flex flex-col" style={{ '--app-shell-row-radius': 'calc(var(--radius) + 4px)' } as CSSProperties}>
     {account && <div className="flex items-center gap-3 px-4 py-3">
       <AccountAvatar account={account} size="lg" />
       <div className="min-w-0"><p className="m-0 truncate font-medium">{account.name}</p>{account.email && <p className="m-0 truncate text-xs text-muted-foreground">{account.email}</p>}</div>
     </div>}
-    {improve && <Button variant="ghost" size="lg" data-testid="account-improve" className={SHEET_ROW} onClick={choose(() => layer.open('improve'))}><SparklesIcon data-icon="inline-start" aria-hidden="true" />{text.improve}</Button>}
+    {/* C1: the first item, 52px on the muted fill, the speech bubble with a plus (icon 20), 15/650. */}
+    {improve && <Button variant="secondary" size="lg" data-testid="account-improve" className={`${SHEET_ROW} min-h-13`} style={IMPROVE_ROW} onClick={choose(() => layer.open('improve'))}><MessageSquarePlusIcon data-icon="inline-start" className="size-5" aria-hidden="true" /><span className="text-[0.9375rem] font-pm-title">{text.improve}</span></Button>}
     {account?.menu.map(entry => <Button key={entry.label} variant="ghost" size="lg" className={SHEET_ROW} onClick={choose(entry.onSelect)}>{entry.label}</Button>)}
     {account?.theme && <ThemeSwitch theme={account.theme} text={text} />}
     {account?.signOut && <Button variant="ghost" size="lg" data-testid="account-sign-out" className={SHEET_ROW} onClick={choose(account.signOut)}><LogOutIcon data-icon="inline-start" aria-hidden="true" />{text.signOut}</Button>}
@@ -76,7 +81,7 @@ export function NavUser({ account, improve, text }: { readonly account: AccountS
         <ChevronsUpDownIcon className="ml-auto size-4" aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuContent side="right" align="end" sideOffset={4} className="app-shell w-56 min-w-56">
-        {improve && <DropdownMenuItem className="pointer-coarse:min-h-11" data-testid="account-improve" onClick={() => layer.open('improve')}><SparklesIcon className="size-4" aria-hidden="true" />{text.improve}</DropdownMenuItem>}
+        {improve && <DropdownMenuItem className="pointer-coarse:min-h-11" data-testid="account-improve" onClick={() => layer.open('improve')}><MessageSquarePlusIcon className="size-4" aria-hidden="true" />{text.improve}</DropdownMenuItem>}
         {account?.menu.map(entry => <DropdownMenuItem key={entry.label} className="pointer-coarse:min-h-11" onClick={entry.onSelect}>{entry.label}</DropdownMenuItem>)}
         {account?.theme && <DropdownMenuCheckboxItem checked={darkOn(account.theme)} closeOnClick data-testid="account-theme" className="pointer-coarse:min-h-11" onCheckedChange={on => account.theme?.onChange(on ? 'dark' : 'light')}><MoonIcon aria-hidden="true" />{text.darkMode}</DropdownMenuCheckboxItem>}
         {account?.signOut && <><DropdownMenuSeparator /><DropdownMenuItem className="pointer-coarse:min-h-11" data-testid="account-sign-out" onClick={account.signOut}><LogOutIcon className="size-4" aria-hidden="true" />{text.signOut}</DropdownMenuItem></>}

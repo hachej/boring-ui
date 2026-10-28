@@ -61,6 +61,27 @@ test('the overlay is a shadow-root host marked data-feedback-overlay, never take
   assert.equal(overlay.host.isConnected, false);
 });
 
+test('corner labels sit on the box top-right corner, element shapes copy the radius, and a clip element bounds the layer', t => {
+  const context = page(t);
+  const save = context.$('save'), data = context.$('data');
+  save.getBoundingClientRect = () => ({ top: 100, left: 20, right: 220, bottom: 140, width: 200, height: 40, x: 20, y: 100 });
+  data.getBoundingClientRect = () => ({ top: 50, left: 0, right: 300, bottom: 400, width: 300, height: 350, x: 0, y: 50 });
+  save.style.borderRadius = '10px';
+  const overlay = createOverlay({ document: context.document, labels: 'corner', shape: 'element', clip: data, mount: context.$('portal') });
+  t.after(() => overlay.dispose());
+  overlay.draw([{ element: save, label: '1', tone: 'hover' }]);
+  const root = overlay.host.shadowRoot;
+  assert.equal(overlay.host.parentElement, context.$('portal'), 'mounted beside the picked area');
+  assert.match(root.querySelector('.label').style.cssText, /top: 100px; left: 220px/, 'the label anchors on the top-right corner');
+  assert.equal(root.querySelector('.box').style.borderRadius, '10px', 'the box takes the element radius');
+  assert.match(root.querySelector('.layer').style.clipPath, /^inset\(50px /, 'nothing draws above the clip element');
+  const plain = createOverlay({ document: context.document });
+  t.after(() => plain.dispose());
+  plain.draw([{ element: save, label: 'Save', tone: 'hover' }]);
+  assert.match(plain.host.shadowRoot.querySelector('.label').style.cssText, /left: 20px/, 'the default label stays above the left edge');
+  assert.equal(plain.host.shadowRoot.querySelector('.box').style.borderRadius, '');
+});
+
 test('hover skips the overlay and ignored subtrees; anything else outside the root refuses the point', async t => {
   const context = page(t);
   const { picker, under } = picking(t, context);

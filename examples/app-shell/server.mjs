@@ -48,9 +48,9 @@ const SIDEBAR_TOKENS = `:root{--sidebar:var(--background);--sidebar-foreground:v
 @theme inline{--color-sidebar:var(--sidebar);--color-sidebar-foreground:var(--sidebar-foreground);--color-sidebar-border:var(--sidebar-border);--color-sidebar-accent:var(--sidebar-accent);--color-sidebar-accent-foreground:var(--sidebar-accent-foreground);--color-sidebar-ring:var(--sidebar-ring)}`;
 
 /** The few Tailwind preflight rules the shell's own markup relies on (a host's shadcn app has the whole preflight); in the base layer, so utilities win. */
-const BASE = '@layer base{*,::before,::after{box-sizing:border-box}ul{list-style:none;margin:0;padding:0}h1,p{margin:0}}';
+const BASE = '@layer base{*,::before,::after{box-sizing:border-box}ul{list-style:none;margin:0;padding:0}h1,p{margin:0}a{color:inherit;text-decoration:inherit}}';
 
-export async function startAppShell({ directory, port = 0, token = randomUUID(), scripted = process.env.STUDIO_MODEL === 'scripted' } = {}) {
+export async function startAppShell({ directory, port = 0, token = randomUUID(), scripted = process.env.STUDIO_MODEL === 'scripted', pageFile = here('./page.tsx'), browserPlugins = [], themeCss = '', pmTranscript } = {}) {
   mkdirSync(join(directory, 'workspace'), { recursive: true });
   const models = scripted ? (await (await import('../../lab/studio/scripted-model.mjs')).createScriptedModels({ sources: (await import('./script.mjs')).SOURCES })).models : createModels();
   if (!scripted) models.setProvider((await import('@earendil-works/pi-ai/providers/openai')).openaiProvider());
@@ -77,12 +77,32 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
   for (const [name, agent] of Object.entries(agents)) created[name] = await conversations.create(agent.id, { start: init => agent.createConversation(harness, context, { init }) });
 
   /** Submit bodies as the browser sent them, and the contexts the transport handed to `requestContext`. */
-  const submits = [], contexts = [];
+  const submits = [], contexts = [], transcribes = [];
   let mealReads = 0;
   const allowed = request => sameSecret(request.headers.get('authorization'), `Bearer ${token}`);
   const resources = createRevisionHandler({ resolve: async request => allowed(request) ? { provider: files, access: person } : null });
   const writerStart = init => agents.writer.createConversation(harness, context, { init });
+  // The in-app PM door as hachej/boring-factory#854 asks for it (a fake: fictional identity, scripted model), plus the host's dictation route
+  // (fixed transcript; dictation belongs to the host, not the PM agent). Same origin stands for « signed in as the person » here; a real host
+  // authenticates its own session.
+  const signedIn = request => request.headers.get('sec-fetch-site') === 'same-origin';
+  const pmStart = init => agents.pm.createConversation(harness, context, { init });
+  const door = {
+    '/api/pm/agent': async request => signedIn(request) && request.method === 'GET' ? Response.json({ agent: 'pm', identity: { runtimeId: 'app', ...person } }) : new Response(null, { status: 403 }),
+    '/api/pm/conversations': createConversationsHandler({ conversations, authenticate: async request => signedIn(request) ? { owner: agents.pm.id, start: pmStart } : null }),
+    '/api/pm/chat': createChatTransportHandler({ authenticate: async request => {
+      const id = Number(new URL(request.url).searchParams.get('conversation'));
+      const conversation = signedIn(request) && Number.isSafeInteger(id) ? await conversations.open(agents.pm.id, id) : undefined;
+      return conversation ? { conversation, context, abortSubmission: submission => harness.abortSubmission(submission, context, conversation.id), requestContext: value => { contexts.push({ conversation: id, value }); } } : null;
+    } }),
+    '/api/host/transcribe': async request => {
+      if (!signedIn(request) || request.method !== 'POST' || !pmTranscript) return new Response(null, { status: signedIn(request) ? 404 : 403 });
+      transcribes.push({ language: new URL(request.url).searchParams.get('language'), bytes: (await request.arrayBuffer()).byteLength });
+      return Response.json(pmTranscript);
+    },
+  };
   const handlers = {
+    ...door,
     '/api/conversations': createConversationsHandler({ conversations, authenticate: async request => allowed(request) ? { owner: agents.writer.id, start: writerStart } : null }),
     '/api/resources': resources,
     '/api/chat': createChatTransportHandler({ authenticate: async request => {
@@ -93,11 +113,12 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
     } }),
   };
 
-  const bundle = await build({ entryPoints: [here('./page.tsx')], bundle: true, write: false, outdir: here('./out'), format: 'esm', platform: 'browser', jsx: 'automatic',
+  const bundle = await build({ entryPoints: [pageFile], plugins: browserPlugins, bundle: true, write: false, outdir: here('./out'), format: 'esm', platform: 'browser', jsx: 'automatic',
     alias: { '@': here('.') }, define: { 'process.env.NODE_ENV': '"production"' }, logLevel: 'silent' });
-  const css = [await buildTailwind({ extraDirectories: ['examples/app-shell', 'registry/app-shell', 'registry/agent-target', 'registry/documents'], extraCss: SIDEBAR_TOKENS }), BASE, ...bundle.outputFiles.filter(file => file.path.endsWith('.css')).map(file => file.text),
+  const css = [await buildTailwind({ extraDirectories: ['examples/app-shell', 'examples/pm-panel', 'registry/pm-panel', 'registry/task-board', 'registry/task-mentions', 'registry/app-shell', 'registry/agent-target', 'registry/documents'], extraCss: SIDEBAR_TOKENS }), BASE, ...bundle.outputFiles.filter(file => file.path.endsWith('.css')).map(file => file.text),
     readFileSync(here('../../registry/feedback/feedback.css'), 'utf8'),
     'html,body,#root{min-height:100%;margin:0}body{background:var(--background);color:var(--foreground);font:15px/1.5 ui-sans-serif,system-ui,sans-serif}',
+    themeCss,
     // The app's own rule for AppShell overlayBlur={false} (an item's CSS stays inside .app-shell; overlays are portalled outside it).
     ':root[data-overlay-blur="off"] :is([data-slot="dialog-overlay"],[data-slot="alert-dialog-overlay"],[data-slot="sheet-overlay"],[data-slot="drawer-overlay"]){-webkit-backdrop-filter:none;backdrop-filter:none}'].join('\n');
   const page = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Forme (fictional)</title>
@@ -122,7 +143,7 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
       if (fixed) return void outgoing.writeHead(200, { 'content-type': fixed[0], 'cache-control': 'no-store' }).end(fixed[1]);
       const handler = handlers[url.pathname];
       const request = handler && await webRequest(incoming, url, { signal: closed.signal });
-      if (request && url.searchParams.get('op') === 'submit' && request.method === 'POST') submits.push({ agent: url.searchParams.get('agent'), body: await request.clone().json().catch(() => undefined) });
+      if (request && url.searchParams.get('op') === 'submit' && request.method === 'POST') submits.push({ agent: url.searchParams.get('agent') ?? (url.pathname.startsWith('/api/pm/') ? 'pm' : null), body: await request.clone().json().catch(() => undefined) });
       await sendWebResponse(request ? await handler(request) : new Response(null, { status: handler ? 413 : 404 }), outgoing, { signal: closed.signal });
     } catch (error) {
       if (!outgoing.headersSent) outgoing.writeHead(500);
@@ -132,7 +153,7 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
   });
   await new Promise(resolve => server.listen(port, '127.0.0.1', resolve));
   return {
-    url: `http://127.0.0.1:${server.address().port}/`, token, harness, conversations, submits, contexts, mealReads: () => mealReads,
+    url: `http://127.0.0.1:${server.address().port}/`, token, harness, conversations, submits, contexts, transcribes, mealReads: () => mealReads,
     close: async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await conversations.dispose(); await harness.close(context); files.close(); db.close(); },
   };
 }

@@ -42,6 +42,12 @@ export interface OverlayOptions {
   readonly styles?: string;
   /** Where the host is appended; defaults to `document.body`. Never inside the application root. */
   readonly mount?: Element;
+  /** `above` (default): the label sits over the box's top-left corner. `corner`: centred on the box's top-right corner, like a numbered pin. */
+  readonly labels?: 'above' | 'corner';
+  /** `element`: each box takes its element's own border radius (default: the overlay's square box). */
+  readonly shape?: 'box' | 'element';
+  /** Nothing is drawn outside this element's rectangle (a scroll container whose bottom part is taken by another surface). */
+  readonly clip?: Element;
 }
 
 const BASE_STYLES = `
@@ -67,7 +73,7 @@ const BASE_STYLES = `
 const LABEL_HEIGHT = 22;
 
 /** Creates the overlay host and its shadow root. Nothing is drawn until `draw` or `highlight`. */
-export function createOverlay({ document, styles, mount }: OverlayOptions): PickerOverlay {
+export function createOverlay({ document, styles, mount, labels = 'above', shape = 'box', clip }: OverlayOptions): PickerOverlay {
   const host = document.createElement('div');
   host.setAttribute(FEEDBACK_OVERLAY_ATTRIBUTE, '');
   host.setAttribute('data-boring', 'feedback');
@@ -96,6 +102,10 @@ export function createOverlay({ document, styles, mount }: OverlayOptions): Pick
     frame = undefined;
     layer.replaceChildren();
     const height = view?.innerHeight ?? 0;
+    if (clip) {
+      const area = clip.getBoundingClientRect();
+      layer.style.clipPath = `inset(${area.top}px ${(view?.innerWidth ?? 0) - area.right}px ${height - area.bottom}px ${area.left}px)`;
+    }
     for (const item of boxes) {
       if (!item.element.isConnected) continue;
       const rect = item.element.getBoundingClientRect();
@@ -104,14 +114,18 @@ export function createOverlay({ document, styles, mount }: OverlayOptions): Pick
       box.dataset['tone'] = item.tone;
       box.setAttribute('part', `box box-${item.tone}`);
       box.style.cssText = `top:${rect.top}px;left:${rect.left}px;width:${rect.width}px;height:${rect.height}px`;
+      if (shape === 'element' && view) box.style.borderRadius = view.getComputedStyle(item.element).borderRadius;
       const label = document.createElement('div');
       label.className = 'label';
       label.dataset['tone'] = item.tone;
       label.setAttribute('part', `label label-${item.tone}`);
       label.textContent = item.label;
-      const above = rect.top - LABEL_HEIGHT - 2;
-      const top = above >= 0 ? above : Math.min(rect.bottom + 2, Math.max(0, height - LABEL_HEIGHT));
-      label.style.cssText = `top:${top}px;left:${Math.max(0, rect.left)}px`;
+      if (labels === 'corner') label.style.cssText = `top:${rect.top}px;left:${rect.right}px`;
+      else {
+        const above = rect.top - LABEL_HEIGHT - 2;
+        const top = above >= 0 ? above : Math.min(rect.bottom + 2, Math.max(0, height - LABEL_HEIGHT));
+        label.style.cssText = `top:${top}px;left:${Math.max(0, rect.left)}px`;
+      }
       layer.append(box, label);
     }
   };

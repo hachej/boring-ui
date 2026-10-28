@@ -46,9 +46,11 @@ export interface FeedbackLabels {
 
 /** The roles and tags people can name; anything else is « this element ». */
 const KINDS_EN: Record<string, string> = { button: 'Button', link: 'Link', a: 'Link', heading: 'Title', img: 'Image', textbox: 'Field', input: 'Field', checkbox: 'Checkbox',
-  combobox: 'List', listbox: 'List', option: 'Choice', tab: 'Tab', row: 'Row', listitem: 'Row', li: 'Row', cell: 'Cell', dialog: 'Window', navigation: 'Menu', menuitem: 'Menu item' };
+  combobox: 'List', listbox: 'List', option: 'Choice', tab: 'Tab', row: 'Row', listitem: 'Row', li: 'Row', cell: 'Cell', dialog: 'Window', navigation: 'Menu', menuitem: 'Menu item',
+  article: 'Card', region: 'Card', group: 'Card', meter: 'Gauge', progressbar: 'Gauge', list: 'List', paragraph: 'Text', p: 'Text', span: 'Text' };
 const KINDS_FR: Record<string, string> = { button: 'Bouton', link: 'Lien', a: 'Lien', heading: 'Titre', img: 'Image', textbox: 'Champ', input: 'Champ', checkbox: 'Case à cocher',
-  combobox: 'Liste', listbox: 'Liste', option: 'Choix', tab: 'Onglet', row: 'Ligne', listitem: 'Ligne', li: 'Ligne', cell: 'Cellule', dialog: 'Fenêtre', navigation: 'Menu', menuitem: 'Entrée du menu' };
+  combobox: 'Liste', listbox: 'Liste', option: 'Choix', tab: 'Onglet', row: 'Ligne', listitem: 'Ligne', li: 'Ligne', cell: 'Cellule', dialog: 'Fenêtre', navigation: 'Menu', menuitem: 'Entrée du menu',
+  article: 'Carte', region: 'Carte', group: 'Carte', meter: 'Jauge', progressbar: 'Jauge', list: 'Liste', paragraph: 'Texte', p: 'Texte', span: 'Texte' };
 const named = (kinds: Record<string, string>, unknown: string) => (kind: string | undefined, name: string | undefined): string => {
   const word = kind ? kinds[kind] : undefined;
   return name ? `${word ?? unknown} « ${name} »` : word ?? unknown;
