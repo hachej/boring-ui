@@ -4,8 +4,8 @@
   "title": "Markdown editor",
   "description": "A host-owned styled wrapper over the concrete borrowed Markdown controller.",
   "dependencies": [
-    "@hachej/boring-ui-kit@^0.4.28",
-    "@hachej/boring-files@^0.4.28",
+    "@hachej/boring-ui-kit@^0.4.29",
+    "@hachej/boring-files@^0.4.29",
     "react@^19.0.0",
     "react-dom@^19.0.0",
     "marked@^17.0.6",
@@ -24,7 +24,7 @@
     "lucide-react@^1.51.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.28/r/button.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.29/r/button.json"
   ],
   "files": [
     {

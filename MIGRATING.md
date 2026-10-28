@@ -1,5 +1,7 @@
 # Unreleased
 
+# Migrating to 0.4.29
+
 - `boring-agent/actions` adds optional `prepareFullContext`: defer host memory preparation until a full-model fallback is needed. Successful extraction and automatic replies skip it; errors prevent an unprepared request. Existing consumers need no change.
 
 # Migrating to 0.4.28
