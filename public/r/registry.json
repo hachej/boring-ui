@@ -2132,7 +2132,7 @@
         "@hachej/boring-files@^0.4.27",
         "react@^19.0.0",
         "lucide-react@^1.51.0",
-        "pdfjs-dist@6.3.289"
+        "pdfjs-dist@6.4.299"
       ],
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.27/r/viewer-frame.json",

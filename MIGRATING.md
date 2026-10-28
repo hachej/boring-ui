@@ -1,6 +1,7 @@
 # Unreleased
 
 - **Blocks CLI and recipes pin shadcn 4.23.0.** `boring-ui-blocks add`/`update` and every documented `npx shadcn@...` command now run `shadcn@4.23.0` (was `4.21.5`); the registry app setup command is the same list with the new pin. Apps keep their installed copies; a reinstall or `update` fetches the 4.23.0 output.
+- **PDF viewer pins pdf.js 6.4.299 (`viewer-pdf`).** The `viewer-pdf` registry item now installs `pdfjs-dist@6.4.299` (was `6.3.289`). An app that already installed the block keeps its own pdf.js until it runs `boring-ui-blocks update`; serve `pdfjs-dist/build/pdf.worker.min.mjs` from the same version. No API change.
 
 # Migrating to 0.4.27
 
