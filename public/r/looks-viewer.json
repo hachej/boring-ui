@@ -8,7 +8,7 @@
     "lucide-react@^1.51.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.26/r/mockup-viewer.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.27/r/mockup-viewer.json"
   ],
   "files": [
     {
