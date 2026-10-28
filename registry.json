@@ -68,7 +68,7 @@
           "color-pm-reply": "var(--pm-reply)",
           "radius-pm-bubble": "var(--pm-radius-bubble)",
           "radius-pm-tail": "var(--pm-radius-tail)",
-          "radius-pm-token": "var(--pm-radius-token)"
+          "radius-pm-token": "var(--pm-radius-token)", "radius-pm-popover": "var(--pm-radius-popover)", "radius-pm-send": "var(--pm-radius-send)", "shadow-pm-popover": "var(--pm-shadow-popover)", "color-pm-label": "var(--pm-label)"
         },
         "light": {
           "radius": "0.75rem",
@@ -124,7 +124,7 @@
           "pm-reply": "transparent",
           "pm-radius-bubble": "1rem",
           "pm-radius-tail": "0.25rem",
-          "pm-radius-token": "0.375rem",
+          "pm-radius-token": "0.375rem", "pm-radius-popover": "0.75rem", "pm-radius-send": "0.5rem", "pm-shadow-popover": "0 8px 24px rgb(0 0 0 / 0.14)", "pm-label": "var(--foreground)",
           "pm-mark-line": "35%",
           "pm-mark-width": "2px"
         },
@@ -181,7 +181,7 @@
           "pm-reply": "transparent",
           "pm-radius-bubble": "1rem",
           "pm-radius-tail": "0.25rem",
-          "pm-radius-token": "0.375rem",
+          "pm-radius-token": "0.375rem", "pm-radius-popover": "0.75rem", "pm-radius-send": "0.5rem", "pm-shadow-popover": "0 8px 24px rgb(0 0 0 / 0.14)", "pm-label": "var(--foreground)",
           "pm-mark-line": "35%",
           "pm-mark-width": "2px"
         }
@@ -2991,6 +2991,7 @@
         { "path": "registry/pm-panel/capture.ts", "type": "registry:lib", "target": "components/pm-panel/capture.ts" },
         { "path": "registry/pm-panel/point-message.tsx", "type": "registry:component", "target": "components/pm-panel/point-message.tsx" },
         { "path": "registry/pm-panel/inline-point-input.tsx", "type": "registry:component", "target": "components/pm-panel/inline-point-input.tsx" },
+        { "path": "registry/pm-panel/point-comment.tsx", "type": "registry:component", "target": "components/pm-panel/point-comment.tsx" },
         { "path": "registry/pm-panel/task-mentions.tsx", "type": "registry:component", "target": "components/pm-panel/task-mentions.tsx" },
         { "path": "registry/pm-panel/pm-text.ts", "type": "registry:lib", "target": "components/pm-panel/pm-text.ts" },
         { "path": "registry/pm-panel/use-improve-agent.ts", "type": "registry:hook", "target": "components/pm-panel/use-improve-agent.ts" }

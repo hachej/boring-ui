@@ -37,6 +37,8 @@ export interface PmComposerProps {
   readonly transcript?: ReactNode;
   /** « Dicté · 0:14 · 2 captures · modifiable » under the draft; absent when there is nothing to say. */
   readonly meta?: string | undefined;
+  /** Strip only: « Envoyé au PM » in place of the idle hint for a moment after a comment went straight to the PM (spec 1 §3b). */
+  readonly notice?: string | undefined;
 }
 const noSelections: readonly PointChip[] = [];
 
@@ -61,7 +63,7 @@ export function PmComposer(props: PmComposerProps) {
   return props.variant === 'strip' ? <Strip {...props} /> : <Compose {...props} />;
 }
 
-function Strip({ preset = 'touch', text = pmTextFr, show, onShow, onReturn, onOpenRecorder, voice }: PmComposerProps) {
+function Strip({ preset = 'touch', text = pmTextFr, show, onShow, onReturn, onOpenRecorder, voice, notice }: PmComposerProps) {
   const touch = preset === 'touch';
   const recording = voice?.phase === 'starting' || voice?.phase === 'recording';
   const paused = recording && Boolean(voice?.paused);
@@ -82,7 +84,7 @@ function Strip({ preset = 'touch', text = pmTextFr, show, onShow, onReturn, onOp
           className={touch ? 'min-h-[38px] min-w-[38px]' : 'min-h-7 min-w-8'}><HandIcon className={touch ? 'size-4' : 'size-3.5'} aria-hidden="true" /></ToggleGroupItem>
       </ToggleGroup>
     </div>}
-    {!recording ? <span data-testid="pm-hint" className={cn('min-w-0 flex-1 text-left', touch ? 'text-[14px] leading-[1.3] text-primary-foreground/90' : 'text-xs text-primary-foreground/80')}>{text.hintIdle}</span>
+    {!recording ? <span data-testid="pm-hint" className={cn('min-w-0 flex-1 text-left', touch ? 'text-[14px] leading-[1.3] text-primary-foreground/90' : 'text-xs text-primary-foreground/80')} data-notice={notice ? '' : undefined} role={notice ? 'status' : undefined}>{notice ?? text.hintIdle}</span>
       // C4: hint, dot and time share one right-aligned group (gap 6), so the hint keeps its two full lines at 390px.
       : <span className="flex min-w-0 flex-1 items-center justify-end gap-1.5">
         {show && <span data-testid="pm-hint" className={cn('min-w-0 text-right text-xs', touch ? 'leading-[1.25] text-primary-foreground/85' : 'text-primary-foreground/80')}>{text.hintRec}</span>}

@@ -14,7 +14,7 @@ The one line is resolved on the first open by `useImproveAgent` (same-origin cal
 ## Exports
 
 - `PmComposer`, `PmComposerProps`, `PmPreset`, `PointerIcon`: the one composer (`touch` | `desktop`), compose and strip variants. No router or backend.
-- `PmChat`: thread plus composer for a column; the strip replaces the composer while pointing.
+- `PmChat`: thread plus composer for a column; the strip replaces the composer while pointing. With the desktop preset (and in the app panel at web width without a coarse pointer) a click in `point.idle` opens `PointComment`, the click-to-comment popover (spec 1 §3b): Enter sends that one pick straight to the PM, « Ajouter au message » keeps it in the draft.
 - `usePmPanel`, `PmPanelState`: picks, pins, recording, merge, meta line, Esc and send context. One per controller instance.
 - `PmPanelProvider`, `ImproveLayout`, `ImproveSpec`: AppShell's in-flow layout (sheet, strip, full panel).
 - `pmEntries`, `pointMessage`, `PointChipView`: the thread's renderers (sent chips, PM reply, request card).

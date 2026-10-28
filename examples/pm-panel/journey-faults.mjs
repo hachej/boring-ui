@@ -14,10 +14,12 @@ async function open(query = '', desktop = false) {
   await browser.click(q('[data-testid=account-improve]'));
   await browser.until('sheet controls are really tappable', `(() => {const e=${q('[data-testid=pm-show]')};if(!e)return false;const r=e.getBoundingClientRect();return e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));})()`);
 }
-async function select() {
+async function select({ desktop = false } = {}) {
   await browser.click(q('[data-testid=pm-show]'));
   await browser.until('point strip ready', `${q('[data-testid=pm-panel]')}.dataset.mode === 'point'`);
   await browser.click(q('[data-testid=card-a]'));
+  // At web width the click opens the comment popover (spec 1 §3b); × keeps a commented pick in the draft.
+  if (desktop) { await browser.until('comment popover', `document.activeElement === ${q('[data-testid=pm-comment-input]')}`); await browser.type(q('[data-testid=pm-comment-input]'), 'Carte'); }
   await browser.click(q('[data-testid=pm-done]'));
   await browser.until('inline selection', `!!${q('[data-pm-marker]')}`);
 }
@@ -41,7 +43,7 @@ const cases = {
     assert.equal(result.hit, true, JSON.stringify(result)); assert.equal(result.overflow, false);
   },
   async ime() {
-    await browser.emulate('desktop'); await open('', true); await select(); const before = app.submits.length;
+    await browser.emulate('desktop'); await open('', true); await select({ desktop: true }); const before = app.submits.length;
     await browser.evaluate(`${q('[data-testid=composer-input]')}.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',keyCode:229,bubbles:true,cancelable:true}))`);
     await pause(500); assert.equal(app.submits.length, before, 'IME confirmation cannot send');
   },

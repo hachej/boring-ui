@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import { ChevronUpIcon, XIcon } from 'lucide-react';
 import type { EntryRecord } from '@earendil-works/pi-durable';
@@ -12,6 +12,7 @@ import { chatTextFor } from '../pi-chat/locale';
 import { withChatPlugins } from '../pi-chat-plugins/chat-plugins';
 import { cn } from '../utils/utils';
 import { PmComposer } from './pm-composer';
+import { PointComment } from './point-comment';
 import { usePmPanel } from './use-pm-panel';
 import { POINT_PREFACE, pointMessage } from './point-message';
 import { useTaskMentions } from './task-mentions';
@@ -27,7 +28,8 @@ import type { PiChatProps } from '../pi-chat/pi-chat';
 export { PmComposer, PointerIcon } from './pm-composer';
 export type { PmComposerProps, PmPreset } from './pm-composer';
 export { usePmPanel } from './use-pm-panel';
-export type { PmPanelState } from './use-pm-panel';
+export type { PmComment, PmPanelState } from './use-pm-panel';
+export { PointComment } from './point-comment';
 export { useTaskMentions } from './task-mentions';
 export type { TaskMention, TaskMentionSource } from './task-mentions';
 export { pmTextEn, pmTextFor, pmTextFr } from './pm-text';
@@ -98,10 +100,24 @@ function BoundLayout({ binding: bound, children, navigation, screen }: { readonl
 }
 
 function PanelSession({ binding, page, screen, report }: { readonly binding: Binding; readonly page: HTMLElement | null; readonly screen: string | undefined; readonly report: (controller: ImproveSpec['controller'], mode: string, show: boolean) => void }) {
-  const pm = usePmPanel(binding.spec, binding.open, page, screen);
+  const pm = usePmPanel(binding.spec, binding.open, page, screen, { comment: useFinePointer() });
   const { mode, show } = pm.state;
   useLayoutEffect(() => { report(binding.spec.controller, mode, show); }, [binding.spec.controller, mode, show, report]);
-  return <Panel binding={binding} pm={pm} strip={mode === 'point' || mode === 'navigate'} full={mode === 'full'} />;
+  return <>
+    <Panel binding={binding} pm={pm} strip={mode === 'point' || mode === 'navigate'} full={mode === 'full'} />
+    {pm.comment && page && <ChatTextProvider value={chatTextFor(binding.spec.chatProps?.locale ?? 'fr')}><PointComment comment={pm.comment} frame={page} text={pm.text} /></ChatTextProvider>}
+  </>;
+}
+
+/** The desktop preset's click to comment (spec 1 §3b) follows the pointer: web width without a touch screen as the main pointer, never a phone. */
+const COARSE = '(pointer: coarse)', WIDE = '(min-width: 768px)';
+const fine = () => !matchMedia(COARSE).matches && matchMedia(WIDE).matches;
+function useFinePointer() {
+  return useSyncExternalStore(listener => {
+    const queries = [matchMedia(COARSE), matchMedia(WIDE)];
+    for (const query of queries) query.addEventListener('change', listener);
+    return () => { for (const query of queries) query.removeEventListener('change', listener); };
+  }, fine, () => false);
 }
 
 /** The grabber: drag up opens the full panel, drag down closes (the draft stays). */
@@ -149,13 +165,13 @@ export function pmEntries({ preset, text, mentions, renderEntry, renderRequest, 
  * replaces while pointing. `page` is the element the point layer picks in (Studio: the app's device frame).
  */
 export function PmChat({ spec, page, screen, preset = 'desktop' }: { readonly spec: ImproveSpec; readonly page: HTMLElement | null; readonly screen?: string; readonly preset?: PmPreset }) {
-  const pm = usePmPanel(spec, true, page, screen);
+  const pm = usePmPanel(spec, true, page, screen, { comment: preset === 'desktop' });
   const { text } = pm;
   const mentions = useTaskMentions(spec.taskMentions, spec.chatProps?.mentions, text);
   const edit = useCallback((value: string) => { spec.controller.setText(value); }, [spec.controller]);
   const strip = pm.state.mode === 'point' || pm.state.mode === 'navigate';
   const props = { preset, text, selections: pm.state.chips, onRemove: pm.remove, show: pm.state.show, onShow: (value: boolean) => pm.dispatch({ type: 'show', value }),
-    onPoint: () => pm.dispatch({ type: 'point' }), onReturn: pm.returnToComposer, onOpenRecorder: () => pm.dispatch({ type: 'return' }), focusInput: pm.focusVersion > 0 && !strip, voice: pm.voice, meta: pm.meta };
+    onPoint: () => pm.dispatch({ type: 'point' }), onReturn: pm.returnToComposer, onOpenRecorder: () => pm.dispatch({ type: 'return' }), focusInput: pm.focusVersion > 0 && !strip, voice: pm.voice, meta: pm.meta, notice: pm.sent ? text.sentToPm : undefined };
   return <ChatTextProvider value={chatTextFor(spec.chatProps?.locale ?? 'en')}><div data-testid="pm-chat" data-mode={pm.state.mode} data-preset={preset} className={cn('flex min-h-0 flex-1 flex-col',
     '[&_[data-boring=pi-chat]]:bg-transparent [&_[data-testid=empty-state]]:hidden [&_[data-testid=transcript-scroll]>div:last-child]:flex [&_[data-testid=transcript-scroll]>div:last-child]:min-h-full [&_[data-testid=transcript-scroll]>div:last-child]:flex-col [&_[data-testid=transcript-scroll]>div:last-child]:justify-end [&_[data-boring=pi-chat]>footer]:px-3.5 [&_[data-boring=pi-chat]>footer]:pt-0 [&_[data-boring=pi-chat]>footer]:pb-3.5 [&_[data-testid=transcript]]:gap-2.5 [&_[data-testid=transcript-scroll]>div:last-child]:px-[18px] [&_[data-testid=transcript-scroll]>div:last-child]:py-4 [&_[data-testid=transcript-history]]:min-h-0 [&_[data-testid=transcript-history]>span:not([role])]:hidden [&_[data-testid=transcript-navigation]]:pointer-events-none [&_[data-testid=transcript-navigation]]:absolute [&_[data-testid=transcript-navigation]]:inset-x-0 [&_[data-testid=transcript-navigation]]:bottom-0 [&_[data-testid=transcript-navigation]_*]:pointer-events-auto')}>
     <p role="status" aria-live="polite" data-testid="pm-announce" className="sr-only">{pm.announcement}</p>
@@ -164,6 +180,7 @@ export function PmChat({ spec, page, screen, preset = 'desktop' }: { readonly sp
       labels={{ ...spec.chatProps?.labels, placeholder: `${text.placeholderBefore}↖${text.placeholderAfter}`, add: text.attach, send: text.send }} onFiles={spec.chatProps?.onFiles ?? imageFiles}
       sendContext={pm.sendContext} renderEntry={pmEntries({ preset, text, mentions, renderEntry: spec.chatProps?.renderEntry, renderRequest: spec.tasks?.renderRequest, edit })}
       renderComposer={composer => strip ? <PmComposer variant="strip" {...props} /> : <PmComposer {...props} composer={{ ...composer, sendBlocked: composer.sendBlocked || pm.voice.phase === 'processing' }} />} />
+    {pm.comment && page && <PointComment comment={pm.comment} frame={page} text={text} />}
   </div></ChatTextProvider>;
 }
 
@@ -177,7 +194,8 @@ function Panel({ binding, pm, strip, full }: { readonly binding: Binding; readon
   const submit = pm.sendContext;
   const { dispatch, text } = pm;
   // Plain-text sends have no context attachment, but still expand on observed native admission.
-  const admitted = pm.snapshot.send.kind === 'admitted' ? pm.snapshot.send.attempt.requestId : undefined;
+  // A comment sent from the popover keeps the strip (spec 1 §3b): only the composer's own sends open C7.
+  const admitted = pm.snapshot.send.kind === 'admitted' && !pm.quietSend(pm.snapshot.send.attempt.draft.text) ? pm.snapshot.send.attempt.requestId : undefined;
   const previousAdmission = useRef<string | undefined>(undefined);
   // The full panel is its own Back step (full, then sheet, then closed): the shell owns the history entries.
   const { onFull } = binding;
@@ -196,7 +214,7 @@ function Panel({ binding, pm, strip, full }: { readonly binding: Binding; readon
   }, [focusVersion, open, strip, spec.controller]);
   const edit = useCallback((value: string) => { spec.controller.setText(value); }, [spec.controller]);
   const pointProps = { preset: 'touch' as const, text, selections: pm.state.chips, onRemove: pm.remove, show: pm.state.show, onShow: (value: boolean) => pm.dispatch({ type: 'show', value }),
-    onPoint: () => pm.dispatch({ type: 'point' }), onReturn: pm.returnToComposer, onOpenRecorder: () => pm.dispatch({ type: 'return' }), focusInput: focusVersion > 0 && open && !strip, voice: pm.voice, meta: pm.meta };
+    onPoint: () => pm.dispatch({ type: 'point' }), onReturn: pm.returnToComposer, onOpenRecorder: () => pm.dispatch({ type: 'return' }), focusInput: focusVersion > 0 && open && !strip, voice: pm.voice, meta: pm.meta, notice: pm.sent ? text.sentToPm : undefined };
   const chatText = chatTextFor(spec.chatProps?.locale ?? 'fr');
   const review = !full && pm.meta !== undefined;
   const transcript = pm.voice.phase === 'processing' ? <p data-testid="pm-transcribing" role="status" className="m-0 px-2">Transcription…</p> : pm.liveText && <p role="status" data-testid="pm-live-transcript" className="m-0 px-2">{pm.liveText}</p>;

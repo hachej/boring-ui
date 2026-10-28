@@ -89,6 +89,38 @@ try {
     }
     await uncovered(`${device} C3`);
 
+    if (device === 'desktop') {
+      // Web width, a mouse: click to comment (spec 1 §3b). A click in point.idle opens the popover at the pin with focus in the field.
+      const comment = q('[data-testid=pm-comment]'), field = q('[data-testid=pm-comment-input]');
+      const commentOpen = stage => browser.until(stage, `!!${comment} && ${comment}.style.visibility !== 'hidden' && document.activeElement === ${field}`);
+      await press('[data-testid=gauge]');
+      await commentOpen('comment popover');
+      assert.equal(await browser.evaluate(`${comment}.getAttribute('aria-label')`), 'Commenter Jauge · Protéines');
+      assert.equal(await browser.evaluate(`${field}.placeholder + '|' + ${q('[data-testid=pm-comment-send]')}.getAttribute('aria-label')`), 'Votre commentaire…|Envoyer au PM');
+      // Enter sends one message with that pick straight to the PM; the panel stays on the strip, the draft is unchanged.
+      const sent = app.submits.length;
+      await browser.type(field, 'Les grammes ici');
+      await browser.press('Enter');
+      await browser.until('Envoyé au PM', `!${comment} && ${q('[data-testid=pm-hint]')}?.textContent === 'Envoyé au PM' && ${pinLabels}.length === 0 && ${mode('point')}`);
+      for (let wait = 0; wait < 50 && app.submits.length === sent; wait++) await pause(100);
+      assert.equal(app.submits.length, sent + 1, 'one message');
+      assert.equal(await browser.evaluate(mode('point')), true, 'a comment does not open the full panel');
+      // Esc cancels the pick and closes the popover.
+      await press('[data-testid=gauge]'); await commentOpen('again');
+      await browser.press('Escape');
+      await browser.until('cancelled', `!${comment} && ${pinLabels}.length === 0 && ${mode('point')}`);
+      // A click outside with text keeps the pick and its text in the draft and picks nothing; « Ajouter au message » does the same.
+      await press('[data-testid=gauge]'); await commentOpen('gauge');
+      await browser.type(field, 'Jauge trop petite');
+      await press('[data-testid=card-a]');
+      await browser.until('kept', `!${comment} && JSON.stringify(${pinLabels}) === '["1"]'`);
+      await press('[data-testid=card-a]'); await commentOpen('card');
+      await browser.click(q('[data-testid=pm-comment-add]'));
+      await browser.click(field); await browser.type(field, 'Carte');
+      await browser.press('Enter');
+      await browser.until('two pins', `!${comment} && JSON.stringify(${pinLabels}) === '["1","2"]'`);
+      assert.equal(await activated(), 1, 'clicks in select mode never trigger the app');
+    } else {
     // Select mode: a tap selects and never activates; tapping a picked element removes it; numbers stay in order.
     await press('[data-testid=card-a]'); await press('[data-testid=gauge]');
     await browser.until('two pins', `JSON.stringify(${pinLabels}) === '["1","2"]'`);
@@ -99,6 +131,7 @@ try {
     assert.match(await browser.evaluate(`${q('[data-testid=pm-announce]')}.textContent`), /^Élément 1 retiré$/);
     await press('[data-testid=card-a]');
     await browser.until('card again', `JSON.stringify(${pinLabels}) === '["1","2"]'`);
+    }
     const pin = await browser.evaluate(`(() => { const label = [...document.querySelectorAll('[data-feedback-overlay]')].flatMap(h => [...(h.shadowRoot?.querySelectorAll('.label') ?? [])]).find(l => l.textContent === '1').getBoundingClientRect(); const box = ${q('[data-testid=gauge]')}.getBoundingClientRect(); return { w: label.width, h: label.height, cx: label.left + label.width / 2 - box.right, cy: label.top + label.height / 2 - box.top }; })()`);
     assert.deepEqual([pin.w, pin.h], [24, 24], 'R3: a 24px pin');
     assert.ok(Math.abs(pin.cx) <= 1 && Math.abs(pin.cy) <= 1, `R3: centred on the top-right corner ${JSON.stringify(pin)}`);
@@ -189,7 +222,7 @@ try {
     assert.equal(await browser.evaluate(`Math.round(${q('[data-testid=pm-panel]')}.getBoundingClientRect().top)`), 40, 'C7 starts 40px from the top');
     assert.equal(await browser.evaluate(`${q('[data-testid=pm-title]')}.nextElementSibling.textContent`), 'Le chef de projet · Coach Max');
     assert.equal(await browser.evaluate(`!!${q('[data-testid=pm-reply] [data-testid=pm-reply]')} || getComputedStyle(${q('[data-testid=pm-reply] p')}).backgroundColor`), 'rgba(0, 0, 0, 0)', 'the PM reply has no bubble');
-    assert.match(await browser.evaluate(`${q('[data-testid=pm-sent-meta]')}.textContent`), /^Dicté · \d:\d\d · 1 capture$/);
+    assert.match(await browser.evaluate(`[...document.querySelectorAll('[data-testid=pm-sent-meta]')].at(-1).textContent`), /^Dicté · \d:\d\d · 1 capture$/);
     if (!oneLine) {
       // « Modifier » puts the request text in the composer; « Confirmer » changes the status pill.
       await press('[data-testid=pm-request-modify]');

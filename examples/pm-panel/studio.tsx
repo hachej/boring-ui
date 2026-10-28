@@ -11,7 +11,7 @@ const STUDIO: CSSProperties = {
   '--secondary': '#e2e9ec', '--secondary-foreground': '#1c2327', '--accent': '#e2e9ec', '--accent-foreground': '#1c2327', '--border': '#d5dde0', '--input': '#d5dde0', '--ring': '#8a979d', '--radius': '9px',
   '--pm-mark': '#5bbbe6', '--pm-mark-foreground': '#1c2327', '--pm-mark-line': '60%', '--pm-mark-width': '2px', '--pm-mic': '#5bbbe6', '--pm-mic-foreground': '#1c2327', '--pm-send-idle': '#c3ccd0', '--pm-line': 'transparent',
   '--pm-strip-line': '#5b6770', '--pm-hint': '#8a979d', '--pm-radius-box': '16px', '--pm-radius-toggle': '10px', '--pm-radius-segment': '8px', '--pm-radius-control': '9px',
-  '--pm-bubble': '#5bbbe6', '--pm-bubble-foreground': '#1c2327', '--pm-reply': '#e2e9ec', '--pm-radius-bubble': '14px', '--pm-radius-tail': '4px', '--pm-radius-token': '6px',
+  '--pm-bubble': '#5bbbe6', '--pm-bubble-foreground': '#1c2327', '--pm-reply': '#e2e9ec', '--pm-radius-bubble': '14px', '--pm-radius-tail': '4px', '--pm-radius-token': '6px', '--pm-radius-popover': '12px', '--pm-radius-send': '8px', '--pm-shadow-popover': '0 8px 24px rgba(28,35,39,0.14)', '--pm-label': '#3b4a52',
   background: '#e8eef0', color: '#1c2327', fontFamily: "'DM Sans', system-ui, sans-serif",
 } as CSSProperties;
 const circle = (active = false): CSSProperties => ({ width: 32, height: 32, borderRadius: 16, background: active ? '#fff' : '#dfe6e9', border: '1px solid #d5dde0', boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600, ...(active ? { boxShadow: '0 0 0 3px #5bbbe6' } : {}) });

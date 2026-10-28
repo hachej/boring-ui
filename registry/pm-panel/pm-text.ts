@@ -31,6 +31,12 @@ export interface PmText {
   readonly requests: string;
   readonly back: string;
   readonly subtitle: (app: string) => string;
+  /** Click to comment (desktop, spec 1 §3b). */
+  readonly commentOn: (kind: string, label: string) => string;
+  readonly commentPlaceholder: string;
+  readonly addToMessage: string;
+  readonly sendToPm: string;
+  readonly sentToPm: string;
 }
 
 /** `0:14`: whole seconds, never a fraction. */
@@ -52,6 +58,7 @@ export const pmTextFr: PmText = {
   added: (n, kind, label) => `Élément ${n} ajouté : ${kind} · ${label}`, removed: n => `Élément ${n} retiré`,
   title: 'Améliorer l’app', openPanel: 'Ouvrir le panneau', close: 'Fermer', review: 'Relisez, puis envoyez', requests: 'Mes demandes', back: '‹ Retour',
   subtitle: app => `Le chef de projet · ${app}`,
+  commentOn: (kind, label) => `Commenter ${kind} · ${label}`, commentPlaceholder: 'Votre commentaire…', addToMessage: 'Ajouter au message', sendToPm: 'Envoyer au PM', sentToPm: 'Envoyé au PM',
 };
 
 export const pmTextEn: PmText = {
@@ -66,6 +73,7 @@ export const pmTextEn: PmText = {
   added: (n, kind, label) => `Item ${n} added: ${kind} · ${label}`, removed: n => `Item ${n} removed`,
   title: 'Improve the app', openPanel: 'Open the panel', close: 'Close', review: 'Review, then send', requests: 'My requests', back: '‹ Back',
   subtitle: app => `The project lead · ${app}`,
+  commentOn: (kind, label) => `Comment on ${kind} · ${label}`, commentPlaceholder: 'Your comment…', addToMessage: 'Add to message', sendToPm: 'Send to the PM', sentToPm: 'Sent to the PM',
 };
 
 export const pmTextFor = (locale: string | undefined): PmText => locale?.startsWith('en') ? pmTextEn : pmTextFr;

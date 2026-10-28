@@ -77,7 +77,26 @@ function keepMarkers(controller: NativeChatController, chips: readonly PointChip
   if (missing) controller.setText(appendToDraft(text, missing));
 }
 
-export function usePmPanel(spec: ImproveSpec, open: boolean, page: HTMLElement | null, screen = 'app') {
+const ADD_TO_MESSAGE = 'boring-ui.pm.add-to-message';
+const readAddToMessage = () => { try { return localStorage.getItem(ADD_TO_MESSAGE) === '1'; } catch { return false; } };
+
+/** The open click-to-comment popover (spec 1 §3b): the pick it comments on, the field and the two ways out. */
+export interface PmComment {
+  readonly chip: PointChip;
+  readonly element: Element;
+  readonly text: string;
+  readonly setText: (value: string) => void;
+  readonly addToMessage: boolean;
+  readonly setAddToMessage: (value: boolean) => void;
+  /** Enter or the send button: straight to the PM, or into the draft when « Ajouter au message » is checked. */
+  readonly submit: () => void;
+  /** A click outside: an empty field cancels the pick, text goes into the draft. */
+  readonly outside: () => void;
+  readonly transcribe: ((audio: Blob, signal: AbortSignal) => Promise<string>) | undefined;
+}
+
+/** `comment`: a click in `point.idle` opens the comment popover at the pin (the desktop preset, spec 1 §3b). */
+export function usePmPanel(spec: ImproveSpec, open: boolean, page: HTMLElement | null, screen = 'app', { comment: commenting = false }: { readonly comment?: boolean } = {}) {
   const text = pmTextFor(spec.chatProps?.locale);
   const [announcement, setAnnouncement] = useState('');
   const [state, dispatch] = useReducer(pointReducer, undefined, createPointState);
@@ -103,10 +122,13 @@ export function usePmPanel(spec: ImproveSpec, open: boolean, page: HTMLElement |
   // Esc = « Terminé » while the strip shows (spec 1 §1): it keeps and transcribes the recording. Registered in a layout effect at mount, so it
   // runs before the voice attempt's own Escape (which cancels a plain dictation) and the picker's; elsewhere Escape keeps their meaning.
   const pointingRef = useRef(false), returnRef = useRef<() => void>(() => {}), removeRef = useRef<(id: string) => void>(() => {});
+  // The open comment popover: Esc cancels its pick first; the strip's × is the second Esc.
+  const commentRef = useRef<{ readonly id: string; readonly cancel: () => void; readonly outside: () => void } | undefined>(undefined);
   useLayoutEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.isComposing || !pointingRef.current) return;
-      event.preventDefault(); event.stopImmediatePropagation(); returnRef.current();
+      event.preventDefault(); event.stopImmediatePropagation();
+      if (commentRef.current) commentRef.current.cancel(); else returnRef.current();
     };
     window.addEventListener('keydown', onKey, { capture: true });
     return () => window.removeEventListener('keydown', onKey, { capture: true });
@@ -173,6 +195,12 @@ export function usePmPanel(spec: ImproveSpec, open: boolean, page: HTMLElement |
     start, finish, cancel,
     ...(item?.canPause ? { pause: () => core.pause(item), resume: () => core.resume(item) } : {}),
   };
+  const [commentAt, setCommentAt] = useState<{ readonly id: string; readonly element: Element }>();
+  const [commentText, setCommentText] = useState('');
+  const [addToMessage, setAddToMessageState] = useState(readAddToMessage);
+  const [sentNotice, setSentNotice] = useState(0);
+  const commentingRef = useRef(commenting);
+  useLayoutEffect(() => { commentingRef.current = commenting; });
   const selectedElements = useRef(new Map<string, Element>());
   const anchors = useRef(new Map<string, import('@hachej/boring-feedback/page').AppElementAnchor>());
   const selectionRoot = page?.closest('[data-pm-layout]') ?? page;
@@ -180,6 +208,8 @@ export function usePmPanel(spec: ImproveSpec, open: boolean, page: HTMLElement |
     if (!open || !state.show || state.mode !== 'point' || !selectionRoot) return;
     const picker = createPicker({ root: selectionRoot, policy, styles: PICK_STYLES, tap: 'pick', wheel: false, keys: 'outside-ignored',
       onPick: picked => {
+      // With the comment popover open, a click on the page is a click outside it: it settles that pick and picks nothing.
+      if (commentRef.current) { commentRef.current.outside(); return; }
       const element = meaningful(picked, selectionRoot);
       // Tapping an already picked element removes that pick.
       for (const [id, chosen] of selectedElements.current) if (chosen === element) { removeRef.current(id); return; }
@@ -201,6 +231,8 @@ export function usePmPanel(spec: ImproveSpec, open: boolean, page: HTMLElement |
         const recordingNow = attempt?.phase === 'recording' || attempt?.phase === 'starting';
         const at = recordingNow ? (attempt.offset ?? 0) + (attempt.capture.progress()?.elapsedMs ?? 0) / 1000 : null;
         dispatch({ type: 'pick', chip: { id, kind, label, screen, at, box: [box.x, box.y, box.width, box.height] } });
+        // While recording the voice is the comment: the click only pins.
+        if (commentingRef.current && !recordingNow) { setCommentText(''); setCommentAt({ id, element }); }
         setAnnouncement(text.added(number, kind, label));
         setProblem(undefined);
       } catch { setProblem('La capture de cet élément est indisponible. Réessayez.'); }
@@ -209,6 +241,13 @@ export function usePmPanel(spec: ImproveSpec, open: boolean, page: HTMLElement |
     return () => picker.dispose();
   }, [open, state.show, state.mode, policy, selectionRoot, page, screen, text]);
   const sequence = useRef(0);
+  // Messages sent from the popover: the app panel stays on the strip when they are admitted (no C7).
+  const quietTexts = useRef(new Set<string>());
+  useEffect(() => {
+    if (!sentNotice) return;
+    const timer = setTimeout(() => setSentNotice(0), 3000);
+    return () => clearTimeout(timer);
+  }, [sentNotice]);
   // Native attachment remove controls also remove the corresponding marker and pin.
   useEffect(() => {
     for (const chip of state.chips) if (!pendingBatch.current?.ids.includes(chip.id) && !snapshot.draft.attachments.some(attachment => attachment.id === chip.id) && snapshot.send.kind !== 'submitting' && snapshot.send.kind !== 'unknown' && snapshot.send.kind !== 'validating') {
@@ -278,16 +317,62 @@ export function usePmPanel(spec: ImproveSpec, open: boolean, page: HTMLElement |
     dispatch({ type: 'remove', id }); selectedElements.current.delete(id); anchors.current.delete(id);
     setAnnouncement(text.removed(chip.number));
   };
+  const commentId = commentAt?.id;
+  const commentChip = commentId ? state.chips.find(chip => chip.id === commentId) : undefined;
+  const closeComment = () => { commentRef.current = undefined; setCommentAt(undefined); setCommentText(''); };
+  const cancelComment = () => { if (commentId) remove(commentId); closeComment(); };
+  // « Ajouter au message », or a click outside with text: the chip, then the text after it, in the draft (spec 1 §3b).
+  const keepComment = () => {
+    if (!commentChip) return;
+    const draft = spec.controller.getSnapshot().draft.text, words = commentText.trim();
+    spec.controller.setText(appendToDraft(draft, words ? `${marker(commentChip.number)} ${words}` : marker(commentChip.number)));
+    closeComment();
+  };
+  // Straight to the PM: the comment and its one chip, the capture and that pick, as their own message; the draft keeps everything else.
+  const sendComment = () => {
+    const words = commentText.trim();
+    if (!commentChip || !words) return;
+    const image = spec.controller.getSnapshot().draft.attachments.find(attachment => attachment.id === commentChip.id);
+    const anchor = anchors.current.get(commentChip.id);
+    const payload = { format: 'pm.points@1', captureBatch: `${batchPrefix}-${++batchSequence.current}`, transcriptSegments: [], alignment: 'unavailable', policy: { version: policy.version, widened: policy.widened },
+      selections: [{ n: 1, kind: commentChip.kind, label: commentChip.label, screen: commentChip.screen, atMs: null, t: null, selector: anchor?.signals.path.join(' > '),
+        screenshot: { imageIndex: image ? 0 : -1, mimeType: image?.content.mimeType }, anchor }] };
+    const message = `${words} ${marker(1)}\n${POINT_PREFACE}${JSON.stringify(payload)}`;
+    remove(commentChip.id); closeComment();
+    quietTexts.current.add(message);
+    const controller = spec.controller;
+    void controller.send('followUp', { text: message, attachments: image ? [{ ...image, name: image.name.replace(marker(commentChip.number), marker(1)) }] : [], restore: { text: words } })
+      .then(submission => { if (submission && mounted.current) setSentNotice(value => value + 1); }, () => { if (mounted.current) setProblem('L’envoi a échoué. Votre commentaire est dans le brouillon.'); });
+  };
+  const setAddToMessage = (value: boolean) => {
+    setAddToMessageState(value);
+    try { localStorage.setItem(ADD_TO_MESSAGE, value ? '1' : '0'); } catch { /* the choice lasts this session */ }
+  };
+  const comment: PmComment | undefined = commentChip && commentAt ? {
+    chip: commentChip, element: commentAt.element, text: commentText, setText: setCommentText, addToMessage, setAddToMessage,
+    submit: () => { if (addToMessage) keepComment(); else sendComment(); },
+    outside: () => { if (commentText.trim()) keepComment(); else cancelComment(); },
+    transcribe: voiceConfig ? async (audio, signal) => { const result = await voiceConfig.transcribe(audio, signal); return typeof result === 'string' ? result : result.text; } : undefined,
+  } : undefined;
+  // The popover's pick went away (sent, removed or the panel closed): nothing is left to comment on.
+  if (commentAt && (!commentChip || !open || state.mode !== 'point')) setCommentAt(undefined);
   const returnToComposer = () => {
+    // × settles an open popover like a click outside it; a cancelled pick gets no marker.
+    const cancelled = comment && !comment.text.trim() ? comment.chip.id : undefined;
+    comment?.outside();
     if (recording) { finish(); return; }
-    keepMarkers(spec.controller, state.chips);
+    keepMarkers(spec.controller, state.chips.filter(chip => chip.id !== cancelled));
     dispatch({ type: 'return' }); setFocusVersion(value => value + 1);
   };
-  useLayoutEffect(() => { returnRef.current = returnToComposer; removeRef.current = remove; pointingRef.current = open && (state.mode === 'point' || state.mode === 'navigate'); });
+  useLayoutEffect(() => {
+    returnRef.current = returnToComposer; removeRef.current = remove; pointingRef.current = open && (state.mode === 'point' || state.mode === 'navigate');
+    commentRef.current = comment ? { id: comment.chip.id, cancel: cancelComment, outside: comment.outside } : undefined;
+  });
+  const quietSend = useCallback((text: string | undefined) => text !== undefined && quietTexts.current.has(text), []);
 
   // The meta line under the draft (spec 1 §5): dictated time and captures, « Écrit · n captures » without dictation, nothing with neither.
   const meta = dictated !== undefined || state.chips.length ? text.meta(dictated, state.chips.length) : undefined;
-  return { state, dispatch, voice, recording, problem, liveText, sendContext, dictated, snapshot, remove, returnToComposer, focusVersion, text, meta, announcement };
+  return { state, dispatch, voice, recording, problem, liveText, sendContext, dictated, snapshot, remove, returnToComposer, focusVersion, text, meta, announcement, comment, sent: sentNotice > 0, quietSend };
 }
 
 export type PmPanelState = ReturnType<typeof usePmPanel>;
