@@ -1,4 +1,4 @@
-// The page side of the view-open acknowledgement (registry/pi-artifacts/artifact.ts: `pendingPresents`, `createPresentAcks`;
+// The public chat-view side of the view-open acknowledgement (`pendingPresents`, `createPresentAcks`;
 // registry/pi-app/artifact-panel.tsx: the mount report). The real bookkeeping is exercised with a fake chat answer.
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -36,7 +36,7 @@ const context = (overrides = {}) => ({ closedThisTurn: false, unsaved: false, na
 const pendingCall = (id, path) => ({ id, callId: id, path });
 
 test('pendingPresents lists the present calls with no result, while the run is live, with the answer ID the server binds', async () => {
-  const { pendingPresents } = await load('artifact', 'pi-artifacts/artifact.ts');
+  const { pendingPresents } = await import('@hachej/boring-ui-kit/chat-view');
   const messages = [assistant([call('c1', 'present', { path: './a.md' }), call('c9', 'read', { path: 'x' })])];
   assert.deepEqual(pendingPresents(view(messages)), [{ id: '[3,"c1"]', callId: 'c1', path: 'a.md' }, { id: '[5,"c2"]', callId: 'c2', path: 'b.md' }]);
   assert.deepEqual(pendingPresents(view(messages, false)), [], 'nothing waits once the run is not live');
@@ -49,7 +49,7 @@ test('pendingPresents lists the present calls with no result, while the run is l
 async function fakeChat(verdict = () => ({ kind: 'answered' })) {
   const sent = [];
   const answer = async (id, body) => { const parsed = JSON.parse(body); sent.push({ id, ...parsed }); return verdict(id, parsed); };
-  const { createPresentAcks } = await load('artifact', 'pi-artifacts/artifact.ts');
+  const { createPresentAcks } = await import('@hachej/boring-ui-kit/chat-view');
   const make = (extra = {}) => createPresentAcks({ answer, open: () => true, instanceId: 'tab-1', wait: async () => {}, ...extra });
   return { sent, make };
 }
@@ -202,7 +202,7 @@ test('an answer in flight keeps its call waiting, so a mount during the flight s
   let release;
   const held = new Promise(resolve => { release = resolve; });
   const answer = async (id, body) => { const parsed = JSON.parse(body); sent.push(parsed.revision); return parsed.revision === 'A' ? held : { kind: 'answered' }; };
-  const { createPresentAcks } = await load('artifact', 'pi-artifacts/artifact.ts');
+  const { createPresentAcks } = await import('@hachej/boring-ui-kit/chat-view');
   const acks = createPresentAcks({ answer, open: () => true, instanceId: 'tab-1', wait: async () => {} });
   acks.consider([pendingCall('c1', 'a.md')], context({ autoOpen: false }));
   acks.shown({ path: 'a.md', revision: 'A' });
@@ -270,7 +270,7 @@ test('a request that fails in transport keeps its call waiting, so a later mount
     if (parsed.revision === 'A') throw new Error('network down');
     return { kind: 'answered' };
   };
-  const { createPresentAcks } = await load('artifact', 'pi-artifacts/artifact.ts');
+  const { createPresentAcks } = await import('@hachej/boring-ui-kit/chat-view');
   const acks = createPresentAcks({ answer, open: () => true, instanceId: 'tab-1', wait: async () => {} });
   acks.consider([pendingCall('c1', 'a.md')], context({ autoOpen: false }));
   acks.shown({ path: 'a.md', revision: 'A' });
@@ -346,4 +346,53 @@ test('createPresentAcks refuses the calls waiting for a file whose view failed, 
   acks.failed({ path: 'sales.dashboard.json', reason: 'x'.repeat(500) });
   await flush();
   assert.equal(sent.at(-1).reason.length, 200, 'the reason is bounded to what the server accepts');
+});
+
+test('the Ambient example host acknowledges only its loaded mounted revision, clears it on close and reports a failed load', async () => {
+  const { createArtifactPanel } = await load('ambient-host', '../examples/ambient/artifact-panel.jsx');
+  const { createResourceHandler } = await import('@hachej/boring-files/remote');
+  const { createElement: h, act } = await import('react');
+  const { createRoot } = await import('react-dom/client');
+  const window = new Window({ url: 'https://fictional.invalid/' });
+  const restore = installDom(window);
+  const beforeLocation = Object.getOwnPropertyDescriptor(globalThis, 'location');
+  Object.defineProperty(globalThis, 'location', { configurable: true, value: window.location });
+  const identity = { scopeId: 'fictional', principalId: 'alice', initiatorId: 'alice' };
+  const { descriptor } = panelFixture();
+  const artifact = descriptor('code');
+  const { sent, make } = await fakeChat();
+  const acks = make();
+  acks.consider([pendingCall('ambient-present', 'a.js')], context({ autoOpen: false }));
+  const reports = [], failures = [];
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const handler = createResourceHandler({ authenticate: async () => identity,
+    reader: { read: async request => { await gate; return request.target.resource.path === 'a.js'
+      ? { kind: 'available', snapshot: { ref: { ...request.target, revision: 'actually-loaded' }, bytes: new TextEncoder().encode('const fictional = true;'), mediaType: 'text/plain' } }
+      : { kind: 'missing' }; } } });
+  const renderPanel = createArtifactPanel({ identity, authorized: request => request.method === 'GET' ? Promise.resolve(Response.json({ saves: [] })) : handler(request) });
+  const api = { follow: true, fullscreen: false, onFullscreenChange() {}, close() {},
+    onShown: shown => { reports.push(shown); if (shown.hidden) acks.hidden(shown); else acks.shown(shown); },
+    onFailed: failed => { failures.push(failed); acks.failed(failed); } };
+  const element = document.createElement('div'); document.body.append(element); const root = createRoot(element);
+  try {
+    await act(async () => root.render(h(() => renderPanel(artifact, api))));
+    assert.deepEqual(reports, [], 'a rendered loading panel is not mounted-revision evidence');
+    assert.deepEqual(sent, [], 'no acknowledgement before the resource read settles');
+    await act(async () => { release(); await flush(); });
+    assert.equal(element.querySelector('[data-testid=artifact-body]').dataset.state, 'open');
+    assert.deepEqual(reports, [{ path: 'a.js', revision: 'actually-loaded' }]);
+    assert.equal(sent[0].revision, 'actually-loaded', 'the descriptor revision is not substituted for the loaded revision');
+    await act(async () => root.render(null));
+    assert.deepEqual(reports.at(-1), { path: 'a.js', revision: 'actually-loaded', hidden: true });
+    await act(async () => root.render(h(() => renderPanel(descriptor('code', 'missing.js'), api))));
+    await act(async () => { await flush(); });
+    assert.equal(failures.length, 1, 'the host forwards a failed load');
+    assert.equal(failures[0].path, 'missing.js');
+    assert.equal(reports.length, 2, 'a failure never fabricates a shown revision');
+  } finally {
+    await act(async () => root.unmount()); element.remove();
+    if (beforeLocation) Object.defineProperty(globalThis, 'location', beforeLocation); else delete globalThis.location;
+    restore(); await window.happyDOM.close();
+  }
 });

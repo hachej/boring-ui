@@ -35,9 +35,43 @@ export function ChatNotices({ state, error, onReconcile, onRetry, natural = fals
 
 /** `presentation="natural"`: whether the one "preparing" status shows (owned by the kit's chat view). */
 export { preparing } from '@hachej/boring-ui-kit/chat-view';
+import { preparing } from '@hachej/boring-ui-kit/chat-view';
 
 /** The one status line of natural presentation. */
 export function PreparingStatus({ children }: { readonly children?: ReactNode }) {
   const { labels } = useChatText();
   return <p role="status" data-testid="preparing" className="m-0 flex items-center gap-2 px-1 text-xs text-muted-foreground"><Shimmer>{children ?? labels.preparing}</Shimmer></p>;
+}
+
+/** Shared full/compact connection presentation; custom host recovery content is never lost in Ambient. */
+export function ChatConnectionNotice({ state, onReconnect, renderConnectionError, compact = false, fallback }: {
+  readonly state: Pick<ChatSnapshot, 'connection' | 'disposed'>;
+  readonly onReconnect: () => void;
+  readonly renderConnectionError?: ((error: unknown) => ReactNode) | undefined;
+  readonly compact?: boolean;
+  /** Surface-specific copy; a host error renderer still takes precedence. */
+  readonly fallback?: { readonly error: ReactNode; readonly closed: ReactNode };
+}) {
+  const { labels, icons } = useChatText();
+  const connection = state.connection;
+  if (connection.kind !== 'error' && connection.kind !== 'closed') return null;
+  return <Notice tone={compact ? 'info' : connection.kind === 'error' ? 'error' : 'info'} testid="connection-notice">
+    <span className="flex-1">{connection.kind === 'error' ? renderConnectionError ? renderConnectionError(connection.error) : fallback?.error ?? labels.loadFailed : fallback?.closed ?? labels.disconnected}</span>
+    {!state.disposed && <Button size="sm" variant="outline" onClick={onReconnect}>{!compact && <icons.reconnect data-icon="inline-start" aria-hidden="true" />}{labels.reconnect}</Button>}
+  </Notice>;
+}
+
+/** PiChat and Ambient choose the same natural/developer status without owning another run lifecycle. */
+export function ChatStatusLine({ natural, working, waitingForAnswer, derived, stop }: {
+  readonly natural: boolean; readonly working: boolean; readonly waitingForAnswer: boolean;
+  readonly derived: Pick<import('./rows').Derived, 'run' | 'retry' | 'compacting' | 'stageStatus'>;
+  readonly stop: ChatSnapshot['stop'];
+}) {
+  const { labels } = useChatText();
+  if (natural) return preparing({ natural, waitingForAnswer, run: derived.run, retry: derived.retry, compacting: derived.compacting, stop }) ? <PreparingStatus>{derived.stageStatus}</PreparingStatus> : null;
+  return <>
+    {working && <p role="status" data-testid="agent-status" className="m-0 flex items-center gap-2 px-1 text-xs text-muted-foreground">
+      <Shimmer active={!waitingForAnswer}>{waitingForAnswer ? labels.waitingForAnswer : derived.retry ? labels.retryPending : labels.agentWorking}</Shimmer></p>}
+    {derived.compacting && <p role="status" className="m-0 px-1 text-xs text-muted-foreground">{labels.compacting}</p>}
+  </>;
 }

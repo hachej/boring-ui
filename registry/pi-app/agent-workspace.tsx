@@ -13,7 +13,6 @@ import { checkBlobBase, parseBlobPointer, withBlobPointers } from '@hachej/borin
 import type { BlobPointer } from '@hachej/boring-files/blob';
 import type { FileEntry, RevisionProvider } from '@hachej/boring-files/revision';
 import { createFileTreeController } from '@hachej/boring-ui-kit/file-tree';
-import { randomUUID } from '@hachej/boring-files/platform';
 import type { FileTreeController } from '@hachej/boring-ui-kit/file-tree';
 import { FileTreeView } from '../file-tree/file-tree';
 import { frenchAppLabels } from './app-labels-fr';
@@ -22,10 +21,11 @@ import type { ChatLocale } from '../pi-chat/locale';
 import type { FileTreeViewProps } from '../file-tree/file-tree';
 import type { ResourceIdentity } from '@hachej/boring-files/remote';
 import type { ChatController } from '@hachej/boring-ui-kit/native-chat';
+import { useArtifactFollow } from '@hachej/boring-ui-kit/chat-react';
 import { PiChat } from '../pi-chat/pi-chat';
 import { withChatPlugins } from '../pi-chat-plugins/chat-plugins';
-import { artifactKey, createPresentAcks, pendingPresents } from '../pi-artifacts/artifact';
-import type { ArtifactDescriptor, ArtifactsConfig, PresentAcks } from '../pi-artifacts/artifact';
+import { artifactKey } from '../pi-artifacts/artifact';
+import type { ArtifactDescriptor, ArtifactsConfig } from '../pi-artifacts/artifact';
 import type { ConversationsConfig, PiChatProps } from '../pi-chat/pi-chat';
 import { Dock, DockLayout, DockMain } from '../pi-workspace/dock';
 import { ArtifactWorkspace } from '../pi-workspace/workspace';
@@ -41,9 +41,10 @@ import { BlockActions } from '../button/actions';
 import type { BlockAction } from '../button/actions';
 import { ChatTextProvider, useMergedText } from '../pi-chat/labels';
 import { cn, PHONE_BELOW, withDefaults } from '../utils/utils';
+import { readFlag, writeFlag } from '../utils/persisted';
 import { AppTextProvider, defaultAppIcons, defaultAppLabels } from './app-labels';
 import type { AppIcons, AppLabels } from './app-labels';
-import { ArtifactPanel, useArtifactVersions, useTurn } from './artifact-panel';
+import { ArtifactPanel } from './artifact-panel';
 import type { CustomViewers, SavedRevision, ViewerOptions } from './artifact-panel';
 import { FileViewer } from './file-viewer';
 import { ImageViewer } from '../pi-chat/image-viewer';
@@ -91,7 +92,6 @@ const isArtifact = (view: OpenedView | null): view is ArtifactView => view?.kind
 const isFile = (view: OpenedView | null): view is FileView => view?.kind === 'file';
 /** Whether the panel shows the file at `path` (a file view, or the artifact view of it). */
 const showsPath = (view: OpenedView | null, path: string): boolean => isFile(view) ? view.path === path : isArtifact(view) ? view.descriptor.target.resource.path === path : false;
-const subscribeNothing = () => () => {};
 type ImageContent = Parameters<NonNullable<PiChatProps['onOpenImage']>>[0];
 
 /**
@@ -271,8 +271,6 @@ export type AgentWorkspaceProps = AgentWorkspaceBaseProps & (
 
 // The Library column is docked only while the chat and the viewer (their `ArtifactWorkspace` minimums) keep their room beside it; otherwise it is Dock's sheet.
 const SESSIONS_WIDTH = 260, LIBRARY_WIDTH = 320, CHAT_MIN = 360, VIEWER_MIN = 360;
-const readFlag = (key: string): boolean => { try { return sessionStorage.getItem(key) === '1'; } catch { return false; } };
-const writeFlag = (key: string, on: boolean) => { try { if (on) sessionStorage.setItem(key, '1'); else sessionStorage.removeItem(key); } catch { /* the layout is a convenience */ } };
 const defaultLocate = (path: string): ResourceLocator => ({ resource: { providerId: 'workspace', path: workspacePath(path) }, view: { kind: 'published' } });
 
 /**
@@ -405,21 +403,15 @@ export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, titl
   const preview = imagePreview && !chat.onOpenImage && imagePreview.controller === controller && imagePreview.client === client && imagePreview.conversationId === conversationId ? imagePreview : undefined;
   // eslint-disable-next-line react-hooks/set-state-in-effect -- a new controller, client, conversation or host image handler drops the preview, once per change
   useEffect(() => { setImagePreview(undefined); }, [controller, client, conversationId, chat.onOpenImage]);
-  // ---- Presented files: the page confirms a `present` call only once its panel has mounted the revision (`onShown`, from the viewers).
-  // The bookkeeping is `createPresentAcks` (pi-artifacts/artifact.ts); the answer goes through the chat's own `answer` (the transport's
-  // `?op=answer`) and the server checks the path and revision.
-  // eslint-disable-next-line react-hooks/refs -- latest-value ref assigned in render, read only by event handlers, effects and async callbacks
-  const answerPresent = useRef(chat.actions?.answer); answerPresent.current = chat.actions?.answer;
-  const openForPresent = useRef<(path: string) => boolean>(() => false);
-  const presentAcks = useRef<PresentAcks | undefined>(undefined);
-  // eslint-disable-next-line react-hooks/refs -- the present acknowledgements are created once per workspace on first render; their callbacks read refs only when called
-  if (!presentAcks.current) presentAcks.current = createPresentAcks({ answer: (id, body) => answerPresent.current?.(id, body),
-    open: path => openForPresent.current(path), instanceId: randomUUID() });
-  const onShown = useCallback((view: { readonly path: string; readonly revision: string; readonly hidden?: true }) => {
-    if (view.hidden) presentAcks.current?.hidden(view); else presentAcks.current?.shown(view);
-  }, []);
-  // A kind that could not show the file (a dashboard whose data failed): the waiting `present` is refused with its reason.
-  const onFailed = useCallback((view: { readonly path: string; readonly reason: string }) => { presentAcks.current?.failed(view); }, []);
+  const active = isArtifact(opened) && opened.conversation === conversationId ? opened : null;
+  const follow = useArtifactFollow({ controller, conversationId, detect, active, autoOpen,
+    onOpen: selection => { if (conversationId !== undefined) void setOpened({ kind: 'artifact', conversation: conversationId, ...selection }); },
+    unsaved: () => unsaved.current,
+    narrow: () => globalThis.matchMedia?.(`(width < ${sheetBelow}px)`).matches === true,
+    showing: path => showsPath(currentView.current, path),
+    openPresent: path => { if (unsaved.current) return false; void setOpened({ kind: 'file', path }); return true; },
+    answer: chat.actions?.answer });
+  const { onShown, onFailed } = follow;
   const kinds = artifactKinds ?? noKinds;
   const options: ViewerOptions = useMemo(() => ({ client, identity, history, viewers, kinds, interactive, share, onShown, onFailed, onUnsavedChange: noteUnsaved, onBeforeLeaveChange: registerBeforeLeave, blobBase }), [client, identityKey, history, viewers, kinds, interactive, share, onShown, onFailed, noteUnsaved, registerBeforeLeave, blobBase]); // eslint-disable-line react-hooks/exhaustive-deps
   const locate = revisionProvider?.locate ?? remote?.locate ?? defaultLocate;
@@ -513,46 +505,15 @@ export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, titl
   } }, [revisionAttachments]);
 
   // ---- Artifacts: cards open the panel; the agent's new ones open it too.
-  const versions = useArtifactVersions(controller, detect);
-  const turn = useTurn(controller);
-  const active = isArtifact(opened) && opened.conversation === conversationId ? opened : null;
   const file = isFile(opened) ? opened : null;
   const host = opened && !isArtifact(opened) && !isFile(opened) && panels?.[opened.kind] ? opened : null;
   const panelOpen = Boolean(active || file || host || panelLibrary);
-  const seen = useRef(new Map<string, Set<string>>());
-  const closedInTurn = useRef(new Map<string, number>());
-  // Kept editing after the unsaved-changes question: the panel stays as it was, and the next artifact may still open it.
-  const close = async () => { if (panelLibrary) { setPanelLibrary(false); return true; } if (!await setOpened(null)) return false; if (conversationId !== undefined) closedInTurn.current.set(conversationId, turn); setFullscreen(false); return true; };
-  useEffect(() => {
-    if (!controller || conversationId === undefined) return;
-    const keys = versions.map(version => `${artifactKey(version)}:${version.revision}`);
-    const known = seen.current.get(conversationId);
-    // What the conversation already held when it loaded does not count.
-    if (!known) { seen.current.set(conversationId, new Set(keys)); return; }
-    const fresh = versions.filter(version => !known.has(`${artifactKey(version)}:${version.revision}`));
-    for (const key of keys) known.add(key);
-    if (unsaved.current || !autoOpen || !fresh.length || closedInTurn.current.get(conversationId) === turn || globalThis.matchMedia?.(`(max-width: ${sheetBelow - 1}px)`).matches) return;
-    setOpened({ kind: 'artifact', conversation: conversationId, descriptor: fresh.at(-1)!, follow: true });
-  }, [versions, controller, conversationId, turn]); // eslint-disable-line react-hooks/exhaustive-deps
-  // A `present` call waiting for the page: decided by `createPresentAcks` (refused when the person closed the panel this turn, has unsaved
-  // edits or is on a phone; otherwise its file is opened unless `autoOpen` is off, and the acknowledgement follows the mount).
-  // eslint-disable-next-line react-hooks/refs -- the present acknowledgements call the latest opener only when a present call is considered, in an effect
-  openForPresent.current = path => { if (unsaved.current) return false; void setOpened({ kind: 'file', path }); return true; };
-  const liveView = useSyncExternalStore(controller ? controller.subscribe : subscribeNothing, () => controller?.getSnapshot().view, () => undefined);
-  const presentCalls = useMemo(() => pendingPresents(liveView), [liveView]);
-  useEffect(() => {
-    if (!answerPresent.current || conversationId === undefined) return;
-    presentAcks.current?.consider(presentCalls, { closedThisTurn: closedInTurn.current.get(conversationId) === turn, unsaved: unsaved.current,
-      narrow: globalThis.matchMedia?.(`(max-width: ${sheetBelow - 1}px)`).matches === true, autoOpen, showing: path => showsPath(currentView.current, path) });
-  }, [presentCalls, conversationId, turn, autoOpen, sheetBelow]);
-  /** The versions of one file that the conversation presented or saved, newest first. */
-  const newestOf = (key: string) => versions.filter(version => artifactKey(version) === key).reverse();
+  // Record a close only after the host's unsaved-changes guard accepted it.
+  const close = async () => { if (panelLibrary) { setPanelLibrary(false); return true; } if (!await setOpened(null)) return false; follow.recordClosed(); setFullscreen(false); return true; };
+  const newestOf = (key: string) => follow.versions.filter(version => artifactKey(version) === key);
   const artifacts: ArtifactsConfig = useMemo(() => ({
-    open: descriptor => { if (conversationId !== undefined) setOpened({ kind: 'artifact', conversation: conversationId, descriptor, follow: descriptor.revision === newestOf(artifactKey(descriptor))[0]?.revision }); },
-    isOpen: descriptor => Boolean(active && artifactKey(active.descriptor) === artifactKey(descriptor) && (active.follow ? descriptor.revision === newestOf(artifactKey(descriptor))[0]?.revision : descriptor.revision === active.descriptor.revision)),
-    ...(detect ? { detect } : {}),
-    kinds,
-  }), [conversationId, active, versions, detect, kinds, setOpened]); // eslint-disable-line react-hooks/exhaustive-deps
+    open: follow.open, isOpen: follow.isOpen, ...(detect ? { detect } : {}), kinds,
+  }), [follow.open, follow.isOpen, detect, kinds]);
 
   // ---- Sessions: docked on a wide workspace (collapsible, remembered for the session), a drawer on a narrow one.
   const root = useRef<HTMLDivElement>(null);
@@ -610,11 +571,11 @@ export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, titl
     followHeader.current = new ResizeObserver(() => { if (toggleRow.current) toggleRow.current.style.height = `${header.clientHeight}px`; });
     followHeader.current.observe(header);
   }, []);
-  const toggleSpace = toggle && <Button ref={headerSlot} variant="ghost" size="icon-sm" aria-hidden="true" tabIndex={-1} className="invisible min-[641px]:-ml-1" />;
+  const toggleSpace = toggle && <Button ref={headerSlot} variant="ghost" size="icon-sm" aria-hidden="true" tabIndex={-1} className="invisible md:-ml-1" />;
 
   // ---- The chat in the center: docked PiChat, or the host's floating surface over the same controller (with the toggle in its header).
   const hostControls = typeof controls === 'function' ? controls({ panelOpen }) : controls ?? chat.controls;
-  const header = <>{conversations?.onNew && <Button variant="ghost" size="icon-sm" data-testid="workspace-new-chat" aria-label={text.labels.newChat} title={text.labels.newChat} className="min-[641px]:hidden" onClick={conversations.onNew}><text.icons.newChat data-icon="inline-start" aria-hidden="true" /></Button>}{hostControls}</>;
+  const header = <>{conversations?.onNew && <Button variant="ghost" size="icon-sm" data-testid="workspace-new-chat" aria-label={text.labels.newChat} title={text.labels.newChat} className="md:hidden" onClick={conversations.onNew}><text.icons.newChat data-icon="inline-start" aria-hidden="true" /></Button>}{hostControls}</>;
   const conversationTitle = conversations?.items.find(item => item.id === conversationId)?.title;
   // pi-app ships every composer feature item: Markdown, the `/` menu, `@` mentions, the model pill, voice messages, the phone camera.
   // eslint-disable-next-line react-hooks/refs -- the functions built here read refs only when a request, an event or an effect calls them, never during render
@@ -633,8 +594,8 @@ export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, titl
     <div className="relative flex min-h-0 flex-1 flex-col">
       {chatProps ? <PiChat key={conversationId} {...chatProps} headerStart={<>{toggleSpace}{chat.headerStart}</>} className={cn('min-h-0 flex-1', chat.className)} />
         // Same geometry as the PiChat header, so nothing moves when the chat arrives.
-        : <>{toggle && <><div className="flex shrink-0 items-center gap-2 px-3 py-2 sm:gap-3 sm:px-4 sm:py-2.5">{toggleSpace}</div><Separator /></>}{connecting}</>}
-      {toggle && <div ref={toggleRow} className="pointer-events-none absolute top-0 left-0 z-10 flex items-center px-3 sm:px-4 [&>*]:pointer-events-auto">{toggle}</div>}
+        : <>{toggle && <><div className="flex shrink-0 items-center gap-2 px-3 py-2 md:gap-3 md:px-4 md:py-2.5">{toggleSpace}</div><Separator /></>}{connecting}</>}
+      {toggle && <div ref={toggleRow} className="pointer-events-none absolute top-0 left-0 z-10 flex items-center px-3 md:px-4 [&>*]:pointer-events-auto">{toggle}</div>}
     </div>
   </div>;
 

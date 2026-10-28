@@ -1,6 +1,7 @@
 import type { ChatAttempt, ChatController, ChatDraft, ChatSendInput, NativeChatSnapshot } from '../native-chat.js';
 import { randomUUID } from '@hachej/boring-files/platform';
 import { createChatOutbox } from '../chat-outbox.js';
+import { mentionedPaths, mentionToken } from '../chat-text.js';
 import { ChannelRequestError } from './error.js';
 export { ChannelRequestError } from './error.js';
 import { cardActions } from './source.js';
@@ -231,13 +232,13 @@ function latestAt(messages: readonly ChannelMessage[]): string {
   return new Date(Math.max(now, newest + 1)).toISOString();
 }
 
-/** The composer uses the existing quoted @ token grammar. Tokens carry stable member ids; picker labels show names. */
+/** A member is mentioned with the chat's one `@` token grammar (`mentionToken` of `chat-text`). Tokens carry stable member ids; picker labels show names. */
 export function memberMention(member: Member): string {
-  return /[\s"\\]/.test(member.id) ? `@"${member.id.replace(/[\\"]/g, '\\$&')}"` : `@${member.id}`;
+  return mentionToken(member.id);
 }
+/** Whether the text mentions the member, parsed as the composer and the agent parse mentions (`mentionedPaths` of `chat-text`). */
 function hasMemberMention(text: string, member: Member): boolean {
-  const token = memberMention(member);
-  return [...text.matchAll(/(^|\s)(@"(?:[^"\\]|\\.)*"|@[^\s]+)/g)].some(match => match[2] === token);
+  return mentionedPaths(text).includes(member.id);
 }
 
 export { createFakeChannelSource } from './fake.js';

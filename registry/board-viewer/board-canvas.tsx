@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { MockupViewer } from '../mockup-viewer/mockup-viewer';
+import { usePhone } from '../utils/use-media';
 import { parseMaquette } from '../maquette-viewer/maquette';
 import { MaquetteScreenView } from '../maquette-viewer/maquette-blocks';
 import { defaultMaquetteLabels } from '../maquette-viewer/maquette-labels';
@@ -107,13 +108,7 @@ function capture(editor: Editor, board: Board): Board | undefined {
 
 export default function BoardCanvas({ buffer, files, assetUrls, licenseKey, onEditor, comments }: Omit<BoardHostProps, 'identity' | 'client'> & { readonly buffer: TextBuffer; readonly files: ReadonlyMap<string, string> }) {
   const state = useSyncExternalStore(buffer.subscribe, buffer.getSnapshot, buffer.getSnapshot);
-  const [phone, setPhone] = useState(() => typeof matchMedia === 'function' && matchMedia('(max-width: 639px), (pointer: coarse)').matches);
-  useEffect(() => {
-    const media = matchMedia('(max-width: 639px), (pointer: coarse)');
-    const changed = () => setPhone(media.matches);
-    media.addEventListener('change', changed);
-    return () => media.removeEventListener('change', changed);
-  }, []);
+  const phone = usePhone();
   const editorRef = useRef<Editor | null>(null);
   const projected = useRef(state.text);
   const [editor, setEditor] = useState<Editor | null>(null);

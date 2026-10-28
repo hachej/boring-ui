@@ -48,14 +48,14 @@ export function ToolCard({ entry, onOpenImage, details = true }: { readonly entr
     <TraceDescription data-testid="tool-status">{labels[STATUS_LABEL[status]]}</TraceDescription>
   </TraceLine>;
   return <TraceCollapsible data-testid="tool-card" data-boring="tool-card" data-status={status} data-tool={call.name} data-call-id={call.id} open={open} onOpenChange={setChosen}>
-    {details ? <TraceCollapsibleTrigger className="min-h-8 max-sm:min-h-11 pointer-coarse:min-h-11">{line}</TraceCollapsibleTrigger> : line}
+    {details ? <TraceCollapsibleTrigger className="min-h-8 max-md:min-h-11 pointer-coarse:min-h-11">{line}</TraceCollapsibleTrigger> : line}
     {details && <TraceCollapsibleContent><div data-testid="tool-details" className="flex flex-col gap-3">
       <Section title={labels.arguments}><Card><CardContent><pre className="m-0 max-h-60 overflow-auto whitespace-pre-wrap [overflow-wrap:anywhere]">{JSON.stringify(call.arguments, null, 2)}</pre></CardContent></Card></Section>
       {result && <Section title={result.isError ? labels.error : labels.result}>
         <Alert variant={result.isError ? 'destructive' : 'default'} role={result.isError ? 'alert' : 'status'}><AlertDescription>
           {result.content.map((part, index) => part.type === 'text'
             ? <pre key={index} className="m-0 max-h-72 overflow-auto whitespace-pre-wrap [overflow-wrap:anywhere]">{part.text}</pre>
-            : <Button key={index} variant="outline" size="sm" className="max-sm:min-h-12! pointer-coarse:min-h-12!" disabled={!onOpenImage} onClick={() => onOpenImage?.(part)}>{labels.openImageResult}</Button>)}
+            : <Button key={index} variant="outline" size="sm" className="max-md:min-h-12! pointer-coarse:min-h-12!" disabled={!onOpenImage} onClick={() => onOpenImage?.(part)}>{labels.openImageResult}</Button>)}
           {result.content.length === 0 && <span>{labels.emptyResult}</span>}
         </AlertDescription></Alert></Section>}
     </div></TraceCollapsibleContent>}

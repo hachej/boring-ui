@@ -14,8 +14,9 @@ import { Shimmer } from './shimmer';
 import { ToolCard } from './tool';
 import { thumbnail } from './composer';
 import { ImageViewer } from './image-viewer';
-import { displayName, fileKind, isUploadPath, isVoicePath, pieces, visibleParts } from './config';
-import type { AudioUrlRead, FileKind, Piece, PreviewRead } from './config';
+import { displayName, fileKind, isUploadPath, isVoicePath, mentionKind, pieces, visibleParts } from '@hachej/boring-ui-kit/chat-text';
+import type { FileKind, Piece } from '@hachej/boring-ui-kit/chat-text';
+import type { AudioUrlRead, MentionsConfig, PreviewRead } from './config';
 import { voiceClock } from './config';
 import { Spinner } from '@/components/ui/spinner';
 import { isFileBlock, segments, targetContent, waits } from './rows';
@@ -65,8 +66,9 @@ export interface RowContext {
   readonly onOpenImage: ((image: ImageContent, gallery?: readonly ImageContent[]) => void) | undefined;
   readonly onCopy: ((text: string) => Promise<void>) | undefined;
   /** Which tokens of a sent message get a styled treatment (`@path` mentions, a leading `/skill`). */
-  readonly pieces: { readonly mentions: boolean; readonly uploads?: boolean; readonly skills: readonly string[]; readonly openMention?: ((path: string) => void) | undefined; readonly renderMention?: ((path: string) => ReactNode | undefined) | undefined;
+  readonly pieces: { readonly kinds?: MentionsConfig['kinds']; readonly mentions: boolean; readonly uploads?: boolean; readonly skills: readonly string[]; readonly openMention?: ((path: string) => void) | undefined; readonly renderMention?: ((path: string) => ReactNode | undefined) | undefined;
     readonly preview?: PreviewRead | undefined; readonly audioUrl?: AudioUrlRead | undefined } | undefined;
+  readonly voiceReplay?: boolean | undefined;
   readonly fileChanges?: boolean | undefined;
   /** Opens a file card through the host's workspace opener. */
   readonly openFile?: ((path: string) => void) | undefined;
@@ -100,12 +102,17 @@ function ImageThumbnails({ images, onOpenImage }: { readonly images: readonly Im
 }
 
 /** Inline sent mention; workspace openers and host renderers keep their existing authority. */
-function UserMention({ path, text, open, render }: { readonly path: string; readonly text: string; readonly open: ((path: string) => void) | undefined; readonly render: ((path: string) => ReactNode | undefined) | undefined }) {
-  const custom = render?.(path);
+function UserMention({ path, text, open, render, kinds }: { readonly path: string; readonly text: string; readonly open: ((path: string) => void) | undefined; readonly render: ((path: string) => ReactNode | undefined) | undefined; readonly kinds?: MentionsConfig['kinds'] }) {
+  const registered = mentionKind(path, { kinds });
+  const custom = registered ? registered.kind.renderSent?.(registered.path) : render?.(path);
   if (custom !== undefined) return <>{custom}</>;
-  return open
-    ? <span role="link" tabIndex={0} className="font-medium text-primary" data-testid="message-mention" data-path={path} aria-label={`Open ${path}`} onClick={() => open(path)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); open(path); } }}>{text}</span>
-    : <span className="font-medium text-primary" data-testid="message-mention" data-path={path}>{text}</span>;
+  const label = registered ? registered.kind.label(registered.path) : text;
+  const activate = registered ? registered.kind.open ? () => registered.kind.open!(registered.path) : undefined : open ? () => open(path) : undefined;
+  const content = <>{registered?.kind.icon}{label}</>;
+  const className = 'inline-flex items-center gap-1 align-middle font-medium text-primary';
+  return activate
+    ? <span role="link" tabIndex={0} className={className} data-testid="message-mention" data-path={path} aria-label={`Open ${label}`} onClick={activate} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); activate(); } }}>{content}</span>
+    : <span className={className} data-testid="message-mention" data-path={path}>{content}</span>;
 }
 
 /** The icon a file card shows for its kind. */
@@ -152,8 +159,17 @@ function FileCards({ paths, open, preview }: { readonly paths: readonly string[]
   </ul>;
 }
 
+interface VoiceBubbleProps {
+  readonly path: string; readonly transcript: ReactNode; readonly preview: PreviewRead | undefined; readonly audioUrl: AudioUrlRead | undefined; readonly align?: 'start' | 'end'; readonly replay?: boolean | undefined;
+}
+/** Voice messages show their transcript by default; the retained audio player is an explicit presentation choice. */
+export function VoiceBubble({ replay = false, ...props }: VoiceBubbleProps) {
+  const { labels } = useChatText();
+  return replay ? <VoiceReplayBubble {...props} /> : <Bubble variant="muted" align={props.align ?? 'end'} data-testid="voice-bubble"><BubbleContent data-testid="user-text" className="whitespace-pre-wrap">{props.transcript ?? <span data-testid="voice-transcript-unavailable">{labels.voiceTranscriptUnavailable}</span>}</BubbleContent></Bubble>;
+}
+
 /** Retained audio is read only on Play, through the same authorized workspace preview as file cards. */
-export function VoiceBubble({ path, transcript, preview, audioUrl, align = 'end' }: { readonly path: string; readonly transcript: ReactNode; readonly preview: PreviewRead | undefined; readonly audioUrl: AudioUrlRead | undefined; readonly align?: 'start' | 'end' }) {
+function VoiceReplayBubble({ path, transcript, preview, audioUrl, align = 'end' }: VoiceBubbleProps) {
   const { labels } = useChatText();
   const audio = useRef<HTMLAudioElement>(null), work = useRef<AbortController | null>(null), loadingRequest = useRef(false);
   const [playing, setPlaying] = useState(false), [loading, setLoading] = useState(false), [failed, setFailed] = useState(false), [duration, setDuration] = useState<number>();
@@ -229,7 +245,7 @@ export function VoiceBubble({ path, transcript, preview, audioUrl, align = 'end'
  */
 /** `variant` picks the bubble: `muted` (the chat's user bubble) or `default` (the theme's primary, used for my own messages in a shared chat). */
 /** `decoration` sits inside the Bubble before its content (a tail); `header` and `footer` inside the content, around the text (a quote, the time). */
-export function MessageText({ text, context, align = 'end', variant = 'muted', decoration, header, footer }: { readonly text: string; readonly context: Pick<RowContext, 'pieces' | 'openFile'>; readonly align?: 'start' | 'end'; readonly variant?: 'muted' | 'default'; readonly decoration?: ReactNode; readonly header?: ReactNode; readonly footer?: ReactNode }) {
+export function MessageText({ text, context, align = 'end', variant = 'muted', decoration, header, footer }: { readonly text: string; readonly context: Pick<RowContext, 'pieces' | 'openFile' | 'voiceReplay'>; readonly align?: 'start' | 'end'; readonly variant?: 'muted' | 'default'; readonly decoration?: ReactNode; readonly header?: ReactNode; readonly footer?: ReactNode }) {
   const framed = decoration !== undefined || header !== undefined || footer !== undefined;
   const wrap = (body: ReactNode) => <Bubble variant={variant} align={align}>{decoration}<BubbleContent data-testid="user-text" className={framed ? 'relative' : undefined}>{header}{body}{footer}</BubbleContent></Bubble>;
   const target = targetContent(text);
@@ -255,12 +271,12 @@ export function MessageText({ text, context, align = 'end', variant = 'muted', d
   const shown = files.length ? visibleParts(all, isFile) : all;
   const empty = shown.every(piece => piece.kind === undefined && piece.text === '');
   const content = shown.map((piece, at) => piece.kind === 'mention'
-    ? <UserMention key={at} path={piece.value!} text={piece.text} open={open} render={render} />
+    ? <UserMention key={at} path={piece.value!} text={piece.text} open={open} render={render} kinds={context.pieces?.kinds} />
     : piece.kind === 'skill' ? <Badge key={at} variant="secondary" data-testid="message-skill" data-skill={piece.value}>{piece.text}</Badge>
     : piece.text);
   return <>
     {cards.length > 0 && <FileCards paths={cards} open={context.openFile ?? open} preview={context.pieces?.preview} />}
-    {voice ? <VoiceBubble path={voice} transcript={empty ? null : content} preview={context.pieces?.preview} audioUrl={context.pieces?.audioUrl} align={align} />
+    {voice ? <VoiceBubble path={voice} transcript={empty ? null : content} preview={context.pieces?.preview} audioUrl={context.pieces?.audioUrl} align={align} replay={context.voiceReplay} />
       : !(files.length > 0 && empty) && wrap(<span className="whitespace-pre-wrap">{content}</span>)}
   </>;
 }
@@ -362,7 +378,7 @@ export function RowView({ row, context }: { readonly row: Row; readonly context:
 function RowBody({ row, images, context: liveContext }: { readonly row: Row; readonly images: readonly ImageContent[]; readonly context: RowContext }) {
   const context: RowContext = row.historical ? { ...liveContext, answer: undefined, onFork: undefined, messageActions: liveContext.historicalMessageActions ? liveContext.messageActions : undefined, replyActions: undefined, commandMentions: undefined } : liveContext;
   const { labels, icons } = useChatText();
-  const renderMention = useMemo(() => context.pieces?.mentions ? (path: string, text: string) => <UserMention path={path} text={text} open={context.pieces?.openMention} render={context.pieces?.renderMention} /> : undefined, [context.pieces]);
+  const renderMention = useMemo(() => context.pieces?.mentions ? (path: string, text: string) => <UserMention path={path} text={text} open={context.pieces?.openMention} render={context.pieces?.renderMention} kinds={context.pieces?.kinds} /> : undefined, [context.pieces]);
   switch (row.type) {
     case 'user': return <article data-row-id={row.key} data-role="user" aria-live={row.historical ? 'off' : undefined}><UserBubble message={row.message} images={images} context={context} lead={row.lead === true} /></article>;
     case 'card': return <article data-row-id={row.key} data-role="event">{row.card.content}</article>;
@@ -440,7 +456,7 @@ function RowBody({ row, images, context: liveContext }: { readonly row: Row; rea
         {row.stopReason === 'aborted' && <Notice tone="muted" testid="interrupted" icon={<CircleSlashIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />}>{labels.interrupted}</Notice>}
         {unread != null && unread !== false && <div data-testid="reply-unread" className="flex flex-col items-start">{unread}</div>}
         {nativeActions && row.text && context.replyActions?.({ key: row.key, text: row.text, timestamp: row.timestamp }, host)}
-        {nativeActions && row.text && !context.replyActions && <div className="mt-1 -ml-2 flex opacity-0 transition-opacity group-focus-within/message:opacity-100 group-hover/message:opacity-100 pointer-coarse:opacity-100 max-sm:opacity-100 motion-reduce:transition-none">
+        {nativeActions && row.text && !context.replyActions && <div className="mt-1 -ml-2 flex opacity-0 transition-opacity group-focus-within/message:opacity-100 group-hover/message:opacity-100 pointer-coarse:opacity-100 max-md:opacity-100 motion-reduce:transition-none">
           <CopyButton iconOnly text={row.text} label={labels.copyResponse} {...(context.onCopy ? { onCopy: context.onCopy } : {})} />
           {context.onFork && row.entryId && <Button size="icon-sm" variant="ghost" aria-label={labels.fork} title={labels.forkHint} data-testid="fork-reply"
             onClick={() => context.onFork!(row.entryId!)}><icons.fork data-icon="inline-start" aria-hidden="true" /></Button>}

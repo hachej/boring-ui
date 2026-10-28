@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-ui-kit",
-  "version": "0.4.25",
+  "version": "0.4.26",
   "license": "MIT",
   "private": false,
   "type": "module",
@@ -58,6 +58,14 @@
     "./chat-view": {
       "types": "./dist/chat-view.d.ts",
       "import": "./dist/chat-view.js"
+    },
+    "./chat-react": {
+      "types": "./dist/chat-react.d.ts",
+      "import": "./dist/chat-react.js"
+    },
+    "./chat-text": {
+      "types": "./dist/chat-text.d.ts",
+      "import": "./dist/chat-text.js"
     },
     "./voice-capture": {
       "types": "./dist/voice-capture.d.ts",
@@ -138,7 +146,7 @@
     }
   },
   "peerDependencies": {
-    "@hachej/boring-files": "^0.4.25",
+    "@hachej/boring-files": "^0.4.26",
     "@earendil-works/pi-durable": "~1.2.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { UserIcon } from 'lucide-react';
+import { useControllerPerConversation } from '@hachej/boring-ui-kit/chat-react';
 import { createSharedChat } from '@hachej/boring-ui-kit/shared-chat';
 import type { ChannelSource, Conversation, SharedChatController } from '@hachej/boring-ui-kit/shared-chat';
 import type { PiChatProps } from '../pi-chat/pi-chat';
@@ -73,20 +74,17 @@ export function useSharedChat(source: ChannelSource, options: SharedTextOptions 
   const error = failure?.source === source ? failure.message : undefined;
   const items = list?.source === source ? list.items : [];
   const conversationId = selection?.source === source ? selection.id : items[0]?.id;
-  const [binding, setBinding] = useState<{ source: ChannelSource; id: string; controller: SharedChatController }>();
   useEffect(() => {
     let off = false;
     void source.conversations().then(items => { if (!off) setList({ source, items }); }, cause => { if (!off) setFailure({ source, message: String(cause) }); });
     return () => { off = true; };
   }, [source]);
-  useEffect(() => {
-    if (conversationId === undefined) return;
-    const controller = createSharedChat(source, { conversationId, ...(options.limit === undefined ? {} : { limit: options.limit }) });
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- the controller is an external resource this effect creates and disposes; render reads it only once bound to this source and conversation.
-    setBinding({ source, id: conversationId, controller });
-    return () => { void controller.dispose(); };
-  }, [source, conversationId, options.limit]);
-  const controller = binding?.source === source && binding.id === conversationId ? binding.controller : undefined;
+  const principalId = source.me.id;
+  const key = useMemo(() => conversationId === undefined ? undefined : { source, conversationId, principalId, limit: options.limit }, [source, conversationId, principalId, options.limit]);
+  const selected = useControllerPerConversation({ key,
+    create: () => createSharedChat(source, { conversationId: conversationId!, ...(options.limit === undefined ? {} : { limit: options.limit }) }),
+  });
+  const controller = selected.status === 'ready' ? selected.controller : undefined;
   const conversations: ConversationsConfig = { items, activeId: conversationId, loading: list?.source !== source, onSelect: id => setSelection({ source, id }) };
   const chat = useSharedChatProps(controller, options);
   return { controller, conversationId, conversations, error,

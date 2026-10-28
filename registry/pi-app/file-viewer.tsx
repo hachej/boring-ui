@@ -224,7 +224,7 @@ export function FileViewer({ path, locator, options, onClose, onBack, backLabel,
 }) {
   const kind = viewerKindOf(path);
   const { labels, icons } = useAppText();
-  const back = onBack ? <Button variant="ghost" size="sm" data-testid="file-back" aria-label={backLabel ?? labels.back} title={backLabel ?? labels.back} onClick={onBack} className="shrink-0"><icons.back data-icon="inline-start" aria-hidden="true" /><span className="max-sm:sr-only">{backLabel ?? labels.back}</span></Button> : undefined;
+  const back = onBack ? <Button variant="ghost" size="sm" data-testid="file-back" aria-label={backLabel ?? labels.back} title={backLabel ?? labels.back} onClick={onBack} className="shrink-0"><icons.back data-icon="inline-start" aria-hidden="true" /><span className="max-md:sr-only">{backLabel ?? labels.back}</span></Button> : undefined;
   const common: Common = { path, kind, locator, options, onClose, back, onUnsavedChange, onBeforeLeaveChange };
   const locatorKey = JSON.stringify(locator);
   const artifact = useMemo(() => fileArtifact(path, locator), [path, locatorKey]); // eslint-disable-line react-hooks/exhaustive-deps
