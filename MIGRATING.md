@@ -1,5 +1,7 @@
 # Unreleased
 
+- **Blocks CLI and recipes pin shadcn 4.23.0.** `boring-ui-blocks add`/`update` and every documented `npx shadcn@...` command now run `shadcn@4.23.0` (was `4.21.5`); the registry app setup command is the same list with the new pin. Apps keep their installed copies; a reinstall or `update` fetches the 4.23.0 output.
+
 # Migrating to 0.4.27
 
 - **Markdown editor localization (`@hachej/boring-ui-kit/markdown-editor`).** `locale="fr"` now translates status, save/conflict/recovery controls, formatting, outline, proposals and preserved-block labels. Override individual words or accessible-name functions with the optional `labels` prop; `markdownEditorLabels` and `MarkdownEditorLabels` are exported. English remains the default; host titles, placeholders and provider reasons are unchanged. The source textarea now receives `placeholder`, including custom textarea components. Evidence: `test/packages/ui-markdown-editor.test.mjs` and `test/packages/ui-markdown-proposals.test.mjs`.
