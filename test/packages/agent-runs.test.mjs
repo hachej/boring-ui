@@ -172,6 +172,20 @@ test('deliverRunEnd: bounded attempts under one receipt key; a completed end is 
   const never = await deliverRunEnd({ operation: 'triage.delivered', key: 'k3', end: { status: 'error', usage: null }, backoffMs: 1, invoke: async () => { throw new Error('down'); } });
   assert.equal(never.delivered, false);
   assert.match(never.error, /deliver triage.delivered: down/);
+
+  const sentAfterOutage = [];
+  let outages = 3;
+  const outage = { operation: 'triage.delivered', end: { status: 'completed', output: { verdict: 'yes' }, usage: null }, backoffMs: 1, attempts: 3,
+    invoke: async (operation, input) => { sentAfterOutage.push(input.status); },
+    recheck: async () => { if (outages-- > 0) throw Object.assign(new Error('validator down'), { status: 503 }); }, onFailure: () => sentAfterOutage.push('failed') };
+  const held = await deliverRunEnd({ ...outage, key: 'k4' });
+  assert.equal(held.delivered, false, 'a re-check that cannot run holds the delivery');
+  assert.deepEqual(sentAfterOutage, [], 'and never changes the completed end');
+  const later = await deliverRunEnd({ ...outage, key: 'k4' });
+  assert.deepEqual([later.delivered, later.end.status, sentAfterOutage], [true, 'completed', ['completed']]);
+
+  const revoked = await deliverRunEnd({ ...outage, key: 'k5', recheck: async () => { throw Object.assign(new Error('no'), { status: 403 }); } });
+  assert.deepEqual([revoked.delivered, revoked.end.status], [true, 'revoked'], 'a refusal by authority still downgrades it');
 });
 
 const sqlOf = db => (text, params = []) => db.prepare(text).all(...params);

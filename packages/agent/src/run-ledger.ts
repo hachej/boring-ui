@@ -127,10 +127,8 @@ export function createRunner(options: RunnerOptions) {
       operation: row.deliver, key: row.key, invoke,
       end: { status: row.status as RunEnd, ...(view.output !== undefined ? { output: view.output } : {}), usage: view.usage, ...(view.error ? { error: view.error } : {}) },
       ...(checked ? { recheck: async () => {
-        try {
-          const result = await validateResult(checked.card, view.output, checked.evidence, invoke, 'delivery', `result-delivery:${row.key}:${crypto.randomUUID()}`);
-          return result.valid ? undefined : { end: 'invalid_output', error: result.hint ?? 'Return a supported result.' };
-        } catch (error) { return validationError(error); }
+        const result = await validateResult(checked.card, view.output, checked.evidence, invoke, 'delivery', `result-delivery:${row.key}:${crypto.randomUUID()}`);
+        return result.valid ? undefined : { end: 'invalid_output', error: result.hint ?? 'Return a supported result.' };
       }, onFailure: (failure) => ledger.fail(row.key, failure.end as RunEnd, failure.error) } : {}),
       ...(options.deliverAttempts !== undefined ? { attempts: options.deliverAttempts } : {}), ...(options.deliverBackoffMs !== undefined ? { backoffMs: options.deliverBackoffMs } : {}),
     });
@@ -166,14 +164,14 @@ export function createRunner(options: RunnerOptions) {
       ledger.begin({ key, agent, deliver: deliverTo, person, startedAt: now() });
       // Over the host's spend cap: the run is never started, and ends (and is delivered) as `error: over_budget`.
       const refused = overBudget();
-      const execution = refused ? Promise.resolve(null) : prepare(agent, input);
+      const execution = refused ? Promise.resolve(null) : Promise.resolve().then(() => prepare(agent, input));
       live.set(key, execution);
       void (async () => {
         try {
           const ready = await execution;
           if (refused) { await end(key, 'error', { error: OVER_BUDGET }); return; }
           const answer = ready ? await answerOf(ready) : null;
-          const usage = ready ? await options.usage?.(ready.conversation) ?? null : null;
+          const usage = ready ? await Promise.resolve(options.usage?.(ready.conversation) ?? null).catch(() => null) : null;
           // A run cut short by the cap (a later turn refused) ends with the cap's code, not the model's error text.
           if (!answer || answer.error !== undefined) await end(key, (answer?.end ?? 'error') as RunEnd, { error: overBudget() ? OVER_BUDGET : answer?.error ?? `${agent} did not answer`, usage });
           else {
@@ -196,7 +194,8 @@ export function createRunner(options: RunnerOptions) {
     /** Cancels it (its delivery gets `cancelled`); a run that has ended stays as it is; null: no such run. */
     async cancel(key: string): Promise<RunView | null> {
       if (!ledger.get(key)) return null;
-      await end(key, 'cancelled', {}, async () => { await (await live.get(key))?.conversation.abort(context); });
+      // A run whose preparation failed has nothing to abort; the cancelled end is delivered either way.
+      await end(key, 'cancelled', {}, async () => { await (await live.get(key)?.catch(() => null))?.conversation.abort(context).catch(() => {}); });
       return ledger.view(ledger.get(key)!);
     },
     recover,

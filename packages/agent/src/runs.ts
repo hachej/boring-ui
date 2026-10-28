@@ -90,7 +90,13 @@ export async function deliverRunEnd(options: DeliveryOptions): Promise<DeliveryR
     if (attempt) await new Promise(resolve => setTimeout(resolve, backoffMs * 2 ** (attempt - 1)));
     if (end.status === 'completed' && recheck) {
       let found: ResultFailure | undefined;
-      try { found = await recheck(); } catch (error) { found = { error: String((error as Error)?.message ?? error).slice(0, 500), end: (error as { status?: unknown })?.status === 401 || (error as { status?: unknown })?.status === 403 ? 'revoked' : 'error' }; }
+      try { found = await recheck(); } catch (error) {
+        // Only a refusal by authority changes the end; any other throw (an outage) leaves it completed, tried again.
+        const status = (error as { status?: unknown })?.status;
+        last = (error as Error)?.message ?? error;
+        if (status !== 401 && status !== 403) continue;
+        found = { error: String(last).slice(0, 500), end: 'revoked' };
+      }
       if (found) {
         failure = found;
         end = { status: found.end as RunEnd, usage: end.usage, error: found.error };
