@@ -25,8 +25,8 @@ import { ConversationHistory, TranscriptHistory } from '../pi-chat/history';
 import { withChatPlugins } from '../pi-chat-plugins/chat-plugins';
 import { TranscriptChunk } from '../pi-chat/message';
 import type { RowContext } from '../pi-chat/message';
-import { ChatNotices, Notice, PreparingStatus, preparing } from '../pi-chat/notice';
-import { AgentNotifications, KindIcon, createNotificationStore, defaultNotificationLabels, finishNotice, noticeTextOf, pendingQuestion, useNotifications } from './notifications';
+import { ChatNotices, ChatConnectionNotice, ChatStatusLine } from '../pi-chat/notice';
+import { AgentNotifications, KindIcon, createNotificationStore, defaultNotificationLabels, noticeTextOf, useRunNotifications, useNotifications } from './notifications';
 import type { AgentNotification, NotificationLabels, NotificationStore } from './notifications';
 import { ChatTextProvider, defaultChatIcons, defaultChatLabels, useMergedText } from '../pi-chat/labels';
 import type { ChatIcons, ChatLabels } from '../pi-chat/labels';
@@ -36,7 +36,7 @@ import type { ArtifactShown, ArtifactFailed } from '@hachej/boring-ui-kit/chat-r
 import type { ArtifactDescriptor, ArtifactsConfig } from '../pi-artifacts/artifact';
 import { artifactCards } from '../pi-artifacts/artifact-card';
 import { PAGE_FIRST, PAGE_MORE, useChatSession, useRowChunks, useTranscript } from '../pi-chat/session';
-import type { ChatFeatureProps, ChatSession } from '../pi-chat/session';
+import type { ChatFeatureProps } from '../pi-chat/session';
 import { ArtifactWorkspace } from '../pi-workspace/workspace';
 import type { WorkspacePanelApi } from '../pi-workspace/workspace';
 import { cn, PHONE_BELOW } from '../utils/utils';
@@ -111,6 +111,8 @@ export interface AmbientArtifactPanelApi extends WorkspacePanelApi {
 
 export interface AmbientChatProps extends Omit<ChatFeatureProps, 'artifacts'> {
   readonly controller: NativeChatController;
+  /** Host recovery content, shared with PiChat in expanded and compact connection notices. */
+  readonly renderConnectionError?: ((error: unknown) => ReactNode) | undefined;
   /** Artifact cards (`ArtifactsConfig` of `pi-artifacts`); the ambient bar plugs in their card itself. */
   readonly artifacts?: ArtifactsConfig | undefined;
   /** Embed the expanded conversation in a host workspace. Switching this flag changes layout without remounting the transcript or composer. The host supplies the header. */
@@ -220,32 +222,6 @@ function useElapsed(active: boolean): number {
   return seconds;
 }
 
-/** Pushes a toast when a run finishes or fails and when a question starts waiting; takes it back when the question is answered or a new run starts. */
-function useRunFeed({ enabled, store, conversationId, title, session, suppress, onOutcome, waiting, notice }: {
-  readonly enabled: boolean; readonly store: NotificationStore; readonly conversationId: string; readonly title: string; readonly session: ChatSession; readonly waiting: string; readonly notice: NoticeText;
-  readonly suppress: () => boolean; readonly onOutcome: (outcome: 'done' | 'error' | null) => void;
-}) {
-  const { working, waitingForAnswer, rows, connected } = session;
-  const before = useRef({ working, waiting: waitingForAnswer });
-  const latest = useRef({ rows, title, suppress, onOutcome, connected, waiting, notice });
-  useLayoutEffect(() => { latest.current = { rows, title, suppress, onOutcome, connected, waiting, notice }; });
-  useEffect(() => {
-    const was = before.current;
-    before.current = { working, waiting: waitingForAnswer };
-    const now = latest.current;
-    if (working && !was.working) { now.onOutcome(null); store.dismiss(`${conversationId}:done`); }
-    if (!enabled) return;
-    if (waitingForAnswer && !was.waiting && !now.suppress()) store.push({ id: `${conversationId}:input`, kind: 'input', title: now.title, summary: pendingQuestion(now.rows, now.notice) ?? now.waiting, conversationId });
-    if (!waitingForAnswer && was.waiting) store.dismiss(`${conversationId}:input`);
-    if (was.working && !working && now.connected) {
-      const finished = finishNotice(now.rows, now.notice);
-      if (!finished) return;
-      now.onOutcome(finished.kind);
-      if (!now.suppress()) store.push({ id: `${conversationId}:done`, kind: finished.kind, title: now.title, summary: finished.summary, conversationId });
-    }
-  }, [working, waitingForAnswer, enabled, store, conversationId]);
-}
-
 /** A compact floating agent bar over an existing page; it grows into a chat window in place. Borrows a concrete native controller like `PiChat`. */
 /** The ambient bar comes with every composer feature item (`withChatPlugins`); a component the host passes is kept. */
 export function AmbientChat(given: AmbientChatProps) {
@@ -265,9 +241,9 @@ export function AmbientChat(given: AmbientChatProps) {
 
 type SessionProps = Omit<AmbientChatProps, 'labels' | 'icons'> & { readonly labels: AmbientLabels; readonly icons: AmbientIcons; readonly activeController: { readonly current: NativeChatController }; readonly windowState: AmbientState; readonly store: NotificationStore; readonly onWindowState: (state: AmbientState) => void };
 
-function AmbientSession({ controller, embedded = false, labels, icons, avatar, headerActions, headerTools, messageActions, variant = 'contrast', mode = 'expert', presentation, actions,
+function AmbientSession({ controller, embedded = false, labels, icons, avatar, headerActions, headerTools, messageActions, variant = 'contrast', mode = 'expert', presentation, voiceReplay, actions,
   windowState, onWindowState, store, storageKey = 'boring.ambient.position', storage = 'session', tools, belowComposer, composerChips, composerLayout = 'card', onOpenFull, onFeedback, notifications, autoDismissMs, maxToasts, systemNotifications = false,
-  renderEntry, hideLine, displayLimit, paging, historicalMessageActions, unread: replyUnread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept = 'image/*', slash, mentions, attachments, onOpenFile, fileChanges, pasteToFile, model, effort, replyFooter, artifacts: hostArtifacts, artifactPanel, artifactTarget, conversations, onDock, feedback: composerFeedback, className,
+  renderConnectionError, renderEntry, hideLine, displayLimit, paging, historicalMessageActions, unread: replyUnread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept = 'image/*', slash, mentions, attachments, onOpenFile, fileChanges, pasteToFile, model, effort, replyFooter, artifacts: hostArtifacts, artifactPanel, artifactTarget, conversations, onDock, feedback: composerFeedback, className,
   activeController }: SessionProps) {
   const { title } = labels;
   useChatPlacement(controller, embedded ? 'docked' : 'floating');
@@ -320,7 +296,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
     ...(hostArtifacts?.kinds ? { kinds: hostArtifacts.kinds } : {}),
     recognise: hostArtifacts?.recognise ?? artifactCards.recognise, Card: hostArtifacts?.Card ?? artifactCards.Card,
   }, [inWindow, hostArtifacts, follow.open, follow.isOpen, detect]);
-  const session = useChatSession({ controller, activeController, mode, presentation, actions, renderEntry, hideLine, historicalMessageActions, unread: replyUnread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept,
+  const session = useChatSession({ controller, activeController, mode, presentation, voiceReplay, actions, renderEntry, hideLine, historicalMessageActions, unread: replyUnread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept,
     slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => scrollToBottom.current(), rowExtras, feedback: composerFeedback, onOpenFile, fileChanges, pasteToFile, composerChips });
   const { state, derived, rows, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, files, loading } = session;
   const empty = session.empty;
@@ -337,7 +313,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
   const activeItem = conversations?.items.find(item => item.id === conversations.activeId);
   const shownTitle = activeItem?.title?.trim() || title;
   const toasts = useNotifications(store);
-  useRunFeed({ enabled: notifications !== false, store, conversationId, title: shownTitle, session, onOutcome: setOutcome, waiting: labels.waitingForAnswer, notice: noticeTextOf(labels),
+  useRunNotifications(controller, store, { enabled: notifications !== false, conversationId, title: shownTitle, onOutcome: setOutcome, text: noticeTextOf(labels),
     suppress: () => stateRef.current === 'expanded' && globalThis.document?.visibilityState !== 'hidden' });
   const unread = !expanded && toasts.length > 0;
   const seconds = useElapsed(working);
@@ -481,9 +457,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
       </header>
 
       {expanded && <div className="flex min-h-0 flex-1 flex-col">
-        {(connectionKind === 'error' || connectionKind === 'closed') && <div className="px-4 pb-2"><Notice tone={connectionKind === 'error' ? 'error' : 'info'} testid="connection-notice">
-          <span className="flex-1">{connectionKind === 'error' ? labels.loadFailed : labels.disconnected}</span>
-          {!state.disposed && <Button size="sm" variant="outline" onClick={() => act(controller.connect)}><icons.reconnect data-icon="inline-start" aria-hidden="true" />{labels.reconnect}</Button>}</Notice></div>}
+        {(connectionKind === 'error' || connectionKind === 'closed') && <div className="px-4 pb-2"><ChatConnectionNotice state={state} renderConnectionError={renderConnectionError} onReconnect={() => act(controller.connect)} /></div>}
         {derived.pinned.length > 0 && <aside aria-label={labels.requiredActions} className="shrink-0 space-y-2 px-4 pb-2">{derived.pinned.map(card => <div key={card.key}>{card.content}</div>)}</aside>}
         <div className="relative flex min-h-0 flex-1 flex-col">
           <MessageScroller>
@@ -505,11 +479,9 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
       {(expanded || !embedded) && <Separator />}
       <div className={cn('shrink-0', phone && 'pb-[env(safe-area-inset-bottom)]')}>
         <div className="space-y-2 px-3 empty:hidden [&:has(*)]:pt-2">
-          {preparing({ natural: session.natural, waitingForAnswer, run: derived.run, retry: derived.retry, compacting: derived.compacting, stop: state.stop }) && <PreparingStatus>{derived.stageStatus}</PreparingStatus>}
+          <ChatStatusLine natural={session.natural} working={working} waitingForAnswer={waitingForAnswer} derived={derived} stop={state.stop} />
           <ChatNotices natural={session.natural} state={state} error={error} onReconcile={() => act(controller.reconcile)} onRetry={() => act(controller.retrySameRequest)} />
-          {!expanded && (connectionKind === 'error' || connectionKind === 'closed') && <Notice tone="info" testid="connection-notice">
-            <span className="flex-1">{connectionKind === 'error' ? labels.loadFailedShort : labels.disconnectedShort}</span>
-            {!state.disposed && <Button size="sm" variant="outline" onClick={() => act(controller.connect)}>{labels.reconnect}</Button>}</Notice>}
+          {!expanded && <ChatConnectionNotice compact fallback={{ error: labels.loadFailedShort, closed: labels.disconnectedShort }} state={state} renderConnectionError={renderConnectionError} onReconnect={() => act(controller.connect)} />}
         </div>
         <div className="px-3 pt-2 pb-3">
           <ConversationFiles files={files} />

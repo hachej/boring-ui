@@ -6,7 +6,37 @@ import type { ChatController } from './native-chat.js';
 import { artifactKey, artifactTurn, artifactVersions, createPresentAcks, follows, pendingPresents, presentPath } from './chat-view.js';
 import type { ArtifactDescriptor, ArtifactDetect, PresentAcksHost } from './chat-view.js';
 
+export { useChatDraft } from './chat-react-draft.js';
+export { useControllerPerConversation } from './chat-react-controller.js';
+export type { ControllerPerConversationOptions, ConversationControllerState } from './chat-react-controller.js';
+export { chunkKeys, useRowChunks, useTranscript, useTranscriptWindow, PAGE_FIRST, PAGE_MORE, CHUNK } from './chat-react-transcript.js';
+export type { ChatPaging } from './chat-react-transcript.js';
+export { useChatPlacement, readChatPlacement, useRemoteChat } from './chat-react-remote.js';
+export type { ChatPlacement, RemoteChatState, RemoteChatHookOptions } from './chat-react-remote.js';
+export { useConversationsClient, useConversations } from './chat-react-conversations.js';
+export type { ConversationItem, ConversationsClient, ConversationsClientOptions } from './chat-react-conversations.js';
+import { watchConversation } from './run-notifications.js';
+import type { NotificationStore, RunNotificationOptions, RunNotificationSource } from './run-notifications.js';
+
+export { createNotificationStore, watchConversation } from './run-notifications.js';
+export type { AgentNotification, NewNotification, NotificationKind, NotificationStore, RunNotificationOptions, RunNotificationSource } from './run-notifications.js';
+
+/** The foreground adapter of watchConversation, with the same connected-only transition rules and borrowed lifecycle. */
+export function useRunNotifications(controller: RunNotificationSource, store: NotificationStore, options: RunNotificationOptions): void {
+  const latest = useRef(options);
+  useLayoutEffect(() => { latest.current = options; });
+  useEffect(() => watchConversation(controller, store, () => latest.current), [controller, store, options.conversationId]);
+}
+
 const subscribeNothing = () => () => {};
+/** Selects the authorized native view using the controller's own cached snapshot and subscription. Borrows its lifetime. */
+export function useChatView<T>(controller: ChatController | undefined, select: (view: ReturnType<ChatController['getSnapshot']>['view']) => T): T {
+  const getView = useCallback(() => controller?.getSnapshot().view, [controller]);
+  const view = useSyncExternalStore(controller?.subscribe ?? subscribeNothing, getView, () => undefined);
+  return useMemo(() => select(view), [view, select]);
+}
+const identityView = (view: ReturnType<ChatController['getSnapshot']>['view']) => view;
+
 export interface ArtifactSelection { readonly descriptor: ArtifactDescriptor; readonly follow: boolean }
 export interface ArtifactShown { readonly path: string; readonly revision: string; readonly hidden?: true }
 export interface ArtifactFailed { readonly path: string; readonly revision: string; readonly reason: string }
@@ -28,7 +58,7 @@ export interface ArtifactFollowOptions {
 /** One version/follow/auto-open and present-ack rule for every chat surface. Mount evidence must come from the viewer. */
 export function useArtifactFollow(options: ArtifactFollowOptions) {
   const { controller, conversationId, detect, active, autoOpen = false } = options;
-  const view = useSyncExternalStore(controller ? controller.subscribe : subscribeNothing, () => controller?.getSnapshot().view, () => undefined);
+  const view = useChatView(controller, identityView);
   const versions = useMemo(() => artifactVersions(view, detect), [view, detect]);
   const turn = useMemo(() => artifactTurn(view), [view]);
   const calls = useMemo(() => pendingPresents(view), [view]);
@@ -80,3 +110,6 @@ export function useArtifactFollow(options: ArtifactFollowOptions) {
   }, [active, known]);
   return { versions, turn, known, shown, open, isOpen, select, recordClosed, onShown, onFailed };
 }
+
+export { useChatSession } from './chat-react-session.js';
+export type { ChatSession, ChatSessionOptions, ChatSessionLabels, ChatSessionFeedback, ConversationFile, ModelRef, PastedText, UploadResult, PendingUpload, FilesHandler, QueueActions } from './chat-react-session.js';

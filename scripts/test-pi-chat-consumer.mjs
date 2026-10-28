@@ -34,7 +34,7 @@ try {
   const pins = [...new Set([...closure.values()].flatMap(item => item.dependencies ?? []))];
   const union = { dependencies: pins };
   const archiveByName = packBoringDependencies(root, union, join(directory, 'packs'), run);
-  const dependencies = consumerDependencies(root, union, ['typescript', '@types/react', '@types/react-dom', 'esbuild', 'shadcn', 'tailwindcss', 'cn', 'class-variance-authority', '@base-ui/react', ...(shared ? ['happy-dom'] : [])]);
+  const dependencies = consumerDependencies(root, union, ['typescript', '@types/react', '@types/react-dom', 'esbuild', 'shadcn', 'tailwindcss', 'cn', 'class-variance-authority', '@base-ui/react', 'happy-dom']);
   writeLockedManifest(root, directory, 'isolated-pi-chat-consumer', dependencies);
   run('npm', ['install', '--package-lock-only', ...npmInstallFlags(cache), ...archiveByName.values()]);
   run('npm', ['ci', ...npmInstallFlags(cache)]);
@@ -45,7 +45,7 @@ try {
   writeFileSync(join(directory, 'components.json'), appComponentsJson());
   writeFileSync(join(directory, 'src/index.css'), '@import "tailwindcss";\n');
   writeFileSync(join(directory, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'ESNext', moduleResolution: 'Bundler', jsx: 'react-jsx', strict: true, noUncheckedIndexedAccess: true, skipLibCheck: false,
-    noEmit: true, types: [], lib: ['ES2023', 'DOM', 'DOM.Iterable'], baseUrl: '.', paths: { '@/*': ['./src/*'] } }, include: ['src/components/pi-chat*/**/*.tsx', 'src/components/pi-chat*/**/*.ts', 'src/components/shared-chat/**/*.tsx', 'src/components/shared-chat/**/*.ts', 'src/page.tsx'] }));
+    noEmit: true, types: [], lib: ['ES2023', 'DOM', 'DOM.Iterable'], baseUrl: '.', paths: { '@/*': ['./src/*'] } }, include: ['src/components/pi-chat*/**/*.tsx', 'src/components/pi-chat*/**/*.ts', 'src/components/shared-chat/**/*.tsx', 'src/components/shared-chat/**/*.ts', 'src/page.tsx', 'src/chat-react-contract.ts'] }));
   const installer = { ...process.env, npm_config_cache: cache, npm_config_offline: 'true', npm_config_ignore_scripts: 'true', npm_config_audit: 'false', npm_config_fund: 'false' };
   delete installer.NODE_OPTIONS;
   // The app's shadcn setup comes first; the items list no shadcn component and import them through the app's ui alias.
@@ -64,6 +64,13 @@ try {
     assert.equal(existsSync(join(directory, 'src/components/pi-chat/shared.tsx')), false);
     assert.equal(existsSync(join(directory, 'src/components/pi-chat/use-shared-chat.ts')), false);
   }
+  // Exercise the packed public hooks, not a source alias or a monorepo dependency.
+  writeFileSync(join(directory, 'src/chat-react-contract.ts'), readFileSync(join(root, 'test/types/chat-react.ts'), 'utf8'));
+  for (const name of ['ui-chat-react-hooks.test.mjs', 'ui-chat-react-hooks.impl.mjs', 'ui-chat-session.test.mjs', 'ui-chat-session.impl.mjs']) {
+    writeFileSync(join(directory, name), readFileSync(join(root, 'test/packages', name), 'utf8'));
+  }
+  run(process.execPath, ['--test', 'ui-chat-react-hooks.test.mjs', 'ui-chat-session.test.mjs'], isolated);
+
   const blocks = 'node_modules/@hachej/boring-ui-kit/bin/boring-ui-blocks.mjs';
   run(process.execPath, [blocks, 'manifest']);
   run(process.execPath, [blocks, 'check']);

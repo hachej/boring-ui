@@ -1,11 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { createVoiceCapture, DEFAULT_MAX_VOICE_MS } from '@hachej/boring-ui-kit/voice-capture';
+import { createVoiceCapture } from '@hachej/boring-ui-kit/voice-capture';
 import type { VoiceCapture, VoiceRecording, VoiceRefusal } from '@hachej/boring-ui-kit/voice-capture';
 import type { ChatController, ChatDraft } from '@hachej/boring-ui-kit/native-chat';
-import { appendToDraft, isVoicePath, mentionToken } from '@hachej/boring-ui-kit/chat-text';
+import { appendToDraft, isVoicePath, mentionedPaths, mentionToken, withoutMentions } from '@hachej/boring-ui-kit/chat-text';
 import type { AttachmentsConfig, PendingVoice, VoiceMessageConfig, VoiceMessageHandle, VoicePhase, VoiceRecorderOptions } from '../pi-chat/config';
+import { useRecordingCancellation } from './use-hold-to-record';
 import type { ChatLabels } from '../pi-chat/labels';
 
 interface Attempt {
@@ -16,9 +17,12 @@ interface Attempt {
   readonly upload: AttachmentsConfig['upload'] | undefined;
   readonly abort: AbortController;
   readonly capture: VoiceCapture;
-  readonly maxMs: number;
+  mentions: readonly string[];
   phase: VoicePhase;
   seconds: number;
+  levels: number[];
+  paused: boolean;
+  canPause: boolean;
   file?: File;
   path?: string;
   transcript?: string;
@@ -56,6 +60,7 @@ export function useVoiceMessage({ controller, config, attachments, labels, admit
   };
   const active = () => attempts.current.find(item => item.phase === 'starting' || item.phase === 'recording') ?? attempts.current.find(item => item.phase === 'processing' || item.phase === 'sending' || item.phase === 'unconfirmed');
   const cancel = () => { const item = active(); if (item) remove(item); };
+  useRecordingCancellation(() => { const item = active(); if (item?.phase === 'starting' || item?.phase === 'recording') cancel(); });
   const clear = () => { for (const item of [...attempts.current]) remove(item); };
   const target = selected ? targetOf(selected) : undefined;
   // eslint-disable-next-line react-hooks/exhaustive-deps -- mount/unmount only: unmounting drops whatever attempts exist then
@@ -80,15 +85,24 @@ export function useVoiceMessage({ controller, config, attachments, labels, admit
   useEffect(() => {
     const item = recording;
     if (item?.phase !== 'recording') return;
-    const started = performance.now();
-    const timer = setInterval(() => { if (valid(item)) { item.seconds = Math.floor(Math.min(performance.now() - started, item.maxMs) / 1000); update(); } }, 250);
+    let elapsedMs = 0;
+    const timer = setInterval(() => {
+      if (!valid(item)) return;
+      const progress = item.capture.progress();
+      if (!progress) return;
+      item.seconds = Math.floor(progress.elapsedMs / 1000);
+      item.canPause = progress.canPause; item.paused = progress.paused;
+      if (progress.level !== undefined && !progress.paused && progress.elapsedMs > elapsedMs) item.levels = [...item.levels.slice(-31), progress.level];
+      elapsedMs = progress.elapsedMs;
+      update();
+    }, 100);
     return () => clearInterval(timer);
   }, [recording, phase]);
 
   const send = async (item: Attempt, audioOnly = false) => {
     if (!valid(item) || !item.path || item.phase === 'sending' || item.phase === 'unconfirmed') return;
     const transcript = audioOnly ? '' : item.transcript ?? '';
-    const text = `${mentionToken(item.path)}${transcript ? ` ${transcript}` : ''}`;
+    const text = [...item.mentions.map(mentionToken), mentionToken(item.path), transcript].filter(Boolean).join(' ');
     const before = item.controller.getSnapshot();
     if (before.send.kind === 'unknown') {
       // This recording was never submitted. Do not bind it to another message's uncertain request.
@@ -107,7 +121,11 @@ export function useVoiceMessage({ controller, config, attachments, labels, admit
       const result = await pending;
       if (!valid(item)) return;
       if (result) { remove(item); latest.current.admitted?.(); return; }
-    } catch { if (!valid(item)) return; }
+    } catch {
+      if (!valid(item)) return;
+      const draft = item.controller.getSnapshot().draft.text;
+      if (transcript) item.controller.setText(appendToDraft(draft, transcript));
+    }
     const native = item.controller.getSnapshot().send;
     if (native.kind === 'admitted' && 'attempt' in native && submittedDraft !== undefined && native.attempt.draft === submittedDraft) {
       remove(item); latest.current.admitted?.(); return;
@@ -144,6 +162,9 @@ export function useVoiceMessage({ controller, config, attachments, labels, admit
     if (!item || !valid(item)) return;
     if (item.phase === 'starting') { cancel(); return; }
     if (item.phase !== 'recording') return;
+    const draft = item.controller.getSnapshot().draft.text;
+    item.mentions = mentionedPaths(draft);
+    item.controller.setText(withoutMentions(draft));
     item.phase = 'processing'; update();
     void (async () => {
       const recording: VoiceRecording | null = await item.capture.stop().catch(() => null);
@@ -159,8 +180,7 @@ export function useVoiceMessage({ controller, config, attachments, labels, admit
   const start = () => {
     if (!controller || !config || active() || controller.getSnapshot().disposed || controller.getSnapshot().send.kind === 'unknown') return;
     captureSequence.current += 1; setProblem(undefined);
-    const maxMs = config.maxMs ?? DEFAULT_MAX_VOICE_MS;
-    const item: Attempt = { id: captureSequence.current, maxMs: Number.isFinite(maxMs) && maxMs > 0 ? maxMs : Infinity, controller, transcribe: config.transcribe.bind(config), upload: config.upload?.bind(config) ?? attachments?.upload.bind(attachments), target: targetOf(controller), abort: new AbortController(), capture: createVoiceCapture({ ...(config.maxMs !== undefined ? { maxMs: config.maxMs } : {}) }), phase: 'starting', seconds: 0 };
+    const item: Attempt = { id: captureSequence.current, controller, mentions: [], transcribe: config.transcribe.bind(config), upload: config.upload?.bind(config) ?? attachments?.upload.bind(attachments), target: targetOf(controller), abort: new AbortController(), capture: createVoiceCapture({ ...(config.maxMs !== undefined ? { maxMs: config.maxMs } : {}) }), phase: 'starting', seconds: 0, levels: [], paused: false, canPause: false };
     attempts.current = [...attempts.current, item]; update();
     void item.capture.start().then(result => {
       if (!valid(item)) { item.capture.cancel(); return; }
@@ -178,5 +198,5 @@ export function useVoiceMessage({ controller, config, attachments, labels, admit
     discard: () => { if (valid(item)) remove(item); },
   }));
   // eslint-disable-next-line react-hooks/refs -- the capture sequence is a ref bumped with update(); render reads it as of that update
-  return { canStart: Boolean(controller && config && !item && !controller.getSnapshot().disposed && controller.getSnapshot().send.kind !== 'unknown'), phase: item?.phase ?? 'idle', seconds: item?.seconds ?? 0, captureSequence: captureSequence.current, problem, pending, start, finish, cancel };
+  return { canStart: Boolean(controller && config && !item && !controller.getSnapshot().disposed && controller.getSnapshot().send.kind !== 'unknown'), phase: item?.phase ?? 'idle', seconds: item?.seconds ?? 0, levels: item?.levels ?? [], paused: item?.paused ?? false, pause: item?.phase === 'recording' && item.canPause ? () => { if (item.capture.pause()) { item.paused = true; update(); } } : undefined, resume: item?.phase === 'recording' && item.canPause ? () => { if (item.capture.resume()) { item.paused = false; update(); } } : undefined, captureSequence: captureSequence.current, problem, pending, start, finish, cancel };
 }

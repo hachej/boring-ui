@@ -8,8 +8,8 @@
     "lucide-react@^1.51.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.25/r/viewer-frame.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.25/r/pi-chat.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.26/r/viewer-frame.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.26/r/pi-chat.json"
   ],
   "files": [
     {

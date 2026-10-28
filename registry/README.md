@@ -47,7 +47,7 @@ Item and file types follow the shadcn schema: the multi-file chat items are `reg
 | `pi-chat-slash` | `... add <registry>/pi-chat-slash.json` | the `/` command menu: `slash={{ commands, Picker: SlashPicker }}` |
 | `pi-chat-mentions` | `... add <registry>/pi-chat-mentions.json` | the `@` file menu: `mentions={{ search, Picker: MentionPicker }}` |
 | `pi-chat-pickers` | `... add <registry>/pi-chat-pickers.json` | the model and effort menus: `model={{ ..., Picker: ModelEffortPicker }}` |
-| `pi-chat-voice` | `... add <registry>/pi-chat-voice.json` (adds the kit's `voice-capture`) | hold-to-record voice messages: `voiceMessage={{ transcribe, ...voiceMessagePlugin }}` |
+| `pi-chat-voice` | `... add <registry>/pi-chat-voice.json` (adds the kit's `voice-capture`) | tap-to-record voice messages: `voiceMessage={{ transcribe, ...voiceMessagePlugin }}` |
 | `pi-chat-attachments` | `... add <registry>/pi-chat-attachments.json` | the phone camera sheet: `attachments={{ upload, Camera: CameraSheet }}` |
 | `pi-chat-question` | `... add <registry>/pi-chat-question.json` | the `ask_user` question card: `cards={{ question: QuestionCard }}`; without it a question shows a « Waiting for your answer » notice with no answer UI |
 | `pi-chat-approval` | `... add <registry>/pi-chat-approval.json` | the Approve / Deny card for `requireApproval` tools: `cards={{ approval: ApprovalCard }}`; without it the same waiting notice |
@@ -266,7 +266,7 @@ The block imports only the feedback package's browser-safe `/format` entry; it i
 
 Install the `pi-chat-voice` item and spread its `voiceMessagePlugin` (recorder hook, microphone button, pending bubble) into `voiceMessage`, or use `withChatPlugins`; without them `pi-chat` shows no microphone.
 
-`voiceMessage={{ transcribe, maxMs?, upload? }}` adds a hold-to-record microphone to PiChat. Release starts upload and transcription in parallel, then submits one native text message, `@uploads/voice-<timestamp>.<extension> <transcript>`. The agent reads the transcript; history retains that same entry and the audio stays in the person's workspace. The existing composer draft is not sent or cleared. Native refusal restores only the transcript beside later typing.
+`voiceMessage={{ transcribe, maxMs?, upload? }}` adds a tap-to-record microphone to PiChat (one tap on desktop or phone). Recording replaces the editable composer and ordinary controls with one shared row: trash, destructive-token dot and polite timer, actual PCM input waveform, pause/resume when supported, and Send. Send starts upload and transcription in parallel, then submits one native text message, `@uploads/voice-<timestamp>.<extension> <transcript>`. The agent reads the transcript; history retains that same entry and the audio stays in the person's workspace. Draft mentions travel with the voice message and leave the draft; other draft text is kept. Native refusal restores only the transcript beside later typing.
 
 Supply `transcribe(blob, signal)` and the normal `attachments.upload`, or override it with `voiceMessage.upload` of the same signature. Upload exactly one file and return its `uploads/voice-…` path with a supported audio extension. Keep the audio MIME from the Blob, including `audio/webm` and Safari's `audio/mp4`. `onFiles` returns native image attachments and is not an audio persistence API. The host owns authorization, budgets and upload policy.
 
@@ -274,13 +274,13 @@ Local pending user rows in the transcript show known positive duration and progr
 
 The native controller publishes this send's immutable `ChatDraft` synchronously in `send.validating.draft` or its `outbox`, and preserves that object in `attempt.draft`. Voice uncertainty binds to that exact draft and its native request ID, never equal text. Compatible custom controllers must preserve these public snapshot identities for voice admission/reconciliation.
 
-Pressing does not move focus. Slide off, Escape, blur or a hidden page cancels a held recording; browser pointer cancellation keeps it like a release. Space and Enter support keyboard holds. `maxMs` limits capture, not permission to send before release. Replace the controller when an authenticated actor, initiator or workspace binding changes outside its public runtime/scope/principal/conversation identity. Unmount and target changes abandon local preparation without stopping admitted Pi work.
+Space and Enter activate the same tap button. Trash, Escape, blur or a hidden page discards an active capture. PCM pause skips sample appends; elapsed time, waveform and the sample-based `maxMs` cap freeze until resume. Paused frames never enter the WAV. Without Web Audio, MediaRecorder still records but the bar omits unavailable waveform/pause instead of inventing them. The app-shell header may still offer its optional hold/release shortcut. `maxMs` limits capture, not permission to send automatically. Replace the controller when an authenticated actor, initiator or workspace binding changes outside its public runtime/scope/principal/conversation identity. Unmount and target changes abandon local preparation without stopping admitted Pi work.
 
-User uploads with the reserved `uploads/voice-` prefix and webm, ogg, m4a/mp4, mp3 or wav extension render a voice bubble with the transcript. Other audio stays a plain file card. Playback lazily reads `mentions.preview(path, signal)`, which must return the stored audio MIME and base64 bytes, not a filename-derived video MIME. Optional `mentions.audioUrl(path, signal)` supplies an authorized HTTP(S) playback URL instead. The host's media CSP must allow Blob URLs or its signed-URL origin. Duration is unknown until lazy loading yields metadata or decoded bytes; after pausing or ending, the play control retains the total duration. Locally created Blob URLs are revoked on provider replacement and unmount.
+User uploads with the reserved `uploads/voice-` prefix and webm, ogg, m4a/mp4, mp3 or wav extension render a transcript-only voice bubble by default: no play control, duration or player. The stored audio token stays hidden; uploaded audio and native message text are unchanged. An explicitly sent audio-only message without transcription shows the localized `voiceTranscriptUnavailable` status instead of an empty bubble, without adding playback. Card and file mentions share the text line's alignment; wrapped text starts flush. Other audio stays a plain file card. Set `voiceReplay={true}` on `PiChat` or `AmbientChat` to opt into replay, independently of capture configuration; in app-shell set `agent.chatProps.voiceReplay = true`. With replay enabled, playback lazily reads `mentions.preview(path, signal)`, which must return the stored audio MIME and base64 bytes, not a filename-derived video MIME. Optional `mentions.audioUrl(path, signal)` supplies an authorized HTTP(S) playback URL instead. The host's media CSP must allow Blob URLs or its signed-URL origin. Duration is unknown until lazy loading yields metadata or decoded bytes; after pausing or ending, the play control retains the total duration. Locally created Blob URLs are revoked on provider replacement and unmount.
 
 For the app shell, `AgentSpec.voice.send: 'message'` uses the same preparation hook and existing TalkButton, with no second composer microphone. Its `upload` overrides `chatProps.attachments.upload`; `auto` and `draft` retain their text-only behavior. An actionable message failure at the phone's peek reveals half once without focusing the composer. The person can still collapse the layer while keeping the failed recording. Existing modal accessibility focus handling remains in effect; half/full and desktop states are not changed.
 
-`npm run app-shell:journey:voice` drives fictional native turns, workspace persistence, reload and replay with Chromium's fake microphone, at phone and desktop sizes. Screenshots and logs belong under `.cache/evidence/D111/`. Physical iPhone/Android capture and playback still need the consuming app's device checks after its Factory integration.
+`npm run app-shell:journey:voice` explicitly opts into replay (`?replay=1`) and drives fictional native turns, workspace persistence, reload and replay with Chromium's fake microphone, at phone and desktop sizes. Screenshots and logs belong under `.cache/evidence/D111/`. Physical iPhone/Android capture and playback still need the consuming app's device checks after its Factory integration.
 
 ## Natural presentation in `pi-chat`
 
@@ -479,6 +479,28 @@ Pass `actions.answer` to `PiChat`. A call to a tool wrapped with `requireApprova
 
 `@` mentions name workspace files; a path with whitespace, a quote or a backslash is written quoted (`@"docs/Meeting notes.md"`, with `\"` and `\\` escaped), and bare paths keep their form. The grammar lives once in the kit (`@hachej/boring-ui-kit/chat-text`, also used by the shared chat's member mentions): `mentionToken(path)` writes the text, `pieces` and `mentionedPaths` (the same parser as the agent package's) read it back, and the composer chip and `removeMention` treat the quoted form as one token. A bare mention ends at whitespace, so the composer never inserts a bare path that contains a space.
 
+### App mention kinds
+
+`MentionsConfig.kinds` adds app-owned mentions beside files, without another picker or message format:
+
+```tsx
+const mentions = {
+  search: searchFiles, // existing file search, or async () => [] for a card-only app
+  kinds: {
+    repas: {
+      label: (path: string) => meals.get(path)?.label ?? path,
+      icon: <UtensilsIcon aria-hidden="true" />,
+      open: (path: string) => openMeal(path), // optional
+      renderSent: (path: string) => undefined, // optional; undefined keeps the label and icon
+    },
+  },
+};
+```
+
+Update the kit with these registry sources: mention matching and token consumption use the shared `@hachej/boring-ui-kit/chat-text` grammar.
+
+Use `@repas:2026-10-27/dejeuner`: a lowercase prefix matching `[a-z][a-z0-9-]*`, a colon, then the app's stable path. Reserve registered prefixes for that app domain; unregistered prefixes retain file behaviour. For portable bare paths use letters, digits, `_`, `-`, `.`, `/` and percent-encoded characters, and do not end in sentence punctuation. Spaces and quotes use the existing quoted syntax, e.g. `@"repas:Meeting notes"`; `mentionToken('repas:Meeting notes')` escapes quotes and backslashes. The parser imposes no new length limit (the host's normal message budget applies). The token, not its label, is the durable model-visible text. Labels and openers receive the path **without** `repas:`. Registered kinds get composer chips directly from the draft, even without a `Picker`. The textarea shows only editable words and file mentions, never the app-kind token; the full native draft still holds that token and sends it. Removing a chip removes its token. Editing, IME and paste-to-file retain the hidden kind mentions without another context store. A leading registered `/skill` stays first in native submissions, ahead of the hidden tokens, preserving its explicit skill-request meaning. Sent messages use the kind's label/icon/open or `renderSent`, independently of the file renderer. A refused or thrown send restores words without app-kind tokens; existing file recovery is unchanged. No server or conversation-format change is needed. Apps resolve the domain token with their normal agent instructions/tools; a file resolver does not resolve a meal.
+
 ## Docks (`dock`)
 
 `dock/dock.tsx` (the `dock` item; `pi-workspace/dock.tsx` re-exports it, so existing imports keep working) lays out any host content as a row of docks around the app. It is layout only: what a dock shows is the host's, and `ArtifactWorkspace` is unchanged (it keeps its own panel, and the two do not know about each other).
@@ -544,6 +566,23 @@ The fictional [app-shell journey](../examples/app-shell/journey-target.mjs) driv
 ## Agent layer (`app-shell`)
 
 `AgentLayerProvider` takes `agent` (one assistant) and `improve` (the product manager, shown from the account menu); each is `{ controller, chatProps?, voice?, feedback? }`, a borrowed `NativeChatController` rendered by `PiChat`. `AgentLayer` is placed once; `AgentTrigger` opens it; `useAgentLayer()` gives `{ agent, state, showing, open(which?, at?), close(), expanded }` (`agent` is the app’s existing controller, even while the product manager is showing). Nothing else is configurable (the layer's words: the agent's `chatProps.locale`, then the shell's `locale`, then English). On a phone (below 768px, the shadcn `useIsMobile`) it is the explicitly installed `drawer` recipe (public Base UI) with three fixed snap points: a peek (8rem above the tab bar `--app-shell-tabbar`, one composer row and a line of the last reply, the page stays usable), half and full. A swipe, an outside tap and a lost focus never close it: they go to peek (half without an `agent`), so the coach stays reachable; only the handle and the title row drag, the transcript scrolls; the close button and Back close it; Escape steps it down to peek like a swipe (half without an `agent`), so the coach stays reachable, and at peek there is no close button, so it is closed from half or full; focusing the composer goes to full and keeps it above the soft keyboard. On a wide screen it is the `sidebar` on the right, not modal. `voice` adds push-to-talk (hold the trigger or the hero button; `send: 'auto'` submits the transcript, `'draft'` (default) fills the composer). `useAgentContext({ name, params })` registers the current screen; `useRemoteChat({ ..., requestContext: readAgentContext })` sends it as the submit's `context` (with a `placement` beside it: `PiChat` reports `docked` unless its `placement` prop says otherwise, `AmbientChat` `floating`, and the layer reports `floating` for the phone drawer and the floating panel; see [PAGE-TOOLS.md](../docs/architecture/PAGE-TOOLS.md)) and the host renders it with `createPromptContext` (see `packages/agent/README.md`). `useBackLayer` is the one Back manager (`point < sheet < agent < stack`). Point mode for `improve` is wired: « Montrer dans l’app » hides the sheet and the feedback item's `CommentBanner` sits above the tab bar; Back ends comment mode. Example and journey: `examples/app-shell/` (`npm run app-shell:journey`); the shadcn components there are pinned fixtures for type-checking only. Reply actions use 44px touch targets.
+
+### Talk about a card
+
+`useAgentLayer().talkAbout(mention: string, options?: { voice?: boolean; at?: 'half' | 'full' }): boolean` inserts one `@` token into the existing agent draft, replacing a previous unsent talk-about token while keeping other words and mentions. It opens the compact drawer at half by default (full with `at: 'full'`), or the existing wide panel. With no agent it returns `false` and changes nothing. Invalid tokens throw. No card is highlighted and the existing drawer overlay does the dimming.
+
+```tsx
+const { talkAbout } = useAgentLayer();
+// Inside the host card's swipe-release handler (not an effect or a timer):
+const onSwipeRelease = () => {
+  if (!talkAbout('@repas:2026-10-27/dejeuner', { voice: true })) showAgentUnavailable();
+};
+// The desktop card's mic button calls the same handler onClick.
+```
+
+Register the kind in `agent.chatProps.mentions`. Configure `agent.voice` as usual: `send: 'message'` retains audio plus transcript (requires upload), `'auto'` sends transcript text, and `'draft'` fills the composer for review. Capture starts synchronously inside `talkAbout`, before it returns, so the click/swipe release grants permission even before the chat mounts. Without voice config, or without `voice: true`, it focuses the composer instead. A gesture-started recording uses exactly the same replacement composer row as one mic tap at half, full and in the panel: trash, localized timer, live PCM waveform, pause/resume and Send. Send finishes (send for `message`/`auto`, fill the draft for `draft`); trash discards. No top recording overlay or second editable row is added. Escape, blur and hidden-page cancellation remain. Typed, dictated, automatic and audio-message sends carry draft mentions. Sent voice messages show transcript text and inline mentions by default; `agent.chatProps.voiceReplay = true` explicitly enables the retained audio player. The mention leaves the draft when sent and is not restored on send refusal/failure. No `context.target`, target block or inline agent-target reply is used.
+
+Fictional consumer: `examples/app-shell/?talkAbout=1&send=message#jour`; `node examples/app-shell/journey-talk-about.mjs` drives swipe on phone and mic click on desktop, transcript-only voice send and reload, plus phone one-/three-line and file-mention alignment geometry/screenshots.
 
 **Dense opt-out (touch targets).** Under 640px or on a coarse pointer, `app-shell` gives every button and toggle inside `.app-shell` a 44px minimum (WCAG 2.5.5). Put `data-dense` on a container (or on a control) and it and everything inside keep their own size. For dense document cards only; the default stays 44px. Do not use it for navigation or primary actions.
 
@@ -1333,3 +1372,5 @@ The host passes `readonly RequestView[]`: `number`, `title`, `state`, `line`, `s
 The host bumps `changeToken` alongside fresh views. A polite live region compares those views with the last announced snapshot and announces moved rows (number and localized state). Locale defaults to English; `locale="fr"` and `labels` overrides follow the diagram labels pattern. Colours and appearance come entirely from the host's shadcn components and tokens.
 
 Run `node --test test/contracts/requests.test.mjs test/contracts/requests-board.test.mjs` for pure transforms and real-shadcn Happy DOM callbacks. After `npm run build`, open `npm run workspace-app` with `?requests` for the fictional Atelier Exemple demo, or run `npm run requests:journey` with Chromium for desktop/phone light/dark screenshots under `.cache/evidence/D141/`. The demo logs intent; it does not call a production endpoint or persist approvals. D-140 endpoint wiring and release remain consumer/owner work.
+
+`pi-chat/session.useChatSession` is a thin presentation adapter over the kit's headless [chat session](../packages/ui/README.md#chat-react-hooks). `pi-chat/notice` exports `ChatConnectionNotice` and `ChatStatusLine`, shared with Ambient so host recovery content and developer/natural statuses stay consistent. Reinstall both blocks after updating the kit.

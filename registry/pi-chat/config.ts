@@ -43,7 +43,15 @@ export interface SlashConfig {
 }
 
 export interface MentionResult { readonly path: string; readonly kind?: 'file' | 'directory'; readonly label?: string }
+export interface MentionKind {
+  readonly label: (path: string) => string;
+  readonly icon: ReactNode;
+  readonly open?: ((path: string) => void) | undefined;
+  readonly renderSent?: ((path: string) => ReactNode | undefined) | undefined;
+}
 export interface MentionsConfig {
+  /** App mentions use `@prefix:path` (or the existing quoted token for spaces). Prefixes match [a-z][a-z0-9-]*. No picker is required. */
+  readonly kinds?: Readonly<Record<string, MentionKind>> | undefined;
   /** Accessible name and optional option/media presentation for a host catalog. */
   readonly listLabel?: string;
   readonly icon?: ReactNode;
@@ -76,15 +84,9 @@ export type PreviewRead = (path: string, signal: AbortSignal) => Promise<{ reado
 /** Paste-to-file thresholds (the kit's `chat-text`): a paste with more characters or more lines than these becomes a file. */
 export type { PasteToFile } from '@hachej/boring-ui-kit/chat-text';
 /** A paste the composer took, with the textarea range it replaces (restored if the upload is cancelled). */
-export interface PastedText { readonly text: string; readonly start: number; readonly end: number }
-
-export interface UploadResult {
-  /** The host saved the file in the workspace: it becomes an `@path` mention. */
-  readonly path?: string;
-  /** Sent as a native image attachment instead of a path mention when both are supplied. */
-  readonly image?: { readonly data: string; readonly mimeType: string };
-  readonly name: string;
-}
+// Compatibility exports for one release; session contracts are owned by the kit.
+export type { PastedText, UploadResult, ModelRef } from '@hachej/boring-ui-kit/chat-react';
+import type { UploadResult, ModelRef } from '@hachej/boring-ui-kit/chat-react';
 export interface VoiceMessageConfig {
   readonly transcribe: (audio: Blob, signal: AbortSignal) => Promise<string>;
   /** Capture limit (default five minutes). Upload and send still wait for release. */
@@ -107,15 +109,9 @@ export interface AttachmentsConfig {
   readonly Camera?: ComponentType<CameraSheetProps> | undefined;
 }
 
-/** One past conversation in the history list. `title` is its name or first message; `updatedAt` is when it last had activity. */
-export interface ConversationItem {
-  readonly id: string;
-  readonly title?: string | undefined;
-  readonly updatedAt?: number | string | Date | undefined;
-  /** A preview of the last message (the row's tooltip). */
-  readonly lastMessage?: string | null | undefined;
-  readonly archived?: boolean | undefined;
-}
+// Compatibility type export for one release.
+export type { ConversationItem } from '@hachej/boring-ui-kit/chat-react';
+import type { ConversationItem } from '@hachej/boring-ui-kit/chat-react';
 /** The host's conversations. Give it to `PiChat` and the header's History button opens a list of them instead of the earlier records of this one. */
 export interface ConversationsConfig {
   readonly items: readonly ConversationItem[];
@@ -158,7 +154,6 @@ export interface ReplyRef {
   readonly durationMs?: number | undefined;
 }
 
-export interface ModelRef { readonly provider: string; readonly modelId: string }
 export interface ModelConfig {
   readonly options: readonly (ModelRef & { readonly label?: string })[];
   /** Reject to refuse: the message is shown inline. */
@@ -177,7 +172,7 @@ export interface EffortConfig {
  * The text grammar (slash menu, `@mention` tokens, message pieces, file kinds, paste and draft rules) is the kit's `chat-text`; it is
  * re-exported here so the items that import it from `pi-chat/config` keep compiling.
  */
-export { appendToDraft, displayName, fileKind, hasMention, isLongPaste, isUploadPath, isVoicePath, looksLikeMarkdown, MENTION_TOKEN, mentionedPaths, mentionToken, mentionTrigger, pieces, prependToDraft, removeMention, slashGroup, slashItems, slashQuery, visibleParts } from '@hachej/boring-ui-kit/chat-text';
+export { appendToDraft, displayName, fileKind, hasMention, isLongPaste, isUploadPath, isVoicePath, looksLikeMarkdown, MENTION_TOKEN, mentionedPaths, mentionKind, mentionToken, mentionTrigger, pieces, prependToDraft, removeMention, slashGroup, slashItems, slashQuery, visibleParts, withoutKindMentions, withoutMentions } from '@hachej/boring-ui-kit/chat-text';
 export type { FileKind, MentionTrigger, Piece, SlashItem } from '@hachej/boring-ui-kit/chat-text';
 
 /** Props of the slash picker that `SlashConfig.Picker` carries. */
@@ -224,15 +219,25 @@ export interface VoiceMessageHandle {
   readonly phase: VoicePhase | 'idle';
   readonly seconds: number;
   readonly captureSequence: number;
+  /** Actual PCM input levels; absent on the MediaRecorder fallback. */
+  readonly levels?: readonly number[];
+  readonly paused?: boolean;
+  readonly pause?: (() => void) | undefined;
+  readonly resume?: (() => void) | undefined;
   readonly problem: string | undefined;
   readonly pending: readonly PendingVoice[];
   readonly start: () => void;
   readonly finish: () => void;
   readonly cancel: () => void;
 }
-/** Props of the hold-to-record button that `VoiceMessageConfig.Button` carries. */
+/** Props of the tap-to-record button that `VoiceMessageConfig.Button` carries. */
 /** `primary`: the button stands in for Send (`voiceReplacesSend`), so it takes Send's primary look. */
-export interface VoiceMessageButtonProps { readonly voice: VoiceMessageHandle; readonly disabled?: boolean; readonly primary?: boolean }
+export interface VoiceMessageButtonProps {
+  readonly voice: VoiceMessageHandle;
+  readonly disabled?: boolean;
+  readonly primary?: boolean;
+  readonly testId?: string;
+}
 /** Props of a pending voice message bubble that `VoiceMessageConfig.Bubble` carries. */
 export interface PendingVoiceBubbleProps { readonly pending: PendingVoice | undefined }
 /** What the chat hands its recorder (`VoiceMessageConfig.useRecorder`). `config` is undefined when voice is off. */
