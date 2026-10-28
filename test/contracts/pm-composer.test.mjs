@@ -28,21 +28,26 @@ test('C3 initially has only hint, mic and done; no timer, counter or automatic r
   assert.match(html, /Touchez ce que vous voulez montrer/);
   assert.match(html, /aria-label="Terminé"/);
   assert.match(html, /data-pm-strip/);
-  assert.doesNotMatch(html, /pm-timer|radiogroup|sélectionnés|Ouvrir le dictaphone/);
+  assert.doesNotMatch(html, /pm-timer|radiogroup|pm-pause|sélectionnés/);
 });
 
-test('C4/C5 share one exclusive selection toggle, timer-to-dictaphone and swapping pause/mic', () => {
-  for (const paused of [false, true]) {
-    const html = renderToStaticMarkup(h(PmComposer, { variant: 'strip', show: !paused, onShow: noop, onReturn: noop, onOpenRecorder: noop,
+test('C4/C5 share one exclusive selection toggle and the recorder button; mic and pause never show together', () => {
+  for (const paused of [false, true]) for (const show of [true, false]) {
+    const html = renderToStaticMarkup(h(PmComposer, { variant: 'strip', show, onShow: noop, onReturn: noop, onOpenRecorder: noop,
       voice: { ...baseVoice, phase: 'recording', seconds: 14, paused, pause: noop, resume: noop } }));
     assert.match(html, /role="radiogroup"/);
     assert.match(html, /aria-label="Sélectionner"/);
     assert.match(html, /aria-label="Naviguer"/);
-    assert.match(html, /Ouvrir le dictaphone/);
+    assert.match(html, /aria-label="Ouvrir l’enregistreur"/, 'R7: the timer is a button that opens the recorder');
     assert.match(html, /0:14/);
-    assert.equal((html.match(/data-testid="pm-pause"/g) ?? []).length, 1);
-    assert.doesNotMatch(html, /data-testid="pm-mic"|sélectionnés|Reprendre la sélection/);
-    assert.match(html, new RegExp(`aria-label="${paused ? 'Reprendre' : 'Pause'}"`));
+    // Spec 1 §1: paused swaps pause for the mic (resume); the two never show together.
+    assert.equal((html.match(/data-testid="pm-pause"/g) ?? []).length, paused ? 0 : 1);
+    assert.equal((html.match(/data-testid="pm-mic"/g) ?? []).length, paused ? 1 : 0);
+    assert.equal(/data-testid="pm-hint"/.test(html), show, 'navigate mode hides the hint (C5)');
+    assert.match(html, paused ? /data-phase="paused"/ : /data-phase="rec"/);
+    // Left to right: toggle · hint · timer · pause (or mic) · ×.
+    const order = ['radiogroup', show ? 'pm-hint' : 'pm-timer', 'pm-timer', paused ? '"pm-mic"' : '"pm-pause"', '"pm-done"'].map(token => html.indexOf(token));
+    assert.deepEqual([...order].sort((a, b) => a - b), order);
   }
 });
 
@@ -54,9 +59,11 @@ test('C7 renders timestamped selections inline in the transcript, not a separate
   assert.equal(card.inline, true);
   const html = renderToStaticMarkup(card.content);
   assert.match(html, /Sur cette carte/);
-  assert.match(html, /① Carte · Déjeuner 0:02/);
-  assert.match(html, /② Jauge · Protéines 0:09/);
-  assert.ok(html.indexOf('① Carte') < html.indexOf('je veux changer'));
+  const plain = html.replace(/<span class="sr-only">[^<]*<\/span>/g, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+  assert.match(plain, /1 Carte · Déjeuner 0:02/);
+  assert.match(plain, /2 Jauge · Protéines 0:09/);
+  assert.ok(plain.indexOf('1 Carte') < plain.indexOf('je veux changer'));
+  assert.doesNotMatch(html, /Retirer/, 'a sent chip has no ×');
   assert.match(html, /Dicté · 0:14 · 2 captures/);
   assert.doesNotMatch(html, /role="list"|pm.points@1/);
   assert.equal(pointMessage({ model: [{ role: 'assistant', content: [{ type: 'text', text }] }] }), undefined);

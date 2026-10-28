@@ -1,25 +1,26 @@
-# PM composer and panel — work in progress
+# PM composer and panel
 
-`PmComposer` is the one host-agnostic composer export, built over the regular kit `Composer` and #1882 recording bar. It is available from `components/pm-panel/pm-panel` or `components/pm-panel/pm-composer` after installing the `pm-panel` registry item. `PiChat` and `AmbientChat` accept `renderComposer={props => <PmComposer composer={props} … />}` and optional `sendContext`; no host controller or Pi lifecycle is replaced.
-
-Current AppShell integration:
+« Améliorer l’app » (specs `/home/ubuntu/projects/_work/pm-spec`, boards C1–C7 and D1, D7, D7b, D8, D9). Install the `pm-panel` registry item; the app's theme defines the `--pm-*` tokens (the registry theme has defaults).
 
 ```tsx
 <AppShell {...app} improve={pm} />
-// pm: ImproveSpec; the host already owns its remote NativeChatController,
-// optional pointVoice transcription, taskMentions and task-board bindings.
+// pm: ImproveSpec — the host's remote NativeChatController, appName, optional pointVoice transcription, taskMentions and the task-board seam.
+<PmChat spec={pm} page={appFrameElement} screen="My day" preset="desktop" /> // Studio's conversation column
 ```
 
-The newer requested `improve: { agent: 'pm' }` resolver is **not implemented**. The latest specifications in `/home/ubuntu/projects/_work/pm-spec` supersede the original brief. This candidate has runtime behavior and regression evidence, not visual acceptance. Do not release or claim mockup equivalence from its screenshots.
+The one-line `improve: { agent: 'pm' }` resolver is **not implemented**: the host owns credentials and passes the controller.
 
 ## Exports
 
-- `PmComposer`, `PmComposerProps`: shared compose/recording/strip presentation. Supplies no router or backend.
-- `usePmPanel`, `PmPanelState`: local selections, native draft context and shared capture orchestration. Mount once per controller instance; remount this state owner on replacement. AppShell does that without remounting the app page.
-- `PmPanelProvider`, `ImproveLayout`, `ImproveSpec`: explicit borrowed-controller layout composition.
-- `useTaskMentions`, `TaskMentionSource`, `TaskMention`: host-authorized task search/title/present ports.
-- `PmVoice`, `PmTranscript`: host transcription and optional live speech. Timings are seconds; picks sample the existing capture clock and are sent as milliseconds.
-- `StudioTaskBoardSeam`: `renderRequest()` and `renderBoard({ filter: 'mine', variant, limit? })`. D-417 / PR #1900 owns the actual card and board. This item builds no alternative.
+- `PmComposer`, `PmComposerProps`, `PmPreset`, `PointerIcon`: the one composer (`touch` | `desktop`), compose and strip variants. No router or backend.
+- `PmChat`: thread plus composer for a column; the strip replaces the composer while pointing.
+- `usePmPanel`, `PmPanelState`: picks, pins, recording, merge, meta line, Esc and send context. One per controller instance.
+- `PmPanelProvider`, `ImproveLayout`, `ImproveSpec`: AppShell's in-flow layout (sheet, strip, full panel).
+- `pmEntries`, `pointMessage`, `PointChipView`: the thread's renderers (sent chips, PM reply, request card).
+- `pmTextFr`, `pmTextEn`, `pmTextFor`, `PmText`: spec strings.
+- `useTaskMentions`, `TaskMentionSource`, `TaskMention`: the @ task picker over host-authorized data.
+- `PmVoice`, `PmTranscript`: host transcription with word timings (seconds).
+- `StudioTaskBoardSeam`: `renderRequest({ entry, edit })` and `renderBoard({ filter: 'mine', variant, limit? })`. D-417 / PR #1900 owns the card and board.
 
 ## Data and lifecycle
 
@@ -41,4 +42,4 @@ node examples/pm-panel/journey-faults.mjs
 
 The example server is `node examples/pm-panel/server.mjs`. The browser journey writes `.agent-handoff/pm-panel/screenshots/`. Use the resource-scoped command in the task brief for heavy runs. The six fault regressions were demonstrated failing before correction. The original public AppShell journey also fails against pre-feature source (`PM_BEFORE=1`).
 
-Remaining spec work includes exact touch/desktop/EN presets and copy, 60px strip, 24px top-right pins, renumbering/tap-to-remove, preceding-word alignment, null idle timestamps, draft metadata, C6 header, C7 overlay/header/card, task picker keyboard/presentation, one-line PM resolution, and the requested side-by-side board comparisons.
+Board comparisons: `node examples/pm-panel/journey-boards.mjs` and `journey-studio.mjs` write `.agent-handoff/pm-panel/compare/<board>.png`. Open: the one-line resolver and PR #1900's compact card.

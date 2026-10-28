@@ -9,7 +9,7 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 const out = join(root, '.cache/pm-point-state-test');
 mkdirSync(out, { recursive: true });
 await build({ entryPoints: [join(root, 'registry/pm-panel/point-state.ts')], outfile: join(out, 'point-state.mjs'), bundle: true, format: 'esm', platform: 'node', packages: 'external', logLevel: 'silent' });
-const { createPointState, pointReducer, marker, alignedTranscript } = await import(pathToFileURL(join(out, 'point-state.mjs')).href);
+const { createPointState, pointReducer, marker, alignedTranscript, renumberText } = await import(pathToFileURL(join(out, 'point-state.mjs')).href);
 
 const chip = (id, overrides = {}) => ({ id, kind: 'carte', label: `Carte ${id}`, screen: '/overview', at: 1, box: [16, 96, 120, 80], ...overrides });
 const pick = (state, value) => pointReducer(state, { type: 'pick', chip: value });
@@ -34,19 +34,31 @@ test('PM point state starts with Montrer off and select/navigate never owns reco
   assert.deepEqual(initial.chips, [], 'transitions do not mutate the prior snapshot');
 });
 
-test('PM chips retain screen/capture and monotonically numbered pins after removal', () => {
+test('PM chips retain screen/capture and renumber in order after a removal (spec 1 §3)', () => {
   const first = chip('a', { at: 0.5, capture: { mimeType: 'image/png', data: 'AA==' } });
   const second = chip('b', { at: 3, screen: '/progress' });
   const one = pick(createPointState(), first);
   const two = pick(one, second);
   assert.deepEqual(two.chips, [{ ...first, number: 1 }, { ...second, number: 2 }]);
   const removed = pointReducer(two, { type: 'remove', id: 'a' });
-  assert.deepEqual(removed.chips.map(value => value.number), [2]);
+  assert.deepEqual(removed.chips.map(value => value.number), [1], 'pins, chips and markers stay in sync: the rest moves down');
   assert.equal(two.chips.length, 2);
   const three = pick(removed, chip('c', { screen: '/settings' }));
-  assert.deepEqual(three.chips.map(value => value.number), [2, 3]);
+  assert.deepEqual(three.chips.map(value => value.number), [1, 2]);
   assert.deepEqual(three.chips.map(value => value.screen), ['/progress', '/settings']);
-  assert.equal(three.nextNumber, 4);
+  assert.equal(three.nextNumber, 3);
+  assert.equal(pointReducer(three, { type: 'remove', id: 'missing' }), three);
+});
+
+test('removing a pick renumbers the draft markers like the pins', () => {
+  assert.equal(renumberText('Sur ① cette carte ② et ③.', 2), 'Sur ① cette carte et ②.');
+  assert.equal(renumberText('① au début', 1), ' au début');
+  assert.equal(renumberText('jauge ②.', 2), 'jauge.');
+});
+
+test('Montrer enters the strip in select mode without any recording state', () => {
+  const pointing = pointReducer(createPointState(), { type: 'point' });
+  assert.deepEqual(pointing, { mode: 'point', show: true, chips: [], nextNumber: 1 });
 });
 
 test('PM selection captures its box and screenshot metadata independently of caller mutations', () => {
@@ -149,4 +161,21 @@ test('PM transcript appends markers honestly without usable timing and never fab
   assert.equal(alignedTranscript(text, [{ start: NaN, end: 1, text }], chips), `${text} ① ②`);
   assert.equal(alignedTranscript('', undefined, chips), '① ②');
   assert.equal(alignedTranscript(text, undefined, []), text);
+});
+
+test('PM transcript puts a chip after the last word ending at or before its time, before that word\'s punctuation (C6)', () => {
+  const text = 'Sur cette carte je veux les protéines en premier, comme sur cette jauge.';
+  const ends = [0.8, 1.3, 1.9, 2.9, 3.5, 3.8, 4.8, 5.2, 6.4, 7.1, 7.5, 8.1, 8.9];
+  const segments = [{ start: 0.4, end: 8.9, text, words: text.split(' ').map((word, index) => ({ start: ends[index] - 0.3, end: ends[index], text: word })) }];
+  const chips = [{ ...chip('a', { at: 2 }), number: 1 }, { ...chip('b', { at: 9 }), number: 2 }];
+  assert.equal(alignedTranscript(text, segments, chips), 'Sur cette carte ① je veux les protéines en premier, comme sur cette jauge ②.');
+  // A word still being said at the tap does not count: the chip goes after the previous one.
+  assert.equal(alignedTranscript(text, segments, [{ ...chip('a', { at: 1.85 }), number: 1 }]), 'Sur cette ① carte je veux les protéines en premier, comme sur cette jauge.');
+});
+
+test('PM picks made before the microphone (t = null) go first, in order', () => {
+  const text = 'cette carte';
+  const segments = [{ start: 0, end: 1, text, words: [{ start: 0, end: 0.4, text: 'cette' }, { start: 0.5, end: 1, text: 'carte' }] }];
+  const chips = [{ ...chip('b', { at: null }), number: 2 }, { ...chip('a', { at: null }), number: 1 }, { ...chip('c', { at: 1.2 }), number: 3 }];
+  assert.equal(alignedTranscript(text, segments, chips), '① ② cette carte ③');
 });

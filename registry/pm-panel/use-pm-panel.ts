@@ -9,9 +9,10 @@ import type { VoiceMessageHandle, VoiceMessageConfig } from '../pi-chat/config';
 import type { PiChatProps } from '../pi-chat/pi-chat';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { frenchChatLabels } from '../pi-chat/labels-fr';
-import { feedbackLabelsFr } from '../feedback/feedback-labels';
+import { feedbackLabels, feedbackLabelsFr } from '../feedback/feedback-labels';
 import type { PointChip } from './point-state';
-import { alignedTranscript, createPointState, marker, pointReducer } from './point-state';
+import { alignedTranscript, createPointState, marker, pointReducer, renumberText } from './point-state';
+import { pmTextFor } from './pm-text';
 import { captureElement } from './capture';
 import { POINT_PREFACE } from './point-message';
 
@@ -27,6 +28,8 @@ export interface ImproveSpec {
   readonly controller: NativeChatController;
   readonly chatProps?: Omit<PiChatProps, 'controller'>;
   readonly label?: string;
+  /** The app's name in the full panel's subtitle: « Le chef de projet · {appName} ». */
+  readonly appName?: string;
   readonly voice?: VoiceMessageConfig & { readonly send?: 'auto' | 'draft' | 'message' };
   readonly feedback?: import('@hachej/boring-feedback/ui').FeedbackSession;
   readonly policy?: PrivacyPolicy;
@@ -37,7 +40,8 @@ export interface ImproveSpec {
 /** D-417 / PR #1900 owns these components; this is deliberately not another card or board. */
 export interface StudioTaskBoardSeam {
   readonly renderBoard: (options: { readonly filter: 'mine'; readonly variant: 'full' | 'compact'; readonly limit?: number }) => import('react').ReactNode;
-  readonly renderRequest?: () => import('react').ReactNode;
+  /** The request card under a PM reply (C7), or undefined when that reply carries no request. `edit` puts the request text back in the composer (« Modifier »). */
+  readonly renderRequest?: (context: { readonly entry: import('@earendil-works/pi-durable').EntryRecord; readonly edit: (text: string) => void }) => import('react').ReactNode;
 }
 
 interface CaptureBatch {
@@ -50,6 +54,23 @@ interface CaptureBatch {
   requestId?: string;
 }
 const defaultPolicy = createPrivacyPolicy();
+const NOTHING = new Error('nothing heard');
+/** The picker's overlay is the pin layer's host only while picking; pins are drawn by the overlay below (corner pins, the element's radius). */
+const PICK_STYLES = '.box[data-tone="pinned"] { display: none; } .label { display: none; } .box[data-tone="hover"] { border-width: var(--pm-mark-width); } @media (hover: none) { .box[data-tone="hover"] { display: none; } }';
+/** Pins: a circle centred on the element's top-right corner, accent fill, contrasting number (spec R3); the accent outline (35% app, 60% Studio) and a light fill. Every value is a theme token. */
+const PIN_STYLES = '.box { border-style: solid; border-width: var(--pm-mark-width); border-color: color-mix(in srgb, var(--pm-mark) var(--pm-mark-line), transparent); background: color-mix(in srgb, var(--pm-mark) 6%, transparent); }'
+  + ' .label { box-sizing: border-box; min-width: 24px; height: 24px; padding: 0 7px; border-radius: var(--pm-radius-round); display: flex; align-items: center; justify-content: center;'
+  + ' background: var(--pm-mark); color: var(--pm-mark-foreground); font-family: var(--font-sans, inherit); font-size: 12px; font-weight: 700; line-height: 1; transform: translate(-50%, -50%); }';
+/** A tap lands on the innermost node; the pick is the nearest element a person would name (a card, a gauge, a button, a field). */
+const NAMED = 'button, a[href], input, select, textarea, img, svg[role], [role=meter], [role=progressbar], [role=article], article, [role=region], [role=group], [role=listitem], li, [role=button], [role=link], [role=img], [aria-label]';
+function meaningful(element: Element, root: Element): Element {
+  const named = element.closest(NAMED);
+  return named && root.contains(named) ? named : element;
+}
+function headingOf(element: Element): string | undefined {
+  const heading = element.querySelector('h1, h2, h3, h4, h5, h6, [role=heading]')?.textContent?.trim();
+  return heading || undefined;
+}
 function keepMarkers(controller: NativeChatController, chips: readonly PointChip[]) {
   const text = controller.getSnapshot().draft.text;
   const missing = chips.filter(chip => !text.includes(marker(chip.number))).map(chip => marker(chip.number)).join(' ');
@@ -57,6 +78,8 @@ function keepMarkers(controller: NativeChatController, chips: readonly PointChip
 }
 
 export function usePmPanel(spec: ImproveSpec, open: boolean, page: HTMLElement | null, screen = 'app') {
+  const text = pmTextFor(spec.chatProps?.locale);
+  const [announcement, setAnnouncement] = useState('');
   const [state, dispatch] = useReducer(pointReducer, undefined, createPointState);
   const [problem, setProblem] = useState<string>();
   const [live, setLive] = useState<PmTranscript>({ text: '' });
@@ -77,6 +100,17 @@ export function usePmPanel(spec: ImproveSpec, open: boolean, page: HTMLElement |
   });
   const coreRef = useRef(core);
   useLayoutEffect(() => { coreRef.current = core; });
+  // Esc = « Terminé » while the strip shows (spec 1 §1): it keeps and transcribes the recording. Registered in a layout effect at mount, so it
+  // runs before the voice attempt's own Escape (which cancels a plain dictation) and the picker's; elsewhere Escape keeps their meaning.
+  const pointingRef = useRef(false), returnRef = useRef<() => void>(() => {}), removeRef = useRef<(id: string) => void>(() => {});
+  useLayoutEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.isComposing || !pointingRef.current) return;
+      event.preventDefault(); event.stopImmediatePropagation(); returnRef.current();
+    };
+    window.addEventListener('keydown', onKey, { capture: true });
+    return () => window.removeEventListener('keydown', onKey, { capture: true });
+  }, []);
   const item = core.attempts[0];
   const recording = item?.phase === 'recording' || item?.phase === 'starting';
   const cancel = useCallback(() => {
@@ -110,21 +144,26 @@ export function usePmPanel(spec: ImproveSpec, open: boolean, page: HTMLElement |
       try {
         const audio = await api.stop(attempt);
         if (!api.valid(attempt)) return;
-        if (!audio) throw new Error('Rien n’a été entendu.');
+        if (!audio) throw NOTHING;
         const result = await attempt.config.transcribe(audio.audio, attempt.abort.signal);
         if (!api.valid(attempt)) return;
         const transcript = typeof result === 'string' ? { text: result } : result;
-        if (!transcript.text.trim()) throw new Error('Rien n’a été entendu.');
+        if (!transcript.text.trim()) throw NOTHING;
         const current = latest.current;
         const typed = attempt.controller.getSnapshot().draft.text;
-        const timed = current.state.chips.filter(chip => !typed.includes(marker(chip.number))).map(chip => ({ ...chip, at: Math.max(0, chip.at - attempt.offset) }));
+        const timed = current.state.chips.filter(chip => !typed.includes(marker(chip.number))).map(chip => ({ ...chip, at: chip.at === null ? null : Math.max(0, chip.at - attempt.offset) }));
         const words = alignedTranscript(transcript.text.trim(), transcript.segments, timed);
         attempt.controller.setText(appendToDraft(attempt.controller.getSnapshot().draft.text, words));
         const segments = transcript.segments?.map(segment => ({ ...segment, start: segment.start + attempt.offset, end: segment.end + attempt.offset,
           ...(segment.words ? { words: segment.words.map(word => ({ ...word, start: word.start + attempt.offset, end: word.end + attempt.offset })) } : {}) }));
         setDictated(attempt.offset + (audio.endedAt - audio.startedAt) / 1000);
         setSpeech({ text: appendToDraft(attempt.priorSpeech.text, transcript.text), segments: [...(attempt.priorSpeech.segments ?? []), ...(segments ?? [])] }); setLive({ text: '' }); setFocusVersion(value => value + 1); dispatch({ type: 'return' });
-      } catch { if (api.valid(attempt)) { keepMarkers(attempt.controller, latest.current.state.chips); setFocusVersion(value => value + 1); setProblem('La transcription a échoué. Vos éléments et votre texte sont conservés.'); } }
+      } catch (error) {
+        if (!api.valid(attempt)) return;
+        // Nothing said: the picks (if any) become chips, the draft is otherwise untouched, and that is not a failure.
+        keepMarkers(attempt.controller, latest.current.state.chips); setFocusVersion(value => value + 1);
+        if (error !== NOTHING) setProblem('La transcription a échoué. Vos éléments et votre texte sont conservés.');
+      }
       finally { if (api.valid(attempt)) api.remove(attempt); }
     })();
   }, []);
@@ -139,28 +178,36 @@ export function usePmPanel(spec: ImproveSpec, open: boolean, page: HTMLElement |
   const selectionRoot = page?.closest('[data-pm-layout]') ?? page;
   useEffect(() => {
     if (!open || !state.show || state.mode !== 'point' || !selectionRoot) return;
-    const picker = createPicker({ root: selectionRoot, policy, styles: '.box { background: transparent; border-color: var(--border); } .label { display: none; }', tap: 'pick', wheel: false, keys: 'outside-ignored', onPick: element => {
+    const picker = createPicker({ root: selectionRoot, policy, styles: PICK_STYLES, tap: 'pick', wheel: false, keys: 'outside-ignored',
+      onPick: picked => {
+      const element = meaningful(picked, selectionRoot);
+      // Tapping an already picked element removes that pick.
+      for (const [id, chosen] of selectedElements.current) if (chosen === element) { removeRef.current(id); return; }
       if (latest.current.state.chips.length >= 20) { setProblem('20 éléments maximum par message.'); return; }
       const capture = anchorOf(element, policy, { root: selectionRoot });
       if (capture.kind !== 'captured') { setProblem('Cet élément ne peut pas être joint.'); return; }
       try {
         const anchor = capture.anchor, image = captureElement(element, policy), box = element.getBoundingClientRect();
         const id = `pm-${++sequence.current}`, number = latest.current.state.nextNumber;
-        const kind = feedbackLabelsFr.element(anchor.signals.role ?? element.localName, undefined);
-        const label = anchor.signals.name ?? kind;
-        const name = `${marker(number)} @ ${kind} · ${label} · capture jointe`;
+        const words = text.locale === 'en' ? feedbackLabels : feedbackLabelsFr;
+        const role = anchor.signals.role ?? element.localName, unknown = words.element(undefined, undefined), named = words.element(role, undefined);
+        const kind = named === unknown ? (text.locale === 'en' ? 'Text' : 'Texte') : named;
+        const name = anchor.signals.name ?? headingOf(element) ?? kind;
+        const label = name.length > 40 ? `${name.slice(0, 39)}…` : name;
         const controller = latest.current.spec.controller;
-        controller.setAttachments([...controller.getSnapshot().draft.attachments, { id, name, content: { type: 'image', ...image } }]);
+        controller.setAttachments([...controller.getSnapshot().draft.attachments, { id, name: `${marker(number)} @ ${kind} · ${label} · capture jointe`, content: { type: 'image', ...image } }]);
         selectedElements.current.set(id, element); anchors.current.set(id, anchor);
         const attempt = coreRef.current.current()[0];
-        const at = (attempt?.offset ?? latest.current.dictated ?? 0) + (attempt?.capture.progress()?.elapsedMs ?? 0) / 1000;
+        const recordingNow = attempt?.phase === 'recording' || attempt?.phase === 'starting';
+        const at = recordingNow ? (attempt.offset ?? 0) + (attempt.capture.progress()?.elapsedMs ?? 0) / 1000 : null;
         dispatch({ type: 'pick', chip: { id, kind, label, screen, at, box: [box.x, box.y, box.width, box.height] } });
+        setAnnouncement(text.added(number, kind, label));
         setProblem(undefined);
       } catch { setProblem('La capture de cet élément est indisponible. Réessayez.'); }
     } });
     void picker.start();
     return () => picker.dispose();
-  }, [open, state.show, state.mode, policy, selectionRoot, page, screen]);
+  }, [open, state.show, state.mode, policy, selectionRoot, page, screen, text]);
   const sequence = useRef(0);
   // Native attachment remove controls also remove the corresponding marker and pin.
   useEffect(() => {
@@ -169,17 +216,19 @@ export function usePmPanel(spec: ImproveSpec, open: boolean, page: HTMLElement |
     }
   }, [snapshot.draft.attachments, snapshot.send.kind, state.chips]);
   useEffect(() => {
-    if (!open || (state.mode !== 'point' && state.mode !== 'navigate') || !selectionRoot) return;
-    const overlay = createOverlay({ document: selectionRoot.ownerDocument, styles: '.box { border-color: var(--border); }' });
+    // Pins stay while the page is visible (strip and review); the full panel covers the page. A pin shows only on its own screen.
+    if (!open || state.mode === 'full' || !state.chips.length || !selectionRoot) return;
+    // Mounted beside the picked area (never inside it), so the pins read the host surface's theme tokens.
+    const overlay = createOverlay({ document: selectionRoot.ownerDocument, styles: PIN_STYLES, labels: 'corner', shape: 'element', mount: selectionRoot.parentElement ?? selectionRoot.ownerDocument.body, ...(page ? { clip: page } : {}) });
     const elements = new Map<Element, string[]>();
     for (const chip of state.chips) {
       const element = selectedElements.current.get(chip.id);
       if (!element?.isConnected || !element.getClientRects().length) continue;
-      elements.set(element, [...(elements.get(element) ?? []), marker(chip.number)]);
+      elements.set(element, [...(elements.get(element) ?? []), String(chip.number)]);
     }
     overlay.draw([...elements].map(([element, numbers]) => ({ element, label: numbers.join(' '), tone: 'hover' as const })));
     return () => overlay.dispose();
-  }, [open, state.mode, state.chips, selectionRoot, screen]);
+  }, [open, state.mode, state.chips, selectionRoot, screen, page]);
   const completeBatch = useCallback((batch: CaptureBatch) => {
     if (!mounted.current || latest.current.spec.controller !== batch.controller || pendingBatch.current !== batch) return;
     pendingBatch.current = undefined;
@@ -193,10 +242,10 @@ export function usePmPanel(spec: ImproveSpec, open: boolean, page: HTMLElement |
       count: state.chips.length || (dictated !== undefined ? 1 : 0),
       attach: (text: string) => {
         if (pendingBatch.current) return Promise.resolve({ kind: 'refused' as const, reason: 'Vérifiez d’abord le message en cours.' });
-        const payload = { format: 'pm.points@1', captureBatch: `${batchPrefix}-${++batchSequence.current}`, dictatedSeconds: dictated,
+        const payload = { format: 'pm.points@1', captureBatch: `${batchPrefix}-${++batchSequence.current}`, dictatedSeconds: dictated, dictatedMs: dictated === undefined ? undefined : Math.round(dictated * 1000),
           transcriptSegments: speech.segments ?? [], alignment: speech.segments?.some(segment => segment.words?.length) ? 'word' : speech.segments?.length ? 'segment' : 'unavailable',
           policy: { version: policy.version, widened: policy.widened }, selections: state.chips.map(({ id, number, kind, label, screen, at }) => ({ n: number, kind, label, screen,
-            atMs: Math.round(at * 1000), screenshot: { imageIndex: snapshot.draft.attachments.findIndex(image => image.id === id), mimeType: snapshot.draft.attachments.find(image => image.id === id)?.content.mimeType }, anchor: anchors.current.get(id) })) };
+            atMs: at === null ? null : Math.round(at * 1000), t: at === null ? null : Math.round(at * 1000), selector: anchors.current.get(id)?.signals.path.join(' > '), screenshot: { imageIndex: snapshot.draft.attachments.findIndex(image => image.id === id), mimeType: snapshot.draft.attachments.find(image => image.id === id)?.content.mimeType }, anchor: anchors.current.get(id) })) };
         const attached = appendToDraft(text, `${POINT_PREFACE}${JSON.stringify(payload)}`);
         const selected: CaptureBatch = { context, controller: spec.controller, ids: state.chips.map(chip => chip.id), text: attached, speech,
           priorRequestId: 'attempt' in snapshot.send ? snapshot.send.attempt.requestId : undefined };
@@ -215,20 +264,30 @@ export function usePmPanel(spec: ImproveSpec, open: boolean, page: HTMLElement |
       if (snapshot.send.kind === 'admitted' && batch.requestId === snapshot.send.attempt.requestId) completeBatch(batch);
     } else if (snapshot.send.kind === 'blocked') pendingBatch.current = undefined;
   }, [snapshot.send, spec.controller, completeBatch]);
-  const liveText = recording ? alignedTranscript(live.text, live.segments, state.chips.filter(chip => !snapshot.draft.text.includes(marker(chip.number))).map(chip => ({ ...chip, at: Math.max(0, chip.at - (item?.offset ?? 0)) }))) : '';
+  const liveText = recording ? alignedTranscript(live.text, live.segments, state.chips.filter(chip => !snapshot.draft.text.includes(marker(chip.number))).map(chip => ({ ...chip, at: chip.at === null ? null : Math.max(0, chip.at - (item?.offset ?? 0)) }))) : '';
   const remove = (id: string) => {
     const chip = state.chips.find(value => value.id === id);
     if (!chip) return;
-    spec.controller.setText(spec.controller.getSnapshot().draft.text.replace(marker(chip.number), ''));
-    spec.controller.setAttachments(spec.controller.getSnapshot().draft.attachments.filter(image => image.id !== id));
+    const draft = spec.controller.getSnapshot().draft;
+    spec.controller.setText(renumberText(draft.text, chip.number));
+    // Attachment names carry the marker too: they follow the renumbering.
+    spec.controller.setAttachments(draft.attachments.filter(image => image.id !== id).map(image => {
+      const other = state.chips.find(value => value.id === image.id);
+      return other && other.number > chip.number ? { ...image, name: image.name.replace(marker(other.number), marker(other.number - 1)) } : image;
+    }));
     dispatch({ type: 'remove', id }); selectedElements.current.delete(id); anchors.current.delete(id);
+    setAnnouncement(text.removed(chip.number));
   };
   const returnToComposer = () => {
     if (recording) { finish(); return; }
     keepMarkers(spec.controller, state.chips);
     dispatch({ type: 'return' }); setFocusVersion(value => value + 1);
   };
-  return { state, dispatch, voice, recording, problem, liveText, sendContext, dictated, snapshot, remove, returnToComposer, focusVersion };
+  useLayoutEffect(() => { returnRef.current = returnToComposer; removeRef.current = remove; pointingRef.current = open && (state.mode === 'point' || state.mode === 'navigate'); });
+
+  // The meta line under the draft (spec 1 §5): dictated time and captures, « Écrit · n captures » without dictation, nothing with neither.
+  const meta = dictated !== undefined || state.chips.length ? text.meta(dictated, state.chips.length) : undefined;
+  return { state, dispatch, voice, recording, problem, liveText, sendContext, dictated, snapshot, remove, returnToComposer, focusVersion, text, meta, announcement };
 }
 
 export type PmPanelState = ReturnType<typeof usePmPanel>;

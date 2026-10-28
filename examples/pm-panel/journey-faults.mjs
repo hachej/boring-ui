@@ -21,15 +21,15 @@ async function select() {
   await browser.click(q('[data-testid=pm-done]'));
   await browser.until('inline selection', `!!${q('[data-pm-marker]')}`);
 }
-async function record({ hold = false } = {}) {
+async function record({ hold = false, target = 'card-a' } = {}) {
   await browser.click(q('[data-testid=pm-show]'));
   await browser.until('point strip ready', `${q('[data-testid=pm-panel]')}.dataset.mode === 'point'`);
   await browser.click(q('[data-testid=pm-strip] [data-testid=pm-mic]'));
   await browser.until('recording', `!!${q('[data-testid=pm-pause]')} && !${q('[data-testid=pm-pause]')}.disabled`, 15000);
-  await pause(700); await browser.tap(q('[data-testid=card-a]'));
+  await pause(700); await browser.tap(q(`[data-testid=${target}]`));
   if (hold) await browser.evaluate('window.__holdTranscription = true');
   await browser.click(q('[data-testid=pm-done]'));
-  await browser.until(hold ? 'transcribing' : 'transcribed', hold ? `!!${q('[data-testid=pm-transcribing]')}` : `!${q('[data-testid=pm-transcribing]')} && ${q('[data-testid=composer-input]')}.textContent.includes('couleur')`);
+  await browser.until(hold ? 'transcribing' : 'transcribed', hold ? `!!${q('[data-testid=pm-transcribing]')}` : `!${q('[data-testid=pm-transcribing]')} && ${q('[data-testid=composer-input]')}.textContent.includes('premier')`);
 }
 const cases = {
   async longEditor() {
@@ -50,11 +50,11 @@ const cases = {
     await browser.click(q('[data-testid=composer-input]')); await browser.send('Input.insertText', { text: 'Avant la fin de la transcription.' });
     assert.equal(await browser.evaluate(`${q('[data-testid=composer-submit]')}.disabled`), true, 'pending voice cannot be separated from its captures by an early send');
     await browser.evaluate('window.__holdTranscription=false;window.__releaseTranscription()');
-    await browser.until('final words', `${q('[data-testid=composer-input]')}.textContent.includes('couleur')`);
+    await browser.until('final words', `${q('[data-testid=composer-input]')}.textContent.includes('premier')`);
     assert.equal(await browser.evaluate(`${q('[data-testid=composer-submit]')}.disabled`), false);
   },
   async twoRecordings() {
-    await open(); await record(); await record();
+    await open(); await record(); await record({ target: 'gauge' }); // a second tap on the same card would remove it (spec 1 §3)
     await browser.click(q('[data-testid=composer-submit]'));
     await browser.until('native submit', `!!${q('[data-testid=pm-sent-message]')}`);
     const body = app.submits.at(-1).body;

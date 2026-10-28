@@ -65,7 +65,7 @@ test('the item imports only React, its declared packages and the app setup shadc
   for (const name of files) {
     for (const [, imported] of source(name).matchAll(/\bfrom\s+['"]([^'"]+)['"]/g)) {
       if (imported.startsWith('./')) { assert.ok(files.some(file => file.replace(/\.tsx?$/, '') === imported.slice(2)), `${name} imports missing ${imported}`); continue; }
-      if (/^\.\.\/(?:pi-chat(?:-[a-z]+)?|feedback|utils|dock)\//.test(imported)) continue;
+      if (/^\.\.\/(?:pi-chat(?:-[a-z]+)?|feedback|utils|dock|pm-panel)\//.test(imported)) continue;
       const ui = /^@\/components\/ui\/([\w-]+)$/.exec(imported);
       if (ui) { assert.ok(SHADCN_BUILTINS.includes(ui[1]), `${name}: ${imported} is not in the app setup`); continue; }
       if (imported === '@/hooks/use-mobile') { assert.ok(SHADCN_BUILTINS.includes('sidebar'), 'use-mobile comes with the sidebar'); continue; }
