@@ -555,3 +555,7 @@ Reply placeholders such as `{note.title}` accept actual strings, finite numbers 
 Hosts must explicitly configure existing conversations when adopting this virtual model; deployment alone does not change their persisted selection. Keep the action's tool and result contract compatible while native work is pending. Changing definitions during an outstanding action is not a version-pinning guarantee.
 
 Evidence: `node --test test/packages/agent-actions.test.mjs` runs the public package through a native Harness, SQLite reopen, native tool gates and scripted models. `npm run test:definitions-consumer -- --actions` repeats these tests and checks strict installed declarations. Real-model speed and decision accuracy remain consumer evals, not claims of these scripted tests.
+
+### Deferred action context
+
+`withActionModels(models, { resolve, prepareFullContext })` optionally prepares context only before a full-model fallback. The asynchronous callback receives the native model context and request options, including cancellation. Successful extraction and automatic replies never invoke it. A preparation failure fails the generation without sending unprepared context. Hosts must install required guards before routing and preserve their native request/task ownership when deferring memory; this callback does not create background work or persist anything.

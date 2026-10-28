@@ -17,14 +17,14 @@ const extraction = (args = { text: 'fictional picnic' }) => answer(fauxToolCall(
 const ref = { provider: 'fictional', modelId: 'full' };
 const virtual = { provider: ACTION_PROVIDER, modelId: 'clerk' };
 const uncertain = 'Outcome unknown; check before retrying.';
-function setup(responses, overrides = {}) {
+function setup(responses, overrides = {}, options = {}) {
   const provider = fauxProvider({ provider: 'fictional', models: [{ id: 'full' }, { id: 'extract' }], tokensPerSecond: Infinity });
   provider.setResponses(responses);
   const models = createModels(); models.setProvider(provider.provider);
   const decisions = [];
   const action = { model: ref, extraction: { model: { ...ref, modelId: 'extract' }, instructions: 'Extract one new note.', tool: { name: 'remember', description: 'Extract a note.', parameters: schema } },
     decide: async input => { decisions.push(input); return true; }, reply: 'Saved {text}.', uncertainReply: uncertain, ...overrides };
-  return { provider, models: withActionModels(models, { resolve: id => id === 'clerk' ? action : undefined }), action, decisions };
+  return { provider, models: withActionModels(models, { ...options, resolve: id => id === 'clerk' ? action : undefined }), action, decisions };
 }
 async function open(fixture, { storage = new MemoryStorage(), execute, extensions = [], settings } = {}) {
   const writes = [];
@@ -211,5 +211,36 @@ test('native deferred generation skips extraction and completes through polling'
   assert.equal(fixture.decisions.length, 0);
   assert.equal(fixture.provider.state.callCount, 1);
   assert.equal(fixture.provider.state.deferredFetchCount, 1);
+  assert.equal(run.writes.length, 0);
+});
+
+
+test('context preparation is lazy: successful action skips it, fallback awaits it and preserves cancellation', async t => {
+  let preparations = 0;
+  const fixture = setup([extraction(), request => {
+    assert.match(JSON.stringify(request), /Prepared fictional history/);
+    return answer('Contextual answer.');
+  }], {}, { prepareFullContext: async (context, options) => {
+    preparations++;
+    assert.ok(options.signal instanceof AbortSignal);
+    return { ...context, messages: [...context.messages, { role: 'user', content: 'Prepared fictional history', timestamp: 1 }] };
+  } });
+  const run = await open(fixture); t.after(() => run.harness.close(ctx));
+  await say(run.conversation);
+  assert.equal(preparations, 0);
+  assert.equal(await text(run.conversation), 'Saved fictional picnic.');
+  fixture.action.decide = async () => false;
+  await say(run.conversation, 'What did I record?');
+  assert.equal(preparations, 1);
+  assert.equal(await text(run.conversation), 'Contextual answer.');
+});
+
+test('failed context preparation never sends the unprepared fallback to a model', async t => {
+  const fixture = setup([answer('Must not run')], { decide: async () => false }, {
+    prepareFullContext: async () => { throw new Error('memory unavailable'); },
+  });
+  const run = await open(fixture); t.after(() => run.harness.close(ctx));
+  await say(run.conversation);
+  assert.equal(fixture.provider.state.callCount, 0);
   assert.equal(run.writes.length, 0);
 });
