@@ -260,7 +260,7 @@ test('native preparation preserves definition text beyond the default tool line 
 test('previous fixture storage without a definition binding is explicitly refused', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'boring-hub-old-definition-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  const oldIncarnation = defineDoc({ kind: 'fixture.hub.app-instance', version: 1, scope: 'session', initial: () => ({ instanceId: 'fictional-old-instance' }) });
+  const oldIncarnation = defineDoc({ kind: 'fixture.hub.app-instance', checkpointWhen: () => false, version: 1, scope: 'session', initial: () => ({ instanceId: 'fictional-old-instance' }) });
   const storage = await openNodeSqliteStorage(join(directory, 'native.sqlite'));
   const harness = await Harness.open(storage, { registry: createRegistry(), models: createModels() }, context);
   try {

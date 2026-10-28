@@ -28,7 +28,7 @@ export type ConversationMetadata = {
 
 /** The native document. `fork: 'initial'`: a fork made by `fork()` gets its own metadata in the creating commit; any other fork starts unmanaged. */
 export const conversationMetadata = defineDoc<ConversationMetadata>({
-  kind: 'boring.conversation.metadata', version: 1, scope: 'conversation', history: 'latest', fork: 'initial',
+  kind: 'boring.conversation.metadata', checkpointWhen: () => false, version: 1, scope: 'conversation', history: 'latest', fork: 'initial',
   initial: () => ({ owner: '', title: null, createdAt: 0, updatedAt: 0, lastMessage: null, archived: false, deletedAt: null }),
 });
 

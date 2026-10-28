@@ -57,7 +57,7 @@ const INTERRUPTED: ReadonlySet<string> = new Set(['aborted', 'reset', 'stale']);
  * Defined without `history` and `fork`, exactly as the homes that ran this protocol before persisted it: pi-durable refuses a token
  * whose semantics differ from the stored record, so adding them here would break every existing run store.
  */
-export const ResultBudget = defineDoc({ kind: 'boring.result-budget', version: 1, scope: 'conversation', initial: () => ({ misses: 0 }) } as unknown as Parameters<typeof defineDoc<{ misses: number }>>[0]) as unknown as ConversationDocToken<{ misses: number }>;
+export const ResultBudget = defineDoc({ kind: 'boring.result-budget', checkpointWhen: () => false, version: 1, scope: 'conversation', initial: () => ({ misses: 0 }) } as unknown as Parameters<typeof defineDoc<{ misses: number }>>[0]) as unknown as ConversationDocToken<{ misses: number }>;
 
 /** Parse `result:` of a card. `legacy` is the card's `tool.json`, whose input is the default schema. Throws a plain Error naming the agent. */
 export function resultConfig(value: unknown, legacy: { readonly input?: JsonObjectSchema } | undefined, name: string): ResultConfig {

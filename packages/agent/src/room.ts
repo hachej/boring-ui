@@ -166,8 +166,8 @@ export function wakeFor(entry: RoomEntry, room: RoomContext): RoomDecision[] {
  * of the entry that woke the agent, so the wake's conversation is that entry's. */
 export type RoomWake = { id: string; agent: string; conversation: string; cause: number; turns: number; attempts: number; due: number };
 /** Conversation names to native ids, and each card's first entry (an action's target). */
-const RoomIndex = defineDoc<{ conversations: Record<string, number>; cards: Record<string, number> }>({ kind: 'boring.room.index', version: 1, scope: 'session', initial: () => ({ conversations: {}, cards: {} }) });
-const RoomWakes = defineDoc<{ open: RoomWake[] }>({ kind: 'boring.room.wakes', version: 1, scope: 'session', initial: () => ({ open: [] }) });
+const RoomIndex = defineDoc<{ conversations: Record<string, number>; cards: Record<string, number> }>({ kind: 'boring.room.index', checkpointWhen: () => false, version: 1, scope: 'session', initial: () => ({ conversations: {}, cards: {} }) });
+const RoomWakes = defineDoc<{ open: RoomWake[] }>({ kind: 'boring.room.wakes', checkpointWhen: () => false, version: 1, scope: 'session', initial: () => ({ open: [] }) });
 
 export type RoomDraft = { [K in RoomKind]: { readonly requestId: string; readonly kind: K; readonly data: RoomEntryData[K] } }[RoomKind];
 export type RoomWrite = { readonly entry: RoomEntry; readonly duplicate: boolean; readonly decisions: readonly RoomDecision[]; readonly wakes: readonly RoomWake[] };
@@ -365,7 +365,7 @@ export interface RoomTurn {
 
 /** Wakes owed a settle: written before the input is submitted, removed after the room took the reply. */
 type Owed = { wakeId: string; input: string; asked: string[] };
-const Turns = defineDoc<{ owed: Owed[] }>({ kind: 'boring.room.turns', version: 1, scope: 'conversation', history: 'latest', fork: 'initial', initial: () => ({ owed: [] }) });
+const Turns = defineDoc<{ owed: Owed[] }>({ kind: 'boring.room.turns', checkpointWhen: () => false, version: 1, scope: 'conversation', history: 'latest', fork: 'initial', initial: () => ({ owed: [] }) });
 
 /** The agent's side of a room, over its own conversation in its own home. Delivery to the port is at least once. */
 export function createRoomTurn(options: { readonly conversation: Conversation; readonly context: Context; readonly port: RoomPort; readonly onError?: (error: unknown) => void }): RoomTurn {

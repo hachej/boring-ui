@@ -24,7 +24,7 @@ Adding an unrelated piece must not change existing tools, grants, identities, mo
 
 ### Pi 1.2 surface
 
-The packages target Pi 1.2.0 (peers `~1.2.0`). Tool tasks are the tagged `ToolTaskInput` (`kind: 'model' | 'nested'`) and tools return `output` rather than `content`. Bash and PowerShell return an error result with an `exit_code` diagnostic on nonzero exit instead of throwing, and any Storage throw fails the Session. Pi 1.2 also adds nested tool calls (`api.executeTool`), task-owned child conversations and durable codemode; hosts reach them through Pi's native API, and this repository adds no facade over them.
+The packages target Pi 1.4.0 (peers `~1.4.0`). Tool tasks are the tagged `ToolTaskInput` (`kind: 'model' | 'nested'`) and tools return `output` rather than `content`. Bash and PowerShell return an error result with an `exit_code` diagnostic on nonzero exit instead of throwing, and any Storage throw fails the Session. Pi 1.2 also adds nested tool calls (`api.executeTool`), task-owned child conversations and durable codemode; hosts reach them through Pi's native API, and this repository adds no facade over them.
 
 ### Do not rebuild smaller native contracts
 

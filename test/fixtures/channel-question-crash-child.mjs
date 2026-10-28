@@ -48,7 +48,7 @@ if (phase === 'hold') {
   const response = await gateway.handler('fictional')(new Request('https://fixture.invalid/channel', { method: 'POST', body: JSON.stringify([{ channel: 'fictional', address: 'fictional-sender', messageId: 'message-one', text: 'Plan a picnic.', receivedAt: 1 }]) }));
   assert.equal(response.status, 200);
   if (boundary === 'after-ack') {
-    const outbox = defineDoc({ kind: 'boring.channels.outbox', version: 1, scope: 'session', initial: () => ({ items: [], answers: [] }) });
+    const outbox = defineDoc({ kind: 'boring.channels.outbox', checkpointWhen: () => false, version: 1, scope: 'session', initial: () => ({ items: [], answers: [] }) });
     await until(async () => (await harness.snapshot(outbox, context))?.items.some(item => item.asked.length > 0));
     ready(sent.find(reply => reply.kind === 'question'));
   }

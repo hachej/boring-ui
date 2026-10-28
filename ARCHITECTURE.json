@@ -3,11 +3,11 @@
   "rootDevDependencies": {
     "@tldraw/assets": "5.5.2",
     "typescript": "5.9.3",
-    "@earendil-works/pi-durable": "1.2.0",
-    "@earendil-works/pi-ai": "1.2.0",
-    "@earendil-works/chord": "1.2.0",
-    "@earendil-works/pi-codemode": "1.2.0",
-    "@earendil-works/pi-mcp": "1.2.0",
+    "@earendil-works/pi-durable": "1.4.0",
+    "@earendil-works/pi-ai": "1.4.0",
+    "@earendil-works/chord": "1.4.0",
+    "@earendil-works/pi-codemode": "1.4.0",
+    "@earendil-works/pi-mcp": "1.4.0",
     "@vercel/sandbox": "3.9.0",
     "@aws-sdk/client-bedrock-agentcore": "3.1156.0",
     "agents": "0.28.1",
@@ -76,14 +76,14 @@
         "isomorphic-git/http/node",
         "isomorphic-git/http/web",
         "ignore",
-        "@earendil-works/pi-durable/env"
+        "@earendil-works/pi-durable/env",
+        "@earendil-works/chord/context"
       ],
       "typeOnlyExternal": [
         "node:http",
         "@earendil-works/pi-durable",
         "@earendil-works/pi-durable/storage/sqlite",
-        "@earendil-works/chord",
-        "@earendil-works/chord/context"
+        "@earendil-works/chord"
       ]
     },
     "agent": {
@@ -538,7 +538,6 @@
       ".",
       "./context",
       "./delta",
-      "./bundler",
       "./node",
       "./package.json"
     ],
@@ -547,7 +546,7 @@
       "./worker"
     ]
   },
-  "upstreamExportsVersion": "1.2.0",
+  "upstreamExportsVersion": "1.4.0",
   "runtimeProofs": {
     "BORING-UI-1": [
       "npm",

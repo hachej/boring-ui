@@ -10,7 +10,7 @@ export const version = 3;
 export const streamType = 'application/x-ndjson';
 /**
  * Native methods sent over the wire unchanged. Pi's stateful readers (`openBinaryReader`, `openDirReader`) hold an open handle; a
- * stateless request cannot, so they travel as the request-bound methods of `PositionalCall`, and `watch` as one streamed request. The optional bounded `listFiles` (pi-durable 1.2.0) is not forwarded: a remote view omits it, as Pi allows.
+ * stateless request cannot, so they travel as the request-bound methods of `PositionalCall`, and `watch` as one streamed request. The optional bounded `listFiles` (pi-durable 1.4.0) is not forwarded: a remote view omits it, as Pi allows.
  */
 export type FileMethod = Exclude<keyof FileSystem, 'id' | 'cwd' | 'cleanup' | 'openBinaryReader' | 'openDirReader' | 'watch' | 'listFiles'>;
 type Arguments<Method> = Method extends (...args: [...infer Input, Context]) => unknown ? Input : never;

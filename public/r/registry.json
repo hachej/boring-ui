@@ -414,9 +414,9 @@
         "react@^19.0.0",
         "react-dom@^19.0.0",
         "@base-ui/react@1.9.0",
-        "@earendil-works/pi-durable@~1.2.0",
-        "@earendil-works/chord@~1.2.0",
-        "@earendil-works/pi-ai@~1.2.0",
+        "@earendil-works/pi-durable@~1.4.0",
+        "@earendil-works/chord@~1.4.0",
+        "@earendil-works/pi-ai@~1.4.0",
         "@modelcontextprotocol/sdk@^1.32.1",
         "lucide-react@^1.51.0",
         "@shadcn/react@0.3.1",
@@ -769,7 +769,7 @@
       "dependencies": [
         "react@^19.0.0",
         "lucide-react@^1.51.0",
-        "@earendil-works/pi-ai@~1.2.0"
+        "@earendil-works/pi-ai@~1.4.0"
       ],
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.27/r/pi-chat.json"
@@ -791,7 +791,7 @@
         "@hachej/boring-ui-kit@^0.4.27",
         "react@^19.0.0",
         "lucide-react@^1.51.0",
-        "@earendil-works/pi-ai@~1.2.0"
+        "@earendil-works/pi-ai@~1.4.0"
       ],
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.27/r/pi-chat.json"
@@ -812,7 +812,7 @@
       "dependencies": [
         "react@^19.0.0",
         "lucide-react@^1.51.0",
-        "@earendil-works/pi-ai@~1.2.0"
+        "@earendil-works/pi-ai@~1.4.0"
       ],
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.27/r/pi-chat.json"
@@ -839,8 +839,8 @@
         "@hachej/boring-ui-kit@^0.4.27",
         "react@^19.0.0",
         "lucide-react@^1.51.0",
-        "@earendil-works/pi-ai@~1.2.0",
-        "@earendil-works/pi-durable@~1.2.0"
+        "@earendil-works/pi-ai@~1.4.0",
+        "@earendil-works/pi-durable@~1.4.0"
       ],
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.27/r/pi-chat.json"
@@ -896,8 +896,8 @@
         "@hachej/boring-ui-kit@^0.4.27",
         "react@^19.0.0",
         "react-dom@^19.0.0",
-        "@earendil-works/pi-durable@~1.2.0",
-        "@earendil-works/pi-ai@~1.2.0",
+        "@earendil-works/pi-durable@~1.4.0",
+        "@earendil-works/pi-ai@~1.4.0",
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
@@ -2716,7 +2716,7 @@
       "description": "PreviewBanner: a live, reversible preview of a change in the page (Approve / Discard) over `@hachej/boring-feedback/preview`, whose subagent calls models through a host gateway. Separate from `feedback` so annotation-only apps do not install the model SDK; install `feedback` first (its styles cover the banner).",
       "dependencies": [
         "@hachej/boring-feedback@^0.4.27",
-        "@earendil-works/pi-ai@~1.2.0",
+        "@earendil-works/pi-ai@~1.4.0",
         "react@^19.0.0"
       ],
       "files": [
@@ -2881,7 +2881,7 @@
       "dependencies": [
         "@hachej/boring-ui-kit@^0.4.27",
         "@hachej/boring-feedback@^0.4.27",
-        "@earendil-works/pi-durable@~1.2.0",
+        "@earendil-works/pi-durable@~1.4.0",
         "react@^19.0.0",
         "react-dom@^19.0.0"
       ],

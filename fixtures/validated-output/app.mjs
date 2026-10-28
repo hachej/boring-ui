@@ -10,9 +10,9 @@ import { createDocumentDelivery } from '@hachej/boring-agent/delivery';
 import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 import { createScriptedValidationModel } from './scripted-model.mjs';
 
-const budgets = defineDocFamily({ kind: 'fixture.validated.repair-budget', version: 1, scope: 'session', family: true,
+const budgets = defineDocFamily({ kind: 'fixture.validated.repair-budget', checkpointWhen: () => false, version: 1, scope: 'session', family: true,
   initial: () => ({ evidence: [], answers: {}, attempts: 0, decisions: {} }) });
-const requests = defineDocFamily({ kind: 'fixture.validated.requests', version: 1, scope: 'session', family: true,
+const requests = defineDocFamily({ kind: 'fixture.validated.requests', checkpointWhen: () => false, version: 1, scope: 'session', family: true,
   initial: () => ({ binding: null }) });
 const identity = { principalId: 'fictional-editor', initiatorId: 'fictional-human', scopeId: 'fictional-team' };
 const target = path => ({ resource: { providerId: 'validated-output', path }, view: { kind: 'published' } });

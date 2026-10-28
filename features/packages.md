@@ -51,7 +51,7 @@ Preconditions: `npm ci`; run from the repository root.
 
 ## Gotchas
 
-- Keep every `@hachej/boring-*` package on one version; Pi packages are peers at `~1.2.0`.
+- Keep every `@hachej/boring-*` package on one version; Pi packages are peers at `~1.4.0`.
 - The host owns the Harness, policy and credentials; kit packages never open a Harness.
 - Change `ARCHITECTURE.json` before a new package or edge.
 

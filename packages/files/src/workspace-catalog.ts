@@ -1,7 +1,7 @@
 import ignore from 'ignore';
 import type { Ignore } from 'ignore';
 import type { FileSystem } from '@earendil-works/pi-durable/env';
-import type { Context } from '@earendil-works/chord';
+import { BACKGROUND_CONTEXT, withAbortSignal, type Context } from '@earendil-works/chord/context';
 import type { ResourceAccess } from './contracts.js';
 import { identifier, locator } from './publication-input.js';
 import { HIDDEN_NAMES, isTemporary } from './file-types.js';
@@ -37,7 +37,7 @@ export function createWorkspaceCatalog(options: {
   const root = fs.cwd.replace(/\/$/, '') || '/';
   const absolute = (path: string) => `${root === '/' ? '' : root}/${path}`;
   const check = (access: ResourceAccess) => { if (access.signal?.aborted) throw new RevisionError('aborted', 'File browsing was cancelled'); };
-  const context = (access: ResourceAccess): Context => ({ abortSignal: access.signal, value: () => undefined, toString: () => 'boring-catalog' });
+  const context = (access: ResourceAccess): Context => access.signal ? withAbortSignal(access.signal, BACKGROUND_CONTEXT) : BACKGROUND_CONTEXT;
   async function contained(path: string, access: ResourceAccess): Promise<boolean> {
     check(access);
     const base = await fs.canonicalPath(root, context(access));

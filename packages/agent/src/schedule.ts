@@ -3,6 +3,7 @@ import type { ConversationId, DocumentReader, Extension, TaskId, TaskInspection,
 import { Type } from '@earendil-works/pi-ai';
 import { withAbortSignal } from '@earendil-works/chord/context';
 import type { Context } from '@earendil-works/chord';
+import { waitUntil } from './wait-until.js';
 
 export const SCHEDULE_TOOL = 'schedule';
 export const LIST_SCHEDULES_TOOL = 'list_schedules';
@@ -30,7 +31,7 @@ type DeliveryState = { phase: 'wait' } | { phase: 'deliver' };
 
 /** Pending schedules of one conversation. Forks start empty: a schedule belongs to the conversation that made it. */
 export const ConversationSchedules = defineDoc<{ items: ScheduleRecord[]; next: number }>({
-  kind: 'boring.schedules', version: 1, scope: 'conversation', history: 'latest', fork: 'initial', initial: () => ({ items: [], next: 1 }),
+  kind: 'boring.schedules', checkpointWhen: () => false, version: 1, scope: 'conversation', history: 'latest', fork: 'initial', initial: () => ({ items: [], next: 1 }),
 });
 
 const remove = (items: ScheduleRecord[], id: string): void => { const index = items.findIndex(item => item.id === id); if (index !== -1) items.splice(index, 1); };
@@ -44,7 +45,8 @@ async function sleepUnlessCancelled(runtime: TaskRuntime<DeliveryInput, Delivery
   try {
     if (cancelledIn(watch.value)) return true;
     watch.start(async value => { if (cancelledIn(value)) cancel.abort(); });
-    await runtime.sleep(input.runAt, withAbortSignal(cancel.signal, context));
+    const wait = waitUntil(runtime, input.runAt, withAbortSignal(cancel.signal, context));
+    try { await wait.done; } finally { wait.disarm(); }
     return false;
   } catch (error) {
     if (cancel.signal.aborted) return true;
@@ -53,7 +55,7 @@ async function sleepUnlessCancelled(runtime: TaskRuntime<DeliveryInput, Delivery
 }
 
 /**
- * The native durable task behind one schedule: it sleeps on the Harness clock (`runtime.sleep`), then delivers the instruction to
+ * The native durable task behind one schedule: it waits on the Harness clock (`runtime.setTimer`), then delivers the instruction to
  * its conversation as a follow-up input whose request id is the schedule id, so a replayed delivery never submits twice. Owned by
  * the conversation as background work: a person stopping the current turn does not cancel it. No second scheduler: Pi's own
  * scheduler runs it, and a restart resumes it.
