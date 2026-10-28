@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { MockupViewer } from '../mockup-viewer/mockup-viewer';
+import { usePhone } from '../utils/use-media';
 import type { ShadcnTheme } from '../mockup-viewer/mockup-viewer';
 import { besideLooks, parseLooks, swatches } from './looks';
 import type { Look, Looks } from './looks';
@@ -58,7 +59,7 @@ function ScaledMockup({ text, theme, mode, title, onReady }: { readonly text: st
     return () => observer.disconnect();
   }, []);
   // A phone draws the phone layout of the screen; a narrow column on a desktop still draws the desktop one, smaller.
-  const phone = typeof matchMedia === 'function' && matchMedia('(max-width: 639px)').matches;
+  const phone = usePhone();
   const virtual = phone ? { w: 390, h: 640 } : { w: 1024, h: 600 };
   const scale = width > 0 ? width / virtual.w : 0.5;
   return <div ref={outer} data-testid="looks-frame" className="relative w-full overflow-hidden bg-muted" style={{ height: Math.round(virtual.h * scale) }}>
