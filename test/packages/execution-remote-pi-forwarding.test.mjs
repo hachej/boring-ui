@@ -55,7 +55,7 @@ test('shell refuses a malformed output window before dispatch and a malformed sk
   assert.equal(bad.ok, false); assert.ok(bad.error instanceof ExecutionError); assert.equal(bad.error.code, 'shell_unavailable'); assert.equal(calls, 0);
   const forged = createRemoteShellLease({ identity, endpoint, fetch: async request => {
     const { requestId } = await request.json();
-    const lines = [{ type: 'header', schema: 'boring.remote-shell', version: 2, nativeVersion: 'pi-durable@1.2.0', identity }, { type: 'output', text: 'a', stream: 'stdout', skipped: { bytes: -1, newlines: 0, endsWithNewline: false } }]
+    const lines = [{ type: 'header', schema: 'boring.remote-shell', version: 2, nativeVersion: 'pi-durable@1.4.0', identity }, { type: 'output', text: 'a', stream: 'stdout', skipped: { bytes: -1, newlines: 0, endsWithNewline: false } }]
       .map((frame, sequence) => JSON.stringify({ ...frame, requestId, sequence })).join('\n') + '\n';
     return new Response(lines, { headers: { 'content-type': 'application/x-ndjson' } });
   } });
@@ -66,7 +66,7 @@ test('shell refuses a malformed output window before dispatch and a malformed sk
 
 test('the shell protocol version moved so an old peer is refused', async () => {
   const handler = createRemoteShellHandler({ authenticate: async () => ({ identity, context, revoked: new AbortController().signal, supports: { timeout: true, spill: true }, authorize: () => true, shell: { cleanup: async () => {}, exec: async () => ok({ exitCode: 0 }) } }) });
-  const response = await handler(new Request(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ schema: 'boring.remote-shell', version: 1, nativeVersion: 'pi-durable@1.2.0', requestId: 'r', identity, command: 'x', options: {}, output: false }) }));
+  const response = await handler(new Request(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ schema: 'boring.remote-shell', version: 1, nativeVersion: 'pi-durable@1.4.0', requestId: 'r', identity, command: 'x', options: {}, output: false }) }));
   assert.equal(response.status >= 400, true);
 });
 
@@ -230,7 +230,7 @@ test('watch is authorized like every other call and refuses without permission',
 test('the files protocol version moved so an old peer is refused', async t => {
   const f = await fixture(t);
   const handlerResponse = await createRemoteFileSystemHandler({ authenticate: async () => ({ identity, filesystemId: f.host.id, context, revoked: new AbortController().signal, authorize: () => true, bindFileSystem: async () => { throw new Error('unused'); } }) })(
-    new Request(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ schema: 'boring.remote-files', version: 2, nativeVersion: 'pi-durable@1.2.0', requestId: 'r', identity, filesystemId: f.host.id, cwd: '.', call: { method: 'exists', args: ['x'] } }) }));
+    new Request(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ schema: 'boring.remote-files', version: 2, nativeVersion: 'pi-durable@1.4.0', requestId: 'r', identity, filesystemId: f.host.id, cwd: '.', call: { method: 'exists', args: ['x'] } }) }));
   assert.equal(handlerResponse.status >= 400, true);
 });
 
@@ -304,7 +304,7 @@ test('an oversized terminal watcher error is bounded, not turned into overflow',
 test('a watch stream that ends without an error change reports an error', async t => {
   const fetch = async request => {
     const { requestId, filesystemId } = await request.json();
-    const body = [{ schema: 'boring.remote-files', version: 3, nativeVersion: 'pi-durable@1.2.0', requestId, identity, filesystemId, type: 'opened', sequence: 0, mode: 'native' }, { requestId, sequence: 1, type: 'end' }]
+    const body = [{ schema: 'boring.remote-files', version: 3, nativeVersion: 'pi-durable@1.4.0', requestId, identity, filesystemId, type: 'opened', sequence: 0, mode: 'native' }, { requestId, sequence: 1, type: 'end' }]
       .map(frame => JSON.stringify(frame)).join('\n') + '\n';
     return new Response(body, { headers: { 'content-type': 'application/x-ndjson' } });
   };

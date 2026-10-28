@@ -54,7 +54,7 @@ Open the printed URL and click **Draft a plan**. The agent writes a fictional pi
 
 ```sh
 npm i @hachej/boring-ui-kit @hachej/boring-agent @hachej/boring-files \
-  @earendil-works/pi-durable@~1.2.0 @earendil-works/pi-ai@~1.2.0 @earendil-works/chord@~1.2.0
+  @earendil-works/pi-durable@~1.4.0 @earendil-works/pi-ai@~1.4.0 @earendil-works/chord@~1.4.0
 ```
 
 Then add UI blocks to a React app that has shadcn set up (`components.json`, Base UI `base-nova` style). Blocks import the app's shadcn components through its `ui` alias and use its tokens, so the app installs those components once, first ([what the app needs](registry/README.md#what-the-app-needs-first)):

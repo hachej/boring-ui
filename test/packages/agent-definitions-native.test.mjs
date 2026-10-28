@@ -15,7 +15,7 @@ import { admitDocumentTool, createSaveNoteTool, documentToolResult } from '../fi
 const access = { scopeId: 'fictional-team', principalId: 'fictional-editor', initiatorId: 'fictional-author' };
 const target = path => ({ resource: { providerId: 'definitions', path }, view: { kind: 'published' } });
 const definition = instructions => ({ format: 'boring.agent', version: 1, instructions, tools: ['save_note'] });
-const retainedDefinition = defineDoc({ kind: 'fixture.definition-binding', version: 1, scope: 'session', initial: () => ({ binding: null }) });
+const retainedDefinition = defineDoc({ kind: 'fixture.definition-binding', checkpointWhen: () => false, version: 1, scope: 'session', initial: () => ({ binding: null }) });
 
 async function agentConfiguration(conversation) {
   const agent = await conversation.agent(context);

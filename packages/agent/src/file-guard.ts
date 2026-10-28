@@ -40,7 +40,7 @@ import type { WorkspaceBinding, WorkspaceResolver } from './workspaces.js';
 type Baselines = { revisions: Record<string, string> };
 /** Conversation document: workspace and path (relative to the workspace root; see `baselineKey`) to the revision this conversation last read or wrote. */
 export const lastReadRevisions = defineDoc<Baselines>({
-  kind: 'boring.files.last-read', version: 1, scope: 'conversation', history: 'latest', fork: 'initial',
+  kind: 'boring.files.last-read', checkpointWhen: () => false, version: 1, scope: 'conversation', history: 'latest', fork: 'initial',
   initial: () => ({ revisions: {} }),
 });
 

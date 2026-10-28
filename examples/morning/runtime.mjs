@@ -21,7 +21,7 @@ const locator = (app, path = `${app}.json`) => ({ resource: { providerId: `morni
 const sameLocator = (left, right) => left?.resource.providerId === right.resource.providerId && left.resource.path === right.resource.path && left.view.kind === 'published';
 const jsonBytes = value => encoder.encode(JSON.stringify(value));
 const requestMemo = 'fictional.morning.action.v1', attemptedMemo = 'fictional.morning.attempted.v1';
-const runtimeIdentity = defineDoc({ kind: 'fictional.morning.identity', version: 1, scope: 'session', initial: () => ({ id: globalThis.crypto.randomUUID() }) });
+const runtimeIdentity = defineDoc({ kind: 'fictional.morning.identity', checkpointWhen: () => false, version: 1, scope: 'session', initial: () => ({ id: globalThis.crypto.randomUUID() }) });
 
 export async function openMorningRuntime({ directory, identity = morningIdentity, layout, authorize = () => true, beforePublish, afterPublish }) {
   if (!layout || typeof layout !== 'object') throw new TypeError('A validated morning layout is required');

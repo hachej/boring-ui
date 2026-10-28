@@ -4,7 +4,7 @@ import type { WorkspaceIdentity } from './contracts.js';
 
 export const schema = 'boring.remote-shell';
 export const version = 2;
-export const nativeVersion = 'pi-durable@1.2.0';
+export const nativeVersion = 'pi-durable@1.4.0';
 export const contentType = 'application/x-ndjson';
 export type WireOptions = Omit<ShellExecOptions, 'onOutput'>;
 export type ShellResult = Awaited<ReturnType<Shell['exec']>>;

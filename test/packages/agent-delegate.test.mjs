@@ -156,7 +156,7 @@ test('a delegated child inherits the parent\'s approval extension: it cannot run
 
 // A host-owned identity document (fictional): who the conversation acts for, which workspace it binds and what it may do.
 const Identity = defineDoc({
-  kind: 'test.delegate.identity', version: 1, scope: 'conversation', history: 'latest', fork: 'initial',
+  kind: 'test.delegate.identity', checkpointWhen: () => false, version: 1, scope: 'conversation', history: 'latest', fork: 'initial',
   initial: () => ({ user: '', workspace: '', permissions: [] }),
 });
 const copyIdentity = async (parent, child, tx) => {

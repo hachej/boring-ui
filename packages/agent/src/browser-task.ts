@@ -20,7 +20,7 @@ type TaskDocument = { task: { tool: string; taskId: TaskId; state: TaskState } |
 
 /** One member per assistant entry and tool call, in the calling conversation. */
 const documents = defineDocFamily<TaskDocument, null>({
-  kind: 'boring.browser-task', version: 1, scope: 'conversation', history: 'latest', fork: 'initial', family: true,
+  kind: 'boring.browser-task', checkpointWhen: () => false, version: 1, scope: 'conversation', history: 'latest', fork: 'initial', family: true,
   initial: () => ({ task: null }),
 });
 
