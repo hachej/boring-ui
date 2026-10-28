@@ -7,7 +7,7 @@ The agent the shell mounts once: a bottom drawer on a phone, a right panel on a 
 - `layer-drawer` phone drawer with peek, half and full; swipe and outside tap go to peek, only the handle drags. `registry/app-shell/agent-layer.tsx`.
 - `layer-dock` wide panel docked right, floatable and dockable left or right, remembered per viewer (`boring.app-shell`). `registry/dock/dock.tsx`.
 - `layer-context` the screen on show travels with each message (`useAgentContext`). `registry/app-shell/agent-context.ts`.
-- `layer-voice` single-tap composer recording with the shared trash/timer/waveform/pause/Send row; optional header hold remains. Waveform history freezes when no new PCM samples arrive, including the capture cap. `send: 'auto' | 'draft' | 'message'`. `registry/app-shell/use-dictation.ts`, `registry/pi-chat-voice/voice-message.tsx`.
+- `layer-voice` single-tap composer recording with the shared trash/timer/waveform/pause/Send row; optional header hold remains. Waveform history freezes when no new PCM samples arrive, including the capture cap. `send: 'auto' | 'draft' | 'message'`. Kit orchestration: `packages/ui/src/chat-voice-message.ts` (`useChatVoice`), `chat-dictation.ts` and `voice-attempt.ts`. Compatibility/presentation: `registry/app-shell/use-dictation.ts`, `registry/pi-chat-voice/voice-message.tsx`.
 - `layer-talk-about` a card gesture inserts a removable kind mention, opens the real chat at half or in the panel and can start capture before returning. `registry/app-shell/agent-layer.tsx`.
 - `layer-launch-link` `agentLink` / `parseAgentLink` open the layer from a URL or a home-screen shortcut. `registry/app-shell/agent-link.ts`.
 - `layer-loan` `useAgentLoan` lends a workspace's controller to the layer at peek. `registry/app-shell/agent-layer.tsx`.
