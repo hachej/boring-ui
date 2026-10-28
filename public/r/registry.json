@@ -2986,6 +2986,7 @@
       ],
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.26/r/task-board.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.26/r/pi-chat.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.26/r/pi-chat-mentions.json"
       ],
       "files": [
