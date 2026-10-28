@@ -2980,14 +2980,14 @@
       "title": "Task mentions",
       "description": "Optional authorized task catalog for the existing PM composer, composed with host file search.",
       "dependencies": [
-        "@hachej/boring-ui-kit@^0.4.28",
+        "@hachej/boring-ui-kit@^0.4.29",
         "react@^19.0.0",
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.28/r/task-board.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.28/r/pi-chat.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.28/r/pi-chat-mentions.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.29/r/task-board.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.29/r/pi-chat.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.29/r/pi-chat-mentions.json"
       ],
       "files": [
         {
@@ -3003,12 +3003,12 @@
       "title": "Task board",
       "description": "Host-owned business requests: board, stacked task/file overlays and compact own-request rows. No agent or task backend required.",
       "dependencies": [
-        "@hachej/boring-ui-kit@^0.4.28",
+        "@hachej/boring-ui-kit@^0.4.29",
         "react@^19.0.0",
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.28/r/utils.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.29/r/utils.json"
       ],
       "files": [
         {
