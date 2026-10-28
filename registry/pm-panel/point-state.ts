@@ -13,37 +13,39 @@ export interface PointChip {
 }
 
 export interface PointState {
-  readonly mode: 'point' | 'navigate' | 'full';
+  readonly mode: 'sheet' | 'point' | 'navigate' | 'full';
   readonly show: boolean;
   readonly chips: readonly PointChip[];
   readonly nextNumber: number;
-  readonly dock: 'top' | 'bottom';
 }
 
 export type PointEvent =
   | { readonly type: 'show'; readonly value: boolean }
-  | { readonly type: 'return' | 'full' | 'collapse' | 'sent' }
-  | { readonly type: 'pick'; readonly chip: Omit<PointChip, 'number'>; readonly viewportHeight: number; readonly bottomInset: number }
-  | { readonly type: 'remove'; readonly id: string };
+  | { readonly type: 'return' | 'full' | 'collapse' }
+  | { readonly type: 'pick'; readonly chip: Omit<PointChip, 'number'> }
+  | { readonly type: 'remove'; readonly id: string }
+  | { readonly type: 'sent'; readonly ids?: readonly string[] };
 
 /** Local presentation only; routing and the borrowed composer's recording lifecycle stay with their owners. */
 export function createPointState(): PointState {
-  return { mode: 'point', show: false, chips: [], nextNumber: 1, dock: 'bottom' };
+  return { mode: 'sheet', show: false, chips: [], nextNumber: 1 };
 }
 
 export function pointReducer(state: PointState, event: PointEvent): PointState {
   switch (event.type) {
     case 'show': return { ...state, show: event.value, mode: event.value ? 'point' : 'navigate' };
     case 'return':
-    case 'collapse': return { ...state, mode: 'point' };
+    case 'collapse': return { ...state, mode: 'sheet', show: false };
     case 'full': return { ...state, mode: 'full' };
     case 'remove': return { ...state, chips: state.chips.filter(chip => chip.id !== event.id) };
-    case 'sent': return { ...createPointState(), mode: 'full', show: state.show };
+    case 'sent': {
+      const chips = event.ids ? state.chips.filter(chip => !event.ids!.includes(chip.id)) : [];
+      return { ...state, mode: 'full', show: false, chips, nextNumber: chips.length ? state.nextNumber : 1 };
+    }
     case 'pick': {
       const chip: PointChip = { ...event.chip, box: [...event.chip.box], number: state.nextNumber,
         ...(event.chip.capture ? { capture: { ...event.chip.capture } } : {}) };
-      return { ...state, chips: [...state.chips, chip], nextNumber: state.nextNumber + 1,
-        dock: chip.box[1] + chip.box[3] >= event.viewportHeight - event.bottomInset - 160 ? 'top' : 'bottom' };
+      return { ...state, chips: [...state.chips, chip], nextNumber: state.nextNumber + 1 };
     }
   }
 }

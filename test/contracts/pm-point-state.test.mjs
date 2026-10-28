@@ -12,11 +12,11 @@ await build({ entryPoints: [join(root, 'registry/pm-panel/point-state.ts')], out
 const { createPointState, pointReducer, marker, alignedTranscript } = await import(pathToFileURL(join(out, 'point-state.mjs')).href);
 
 const chip = (id, overrides = {}) => ({ id, kind: 'carte', label: `Carte ${id}`, screen: '/overview', at: 1, box: [16, 96, 120, 80], ...overrides });
-const pick = (state, value, overrides = {}) => pointReducer(state, { type: 'pick', chip: value, viewportHeight: 844, bottomInset: 64, ...overrides });
+const pick = (state, value) => pointReducer(state, { type: 'pick', chip: value });
 
 test('PM point state starts with Montrer off and select/navigate never owns recording', () => {
   const initial = createPointState();
-  assert.deepEqual(initial, { mode: 'point', show: false, chips: [], nextNumber: 1, dock: 'bottom' });
+  assert.deepEqual(initial, { mode: 'sheet', show: false, chips: [], nextNumber: 1 });
   const selecting = pointReducer(initial, { type: 'show', value: true });
   assert.equal(selecting.mode, 'point');
   assert.equal(selecting.show, true);
@@ -26,11 +26,11 @@ test('PM point state starts with Montrer off and select/navigate never owns reco
   assert.equal(navigating.show, false);
   assert.equal(navigating.chips, selected.chips, 'the 56px in-flow navigation strip retains the composer chips');
   const returned = pointReducer(navigating, { type: 'return' });
-  assert.equal(returned.mode, 'point');
+  assert.equal(returned.mode, 'sheet');
   assert.equal(returned.show, false, 'Revenir expands the composer without silently enabling Montrer');
   assert.equal(returned.chips, selected.chips);
   assert.equal(pointReducer(returned, { type: 'show', value: true }).show, true);
-  assert.deepEqual(Object.keys(navigating).sort(), ['chips', 'dock', 'mode', 'nextNumber', 'show']);
+  assert.deepEqual(Object.keys(navigating).sort(), ['chips', 'mode', 'nextNumber', 'show']);
   assert.deepEqual(initial.chips, [], 'transitions do not mutate the prior snapshot');
 });
 
@@ -56,7 +56,7 @@ test('PM selection captures its box and screenshot metadata independently of cal
   original.capture.data = 'BB==';
   assert.deepEqual(selected.chips[0].box, [16, 96, 120, 80]);
   assert.equal(selected.chips[0].capture.data, 'AA==');
-  assert.equal(selected.dock, 'bottom');
+  assert.equal(selected.mode, 'sheet');
 });
 
 test('PM navigation across screens keeps the strip and selections until Revenir', () => {
@@ -68,20 +68,16 @@ test('PM navigation across screens keeps the strip and selections until Revenir'
     assert.equal(state.chips[0].screen, '/overview');
   }
   const returned = pointReducer(state, { type: 'return' });
-  assert.equal(returned.mode, 'point');
+  assert.equal(returned.mode, 'sheet');
   assert.deepEqual(returned.chips, state.chips);
 });
 
-test('PM chooses a top in-flow dock for bottom targets, including the tab bar', () => {
-  const ordinary = pick(createPointState(), chip('a'));
-  assert.equal(ordinary.dock, 'bottom');
-  const boundary = pick(ordinary, chip('b', { box: [16, 540, 120, 80] }));
-  assert.equal(boundary.dock, 'top', 'target bottom at 844 - 64 - 160 enters the top dock');
-  const tab = pick(boundary, chip('c', { box: [0, 780, 390, 64] }));
-  assert.equal(tab.dock, 'top');
-  const desktop = pick(tab, chip('d', { box: [40, 700, 300, 80] }), { viewportHeight: 900, bottomInset: 0 });
-  assert.equal(desktop.dock, 'top');
-  assert.equal(pick(desktop, chip('e')).dock, 'bottom', 'the latest target chooses the dock');
+test('PM tab-bar targets keep the same strip; the superseded top dock does not exist', () => {
+  const pointing = pointReducer(createPointState(), { type: 'show', value: true });
+  const tab = pick(pointing, chip('tab', { box: [0, 788, 390, 56] }));
+  assert.equal(tab.mode, 'point');
+  assert.equal(tab.show, true);
+  assert.equal('dock' in tab, false);
 });
 
 test('PM full/collapse/sent retain selection preference, not a second recording state', () => {
@@ -91,11 +87,20 @@ test('PM full/collapse/sent retain selection preference, not a second recording 
   assert.equal(full.show, false);
   assert.equal(full.chips, initial.chips);
   const collapsed = pointReducer(full, { type: 'collapse' });
-  assert.equal(collapsed.mode, 'point');
+  assert.equal(collapsed.mode, 'sheet');
   assert.equal(collapsed.show, false);
   const sent = pointReducer(collapsed, { type: 'sent' });
-  assert.deepEqual(sent, { mode: 'full', show: false, chips: [], nextNumber: 1, dock: 'bottom' });
+  assert.deepEqual(sent, { mode: 'full', show: false, chips: [], nextNumber: 1 });
   assert.equal(initial.chips.length, 1);
+});
+
+test('a late acknowledgement removes only its captured selection batch', () => {
+  const original = pick(createPointState(), chip('a'));
+  const later = pick(original, chip('b'));
+  const admitted = pointReducer(later, { type: 'sent', ids: ['a'] });
+  assert.deepEqual(admitted.chips.map(value => value.id), ['b']);
+  assert.equal(admitted.nextNumber, 3);
+  assert.equal(admitted.mode, 'full');
 });
 
 test('PM pin marker spelling is stable for chips and transcript', () => {
