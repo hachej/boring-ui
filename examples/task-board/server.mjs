@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -32,9 +32,9 @@ export async function startTaskBoard({ port = 0 } = {}) {
   const db = openNodeConnection(join(directory, 'workspace.sqlite'));
   const files = createWorkspaceProvider({ identity: { providerId: 'workspace', instanceId: 'task-board', incarnation: 'fixture', viewId: 'published' }, fs: env, journal: createWorkspaceJournal(db) });
   const contents = [
-    ['brief.md', new TextEncoder().encode('# Picnic route\n\nA fictional riverside outing. Bring water and a sun hat.\n'), 'text/markdown'],
-    ['mockup.html', new TextEncoder().encode('<!doctype html><html><body><h1>Riverside picnic</h1><p>Meet at the imaginary west gate at noon.</p></body></html>'), 'text/html'],
-    ['evidence.png', evidenceImage(), 'image/png'],
+    ['brief.md', new TextEncoder().encode('# Protein before calories\n\nOn every meal card of « My day », show protein first and calories second. The protein gauge goes. Fictional brief.\n'), 'text/markdown'],
+    ['mockups/meal-card.html', new TextEncoder().encode('<!doctype html><html><body style="margin:0;min-height:100vh;display:grid;place-items:center;font-family:system-ui,sans-serif"><div style="width:340px;border:1px solid #e4e4e7;border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:8px"><div style="font-size:11px;letter-spacing:.08em;color:#66737a">LUNCH</div><div style="font-size:26px;font-weight:800">32 g protein</div><div style="font-size:14px;color:#66737a">520 kcal · lentil salad, egg</div></div></body></html>'), 'text/html'],
+    ['evidence/day-plan.png', evidenceImage(), 'image/png'],
   ];
   for (const [name, bytes, mediaType] of contents) {
     const result = await files.publication.publish({ operationId: `seed-${name}`, atomicity: 'all-or-nothing', changes: [{ kind: 'create', target: { resource: { providerId: 'workspace', path: `docs/tasks/D-201/${name}` }, view: { kind: 'published' } }, expected: { kind: 'absent' }, bytes, mediaType }] }, human);
@@ -44,7 +44,7 @@ export async function startTaskBoard({ port = 0 } = {}) {
   const registry = createRegistry();
   const answers = new Map();
   const settle = (task, question, value, actor) => {
-    const options = { route: ['river', 'hill'], supplies: ['water', 'snacks'] };
+    const options = { unit: ['grams', 'percentage'], gauge: ['remove', 'keep'] };
     if (task !== 'D-201' || !Object.hasOwn(options, question) || typeof value !== 'string' || !value.trim() || value.length > 4096) return { kind: 'denied', reason: 'Unknown task question or invalid answer' };
     const previous = answers.get(question);
     if (previous) return previous.answer === value ? { kind: 'answered', question, ...previous } : { kind: 'conflict', reason: 'The question was already answered' };
@@ -63,7 +63,7 @@ export async function startTaskBoard({ port = 0 } = {}) {
   const reader = { read: (request, access) => allowedPaths.has(request.target.resource.path) ? files.read(request, access) : Promise.resolve({ kind: 'denied', reason: 'Task folder not authorized' }) };
   const resources = createResourceHandler({ authenticate: async request => authenticated(request) ? human : null, reader });
   const bundle = await build({ entryPoints: [fileURLToPath(new URL('./page.tsx', import.meta.url))], bundle: true, write: false, format: 'esm', platform: 'browser', jsx: 'automatic', alias: { '@': fileURLToPath(new URL('../app-shell', import.meta.url)) }, define: { 'process.env.NODE_ENV': '"production"' }, minify: true, logLevel: 'silent', metafile: true });
-  const css = await buildTailwind({ extraDirectories: ['examples/task-board', 'registry/task-board'], extraCss: '@layer base { @import "tailwindcss/preflight.css"; }' });
+  const css = await buildTailwind({ extraDirectories: ['examples/task-board', 'registry/task-board'], extraCss: `@layer base { @import "tailwindcss/preflight.css"; }\n${readFileSync(new URL('./studio-theme.css', import.meta.url), 'utf8')}` });
   const boot = { token, conversationId: String(conversation.id), identity: { runtimeId: 'task-board', ...human } };
   const page = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fictional task board</title><link rel="stylesheet" href="/app.css"></head><body class="m-0 bg-background text-foreground font-sans"><div id="root"></div><script>window.__TASK_BOARD__=${JSON.stringify(boot)}</script><script type="module" src="/page.js"></script></body></html>`;
   const statics = { '/': ['text/html; charset=utf-8', page], '/page.js': ['text/javascript', bundle.outputFiles[0].contents], '/app.css': ['text/css', css] };

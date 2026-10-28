@@ -8,9 +8,9 @@ import { Window } from 'happy-dom';
 
 const out = resolve('.cache/task-board-test'); mkdirSync(out, { recursive: true });
 const tasks = [
-  { id: 'orchard', number: 201, title: 'Fictional orchard map', state: 'waiting', requesterId: 'alice', waiting_on_you: true, waiting_on: { who: 'Alice', question: 'Which route?' }, screen: 'Garden', capture: 'Map capture', spec: '<script>not executable</script>', updated_at: '2026-10-27T10:00:00Z', questions: [{ id: 'route', text: 'Choose a route', options: ['River', { label: 'Hill', value: 'hill' }] }], history: [{ note: 'Request received', actor: 'PM', at: '2026-10-27T09:00:00Z' }] },
+  { id: 'orchard', number: 201, title: 'Fictional orchard map', state: 'waiting', requesterId: 'alice', requester: '<script>not executable</script>', waiting_on_you: true, waiting_on: { who: 'Alice', question: 'Which route?' }, screen: 'Garden', capture: 'Map capture', captureCount: 2, age: '12m', spec: '<script>not executable</script>', updated_at: '2026-10-27T10:00:00Z', questions: [{ id: 'route', text: 'Choose a route', options: ['River', { label: 'Hill', value: 'hill' }] }], history: [{ note: 'Request received', actor: 'PM', at: '2026-10-27T09:00:00Z' }] },
   { id: 'picnic', number: 202, title: 'Fictional picnic plan', state: 'working', requesterId: 'bob', updated_at: '2026-10-28T10:00:00Z' },
-  { id: 'kites', number: 203, title: 'Fictional kite colors', state: 'open', status: 'À essayer', requesterId: 'alice', updated_at: '2026-10-28T09:00:00Z' },
+  { id: 'kites', number: 203, title: 'Fictional kite colors', state: 'open', status: 'À essayer', requesterId: 'alice', screen: 'Garden', captureCount: 2, updated_at: '2026-10-28T09:00:00Z' },
   { id: 'done', title: 'Fictional finished task', state: 'done' },
   { id: 'closed', title: 'Fictional closed task', state: 'closed' },
 ];
@@ -25,7 +25,11 @@ test('answered questions name their actor, Other is a distinct host intent, file
       f.h('button', { onClick: api.onShowFile }, 'Montrer'), f.h('button', { onClick: api.onClose }, 'Close file')) });
   await f.click('[data-task-open=orchard]');
   assert.match(document.querySelector('[data-task-answered=time]').textContent, /Sam: Noon/);
-  await f.click('[data-task-other=route]'); assert.equal(other[0][1].id, 'route');
+  await f.click('[data-task-other=route]');
+  const field = document.querySelector('[data-task-other-form=route] input');
+  await f.run(() => { Object.getOwnPropertyDescriptor(f.window.HTMLInputElement.prototype, 'value').set.call(field, 'Along the river'); field.dispatchEvent(new f.window.Event('input', { bubbles: true })); });
+  await f.click('[data-task-other-form=route] button[type=submit]');
+  assert.equal(other[0][1].id, 'route'); assert.equal(other[0][2], 'Along the river', 'Other sends the typed text inline');
   await f.click('[data-task-file]');
   assert.equal(opened[0][0].id, 'orchard');
   assert.ok(document.querySelector('[data-task-side]').isConnected);
@@ -56,16 +60,20 @@ async function fixture(t, props = {}, query = '?agent=pm') {
   return { render, click, run, window, root, h, act, TaskRequestCard };
 }
 
-test('board orders columns and folds terminal tasks, URL selection supports deep links, safe detail, question callback and keyboard back', async t => {
+test('board orders WAITING · WORKING · OPEN with Done/Closed list links, URL selection supports deep links, safe detail, question callback and keyboard back', async t => {
   const answers = [];
   const f = await fixture(t, { onAnswer: (...answer) => answers.push(answer) });
-  assert.deepEqual([...document.querySelectorAll('[data-task-column]')].map(node => node.dataset.taskColumn), ['waiting', 'working', 'open', 'done', 'closed']);
-  assert.equal(document.querySelector('[data-task-column=done]').open, false);
+  assert.deepEqual([...document.querySelectorAll('[data-task-column]')].map(node => node.dataset.taskColumn), ['waiting', 'working', 'open']);
+  assert.deepEqual([...document.querySelectorAll('[data-task-bar] > *')].map(node => node.textContent).filter(text => text !== '·'), ['3 open', 'Done 1', 'Closed 1']);
+  assert.equal(document.querySelector('[data-task-column=waiting] h3').textContent, 'Waiting 11 on you');
+  assert.equal(document.querySelector('[data-task-attention] [data-task-card=orchard]')?.dataset.taskCard, 'orchard', 'the card waiting on the viewer carries the attention edge');
+  await f.click('[data-task-list-link=done]'); assert.deepEqual([...document.querySelectorAll('[data-task-card]')].map(node => node.dataset.taskCard), ['done']);
+  await f.click('[data-task-list-link=open]');
   await f.click('[data-task-open=orchard]');
   assert.equal(new URL(f.window.location.href).searchParams.get('task'), 'orchard');
   assert.equal(new URL(f.window.location.href).searchParams.get('agent'), 'pm');
-  assert.equal(document.activeElement.textContent, 'Back to tasks');
-  assert.ok(document.querySelector('[data-task-detail]').textContent.includes('Map capture'));
+  assert.equal(document.activeElement.getAttribute('aria-label'), 'Back to the tasks');
+  assert.ok(document.querySelector('[data-task-detail]').textContent.includes('Screen: Garden'));
   assert.ok(document.querySelector('[data-task-detail]').textContent.includes('<script>not executable</script>'));
   assert.equal(document.querySelector('script'), null);
   await f.click('[data-task-question] button');
@@ -96,11 +104,13 @@ test('open questions precede bounded latest-three answers; full huge answers mou
   assert.equal(document.querySelector('[data-task-answered]').dataset.taskAnswered, 'answer-0', 'host answer time takes precedence over source position');
 });
 
-test('compact mine renders only newest two own title/chip rows and uses the host open path', async t => {
+test('compact mine stacks the newest two own C7 request cards and uses the host open path', async t => {
   const opened = []; const f = await fixture(t, { filter: 'mine', currentUser: 'alice', limit: 2, variant: 'compact', onOpen: task => opened.push(task.id) });
   assert.deepEqual([...document.querySelectorAll('[data-task-card]')].map(node => node.dataset.taskCard), ['kites', 'orchard']);
-  assert.match(document.body.textContent, /À essayer/);
-  assert.doesNotMatch(document.body.textContent, /D-201|Map capture|Waiting on you|Fictional picnic/);
+  assert.equal(document.querySelectorAll('[data-variant=compact][data-task-card]').length, 2);
+  assert.match(document.body.textContent, /REQUEST/);
+  assert.match(document.body.textContent, /Screen: Garden · 2 captures/);
+  assert.doesNotMatch(document.body.textContent, /Fictional picnic/);
   await f.click('[data-task-open=orchard]'); assert.deepEqual(opened, ['orchard']);
   assert.equal(new URL(f.window.location.href).searchParams.get('task'), null);
   assert.equal(document.querySelector('[data-task-side]'), null);
@@ -119,10 +129,10 @@ test('deep-link alias, browser navigation and missing records remain explicit wi
   assert.equal(document.querySelector('[data-task-detail]'), null);
 });
 
-test('return from a deep-linked terminal task expands its folded section before restoring keyboard focus', async t => {
+test('return from a deep-linked terminal task switches to its list before restoring keyboard focus', async t => {
   const f = await fixture(t, {}, '?task=done');
   await f.click('[data-task-side] button');
-  assert.equal(document.querySelector('[data-task-column=done]').open, true);
+  assert.equal(document.querySelector('[data-task-column]').dataset.taskColumn, 'done');
   assert.equal(document.activeElement.dataset.taskOpen, 'done');
 });
 
@@ -131,7 +141,8 @@ test('controlled selection and shared PM request card keep confirmation as a hos
   await f.click('[data-task-open=orchard]'); assert.deepEqual(selected, ['orchard']);
   assert.equal(f.window.location.search, '?agent=pm');
   await f.render({ selectedTask: 'orchard' }); assert.ok(document.querySelector('[data-task-detail=orchard]'));
-  await f.act(async () => f.root.render(f.h(f.TaskRequestCard, { task: tasks[0], actions: f.h('button', { onClick: () => answers.push('confirmed') }, 'Confirm') })));
-  assert.match(document.body.textContent, /Garden · Map capture/);
+  await f.act(async () => f.root.render(f.h(f.TaskRequestCard, { task: tasks[0], variant: 'compact', locale: 'fr', viewerAction: 'confirmation', actions: f.h('button', { onClick: () => answers.push('confirmed') }, 'Confirmer') })));
+  assert.match(document.body.textContent, /DEMANDE/); assert.match(document.body.textContent, /À confirmer/);
+  assert.match(document.body.textContent, /Écran\u00a0: Garden · 2 captures/);
   await f.click('button'); assert.deepEqual(answers, ['confirmed']);
 });

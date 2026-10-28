@@ -1,21 +1,23 @@
 'use client';
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import type { ReactNode } from 'react';
+import type { MouseEvent, ReactNode } from 'react';
 import { selectTasks, taskFromUrl, taskReference, taskUrl, TASK_STATES } from '@hachej/boring-ui-kit/task-board';
 import type { TaskFile, TaskFilter, TaskRecord, TaskState } from '@hachej/boring-ui-kit/task-board';
-import { ArrowLeftIcon } from 'lucide-react';
-import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer';
+import { ChevronLeftIcon } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
+import { Separator } from '@/components/ui/separator';
 import { cn } from '../utils/utils';
-import { TaskRequestCard, taskStateLabels } from './task-request-card';
+import { TaskRequestCard, TaskStatusPill, taskMeta, taskStateLabels } from './task-request-card';
+import type { TaskLocale, TaskViewerAction } from './task-request-card';
 import { TaskDetail } from './task-detail';
 import type { TaskDetailProps } from './task-detail';
 
-export { TaskRequestCard, TaskRequestCard as TaskCard, TaskStatusChip } from './task-request-card';
+export { TaskRequestCard, TaskRequestCard as TaskCard, TaskStatusPill, TaskStatusChip, TaskAttention, taskMeta } from './task-request-card';
 export { TaskDetail } from './task-detail';
-export type { TaskRequestCardProps, TaskRequestCardProps as TaskCardProps } from './task-request-card';
+export type { TaskRequestCardProps, TaskRequestCardProps as TaskCardProps, TaskLocale, TaskViewerAction } from './task-request-card';
 export type { TaskDetailProps } from './task-detail';
 export type { TaskFile, TaskRecord, TaskFilter, TaskState } from '@hachej/boring-ui-kit/task-board';
 
@@ -26,6 +28,8 @@ const subscribe = (changed: () => void) => {
 };
 const readSelection = () => taskFromUrl(window.location.href);
 const serverSelection = () => null;
+const BOARD_STATES = TASK_STATES.slice(0, 3);
+type TaskList = 'open' | 'done' | 'closed';
 
 export interface TaskFileViewApi {
   readonly fullscreen: boolean;
@@ -37,38 +41,58 @@ export interface TaskFileViewApi {
 }
 export interface TaskBoardProps {
   readonly tasks: readonly TaskRecord[];
+  /** Controlled Mine/All. Uncontrolled, the tasks bar starts on Mine when `currentUser` is known, otherwise All. */
   readonly filter?: TaskFilter;
+  readonly onFilterChange?: ((filter: TaskFilter) => void) | undefined;
   readonly currentUser?: string;
   readonly limit?: number;
   readonly variant?: 'board' | 'compact';
   readonly title?: string;
+  /** Column names, shown uppercase. */
   readonly labels?: Readonly<Record<TaskState, string>>;
+  /** The tasks bar (« 5 open · Done 12 · Closed 1 », Mine/All). Hosts that draw it in their own header pass false. */
+  readonly bar?: boolean;
+  /** Host content at the start of the tasks bar, e.g. the collapsed Studio header's app name and « Show the app ». */
+  readonly barStart?: ReactNode;
+  readonly locale?: TaskLocale;
+  /** Explicit host context for compact French labels (« À vous » or « À confirmer »). */
+  readonly viewerAction?: TaskViewerAction;
   /** Omit to use ?task= with native history. A router may instead supply controlled selection. */
   readonly selectedTask?: string | null;
   readonly onSelectedTaskChange?: ((id: string | null) => void) | undefined;
   /** Optional host navigation/present path, particularly for compact lists inside the PM panel. */
   readonly onOpen?: ((task: TaskRecord) => void) | undefined;
+  /** Host content under the detail's title card. */
   readonly actions?: ((task: TaskRecord) => ReactNode) | undefined;
+  /** Host-authorized compact card actions (« Modifier », « Confirmer »). */
+  readonly cardActions?: ((task: TaskRecord) => ReactNode) | undefined;
   readonly onAnswer?: TaskDetailProps['onAnswer'];
   readonly onOther?: TaskDetailProps['onOther'];
   readonly onDiscussQuestion?: TaskDetailProps['onDiscussQuestion'];
+  readonly onAsk?: TaskDetailProps['onAsk'];
   /** Adapter paths only. The host reauthorizes them when opening the regular viewer. */
   readonly onOpenFile?: TaskDetailProps['onOpenFile'];
   readonly onShowFile?: TaskDetailProps['onOpenFile'];
-  /** Supply the host's regular FileViewer in a wider overlay over task detail; no second store or composer. */
+  /** Supply the host's regular FileViewer; it opens 760px wide over the task detail. No second store or composer. */
   readonly renderFile?: ((task: TaskRecord, file: TaskFile, api: TaskFileViewApi) => ReactNode) | undefined;
-  /** Host-owned overlay appearance (for example the host's existing shadow token). */
+  /** Host-owned overlay appearance (for example the host's overlay shadow token). */
   readonly overlayClassName?: string;
   readonly className?: string;
 }
 
-/** Authorized records in; container-responsive board beneath stacked shadcn task/file overlays. */
-export function TaskBoard({ tasks, filter = 'all', currentUser, limit, variant = 'board', title = 'Tasks', labels = taskStateLabels,
-  selectedTask, onSelectedTaskChange, onOpen, actions, onAnswer, onOther, onDiscussQuestion, onOpenFile, onShowFile, renderFile, overlayClassName, className }: TaskBoardProps) {
+/**
+ * The tasks panel (spec 3 §3–§5): tasks bar, WAITING · WORKING · OPEN, and panel-scoped overlays. The task detail opens 400px wide
+ * from the right over the board, which keeps its columns; a file opens 760px wide over the detail. `variant="compact"` stacks C7 cards.
+ */
+export function TaskBoard({ tasks, filter, onFilterChange, currentUser, limit, variant = 'board', title = 'Tasks', labels = taskStateLabels, bar = true, barStart, locale = 'en', viewerAction,
+  selectedTask, onSelectedTaskChange, onOpen, actions, cardActions, onAnswer, onOther, onDiscussQuestion, onAsk, onOpenFile, onShowFile, renderFile, overlayClassName, className }: TaskBoardProps) {
   const urlSelection = useSyncExternalStore(subscribe, readSelection, serverSelection);
+  const [ownFilter, setOwnFilter] = useState<TaskFilter>(currentUser === undefined ? 'all' : 'mine');
+  const [list, setList] = useState<TaskList>('open');
+  const shownFilter = filter ?? ownFilter;
   const selected = selectedTask === undefined ? onOpen ? null : urlSelection : selectedTask;
   const detail = selected === null ? undefined : tasks.find(task => task.id === selected || taskReference(task) === selected);
-  const shown = selectTasks(tasks, { filter, ...(currentUser === undefined ? {} : { currentUser }), ...(limit === undefined ? {} : { limit }) });
+  const shown = selectTasks(tasks, { filter: shownFilter, ...(currentUser === undefined ? {} : { currentUser }), ...(limit === undefined ? {} : { limit }) });
   const [fileSelection, setFileSelection] = useState<{ readonly taskId: string; readonly path: string } | null>(null);
   const filePath = fileSelection?.path;
   const file = detail?.id === fileSelection?.taskId ? detail?.files?.find(candidate => candidate.path === filePath) : undefined;
@@ -78,19 +102,19 @@ export function TaskBoard({ tasks, filter = 'all', currentUser, limit, variant =
   const openFile = (task: TaskRecord, file: TaskFile) => { setFileSelection({ taskId: task.id, path: file.path }); onOpenFile?.(task, file); };
   const root = useRef<HTMLElement>(null);
   const back = useRef<HTMLButtonElement>(null);
-  const previous = useRef<string | null>(null);
+  const previous = useRef<{ readonly id: string; readonly state: TaskState | undefined } | null>(null);
+  const pendingFocus = useRef<string | null>(null);
+  const cardLink = (id: string) => [...root.current?.querySelectorAll<HTMLAnchorElement>('[data-task-open]') ?? []].find(candidate => candidate.dataset['taskOpen'] === id);
   useEffect(() => {
     if (selected !== null) back.current?.focus();
     else if (previous.current !== null) {
-      const id = previous.current;
-      const links = root.current?.querySelectorAll<HTMLAnchorElement>('[data-task-open]');
-      const link = [...links ?? []].find(candidate => candidate.dataset['taskOpen'] === id);
-      const folded = link?.closest('details');
-      if (folded) folded.open = true;
-      link?.focus();
+      const { id, state } = previous.current, link = cardLink(id);
+      if (link) link.focus();
+      else if (state === 'done' || state === 'closed') { pendingFocus.current = id; setList(state); }
     }
-    previous.current = detail?.id ?? selected;
-  }, [selected, detail?.id]);
+    previous.current = selected === null ? null : { id: detail?.id ?? selected, state: detail?.state };
+  }, [selected, detail?.id, detail?.state]);
+  useEffect(() => { if (pendingFocus.current !== null) { cardLink(pendingFocus.current)?.focus(); pendingFocus.current = null; } }, [list]);
   const select = (id: string | null) => {
     closeFile();
     if (selectedTask === undefined) {
@@ -101,42 +125,59 @@ export function TaskBoard({ tasks, filter = 'all', currentUser, limit, variant =
   };
   const open = (task: TaskRecord) => { if (onOpen) onOpen(task); else select(task.id); };
   const href = (task: TaskRecord) => typeof window === 'undefined' ? `?task=${encodeURIComponent(task.id)}` : taskUrl(window.location.href, task.id);
-  const card = (task: TaskRecord) => <TaskRequestCard key={task.id} task={task} variant={variant === 'compact' ? 'compact' : 'card'} selected={task.id === detail?.id} href={href(task)} onOpen={open} labels={labels} />;
+  const card = (task: TaskRecord) => <TaskRequestCard key={task.id} task={task} variant={variant === 'compact' ? 'compact' : 'card'} selected={task.id === detail?.id} href={href(task)} onOpen={open}
+    locale={locale} viewerAction={viewerAction} actions={variant === 'compact' ? cardActions?.(task) : undefined} />;
+  const of = (state: TaskState) => shown.filter(task => task.state === state);
   const empty = <Empty><EmptyHeader><EmptyTitle>No requests</EmptyTitle><EmptyDescription>No tasks match this view.</EmptyDescription></EmptyHeader></Empty>;
-  return <section ref={root} data-boring="task-board" data-variant={variant} aria-label={title} className={cn('@container/task-board min-w-0', className)} onKeyDown={event => {
+  const switcher = (target: TaskList, text: string) => list === target ? <span data-task-list-link={target} aria-current="page">{text}</span>
+    : <a href="#" data-task-list-link={target} className="text-foreground underline underline-offset-2" onClick={(event: MouseEvent) => { event.preventDefault(); setList(target); }}>{text}</a>;
+  const chooseFilter = (next: TaskFilter) => (event: MouseEvent) => { event.preventDefault(); if (filter === undefined) setOwnFilter(next); onFilterChange?.(next); };
+  if (variant === 'compact') return <section ref={root} data-boring="task-board" data-variant="compact" aria-label={title} className={cn('min-w-0', className)}>
+    <div data-task-list role="list" aria-label={title} className="flex flex-col gap-2">{shown.length ? shown.map(card) : empty}</div>
+  </section>;
+  return <section ref={root} data-boring="task-board" data-variant={variant} aria-label={title} className={cn('flex min-h-0 min-w-0 flex-col', className)} onKeyDown={event => {
     if (event.key === 'Escape' && selected !== null && !event.defaultPrevented) { event.preventDefault(); if (fileOpen) closeFile(); else select(null); }
   }}>
-    <Drawer open={selected !== null} onOpenChange={next => { if (!next) select(null); }} modal={false} swipeDirection="right">
-      <div data-task-list className="@container/task-rails flex min-w-0 flex-col gap-4">
-        {variant === 'compact' ? <div role="list" aria-label={title} className="flex flex-col gap-2">{shown.length ? shown.map(card) : empty}</div> : <>
-          <div className="grid min-w-0 gap-4 @2xl/task-rails:grid-cols-3">
-            {TASK_STATES.slice(0, 3).map(state => <section key={state} data-task-column={state} className="flex min-w-0 flex-col gap-3" aria-label={labels[state]}>
-              <h3>{labels[state]} · {shown.filter(task => task.state === state).length}</h3>
-              <div role="list" className="flex flex-col gap-2">{shown.filter(task => task.state === state).sort((a, b) => Number(b.waiting_on_you === true) - Number(a.waiting_on_you === true)).map(card)}</div>
-              {!shown.some(task => task.state === state) && <p className="text-muted-foreground">No tasks</p>}
-            </section>)}
-          </div>
-          {TASK_STATES.slice(3).map(state => <details key={state} data-task-column={state} className="min-w-0">
-            <summary className="min-h-11 cursor-pointer content-center">{labels[state]} · {shown.filter(task => task.state === state).length}</summary>
-            <div role="list" className="flex flex-col gap-2">{shown.filter(task => task.state === state).map(card)}</div>
-          </details>)}
-        </>}
+    {bar && <nav data-task-bar aria-label="Task lists" className="flex h-13 shrink-0 items-center gap-2.5 px-3.5 text-[13px] text-muted-foreground">
+      {barStart}
+      {switcher('open', `${BOARD_STATES.reduce((sum, state) => sum + of(state).length, 0)} open`)}<span aria-hidden="true">·</span>
+      {switcher('done', `Done ${of('done').length}`)}<span aria-hidden="true">·</span>
+      {switcher('closed', `Closed ${of('closed').length}`)}
+      {currentUser !== undefined && <span className="ml-auto flex items-center gap-2.5" data-task-filter={shownFilter}>
+        {(['mine', 'all'] as const).map(value => <Badge key={value} variant={shownFilter === value ? 'default' : 'secondary'} render={<a href="#" aria-current={shownFilter === value ? 'true' : undefined} onClick={chooseFilter(value)} />}>{value === 'mine' ? 'Mine' : 'All'}</Badge>)}
+      </span>}
+    </nav>}
+    <div data-task-stage className="relative min-h-0 flex-1 overflow-hidden">
+      <div data-task-list className="@container/task-rails h-full min-w-0 overflow-auto">
+        {list === 'open' ? <div className="grid min-w-0 content-start gap-2.5 p-3.5 @2xl/task-rails:grid-cols-3">
+          {BOARD_STATES.map(state => {
+            const column = of(state).sort((a, b) => Number(b.waiting_on_you === true) - Number(a.waiting_on_you === true));
+            const onYou = column.filter(task => task.waiting_on_you === true).length;
+            return <section key={state} data-task-column={state} aria-label={labels[state]} className="flex min-w-0 flex-col gap-[7px] self-start rounded-[var(--radius-xl)] bg-muted p-2">
+              <h3 className="flex min-h-6 items-center justify-between gap-2 px-0.5 pb-0.5 text-[11px] font-semibold tracking-[0.06em] text-muted-foreground"><span className="uppercase">{labels[state]} {column.length}</span>{onYou > 0 && <Badge data-task-on-you="">{onYou} on you</Badge>}</h3>
+              <div role="list" className="flex flex-col gap-[7px]">{column.map(card)}</div>
+            </section>;
+          })}
+        </div> : <section data-task-column={list} aria-label={labels[list]} className="flex max-w-xl min-w-0 flex-col gap-[7px] p-3.5">
+          <div role="list" className="flex flex-col gap-[7px]">{of(list).map(card)}</div>
+          {!of(list).length && empty}
+        </section>}
       </div>
-      <DrawerContent initialFocus={back} finalFocus={false} className={overlayClassName} style={{ '--drawer-content-width': 'min(100vw, 32rem)' } as React.CSSProperties}>
-        <DrawerTitle className="sr-only">Task detail</DrawerTitle>
-        <section aria-label="Task detail" data-task-side className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-auto p-4" aria-live="polite">
-          <Button ref={back} variant="outline" className="min-h-11 self-start" onClick={() => select(null)}><ArrowLeftIcon aria-hidden="true" />Back to tasks</Button>
-          {detail ? <TaskDetail key={detail.id} task={detail} labels={labels} actions={actions?.(detail)} onAnswer={onAnswer} onOther={onOther} onDiscussQuestion={onDiscussQuestion} onOpenFile={renderFile || onOpenFile ? openFile : undefined} /> : <Empty><EmptyHeader><EmptyTitle>Task unavailable</EmptyTitle><EmptyDescription>The host has not supplied this task.</EmptyDescription></EmptyHeader></Empty>}
-          <Drawer open={fileOpen} onOpenChange={next => { if (!next) closeFile(); }} modal={false} swipeDirection="right">
-            <DrawerContent className={overlayClassName} style={{ '--drawer-content-width': fileFullscreen ? '100%' : 'min(100vw, 56rem)' } as React.CSSProperties}>
-              <DrawerTitle className="sr-only">Task file viewer</DrawerTitle>
-              {fileOpen && detail && file && <section aria-label="Task file viewer" data-task-file-pane={detail.id} className="h-dvh min-w-0 flex-1 overflow-hidden">
-                {renderFile!(detail, file, { fullscreen: fileFullscreen, onFullscreenChange: setFileFullscreen, onClose: closeFile, onBack: closeFile, onShowFile: onShowFile ? () => onShowFile(detail, file) : undefined })}
-              </section>}
-            </DrawerContent>
-          </Drawer>
-        </section>
-      </DrawerContent>
-    </Drawer>
+      {selected !== null && <aside aria-label="Task detail" data-task-side className={cn('absolute inset-y-0 right-0 flex w-[400px] max-w-full flex-col bg-popover text-popover-foreground', overlayClassName)} aria-live="polite">
+        <Separator orientation="vertical" className="absolute inset-y-0 left-0" />
+        <div className="flex h-10 shrink-0 items-center gap-2 pr-1.5 pl-3.5">
+          <Button ref={back} variant="ghost" size="icon" data-task-back="" aria-label="Back to the tasks" title="Back to the tasks" onClick={() => select(null)}><ChevronLeftIcon aria-hidden="true" /></Button>
+          {detail && <><span className="text-[11px] text-muted-foreground">{taskMeta(detail)}</span><TaskStatusPill task={detail} locale={locale} viewerAction={viewerAction} /></>}
+        </div>
+        <Separator />
+        <div className="min-h-0 flex-1 overflow-auto p-3.5">
+          {detail ? <TaskDetail key={detail.id} task={detail} actions={actions?.(detail)} onAnswer={onAnswer} onOther={onOther} onDiscussQuestion={onDiscussQuestion} onAsk={onAsk} onOpenFile={renderFile || onOpenFile ? openFile : undefined} />
+            : <Empty><EmptyHeader><EmptyTitle>Task unavailable</EmptyTitle><EmptyDescription>The host has not supplied this task.</EmptyDescription></EmptyHeader></Empty>}
+        </div>
+      </aside>}
+      {fileOpen && detail && file && <section aria-label="Task file viewer" data-task-file-pane={detail.id} className={cn('flex min-w-0 flex-col bg-background', fileFullscreen ? 'fixed inset-0 z-50' : 'absolute inset-y-0 right-0 w-[760px] max-w-full', overlayClassName)}>
+        {renderFile!(detail, file, { fullscreen: fileFullscreen, onFullscreenChange: setFileFullscreen, onClose: closeFile, onBack: closeFile, onShowFile: onShowFile ? () => onShowFile(detail, file) : undefined })}
+      </section>}
+    </div>
   </section>;
 }

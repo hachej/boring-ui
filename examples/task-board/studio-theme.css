@@ -1,0 +1,54 @@
+/* The fictional hosts' theme roles: Studio (spec 3, row D) and, under .coach, Coach Max (row C). Components read only these roles. */
+:root:not(.coach) {
+  --background: #e8eef0;
+  --foreground: #1c2327;
+  --card: #ffffff;
+  --card-foreground: #1c2327;
+  --popover: #f5f8f9;
+  --popover-foreground: #1c2327;
+  --primary: #1c2327;
+  --primary-foreground: #ffffff;
+  --secondary: #e2e9ec;
+  --secondary-foreground: #3b4a52;
+  --muted: #e1e8eb;
+  --muted-foreground: #66737a;
+  --accent: #e2e9ec;
+  --accent-foreground: #1c2327;
+  --destructive: #c2414b;
+  --border: #d5dde0;
+  --input: #d5dde0;
+  --ring: #5bbbe6;
+  --radius: 0.625rem;
+  --shell: #eef2f3;
+  --studio-accent: #5bbbe6;
+  --warning-soft: #fef3c7;
+  --warning-soft-foreground: #92400e;
+  --task-overlay-shadow: -12px 0 32px rgba(28, 35, 39, 0.16);
+}
+.dark:not(.coach) {
+  --background: #151b1e;
+  --foreground: #e8eef0;
+  --card: #1c2327;
+  --card-foreground: #e8eef0;
+  --popover: #192024;
+  --popover-foreground: #e8eef0;
+  --primary: #e8eef0;
+  --primary-foreground: #1c2327;
+  --secondary: #2a3439;
+  --secondary-foreground: #c6d0d4;
+  --muted: #20292d;
+  --muted-foreground: #93a1a7;
+  --accent: #2a3439;
+  --accent-foreground: #e8eef0;
+  --destructive: #e5737b;
+  --border: #33404a;
+  --input: #33404a;
+  --ring: #5bbbe6;
+  --shell: #182024;
+  --warning-soft: #4a3410;
+  --warning-soft-foreground: #fcd9a0;
+  --task-overlay-shadow: -12px 0 32px rgba(0, 0, 0, 0.5);
+}
+/* Coach Max (row C) keeps the kit's zinc theme; it only adds its warning role for « À confirmer ». */
+.coach { --warning-soft: #fef3c7; --warning-soft-foreground: #92400e; }
+.coach.dark { --warning-soft: #4a3410; --warning-soft-foreground: #fcd9a0; }

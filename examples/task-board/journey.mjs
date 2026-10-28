@@ -35,17 +35,17 @@ try {
     assert.equal((await nativeResult(1)).opened, true);
     assert.equal(await browser.evaluate('new URL(location.href).searchParams.get("task")'), 'D-201');
     await browser.until('finished task artifact card', '!!document.querySelector("[data-testid=artifact-card][data-state=ready]")');
-    await browser.click('document.querySelector("[data-task-side] > button")');
+    await browser.click('document.querySelector("[data-task-back]")');
     await browser.click('document.querySelector("[data-testid=artifact-card][data-state=ready]")');
     await browser.until('card requests same host viewer', '!!document.querySelector("[data-mount-task]")');
     await browser.click('document.querySelector("[data-mount-task]")');
     await browser.until('card reopens same detail', `!!${detail}`);
     assert.equal(await browser.evaluate('new URL(location.href).searchParams.get("task")'), 'D-201');
     await browser.screenshot('native-present-mounted.png');
-    await browser.click('document.querySelector("[data-task-side] > button")');
+    await browser.click('document.querySelector("[data-task-back]")');
   });
   await step('native task lists use actual mine/waiting filters and missing/denied tasks report failure', async () => {
-    for (const [text, count, filter, cards] of [['Show waiting on me', 2, 'waiting-on-me', 1], ['Show my requests', 3, 'mine', 4], ['Show denied task', 4, null, null], ['Show missing task', 5, null, null]]) {
+    for (const [text, count, filter, cards] of [['Show waiting on me', 2, 'waiting-on-me', 1], ['Show my requests', 3, 'mine', 5], ['Show denied task', 4, null, null], ['Show missing task', 5, null, null]]) {
       await prompt(text);
       assert.equal((await toolResults()).length, count - 1);
       await browser.click('document.querySelector("[data-mount-task]")');
@@ -53,16 +53,12 @@ try {
       if (filter) { assert.equal(result.opened, true); assert.equal(result.artifact.subject.tasks.filter, filter); assert.equal(await browser.evaluate(`${board}.querySelectorAll('[data-task-card]').length`), cards); }
       else { assert.equal(result.opened, false); assert.match(result.refused, /denied|not found/); }
     }
-    await browser.click('document.querySelector("[data-task-side] > button")');
-    // Compact onOpen uses the identical controlled selection and URL path, without spawning another chat.
-    await browser.click('document.querySelector("[data-variant=compact] [data-task-open=\\"D-201\\"]")');
-    await browser.until('compact task detail', `!!${detail}`);
-    await browser.click('document.querySelector("[data-task-side] > button")');
+    await browser.click('document.querySelector("[data-task-back]")');
   });
-  await step('wide host has three rails, folded terminal columns and two own request rows', async () => {
+  await step('wide host has WAITING · WORKING · OPEN and Done/Closed list links in the tasks bar', async () => {
     assert.equal(await browser.evaluate(`getComputedStyle(${board}.querySelector('[data-task-column="waiting"]').parentElement).gridTemplateColumns.split(' ').length`), 3);
-    assert.equal(await browser.evaluate(`${board}.querySelector('[data-task-column="done"]').open`), false);
-    assert.equal(await browser.evaluate(`document.querySelector('[data-variant=compact] [role=list]').children.length`), 2);
+    assert.deepEqual(await browser.evaluate(`[...${board}.querySelectorAll('[data-task-column]')].map(node => node.dataset.taskColumn)`), ['waiting', 'working', 'open']);
+    assert.equal(await browser.evaluate(`${board}.querySelector('[data-task-list-link=done]').textContent`), 'Done 12');
     await browser.screenshot('desktop-wide-light.png');
   });
   await step('keyboard opens right task overlay without squeezing kanban; choices use host callback; Back restores focus and history', async () => {
@@ -73,11 +69,12 @@ try {
     assert.notEqual(await browser.evaluate(`getComputedStyle(${list}).display`), 'none');
     assert.equal(await browser.evaluate(`${board}.getBoundingClientRect().width`), widthBefore);
     assert.equal(await browser.evaluate(`getComputedStyle(${board}.querySelector('[data-task-column="waiting"]').parentElement).gridTemplateColumns.split(' ').length`), 3);
-    await browser.until('back receives overlay focus', 'document.activeElement.textContent === "Back to tasks"');
+    await browser.until('back receives overlay focus', 'document.activeElement.getAttribute("aria-label") === "Back to the tasks"');
     await browser.screenshot('desktop-detail-light.png');
-    assert.match(await browser.evaluate(`${detail}.querySelector('[data-task-answer=time]').textContent`), /Sam: Noon/);
+    assert.match(await browser.evaluate(`${detail}.querySelector('[data-task-answer=every-card]').textContent`), /Alice: every card/);
+    assert.equal(await browser.evaluate(`Math.round(document.querySelector('[data-task-side]').getBoundingClientRect().width)`), 400);
     await browser.click(`${detail}.querySelector('[data-task-question] button')`);
-    await browser.until('host choice received', `document.querySelector('output').textContent.includes('river')`);
+    await browser.until('host choice received', `document.querySelector('output').textContent.includes('grams')`);
     await browser.press('Escape'); await browser.until('board returned', `!${detail}`);
     assert.equal(await browser.evaluate('document.activeElement.dataset.taskOpen'), 'D-201');
     await browser.evaluate('history.back()'); await browser.until('back restored detail', `!!${detail}`);
@@ -89,7 +86,7 @@ try {
     assert.match(await browser.evaluate('document.querySelector("[data-testid=mention-item]").textContent'), /Waiting on you/);
     await browser.click('document.querySelector("[data-testid=mention-item][data-path=\\"task:D-201\\"]")');
     await browser.until('task kind chip in ambient composer', '!!document.querySelector("[data-testid=mention-chip][data-path=\\"task:D-201\\"]")');
-    assert.match(await browser.evaluate('document.querySelector("[data-testid=mention-chip]").textContent'), /@ D-201.*picnic/);
+    assert.match(await browser.evaluate('document.querySelector("[data-testid=mention-chip]").textContent'), /@ D-201.*Protein/);
     assert.equal(await browser.evaluate('document.querySelectorAll("[data-testid=composer]").length'), 1);
     assert.doesNotMatch(await browser.evaluate('document.querySelector("textarea").value'), /task:D-201/);
     await browser.screenshot('ambient-task-picker-chip.png');
@@ -100,17 +97,17 @@ try {
     await browser.click('document.querySelector("[data-task-show-answers]")');
     assert.ok(await browser.evaluate('document.querySelectorAll("[data-task-answered]").length > 3'));
     await browser.click('document.querySelector("[data-task-show-answers]")');
-    await browser.click('document.querySelector("[data-task-discuss=supplies]")');
-    await browser.until('Discuss stages the question in the existing composer', 'document.querySelector("textarea").value.includes("What should we bring?")');
+    await browser.click('document.querySelector("[data-task-discuss=gauge]")');
+    await browser.until('Discuss stages the question in the existing composer', 'document.querySelector("textarea").value.includes("Keep the protein gauge under the card?")');
     assert.equal(await browser.evaluate('document.activeElement === document.querySelector("textarea")'), true);
     assert.equal((await app.view()).entries.flatMap(entry => entry.model ?? []).filter(message => message.role === 'toolResult' && message.toolName === 'answer_task_question').length, 0, 'Discuss never submits or settles the question before Send');
     await browser.click('document.querySelector("[data-testid=composer-submit]")');
     await browser.until('sent discussion task mention', `!!document.querySelector('[data-testid=message-mention][data-path="task:D-201"]')`);
     await browser.click(`document.querySelector('[data-testid=message-mention][data-path="task:D-201"]')`);
-    await browser.until('native PM answer written to host projection', 'document.querySelector("[data-task-answer=supplies]")?.textContent.includes("PM: water")');
+    await browser.until('native PM answer written to host projection', 'document.querySelector("[data-task-answer=gauge]")?.textContent.includes("PM: remove")');
     const settled = (await app.view()).entries.flatMap(entry => entry.model ?? []).filter(message => message.role === 'toolResult' && message.toolName === 'answer_task_question');
     assert.equal(settled.length, 1);
-    await browser.click('document.querySelector("[data-task-side] > button")');
+    await browser.click('document.querySelector("[data-task-back]")');
     await browser.click('document.querySelector("[data-testid=message-mention][data-path=\\"task:D-201\\"]")');
     await browser.until('sent task chip opens same overlay', `!!${detail}`);
     assert.equal(await browser.evaluate('new URL(location.href).searchParams.get("task")'), 'D-201');
@@ -119,11 +116,11 @@ try {
   });
   await step('regular markdown/html/image file overlay stacks wider over the task; back close fullscreen zoom/more controls work', async () => {
     await browser.click(card('D-201')); await browser.until('files task detail', `!!${detail}`);
-    for (const [file, kind] of [['brief.md', 'markdown'], ['mockup.html', 'html'], ['evidence.png', 'image']]) {
+    for (const [file, kind] of [['brief.md', 'markdown'], ['mockups/meal-card.html', 'html'], ['evidence/day-plan.png', 'image']]) {
       await browser.click(`${detail}.querySelector('[data-task-file$="${file}"]')`);
       await browser.until(`${kind} viewer ready`, `!!document.querySelector('[data-testid=file-viewer][data-kind=${kind}]') && !!document.querySelector('[data-testid=file-title]')`);
       if (kind === 'markdown') await browser.until('regular markdown loaded', `!!document.querySelector('[data-testid=file-preview] .tiptap')`);
-      if (kind === 'html') await browser.until('regular html loaded', `!!document.querySelector('[data-testid=file-preview] iframe')`);
+      if (kind === 'html') await browser.until('regular html loaded', `!!document.querySelector('[data-testid=file-viewer] iframe')`);
       if (kind === 'image') await browser.until('regular image loaded', `document.querySelector('[data-testid=viewer-stage] img')?.naturalWidth > 0`);
       const geometry = await browser.evaluate(`(() => { const d=document.querySelector('[data-task-side]').getBoundingClientRect(), v=document.querySelector('[data-task-file-pane]').getBoundingClientRect(); return {taskLeft:d.x,fileLeft:v.x,taskWidth:d.width,fileWidth:v.width,task:${detail}.dataset.taskDetail,path:document.querySelector('[data-testid=file-viewer]').dataset.path}; })()`);
       assert.ok(geometry.fileLeft < geometry.taskLeft); assert.ok(geometry.fileWidth > geometry.taskWidth); assert.equal(geometry.task, 'D-201'); assert.equal(geometry.path, `docs/tasks/D-201/${file}`);

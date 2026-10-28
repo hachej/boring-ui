@@ -37,3 +37,7 @@
 - Existing full browser driver can run logic-only with `TASK_BOARD_SCREENSHOTS=0 CHROMIUM=/path/to/chromium npm run task-board:journey`; CI keeps its existing proof mode. No comparison baselines were changed.
 - Use `npm run registry:build`, `npm run check`, `npm run typecheck`, and the existing isolated app consumer/CI gates after updates. All heavy local commands serialize through `flock /tmp/boring-ui-d417-heavy.lock systemd-run --user --scope -p MemoryMax=8G`.
 - Raw evidence stays in ignored `.cache/evidence/d417/spec-*`. Final head/check status is recorded in the external `spec.md.report.md`; do not merge even when green.
+
+## Fidelity pass (Opus, 2026-10-28)
+
+Board, detail, files, file overlay and compact card now follow spec 3 §3–§5 and C7. Side-by-side shots (light/dark) are in `compare/`, made by `examples/task-board/compare.mjs`. What is still off, and why, is in the external `fidelity.md.report.md`.
