@@ -179,10 +179,14 @@ function App() {
   }
   const common = { locale: 'fr', showHistory: false, showConnectionStatus: false };
 
+  // The coach's « Voir la fiche » (the PM panel has no header actions) opens the product sheet over the app (`DocumentSheet`); the host decides which document.
+  const seeSheet = docs ? [{ id: 'spec', label: 'Voir la fiche', icon: ClipboardListIcon, onSelect: () => setSpec('fiche-produit.md') }] : [];
   const agent = noAgent ? undefined : {
     controller: coach.controller,
+    ...(feedback ? { feedback } : {}),
     // Three actions: the first two in the title row, the third (a link) in « … ».
     headerActions: [
+      ...seeSheet,
       { id: 'whatsapp', label: 'Discuter avec Max sur WhatsApp', icon: MessageCircleIcon, href: '/whatsapp/open?app=fitness', onSelect: () => window.__did.push('whatsapp') },
       { id: 'share', label: 'Partager ma semaine', icon: Share2Icon, onSelect: () => window.__did.push('share') },
       { id: 'invite', label: 'Inviter un ami', icon: UsersIcon, href: '/invite?app=fitness', onSelect: () => window.__did.push('invite') },
@@ -200,9 +204,7 @@ function App() {
       return window.__transcript ?? (send === 'message' ? 'Je mange une salade' : 'Combien de pas hier ?');
     }, send } }),
   };
-  // The product manager's « Voir la fiche » opens the product sheet over the app (`DocumentSheet`); the host decides which document.
-  const seeSheet = docs ? [{ id: 'spec', label: 'Voir la fiche', icon: ClipboardListIcon, onSelect: () => setSpec('fiche-produit.md') }] : [];
-  const improve = { controller: manager.controller, ...(feedback ? { feedback } : {}), ...(seeSheet.length ? { headerActions: seeSheet } : {}), chatProps: { ...common, actions: manager.actions, labels: { title: 'Chef de produit' } } };
+  const improve = { controller: manager.controller, ...(seeSheet.length ? { headerActions: seeSheet } : {}), chatProps: { ...common, actions: manager.actions, labels: { title: 'Chef de produit' } } };
   const nav = [...(app === 'empty' ? EMPTY : query.get('nav') === 'dashboard' ? DASHBOARD : FITNESS), ...(docs ? [{ id: 'fiches', label: 'Fiches', icon: ClipboardListIcon, render: () => <Documents provider={docs} locale="fr" /> }] : [])];
   const account = {
     name: 'Camille Martin', email: 'camille@example.invalid',

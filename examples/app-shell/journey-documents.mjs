@@ -41,13 +41,10 @@ try {
     assert.deepEqual(found, [], `${where}: controls under 44px`);
     assert.ok(await browser.evaluate(noOverflow), `${where}: horizontal overflow`);
   };
-  /** The product manager's sheet: the account menu, then « Améliorer l’app ». */
-  const openImprove = async () => {
-    await tap('[data-testid=account-button]');
-    await browser.until('the account sheet', `!!${q('[data-testid=account-improve]')}`);
-    await pause(500);
-    await tap('[data-testid=account-improve]');
-    await browser.until('the product manager', `!!${q('[data-testid=agent-layer-action-spec]')}`, 15000);
+  /** The coach's layer, whose « Voir la fiche » opens the sheet (the PM panel replaced the manager and has no header actions; it is covered by examples/pm-panel/journey.mjs). */
+  const openCoach = async wide => {
+    await (wide ? browser.click(q('[data-testid=nav-agent]')) : tap('[data-testid=agent-trigger]'));
+    await browser.until('the coach with its action', `!!${q('[data-testid=agent-layer-action-spec]')}`, 15000);
   };
   const revisionRows = `[...document.querySelectorAll('[data-testid=revision-item]')].map(row => row.dataset.revision)`;
 
@@ -73,8 +70,8 @@ try {
   await browser.until('its own bytes', `/Brouillon initial/.test(${q('[data-testid=artifact-body]')}?.textContent ?? '')`, 15000);
   await browser.screenshot('phone-revision.png');
   await small('phone Revisions');
-  // The product manager's « Voir la fiche » opens the sheet over the app; Back closes the sheet and keeps the layer.
-  await openImprove();
+  // The coach's « Voir la fiche » opens the sheet over the app; Back closes the sheet and keeps the layer.
+  await openCoach();
   // The drawer slides in first: the action is tapped once it is on screen and the slide has settled.
   await browser.until('the action on screen', `(() => { const r = ${q('[data-testid=agent-layer-action-spec]')}?.getBoundingClientRect(); return !!r && r.bottom <= innerHeight; })()`, 15000);
   await pause(700);
@@ -86,9 +83,9 @@ try {
   await browser.evaluate('history.back()');
   await browser.until('Back closes the sheet', `!${q(SHEET)}`, 15000);
   // One layer at a time: the sheet took the layer's place, and Back returns to the page without reopening the layer.
-  assert.equal(await browser.evaluate(`${q('[data-testid=agent-layer]')}?.dataset.state ?? null`), null, 'the product manager stays closed');
+  assert.equal(await browser.evaluate(`${q('[data-testid=agent-layer]')}?.dataset.state ?? null`), null, 'the coach stays closed');
   // « Toutes les fiches » closes the sheet and shows the Fiches screen.
-  await openImprove();
+  await openCoach();
   await browser.until('the action on screen again', `(() => { const r = ${q('[data-testid=agent-layer-action-spec]')}?.getBoundingClientRect(); return !!r && r.bottom <= innerHeight; })()`, 15000);
   await pause(700);
   await tap('[data-testid=agent-layer-action-spec]');
@@ -98,7 +95,7 @@ try {
   await browser.until('the sheet closes', `!${q(SHEET)}`, 15000);
   assert.equal(await browser.evaluate('location.hash'), '#fiches', 'the Fiches screen shows');
 
-  // 1280x800: the same document, the Library beside it, the sheet from the product manager in the dock. On a wide screen the account is
+  // 1280x800: the same document, the Library beside it, the sheet from the coach in the dock. On a wide screen the account is
   // the sidebar's NavUser (no header avatar). The Library row and the sheet's action are DOM clicks: the harness's hit test finds the
   // sidebar's menu button over them, which the screenshot does not show.
   const treeItem = `[role=treeitem][data-path="${FILE}"] button`;
@@ -113,10 +110,7 @@ try {
   assert.ok(await browser.evaluate(`!!${q('[data-testid=list-pane]')} && !!${q('[data-testid=detail-pane]')} && !!${q('[data-testid=revisions]')}`), 'the Library, the file and its Revisions on one screen');
   assert.ok(await browser.evaluate(noOverflow), '1280: no horizontal overflow');
   await browser.screenshot('desktop-documents.png');
-  await browser.click(q('[data-testid=nav-user]'));
-  await browser.until('the NavUser menu', `!!${q('[data-testid=account-improve]')}`);
-  await browser.click(q('[data-testid=account-improve]'));
-  await browser.until('the manager in the dock', `!!${q('[data-testid=agent-layer-action-spec]')}`, 15000);
+  await openCoach(true);
   await pause(700);
   await browser.evaluate(`${q('[data-testid=agent-layer-action-spec]')}.click()`);
   await browser.until('the sheet at 1280', `!!${q(`${SHEET} [data-testid=file-viewer][data-path="${FILE}"]`)}`, 15000);
@@ -157,5 +151,5 @@ try {
   assert.ok(await browser.evaluate(`!!${q(`[role=treeitem][data-path="${FILE}"]`)}`), 'the other files stay');
 
   assert.deepEqual(browser.problems.filter(p => !/Failed to load resource/.test(p)), [], 'no page problems');
-  console.log('documents journey ok: 390x844 (Library, Revisions, read-only revision, PM sheet, Back, Toutes les fiches) and 1280x800 (side by side, PM sheet, Back, rename and delete from the Library, the open file followed and closed)');
+  console.log('documents journey ok: 390x844 (Library, Revisions, read-only revision, coach sheet, Back, Toutes les fiches) and 1280x800 (side by side, coach sheet, Back, rename and delete from the Library, the open file followed and closed)');
 } finally { await browser?.close(); await app.close(); }
