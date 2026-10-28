@@ -164,6 +164,10 @@
     "./run-outbox": {
       "types": "./dist/run-outbox.d.ts",
       "import": "./dist/run-outbox.js"
+    },
+    "./actions": {
+      "types": "./dist/actions.d.ts",
+      "import": "./dist/actions.js"
     }
   },
   "dependencies": {

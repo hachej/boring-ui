@@ -1,7 +1,8 @@
 import type { ComponentType, ReactNode } from 'react';
 import type { ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
-import type { ChatController } from '@hachej/boring-ui-kit/native-chat';
 import type { SlashItem } from '@hachej/boring-ui-kit/chat-text';
+import type { VoiceMessageConfig as KitVoiceMessageConfig, PendingVoice, VoiceMessageHandle, VoiceRecorderOptions as KitVoiceRecorderOptions } from '@hachej/boring-ui-kit/chat-react/voice';
+export type { PendingVoice, VoiceMessageHandle, VoicePhase } from '@hachej/boring-ui-kit/chat-react/voice';
 import type { ApprovalDecision, ArtifactDetect, ArtifactRecognise, ChatArtifact, SubagentRenderer as ViewSubagentRenderer } from '@hachej/boring-ui-kit/chat-view';
 import type { BlockAction } from '../button/actions';
 import type { ChatLabels } from './labels';
@@ -87,10 +88,7 @@ export type { PasteToFile } from '@hachej/boring-ui-kit/chat-text';
 // Compatibility exports for one release; session contracts are owned by the kit.
 export type { PastedText, UploadResult, ModelRef } from '@hachej/boring-ui-kit/chat-react';
 import type { UploadResult, ModelRef } from '@hachej/boring-ui-kit/chat-react';
-export interface VoiceMessageConfig {
-  readonly transcribe: (audio: Blob, signal: AbortSignal) => Promise<string>;
-  /** Capture limit (default five minutes). Upload and send still wait for release. */
-  readonly maxMs?: number;
+export interface VoiceMessageConfig extends KitVoiceMessageConfig {
   /** Same workspace upload contract as `attachments.upload`, used instead when supplied. Preserve the voice- filename prefix. */
   readonly upload?: AttachmentsConfig['upload'];
   /** The recorder (`useVoiceMessage` of `pi-chat-voice`). Without it there is no voice message: no button, no pending bubble. */
@@ -202,34 +200,6 @@ export interface ModelEffortPickerProps {
   readonly onModel: (model: ModelRef) => void; readonly onEffort: (level: string) => void;
 }
 
-export type VoicePhase = 'starting' | 'recording' | 'processing' | 'transcribe-failed' | 'upload-failed' | 'sending' | 'unconfirmed' | 'blocked';
-/** A voice message on its way: recorded, then transcribed, uploaded and sent. */
-export interface PendingVoice {
-  readonly id: number;
-  readonly path: string | undefined;
-  readonly phase: VoicePhase;
-  readonly seconds: number;
-  readonly retry: () => void;
-  readonly audioOnly: (() => void) | undefined;
-  readonly discard: () => void;
-}
-/** The recorder the chat hands to the voice button. */
-export interface VoiceMessageHandle {
-  readonly canStart: boolean;
-  readonly phase: VoicePhase | 'idle';
-  readonly seconds: number;
-  readonly captureSequence: number;
-  /** Actual PCM input levels; absent on the MediaRecorder fallback. */
-  readonly levels?: readonly number[];
-  readonly paused?: boolean;
-  readonly pause?: (() => void) | undefined;
-  readonly resume?: (() => void) | undefined;
-  readonly problem: string | undefined;
-  readonly pending: readonly PendingVoice[];
-  readonly start: () => void;
-  readonly finish: () => void;
-  readonly cancel: () => void;
-}
 /** Props of the tap-to-record button that `VoiceMessageConfig.Button` carries. */
 /** `primary`: the button stands in for Send (`voiceReplacesSend`), so it takes Send's primary look. */
 export interface VoiceMessageButtonProps {
@@ -241,13 +211,10 @@ export interface VoiceMessageButtonProps {
 /** Props of a pending voice message bubble that `VoiceMessageConfig.Bubble` carries. */
 export interface PendingVoiceBubbleProps { readonly pending: PendingVoice | undefined }
 /** What the chat hands its recorder (`VoiceMessageConfig.useRecorder`). `config` is undefined when voice is off. */
-export interface VoiceRecorderOptions {
-  readonly controller: ChatController | undefined;
+export interface VoiceRecorderOptions extends KitVoiceRecorderOptions {
   readonly config: VoiceMessageConfig | undefined;
   readonly attachments?: AttachmentsConfig | undefined;
   readonly labels: ChatLabels;
-  readonly admitted?: (() => void) | undefined;
-  readonly activeController?: { readonly current: ChatController } | undefined;
 }
 /** A React hook: the chat calls it on every render of a mounted chat (a new hook remounts the chat). */
 export type VoiceRecorderHook = (options: VoiceRecorderOptions) => VoiceMessageHandle;

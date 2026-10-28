@@ -4,6 +4,8 @@ The npm side of the kit: Pi-based agent definitions and handlers, the workspace 
 
 ## Sub-features
 
+- `pkg-agent-actions` optional decision, structured extraction, native tool and result-derived reply, with native unavailable-model outcomes and deferred fallback polling/cancellation. `packages/agent/src/actions.ts`.
+
 - `pkg-agent-define` `defineAgent`, tools, extensions, delegates. `packages/agent/src/agents.ts`.
 - `pkg-agent-transport` chat transport and conversations handlers. `packages/agent/src/chat-transport.ts`, `conversations.ts`.
 - `pkg-agent-capabilities` file guard, approvals, `ask_user`, `present`, schedules, sandbox. `packages/agent/src/file-guard.ts`, `approval.ts`, `ask-user.ts`, `artifacts.ts`, `schedule.ts`, `sandbox.ts`.
@@ -33,6 +35,7 @@ The npm side of the kit: Pi-based agent definitions and handlers, the workspace 
 Preconditions: `npm ci`; run from the repository root.
 
 - **All.** `npm run check` then `npm test` then `npm run verify`.
+- **Actions.** `pkg-agent-actions`: `node --test test/packages/agent-actions.test.mjs`; `npm run test:definitions-consumer -- --actions` repeats public behavior and strict types from packed output.
 - **Agent.** `pkg-agent-define`, `pkg-agent-transport`, `pkg-agent-capabilities`, `pkg-agent-context`, `pkg-agent-questions-delivery`, `pkg-agent-room-metering`, `pkg-agent-runs`: `npm test`, files `test/packages/agent-*.test.mjs`; background task composition is driven by `npm run workspace-demo:journey` and the native question/delivery tests.
 - **Files.** `pkg-files-workspace`: `npm test`, files `test/packages/files-*.test.mjs`.
 - **Execution.** `pkg-execution`: `npm test`, files `test/packages/execution-*.test.mjs`.
