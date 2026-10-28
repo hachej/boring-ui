@@ -85,7 +85,7 @@ function Page() {
         <output aria-live="polite">{answer}</output>
       </aside>
       <section aria-label="Right stage" className={narrow ? 'min-h-dvh min-w-0 max-w-md lg:min-h-0' : 'min-h-dvh min-w-0 lg:min-h-0'}>
-        <TaskBoard tasks={projected} actions={task => <MountReport request={request} selected={selected} mountedTask={task.id} />} filter={filter} currentUser="alice" selectedTask={selected} onSelectedTaskChange={select}
+        <TaskBoard tasks={projected} overlayClassName="shadow-xl" actions={task => <MountReport request={request} selected={selected} mountedTask={task.id} />} filter={filter} currentUser="alice" selectedTask={selected} onSelectedTaskChange={select}
           onAnswer={(task, question, value) => { setAnswer(`Fictional choice: ${task.id} · ${question.id} · ${value}`); void authorized(new Request(new URL('/api/answers', location.href), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ task: task.id, question: question.id, value }) })); }}
           onOther={(task, question) => setAnswer(`Host free-answer intent: ${task.id} · ${question.id}`)}
           onDiscussQuestion={(task, question) => { if (chat.status !== 'ready') return; chat.controller.setText(`${mentionToken(`task:${task.id}`)} Discuss route question: ${question.text}`); void chat.controller.send('followUp'); }}

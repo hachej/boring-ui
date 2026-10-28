@@ -1427,7 +1427,7 @@ function RecentRequests({ tasks, open }: { tasks: readonly TaskRecord[]; open: (
 | `TaskQuestion.answeredBy`, `answeredAt` | Host answer actor/timestamp. Open questions first; latest three answered items have bounded one-line question + who:answer previews, chevron full-text expansion and Show all |
 | `renderFile(task, file, api)` | Host regular viewer in a wider right overlay stacked over task detail. `api` has `onClose`, `onBack`, optional `onShowFile` |
 | `onOpenFile(task, file)`, `onShowFile(task, file)` | Exact adapter-owned task/file intents; Studio supplies its existing viewer/PM pointing service |
-| `labels`, `title`, `className` | State labels, accessible board name and outer layout |
+| `labels`, `title`, `className`, `overlayClassName` | State labels, accessible name, outer layout and host-owned overlay appearance. The kit adds no shadow; the fixture host passes its existing shadow token |
 | `TaskRequestCard` | Shared board/detail/PM card: `task`, `variant: card \| compact`, `href`, `onOpen`, `selected`, `labels`, optional `actions` slot |
 | `TaskStatusChip`, `TaskDetail` | Same chip and detail independently embeddable without the board |
 

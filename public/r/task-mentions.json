@@ -1,0 +1,24 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "task-mentions",
+  "title": "Task mentions",
+  "description": "Optional authorized task catalog for the existing PM composer, composed with host file search.",
+  "dependencies": [
+    "@hachej/boring-ui-kit@^0.4.26",
+    "react@^19.0.0",
+    "lucide-react@^1.51.0"
+  ],
+  "registryDependencies": [
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.26/r/task-board.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.26/r/pi-chat-mentions.json"
+  ],
+  "files": [
+    {
+      "path": "registry/task-mentions/task-mentions.tsx",
+      "content": "import { ListTodoIcon } from 'lucide-react';\nimport { taskReference } from '@hachej/boring-ui-kit/task-board';\nimport type { TaskRecord } from '@hachej/boring-ui-kit/task-board';\nimport type { MentionsConfig } from '../pi-chat/config';\nimport { MentionPicker } from '../pi-chat-mentions/mention-menu';\n\n/** Authorized tasks only. Composes, never replaces, the host's file search and other mention kinds. */\nexport function taskMentions({ tasks, onOpen, base }: {\n  readonly tasks: readonly TaskRecord[];\n  readonly onOpen: (task: TaskRecord) => void;\n  readonly base?: MentionsConfig;\n}): MentionsConfig {\n  const find = (id: string) => tasks.find(task => task.id === id || taskReference(task) === id);\n  const label = (id: string) => { const task = find(id); return task ? `@ ${taskReference(task)} · ${task.title}` : id; };\n  return {\n    ...base,\n    Picker: base?.Picker ?? MentionPicker,\n    listLabel: base?.listLabel ?? 'Tasks and files',\n    kinds: { ...base?.kinds, task: { label, icon: <ListTodoIcon aria-hidden=\"true\" />, open: id => { const task = find(id); if (task) onOpen(task); } } },\n    search: async (query, signal) => {\n      const needle = query.toLocaleLowerCase();\n      const matches = tasks.filter(task => `${taskReference(task)} ${task.title}`.toLocaleLowerCase().includes(needle))\n        .sort((a, b) => Number(b.waiting_on_you === true) - Number(a.waiting_on_you === true))\n        .map(task => ({ path: `task:${task.id}`, label: `${taskReference(task)} · ${task.title}${task.waiting_on_you ? ' · Waiting on you' : ''}` }));\n      const files = await base?.search(query, signal) ?? [];\n      return signal.aborted ? [] : [...matches, ...files];\n    },\n  };\n}\n",
+      "type": "registry:component",
+      "target": "components/task-mentions/task-mentions.tsx"
+    }
+  ],
+  "type": "registry:component"
+}

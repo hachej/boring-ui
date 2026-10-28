@@ -19,6 +19,9 @@ const prompt = async text => { await browser.type('document.querySelector("texta
 const step = async (name, run) => { await run(); steps.push(name); console.log(`PASS ${name}`); };
 try {
   browser = await launch(`${app.url}?deferMount=1`, { evidence });
+  // The consumer's shadcn Drawer owns transitions. Capture settled views, never an in-flight slide.
+  const capture = browser.screenshot;
+  browser.screenshot = async name => { await pause(600); await capture(name); };
   await browser.send('Emulation.setDeviceMetricsOverride', { width: 1600, height: 1000, deviceScaleFactor: 1, mobile: false });
   await browser.until('board ready', `!!${card('D-201')}`);
   await browser.until('real ambient conversation connected', '!!document.querySelector("aside textarea")');

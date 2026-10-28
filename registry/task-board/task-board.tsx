@@ -55,12 +55,14 @@ export interface TaskBoardProps {
   readonly onShowFile?: TaskDetailProps['onOpenFile'];
   /** Supply the host's regular FileViewer in a wider overlay over task detail; no second store or composer. */
   readonly renderFile?: ((task: TaskRecord, file: TaskFile, api: TaskFileViewApi) => ReactNode) | undefined;
+  /** Host-owned overlay appearance (for example the host's existing shadow token). */
+  readonly overlayClassName?: string;
   readonly className?: string;
 }
 
 /** Authorized records in; container-responsive board beneath stacked shadcn task/file overlays. */
 export function TaskBoard({ tasks, filter = 'all', currentUser, limit, variant = 'board', title = 'Tasks', labels = taskStateLabels,
-  selectedTask, onSelectedTaskChange, onOpen, actions, onAnswer, onOther, onDiscussQuestion, onOpenFile, onShowFile, renderFile, className }: TaskBoardProps) {
+  selectedTask, onSelectedTaskChange, onOpen, actions, onAnswer, onOther, onDiscussQuestion, onOpenFile, onShowFile, renderFile, overlayClassName, className }: TaskBoardProps) {
   const urlSelection = useSyncExternalStore(subscribe, readSelection, serverSelection);
   const selected = selectedTask === undefined ? onOpen ? null : urlSelection : selectedTask;
   const detail = selected === null ? undefined : tasks.find(task => task.id === selected || taskReference(task) === selected);
@@ -117,13 +119,13 @@ export function TaskBoard({ tasks, filter = 'all', currentUser, limit, variant =
           </details>)}
         </>}
       </div>
-      <DrawerContent initialFocus={back} finalFocus={false} className="shadow-xl" style={{ '--drawer-content-width': 'min(100vw, 32rem)' } as React.CSSProperties}>
+      <DrawerContent initialFocus={back} finalFocus={false} className={overlayClassName} style={{ '--drawer-content-width': 'min(100vw, 32rem)' } as React.CSSProperties}>
         <DrawerTitle className="sr-only">Task detail</DrawerTitle>
         <section aria-label="Task detail" data-task-side className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-auto p-4" aria-live="polite">
           <Button ref={back} variant="outline" className="min-h-11 self-start" onClick={() => select(null)}><ArrowLeftIcon aria-hidden="true" />Back to tasks</Button>
           {detail ? <TaskDetail key={detail.id} task={detail} labels={labels} actions={actions?.(detail)} onAnswer={onAnswer} onOther={onOther} onDiscussQuestion={onDiscussQuestion} onOpenFile={renderFile || onOpenFile ? openFile : undefined} /> : <Empty><EmptyHeader><EmptyTitle>Task unavailable</EmptyTitle><EmptyDescription>The host has not supplied this task.</EmptyDescription></EmptyHeader></Empty>}
           <Drawer open={fileOpen} onOpenChange={next => { if (!next) closeFile(); }} modal={false} swipeDirection="right">
-            <DrawerContent className="shadow-xl" style={{ '--drawer-content-width': 'min(100vw, 56rem)' } as React.CSSProperties}>
+            <DrawerContent className={overlayClassName} style={{ '--drawer-content-width': 'min(100vw, 56rem)' } as React.CSSProperties}>
               <DrawerTitle className="sr-only">Task file viewer</DrawerTitle>
               {fileOpen && detail && file && <section aria-label="Task file viewer" data-task-file-pane={detail.id} className="h-dvh min-w-0 flex-1 overflow-hidden">
                 {renderFile!(detail, file, { onClose: closeFile, onBack: closeFile, onShowFile: onShowFile ? () => onShowFile(detail, file) : undefined })}

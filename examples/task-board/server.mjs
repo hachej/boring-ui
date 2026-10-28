@@ -45,7 +45,7 @@ export async function startTaskBoard({ port = 0 } = {}) {
   const answers = new Map();
   const settle = (task, question, value, actor) => {
     const options = { route: ['river', 'hill'], supplies: ['water', 'snacks'] };
-    if (task !== 'D-201' || !options[question]?.includes(value)) return { kind: 'denied', reason: 'Unknown task question or option' };
+    if (task !== 'D-201' || !Object.hasOwn(options, question) || !options[question].includes(value)) return { kind: 'denied', reason: 'Unknown task question or option' };
     const answer = { answer: value, answeredBy: actor, answeredAt: new Date().toISOString() }; answers.set(question, answer); return { kind: 'answered', question, ...answer };
   };
   const answerQuestion = defineTool({ name: 'answer_task_question', description: 'Settle a fictional host question. Not an approval or task execution.', replay: 'safe', parameters: Type.Object({ task: Type.String(), question: Type.String(), value: Type.String() }), execute: async args => ({ output: [{ type: 'text', text: JSON.stringify(settle(args.task, args.question, args.value, 'PM')) }] }) });

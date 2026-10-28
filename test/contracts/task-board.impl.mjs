@@ -92,6 +92,8 @@ test('open questions precede bounded latest-three answers; full huge answers mou
   await f.click('[data-task-answered] button'); assert.equal(document.querySelector('[data-task-answer-full]'), null);
   await f.click('[data-task-show-answers]'); assert.equal(document.querySelectorAll('[data-task-answered]').length, 7);
   assert.equal(document.querySelector('[data-task-answer-full]'), null);
+  await f.render({ tasks: [{ ...record, questions: record.questions.map(question => question.id === 'answer-0' ? { ...question, answeredAt: '2026-10-28T12:00:00Z' } : question) }] });
+  assert.equal(document.querySelector('[data-task-answered]').dataset.taskAnswered, 'answer-0', 'host answer time takes precedence over source position');
 });
 
 test('compact mine renders only newest two own title/chip rows and uses the host open path', async t => {
