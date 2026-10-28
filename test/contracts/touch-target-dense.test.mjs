@@ -9,7 +9,7 @@ import { spawnSync } from 'node:child_process';
 // The published registry item's rule is applied by a real browser (happy-dom cannot evaluate `:not([data-dense] *)`): the default
 // still applies, the opt-out works. The browser part is skipped where no Chromium is installed.
 const registry = JSON.parse(readFileSync(new URL('../../registry.json', import.meta.url), 'utf8'));
-const rules = registry.items.find(item => item.name === 'app-shell').css['@layer utilities']['@media (max-width: 640px), (pointer: coarse)'];
+const rules = registry.items.find(item => item.name === 'app-shell').css['@layer utilities']['@media (width < 768px), (pointer: coarse)'];
 const [selector, declaration] = Object.entries(rules)[0];
 const chromium = process.env.CHROMIUM ?? `${process.env.HOME}/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome`;
 
@@ -20,7 +20,7 @@ test('the 44px rule is unchanged and names the data-dense opt-out', () => {
 });
 
 test('in a phone-width browser, buttons are 44px by default and data-dense keeps its own size', { skip: !existsSync(chromium) && 'no Chromium' }, () => {
-  const page = `<style>@media (max-width: 640px), (pointer: coarse) { ${selector} { min-height: 2.75rem; min-width: 2.75rem; } }
+  const page = `<style>@media (width < 768px), (pointer: coarse) { ${selector} { min-height: 2.75rem; min-width: 2.75rem; } }
     button { all: unset; display: block; height: 10px; width: 10px; box-sizing: border-box; }</style>
     <div class="app-shell"><button id="plain" data-slot="button"></button>
       <div data-dense><button id="inside" data-slot="button"></button><div><button id="deep" data-slot="button"></button></div></div>

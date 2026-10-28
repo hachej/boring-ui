@@ -41,6 +41,7 @@ import { BlockActions } from '../button/actions';
 import type { BlockAction } from '../button/actions';
 import { ChatTextProvider, useMergedText } from '../pi-chat/labels';
 import { cn, PHONE_BELOW, withDefaults } from '../utils/utils';
+import { readFlag, writeFlag } from '../utils/persisted';
 import { AppTextProvider, defaultAppIcons, defaultAppLabels } from './app-labels';
 import type { AppIcons, AppLabels } from './app-labels';
 import { ArtifactPanel } from './artifact-panel';
@@ -270,8 +271,6 @@ export type AgentWorkspaceProps = AgentWorkspaceBaseProps & (
 
 // The Library column is docked only while the chat and the viewer (their `ArtifactWorkspace` minimums) keep their room beside it; otherwise it is Dock's sheet.
 const SESSIONS_WIDTH = 260, LIBRARY_WIDTH = 320, CHAT_MIN = 360, VIEWER_MIN = 360;
-const readFlag = (key: string): boolean => { try { return sessionStorage.getItem(key) === '1'; } catch { return false; } };
-const writeFlag = (key: string, on: boolean) => { try { if (on) sessionStorage.setItem(key, '1'); else sessionStorage.removeItem(key); } catch { /* the layout is a convenience */ } };
 const defaultLocate = (path: string): ResourceLocator => ({ resource: { providerId: 'workspace', path: workspacePath(path) }, view: { kind: 'published' } });
 
 /**
@@ -408,7 +407,7 @@ export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, titl
   const follow = useArtifactFollow({ controller, conversationId, detect, active, autoOpen,
     onOpen: selection => { if (conversationId !== undefined) void setOpened({ kind: 'artifact', conversation: conversationId, ...selection }); },
     unsaved: () => unsaved.current,
-    narrow: () => globalThis.matchMedia?.(`(max-width: ${sheetBelow - 1}px)`).matches === true,
+    narrow: () => globalThis.matchMedia?.(`(width < ${sheetBelow}px)`).matches === true,
     showing: path => showsPath(currentView.current, path),
     openPresent: path => { if (unsaved.current) return false; void setOpened({ kind: 'file', path }); return true; },
     answer: chat.actions?.answer });
@@ -572,11 +571,11 @@ export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, titl
     followHeader.current = new ResizeObserver(() => { if (toggleRow.current) toggleRow.current.style.height = `${header.clientHeight}px`; });
     followHeader.current.observe(header);
   }, []);
-  const toggleSpace = toggle && <Button ref={headerSlot} variant="ghost" size="icon-sm" aria-hidden="true" tabIndex={-1} className="invisible min-[641px]:-ml-1" />;
+  const toggleSpace = toggle && <Button ref={headerSlot} variant="ghost" size="icon-sm" aria-hidden="true" tabIndex={-1} className="invisible md:-ml-1" />;
 
   // ---- The chat in the center: docked PiChat, or the host's floating surface over the same controller (with the toggle in its header).
   const hostControls = typeof controls === 'function' ? controls({ panelOpen }) : controls ?? chat.controls;
-  const header = <>{conversations?.onNew && <Button variant="ghost" size="icon-sm" data-testid="workspace-new-chat" aria-label={text.labels.newChat} title={text.labels.newChat} className="min-[641px]:hidden" onClick={conversations.onNew}><text.icons.newChat data-icon="inline-start" aria-hidden="true" /></Button>}{hostControls}</>;
+  const header = <>{conversations?.onNew && <Button variant="ghost" size="icon-sm" data-testid="workspace-new-chat" aria-label={text.labels.newChat} title={text.labels.newChat} className="md:hidden" onClick={conversations.onNew}><text.icons.newChat data-icon="inline-start" aria-hidden="true" /></Button>}{hostControls}</>;
   const conversationTitle = conversations?.items.find(item => item.id === conversationId)?.title;
   // pi-app ships every composer feature item: Markdown, the `/` menu, `@` mentions, the model pill, voice messages, the phone camera.
   // eslint-disable-next-line react-hooks/refs -- the functions built here read refs only when a request, an event or an effect calls them, never during render
@@ -595,8 +594,8 @@ export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, titl
     <div className="relative flex min-h-0 flex-1 flex-col">
       {chatProps ? <PiChat key={conversationId} {...chatProps} headerStart={<>{toggleSpace}{chat.headerStart}</>} className={cn('min-h-0 flex-1', chat.className)} />
         // Same geometry as the PiChat header, so nothing moves when the chat arrives.
-        : <>{toggle && <><div className="flex shrink-0 items-center gap-2 px-3 py-2 sm:gap-3 sm:px-4 sm:py-2.5">{toggleSpace}</div><Separator /></>}{connecting}</>}
-      {toggle && <div ref={toggleRow} className="pointer-events-none absolute top-0 left-0 z-10 flex items-center px-3 sm:px-4 [&>*]:pointer-events-auto">{toggle}</div>}
+        : <>{toggle && <><div className="flex shrink-0 items-center gap-2 px-3 py-2 md:gap-3 md:px-4 md:py-2.5">{toggleSpace}</div><Separator /></>}{connecting}</>}
+      {toggle && <div ref={toggleRow} className="pointer-events-none absolute top-0 left-0 z-10 flex items-center px-3 md:px-4 [&>*]:pointer-events-auto">{toggle}</div>}
     </div>
   </div>;
 

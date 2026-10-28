@@ -1,5 +1,7 @@
 'use client';
 
+import { readPersisted, writePersisted } from '../utils/persisted';
+
 import { createContext, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent, PointerEvent, ReactNode } from 'react';
 import { cn } from '../utils/utils';
@@ -99,8 +101,6 @@ interface LayoutContext {
 const Layout = createContext<LayoutContext | null>(null);
 const STEP = 24, BIG_STEP = 96;
 
-function store(persist: 'session' | 'local'): Storage | undefined { try { return persist === 'local' ? globalThis.localStorage : globalThis.sessionStorage; } catch { return undefined; } }
-
 /** The row of docks and main content. Measures its own width, so it works inside any container. */
 export function DockLayout({ children, storageKey = 'boring.dock', persist = 'session', minMain = 360, className }: DockLayoutProps) {
   const root = useRef<HTMLDivElement>(null);
@@ -119,18 +119,16 @@ export function DockLayout({ children, storageKey = 'boring.dock', persist = 'se
     return () => observer.disconnect();
   }, []);
   const read = useCallback((id: string): DockRecord => {
-    const storage = store(persist);
-    const get = (name: string) => { try { return storage?.getItem(`${storageKey}.${id}.${name}`) ?? null; } catch { return null; } };
+    const get = (name: string) => readPersisted(`${storageKey}.${id}.${name}`, persist);
     const width = Number(get('width')), floating = get('floating'), open = get('open'), placement = get('placement');
     return { width: Number.isFinite(width) && width > 0 ? width : undefined, placement: placement === 'page' || placement === 'docked' || placement === 'floating' ? placement : undefined,
       floating: floating === null ? undefined : floating === '1', open: open === null ? undefined : open === '1' };
   }, [persist, storageKey]);
   const update = useCallback((id: string, patch: DockRecord) => {
     setRecords(current => ({ ...current, [id]: { ...current[id], ...patch } }));
-    const storage = store(persist);
     for (const [name, value] of Object.entries(patch)) {
       if (value === undefined) continue;
-      try { storage?.setItem(`${storageKey}.${id}.${name}`, typeof value === 'boolean' ? (value ? '1' : '0') : typeof value === 'number' ? String(Math.round(value)) : value); } catch { /* the layout is a convenience */ }
+      writePersisted(`${storageKey}.${id}.${name}`, typeof value === 'boolean' ? (value ? '1' : '0') : typeof value === 'number' ? String(Math.round(value)) : value, persist);
     }
   }, [persist, storageKey]);
   const publish = useCallback((id: string, api: DockApi | undefined) => {

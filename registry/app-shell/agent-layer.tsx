@@ -19,7 +19,7 @@ import type { FeedbackSession } from '@hachej/boring-feedback/ui';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { appendToDraft, mentionedPaths, mentionToken, pieces, removeMention, withoutMentions } from '@hachej/boring-ui-kit/chat-text';
 import { Drawer, DrawerContent } from '@/components/ui/drawer';
-import { useIsMobile } from '@/hooks/use-mobile';
+import { usePhone } from '../utils/use-media';
 import { Dock, DockLayout, DockMain } from '../dock/dock';
 import { useDraggable } from '../utils/use-draggable';
 import type { DockApi } from '../dock/dock';
@@ -236,7 +236,7 @@ function useMeasuredPeek(probe: RefObject<HTMLDivElement | null>): { readonly pe
 
 /** Places the layer in the app. `agent` is the one assistant; `improve` is the product manager. Either may be absent. */
 export function AgentLayerProvider({ agent: own, improve, locale, agentLink, children }: { readonly agent?: AgentSpec | undefined; readonly improve?: AgentSpec | undefined; readonly locale?: AppShellLocale | undefined; readonly agentLink?: false | undefined; readonly children: ReactNode }): ReactElement {
-  const compact = useIsMobile();
+  const compact = usePhone();
   const expanded = !compact;
   const [snap, setSnapState] = useState<Snap>('closed');
   const [dockFloating, setDockFloating] = useState(false);
