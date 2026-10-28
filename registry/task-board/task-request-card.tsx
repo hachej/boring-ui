@@ -5,6 +5,7 @@ import type { TaskRecord, TaskState } from '@hachej/boring-ui-kit/task-board';
 import { deriveTaskStatus, taskReference, taskStatusLabel } from '@hachej/boring-ui-kit/task-board';
 import { Badge } from '@/components/ui/badge';
 import { Item } from '@/components/ui/item';
+import { cn } from '../utils/utils';
 
 export type TaskLocale = 'en' | 'fr';
 export type TaskViewerAction = 'question' | 'confirmation';
@@ -14,6 +15,18 @@ const captures = (count: number) => `${count} capture${count === 1 ? '' : 's'}`;
 const compactStrings = {
   en: { label: 'REQUEST', screen: (screen: string) => `Screen: ${screen}` },
   fr: { label: 'DEMANDE', screen: (screen: string) => `Écran : ${screen}` },
+} as const;
+
+/**
+ * Task-board tokens, set by the host theme. Each falls back to the stock shadcn value, so a host without them looks unchanged.
+ * `--task-pill-height` / `--task-pill-font-size` (pills), `--task-control-height` (question controls), `--task-column-radius`,
+ * `--task-card-padding-y` / `--task-card-padding-x` (board cards).
+ */
+export const taskTokens = {
+  pill: '*:h-[var(--task-pill-height,1.25rem)] *:text-[length:var(--task-pill-font-size,0.75rem)]',
+  control: '*:h-[var(--task-control-height,2rem)]',
+  card: '[&_[data-slot=item]]:px-[var(--task-card-padding-x,0.75rem)] [&_[data-slot=item]]:py-[var(--task-card-padding-y,0.625rem)]',
+  column: 'rounded-[var(--task-column-radius,var(--radius-xl))]',
 } as const;
 
 /** `id · age`, e.g. « D-201 · 12m ». */
@@ -30,7 +43,7 @@ export function TaskStatusPill({ task, locale = 'en', viewerAction = 'question' 
   if (!label) return null;
   const warning = status === 'waiting-on-viewer' && locale === 'fr';
   const badge = <Badge data-task-status={status} variant={status === 'waiting-on-viewer' && !warning ? 'default' : status === 'high-risk' ? 'destructive' : 'secondary'}>{label}</Badge>;
-  return warning ? <span className="contents [--secondary:var(--warning-soft,var(--secondary))] [--secondary-foreground:var(--warning-soft-foreground,var(--secondary-foreground))]">{badge}</span> : badge;
+  return <span className={cn('contents', taskTokens.pill, warning && '[--secondary:var(--warning-soft,var(--secondary))] [--secondary-foreground:var(--warning-soft-foreground,var(--secondary-foreground))]')}>{badge}</span>;
 }
 /** @deprecated The pill now follows `deriveTaskStatus`; `labels` is ignored. */
 export const TaskStatusChip = TaskStatusPill as (props: { readonly task: Pick<TaskRecord, 'waiting_on_you' | 'waiting_on' | 'risk'>; readonly labels?: unknown; readonly locale?: TaskLocale; readonly viewerAction?: TaskViewerAction }) => ReactNode;
@@ -76,7 +89,7 @@ export function TaskRequestCard({ task, variant = 'card', selected, href, onOpen
       {actions && <div data-task-actions="" className="mt-1 grid grid-cols-2 gap-2 *:min-h-11 *:w-full">{actions}</div>}
     </Item></div>;
   }
-  return <div role="listitem" className="rounded-[var(--radius-lg)] bg-card"><TaskAttention active={task.waiting_on_you === true}>
+  return <div role="listitem" className={cn('rounded-[var(--radius-lg)] bg-card', taskTokens.card)}><TaskAttention active={task.waiting_on_you === true}>
     <Item variant="outline" className="flex-col items-stretch gap-1" data-task-card={task.id} data-selected={selected || undefined} {...(link ? { render: link } : {})}>
       <span className="flex min-h-5 min-w-0 items-center justify-between gap-2 text-[11px] text-muted-foreground"><span>{taskMeta(task)}</span>{pill}</span>
       <span className="min-w-0 text-sm break-words text-foreground">{task.title}</span>

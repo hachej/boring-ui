@@ -7,7 +7,7 @@ import type { TaskFile, TaskQuestion, TaskRecord } from '@hachej/boring-ui-kit/t
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Item } from '@/components/ui/item';
-import { TaskAttention } from './task-request-card';
+import { TaskAttention, taskTokens } from './task-request-card';
 
 export interface TaskDetailProps {
   readonly task: TaskRecord;
@@ -52,7 +52,7 @@ function OpenQuestion({ task, question, onAnswer, onOther, onDiscussQuestion }: 
     <Item variant="outline" className="flex-col items-stretch gap-2" data-task-question={question.id}>
       <div className="flex items-baseline justify-between gap-2"><span className={sectionLabel}>QUESTION FOR YOU</span>{asked && <span className="text-[11px] text-muted-foreground">{asked}</span>}</div>
       <p className="text-sm">{question.text}</p>
-      <div className="flex items-center gap-2">
+      <div className={`flex items-center gap-2 ${taskTokens.control}`}>
         {question.options?.map((option, index) => {
           const value = typeof option === 'string' ? option : option.value;
           const label = typeof option === 'string' ? option : option.label;
@@ -61,7 +61,7 @@ function OpenQuestion({ task, question, onAnswer, onOther, onDiscussQuestion }: 
         {onOther && <Button variant="outline" data-task-other={question.id} aria-expanded={other !== null} onClick={() => setOther(value => value === null ? '' : null)}>Other…</Button>}
         {onDiscussQuestion && <Button variant="link" className="h-auto min-w-0 shrink text-center leading-tight whitespace-normal underline" data-task-discuss={question.id} onClick={() => onDiscussQuestion(task, question)}>Discuss in chat</Button>}
       </div>
-      {other !== null && <form className="flex gap-2" data-task-other-form={question.id} onSubmit={event => { event.preventDefault(); send(); }}>
+      {other !== null && <form className={`flex gap-2 ${taskTokens.control}`} data-task-other-form={question.id} onSubmit={event => { event.preventDefault(); send(); }}>
         <Input autoFocus aria-label="Your answer" maxLength={4096} value={other} onChange={event => setOther(event.target.value)} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); setOther(null); } }} />
         <Button type="submit" disabled={!other.trim()}>Send</Button>
       </form>}

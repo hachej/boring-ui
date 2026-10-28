@@ -39,7 +39,7 @@ Preconditions: built packages, Chromium, fictional data only. Run `CHROMIUM=/pat
 
 ## Gotchas
 
-- Blocks pick no radius, border, shadow or colour literal (BORING-UI-1): pills, buttons and inputs are the host's shadcn sizes, and colours/radius come from the host theme (the fixture's `studio-theme.css`). Exact pill/button heights therefore follow the host's installed shadcn, not the block.
+- Blocks pick no radius, border, shadow or colour literal (BORING-UI-1). Spec sizes come from host tokens the block reads (`taskTokens`): `--task-pill-height` / `--task-pill-font-size`, `--task-control-height`, `--task-column-radius`, `--task-card-padding-y` / `-x`. Without them the stock shadcn values apply; Studio's theme (the fixture's `studio-theme.css`) sets the spec values, Coach Max keeps its own theme. `compare.mjs` fails if D2 does not measure 11px/17px pills, 34px controls, 12px columns, 9/11 card padding and a 400px overlay.
 - Hosts authorize and adapt records before rendering. `filter: 'mine'` is not authorization; the adapter supplies `requesterId`, never inferred from the assignee. Missing `currentUser` matches no own requests.
 - Question/action callbacks are host intents, not approval, persistence or confirmed execution. Text remains escaped; captures are labels, not arbitrary remote image URLs.
 - Files, answer identities and permissions belong to the adapter. The example resource route permits only the three supplied D-201 paths. `renderFile` borrows the host viewer; fullscreen/comments/pointing are that viewer/host's services, not TaskBoard implementations. The fixture records Montrer intent only: no PM point capture/chip, comment storage or second composer.

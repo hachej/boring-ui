@@ -28,6 +28,13 @@ try {
     await browser.until('PM reply', `document.body.textContent.includes('I opened D-201 on the right.')`, 20000);
     await browser.evaluate('document.activeElement?.blur()'); await pause(400);
     await shoot('D2-StudioTasks', mode);
+    if (mode === 'light') {
+      const measured = await browser.evaluate(`(() => { const css = element => getComputedStyle(element), pill = document.querySelector('[data-task-card="D-201"] [data-task-status]'), option = document.querySelector('[data-task-question] button'), column = document.querySelector('[data-task-column=waiting]'), item = document.querySelector('[data-task-card="D-199"]');
+        return { pill: { height: pill.getBoundingClientRect().height, fontSize: css(pill).fontSize }, control: option.getBoundingClientRect().height, columnRadius: css(column).borderTopLeftRadius, cardPadding: [css(item).paddingTop, css(item).paddingLeft], overlay: document.querySelector('[data-task-side]').getBoundingClientRect().width }; })()`);
+      // Spec 3 values from the Studio theme tokens, not the stock shadcn sizes.
+      if (JSON.stringify(measured) !== JSON.stringify({ pill: { height: 17, fontSize: '11px' }, control: 34, columnRadius: '12px', cardPadding: ['9px', '11px'], overlay: 400 })) throw new Error(`D2 geometry: ${JSON.stringify(measured)}`);
+      console.log(`D2 geometry ${JSON.stringify(measured)}`);
+    }
     // D6: the mockup file opens 760px wide over the detail.
     await browser.click(`${detail}.querySelector('[data-task-file$="meal-card.html"]')`);
     await browser.until('html mockup viewer', '!!document.querySelector("[data-testid=file-viewer][data-kind=html]")', 20000); await pause(1200);

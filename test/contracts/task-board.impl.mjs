@@ -67,6 +67,8 @@ test('board orders WAITING · WORKING · OPEN with Done/Closed list links, URL s
   assert.deepEqual([...document.querySelectorAll('[data-task-bar] > *')].map(node => node.textContent).filter(text => text !== '·'), ['3 open', 'Done 1', 'Closed 1']);
   assert.equal(document.querySelector('[data-task-column=waiting] h3').textContent, 'Waiting 11 on you');
   assert.equal(document.querySelector('[data-task-attention] [data-task-card=orchard]')?.dataset.taskCard, 'orchard', 'the card waiting on the viewer carries the attention edge');
+  for (const [element, token] of [[document.querySelector('[data-task-column=waiting]'), '--task-column-radius'], [document.querySelector('[role=listitem]'), '--task-card-padding-y'], [document.querySelector('[role=listitem]'), '--task-card-padding-x'], [document.querySelector('[data-task-status]').parentElement, '--task-pill-font-size'], [document.querySelector('[data-task-on-you]').parentElement, '--task-pill-height']])
+    assert.ok(element.className.includes(`var(${token},`), `the board reads the host token ${token}`);
   await f.click('[data-task-list-link=done]'); assert.deepEqual([...document.querySelectorAll('[data-task-card]')].map(node => node.dataset.taskCard), ['done']);
   await f.click('[data-task-list-link=open]');
   await f.click('[data-task-open=orchard]');

@@ -24,6 +24,13 @@
   --warning-soft: #fef3c7;
   --warning-soft-foreground: #92400e;
   --task-overlay-shadow: -12px 0 32px rgba(28, 35, 39, 0.16);
+  /* Task-board tokens at the spec 3 values: pill 11/500 with 1px padding, 34px controls, 12px columns, 9/11 card padding. */
+  --task-pill-font-size: 11px;
+  --task-pill-height: 17px;
+  --task-control-height: 34px;
+  --task-column-radius: 12px;
+  --task-card-padding-y: 9px;
+  --task-card-padding-x: 11px;
 }
 .dark:not(.coach) {
   --background: #151b1e;

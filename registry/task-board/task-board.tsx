@@ -10,12 +10,12 @@ import { Button } from '@/components/ui/button';
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '../utils/utils';
-import { TaskRequestCard, TaskStatusPill, taskMeta, taskStateLabels } from './task-request-card';
+import { TaskRequestCard, TaskStatusPill, taskMeta, taskStateLabels, taskTokens } from './task-request-card';
 import type { TaskLocale, TaskViewerAction } from './task-request-card';
 import { TaskDetail } from './task-detail';
 import type { TaskDetailProps } from './task-detail';
 
-export { TaskRequestCard, TaskRequestCard as TaskCard, TaskStatusPill, TaskStatusChip, TaskAttention, taskMeta } from './task-request-card';
+export { TaskRequestCard, TaskRequestCard as TaskCard, TaskStatusPill, TaskStatusChip, TaskAttention, taskMeta, taskTokens } from './task-request-card';
 export { TaskDetail } from './task-detail';
 export type { TaskRequestCardProps, TaskRequestCardProps as TaskCardProps, TaskLocale, TaskViewerAction } from './task-request-card';
 export type { TaskDetailProps } from './task-detail';
@@ -143,7 +143,7 @@ export function TaskBoard({ tasks, filter, onFilterChange, currentUser, limit, v
       {switcher('open', `${BOARD_STATES.reduce((sum, state) => sum + of(state).length, 0)} open`)}<span aria-hidden="true">·</span>
       {switcher('done', `Done ${of('done').length}`)}<span aria-hidden="true">·</span>
       {switcher('closed', `Closed ${of('closed').length}`)}
-      {currentUser !== undefined && <span className="ml-auto flex items-center gap-2.5" data-task-filter={shownFilter}>
+      {currentUser !== undefined && <span className={cn('ml-auto flex items-center gap-2.5', taskTokens.pill)} data-task-filter={shownFilter}>
         {(['mine', 'all'] as const).map(value => <Badge key={value} variant={shownFilter === value ? 'default' : 'secondary'} render={<a href="#" aria-current={shownFilter === value ? 'true' : undefined} onClick={chooseFilter(value)} />}>{value === 'mine' ? 'Mine' : 'All'}</Badge>)}
       </span>}
     </nav>}
@@ -153,8 +153,8 @@ export function TaskBoard({ tasks, filter, onFilterChange, currentUser, limit, v
           {BOARD_STATES.map(state => {
             const column = of(state).sort((a, b) => Number(b.waiting_on_you === true) - Number(a.waiting_on_you === true));
             const onYou = column.filter(task => task.waiting_on_you === true).length;
-            return <section key={state} data-task-column={state} aria-label={labels[state]} className="flex min-w-0 flex-col gap-[7px] self-start rounded-[var(--radius-xl)] bg-muted p-2">
-              <h3 className="flex min-h-6 items-center justify-between gap-2 px-0.5 pb-0.5 text-[11px] font-semibold tracking-[0.06em] text-muted-foreground"><span className="uppercase">{labels[state]} {column.length}</span>{onYou > 0 && <Badge data-task-on-you="">{onYou} on you</Badge>}</h3>
+            return <section key={state} data-task-column={state} aria-label={labels[state]} className={cn('flex min-w-0 flex-col gap-[7px] self-start bg-muted p-2', taskTokens.column)}>
+              <h3 className="flex min-h-6 items-center justify-between gap-2 px-0.5 pb-0.5 text-[11px] font-semibold tracking-[0.06em] text-muted-foreground"><span className="uppercase">{labels[state]} {column.length}</span>{onYou > 0 && <span className={cn('contents', taskTokens.pill)}><Badge data-task-on-you="">{onYou} on you</Badge></span>}</h3>
               <div role="list" className="flex flex-col gap-[7px]">{column.map(card)}</div>
             </section>;
           })}
