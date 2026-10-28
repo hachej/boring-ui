@@ -13,9 +13,9 @@ import { TaskRequestCard, taskStateLabels } from './task-request-card';
 import { TaskDetail } from './task-detail';
 import type { TaskDetailProps } from './task-detail';
 
-export { TaskRequestCard, TaskStatusChip } from './task-request-card';
+export { TaskRequestCard, TaskRequestCard as TaskCard, TaskStatusChip } from './task-request-card';
 export { TaskDetail } from './task-detail';
-export type { TaskRequestCardProps } from './task-request-card';
+export type { TaskRequestCardProps, TaskRequestCardProps as TaskCardProps } from './task-request-card';
 export type { TaskDetailProps } from './task-detail';
 export type { TaskFile, TaskRecord, TaskFilter, TaskState } from '@hachej/boring-ui-kit/task-board';
 

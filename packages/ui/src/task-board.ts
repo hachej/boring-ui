@@ -6,6 +6,9 @@ export type TaskFilter = 'all' | 'mine' | 'waiting-on-me';
 export interface TaskQuestion {
   readonly id: string;
   readonly text: string;
+  /** Host-supplied display identity and timestamp for the question. */
+  readonly askedBy?: string;
+  readonly askedAt?: string;
   readonly options?: readonly (string | { readonly label: string; readonly value: string })[];
   readonly answer?: string;
   /** Display identity supplied by the host, not inferred from the current viewer. */
@@ -17,6 +20,8 @@ export interface TaskFile {
   /** Authorized workspace path supplied by the host adapter; never derived from the task id. */
   readonly path: string;
   readonly name?: string;
+  /** Presentation metadata, not permission to execute or load a file. */
+  readonly kind?: 'markdown' | 'mockup' | 'capture';
 }
 export interface TaskHistory {
   readonly id?: string;
@@ -33,18 +38,47 @@ export interface TaskRecord {
   readonly status?: string;
   /** The host adapter resolves the request's author; never inferred from an assignee. */
   readonly requesterId?: string;
+  /** Host-formatted display metadata; identities here never determine ownership or filtering. */
+  readonly requester?: string;
+  readonly refiner?: string;
+  readonly age?: string;
+  /** Native viewer-relative projection, not inferred from waiting_on.who. */
   readonly waiting_on_you?: boolean;
-  readonly waiting_on?: { readonly who: string; readonly question?: string };
+  readonly waiting_on?: { readonly who: string; readonly question?: string; readonly type?: 'builder' | 'person' | 'other' };
   readonly risk?: string;
   readonly spec?: string;
   readonly screen?: string;
   readonly capture?: string;
+  /** Number of captures attached to the request, independent of the legacy capture description. */
+  readonly captureCount?: number;
+  /** Authorized workspace folder supplied by the host; never synthesized from the task reference. */
+  readonly folder?: string;
   readonly questions?: readonly TaskQuestion[];
   readonly files?: readonly TaskFile[];
   readonly history?: readonly TaskHistory[];
   readonly updated_at?: string;
   readonly created_at?: string;
 }
+export type TaskSemanticStatus = 'waiting-on-viewer' | 'waiting-on-builder' | 'high-risk' | 'none';
+
+/** Single-pill presentation precedence: viewer, explicit builder, high risk. No workflow or authority is changed. */
+export function deriveTaskStatus(task: Pick<TaskRecord, 'waiting_on_you' | 'waiting_on' | 'risk'>): TaskSemanticStatus {
+  if (task.waiting_on_you === true) return 'waiting-on-viewer';
+  if (task.waiting_on?.type === 'builder') return 'waiting-on-builder';
+  if (task.risk === 'high') return 'high-risk';
+  return 'none';
+}
+
+/** Confirmation wording is explicit host context, never inferred from a question, title or free-form status. */
+export function taskStatusLabel(status: TaskSemanticStatus, locale: 'en' | 'fr' = 'en', viewerAction: 'question' | 'confirmation' = 'question'): string | undefined {
+  switch (status) {
+    case 'waiting-on-viewer': return locale === 'fr' ? viewerAction === 'confirmation' ? 'À confirmer' : 'À vous' : 'Waiting on you';
+    case 'waiting-on-builder': return locale === 'fr' ? "Chez l'équipe" : 'Waiting on the builder';
+    case 'high-risk': return locale === 'fr' ? 'Risque élevé' : 'High risk';
+    default: return undefined;
+  }
+}
+
 export interface TaskSelection {
   readonly filter?: TaskFilter;
   readonly currentUser?: string;
