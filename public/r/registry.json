@@ -131,7 +131,7 @@
           "pm-radius-token": "0.375rem",
           "pm-radius-popover": "0.75rem",
           "pm-radius-send": "0.5rem",
-          "pm-shadow-popover": "0 8px 24px rgb(0 0 0 / 0.14)",
+          "pm-shadow-popover": "0 0 0 1px var(--border), 0 8px 24px rgb(0 0 0 / 0.14)",
           "pm-label": "var(--foreground)",
           "pm-mark-line": "35%",
           "pm-mark-width": "2px"
@@ -192,7 +192,7 @@
           "pm-radius-token": "0.375rem",
           "pm-radius-popover": "0.75rem",
           "pm-radius-send": "0.5rem",
-          "pm-shadow-popover": "0 8px 24px rgb(0 0 0 / 0.14)",
+          "pm-shadow-popover": "0 0 0 1px var(--border), 0 8px 24px rgb(0 0 0 / 0.14)",
           "pm-label": "var(--foreground)",
           "pm-mark-line": "35%",
           "pm-mark-width": "2px"
@@ -3001,11 +3001,12 @@
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.28/r/utils.json"
       ],
       "dependencies": [
-        "@hachej/boring-ui-kit@^0.4.27",
-        "@hachej/boring-feedback@^0.4.27",
+        "@hachej/boring-ui-kit@^0.4.28",
+        "@hachej/boring-feedback@^0.4.28",
         "@earendil-works/pi-durable@~1.4.0",
         "lucide-react@^1.51.0",
-        "react@^19.0.0"
+        "react@^19.0.0",
+        "react-dom@^19.0.0"
       ],
       "files": [
         {

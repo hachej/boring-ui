@@ -41,10 +41,10 @@ export function PointComment({ comment, frame, text }: { readonly comment: PmCom
   useLayoutEffect(() => {
     const update = () => { if (popover.current) setPosition(place(element, frame, popover.current.offsetHeight)); };
     update();
-    const observer = new ResizeObserver(update);
-    if (popover.current) observer.observe(popover.current);
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : undefined;
+    if (popover.current) observer?.observe(popover.current);
     window.addEventListener('resize', update); window.addEventListener('scroll', update, true);
-    return () => { observer.disconnect(); window.removeEventListener('resize', update); window.removeEventListener('scroll', update, true); };
+    return () => { observer?.disconnect(); window.removeEventListener('resize', update); window.removeEventListener('scroll', update, true); };
   }, [element, frame]);
   // Focused once placed, after the click that picked has finished (the point layer holds that click until it ends).
   const field = useRef<HTMLTextAreaElement | null>(null);
@@ -61,26 +61,26 @@ export function PointComment({ comment, frame, text }: { readonly comment: PmCom
   const empty = !comment.text.trim();
   const listening = dictation.phase === 'recording' || dictation.phase === 'starting';
   return createPortal(<div ref={popover} role="dialog" aria-label={text.commentOn(chip.kind, chip.label)} data-feedback-ignore="" data-testid="pm-comment"
-    className="fixed z-50 flex w-80 flex-col gap-2 rounded-pm-popover border bg-background px-3 py-2.5 text-foreground shadow-pm-popover"
+    className="fixed z-50 flex w-80 flex-col gap-2 rounded-pm-popover bg-background px-3 py-2.5 text-foreground shadow-pm-popover"
     style={position ? { left: position.left, top: position.top } : { visibility: 'hidden', left: 0, top: 0 }}>
     <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
       <span aria-hidden="true" className="inline-flex size-4 shrink-0 items-center justify-center rounded-pm-round bg-pm-mark text-[10px] font-bold text-pm-mark-foreground">{chip.number}</span>
       <span className="min-w-0 truncate"><b className="font-semibold text-pm-label">{chip.kind} · {chip.label}</b> · {chip.screen}</span>
     </div>
-    <span className="flex [&_textarea]:min-h-[42px] [&_textarea]:max-h-[126px] [&_textarea]:resize-none [&_textarea]:rounded-none [&_textarea]:border-0 [&_textarea]:bg-transparent [&_textarea]:p-0 [&_textarea]:font-[inherit] [&_textarea]:text-sm [&_textarea]:leading-normal [&_textarea]:shadow-none [&_textarea]:!ring-0">
-      <Textarea ref={field} data-testid="pm-comment-input" rows={2} value={comment.text} placeholder={text.commentPlaceholder} aria-label={text.commentPlaceholder}
+    <span className="flex [&_textarea]:min-h-[42px] [&_textarea]:max-h-[126px] [&_textarea]:resize-none [&_textarea]:rounded-none [&_textarea]:border-transparent [&_textarea]:focus-visible:border-transparent [&_textarea]:bg-transparent [&_textarea]:p-0 [&_textarea]:text-sm [&_textarea]:leading-normal [&_textarea]:shadow-none [&_textarea]:!ring-0">
+      <Textarea ref={field} data-testid="pm-comment-input" rows={2} style={{ font: 'inherit' }} value={comment.text} placeholder={text.commentPlaceholder} aria-label={text.commentPlaceholder}
         onChange={event => comment.setText(event.target.value)}
         onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (!empty) comment.submit(); } }} />
     </span>
     <div className="flex items-center gap-2">
       <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
         <Checkbox data-testid="pm-comment-add" checked={comment.addToMessage} onCheckedChange={value => comment.setAddToMessage(value)} />{text.addToMessage}</label>
-      {comment.transcribe && <Button variant="ghost" size="icon" data-testid="pm-comment-mic" data-state={dictation.phase} aria-pressed={listening} aria-label={text.dictate} title={text.dictate}
-        disabled={dictation.phase === 'transcribing'} onClick={() => { if (dictation.phase === 'idle') dictation.start(); else dictation.finish(); }} className="min-h-[30px] min-w-[30px] size-[30px]" style={sendScope}>
+      {comment.transcribe && <span className="flex [&_button]:size-[30px] [&_button]:min-h-[30px] [&_button]:min-w-[30px]"><Button variant="ghost" size="icon" data-testid="pm-comment-mic" data-state={dictation.phase} aria-pressed={listening} aria-label={text.dictate} title={text.dictate}
+        disabled={dictation.phase === 'transcribing'} onClick={() => { if (dictation.phase === 'idle') dictation.start(); else dictation.finish(); }} style={sendScope}>
         {dictation.phase === 'transcribing' ? <Loader2Icon className="size-[15px] animate-spin motion-reduce:animate-none" aria-hidden="true" />
-          : listening ? <SquareIcon className="size-[13px]" aria-hidden="true" /> : <MicIcon className="size-[15px]" aria-hidden="true" />}</Button>}
-      <span className="flex [&_button:disabled]:bg-pm-send-idle [&_button:disabled]:opacity-100">
-        <Button size="icon" data-testid="pm-comment-send" aria-label={text.sendToPm} title={text.sendToPm} disabled={empty} onClick={comment.submit} className="min-h-[30px] min-w-[30px] size-[30px]" style={sendScope}>
+          : listening ? <SquareIcon className="size-[13px]" aria-hidden="true" /> : <MicIcon className="size-[15px]" aria-hidden="true" />}</Button></span>}
+      <span className="flex [&_button]:size-[30px] [&_button]:min-h-[30px] [&_button]:min-w-[30px] [&_button:disabled]:bg-pm-send-idle [&_button:disabled]:opacity-100">
+        <Button size="icon" data-testid="pm-comment-send" aria-label={text.sendToPm} title={text.sendToPm} disabled={empty} onClick={comment.submit} style={sendScope}>
           <ArrowUpIcon className="size-3.5" strokeWidth={2.5} aria-hidden="true" /></Button>
       </span>
     </div>

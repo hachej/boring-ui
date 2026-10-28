@@ -124,7 +124,7 @@
           "pm-reply": "transparent",
           "pm-radius-bubble": "1rem",
           "pm-radius-tail": "0.25rem",
-          "pm-radius-token": "0.375rem", "pm-radius-popover": "0.75rem", "pm-radius-send": "0.5rem", "pm-shadow-popover": "0 8px 24px rgb(0 0 0 / 0.14)", "pm-label": "var(--foreground)",
+          "pm-radius-token": "0.375rem", "pm-radius-popover": "0.75rem", "pm-radius-send": "0.5rem", "pm-shadow-popover": "0 0 0 1px var(--border), 0 8px 24px rgb(0 0 0 / 0.14)", "pm-label": "var(--foreground)",
           "pm-mark-line": "35%",
           "pm-mark-width": "2px"
         },
@@ -181,7 +181,7 @@
           "pm-reply": "transparent",
           "pm-radius-bubble": "1rem",
           "pm-radius-tail": "0.25rem",
-          "pm-radius-token": "0.375rem", "pm-radius-popover": "0.75rem", "pm-radius-send": "0.5rem", "pm-shadow-popover": "0 8px 24px rgb(0 0 0 / 0.14)", "pm-label": "var(--foreground)",
+          "pm-radius-token": "0.375rem", "pm-radius-popover": "0.75rem", "pm-radius-send": "0.5rem", "pm-shadow-popover": "0 0 0 1px var(--border), 0 8px 24px rgb(0 0 0 / 0.14)", "pm-label": "var(--foreground)",
           "pm-mark-line": "35%",
           "pm-mark-width": "2px"
         }
@@ -2982,7 +2982,7 @@
       "title": "Shared PM composer and in-app panel",
       "description": "« Améliorer l'app »: one PmComposer (touch and desktop presets, FR/EN strings) with « Montrer », the point strip, numbered pins and timestamped chips; AppShell improve composes the in-flow sheet, strip and the full panel, and PmChat gives Studio the same conversation. Pins and chips come from the public feedback picker; the request card and « Mes demandes » render through StudioTaskBoardSeam (D-417).",
       "registryDependencies": ["@boring-ui/pi-chat", "@boring-ui/pi-chat-plugins", "@boring-ui/pi-chat-voice", "@boring-ui/feedback", "@boring-ui/utils"],
-      "dependencies": ["@hachej/boring-ui-kit@^0.4.27", "@hachej/boring-feedback@^0.4.27", "@earendil-works/pi-durable@~1.4.0", "lucide-react@^1.51.0", "react@^19.0.0"],
+      "dependencies": ["@hachej/boring-ui-kit@^0.4.28", "@hachej/boring-feedback@^0.4.28", "@earendil-works/pi-durable@~1.4.0", "lucide-react@^1.51.0", "react@^19.0.0", "react-dom@^19.0.0"],
       "files": [
         { "path": "registry/pm-panel/pm-panel.tsx", "type": "registry:component", "target": "components/pm-panel/pm-panel.tsx" },
         { "path": "registry/pm-panel/pm-composer.tsx", "type": "registry:component", "target": "components/pm-panel/pm-composer.tsx" },
