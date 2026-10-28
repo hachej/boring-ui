@@ -103,10 +103,10 @@ export function WorkspaceBar({ title, subtitle, conversations, library, panels, 
     {controls}
   </div>;
   if (slot) return createPortal(tools, slot);
-  return <header data-testid="workspace-bar" className="flex h-13 shrink-0 items-center gap-1 pr-2 pl-4 max-[640px]:h-14 max-[640px]:pl-3">
+  return <header data-testid="workspace-bar" className="flex h-13 shrink-0 items-center gap-1 pr-2 pl-4 max-md:h-14 max-md:pl-3">
     <div className="flex min-w-0 flex-1 items-baseline gap-2">
       <h2 data-testid="workspace-bar-title" className={cn('m-0 min-w-0 truncate text-sm font-medium tracking-tight', subtitle === undefined && 'flex-1')}>{title}</h2>
-      {subtitle !== undefined && <span data-testid="workspace-bar-conversation" className="min-w-0 flex-1 truncate text-sm text-muted-foreground max-sm:hidden">{subtitle}</span>}
+      {subtitle !== undefined && <span data-testid="workspace-bar-conversation" className="min-w-0 flex-1 truncate text-sm text-muted-foreground max-md:hidden">{subtitle}</span>}
     </div>
     {tools}
   </header>;

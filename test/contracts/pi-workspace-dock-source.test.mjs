@@ -43,7 +43,7 @@ test('dock.tsx compiles under the repository strict settings and imports only Re
   const diagnostics = ts.getPreEmitDiagnostics(program).filter(diagnostic => diagnostic.file?.fileName.startsWith(`${root}registry/`));
   assert.deepEqual(diagnostics.map(diagnostic => ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')), []);
   const source = readFileSync(`${root}${file}`, 'utf8');
-  assert.deepEqual([...new Set([...source.matchAll(/\bfrom\s+['"]([^'"]+)['"]/g)].map(match => match[1]))].sort(), ['../utils/utils', 'react']);
+  assert.deepEqual([...new Set([...source.matchAll(/\bfrom\s+['"]([^'"]+)['"]/g)].map(match => match[1]))].sort(), ['../utils/persisted', '../utils/utils', 'react']);
   assert.doesNotMatch(source, /dangerouslySetInnerHTML|eval\s*\(|new Function|<script\b/);
 });
 

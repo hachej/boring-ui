@@ -372,7 +372,7 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     assert.equal(view.q('[data-testid="viewer-save"]'), null, 'autosave is the pane default');
     const input = async text => act(async () => { const area = view.q('textarea'); Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(area, text); area.dispatchEvent(new window.Event('input', { bubbles: true })); });
     await input('flushed before standalone close');
-    await view.click('[data-testid="viewer-close"]'); await settle();
+    await view.click('[data-testid="viewer-close"]'); await saved(d.controller); await settle();
     assert.equal(closed, 1);
     assert.equal(new TextDecoder().decode((await d.read()).snapshot.bytes), 'flushed before standalone close');
     d.client.publish = async () => ({ kind: 'unavailable', reason: 'Fictional offline provider' });

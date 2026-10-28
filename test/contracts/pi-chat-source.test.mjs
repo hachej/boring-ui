@@ -43,7 +43,7 @@ test('settled reply actions are icon-only, named and sized for pointer and touch
   assert.match(html, /class="sr-only">Copy response<\/span>/);
   assert.equal((html.match(/data-slot="button"/g) ?? []).length, 3, 'all three actions use consumer-owned Buttons');
   const item = JSON.parse(readFileSync(`${root}registry.json`, 'utf8')).items.find(item => item.name === 'pi-chat');
-  assert.deepEqual(item.css['@layer utilities']['@media (max-width: 640px), (pointer: coarse)']['.pi-chat :is([data-slot="button"], [data-slot="toggle"], [class~="group/button"], [class~="group/toggle"])'], { 'min-height': '2.75rem', 'min-width': '2.75rem' }, '44px touch targets while desktop uses the native icon size');
+  assert.deepEqual(item.css['@layer utilities']['@media (width < 768px), (pointer: coarse)']['.pi-chat :is([data-slot="button"], [data-slot="toggle"], [class~="group/button"], [class~="group/toggle"])'], { 'min-height': '2.75rem', 'min-width': '2.75rem' }, '44px touch targets while desktop uses the native icon size');
   assert.match(html, /aria-label="Quote this reply"/);
   assert.doesNotMatch(html, />Quote this reply<\/span>/);
   assert.match(html, /group-hover\/message:opacity-100/);

@@ -168,7 +168,7 @@ test('AgentWorkspace embedded: one bar, no left column, and a Library over resou
       const conversation = q('[data-testid=workspace-bar-conversation]');
       assert.equal(conversation?.textContent, 'Fictional plan', `${width}: the conversation title follows`);
       assert.ok(conversation.classList.contains('text-muted-foreground'), `${width}: muted`);
-      assert.equal(conversation.classList.contains('max-sm:hidden'), true, `${width}: hidden on a phone`);
+      assert.equal(conversation.classList.contains('max-md:hidden'), true, `${width}: hidden on a phone`);
     }
     measured = 1440;
     await render({ key: 'title-switch', title: 'Fictional app', conversationId: 'two' });
