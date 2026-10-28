@@ -60,7 +60,7 @@
     "ignore": "5.3.2",
     "@base-ui/react": "1.9.0",
     "class-variance-authority": "0.7.1",
-    "pdfjs-dist": "6.3.289"
+    "pdfjs-dist": "6.4.299"
   },
   "packages": {
     "files": {

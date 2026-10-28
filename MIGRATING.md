@@ -1,5 +1,7 @@
 # Unreleased
 
+- **PDF viewer pins pdf.js 6.4.299 (`viewer-pdf`).** The `viewer-pdf` registry item now installs `pdfjs-dist@6.4.299` (was `6.3.289`). An app that already installed the block keeps its own pdf.js until it runs `boring-ui-blocks update`; serve `pdfjs-dist/build/pdf.worker.min.mjs` from the same version. No API change.
+
 # Migrating to 0.4.27
 
 - **Markdown editor localization (`@hachej/boring-ui-kit/markdown-editor`).** `locale="fr"` now translates status, save/conflict/recovery controls, formatting, outline, proposals and preserved-block labels. Override individual words or accessible-name functions with the optional `labels` prop; `markdownEditorLabels` and `MarkdownEditorLabels` are exported. English remains the default; host titles, placeholders and provider reasons are unchanged. The source textarea now receives `placeholder`, including custom textarea components. Evidence: `test/packages/ui-markdown-editor.test.mjs` and `test/packages/ui-markdown-proposals.test.mjs`.
