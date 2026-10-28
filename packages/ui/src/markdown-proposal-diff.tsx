@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { MarkdownProposal } from './markdown.js';
+import { markdownEditorLabels, type MarkdownEditorLabels } from './markdown-editor-labels.js';
 
 type DiffLine = { readonly kind: 'same' | 'add' | 'remove'; readonly value: string };
 type Fold = { readonly kind: 'fold'; readonly index: number; readonly lines: readonly DiffLine[] };
@@ -99,33 +100,33 @@ function entries(diff: readonly DiffLine[]): readonly (DiffLine | Fold)[] {
   return result;
 }
 
-function DiffRow({ line }: { readonly line: DiffLine }) {
+function DiffRow({ line, labels }: { readonly line: DiffLine; readonly labels: MarkdownEditorLabels }) {
   const terminated = line.value.endsWith('\n');
   const display = terminated ? line.value.slice(0, -1) : line.value;
   return <div data-diff={line.kind} data-line-ending={terminated ? 'lf' : 'none'}>
     <span>{line.kind === 'add' ? '+ ' : line.kind === 'remove' ? '- ' : '  '}</span>
     <span data-diff-text="">{display}</span>
-    {line.kind !== 'same' && line.value.endsWith('\r\n') && <span data-diff-crlf=""> CRLF line ending</span>}
-    {!terminated && <span data-diff-no-newline=""> No newline at end</span>}
+    {line.kind !== 'same' && line.value.endsWith('\r\n') && <span data-diff-crlf=""> {labels.crlfLineEnding}</span>}
+    {!terminated && <span data-diff-no-newline=""> {labels.noNewline}</span>}
   </div>;
 }
 
-export function MarkdownProposalDiff({ components, proposal }: { readonly components?: import('./viewer-components.js').ViewerComponents | undefined; readonly proposal: MarkdownProposal }) {
+export function MarkdownProposalDiff({ components, proposal, labels = markdownEditorLabels.en }: { readonly components?: import('./viewer-components.js').ViewerComponents | undefined; readonly proposal: MarkdownProposal; readonly labels?: MarkdownEditorLabels }) {
   const Control = components?.button ?? 'button';
   const diff = useMemo(() => review(proposal.before, proposal.after), [proposal.before, proposal.after]);
   const shown = useMemo(() => entries(diff.lines), [diff]);
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(() => new Set());
-  return <div data-boring="proposal-diff" role="group" aria-label="Proposed line changes">
-    {diff.fallback && <p role="status" data-diff-fallback="">Detailed line alignment unavailable; showing changed block.</p>}
-    {proposal.before === proposal.after && <p>No text changes</p>}
+  return <div data-boring="proposal-diff" role="group" aria-label={labels.proposedLineChanges}>
+    {diff.fallback && <p role="status" data-diff-fallback="">{labels.diffFallback}</p>}
+    {proposal.before === proposal.after && <p>{labels.noTextChanges}</p>}
     <div style={{ overflowX: 'auto', whiteSpace: 'pre-wrap' }}>{shown.map((entry, index) => entry.kind === 'fold' ? <div key={`fold-${entry.index}`}>
       <Control type="button" data-diff-fold="" aria-expanded={expanded.has(entry.index)} onClick={() => setExpanded(current => {
         const next = new Set(current);
         if (next.has(entry.index)) next.delete(entry.index);
         else next.add(entry.index);
         return next;
-      })}>{expanded.has(entry.index) ? 'Hide' : 'Show'} {entry.lines.length} unchanged lines</Control>
-      {expanded.has(entry.index) && entry.lines.map((line, lineIndex) => <DiffRow key={lineIndex} line={line} />)}
-    </div> : <DiffRow key={`line-${index}`} line={entry} />)}</div>
+      })}>{expanded.has(entry.index) ? labels.hideUnchangedLines(entry.lines.length) : labels.showUnchangedLines(entry.lines.length)}</Control>
+      {expanded.has(entry.index) && entry.lines.map((line, lineIndex) => <DiffRow key={lineIndex} line={line} labels={labels} />)}
+    </div> : <DiffRow key={`line-${index}`} line={entry} labels={labels} />)}</div>
   </div>;
 }

@@ -1,16 +1,28 @@
 import { Node } from '@tiptap/core';
 import { Marked } from 'marked';
+import { markdownEditorLabels, type MarkdownEditorLabels } from './markdown-editor-labels.js';
 
 const literalHtml = new Marked();
 
+type PreservedLabels = Pick<MarkdownEditorLabels, 'preservedBlockName' | 'frontMatterCode'>;
+
+export function updatePreservedMarkdownLabels(root: HTMLElement, labels: PreservedLabels): void {
+  for (const block of Array.from(root.querySelectorAll<HTMLElement>('[data-preserved]'))) {
+    const name = block.querySelector('small');
+    if (name) name.textContent = labels.preservedBlockName(block.dataset['preserved'] ?? 'HTML');
+    const code = block.querySelector('[role="textbox"]');
+    if (code) code.setAttribute('aria-label', labels.frontMatterCode);
+  }
+}
+
 /** Literal Markdown, never HTML inserted into the host DOM. These atoms are host presentation, not Pi execution. */
-export function preservedMarkdownNodes() {
+export function preservedMarkdownNodes(labels: () => PreservedLabels = () => markdownEditorLabels.en) {
   const block = Node.create({
     name: 'preservedBlock', group: 'block', atom: true,
     addAttributes: () => ({ raw: { default: '', rendered: false }, label: { default: 'HTML', rendered: false } }),
     parseHTML: () => [],
     renderHTML: ({ node }) => ['div', { class: 'boring-markdown-preserved', 'data-preserved': node.attrs['label'] },
-      ['small', {}, String(node.attrs['label'])], ['pre', {}, String(node.attrs['raw'])]],
+      ['small', {}, labels().preservedBlockName(String(node.attrs['label']))], ['pre', {}, String(node.attrs['raw'])]],
     markdownTokenName: 'preservedBlock',
     markdownTokenizer: {
       name: 'preservedBlock', level: 'block',
@@ -31,13 +43,13 @@ export function preservedMarkdownNodes() {
     addNodeView() {
       return ({ node, editor, getPos }) => {
         const dom = document.createElement('div'); dom.className = 'boring-markdown-preserved'; dom.dataset['preserved'] = String(node.attrs['label']);
-        const label = document.createElement('small'); label.textContent = String(node.attrs['label']); dom.append(label);
+        const label = document.createElement('small'); label.textContent = labels().preservedBlockName(String(node.attrs['label'])); dom.append(label);
         if (node.attrs['label'] !== 'Front matter') {
           const pre = document.createElement('pre'); pre.textContent = String(node.attrs['raw']); dom.append(pre);
           return { dom };
         }
         const code = document.createElement('pre'); code.textContent = String(node.attrs['raw']);
-        code.contentEditable = editor.isEditable ? 'plaintext-only' : 'false'; code.setAttribute('role', 'textbox'); code.setAttribute('aria-label', 'Front matter code'); code.setAttribute('aria-multiline', 'true'); code.spellcheck = false;
+        code.contentEditable = editor.isEditable ? 'plaintext-only' : 'false'; code.setAttribute('role', 'textbox'); code.setAttribute('aria-label', labels().frontMatterCode); code.setAttribute('aria-multiline', 'true'); code.spellcheck = false;
         dom.append(code);
         const input = () => {
           const pos = getPos();
