@@ -10,6 +10,8 @@
 
 - **Task references in `present`.** `present({ task: "D-201" })` and `present({ tasks: { filter: "mine" } })` add host-resolved task/list cards without a workspace or file mirror. Reinstall `pi-artifacts`, `pi-ambient` and `pi-app` with the matching agent and UI kit release. Host viewers acknowledge exact task subjects through `artifacts.open(artifact, { onShown, onFailed })`; opening a descriptor alone confirms nothing. Existing file descriptors and callbacks remain supported. Host task viewers can acknowledge on phones independently of file-sheet auto-open policy. `panels.task` in `AgentWorkspace` opens pending task subjects before the tool returns. Independent task/file mounts retain separate acknowledgement evidence. TaskBoard's file render slot now exposes `fullscreen` / `onFullscreenChange`; bind these to the existing viewer window provider.
 
+# Migrating to 0.4.29
+
 - `boring-agent/actions` adds optional `prepareFullContext`: defer host memory preparation until a full-model fallback is needed. Successful extraction and automatic replies skip it; errors prevent an unprepared request. Existing consumers need no change.
 
 # Migrating to 0.4.28
