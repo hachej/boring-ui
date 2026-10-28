@@ -1,5 +1,8 @@
 'use client';
 
+import { PHONE_BELOW, usePhone } from '../utils/use-media';
+import { readPersistedJson, writePersistedJson } from '../utils/persisted';
+
 // Host concern: Pi has no window layout. These surfaces borrow their content and remember presentation only.
 import { createPortal } from 'react-dom';
 import { createContext, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState, useId } from 'react';
@@ -41,7 +44,6 @@ const DEFAULT_RECT: WindowRect = { x: 48, y: 64, width: 400, height: 320 };
 const MIN_WIDTH = 240, MIN_HEIGHT = 160;
 const windowRecord = (records: WindowState['records'], id: string): WindowRecord | undefined => Object.hasOwn(records, id) ? records[id] : undefined;
 const useWindows = () => { const value = useContext(Windows); if (!value) throw new Error('Windows need a WindowLayer'); return value; };
-const storage = (persist: 'session' | 'local') => { try { return persist === 'local' ? window.localStorage : window.sessionStorage; } catch { return undefined; } };
 const clamp = (rect: WindowRect): WindowRect => {
   const width = Math.min(Math.max(rect.width, MIN_WIDTH), window.innerWidth), height = Math.min(Math.max(rect.height, MIN_HEIGHT), window.innerHeight);
   return { width, height, x: Math.min(Math.max(rect.x, 0), Math.max(0, window.innerWidth - width)), y: Math.min(Math.max(rect.y, 0), Math.max(0, window.innerHeight - height)) };
@@ -68,19 +70,19 @@ const validRect = (rect: unknown): rect is WindowRect => !!rect && typeof rect =
 export function WindowLayer({ children, storageKey = 'boring.windows', persist = 'session' }: { readonly children: ReactNode; readonly storageKey?: string; readonly persist?: 'session' | 'local' }) {
   const [state, setState] = useState<WindowState>({ records: {}, order: [], focus: null, request: 0 });
   const current = useRef(state), mounted = useRef(new Set<string>()), launcher = useRef<HTMLButtonElement>(null);
-  const [phone, setPhone] = useState(false);
+  const phone = usePhone();
   const [host, setHost] = useState<HTMLDivElement | null>(null);
   const commit = useCallback((next: WindowState) => { current.current = next; setState(next); }, []);
-  const save = useCallback((id: string, record: WindowRecord) => { try { storage(persist)?.setItem(`${storageKey}.${id}`, JSON.stringify(record)); } catch { /* the layout is a convenience */ } }, [persist, storageKey]);
+  const save = useCallback((id: string, record: WindowRecord) => writePersistedJson(`${storageKey}.${id}`, record, persist), [persist, storageKey]);
   const register = useCallback((id: string, rect: WindowRect, open: boolean) => {
     if (mounted.current.has(id)) throw new Error(`Duplicate floating window id: ${id}`);
     mounted.current.add(id);
     let record = windowRecord(current.current.records, id) ?? { rect, status: open ? 'open' : 'closed' } as WindowRecord;
     try {
-      const saved = JSON.parse(storage(persist)?.getItem(`${storageKey}.${id}`) ?? 'null');
-      if (saved && validRect(saved.rect) && ['closed', 'open', 'minimized'].includes(saved.status)) record = saved;
+      const saved = readPersistedJson(`${storageKey}.${id}`, persist);
+      if (saved && typeof saved === 'object' && 'rect' in saved && validRect(saved.rect) && 'status' in saved && (saved.status === 'closed' || saved.status === 'open' || saved.status === 'minimized')) record = { rect: saved.rect, status: saved.status };
     } catch { /* malformed or unavailable storage leaves the default */ }
-    record = { ...record, rect: window.innerWidth < 641 ? record.rect : clamp(record.rect) };
+    record = { ...record, rect: window.innerWidth < PHONE_BELOW ? record.rect : clamp(record.rect) };
     const previous = current.current, order = previous.order.filter(key => key !== id);
     if (record.status === 'open') order.push(id);
     commit({ ...previous, records: { ...previous.records, [id]: record }, order, focus: record.status === 'open' ? id : previous.focus, request: previous.request + (record.status === 'open' ? 1 : 0) });
@@ -107,7 +109,7 @@ export function WindowLayer({ children, storageKey = 'boring.windows', persist =
   }, [commit, save]);
   useLayoutEffect(() => {
     const measure = () => {
-      const narrow = window.innerWidth < 641; setPhone(narrow);
+      const narrow = window.innerWidth < PHONE_BELOW;
       if (!narrow) for (const [id, record] of Object.entries(current.current.records)) resize(id, record.rect);
     };
     measure(); window.addEventListener('resize', measure); return () => window.removeEventListener('resize', measure);
@@ -123,7 +125,7 @@ export function useWindow(id: string): WindowApi | undefined {
   return useMemo(() => record ? { id, ...record, open: () => change(id, 'open'), close: () => change(id, 'closed'), minimize: () => change(id, 'minimized') } : undefined, [id, record, change]);
 }
 
-/** Non-modal on desktop; the front window uses the host's full-screen Drawer below 641px. */
+/** Non-modal on desktop; the front window uses the host's full-screen Drawer below 768px. */
 export function FloatingWindow({ id, title, children, defaultRect = DEFAULT_RECT, defaultOpen = false }: {
   readonly id: string; readonly title: string; readonly children: ReactNode; readonly defaultRect?: WindowRect; readonly defaultOpen?: boolean;
 }) {

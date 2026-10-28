@@ -1,7 +1,7 @@
 /* Viewer layout and Markdown document content only. Controls use the consumer's shadcn components unchanged.
    Source for registry.json: run node registry/viewer-frame/build-css.mjs after editing. */
 @layer utilities {
-  @media (max-width: 640px), (pointer: coarse) {
+  @media (width < 768px), (pointer: coarse) {
     .boring-viewer :is([data-slot="button"], [data-slot="toggle"], [data-slot="toggle-group-item"], [class~="group/button"], [class~="group/toggle"]) { min-height: 2.75rem; min-width: 2.75rem; }
     .boring-viewer.boring-markdown-bubble :is([data-slot="button"], [data-slot="toggle"]) { min-height: 2.75rem; min-width: 2.75rem; }
   }
@@ -111,7 +111,7 @@
     background-size: 16px 16px;
   }
   .boring-viewer .boring-viewer-stage { overflow: auto; }
-  @media (max-width: 640px) {
+  @media (width < 768px) {
     .boring-viewer .boring-markdown-content { padding: 1.25rem 1.25rem 3rem; }
     .boring-viewer .boring-markdown-toolbar { display: none; }
     /* Editing on a phone: one scrollable row docked above the soft keyboard (bottom is set from visualViewport).

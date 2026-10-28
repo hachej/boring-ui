@@ -1,5 +1,7 @@
 'use client';
 
+import { useMedia, usePhone } from '../utils/use-media';
+
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ArrowLeftIcon, CheckIcon, CircleIcon, CopyIcon, DownloadIcon, ExternalLinkIcon, RefreshCwIcon } from 'lucide-react';
@@ -84,7 +86,6 @@ export interface ViewerFrameProps {
 
 /** Narrow panes drop optional controls. */
 const TIGHT_WIDTH = { touch: 440, pointer: 340 };
-const touchScreen = () => typeof matchMedia === 'function' && matchMedia('(max-width: 639px), (pointer: coarse)').matches;
 
 /** How much room the bar has, for a pane that wants to drop optional controls (the zoom percentage, for example) on a narrow panel. */
 export interface ViewerBarSpace { readonly tight: boolean }
@@ -146,6 +147,8 @@ function StatusMark({ status, testId }: { readonly status: ViewerStatus; readonl
 /** The one top bar of every viewer, always a single row: title and facts, viewer controls, a status dot when something needs attention, Share, full screen, Close and the "…" menu. */
 export function ViewerFrame({ title, subtitle, status, showSavedStatus = false, target, revision, headerStart, controls, mainControl, menu, menuContent, actions, labels: ownLabels, icons: ownIcons, onRefresh, onShare, onCopy, onDownload, onOpenInNewTab, onClose, testId = 'viewer', titleTestId, compactHeader = true, className, children }: ViewerFrameProps) {
   const bar = useRef<HTMLElement>(null);
+  const phone = usePhone(), coarse = useMedia('(pointer: coarse)');
+  const tightWidth = phone || coarse ? TIGHT_WIDTH.touch : TIGHT_WIDTH.pointer;
   const [space, setSpace] = useState<ViewerBarSpace>({ tight: false });
   const [busy, setBusy] = useState<'refresh' | 'share' | undefined>();
   const [notice, setNotice] = useState<{ readonly text: string; readonly tone: ViewerTone } | undefined>();
@@ -158,14 +161,14 @@ export function ViewerFrame({ title, subtitle, status, showSavedStatus = false, 
     if (!element || typeof ResizeObserver === 'undefined') return;
     const measure = () => {
       const width = element.getBoundingClientRect().width;
-      const next = { tight: width > 0 && width < (touchScreen() ? TIGHT_WIDTH.touch : TIGHT_WIDTH.pointer) };
+      const next = { tight: width > 0 && width < tightWidth };
       setSpace(now => now.tight === next.tight ? now : next);
     };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(element);
     return () => observer.disconnect();
-  }, [host?.renderHeader]);
+  }, [host?.renderHeader, tightWidth]);
   useEffect(() => {
     if (!notice) return;
     const timer = setTimeout(() => setNotice(undefined), NOTICE_MS);
@@ -209,13 +212,13 @@ export function ViewerFrame({ title, subtitle, status, showSavedStatus = false, 
   ] as ViewerMenuItem[]).map(entry => ({ ...entry, testId: entry.testId ?? `${testId}-${entry.id}` }));
 
   const stacked = !compactHeader && host?.headerLayout === 'stacked';
-  const toolbar = controls && <div data-testid={`${testId}-controls`} className={cn('flex shrink-0 items-center gap-1', compactHeader && 'max-[641px]:hidden', stacked && 'flex-wrap px-3 py-2')}>{controls}</div>;
+  const toolbar = controls && <div data-testid={`${testId}-controls`} className={cn('flex shrink-0 items-center gap-1', compactHeader && 'max-md:hidden', stacked && 'flex-wrap px-3 py-2')}>{controls}</div>;
   const titlebar = <>
-        {compactHeader && !headerStart && onClose && <Button variant="ghost" size="icon-sm" aria-label={labels.close} title={labels.close} data-testid={`${testId}-close`} onClick={() => run(onClose)}><ArrowLeftIcon data-icon="inline-start" className="min-[641px]:hidden" aria-hidden="true" /><icons.close data-icon="inline-start" className="hidden min-[641px]:block" aria-hidden="true" /></Button>}
+        {compactHeader && !headerStart && onClose && <Button variant="ghost" size="icon-sm" aria-label={labels.close} title={labels.close} data-testid={`${testId}-close`} onClick={() => run(onClose)}><ArrowLeftIcon data-icon="inline-start" className="md:hidden" aria-hidden="true" /><icons.close data-icon="inline-start" className="hidden md:block" aria-hidden="true" /></Button>}
         {headerStart}
         <div className="group/title relative min-w-0 flex-1 basis-0 text-left">
           <h2 data-testid={titleTestId ?? `${testId}-title`} title={title} className="m-0 truncate text-sm leading-5 font-semibold tracking-tight">{title}</h2>
-          {(subtitle || reading) && <p data-testid={`${testId}-subtitle`} className={cn('m-0 flex min-w-0 items-center gap-x-1.5 text-xs leading-4 whitespace-nowrap text-muted-foreground', compactHeader ? 'hidden group-hover/title:flex max-[641px]:hidden' : 'overflow-hidden')}>{subtitle}{subtitle && reading && <span aria-hidden="true">·</span>}{reading && <span data-testid={`${testId}-readonly`}>{labels.readOnly}</span>}</p>}
+          {(subtitle || reading) && <p data-testid={`${testId}-subtitle`} className={cn('m-0 flex min-w-0 items-center gap-x-1.5 text-xs leading-4 whitespace-nowrap text-muted-foreground', compactHeader ? 'hidden group-hover/title:flex max-md:hidden' : 'overflow-hidden')}>{subtitle}{subtitle && reading && <span aria-hidden="true">·</span>}{reading && <span data-testid={`${testId}-readonly`}>{labels.readOnly}</span>}</p>}
         </div>
         {!stacked && toolbar}
         {mainControl && <div data-testid={`${testId}-main`} className="flex shrink-0 items-center">{mainControl}</div>}
@@ -223,14 +226,14 @@ export function ViewerFrame({ title, subtitle, status, showSavedStatus = false, 
         <div className="flex shrink-0 items-center gap-0.5">
           {headerActions(hostActions).map(action => <ActionButton key={action.id} action={action} testId={testId} size="icon-sm" />)}
           {!compactHeader && onShare && <Button variant="ghost" size="icon-sm" aria-label={labels.share} title={labels.share} data-testid={`${testId}-share`} disabled={busy === 'share'} onClick={share}><icons.share data-icon="inline-start" aria-hidden="true" /></Button>}
-          {(menuItems.length > 0 || controls || menuContent) && <ViewerActions label={labels.moreActions} testId={`${testId}-more`} icon={<icons.more data-icon="inline-start" aria-hidden="true" />} items={menuItems}>{menuContent}{menuContent && menuItems.length > 0 && <DropdownMenuSeparator />}{compactHeader && controls && <div className="boring-viewer flex flex-wrap items-center gap-2 p-2 min-[641px]:hidden">{controls}</div>}</ViewerActions>}
+          {(menuItems.length > 0 || controls || menuContent) && <ViewerActions label={labels.moreActions} testId={`${testId}-more`} icon={<icons.more data-icon="inline-start" aria-hidden="true" />} items={menuItems}>{menuContent}{menuContent && menuItems.length > 0 && <DropdownMenuSeparator />}{compactHeader && controls && <div className="boring-viewer flex flex-wrap items-center gap-2 p-2 md:hidden">{controls}</div>}</ViewerActions>}
           {!compactHeader && host?.onFullscreenChange && <Toggle size="sm" aria-label={host.fullscreen ? labels.exitFullscreen : labels.enterFullscreen} title={host.fullscreen ? labels.exitFullscreen : labels.enterFullscreen} data-testid={`${testId}-fullscreen`} pressed={host.fullscreen === true}
             onPressedChange={pressed => host.onFullscreenChange!(pressed)}>{host.fullscreen ? <icons.exitFullscreen data-icon="inline-start" aria-hidden="true" /> : <icons.enterFullscreen data-icon="inline-start" aria-hidden="true" />}</Toggle>}
-          {(!compactHeader || headerStart) && onClose && <Button variant="ghost" size="icon-sm" className={compactHeader ? 'max-[641px]:hidden' : undefined} aria-label={labels.close} title={labels.close} data-testid={`${testId}-close`} onClick={() => run(onClose)}><icons.close data-icon="inline-start" aria-hidden="true" /></Button>}
+          {(!compactHeader || headerStart) && onClose && <Button variant="ghost" size="icon-sm" className={compactHeader ? 'max-md:hidden' : undefined} aria-label={labels.close} title={labels.close} data-testid={`${testId}-close`} onClick={() => run(onClose)}><icons.close data-icon="inline-start" aria-hidden="true" /></Button>}
         </div>
       </>;
   const header = <header ref={bar} data-testid={`${testId}-bar`} data-layout={stacked ? 'stacked' : undefined}
-    className={cn('relative flex shrink-0', stacked ? 'flex-col' : 'h-13 flex-nowrap items-center gap-x-1.5 px-2 sm:px-3')}>
+    className={cn('relative flex shrink-0', stacked ? 'flex-col' : 'h-13 flex-nowrap items-center gap-x-1.5 px-2 md:px-3')}>
         {stacked ? <><div data-testid={`${testId}-titlebar`} className="flex min-h-14 min-w-0 items-center gap-x-1.5 px-3 py-1.5">{titlebar}</div>{toolbar}</> : titlebar}
         {notice && <Badge role="status" aria-live="polite" data-testid={`${testId}-notice`} data-tone={notice.tone} variant={notice.tone === 'danger' ? 'destructive' : 'secondary'}>{notice.text}</Badge>}
         {manual && <ManualCopy testId={testId} link={manual.link} text={manual.text} labels={labels} onClose={() => setManual(undefined)} />}

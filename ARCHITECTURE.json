@@ -594,6 +594,7 @@
     "versionHistory": "shared registry version-history presentation owns relative time, provenance and Current rows for viewer menus and Library panels; no publication or execution authority",
     "chatActivity": "the app's shadcn trace (its ui alias, installed in the app setup); host presentation over native Pi views, no execution state",
     "chatComposition": {
+      "viewerUtilities": "registry/utils/use-media.ts and persisted.ts own browser presentation only: one phone breakpoint below 768px, media subscriptions, visual viewport/keyboard inset and nonfatal session/local storage conveniences. No Pi extension point applies to local layout or browser storage; no kit subpath, package edge or execution state is introduced.",
       "pi-chat": "regular native renderer; optional generic transcript, composer-content, file-pick and mention-option seams; no dependency on shared-chat",
       "sentFeedback": "pi-chat -> @hachej/boring-feedback/format for strict page-report parsing and readable element labels; host presentation only, no feedback capture, store, agent or Pi execution authority",
       "voiceMessages": "host microphone gestures and transient preparation over the neutral UI voice-capture entry; one workspace upload and transcript in one native submission, no feedback capture dependency or second transcript store",
