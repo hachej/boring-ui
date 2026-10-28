@@ -164,6 +164,7 @@ function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActiva
   const activeMode = useRef(mode); activeMode.current = mode;
   const images = useRef(resolveImage); images.current = resolveImage;
   const preservedLabels = useRef(text); preservedLabels.current = text;
+  const richPlaceholder = useRef(placeholder); richPlaceholder.current = placeholder;
   useEffect(() => { onRichSafety?.(safety); }, [safety, onRichSafety]);
   const [error, setError] = useState<string | null>(null);
   const interaction = useRef(false);
@@ -177,7 +178,7 @@ function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActiva
   };
   const editor = useEditor({
     immediatelyRender: false,
-    extensions: createMarkdownExtensions({ placeholder, images: () => images.current, preservedLabels: () => preservedLabels.current, source: () => controller.getSnapshot().text.replace(/\r\n/g, '\n') }),
+    extensions: createMarkdownExtensions({ placeholder: () => richPlaceholder.current, images: () => images.current, preservedLabels: () => preservedLabels.current, source: () => controller.getSnapshot().text.replace(/\r\n/g, '\n') }),
     content: '',
     editable: !state.readOnly && state.lifecycle === 'active',
     editorProps: { attributes: { role: 'textbox', 'aria-label': text.richName(title), 'aria-multiline': 'true', tabindex: '0', class: 'boring-markdown-content' } },
@@ -211,6 +212,7 @@ function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActiva
   }, [editor, state.text]);
   useEffect(() => { editor?.setEditable(!state.readOnly && state.lifecycle === 'active'); }, [editor, state.readOnly, state.lifecycle]);
   useEffect(() => { if (editor && !editor.isDestroyed) updatePreservedMarkdownLabels(editor.view.dom, text); }, [editor, text]);
+  useEffect(() => { if (editor && !editor.isDestroyed) editor.view.dispatch(editor.state.tr.setMeta('addToHistory', false)); }, [editor, placeholder]);
 
   const mounted = useMemo(() => {
     if (mode === 'rich' && !editor) return null;

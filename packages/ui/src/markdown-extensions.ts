@@ -138,7 +138,7 @@ export type MarkdownImageResolver = (source: string) => string | undefined;
 export const inlineImagesOnly: MarkdownImageResolver = source => /^data:image\/(?:png|jpe?g|gif|webp);base64,[a-z0-9+/=]+$/i.test(source) ? source : undefined;
 
 export interface MarkdownExtensionOptions {
-  readonly placeholder?: string;
+  readonly placeholder?: string | (() => string);
   readonly images?: () => MarkdownImageResolver | undefined;
   readonly preservedLabels?: Parameters<typeof preservedMarkdownNodes>[0];
   readonly source?: () => string;
