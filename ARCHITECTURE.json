@@ -29,7 +29,7 @@
     "@tiptap/extension-highlight": "3.32.0",
     "@tiptap/extension-bubble-menu": "3.32.0",
     "@tiptap/extension-floating-menu": "3.32.0",
-    "happy-dom": "20.14.6",
+    "happy-dom": "21.0.4",
     "esbuild": "0.28.2",
     "oxlint": "1.86.0",
     "eslint": "10.12.0",
