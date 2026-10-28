@@ -95,7 +95,7 @@ export function scanAppDesign(file, text) {
 
 const KIT = '@hachej/boring-ui-kit';
 /** The shadcn CLI the registry items are built for (ARCHITECTURE.json `sourceDistribution.format`). */
-export const SHADCN = 'shadcn@4.21.5';
+export const SHADCN = 'shadcn@4.23.0';
 /** sha256 of every generated shadcn file under the app's `ui` alias, written by `add`, `update` and `manifest`, verified by `check`. */
 export const MANIFEST = 'SHADCN-GENERATED.json';
 export const itemBase = version => `https://cdn.jsdelivr.net/npm/${KIT}@${version}/r`;
