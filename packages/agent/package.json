@@ -149,14 +149,29 @@
       "types": "./dist/room.d.ts",
       "import": "./dist/room.js"
     },
+    "./run-result": {
+      "types": "./dist/run-result.d.ts",
+      "import": "./dist/run-result.js"
+    },
+    "./runs": {
+      "types": "./dist/runs.d.ts",
+      "import": "./dist/runs.js"
+    },
+    "./run-ledger": {
+      "types": "./dist/run-ledger.d.ts",
+      "import": "./dist/run-ledger.js"
+    },
+    "./run-outbox": {
+      "types": "./dist/run-outbox.d.ts",
+      "import": "./dist/run-outbox.js"
+    },
     "./actions": {
       "types": "./dist/actions.d.ts",
       "import": "./dist/actions.js"
     }
   },
   "dependencies": {
-    "unpdf": "1.9.1",
-    "typebox": "1.3.27"
+    "unpdf": "1.9.1"
   },
   "devDependencies": {
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
@@ -167,6 +182,7 @@
     "@earendil-works/chord": "~1.2.0",
     "@hachej/boring-files": "^0.4.26",
     "@hachej/boring-ui-kit": "^0.4.26",
+    "typebox": "1.3.27",
     "xlsx": "^0.20.3"
   },
   "peerDependenciesMeta": {
