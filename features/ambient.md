@@ -22,7 +22,7 @@ Preconditions: `npm run build`, Chromium.
 - **Notifications.** `ambient-notifications`: the journey's background task raises a toast.
 - **Browser notify.** `ambient-browser-notify`: grant the permission in the journey page; a notification fires when hidden.
 - **Artifacts.** `ambient-artifacts`: click an artifact card; the window widens with the panel.
-- **Host task presentation.** `ambient-task-present`: `node --test test/packages/agent-view-open.test.mjs` drives the native tool and authenticated answer transport without a workspace. `node --test test/ui/ambient-position.test.mjs` opens a task card through the actual Ambient host callback; only `onShown({ subject })` confirms it, and `onFailed({ subject, reason })` refuses it. The task-board journey is the composed browser driver.
+- **Host task presentation.** `ambient-task-present`: set `artifacts.autoOpenTasks: true` with `artifactTarget="host"` to request the host viewer while native present waits (default remains manual). `npm run task-board:journey` sends actual native ambient prompts, defers mounting to prove no early success, then checks task/list mount reports and denied/missing failures. File auto-open is unchanged. `node --test test/packages/agent-view-open.test.mjs` drives the native tool and authenticated answer transport without a workspace. `node --test test/ui/ambient-position.test.mjs` opens a task card through the actual Ambient host callback; only `onShown({ subject })` confirms it, and `onFailed({ subject, reason })` refuses it. The task-board journey is the composed browser driver.
 - **Proof.** Screenshot per state and the conversation read after reload.
 
 ## Gotchas

@@ -63,7 +63,8 @@ export function TaskBoard({ tasks, filter = 'all', currentUser, limit, variant =
   const detail = selected === null ? undefined : tasks.find(task => task.id === selected || taskReference(task) === selected);
   const shown = selectTasks(tasks, { filter, ...(currentUser === undefined ? {} : { currentUser }), ...(limit === undefined ? {} : { limit }) });
   const [fileSelection, setFileSelection] = useState<{ readonly taskId: string; readonly path: string } | null>(null);
-  const file = detail?.id === fileSelection?.taskId ? detail?.files?.find(candidate => candidate.path === fileSelection.path) : undefined;
+  const filePath = fileSelection?.path;
+  const file = detail?.id === fileSelection?.taskId ? detail?.files?.find(candidate => candidate.path === filePath) : undefined;
   const fileOpen = !!file && !!renderFile;
   const closeFile = () => setFileSelection(null);
   const openFile = (task: TaskRecord, file: TaskFile) => { setFileSelection({ taskId: task.id, path: file.path }); onOpenFile?.(task, file); };
