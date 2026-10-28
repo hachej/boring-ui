@@ -140,6 +140,7 @@ export const inlineImagesOnly: MarkdownImageResolver = source => /^data:image\/(
 export interface MarkdownExtensionOptions {
   readonly placeholder?: string;
   readonly images?: () => MarkdownImageResolver | undefined;
+  readonly preservedLabels?: Parameters<typeof preservedMarkdownNodes>[0];
   readonly source?: () => string;
 }
 
@@ -148,7 +149,7 @@ export interface MarkdownExtensionOptions {
  * strike, links), task lists, GFM tables, images and highlight. Underline is off because Markdown has no underline.
  * Images are inert: without a host resolver they render as a labelled placeholder and never make a request.
  */
-export function createMarkdownExtensions({ placeholder, images, source = () => '' }: MarkdownExtensionOptions = {}): Extensions {
+export function createMarkdownExtensions({ placeholder, images, preservedLabels, source = () => '' }: MarkdownExtensionOptions = {}): Extensions {
   const InertImage = Image.extend({
     renderHTML({ node }) {
       const source = String(node.attrs['src'] ?? '');
@@ -166,7 +167,7 @@ export function createMarkdownExtensions({ placeholder, images, source = () => '
   });
   return [
     sourceStarterKit(source, () => schema).configure({ link: { openOnClick: false, autolink: false, linkOnPaste: false }, underline: false }),
-    ...preservedMarkdownNodes(),
+    ...preservedMarkdownNodes(preservedLabels),
     TaskList, TaskItem.configure({ nested: true }),
     SourceTable.configure({ resizable: false }), TableRow, TableHeader, TableCell,
     InertImage.configure({ inline: false, allowBase64: true }),

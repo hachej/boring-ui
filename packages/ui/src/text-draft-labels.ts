@@ -23,6 +23,8 @@ export interface TextDraftLabels {
   readonly draftStorageFailed: string;
 }
 
+const frenchRecoveryStates: Record<string, string> = { disabled: 'désactivée', revoked: 'accès révoqué', expired: 'expirée', disposed: 'fermée' };
+
 export const textDraftLabels: Record<'en' | 'fr', TextDraftLabels> = {
   en: {
     draftRecovery: 'Draft recovery',
@@ -48,7 +50,7 @@ export const textDraftLabels: Record<'en' | 'fr', TextDraftLabels> = {
   },
   fr: {
     draftRecovery: 'Récupération de brouillon',
-    draftRecoveryState: kind => `Récupération de brouillon : ${kind}`,
+    draftRecoveryState: kind => `Récupération de brouillon : ${frenchRecoveryStates[kind] ?? kind}`,
     draftChecking: 'Recherche des brouillons enregistrés',
     draftStoring: 'Enregistrement du brouillon',
     draftStored: 'Brouillon conservé pour récupération. Ce n’est pas un enregistrement du document.',

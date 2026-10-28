@@ -60,6 +60,15 @@ export interface MarkdownEditorLabels extends MarkdownEditorMenuLabels, TextDraf
   readonly operationFailed: string;
   /** The source-only notice. `reasons` are the kit's English reason names; the French set translates the known ones. */
   readonly richOff: (reasons: readonly string[]) => string;
+  readonly preservedBlockName: (kind: string) => string;
+  readonly frontMatterCode: string;
+  readonly proposedLineChanges: string;
+  readonly diffFallback: string;
+  readonly noTextChanges: string;
+  readonly crlfLineEnding: string;
+  readonly noNewline: string;
+  readonly showUnchangedLines: (count: number) => string;
+  readonly hideUnchangedLines: (count: number) => string;
   readonly proposedEdit: string;
   readonly reviewChanges: string;
   readonly exactBeforeAfter: string;
@@ -71,6 +80,8 @@ export interface MarkdownEditorLabels extends MarkdownEditorMenuLabels, TextDraf
 }
 
 export type MarkdownEditorLabelOverrides = Partial<MarkdownEditorLabels>;
+
+const frenchBlocks: Record<string, string> = { 'Front matter': 'Métadonnées', Footnote: 'Note de bas de page', Reference: 'Référence' };
 
 const frenchReasons: Record<string, string> = {
   'bare carriage returns': 'des retours chariot isolés',
@@ -104,6 +115,10 @@ export const markdownEditorLabels: Record<'en' | 'fr', MarkdownEditorLabels> = {
     saveFailed: 'The save could not be completed. Your text is still available.',
     operationFailed: 'The operation could not be completed. Your text is still available.',
     richOff: reasons => `Rich editing is off because this document contains ${reasons.join(', ')}, which it could not keep exactly. You can still edit the Markdown source.`,
+    preservedBlockName: kind => kind, frontMatterCode: 'Front matter code',
+    proposedLineChanges: 'Proposed line changes', diffFallback: 'Detailed line alignment unavailable; showing changed block.',
+    noTextChanges: 'No text changes', crlfLineEnding: 'CRLF line ending', noNewline: 'No newline at end',
+    showUnchangedLines: count => `Show ${count} unchanged lines`, hideUnchangedLines: count => `Hide ${count} unchanged lines`,
     proposedEdit: 'Proposed edit', reviewChanges: 'Review text changes', exactBeforeAfter: 'Exact before and after', before: 'Before', after: 'After',
     adopted: 'Adopted', acceptAndSave: 'Accept and save', dismissProposal: 'Dismiss proposal',
   },
@@ -130,6 +145,11 @@ export const markdownEditorLabels: Record<'en' | 'fr', MarkdownEditorLabels> = {
     saveFailed: 'L’enregistrement n’a pas pu aboutir. Votre texte est toujours disponible.',
     operationFailed: 'L’opération n’a pas pu aboutir. Votre texte est toujours disponible.',
     richOff: reasons => `La mise en forme est désactivée car ce document contient ${reasons.map(reason => frenchReasons[reason] ?? reason).join(', ')}, qu’elle ne saurait pas conserver à l’identique. Vous pouvez toujours modifier la source Markdown.`,
+    preservedBlockName: kind => frenchBlocks[kind] ?? kind,
+    frontMatterCode: 'Code des métadonnées', proposedLineChanges: 'Changements de lignes proposés',
+    diffFallback: 'Alignement détaillé indisponible ; affichage du bloc modifié.', noTextChanges: 'Aucun changement de texte',
+    crlfLineEnding: 'Fin de ligne CRLF', noNewline: 'Aucun saut de ligne à la fin',
+    showUnchangedLines: count => `Afficher ${count} lignes inchangées`, hideUnchangedLines: count => `Masquer ${count} lignes inchangées`,
     proposedEdit: 'Modification proposée', reviewChanges: 'Examiner les changements', exactBeforeAfter: 'Avant et après, à l’identique', before: 'Avant', after: 'Après',
     adopted: 'Adoptée', acceptAndSave: 'Accepter et enregistrer', dismissProposal: 'Ignorer la proposition',
   },

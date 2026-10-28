@@ -14,6 +14,7 @@ The npm side of the kit: Pi-based agent definitions and handlers, the workspace 
 - `pkg-files-workspace` one workspace provider, journal, SQLite, revision handler. `packages/files/src/workspace.ts`, `revision-handler.ts`.
 - `pkg-execution` virtual bash and git, remote shell and files, AWS interpreter. `packages/execution/src/`.
 - `pkg-ui-kit` headless controllers, editors and viewers, registry items under `r/`. `packages/ui/src/`.
+- `pkg-ui-markdown-labels` Markdown editor English/French text and per-key `labels` overrides, including accessible names, proposal diff, preserved blocks and recovery controls; source textarea placeholders. `packages/ui/src/markdown-editor-labels.ts`, `markdown-editor.tsx`.
 - `pkg-ui-voice-capture` public PCM capture progress, actual input level and pause/resume; paused frames never enter the WAV. `packages/ui/src/voice-capture.ts`.
 - `pkg-ui-experiences` fixed and generated experience composition with typed cells and conditional keep/pin. `packages/ui/src/experience*`.
 - `pkg-ui-remote-chat` authorized remote chat projections and client controller. `packages/ui/src/remote-chat.ts`, `packages/agent/src/projection.ts`.
@@ -36,6 +37,7 @@ Preconditions: `npm ci`; run from the repository root.
 - **Files.** `pkg-files-workspace`: `npm test`, files `test/packages/files-*.test.mjs`.
 - **Execution.** `pkg-execution`: `npm test`, files `test/packages/execution-*.test.mjs`.
 - **UI kit.** `pkg-ui-kit`, `pkg-ui-experiences`, `pkg-ui-remote-chat`: `npm test`, files `test/packages/ui-*.test.mjs`; drive the experience flow with `npm run morning:journey` and remote chat with `npm run workspace-app:journey`.
+- **Markdown localization.** `pkg-ui-markdown-labels`: mount `MarkdownEditor` with `locale="fr"`, edit/save and review a proposal; set `labels={{ saved: 'Conservé', sourceName: title => title }}` and switch to source to check the exact name and placeholder. Drive `node --test test/packages/ui-markdown-editor.test.mjs test/packages/ui-markdown-proposals.test.mjs`.
 - **Voice capture.** `pkg-ui-voice-capture`: `node --test test/packages/feedback-voice.test.mjs` checks exact PCM samples, progress, pause/resume and honest fallback; `node examples/app-shell/journey-talk-about.mjs` drives the shared browser recording row.
 - **Browser worker.** `pkg-browser-worker`: `npm run browser-agent:journey` (fictional model only; no live credentials).
 - **Test utilities.** `pkg-testing-tools`: `npm run test:testing-consumer` for its installed public consumer.

@@ -23,6 +23,7 @@ import { checkMarkdownRichSafety, finishRichMarkdown, type MarkdownRichSafety } 
 import { captureMarkdownSource, serializeMarkdownEdit, type MarkdownSource } from './markdown-source.js';
 import { MarkdownIcon, type MarkdownIconName } from './markdown-icons.js';
 import { MarkdownProposalDiff } from './markdown-proposal-diff.js';
+import { updatePreservedMarkdownLabels } from './markdown-preserved.js';
 import { resolveMarkdownEditorLabels, type MarkdownEditorLabelOverrides } from './markdown-editor-labels.js';
 import { createMountedMarkdownTools, type MarkdownMountedTools } from './markdown-mounted.js';
 export { checkMarkdownRichSafety } from './markdown-safety.js';
@@ -162,6 +163,7 @@ function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActiva
   const mode = richOffered ? requestedMode : 'source';
   const activeMode = useRef(mode); activeMode.current = mode;
   const images = useRef(resolveImage); images.current = resolveImage;
+  const preservedLabels = useRef(text); preservedLabels.current = text;
   useEffect(() => { onRichSafety?.(safety); }, [safety, onRichSafety]);
   const [error, setError] = useState<string | null>(null);
   const interaction = useRef(false);
@@ -175,7 +177,7 @@ function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActiva
   };
   const editor = useEditor({
     immediatelyRender: false,
-    extensions: createMarkdownExtensions({ placeholder, images: () => images.current, source: () => controller.getSnapshot().text.replace(/\r\n/g, '\n') }),
+    extensions: createMarkdownExtensions({ placeholder, images: () => images.current, preservedLabels: () => preservedLabels.current, source: () => controller.getSnapshot().text.replace(/\r\n/g, '\n') }),
     content: '',
     editable: !state.readOnly && state.lifecycle === 'active',
     editorProps: { attributes: { role: 'textbox', 'aria-label': text.richName(title), 'aria-multiline': 'true', tabindex: '0', class: 'boring-markdown-content' } },
@@ -208,6 +210,7 @@ function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActiva
     projected.current = state.text;
   }, [editor, state.text]);
   useEffect(() => { editor?.setEditable(!state.readOnly && state.lifecycle === 'active'); }, [editor, state.readOnly, state.lifecycle]);
+  useEffect(() => { if (editor && !editor.isDestroyed) updatePreservedMarkdownLabels(editor.view.dom, text); }, [editor, text]);
 
   const mounted = useMemo(() => {
     if (mode === 'rich' && !editor) return null;
@@ -428,7 +431,7 @@ function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActiva
     {error && <p role="alert" className="boring-markdown-alert">{error}</p>}
     {state.proposals.map(proposal => <article key={proposal.id} data-boring="proposal" className="boring-markdown-proposal">
       <h3>{proposal.summary || text.proposedEdit}</h3>
-      <details><summary>{text.reviewChanges}</summary><MarkdownProposalDiff components={components} proposal={proposal} />
+      <details><summary>{text.reviewChanges}</summary><MarkdownProposalDiff components={components} proposal={proposal} labels={text} />
         <details><summary>{text.exactBeforeAfter}</summary><h4>{text.before}</h4><pre>{proposal.before}</pre><h4>{text.after}</h4><pre>{proposal.after}</pre></details>
       </details>
       <Control type="button" disabled={unavailable || pending || uncertain || proposal.adopted} onClick={() => run(() => controller.actions.accept(proposal.id))}>{proposal.adopted ? text.adopted : text.acceptAndSave}</Control>
