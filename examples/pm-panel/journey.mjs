@@ -7,7 +7,7 @@ import { startPmPanel } from './server.mjs';
 
 const evidence = process.env.PM_EVIDENCE ?? '.cache/evidence/pm-panel/journey';
 mkdirSync(evidence, { recursive: true });
-// PM_ONE_LINE=1 runs the same journey on the app whose only PM code is `improve={{ agent: 'pm' }}` (the fake #854 door); the task-board
+// PM_ONE_LINE=1 runs the same journey on the app whose only PM code is `improve={{ agent: 'pm' }}` (the fake #854 door, dictation on the host's /api/host/transcribe); the task-board
 // seam (request card, « Mes demandes », @ tasks) is host data that one line does not bring, so those steps run on the host-wired fixture only.
 const oneLine = process.env.PM_ONE_LINE === '1';
 if (oneLine) {
@@ -155,6 +155,8 @@ try {
     if (device === 'phone') await browser.tap(q('[data-testid=pm-done]')); else await browser.press('Escape');
     await browser.until('C6', `${mode('sheet')} && ${visible('[data-testid=pm-review-hint]')} && document.querySelectorAll('[data-testid=pm-chip]').length === 2 && !${q('[data-testid=pm-transcribing]')}`, 15000);
     assert.deepEqual(await browser.evaluate(chips), ['1 Jauge · Protéines', '2 Carte · Déjeuner']);
+    // One line: dictation goes to the host's route (POST /api/host/transcribe?language=fr), not the PM agent's door.
+    if (oneLine) assert.deepEqual(app.transcribes.map(call => call.language).slice(-1), ['fr'], 'the host transcribed the recording, in French');
     // C6: the editor has focus and the caret sits after the last character, ready to type.
     await browser.until('caret at the end', `(() => { const editor = ${q('[data-testid=composer-input][contenteditable=true]')}, s = getSelection(); if (document.activeElement !== editor || !s.rangeCount || !s.isCollapsed) return false;
       const tail = document.createRange(); tail.selectNodeContents(editor); tail.setStart(s.getRangeAt(0).endContainer, s.getRangeAt(0).endOffset); return tail.toString() === ''; })()`, 5000);

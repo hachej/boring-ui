@@ -8,7 +8,8 @@ import type { ImproveSpec, PmTranscript } from './use-pm-panel';
 /**
  * The one line an app writes: `improve: { agent: 'pm' }`. The kit opens that agent's conversation through the app's own door
  * (hachej/boring-factory#854), same origin and as the signed-in person: `GET {base}/agent` (identity), `{base}/conversations`
- * (the viewer's latest, created when there is none), `{base}/chat?conversation=` (the native chat wire) and `POST {base}/transcribe`.
+ * (the viewer's latest, created when there is none) and `{base}/chat?conversation=` (the native chat wire). Dictation is the host's, not
+ * the agent's: `POST /api/host/transcribe?language=` (audio body, answers `{ text, segments? }`).
  */
 export interface ImproveAgent {
   readonly agent: string;
@@ -54,12 +55,12 @@ export function useImproveAgent(value: ImproveProp | undefined, active: boolean,
     controller: ready.controller, ...(defaults.appName ? { appName: defaults.appName } : {}),
     chatProps: { actions: ready.actions, showHistory: false, ...(defaults.locale ? { locale: defaults.locale as 'fr' } : {}) },
     pointVoice: { transcribe: async (audio: Blob, signal: AbortSignal): Promise<string | PmTranscript> => {
-      const response = await fetch(`${base}/transcribe`, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': audio.type || 'application/octet-stream' }, body: audio, signal });
+      const response = await fetch(`/api/host/transcribe${defaults.locale ? `?language=${encodeURIComponent(defaults.locale)}` : ''}`, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': audio.type || 'application/octet-stream' }, body: audio, signal });
       if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
       const result = await response.json() as PmTranscript | { readonly text?: string };
       return typeof result.text === 'string' ? result as PmTranscript : '';
     } },
-  } : undefined, [agent, value, ready, base, defaults.appName, defaults.locale]);
+  } : undefined, [agent, value, ready, defaults.appName, defaults.locale]);
   const problem = door && 'error' in door.door ? door.door.error : remote.status === 'offline' ? remote.error : undefined;
   return { spec, problem };
 }

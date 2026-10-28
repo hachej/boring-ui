@@ -77,13 +77,14 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
   for (const [name, agent] of Object.entries(agents)) created[name] = await conversations.create(agent.id, { start: init => agent.createConversation(harness, context, { init }) });
 
   /** Submit bodies as the browser sent them, and the contexts the transport handed to `requestContext`. */
-  const submits = [], contexts = [];
+  const submits = [], contexts = [], transcribes = [];
   let mealReads = 0;
   const allowed = request => sameSecret(request.headers.get('authorization'), `Bearer ${token}`);
   const resources = createRevisionHandler({ resolve: async request => allowed(request) ? { provider: files, access: person } : null });
   const writerStart = init => agents.writer.createConversation(harness, context, { init });
-  // The in-app PM door as hachej/boring-factory#854 asks for it (a fake: fictional identity, scripted model, fixed transcript). Same origin
-  // stands for « signed in as the person » here; a real host authenticates its own session.
+  // The in-app PM door as hachej/boring-factory#854 asks for it (a fake: fictional identity, scripted model), plus the host's dictation route
+  // (fixed transcript; dictation belongs to the host, not the PM agent). Same origin stands for « signed in as the person » here; a real host
+  // authenticates its own session.
   const signedIn = request => request.headers.get('sec-fetch-site') === 'same-origin';
   const pmStart = init => agents.pm.createConversation(harness, context, { init });
   const door = {
@@ -94,7 +95,11 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
       const conversation = signedIn(request) && Number.isSafeInteger(id) ? await conversations.open(agents.pm.id, id) : undefined;
       return conversation ? { conversation, context, abortSubmission: submission => harness.abortSubmission(submission, context, conversation.id), requestContext: value => { contexts.push({ conversation: id, value }); } } : null;
     } }),
-    '/api/pm/transcribe': async request => signedIn(request) && request.method === 'POST' && pmTranscript ? (await request.arrayBuffer(), Response.json(pmTranscript)) : new Response(null, { status: signedIn(request) ? 404 : 403 }),
+    '/api/host/transcribe': async request => {
+      if (!signedIn(request) || request.method !== 'POST' || !pmTranscript) return new Response(null, { status: signedIn(request) ? 404 : 403 });
+      transcribes.push({ language: new URL(request.url).searchParams.get('language'), bytes: (await request.arrayBuffer()).byteLength });
+      return Response.json(pmTranscript);
+    },
   };
   const handlers = {
     ...door,
@@ -148,7 +153,7 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
   });
   await new Promise(resolve => server.listen(port, '127.0.0.1', resolve));
   return {
-    url: `http://127.0.0.1:${server.address().port}/`, token, harness, conversations, submits, contexts, mealReads: () => mealReads,
+    url: `http://127.0.0.1:${server.address().port}/`, token, harness, conversations, submits, contexts, transcribes, mealReads: () => mealReads,
     close: async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await conversations.dispose(); await harness.close(context); files.close(); db.close(); },
   };
 }
