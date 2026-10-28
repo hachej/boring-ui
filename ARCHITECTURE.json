@@ -102,7 +102,9 @@
         "@earendil-works/chord/*",
         "node:crypto",
         "unpdf",
-        "xlsx"
+        "xlsx",
+        "typebox/schema",
+        "typebox"
       ],
       "typeOnlyExternal": [],
       "pathRules": [

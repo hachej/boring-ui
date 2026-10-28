@@ -510,3 +510,33 @@ const navigate = createPresentationTool({
 Here `Type` is Pi AI's native schema builder, and `mounted`, `capturedTarget` and `canNavigate` belong to the host. The adapter passes native cancellation to the command and fixes replay to `unsafe`: an interrupted presentation call cannot safely be redirected or repeated. It acquires no controller, provider or Harness and owns none of their cleanup.
 
 This is direct in-process binding. A server cannot manipulate a remote browser through this adapter alone. The optional [canvas host recipe](../../docs/architecture/CANVAS.md#authenticated-remote-presentation-recipe) supplies authenticated selection/proposal delivery to a mounted canvas. Other viewer transports and deployment identity remain separate work. Presentation/proposal results are not publication receipts or human approval.
+
+## Structured actions
+
+`@hachej/boring-agent/actions` provides `withActionModels(models, { resolve })`, an optional adapter at the public `HarnessOptions.models` seam. A host decision admits one structured extraction; its single validated tool call is executed by Pi. The next native generation renders a template from the actual tool result, without contacting an LLM. Ambiguous requests return to the full model. No extra harness, tool dispatcher or durable journal is created.
+
+```ts
+import { ACTION_PROVIDER, withActionModels } from '@hachej/boring-agent/actions';
+
+const actionModels = withActionModels(admittedModels, {
+  resolve: id => id === 'notes' ? {
+    model: fullModel,
+    extraction: { model: extractionModel, instructions: 'Extract one new note.', tool: noteTool },
+    decide: async ({ message, history, signal }) => decideNote({ message, history, signal }),
+    reply: 'Saved {note.title}.',
+    uncertainReply: 'The outcome is uncertain. Check before retrying.',
+  } : undefined,
+});
+// Pass actionModels as the models option when the host opens its native Harness.
+await conversation.configure({ model: { provider: ACTION_PROVIDER, modelId: 'notes' } }, context);
+```
+
+`admittedModels` is the host's existing native Models, including its provider authentication and budget wrappers. `noteTool` is a native tool declaration, already installed and allowed in the conversation. The extraction schema may be stricter than that tool's schema; both are checked without coercion before returning a call. No commercial provider, API key, subscription or Jev client is embedded in the package. The host's `decide` adapts its chosen decision service; only literal `true` admits extraction. The callback gets native prior messages so the host can choose and bound the authorized decision context. Extraction receives only the current text input.
+
+The default decision deadline is 400 ms and the input cap is 1,500 characters; `decisionTimeoutMs` and `maxInputCharacters` override them. Decision failure/timeout, non-text input, missing current tool, malformed/multiple extraction calls or extraction refusal return to the full model. The decision receives an abort signal; an uncooperative service may finish later, but its result cannot start extraction. Compaction (`Models.stream`) always uses the full model. Unselected models and native registry capabilities remain available.
+
+Reply placeholders such as `{note.title}` accept actual strings, finite numbers and string arrays (joined by newline). Missing output, a failed tool or unreadable result produces `uncertainReply`, never a blind replay of a possible mutation. `rejectedWithoutEffect(result)` may opt into full-model handling only when the host can prove an atomic rejection. Tools still own permission checks and durable idempotent receipts; the adapter cannot make external writes transactional. Install the adapter outside the metered Models so real extraction and fallback requests retain admission. Synthetic replies have zero usage; failed extraction usage needs host request metering because only the final fallback message enters Pi's transcript.
+
+Hosts must explicitly configure existing conversations when adopting this virtual model; deployment alone does not change their persisted selection. Keep the action's tool and result contract compatible while native work is pending. Changing definitions during an outstanding action is not a version-pinning guarantee.
+
+Evidence: `node --test test/packages/agent-actions.test.mjs` runs the public package through a native Harness, SQLite reopen, native tool gates and scripted models. `npm run test:definitions-consumer -- --actions` repeats these tests and checks strict installed declarations. Real-model speed and decision accuracy remain consumer evals, not claims of these scripted tests.
