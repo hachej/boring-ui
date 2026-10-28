@@ -361,7 +361,7 @@ export function Composer(props: ComposerProps) {
       {...(slash || mentions ? { role: 'combobox', 'aria-expanded': menuOpen, 'aria-haspopup': 'listbox', 'aria-autocomplete': 'list' } as const : {})}
       onChange={onChange} onKeyDown={onKeyDown} onPaste={onPaste} onKeyUp={event => trackCaret(event.currentTarget)} onClick={event => trackCaret(event.currentTarget)}
       onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }}
-      className={pill ? 'relative max-h-52 min-h-0 min-w-0' : 'relative max-h-52 min-h-11'} />;
+      className={cn(props.markMentionQuery && 'relative', pill ? 'max-h-52 min-h-0 min-w-0' : 'max-h-52 min-h-11')} />;
   // The query mark is a backdrop with the textarea's own metrics behind its transparent text: the text the person edits stays the textarea's.
   const marked = props.markMentionQuery && mentionOpen && trigger ? <QueryBackdrop text={text} start={trigger.start} end={trigger.end} /> : null;
   // eslint-disable-next-line react-hooks/refs -- renderInput receives event callbacks, not ref values; an input calls them only on interaction
