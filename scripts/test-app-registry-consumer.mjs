@@ -30,6 +30,7 @@ visit('file-tree');
 // The documents screen: its Library, revisions and sheet, installed and checked strictly with the rest of the closure.
 visit('documents');
 visit('highlights');
+visit('task-board');
 // The kit's tokens, which this token-less app installs once in its setup; no block depends on them.
 visit('theme');
 const styles = [process.env.BORING_CONSUMER_STYLE ?? 'base-nova'];
@@ -70,13 +71,13 @@ async function testStyle(style) {
     writeFileSync(join(directory, 'components.json'), appComponentsJson({ style, ui: '@/shadcn/ui' }));
     writeFileSync(join(directory, 'src/index.css'), '@import "tailwindcss";\n');
     writeFileSync(join(directory, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'ESNext', moduleResolution: 'Bundler', jsx: 'react-jsx', strict: true, noUnusedLocals: true, noUnusedParameters: true, verbatimModuleSyntax: true, erasableSyntaxOnly: true, noUncheckedIndexedAccess: true, skipLibCheck: false,
-      noEmit: true, types: [], lib: ['ES2023', 'DOM', 'DOM.Iterable'], baseUrl: '.', paths: { '@/*': ['./src/*'] } }, include: ['src/components/pi-app/**/*.tsx', 'src/components/pi-app/**/*.ts', 'src/components/pi-app-kinds/**/*.ts', 'src/components/app-shell/**/*.tsx', 'src/components/app-shell/**/*.ts', 'src/components/documents/**/*.tsx', 'src/components/documents/**/*.ts', 'src/page.tsx', 'src/pdf-check.tsx', 'src/local-file-check.tsx'] }));
+      noEmit: true, types: [], lib: ['ES2023', 'DOM', 'DOM.Iterable'], baseUrl: '.', paths: { '@/*': ['./src/*'] } }, include: ['src/components/pi-app/**/*.tsx', 'src/components/pi-app/**/*.ts', 'src/components/pi-app-kinds/**/*.ts', 'src/components/app-shell/**/*.tsx', 'src/components/app-shell/**/*.ts', 'src/components/documents/**/*.tsx', 'src/components/documents/**/*.ts', 'src/components/task-board/**/*.tsx', 'src/page.tsx', 'src/pdf-check.tsx', 'src/local-file-check.tsx'] }));
     const installer = { ...process.env, npm_config_cache: cache, npm_config_offline: 'true', npm_config_ignore_scripts: 'true', npm_config_audit: 'false', npm_config_fund: 'false' };
     delete installer.NODE_OPTIONS;
     // The documented app setup (registry/README.md, APP_SETUP), then the blocks, which declare no shadcn component of their own.
     addAppComponents(directory, [...SHADCN_BUILTINS], installer, run);
     run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', `${registry}/theme.json`, '--cwd', directory, '--yes'], installer);
-    run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', `${registry}/pi-app.json`, `${registry}/pi-app-kinds.json`, `${registry}/file-tree.json`, `${registry}/app-shell.json`, `${registry}/documents.json`, `${registry}/highlights.json`, '--cwd', directory, '--yes'], installer);
+    run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', `${registry}/pi-app.json`, `${registry}/pi-app-kinds.json`, `${registry}/file-tree.json`, `${registry}/app-shell.json`, `${registry}/documents.json`, `${registry}/highlights.json`, `${registry}/task-board.json`, '--cwd', directory, '--yes'], installer);
     for (const [name, item] of closure) for (const file of item.files ?? []) {
       assert.ok(existsSync(join(directory, 'src', file.target)), `the CLI must create ${file.target} (${name})`);
       const text = readFileSync(join(directory, 'src', file.target), 'utf8');
@@ -94,6 +95,12 @@ async function testStyle(style) {
     // A consumer page: only the block, its hooks and the host's own routes.
     writeFileSync(join(directory, 'src/page.tsx'), `export { ReportWorkspace } from './local-file-check';
   export { Highlights } from './components/highlights/highlights';
+  import { TaskBoard, TaskRequestCard, TaskStatusChip } from './components/task-board/task-board';
+  import type { TaskRecord } from '@hachej/boring-ui-kit/task-board';
+  export function OwnRequests({ tasks }: { readonly tasks: readonly TaskRecord[] }) {
+    return <><TaskBoard tasks={tasks} filter="mine" currentUser="fictional-person" limit={2} variant="compact" />
+      {tasks[0] && <><TaskRequestCard task={tasks[0]} actions={<button>Confirm</button>} /><TaskStatusChip task={tasks[0]} /></>}</>;
+  }
   import { useEffect, useState } from 'react';
   import { createRoot } from 'react-dom/client';
   import { AgentWorkspace, useConversations, useRemoteChat } from './components/pi-app/agent-workspace';

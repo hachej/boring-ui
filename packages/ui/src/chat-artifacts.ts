@@ -1,5 +1,9 @@
 import type { ConversationView } from '@earendil-works/pi-durable';
 import type { ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
+import { parseTaskArtifact, parseTaskSubject, taskSubjectKey } from './task-artifacts.js';
+import type { TaskArtifactDescriptor, TaskSubject } from './task-artifacts.js';
+export { createTaskArtifact, parseTaskArtifact, parseTaskSubject, taskSubjectKey } from './task-artifacts.js';
+export type { TaskArtifactDescriptor, TaskSubject } from './task-artifacts.js';
 /**
  * An artifact a tool call made (or a running `present` call is making), as the chat places it. `descriptor` is the host's own
  * value: the chat hands it back to the host's `open` and `isOpen` and never reads it.
@@ -49,12 +53,19 @@ export interface ArtifactDescriptor {
 }
 
 /** What identifies an artifact across its versions: its id, or for a presented file its path. */
-export const artifactKey = (artifact: Pick<ArtifactDescriptor, 'id' | 'target'>): string => artifact.id ?? artifact.target.resource.path;
+export type PresentedArtifact = ArtifactDescriptor | TaskArtifactDescriptor;
+export const artifactKey = (artifact: Pick<ArtifactDescriptor, 'id' | 'target'> | TaskArtifactDescriptor): string => 'subject' in artifact ? taskSubjectKey(artifact.subject) : artifact.id ?? artifact.target.resource.path;
+/** File revisions are retained history; a task reference has no invented revision. */
+export const artifactVersionKey = (artifact: PresentedArtifact): string => JSON.stringify([artifactKey(artifact), artifact.type === 'task' ? null : artifact.revision]);
+export function parsePresentedArtifact(value: unknown): PresentedArtifact | undefined { return parseArtifact(value) ?? parseTaskArtifact(value); }
 
 export const PRESENT_TOOL = 'present';
 
 /** A `present` call with no result yet, while its conversation runs: its answer ID (`[assistantEntryId, callId]`) and the path it names. */
-export interface PendingPresent { readonly id: string; readonly callId: string; readonly path: string }
+export type PendingPresent = { readonly id: string; readonly callId: string } & ({ readonly path: string } | { readonly subject: TaskSubject });
+export type PresentationShown = ({ readonly path: string; readonly revision: string } | { readonly subject: TaskSubject });
+export type PresentationFailed = ({ readonly path: string } | { readonly subject: TaskSubject }) & { readonly reason: string };
+const presentationKey = (value: { readonly path: string } | { readonly subject: TaskSubject }): string => 'subject' in value ? taskSubjectKey(value.subject) : JSON.stringify(['file', presentPath(value.path)]);
 
 /** The path a `present` call or a page acknowledgement names, as the server compares it (a leading `./` is the same file). */
 export const presentPath = (path: string): string => path.replace(/^\.\//, '');
@@ -72,9 +83,11 @@ export function pendingPresents(view: { readonly entries: readonly { readonly id
     const item = message as { readonly role?: string; readonly content?: unknown; readonly toolCallId?: string };
     if (item.role === 'assistant' && Array.isArray(item.content)) {
       for (const part of item.content as { type?: string; id?: string; name?: string; arguments?: Record<string, unknown> }[]) {
-        const path = part.arguments?.['path'];
-        if (part.type === 'toolCall' && part.name === PRESENT_TOOL && typeof part.id === 'string' && typeof path === 'string') {
-          calls.set(part.id, { id: JSON.stringify([Number(entry.id), part.id]), callId: part.id, path: presentPath(path) });
+        const path = part.arguments?.['path'], subject = parseTaskSubject(part.arguments);
+        if (part.type === 'toolCall' && part.name === PRESENT_TOOL && typeof part.id === 'string') {
+          const binding = { id: JSON.stringify([Number(entry.id), part.id]), callId: part.id };
+          if (typeof path === 'string') calls.set(part.id, { ...binding, path: presentPath(path) });
+          else if (subject) calls.set(part.id, { ...binding, subject });
         }
       }
     }
@@ -121,28 +134,32 @@ const textOf = (result: ToolResultMessage): string => result.content.map(part =>
  * the host's `detect`, only a result of `present` counts: any other tool whose text happens
  * to be that JSON (an MCP tool, `cat x.json`) cannot forge a card. A host with renamed tools says so in `detect`.
  */
-export function detectArtifact(call: ToolCall, result: ToolResultMessage, detect?: ArtifactDetect | undefined): ArtifactDescriptor | undefined {
+export function detectArtifact(call: ToolCall, result: ToolResultMessage, detect?: ArtifactDetect | undefined): PresentedArtifact | undefined {
   if (result.isError) return undefined;
   if (detect) {
-    try { const found = parseArtifact(detect(call, result)); if (found) return found; } catch { /* a faulty host callback shows no card */ }
+    try { const found = parsePresentedArtifact(detect(call, result)); if (found) return found; } catch { /* a faulty host callback shows no card */ }
   }
   if (call.name !== PRESENT_TOOL) return undefined;
   const text = textOf(result);
-  if (!text.includes('"boring.artifact"')) return undefined;
+  if (!text.includes('"boring.artifact"') && !text.includes('"boring.task"')) return undefined;
   try {
     const value: unknown = JSON.parse(text);
-    return isObject(value) ? parseArtifact(value['artifact']) : undefined;
+    return isObject(value) ? parsePresentedArtifact(value['artifact']) : undefined;
   } catch { return undefined; }
 }
 
 /** The title a still-running `present` call announces in its streamed arguments: the file name. */
 export function pendingTitle(call: ToolCall): string | undefined {
+  const subject = parseTaskSubject(call.arguments);
+  if (subject) return 'task' in subject ? subject.task : subject.tasks.filter === 'mine' ? 'My requests' : subject.tasks.filter === 'waiting-on-me' ? 'Waiting on me' : 'Tasks';
   const path = (call.arguments as Record<string, unknown>)['path'];
   const title = typeof path === 'string' ? path.slice(path.lastIndexOf('/') + 1) : undefined;
   return title?.trim() ? title.trim().slice(0, 200) : undefined;
 }
 /** What a still-running `present` call will show: the file path. */
 export function pendingId(call: ToolCall): string | undefined {
+  const subject = parseTaskSubject(call.arguments);
+  if (subject) return taskSubjectKey(subject);
   const path = (call.arguments as Record<string, unknown>)['path'];
   return typeof path === 'string' && path ? path.replace(/^(\.\/)+/, '') : undefined;
 }
@@ -151,8 +168,8 @@ export function pendingId(call: ToolCall): string | undefined {
  * Every artifact version a conversation's tool results produced, oldest first. Hosts use it to list the versions known
  * from the conversation (a version switcher); the chat itself shows only the last version of an artifact per turn.
  */
-export function collectArtifacts(view: ConversationView | undefined, detect?: ArtifactDetect | undefined): ArtifactDescriptor[] {
-  const calls = new Map<string, ToolCall>(), found: ArtifactDescriptor[] = [];
+export function collectArtifacts(view: ConversationView | undefined, detect?: ArtifactDetect | undefined): PresentedArtifact[] {
+  const calls = new Map<string, ToolCall>(), found: PresentedArtifact[] = [];
   for (const entry of view?.entries ?? []) for (const message of entry.model ?? []) {
     if (message.role === 'assistant') for (const part of message.content) { if (part.type === 'toolCall') calls.set(part.id, part); }
     else if (message.role === 'toolResult') {
@@ -172,6 +189,8 @@ export interface PresentAcksHost {
   readonly answer: (id: string, answer: string) => Promise<PresentAnswer> | undefined;
   /** Open the file in the panel; false when the panel refuses (unsaved changes the person keeps). */
   readonly open: (path: string) => boolean;
+  /** Open a host task reference; absent: it stays pending until a manual mount or deadline. */
+  readonly openTask?: ((subject: TaskSubject) => boolean) | undefined;
   /** This page's identity in the acknowledgement. */
   readonly instanceId: string;
   /** Test seams: the wait between retries and the clock of the retry bound. Default: real timers. */
@@ -191,6 +210,7 @@ export interface PresentContext {
   readonly autoOpen: boolean;
   /** Whether the panel already shows this file. */
   readonly showing: (path: string) => boolean;
+  readonly showingTask?: ((subject: TaskSubject) => boolean) | undefined;
 }
 
 /**
@@ -201,14 +221,14 @@ export interface PresentContext {
 export function createPresentAcks(host: PresentAcksHost) {
   const decided = new Set<string>();
   /** Calls waiting for their file's mount report: answer ID to path. */
-  const mounting = new Map<string, string>();
+  const mounting = new Map<string, PendingPresent>();
   const wait = host.wait ?? (ms => new Promise<void>(resolve => setTimeout(resolve, ms)));
   const now = host.now ?? (() => Date.now());
   /** The last mount report: the file on screen and its revision. */
-  let lastShown: { readonly path: string; readonly revision: string } | undefined;
+  let lastShown: PresentationShown | undefined;
 
   /** Sends one answer; returns the server's outcome kind, or undefined when it was not sent. Retries while the record is not written yet. */
-  async function send(id: string, body: Record<string, string>): Promise<string | undefined> {
+  async function send(id: string, body: Record<string, unknown>): Promise<string | undefined> {
     const until = now() + 3000;
     for (;;) {
       try {
@@ -221,8 +241,8 @@ export function createPresentAcks(host: PresentAcksHost) {
     }
   }
   /** Confirms a shown revision. The call keeps its entry while the answer is in flight, so a mount during the flight still confirms it. */
-  async function confirm(id: string, path: string, revision: string): Promise<void> {
-    const kind = await send(id, { kind: 'opened', instanceId: host.instanceId, path, revision });
+  async function confirm(id: string, view: PresentationShown): Promise<void> {
+    const kind = await send(id, { kind: 'opened', instanceId: host.instanceId, ...view });
     // Only an accepted or conflicting answer ends the call. A denial (another revision), a failed request or an unrecorded call keeps it waiting for a later mount or a live-call check.
     if (kind === 'answered' || kind === 'conflict') mounting.delete(id);
   }
@@ -235,19 +255,19 @@ export function createPresentAcks(host: PresentAcksHost) {
 
   return {
     /** A viewer mounted and shows `path` at `revision`: confirms the calls waiting for that file. */
-    shown(view: { readonly path: string; readonly revision: string }): void {
-      for (const [id, path] of mounting) if (path === view.path) void confirm(id, path, view.revision);
+    shown(view: PresentationShown): void {
+      for (const [id, call] of mounting) if (presentationKey(call) === presentationKey(view)) void confirm(id, view);
       lastShown = view;
     },
     /** A viewer could not show `path` (a kind's `onFailed`, or its renderer threw): refuses the calls waiting for that file with `reason`. */
-    failed(view: { readonly path: string; readonly reason: string }): void {
-      if (lastShown?.path === view.path) lastShown = undefined;
+    failed(view: PresentationFailed): void {
+      if (lastShown && presentationKey(lastShown) === presentationKey(view)) lastShown = undefined;
       const reason = view.reason.trim().slice(0, 200) || 'the view failed';
-      for (const [id, path] of mounting) if (path === view.path) void refuse(id, reason);
+      for (const [id, call] of mounting) if (presentationKey(call) === presentationKey(view)) void refuse(id, reason);
     },
     /** A viewer stopped showing `path` at `revision` (it unmounted, or a custom viewer or the canvas took the file): it no longer confirms. */
-    hidden(view: { readonly path: string; readonly revision: string }): void {
-      if (lastShown?.path === view.path && lastShown.revision === view.revision) lastShown = undefined;
+    hidden(view: PresentationShown): void {
+      if (lastShown && presentationKey(lastShown) === presentationKey(view) && ('subject' in view || ('revision' in lastShown && lastShown.revision === view.revision))) lastShown = undefined;
     },
     /** The presents the server waits for: each is decided once, in order. Decided calls and waits that are no longer live are forgotten. */
     consider(calls: readonly PendingPresent[], context: PresentContext): void {
@@ -261,9 +281,10 @@ export function createPresentAcks(host: PresentAcksHost) {
         else if (context.unsaved) void send(call.id, { kind: 'refused', reason: 'unsaved changes' });
         else if (context.narrow) void send(call.id, { kind: 'refused', reason: 'narrow screen' });
         else {
-          mounting.set(call.id, call.path);
-          if (lastShown?.path === call.path && context.showing(call.path)) void confirm(call.id, call.path, lastShown.revision);
-          else if (context.autoOpen && !host.open(call.path)) {
+          mounting.set(call.id, call);
+          const showing = 'subject' in call ? context.showingTask?.(call.subject) : context.showing(call.path);
+          if (lastShown && presentationKey(lastShown) === presentationKey(call) && showing) void confirm(call.id, lastShown);
+          else if (context.autoOpen && ('subject' in call ? host.openTask?.(call.subject) === false : !host.open(call.path))) {
             mounting.delete(call.id);
             void send(call.id, { kind: 'refused', reason: 'unsaved changes' });
           }
@@ -287,20 +308,21 @@ export function recogniseArtifact(call: ToolCall, result: ToolResultMessage | un
     const artifact = detectArtifact(call, result, detect);
     if (!artifact) return undefined;
     // A tool whose own result carries the descriptor is replaced by its card; a host-detected card is shown in addition to the step.
-    return { state: 'ready', id: artifactKey(artifact), title: artifact.title, path: artifact.target.resource.path, own: detectArtifact(call, result) !== undefined, descriptor: artifact };
+    return { state: 'ready', id: artifactKey(artifact), title: artifact.title, path: artifact.type === 'task' ? undefined : artifact.target.resource.path, own: detectArtifact(call, result) !== undefined, descriptor: artifact };
   }
   if (running && call.name === PRESENT_TOOL) return { state: 'presenting', id: pendingId(call), title: pendingTitle(call), path: undefined, own: true, descriptor: undefined };
   return undefined;
 }
 
 /** Every version, newest conversation result first. Ordinals can tie across retries and never determine recency. */
-export function artifactVersions(view: ConversationView | undefined, detect?: ArtifactDetect): ArtifactDescriptor[] {
+export function artifactVersions(view: ConversationView | undefined, detect?: ArtifactDetect): PresentedArtifact[] {
   return collectArtifacts(view, detect).reverse();
 }
 
 /** Whether this descriptor is the newest known revision of its artifact, never an ordinal comparison. */
-export function follows(descriptor: ArtifactDescriptor, versions: readonly ArtifactDescriptor[]): boolean {
-  return descriptor.revision === versions.find(version => artifactKey(version) === artifactKey(descriptor))?.revision;
+export function follows(descriptor: PresentedArtifact, versions: readonly PresentedArtifact[]): boolean {
+  const newest = versions.find(version => artifactKey(version) === artifactKey(descriptor));
+  return newest !== undefined && artifactVersionKey(descriptor) === artifactVersionKey(newest);
 }
 
 /** The number of user messages in the current native view, used to retain a manual close until the next turn. */

@@ -294,3 +294,38 @@ test('Ambient shares PiChat working, waiting, retry, compaction and natural stat
     assert.equal(Boolean(element.querySelector('[data-testid=preparing]')), fixture.name !== 'waiting');
   });
 });
+
+
+test('Ambient host artifact callbacks expose mount and failure reports for files and task records', async t => {
+  const fixtures = [
+    { args: { path: 'plan.txt' }, descriptor: { schema: 'boring.artifact', version: 1, title: 'Plan', type: 'code', mediaType: 'text/plain', target: { resource: { providerId: 'fictional', path: 'plan.txt' }, view: { kind: 'published' } }, revision: 'r1' }, report: { path: 'plan.txt', revision: 'r1' } },
+    { args: { task: 'D-201' }, descriptor: { schema: 'boring.task', version: 1, title: 'D-201', type: 'task', subject: { task: 'D-201' } }, report: { subject: { task: 'D-201' } } },
+  ];
+  for (const fixture of fixtures) await t.test(fixture.descriptor.type, async t => {
+    const view = { conversation: { id: 1 }, entries: [{ id: 1, model: [
+      { role: 'assistant', content: [{ type: 'toolCall', id: 'ready', name: 'present', arguments: fixture.args }], stopReason: 'toolUse' },
+      { role: 'toolResult', toolCallId: 'ready', toolName: 'present', content: [{ type: 'text', text: JSON.stringify({ artifact: fixture.descriptor }) }] },
+    ] }, { id: 2, model: [{ role: 'user', content: 'Show it again', timestamp: 2 }] }, { id: 3, model: [
+      { role: 'assistant', content: [{ type: 'toolCall', id: 'waiting', name: 'present', arguments: fixture.args }], stopReason: 'toolUse' },
+    ] }], docs: { 'pi.live': { run: { id: 'fictional' } } } };
+    const { element, root, chat, act, createElement: h, AmbientChat } = await harness(t, view);
+    const sent = []; let opened, reports;
+    await act(async () => root.render(h(AmbientChat, { controller: chat, defaultState: 'expanded', notifications: false, artifactTarget: 'host',
+      actions: { answer: async (id, body) => { sent.push({ id, ...JSON.parse(body) }); return { kind: 'denied' }; } },
+      artifacts: { open: (artifact, api) => { opened = artifact; reports = api; } } })));
+    assert.deepEqual(sent, [], 'render and pending task detection do not confirm a mount');
+    const ready = element.querySelector('[data-testid=artifact-card][data-state=ready]');
+    assert.ok(ready, element.innerHTML);
+    await act(async () => ready.click());
+    assert.deepEqual(opened, fixture.descriptor);
+    assert.ok(reports, 'artifactTarget=host exposes the same onShown/onFailed callbacks as an in-window panel');
+    assert.deepEqual(sent, [], 'opening a host viewer does not confirm it');
+    await act(async () => reports.onShown(fixture.report));
+    assert.equal(sent[0].kind, 'opened');
+    assert.equal(sent[0].id, '[3,"waiting"]');
+    for (const [key, value] of Object.entries(fixture.report)) assert.deepEqual(sent[0][key], value);
+    await act(async () => reports.onFailed({ ...fixture.report, reason: 'Host task access denied' }));
+    assert.equal(sent.at(-1).kind, 'refused');
+    assert.equal(sent.at(-1).reason, 'Host task access denied');
+  });
+});

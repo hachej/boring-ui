@@ -117,7 +117,7 @@ class KindBoundary extends Component<{ readonly revision: string; readonly onErr
 
 /** Every artifact version the conversation's tool results produced (the version switcher's source), oldest first. */
 export function useArtifactVersions(controller: ChatController | undefined, detect?: ArtifactsConfig['detect']): ArtifactDescriptor[] {
-  return useChatView(controller, useCallback(view => collectArtifacts(view, detect), [detect]));
+  return useChatView(controller, useCallback(view => collectArtifacts(view, detect).filter((artifact): artifact is ArtifactDescriptor => artifact.type !== 'task'), [detect]));
 }
 
 /** How many messages the person has sent in the conversation: it changes when a new turn starts. */

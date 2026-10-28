@@ -905,7 +905,7 @@ States: `bar` (title row with minimise, a spinner while working and a check when
 
 Placement: offsets from the bottom right corner, shared by the bar, the window and the pill, remembered for the browser session under `storageKey`. The grip (in the header and at the left of the pill) drags it; the whole pill drags too once the pointer moves 4px, so a plain click still restores it. With the grip focused, arrow keys move it (Shift for bigger steps) and Home returns it to the default corner. `storage="local"` keeps it in `localStorage` across sessions (default `session`, `sessionStorage`). The position is clamped to the viewport on every render (also when the window is resized or grows), so the agent UI can never be off screen. On a phone (below `PHONE_BELOW`, 768px, the one breakpoint of `utils`, shared with `AgentWorkspace`) the bar and the pill are docked at the bottom with no dragging, and the window is a full-height sheet. `variant="contrast"` (default) is a dark window on any page: its root carries the `.dark` class (and `color-scheme: dark`), so every reused part shows the host's own dark tokens; the item declares no colours. `variant="surface"` uses the host's tokens, light or dark.
 
-Artifacts: with `artifactPanel` (a render function the host writes with the viewer registry, see `examples/ambient/artifact-panel.jsx`), clicking an artifact card opens it inside the window. The window widens (up to 72rem, at most the viewport) into the chat on the left and the panel on the right, using `ArtifactWorkspace` (draggable divider, width remembered, full screen that covers the viewport, a full-screen sheet on a phone). The panel gets `{ fullscreen, onFullscreenChange, close, versions, follow, select, onShown, onFailed }` for the viewer bar and the version history; it reads through the host's own resource client. Escape steps back: full screen, then the artifact, then the window. `artifactTarget="host"` calls `artifacts.open` instead, for hosts with their own viewer. Ambient keeps auto-open off. To acknowledge a waiting `present`, forward `onShown({ path, revision })` only from the viewer's effect after that exact revision loads and mounts; its cleanup reports `{ path, revision, hidden: true }`. Forward load/render failures with `onFailed({ path, revision, reason })`. Do not call these from the panel render function: opening or rendering a descriptor proves no revision was shown. The actual demo host (`examples/ambient/artifact-panel.jsx`) forwards those callbacks from its loaded viewer: `onShown` reports `saved.snapshot.ref.revision`, cleanup reports hidden, and a refused/missing/invalid read reports `onFailed`. With no report the present remains unconfirmed. Version order and revision-equality follow come from the kit's `chat-view`; both Ambient and AgentWorkspace use `chat-react/useArtifactFollow`.
+Artifacts: with `artifactPanel` (a render function the host writes with the viewer registry, see `examples/ambient/artifact-panel.jsx`), clicking an artifact card opens it inside the window. The window widens (up to 72rem, at most the viewport) into the chat on the left and the panel on the right, using `ArtifactWorkspace` (draggable divider, width remembered, full screen that covers the viewport, a full-screen sheet on a phone). The panel gets `{ fullscreen, onFullscreenChange, close, versions, follow, select, onShown, onFailed }` for the viewer bar and the version history; it reads through the host's own resource client. Escape steps back: full screen, then the artifact, then the window. `artifactTarget="host"` calls `artifacts.open(artifact, reports)` instead, for hosts with their own viewer; `reports` carries the same `onShown`/`onFailed` callbacks as the in-window panel. Existing one-argument openers remain valid. Ambient keeps auto-open off. To acknowledge a waiting `present`, forward `onShown({ path, revision })` only from the viewer's effect after that exact revision loads and mounts; its cleanup reports `{ path, revision, hidden: true }`. Forward load/render failures with `onFailed({ path, revision, reason })`. Do not call these from the panel render function: opening or rendering a descriptor proves no revision was shown. The actual demo host (`examples/ambient/artifact-panel.jsx`) forwards those callbacks from its loaded viewer: `onShown` reports `saved.snapshot.ref.revision`, cleanup reports hidden, and a refused/missing/invalid read reports `onFailed`. With no report the present remains unconfirmed. Version order and revision-equality follow come from the kit's `chat-view`; both Ambient and AgentWorkspace use `chat-react/useArtifactFollow`.
 
 `AgentNotifications` is a polite live region of toasts (status icon, title, a one-line summary of the final reply, close). `AmbientChat` feeds its store when its own run finishes, fails (toast kind `error`) or waits for an answer (`input`, never auto-dismissed, taken back when answered); a toast is not raised while the window is open on that conversation. A host pushes events for anything else with `store.push({ kind, title, summary, conversationId })`, or lets `watchConversation` do it. `autoDismissMs` (default 8000, 0 keeps them), `maxToasts`, hover and focus pause the timer, Escape closes the focused toast; a click opens that conversation (`conversations.onSelect`, then the window expands). With `systemNotifications`, a bell in the header asks for browser notification permission only when the person clicks it, and a system notification is shown only while the page is hidden, so a host whose connection feeds the store passes `pauseWhenHidden: false` to `createRemoteChat` (by default the stream pauses while hidden and nothing would arrive); `browser-notify.ts` is the one file that touches `Notification`, feature-detects it and never asks on load.
 
@@ -919,6 +919,27 @@ The `feedback` item ships the microphone button: `VoiceInput` (`feedback/voice-i
 The queue (`queue.tsx`, shared by `PiChat` and `AmbientChat`) is one slim row per message in a tab tucked behind the composer's top edge: queue icon, one-line text, icon-only Steer and remove actions, and a "…" menu with Edit (48px phone targets; see [queue controls](#panel-pi-workspace-history-and-queue-pi-chat)). The composer parity (paperclip, `/`, `@`, model, effort) is one `Composer` component with a one-row and a two-row layout, not two implementations.
 
 `examples/ambient` is a fictional settings console with the bar over it, a durable agent (artifact tools, `ask_user`, one slow tool) and a background task button (`?view=full` renders a `PiChat` with the same composer config, `?artifacts=host` the host-viewer handoff): `npm run ambient`, and `npm run ambient:journey` for the real-browser, real-model journey with screenshots under `.cache/evidence/ambient/`.
+
+### Host task viewers
+
+The native `present` tool accepts `{ task: 'D-201' }` or `{ tasks: { filter: 'all' | 'mine' | 'waiting-on-me' } }` without a workspace. Its `TaskArtifactDescriptor` is `{ schema: 'boring.task', version: 1, type: 'task', title, subject }`; it contains no private task payload, file target or fabricated revision. `PresentedArtifact` is this descriptor or the unchanged file `ArtifactDescriptor`. `parsePresentedArtifact` accepts both; `parseArtifact` remains file-only.
+
+Register a task card label/icon with `artifacts.kinds: [{ matchTask: (subject, artifact) => true, label: 'Task' }]`. A file `ArtifactKind.match(target, artifact)` and its file renderer remain unchanged. The host opens tasks through `artifacts.open`; no kit file-viewer switch or iframe is needed:
+
+```tsx
+<AmbientChat controller={controller} actions={actions} artifactTarget="host"
+  artifacts={{
+    kinds: [{ matchTask: () => true, label: 'Task' }],
+    open: (artifact, reports) => {
+      if (artifact.type === 'task' && reports) setTaskView({ artifact, reports });
+      else if (artifact.type !== 'task') openFile(artifact, reports);
+    },
+  }} />
+```
+
+`reports` is `ArtifactHostViewApi` (`onShown`, `onFailed`). The host fetches with its own authenticated task API, renders its board/detail, then reports `onShown({ subject: artifact.subject })` **from the loaded viewer's effect**. Cleanup reports `onShown({ subject: artifact.subject, hidden: true })`; denied/missing/load/render errors report `onFailed({ subject: artifact.subject, reason })`. Do not report when merely setting the descriptor state or starting a fetch. Keep each report bound to the subject that actually loaded: changing selection or filters cannot acknowledge an older task. `mine` is resolved against the host's authenticated person, not a model-supplied identity.
+
+With `createPresentTool({ ack })`, these callbacks settle the same native durable wait as files; wrong subjects and wrong file/task report shapes are refused, an absent mount stays `unconfirmed`, and `viewers: () => false` reports `viewer: 'none'`. The acknowledgement grants no permission, approval or task-completion evidence. Without `ack`, the tool returns the reference immediately. A host using the headless `useArtifactFollow` instead can pass `openTask(subject)`/`showingTask(subject)` and use the same `onShown`/`onFailed` reports. In `AgentWorkspace`, task references route to the existing `panels.task(view, api)` host slot (`view.descriptor`); `api` includes those reports. File version menus stay file-only.
 
 ## Viewers (`viewer-frame`, `viewer-markdown`, `viewer-html`, `viewer-image`, `viewer-pdf`, `viewer-code`)
 
@@ -1374,3 +1395,38 @@ The host bumps `changeToken` alongside fresh views. A polite live region compare
 Run `node --test test/contracts/requests.test.mjs test/contracts/requests-board.test.mjs` for pure transforms and real-shadcn Happy DOM callbacks. After `npm run build`, open `npm run workspace-app` with `?requests` for the fictional Atelier Exemple demo, or run `npm run requests:journey` with Chromium for desktop/phone light/dark screenshots under `.cache/evidence/D141/`. The demo logs intent; it does not call a production endpoint or persist approvals. D-140 endpoint wiring and release remain consumer/owner work.
 
 `pi-chat/session.useChatSession` is a thin presentation adapter over the kit's headless [chat session](../packages/ui/README.md#chat-react-hooks). `pi-chat/notice` exports `ChatConnectionNotice` and `ChatStatusLine`, shared with Ambient so host recovery content and developer/natural statuses stay consistent. Reinstall both blocks after updating the kit.
+
+## Task board (`task-board`)
+
+Install `<registry>/task-board.json` after the normal Base UI setup. No theme, agent, iframe or task backend is installed. The host supplies authorized records from its task API; this is the five-state business-task board, distinct from the older release-oriented `requests-board`.
+
+```tsx
+import { TaskBoard, TaskRequestCard } from '@/components/task-board/task-board';
+import type { TaskRecord } from '@hachej/boring-ui-kit/task-board';
+
+function Tasks({ tasks }: { tasks: readonly TaskRecord[] }) {
+  return <TaskBoard tasks={tasks} />; // ?task=<id>; responsive detail
+}
+function RecentRequests({ tasks, open }: { tasks: readonly TaskRecord[]; open: (id: string) => void }) {
+  return <TaskBoard tasks={tasks} filter="mine" currentUser="alice" limit={2}
+    variant="compact" onOpen={task => open(task.id)} />;
+}
+// The PM's À confirmer card uses the same component, with screen/capture from task:
+// <TaskRequestCard task={request} actions={<><Button variant="outline">Modifier</Button><Button>Confirmer</Button></>} />
+```
+
+| Prop / export | Contract |
+| --- | --- |
+| `tasks` | `readonly TaskRecord[]`: `id`, `title`, `state: waiting \| working \| open \| done \| closed`; optional `number`, host-facing `status`, `requesterId`, `spec`, `screen`, `capture`, `waiting_on: { who, question? }`, `waiting_on_you`, `risk`, `questions`, `history`, ISO `updated_at` / `created_at` |
+| `filter`, `currentUser`, `limit` | `all` (default), `mine` (exact host-resolved requester identity), `waiting-on-me` (waiting with `waiting_on_you`); filter before newest-first limit. No user means no `mine` rows |
+| `variant` | `board` (default) or `compact` (title + chip only). Compact rows use the same open path |
+| `selectedTask`, `onSelectedTaskChange` | Optional controlled router selection, ID / `D-<number>` alias or null. Otherwise `?task=` with native pushState/back/forward, preserving other query/hash state |
+| `onOpen(task)` | Delegate navigation to one host detail/present path; when supplied, no additional local detail opens |
+| `actions(task)`, `onAnswer(task, question, value)` | Host actions slot in detail and host-authorized question callback. Question options are strings or `{ label, value }`; no callback shows inert option chips |
+| `labels`, `title`, `className` | State labels, accessible board name and outer layout |
+| `TaskRequestCard` | Shared board/detail/PM card: `task`, `variant: card \| compact`, `href`, `onOpen`, `selected`, `labels`, optional `actions` slot |
+| `TaskStatusChip`, `TaskDetail` | Same chip and detail independently embeddable without the board |
+
+The pure `@hachej/boring-ui-kit/task-board` entry exports record types, `TASK_STATES`, `selectTasks`, `taskReference`, `taskFromUrl` and `taskUrl`, with no React/files/Pi dependency. Map API-specific author/status fields in the host adapter; filtering never authorizes a read. History contains `{ id?, at?, actor?, note }`; questions contain `{ id, text, options?, answer? }`. Spec, questions and history render as escaped text, never executable content. A capture is a label, not an automatically fetched image.
+
+Container queries (not phone viewport heuristics) select three columns at 42rem and side detail at 56rem available board width. Narrow detail replaces the board with Back; Escape closes it, and Back restores card focus. Done and Closed start folded. Multiple boards sharing a URL should route their compact `onOpen` to one selected detail. The host owns data loading/errors, pending answers, durable decisions and authorization; mounting a card never supplies approval. See [feature driving map](../features/task-board.md) and [example](../examples/task-board/README.md).

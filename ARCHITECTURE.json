@@ -226,6 +226,14 @@
           ]
         },
         {
+          "prefix": "src/task-board",
+          "forbidden": [
+            "@hachej/boring-*",
+            "@earendil-works/*",
+            "react*"
+          ]
+        },
+        {
           "prefix": "bin/",
           "forbidden": [
             "@hachej/boring-*",

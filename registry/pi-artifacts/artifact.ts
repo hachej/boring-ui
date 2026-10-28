@@ -1,12 +1,13 @@
 import type { ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
 import type { ComponentType, ReactNode } from 'react';
 import { defaultChatLabels } from '../pi-chat/labels';
+import type { ArtifactShown, ArtifactFailed } from '@hachej/boring-ui-kit/chat-react';
 import type { ChatArtifactsConfig } from '../pi-chat/config';
 
 // Compatibility exports for one release; conversation rules live in the kit.
-export { ARTIFACT_TYPES, PRESENT_TOOL, artifactKey, parseArtifact, detectArtifact, collectArtifacts, pendingPresents, presentPath, pendingTitle, pendingId, createPresentAcks, recogniseArtifact } from '@hachej/boring-ui-kit/chat-view';
-export type { ArtifactType, ArtifactTarget, ArtifactDescriptor, PendingPresent, PresentAnswer, PresentAcksHost, PresentContext, PresentAcks } from '@hachej/boring-ui-kit/chat-view';
-import type { ArtifactDescriptor, ArtifactTarget, ArtifactType } from '@hachej/boring-ui-kit/chat-view';
+export { ARTIFACT_TYPES, PRESENT_TOOL, artifactKey, artifactVersionKey, parseArtifact, parsePresentedArtifact, parseTaskArtifact, parseTaskSubject, taskSubjectKey, createTaskArtifact, detectArtifact, collectArtifacts, pendingPresents, presentPath, pendingTitle, pendingId, createPresentAcks, recogniseArtifact } from '@hachej/boring-ui-kit/chat-view';
+export type { ArtifactType, ArtifactTarget, ArtifactDescriptor, PresentedArtifact, TaskArtifactDescriptor, TaskSubject, PendingPresent, PresentAnswer, PresentAcksHost, PresentContext, PresentAcks } from '@hachej/boring-ui-kit/chat-view';
+import type { ArtifactDescriptor, ArtifactTarget, ArtifactType, PresentedArtifact, TaskArtifactDescriptor, TaskSubject } from '@hachej/boring-ui-kit/chat-view';
 
 /**
  * What an artifact kind's renderer receives: the artifact and its text at the revision shown, the page's URL fragment without `#`
@@ -80,11 +81,23 @@ export interface ArtifactKind {
 }
 
 /** What every kind shares, whatever its view: the match, its name and icon. The panel's Markdown and HTML editor kinds are kinds too. */
-export type KindMatch = Pick<ArtifactKind, 'match' | 'label' | 'icon'>;
+export interface TaskArtifactKind {
+  /** Host record viewers are selected separately from file-path matchers. */
+  readonly matchTask: (subject: TaskSubject, artifact: TaskArtifactDescriptor) => boolean;
+  readonly label?: string | undefined;
+  readonly icon?: ArtifactKind['icon'];
+}
+export type KindMatch = Pick<ArtifactKind, 'match' | 'label' | 'icon'> | TaskArtifactKind;
 
 /** The first kind that matches the artifact; a `match` that throws counts as no match. */
-export function artifactKind<Kind extends KindMatch>(artifact: ArtifactDescriptor, kinds: readonly Kind[] | undefined): Kind | undefined {
-  return kinds?.find(kind => { try { return kind.match(artifact.target, artifact); } catch { return false; } });
+export function artifactKind<Kind extends KindMatch>(artifact: PresentedArtifact, kinds: readonly Kind[] | undefined): Kind | undefined {
+  return kinds?.find(kind => { try { return artifact.type === 'task' ? 'matchTask' in kind && kind.matchTask(artifact.subject, artifact) : 'match' in kind && kind.match(artifact.target, artifact); } catch { return false; } });
+}
+
+export interface ArtifactHostViewApi {
+  /** Report only after the exact subject has loaded and mounted; cleanup reports hidden. */
+  readonly onShown: (shown: ArtifactShown) => void;
+  readonly onFailed: (failed: ArtifactFailed) => void;
 }
 
 /** What the host passes to `PiChat` to turn artifact tool results into cards. */
@@ -92,11 +105,11 @@ export interface ArtifactsConfig {
   /** The app's own artifact kinds (label, icon, renderer), consulted before the built-in types. */
   readonly kinds?: readonly KindMatch[] | undefined;
   /** The person clicked a card: show this artifact (and revision) in the host's panel. */
-  readonly open: (artifact: ArtifactDescriptor) => void;
+  readonly open: (artifact: PresentedArtifact, reports?: ArtifactHostViewApi) => void;
   /** True for the card whose artifact version is on display. */
-  readonly isOpen?: (artifact: ArtifactDescriptor) => boolean;
+  readonly isOpen?: (artifact: PresentedArtifact) => boolean;
   /** Recognise a descriptor in a successful tool result that does not carry one itself (for example a document save). */
-  readonly detect?: (call: ToolCall, result: ToolResultMessage) => ArtifactDescriptor | undefined;
+  readonly detect?: (call: ToolCall, result: ToolResultMessage) => PresentedArtifact | undefined;
   /** How the chat finds a call's artifact (`recogniseArtifact`). With `Card`, it is what makes `PiChat` offer artifacts; `artifactCards` sets both. */
   readonly recognise?: ChatArtifactsConfig['recognise'];
   /** The card the chat draws (`PluggedArtifactCard`). */
@@ -104,8 +117,9 @@ export interface ArtifactsConfig {
 }
 
 /** The artifact's type name: the matching kind's label first, then the chat's name of its type. */
-export function typeLabel(artifact: ArtifactDescriptor, kinds?: readonly KindMatch[], labels: Readonly<Record<ArtifactType, string>> = defaultChatLabels.artifactTypes): string {
+export function typeLabel(artifact: PresentedArtifact, kinds?: readonly KindMatch[], labels: Readonly<Record<ArtifactType, string>> = defaultChatLabels.artifactTypes): string {
   const kind = artifactKind(artifact, kinds);
   if (kind?.label) return kind.label;
+  if (artifact.type === 'task') return 'Task';
   return artifact.type === 'code' && artifact.language ? `${labels.code} · ${artifact.language}` : labels[artifact.type];
 }
