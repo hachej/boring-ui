@@ -76,7 +76,7 @@ try {
     assert.equal(await browser.evaluate(`${q('[data-testid=composer-input]')}.value`), 'Brouillon fictif', 'the draft persists across × and reopen');
     await browser.evaluate(`(() => { const input = ${q('[data-testid=composer-input]')}; const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set; set.call(input, ''); input.dispatchEvent(new Event('input', { bubbles: true })); })()`);
 
-    // C3: Montrer shows the strip without recording: hint · mic · ×, no toggle, no timer; the tab bar shows and navigates.
+    // C3: Montrer shows the strip without recording: hint · mic · « ✓ Terminer », no toggle, no timer; the tab bar shows and navigates.
     await press('[data-testid=pm-show]');
     await browser.until('C3', `${mode('point')} && ${visible('[data-testid=pm-strip]')}`);
     assert.equal(await browser.evaluate(`${q('[data-testid=pm-strip]')}.dataset.phase`), 'idle');
@@ -143,27 +143,27 @@ try {
       await browser.until('pins come back on their screen', `JSON.stringify(${pinLabels}) === '["1","2"]'`);
     }
 
-    // C4: the mic starts recording; toggle · hint · timer · pause · × in that order; pause and mic never together; pause freezes the timer.
+    // C4: the mic starts recording; toggle · hint · timer · « ✓ Terminer » in that order. No pause and no × in the strip (spec 1 §1–2).
     await browser.until('mic ready', `!${q('[data-testid=pm-strip] [data-testid=pm-mic]')}.disabled`);
     await press('[data-testid=pm-strip] [data-testid=pm-mic]');
-    await browser.until('C4', visible('[data-testid=pm-pause]'), 15000);
+    await browser.until('C4', `${q('[data-testid=pm-strip]')}.dataset.phase === 'rec' && ${visible('[data-testid=pm-timer]')}`, 15000);
+    // Some audio before the picks and Terminer, as a person speaks (the paused-timer check that used to wait here went with the pause button).
+    await browser.until('recorded time', `${q('[data-testid=pm-timer]')}.textContent >= '0:02'`, 15000);
     const order = await browser.evaluate(`[...${q('[data-testid=pm-strip]')}.querySelectorAll('[role=radiogroup], [data-testid=pm-hint], [data-testid=pm-timer], [data-testid=pm-pause], [data-testid=pm-mic], [data-testid=pm-done]')].map(n => n.getAttribute('role') ?? n.dataset.testid)`);
-    assert.deepEqual(order, ['radiogroup', 'pm-hint', 'pm-timer', 'pm-pause', 'pm-done']);
-    assert.equal(await browser.evaluate(`${q('[data-testid=pm-hint]')}.textContent`), 'Parlez et touchez ce que vous montrez');
+    assert.deepEqual(order, ['radiogroup', 'pm-hint', 'pm-timer', 'pm-done']);
+    assert.deepEqual(await browser.evaluate(`(() => { const b = ${q('[data-testid=pm-done]')}; return { label: b.getAttribute('aria-label'), text: b.textContent, check: !!b.querySelector('.lucide-check'), x: !!${q('[data-testid=pm-strip] .lucide-x')} }; })()`),
+      { label: 'Terminer : relire dans le composer', text: 'Terminer', check: true, x: false }, 'the labelled « ✓ Terminer » pill replaces ×');
     if (device === 'phone') {
-      // C4 at 390px: the whole hint shows on exactly two right-aligned lines, never clipped or ellipsised.
-      const hint = await browser.evaluate(`(() => { const h = ${q('[data-testid=pm-hint]')}, s = getComputedStyle(h), r = h.getBoundingClientRect(); return { width: innerWidth, lines: Math.round(r.height / parseFloat(s.lineHeight)), clipped: h.scrollHeight > h.clientHeight + 1 || h.scrollWidth > h.clientWidth + 1, overflow: s.overflow, clamp: s.webkitLineClamp, align: s.textAlign }; })()`);
-      assert.deepEqual(hint, { width: 390, lines: 2, clipped: false, overflow: 'visible', clamp: 'none', align: 'right' }, 'the C4 hint is never truncated at 390px');
-    }
-    await browser.until('PCM pause', `!${q('[data-testid=pm-pause]')}.disabled`, 15000);
-    await pause(1100);
-    await press('[data-testid=pm-pause]');
-    await browser.until('paused', `${q('[data-testid=pm-strip]')}.dataset.phase === 'paused'`);
-    assert.equal(await browser.evaluate(`!!${q('[data-testid=pm-pause]')} + '|' + !!${q('[data-testid=pm-strip] [data-testid=pm-mic]')}`), 'false|true', 'paused: the mic replaces pause');
-    const frozen = await browser.evaluate(`${q('[data-testid=pm-timer]')}.textContent`); await pause(1200);
-    assert.equal(await browser.evaluate(`${q('[data-testid=pm-timer]')}.textContent`), frozen, 'the timer counts recorded time only');
-    await press('[data-testid=pm-strip] [data-testid=pm-mic]');
-    await browser.until('resumed', `${q('[data-testid=pm-strip]')}.dataset.phase === 'rec'`);
+      // C4 at 390px: the pill never shrinks (44 high, its whole label); the hint takes at most two right-aligned lines, never clipped or
+      // ellipsised, and shortens to « Parlez et touchez » when the whole one would need a third.
+      const strip = await browser.evaluate(`(() => { const h = ${q('[data-testid=pm-hint]')}, s = getComputedStyle(h), r = h.getBoundingClientRect(), d = ${q('[data-testid=pm-done]')}, dr = d.getBoundingClientRect();
+        return { width: innerWidth, text: h.textContent, lines: Math.round(r.height / parseFloat(s.lineHeight)), clipped: h.scrollHeight > h.clientHeight + 1 || h.scrollWidth > h.clientWidth + 1, overflow: s.overflow, clamp: s.webkitLineClamp, align: s.textAlign,
+          pill: { height: Math.round(dr.height), full: d.scrollWidth <= d.clientWidth + 1, shrink: getComputedStyle(d.parentElement).flexShrink, inside: dr.right <= innerWidth } }; })()`);
+      console.log('C4 at 390px:', JSON.stringify(strip));
+      assert.ok(['Parlez et touchez ce que vous montrez', 'Parlez et touchez'].includes(strip.text), strip.text);
+      assert.ok(strip.lines >= 1 && strip.lines <= 2, `the C4 hint takes ${strip.lines} lines`);
+      assert.deepEqual({ ...strip, text: undefined, lines: undefined }, { width: 390, text: undefined, lines: undefined, clipped: false, overflow: 'visible', clamp: 'none', align: 'right', pill: { height: 44, full: true, shrink: '0', inside: true } }, 'the C4 hint is never truncated at 390px; the pill never shrinks');
+    } else assert.equal(await browser.evaluate(`${q('[data-testid=pm-hint]')}.textContent`), 'Parlez et touchez ce que vous montrez');
     // R7: the timer opens the dictaphone; Montrer brings the strip back in the same state.
     await press('[data-testid=pm-timer]');
     await browser.until('dictaphone', `${mode('sheet')} && ${visible('[data-testid=voice-recording-bar]')}`);
@@ -184,7 +184,7 @@ try {
     if (device === 'phone') await browser.tap(q('[data-testid=tab-day]')); else await browser.click(q('[data-testid=nav-day]'));
     await browser.until('Ma journée', visible('[data-testid=card-a]'));
 
-    // × (phone) or Esc (desktop) gives the review: chips merged by time, the meta line, send enabled, pins kept on the page.
+    // « ✓ Terminer » (phone) or Esc (desktop) gives the review: chips merged by time, the meta line, send enabled, pins kept on the page.
     if (device === 'phone') await browser.tap(q('[data-testid=pm-done]')); else await browser.press('Escape');
     await browser.until('C6', `${mode('sheet')} && ${visible('[data-testid=pm-review-hint]')} && document.querySelectorAll('[data-testid=pm-chip]').length === 2 && !${q('[data-testid=pm-transcribing]')}`, 15000);
     assert.deepEqual(await browser.evaluate(chips), ['1 Jauge · Protéines', '2 Carte · Déjeuner']);

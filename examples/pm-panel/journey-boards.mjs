@@ -42,7 +42,7 @@ try {
   await browser.until('C3 strip', `${mode('point')} && ${visible('[data-testid=pm-strip]')}`);
   await shot('C3');
   await browser.until('mic ready', `!${q('[data-testid=pm-strip] [data-testid=pm-mic]')}.disabled`); await browser.tap(q('[data-testid=pm-strip] [data-testid=pm-mic]'));
-  await browser.until('C4 recording', visible('[data-testid=pm-pause]'), 15000);
+  await browser.until('C4 recording', visible('[data-testid=pm-timer]'), 15000);
   await at('0:02'); await browser.tap(q('[data-testid=card-a]'));
   await at('0:09'); await browser.tap(q('[data-testid=gauge]'));
   await browser.until('two pins', `[...document.querySelectorAll('[data-feedback-overlay]')].some(host => host.shadowRoot?.querySelectorAll('.label').length === 2)`);

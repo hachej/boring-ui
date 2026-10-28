@@ -7,8 +7,8 @@ import { createElement as h } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 mkdirSync('.cache/pm-composer-test', { recursive: true });
-await build({ stdin: { contents: `export { PmComposer } from './registry/pm-panel/pm-composer'; export { pointMessage, POINT_PREFACE } from './registry/pm-panel/point-message';`, resolveDir: process.cwd(), loader: 'tsx' }, outfile: '.cache/pm-composer-test/composer.mjs', bundle: true, platform: 'node', format: 'esm', jsx: 'automatic', packages: 'external', alias: { '@': `${process.cwd()}/examples/app-shell` } });
-const { PmComposer, pointMessage, POINT_PREFACE } = await import(pathToFileURL(`${process.cwd()}/.cache/pm-composer-test/composer.mjs`));
+await build({ stdin: { contents: `export { PmComposer } from './registry/pm-panel/pm-composer'; export { pmTextEn } from './registry/pm-panel/pm-text'; export { pointMessage, POINT_PREFACE } from './registry/pm-panel/point-message';`, resolveDir: process.cwd(), loader: 'tsx' }, outfile: '.cache/pm-composer-test/composer.mjs', bundle: true, platform: 'node', format: 'esm', jsx: 'automatic', packages: 'external', alias: { '@': `${process.cwd()}/examples/app-shell` } });
+const { PmComposer, pmTextEn, pointMessage, POINT_PREFACE } = await import(pathToFileURL(`${process.cwd()}/.cache/pm-composer-test/composer.mjs`));
 const noop = () => {};
 const baseVoice = { canStart: true, phase: 'idle', seconds: 0, captureSequence: 0, pending: [], problem: undefined, start: noop, finish: noop, cancel: noop };
 const base = { text: '', onText: noop, attachments: [], onRemoveAttachment: noop, working: false, sendBlocked: false, disabled: false, stopRequested: false, onSend: noop, onStop: noop, uploading: false, canAttach: true, fileAccept: 'image/*', onPickFiles: noop, textareaRef: null };
@@ -23,15 +23,19 @@ test('one host-agnostic PmComposer renders sheet, desktop column and ambient hos
   }
 });
 
-test('C3 initially has only hint, mic and done; no timer, counter or automatic recording', () => {
+test('C3 initially has only hint, mic and the « ✓ Terminer » pill; no timer, counter, pause or automatic recording', () => {
   const html = renderToStaticMarkup(h(PmComposer, { variant: 'strip', show: true, onShow: noop, onReturn: noop, voice: baseVoice }));
   assert.match(html, /Touchez ce que vous voulez montrer/);
-  assert.match(html, /aria-label="Terminé"/);
+  // Spec 1 §2 (Julien 2026-10-28): a labelled pill, not a bare ×.
+  assert.match(html, /data-testid="pm-done"[^>]*aria-label="Terminer : relire dans le composer"[^>]*>(?:(?!<\/button>).)*lucide-check(?:(?!<\/button>).)*>Terminer<\/span><\/button>/);
+  assert.doesNotMatch(html, /lucide-x\b/);
   assert.match(html, /data-pm-strip/);
+  const order = ['data-testid="pm-hint"', 'data-testid="pm-mic"', 'data-testid="pm-done"'].map(token => html.indexOf(token));
+  assert.deepEqual([...order].sort((a, b) => a - b), order, 'hint · mic · ✓ Terminer');
   assert.doesNotMatch(html, /pm-timer|radiogroup|pm-pause|sélectionnés/);
 });
 
-test('C4/C5 share one exclusive selection toggle and the recorder button; mic and pause never show together', () => {
+test('C4/C5 share one exclusive selection toggle and the recorder button; no pause, no mic, no × while recording', () => {
   for (const paused of [false, true]) for (const show of [true, false]) {
     const html = renderToStaticMarkup(h(PmComposer, { variant: 'strip', show, onShow: noop, onReturn: noop, onOpenRecorder: noop,
       voice: { ...baseVoice, phase: 'recording', seconds: 14, paused, pause: noop, resume: noop } }));
@@ -40,18 +44,21 @@ test('C4/C5 share one exclusive selection toggle and the recorder button; mic an
     assert.match(html, /aria-label="Naviguer"/);
     assert.match(html, /aria-label="Ouvrir l’enregistreur"/, 'R7: the timer is a button that opens the recorder');
     assert.match(html, /0:14/);
-    // Spec 1 §1: paused swaps pause for the mic (resume); the two never show together.
-    assert.equal((html.match(/data-testid="pm-pause"/g) ?? []).length, paused ? 0 : 1);
-    assert.equal((html.match(/data-testid="pm-mic"/g) ?? []).length, paused ? 1 : 0);
-    // The boards' pause: two stroked bars at stroke 2.5 (C4), never lucide's filled rectangles.
-    if (!paused) assert.match(html, /data-testid="pm-pause"[^]*?<svg[^>]*stroke-width="2\.5"[^>]*data-icon="pause"[^>]*><path d="M9 5v14"><\/path><path d="M15 5v14"><\/path><\/svg>/);
-    assert.doesNotMatch(html, /lucide-pause/);
+    // Spec 1 §1 (Julien 2026-10-28): no pause in the strip, even when the dictaphone paused the recording; the timer is the way to pause.
+    assert.doesNotMatch(html, /pm-pause|data-icon="pause"|lucide-pause|data-phase="paused"|lucide-x\b/);
+    assert.doesNotMatch(html, /data-testid="pm-mic"/);
+    assert.match(html, /data-phase="rec"/);
     assert.equal(/data-testid="pm-hint"/.test(html), show, 'navigate mode hides the hint (C5)');
-    assert.match(html, paused ? /data-phase="paused"/ : /data-phase="rec"/);
-    // Left to right: toggle · hint · timer · pause (or mic) · ×.
-    const order = ['radiogroup', show ? 'pm-hint' : 'pm-timer', 'pm-timer', paused ? '"pm-mic"' : '"pm-pause"', '"pm-done"'].map(token => html.indexOf(token));
+    // Left to right: toggle · hint · timer · ✓ Terminer.
+    const order = ['radiogroup', show ? 'pm-hint' : 'pm-timer', 'pm-timer', '"pm-done"'].map(token => html.indexOf(token));
     assert.deepEqual([...order].sort((a, b) => a - b), order);
   }
+});
+
+test('the desktop pill reads "Done" with its own aria-label', () => {
+  const html = renderToStaticMarkup(h(PmComposer, { variant: 'strip', preset: 'desktop', text: pmTextEn, show: true, onShow: noop, onReturn: noop, voice: baseVoice }));
+  assert.match(html, /data-testid="pm-done"[^>]*aria-label="Done: reread in the composer"/);
+  assert.match(html, />Done<\/span><\/button>/);
 });
 
 test('C7 renders timestamped selections inline in the transcript, not a separate chip row', () => {

@@ -119,7 +119,7 @@ export function usePmPanel(spec: ImproveSpec, open: boolean, page: HTMLElement |
   });
   const coreRef = useRef(core);
   useLayoutEffect(() => { coreRef.current = core; });
-  // Esc = « Terminé » while the strip shows (spec 1 §1): it keeps and transcribes the recording. Registered in a layout effect at mount, so it
+  // Esc = « ✓ Terminer » while the strip shows (spec 1 §1): it keeps and transcribes the recording. Registered in a layout effect at mount, so it
   // runs before the voice attempt's own Escape (which cancels a plain dictation) and the picker's; elsewhere Escape keeps their meaning.
   const pointingRef = useRef(false), returnRef = useRef<() => void>(() => {}), removeRef = useRef<(id: string) => void>(() => {});
   // The open comment popover: Esc cancels its pick first; the strip's × is the second Esc.

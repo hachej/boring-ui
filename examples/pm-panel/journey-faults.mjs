@@ -18,7 +18,7 @@ async function select({ desktop = false } = {}) {
   await browser.click(q('[data-testid=pm-show]'));
   await browser.until('point strip ready', `${q('[data-testid=pm-panel]')}.dataset.mode === 'point'`);
   await browser.click(q('[data-testid=card-a]'));
-  // At web width the click opens the comment popover (spec 1 §3b); × keeps a commented pick in the draft.
+  // At web width the click opens the comment popover (spec 1 §3b); « ✓ Terminer » keeps a commented pick in the draft.
   if (desktop) { await browser.until('comment popover', `document.activeElement === ${q('[data-testid=pm-comment-input]')}`); await browser.type(q('[data-testid=pm-comment-input]'), 'Carte'); }
   await browser.click(q('[data-testid=pm-done]'));
   await browser.until('inline selection', `!!${q('[data-pm-marker]')}`);
@@ -27,7 +27,7 @@ async function record({ hold = false, target = 'card-a' } = {}) {
   await browser.click(q('[data-testid=pm-show]'));
   await browser.until('point strip ready', `${q('[data-testid=pm-panel]')}.dataset.mode === 'point'`);
   await browser.click(q('[data-testid=pm-strip] [data-testid=pm-mic]'));
-  await browser.until('recording', `!!${q('[data-testid=pm-pause]')} && !${q('[data-testid=pm-pause]')}.disabled`, 15000);
+  await browser.until('recording', `(${q('[data-testid=pm-timer]')}?.textContent ?? '0:00') !== '0:00'`, 15000);
   await pause(700); await browser.tap(q(`[data-testid=${target}]`));
   if (hold) await browser.evaluate('window.__holdTranscription = true');
   await browser.click(q('[data-testid=pm-done]'));

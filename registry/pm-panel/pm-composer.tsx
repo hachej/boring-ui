@@ -1,7 +1,8 @@
 'use client';
 
+import { useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
-import { HandIcon, MicIcon, XIcon } from 'lucide-react';
+import { CheckIcon, HandIcon, MicIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Composer } from '../pi-chat/composer';
@@ -47,15 +48,10 @@ export function PointerIcon({ className, style }: { readonly className?: string;
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={className} style={style}><path d="M3 3l7 17 2.5-7.5L20 10z" /></svg>;
 }
 
-/** The boards' pause: two stroked bars (C4 stroke 2.5, D7b stroke 2), not lucide's filled rectangles. */
-function StrokePause({ className, strokeWidth }: { readonly className?: string; readonly strokeWidth: number }) {
-  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" aria-hidden="true" data-icon="pause" className={className}><path d="M9 5v14" /><path d="M15 5v14" /></svg>;
-}
-
 // Shapes are theme tokens: `--radius` drives the host shadcn controls' own radius inside a scope.
 const round = { '--radius': 'var(--pm-radius-round)' } as CSSProperties;
 const segment = { '--radius': 'var(--pm-radius-segment)' } as CSSProperties;
-/** Inside the dark strip the host controls read the inverted roles: outline circles on `primary`, a light « Terminé ». */
+/** Inside the dark strip the host controls read the inverted roles: outline circles on `primary`, a light « ✓ Terminer » pill. */
 const stripScope = { '--background': 'var(--primary)', '--foreground': 'var(--primary-foreground)', '--border': 'var(--pm-strip-line)', '--secondary': 'var(--primary-foreground)', '--secondary-foreground': 'var(--primary)', '--muted': 'var(--primary-foreground)' } as CSSProperties;
 const micScope = { ...round, '--primary': 'var(--pm-mic)', '--primary-foreground': 'var(--pm-mic-foreground)' } as CSSProperties;
 
@@ -63,17 +59,38 @@ export function PmComposer(props: PmComposerProps) {
   return props.variant === 'strip' ? <Strip {...props} /> : <Compose {...props} />;
 }
 
+/**
+ * C4's hint on the touch strip: right-aligned, at most two lines. The « ✓ Terminer » pill never shrinks, so when the whole hint would take a
+ * third line it shortens to « Parlez et touchez » (spec 1 §2). A wider strip brings the whole hint back.
+ */
+function RecHint({ text, touch }: { readonly text: PmText; readonly touch: boolean }) {
+  const hint = useRef<HTMLSpanElement | null>(null);
+  const [short, setShort] = useState(false);
+  useLayoutEffect(() => {
+    const node = hint.current, group = node?.parentElement;
+    if (!touch || !node || !group) return;
+    const tooTall = () => node.offsetHeight > 2 * parseFloat(getComputedStyle(node).lineHeight) + 1;
+    if (!short && tooTall()) { setShort(true); return; }
+    if (typeof ResizeObserver === 'undefined') return;
+    let width = group.clientWidth;
+    const observer = new ResizeObserver(() => {
+      const next = group.clientWidth;
+      if (short ? next > width : tooTall()) setShort(!short);
+      width = next;
+    });
+    observer.observe(group);
+    return () => observer.disconnect();
+  }, [touch, short, text]);
+  return <span ref={hint} data-testid="pm-hint" data-short={short ? '' : undefined} className={cn('min-w-0 text-right text-xs', touch ? 'leading-[1.25] text-primary-foreground/85' : 'text-primary-foreground/80')}>
+    {short ? text.hintRecShort : text.hintRec}</span>;
+}
+
+/** Spec 1 §1–2 (Julien 2026-10-28): no pause in the strip (the timer opens the recorder for that) and a labelled « ✓ Terminer » pill, never a bare ×. */
 function Strip({ preset = 'touch', text = pmTextFr, show, onShow, onReturn, onOpenRecorder, voice, notice }: PmComposerProps) {
   const touch = preset === 'touch';
   const recording = voice?.phase === 'starting' || voice?.phase === 'recording';
-  const paused = recording && Boolean(voice?.paused);
-  const phase = !recording ? 'idle' : paused ? 'paused' : 'rec';
   const circle = touch ? 'min-h-11 min-w-11' : 'min-h-[34px] min-w-[34px]';
-  const icon = touch ? 'size-[18px]' : 'size-[15px]';
-  const mic = <Button variant={touch ? 'outline' : 'default'} size="icon" data-testid="pm-mic" aria-label={text.speak} title={text.speak} disabled={!voice || (!recording && !voice.canStart)}
-    onClick={() => { if (!voice) return; if (paused) voice.resume?.(); else voice.start(); }} className={cn('shrink-0', circle)} style={touch ? round : micScope}>
-    <MicIcon className={icon} aria-hidden="true" /></Button>;
-  return <div data-feedback-ignore="" data-pm-strip="" data-testid="pm-strip" data-preset={preset} data-phase={phase} data-pointing={show}
+  return <div data-feedback-ignore="" data-pm-strip="" data-testid="pm-strip" data-preset={preset} data-phase={recording ? 'rec' : 'idle'} data-pointing={show}
     className={cn('flex shrink-0 items-center gap-2 bg-primary text-primary-foreground', touch ? 'h-15 pr-2 pl-3.5' : 'rounded-pm-box px-3 py-2.5')}
     style={touch ? stripScope : { ...stripScope, '--border': 'var(--primary-foreground)' } as CSSProperties}>
     {recording && <div data-dense="" className="flex shrink-0 rounded-pm-toggle p-0.5 ring-1 ring-inset ring-pm-strip-line [&_[data-pressed]]:text-primary">
@@ -85,19 +102,22 @@ function Strip({ preset = 'touch', text = pmTextFr, show, onShow, onReturn, onOp
       </ToggleGroup>
     </div>}
     {!recording ? <span data-testid="pm-hint" className={cn('min-w-0 flex-1 text-left', touch ? 'text-[14px] leading-[1.3] text-primary-foreground/90' : 'text-xs text-primary-foreground/80')} data-notice={notice ? '' : undefined} role={notice ? 'status' : undefined}>{notice ?? text.hintIdle}</span>
-      // C4: hint, dot and time share one right-aligned group (gap 6), so the hint keeps its two full lines at 390px.
+      // C4: hint, dot and time share one right-aligned group (gap 6), so the hint keeps at most two lines at 390px.
       : <span className="flex min-w-0 flex-1 items-center justify-end gap-1.5">
-        {show && <span data-testid="pm-hint" className={cn('min-w-0 text-right text-xs', touch ? 'leading-[1.25] text-primary-foreground/85' : 'text-primary-foreground/80')}>{text.hintRec}</span>}
-        {/* The host button's transparent 1px border is taken back by the margins: the visible gap to the hint stays 5–6px and the C4 hint keeps two lines. */}
+        {show && <RecHint text={text} touch={touch} />}
+        {/* The host button's transparent 1px border is taken back by the margins: the visible gap to the hint stays 5–6px. */}
         <span className={touch ? 'flex shrink-0 -mr-px -ml-0.5 [&_button]:px-0' : 'flex shrink-0 [&_button]:px-2.5'}><Button variant={touch ? 'ghost' : 'outline'} size={touch ? 'default' : 'sm'} data-testid="pm-timer" aria-label={text.recorder} title={text.recorder} onClick={onOpenRecorder}
           className={cn('shrink-0 gap-1.5 tabular-nums', touch ? 'min-h-11' : 'min-h-[26px]')} style={touch ? undefined : round}>
-          <span aria-hidden="true" className={cn('shrink-0 rounded-pm-round', paused ? 'bg-primary-foreground/50' : 'bg-destructive', touch ? 'size-2.5' : 'size-2')} />
+          {/* Grey while the recorder holds the recording paused: the strip itself has no pause. */}
+          <span aria-hidden="true" className={cn('shrink-0 rounded-pm-round', voice?.paused ? 'bg-primary-foreground/50' : 'bg-destructive', touch ? 'size-2.5' : 'size-2')} />
           <span className={cn('font-normal', touch ? 'text-[14px]' : 'text-[13px]')}>{clock(voice?.seconds ?? 0)}</span></Button></span>
       </span>}
-    {recording && !paused ? <Button variant="outline" size="icon" data-testid="pm-pause" aria-label={text.pause} title={text.pause} disabled={!voice?.pause} onClick={voice?.pause}
-      className={cn('shrink-0', circle)} style={round}><StrokePause className={touch ? 'size-[18px]' : 'size-3.5'} strokeWidth={touch ? 2.5 : 2} /></Button> : mic}
-    <Button variant="secondary" size="icon" data-testid="pm-done" aria-label={text.done} title={text.done} onClick={onReturn} className={cn('shrink-0', circle)} style={round}>
-      <XIcon className={icon} strokeWidth={touch ? 2.5 : 2} aria-hidden="true" /></Button>
+    {!recording && <Button variant={touch ? 'outline' : 'default'} size="icon" data-testid="pm-mic" aria-label={text.speak} title={text.speak} disabled={!voice?.canStart}
+      onClick={() => voice?.start()} className={cn('shrink-0', circle)} style={touch ? round : micScope}>
+      <MicIcon className={touch ? 'size-[18px]' : 'size-[15px]'} aria-hidden="true" /></Button>}
+    <span className={cn('flex shrink-0 [&_button]:font-semibold', touch ? '[&_button]:h-11 [&_button]:gap-1.5 [&_button]:px-3.5 [&_button]:text-[14px]' : '[&_button]:h-[34px] [&_button]:gap-1.5 [&_button]:px-3 [&_button]:text-[13px]')}>
+      <Button variant="secondary" data-testid="pm-done" aria-label={text.doneLabel} title={text.doneLabel} onClick={onReturn} className="shrink-0" style={round}>
+        <CheckIcon className={touch ? 'size-4' : 'size-3.5'} strokeWidth={2.5} aria-hidden="true" /><span>{text.done}</span></Button></span>
   </div>;
 }
 

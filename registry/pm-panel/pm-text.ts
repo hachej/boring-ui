@@ -5,12 +5,14 @@ export interface PmText {
   readonly placeholderAfter: string;
   readonly hintIdle: string;
   readonly hintRec: string;
+  /** The touch strip's C4 hint when the whole one would take more than two lines (spec 1 §2). */
+  readonly hintRecShort: string;
   readonly mode: string;
   readonly select: string;
   readonly navigate: string;
   readonly done: string;
+  readonly doneLabel: string;
   readonly speak: string;
-  readonly pause: string;
   readonly recorder: string;
   readonly attach: string;
   readonly dictate: string;
@@ -49,8 +51,8 @@ const captures = (n: number, one: string, many: string) => `${n} ${n === 1 ? one
 export const pmTextFr: PmText = {
   locale: 'fr',
   placeholderBefore: 'Décrivez le problème, ou ', placeholderAfter: ' pour me le montrer.',
-  hintIdle: 'Touchez ce que vous voulez montrer', hintRec: 'Parlez et touchez ce que vous montrez',
-  mode: 'Mode', select: 'Sélectionner', navigate: 'Naviguer', done: 'Terminé', speak: 'Parler', pause: 'Pause',
+  hintIdle: 'Touchez ce que vous voulez montrer', hintRec: 'Parlez et touchez ce que vous montrez', hintRecShort: 'Parlez et touchez',
+  mode: 'Mode', select: 'Sélectionner', navigate: 'Naviguer', done: 'Terminer', doneLabel: 'Terminer : relire dans le composer', speak: 'Parler',
   recorder: 'Ouvrir l’enregistreur', attach: 'Joindre un fichier', dictate: 'Dicter', send: 'Envoyer', remove: 'Retirer', show: 'Montrer', showTitle: 'Montrer',
   meta: (seconds, n) => seconds === undefined ? `Écrit · ${captures(n, 'capture', 'captures')}` : `Dicté · ${clock(seconds)} · ${captures(n, 'capture', 'captures')} · modifiable`,
   sentMeta: (seconds, n) => seconds === undefined ? `Écrit · ${captures(n, 'capture', 'captures')}` : `Dicté · ${clock(seconds)} · ${captures(n, 'capture', 'captures')}`,
@@ -64,8 +66,8 @@ export const pmTextFr: PmText = {
 export const pmTextEn: PmText = {
   locale: 'en',
   placeholderBefore: 'Describe the problem, or ', placeholderAfter: ' to show me',
-  hintIdle: 'Tap what you want to show', hintRec: 'Speak and tap what you show',
-  mode: 'Mode', select: 'Select', navigate: 'Navigate', done: 'Done (keeps the selection, back to the composer)', speak: 'Speak', pause: 'Pause',
+  hintIdle: 'Tap what you want to show', hintRec: 'Speak and tap what you show', hintRecShort: 'Speak and tap',
+  mode: 'Mode', select: 'Select', navigate: 'Navigate', done: 'Done', doneLabel: 'Done: reread in the composer', speak: 'Speak',
   recorder: 'Open the recorder', attach: 'Attach a file', dictate: 'Dictate', send: 'Send', remove: 'Remove', show: 'Montrer', showTitle: 'Montrer: point at the app',
   meta: (seconds, n) => seconds === undefined ? `Written · ${captures(n, 'capture', 'captures')}` : `Dictated · ${clock(seconds)} · ${captures(n, 'capture', 'captures')} · editable`,
   sentMeta: (seconds, n) => seconds === undefined ? `Written · ${captures(n, 'capture', 'captures')}` : `Dictated · ${clock(seconds)} · ${captures(n, 'capture', 'captures')}`,

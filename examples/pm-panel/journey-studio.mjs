@@ -42,7 +42,7 @@ try {
   await browser.click(q('[data-testid=pm-show]'));
   await browser.until('D7 strip', `${mode('point')} && ${visible('[data-testid=pm-strip]')}`);
   await browser.until('mic ready', `!${q('[data-testid=pm-strip] [data-testid=pm-mic]')}.disabled`); await browser.click(q('[data-testid=pm-strip] [data-testid=pm-mic]'));
-  await browser.until('recording', visible('[data-testid=pm-pause]'), 15000);
+  await browser.until('recording', visible('[data-testid=pm-timer]'), 15000);
   await at('0:02'); await browser.click(q('[data-testid=d-card]'));
   await at('0:09'); await browser.click(q('[data-testid=d-gauge]'));
   // §3b: while recording the voice is the comment; a click only pins.
@@ -82,10 +82,13 @@ try {
   await browser.until('two pins', pins(2));
   await browser.hover(q('nav[aria-label=Apps]'));
   await shot('D7');
-  // D7b: speaking, the toggle, hint, timer, pause and × in that order.
+  // D7b: speaking, the toggle, hint, timer and « Done » in that order (no pause, no ×: spec 1 §2).
   await browser.until('mic ready', `!${q('[data-testid=pm-strip] [data-testid=pm-mic]')}.disabled`); await browser.click(q('[data-testid=pm-strip] [data-testid=pm-mic]'));
-  await browser.until('recording', visible('[data-testid=pm-pause]'), 15000);
+  await browser.until('recording', visible('[data-testid=pm-timer]'), 15000);
   await at('0:03');
+  assert.deepEqual(await browser.evaluate(`[...${q('[data-testid=pm-strip]')}.querySelectorAll('[role=radiogroup], [data-testid=pm-hint], [data-testid=pm-timer], [data-testid=pm-pause], [data-testid=pm-mic], [data-testid=pm-done]')].map(n => n.getAttribute('role') ?? n.dataset.testid)`),
+    ['radiogroup', 'pm-hint', 'pm-timer', 'pm-done'], 'D7b: no pause and no × in the strip');
+  assert.deepEqual(await browser.evaluate(`(() => { const b = ${q('[data-testid=pm-done]')}, r = b.getBoundingClientRect(); return [b.textContent, b.getAttribute('aria-label'), Math.round(r.height)]; })()`), ['Done', 'Done: reread in the composer', 34]);
   await shot('D7b');
   // D9: a fresh draft typing a task mention.
   await open();
