@@ -95,7 +95,7 @@ type OutboxItem = {
 /** Detach a document draft before its commit settles. */
 const copy = (item: OutboxItem): OutboxItem => ({ ...item, asked: [...item.asked] });
 /** Owed replies, and the newest message IDs that answered a question (so a redelivered answer is not a new prompt). */
-const Outbox = defineDoc<{ items: OutboxItem[]; answers: string[] }>({ kind: 'boring.channels.outbox', version: 1, scope: 'session', initial: () => ({ items: [], answers: [] }) });
+const Outbox = defineDoc<{ items: OutboxItem[]; answers: string[] }>({ kind: 'boring.channels.outbox', checkpointWhen: () => false, version: 1, scope: 'session', initial: () => ({ items: [], answers: [] }) });
 const MAX_ANSWERS = 500;
 
 const headers = { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' };

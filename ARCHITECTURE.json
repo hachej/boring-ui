@@ -3,11 +3,11 @@
   "rootDevDependencies": {
     "@tldraw/assets": "5.5.2",
     "typescript": "5.9.3",
-    "@earendil-works/pi-durable": "1.2.0",
-    "@earendil-works/pi-ai": "1.2.0",
-    "@earendil-works/chord": "1.2.0",
-    "@earendil-works/pi-codemode": "1.2.0",
-    "@earendil-works/pi-mcp": "1.2.0",
+    "@earendil-works/pi-durable": "1.4.0",
+    "@earendil-works/pi-ai": "1.4.0",
+    "@earendil-works/chord": "1.4.0",
+    "@earendil-works/pi-codemode": "1.4.0",
+    "@earendil-works/pi-mcp": "1.4.0",
     "@vercel/sandbox": "3.9.0",
     "@aws-sdk/client-bedrock-agentcore": "3.1156.0",
     "agents": "0.28.1",
@@ -44,7 +44,7 @@
     "@tldraw/store": "5.5.2",
     "entities": "8.1.0",
     "semver": "7.8.5",
-    "shadcn": "4.21.5",
+    "shadcn": "4.23.0",
     "cn": "0.5.0",
     "tailwindcss": "4.3.3",
     "@json-render/core": "0.21.3",
@@ -60,7 +60,7 @@
     "ignore": "5.3.2",
     "@base-ui/react": "1.9.0",
     "class-variance-authority": "0.7.1",
-    "pdfjs-dist": "6.3.289"
+    "pdfjs-dist": "6.4.299"
   },
   "packages": {
     "files": {
@@ -76,14 +76,14 @@
         "isomorphic-git/http/node",
         "isomorphic-git/http/web",
         "ignore",
-        "@earendil-works/pi-durable/env"
+        "@earendil-works/pi-durable/env",
+        "@earendil-works/chord/context"
       ],
       "typeOnlyExternal": [
         "node:http",
         "@earendil-works/pi-durable",
         "@earendil-works/pi-durable/storage/sqlite",
-        "@earendil-works/chord",
-        "@earendil-works/chord/context"
+        "@earendil-works/chord"
       ]
     },
     "agent": {
@@ -538,7 +538,6 @@
       ".",
       "./context",
       "./delta",
-      "./bundler",
       "./node",
       "./package.json"
     ],
@@ -547,7 +546,7 @@
       "./worker"
     ]
   },
-  "upstreamExportsVersion": "1.2.0",
+  "upstreamExportsVersion": "1.4.0",
   "runtimeProofs": {
     "BORING-UI-1": [
       "npm",
@@ -581,7 +580,7 @@
   ],
   "sourceDistribution": {
     "manifest": "registry.json",
-    "format": "shadcn@4.21.5",
+    "format": "shadcn@4.23.0",
     "nativePresentationPrimitives": {
       "drawer": "@base-ui/react/drawer@1.9.0; owned source recipe independent of the consumer's shadcn style",
       "dropdown-menu": "@base-ui/react/menu@1.9.0; explicit app-shell dependency, not a style-selected built-in"

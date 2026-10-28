@@ -427,7 +427,7 @@ test('a legacy pending question resumes only under its original native task', { 
   t.after(() => harness.close(context));
   const conversation = await harness.root(context);
   const taskId = await admitDocumentTool(conversation, { question: 'Original?', options: ['park', 'lake'] }, 'ask_user');
-  const legacy = defineDocFamily({ kind: 'boring.ask-user.question', version: 1, scope: 'conversation', history: 'latest', fork: 'initial', family: true, initial: () => ({ question: null }) });
+  const legacy = defineDocFamily({ kind: 'boring.ask-user.question', checkpointWhen: () => false, version: 1, scope: 'conversation', history: 'latest', fork: 'initial', family: true, initial: () => ({ question: null }) });
   await conversation.commit(async tx => {
     const doc = await tx.doc(legacy, conversation.id, 'fixture-call', null);
     doc.question = { prompt: 'Original?', options: ['park', 'lake'], allowFreeText: false, taskId, state: { kind: 'pending' } };
@@ -445,7 +445,7 @@ test('a legacy pending question resumes only under its original native task', { 
 
 
 test('a completed legacy question retains idempotent answer retries after upgrade', { timeout: 10000 }, async t => {
-  const legacy = defineDocFamily({ kind: 'boring.ask-user.question', version: 1, scope: 'conversation', history: 'latest', fork: 'initial', family: true, initial: () => ({ question: null }) });
+  const legacy = defineDocFamily({ kind: 'boring.ask-user.question', checkpointWhen: () => false, version: 1, scope: 'conversation', history: 'latest', fork: 'initial', family: true, initial: () => ({ question: null }) });
   const registry = createRegistry();
   const oldTool = { ...createAskUserTool(), execute: async (args, api, ctx) => {
     await api.commit(async tx => {

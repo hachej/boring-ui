@@ -6,7 +6,7 @@
   "dependencies": [
     "@hachej/boring-ui-kit@^0.4.27",
     "@hachej/boring-feedback@^0.4.27",
-    "@earendil-works/pi-durable@~1.2.0",
+    "@earendil-works/pi-durable@~1.4.0",
     "react@^19.0.0",
     "react-dom@^19.0.0"
   ],

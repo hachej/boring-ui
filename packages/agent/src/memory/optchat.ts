@@ -26,25 +26,25 @@ export type { Leaf, LeafKind, LeafOptions, Part, StoredNode, ViewFold } from './
 type NodeShard = { nodes: Record<string, { text: string; of: string }> };
 /** Summaries of one conversation, in shards of 64 nodes per level (`<level>.<shard>`). A fork starts with the current ones; fingerprints reject any that no longer match. */
 export const OptChatNodes = defineDocFamily<NodeShard, number>({
-  kind: 'boring.memory.optchat.nodes', version: 1, family: true, scope: 'conversation', history: 'latest', fork: 'current', initial: () => ({ nodes: {} }),
+  kind: 'boring.memory.optchat.nodes', checkpointWhen: () => false, version: 1, family: true, scope: 'conversation', history: 'latest', fork: 'current', initial: () => ({ nodes: {} }),
 });
 
 /** Seed memories, stored once per conversation and inherited by forks. They precede the Pi transcript in the memory only. */
 export const OptChatNotes = defineDoc<{ seeded: boolean; notes: string[] }>({
-  kind: 'boring.memory.optchat.notes', version: 1, scope: 'conversation', history: 'latest', fork: 'current',
+  kind: 'boring.memory.optchat.notes', checkpointWhen: () => false, version: 1, scope: 'conversation', history: 'latest', fork: 'current',
   initial: () => ({ seeded: false, notes: [] }),
 });
 
 type Edits = { revision: number; forgotten: Record<string, number> };
 /** Memory-only tombstones. Values are leaf counts, never the forgotten content. Pi's transcript is unchanged. */
 export const OptChatEdits = defineDoc<Edits>({
-  kind: 'boring.memory.optchat.edits', version: 1, scope: 'conversation', history: 'latest', fork: 'current',
+  kind: 'boring.memory.optchat.edits', checkpointWhen: () => false, version: 1, scope: 'conversation', history: 'latest', fork: 'current',
   initial: () => ({ revision: 0, forgotten: {} }),
 });
 
 /** Only the emitted tiling and fingerprints are retained, never another copy of message or summary text. */
 const OptChatFold = defineDocFamily<{ configuration: string; revision: number; fingerprints: string[]; fold: JsonRepresentation<ViewFold> | null }, null>({
-  kind: 'boring.memory.optchat.fold', version: 1, family: true, scope: 'conversation', history: 'latest', fork: 'current',
+  kind: 'boring.memory.optchat.fold', checkpointWhen: () => false, version: 1, family: true, scope: 'conversation', history: 'latest', fork: 'current',
   initial: () => ({ configuration: '', revision: -1, fingerprints: [], fold: null }),
 });
 
@@ -53,7 +53,7 @@ type Failure = { at: number; of: string; error: string; attempts?: number };
 type StateDoc = { calls: number; usage: Ledger; requests?: Ledger[]; sharedContext?: boolean; failures: Record<string, Failure> };
 /** Compactor bookkeeping of one conversation: calls, spend and the last failure of each node, including its retry streak. */
 export const OptChatState = defineDoc<StateDoc>({
-  kind: 'boring.memory.optchat.state', version: 1, scope: 'conversation', history: 'latest', fork: 'initial',
+  kind: 'boring.memory.optchat.state', checkpointWhen: () => false, version: 1, scope: 'conversation', history: 'latest', fork: 'initial',
   initial: () => ({ calls: 0, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 }, failures: {} }),
 });
 /** Input of one summary task. `key` is `level:index:fingerprint`; `upTo` bounds the admitted source, not the cached context. */

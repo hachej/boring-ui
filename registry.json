@@ -487,9 +487,9 @@
         "react@^19.0.0",
         "react-dom@^19.0.0",
         "@base-ui/react@1.9.0",
-        "@earendil-works/pi-durable@~1.2.0",
-        "@earendil-works/chord@~1.2.0",
-        "@earendil-works/pi-ai@~1.2.0",
+        "@earendil-works/pi-durable@~1.4.0",
+        "@earendil-works/chord@~1.4.0",
+        "@earendil-works/pi-ai@~1.4.0",
         "@modelcontextprotocol/sdk@^1.32.1",
         "lucide-react@^1.51.0",
         "@shadcn/react@0.3.1",
@@ -842,7 +842,7 @@
       "dependencies": [
         "react@^19.0.0",
         "lucide-react@^1.51.0",
-        "@earendil-works/pi-ai@~1.2.0"
+        "@earendil-works/pi-ai@~1.4.0"
       ],
       "registryDependencies": [
         "@boring-ui/pi-chat"
@@ -864,7 +864,7 @@
         "@hachej/boring-ui-kit@^0.4.27",
         "react@^19.0.0",
         "lucide-react@^1.51.0",
-        "@earendil-works/pi-ai@~1.2.0"
+        "@earendil-works/pi-ai@~1.4.0"
       ],
       "registryDependencies": [
         "@boring-ui/pi-chat"
@@ -885,7 +885,7 @@
       "dependencies": [
         "react@^19.0.0",
         "lucide-react@^1.51.0",
-        "@earendil-works/pi-ai@~1.2.0"
+        "@earendil-works/pi-ai@~1.4.0"
       ],
       "registryDependencies": [
         "@boring-ui/pi-chat"
@@ -912,8 +912,8 @@
         "@hachej/boring-ui-kit@^0.4.27",
         "react@^19.0.0",
         "lucide-react@^1.51.0",
-        "@earendil-works/pi-ai@~1.2.0",
-        "@earendil-works/pi-durable@~1.2.0"
+        "@earendil-works/pi-ai@~1.4.0",
+        "@earendil-works/pi-durable@~1.4.0"
       ],
       "registryDependencies": [
         "@boring-ui/pi-chat"
@@ -969,8 +969,8 @@
         "@hachej/boring-ui-kit@^0.4.27",
         "react@^19.0.0",
         "react-dom@^19.0.0",
-        "@earendil-works/pi-durable@~1.2.0",
-        "@earendil-works/pi-ai@~1.2.0",
+        "@earendil-works/pi-durable@~1.4.0",
+        "@earendil-works/pi-ai@~1.4.0",
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
@@ -2206,7 +2206,7 @@
         "@hachej/boring-files@^0.4.27",
         "react@^19.0.0",
         "lucide-react@^1.51.0",
-        "pdfjs-dist@6.3.289"
+        "pdfjs-dist@6.4.299"
       ],
       "registryDependencies": [
         "@boring-ui/viewer-frame",
@@ -2790,7 +2790,7 @@
       "description": "PreviewBanner: a live, reversible preview of a change in the page (Approve / Discard) over `@hachej/boring-feedback/preview`, whose subagent calls models through a host gateway. Separate from `feedback` so annotation-only apps do not install the model SDK; install `feedback` first (its styles cover the banner).",
       "dependencies": [
         "@hachej/boring-feedback@^0.4.27",
-        "@earendil-works/pi-ai@~1.2.0",
+        "@earendil-works/pi-ai@~1.4.0",
         "react@^19.0.0"
       ],
       "files": [
@@ -2955,7 +2955,7 @@
       "dependencies": [
         "@hachej/boring-ui-kit@^0.4.27",
         "@hachej/boring-feedback@^0.4.27",
-        "@earendil-works/pi-durable@~1.2.0",
+        "@earendil-works/pi-durable@~1.4.0",
         "react@^19.0.0",
         "react-dom@^19.0.0"
       ],
@@ -2982,7 +2982,7 @@
       "title": "Shared PM composer and in-app panel",
       "description": "« Améliorer l'app »: one PmComposer (touch and desktop presets, FR/EN strings) with « Montrer », the point strip, numbered pins and timestamped chips; AppShell improve composes the in-flow sheet, strip and the full panel, and PmChat gives Studio the same conversation. Pins and chips come from the public feedback picker; the request card and « Mes demandes » render through StudioTaskBoardSeam (D-417).",
       "registryDependencies": ["@boring-ui/pi-chat", "@boring-ui/pi-chat-plugins", "@boring-ui/pi-chat-voice", "@boring-ui/feedback", "@boring-ui/utils"],
-      "dependencies": ["@hachej/boring-ui-kit@^0.4.27", "@hachej/boring-feedback@^0.4.27", "@earendil-works/pi-durable@~1.2.0", "lucide-react@^1.51.0", "react@^19.0.0"],
+      "dependencies": ["@hachej/boring-ui-kit@^0.4.27", "@hachej/boring-feedback@^0.4.27", "@earendil-works/pi-durable@~1.4.0", "lucide-react@^1.51.0", "react@^19.0.0"],
       "files": [
         { "path": "registry/pm-panel/pm-panel.tsx", "type": "registry:component", "target": "components/pm-panel/pm-panel.tsx" },
         { "path": "registry/pm-panel/pm-composer.tsx", "type": "registry:component", "target": "components/pm-panel/pm-composer.tsx" },

@@ -14,7 +14,7 @@ export type AskUserAnswer = { kind: 'answered' } | { kind: 'denied' | 'conflict'
 
 /** One member per assistant entry and tool call, in the asking conversation. */
 const documents = defineDocFamily<AskDocument, null>({
-  kind: 'boring.ask-user.question', version: 1, scope: 'conversation', history: 'latest', fork: 'initial', family: true,
+  kind: 'boring.ask-user.question', checkpointWhen: () => false, version: 1, scope: 'conversation', history: 'latest', fork: 'initial', family: true,
   initial: () => ({ question: null }),
 });
 

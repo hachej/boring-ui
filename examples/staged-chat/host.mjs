@@ -4,8 +4,8 @@ import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { createScriptedModel } from '@hachej/boring-testing/model';
 
 const StageEntry = defineEntry('fictional.triage.stage');
-const binding = defineDoc({ kind: 'fictional.triage.binding', version: 1, scope: 'task', initial: () => ({ stageTask: null }) });
-const reader = defineDoc({ kind: 'fictional.triage.reader', version: 1, scope: 'conversation', initial: () => ({ seen: [], offers: 0 }) });
+const binding = defineDoc({ kind: 'fictional.triage.binding', checkpointWhen: () => false, version: 1, scope: 'task', initial: () => ({ stageTask: null }) });
+const reader = defineDoc({ kind: 'fictional.triage.reader', checkpointWhen: () => false, version: 1, scope: 'conversation', initial: () => ({ seen: [], offers: 0 }) });
 const textOf = message => message?.content.filter(part => part.type === 'text').map(part => part.text).join('\n') ?? '';
 
 /** Demo-only host input metadata on Pi's public InputSubmissionDraft.entry seam; model/user text stays untouched. */
