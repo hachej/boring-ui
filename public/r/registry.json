@@ -712,7 +712,7 @@
       "name": "pi-chat-voice",
       "type": "registry:block",
       "title": "Pi chat voice messages",
-      "description": "Hold-to-record voice messages: the recorder hook over the kit's voice capture, the composer's record button and the pending voice bubble, plus useHoldToRecord. Plug it in with `voiceMessage={{ ...config, ...voiceMessagePlugin }}`; without it pi-chat has no voice button.",
+      "description": "Tap-to-record voice messages: a compatibility export of the kit's chat-react/voice recorder hook, the composer's record button and the pending voice bubble, plus useHoldToRecord. Plug it in with `voiceMessage={{ ...config, ...voiceMessagePlugin }}`; without it pi-chat has no voice button.",
       "dependencies": [
         "@hachej/boring-ui-kit@^0.4.26",
         "react@^19.0.0",

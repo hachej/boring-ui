@@ -6,7 +6,7 @@ import { mkdirSync } from 'node:fs';
 import { build } from 'esbuild';
 import { Window } from 'happy-dom';
 
-const mount = async t => {
+const mount = async (t, options = {}) => {
   const window = new Window({ url: 'https://fictional.invalid/', settings: { disableIframePageLoading: true } });
   const names = ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node', 'Text', 'MutationObserver', 'getComputedStyle', 'IS_REACT_ACT_ENVIRONMENT'];
   const globals = new Map([...names, 'MediaRecorder'].map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
@@ -16,8 +16,9 @@ const mount = async t => {
   }
 
   // The fake microphone: each getUserMedia call hands out a stream whose one track records whether it was released.
-  const tracks = []; const microphone = { refuse: undefined };
+  const tracks = []; const microphone = { refuse: undefined, permission: undefined };
   Object.defineProperty(window.navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: async () => {
+    if (microphone.permission) await microphone.permission;
     if (microphone.refuse) throw Object.assign(new Error(microphone.refuse), { name: 'NotAllowedError' });
     const track = { stopped: false, stop() { this.stopped = true; } }; tracks.push(track);
     return { getTracks: () => [track], getAudioTracks: () => [track] };
@@ -63,7 +64,7 @@ const mount = async t => {
   const cancel = () => element.querySelector('[data-testid="composer-voice-cancel"]');
   const alert = () => element.querySelector('[data-testid="composer-voice-problem"]');
   const click = async node => { await act(async () => { node.click(); }); };
-  await act(async () => root.render(createElement(VoiceInput, { controller, transcribe })));
+  await act(async () => root.render(createElement(VoiceInput, { controller, transcribe, ...options })));
   return { element, chat, tracks, microphone, transcripts, button, cancel, alert, click, until, setTranscribeError: error => { transcribeError = error; }, unmount: () => act(async () => root.unmount()) };
 };
 
@@ -120,4 +121,30 @@ test('a failed transcription keeps the draft and says so; unmounting while recor
   assert.equal(ui.tracks.at(-1).stopped, false);
   await ui.unmount();
   assert.equal(ui.tracks.at(-1).stopped, true, 'unmounting releases the microphone');
+});
+
+test('dictation respects a configured maxMs and keeps the capped audio for explicit finish', async t => {
+  const ui = await mount(t, { maxMs: 25 });
+  await ui.click(ui.button());
+  await new Promise(resolve => setTimeout(resolve, 80));
+  assert.equal(ui.tracks[0].stopped, true, 'the configured cap releases the microphone');
+  assert.equal(ui.transcripts.length, 0, 'the cap does not submit without the finish gesture');
+  await ui.click(ui.button());
+  await ui.until(() => ui.chat.text !== 'Hello', 'the capped recording can still be transcribed');
+});
+
+test('finishing while microphone permission is pending cancels and fences late permission', async t => {
+  const ui = await mount(t);
+  let permit;
+  ui.microphone.permission = new Promise(resolve => { permit = resolve; });
+  await ui.click(ui.button());
+  assert.equal(ui.button().getAttribute('data-state'), 'starting');
+  await ui.click(ui.button());
+  // Settle permission before asserting, so pre-fix failures cannot leave a live microphone or cap timer behind.
+  const { act } = await import('react');
+  await act(async () => permit());
+  assert.equal(ui.button().getAttribute('data-state'), 'idle', 'a second gesture during starting cancels');
+  assert.equal(ui.tracks[0].stopped, true, 'late permission releases only the cancelled microphone');
+  assert.equal(ui.transcripts.length, 0);
+  assert.equal(ui.chat.text, 'Hello');
 });
