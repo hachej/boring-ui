@@ -7,7 +7,7 @@ description: Find, install, update, check and theme Boring UI registry blocks (s
 
 Blocks are shadcn registry items: React source the shadcn CLI copies into the app. They are generated copies. The app installs them, configures them through props and theme tokens, and updates them with one command. It never edits them.
 
-Prerequisites: React 19, Tailwind v4, a `components.json` with a Base UI style (only `base-nova` is supported), and `@hachej/boring-ui-kit` installed (the `boring-ui-blocks` command is its `bin`). A new app starts with `npx shadcn@4.21.5 init -t vite -b base -p nova -n app -y --no-monorepo`.
+Prerequisites: React 19, Tailwind v4, a `components.json` with a Base UI style (only `base-nova` is supported), and `@hachej/boring-ui-kit` installed (the `boring-ui-blocks` command is its `bin`). A new app starts with `npx shadcn@4.23.0 init -t vite -b base -p nova -n app -y --no-monorepo`.
 
 Blocks import the app's shadcn components through its `ui` alias (`components.json`) and use its tokens; no block lists them. Install them once, before any block ([what the app needs](../../registry/README.md#what-the-app-needs-first)):
 
@@ -50,7 +50,7 @@ npx boring-ui-blocks add https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@<v>/
 - `pi-app` draws only the kinds passed in `artifactKinds`; `pi-app-kinds` installs the viewers and `defaultKinds({ locale })`, the default list to pass.
 
 - Use the same `<v>` as the installed `@hachej/boring-ui-kit` (`npm ls @hachej/boring-ui-kit`).
-- `add` runs `npx -y shadcn@4.21.5 add <args> --overwrite --yes` with stdin closed (it never prompts), keeps and lists every existing file whose content differs (exit 1) unless you pass `--overwrite`, then records every file under `components/ui` in `SHADCN-GENERATED.json`. Use it for plain shadcn components too (`npx boring-ui-blocks add dialog`).
+- `add` runs `npx -y shadcn@4.23.0 add <args> --overwrite --yes` with stdin closed (it never prompts), keeps and lists every existing file whose content differs (exit 1) unless you pass `--overwrite`, then records every file under `components/ui` in `SHADCN-GENERATED.json`. Use it for plain shadcn components too (`npx boring-ui-blocks add dialog`).
 - No block installs tokens. If the app has no shadcn tokens yet, add `.../r/theme.json` once. The theme keeps tokens the app already defines.
 - The app setup installs `tooltip`: wrap the app in `TooltipProvider` from `@/components/ui/tooltip`.
 - After a plain `npx shadcn add`, run `npx boring-ui-blocks manifest` to record the files.
