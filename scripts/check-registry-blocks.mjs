@@ -42,7 +42,7 @@ export const SHADCN_BUILTINS = Object.freeze(['alert', 'attachment', 'avatar', '
 /** The hooks the shadcn components above install under the app's `hooks` alias (sidebar's use-mobile) that blocks may import too. */
 export const SHADCN_HOOKS = Object.freeze(['use-mobile']);
 /** The app's one-time shadcn setup, quoted verbatim in registry/README.md. */
-export const APP_SETUP = `npx shadcn@4.21.5 add ${SHADCN_BUILTINS.join(' ')}`;
+export const APP_SETUP = `npx shadcn@4.23.0 add ${SHADCN_BUILTINS.join(' ')}`;
 /** npm packages (or package subpaths) only the optional composer feature items use: Markdown and voice capture. */
 export const CORE_EXCLUDED = Object.freeze(['marked', 'entities', '@hachej/boring-ui-kit/voice-capture']);
 /** The optional items the core chat must not depend on besides the `pi-chat-*` ones. */

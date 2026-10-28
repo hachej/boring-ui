@@ -77,7 +77,7 @@ test('add --overwrite replaces a differing file, without a prompt', async t => {
   assert.equal(replaced.hung, false);
   assert.equal(replaced.status, 0, replaced.stdout + replaced.stderr);
   assert.equal(readFileSync(toggle, 'utf8'), REGISTRY);
-  assert.equal(readFileSync(join(dir, '.npx-args'), 'utf8').trim(), '-y shadcn@4.21.5 add toggle --overwrite --yes');
+  assert.equal(readFileSync(join(dir, '.npx-args'), 'utf8').trim(), '-y shadcn@4.23.0 add toggle --overwrite --yes');
 });
 
 test('add leaves a file with identical content alone and exits 0', async t => {
