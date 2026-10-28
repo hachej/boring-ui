@@ -131,6 +131,10 @@ try {
       await browser.until('existing viewer menu', '!!document.querySelector("[data-testid=viewer-fullscreen]")');
       await browser.click('document.querySelector("[data-testid=viewer-fullscreen]")');
       await browser.until('fullscreen regular viewer', 'document.querySelector("[data-host-file]").dataset.fullscreen === "true"');
+      await pause(600);
+      const full = await browser.evaluate('(() => { const r=document.querySelector("[data-host-file]").getBoundingClientRect(); return {x:r.x,y:r.y,w:r.width,h:r.height,vw:document.documentElement.clientWidth,vh:innerHeight}; })()');
+      assert.ok(Math.abs(full.x) <= 1 && Math.abs(full.y) <= 1 && Math.abs(full.w-full.vw) <= 1 && Math.abs(full.h-full.vh) <= 1, `Fullscreen must fill the viewport, not its transformed Drawer: ${JSON.stringify(full)}`);
+      await browser.screenshot(`file-fullscreen-${kind}.png`);
       await browser.click('document.querySelector("[data-testid=viewer-more]")');
       await browser.click('document.querySelector("[data-testid=viewer-fullscreen]")');
       await browser.click('document.querySelector("[data-testid=viewer-show-file]")');
@@ -140,6 +144,7 @@ try {
       if (kind === 'image') await browser.press('Escape');
       else await browser.click(kind === 'html' ? 'document.querySelector("[data-testid=viewer-close]")' : 'document.querySelector("[data-testid=file-back]")');
       await browser.until('task survives viewer close/back', `!document.querySelector('[data-task-file-pane]') && !!${detail}`);
+      await pause(600); // The host Drawer finishes its exit before another file is selected.
     }
     await browser.press('Escape');
   });
@@ -174,6 +179,15 @@ try {
     await browser.evaluate(`document.documentElement.classList.add('dark')`); await pause(200); await browser.screenshot('phone-detail-dark.png');
     await browser.press('Escape'); await browser.screenshot('phone-dark.png');
     assert.equal(await browser.evaluate('document.documentElement.scrollWidth <= innerWidth'), true);
+    const before = (await toolResults()).length;
+    await browser.evaluate('window.scrollTo(0, 0)');
+    await browser.type('document.querySelector("textarea")', 'Show D-201');
+    await browser.click('document.querySelector("[data-testid=composer-submit]")');
+    await browser.until('phone receives pending native subject', '!!document.querySelector("[data-mount-task]")');
+    await browser.click('document.querySelector("[data-mount-task]")');
+    assert.equal((await nativeResult(before + 1)).opened, true, 'a mounted phone task is not refused by the file-panel narrow guard');
+    await browser.screenshot('phone-native-present.png');
+    await browser.press('Escape');
   });
   assert.deepEqual(browser.problems, []);
 } finally {

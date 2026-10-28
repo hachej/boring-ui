@@ -224,8 +224,8 @@ export function createPresentAcks(host: PresentAcksHost) {
   const mounting = new Map<string, PendingPresent>();
   const wait = host.wait ?? (ms => new Promise<void>(resolve => setTimeout(resolve, ms)));
   const now = host.now ?? (() => Date.now());
-  /** The last mount report: the file on screen and its revision. */
-  let lastShown: PresentationShown | undefined;
+  /** Independent mounted subjects retain their own evidence until that viewer hides or fails. */
+  const mounted = new Map<string, PresentationShown>();
 
   /** Sends one answer; returns the server's outcome kind, or undefined when it was not sent. Retries while the record is not written yet. */
   async function send(id: string, body: Record<string, unknown>): Promise<string | undefined> {
@@ -257,17 +257,18 @@ export function createPresentAcks(host: PresentAcksHost) {
     /** A viewer mounted and shows `path` at `revision`: confirms the calls waiting for that file. */
     shown(view: PresentationShown): void {
       for (const [id, call] of mounting) if (presentationKey(call) === presentationKey(view)) void confirm(id, view);
-      lastShown = view;
+      mounted.set(presentationKey(view), view);
     },
     /** A viewer could not show `path` (a kind's `onFailed`, or its renderer threw): refuses the calls waiting for that file with `reason`. */
     failed(view: PresentationFailed): void {
-      if (lastShown && presentationKey(lastShown) === presentationKey(view)) lastShown = undefined;
+      mounted.delete(presentationKey(view));
       const reason = view.reason.trim().slice(0, 200) || 'the view failed';
       for (const [id, call] of mounting) if (presentationKey(call) === presentationKey(view)) void refuse(id, reason);
     },
     /** A viewer stopped showing `path` at `revision` (it unmounted, or a custom viewer or the canvas took the file): it no longer confirms. */
     hidden(view: PresentationShown): void {
-      if (lastShown && presentationKey(lastShown) === presentationKey(view) && ('subject' in view || ('revision' in lastShown && lastShown.revision === view.revision))) lastShown = undefined;
+      const shown = mounted.get(presentationKey(view));
+      if (shown && ('subject' in view || ('revision' in shown && shown.revision === view.revision))) mounted.delete(presentationKey(view));
     },
     /** The presents the server waits for: each is decided once, in order. Decided calls and waits that are no longer live are forgotten. */
     consider(calls: readonly PendingPresent[], context: PresentContext): void {
@@ -279,14 +280,15 @@ export function createPresentAcks(host: PresentAcksHost) {
         decided.add(call.id);
         if (context.closedThisTurn) void send(call.id, { kind: 'refused', reason: 'closed by user' });
         else if (context.unsaved) void send(call.id, { kind: 'refused', reason: 'unsaved changes' });
-        else if (context.narrow) void send(call.id, { kind: 'refused', reason: 'narrow screen' });
+        else if (context.narrow && !('subject' in call)) void send(call.id, { kind: 'refused', reason: 'narrow screen' });
         else {
           mounting.set(call.id, call);
           const showing = 'subject' in call ? context.showingTask?.(call.subject) : context.showing(call.path);
-          if (lastShown && presentationKey(lastShown) === presentationKey(call) && showing) void confirm(call.id, lastShown);
+          const shown = mounted.get(presentationKey(call));
+          if (shown && showing) void confirm(call.id, shown);
           else if (context.autoOpen && ('subject' in call ? host.openTask?.(call.subject) === false : !host.open(call.path))) {
             mounting.delete(call.id);
-            void send(call.id, { kind: 'refused', reason: 'unsaved changes' });
+            void send(call.id, { kind: 'refused', reason: 'subject' in call ? 'task viewer unavailable' : 'unsaved changes' });
           }
         }
       }

@@ -46,10 +46,9 @@ function MountReport({ request, selected, mountedTask }: { readonly request: Hos
 }
 
 function TaskFile({ taskId, path, api }: { readonly taskId: string; readonly path: string; readonly api: TaskFileViewApi }) {
-  const [fullscreen, setFullscreen] = useState(false);
   const options = useMemo(() => ({ client: createResourceClient({ endpoint: new URL('/api/resources', location.href), identity: boot.identity, fetch: authorized }), identity: boot.identity, kinds: [markdownKind, htmlKind, imageKind] }), []);
-  return <div data-host-file={path} data-fullscreen={fullscreen} className={fullscreen ? 'fixed inset-0 z-40 bg-background' : 'h-full min-h-0'}>
-    <ViewerWindowProvider value={{ fullscreen, onFullscreenChange: setFullscreen, actions: api.onShowFile ? [{ id: 'show-file', label: 'Montrer', icon: MousePointer2Icon, placement: 'header', onSelect: api.onShowFile }] : [] }}>
+  return <div data-host-file={path} data-fullscreen={api.fullscreen} className="h-full min-h-0">
+    <ViewerWindowProvider value={{ fullscreen: api.fullscreen, onFullscreenChange: api.onFullscreenChange, actions: api.onShowFile ? [{ id: 'show-file', label: 'Montrer', icon: MousePointer2Icon, placement: 'header', onSelect: api.onShowFile }] : [] }}>
       <FileViewer key={path} path={path} locator={{ resource: { providerId: 'workspace', path }, view: { kind: 'published' } }} options={options} onClose={api.onClose} onBack={api.onBack} backLabel={`${taskId} /`} />
     </ViewerWindowProvider>
   </div>;

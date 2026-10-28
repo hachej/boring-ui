@@ -84,6 +84,20 @@
       },
       "opened": false,
       "refused": "Task not found"
+    },
+    {
+      "kind": "presented",
+      "artifact": {
+        "schema": "boring.task",
+        "version": 1,
+        "type": "task",
+        "title": "D-201",
+        "subject": {
+          "task": "D-201"
+        }
+      },
+      "opened": true,
+      "viewer": "_r_2_"
     }
   ],
   "errors": []

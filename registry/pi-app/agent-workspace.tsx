@@ -24,7 +24,7 @@ import type { ChatController } from '@hachej/boring-ui-kit/native-chat';
 import { useArtifactFollow } from '@hachej/boring-ui-kit/chat-react';
 import { PiChat } from '../pi-chat/pi-chat';
 import { withChatPlugins } from '../pi-chat-plugins/chat-plugins';
-import { artifactKey } from '../pi-artifacts/artifact';
+import { artifactKey, createTaskArtifact, parseTaskArtifact, taskSubjectKey } from '../pi-artifacts/artifact';
 import type { ArtifactDescriptor, ArtifactHostViewApi, ArtifactsConfig } from '../pi-artifacts/artifact';
 import type { ConversationsConfig, PiChatProps } from '../pi-chat/pi-chat';
 import { Dock, DockLayout, DockMain } from '../pi-workspace/dock';
@@ -410,6 +410,16 @@ export function AgentWorkspace({ layout = 'default', barPanels, panelWidth, titl
     narrow: () => globalThis.matchMedia?.(`(width < ${sheetBelow}px)`).matches === true,
     showing: path => showsPath(currentView.current, path),
     openPresent: path => { if (unsaved.current) return false; void setOpened({ kind: 'file', path }); return true; },
+    openTask: subject => {
+      if (unsaved.current || conversationId === undefined || !panels?.['task']) return false;
+      void setOpened({ kind: 'task', conversation: conversationId, descriptor: createTaskArtifact(subject), follow: true });
+      return true;
+    },
+    showingTask: subject => {
+      const current = currentView.current;
+      const descriptor = current?.kind === 'task' && current['conversation'] === conversationId ? parseTaskArtifact(current['descriptor']) : undefined;
+      return descriptor !== undefined && taskSubjectKey(descriptor.subject) === taskSubjectKey(subject);
+    },
     answer: chat.actions?.answer });
   const { onShown, onFailed } = follow;
   const kinds = artifactKinds ?? noKinds;

@@ -28,6 +28,8 @@ const readSelection = () => taskFromUrl(window.location.href);
 const serverSelection = () => null;
 
 export interface TaskFileViewApi {
+  readonly fullscreen: boolean;
+  readonly onFullscreenChange: (fullscreen: boolean) => void;
   readonly onClose: () => void;
   readonly onBack: () => void;
   /** The host's PM pointing service; absent unless onShowFile was supplied. */
@@ -71,7 +73,8 @@ export function TaskBoard({ tasks, filter = 'all', currentUser, limit, variant =
   const filePath = fileSelection?.path;
   const file = detail?.id === fileSelection?.taskId ? detail?.files?.find(candidate => candidate.path === filePath) : undefined;
   const fileOpen = !!file && !!renderFile;
-  const closeFile = () => setFileSelection(null);
+  const [fileFullscreen, setFileFullscreen] = useState(false);
+  const closeFile = () => { setFileSelection(null); setFileFullscreen(false); };
   const openFile = (task: TaskRecord, file: TaskFile) => { setFileSelection({ taskId: task.id, path: file.path }); onOpenFile?.(task, file); };
   const root = useRef<HTMLElement>(null);
   const back = useRef<HTMLButtonElement>(null);
@@ -125,10 +128,10 @@ export function TaskBoard({ tasks, filter = 'all', currentUser, limit, variant =
           <Button ref={back} variant="outline" className="min-h-11 self-start" onClick={() => select(null)}><ArrowLeftIcon aria-hidden="true" />Back to tasks</Button>
           {detail ? <TaskDetail key={detail.id} task={detail} labels={labels} actions={actions?.(detail)} onAnswer={onAnswer} onOther={onOther} onDiscussQuestion={onDiscussQuestion} onOpenFile={renderFile || onOpenFile ? openFile : undefined} /> : <Empty><EmptyHeader><EmptyTitle>Task unavailable</EmptyTitle><EmptyDescription>The host has not supplied this task.</EmptyDescription></EmptyHeader></Empty>}
           <Drawer open={fileOpen} onOpenChange={next => { if (!next) closeFile(); }} modal={false} swipeDirection="right">
-            <DrawerContent className={overlayClassName} style={{ '--drawer-content-width': 'min(100vw, 56rem)' } as React.CSSProperties}>
+            <DrawerContent className={overlayClassName} style={{ '--drawer-content-width': fileFullscreen ? '100%' : 'min(100vw, 56rem)' } as React.CSSProperties}>
               <DrawerTitle className="sr-only">Task file viewer</DrawerTitle>
               {fileOpen && detail && file && <section aria-label="Task file viewer" data-task-file-pane={detail.id} className="h-dvh min-w-0 flex-1 overflow-hidden">
-                {renderFile!(detail, file, { onClose: closeFile, onBack: closeFile, onShowFile: onShowFile ? () => onShowFile(detail, file) : undefined })}
+                {renderFile!(detail, file, { fullscreen: fileFullscreen, onFullscreenChange: setFileFullscreen, onClose: closeFile, onBack: closeFile, onShowFile: onShowFile ? () => onShowFile(detail, file) : undefined })}
               </section>}
             </DrawerContent>
           </Drawer>
