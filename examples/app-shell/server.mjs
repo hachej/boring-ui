@@ -50,7 +50,7 @@ const SIDEBAR_TOKENS = `:root{--sidebar:var(--background);--sidebar-foreground:v
 /** The few Tailwind preflight rules the shell's own markup relies on (a host's shadcn app has the whole preflight); in the base layer, so utilities win. */
 const BASE = '@layer base{*,::before,::after{box-sizing:border-box}ul{list-style:none;margin:0;padding:0}h1,p{margin:0}}';
 
-export async function startAppShell({ directory, port = 0, token = randomUUID(), scripted = process.env.STUDIO_MODEL === 'scripted', pageFile = here('./page.tsx'), browserPlugins = [], themeCss = '' } = {}) {
+export async function startAppShell({ directory, port = 0, token = randomUUID(), scripted = process.env.STUDIO_MODEL === 'scripted', pageFile = here('./page.tsx'), browserPlugins = [], themeCss = '', pmTranscript } = {}) {
   mkdirSync(join(directory, 'workspace'), { recursive: true });
   const models = scripted ? (await (await import('../../lab/studio/scripted-model.mjs')).createScriptedModels({ sources: (await import('./script.mjs')).SOURCES })).models : createModels();
   if (!scripted) models.setProvider((await import('@earendil-works/pi-ai/providers/openai')).openaiProvider());
@@ -82,7 +82,22 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
   const allowed = request => sameSecret(request.headers.get('authorization'), `Bearer ${token}`);
   const resources = createRevisionHandler({ resolve: async request => allowed(request) ? { provider: files, access: person } : null });
   const writerStart = init => agents.writer.createConversation(harness, context, { init });
+  // The in-app PM door as hachej/boring-factory#854 asks for it (a fake: fictional identity, scripted model, fixed transcript). Same origin
+  // stands for « signed in as the person » here; a real host authenticates its own session.
+  const signedIn = request => request.headers.get('sec-fetch-site') === 'same-origin';
+  const pmStart = init => agents.pm.createConversation(harness, context, { init });
+  const door = {
+    '/api/pm/agent': async request => signedIn(request) && request.method === 'GET' ? Response.json({ agent: 'pm', identity: { runtimeId: 'app', ...person } }) : new Response(null, { status: 403 }),
+    '/api/pm/conversations': createConversationsHandler({ conversations, authenticate: async request => signedIn(request) ? { owner: agents.pm.id, start: pmStart } : null }),
+    '/api/pm/chat': createChatTransportHandler({ authenticate: async request => {
+      const id = Number(new URL(request.url).searchParams.get('conversation'));
+      const conversation = signedIn(request) && Number.isSafeInteger(id) ? await conversations.open(agents.pm.id, id) : undefined;
+      return conversation ? { conversation, context, abortSubmission: submission => harness.abortSubmission(submission, context, conversation.id), requestContext: value => { contexts.push({ conversation: id, value }); } } : null;
+    } }),
+    '/api/pm/transcribe': async request => signedIn(request) && request.method === 'POST' && pmTranscript ? (await request.arrayBuffer(), Response.json(pmTranscript)) : new Response(null, { status: signedIn(request) ? 404 : 403 }),
+  };
   const handlers = {
+    ...door,
     '/api/conversations': createConversationsHandler({ conversations, authenticate: async request => allowed(request) ? { owner: agents.writer.id, start: writerStart } : null }),
     '/api/resources': resources,
     '/api/chat': createChatTransportHandler({ authenticate: async request => {
@@ -123,7 +138,7 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
       if (fixed) return void outgoing.writeHead(200, { 'content-type': fixed[0], 'cache-control': 'no-store' }).end(fixed[1]);
       const handler = handlers[url.pathname];
       const request = handler && await webRequest(incoming, url, { signal: closed.signal });
-      if (request && url.searchParams.get('op') === 'submit' && request.method === 'POST') submits.push({ agent: url.searchParams.get('agent'), body: await request.clone().json().catch(() => undefined) });
+      if (request && url.searchParams.get('op') === 'submit' && request.method === 'POST') submits.push({ agent: url.searchParams.get('agent') ?? (url.pathname.startsWith('/api/pm/') ? 'pm' : null), body: await request.clone().json().catch(() => undefined) });
       await sendWebResponse(request ? await handler(request) : new Response(null, { status: handler ? 413 : 404 }), outgoing, { signal: closed.signal });
     } catch (error) {
       if (!outgoing.headersSent) outgoing.writeHead(500);

@@ -1,7 +1,7 @@
 'use client';
 
 import type { CSSProperties, ReactNode } from 'react';
-import { HandIcon, MicIcon, PauseIcon, XIcon } from 'lucide-react';
+import { HandIcon, MicIcon, XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Composer } from '../pi-chat/composer';
@@ -45,6 +45,11 @@ export function PointerIcon({ className, style }: { readonly className?: string;
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={className} style={style}><path d="M3 3l7 17 2.5-7.5L20 10z" /></svg>;
 }
 
+/** The boards' pause: two stroked bars (C4 stroke 2.5, D7b stroke 2), not lucide's filled rectangles. */
+function StrokePause({ className, strokeWidth }: { readonly className?: string; readonly strokeWidth: number }) {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" aria-hidden="true" data-icon="pause" className={className}><path d="M9 5v14" /><path d="M15 5v14" /></svg>;
+}
+
 // Shapes are theme tokens: `--radius` drives the host shadcn controls' own radius inside a scope.
 const round = { '--radius': 'var(--pm-radius-round)' } as CSSProperties;
 const segment = { '--radius': 'var(--pm-radius-segment)' } as CSSProperties;
@@ -77,16 +82,18 @@ function Strip({ preset = 'touch', text = pmTextFr, show, onShow, onReturn, onOp
           className={touch ? 'min-h-[38px] min-w-[38px]' : 'min-h-7 min-w-8'}><HandIcon className={touch ? 'size-4' : 'size-3.5'} aria-hidden="true" /></ToggleGroupItem>
       </ToggleGroup>
     </div>}
-    {(!recording || show) ? <span data-testid="pm-hint" className={cn('min-w-0 flex-1', !recording
-      ? touch ? 'text-left text-[14px] leading-[1.3] text-primary-foreground/90' : 'text-left text-xs text-primary-foreground/80'
-      : touch ? 'line-clamp-2 text-right text-xs leading-[1.25] text-primary-foreground/85' : 'text-right text-xs text-primary-foreground/80')}>{recording ? text.hintRec : text.hintIdle}</span>
-      : <span className="min-w-0 flex-1" />}
-    {recording && <span className={touch ? 'flex shrink-0 [&_button]:px-0' : 'flex shrink-0 [&_button]:px-2.5'}><Button variant={touch ? 'ghost' : 'outline'} size={touch ? 'default' : 'sm'} data-testid="pm-timer" aria-label={text.recorder} title={text.recorder} onClick={onOpenRecorder}
-      className={cn('shrink-0 gap-1.5 tabular-nums', touch ? 'min-h-11' : 'min-h-[26px]')} style={touch ? undefined : round}>
-      <span aria-hidden="true" className={cn('shrink-0 rounded-pm-round', paused ? 'bg-primary-foreground/50' : 'bg-destructive', touch ? 'size-2.5' : 'size-2')} />
-      <span className={touch ? 'text-[14px]' : 'text-[13px]'}>{clock(voice?.seconds ?? 0)}</span></Button></span>}
+    {!recording ? <span data-testid="pm-hint" className={cn('min-w-0 flex-1 text-left', touch ? 'text-[14px] leading-[1.3] text-primary-foreground/90' : 'text-xs text-primary-foreground/80')}>{text.hintIdle}</span>
+      // C4: hint, dot and time share one right-aligned group (gap 6), so the hint keeps its two full lines at 390px.
+      : <span className="flex min-w-0 flex-1 items-center justify-end gap-1.5">
+        {show && <span data-testid="pm-hint" className={cn('min-w-0 text-right text-xs', touch ? 'leading-[1.25] text-primary-foreground/85' : 'text-primary-foreground/80')}>{text.hintRec}</span>}
+        {/* The host button's transparent 1px border is taken back by the margins: the visible gap to the hint stays 5–6px and the C4 hint keeps two lines. */}
+        <span className={touch ? 'flex shrink-0 -mr-px -ml-0.5 [&_button]:px-0' : 'flex shrink-0 [&_button]:px-2.5'}><Button variant={touch ? 'ghost' : 'outline'} size={touch ? 'default' : 'sm'} data-testid="pm-timer" aria-label={text.recorder} title={text.recorder} onClick={onOpenRecorder}
+          className={cn('shrink-0 gap-1.5 tabular-nums', touch ? 'min-h-11' : 'min-h-[26px]')} style={touch ? undefined : round}>
+          <span aria-hidden="true" className={cn('shrink-0 rounded-pm-round', paused ? 'bg-primary-foreground/50' : 'bg-destructive', touch ? 'size-2.5' : 'size-2')} />
+          <span className={cn('font-normal', touch ? 'text-[14px]' : 'text-[13px]')}>{clock(voice?.seconds ?? 0)}</span></Button></span>
+      </span>}
     {recording && !paused ? <Button variant="outline" size="icon" data-testid="pm-pause" aria-label={text.pause} title={text.pause} disabled={!voice?.pause} onClick={voice?.pause}
-      className={cn('shrink-0', circle)} style={round}><PauseIcon className={touch ? 'size-[18px]' : 'size-3.5'} strokeWidth={touch ? 2.5 : 2} aria-hidden="true" /></Button> : mic}
+      className={cn('shrink-0', circle)} style={round}><StrokePause className={touch ? 'size-[18px]' : 'size-3.5'} strokeWidth={touch ? 2.5 : 2} /></Button> : mic}
     <Button variant="secondary" size="icon" data-testid="pm-done" aria-label={text.done} title={text.done} onClick={onReturn} className={cn('shrink-0', circle)} style={round}>
       <XIcon className={icon} strokeWidth={touch ? 2.5 : 2} aria-hidden="true" /></Button>
   </div>;
@@ -113,15 +120,20 @@ function Compose({ preset = 'touch', text = pmTextFr, composer, selections = noS
       '[&_[data-testid=composer-controls]]:text-foreground',
       '[&_[data-testid=composer-submit]]:text-primary-foreground [&_[data-testid=composer-submit]:disabled]:bg-pm-send-idle [&_[data-testid=composer-submit]:disabled]:opacity-100',
       '[&_[data-slot=input-group-control]]:placeholder:text-pm-hint [&_[data-slot=composer-placeholder]]:text-pm-hint',
+      // D9: the highlighted task row takes the full muted fill.
+      '[&_[data-testid=mention-item][aria-selected=true]]:bg-muted',
+      // D9: the typed `@d-2` as an inline token (padding 1 6 without moving the text: the margin takes it back).
+      '[&_[data-slot=composer-mention-query]]:rounded-pm-token [&_[data-slot=composer-mention-query]]:bg-muted [&_[data-slot=composer-mention-query]]:-mx-1.5 [&_[data-slot=composer-mention-query]]:px-1.5 [&_[data-slot=composer-mention-query]]:py-px',
       touch ? '[&_[data-testid=composer-controls]]:gap-2 [&_[data-testid=composer-controls]_button]:min-h-10 [&_[data-testid=composer-controls]_button]:min-w-10 [&_[data-testid=composer-input]]:text-[15px] [&_[data-slot=composer-placeholder]]:text-[15px]'
         : '[&_[data-testid=composer-controls]]:gap-2 [&_[data-testid=composer-input]]:text-sm [&_[data-slot=composer-placeholder]]:text-sm [&_[data-testid=composer-submit]]:min-h-9 [&_[data-testid=composer-submit]]:min-w-9 [&_[data-testid=composer-plus]]:min-h-[34px] [&_[data-testid=composer-plus]]:min-w-[34px] [&_[data-testid=composer-plus]]:[--radius:var(--pm-radius-round)] [&_[data-testid=composer-plus]]:ring-1 [&_[data-testid=composer-plus]]:ring-inset [&_[data-testid=composer-plus]]:ring-border',
-      !touch && 'data-[filled]:[&_[data-slot=input-group]]:border-primary')}>
+      // D8/D9: focused or filled, the box outline turns primary, without the host focus ring.
+      !touch && 'data-[filled]:[&_[data-slot=input-group]]:border-primary [&_[data-slot=input-group]]:has-[:focus-visible]:border-primary [&_[data-slot=input-group]]:!ring-0')}>
     {transcript}
     <Composer {...composer} attachments={composer.attachments.filter(image => !selected.has(image.id))}
       placeholderContent={placeholder}
       renderInput={selections.length || meta ? ({ text: value, onText, onCaret, onSend }) => <InlinePointInput text={value} preset={preset} labels={text} selections={selections} onText={onText} onCaret={onCaret}
         onRemove={id => onRemove?.(id)} onSend={onSend} disabled={composer.disabled} focus={focusInput} placeholder={placeholder} meta={meta} /> : composer.renderInput}
-      chips={<>{montrer}{composer.chips}</>}
+      markMentionQuery chips={<>{montrer}{composer.chips}</>}
       recording={recording && voice ? <div className="flex w-full min-w-0 items-center gap-1">{montrer}<RecordingBar voice={voice} testId="pm-voice-send" /></div> : composer.recording}
       barEnd={<>{composer.barEnd}{mic}</>} />
   </div>;

@@ -1,13 +1,21 @@
 // Behaviour journey for « Améliorer l'app » (spec 1 §10 and spec 2's checklist) on the fictional Coach Max app, phone and desktop.
 // Every check drives the public AppShell `improve` entry and the real picker, composer and remote chat; nothing calls a library directly.
 import assert from 'node:assert/strict';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { launch, pause, q } from '@hachej/boring-testing/browser';
 import { startPmPanel } from './server.mjs';
 
 const evidence = process.env.PM_EVIDENCE ?? '.cache/evidence/pm-panel/journey';
 mkdirSync(evidence, { recursive: true });
-const app = await startPmPanel();
+// PM_ONE_LINE=1 runs the same journey on the app whose only PM code is `improve={{ agent: 'pm' }}` (the fake #854 door); the task-board
+// seam (request card, « Mes demandes », @ tasks) is host data that one line does not bring, so those steps run on the host-wired fixture only.
+const oneLine = process.env.PM_ONE_LINE === '1';
+if (oneLine) {
+  const source = readFileSync(new URL('./oneline.tsx', import.meta.url), 'utf8').replace(/^\s*\/\/.*$/gm, '');
+  assert.match(source, /improve=\{\{ agent: 'pm' \}\}/);
+  assert.doesNotMatch(source, /useRemoteChat|controller|transcribe|identity|fetch\(/, 'the one line is the only PM code of the app');
+}
+const app = await startPmPanel({ oneLine });
 let browser;
 const visible = selector => `!!${q(selector)} && ${q(selector)}.getClientRects().length > 0`;
 const mode = value => `${q('[data-testid=pm-panel]')}?.dataset.mode === '${value}'`;
@@ -109,6 +117,11 @@ try {
     const order = await browser.evaluate(`[...${q('[data-testid=pm-strip]')}.querySelectorAll('[role=radiogroup], [data-testid=pm-hint], [data-testid=pm-timer], [data-testid=pm-pause], [data-testid=pm-mic], [data-testid=pm-done]')].map(n => n.getAttribute('role') ?? n.dataset.testid)`);
     assert.deepEqual(order, ['radiogroup', 'pm-hint', 'pm-timer', 'pm-pause', 'pm-done']);
     assert.equal(await browser.evaluate(`${q('[data-testid=pm-hint]')}.textContent`), 'Parlez et touchez ce que vous montrez');
+    if (device === 'phone') {
+      // C4 at 390px: the whole hint shows on exactly two right-aligned lines, never clipped or ellipsised.
+      const hint = await browser.evaluate(`(() => { const h = ${q('[data-testid=pm-hint]')}, s = getComputedStyle(h), r = h.getBoundingClientRect(); return { width: innerWidth, lines: Math.round(r.height / parseFloat(s.lineHeight)), clipped: h.scrollHeight > h.clientHeight + 1 || h.scrollWidth > h.clientWidth + 1, overflow: s.overflow, clamp: s.webkitLineClamp, align: s.textAlign }; })()`);
+      assert.deepEqual(hint, { width: 390, lines: 2, clipped: false, overflow: 'visible', clamp: 'none', align: 'right' }, 'the C4 hint is never truncated at 390px');
+    }
     await browser.until('PCM pause', `!${q('[data-testid=pm-pause]')}.disabled`, 15000);
     await pause(1100);
     await press('[data-testid=pm-pause]');
@@ -142,6 +155,9 @@ try {
     if (device === 'phone') await browser.tap(q('[data-testid=pm-done]')); else await browser.press('Escape');
     await browser.until('C6', `${mode('sheet')} && ${visible('[data-testid=pm-review-hint]')} && document.querySelectorAll('[data-testid=pm-chip]').length === 2 && !${q('[data-testid=pm-transcribing]')}`, 15000);
     assert.deepEqual(await browser.evaluate(chips), ['1 Jauge · Protéines', '2 Carte · Déjeuner']);
+    // C6: the editor has focus and the caret sits after the last character, ready to type.
+    await browser.until('caret at the end', `(() => { const editor = ${q('[data-testid=composer-input][contenteditable=true]')}, s = getSelection(); if (document.activeElement !== editor || !s.rangeCount || !s.isCollapsed) return false;
+      const tail = document.createRange(); tail.selectNodeContents(editor); tail.setStart(s.getRangeAt(0).endContainer, s.getRangeAt(0).endOffset); return tail.toString() === ''; })()`, 5000);
     assert.match(await browser.evaluate(`${q('[data-testid=pm-meta]')}.textContent`), /^Dicté · \d:\d\d · 2 captures · modifiable$/);
     assert.equal(await browser.evaluate(`${q('[data-testid=composer-submit]')}.disabled`), false, 'send enabled');
     assert.equal(await browser.evaluate(`!!${q('[data-testid=pm-expand]')} || !!${q('[data-testid=pm-close]')}`), false, 'C6: no ^ and no ×');
@@ -162,7 +178,7 @@ try {
     // Send: text, capture and pick metadata travel together; the draft and pins clear; C7 opens.
     const sent = app.submits.length;
     await press('[data-testid=composer-submit]');
-    await browser.until('C7', `${mode('full')} && ${visible('[data-testid=pm-sent-message]')} && ${visible('[data-testid=pm-request-card]')}`, 20000);
+    await browser.until('C7', `${mode('full')} && ${visible('[data-testid=pm-sent-message]')} && ${visible(oneLine ? '[data-testid=pm-reply]' : '[data-testid=pm-request-card]')}`, 20000);
     assert.equal(app.submits.length, sent + 1, 'one native admission');
     const body = JSON.stringify(app.submits.at(-1).body);
     for (const field of ['pm.points@1', 'dictatedMs', '\\"t\\":', 'selector', 'imageIndex', 'image/png', 'Jauge']) assert.ok(body.includes(field), `the message carries ${field}`);
@@ -172,41 +188,54 @@ try {
     assert.equal(await browser.evaluate(`${q('[data-testid=pm-title]')}.nextElementSibling.textContent`), 'Le chef de projet · Coach Max');
     assert.equal(await browser.evaluate(`!!${q('[data-testid=pm-reply] [data-testid=pm-reply]')} || getComputedStyle(${q('[data-testid=pm-reply] p')}).backgroundColor`), 'rgba(0, 0, 0, 0)', 'the PM reply has no bubble');
     assert.match(await browser.evaluate(`${q('[data-testid=pm-sent-meta]')}.textContent`), /^Dicté · \d:\d\d · 1 capture$/);
-    // « Modifier » puts the request text in the composer; « Confirmer » changes the status pill.
-    await press('[data-testid=pm-request-modify]');
-    await browser.until('modify', `${q('[data-testid=pm-panel] [data-testid=composer-input]')}.value === 'Protéines avant les calories sur les cartes repas'`);
-    await press('[data-testid=pm-request-confirm]');
-    await browser.until('confirmed', `${q('[data-testid=pm-request-status]')}.textContent === 'Confirmée'`);
-    // « Mes demandes »: the shared board, compact, with « ‹ Retour ».
-    await press('[data-testid=pm-requests]');
-    await browser.until('Mes demandes', `${visible('[data-testid=pm-task-board-seam]')} && ${q('[data-testid=studio-task-board-seam]')}.dataset.variant === 'compact'`);
-    await press('[data-testid=pm-requests-back]');
-    await browser.until('thread again', visible('[data-testid=pm-sent-message]'));
+    if (!oneLine) {
+      // « Modifier » puts the request text in the composer; « Confirmer » changes the status pill.
+      await press('[data-testid=pm-request-modify]');
+      await browser.until('modify', `${q('[data-testid=pm-panel] [data-testid=composer-input]')}.value === 'Protéines avant les calories sur les cartes repas'`);
+      await press('[data-testid=pm-request-confirm]');
+      await browser.until('confirmed', `${q('[data-testid=pm-request-status]')}.textContent === 'Confirmée'`);
+      // « Mes demandes »: the shared board, compact, with « ‹ Retour ».
+      await press('[data-testid=pm-requests]');
+      await browser.until('Mes demandes', `${visible('[data-testid=pm-task-board-seam]')} && ${q('[data-testid=studio-task-board-seam]')}.dataset.variant === 'compact'`);
+      await press('[data-testid=pm-requests-back]');
+      await browser.until('thread again', visible('[data-testid=pm-sent-message]'));
 
-    // @ task mention: the header carries the query, the viewer's tasks only, Enter inserts, the chip opens the task.
-    const input = '[data-testid=pm-panel] [data-testid=composer-input]';
-    await browser.evaluate(`(() => { const input = ${q(input)}; const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set; set.call(input, ''); input.dispatchEvent(new Event('input', { bubbles: true })); input.focus(); })()`);
-    await browser.type(q(input), 'Avant de commencer, @d-2');
-    await browser.until('listbox', `document.querySelectorAll('[data-testid=pm-mention-row]').length === 3`);
-    assert.equal(await browser.evaluate(`${q('[data-testid=pm-mention-header]')}.textContent`), 'TÂCHES · d-2');
-    assert.equal(await browser.evaluate(`${q('[data-testid=mention-menu]')}.getBoundingClientRect().bottom <= ${q(input)}.getBoundingClientRect().top`), true, 'the listbox opens above the composer');
-    assert.match(await browser.evaluate(`${q('[data-testid=pm-mention-row]')}.textContent`), /^D-201Protéines avant les calories sur les cartes repasÀ vous$/);
-    // The first row is the highlighted one; a mouse resting over the list moves it, ↑ brings it back (keyboard, spec 1 §8).
-    for (let index = 1; index > 0;) {
-      index = await browser.evaluate(`[...document.querySelectorAll('[data-testid=mention-item]')].findIndex(row => row.getAttribute('aria-selected') === 'true')`);
-      if (index > 0) await browser.press('ArrowUp');
+      // @ task mention: the header carries the query, the viewer's tasks only, Enter inserts, the chip opens the task.
+      const input = '[data-testid=pm-panel] [data-testid=composer-input]';
+      await browser.evaluate(`(() => { const input = ${q(input)}; const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set; set.call(input, ''); input.dispatchEvent(new Event('input', { bubbles: true })); input.focus(); })()`);
+      await browser.type(q(input), 'Avant de commencer, @d-2');
+      await browser.until('listbox', `document.querySelectorAll('[data-testid=pm-mention-row]').length === 3`);
+      assert.equal(await browser.evaluate(`${q('[data-testid=pm-mention-header]')}.textContent`), 'TÂCHES · d-2');
+      assert.equal(await browser.evaluate(`${q('[data-testid=mention-menu]')}.getBoundingClientRect().bottom <= ${q(input)}.getBoundingClientRect().top`), true, 'the listbox opens above the composer');
+      assert.match(await browser.evaluate(`${q('[data-testid=pm-mention-row]')}.textContent`), /^D-201Protéines avant les calories sur les cartes repasÀ vous$/);
+      // The first row is the highlighted one; a mouse resting over the list moves it, ↑ brings it back (keyboard, spec 1 §8).
+      for (let index = 1; index > 0;) {
+        index = await browser.evaluate(`[...document.querySelectorAll('[data-testid=mention-item]')].findIndex(row => row.getAttribute('aria-selected') === 'true')`);
+        if (index > 0) await browser.press('ArrowUp');
+      }
+      await browser.press('Enter');
+      await browser.until('task chip', visible('[data-testid=mention-chip]'));
+      assert.match(await browser.evaluate(`${q('[data-testid=mention-chip]')}.textContent`), /@ D-201 · Protéines avant/);
+      // The label opens the task and stays clear of « Retirer », however long the title (the desktop chip is narrower).
+      assert.equal(await browser.evaluate(`(() => { const b = ${q('[data-testid=mention-chip] button')}, r = b.getBoundingClientRect(); return b.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)); })()`), true);
+      await browser.click(q('[data-testid=mention-chip] button'));
+      assert.deepEqual(await browser.evaluate('window.__presented'), ['D-201'], 'the chip opens the task');
+      await browser.evaluate('window.__presented = []');
     }
-    await browser.press('Enter');
-    await browser.until('task chip', visible('[data-testid=mention-chip]'));
-    assert.match(await browser.evaluate(`${q('[data-testid=mention-chip]')}.textContent`), /@ D-201 · Protéines avant/);
-    // The label opens the task and stays clear of « Retirer », however long the title (the desktop chip is narrower).
-    assert.equal(await browser.evaluate(`(() => { const b = ${q('[data-testid=mention-chip] button')}, r = b.getBoundingClientRect(); return b.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)); })()`), true);
-    await browser.click(q('[data-testid=mention-chip] button'));
-    assert.deepEqual(await browser.evaluate('window.__presented'), ['D-201'], 'the chip opens the task');
-    await browser.evaluate('window.__presented = []');
-    await press('[data-testid=pm-close]');
-    await browser.until('closed', `${q('[data-testid=pm-panel]')}.hidden`);
-    console.log(`PASS ${device}: C2–C7 behaviour, never-covered page, select never activates, renumbering, persistence, recorder, mention`);
+    // Back closes the panel step by step and never leaves the app page: full panel, then the sheet, then closed; the strip closes too.
+    const href = await browser.evaluate('location.href');
+    await browser.evaluate('history.back()');
+    await browser.until('Back: full → sheet', mode('sheet'));
+    await browser.evaluate('history.back()');
+    await browser.until('Back: sheet → closed', `${q('[data-testid=pm-panel]')}.hidden`);
+    await openSheet();
+    await press('[data-testid=pm-show]');
+    await browser.until('strip', mode('point'));
+    await browser.evaluate('history.back()');
+    await browser.until('Back: strip → closed', `${q('[data-testid=pm-panel]')}.hidden && ${visible('[data-testid=card-a]')}`);
+    await pause(400);
+    assert.equal(await browser.evaluate('location.href'), href, 'Back never leaves the app page');
+    console.log(`PASS ${oneLine ? 'one-line app ' : ''}${device}: C2–C7 behaviour, Back, never-covered page, select never activates, renumbering, persistence, recorder${oneLine ? '' : ', request card, « Mes demandes », @ mention'}`);
   }
   assert.deepEqual(browser.problems, [], 'no browser errors');
 } finally { await browser?.close(); await app.close(); }

@@ -3,12 +3,13 @@
 « Améliorer l’app » (specs `/home/ubuntu/projects/_work/pm-spec`, boards C1–C7 and D1, D7, D7b, D8, D9). Install the `pm-panel` registry item; the app's theme defines the `--pm-*` tokens (the registry theme has defaults).
 
 ```tsx
+<AppShell {...app} improve={{ agent: 'pm' }} />  // the one line: the kit opens /api/pm/{agent,conversations,chat,transcribe} (#854)
 <AppShell {...app} improve={pm} />
 // pm: ImproveSpec — the host's remote NativeChatController, appName, optional pointVoice transcription, taskMentions and the task-board seam.
 <PmChat spec={pm} page={appFrameElement} screen="My day" preset="desktop" /> // Studio's conversation column
 ```
 
-The one-line `improve: { agent: 'pm' }` resolver is **not implemented**: the host owns credentials and passes the controller.
+The one line is resolved on the first open by `useImproveAgent` (same-origin calls as the signed-in person; the host door owns authentication). A host `ImproveSpec` adds what one line cannot: task mentions and the task-board seam.
 
 ## Exports
 
@@ -18,6 +19,7 @@ The one-line `improve: { agent: 'pm' }` resolver is **not implemented**: the hos
 - `PmPanelProvider`, `ImproveLayout`, `ImproveSpec`: AppShell's in-flow layout (sheet, strip, full panel).
 - `pmEntries`, `pointMessage`, `PointChipView`: the thread's renderers (sent chips, PM reply, request card).
 - `pmTextFr`, `pmTextEn`, `pmTextFor`, `PmText`: spec strings.
+- `useImproveAgent`, `isImproveAgent`, `ImproveAgent`, `ImproveProp`: the one-line resolver.
 - `useTaskMentions`, `TaskMentionSource`, `TaskMention`: the @ task picker over host-authorized data.
 - `PmVoice`, `PmTranscript`: host transcription with word timings (seconds).
 - `StudioTaskBoardSeam`: `renderRequest({ entry, edit })` and `renderBoard({ filter: 'mine', variant, limit? })`. D-417 / PR #1900 owns the card and board.
@@ -42,4 +44,4 @@ node examples/pm-panel/journey-faults.mjs
 
 The example server is `node examples/pm-panel/server.mjs`. The browser journey writes `.agent-handoff/pm-panel/screenshots/`. Use the resource-scoped command in the task brief for heavy runs. The six fault regressions were demonstrated failing before correction. The original public AppShell journey also fails against pre-feature source (`PM_BEFORE=1`).
 
-Board comparisons: `node examples/pm-panel/journey-boards.mjs` and `journey-studio.mjs` write `.agent-handoff/pm-panel/compare/<board>.png`. Open: the one-line resolver and PR #1900's compact card.
+Board comparisons: `node examples/pm-panel/journey-boards.mjs` and `journey-studio.mjs` write `.agent-handoff/pm-panel/compare/<board>.png`. Open: PR #1900's compact card.

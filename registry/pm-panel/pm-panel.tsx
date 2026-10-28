@@ -16,6 +16,9 @@ import { usePmPanel } from './use-pm-panel';
 import { POINT_PREFACE, pointMessage } from './point-message';
 import { useTaskMentions } from './task-mentions';
 import type { ImproveSpec, StudioTaskBoardSeam } from './use-pm-panel';
+import { useImproveAgent } from './use-improve-agent';
+import type { ImproveProp } from './use-improve-agent';
+import { pmTextFor } from './pm-text';
 import type { PmPreset } from './pm-composer';
 import type { PmText } from './pm-text';
 import type { MentionsConfig } from '../pi-chat/config';
@@ -32,8 +35,11 @@ export type { PmText } from './pm-text';
 export { PointChipView } from './inline-point-input';
 export { pointMessage } from './point-message';
 export type { ImproveSpec, PmVoice, PmTranscript, StudioTaskBoardSeam } from './use-pm-panel';
+export { useImproveAgent, isImproveAgent } from './use-improve-agent';
+export type { ImproveAgent, ImproveProp } from './use-improve-agent';
 
-interface Binding { readonly spec: ImproveSpec; readonly open: boolean; readonly close: () => void }
+interface Binding { readonly spec: ImproveSpec; readonly open: boolean; readonly close: () => void; readonly onFull?: ((full: boolean, collapse: () => void) => void) | undefined }
+interface Pending { readonly open: boolean; readonly close: () => void; readonly problem: string | undefined; readonly title: string }
 async function imageFiles(files: readonly File[]) {
   return Promise.all(files.map(async (file, index) => {
     if (!/^image\/(png|jpeg|gif|webp)$/.test(file.type) || file.size > 3 * 1024 * 1024) throw new Error('Joignez une image de moins de 3 Mo.');
@@ -43,10 +49,16 @@ async function imageFiles(files: readonly File[]) {
   }));
 }
 
-const PmContext = createContext<Binding | null>(null);
+const PmContext = createContext<Binding | Pending | null>(null);
 
-export function PmPanelProvider({ spec, open, close, children }: { readonly spec?: ImproveSpec | undefined; readonly open: boolean; readonly close: () => void; readonly children: ReactNode }) {
-  const value = useMemo(() => spec ? { spec, open, close } : null, [spec, open, close]);
+/**
+ * `spec` is either the host's own `ImproveSpec` or the one line `{ agent: 'pm' }`, which the kit resolves to that agent's conversation
+ * through the app's door on the first open (`useImproveAgent`). `onFull` reports the full panel (C7) so the shell gives it its own Back step.
+ */
+export function PmPanelProvider({ spec, open, close, appName, locale, onFull, children }: { readonly spec?: ImproveProp | undefined; readonly open: boolean; readonly close: () => void; readonly appName?: string | undefined; readonly locale?: string | undefined; readonly onFull?: ((full: boolean, collapse: () => void) => void) | undefined; readonly children: ReactNode }) {
+  const resolved = useImproveAgent(spec, open, { ...(appName ? { appName } : {}), ...(locale ? { locale } : {}) });
+  const title = pmTextFor(locale).title;
+  const value = useMemo<Binding | Pending | null>(() => resolved.spec ? { spec: resolved.spec, open, close, onFull } : spec ? { open, close, problem: resolved.problem, title } : null, [resolved.spec, resolved.problem, spec, open, close, onFull, title]);
   return <PmContext.Provider value={value}>{children}</PmContext.Provider>;
 }
 
@@ -59,8 +71,9 @@ export function ImproveLayout({ children, navigation, screen }: { readonly child
   return <BoundLayout binding={binding} navigation={navigation} screen={screen}>{children}</BoundLayout>;
 }
 
-function BoundLayout({ binding, children, navigation, screen }: { readonly binding: Binding | null; readonly children: ReactNode; readonly navigation?: ReactNode; readonly screen: string | undefined }) {
+function BoundLayout({ binding: bound, children, navigation, screen }: { readonly binding: Binding | Pending | null; readonly children: ReactNode; readonly navigation?: ReactNode; readonly screen: string | undefined }) {
   const [page, setPage] = useState<HTMLDivElement | null>(null);
+  const binding = bound && 'spec' in bound ? bound : null, pending = bound && !('spec' in bound) ? bound : null;
   const controller = binding?.spec.controller;
   const [instance, setInstance] = useState({ controller, sequence: 0 });
   if (instance.controller !== controller) setInstance({ controller, sequence: instance.sequence + 1 });
@@ -74,8 +87,13 @@ function BoundLayout({ binding, children, navigation, screen }: { readonly bindi
     <div ref={setPage} data-pm-page="" data-pm-screen={screen} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{children}</div>
     {/* Mounted on the first open, then kept: the picks, pins and recording survive × (spec 2, draft persistence). */}
     {binding && opened && <PanelSession key={instance.sequence} binding={binding} page={page} screen={screen} report={report} />}
+    {pending?.open && <section data-feedback-ignore="" data-testid="pm-panel" data-mode="connecting" className="flex shrink-0 flex-col gap-1.5 rounded-t-pm-sheet bg-background px-3 pt-2 pb-6 shadow-pm-sheet">
+      <div className="flex items-center"><h2 className="m-0 min-w-0 flex-1 truncate text-[13px] font-pm-title">{pending.title}</h2>
+        <Button variant="ghost" size="icon" aria-label="Fermer" data-testid="pm-close" onClick={pending.close} className="min-h-9 min-w-9"><XIcon className="size-4" aria-hidden="true" /></Button></div>
+      <p role={pending.problem ? 'alert' : 'status'} className="m-0 px-1 text-sm text-muted-foreground">{pending.problem ?? 'Connexion…'}</p>
+    </section>}
     {/* The tab bar shows under the strip and works normally; the sheet sits at the bottom instead of it. */}
-    <div data-pm-navigation="" hidden={Boolean(binding?.open && !strip)} className="shrink-0">{navigation}</div>
+    <div data-pm-navigation="" hidden={Boolean(bound?.open && !strip)} className="shrink-0">{navigation}</div>
   </div>;
 }
 
@@ -149,7 +167,8 @@ export function PmChat({ spec, page, screen, preset = 'desktop' }: { readonly sp
   </div></ChatTextProvider>;
 }
 
-function Panel({ binding: { spec, open, close: closeLayer }, pm, strip, full }: { readonly binding: Binding; readonly pm: ReturnType<typeof usePmPanel>; readonly strip: boolean; readonly full: boolean }) {
+function Panel({ binding, pm, strip, full }: { readonly binding: Binding; readonly pm: ReturnType<typeof usePmPanel>; readonly strip: boolean; readonly full: boolean }) {
+  const { spec, open, close: closeLayer } = binding;
   const [requests, setRequests] = useState(false);
   // Closing leaves « Mes demandes »: the next full panel opens on the thread.
   const close = () => { setRequests(false); closeLayer(); };
@@ -160,6 +179,9 @@ function Panel({ binding: { spec, open, close: closeLayer }, pm, strip, full }: 
   // Plain-text sends have no context attachment, but still expand on observed native admission.
   const admitted = pm.snapshot.send.kind === 'admitted' ? pm.snapshot.send.attempt.requestId : undefined;
   const previousAdmission = useRef<string | undefined>(undefined);
+  // The full panel is its own Back step (full, then sheet, then closed): the shell owns the history entries.
+  const { onFull } = binding;
+  useEffect(() => { onFull?.(full, () => dispatch({ type: 'collapse' })); }, [full, onFull, dispatch]);
   useEffect(() => {
     if (admitted && admitted !== previousAdmission.current) dispatch({ type: 'full' });
     if (admitted) previousAdmission.current = admitted;

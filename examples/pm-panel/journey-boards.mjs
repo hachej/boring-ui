@@ -26,6 +26,8 @@ async function shot(board) {
 }
 try {
   browser = await launch('about:blank', { evidence, args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] });
+  // Carets paint only in a focused page: the C6/D8/D9 shots show the caret at the end of the draft, as the boards do.
+  await browser.send('Emulation.setFocusEmulationEnabled', { enabled: true });
   await browser.emulate('phone');
   await browser.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
   await browser.send('Page.navigate', { url: app.url });
@@ -57,7 +59,6 @@ try {
   await at('0:14'); await pause(200);
   await browser.tap(q('[data-testid=pm-done]'));
   await browser.until('C6 review', `${mode('sheet')} && ${visible('[data-testid=pm-review-hint]')} && document.querySelectorAll('[data-testid=pm-chip]').length === 2`, 15000);
-  await browser.evaluate(`document.activeElement?.blur?.()`);
   await shot('C6');
   await browser.tap(q('[data-testid=composer-submit]'));
   await browser.until('C7 thread', `${mode('full')} && ${visible('[data-testid=pm-sent-message]')} && ${visible('[data-testid=pm-request-card]')}`, 20000);

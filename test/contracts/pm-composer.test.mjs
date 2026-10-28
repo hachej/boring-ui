@@ -43,6 +43,9 @@ test('C4/C5 share one exclusive selection toggle and the recorder button; mic an
     // Spec 1 §1: paused swaps pause for the mic (resume); the two never show together.
     assert.equal((html.match(/data-testid="pm-pause"/g) ?? []).length, paused ? 0 : 1);
     assert.equal((html.match(/data-testid="pm-mic"/g) ?? []).length, paused ? 1 : 0);
+    // The boards' pause: two stroked bars at stroke 2.5 (C4), never lucide's filled rectangles.
+    if (!paused) assert.match(html, /data-testid="pm-pause"[^]*?<svg[^>]*stroke-width="2\.5"[^>]*data-icon="pause"[^>]*><path d="M9 5v14"><\/path><path d="M15 5v14"><\/path><\/svg>/);
+    assert.doesNotMatch(html, /lucide-pause/);
     assert.equal(/data-testid="pm-hint"/.test(html), show, 'navigate mode hides the hint (C5)');
     assert.match(html, paused ? /data-phase="paused"/ : /data-phase="rec"/);
     // Left to right: toggle · hint · timer · pause (or mic) · ×.

@@ -25,6 +25,8 @@ async function open() {
 }
 try {
   browser = await launch('about:blank', { evidence, args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] });
+  // Carets paint only in a focused page: the C6/D8/D9 shots show the caret at the end of the draft, as the boards do.
+  await browser.send('Emulation.setFocusEmulationEnabled', { enabled: true });
   await browser.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 2, mobile: false });
   await open();
   // D8: the review after a dictated pointing round.
@@ -38,7 +40,6 @@ try {
   await at('0:10'); await pause(400);
   await browser.press('Escape');
   await browser.until('D8 review', `${mode('sheet')} && document.querySelectorAll('[data-testid=pm-chip]').length === 2`, 15000);
-  await browser.evaluate('document.activeElement?.blur?.()');
   await shot('D8');
   // D1: sent, with the PM's answer.
   await browser.click(q('[data-testid=composer-submit]'));
