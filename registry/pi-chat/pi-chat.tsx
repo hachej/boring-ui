@@ -26,8 +26,7 @@ import { TranscriptChunk } from './message';
 import { markLeads } from './rows';
 import type { Row } from './rows';
 import { MessageQueue } from './queue';
-import { ChatNotices, Notice, PreparingStatus, preparing } from './notice';
-import { Shimmer } from './shimmer';
+import { ChatNotices, ChatConnectionNotice, ChatStatusLine } from './notice';
 import { PAGE_FIRST, PAGE_MORE, useChatSession, useRowChunks, useTranscript } from './session';
 import { useChatDraft } from './use-chat-draft';
 import { useChatPlacement } from './use-remote-chat';
@@ -211,8 +210,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
     const path = item.path, open = onOpenFile ?? mentions?.open;
     conversationFiles.set(`file:${path}`, { id: `file:${path}`, name: displayName(path), open: open ? () => open(path) : undefined });
   }
-  const { pinned, retry } = derived;
-  const showPreparing = preparing({ natural: session.natural, waitingForAnswer, run: derived.run, retry, compacting: derived.compacting, stop: state.stop });
+  const { pinned } = derived;
   const transcript = useTranscript(transcriptRows, displayLimit ?? paging?.first ?? PAGE_FIRST, paging?.more ?? PAGE_MORE, { state: state.history, connected: !state.disposed && connected, load: controller.loadEarlier }, displayLimit === undefined);
   const { stick, hidden } = transcript, { scrollRef, isAtBottom } = stick;
   useLayoutEffect(() => { scrollToBottom.current = () => { transcript.reset(); void stick.scrollToBottom('instant'); }; });
@@ -244,10 +242,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
     {decisions && <><div data-boring="required-decisions" className="shrink-0 px-4 py-2">{decisions}</div><Separator /></>}
     {pinned.length > 0 && <><aside aria-label={labels.requiredActions} className="shrink-0 space-y-2 px-4 py-2">{pinned.map(card => <div key={card.key}>{card.content}</div>)}</aside><Separator /></>}
     {(connectionKind === 'error' || connectionKind === 'closed') && <div className="shrink-0 px-4 pt-2">
-      <Notice tone={connectionKind === 'error' ? 'error' : 'info'} testid="connection-notice">
-        <span className="flex-1">{connectionKind === 'error' ? state.connection.kind === 'error' && renderConnectionError ? renderConnectionError(state.connection.error) : labels.loadFailed : labels.disconnected}</span>
-        {!state.disposed && <Button size="sm" variant="outline" onClick={() => act(controller.connect)}><icons.reconnect data-icon="inline-start" aria-hidden="true" />{labels.reconnect}</Button>}
-      </Notice></div>}
+      <ChatConnectionNotice state={state} renderConnectionError={renderConnectionError} onReconnect={() => act(controller.connect)} /></div>}
     {pickingConversation && conversations && historyList && <ConversationHistory conversations={conversations} onClose={() => setPickingConversation(false)} />}
 
     <div data-testid="conversation-content" className={cn('relative min-h-0 flex-1', empty && emptyLayout === 'centered' && 'md:min-h-60 md:flex-none')}>
@@ -273,9 +268,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
     <footer data-testid="composer-dock" className="shrink-0 px-4 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))] md:px-6">
       <div className="mx-auto w-full max-w-[720px] space-y-2">
         <div {...(session.natural ? {} : { 'aria-live': 'polite' as const })} className="space-y-2 empty:hidden">
-          {session.natural ? showPreparing && <PreparingStatus>{derived.stageStatus}</PreparingStatus> : working && <p role="status" data-testid="agent-status" className="m-0 flex items-center gap-2 px-1 text-xs text-muted-foreground">
-            <Shimmer active={!waitingForAnswer}>{waitingForAnswer ? labels.waitingForAnswer : retry ? labels.retryPending : labels.agentWorking}</Shimmer></p>}
-          {!session.natural && derived.compacting && <p role="status" className="m-0 px-1 text-xs text-muted-foreground">{labels.compacting}</p>}
+          <ChatStatusLine natural={session.natural} working={working} waitingForAnswer={waitingForAnswer} derived={derived} stop={state.stop} />
           <ChatNotices natural={session.natural} state={state} error={error} onReconcile={() => act(controller.reconcile)} onRetry={() => act(controller.retrySameRequest)} />
         </div>
         <div>

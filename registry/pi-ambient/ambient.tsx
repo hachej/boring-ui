@@ -25,7 +25,7 @@ import { ConversationHistory, TranscriptHistory } from '../pi-chat/history';
 import { withChatPlugins } from '../pi-chat-plugins/chat-plugins';
 import { TranscriptChunk } from '../pi-chat/message';
 import type { RowContext } from '../pi-chat/message';
-import { ChatNotices, Notice, PreparingStatus, preparing } from '../pi-chat/notice';
+import { ChatNotices, ChatConnectionNotice, ChatStatusLine } from '../pi-chat/notice';
 import { AgentNotifications, KindIcon, createNotificationStore, defaultNotificationLabels, noticeTextOf, useRunNotifications, useNotifications } from './notifications';
 import type { AgentNotification, NotificationLabels, NotificationStore } from './notifications';
 import { ChatTextProvider, defaultChatIcons, defaultChatLabels, useMergedText } from '../pi-chat/labels';
@@ -114,6 +114,8 @@ export interface AmbientArtifactPanelApi extends WorkspacePanelApi {
 
 export interface AmbientChatProps extends Omit<ChatFeatureProps, 'artifacts'> {
   readonly controller: NativeChatController;
+  /** Host recovery content, shared with PiChat in expanded and compact connection notices. */
+  readonly renderConnectionError?: ((error: unknown) => ReactNode) | undefined;
   /** Artifact cards (`ArtifactsConfig` of `pi-artifacts`); the ambient bar plugs in their card itself. */
   readonly artifacts?: ArtifactsConfig | undefined;
   /** Embed the expanded conversation in a host workspace. Switching this flag changes layout without remounting the transcript or composer. The host supplies the header. */
@@ -230,7 +232,7 @@ type SessionProps = Omit<AmbientChatProps, 'labels' | 'icons'> & { readonly labe
 
 function AmbientSession({ controller, embedded = false, labels, icons, avatar, headerActions, headerTools, messageActions, variant = 'contrast', mode = 'expert', presentation, voiceReplay, actions,
   windowState, onWindowState, store, storageKey = 'boring.ambient.position', storage = 'session', tools, belowComposer, composerChips, composerLayout = 'card', onOpenFull, onFeedback, notifications, autoDismissMs, maxToasts, systemNotifications = false,
-  renderEntry, hideLine, displayLimit, paging, historicalMessageActions, unread: replyUnread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept = 'image/*', slash, mentions, attachments, onOpenFile, fileChanges, pasteToFile, model, effort, replyFooter, artifacts: hostArtifacts, artifactPanel, artifactTarget, conversations, onDock, feedback: composerFeedback, className,
+  renderConnectionError, renderEntry, hideLine, displayLimit, paging, historicalMessageActions, unread: replyUnread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept = 'image/*', slash, mentions, attachments, onOpenFile, fileChanges, pasteToFile, model, effort, replyFooter, artifacts: hostArtifacts, artifactPanel, artifactTarget, conversations, onDock, feedback: composerFeedback, className,
   activeController }: SessionProps) {
   const { title } = labels;
   useChatPlacement(controller, embedded ? 'docked' : 'floating');
@@ -444,9 +446,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
       </header>
 
       {expanded && <div className="flex min-h-0 flex-1 flex-col">
-        {(connectionKind === 'error' || connectionKind === 'closed') && <div className="px-4 pb-2"><Notice tone={connectionKind === 'error' ? 'error' : 'info'} testid="connection-notice">
-          <span className="flex-1">{connectionKind === 'error' ? labels.loadFailed : labels.disconnected}</span>
-          {!state.disposed && <Button size="sm" variant="outline" onClick={() => act(controller.connect)}><icons.reconnect data-icon="inline-start" aria-hidden="true" />{labels.reconnect}</Button>}</Notice></div>}
+        {(connectionKind === 'error' || connectionKind === 'closed') && <div className="px-4 pb-2"><ChatConnectionNotice state={state} renderConnectionError={renderConnectionError} onReconnect={() => act(controller.connect)} /></div>}
         {derived.pinned.length > 0 && <aside aria-label={labels.requiredActions} className="shrink-0 space-y-2 px-4 pb-2">{derived.pinned.map(card => <div key={card.key}>{card.content}</div>)}</aside>}
         <div className="relative flex min-h-0 flex-1 flex-col">
           <MessageScroller>
@@ -468,11 +468,9 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
       {(expanded || !embedded) && <Separator />}
       <div className={cn('shrink-0', phone && 'pb-[env(safe-area-inset-bottom)]')}>
         <div className="space-y-2 px-3 empty:hidden [&:has(*)]:pt-2">
-          {preparing({ natural: session.natural, waitingForAnswer, run: derived.run, retry: derived.retry, compacting: derived.compacting, stop: state.stop }) && <PreparingStatus>{derived.stageStatus}</PreparingStatus>}
+          <ChatStatusLine natural={session.natural} working={working} waitingForAnswer={waitingForAnswer} derived={derived} stop={state.stop} />
           <ChatNotices natural={session.natural} state={state} error={error} onReconcile={() => act(controller.reconcile)} onRetry={() => act(controller.retrySameRequest)} />
-          {!expanded && (connectionKind === 'error' || connectionKind === 'closed') && <Notice tone="info" testid="connection-notice">
-            <span className="flex-1">{connectionKind === 'error' ? labels.loadFailedShort : labels.disconnectedShort}</span>
-            {!state.disposed && <Button size="sm" variant="outline" onClick={() => act(controller.connect)}>{labels.reconnect}</Button>}</Notice>}
+          {!expanded && <ChatConnectionNotice compact fallback={{ error: labels.loadFailedShort, closed: labels.disconnectedShort }} state={state} renderConnectionError={renderConnectionError} onReconnect={() => act(controller.connect)} />}
         </div>
         <div className="px-3 pt-2 pb-3">
           <ConversationFiles files={files} />

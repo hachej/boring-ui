@@ -6,7 +6,7 @@ import { mkdirSync } from 'node:fs';
 import { build } from 'esbuild';
 import { Window } from 'happy-dom';
 
-async function harness(t, view = { conversation: { id: 1 }, entries: [], docs: {} }) {
+async function harness(t, view = { conversation: { id: 1 }, entries: [], docs: {} }, failure, closed = new Promise(() => {})) {
   const window = new Window({ url: 'https://fictional.invalid/', settings: { disableIframePageLoading: true } });
   const names = ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node', 'Text', 'DOMParser', 'MutationObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'IS_REACT_ACT_ENVIRONMENT', 'confirm', 'sessionStorage', 'localStorage', 'ResizeObserver', 'KeyboardEvent', 'addEventListener', 'removeEventListener', 'matchMedia', 'innerWidth', 'innerHeight'];
   const globals = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
@@ -28,7 +28,7 @@ async function harness(t, view = { conversation: { id: 1 }, entries: [], docs: {
   const root = createRoot(element);
   const chat = createNativeChatController({ identity: { runtimeId: 'fictional', scopeId: 'fictional', principalId: 'alice' },
     conversation: { id: 1 }, context: { value: () => undefined, toString: () => 'fictional' }, history: false,
-    source: { open: async () => ({ value: view, start() {}, closed: new Promise(() => {}), stop: async () => ({ kind: 'stopped' }) }) } });
+    source: { open: async () => { if (failure) throw failure; return ({ value: view, start() {}, closed, stop: async () => ({ kind: 'stopped' }) }); } } });
   t.after(async () => {
     await act(async () => root.unmount());
     chat.dispose();
@@ -235,4 +235,62 @@ test('ambient bar follows a storage prop change after mount for the next move', 
   await press(window, act, element, 'ArrowUp');
   assert.deepEqual(JSON.parse(window.sessionStorage.getItem(key)), { right: 16, bottom: 48 });
   assert.deepEqual(JSON.parse(window.localStorage.getItem(key)), afterLocal, 'localStorage is not written after the switch');
+});
+
+
+test('Ambient honours the host connection renderer in expanded and compact notices and reconnects', async t => {
+  const failure = new Error('fictional connection failure');
+  const { element, root, chat, act, createElement: h, AmbientChat } = await harness(t, undefined, failure);
+  const seen = [];
+  for (const state of ['expanded', 'bar']) {
+    await act(async () => root.render(h(AmbientChat, { controller: chat, state, notifications: false,
+      renderConnectionError: error => { seen.push(error); return h('strong', { 'data-testid': 'host-connection-error' }, 'Host recovery'); } })));
+    const notice = element.querySelector('[data-testid=connection-notice]');
+    assert.ok(notice?.querySelector('[data-testid=host-connection-error]'), `${state} keeps host recovery content`);
+    assert.equal(seen.at(-1), failure);
+    assert.ok(notice.querySelector('button'), 'reconnect remains available');
+    await act(async () => notice.querySelector('button').click());
+  }
+});
+
+for (const kind of ['error', 'closed']) test(`compact Ambient preserves custom ${kind} short labels`, async t => {
+  let close;
+  const closed = new Promise(resolve => { close = resolve; });
+  const { element, root, chat, act, createElement: h, AmbientChat } = await harness(t, undefined,
+    kind === 'error' ? new Error('Fictional offline') : undefined, closed);
+  const render = renderConnectionError => act(async () => root.render(h(AmbientChat, { controller: chat, state: 'bar', notifications: false,
+    labels: { loadFailed: 'Full failure', disconnected: 'Full disconnect', loadFailedShort: 'Brief failure', disconnectedShort: 'Brief disconnect' }, renderConnectionError })));
+  await render();
+  if (kind === 'closed') await act(async () => close({ kind: 'stopped' }));
+  assert.equal(chat.getSnapshot().connection.kind, kind);
+  const notice = () => element.querySelector('[data-testid=connection-notice]');
+  assert.ok(notice()?.textContent.includes(kind === 'error' ? 'Brief failure' : 'Brief disconnect'));
+  assert.doesNotMatch(notice().textContent, /Full/);
+  if (kind === 'error') {
+    await render(() => h('strong', null, 'Host recovery'));
+    assert.match(notice().textContent, /Host recovery/);
+    assert.doesNotMatch(notice().textContent, /Brief failure/);
+  }
+});
+
+test('Ambient shares PiChat working, waiting, retry, compaction and natural statuses', async t => {
+  const call = { type: 'toolCall', id: 'question', name: 'ask_user', arguments: { question: 'Fictional question?' } };
+  const cases = [
+    { name: 'working', docs: { 'pi.live': { run: { id: 'fictional' } } }, expected: 'Working' },
+    { name: 'retry', docs: { 'pi.live': { run: { id: 'fictional' }, generation: { retry: { attempt: 1 } } } }, expected: 'Retrying' },
+    { name: 'waiting', docs: { 'pi.live': { run: { id: 'fictional' } } }, entries: [{ id: 1, model: [{ role: 'assistant', content: [call], stopReason: 'toolUse' }] }], expected: 'Waiting' },
+    { name: 'compaction', docs: { 'pi.live': { compactions: [{}] } }, expected: 'Compacting', status: null },
+  ];
+  for (const fixture of cases) await t.test(fixture.name, async t => {
+    const view = { conversation: { id: 1 }, entries: fixture.entries ?? [], docs: fixture.docs };
+    const { element, root, chat, act, createElement: h, AmbientChat } = await harness(t, view);
+    const render = presentation => act(async () => root.render(h(AmbientChat, { controller: chat, defaultState: 'expanded', mode: 'developer', presentation, notifications: false,
+      labels: { agentWorking: 'Working', retryPending: 'Retrying', waitingForAnswer: 'Waiting', compacting: 'Compacting' } })));
+    await render();
+    if (fixture.status !== null) assert.equal(element.querySelector('[data-testid=agent-status]')?.textContent, fixture.expected);
+    else assert.ok([...element.querySelectorAll('[role=status]')].some(node => node.textContent === fixture.expected));
+    await render('natural');
+    assert.equal(element.querySelector('[data-testid=agent-status]'), null);
+    assert.equal(Boolean(element.querySelector('[data-testid=preparing]')), fixture.name !== 'waiting');
+  });
 });
