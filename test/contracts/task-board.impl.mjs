@@ -15,6 +15,27 @@ const tasks = [
   { id: 'closed', title: 'Fictional closed task', state: 'closed' },
 ];
 let sequence = 0;
+
+test('answered questions name their actor, Other is a distinct host intent, files use the injected right viewer and remain task-bound', async t => {
+  const other = [], opened = [], shown = [];
+  const record = { ...tasks[0], questions: [...tasks[0].questions, { id: 'time', text: 'When?', answer: 'Noon', answeredBy: 'Sam' }], files: [{ path: 'docs/tasks/D-201/brief.md', name: 'Brief' }] };
+  const f = await fixture(t, { tasks: [record, tasks[1]], onAnswer: () => {}, onOther: (...args) => other.push(args),
+    onOpenFile: (...args) => opened.push(args), onShowFile: (...args) => shown.push(args),
+    renderFile: (task, file, api) => f.h('div', { 'data-host-viewer': task.id }, file.path,
+      f.h('button', { onClick: api.onShowFile }, 'Montrer'), f.h('button', { onClick: api.onClose }, 'Close file')) });
+  await f.click('[data-task-open=orchard]');
+  assert.match(document.querySelector('[data-task-question=time]').textContent, /Noon.*Sam/);
+  await f.click('[data-task-other=route]'); assert.equal(other[0][1].id, 'route');
+  await f.click('[data-task-file]');
+  assert.equal(opened[0][0].id, 'orchard');
+  assert.equal(document.querySelector('[data-task-file-pane]').previousElementSibling.getAttribute('aria-label'), 'Task detail');
+  assert.equal(document.querySelector('[data-task-detail]').dataset.taskDetail, 'orchard');
+  await f.click('[data-host-viewer] button'); assert.equal(shown[0][1].path, record.files[0].path);
+  await f.click('[data-host-viewer] button:last-child'); assert.equal(document.querySelector('[data-task-file-pane]'), null);
+  await f.click('[data-task-file]');
+  await f.render({ selectedTask: 'picnic' }); assert.equal(document.querySelector('[data-task-file-pane]'), null);
+  await f.render({ selectedTask: 'orchard', tasks: [{ ...record, files: [] }] }); assert.equal(document.querySelector('[data-task-file-pane]'), null);
+});
 async function fixture(t, props = {}, query = '?agent=pm') {
   const outfile = `${out}/board-${++sequence}.mjs`;
   await build({ entryPoints: ['registry/task-board/task-board.tsx'], outfile, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', alias: { '@': resolve('examples/app-shell') }, logLevel: 'silent' });

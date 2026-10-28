@@ -31,9 +31,9 @@ import type { AgentNotification, NotificationLabels, NotificationStore } from '.
 import { ChatTextProvider, defaultChatIcons, defaultChatLabels, useMergedText } from '../pi-chat/labels';
 import type { ChatIcons, ChatLabels } from '../pi-chat/labels';
 import { MessageQueue } from '../pi-chat/queue';
-import { useArtifactFollow } from '@hachej/boring-ui-kit/chat-react';
+import { useChatView, useArtifactFollow } from '@hachej/boring-ui-kit/chat-react';
 import type { ArtifactShown, ArtifactFailed } from '@hachej/boring-ui-kit/chat-react';
-import { taskSubjectKey } from '../pi-artifacts/artifact';
+import { createTaskArtifact, pendingPresents, taskSubjectKey } from '../pi-artifacts/artifact';
 import type { ArtifactDescriptor, PresentedArtifact, ArtifactsConfig } from '../pi-artifacts/artifact';
 import { artifactCards } from '../pi-artifacts/artifact-card';
 import { PAGE_FIRST, PAGE_MORE, useChatSession, useRowChunks, useTranscript } from '../pi-chat/session';
@@ -280,6 +280,18 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
     showing: path => !inWindow || (expanded && opened?.descriptor.type !== 'task' && opened?.descriptor.target.resource.path === path),
     showingTask: subject => !inWindow || (expanded && opened?.descriptor.type === 'task' && taskSubjectKey(opened.descriptor.subject) === taskSubjectKey(subject)),
     openPresent: () => false, answer: actions?.answer });
+  const pendingTasks = useChatView(controller, pendingPresents);
+  const requestedTasks = useRef(new WeakMap<NativeChatController, Set<string>>());
+  useEffect(() => {
+    if (inWindow || !hostArtifacts?.autoOpenTasks) return;
+    let requested = requestedTasks.current.get(controller);
+    if (!requested) { requested = new Set(); requestedTasks.current.set(controller, requested); }
+    for (const call of pendingTasks) {
+      if (!('subject' in call) || requested.has(call.id)) continue;
+      requested.add(call.id);
+      hostArtifacts.open(createTaskArtifact(call.subject), { onShown: follow.onShown, onFailed: follow.onFailed });
+    }
+  }, [controller, inWindow, hostArtifacts, pendingTasks, follow.onShown, follow.onFailed]);
   const closeArtifact = () => { follow.recordClosed(); setOpened(null); setFullscreen(false); };
   const artifacts = useMemo<ArtifactsConfig | undefined>(() => !inWindow ? hostArtifacts && { ...hostArtifacts,
     open: artifact => hostArtifacts.open(artifact, { onShown: follow.onShown, onFailed: follow.onFailed }) } : {

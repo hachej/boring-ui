@@ -8,6 +8,13 @@ export interface TaskQuestion {
   readonly text: string;
   readonly options?: readonly (string | { readonly label: string; readonly value: string })[];
   readonly answer?: string;
+  /** Display identity supplied by the host, not inferred from the current viewer. */
+  readonly answeredBy?: string;
+}
+export interface TaskFile {
+  /** Authorized workspace path supplied by the host adapter; never derived from the task id. */
+  readonly path: string;
+  readonly name?: string;
 }
 export interface TaskHistory {
   readonly id?: string;
@@ -31,6 +38,7 @@ export interface TaskRecord {
   readonly screen?: string;
   readonly capture?: string;
   readonly questions?: readonly TaskQuestion[];
+  readonly files?: readonly TaskFile[];
   readonly history?: readonly TaskHistory[];
   readonly updated_at?: string;
   readonly created_at?: string;

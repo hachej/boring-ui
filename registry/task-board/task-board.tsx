@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useRef, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { selectTasks, taskFromUrl, taskReference, taskUrl, TASK_STATES } from '@hachej/boring-ui-kit/task-board';
-import type { TaskFilter, TaskRecord, TaskState } from '@hachej/boring-ui-kit/task-board';
+import type { TaskFile, TaskFilter, TaskRecord, TaskState } from '@hachej/boring-ui-kit/task-board';
 import { Button } from '@/components/ui/button';
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
 import { cn } from '../utils/utils';
@@ -15,7 +15,7 @@ export { TaskRequestCard, TaskStatusChip } from './task-request-card';
 export { TaskDetail } from './task-detail';
 export type { TaskRequestCardProps } from './task-request-card';
 export type { TaskDetailProps } from './task-detail';
-export type { TaskRecord, TaskFilter, TaskState } from '@hachej/boring-ui-kit/task-board';
+export type { TaskFile, TaskRecord, TaskFilter, TaskState } from '@hachej/boring-ui-kit/task-board';
 
 const navigation = 'boring:task-navigation';
 const subscribe = (changed: () => void) => {
@@ -25,6 +25,12 @@ const subscribe = (changed: () => void) => {
 const readSelection = () => taskFromUrl(window.location.href);
 const serverSelection = () => null;
 
+export interface TaskFileViewApi {
+  readonly onClose: () => void;
+  readonly onBack: () => void;
+  /** The host's PM pointing service; absent unless onShowFile was supplied. */
+  readonly onShowFile?: (() => void) | undefined;
+}
 export interface TaskBoardProps {
   readonly tasks: readonly TaskRecord[];
   readonly filter?: TaskFilter;
@@ -40,16 +46,27 @@ export interface TaskBoardProps {
   readonly onOpen?: ((task: TaskRecord) => void) | undefined;
   readonly actions?: ((task: TaskRecord) => ReactNode) | undefined;
   readonly onAnswer?: TaskDetailProps['onAnswer'];
+  readonly onOther?: TaskDetailProps['onOther'];
+  /** Adapter paths only. The host reauthorizes them when opening the regular viewer. */
+  readonly onOpenFile?: TaskDetailProps['onOpenFile'];
+  readonly onShowFile?: TaskDetailProps['onOpenFile'];
+  /** Supply the host's regular FileViewer, never another file store or composer. Detail stays left of this slot. */
+  readonly renderFile?: ((task: TaskRecord, file: TaskFile, api: TaskFileViewApi) => ReactNode) | undefined;
   readonly className?: string;
 }
 
 /** Authorized records in; local presentation out. Container width, never the viewport, chooses list and side detail. */
 export function TaskBoard({ tasks, filter = 'all', currentUser, limit, variant = 'board', title = 'Tasks', labels = taskStateLabels,
-  selectedTask, onSelectedTaskChange, onOpen, actions, onAnswer, className }: TaskBoardProps) {
+  selectedTask, onSelectedTaskChange, onOpen, actions, onAnswer, onOther, onOpenFile, onShowFile, renderFile, className }: TaskBoardProps) {
   const urlSelection = useSyncExternalStore(subscribe, readSelection, serverSelection);
   const selected = selectedTask === undefined ? onOpen ? null : urlSelection : selectedTask;
   const detail = selected === null ? undefined : tasks.find(task => task.id === selected || taskReference(task) === selected);
   const shown = selectTasks(tasks, { filter, ...(currentUser === undefined ? {} : { currentUser }), ...(limit === undefined ? {} : { limit }) });
+  const [fileSelection, setFileSelection] = useState<{ readonly taskId: string; readonly path: string } | null>(null);
+  const file = detail?.id === fileSelection?.taskId ? detail?.files?.find(candidate => candidate.path === fileSelection.path) : undefined;
+  const fileOpen = !!file && !!renderFile;
+  const closeFile = () => setFileSelection(null);
+  const openFile = (task: TaskRecord, file: TaskFile) => { setFileSelection({ taskId: task.id, path: file.path }); onOpenFile?.(task, file); };
   const root = useRef<HTMLElement>(null);
   const back = useRef<HTMLButtonElement>(null);
   const previous = useRef<string | null>(null);
@@ -66,6 +83,7 @@ export function TaskBoard({ tasks, filter = 'all', currentUser, limit, variant =
     previous.current = detail?.id ?? selected;
   }, [selected, detail?.id]);
   const select = (id: string | null) => {
+    closeFile();
     if (selectedTask === undefined) {
       window.history.pushState(null, '', taskUrl(window.location.href, id));
       window.dispatchEvent(new Event(navigation));
@@ -79,8 +97,8 @@ export function TaskBoard({ tasks, filter = 'all', currentUser, limit, variant =
   return <section ref={root} data-boring="task-board" data-variant={variant} aria-label={title} className={cn('@container/task-board min-w-0', className)} onKeyDown={event => {
     if (event.key === 'Escape' && selected !== null && !event.defaultPrevented) { event.preventDefault(); select(null); }
   }}>
-    <div className={cn('grid min-w-0 gap-4', selected !== null && '@4xl/task-board:grid-cols-[minmax(0,1fr)_22rem]')}>
-      <div data-task-list className={cn('@container/task-rails min-w-0 flex-col gap-4', selected !== null ? 'hidden @4xl/task-board:flex' : 'flex')}>
+    <div className={cn('grid min-w-0 gap-4', fileOpen ? 'grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]' : selected !== null && '@4xl/task-board:grid-cols-[minmax(0,1fr)_22rem]')}>
+      <div data-task-list className={cn('@container/task-rails min-w-0 flex-col gap-4', fileOpen ? 'hidden' : selected !== null ? 'hidden @4xl/task-board:flex' : 'flex')}>
         {variant === 'compact' ? <div role="list" aria-label={title} className="flex flex-col gap-2">{shown.length ? shown.map(card) : empty}</div> : <>
           <div className="grid min-w-0 gap-4 @2xl/task-rails:grid-cols-3">
             {TASK_STATES.slice(0, 3).map(state => <section key={state} data-task-column={state} className="flex min-w-0 flex-col gap-3" aria-label={labels[state]}>
@@ -97,7 +115,10 @@ export function TaskBoard({ tasks, filter = 'all', currentUser, limit, variant =
       </div>
       {selected !== null && <section aria-label="Task detail" data-task-side className="flex min-w-0 flex-col gap-4" aria-live="polite">
         <Button ref={back} variant="outline" className="min-h-11 self-start" onClick={() => select(null)}>Back to tasks</Button>
-        {detail ? <TaskDetail task={detail} labels={labels} actions={actions?.(detail)} onAnswer={onAnswer} /> : <Empty><EmptyHeader><EmptyTitle>Task unavailable</EmptyTitle><EmptyDescription>The host has not supplied this task.</EmptyDescription></EmptyHeader></Empty>}
+        {detail ? <TaskDetail task={detail} labels={labels} actions={actions?.(detail)} onAnswer={onAnswer} onOther={onOther} onOpenFile={renderFile || onOpenFile ? openFile : undefined} /> : <Empty><EmptyHeader><EmptyTitle>Task unavailable</EmptyTitle><EmptyDescription>The host has not supplied this task.</EmptyDescription></EmptyHeader></Empty>}
+      </section>}
+      {fileOpen && detail && file && <section aria-label="Task file viewer" data-task-file-pane={detail.id} className="h-[min(80dvh,900px)] min-w-0 overflow-hidden">
+        {renderFile!(detail, file, { onClose: closeFile, onBack: closeFile, onShowFile: onShowFile ? () => onShowFile(detail, file) : undefined })}
       </section>}
     </div>
   </section>;

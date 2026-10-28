@@ -296,6 +296,22 @@ test('Ambient shares PiChat working, waiting, retry, compaction and natural stat
 });
 
 
+test('Ambient opt-in task auto-open requests a host mount while pending, never acknowledges the descriptor', async t => {
+  const subject = { task: 'D-201' };
+  const view = { conversation: { id: 1 }, entries: [{ id: 3, model: [{ role: 'assistant', content: [{ type: 'toolCall', id: 'waiting', name: 'present', arguments: subject }], stopReason: 'toolUse' }] }], docs: { 'pi.live': { run: { id: 'fictional' } } } };
+  const { root, chat, act, createElement: h, AmbientChat } = await harness(t, view);
+  const sent = [], opened = [];
+  let reports;
+  await act(async () => root.render(h(AmbientChat, { controller: chat, notifications: false, artifactTarget: 'host', actions: { answer: async (id, body) => { sent.push({ id, ...JSON.parse(body) }); return { kind: 'denied' }; } },
+    artifacts: { autoOpenTasks: true, open: (artifact, api) => { opened.push(artifact); reports = api; } } })));
+  assert.equal(opened.length, 1);
+  assert.deepEqual(opened[0].subject, subject);
+  assert.deepEqual(sent, []);
+  await act(async () => reports.onShown({ subject }));
+  assert.equal(sent[0].kind, 'opened');
+  assert.equal(sent[0].id, '[3,"waiting"]');
+});
+
 test('Ambient host artifact callbacks expose mount and failure reports for files and task records', async t => {
   const fixtures = [
     { args: { path: 'plan.txt' }, descriptor: { schema: 'boring.artifact', version: 1, title: 'Plan', type: 'code', mediaType: 'text/plain', target: { resource: { providerId: 'fictional', path: 'plan.txt' }, view: { kind: 'published' } }, revision: 'r1' }, report: { path: 'plan.txt', revision: 'r1' } },

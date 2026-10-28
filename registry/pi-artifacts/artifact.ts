@@ -102,6 +102,8 @@ export interface ArtifactHostViewApi {
 
 /** What the host passes to `PiChat` to turn artifact tool results into cards. */
 export interface ArtifactsConfig {
+  /** Ambient host only: request task viewers while native present waits. The viewer must still report its loaded mount or failure. Files are unchanged. */
+  readonly autoOpenTasks?: boolean | undefined;
   /** The app's own artifact kinds (label, icon, renderer), consulted before the built-in types. */
   readonly kinds?: readonly KindMatch[] | undefined;
   /** The person clicked a card: show this artifact (and revision) in the host's panel. */
