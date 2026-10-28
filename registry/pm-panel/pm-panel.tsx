@@ -67,10 +67,13 @@ function BoundLayout({ binding, children, navigation, screen }: { readonly bindi
   const [placement, setPlacement] = useState({ controller, mode: 'sheet', show: false });
   const report = useCallback((controller: ImproveSpec['controller'], mode: string, show: boolean) => setPlacement(current => current.controller === controller && current.mode === mode && current.show === show ? current : { controller, mode, show }), []);
   const current = placement.controller === controller ? placement : { mode: 'sheet', show: false };
+  const [opened, setOpened] = useState(false);
+  if (binding?.open && !opened) setOpened(true);
   const strip = current.mode === 'point' || current.mode === 'navigate';
   return <div data-pm-layout="" className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
     <div ref={setPage} data-pm-page="" data-pm-screen={screen} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{children}</div>
-    {binding && <PanelSession key={instance.sequence} binding={binding} page={page} screen={screen} report={report} />}
+    {/* Mounted on the first open, then kept: the picks, pins and recording survive × (spec 2, draft persistence). */}
+    {binding && opened && <PanelSession key={instance.sequence} binding={binding} page={page} screen={screen} report={report} />}
     {/* The tab bar shows under the strip and works normally; the sheet sits at the bottom instead of it. */}
     <div data-pm-navigation="" hidden={Boolean(binding?.open && !strip)} className="shrink-0">{navigation}</div>
   </div>;
