@@ -1,4 +1,4 @@
-import type { Context } from '@earendil-works/chord';
+import { BACKGROUND_CONTEXT, withAbortSignal, type Context } from '@earendil-works/chord/context';
 import type { FileSystem, FileWatcher, WatchChange } from '@earendil-works/pi-durable/env';
 import type { CommittedChange, PublicationLookupResult, PublicationReceipt, PublicationResult, ReadResult, ResourceAccess, ResourceCapabilities, ResourceExpectation, ResourceLocator, ResourceProvider, ResourceRead, ResourceRef, ResourceChange, PublicationRequest, ResourceRenameRequest, ResourceRenamer, ResourceDeleter } from './contracts.js';
 import { createWorkspaceCatalog } from './workspace-catalog.js';
@@ -172,7 +172,7 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
   const known = new Map<string, string | null>();
   const startedAt = Date.now();
 
-  const fsContext = (signal?: AbortSignal): Context => ({ abortSignal: signal, value: () => undefined, toString: () => 'boring-workspace' });
+  const fsContext = (signal?: AbortSignal): Context => signal ? withAbortSignal(signal, BACKGROUND_CONTEXT) : BACKGROUND_CONTEXT;
   const absolute = (path: string) => root.endsWith('/') ? root + path : `${root}/${path}`;
   const ref = (path: string, revision: string): ResourceRef => ({ resource: { providerId, path }, view: { kind: 'published' }, revision });
   const supported = (value: ResourceLocator) => value.resource.providerId === providerId && value.view.kind === 'published';

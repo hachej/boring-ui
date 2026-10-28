@@ -44,7 +44,7 @@ type ViewDocument = { view: ViewRecord | null };
 
 /** One member per assistant entry and tool call, in the calling conversation. */
 const documents = defineDocFamily<ViewDocument, null>({
-  kind: 'boring.view-open', version: 1, scope: 'conversation', history: 'latest', fork: 'initial', family: true,
+  kind: 'boring.view-open', checkpointWhen: () => false, version: 1, scope: 'conversation', history: 'latest', fork: 'initial', family: true,
   initial: () => ({ view: null }),
 });
 

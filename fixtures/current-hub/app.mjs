@@ -21,9 +21,9 @@ export const fixtureRequest = (appId, requestId = 'request-1', inputVersion = 1)
 const actorFields = ['principalId', 'initiatorId', 'scopeId', 'installationId'];
 const refFields = ['appId', 'runtimeId', 'instanceId', 'capabilityVersion', ...actorFields, 'requestId', 'producer', 'delivery', 'operationId'];
 const same = (left, right, fields) => fields.every(key => left?.[key] === right?.[key]);
-const requests = defineDocFamily({ kind: 'fixture.hub.app-requests', version: 1, scope: 'session', family: true,
+const requests = defineDocFamily({ kind: 'fixture.hub.app-requests', checkpointWhen: () => false, version: 1, scope: 'session', family: true,
   initial: () => ({ binding: null }) });
-const incarnation = defineDoc({ kind: 'fixture.hub.app-instance', version: 2, scope: 'session',
+const incarnation = defineDoc({ kind: 'fixture.hub.app-instance', checkpointWhen: () => false, version: 2, scope: 'session',
   initial: () => ({ instanceId: randomUUID(), definition: null }),
   migrate: () => { throw new Error('Fixture v1 storage has no qualified definition binding'); } });
 const sameDefinition = (a, b) => JSON.stringify(a) === JSON.stringify(b);

@@ -65,7 +65,7 @@ if (holding) {
   // The room's alarm resends the open wake too: the home finds its submission by `requestId` and starts nothing new.
   for (const wake of (await room.resend()).resend) await turn.wake({ wakeId: wake.id, input: 'ana: Salut' });
   // Done when the room has no open wake and the home owes no settle.
-  const turns = defineDoc({ kind: 'boring.room.turns', version: 1, scope: 'conversation', history: 'latest', fork: 'initial', initial: () => ({ owed: [] }) });
+  const turns = defineDoc({ kind: 'boring.room.turns', checkpointWhen: () => false, version: 1, scope: 'conversation', history: 'latest', fork: 'initial', initial: () => ({ owed: [] }) });
   const settled = async () => (await room.wakes()).length === 0 && !(await home.snapshot(turns, conversation.id, context))?.owed.length;
   await until(settled);
   await turn.close();

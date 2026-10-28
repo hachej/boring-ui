@@ -2,6 +2,7 @@ import { ReadAfterWrite, defineDocFamily, defineExtension, defineTask } from '@e
 import type { TaskOptions, Tx } from '@earendil-works/pi-durable';
 import type { Context } from '@earendil-works/chord';
 import type { RuntimeQuestionRef } from './contracts.js';
+import { waitUntil } from './wait-until.js';
 
 type QuestionRef = { [Key in keyof RuntimeQuestionRef]: RuntimeQuestionRef[Key] };
 export type ChoiceQuestion = Omit<QuestionRef, 'runtimeId' | 'taskId'> & {
@@ -38,7 +39,7 @@ export function createQuestions(options: QuestionOptions) {
   if (!runtimeId) throw new TypeError('A stable runtime identity is required');
   const now = options.now ?? Date.now;
   const documents = defineDocFamily<QuestionDocument, null>({
-    kind: 'boring.questions.record', version: 1, scope: 'session', family: true,
+    kind: 'boring.questions.record', checkpointWhen: () => false, version: 1, scope: 'session', family: true,
     initial: () => ({ question: null }),
   });
   const key = (ref: Pick<RuntimeQuestionRef, 'scopeId' | 'questionId'>): string => JSON.stringify([runtimeId, ref.scopeId, ref.questionId]);
@@ -65,11 +66,14 @@ export function createQuestions(options: QuestionOptions) {
             const changed = new Promise<void>(resolve => {
               watch.start(async value => { if (value?.question?.state.kind !== 'pending') resolve(); });
             });
-            await Promise.race([
-              changed,
-              runtime.sleep(Date.parse(watch.value.question.ref.expiresAt), context),
-              watch.closed.then(() => { throw new Error('Question observation closed'); }),
-            ]);
+            const expiry = waitUntil(runtime, Date.parse(watch.value.question.ref.expiresAt), context);
+            try {
+              await Promise.race([
+                changed,
+                expiry.done,
+                watch.closed.then(() => { throw new Error('Question observation closed'); }),
+              ]);
+            } finally { expiry.disarm(); }
           }
           await runtime.commit(async tx => {
             const doc = await tx.doc(documents, running.input.key, null);

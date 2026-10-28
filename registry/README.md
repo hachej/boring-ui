@@ -22,15 +22,15 @@ The `markdown-editor` and `html-viewer` items copy thin React wrappers and scope
 
 Blocks are written against an app that already has shadcn set up. They import its components and use its tokens; no item lists a shadcn component, so the app sets them up once, before any block:
 
-1. **shadcn in the Base UI style.** `components.json` has `"style": "base-nova"`, with Tailwind v4 and CSS variables (`npx shadcn@4.21.5 init` creates it). Its `aliases` (`ui`, `hooks`, `utils`, `components`) say where things go: a block's `@/components/ui/<name>` import is rewritten by the shadcn CLI to the app's `ui` alias (an app with `"ui": "@/shadcn/ui"` gets `@/shadcn/ui/<name>`), and `@/hooks/use-mobile` to its `hooks` alias.
+1. **shadcn in the Base UI style.** `components.json` has `"style": "base-nova"`, with Tailwind v4 and CSS variables (`npx shadcn@4.23.0 init` creates it). Its `aliases` (`ui`, `hooks`, `utils`, `components`) say where things go: a block's `@/components/ui/<name>` import is rewritten by the shadcn CLI to the app's `ui` alias (an app with `"ui": "@/shadcn/ui"` gets `@/shadcn/ui/<name>`), and `@/hooks/use-mobile` to its `hooks` alias.
 2. **These shadcn components**, the one kit-wide list (`SHADCN_BUILTINS` in `scripts/check-registry-blocks.mjs`; the check keeps this command equal to it and fails on any block import outside it):
 
    ```sh
-   npx shadcn@4.21.5 add alert attachment avatar badge bubble button card checkbox collapsible dialog drawer dropdown-menu empty input input-group item label message message-scroller native-select popover progress scroll-area separator sidebar spinner switch table textarea toggle toggle-group tooltip trace
+   npx shadcn@4.23.0 add alert attachment avatar badge bubble button card checkbox collapsible dialog drawer dropdown-menu empty input input-group item label message message-scroller native-select popover progress scroll-area separator sidebar spinner switch table textarea toggle toggle-group tooltip trace
    ```
 
    Installing all of them once is simplest; an app that adds only some blocks can add only the components those blocks import (`grep -rho "@/components/ui/[a-z-]*" components/<block>`). Blocks never restyle them: they pass layout classes only, so the app's own shadcn theme decides how every control looks.
-3. **The shadcn tokens** (`background`, `foreground`, `muted`, `primary`, `border`, `ring`, `destructive`, `sidebar-*` and the rest), which `shadcn init` writes into the app's CSS. An app without them installs the kit's tokens once: `npx shadcn@4.21.5 add <registry>/theme.json` (light and dark). No block installs `theme`: blocks keep their own few variables scoped in their item `css`.
+3. **The shadcn tokens** (`background`, `foreground`, `muted`, `primary`, `border`, `ring`, `destructive`, `sidebar-*` and the rest), which `shadcn init` writes into the app's CSS. An app without them installs the kit's tokens once: `npx shadcn@4.23.0 add <registry>/theme.json` (light and dark). No block installs `theme`: blocks keep their own few variables scoped in their item `css`.
 
 Items then list only other kit items in `registryDependencies` (`@boring-ui/<item>`, published as absolute URLs of the release), never a shadcn component and never `theme`; `scripts/check-registry-blocks.mjs` refuses anything else.
 
@@ -42,7 +42,7 @@ Item and file types follow the shadcn schema: the multi-file chat items are `reg
 
 | Block | Install | Pick it when |
 | --- | --- | --- |
-| `pi-chat` | `npx shadcn@4.21.5 add <registry>/pi-chat.json` (after the [app setup](#what-the-app-needs-first)) | you lay out the page yourself and only need the conversation (`PiChat`) |
+| `pi-chat` | `npx shadcn@4.23.0 add <registry>/pi-chat.json` (after the [app setup](#what-the-app-needs-first)) | you lay out the page yourself and only need the conversation (`PiChat`) |
 | `pi-chat-markdown` | `... add <registry>/pi-chat-markdown.json` (adds `marked` and `entities`; uses the app's `checkbox` and `table`) | messages render as Markdown: pass `renderText={markdownText}`; without it text is plain |
 | `pi-chat-slash` | `... add <registry>/pi-chat-slash.json` | the `/` command menu: `slash={{ commands, Picker: SlashPicker }}` |
 | `pi-chat-mentions` | `... add <registry>/pi-chat-mentions.json` | the `@` file menu: `mentions={{ search, Picker: MentionPicker }}` |
@@ -211,7 +211,7 @@ fail @hachej/boring-ui-kit@0.4.1: 3 violation(s) (blocks 1, design 1, ui 1). …
 
 The line format is `<check> <rule> <file>[:<line>:<column>] <detail>` with paths relative to the app (detail: the block name, the matched text or the manifest name). `--json` prints `{ ok, kit, version, blocks, violations: [{ check, rule, file, line?, column?, detail }] }` instead, or `{ ok: false, error }`. Exit codes: `0` all checks pass; `1` rule violations; `2` usage or configuration error (unknown command or flag, no `components.json`, the kit not installed or shipping no `r/`, a `--design` directory that does not exist), with `error: …` on stderr.
 
-`add` runs `npx -y shadcn@4.21.5 add <arguments> --overwrite --yes` in the app with stdin closed, so it never waits for an answer (CI, agents). Files it did not change are left alone; a file under the `components`, `ui`, `lib` or `hooks` alias that already exists with other content (an app edit, or a shadcn component such as `toggle.tsx` that a block depends on) is put back as it was and listed on stderr, and `add` exits `1` without rewriting the manifest. `--overwrite` replaces those files with the registry's copy. When nothing differs, `add` rewrites the manifest (only its `files` map; other keys of an existing manifest are kept, and `--manifest` names it); add shadcn components with it. After a deliberate `npx shadcn add`, run `manifest` to record the files. `update` reinstalls every installed block from `https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@<version>/r/` with `npx -y shadcn@4.21.5 add <items> --overwrite --yes` (default: the installed version; `--registry <url>` for another host; `--dry-run` prints the command) and rewrites the manifest, which also moves the package dependencies the items pin and the shadcn components they depend on. The app's own version specifiers are kept: the CLI installs dependencies by name and npm then saves `^<version>` over an exact pin, so `add` and `update` put back the specifier of every dependency that was in `package.json` (and in the lockfile's root entry) before they ran; dependencies the CLI added keep what it wrote. Run `check` first: `update` overwrites edited copies. Only `add`, `update` and `manifest` write into the app, and only the shadcn files and the manifest.
+`add` runs `npx -y shadcn@4.23.0 add <arguments> --overwrite --yes` in the app with stdin closed, so it never waits for an answer (CI, agents). Files it did not change are left alone; a file under the `components`, `ui`, `lib` or `hooks` alias that already exists with other content (an app edit, or a shadcn component such as `toggle.tsx` that a block depends on) is put back as it was and listed on stderr, and `add` exits `1` without rewriting the manifest. `--overwrite` replaces those files with the registry's copy. When nothing differs, `add` rewrites the manifest (only its `files` map; other keys of an existing manifest are kept, and `--manifest` names it); add shadcn components with it. After a deliberate `npx shadcn add`, run `manifest` to record the files. `update` reinstalls every installed block from `https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@<version>/r/` with `npx -y shadcn@4.23.0 add <items> --overwrite --yes` (default: the installed version; `--registry <url>` for another host; `--dry-run` prints the command) and rewrites the manifest, which also moves the package dependencies the items pin and the shadcn components they depend on. The app's own version specifiers are kept: the CLI installs dependencies by name and npm then saves `^<version>` over an exact pin, so `add` and `update` put back the specifier of every dependency that was in `package.json` (and in the lockfile's root entry) before they ran; dependencies the CLI added keep what it wrote. Run `check` first: `update` overwrites edited copies. Only `add`, `update` and `manifest` write into the app, and only the shadcn files and the manifest.
 
 | An app wants to | Extension point |
 | --- | --- |
@@ -297,7 +297,7 @@ Choose the copied item explicitly. The headless package root stays lean; channel
 **Regular chat** installs no shared-chat files or imports:
 
 ```sh
-npx shadcn@4.21.5 add <registry>/pi-chat.json
+npx shadcn@4.23.0 add <registry>/pi-chat.json
 ```
 
 ```tsx
@@ -309,7 +309,7 @@ import { PiChat } from '@/components/pi-chat/pi-chat';
 **Shared chat** adds the optional presentation item, its `pi-chat` dependency and missing existing theme tokens, not `pi-app`:
 
 ```sh
-npx shadcn@4.21.5 add <registry>/shared-chat.json
+npx shadcn@4.23.0 add <registry>/shared-chat.json
 ```
 
 ```tsx
@@ -747,11 +747,11 @@ Words: `documentsLabels(locale, labels)` over `defaultDocumentsLabels` and `fren
 
 ## Install into a new app (tested with a fresh outside app)
 
-Nothing is published, so a consumer needs a package source for the private `@hachej/boring-*` packages. The first pass at A46 used the steps below in a Vite, React 19 and Tailwind v4 app created by the pinned CLI (`npx shadcn@4.21.5 init -t vite -b base -p nova -n app -y --no-monorepo`).
+Nothing is published, so a consumer needs a package source for the private `@hachej/boring-*` packages. The first pass at A46 used the steps below in a Vite, React 19 and Tailwind v4 app created by the pinned CLI (`npx shadcn@4.23.0 init -t vite -b base -p nova -n app -y --no-monorepo`).
 
 1. In this repository: `npm ci && npm run build && npm run registry:build`, then `npm pack ./packages/ui ./packages/files ./packages/agent --pack-destination <dir>`.
 2. Serve the tarballs as an npm registry for the `@boring` scope (a ten-line static registry that returns a packument with `dist.tarball`, `dist.integrity` and the package's own manifest is enough) and put `@boring:registry=http://127.0.0.1:<port>/` in the app's `.npmrc`. This is required because every item lists `@hachej/boring-ui-kit@0.0.0` as a dependency and the CLI runs `npm install` for it. `file:` tarball specs in `package.json` do not help: the CLI still installs `@hachej/boring-ui-kit@0.0.0` by name.
-3. Set up the app's shadcn components ([app setup](#what-the-app-needs-first)), serve `public/r/` over HTTP and run `npx shadcn@4.21.5 add http://127.0.0.1:<port>/r/pi-chat.json http://127.0.0.1:<port>/r/viewer-frame.json http://127.0.0.1:<port>/r/markdown-editor.json -y`. Files land in `src/components/pi-chat/`, `src/components/viewer-frame/`, `src/components/button/`, `src/components/utils/` and `src/components/markdown-editor/markdown-editor.tsx`; registry dependencies are the published release's jsDelivr URLs, so an unpublished build serves only its own items locally (the consumer harness serves the dependencies too); scoped CSS is merged into the app's CSS file. Re-running with `-o` is idempotent.
+3. Set up the app's shadcn components ([app setup](#what-the-app-needs-first)), serve `public/r/` over HTTP and run `npx shadcn@4.23.0 add http://127.0.0.1:<port>/r/pi-chat.json http://127.0.0.1:<port>/r/viewer-frame.json http://127.0.0.1:<port>/r/markdown-editor.json -y`. Files land in `src/components/pi-chat/`, `src/components/viewer-frame/`, `src/components/button/`, `src/components/utils/` and `src/components/markdown-editor/markdown-editor.tsx`; registry dependencies are the published release's jsDelivr URLs, so an unpublished build serves only its own items locally (the consumer harness serves the dependencies too); scoped CSS is merged into the app's CSS file. Re-running with `-o` is idempotent.
 4. Install the server side with exact pins: `@hachej/boring-agent`, `@hachej/boring-files`, `react@19.3.0`, `react-dom@19.3.0`, `@earendil-works/pi-durable@1.0.1`, `@earendil-works/pi-ai@1.0.1` and `@earendil-works/chord@1.0.1`. Node 22.19 or newer runs a TypeScript server with `node server/main.ts` (SQLite resources use `node:sqlite`).
 5. The shadcn Vite template's `npm run typecheck` is `tsc --noEmit` over a solution file with `"files": []` and checks nothing. Use `tsc -p tsconfig.app.json --noEmit`; the installed source passes the template's `strict`, `noUnusedLocals` and `noUnusedParameters`.
 
@@ -762,8 +762,8 @@ Run `npm run registry:build` with the pinned shadcn 4.21.1 development dependenc
 With the exact package dependencies available through the host's package distribution, run the standard CLI in an existing React application with a valid `components.json`:
 
 ```sh
-npx shadcn@4.21.5 add /absolute/path/to/public/r/markdown-editor.json
-npx shadcn@4.21.5 add /absolute/path/to/public/r/html-viewer.json
+npx shadcn@4.23.0 add /absolute/path/to/public/r/markdown-editor.json
+npx shadcn@4.23.0 add /absolute/path/to/public/r/html-viewer.json
 ```
 
 Version 0.0.0 identifies the local library candidate. This repository does not publish or host the package or registry endpoint. The command above requires that distribution setup before a normal npm install can succeed.
