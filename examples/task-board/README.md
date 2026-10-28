@@ -1,4 +1,9 @@
-# Task board host
+# Task board
+
+## Logic handoff (revised PM spec)
+
+The Opus owner handles all new board-by-board fidelity, geometry, compact-card markup and comparisons; see `../../.agent-handoff/d417/HANDOFF.md`. Current screenshots precede that pass. `node --test test/contracts/task-board-host.test.mjs` drives one-tap/free-text answers through HTTP into the same native PM transcript. `node examples/task-board/journey-discussion.mjs` drives Discuss → draft → explicit Send without taking screenshots. Set `TASK_BOARD_SCREENSHOTS=0` for a logic-only run of the existing full journey. Discuss preserves unsent text and never sends on its own; a one-tap answer records no second conversation.
+ host
 
 One real native Pi Harness, a keyless scripted model and one `AmbientChat artifactTarget="host"` conversation at left; authorized business tasks and ordinary file viewers at right. Uses the Studio theme compiler and the app's Base UI controls, not a redesigned Studio or PM header/composer.
 

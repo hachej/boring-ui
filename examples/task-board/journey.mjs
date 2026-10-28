@@ -21,7 +21,7 @@ try {
   browser = await launch(`${app.url}?deferMount=1`, { evidence });
   // The consumer's shadcn Drawer owns transitions. Capture settled views, never an in-flight slide.
   const capture = browser.screenshot;
-  browser.screenshot = async name => { await pause(600); await capture(name); };
+  browser.screenshot = async name => { await pause(600); if (process.env.TASK_BOARD_SCREENSHOTS !== '0') await capture(name); };
   await browser.send('Emulation.setDeviceMetricsOverride', { width: 1600, height: 1000, deviceScaleFactor: 1, mobile: false });
   await browser.until('board ready', `!!${card('D-201')}`);
   await browser.until('real ambient conversation connected', '!!document.querySelector("aside textarea")');
@@ -101,6 +101,12 @@ try {
     assert.ok(await browser.evaluate('document.querySelectorAll("[data-task-answered]").length > 3'));
     await browser.click('document.querySelector("[data-task-show-answers]")');
     await browser.click('document.querySelector("[data-task-discuss=supplies]")');
+    await browser.until('Discuss stages the question in the existing composer', 'document.querySelector("textarea").value.includes("What should we bring?")');
+    assert.equal(await browser.evaluate('document.activeElement === document.querySelector("textarea")'), true);
+    assert.equal((await app.view()).entries.flatMap(entry => entry.model ?? []).filter(message => message.role === 'toolResult' && message.toolName === 'answer_task_question').length, 0, 'Discuss never submits or settles the question before Send');
+    await browser.click('document.querySelector("[data-testid=composer-submit]")');
+    await browser.until('sent discussion task mention', `!!document.querySelector('[data-testid=message-mention][data-path="task:D-201"]')`);
+    await browser.click(`document.querySelector('[data-testid=message-mention][data-path="task:D-201"]')`);
     await browser.until('native PM answer written to host projection', 'document.querySelector("[data-task-answer=supplies]")?.textContent.includes("PM: water")');
     const settled = (await app.view()).entries.flatMap(entry => entry.model ?? []).filter(message => message.role === 'toolResult' && message.toolName === 'answer_task_question');
     assert.equal(settled.length, 1);

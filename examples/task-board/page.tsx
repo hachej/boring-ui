@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { MousePointer2Icon } from 'lucide-react';
 import { createResourceClient } from '@hachej/boring-files/remote';
 import type { ResourceIdentity } from '@hachej/boring-files/remote';
-import { mentionToken } from '@hachej/boring-ui-kit/chat-text';
+import { appendToDraft, hasMention, mentionToken } from '@hachej/boring-ui-kit/chat-text';
 import { taskMentions } from '../../registry/task-mentions/task-mentions';
 import { taskFromUrl, taskUrl } from '@hachej/boring-ui-kit/task-board';
 import type { TaskFilter } from '@hachej/boring-ui-kit/task-board';
@@ -87,7 +87,12 @@ function Page() {
         <TaskBoard tasks={projected} overlayClassName="shadow-xl" actions={task => <MountReport request={request} selected={selected} mountedTask={task.id} />} filter={filter} currentUser="alice" selectedTask={selected} onSelectedTaskChange={select}
           onAnswer={(task, question, value) => { setAnswer(`Fictional choice: ${task.id} · ${question.id} · ${value}`); void authorized(new Request(new URL('/api/answers', location.href), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ task: task.id, question: question.id, value }) })); }}
           onOther={(task, question) => setAnswer(`Host free-answer intent: ${task.id} · ${question.id}`)}
-          onDiscussQuestion={(task, question) => { if (chat.status !== 'ready') return; chat.controller.setText(`${mentionToken(`task:${task.id}`)} Discuss route question: ${question.text}`); void chat.controller.send('followUp'); }}
+          onDiscussQuestion={(task, question) => {
+            if (chat.status !== 'ready') return;
+            const path = `task:${task.id}`, draft = chat.controller.getSnapshot().draft.text;
+            chat.controller.setText(appendToDraft(draft, `${hasMention(draft, path) ? '' : `${mentionToken(path)} `}${question.text}`));
+            document.querySelector<HTMLTextAreaElement>('[data-testid="composer-input"]')?.focus();
+          }}
           onShowFile={(task, file) => setAnswer(`Host Montrer target: ${task.id} · ${file.path}. PM pointing is supplied by the host, not this fixture.`)}
           renderFile={(task, file, api) => <TaskFile key={file.path} taskId={task.id} path={file.path} api={api} />} />
         <MountReport request={request} selected={selected} />
