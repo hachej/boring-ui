@@ -4,21 +4,21 @@
   "title": "Pi agent app",
   "description": "AgentWorkspace: a whole agent page in one component. Left: the sessions pane (search, New, rename, archive, delete; collapsible, a drawer on a narrow screen). Center: PiChat. Right: the artifact panel (versions, file viewer, auto-open of new artifacts) in the ArtifactWorkspace panel, a full-screen sheet on a phone; it draws files with the kinds the app passes in artifactKinds (defaultKinds of the pi-app-kinds item is the default list). layout=\"embedded\" drops the left column for one compact top bar (title, History, Library, New) that joins an app-shell screen header. Props are data and callbacks; hooks for the conversations handler (useConversations), the chat transport (useRemoteChat) and saved resources (useSaved).",
   "dependencies": [
-    "@hachej/boring-ui-kit@^0.4.33",
-    "@hachej/boring-files@^0.4.33",
+    "@hachej/boring-ui-kit@^0.4.34",
+    "@hachej/boring-files@^0.4.34",
     "react@^19.0.0",
     "react-dom@^19.0.0",
     "lucide-react@^1.51.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.33/r/pi-chat.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.33/r/pi-chat-plugins.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.33/r/pi-artifacts.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.33/r/pi-workspace.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.33/r/viewer-frame.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.33/r/utils.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.33/r/button.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.33/r/file-tree.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.34/r/pi-chat.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.34/r/pi-chat-plugins.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.34/r/pi-artifacts.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.34/r/pi-workspace.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.34/r/viewer-frame.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.34/r/utils.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.34/r/button.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.34/r/file-tree.json"
   ],
   "files": [
     {
