@@ -4,14 +4,14 @@
   "title": "HTML viewer",
   "description": "The HTML kind: `htmlKind` (match, loader) and `HtmlPane`, the passive HTML preview (sandboxed when the host opts in) and source editor, in the viewer frame. The pane loads the first time an HTML file opens.",
   "dependencies": [
-    "@hachej/boring-ui-kit@^0.4.33",
+    "@hachej/boring-ui-kit@^0.4.34",
     "react@^19.0.0",
     "lucide-react@^1.51.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.33/r/viewer-frame.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.33/r/utils.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.33/r/button.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.34/r/viewer-frame.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.34/r/utils.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.34/r/button.json"
   ],
   "files": [
     {
