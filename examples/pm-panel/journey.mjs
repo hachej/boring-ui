@@ -8,7 +8,8 @@ import { startPmPanel } from './server.mjs';
 
 const evidence = process.env.PM_EVIDENCE ?? '.cache/evidence/pm-panel/journey';
 mkdirSync(evidence, { recursive: true });
-// PM_SHOTS=<dir>: the one line's « Envoyée » / « Retirer » phone screenshots (390×844).
+// PM_SHOTS=<dir>: the one line's phone screenshots (390×844): « Envoyée » / « Retirer », the step list, the request card from `tasks_create`,
+// the mockups and the `ask_user` choice; plus one desktop shot of the panel during the turn.
 if (process.env.PM_SHOTS) mkdirSync(process.env.PM_SHOTS, { recursive: true });
 const shots = process.env.PM_SHOTS && relative(evidence, process.env.PM_SHOTS);
 // PM_ONE_LINE=1 runs the same journey on the app whose only PM code is `improve={{ agent: 'pm' }}` (the fake #854 door, dictation on the host's /api/host/transcribe),
@@ -219,7 +220,17 @@ try {
 
     // Send: text, capture and pick metadata travel together; the draft and pins clear; C7 opens.
     const sent = app.submits.length;
+    // The one line: the host's task list answers 403 while this turn runs (« unavailable for now », decided 2026-10-29).
+    if (oneLine) app.refuseTasks(true);
     await press('[data-testid=composer-submit]');
+    if (oneLine) {
+      // The calm live step list (decided 2026-10-29): plain words, a spinner on the running step, a neutral dot on the refused write.
+      await browser.until('step list running', `${q('[data-testid=pm-steps][data-state=running][data-open=true]')} && document.querySelectorAll('[data-testid=pm-step]').length >= 2 && !!${q('[data-testid=pm-step][data-step-status=running]')}`, 20000);
+      assert.equal(await browser.evaluate(`!!${q('[data-testid=preparing]')} && ${visible('[data-testid=preparing]')}`), false, 'no lone « Préparation… » beside the list');
+      if (shots) await browser.screenshot(`${shots}/${device === 'phone' ? '1-steps-running-phone' : '8-panel-during-turn-desktop'}.png`);
+      await browser.until('steps named', `JSON.stringify([...document.querySelectorAll('[data-testid=pm-step]')].slice(-3).map(step => step.textContent)) === ${JSON.stringify(JSON.stringify(['Lecture des fichiers', "Rédaction d'un document", 'Création de la demande']))}`, 20000);
+      assert.equal(await browser.evaluate(`${q('[data-testid=pm-step][data-step-status=stopped]')}?.textContent`), "Rédaction d'un document", 'the refused write is a neutral step');
+    }
     await browser.until('C7', `${mode('full')} && ${visible('[data-testid=pm-sent-message]')} && ${visible(oneLine ? '[data-testid=pm-reply]' : '[data-task-card=D-201][data-variant=compact]')}`, 20000);
     assert.equal(app.submits.length, sent + 1, 'one native admission');
     const body = JSON.stringify(app.submits.at(-1).body);
@@ -234,7 +245,19 @@ try {
       // The host's task API: the PM's task tool filed the request; its card sits under the reply. « Confirmer » answers the task as the viewer.
       // The newest task is this message's (on desktop the earlier comment filed one too).
       const filed = app.tasks.at(-1), card = `[data-testid=pm-reply] [data-task-card="${filed.id}"][data-variant=compact]`;
-      await browser.until('request card', visible(card), 15000);
+      // The list answered 403: the card is drawn from the `tasks_create` result, « DEMANDE » and its title, no pill.
+      await browser.until('request card from the tool result', visible(card), 15000);
+      assert.equal(await browser.evaluate(`!!${q(card + ' [data-task-status]')}`), false, 'no pill without waiting_on_you');
+      await browser.until('steps folded', `${q('[data-testid=pm-steps]:last-of-type')} && [...document.querySelectorAll('[data-testid=pm-steps]')].at(-1).dataset.open === 'false'`);
+      assert.match(await browser.evaluate(`[...document.querySelectorAll('[data-testid=pm-steps-summary]')].at(-1).textContent`), /^3 étapes/);
+      if (shots && device === 'phone') { await pause(300); await browser.screenshot(`${shots}/2-steps-folded-card-from-tool-phone.png`); }
+      // « Mes demandes » opened: read again, now 200; back in the thread the card takes the list's record.
+      app.refuseTasks(false);
+      await press('[data-testid=pm-requests]');
+      await browser.until('Mes demandes after the 403', `${visible('[data-testid=pm-task-board-seam]')} && !!${q(`[data-testid=pm-task-board-seam] [data-task-card="${filed.id}"]`)}`, 15000);
+      await press('[data-testid=pm-requests-back]');
+      await browser.until('the list\'s record', `${q(card + ' [data-task-status]')}?.textContent === 'À confirmer'`, 15000);
+      if (shots && device === 'phone') await browser.screenshot(`${shots}/3-card-from-list-phone.png`);
       // The member's thread (C7): the refused write and the task tool never show; the reply's Markdown is drawn.
       assert.equal(await browser.evaluate(`${q('[data-testid=pm-reply] strong')}?.textContent`), 'Protéines avant les calories', 'the reply draws **bold**');
       assert.equal(await browser.evaluate(`document.querySelectorAll('[data-testid=pm-panel] :is([data-testid=activity],[data-testid=tool-card],[data-testid=tool-error],[data-testid=orphan-result],[data-testid=response-error])').length`), 0, 'no tool step or raw error');
@@ -280,6 +303,32 @@ try {
       }
       await press('[data-testid=pm-requests-back]');
       await browser.until('thread again', visible('[data-testid=pm-sent-message]'));
+      if (device === 'phone') {
+        // Mockups (decided 2026-10-29): the PM presents two HTML pages, then asks to choose. Both are thread content, never tool steps.
+        const input = '[data-testid=pm-panel] [data-testid=composer-input]';
+        await browser.evaluate(`(() => { const input = ${q(input)}; const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set; set.call(input, ''); input.dispatchEvent(new Event('input', { bubbles: true })); input.focus(); })()`);
+        await browser.type(q(input), 'Montrez-moi deux maquettes pour la carte repas.');
+        await press('[data-testid=composer-submit]');
+        await browser.until('two mockups and a choice', `document.querySelectorAll('[data-testid=pm-mockup][data-state=ready]').length === 2 && ${visible('[data-testid=question-card][data-state=pending]')} && document.querySelectorAll('[data-testid=pm-mockup-thumb-run-frame]').length === 2`, 25000);
+        assert.equal(await browser.evaluate(`JSON.stringify([...document.querySelectorAll('[data-testid=pm-mockup-title]')].map(title => title.textContent))`), '["piste-a.html","piste-b.html"]');
+        assert.equal(await browser.evaluate(`JSON.stringify([...document.querySelectorAll('[data-testid=pm-step]')].slice(-5).map(step => step.textContent))`),
+          JSON.stringify(["Rédaction d'un document", "Rédaction d'un document", "Préparation d'une maquette", "Préparation d'une maquette", 'Question pour vous']));
+        await browser.evaluate(`${q('[data-testid=pm-mockup]')}.scrollIntoView({ block: 'center' })`);
+        if (shots) { await pause(500); await browser.screenshot(`${shots}/4-mockups-phone.png`); }
+        await press('[data-testid=pm-mockup-open]');
+        await browser.until('mockup open', `${visible('[data-testid=pm-mockup-view] [data-testid=pm-mockup-full-run-frame]')} && ${q('[data-testid=pm-mockup-full-run-frame]')}.getAttribute('sandbox') === 'allow-scripts'`);
+        assert.ok(await browser.evaluate(`${q('[data-testid=pm-mockup-full-run-frame]')}.getBoundingClientRect().height > 600`), 'full height in the sheet');
+        if (shots) { await pause(500); await browser.screenshot(`${shots}/5-mockup-open-phone.png`); }
+        await press('[data-testid=pm-mockup-back]');
+        await browser.until('back to the choice', visible('[data-testid=question-card][data-state=pending]'));
+        await browser.evaluate(`${q('[data-testid=question-card]')}.scrollIntoView({ block: 'end' })`);
+        assert.equal(await browser.evaluate(`[...document.querySelectorAll('[data-testid=question-option]')].every(option => option.getBoundingClientRect().height >= 44)`), true, 'options are 44px rows');
+        if (shots) { await pause(300); await browser.screenshot(`${shots}/6-ask-user-phone.png`); }
+        await press('[data-testid=question-option][data-option^="Piste B"]');
+        await browser.until('answered', `${q('[data-testid=question-card][data-state=answered]')} && [...document.querySelectorAll('[data-testid=pm-reply] strong, [data-testid=pm-reply-text] strong')].some(node => node.textContent === "Piste B · calories d'abord")`, 20000);
+        if (shots) { await pause(400); await browser.screenshot(`${shots}/7-after-choice-phone.png`); }
+        assert.doesNotMatch(await browser.evaluate(`${q('[data-testid=pm-panel]')}.textContent`), /ask_user|present\b|maquettes\/|"path"/, 'no tool name or argument');
+      }
     } else {
       // « Modifier » puts the request text in the composer; « Confirmer » changes the status pill.
       await press('[data-testid=pm-request-modify]');

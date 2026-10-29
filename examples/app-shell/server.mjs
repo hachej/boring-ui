@@ -18,6 +18,7 @@ import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { defineAgent } from '@hachej/boring-agent/agents';
 import { createPresentTool } from '@hachej/boring-agent/artifacts';
 import { createFileGuard } from '@hachej/boring-agent/file-guard';
+import { answerUserQuestion, createAskUserTool } from '@hachej/boring-agent/ask-user';
 import { createChatTransportHandler } from '@hachej/boring-agent/chat-transport';
 import { createConversations, createConversationsHandler } from '@hachej/boring-agent/conversations';
 import { openNodeConnection } from '@hachej/boring-files/sqlite';
@@ -29,11 +30,23 @@ import { readFiles, writeFiles } from '../../shared/workspace-tools.mjs';
 import { buildTailwind } from '../../lab/studio/tailwind.mjs';
 
 const here = name => fileURLToPath(new URL(name, import.meta.url));
-// The PM's turn with the host task API, as on the live app: a write the workspace refuses, `tasks_create`, then a Markdown reply. The member's
-// thread (C7) shows only the reply and its request card.
-const PM_TASK_TURNS = [{ tools: [{ name: 'write', args: { path: '../outside/brief.md', content: '# Fictional brief' } }] },
-  { tools: [{ name: 'tasks_create', args: { title: 'Protéines avant les calories sur les cartes repas' } }] },
-  "C'est noté : **Protéines avant les calories** sur les cartes repas de Ma journée."];
+// The PM's turn with the host task API, as on the live app: a read, a write the workspace refuses, `tasks_create` (its arguments streamed, so
+// the step runs a moment), then a streamed Markdown reply. The member's thread (C7) shows a calm step list in plain words, the reply and its
+// request card, never a tool name, an argument or the refusal.
+const PM_TASK_TURNS = [{ tools: [{ name: 'read', args: { path: 'fiche-produit.md' } }], delay: 300 },
+  { tools: [{ name: 'write', args: { path: '../outside/brief.md', content: '# Fictional brief' } }], delay: 300 },
+  { tools: [{ name: 'tasks_create', args: { title: 'Protéines avant les calories sur les cartes repas' }, ms: 120 }], delay: 600 },
+  { text: { chunks: ["C'est noté : ", '**Protéines avant les calories** ', 'sur les cartes repas ', 'de Ma journée.'], ms: 350 } }];
+/** Two fictional HTML mockups of Coach Max's meal card, written by the PM, then presented. */
+const mockup = (title, first, second) => `<!doctype html><html lang="fr"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${title}</title>
+<style>body{margin:0;font:15px/1.4 system-ui,sans-serif;color:#18181b;background:#fff}main{padding:18px;display:flex;flex-direction:column;gap:12px}h1{font-size:20px;margin:0}.card{border:1px solid #e4e4e7;border-radius:14px;padding:14px}.big{font-size:28px;font-weight:800}.small{color:#52525b;font-size:13px}</style>
+<main><h1>${title}</h1><div class="card"><div class="small">DÉJEUNER · Salade de lentilles, œuf</div><div class="big">${first}</div><div class="small">${second}</div></div><div class="card"><div class="small">DÎNER</div><div class="big">—</div></div></main></html>`;
+// The mockup turn: two pages written and presented, then a choice with `ask_user`; the answer gets a one-line reply.
+const PM_MOCKUP_TURNS = [{ text: 'Je prépare deux pistes.', tools: [{ name: 'write', args: { path: 'maquettes/piste-a.html', content: mockup('Piste A', '32 g de protéines', '520 kcal') } },
+  { name: 'write', args: { path: 'maquettes/piste-b.html', content: mockup('Piste B', '520 kcal', 'Protéines 32 g · 25 % du jour') } }], delay: 300 },
+  { tools: [{ name: 'present', args: { path: 'maquettes/piste-a.html' } }, { name: 'present', args: { path: 'maquettes/piste-b.html' } }], delay: 300 },
+  { text: 'Laquelle préférez-vous ?', tools: [{ name: 'ask_user', args: { question: 'Quelle piste pour la carte repas ?', options: ['Piste A · protéines en grand', "Piste B · calories d'abord"] } }] },
+  ctx => `Parfait : **${ctx.last?.json?.answer ?? 'noté'}**. Je l'ajoute à la demande.`];
 
 /** A fictional product sheet with three saves, so its history has older revisions for the documents screen (`?documents=1`). */
 async function seedDocuments(files, access) {
@@ -63,13 +76,15 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
   const tasks = pmTasks ? [{ id: randomUUID(), ref: 'D-202', title: 'Plan du jour : photo du déjeuner', state: 'open', created: '2026-10-27T09:00:00Z', updated: '2026-10-27T09:00:00Z', waiting_on_you: false, is_requester: true },
     { id: randomUUID(), ref: 'D-190', title: 'Un repère sur la jauge', state: 'open', created: '2026-10-26T09:00:00Z', updated: '2026-10-26T09:00:00Z', waiting_on_you: false, is_requester: false }] : [];
   const answers = [], withdrawals = [];
+  // `refuseTasks(true)`: the task list answers 403 until `refuseTasks(false)` (the host's list « unavailable for now »).
+  let refusing = false;
   const createTask = defineTool({ name: 'tasks_create', description: 'File a fictional request for the person.', replay: 'safe', parameters: Type.Object({ title: Type.String() }), execute: async ({ title }) => {
     const task = { id: randomUUID(), ref: `D-${203 + tasks.length}`, title, state: 'waiting', created: '2026-10-29T08:00:00Z', updated: '2026-10-29T08:00:00Z', waiting_on_you: true, is_requester: true, question: 'Confirmez-vous cette demande ?' };
     tasks.push(task);
     // hachej/boring-factory#892's result: JSON `{ created, task: { id, number, title, state, status, updated_at } }` in the first text block.
     return { output: [{ type: 'text', text: JSON.stringify({ created: true, task: { id: task.id, number: task.ref, title, state: task.state, status: 'À confirmer', updated_at: task.updated } }) }] };
   } });
-  const script = (await import('./script.mjs')).SOURCES.map(source => !pmTasks ? source : { ...source, entries: source.entries.map(entry => entry.match === 'pm.points@1' ? { ...entry, turns: PM_TASK_TURNS } : entry) });
+  const script = (await import('./script.mjs')).SOURCES.map(source => !pmTasks ? source : { ...source, entries: source.entries.map(entry => entry.match === 'pm.points@1' ? { ...entry, turns: PM_TASK_TURNS } : entry).concat(source.entries.some(entry => entry.match === 'pm.points@1') ? [{ match: 'deux maquettes', turns: PM_MOCKUP_TURNS }] : []) });
   const models = scripted ? (await (await import('../../lab/studio/scripted-model.mjs')).createScriptedModels({ sources: script })).models : createModels();
   if (!scripted) models.setProvider((await import('@earendil-works/pi-ai/providers/openai')).openaiProvider());
   const person = { scopeId: 'fictional-team', principalId: 'fictional-person', initiatorId: 'fictional-person' };
@@ -84,7 +99,8 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
       tools: [createPresentTool({ workspace: { files, root, access: agentAccess } })],
       extensions: [readFiles, writeFiles, createFileGuard({ workspace: { files, root, access: agentAccess } })] }),
     coach: defineAgent({ id: 'coach', model: { provider: 'openai', modelId: 'gpt-5-mini' }, instructions: 'You coach a fictional walker. Be brief.', tools: [], extensions: [] }),
-    pm: defineAgent({ id: 'pm', model: { provider: 'openai', modelId: 'gpt-5-mini' }, instructions: 'You are the product manager of a fictional fitness app. Be brief.', tools: pmTasks ? [createTask] : [], extensions: [] }),
+    pm: defineAgent({ id: 'pm', model: { provider: 'openai', modelId: 'gpt-5-mini' }, instructions: 'You are the product manager of a fictional fitness app. Be brief.', tools: pmTasks ? [createTask, createAskUserTool(), createPresentTool({ workspace: { files, root, access: agentAccess } })] : [],
+      extensions: pmTasks ? [readFiles, writeFiles, createFileGuard({ workspace: { files, root, access: agentAccess } })] : [] }),
   };
   const registry = createRegistry();
   for (const agent of Object.values(agents)) agent.install(registry);
@@ -111,14 +127,17 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
     '/api/pm/chat': createChatTransportHandler({ authenticate: async request => {
       const id = Number(new URL(request.url).searchParams.get('conversation'));
       const conversation = signedIn(request) && Number.isSafeInteger(id) ? await conversations.open(agents.pm.id, id) : undefined;
-      return conversation ? { conversation, context, abortSubmission: submission => harness.abortSubmission(submission, context, conversation.id), requestContext: value => { contexts.push({ conversation: id, value }); } } : null;
+      return conversation ? { conversation, context, abortSubmission: submission => harness.abortSubmission(submission, context, conversation.id), answer: (callId, answer) => answerUserQuestion(conversation, callId, answer),
+        requestContext: value => { contexts.push({ conversation: id, value }); } } : null;
     } }),
     '/api/host/transcribe': async request => {
       if (!signedIn(request) || request.method !== 'POST' || !pmTranscript) return new Response(null, { status: signedIn(request) ? 404 : 403 });
       transcribes.push({ language: new URL(request.url).searchParams.get('language'), bytes: (await request.arrayBuffer()).byteLength });
       return Response.json(pmTranscript);
     },
-    '/_tasks/api': async request => !pmTasks ? new Response(null, { status: 404 }) : !signedIn(request) ? new Response(null, { status: 403 })
+    // The files the PM presents, read by the panel through the door (`{base}/resources`, the same revision route as `/api/resources`).
+    '/api/pm/resources': createRevisionHandler({ resolve: async request => pmTasks && signedIn(request) ? { provider: files, access: person } : null }),
+    '/_tasks/api': async request => !pmTasks ? new Response(null, { status: 404 }) : !signedIn(request) || refusing ? new Response(null, { status: 403 })
       : Response.json({ tasks: new URL(request.url).searchParams.get('mine') === '1' ? tasks : [], cursor: String(tasks.length + answers.length) }),
   };
   /** `POST /_tasks/api/<id>/answer { text }`: the viewer answers the question the task waits on. */
@@ -197,7 +216,7 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
   });
   await new Promise(resolve => server.listen(port, '127.0.0.1', resolve));
   return {
-    url: `http://127.0.0.1:${server.address().port}${prefix}`, token, harness, conversations, submits, contexts, transcribes, answers, withdrawals, tasks, mealReads: () => mealReads,
+    url: `http://127.0.0.1:${server.address().port}${prefix}`, token, harness, conversations, submits, contexts, transcribes, answers, withdrawals, tasks, mealReads: () => mealReads, refuseTasks: value => { refusing = value; },
     close: async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await conversations.dispose(); await harness.close(context); files.close(); db.close(); },
   };
 }

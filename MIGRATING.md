@@ -1,5 +1,11 @@
 # Unreleased
 
+- **The app PM panel during a PM turn (`pm-panel`; decided 2026-10-29).**
+  - **Step list:** the member thread shows a calm, collapsible step list under each sent message instead of the lone « Préparation… »: one muted line per tool, in plain words (`PmText.steps`, `stepUnknown`, `stepsSummary`, `preparing`), folded to « n étapes ▸ » once the reply arrives. The reply streams as Markdown. Exports: `PmSteps`, `turnSteps`, `stepLabel`, `pmReplyText`. Sent plain messages are drawn by the panel (the C7 bubble). Copy buttons and the conversation file list are hidden in the app panel.
+  - **Request card:** a 403, 404 or network error on `_tasks/api?mine=1` no longer turns the cards and « Mes demandes » off for the session; the list is read again on the next turn and when the panel or « Mes demandes » opens (`StudioTaskBoardSeam.refresh?`). The card is drawn from the `tasks_create` result and merged with the list's record (the list wins). « Mes demandes » is enabled as soon as the door opens.
+  - **Mockups:** `present` results show as mockup rows that open full height in the sheet; pass `ImproveSpec.readArtifact` (the one line reads `api/pm/resources`, a revision route the host's PM door must serve). `ask_user` options are 44px in the panel.
+  - Update `pm-panel` (new files `pm-steps.tsx`, `pm-mockups.tsx`; registry dependencies `pi-artifacts`, `viewer-frame`; package `@hachej/boring-files`).
+
 # Migrating to 0.4.33
 
 - **« Envoyée » and « Retirer » (`task-board`, `pm-panel`; decided 2026-10-29).**

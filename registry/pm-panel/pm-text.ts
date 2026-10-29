@@ -49,6 +49,17 @@ export interface PmText {
   readonly withdrawFailed: string;
   /** The app panel's one muted line when the PM's run ends in error without a reply: the member never sees a tool or a raw error (C7). */
   readonly failed: string;
+  /**
+   * The app panel's live step list (decided 2026-10-29): each tool the PM runs, in plain words, never its raw name. `steps` maps a tool
+   * name (or a `prefix_*` family) to its line; any other tool is `stepUnknown`. `stepsSummary` is the collapsed line once the reply arrives.
+   */
+  readonly steps: Readonly<Record<string, string>>;
+  readonly stepUnknown: string;
+  readonly stepsSummary: (n: number) => string;
+  readonly preparing: string;
+  /** A presented mockup (C7): the card's action, and the line when its file can't be read. */
+  readonly openMockup: string;
+  readonly mockupUnavailable: string;
 }
 
 /** `0:14`: whole seconds, never a fraction. */
@@ -73,6 +84,10 @@ export const pmTextFr: PmText = {
   commentOn: (kind, label) => `Commenter ${kind} · ${label}`, commentPlaceholder: 'Votre commentaire…', addToMessage: 'Ajouter au message', sendToPm: 'Envoyer au PM', sentToPm: 'Envoyé au PM',
   modify: 'Modifier', confirm: 'Confirmer', failed: "Le chef de projet n'a pas pu terminer. Réessayez.",
   withdraw: 'Retirer', withdrawAsk: 'Retirer cette demande\u00a0?', cancel: 'Annuler', withdrawFailed: 'Impossible de retirer la demande.',
+  steps: { tasks_list: 'Lecture des tâches', tasks_read: 'Lecture des tâches', tasks_create: 'Création de la demande', tasks_update: 'Mise à jour de la demande',
+    read: 'Lecture des fichiers', 'files_*': 'Lecture des fichiers', write: "Rédaction d'un document", present: "Préparation d'une maquette", ask_user: 'Question pour vous' },
+  stepUnknown: 'Étape en cours', stepsSummary: n => `${n} ${n === 1 ? 'étape' : 'étapes'}`, preparing: 'Préparation…',
+  openMockup: 'Ouvrir', mockupUnavailable: "La maquette n'est pas disponible.",
 };
 
 export const pmTextEn: PmText = {
@@ -90,6 +105,10 @@ export const pmTextEn: PmText = {
   commentOn: (kind, label) => `Comment on ${kind} · ${label}`, commentPlaceholder: 'Your comment…', addToMessage: 'Add to message', sendToPm: 'Send to the PM', sentToPm: 'Sent to the PM',
   modify: 'Modify', confirm: 'Confirm', failed: "The PM couldn't finish. Try again.",
   withdraw: 'Withdraw', withdrawAsk: 'Withdraw this request?', cancel: 'Cancel', withdrawFailed: "Couldn't withdraw the request.",
+  steps: { tasks_list: 'Reading the tasks', tasks_read: 'Reading the tasks', tasks_create: 'Creating the request', tasks_update: 'Updating the request',
+    read: 'Reading the files', 'files_*': 'Reading the files', write: 'Writing a document', present: 'Preparing a mockup', ask_user: 'A question for you' },
+  stepUnknown: 'Working', stepsSummary: n => `${n} ${n === 1 ? 'step' : 'steps'}`, preparing: 'Preparing…',
+  openMockup: 'Open', mockupUnavailable: 'The mockup is not available.',
 };
 
 export const pmTextFor = (locale: string | undefined): PmText => locale?.startsWith('en') ? pmTextEn : pmTextFr;

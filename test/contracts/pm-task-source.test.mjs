@@ -68,7 +68,8 @@ test('the created task: a task tool result in the reply\'s turn, from details or
   const reply = id => ({ id, kind: 'message', model: [{ role: 'assistant', content: [{ type: 'text', text: 'Noté.' }] }] });
   const exact = (id, json) => ({ id, kind: 'message', model: [{ role: 'toolResult', toolName: 'tasks_create', isError: false, content: [{ type: 'text', text: json }] }] });
   const turn = [user(20), result(21, 'create_task', { ref: 'D-3' }), exact(22, JSON.stringify({ created: true, task: { id: '0b8e2c7e-1111-4222-8333-944455556666', number: 'D-12', title: 'Fictif', state: 'waiting', status: 'À confirmer', updated_at: '2026-10-29T08:00:00Z' } })), reply(23)];
-  assert.deepEqual(createdTask(turn, turn[3]), { ref: 'D-12', id: '0b8e2c7e-1111-4222-8333-944455556666' }, 'tasks_create, exactly (#892)');
+  assert.deepEqual(createdTask(turn, turn[3]), { ref: 'D-12', id: '0b8e2c7e-1111-4222-8333-944455556666',
+    task: { id: '0b8e2c7e-1111-4222-8333-944455556666', number: 'D-12', title: 'Fictif', state: 'waiting', status: 'À confirmer', updated_at: '2026-10-29T08:00:00Z' } }, 'tasks_create, exactly (#892), with the task that draws the card');
   const entries = [user(1), result(2, 'create_task', { task: { id: 'u-1', ref: 'D-4' } }), reply(3), user(4), result(5, 'pm_tasks.file', undefined, 'Demande D-9 créée.'), result(6, 'search', { ref: 'D-1' }), reply(7), user(8), reply(9), result(10, 'create_task', { ref: 'D-2' }, '', true), reply(11)];
   assert.deepEqual(createdTask(entries, entries[2]), { ref: 'D-4' });
   assert.deepEqual(createdTask(entries, entries[6]), { ref: 'D-9' }, 'from the text; a tool without « task » in its name is ignored');

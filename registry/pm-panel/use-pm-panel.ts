@@ -35,6 +35,8 @@ export interface ImproveSpec {
   readonly policy?: PrivacyPolicy;
   readonly pointVoice?: PmVoice;
   readonly tasks?: StudioTaskBoardSeam;
+  /** Reads a file the PM presented (`present`), so the app panel shows it as a mockup card and opens it in the sheet. Absent: the card shows « unavailable ». */
+  readonly readArtifact?: import('./pm-mockups').PmReadArtifact;
 }
 /**
  * The app's task board (`task-board` item): the host's authorized records. The panel draws « Mes demandes » with `TaskBoard` and the @
@@ -50,6 +52,8 @@ export interface StudioTaskBoardSeam {
   readonly cardActions?: (task: import('@hachej/boring-ui-kit/task-board').TaskRecord) => import('react').ReactNode;
   /** The request card under a PM reply (C7, `TaskRequestCard variant="compact"`), or undefined when that reply carries no request. `edit` puts the request text back in the composer (« Modifier »). */
   readonly renderRequest?: (context: { readonly entry: import('@earendil-works/pi-durable').EntryRecord; readonly edit: (text: string) => void }) => import('react').ReactNode;
+  /** Reads the host's records again: the app panel calls it when it opens and when « Mes demandes » opens. */
+  readonly refresh?: () => void;
 }
 
 interface CaptureBatch {
