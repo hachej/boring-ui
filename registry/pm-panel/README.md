@@ -1,9 +1,9 @@
 # PM composer and panel
 
-« Améliorer l’app » (specs `/home/ubuntu/projects/_work/pm-spec`, boards C1–C7 and D1, D7, D7b, D8, D9). Install the `pm-panel` registry item; the app's theme defines the `--pm-*` tokens (the registry theme has defaults).
+« Améliorer l'app » (specs `/home/ubuntu/projects/_work/pm-spec`, boards C1–C7 and D1, D7, D7b, D8, D9). Install the `pm-panel` registry item; the app's theme defines the `--pm-*` tokens (the registry theme has defaults).
 
 ```tsx
-<AppShell {...app} improve={{ agent: 'pm' }} />  // the one line: the kit opens /api/pm/{agent,conversations,chat} (#854); dictation: POST /api/host/transcribe
+<AppShell {...app} improve={{ agent: 'pm' }} />  // the one line: the kit opens api/pm/{agent,conversations,chat} (#854), dictation POST api/host/transcribe, requests _tasks/api — all relative to the page
 <AppShell {...app} improve={pm} />
 // pm: ImproveSpec — the host's remote NativeChatController, appName, optional pointVoice transcription and the task records (`tasks`).
 <PmChat spec={pm} page={appFrameElement} screen="My day" preset="desktop" /> // Studio's conversation column

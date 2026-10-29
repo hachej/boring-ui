@@ -39,7 +39,7 @@ export interface AppShellProps {
   readonly agent?: AgentSpec;
   /** Consume agent/open/input launch parameters on mount (default). `false` leaves the URL and layer untouched. */
   readonly agentLink?: false;
-  /** The product manager: « Améliorer l’app » in the account menu, the PM panel and the point layer. One line: `improve={{ agent: 'pm' }}` (the kit opens the app's PM door); or a host `ImproveSpec`. */
+  /** The product manager: « Améliorer l'app » in the account menu, the PM panel and the point layer. One line: `improve={{ agent: 'pm' }}` (the kit opens the app's PM door); or a host `ImproveSpec`. */
   readonly improve?: ImproveProp;
   readonly account?: AccountSpec;
   /** The language of the shell's own words and the layer's (« Se déconnecter », « Plus », « Ouvrir l’assistant »…). The agent's `chatProps.locale` wins when it sets one; else this; else English. */
@@ -104,7 +104,7 @@ function Shell({ compactNav, layout, rail, title, nav, agent, improve, account, 
     {(!compact || sheet) && <AppSidebar rail={sheet ? 'icon' : rail} title={title} items={nav} activeId={active.id} onChange={choose} agent={agent} account={account} improve={improve} text={text} />}
     <AgentDockLayout>
       <div data-slot="sidebar-inset" className="relative flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden bg-background">
-      <ImproveLayout screen={active.id} navigation={compact && !sheet ? <TabBar items={nav} activeId={active.id} onChange={choose} text={text} /> : undefined}>
+      <ImproveLayout screen={active.label}navigation={compact && !sheet ? <TabBar items={nav} activeId={active.id} onChange={choose} text={text} /> : undefined}>
         <ShellContext name={active.label} />
         <ScreenHeader fallbackTitle={active.label} compact={compact} avatar={avatar} menu={sheet} text={text} slotRef={setSlot} />
         <Screens items={nav} activeId={active.id} scrolls={layout === 'screen'} slot={slot} />

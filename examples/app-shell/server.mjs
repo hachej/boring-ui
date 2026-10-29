@@ -9,7 +9,8 @@ import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
-import { Harness, createRegistry } from '@earendil-works/pi-durable';
+import { Harness, createRegistry, defineTool } from '@earendil-works/pi-durable';
+import { Type } from '@earendil-works/pi-ai';
 import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node';
 import { NodeExecutionEnv } from '@earendil-works/pi-durable/env/node';
 import { createModels } from '@earendil-works/pi-ai/models';
@@ -50,9 +51,18 @@ const SIDEBAR_TOKENS = `:root{--sidebar:var(--background);--sidebar-foreground:v
 /** The few Tailwind preflight rules the shell's own markup relies on (a host's shadcn app has the whole preflight); in the base layer, so utilities win. */
 const BASE = '@layer base{*,::before,::after{box-sizing:border-box}ul{list-style:none;margin:0;padding:0}h1,p{margin:0}a{color:inherit;text-decoration:inherit}}';
 
-export async function startAppShell({ directory, port = 0, token = randomUUID(), scripted = process.env.STUDIO_MODEL === 'scripted', pageFile = here('./page.tsx'), browserPlugins = [], themeCss = '', pmTranscript } = {}) {
+export async function startAppShell({ directory, port = 0, token = randomUUID(), scripted = process.env.STUDIO_MODEL === 'scripted', pageFile = here('./page.tsx'), browserPlugins = [], themeCss = '', pmTranscript, prefix = '/', pmTasks = false } = {}) {
   mkdirSync(join(directory, 'workspace'), { recursive: true });
-  const models = scripted ? (await (await import('../../lab/studio/scripted-model.mjs')).createScriptedModels({ sources: (await import('./script.mjs')).SOURCES })).models : createModels();
+  // `pmTasks`: the host's task API (`/_tasks/api`, fictional records) and a PM task tool whose result carries the new D-ref, as the one line reads them.
+  const tasks = pmTasks ? [{ id: randomUUID(), ref: 'D-202', title: 'Plan du jour : photo du déjeuner', state: 'open', created: '2026-10-27T09:00:00Z', updated: '2026-10-27T09:00:00Z', waiting_on_you: false }] : [];
+  const answers = [];
+  const createTask = defineTool({ name: 'create_task', description: 'File a fictional request for the person.', replay: 'safe', parameters: Type.Object({ title: Type.String() }), execute: async ({ title }) => {
+    const task = { id: randomUUID(), ref: `D-${203 + tasks.length}`, title, state: 'waiting', created: '2026-10-29T08:00:00Z', updated: '2026-10-29T08:00:00Z', waiting_on_you: true, question: 'Confirmez-vous cette demande ?' };
+    tasks.push(task);
+    return { output: [{ type: 'text', text: `Demande ${task.ref} créée.` }], details: { task: { id: task.id, ref: task.ref } } };
+  } });
+  const script = (await import('./script.mjs')).SOURCES.map(source => !pmTasks ? source : { ...source, entries: source.entries.map(entry => entry.match === 'pm.points@1' ? { ...entry, turns: [{ tools: [{ name: 'create_task', args: { title: 'Protéines avant les calories sur les cartes repas' } }] }, ...entry.turns] } : entry) });
+  const models = scripted ? (await (await import('../../lab/studio/scripted-model.mjs')).createScriptedModels({ sources: script })).models : createModels();
   if (!scripted) models.setProvider((await import('@earendil-works/pi-ai/providers/openai')).openaiProvider());
   const person = { scopeId: 'fictional-team', principalId: 'fictional-person', initiatorId: 'fictional-person' };
   const env = new NodeExecutionEnv({ cwd: join(directory, 'workspace') });
@@ -66,7 +76,7 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
       tools: [createPresentTool({ workspace: { files, root, access: agentAccess } })],
       extensions: [readFiles, writeFiles, createFileGuard({ workspace: { files, root, access: agentAccess } })] }),
     coach: defineAgent({ id: 'coach', model: { provider: 'openai', modelId: 'gpt-5-mini' }, instructions: 'You coach a fictional walker. Be brief.', tools: [], extensions: [] }),
-    pm: defineAgent({ id: 'pm', model: { provider: 'openai', modelId: 'gpt-5-mini' }, instructions: 'You are the product manager of a fictional fitness app. Be brief.', tools: [], extensions: [] }),
+    pm: defineAgent({ id: 'pm', model: { provider: 'openai', modelId: 'gpt-5-mini' }, instructions: 'You are the product manager of a fictional fitness app. Be brief.', tools: pmTasks ? [createTask] : [], extensions: [] }),
   };
   const registry = createRegistry();
   for (const agent of Object.values(agents)) agent.install(registry);
@@ -100,6 +110,16 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
       transcribes.push({ language: new URL(request.url).searchParams.get('language'), bytes: (await request.arrayBuffer()).byteLength });
       return Response.json(pmTranscript);
     },
+    '/_tasks/api': async request => !pmTasks ? new Response(null, { status: 404 }) : !signedIn(request) ? new Response(null, { status: 403 })
+      : Response.json({ tasks: new URL(request.url).searchParams.get('mine') === '1' ? tasks : [], cursor: String(tasks.length + answers.length) }),
+  };
+  /** `POST /_tasks/api/<id>/answer { text }`: the viewer answers the question the task waits on. */
+  const answer = async (request, id) => {
+    const task = tasks.find(each => each.id === id);
+    if (!pmTasks || !signedIn(request) || request.method !== 'POST' || !task?.waiting_on_you) return new Response(null, { status: !pmTasks ? 404 : 403 });
+    answers.push({ id, ref: task.ref, text: (await request.json()).text });
+    Object.assign(task, { state: 'working', waiting_on_you: false, question: undefined, updated: '2026-10-29T08:05:00Z' });
+    return Response.json({ ok: true });
   };
   const handlers = {
     ...door,
@@ -131,6 +151,11 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
   const server = createServer(async (incoming, outgoing) => {
     if (rejectForeignHost(incoming, outgoing)) return;
     const url = new URL(incoming.url, `http://${incoming.headers.host}`);
+    // Served under `prefix` (a host's /apps/<app>/): the app's own paths only answer there; the shared assets stay at the root.
+    if (prefix !== '/') {
+      if (url.pathname.startsWith(prefix)) url.pathname = `/${url.pathname.slice(prefix.length)}`;
+      else if (/^\/(api\/pm\/|api\/host\/|_tasks\/)|^\/$/.test(url.pathname)) return void outgoing.writeHead(404).end();
+    }
     const closed = new AbortController();
     outgoing.on('close', () => closed.abort());
     try {
@@ -141,7 +166,8 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
       }
       const fixed = incoming.method === 'GET' && statics[url.pathname];
       if (fixed) return void outgoing.writeHead(200, { 'content-type': fixed[0], 'cache-control': 'no-store' }).end(fixed[1]);
-      const handler = handlers[url.pathname];
+      const answering = /^\/_tasks\/api\/([^/]+)\/answer$/.exec(url.pathname);
+      const handler = answering ? request => answer(request, decodeURIComponent(answering[1])) : handlers[url.pathname];
       const request = handler && await webRequest(incoming, url, { signal: closed.signal });
       if (request && url.searchParams.get('op') === 'submit' && request.method === 'POST') submits.push({ agent: url.searchParams.get('agent') ?? (url.pathname.startsWith('/api/pm/') ? 'pm' : null), body: await request.clone().json().catch(() => undefined) });
       await sendWebResponse(request ? await handler(request) : new Response(null, { status: handler ? 413 : 404 }), outgoing, { signal: closed.signal });
@@ -153,7 +179,7 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
   });
   await new Promise(resolve => server.listen(port, '127.0.0.1', resolve));
   return {
-    url: `http://127.0.0.1:${server.address().port}/`, token, harness, conversations, submits, contexts, transcribes, mealReads: () => mealReads,
+    url: `http://127.0.0.1:${server.address().port}${prefix}`, token, harness, conversations, submits, contexts, transcribes, answers, tasks, mealReads: () => mealReads,
     close: async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await conversations.dispose(); await harness.close(context); files.close(); db.close(); },
   };
 }

@@ -42,7 +42,7 @@ test('C4/C5 share one exclusive selection toggle and the recorder button; no pau
     assert.match(html, /role="radiogroup"/);
     assert.match(html, /aria-label="Sélectionner"/);
     assert.match(html, /aria-label="Naviguer"/);
-    assert.match(html, /aria-label="Ouvrir l’enregistreur"/, 'R7: the timer is a button that opens the recorder');
+    assert.match(html, /aria-label="Ouvrir l'enregistreur"/, 'R7: the timer is a button that opens the recorder');
     assert.match(html, /0:14/);
     // Spec 1 §1 (Julien 2026-10-28): no pause in the strip, even when the dictaphone paused the recording; the timer is the way to pause.
     assert.doesNotMatch(html, /pm-pause|data-icon="pause"|lucide-pause|data-phase="paused"|lucide-x\b/);

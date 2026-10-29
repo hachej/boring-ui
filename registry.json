@@ -3057,6 +3057,11 @@
           "target": "components/pm-panel/pm-mentions.tsx"
         },
         {
+          "path": "registry/pm-panel/pm-task-source.tsx",
+          "type": "registry:component",
+          "target": "components/pm-panel/pm-task-source.tsx"
+        },
+        {
           "path": "registry/pm-panel/pm-text.ts",
           "type": "registry:lib",
           "target": "components/pm-panel/pm-text.ts"

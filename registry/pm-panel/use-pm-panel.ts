@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react';
-import { anchorOf, createOverlay, createPicker, createPrivacyPolicy } from '@hachej/boring-feedback/page';
+import { MASKED_NAME, accessibleNameOf, anchorOf, createOverlay, createPicker, createPrivacyPolicy } from '@hachej/boring-feedback/page';
 import type { PrivacyPolicy, SpeechSegment } from '@hachej/boring-feedback/page';
 import { useVoiceAttempt } from '@hachej/boring-ui-kit/chat-react/voice';
 import { appendToDraft, voiceRefusalLabel } from '@hachej/boring-ui-kit/chat-text';
@@ -75,9 +75,20 @@ function meaningful(element: Element, root: Element): Element {
   const named = element.closest(NAMED);
   return named && root.contains(named) ? named : element;
 }
-function headingOf(element: Element): string | undefined {
-  const heading = element.querySelector('h1, h2, h3, h4, h5, h6, [role=heading]')?.textContent?.trim();
-  return heading || undefined;
+const HEADING = 'h1, h2, h3, h4, h5, h6, [role=heading]';
+/**
+ * Spec 1 §3's label for an element without an accessible name: its own heading, its visible text, then the nearest heading around it.
+ * Read through the privacy policy, like the name and the capture: text the capture masks never becomes a label (the kind stands in).
+ */
+function labelOf(element: Element, root: Element, policy: PrivacyPolicy): string | undefined {
+  const readable = (node: Element | null) => { const name = node ? accessibleNameOf(node, policy) : MASKED_NAME; return name === MASKED_NAME ? undefined : name; };
+  const own = readable(element.querySelector(HEADING)) ?? readable(element);
+  if (own) return own;
+  for (let around = element.parentElement; around && root.contains(around); around = around.parentElement) {
+    const heading = readable(around.querySelector(HEADING));
+    if (heading) return heading;
+  }
+  return undefined;
 }
 function keepMarkers(controller: NativeChatController, chips: readonly PointChip[]) {
   const text = controller.getSnapshot().draft.text;
@@ -104,7 +115,7 @@ export interface PmComment {
 }
 
 /** `comment`: a click in `point.idle` opens the comment popover at the pin (the desktop preset, spec 1 §3b). */
-export function usePmPanel(spec: ImproveSpec, open: boolean, page: HTMLElement | null, screen = 'app', { comment: commenting = false }: { readonly comment?: boolean } = {}) {
+export function usePmPanel(spec: ImproveSpec, open: boolean, page: HTMLElement | null, screen = (typeof document === 'undefined' ? '' : document.title) || 'app', { comment: commenting = false }: { readonly comment?: boolean } = {}) {
   const text = pmTextFor(spec.chatProps?.locale);
   const [announcement, setAnnouncement] = useState('');
   const [state, dispatch] = useReducer(pointReducer, undefined, createPointState);
@@ -230,7 +241,7 @@ export function usePmPanel(spec: ImproveSpec, open: boolean, page: HTMLElement |
         const words = text.locale === 'en' ? feedbackLabels : feedbackLabelsFr;
         const role = anchor.signals.role ?? element.localName, unknown = words.element(undefined, undefined), named = words.element(role, undefined);
         const kind = named === unknown ? (text.locale === 'en' ? 'Text' : 'Texte') : named;
-        const name = anchor.signals.name ?? headingOf(element) ?? kind;
+        const name = anchor.signals.name ?? labelOf(element, selectionRoot, policy) ?? kind;
         const label = name.length > 40 ? `${name.slice(0, 39)}…` : name;
         const controller = latest.current.spec.controller;
         controller.setAttachments([...controller.getSnapshot().draft.attachments, { id, name: `${marker(number)} @ ${kind} · ${label} · capture jointe`, content: { type: 'image', ...image } }]);

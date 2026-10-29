@@ -36,7 +36,8 @@ function Day() {
       <div style={{ fontSize: 14, marginTop: 6 }}>Haut du corps · 18:00</div>
     </div>
     {query.has('case') && <Input data-testid="domain-draft" aria-label="Brouillon de la page" defaultValue="Brouillon fictif" />}
-    {query.has('case') && Array.from({ length: 12 }, (_, index) => <div key={index} style={card}><div style={label}>REPÈRE {index + 1}</div><div style={{ fontSize: 14, marginTop: 6 }}>Le contenu reste accessible en défilant.</div></div>)}
+    {/* A heading and a mark with no name of its own (spec 1 §3: such a pick is labelled with the nearest heading). */}
+    {query.has('case') && Array.from({ length: 12 }, (_, index) => <div key={index} style={card}><h3 style={{ ...label, margin: 0, fontWeight: 400 }}>REPÈRE {index + 1}</h3><div style={{ fontSize: 14, marginTop: 6 }}><span data-testid={`mark-${index + 1}`} style={{ display: 'inline-block', width: 10, height: 10, marginRight: 6, borderRadius: 5, background: 'currentColor' }} />Le contenu reste accessible en défilant.</div></div>)}
     <button type="button" data-testid="last-action" onClick={() => note('__activated', 'last')} style={{ ...card, background: 'transparent', font: 'inherit', fontSize: 14, textAlign: 'left', minHeight: 44, ...(query.has('case') || query.has('scroll') ? {} : { display: 'none' }) }}>Dernière action de la page</button>
   </Page>;
 }

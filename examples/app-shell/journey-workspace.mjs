@@ -158,7 +158,7 @@ try {
   });
 
   // The PM panel replaced the manager's drawer (no swipe-to-keep-open, no history entry of its own); it is covered by examples/pm-panel/journey.mjs.
-  await step('5 « Améliorer l’app » opens the PM panel in the detail: closing it keeps the detail, and Back then pops the stack', async () => {
+  await step("5 « Améliorer l'app » opens the PM panel in the detail: closing it keeps the detail, and Back then pops the stack", async () => {
     await tap('[data-testid=consultation-3]');
     await browser.until('the detail', `${view} === 'detail'`);
     await tap('[data-testid=account-button]');

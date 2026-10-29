@@ -132,7 +132,7 @@ test('text.ts has the same keys in English and French, and every word is filled'
   assert.equal(fr.holdToTalk, 'Appuie et parle');
   assert.equal(fr.signOut, 'Se déconnecter');
   assert.equal(fr.more, 'Plus');
-  assert.equal(fr.improve, 'Améliorer l’app');
+  assert.equal(fr.improve, "Améliorer l'app");
 });
 
 test('the French words of the shell and of the chat and feedback labels use the typographic apostrophe, never ASCII', () => {
