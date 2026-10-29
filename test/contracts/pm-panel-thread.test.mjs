@@ -5,8 +5,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 import { Window } from 'happy-dom';
 
-// The app panel's member thread (spec 2 §C7) through the public PmPanelProvider + ImproveLayout: no tool step, no raw tool error, the PM's
-// reply drawn as Markdown, and one muted line when the run ends in error without a reply. Studio's PmChat keeps the builder view.
+// The app panel's member thread (spec 2 §C7) through the public PmPanelProvider + ImproveLayout: pi-chat's standard tool trace (decided
+// 2026-10-29, Julien), never a raw tool error, the PM's reply drawn as Markdown, and one muted line when the run ends in error without a reply.
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const source = process.env.PM_SOURCE_ROOT ?? root;
 const out = `${root}.cache/pm-panel-thread-test`;
@@ -16,9 +16,11 @@ await build({ stdin: { contents: `export { PmPanelProvider, ImproveLayout } from
 const assistant = (content, extra = {}) => ({ role: 'assistant', content, api: 'fictional', provider: 'fictional', model: 'fictional', usage: {}, stopReason: 'stop', timestamp: 1, ...extra });
 const user = (id, text) => ({ id, kind: 'message', model: [{ role: 'user', content: text, timestamp: 0 }] });
 const write = { type: 'toolCall', id: 'w', name: 'write', arguments: { path: 'docs/tasks/fictional/brief.md', content: '# D-9 — Fictif' } };
+/** A raw tool error stays in pi-chat's DOM but the app panel hides it: its details and orphan notices sit under the panel's hiding rule. */
+const hiddenByPanel = node => { for (let at = node; at; at = at.parentElement) if (['[&_[data-testid=tool-details]]:hidden', '[&_[data-testid=tool-error]]:hidden'].every(rule => (at.getAttribute?.('class') ?? '').split(/\s+/).includes(rule))) return true; return false; };
 const refused = { role: 'toolResult', toolCallId: 'w', toolName: 'write', content: [{ type: 'text', text: 'Refused: docs/tasks/fictional/brief.md is outside the workspace.' }], isError: true, timestamp: 2 };
 
-test('the app panel thread hides tool steps and raw errors, and draws the reply as Markdown', async t => {
+test('the app panel thread shows pi-chat\'s tool trace without raw errors, and draws the reply as Markdown', async t => {
   const window = new Window({ url: 'https://fictional.invalid/apps/coach/' });
   const names = ['window', 'document', 'navigator', 'HTMLElement', 'HTMLTextAreaElement', 'Element', 'Node', 'Text', 'MutationObserver', 'ResizeObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'matchMedia', 'IS_REACT_ACT_ENVIRONMENT'];
   const globals = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
@@ -47,9 +49,10 @@ test('the app panel thread hides tool steps and raw errors, and draws the reply 
   await render([user(1, 'Ajouter un bouton fictif'), { id: 2, kind: 'message', model: [assistant([write])] }, { id: 3, kind: 'message', model: [refused] },
     { id: 4, kind: 'message', model: [assistant([{ type: 'text', text: 'Demande créée : **D-9 — Bouton fictif**. Voir `D-9` et _la liste_.' }])] }]);
   assert.ok(panel(), 'the panel is mounted');
-  for (const id of ['activity', 'activity-step', 'tool-card', 'tool-details', 'tool-error', 'orphan-result'])
-    assert.equal(panel().querySelectorAll(`[data-testid="${id}"]`).length, 0, `${id} is not in the member thread`);
-  assert.doesNotMatch(panel().textContent, /Refused|outside the workspace|docs\/tasks|"path"/, 'no tool call or raw tool error');
+  assert.ok(panel().querySelector('[data-testid="activity"] [data-testid="tool-card"][data-tool="write"]'), 'pi-chat\'s standard tool trace shows the step');
+  const raw = [...panel().querySelectorAll('[data-testid="tool-details"], [data-testid="tool-error"]')];
+  assert.ok(raw.length > 0 && raw.every(hiddenByPanel), 'the raw tool error is hidden from the member');
+  assert.ok([...panel().querySelectorAll('*')].filter(node => node.children.length === 0 && /Refused|outside the workspace/.test(node.textContent)).every(hiddenByPanel), 'no visible raw error text');
   const reply = panel().querySelector('[data-testid="pm-reply"]');
   assert.equal(reply.querySelector('strong')?.textContent, 'D-9 — Bouton fictif', 'bold is drawn');
   assert.equal(reply.querySelector('code')?.textContent, 'D-9');
@@ -61,17 +64,18 @@ test('the app panel thread hides tool steps and raw errors, and draws the reply 
     { id: 4, kind: 'message', model: [assistant([], { stopReason: 'error', errorMessage: 'Fictional provider stack trace' })] }]);
   assert.equal(panel().querySelector('[data-testid="pm-failed"]')?.textContent, "Le chef de projet n'a pas pu terminer. Réessayez.");
   assert.equal(panel().querySelectorAll('[data-testid="response-error"]').length, 0);
-  assert.doesNotMatch(panel().textContent, /stack trace|Refused/);
+  assert.doesNotMatch(panel().textContent, /stack trace/);
+  assert.ok([...panel().querySelectorAll('*')].filter(node => node.children.length === 0 && /Refused/.test(node.textContent)).every(hiddenByPanel), 'the refusal stays hidden');
 });
 
-// Decided 2026-10-29 (Julien's test): the member thread shows a calm live step list in plain words instead of the lone « Préparation… »,
-// streams the reply, and draws `present` mockups and `ask_user` choices in place. Fictional turn, fictional files.
+// Decided 2026-10-29 (Julien's test): the member thread is pi-chat's standard chat (its tool trace and « working » line, the reply streamed),
+// without raw tool errors, and draws `present` mockups and `ask_user` choices in place. Fictional turn, fictional files.
 const call = (id, name, args = {}) => ({ type: 'toolCall', id, name, arguments: args });
 const result = (id, name, text, isError = false) => ({ id: `r-${id}`, kind: 'message', model: [{ role: 'toolResult', toolCallId: id, toolName: name, content: [{ type: 'text', text }], isError, timestamp: 2 }] });
 const round = (id, content) => ({ id, kind: 'message', model: [assistant(content, { stopReason: 'toolUse' })] });
 const mockup = name => ({ schema: 'boring.artifact', version: 1, title: name, type: 'html', mediaType: 'text/html', target: { resource: { providerId: 'workspace', path: `maquettes/${name}` }, view: { kind: 'published' } }, revision: `rev-${name}` });
 
-test('the member thread: a live step list in plain words, a streamed reply, mockups and a choice', async t => {
+test('the member thread: the standard tool trace and working line, a streamed reply, mockups and a choice', async t => {
   const window = new Window({ url: 'https://fictional.invalid/apps/coach/' });
   const names = ['window', 'document', 'navigator', 'HTMLElement', 'HTMLTextAreaElement', 'Element', 'Node', 'Text', 'MutationObserver', 'ResizeObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'matchMedia', 'IS_REACT_ACT_ENVIRONMENT'];
   const globals = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
@@ -100,30 +104,26 @@ test('the member thread: a live step list in plain words, a streamed reply, mock
   };
   const settle = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 10)); });
   const panel = () => container.querySelector('[data-testid="pm-panel"]');
-  const steps = () => [...panel().querySelectorAll('[data-testid="pm-step"]')].map(step => [step.textContent, step.dataset.stepStatus]);
+  const tools = () => [...panel().querySelectorAll('[data-testid="activity"] [data-testid="tool-card"]')].map(card => [card.dataset.tool, card.dataset.status]);
   const run = message => ({ run: { taskId: 7 }, ...(message ? { generation: { message: { role: 'assistant', content: message } } } : {}) });
 
-  // Running: a read, a refused write, then a tool the map doesn't know, still running. Plain words, never a raw name or error.
+  // Running: the standard trace (a read, a refused write, a tool still running) and pi-chat's own working line; the refusal is hidden.
   const turn = [user(1, 'Mettre les protéines en avant'), round(2, [call('a', 'tasks_list')]), result('a', 'tasks_list', '[]'), round(3, [call('w', 'write', { path: '../dehors.md' })]),
     result('w', 'write', 'Refused: ../dehors.md is outside the workspace.', true), round(4, [call('x', 'mystery_tool', { secret: 'json' })])];
   await render(turn, run());
-  assert.equal(panel().querySelector('[data-testid="pm-steps"]')?.dataset.open, 'true', 'the list is open while the PM works');
-  assert.deepEqual(steps(), [['Lecture des tâches', 'done'], ["Rédaction d'un document", 'stopped'], ['Étape en cours', 'running']]);
-  assert.equal(panel().querySelectorAll('[data-testid="pm-step-dot"]').length, 1, 'the failed step is a neutral dot');
-  assert.doesNotMatch(panel().textContent, /tasks_list|mystery_tool|Refused|dehors|secret|\{/, 'no tool name, argument, result or error');
+  assert.deepEqual(tools(), [['tasks_list', 'completed'], ['write', 'failed'], ['mystery_tool', 'running']]);
+  assert.ok(panel().querySelector('[data-testid="agent-status"]'), 'pi-chat\'s own « working » line');
+  assert.equal(panel().querySelector('[data-testid="preparing"]'), null, 'no lone « Préparation… »');
+  assert.ok([...panel().querySelectorAll('[data-testid="tool-details"]')].every(hiddenByPanel), 'the raw refusal is hidden');
 
-  // The reply streams: its Markdown is drawn live, and the list folds to its summary.
+  // The reply streams: its Markdown is drawn live.
   await render([...turn, result('x', 'mystery_tool', 'ok')], run([{ type: 'text', text: 'Je propose **deux pistes**' }]));
-  assert.equal(panel().querySelector('[data-testid="pm-reply-text"] strong')?.textContent, 'deux pistes', 'the streamed reply is Markdown, live');
-  assert.equal(panel().querySelector('[data-testid="pm-steps"]').dataset.open, 'false', 'folded once the reply arrives');
-  assert.match(panel().querySelector('[data-testid="pm-steps-summary"]').textContent, /^3 étapes/);
+  assert.equal(panel().querySelector('[data-testid="transcript"] strong')?.textContent, 'deux pistes', 'the streamed reply is Markdown, live');
 
-  // Done: folded; a tap opens it again.
-  await render([...turn, result('x', 'mystery_tool', 'ok'), { id: 9, kind: 'message', model: [assistant([{ type: 'text', text: 'Je propose **deux pistes**.' }])] }]);
-  assert.equal(panel().querySelector('[data-testid="pm-steps"]').dataset.open, 'false');
-  await act(async () => panel().querySelector('[data-testid="pm-steps-summary"]').click());
-  assert.equal(panel().querySelector('[data-testid="pm-steps"]').dataset.open, 'true', 'a tap opens the list');
-  assert.equal(panel().querySelectorAll('[data-testid="pm-reply"]').length, 1);
+  // A run that ends in error after a tool step: one muted line, never the provider's error.
+  await render([...turn, result('x', 'mystery_tool', 'ok'), { id: 9, kind: 'message', model: [assistant([], { stopReason: 'error', errorMessage: 'Fictional provider stack trace' })] }]);
+  assert.match(panel().textContent, /Le chef de projet n'a pas pu terminer\. Réessayez\./);
+  assert.doesNotMatch(panel().textContent, /stack trace/);
 
   // Mockups and a choice: two `present` results become two mockup rows, `ask_user` its options, both as thread content; text beside the calls stays.
   const choose = [user(1, 'Montrez-moi des maquettes'), round(2, [{ type: 'text', text: 'Voici deux pistes.' }, call('p1', 'present', { path: 'maquettes/piste-a.html' }), call('p2', 'present', { path: 'maquettes/piste-b.html' })]),
@@ -133,7 +133,6 @@ test('the member thread: a live step list in plain words, a streamed reply, mock
   assert.deepEqual([...panel().querySelectorAll('[data-testid="pm-mockup-title"]')].map(node => node.textContent), ['piste-a.html', 'piste-b.html']);
   assert.deepEqual([...panel().querySelectorAll('[data-testid="question-option"]')].map(node => node.textContent), ['Piste A', 'Piste B']);
   assert.match(panel().textContent, /Voici deux pistes\.[\s\S]*Laquelle préférez-vous/, 'the text of a round that calls tools stays');
-  assert.deepEqual(steps(), [["Préparation d'une maquette", 'done'], ["Préparation d'une maquette", 'done'], ['Question pour vous', 'running']]);
   await settle();
   assert.ok(panel().querySelector('[data-testid="pm-mockup-thumb-run-frame"]')?.getAttribute('srcdoc')?.includes('Fictional piste-a.html'), 'a live thumbnail');
   await act(async () => panel().querySelectorAll('[data-testid="pm-mockup-open"]')[1].click());

@@ -49,23 +49,3 @@ export function pointMessage(entry: EntryRecord, mentions?: MentionsConfig, { pr
   } catch { return undefined; }
 }
 
-/**
- * A plain sent message in the app panel's member thread (C7): the same muted bubble as a sent point, its text and image thumbnails.
- * Drawn by the panel so the turn's step list can follow it (`pmEntries`); undefined for anything but one user message.
- */
-export function plainMessage(entry: EntryRecord, mentions?: MentionsConfig) {
-  const messages = entry.model?.filter(message => message.role === 'user');
-  if (messages?.length !== 1 || entry.model?.length !== 1) return undefined;
-  const message = messages[0]!;
-  const parts = typeof message.content === 'string' ? [{ type: 'text' as const, text: message.content }] : message.content;
-  const text = parts.flatMap(part => part.type === 'text' ? [part.text] : []).join('\n').trim();
-  const images = parts.flatMap(part => part.type === 'image' ? [part] : []);
-  if (!text && !images.length) return undefined;
-  return <div data-testid="pm-sent-message" data-role="user" className="flex flex-col items-end gap-1">
-    {images.length > 0 && <div className="flex flex-wrap justify-end gap-1.5">{images.map((image, at) => <img key={at} src={`data:${image.mimeType};base64,${image.data}`} alt="" className="size-16 rounded-pm-box object-cover" />)}</div>}
-    {text && <div className="max-w-[300px] rounded-pm-bubble rounded-br-pm-tail bg-pm-bubble px-3.5 py-2.5 text-[15px] leading-[1.45] text-pm-bubble-foreground">
-      <p className="m-0 whitespace-pre-wrap [overflow-wrap:anywhere]" data-testid="pm-sent-transcript">{pieces(text, { mentions: Boolean(mentions), skills: [] }).map((piece, at) => piece.kind === 'mention'
-        ? <UserMention key={at} path={piece.value!} text={piece.text} open={mentions?.open} render={mentions?.renderSent} kinds={mentions?.kinds} /> : <span key={at}>{piece.text}</span>)}</p>
-    </div>}
-  </div>;
-}

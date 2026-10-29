@@ -15,8 +15,7 @@ import { cn } from '../utils/utils';
 import { PmComposer } from './pm-composer';
 import { PointComment } from './point-comment';
 import { usePmPanel } from './use-pm-panel';
-import { POINT_PREFACE, plainMessage, pointMessage } from './point-message';
-import { PmSteps } from './pm-steps';
+import { POINT_PREFACE, pointMessage } from './point-message';
 import { PmMockupProvider, PmMockupView, pmArtifacts } from './pm-mockups';
 import type { ArtifactDescriptor } from '@hachej/boring-ui-kit/chat-view';
 import { usePmMentions } from './pm-mentions';
@@ -29,7 +28,6 @@ import type { PmPreset } from './pm-composer';
 import type { PmText } from './pm-text';
 import type { MentionsConfig } from '../pi-chat/config';
 import type { PiChatProps } from '../pi-chat/pi-chat';
-import type { ChatTextPart } from '../pi-chat/message';
 
 export { PmComposer, PointerIcon } from './pm-composer';
 export type { PmComposerProps, PmPreset } from './pm-composer';
@@ -40,8 +38,6 @@ export { usePmMentions } from './pm-mentions';
 export { pmTextEn, pmTextFor, pmTextFr } from './pm-text';
 export type { PmText } from './pm-text';
 export { PointChipView } from './inline-point-input';
-export { PmSteps, stepLabel, turnSteps } from './pm-steps';
-export type { PmStep, PmTurnSteps } from './pm-steps';
 export { PmArtifactCard, PmMockupView } from './pm-mockups';
 export type { PmReadArtifact } from './pm-mockups';
 export { pointMessage } from './point-message';
@@ -152,29 +148,21 @@ const failedRun = (entry: EntryRecord) => entry.model?.filter(message => message
 
 const callsTools = (entry: EntryRecord) => entry.model?.some(message => message.role === 'assistant' && typeof message.content !== 'string' && message.content.some(part => part.type === 'toolCall')) === true;
 
-/** The PM's reply text in the app panel, while it streams and once committed: the C7 type, headings at body size. */
-export const pmReplyText = ({ text, streaming }: ChatTextPart) => <div data-testid="pm-reply-text" className="text-[15px] leading-[1.45] [&_:is(h1,h2,h3,h4,h5,h6)]:text-[length:inherit]"><Markdown text={text} streaming={streaming} /></div>;
-
 /**
  * The PM thread's entries: sent points with their chips, the PM's reply (Markdown; plain text on touch, a bubble on desktop) and its
- * request card. `member` is the app panel's member thread (C7): each sent message is followed by its turn's step list (`PmSteps`), a round
- * that calls tools keeps the chat's own rows (so its mockup and question cards stay), and a run that ends in error without a reply shows
- * one muted line.
+ * request card. `member` is the app panel's member thread (C7): a round that calls tools keeps the chat's own rows (its tool trace, mockup
+ * and question cards), and a run that ends in error without a reply shows one muted line.
  */
-export function pmEntries({ preset, text, mentions, renderEntry, renderRequest, edit, member = false, controller }: {
+export function pmEntries({ preset, text, mentions, renderEntry, renderRequest, edit, member = false }: {
   readonly preset: PmPreset; readonly text: PmText; readonly mentions: MentionsConfig | undefined;
   readonly renderEntry?: ((entry: EntryRecord) => ReturnType<NonNullable<PiChatProps['renderEntry']>>) | undefined;
   readonly renderRequest?: StudioTaskBoardSeam['renderRequest']; readonly edit: (text: string) => void; readonly member?: boolean;
-  /** The member thread's controller: its step lists read the live turn from it. */
-  readonly controller?: ImproveSpec['controller'] | undefined;
 }) {
   return (entry: EntryRecord) => {
     const sent = pointMessage(entry, mentions, { preset, text });
-    const own = sent ? undefined : renderEntry?.(entry);
-    if (own) return own;
-    const user = sent?.content ?? (member ? plainMessage(entry, mentions) : undefined);
-    if (user && member && controller) return { inline: true, content: <div className="flex flex-col gap-1.5">{user}<PmSteps controller={controller} turn={entry.id} text={text} /></div> };
     if (sent) return sent;
+    const own = renderEntry?.(entry);
+    if (own) return own;
     if (member && callsTools(entry) && !failedRun(entry)) return undefined;
     const reply = assistantText(entry);
     if (reply === undefined) return member && failedRun(entry) ? { inline: true, content: <p data-testid="pm-failed" className="m-0 text-sm text-muted-foreground">{text.failed}</p> } : undefined;
@@ -250,7 +238,7 @@ function Panel({ binding, pm, strip, full }: { readonly binding: Binding; readon
   const chatText = chatTextFor(spec.chatProps?.locale ?? 'fr');
   const review = !full && pm.meta !== undefined;
   const transcript = pm.voice.phase === 'processing' ? <p data-testid="pm-transcribing" role="status" className="m-0 px-2">Transcription…</p> : pm.liveText && <p role="status" data-testid="pm-live-transcript" className="m-0 px-2">{pm.liveText}</p>;
-  const renderEntry = pmEntries({ preset: 'touch', text, mentions, renderEntry: spec.chatProps?.renderEntry, renderRequest: spec.tasks?.renderRequest, edit, member: true, controller: spec.controller });
+  const renderEntry = pmEntries({ preset: 'touch', text, mentions, renderEntry: spec.chatProps?.renderEntry, renderRequest: spec.tasks?.renderRequest, edit, member: true });
   const showMockup = useCallback((artifact: ArtifactDescriptor) => { setMockup(artifact); dispatch({ type: 'full' }); }, [dispatch]);
   const artifacts = useMemo(() => spec.chatProps?.artifacts ?? pmArtifacts(showMockup, mockup), [spec.chatProps?.artifacts, showMockup, mockup]);
   const aside = full && (requests || mockup !== undefined);
@@ -286,10 +274,11 @@ function Panel({ binding, pm, strip, full }: { readonly binding: Binding; readon
             onOpen={spec.tasks.onOpen} cardActions={spec.tasks.cardActions} locale={text.locale} viewerAction="confirmation" className="p-4" />}</div>
         </> : header}
         {pm.problem && <p role="alert" className="m-0 px-4 text-sm">{pm.problem}</p>}
-        <div hidden={aside} className={cn('min-h-0 flex-1 flex-col', aside ? 'hidden' : 'flex',
-          full ? '[&_[data-boring=pi-chat]>footer]:px-4 [&_[data-boring=pi-chat]>footer]:pb-6 [&_[data-testid=transcript]]:gap-3.5 [&_[data-testid=transcript]]:text-[15px] [&_[data-testid=transcript-scroll]>div:last-child]:p-4 [&_[data-testid=transcript-history]]:min-h-0 [&_[data-testid=transcript-history]>span:not([role])]:hidden [&_[data-testid=transcript-navigation]]:pointer-events-none [&_[data-testid=transcript-navigation]]:absolute [&_[data-testid=transcript-navigation]]:inset-x-0 [&_[data-testid=transcript-navigation]]:bottom-0 [&_[data-testid=transcript-navigation]_*]:pointer-events-auto [&_[data-testid=preparing]]:hidden [&_[data-testid=copy]]:hidden [&_[data-testid=conversation-files]]:hidden [&_[data-testid=question-option]]:min-h-11 [&_[data-testid=question-input]]:min-h-11 [&_[data-testid=question-submit]]:min-h-11'
+        {/* The member never sees a raw tool error: pi-chat's trace stays, the failed step's details and orphan error notices are hidden. */}
+        <div hidden={aside} className={cn('min-h-0 flex-1 flex-col [&_[data-testid=tool-details]]:hidden [&_[data-testid=tool-error]]:hidden', aside ? 'hidden' : 'flex',
+          full ? '[&_[data-boring=pi-chat]>footer]:px-4 [&_[data-boring=pi-chat]>footer]:pb-6 [&_[data-testid=transcript]]:gap-3.5 [&_[data-testid=transcript]]:text-[15px] [&_[data-testid=transcript-scroll]>div:last-child]:p-4 [&_[data-testid=transcript-history]]:min-h-0 [&_[data-testid=transcript-history]>span:not([role])]:hidden [&_[data-testid=transcript-navigation]]:pointer-events-none [&_[data-testid=transcript-navigation]]:absolute [&_[data-testid=transcript-navigation]]:inset-x-0 [&_[data-testid=transcript-navigation]]:bottom-0 [&_[data-testid=transcript-navigation]_*]:pointer-events-auto [&_[data-testid=question-option]]:min-h-11 [&_[data-testid=question-input]]:min-h-11 [&_[data-testid=question-submit]]:min-h-11'
             : '[&_[data-testid=transcript]]:hidden [&_[data-boring=pi-chat]>.relative]:hidden [&_[data-boring=pi-chat]>footer]:p-0')}>
-          <PiChat {...withChatPlugins({ ...spec.chatProps, renderText: spec.chatProps?.renderText ?? pmReplyText, artifacts, ...(mentions ? { mentions } : {}) })} controller={spec.controller} locale={spec.chatProps?.locale ?? 'fr'} header={false} emptyLayout="docked" keyboardInset={false} presentation="natural"
+          <PiChat {...withChatPlugins({ ...spec.chatProps, artifacts, ...(mentions ? { mentions } : {}) })} controller={spec.controller} locale={spec.chatProps?.locale ?? 'fr'} header={false} emptyLayout="docked" keyboardInset={false} replyError={spec.chatProps?.replyError ?? (() => text.failed)}
             labels={{ ...spec.chatProps?.labels, placeholder: `${text.placeholderBefore}↖${text.placeholderAfter}`, add: text.attach, send: text.send }} onFiles={spec.chatProps?.onFiles ?? imageFiles}
             sendContext={submit} renderEntry={renderEntry} renderComposer={composer => <PmComposer {...pointProps} composer={{ ...composer, sendBlocked: composer.sendBlocked || pm.voice.phase === 'processing' || pm.snapshot.send.kind === 'validating' || pm.snapshot.send.kind === 'submitting', ...(uncertain ? { text: uncertain.draft.text.split(POINT_PREFACE)[0]!.trimEnd(), disabled: true } : {}) }} transcript={transcript} />} />
         </div>

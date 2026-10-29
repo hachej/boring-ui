@@ -97,7 +97,7 @@ export function PmMockupView({ artifact, text, onBack }: { readonly artifact: Ar
       <span data-testid="pm-mockup-view-title" className="min-w-0 flex-1 truncate text-right text-[13px] text-muted-foreground">{artifact.title}</span>
     </div>
     {loaded && 'text' in loaded ? <MockupBody artifact={artifact} text={loaded.text} testId="pm-mockup-full" />
-      : <p role="status" className="m-0 p-4 text-sm text-muted-foreground">{loaded ? text.mockupUnavailable : text.preparing}</p>}
+      : <p role="status" className="m-0 p-4 text-sm text-muted-foreground">{loaded ? text.mockupUnavailable : text.mockupLoading}</p>}
   </div>;
 }
 

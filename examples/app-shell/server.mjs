@@ -31,8 +31,8 @@ import { buildTailwind } from '../../lab/studio/tailwind.mjs';
 
 const here = name => fileURLToPath(new URL(name, import.meta.url));
 // The PM's turn with the host task API, as on the live app: a read, a write the workspace refuses, `tasks_create` (its arguments streamed, so
-// the step runs a moment), then a streamed Markdown reply. The member's thread (C7) shows a calm step list in plain words, the reply and its
-// request card, never a tool name, an argument or the refusal.
+// the step runs a moment), then a streamed Markdown reply. The member's thread (C7) shows pi-chat's standard tool trace, the reply and its
+// request card, never the raw refusal.
 const PM_TASK_TURNS = [{ tools: [{ name: 'read', args: { path: 'fiche-produit.md' } }], delay: 300 },
   { tools: [{ name: 'write', args: { path: '../outside/brief.md', content: '# Fictional brief' } }], delay: 300 },
   { tools: [{ name: 'tasks_create', args: { title: 'Protéines avant les calories sur les cartes repas' }, ms: 120 }], delay: 600 },

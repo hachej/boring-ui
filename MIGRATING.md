@@ -1,10 +1,10 @@
 # Unreleased
 
 - **The app PM panel during a PM turn (`pm-panel`; decided 2026-10-29).**
-  - **Step list:** the member thread shows a calm, collapsible step list under each sent message instead of the lone « Préparation… »: one muted line per tool, in plain words (`PmText.steps`, `stepUnknown`, `stepsSummary`, `preparing`), folded to « n étapes ▸ » once the reply arrives. The reply streams as Markdown. Exports: `PmSteps`, `turnSteps`, `stepLabel`, `pmReplyText`. Sent plain messages are drawn by the panel (the C7 bubble). Copy buttons and the conversation file list are hidden in the app panel.
+  - **Standard chat:** the app panel drops round 6's `presentation="natural"` and its « Préparation… »: the member thread is pi-chat's standard chat, with its default tool trace and its own « working » line, and the reply streams. A raw tool error never shows: the panel hides the failed step's details and orphan tool-error notices, and passes `replyError` (`PmText.failed`) unless the host gives one. A PM round that calls tools keeps the chat's own rows (its text, trace and cards).
   - **Request card:** a 403, 404 or network error on `_tasks/api?mine=1` no longer turns the cards and « Mes demandes » off for the session; the list is read again on the next turn and when the panel or « Mes demandes » opens (`StudioTaskBoardSeam.refresh?`). The card is drawn from the `tasks_create` result and merged with the list's record (the list wins). « Mes demandes » is enabled as soon as the door opens.
   - **Mockups:** `present` results show as mockup rows that open full height in the sheet; pass `ImproveSpec.readArtifact` (the one line reads `api/pm/resources`, a revision route the host's PM door must serve). `ask_user` options are 44px in the panel.
-  - Update `pm-panel` (new files `pm-steps.tsx`, `pm-mockups.tsx`; registry dependencies `pi-artifacts`, `viewer-frame`; package `@hachej/boring-files`).
+  - Update `pm-panel` (new file `pm-mockups.tsx`, `PmText.openMockup`, `mockupLoading`, `mockupUnavailable`; registry dependencies `pi-artifacts`, `viewer-frame`; package `@hachej/boring-files`).
 
 # Migrating to 0.4.33
 
