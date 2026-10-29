@@ -275,16 +275,18 @@ try {
       for (let wait = 0; wait < 10; wait++) { await pause(100); assert.equal(await browser.evaluate(sent), true, 'still « Envoyée » after the host is read again'); }
       if (shots && device === 'phone') await browser.screenshot(`${shots}/1-c7-envoyee-phone.png`);
       await press('[data-testid=pm-requests]');
-      // Open requests on top; the three finished ones under « Terminées (3) », collapsed (decided 2026-10-29).
+      // Open requests on top; the finished ones under « Terminées (n) », collapsed (decided 2026-10-29): the fixture's three on phone, plus
+      // D-202 on desktop (the server keeps the phone's withdrawal).
       const finishedNow = () => app.tasks.filter(t => t.state === 'done' || t.state === 'closed'), openIds = app.tasks.filter(t => !finishedNow().includes(t)).map(t => t.id).sort();
       const toggle = '[data-testid=pm-task-board-seam] [data-testid=pm-finished-toggle]';
       await browser.until('Mes demandes', `${visible('[data-testid=pm-task-board-seam]')} && JSON.stringify([...document.querySelectorAll('[data-testid=pm-task-board-seam] [data-task-card]')].map(c => c.dataset.taskCard).sort()) === ${JSON.stringify(JSON.stringify(openIds))}`);
-      assert.deepEqual(await browser.evaluate(`[${q(toggle)}.textContent, ${q(toggle)}.getAttribute('aria-expanded')]`), ['Terminées (3)', 'false'], '« Terminées (3) », collapsed');
+      assert.deepEqual(await browser.evaluate(`[${q(toggle)}.textContent, ${q(toggle)}.getAttribute('aria-expanded')]`), [`Terminées (${finishedNow().length})`, 'false'], '« Terminées (n) », collapsed');
+      if (device === 'phone') assert.equal(finishedNow().length, 3, 'the fixture: one finished request per label');
       assert.ok(await browser.evaluate(`${q(toggle)}.getBoundingClientRect().height >= 44`), '« Terminées » is 44px high');
       if (shots && device === 'phone') { await pause(200); await browser.screenshot(`${shots}/mes-demandes-1-collapsed-phone.png`); }
       await press(toggle);
       const outcomes = `JSON.stringify([...document.querySelectorAll('[data-testid=pm-finished] [data-task-card]')].map(c => c.querySelector('[data-task-outcome]').textContent))`;
-      await browser.until('Terminées expanded', `${q(toggle)}.getAttribute('aria-expanded') === 'true' && ${outcomes} === ${JSON.stringify(JSON.stringify(['En ligne', 'Retirée', 'Fermée']))}`);
+      await browser.until('Terminées expanded', `${q(toggle)}.getAttribute('aria-expanded') === 'true' && ${outcomes} === ${JSON.stringify(JSON.stringify(device === 'phone' ? ['En ligne', 'Retirée', 'Fermée'] : ['Retirée', 'En ligne', 'Retirée', 'Fermée']))}`);
       assert.equal(await browser.evaluate(`!!${q('[data-testid=pm-finished] [data-testid=pm-withdraw]')}`), false, 'no « Retirer » on a finished request');
       if (shots && device === 'phone') { await pause(200); await browser.screenshot(`${shots}/mes-demandes-2-expanded-phone.png`); }
       // « Retirer » only on what the viewer filed (`is_requester`) and nobody started; never on D-190, listed because it waited on them.
