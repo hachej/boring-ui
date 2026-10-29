@@ -4,12 +4,12 @@
   "title": "Viewers",
   "description": "Deprecated aggregate: installs every viewer item (viewer-frame, viewer-markdown, viewer-html, viewer-image, viewer-pdf, viewer-code). Add the items you use instead.",
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.30/r/viewer-frame.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.30/r/viewer-markdown.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.30/r/viewer-html.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.30/r/viewer-image.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.30/r/viewer-pdf.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.30/r/viewer-code.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.31/r/viewer-frame.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.31/r/viewer-markdown.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.31/r/viewer-html.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.31/r/viewer-image.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.31/r/viewer-pdf.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.31/r/viewer-code.json"
   ],
   "files": [],
   "type": "registry:component"

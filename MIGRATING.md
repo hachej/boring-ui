@@ -1,5 +1,7 @@
 # Unreleased
 
+# Migrating to 0.4.31
+
 - **PM panel fixes from the Coach Max adoption (`pm-panel`, `app-shell`).**
   - **52px row:** « Améliorer l'app » is now 52px tall, because the row uses a height instead of a minimum. Before, the shell's 44px touch-target rule shrank it.
   - **Straight apostrophe:** the label is written with a straight apostrophe, as in spec 2 (« Améliorer l'app », « Ouvrir l'enregistreur »).
