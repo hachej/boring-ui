@@ -42,6 +42,13 @@ test('semantic task status uses explicit host facts, never display wording or gu
   }
   // Native viewer projection is authoritative even without a waiting_on object or a particular column.
   assert.equal(taskBoard.deriveTaskStatus({ ...base, state: 'open', waiting_on_you: true }), 'waiting-on-viewer');
+  // « Sent »: confirmed and still `open`, only when the rendering asks for it (the requester's compact card).
+  const confirmed = { ...base, state: 'open', confirmed_at: '2026-10-29T08:05:00Z' };
+  assert.equal(taskBoard.deriveTaskStatus(confirmed, { sent: true }), 'sent');
+  assert.equal(taskBoard.deriveTaskStatus(confirmed), 'none', 'the board does not ask for it');
+  for (const state of ['working', 'done', 'closed', 'waiting']) assert.equal(taskBoard.deriveTaskStatus({ ...confirmed, state }, { sent: true }), 'none', state);
+  assert.equal(taskBoard.deriveTaskStatus({ ...base, state: 'open' }, { sent: true }), 'none', 'not confirmed');
+  assert.equal(taskBoard.deriveTaskStatus({ ...confirmed, waiting_on_you: true }, { sent: true }), 'waiting-on-viewer');
 });
 
 test('semantic task labels localize presentation, require explicit confirmation context and omit unknown pills', () => {
@@ -52,6 +59,8 @@ test('semantic task labels localize presentation, require explicit confirmation 
   assert.equal(taskBoard.taskStatusLabel('waiting-on-builder', 'fr'), "Chez l'équipe");
   assert.equal(taskBoard.taskStatusLabel('high-risk'), 'High risk');
   assert.equal(taskBoard.taskStatusLabel('high-risk', 'fr'), 'Risque élevé');
+  assert.equal(taskBoard.taskStatusLabel('sent'), 'Sent');
+  assert.equal(taskBoard.taskStatusLabel('sent', 'fr'), 'Envoyée');
   assert.equal(taskBoard.taskStatusLabel('none'), undefined);
   assert.equal(taskBoard.taskStatusLabel('none', 'fr'), undefined);
   assert.equal(taskBoard.taskStatusLabel('unknown-host-status'), undefined);

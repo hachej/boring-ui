@@ -42,6 +42,11 @@ export interface PmText {
   /** The request card's two answers (C7): « Modifier » goes back to the composer, « Confirmer » is the viewer's answer to the task. */
   readonly modify: string;
   readonly confirm: string;
+  /** The requester withdraws a request nobody started (« Mes demandes », decided 2026-10-29): the action, its confirm step and its error line. */
+  readonly withdraw: string;
+  readonly withdrawAsk: string;
+  readonly cancel: string;
+  readonly withdrawFailed: string;
   /** The app panel's one muted line when the PM's run ends in error without a reply: the member never sees a tool or a raw error (C7). */
   readonly failed: string;
 }
@@ -67,6 +72,7 @@ export const pmTextFr: PmText = {
   subtitle: app => `Le chef de projet · ${app}`,
   commentOn: (kind, label) => `Commenter ${kind} · ${label}`, commentPlaceholder: 'Votre commentaire…', addToMessage: 'Ajouter au message', sendToPm: 'Envoyer au PM', sentToPm: 'Envoyé au PM',
   modify: 'Modifier', confirm: 'Confirmer', failed: "Le chef de projet n'a pas pu terminer. Réessayez.",
+  withdraw: 'Retirer', withdrawAsk: 'Retirer cette demande\u00a0?', cancel: 'Annuler', withdrawFailed: 'Impossible de retirer la demande.',
 };
 
 export const pmTextEn: PmText = {
@@ -83,6 +89,7 @@ export const pmTextEn: PmText = {
   subtitle: app => `The project lead · ${app}`,
   commentOn: (kind, label) => `Comment on ${kind} · ${label}`, commentPlaceholder: 'Your comment…', addToMessage: 'Add to message', sendToPm: 'Send to the PM', sentToPm: 'Sent to the PM',
   modify: 'Modify', confirm: 'Confirm', failed: "The PM couldn't finish. Try again.",
+  withdraw: 'Withdraw', withdrawAsk: 'Withdraw this request?', cancel: 'Cancel', withdrawFailed: "Couldn't withdraw the request.",
 };
 
 export const pmTextFor = (locale: string | undefined): PmText => locale?.startsWith('en') ? pmTextEn : pmTextFr;

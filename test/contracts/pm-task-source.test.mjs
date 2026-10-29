@@ -5,8 +5,8 @@ import { pathToFileURL } from 'node:url';
 
 // The one line's task source (`pm-task-source.tsx`): the host's task API behind a feature check, its record mapping and the tolerant
 // matcher that finds the task a PM reply created. The browser path is examples/pm-panel/journey.mjs with PM_ONE_LINE=1.
-await build({ stdin: { contents: `export { readTasks, answerTask, toTaskRecord, createdTask } from './registry/pm-panel/pm-task-source';`, resolveDir: process.cwd(), loader: 'tsx' }, outfile: '.cache/pm-task-source-test/source.mjs', bundle: true, platform: 'node', format: 'esm', jsx: 'automatic', packages: 'external', alias: { '@': `${process.cwd()}/examples/app-shell` } });
-const { readTasks, answerTask, toTaskRecord, createdTask } = await import(pathToFileURL(`${process.cwd()}/.cache/pm-task-source-test/source.mjs`));
+await build({ stdin: { contents: `export { readTasks, answerTask, withdrawTask, withdrawable, toTaskRecord, createdTask } from './registry/pm-panel/pm-task-source';`, resolveDir: process.cwd(), loader: 'tsx' }, outfile: '.cache/pm-task-source-test/source.mjs', bundle: true, platform: 'node', format: 'esm', jsx: 'automatic', packages: 'external', alias: { '@': `${process.cwd()}/examples/app-shell` } });
+const { readTasks, answerTask, withdrawTask, withdrawable, toTaskRecord, createdTask } = await import(pathToFileURL(`${process.cwd()}/.cache/pm-task-source-test/source.mjs`));
 
 const served = (status, body) => async (url, init) => { served.calls.push({ url: String(url), init }); return new Response(body === undefined ? null : JSON.stringify(body), { status }); };
 served.calls = [];
@@ -35,6 +35,31 @@ test('the viewer\'s tasks map to TaskRecord: uuid id, D-ref number, waiting on t
   await answerTask('http://app.test/apps/x/_tasks/api', 'a b', 'Confirmer');
   assert.equal(served.calls.at(-1).url, 'http://app.test/apps/x/_tasks/api/a%20b/answer');
   assert.deepEqual(JSON.parse(served.calls.at(-1).init.body), { text: 'Confirmer' });
+});
+
+test('confirmed_at and is_requester (decided 2026-10-29): « Envoyée » and « Retirer » read them; absent, the record is today\'s', () => {
+  const host = { id: 'x', ref: 'D-5', title: 'T', state: 'open', waiting_on_you: false };
+  assert.deepEqual(toTaskRecord(host, 'alice'), { id: 'x', number: 'D-5', title: 'T', requesterId: 'alice', waiting_on_you: false, state: 'open' }, 'no new field without the host\'s');
+  assert.deepEqual(toTaskRecord({ ...host, confirmed_at: '2026-10-29T08:05:00Z', is_requester: true }, 'alice'),
+    { id: 'x', number: 'D-5', title: 'T', requesterId: 'alice', waiting_on_you: false, state: 'open', confirmed_at: '2026-10-29T08:05:00.000Z', is_requester: true });
+  assert.equal(withdrawable(toTaskRecord({ ...host, is_requester: true }, 'alice')), true);
+  assert.equal(withdrawable(toTaskRecord({ ...host, is_requester: true, state: 'waiting', waiting_on_you: true }, 'alice')), true, 'waiting on them: not started');
+  assert.equal(withdrawable(toTaskRecord({ ...host, is_requester: true, state: 'working' }, 'alice')), false, 'started');
+  assert.equal(withdrawable(toTaskRecord({ ...host, is_requester: false }, 'alice')), false, 'listed because it waits on them, not theirs');
+  assert.equal(withdrawable(toTaskRecord(host, 'alice')), false, 'never assumed');
+});
+
+test('POST withdraw: 200 withdrawn, 409 started, 404 or a network failure refused', async t => {
+  const original = globalThis.fetch;
+  t.after(() => { globalThis.fetch = original; });
+  served.calls = [];
+  globalThis.fetch = served(200, { task: { id: 'a b', state: 'closed' } });
+  assert.equal(await withdrawTask('http://app.test/apps/x/_tasks/api', 'a b'), 'withdrawn');
+  assert.equal(served.calls.at(-1).url, 'http://app.test/apps/x/_tasks/api/a%20b/withdraw');
+  assert.equal(served.calls.at(-1).init.method, 'POST');
+  globalThis.fetch = served(409); assert.equal(await withdrawTask('http://app.test/apps/x/_tasks/api', 'x'), 'started');
+  globalThis.fetch = served(404); assert.equal(await withdrawTask('http://app.test/apps/x/_tasks/api', 'x'), 'refused');
+  globalThis.fetch = async () => { throw new TypeError('offline'); }; assert.equal(await withdrawTask('http://app.test/apps/x/_tasks/api', 'x'), 'refused');
 });
 
 test('the created task: a task tool result in the reply\'s turn, from details or text; never an earlier turn', () => {

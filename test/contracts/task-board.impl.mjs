@@ -148,3 +148,21 @@ test('controlled selection and shared PM request card keep confirmation as a hos
   assert.match(document.body.textContent, /Écran\u00a0: Garden · 2 captures/);
   await f.click('button'); assert.deepEqual(answers, ['confirmed']);
 });
+
+test('the compact card shows « Envoyée » while a confirmed request is still open; the board card and unconfirmed requests stay as before', async t => {
+  const f = await fixture(t);
+  const sent = { id: 'sent', number: 204, title: 'Fictional sent request', state: 'open', requesterId: 'alice', confirmed_at: '2026-10-29T08:05:00Z' };
+  const pill = async (task, variant, locale = 'fr') => {
+    await f.act(async () => f.root.render(f.h(f.TaskRequestCard, { task, variant, locale, viewerAction: 'confirmation' })));
+    const node = document.querySelector('[data-task-status]');
+    return node && `${node.dataset.taskStatus}:${node.textContent}`;
+  };
+  assert.equal(await pill(sent, 'compact'), 'sent:Envoyée');
+  assert.equal(await pill(sent, 'compact', 'en'), 'sent:Sent');
+  assert.equal(await pill({ ...sent, state: 'working' }, 'compact'), null, 'started: nothing new');
+  assert.equal(await pill({ ...sent, state: 'done' }, 'compact'), null);
+  assert.equal(await pill({ ...sent, waiting_on_you: true }, 'compact'), 'waiting-on-viewer:À confirmer', 'waiting on the viewer wins');
+  const { confirmed_at: _, ...unconfirmed } = sent;
+  assert.equal(await pill(unconfirmed, 'compact'), null, 'without confirmed_at: today\'s card');
+  assert.equal(await pill(sent, 'card'), null, 'the board card (D2) keeps its pills');
+});

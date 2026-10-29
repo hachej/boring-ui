@@ -58,14 +58,20 @@ export interface TaskRecord {
   readonly history?: readonly TaskHistory[];
   readonly updated_at?: string;
   readonly created_at?: string;
+  /** When the requester confirmed the request (« Confirmer »), from the host; absent until then. */
+  readonly confirmed_at?: string;
 }
-export type TaskSemanticStatus = 'waiting-on-viewer' | 'waiting-on-builder' | 'high-risk' | 'none';
+export type TaskSemanticStatus = 'waiting-on-viewer' | 'waiting-on-builder' | 'high-risk' | 'sent' | 'none';
 
-/** Single-pill presentation precedence: viewer, explicit builder, high risk. No workflow or authority is changed. */
-export function deriveTaskStatus(task: Pick<TaskRecord, 'waiting_on_you' | 'waiting_on' | 'risk'>): TaskSemanticStatus {
+/**
+ * Single-pill presentation precedence: viewer, explicit builder, high risk, then « sent » (confirmed, still `open`: nobody started)
+ * when the rendering asks for it (`sent`: the requester's compact card). No workflow or authority is changed.
+ */
+export function deriveTaskStatus(task: Pick<TaskRecord, 'waiting_on_you' | 'waiting_on' | 'risk'> & Partial<Pick<TaskRecord, 'state' | 'confirmed_at'>>, { sent = false }: { readonly sent?: boolean } = {}): TaskSemanticStatus {
   if (task.waiting_on_you === true) return 'waiting-on-viewer';
   if (task.waiting_on?.type === 'builder') return 'waiting-on-builder';
   if (task.risk === 'high') return 'high-risk';
+  if (sent && task.state === 'open' && task.confirmed_at) return 'sent';
   return 'none';
 }
 
@@ -75,6 +81,7 @@ export function taskStatusLabel(status: TaskSemanticStatus, locale: 'en' | 'fr' 
     case 'waiting-on-viewer': return locale === 'fr' ? viewerAction === 'confirmation' ? 'À confirmer' : 'À vous' : 'Waiting on you';
     case 'waiting-on-builder': return locale === 'fr' ? "Chez l'équipe" : 'Waiting on the builder';
     case 'high-risk': return locale === 'fr' ? 'Risque élevé' : 'High risk';
+    case 'sent': return locale === 'fr' ? 'Envoyée' : 'Sent';
     default: return undefined;
   }
 }
