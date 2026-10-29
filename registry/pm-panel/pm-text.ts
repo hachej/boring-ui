@@ -42,6 +42,8 @@ export interface PmText {
   /** The request card's two answers (C7): « Modifier » goes back to the composer, « Confirmer » is the viewer's answer to the task. */
   readonly modify: string;
   readonly confirm: string;
+  /** The app panel's one muted line when the PM's run ends in error without a reply: the member never sees a tool or a raw error (C7). */
+  readonly failed: string;
 }
 
 /** `0:14`: whole seconds, never a fraction. */
@@ -64,7 +66,7 @@ export const pmTextFr: PmText = {
   title: "Améliorer l'app", openPanel: 'Ouvrir le panneau', close: 'Fermer', review: 'Relisez, puis envoyez', requests: 'Mes demandes', back: '‹ Retour',
   subtitle: app => `Le chef de projet · ${app}`,
   commentOn: (kind, label) => `Commenter ${kind} · ${label}`, commentPlaceholder: 'Votre commentaire…', addToMessage: 'Ajouter au message', sendToPm: 'Envoyer au PM', sentToPm: 'Envoyé au PM',
-  modify: 'Modifier', confirm: 'Confirmer',
+  modify: 'Modifier', confirm: 'Confirmer', failed: "Le chef de projet n'a pas pu terminer. Réessayez.",
 };
 
 export const pmTextEn: PmText = {
@@ -80,7 +82,7 @@ export const pmTextEn: PmText = {
   title: 'Improve the app', openPanel: 'Open the panel', close: 'Close', review: 'Review, then send', requests: 'My requests', back: '‹ Back',
   subtitle: app => `The project lead · ${app}`,
   commentOn: (kind, label) => `Comment on ${kind} · ${label}`, commentPlaceholder: 'Your comment…', addToMessage: 'Add to message', sendToPm: 'Send to the PM', sentToPm: 'Sent to the PM',
-  modify: 'Modify', confirm: 'Confirm',
+  modify: 'Modify', confirm: 'Confirm', failed: "The PM couldn't finish. Try again.",
 };
 
 export const pmTextFor = (locale: string | undefined): PmText => locale?.startsWith('en') ? pmTextEn : pmTextFr;

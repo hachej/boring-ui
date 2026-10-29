@@ -231,6 +231,11 @@ try {
       // The newest task is this message's (on desktop the earlier comment filed one too).
       const filed = app.tasks.at(-1), card = `[data-testid=pm-reply] [data-task-card="${filed.id}"][data-variant=compact]`;
       await browser.until('request card', visible(card), 15000);
+      // The member's thread (C7): the refused write and the task tool never show; the reply's Markdown is drawn.
+      assert.equal(await browser.evaluate(`${q('[data-testid=pm-reply] strong')}?.textContent`), 'Protéines avant les calories', 'the reply draws **bold**');
+      assert.equal(await browser.evaluate(`document.querySelectorAll('[data-testid=pm-panel] :is([data-testid=activity],[data-testid=tool-card],[data-testid=tool-error],[data-testid=orphan-result],[data-testid=response-error])').length`), 0, 'no tool step or raw error');
+      assert.doesNotMatch(await browser.evaluate(`${q('[data-testid=pm-panel]')}.textContent`), /outside|\*\*|"path"/, 'no tool arguments, refusal or raw Markdown');
+      if (process.env.PM_SHOT) { await pause(350); await browser.screenshot(`${process.env.PM_SHOT}-${device}.png`); }
       assert.equal(await browser.evaluate(`${q(card + ' [data-task-status]')}.textContent`), 'À confirmer');
       await press(`${card} [data-testid=pm-request-modify]`);
       await browser.until('modify', `${q('[data-testid=pm-panel] [data-testid=composer-input]')}.value === 'Protéines avant les calories sur les cartes repas'`);

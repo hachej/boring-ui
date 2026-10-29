@@ -2995,6 +2995,7 @@
       "description": "« Améliorer l'app »: one PmComposer (touch and desktop presets, FR/EN strings) with « Montrer », the point strip, numbered pins and timestamped chips; AppShell improve composes the in-flow sheet, strip and the full panel, and PmChat gives Studio the same conversation. Pins and chips come from the public feedback picker; the request card and « Mes demandes » render through StudioTaskBoardSeam (D-417).",
       "registryDependencies": [
         "@boring-ui/pi-chat",
+        "@boring-ui/pi-chat-markdown",
         "@boring-ui/pi-chat-plugins",
         "@boring-ui/pi-chat-voice",
         "@boring-ui/feedback",
