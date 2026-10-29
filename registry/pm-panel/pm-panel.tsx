@@ -10,6 +10,7 @@ import { PiChat } from '../pi-chat/pi-chat';
 import { ChatTextProvider } from '../pi-chat/labels';
 import { chatTextFor } from '../pi-chat/locale';
 import { withChatPlugins } from '../pi-chat-plugins/chat-plugins';
+import { Markdown } from '../pi-chat-markdown/markdown';
 import { cn } from '../utils/utils';
 import { PmComposer } from './pm-composer';
 import { PointComment } from './point-comment';
@@ -139,12 +140,16 @@ function assistantText(entry: EntryRecord): string | undefined {
   const text = messages.map(message => typeof message.content === 'string' ? message.content : message.content.filter(part => part.type === 'text').map(part => part.text).join('')).join('\n').trim();
   return text || undefined;
 }
+const failedRun = (entry: EntryRecord) => entry.model?.filter(message => message.role === 'assistant').at(-1)?.stopReason === 'error';
 
-/** The PM thread's entries: sent points with their chips, the PM's reply (plain text on touch, a bubble on desktop) and its request card. */
-export function pmEntries({ preset, text, mentions, renderEntry, renderRequest, edit }: {
+/**
+ * The PM thread's entries: sent points with their chips, the PM's reply (Markdown; plain text on touch, a bubble on desktop) and its
+ * request card. `member` is the app panel's member thread (C7): a run that ends in error without a reply shows one muted line.
+ */
+export function pmEntries({ preset, text, mentions, renderEntry, renderRequest, edit, member = false }: {
   readonly preset: PmPreset; readonly text: PmText; readonly mentions: MentionsConfig | undefined;
   readonly renderEntry?: ((entry: EntryRecord) => ReturnType<NonNullable<PiChatProps['renderEntry']>>) | undefined;
-  readonly renderRequest?: StudioTaskBoardSeam['renderRequest']; readonly edit: (text: string) => void;
+  readonly renderRequest?: StudioTaskBoardSeam['renderRequest']; readonly edit: (text: string) => void; readonly member?: boolean;
 }) {
   return (entry: EntryRecord) => {
     const sent = pointMessage(entry, mentions, { preset, text });
@@ -152,9 +157,10 @@ export function pmEntries({ preset, text, mentions, renderEntry, renderRequest, 
     const own = renderEntry?.(entry);
     if (own) return own;
     const reply = assistantText(entry);
-    if (reply === undefined) return undefined;
+    if (reply === undefined) return member && failedRun(entry) ? { inline: true, content: <p data-testid="pm-failed" className="m-0 text-sm text-muted-foreground">{text.failed}</p> } : undefined;
+    // Headings stay at body size inside the panel.
     return { inline: true, content: <div data-testid="pm-reply" data-role="assistant" className="flex flex-col items-start gap-3.5">
-      <p className={cn('m-0 whitespace-pre-wrap rounded-pm-bubble rounded-bl-pm-tail bg-pm-reply', preset === 'touch' ? 'text-[15px] leading-[1.45]' : 'max-w-[88%] px-3 py-[9px] text-sm leading-[1.45]')}>{reply}</p>
+      <div className={cn('rounded-pm-bubble rounded-bl-pm-tail bg-pm-reply [&_:is(h1,h2,h3,h4,h5,h6)]:text-[length:inherit]', preset === 'touch' ? 'text-[15px] leading-[1.45]' : 'max-w-[88%] px-3 py-[9px] text-sm leading-[1.45]')}><Markdown text={reply} /></div>
       {renderRequest?.({ entry, edit })}
     </div> };
   };
@@ -218,7 +224,7 @@ function Panel({ binding, pm, strip, full }: { readonly binding: Binding; readon
   const chatText = chatTextFor(spec.chatProps?.locale ?? 'fr');
   const review = !full && pm.meta !== undefined;
   const transcript = pm.voice.phase === 'processing' ? <p data-testid="pm-transcribing" role="status" className="m-0 px-2">Transcription…</p> : pm.liveText && <p role="status" data-testid="pm-live-transcript" className="m-0 px-2">{pm.liveText}</p>;
-  const renderEntry = pmEntries({ preset: 'touch', text, mentions, renderEntry: spec.chatProps?.renderEntry, renderRequest: spec.tasks?.renderRequest, edit });
+  const renderEntry = pmEntries({ preset: 'touch', text, mentions, renderEntry: spec.chatProps?.renderEntry, renderRequest: spec.tasks?.renderRequest, edit, member: true });
   const header = full ? <>
     <div className="flex shrink-0 items-center gap-2.5 py-2 pr-2 pl-4">
       <div className="min-w-0 flex-1">
@@ -254,7 +260,7 @@ function Panel({ binding, pm, strip, full }: { readonly binding: Binding; readon
         <div hidden={requests && full} className={cn('min-h-0 flex-1 flex-col', requests && full ? 'hidden' : 'flex',
           full ? '[&_[data-boring=pi-chat]>footer]:px-4 [&_[data-boring=pi-chat]>footer]:pb-6 [&_[data-testid=transcript]]:gap-3.5 [&_[data-testid=transcript]]:text-[15px] [&_[data-testid=transcript-scroll]>div:last-child]:p-4 [&_[data-testid=transcript-history]]:min-h-0 [&_[data-testid=transcript-history]>span:not([role])]:hidden [&_[data-testid=transcript-navigation]]:pointer-events-none [&_[data-testid=transcript-navigation]]:absolute [&_[data-testid=transcript-navigation]]:inset-x-0 [&_[data-testid=transcript-navigation]]:bottom-0 [&_[data-testid=transcript-navigation]_*]:pointer-events-auto'
             : '[&_[data-testid=transcript]]:hidden [&_[data-boring=pi-chat]>.relative]:hidden [&_[data-boring=pi-chat]>footer]:p-0')}>
-          <PiChat {...withChatPlugins({ ...spec.chatProps, ...(mentions ? { mentions } : {}) })} controller={spec.controller} locale={spec.chatProps?.locale ?? 'fr'} header={false} emptyLayout="docked" keyboardInset={false}
+          <PiChat {...withChatPlugins({ ...spec.chatProps, ...(mentions ? { mentions } : {}) })} controller={spec.controller} locale={spec.chatProps?.locale ?? 'fr'} header={false} emptyLayout="docked" keyboardInset={false} presentation="natural"
             labels={{ ...spec.chatProps?.labels, placeholder: `${text.placeholderBefore}↖${text.placeholderAfter}`, add: text.attach, send: text.send }} onFiles={spec.chatProps?.onFiles ?? imageFiles}
             sendContext={submit} renderEntry={renderEntry} renderComposer={composer => <PmComposer {...pointProps} composer={{ ...composer, sendBlocked: composer.sendBlocked || pm.voice.phase === 'processing' || pm.snapshot.send.kind === 'validating' || pm.snapshot.send.kind === 'submitting', ...(uncertain ? { text: uncertain.draft.text.split(POINT_PREFACE)[0]!.trimEnd(), disabled: true } : {}) }} transcript={transcript} />} />
         </div>

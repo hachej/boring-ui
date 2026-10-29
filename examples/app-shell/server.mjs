@@ -29,6 +29,11 @@ import { readFiles, writeFiles } from '../../shared/workspace-tools.mjs';
 import { buildTailwind } from '../../lab/studio/tailwind.mjs';
 
 const here = name => fileURLToPath(new URL(name, import.meta.url));
+// The PM's turn with the host task API, as on the live app: a write the workspace refuses, `tasks_create`, then a Markdown reply. The member's
+// thread (C7) shows only the reply and its request card.
+const PM_TASK_TURNS = [{ tools: [{ name: 'write', args: { path: '../outside/brief.md', content: '# Fictional brief' } }] },
+  { tools: [{ name: 'tasks_create', args: { title: 'Protéines avant les calories sur les cartes repas' } }] },
+  "C'est noté : **Protéines avant les calories** sur les cartes repas de Ma journée."];
 
 /** A fictional product sheet with three saves, so its history has older revisions for the documents screen (`?documents=1`). */
 async function seedDocuments(files, access) {
@@ -62,7 +67,7 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
     // hachej/boring-factory#892's result: JSON `{ created, task: { id, number, title, state, status, updated_at } }` in the first text block.
     return { output: [{ type: 'text', text: JSON.stringify({ created: true, task: { id: task.id, number: task.ref, title, state: task.state, status: 'À confirmer', updated_at: task.updated } }) }] };
   } });
-  const script = (await import('./script.mjs')).SOURCES.map(source => !pmTasks ? source : { ...source, entries: source.entries.map(entry => entry.match === 'pm.points@1' ? { ...entry, turns: [{ tools: [{ name: 'tasks_create', args: { title: 'Protéines avant les calories sur les cartes repas' } }] }, ...entry.turns] } : entry) });
+  const script = (await import('./script.mjs')).SOURCES.map(source => !pmTasks ? source : { ...source, entries: source.entries.map(entry => entry.match === 'pm.points@1' ? { ...entry, turns: PM_TASK_TURNS } : entry) });
   const models = scripted ? (await (await import('../../lab/studio/scripted-model.mjs')).createScriptedModels({ sources: script })).models : createModels();
   if (!scripted) models.setProvider((await import('@earendil-works/pi-ai/providers/openai')).openaiProvider());
   const person = { scopeId: 'fictional-team', principalId: 'fictional-person', initiatorId: 'fictional-person' };
