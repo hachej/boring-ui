@@ -39,6 +39,9 @@ export interface PmText {
   readonly addToMessage: string;
   readonly sendToPm: string;
   readonly sentToPm: string;
+  /** The request card's two answers (C7): « Modifier » goes back to the composer, « Confirmer » is the viewer's answer to the task. */
+  readonly modify: string;
+  readonly confirm: string;
 }
 
 /** `0:14`: whole seconds, never a fraction. */
@@ -53,14 +56,15 @@ export const pmTextFr: PmText = {
   placeholderBefore: 'Décrivez le problème, ou ', placeholderAfter: ' pour me le montrer.',
   hintIdle: 'Touchez ce que vous voulez montrer', hintRec: 'Parlez et touchez ce que vous montrez', hintRecShort: 'Parlez et touchez',
   mode: 'Mode', select: 'Sélectionner', navigate: 'Naviguer', done: 'Terminer', doneLabel: 'Terminer : relire dans le composer', speak: 'Parler',
-  recorder: 'Ouvrir l’enregistreur', attach: 'Joindre un fichier', dictate: 'Dicter', send: 'Envoyer', remove: 'Retirer', show: 'Montrer', showTitle: 'Montrer',
+  recorder: "Ouvrir l'enregistreur", attach: 'Joindre un fichier', dictate: 'Dicter', send: 'Envoyer', remove: 'Retirer', show: 'Montrer', showTitle: 'Montrer',
   meta: (seconds, n) => seconds === undefined ? `Écrit · ${captures(n, 'capture', 'captures')}` : `Dicté · ${clock(seconds)} · ${captures(n, 'capture', 'captures')} · modifiable`,
   sentMeta: (seconds, n) => seconds === undefined ? `Écrit · ${captures(n, 'capture', 'captures')}` : `Dicté · ${clock(seconds)} · ${captures(n, 'capture', 'captures')}`,
   mentionHeader: query => `TÂCHES · ${query}`, onYou: 'À vous',
   added: (n, kind, label) => `Élément ${n} ajouté : ${kind} · ${label}`, removed: n => `Élément ${n} retiré`,
-  title: 'Améliorer l’app', openPanel: 'Ouvrir le panneau', close: 'Fermer', review: 'Relisez, puis envoyez', requests: 'Mes demandes', back: '‹ Retour',
+  title: "Améliorer l'app", openPanel: 'Ouvrir le panneau', close: 'Fermer', review: 'Relisez, puis envoyez', requests: 'Mes demandes', back: '‹ Retour',
   subtitle: app => `Le chef de projet · ${app}`,
   commentOn: (kind, label) => `Commenter ${kind} · ${label}`, commentPlaceholder: 'Votre commentaire…', addToMessage: 'Ajouter au message', sendToPm: 'Envoyer au PM', sentToPm: 'Envoyé au PM',
+  modify: 'Modifier', confirm: 'Confirmer',
 };
 
 export const pmTextEn: PmText = {
@@ -76,6 +80,7 @@ export const pmTextEn: PmText = {
   title: 'Improve the app', openPanel: 'Open the panel', close: 'Close', review: 'Review, then send', requests: 'My requests', back: '‹ Back',
   subtitle: app => `The project lead · ${app}`,
   commentOn: (kind, label) => `Comment on ${kind} · ${label}`, commentPlaceholder: 'Your comment…', addToMessage: 'Add to message', sendToPm: 'Send to the PM', sentToPm: 'Sent to the PM',
+  modify: 'Modify', confirm: 'Confirm',
 };
 
 export const pmTextFor = (locale: string | undefined): PmText => locale?.startsWith('en') ? pmTextEn : pmTextFr;

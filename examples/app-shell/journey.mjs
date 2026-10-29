@@ -58,7 +58,7 @@ try {
     assert.ok(await browser.evaluate(noOverflow), `${where}: horizontal overflow`);
   };
   const settle = () => pause(900);
-  /** The account sheet, then « Améliorer l’app »: opens the PM panel (it replaced the product manager that used to open in the layer; its own journey is examples/pm-panel/journey.mjs). */
+  /** The account sheet, then « Améliorer l'app »: opens the PM panel (it replaced the product manager that used to open in the layer; its own journey is examples/pm-panel/journey.mjs). */
   const openImprove = async () => {
     await tap('[data-testid=account-button]');
     await browser.until('the account sheet', `!!${q('[data-testid=account-improve]')}`);
@@ -243,7 +243,7 @@ try {
     await browser.until('the sheet', `${openSheets} === 1 && !!${q('[data-testid=account-improve]')}`);
     await pause(700);
     const rows = await browser.evaluate(`[...document.querySelectorAll('[data-testid=account-menu] button')].map(e => e.textContent.trim())`);
-    assert.deepEqual(rows, ["Améliorer l’app", 'Réglages', 'Nouveautés', 'Se déconnecter']);
+    assert.deepEqual(rows, ["Améliorer l'app", 'Réglages', 'Nouveautés', 'Se déconnecter']);
     assert.ok((await browser.evaluate(`${q('[data-testid=account-menu]')}.innerText`)).includes('camille@example.invalid'), 'the person block');
     await browser.screenshot('phone-account.png');
     await controls('account sheet');
@@ -262,7 +262,7 @@ try {
     assert.equal(await browser.evaluate(`history.state`), null, 'a choice leaves no history entry');
   });
 
-  await step('D « Améliorer l’app » shows the PM panel as a sheet; closing it leaves the history clean', async () => {
+  await step("D « Améliorer l'app » shows the PM panel as a sheet; closing it leaves the history clean", async () => {
     await openImprove();
     await browser.until('the PM panel as a sheet', pmSheet);
     await pause(700);
@@ -619,7 +619,7 @@ try {
   });
 
   // The PM panel replaced the improve chat inside the layer (its « ← » back to the coach, the shared dock and header actions); it is covered by examples/pm-panel/journey.mjs.
-  await step('10 « Améliorer l’app » opens the PM panel beside the coach, whose draft survives; the annotate toggle lives on the coach', async () => {
+  await step("10 « Améliorer l'app » opens the PM panel beside the coach, whose draft survives; the annotate toggle lives on the coach", async () => {
     await tap(TRIGGER); await browser.until('half', `${snap} === 'half'`); await settle();
     await browser.evaluate(`(() => { const t = ${q(INPUT)}; t.focus(); })()`);
     await send('Input.insertText', { text: 'brouillon du coach' });
@@ -742,7 +742,7 @@ try {
     await browser.evaluate(`window.__breakSend = false`);
   });
 
-  await step('round c 4: the account sheet then « Améliorer l’app » keeps the page (no about:blank); then point mode on the coach', async () => {
+  await step("round c 4: the account sheet then « Améliorer l'app » keeps the page (no about:blank); then point mode on the coach", async () => {
     await browser.send('Page.navigate', { url: app.url });
     await live();
     const href = await browser.evaluate('location.href');
@@ -910,7 +910,7 @@ try {
     await browser.until('Progrès on show', `${q('[data-testid=header-title]')}.textContent === 'Progrès' && !${q('[data-testid=screen-progres]')}.hidden`);
     await browser.click(q('[data-testid=nav-user]'));
     await browser.until('the NavUser menu', `!!${q('[data-testid=account-improve]')}`);
-    assert.deepEqual(await browser.evaluate(`[...document.querySelectorAll('[data-slot=dropdown-menu-content] [role=menuitem]')].map(e => e.textContent.trim())`), ["Améliorer l’app", 'Réglages', 'Nouveautés', 'Se déconnecter']);
+    assert.deepEqual(await browser.evaluate(`[...document.querySelectorAll('[data-slot=dropdown-menu-content] [role=menuitem]')].map(e => e.textContent.trim())`), ["Améliorer l'app", 'Réglages', 'Nouveautés', 'Se déconnecter']);
     await browser.screenshot('desktop-account.png');
     await browser.click(q('[data-testid=account-improve]'));
     await browser.until('the PM panel as a sheet', pmSheet);

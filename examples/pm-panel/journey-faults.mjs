@@ -34,6 +34,17 @@ async function record({ hold = false, target = 'card-a' } = {}) {
   await browser.until(hold ? 'transcribing' : 'transcribed', hold ? `!!${q('[data-testid=pm-transcribing]')}` : `!${q('[data-testid=pm-transcribing]')} && ${q('[data-testid=composer-input]')}.textContent.includes('premier')`);
 }
 const cases = {
+  async labels() {
+    // Spec 1 §3: a pick with no accessible name takes the nearest heading; its screen is the nav label, not the route id.
+    await open();
+    await browser.click(q('[data-testid=pm-show]'));
+    await browser.until('point strip ready', `${q('[data-testid=pm-panel]')}.dataset.mode === 'point'`);
+    await browser.evaluate(`${q('[data-testid=mark-1]')}.scrollIntoView({ block: 'center' })`); await pause(300);
+    await browser.tap(q('[data-testid=mark-1]'));
+    await browser.click(q('[data-testid=pm-done]'));
+    await browser.until('one chip', `document.querySelectorAll('[data-testid=pm-chip]').length === 1`);
+    assert.equal(await browser.evaluate(`${q('[data-testid=pm-chip]')}.title`), 'Ma journée · Texte · REPÈRE 1');
+  },
   async longEditor() {
     await open(); await select();
     await browser.click(q('[data-testid=composer-input]'));

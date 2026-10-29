@@ -3,7 +3,7 @@
 // The AgentLayer: ONE agent's PiChat above the app. Compact (below 768px): a bottom drawer with three fixed snap points, peek, half and
 // full (shadcn `drawer`, Base UI variant). Expanded: a `Dock` (the `dock` item) beside the app, docked on the left or the right (default right)
 // or floating over it; the person chooses and the choice is remembered. The same layer shows
-// the product manager (« Améliorer l’app ») when the account menu asks for it. Push-to-talk is an option of the agent.
+// the product manager (« Améliorer l'app ») when the account menu asks for it. Push-to-talk is an option of the agent.
 // Host concern: Pi has no layout. The chat is the borrowed NativeChatController rendered by PiChat; the screen context travels as the
 // submit's `context` (agent-context.ts). Nothing here is configurable beyond AgentSpec.
 import { createPortal } from 'react-dom';
@@ -346,7 +346,7 @@ export function AgentLayerProvider({ agent: own, improve, locale, agentLink, app
   // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when a pending item's id or phase changes (pendingKey), not on every new pending array
   }, [expanded, shown, snap, voiceSend, voice.captureSequence, voice.problem, pendingKey]);
 
-  // « Améliorer l’app » owns Back like any layer: one entry while the panel shows (sheet or strip), one more for the full panel (C7).
+  // « Améliorer l'app » owns Back like any layer: one entry while the panel shows (sheet or strip), one more for the full panel (C7).
   const improveOpen = snap !== 'closed' && shown === 'improve';
   const [pmFull, setPmFull] = useState<{ readonly full: boolean; readonly collapse: () => void }>({ full: false, collapse: () => {} });
   const onFull = useCallback((full: boolean, collapse: () => void) => setPmFull(current => current.full === full ? current : { full, collapse }), []);
@@ -562,7 +562,7 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
     };
   }, [recording]);
 
-  // While « Améliorer l’app » shows, the PM panel owns the layer's Back entry (AgentLayerProvider).
+  // While « Améliorer l'app » shows, the PM panel owns the layer's Back entry (AgentLayerProvider).
   useBackLayer((snap === 'half' || snap === 'full') && layer.showing !== 'improve', layer.close, 'agent');
 
   // The popup is taller than what shows and slides down by `--drawer-snap-point-offset` (a registered, non-inheriting property, so only the

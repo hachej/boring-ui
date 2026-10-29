@@ -132,7 +132,7 @@ test('text.ts has the same keys in English and French, and every word is filled'
   assert.equal(fr.holdToTalk, 'Appuie et parle');
   assert.equal(fr.signOut, 'Se déconnecter');
   assert.equal(fr.more, 'Plus');
-  assert.equal(fr.improve, 'Améliorer l’app');
+  assert.equal(fr.improve, "Améliorer l'app");
 });
 
 test('the French words of the shell and of the chat and feedback labels use the typographic apostrophe, never ASCII', () => {
@@ -146,7 +146,10 @@ test('the French words of the shell and of the chat and feedback labels use the 
     ...frTable(readFileSync(`${root}registry/feedback/feedback-labels.ts`, 'utf8'), 'feedback-labels.ts').flatMap(declaration => literals(readFileSync(`${root}registry/feedback/feedback-labels.ts`, 'utf8'), declaration)),
   ];
   assert.ok(checked.length > 100, 'the French tables are found');
-  assert.deepEqual(checked.filter(value => value.includes("'")), [], 'an ASCII apostrophe in a French string');
+  // Spec 2 writes « Améliorer l'app » with a straight apostrophe (round 7: follow the spec); every other French string keeps ’.
+  const SPEC_STRAIGHT = new Set(["Améliorer l'app"]);
+  assert.deepEqual(checked.filter(value => value.includes("'") && !SPEC_STRAIGHT.has(value)), [], 'an ASCII apostrophe in a French string');
+  assert.ok(checked.includes("Améliorer l'app"), 'the spec 2 label is checked');
 });
 
 test('nextSnapOnClose: a swipe, an outside press, a lost focus and Escape step down and never close; every other reason does', async () => {

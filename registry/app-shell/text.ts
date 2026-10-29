@@ -64,7 +64,7 @@ const fr: AppShellText = {
   collapse: 'Réduire',
   back: 'Retour à l’assistant',
   listening: 'J’écoute…',
-  improve: 'Améliorer l’app',
+  improve: "Améliorer l'app",
   holdToTalk: 'Appuie et parle',
   assistant: 'Assistant',
   open: 'Ouvrir l’assistant',

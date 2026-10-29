@@ -7,8 +7,9 @@ import { startPmPanel } from './server.mjs';
 
 const evidence = process.env.PM_EVIDENCE ?? '.cache/evidence/pm-panel/journey';
 mkdirSync(evidence, { recursive: true });
-// PM_ONE_LINE=1 runs the same journey on the app whose only PM code is `improve={{ agent: 'pm' }}` (the fake #854 door, dictation on the host's /api/host/transcribe); the task-board
-// seam (request card, « Mes demandes », @ tasks) is host data that one line does not bring, so those steps run on the host-wired fixture only.
+// PM_ONE_LINE=1 runs the same journey on the app whose only PM code is `improve={{ agent: 'pm' }}` (the fake #854 door, dictation on the host's /api/host/transcribe),
+// served under a host prefix (/apps/coach-max/: every path resolves against the page). Its request card and « Mes demandes » come from the host's task API
+// (/_tasks/api); the @ task steps run on the host-wired fixture only.
 const oneLine = process.env.PM_ONE_LINE === '1';
 if (oneLine) {
   const source = readFileSync(new URL('./oneline.tsx', import.meta.url), 'utf8').replace(/^\s*\/\/.*$/gm, '');
@@ -46,6 +47,8 @@ async function openSheet() {
   if (device === 'phone') await browser.tap(q('[data-testid=account-button]')); else await browser.click(q('[data-testid=nav-user]'));
   await browser.until('account entry', visible('[data-testid=account-improve]'));
   await pause(400);
+  // C1: the row is 52px under the app-shell item's 44px touch-target rule (a real app compiles that rule in, as this example does).
+  if (device === 'phone') assert.equal(await browser.evaluate(`Math.round(${q('[data-testid=account-improve]')}.getBoundingClientRect().height)`), 52, 'C1: « Améliorer l\'app » is 52px');
   await press('[data-testid=account-improve]');
   await browser.until('C2 sheet', `${mode('sheet')} && ${visible('[data-testid=pm-sheet]')}`, 12000);
 }
@@ -223,7 +226,22 @@ try {
     assert.equal(await browser.evaluate(`${q('[data-testid=pm-title]')}.nextElementSibling.textContent`), 'Le chef de projet · Coach Max');
     assert.equal(await browser.evaluate(`!!${q('[data-testid=pm-reply] [data-testid=pm-reply]')} || getComputedStyle(${q('[data-testid=pm-reply] p')}).backgroundColor`), 'rgba(0, 0, 0, 0)', 'the PM reply has no bubble');
     assert.match(await browser.evaluate(`[...document.querySelectorAll('[data-testid=pm-sent-meta]')].at(-1).textContent`), /^Dicté · \d:\d\d · 1 capture$/);
-    if (!oneLine) {
+    if (oneLine) {
+      // The host's task API: the PM's task tool filed the request; its card sits under the reply. « Confirmer » answers the task as the viewer.
+      // The newest task is this message's (on desktop the earlier comment filed one too).
+      const filed = app.tasks.at(-1), card = `[data-testid=pm-reply] [data-task-card="${filed.id}"][data-variant=compact]`;
+      await browser.until('request card', visible(card), 15000);
+      assert.equal(await browser.evaluate(`${q(card + ' [data-task-status]')}.textContent`), 'À confirmer');
+      await press(`${card} [data-testid=pm-request-modify]`);
+      await browser.until('modify', `${q('[data-testid=pm-panel] [data-testid=composer-input]')}.value === 'Protéines avant les calories sur les cartes repas'`);
+      await press(`${card} [data-testid=pm-request-confirm]`);
+      await browser.until('confirmed', `!${q(card + ' [data-task-status]')} && !${q(card + ' [data-testid=pm-request-confirm]')}`);
+      assert.deepEqual(app.answers.at(-1), { id: filed.id, ref: filed.ref, text: 'Confirmer' }, '« Confirmer » is the viewer\'s answer');
+      await press('[data-testid=pm-requests]');
+      await browser.until('Mes demandes', `${visible('[data-testid=pm-task-board-seam]')} && JSON.stringify([...document.querySelectorAll('[data-testid=pm-task-board-seam] [data-task-card]')].map(c => c.dataset.taskCard).sort()) === ${JSON.stringify(JSON.stringify(app.tasks.map(t => t.id).sort()))}`);
+      await press('[data-testid=pm-requests-back]');
+      await browser.until('thread again', visible('[data-testid=pm-sent-message]'));
+    } else {
       // « Modifier » puts the request text in the composer; « Confirmer » changes the status pill.
       await press('[data-testid=pm-request-modify]');
       await browser.until('modify', `${q('[data-testid=pm-panel] [data-testid=composer-input]')}.value === 'Protéines avant les calories sur les cartes repas'`);
@@ -273,7 +291,7 @@ try {
     await browser.until('Back: strip → closed', `${q('[data-testid=pm-panel]')}.hidden && ${visible('[data-testid=card-a]')}`);
     await pause(400);
     assert.equal(await browser.evaluate('location.href'), href, 'Back never leaves the app page');
-    console.log(`PASS ${oneLine ? 'one-line app ' : ''}${device}: C2–C7 behaviour, Back, never-covered page, select never activates, renumbering, persistence, recorder${oneLine ? '' : ', request card, « Mes demandes », @ mention'}`);
+    console.log(`PASS ${oneLine ? 'one-line app ' : ''}${device}: C2–C7 behaviour, Back, never-covered page, select never activates, renumbering, persistence, recorder, request card, « Mes demandes »${oneLine ? ' (host task API, under /apps/coach-max/)' : ', @ mention'}`);
   }
   assert.deepEqual(browser.problems, [], 'no browser errors');
 } finally { await browser?.close(); await app.close(); }

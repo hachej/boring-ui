@@ -75,7 +75,7 @@ export function useBackLayer(open: boolean, close: () => void, order: BackOrder)
       layers.add(layer);
     };
     if (!listening) { window.addEventListener('popstate', onPopState); listening = true; }
-    // A sheet that closes as this layer opens (the account menu choosing « Améliorer l’app ») is still going back: wait for it.
+    // A sheet that closes as this layer opens (the account menu choosing « Améliorer l'app ») is still going back: wait for it.
     if (ignored > 0) waiting.push(start); else start();
     return () => {
       const at = waiting.indexOf(start);

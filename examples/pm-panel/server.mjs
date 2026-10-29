@@ -15,12 +15,12 @@ export const COACH_THEME = `:root{--background:#fff;--foreground:#18181b;--card:
 --coach-subtle:#52525b;--warning-soft:#fef3c7;--warning-soft-foreground:#92400e;color-scheme:light}
 body{font-family:system-ui,-apple-system,sans-serif}`;
 
-/** `oneLine`: the app whose only PM code is `improve={{ agent: 'pm' }}`, served through the fake PM door (#854). */
+/** `oneLine`: the app whose only PM code is `improve={{ agent: 'pm' }}`, served through the fake PM door (#854) under a host prefix, with the host's task API. */
 export async function startPmPanel({ oneLine = false } = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'fictional-pm-panel-'));
   const originals = process.env.PM_BEFORE ? new Map(['app-shell.tsx', 'agent-layer.tsx', 'nav.tsx'].map(name => [name, execFileSync('git', ['show', `f81113dc9:registry/app-shell/${name}`], { encoding: 'utf8' })])) : undefined;
   try {
-    const app = await startAppShell({ directory, scripted: true, pageFile: fileURLToPath(new URL(oneLine ? './oneline.tsx' : './page.tsx', import.meta.url)), themeCss: COACH_THEME, pmTranscript: { text: words, segments }, browserPlugins: originals ? [{ name: 'pre-pm-public-shell', setup(builder) {
+    const app = await startAppShell({ directory, scripted: true, pageFile: fileURLToPath(new URL(oneLine ? './oneline.tsx' : './page.tsx', import.meta.url)), themeCss: COACH_THEME, pmTranscript: { text: words, segments }, ...(oneLine ? { prefix: '/apps/coach-max/', pmTasks: true } : {}), browserPlugins: originals ? [{ name: 'pre-pm-public-shell', setup(builder) {
       builder.onLoad({ filter: /registry\/app-shell\/(app-shell|agent-layer|nav)\.tsx$/ }, args => ({ contents: originals.get(args.path.split('/').pop()), loader: 'tsx', resolveDir: fileURLToPath(new URL('../../registry/app-shell/', import.meta.url)) }));
     } }] : [] });
     return { ...app, close: async () => { await app.close(); rmSync(directory, { recursive: true, force: true }); } };
