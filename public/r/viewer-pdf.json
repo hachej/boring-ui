@@ -4,14 +4,14 @@
   "title": "PDF viewer",
   "description": "The PDF kind: `pdfKind` (match, loader) and `PdfPane` in the viewer frame (the browser's viewer, or pdf.js pages where there is none), and LocalFileViewer for browser-only files. The pane loads the first time a PDF opens.",
   "dependencies": [
-    "@hachej/boring-files@^0.4.31",
+    "@hachej/boring-files@^0.4.32",
     "react@^19.0.0",
     "lucide-react@^1.51.0",
     "pdfjs-dist@6.4.299"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.31/r/viewer-frame.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.31/r/viewer-image.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.32/r/viewer-frame.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.32/r/viewer-image.json"
   ],
   "files": [
     {

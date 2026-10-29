@@ -1,5 +1,7 @@
 # Unreleased
 
+# Migrating to 0.4.32
+
 - **PM panel member thread (`pm-panel`).** The app panel's thread (C7) no longer shows the PM's tool calls, tool results or raw tool errors: `Panel` passes `presentation="natural"` to `PiChat`. The PM's reply is drawn as Markdown (`pi-chat-markdown`, now a registry dependency of `pm-panel`); in the app panel, a run that ends in error without a reply shows one muted line (`PmText.failed`). Studio's `PmChat` is unchanged. Nothing to change in apps: update the `pm-panel` item.
 
 # Migrating to 0.4.31
