@@ -6,9 +6,9 @@
   - **Pick labels:** a pick with no accessible name now takes its own heading, then its visible text, then the nearest heading around it, up to 40 characters. These labels go through the privacy policy, like the capture. On screens outside a `data-feedback-visible` region the text is masked, so the label falls back to the kind. Mark your app's screens as visible regions if you want readable labels and captures.
   - **Screen name:** a pick's screen is the AppShell nav label (« Ma journée »), then `document.title`, instead of the route id.
   - **Paths under a prefix:** `improve={{ agent: 'pm' }}` now resolves its paths against the page, like an app's own relative `api()` calls. This covers the default `api/pm` door, `api/host/transcribe` and `_tasks/api`, so apps served under a prefix (`/apps/<app>/`, `/preview/<sha>/`) reach their own routes. An explicit `base` is resolved the same way, so `/api/pm` still means the origin's root.
-  - **Tasks in the one line:** the one line now reads the viewer's requests from the host's task API. `GET _tasks/api?mine=1` returns `{ tasks, cursor }`.
+  - **Tasks in the one line:** the one line now reads the viewer's requests from the host's task API. `GET _tasks/api?mine=1` returns `{ tasks, cursor }` (live since hachej/boring-factory#892).
     - « Mes demandes » lists those requests.
-    - The C7 request card shows under the reply whose turn ran a PM task tool. That is a tool with `task` in its name whose result carries a D-ref or an id.
+    - The C7 request card shows under the reply whose turn ran the PM's `tasks_create` tool. Its first text block is JSON `{ created, task: { id, number } }` (hachej/boring-factory#892). As a fallback, any tool with `task` in its name whose result carries a D-ref or an id also counts.
     - « Confirmer » answers the task with `POST _tasks/api/<id>/answer { text: 'Confirmer' }`. « Modifier » puts the request back in the composer.
     - A 404 or 403 means the host has no task source, and « Mes demandes » stays disabled.
     - The host contract's field names are mapped in one adapter, `registry/pm-panel/pm-task-source.tsx`.

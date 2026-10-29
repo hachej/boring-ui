@@ -11,14 +11,21 @@ import { TaskRequestCard } from '../task-board/task-board';
 import type { ImproveSpec, StudioTaskBoardSeam } from './use-pm-panel';
 import type { PmText } from './pm-text';
 
-/** One task of `GET {tasks}?mine=1` (`{ tasks, cursor }`): the viewer's own requests for this app, as requester or waiting on them. */
+/**
+ * One task of `GET {tasks}?mine=1` (`{ tasks, cursor }`, hachej/boring-factory#892): the viewer's own requests for this app, as requester
+ * or waiting on them. The D-ref is `ref` (list) or `number` (`tasks_create`), the update time `updated` or `updated_at`.
+ */
 export interface HostTask {
   readonly id: string;
   readonly ref?: string;
+  readonly number?: string;
   readonly title: string;
   readonly state: string;
+  /** Host wording, shown as is. */
+  readonly status?: string;
   readonly created?: string | number;
   readonly updated?: string | number;
+  readonly updated_at?: string | number;
   readonly waiting_on_you?: boolean;
   /** The question, when the task waits on the viewer. */
   readonly question?: string;
@@ -30,9 +37,9 @@ const stamp = (value: string | number | undefined) => value === undefined ? unde
 /** Every listed task is the viewer's (the host filtered them), so the viewer is their requester for « Mes demandes ». */
 export function toTaskRecord(task: HostTask, viewer: string): TaskRecord {
   const waiting = task.waiting_on_you === true;
-  const created = stamp(task.created), updated = stamp(task.updated);
+  const created = stamp(task.created), updated = stamp(task.updated ?? task.updated_at), ref = task.ref ?? task.number;
   return {
-    id: task.id, ...(task.ref ? { number: task.ref } : {}), title: task.title, requesterId: viewer, waiting_on_you: waiting,
+    id: task.id, ...(ref ? { number: ref } : {}), title: task.title, ...(task.status ? { status: task.status } : {}), requesterId: viewer, waiting_on_you: waiting,
     state: waiting ? 'waiting' : STATES.includes(task.state as TaskState) ? task.state as TaskState : 'open',
     ...(waiting ? { waiting_on: { who: viewer, type: 'person' as const, ...(task.question ? { question: task.question } : {}) } } : {}),
     ...(created ? { created_at: created } : {}), ...(updated ? { updated_at: updated } : {}),
@@ -64,9 +71,20 @@ function referenceIn(value: unknown): { readonly ref?: string; readonly id?: str
   return undefined;
 }
 
+/** The PM's task tool (hachej/boring-factory#892): `content[0].text` is JSON `{ created, task: { id, number: 'D-n', title, state, status, updated_at } }`. */
+export const TASK_CREATE_TOOL = 'tasks_create';
+function exactTask(message: { readonly toolName: string; readonly content: readonly { readonly type: string; readonly text?: string }[] }): { readonly ref?: string; readonly id?: string } | undefined {
+  if (message.toolName !== TASK_CREATE_TOOL || message.content[0]?.type !== 'text') return undefined;
+  try {
+    const task = (JSON.parse(message.content[0].text ?? '') as { readonly task?: { readonly id?: unknown; readonly number?: unknown } }).task;
+    const id = typeof task?.id === 'string' ? task.id : undefined, ref = typeof task?.number === 'string' ? task.number : undefined;
+    return id || ref ? { ...(ref ? { ref } : {}), ...(id ? { id } : {}) } : undefined;
+  } catch { return undefined; }
+}
+
 /**
- * The task a PM reply created: a tool whose name contains `task`, run in the same turn before that reply, whose result carries a D-ref or
- * an id. Tolerant on purpose (the PM's task tool is the host's); adjust here when its result changes.
+ * The task a PM reply created, from a tool result run in the same turn before that reply: `tasks_create`'s JSON first; then, tolerant
+ * (an older or renamed tool), any tool whose name contains `task` and whose result carries a D-ref or an id. Adjust here when it changes.
  */
 export function createdTask(entries: readonly EntryRecord[], reply: EntryRecord): { readonly ref?: string; readonly id?: string } | undefined {
   const at = entries.findIndex(entry => entry.id === reply.id);
@@ -74,7 +92,7 @@ export function createdTask(entries: readonly EntryRecord[], reply: EntryRecord)
     for (const message of [...(entries[index]!.model ?? [])].reverse()) {
       if (message.role === 'user') return undefined;
       if (message.role !== 'toolResult' || message.isError || !/task/i.test(message.toolName)) continue;
-      const found = referenceIn(message.details) ?? referenceIn(message.content.map(part => part.type === 'text' ? part.text : '').join('\n'));
+      const found = exactTask(message) ?? referenceIn(message.details) ?? referenceIn(message.content.map(part => part.type === 'text' ? part.text : '').join('\n'));
       if (found) return found;
     }
   }

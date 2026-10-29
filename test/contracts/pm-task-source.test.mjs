@@ -29,6 +29,8 @@ test('the viewer\'s tasks map to TaskRecord: uuid id, D-ref number, waiting on t
   assert.deepEqual(task, { id: '0b8e2c7e-1111-4222-8333-944455556666', number: 'D-7', title: 'Fictif', requesterId: 'alice', waiting_on_you: true, state: 'waiting',
     waiting_on: { who: 'alice', type: 'person', question: 'Vous confirmez ?' }, created_at: '2026-10-29T08:00:00.000Z' });
   assert.equal(toTaskRecord({ id: 'x', title: 'T', state: 'unknown-state' }, 'alice').state, 'open');
+  assert.deepEqual(toTaskRecord({ id: 'x', number: 'D-3', title: 'T', state: 'working', status: 'En cours', updated_at: '2026-10-29T08:00:00Z' }, 'alice'),
+    { id: 'x', number: 'D-3', title: 'T', status: 'En cours', requesterId: 'alice', waiting_on_you: false, state: 'working', updated_at: '2026-10-29T08:00:00.000Z' }, '#892 field names');
   globalThis.fetch = served(200, { ok: true });
   await answerTask('http://app.test/apps/x/_tasks/api', 'a b', 'Confirmer');
   assert.equal(served.calls.at(-1).url, 'http://app.test/apps/x/_tasks/api/a%20b/answer');
@@ -39,6 +41,9 @@ test('the created task: a task tool result in the reply\'s turn, from details or
   const user = id => ({ id, kind: 'message', model: [{ role: 'user', content: 'x' }] });
   const result = (id, toolName, details, text = '', isError = false) => ({ id, kind: 'message', model: [{ role: 'toolResult', toolName, details, isError, content: [{ type: 'text', text }] }] });
   const reply = id => ({ id, kind: 'message', model: [{ role: 'assistant', content: [{ type: 'text', text: 'Noté.' }] }] });
+  const exact = (id, json) => ({ id, kind: 'message', model: [{ role: 'toolResult', toolName: 'tasks_create', isError: false, content: [{ type: 'text', text: json }] }] });
+  const turn = [user(20), result(21, 'create_task', { ref: 'D-3' }), exact(22, JSON.stringify({ created: true, task: { id: '0b8e2c7e-1111-4222-8333-944455556666', number: 'D-12', title: 'Fictif', state: 'waiting', status: 'À confirmer', updated_at: '2026-10-29T08:00:00Z' } })), reply(23)];
+  assert.deepEqual(createdTask(turn, turn[3]), { ref: 'D-12', id: '0b8e2c7e-1111-4222-8333-944455556666' }, 'tasks_create, exactly (#892)');
   const entries = [user(1), result(2, 'create_task', { task: { id: 'u-1', ref: 'D-4' } }), reply(3), user(4), result(5, 'pm_tasks.file', undefined, 'Demande D-9 créée.'), result(6, 'search', { ref: 'D-1' }), reply(7), user(8), reply(9), result(10, 'create_task', { ref: 'D-2' }, '', true), reply(11)];
   assert.deepEqual(createdTask(entries, entries[2]), { ref: 'D-4' });
   assert.deepEqual(createdTask(entries, entries[6]), { ref: 'D-9' }, 'from the text; a tool without « task » in its name is ignored');

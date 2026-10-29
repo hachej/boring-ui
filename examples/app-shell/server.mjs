@@ -56,12 +56,13 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
   // `pmTasks`: the host's task API (`/_tasks/api`, fictional records) and a PM task tool whose result carries the new D-ref, as the one line reads them.
   const tasks = pmTasks ? [{ id: randomUUID(), ref: 'D-202', title: 'Plan du jour : photo du déjeuner', state: 'open', created: '2026-10-27T09:00:00Z', updated: '2026-10-27T09:00:00Z', waiting_on_you: false }] : [];
   const answers = [];
-  const createTask = defineTool({ name: 'create_task', description: 'File a fictional request for the person.', replay: 'safe', parameters: Type.Object({ title: Type.String() }), execute: async ({ title }) => {
+  const createTask = defineTool({ name: 'tasks_create', description: 'File a fictional request for the person.', replay: 'safe', parameters: Type.Object({ title: Type.String() }), execute: async ({ title }) => {
     const task = { id: randomUUID(), ref: `D-${203 + tasks.length}`, title, state: 'waiting', created: '2026-10-29T08:00:00Z', updated: '2026-10-29T08:00:00Z', waiting_on_you: true, question: 'Confirmez-vous cette demande ?' };
     tasks.push(task);
-    return { output: [{ type: 'text', text: `Demande ${task.ref} créée.` }], details: { task: { id: task.id, ref: task.ref } } };
+    // hachej/boring-factory#892's result: JSON `{ created, task: { id, number, title, state, status, updated_at } }` in the first text block.
+    return { output: [{ type: 'text', text: JSON.stringify({ created: true, task: { id: task.id, number: task.ref, title, state: task.state, status: 'À confirmer', updated_at: task.updated } }) }] };
   } });
-  const script = (await import('./script.mjs')).SOURCES.map(source => !pmTasks ? source : { ...source, entries: source.entries.map(entry => entry.match === 'pm.points@1' ? { ...entry, turns: [{ tools: [{ name: 'create_task', args: { title: 'Protéines avant les calories sur les cartes repas' } }] }, ...entry.turns] } : entry) });
+  const script = (await import('./script.mjs')).SOURCES.map(source => !pmTasks ? source : { ...source, entries: source.entries.map(entry => entry.match === 'pm.points@1' ? { ...entry, turns: [{ tools: [{ name: 'tasks_create', args: { title: 'Protéines avant les calories sur les cartes repas' } }] }, ...entry.turns] } : entry) });
   const models = scripted ? (await (await import('../../lab/studio/scripted-model.mjs')).createScriptedModels({ sources: script })).models : createModels();
   if (!scripted) models.setProvider((await import('@earendil-works/pi-ai/providers/openai')).openaiProvider());
   const person = { scopeId: 'fictional-team', principalId: 'fictional-person', initiatorId: 'fictional-person' };
