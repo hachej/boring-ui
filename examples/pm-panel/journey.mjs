@@ -8,7 +8,8 @@ import { startPmPanel } from './server.mjs';
 
 const evidence = process.env.PM_EVIDENCE ?? '.cache/evidence/pm-panel/journey';
 mkdirSync(evidence, { recursive: true });
-// PM_SHOTS=<dir>: the one line's « Envoyée » / « Retirer » phone screenshots (390×844).
+// PM_SHOTS=<dir>: the one line's phone screenshots (390×844): « Envoyée » / « Retirer », pi-chat's tool trace, the request card from `tasks_create`,
+// the mockups and the `ask_user` choice; plus one desktop shot of the panel during the turn.
 if (process.env.PM_SHOTS) mkdirSync(process.env.PM_SHOTS, { recursive: true });
 const shots = process.env.PM_SHOTS && relative(evidence, process.env.PM_SHOTS);
 // PM_ONE_LINE=1 runs the same journey on the app whose only PM code is `improve={{ agent: 'pm' }}` (the fake #854 door, dictation on the host's /api/host/transcribe),
@@ -22,6 +23,8 @@ if (oneLine) {
 }
 const app = await startPmPanel({ oneLine });
 let browser;
+// The member never sees a raw tool error: the failed step's details and orphan error notices take no space on screen.
+const rawHidden = `[...document.querySelectorAll('[data-testid=pm-panel] :is([data-testid=tool-details],[data-testid=tool-error])')].every(node => !node.getClientRects().length)`;
 const visible = selector => `!!${q(selector)} && ${q(selector)}.getClientRects().length > 0`;
 const mode = value => `${q('[data-testid=pm-panel]')}?.dataset.mode === '${value}'`;
 const pinLabels = `[...document.querySelectorAll('[data-feedback-overlay]')].flatMap(host => [...(host.shadowRoot?.querySelectorAll('.label') ?? [])].filter(label => getComputedStyle(label).display !== 'none').map(label => label.textContent))`;
@@ -219,7 +222,17 @@ try {
 
     // Send: text, capture and pick metadata travel together; the draft and pins clear; C7 opens.
     const sent = app.submits.length;
+    // The one line: the host's task list answers 403 while this turn runs (« unavailable for now », decided 2026-10-29).
+    if (oneLine) app.refuseTasks(true);
     await press('[data-testid=composer-submit]');
+    if (oneLine) {
+      // pi-chat's standard chat while the PM works (decided 2026-10-29): its tool trace and its own « working » line, no lone « Préparation… ».
+      await browser.until('standard trace running', `${visible('[data-testid=pm-panel] [data-testid=activity]')} && !!${q('[data-testid=pm-panel] [data-testid=tool-card][data-status=running]')} && ${visible('[data-testid=pm-panel] [data-testid=agent-status]')}`, 20000);
+      assert.equal(await browser.evaluate(`!!${q('[data-testid=pm-panel] [data-testid=preparing]')}`), false, 'no lone « Préparation… »');
+      if (shots) await browser.screenshot(`${shots}/${device === 'phone' ? '1-trace-running-phone' : '8-panel-during-turn-desktop'}.png`);
+      await browser.until('the refused write is a failed step', `!!${q('[data-testid=pm-panel] [data-testid=tool-card][data-tool=write][data-status=failed]')}`, 20000);
+      assert.equal(await browser.evaluate(rawHidden), true, 'the raw tool error is not shown');
+    }
     await browser.until('C7', `${mode('full')} && ${visible('[data-testid=pm-sent-message]')} && ${visible(oneLine ? '[data-testid=pm-reply]' : '[data-task-card=D-201][data-variant=compact]')}`, 20000);
     assert.equal(app.submits.length, sent + 1, 'one native admission');
     const body = JSON.stringify(app.submits.at(-1).body);
@@ -234,11 +247,22 @@ try {
       // The host's task API: the PM's task tool filed the request; its card sits under the reply. « Confirmer » answers the task as the viewer.
       // The newest task is this message's (on desktop the earlier comment filed one too).
       const filed = app.tasks.at(-1), card = `[data-testid=pm-reply] [data-task-card="${filed.id}"][data-variant=compact]`;
-      await browser.until('request card', visible(card), 15000);
+      // The list answered 403: the card is drawn from the `tasks_create` result, « DEMANDE » and its title, no pill.
+      await browser.until('request card from the tool result', visible(card), 15000);
+      assert.equal(await browser.evaluate(`!!${q(card + ' [data-task-status]')}`), false, 'no pill without waiting_on_you');
+      if (shots && device === 'phone') { await pause(300); await browser.screenshot(`${shots}/2-trace-done-card-from-tool-phone.png`); }
+      // « Mes demandes » opened: read again, now 200; back in the thread the card takes the list's record.
+      app.refuseTasks(false);
+      await press('[data-testid=pm-requests]');
+      await browser.until('Mes demandes after the 403', `${visible('[data-testid=pm-task-board-seam]')} && !!${q(`[data-testid=pm-task-board-seam] [data-task-card="${filed.id}"]`)}`, 15000);
+      await press('[data-testid=pm-requests-back]');
+      await browser.until('the list\'s record', `${q(card + ' [data-task-status]')}?.textContent === 'À confirmer'`, 15000);
+      if (shots && device === 'phone') await browser.screenshot(`${shots}/3-card-from-list-phone.png`);
       // The member's thread (C7): the refused write and the task tool never show; the reply's Markdown is drawn.
       assert.equal(await browser.evaluate(`${q('[data-testid=pm-reply] strong')}?.textContent`), 'Protéines avant les calories', 'the reply draws **bold**');
-      assert.equal(await browser.evaluate(`document.querySelectorAll('[data-testid=pm-panel] :is([data-testid=activity],[data-testid=tool-card],[data-testid=tool-error],[data-testid=orphan-result],[data-testid=response-error])').length`), 0, 'no tool step or raw error');
-      assert.doesNotMatch(await browser.evaluate(`${q('[data-testid=pm-panel]')}.textContent`), /outside|\*\*|"path"/, 'no tool arguments, refusal or raw Markdown');
+      assert.equal(await browser.evaluate(rawHidden), true, 'no raw tool error');
+      assert.equal(await browser.evaluate(`document.querySelectorAll('[data-testid=pm-panel] [data-testid=response-error]').length`), 0);
+      assert.doesNotMatch(await browser.evaluate(`${q('[data-testid=pm-reply]')}.textContent`), /\*\*/, 'no raw Markdown');
       if (process.env.PM_SHOT) { await pause(350); await browser.screenshot(`${process.env.PM_SHOT}-${device}.png`); }
       assert.equal(await browser.evaluate(`${q(card + ' [data-task-status]')}.textContent`), 'À confirmer');
       await press(`${card} [data-testid=pm-request-modify]`);
@@ -280,6 +304,30 @@ try {
       }
       await press('[data-testid=pm-requests-back]');
       await browser.until('thread again', visible('[data-testid=pm-sent-message]'));
+      if (device === 'phone') {
+        // Mockups (decided 2026-10-29): the PM presents two HTML pages, then asks to choose. Both are thread content, never tool steps.
+        const input = '[data-testid=pm-panel] [data-testid=composer-input]';
+        await browser.evaluate(`(() => { const input = ${q(input)}; const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set; set.call(input, ''); input.dispatchEvent(new Event('input', { bubbles: true })); input.focus(); })()`);
+        await browser.type(q(input), 'Montrez-moi deux maquettes pour la carte repas.');
+        await press('[data-testid=composer-submit]');
+        await browser.until('two mockups and a choice', `document.querySelectorAll('[data-testid=pm-mockup][data-state=ready]').length === 2 && ${visible('[data-testid=question-card][data-state=pending]')} && document.querySelectorAll('[data-testid=pm-mockup-thumb-run-frame]').length === 2`, 25000);
+        assert.equal(await browser.evaluate(`JSON.stringify([...document.querySelectorAll('[data-testid=pm-mockup-title]')].map(title => title.textContent))`), '["piste-a.html","piste-b.html"]');
+        await browser.evaluate(`${q('[data-testid=pm-mockup]')}.scrollIntoView({ block: 'center' })`);
+        if (shots) { await pause(500); await browser.screenshot(`${shots}/4-mockups-phone.png`); }
+        await press('[data-testid=pm-mockup-open]');
+        await browser.until('mockup open', `${visible('[data-testid=pm-mockup-view] [data-testid=pm-mockup-full-run-frame]')} && ${q('[data-testid=pm-mockup-full-run-frame]')}.getAttribute('sandbox') === 'allow-scripts'`);
+        assert.ok(await browser.evaluate(`${q('[data-testid=pm-mockup-full-run-frame]')}.getBoundingClientRect().height > 600`), 'full height in the sheet');
+        if (shots) { await pause(500); await browser.screenshot(`${shots}/5-mockup-open-phone.png`); }
+        await press('[data-testid=pm-mockup-back]');
+        await browser.until('back to the choice', visible('[data-testid=question-card][data-state=pending]'));
+        await browser.evaluate(`${q('[data-testid=question-card]')}.scrollIntoView({ block: 'end' })`);
+        assert.equal(await browser.evaluate(`[...document.querySelectorAll('[data-testid=question-option]')].every(option => option.getBoundingClientRect().height >= 44)`), true, 'options are 44px rows');
+        if (shots) { await pause(300); await browser.screenshot(`${shots}/6-ask-user-phone.png`); }
+        await press('[data-testid=question-option][data-option^="Piste B"]');
+        await browser.until('answered', `${q('[data-testid=question-card][data-state=answered]')} && [...document.querySelectorAll('[data-testid=pm-reply] strong, [data-testid=pm-reply-text] strong')].some(node => node.textContent === "Piste B · calories d'abord")`, 20000);
+        if (shots) { await pause(400); await browser.screenshot(`${shots}/7-after-choice-phone.png`); }
+        assert.equal(await browser.evaluate(rawHidden), true, 'no raw tool error');
+      }
     } else {
       // « Modifier » puts the request text in the composer; « Confirmer » changes the status pill.
       await press('[data-testid=pm-request-modify]');

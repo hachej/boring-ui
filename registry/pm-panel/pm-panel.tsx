@@ -16,6 +16,8 @@ import { PmComposer } from './pm-composer';
 import { PointComment } from './point-comment';
 import { usePmPanel } from './use-pm-panel';
 import { POINT_PREFACE, pointMessage } from './point-message';
+import { PmMockupProvider, PmMockupView, pmArtifacts } from './pm-mockups';
+import type { ArtifactDescriptor } from '@hachej/boring-ui-kit/chat-view';
 import { usePmMentions } from './pm-mentions';
 import { TaskBoard } from '../task-board/task-board';
 import type { ImproveSpec, StudioTaskBoardSeam } from './use-pm-panel';
@@ -36,6 +38,8 @@ export { usePmMentions } from './pm-mentions';
 export { pmTextEn, pmTextFor, pmTextFr } from './pm-text';
 export type { PmText } from './pm-text';
 export { PointChipView } from './inline-point-input';
+export { PmArtifactCard, PmMockupView } from './pm-mockups';
+export type { PmReadArtifact } from './pm-mockups';
 export { pointMessage } from './point-message';
 export type { ImproveSpec, PmVoice, PmTranscript, StudioTaskBoardSeam } from './use-pm-panel';
 export { useImproveAgent, isImproveAgent } from './use-improve-agent';
@@ -142,9 +146,12 @@ function assistantText(entry: EntryRecord): string | undefined {
 }
 const failedRun = (entry: EntryRecord) => entry.model?.filter(message => message.role === 'assistant').at(-1)?.stopReason === 'error';
 
+const callsTools = (entry: EntryRecord) => entry.model?.some(message => message.role === 'assistant' && typeof message.content !== 'string' && message.content.some(part => part.type === 'toolCall')) === true;
+
 /**
  * The PM thread's entries: sent points with their chips, the PM's reply (Markdown; plain text on touch, a bubble on desktop) and its
- * request card. `member` is the app panel's member thread (C7): a run that ends in error without a reply shows one muted line.
+ * request card. `member` is the app panel's member thread (C7): a round that calls tools keeps the chat's own rows (its tool trace, mockup
+ * and question cards), and a run that ends in error without a reply shows one muted line.
  */
 export function pmEntries({ preset, text, mentions, renderEntry, renderRequest, edit, member = false }: {
   readonly preset: PmPreset; readonly text: PmText; readonly mentions: MentionsConfig | undefined;
@@ -156,6 +163,7 @@ export function pmEntries({ preset, text, mentions, renderEntry, renderRequest, 
     if (sent) return sent;
     const own = renderEntry?.(entry);
     if (own) return own;
+    if (member && callsTools(entry) && !failedRun(entry)) return undefined;
     const reply = assistantText(entry);
     if (reply === undefined) return member && failedRun(entry) ? { inline: true, content: <p data-testid="pm-failed" className="m-0 text-sm text-muted-foreground">{text.failed}</p> } : undefined;
     // Headings stay at body size inside the panel.
@@ -192,9 +200,15 @@ export function PmChat({ spec, page, screen, preset = 'desktop' }: { readonly sp
 
 function Panel({ binding, pm, strip, full }: { readonly binding: Binding; readonly pm: ReturnType<typeof usePmPanel>; readonly strip: boolean; readonly full: boolean }) {
   const { spec, open, close: closeLayer } = binding;
-  const [requests, setRequests] = useState(false);
-  // Closing leaves « Mes demandes »: the next full panel opens on the thread.
-  const close = () => { setRequests(false); closeLayer(); };
+  const [requests, setRequestsState] = useState(false);
+  // An opened mockup (`present`): full height in the sheet, under « ‹ Retour ».
+  const [mockup, setMockup] = useState<ArtifactDescriptor>();
+  // The task source is read again when « Mes demandes » opens and when the panel opens (a 403 or 404 is « unavailable for now »).
+  const setRequests = (next: boolean) => { if (next && !requests) spec.tasks?.refresh?.(); setRequestsState(next); };
+  const refreshTasks = spec.tasks?.refresh;
+  useEffect(() => { if (open) refreshTasks?.(); }, [open, refreshTasks]);
+  // Closing leaves « Mes demandes » and the mockup: the next full panel opens on the thread.
+  const close = () => { setRequestsState(false); setMockup(undefined); closeLayer(); };
   const mentions = usePmMentions(spec.tasks, spec.chatProps?.mentions, pm.text);
   const sheet = useRef<HTMLDivElement | null>(null);
   const submit = pm.sendContext;
@@ -225,13 +239,16 @@ function Panel({ binding, pm, strip, full }: { readonly binding: Binding; readon
   const review = !full && pm.meta !== undefined;
   const transcript = pm.voice.phase === 'processing' ? <p data-testid="pm-transcribing" role="status" className="m-0 px-2">Transcription…</p> : pm.liveText && <p role="status" data-testid="pm-live-transcript" className="m-0 px-2">{pm.liveText}</p>;
   const renderEntry = pmEntries({ preset: 'touch', text, mentions, renderEntry: spec.chatProps?.renderEntry, renderRequest: spec.tasks?.renderRequest, edit, member: true });
+  const showMockup = useCallback((artifact: ArtifactDescriptor) => { setMockup(artifact); dispatch({ type: 'full' }); }, [dispatch]);
+  const artifacts = useMemo(() => spec.chatProps?.artifacts ?? pmArtifacts(showMockup, mockup), [spec.chatProps?.artifacts, showMockup, mockup]);
+  const aside = full && (requests || mockup !== undefined);
   const header = full ? <>
     <div className="flex shrink-0 items-center gap-2.5 py-2 pr-2 pl-4">
       <div className="min-w-0 flex-1">
         <h2 data-testid="pm-title" className="m-0 truncate text-[15px] leading-tight font-pm-title">{text.title}</h2>
         <p className="m-0 truncate text-xs text-muted-foreground">{text.subtitle(spec.appName ?? spec.label ?? '')}</p>
       </div>
-      <span className="flex shrink-0 [&_button]:px-0 [&_button]:text-sm [&_button]:font-semibold [&_button]:text-foreground [&_button]:underline"><Button variant="link" data-testid="pm-requests" disabled={!spec.tasks} onClick={() => setRequests(value => !value)} className="min-h-11">{text.requests}</Button></span>
+      <span className="flex shrink-0 [&_button]:px-0 [&_button]:text-sm [&_button]:font-semibold [&_button]:text-foreground [&_button]:underline"><Button variant="link" data-testid="pm-requests" disabled={!spec.tasks} onClick={() => setRequests(!requests)} className="min-h-11">{text.requests}</Button></span>
       <Button variant="ghost" size="icon" aria-label={text.close} title={text.close} data-testid="pm-close" onClick={close} className="min-h-11 min-w-11"><XIcon className="size-[18px]" aria-hidden="true" /></Button>
     </div>
     <Separator />
@@ -246,25 +263,26 @@ function Panel({ binding, pm, strip, full }: { readonly binding: Binding; readon
   return <section hidden={!open} data-feedback-ignore="" data-testid="pm-panel" data-mode={pm.state.mode} data-review={review || undefined}
     className={cn(open && !strip && (full ? 'absolute inset-x-0 top-10 bottom-0 z-40 flex flex-col' : 'flex max-h-[85dvh] min-h-0 shrink-0 flex-col'), strip && 'shrink-0')}>
     <p role="status" aria-live="polite" data-testid="pm-announce" className="sr-only">{pm.announcement}</p>
-    <ChatTextProvider value={chatText}>
+    <ChatTextProvider value={chatText}><PmMockupProvider read={spec.readArtifact} text={text}>
       <div hidden={!strip}><PmComposer variant="strip" {...pointProps} /></div>
       <div hidden={strip} ref={sheet} data-testid="pm-sheet" className={cn('min-h-0 flex-1 flex-col rounded-t-pm-sheet bg-background', strip ? 'hidden' : 'flex', full ? 'shadow-pm-panel pt-2' : 'gap-1.5 px-3 pt-2 pb-6 shadow-pm-sheet')}>
         <Grabber wide={full} onUp={full ? undefined : () => pm.dispatch({ type: 'full' })} onDown={close} />
-        {requests && full ? <>
+        {mockup && full && !requests ? <PmMockupView artifact={mockup} text={text} onBack={() => setMockup(undefined)} /> : requests && full ? <>
           <div className="flex shrink-0 items-center py-1 pr-2 pl-2"><Button variant="ghost" data-testid="pm-requests-back" onClick={() => setRequests(false)} className="min-h-11">{text.back}</Button></div>
           <Separator />
           <div className="min-h-0 flex-1 overflow-auto" data-testid="pm-task-board-seam">{spec.tasks && <TaskBoard tasks={spec.tasks.tasks} variant="compact" filter="mine" currentUser={spec.tasks.currentUser} bar={false} title={text.requests}
             onOpen={spec.tasks.onOpen} cardActions={spec.tasks.cardActions} locale={text.locale} viewerAction="confirmation" className="p-4" />}</div>
         </> : header}
         {pm.problem && <p role="alert" className="m-0 px-4 text-sm">{pm.problem}</p>}
-        <div hidden={requests && full} className={cn('min-h-0 flex-1 flex-col', requests && full ? 'hidden' : 'flex',
-          full ? '[&_[data-boring=pi-chat]>footer]:px-4 [&_[data-boring=pi-chat]>footer]:pb-6 [&_[data-testid=transcript]]:gap-3.5 [&_[data-testid=transcript]]:text-[15px] [&_[data-testid=transcript-scroll]>div:last-child]:p-4 [&_[data-testid=transcript-history]]:min-h-0 [&_[data-testid=transcript-history]>span:not([role])]:hidden [&_[data-testid=transcript-navigation]]:pointer-events-none [&_[data-testid=transcript-navigation]]:absolute [&_[data-testid=transcript-navigation]]:inset-x-0 [&_[data-testid=transcript-navigation]]:bottom-0 [&_[data-testid=transcript-navigation]_*]:pointer-events-auto'
+        {/* The member never sees a raw tool error: pi-chat's trace stays, the failed step's details and orphan error notices are hidden. */}
+        <div hidden={aside} className={cn('min-h-0 flex-1 flex-col [&_[data-testid=tool-details]]:hidden [&_[data-testid=tool-error]]:hidden', aside ? 'hidden' : 'flex',
+          full ? '[&_[data-boring=pi-chat]>footer]:px-4 [&_[data-boring=pi-chat]>footer]:pb-6 [&_[data-testid=transcript]]:gap-3.5 [&_[data-testid=transcript]]:text-[15px] [&_[data-testid=transcript-scroll]>div:last-child]:p-4 [&_[data-testid=transcript-history]]:min-h-0 [&_[data-testid=transcript-history]>span:not([role])]:hidden [&_[data-testid=transcript-navigation]]:pointer-events-none [&_[data-testid=transcript-navigation]]:absolute [&_[data-testid=transcript-navigation]]:inset-x-0 [&_[data-testid=transcript-navigation]]:bottom-0 [&_[data-testid=transcript-navigation]_*]:pointer-events-auto [&_[data-testid=question-option]]:min-h-11 [&_[data-testid=question-input]]:min-h-11 [&_[data-testid=question-submit]]:min-h-11'
             : '[&_[data-testid=transcript]]:hidden [&_[data-boring=pi-chat]>.relative]:hidden [&_[data-boring=pi-chat]>footer]:p-0')}>
-          <PiChat {...withChatPlugins({ ...spec.chatProps, ...(mentions ? { mentions } : {}) })} controller={spec.controller} locale={spec.chatProps?.locale ?? 'fr'} header={false} emptyLayout="docked" keyboardInset={false} presentation="natural"
+          <PiChat {...withChatPlugins({ ...spec.chatProps, artifacts, ...(mentions ? { mentions } : {}) })} controller={spec.controller} locale={spec.chatProps?.locale ?? 'fr'} header={false} emptyLayout="docked" keyboardInset={false} replyError={spec.chatProps?.replyError ?? (() => text.failed)}
             labels={{ ...spec.chatProps?.labels, placeholder: `${text.placeholderBefore}↖${text.placeholderAfter}`, add: text.attach, send: text.send }} onFiles={spec.chatProps?.onFiles ?? imageFiles}
             sendContext={submit} renderEntry={renderEntry} renderComposer={composer => <PmComposer {...pointProps} composer={{ ...composer, sendBlocked: composer.sendBlocked || pm.voice.phase === 'processing' || pm.snapshot.send.kind === 'validating' || pm.snapshot.send.kind === 'submitting', ...(uncertain ? { text: uncertain.draft.text.split(POINT_PREFACE)[0]!.trimEnd(), disabled: true } : {}) }} transcript={transcript} />} />
         </div>
       </div>
-    </ChatTextProvider>
+    </PmMockupProvider></ChatTextProvider>
   </section>;
 }

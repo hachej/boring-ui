@@ -48,3 +48,4 @@ export function pointMessage(entry: EntryRecord, mentions?: MentionsConfig, { pr
     </div> };
   } catch { return undefined; }
 }
+

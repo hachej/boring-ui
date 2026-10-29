@@ -3001,11 +3001,14 @@
         "@boring-ui/feedback",
         "@boring-ui/task-board",
         "@boring-ui/task-mentions",
-        "@boring-ui/utils"
+        "@boring-ui/utils",
+        "@boring-ui/pi-artifacts",
+        "@boring-ui/viewer-frame"
       ],
       "dependencies": [
         "@hachej/boring-ui-kit@^0.4.33",
         "@hachej/boring-feedback@^0.4.33",
+        "@hachej/boring-files@^0.4.33",
         "@earendil-works/pi-durable@~1.4.0",
         "lucide-react@^1.51.0",
         "react@^19.0.0",
@@ -3071,6 +3074,11 @@
           "path": "registry/pm-panel/use-improve-agent.ts",
           "type": "registry:hook",
           "target": "components/pm-panel/use-improve-agent.ts"
+        },
+        {
+          "path": "registry/pm-panel/pm-mockups.tsx",
+          "type": "registry:component",
+          "target": "components/pm-panel/pm-mockups.tsx"
         }
       ]
     },

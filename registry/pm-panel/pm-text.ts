@@ -49,6 +49,10 @@ export interface PmText {
   readonly withdrawFailed: string;
   /** The app panel's one muted line when the PM's run ends in error without a reply: the member never sees a tool or a raw error (C7). */
   readonly failed: string;
+  /** A presented mockup (C7): the card's action, the line while it loads, and the line when its file can't be read. */
+  readonly openMockup: string;
+  readonly mockupLoading: string;
+  readonly mockupUnavailable: string;
 }
 
 /** `0:14`: whole seconds, never a fraction. */
@@ -73,6 +77,7 @@ export const pmTextFr: PmText = {
   commentOn: (kind, label) => `Commenter ${kind} · ${label}`, commentPlaceholder: 'Votre commentaire…', addToMessage: 'Ajouter au message', sendToPm: 'Envoyer au PM', sentToPm: 'Envoyé au PM',
   modify: 'Modifier', confirm: 'Confirmer', failed: "Le chef de projet n'a pas pu terminer. Réessayez.",
   withdraw: 'Retirer', withdrawAsk: 'Retirer cette demande\u00a0?', cancel: 'Annuler', withdrawFailed: 'Impossible de retirer la demande.',
+  openMockup: 'Ouvrir', mockupLoading: 'Chargement…', mockupUnavailable: "La maquette n'est pas disponible.",
 };
 
 export const pmTextEn: PmText = {
@@ -90,6 +95,7 @@ export const pmTextEn: PmText = {
   commentOn: (kind, label) => `Comment on ${kind} · ${label}`, commentPlaceholder: 'Your comment…', addToMessage: 'Add to message', sendToPm: 'Send to the PM', sentToPm: 'Sent to the PM',
   modify: 'Modify', confirm: 'Confirm', failed: "The PM couldn't finish. Try again.",
   withdraw: 'Withdraw', withdrawAsk: 'Withdraw this request?', cancel: 'Cancel', withdrawFailed: "Couldn't withdraw the request.",
+  openMockup: 'Open', mockupLoading: 'Loading…', mockupUnavailable: 'The mockup is not available.',
 };
 
 export const pmTextFor = (locale: string | undefined): PmText => locale?.startsWith('en') ? pmTextEn : pmTextFr;

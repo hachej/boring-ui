@@ -54,7 +54,7 @@ export function toTaskRecord(task: HostTask, viewer: string): HostTaskRecord {
   };
 }
 
-/** `null`: the host has no task source for this viewer (404 or 403), so « Mes demandes » stays disabled. */
+/** `null`: no task source for this viewer just now (404 or 403). The hook reads again later; it never latches it (decided 2026-10-29). */
 export async function readTasks(url: string, viewer: string, signal?: AbortSignal): Promise<readonly HostTaskRecord[] | null> {
   const response = await fetch(`${url}?mine=1`, { credentials: 'same-origin', ...(signal ? { signal } : {}) });
   if (response.status === 404 || response.status === 403) return null;
@@ -105,14 +105,20 @@ function referenceIn(value: unknown): { readonly ref?: string; readonly id?: str
   return undefined;
 }
 
-/** The PM's task tool (hachej/boring-factory#892): `content[0].text` is JSON `{ created, task: { id, number: 'D-n', title, state, status, updated_at } }`. */
+/**
+ * The PM's task tool (hachej/boring-factory#892): `content[0].text` is JSON `{ created, task: { id, number: 'D-n', title, state, status,
+ * updated_at, waiting_on_you?, confirmed_at?, is_requester? } }`. With an id and a title, `task` draws the request card on its own.
+ */
 export const TASK_CREATE_TOOL = 'tasks_create';
-function exactTask(message: { readonly toolName: string; readonly content: readonly { readonly type: string; readonly text?: string }[] }): { readonly ref?: string; readonly id?: string } | undefined {
+export interface CreatedTask { readonly ref?: string; readonly id?: string; readonly task?: HostTask }
+function exactTask(message: { readonly toolName: string; readonly content: readonly { readonly type: string; readonly text?: string }[] }): CreatedTask | undefined {
   if (message.toolName !== TASK_CREATE_TOOL || message.content[0]?.type !== 'text') return undefined;
   try {
-    const task = (JSON.parse(message.content[0].text ?? '') as { readonly task?: { readonly id?: unknown; readonly number?: unknown } }).task;
-    const id = typeof task?.id === 'string' ? task.id : undefined, ref = typeof task?.number === 'string' ? task.number : undefined;
-    return id || ref ? { ...(ref ? { ref } : {}), ...(id ? { id } : {}) } : undefined;
+    const task = (JSON.parse(message.content[0].text ?? '') as { readonly task?: Record<string, unknown> }).task;
+    const id = typeof task?.['id'] === 'string' ? task['id'] : undefined, ref = typeof task?.['number'] === 'string' ? task['number'] : undefined;
+    if (!id && !ref) return undefined;
+    const whole = id && typeof task?.['title'] === 'string' && typeof task['state'] === 'string' ? task as unknown as HostTask : undefined;
+    return { ...(ref ? { ref } : {}), ...(id ? { id } : {}), ...(whole ? { task: whole } : {}) };
   } catch { return undefined; }
 }
 
@@ -120,7 +126,7 @@ function exactTask(message: { readonly toolName: string; readonly content: reado
  * The task a PM reply created, from a tool result run in the same turn before that reply: `tasks_create`'s JSON first; then, tolerant
  * (an older or renamed tool), any tool whose name contains `task` and whose result carries a D-ref or an id. Adjust here when it changes.
  */
-export function createdTask(entries: readonly EntryRecord[], reply: EntryRecord): { readonly ref?: string; readonly id?: string } | undefined {
+export function createdTask(entries: readonly EntryRecord[], reply: EntryRecord): CreatedTask | undefined {
   const at = entries.findIndex(entry => entry.id === reply.id);
   for (let index = (at < 0 ? entries.length : at) - 1; index >= 0; index--) {
     for (const message of [...(entries[index]!.model ?? [])].reverse()) {
@@ -133,34 +139,50 @@ export function createdTask(entries: readonly EntryRecord[], reply: EntryRecord)
   return undefined;
 }
 
+/** The request card's record: the `tasks_create` result merged with the list's record, the list winning on conflicts. */
+export function requestRecord(made: CreatedTask, listed: readonly HostTaskRecord[], viewer: string): HostTaskRecord | undefined {
+  const fromList = listed.find(each => each.id === made.id || (made.ref !== undefined && taskReference(each) === made.ref));
+  const fromTool = made.task ? toTaskRecord(made.task, viewer) : undefined;
+  if (!fromList || !fromTool) return fromList ?? fromTool;
+  const { waiting_on: _, ...tool } = fromTool;
+  return { ...tool, ...fromList };
+}
+
 /**
- * `spec.tasks` for the one line: read when `active`, again when the conversation grows (a PM reply may have created a task), after an
- * answer and after a withdraw refused with 409. `undefined` until the host answers, and for good when it has no task source. A withdrawn
- * request leaves the list; « Confirmer » shows « Envoyée » at once.
+ * `spec.tasks` for the one line: read when `active`, again when the conversation grows (a PM reply may have created a task), on `refresh`
+ * (the panel opens, « Mes demandes » opens), after an answer and after a withdraw refused with 409. A 403, 404 or network error is
+ * « unavailable for now », never latched: the next read may answer (decided 2026-10-29). The request card is drawn from the `tasks_create`
+ * result even before or without the list. A withdrawn request leaves the list; « Confirmer » shows « Envoyée » at once.
  */
 export function useHostTasks(url: string | undefined, viewer: string | undefined, controller: ImproveSpec['controller'] | undefined, text: PmText): StudioTaskBoardSeam | undefined {
   const [read, setTasks] = useState<readonly HostTaskRecord[] | null>();
   const [withdrawn, setWithdrawn] = useState<ReadonlySet<string>>(() => new Set());
   const [refused, setRefused] = useState<ReadonlySet<string>>(() => new Set());
-  const tasks = useMemo(() => read?.filter(task => !withdrawn.has(task.id)) ?? read, [read, withdrawn]);
+  // « Envoyée » at once: confirmed, nobody started yet. Kept until the host's record says so (or the answer fails).
+  const [confirmed, setConfirmed] = useState<ReadonlyMap<string, string>>(() => new Map());
+  const settle = useCallback((task: HostTaskRecord): HostTaskRecord => {
+    const at = confirmed.get(task.id);
+    if (at === undefined || !task.waiting_on_you) return task;
+    const { waiting_on: _, ...rest } = task;
+    return { ...rest, state: 'open', waiting_on_you: false, confirmed_at: task.confirmed_at ?? at };
+  }, [confirmed]);
+  const tasks = useMemo(() => (read ?? []).filter(task => !withdrawn.has(task.id)).map(settle), [read, withdrawn, settle]);
   const entries = useSyncExternalStore(controller?.subscribe ?? noSubscribe, () => controller?.getSnapshot().view?.entries.length ?? 0, () => 0);
   const [answered, setAnswered] = useState(0);
-  const absent = read === null;
+  const [asked, setAsked] = useState(0);
+  const refresh = useCallback(() => setAsked(count => count + 1), []);
   useEffect(() => {
-    if (!url || !viewer || absent) return;
+    if (!url || !viewer) return;
     const abort = new AbortController();
-    const timer = setTimeout(() => { readTasks(url, viewer, abort.signal).then(setTasks, () => undefined); }, 300);
+    // A network error keeps what was read before; 403 and 404 mean « unavailable for now ».
+    const timer = setTimeout(() => { readTasks(url, viewer, abort.signal).then(setTasks, () => { if (!abort.signal.aborted) setTasks(current => current ?? null); }); }, 300);
     return () => { clearTimeout(timer); abort.abort(); };
-  }, [url, viewer, absent, entries, answered]);
+  }, [url, viewer, entries, answered, asked]);
   const confirm = useCallback(async (task: TaskRecord) => {
     if (!url) return;
-    // « Envoyée » at once: confirmed, nobody started yet.
-    setTasks(current => current?.map(each => {
-      if (each.id !== task.id) return each;
-      const { waiting_on: _, ...rest } = each;
-      return { ...rest, state: 'open', waiting_on_you: false, confirmed_at: each.confirmed_at ?? new Date().toISOString() };
-    }));
-    await answerTask(url, task.id, text.confirm).catch(() => undefined);
+    setConfirmed(current => new Map(current).set(task.id, task.confirmed_at ?? new Date().toISOString()));
+    const done = await answerTask(url, task.id, text.confirm).then(() => true, () => false);
+    if (!done) setConfirmed(current => { const next = new Map(current); next.delete(task.id); return next; });
     setAnswered(count => count + 1);
   }, [url, text.confirm]);
   const withdraw = useCallback(async (task: HostTaskRecord) => {
@@ -172,20 +194,21 @@ export function useHostTasks(url: string | undefined, viewer: string | undefined
     // Started meanwhile: read again, so the card shows its real state.
     if (outcome === 'started') setAnswered(count => count + 1);
   }, [url]);
-  return useMemo(() => !tasks || !viewer ? undefined : {
-    tasks: [...tasks], currentUser: viewer,
+  return useMemo(() => !url || !viewer ? undefined : {
+    tasks, currentUser: viewer, refresh,
     // No task route in the one line: a card is the request, its answer happens in the PM chat.
     onOpen: () => undefined,
     cardActions: (task: TaskRecord) => withdrawable(task) || refused.has(task.id) ? <WithdrawAction key={task.id} task={task} failed={refused.has(task.id)} text={text} onWithdraw={withdraw} /> : undefined,
     renderRequest: ({ entry, edit }) => {
       const made = createdTask(controller?.getSnapshot().view?.entries ?? [], entry);
-      const task = made && tasks.find(each => each.id === made.id || (made.ref !== undefined && taskReference(each) === made.ref));
-      if (!task) return undefined;
+      const found = made && !withdrawn.has(made.id ?? '') ? requestRecord(made, tasks, viewer) : undefined;
+      if (!found) return undefined;
+      const task = settle(found);
       return <TaskRequestCard task={task} variant="compact" locale={text.locale} viewerAction="confirmation" actions={task.waiting_on_you ? <>
         <Button variant="outline" data-testid="pm-request-modify" onClick={() => edit(task.title)}>{text.modify}</Button>
         <Button data-testid="pm-request-confirm" onClick={() => { void confirm(task); }}>{text.confirm}</Button>
       </> : undefined} />;
     },
-  }, [tasks, viewer, text, confirm, withdraw, refused, controller]);
+  }, [url, tasks, viewer, text, confirm, withdraw, refused, withdrawn, settle, refresh, controller]);
 }
 const noSubscribe = () => () => undefined;

@@ -3001,11 +3001,14 @@
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.33/r/feedback.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.33/r/task-board.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.33/r/task-mentions.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.33/r/utils.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.33/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.33/r/pi-artifacts.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.33/r/viewer-frame.json"
       ],
       "dependencies": [
         "@hachej/boring-ui-kit@^0.4.33",
         "@hachej/boring-feedback@^0.4.33",
+        "@hachej/boring-files@^0.4.33",
         "@earendil-works/pi-durable@~1.4.0",
         "lucide-react@^1.51.0",
         "react@^19.0.0",
@@ -3071,6 +3074,11 @@
           "path": "registry/pm-panel/use-improve-agent.ts",
           "type": "registry:hook",
           "target": "components/pm-panel/use-improve-agent.ts"
+        },
+        {
+          "path": "registry/pm-panel/pm-mockups.tsx",
+          "type": "registry:component",
+          "target": "components/pm-panel/pm-mockups.tsx"
         }
       ]
     },
