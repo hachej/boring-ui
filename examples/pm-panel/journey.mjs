@@ -2,11 +2,15 @@
 // Every check drives the public AppShell `improve` entry and the real picker, composer and remote chat; nothing calls a library directly.
 import assert from 'node:assert/strict';
 import { mkdirSync, readFileSync } from 'node:fs';
+import { relative } from 'node:path';
 import { launch, pause, q } from '@hachej/boring-testing/browser';
 import { startPmPanel } from './server.mjs';
 
 const evidence = process.env.PM_EVIDENCE ?? '.cache/evidence/pm-panel/journey';
 mkdirSync(evidence, { recursive: true });
+// PM_SHOTS=<dir>: the one line's « Envoyée » / « Retirer » phone screenshots (390×844).
+if (process.env.PM_SHOTS) mkdirSync(process.env.PM_SHOTS, { recursive: true });
+const shots = process.env.PM_SHOTS && relative(evidence, process.env.PM_SHOTS);
 // PM_ONE_LINE=1 runs the same journey on the app whose only PM code is `improve={{ agent: 'pm' }}` (the fake #854 door, dictation on the host's /api/host/transcribe),
 // served under a host prefix (/apps/coach-max/: every path resolves against the page). Its request card and « Mes demandes » come from the host's task API
 // (/_tasks/api); the @ task steps run on the host-wired fixture only.
@@ -239,11 +243,41 @@ try {
       assert.equal(await browser.evaluate(`${q(card + ' [data-task-status]')}.textContent`), 'À confirmer');
       await press(`${card} [data-testid=pm-request-modify]`);
       await browser.until('modify', `${q('[data-testid=pm-panel] [data-testid=composer-input]')}.value === 'Protéines avant les calories sur les cartes repas'`);
+      // « Confirmer » shows « Envoyée » at once (before the host is read again), and keeps it while the task stays `open` (decided 2026-10-29).
+      const sent = `${q(card + ' [data-task-status=sent]')}?.textContent === 'Envoyée' && !${q(card + ' [data-testid=pm-request-confirm]')}`;
       await press(`${card} [data-testid=pm-request-confirm]`);
-      await browser.until('confirmed', `!${q(card + ' [data-task-status]')} && !${q(card + ' [data-testid=pm-request-confirm]')}`);
+      await browser.until('Envoyée at once', sent, 250);
       assert.deepEqual(app.answers.at(-1), { id: filed.id, ref: filed.ref, text: 'Confirmer' }, '« Confirmer » is the viewer\'s answer');
+      for (let wait = 0; wait < 10; wait++) { await pause(100); assert.equal(await browser.evaluate(sent), true, 'still « Envoyée » after the host is read again'); }
+      if (shots && device === 'phone') await browser.screenshot(`${shots}/1-c7-envoyee-phone.png`);
       await press('[data-testid=pm-requests]');
       await browser.until('Mes demandes', `${visible('[data-testid=pm-task-board-seam]')} && JSON.stringify([...document.querySelectorAll('[data-testid=pm-task-board-seam] [data-task-card]')].map(c => c.dataset.taskCard).sort()) === ${JSON.stringify(JSON.stringify(app.tasks.map(t => t.id).sort()))}`);
+      // « Retirer » only on what the viewer filed (`is_requester`) and nobody started; never on D-190, listed because it waited on them.
+      const mine = id => `[data-testid=pm-task-board-seam] [data-task-card="${id}"]`, other = app.tasks.find(t => t.ref === 'D-190');
+      assert.equal(await browser.evaluate(`!!${q(`${mine(other.id)} [data-testid=pm-withdraw]`)}`), false, 'no « Retirer » on a task the viewer did not file');
+      assert.equal(await browser.evaluate(`${q(`${mine(filed.id)} [data-task-status]`)}?.textContent`), 'Envoyée', '« Mes demandes » shows « Envoyée » too');
+      const target = device === 'phone' ? app.tasks.find(t => t.ref === 'D-202') : filed, withdraw = `${mine(target.id)} [data-testid=pm-withdraw]`;
+      await browser.until('Retirer', visible(withdraw));
+      assert.ok(await browser.evaluate(`${q(withdraw)}.getBoundingClientRect().height >= 44`), '« Retirer » is 44px high');
+      if (shots && device === 'phone') await browser.screenshot(`${shots}/2-mes-demandes-retirer-phone.png`);
+      // One tap asks; nothing is sent until the second.
+      const before = app.withdrawals.length;
+      await press(withdraw);
+      await browser.until('confirm step', `${q(`${mine(target.id)} [data-testid=pm-withdraw-ask]`)}?.textContent === 'Retirer cette demande\u00a0?' && ${visible(`${mine(target.id)} [data-testid=pm-withdraw-cancel]`)}`);
+      assert.equal(app.withdrawals.length, before, 'one tap never withdraws');
+      if (shots && device === 'phone') await browser.screenshot(`${shots}/3-confirmer-retrait-phone.png`);
+      if (device === 'phone') {
+        await press(`${mine(target.id)} [data-testid=pm-withdraw-confirm]`);
+        await browser.until('withdrawn: the card leaves « Mes demandes »', `!${q(mine(target.id))} && ${visible(mine(filed.id))}`);
+        assert.deepEqual(app.withdrawals.at(-1), { id: target.id, ref: 'D-202' }, 'POST withdraw, as the requester');
+        if (shots) { await pause(200); await browser.screenshot(`${shots}/4-apres-retrait-phone.png`); }
+      } else {
+        // Started meanwhile (409): one muted line, and the card is read again to show its real state (no « Retirer »).
+        target.state = 'working';
+        await press(`${mine(target.id)} [data-testid=pm-withdraw-confirm]`);
+        await browser.until('409', `${q(`${mine(target.id)} [data-testid=pm-withdraw-failed]`)}?.textContent === 'Impossible de retirer la demande.' && !${q(`${mine(target.id)} [data-testid=pm-withdraw]`)} && !${q(`${mine(target.id)} [data-testid=pm-withdraw-confirm]`)}`, 15000);
+        assert.equal(app.withdrawals.length, before, 'nothing withdrawn on 409');
+      }
       await press('[data-testid=pm-requests-back]');
       await browser.until('thread again', visible('[data-testid=pm-sent-message]'));
     } else {

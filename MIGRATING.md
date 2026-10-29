@@ -1,5 +1,10 @@
 # Unreleased
 
+- **« Envoyée » and « Retirer » (`task-board`, `pm-panel`; decided 2026-10-29).**
+  - `TaskRecord` adds `confirmed_at`; `deriveTaskStatus(task, { sent: true })` returns `sent` for a confirmed task still `open`, and `taskStatusLabel('sent')` reads « Envoyée » / "Sent". The compact card (C7, « Mes demandes ») asks for it; the board card and the detail are unchanged. `TaskStatusPill` takes `sent`.
+  - The one line maps the host's `confirmed_at` and `is_requester` (`pm-task-source.tsx`). « Confirmer » shows « Envoyée » at once. In « Mes demandes », the requester's card has « Retirer » with a confirm step; it calls `POST _tasks/api/<id>/withdraw` (404 for a non-requester, 409 once started: one muted line, and a 409 reads the tasks again). `PmText` adds `withdraw`, `withdrawAsk`, `cancel` and `withdrawFailed`.
+  - Hosts without these fields keep today's rendering. Update `task-board` and `pm-panel` together.
+
 # Migrating to 0.4.32
 
 - **PM panel member thread (`pm-panel`).** The app panel's thread (C7) no longer shows the PM's tool calls, tool results or raw tool errors: `Panel` passes `presentation="natural"` to `PiChat`. The PM's reply is drawn as Markdown (`pi-chat-markdown`, now a registry dependency of `pm-panel`); in the app panel, a run that ends in error without a reply shows one muted line (`PmText.failed`). Studio's `PmChat` is unchanged. Nothing to change in apps: update the `pm-panel` item.

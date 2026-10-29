@@ -59,10 +59,12 @@ const BASE = '@layer base{*,::before,::after{box-sizing:border-box}ul{list-style
 export async function startAppShell({ directory, port = 0, token = randomUUID(), scripted = process.env.STUDIO_MODEL === 'scripted', pageFile = here('./page.tsx'), browserPlugins = [], themeCss = '', pmTranscript, prefix = '/', pmTasks = false } = {}) {
   mkdirSync(join(directory, 'workspace'), { recursive: true });
   // `pmTasks`: the host's task API (`/_tasks/api`, fictional records) and a PM task tool whose result carries the new D-ref, as the one line reads them.
-  const tasks = pmTasks ? [{ id: randomUUID(), ref: 'D-202', title: 'Plan du jour : photo du déjeuner', state: 'open', created: '2026-10-27T09:00:00Z', updated: '2026-10-27T09:00:00Z', waiting_on_you: false }] : [];
-  const answers = [];
+  // `is_requester`: the viewer filed D-202; D-190 is listed (mine=1) only because it once waited on them, so it is not theirs to withdraw.
+  const tasks = pmTasks ? [{ id: randomUUID(), ref: 'D-202', title: 'Plan du jour : photo du déjeuner', state: 'open', created: '2026-10-27T09:00:00Z', updated: '2026-10-27T09:00:00Z', waiting_on_you: false, is_requester: true },
+    { id: randomUUID(), ref: 'D-190', title: 'Un repère sur la jauge', state: 'open', created: '2026-10-26T09:00:00Z', updated: '2026-10-26T09:00:00Z', waiting_on_you: false, is_requester: false }] : [];
+  const answers = [], withdrawals = [];
   const createTask = defineTool({ name: 'tasks_create', description: 'File a fictional request for the person.', replay: 'safe', parameters: Type.Object({ title: Type.String() }), execute: async ({ title }) => {
-    const task = { id: randomUUID(), ref: `D-${203 + tasks.length}`, title, state: 'waiting', created: '2026-10-29T08:00:00Z', updated: '2026-10-29T08:00:00Z', waiting_on_you: true, question: 'Confirmez-vous cette demande ?' };
+    const task = { id: randomUUID(), ref: `D-${203 + tasks.length}`, title, state: 'waiting', created: '2026-10-29T08:00:00Z', updated: '2026-10-29T08:00:00Z', waiting_on_you: true, is_requester: true, question: 'Confirmez-vous cette demande ?' };
     tasks.push(task);
     // hachej/boring-factory#892's result: JSON `{ created, task: { id, number, title, state, status, updated_at } }` in the first text block.
     return { output: [{ type: 'text', text: JSON.stringify({ created: true, task: { id: task.id, number: task.ref, title, state: task.state, status: 'À confirmer', updated_at: task.updated } }) }] };
@@ -124,8 +126,18 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
     const task = tasks.find(each => each.id === id);
     if (!pmTasks || !signedIn(request) || request.method !== 'POST' || !task?.waiting_on_you) return new Response(null, { status: !pmTasks ? 404 : 403 });
     answers.push({ id, ref: task.ref, text: (await request.json()).text });
-    Object.assign(task, { state: 'working', waiting_on_you: false, question: undefined, updated: '2026-10-29T08:05:00Z' });
+    // Confirmed, not started: the task stays `open` and carries `confirmed_at`.
+    Object.assign(task, { state: 'open', waiting_on_you: false, question: undefined, confirmed_at: '2026-10-29T08:05:00Z', updated: '2026-10-29T08:05:00Z' });
     return Response.json({ ok: true });
+  };
+  /** `POST /_tasks/api/<id>/withdraw`: the requester withdraws a request nobody started. 404 for anyone else, 409 once work started. */
+  const withdraw = async (request, id) => {
+    const task = tasks.find(each => each.id === id);
+    if (!pmTasks || !signedIn(request) || request.method !== 'POST' || task?.is_requester !== true) return new Response(null, { status: 404 });
+    if (task.state !== 'open' && !task.waiting_on_you) return new Response(null, { status: 409 });
+    withdrawals.push({ id, ref: task.ref });
+    Object.assign(task, { state: 'closed', waiting_on_you: false, question: undefined, updated: '2026-10-29T08:10:00Z' });
+    return Response.json({ task });
   };
   const handlers = {
     ...door,
@@ -172,8 +184,8 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
       }
       const fixed = incoming.method === 'GET' && statics[url.pathname];
       if (fixed) return void outgoing.writeHead(200, { 'content-type': fixed[0], 'cache-control': 'no-store' }).end(fixed[1]);
-      const answering = /^\/_tasks\/api\/([^/]+)\/answer$/.exec(url.pathname);
-      const handler = answering ? request => answer(request, decodeURIComponent(answering[1])) : handlers[url.pathname];
+      const acting = /^\/_tasks\/api\/([^/]+)\/(answer|withdraw)$/.exec(url.pathname);
+      const handler = acting ? request => (acting[2] === 'answer' ? answer : withdraw)(request, decodeURIComponent(acting[1])) : handlers[url.pathname];
       const request = handler && await webRequest(incoming, url, { signal: closed.signal });
       if (request && url.searchParams.get('op') === 'submit' && request.method === 'POST') submits.push({ agent: url.searchParams.get('agent') ?? (url.pathname.startsWith('/api/pm/') ? 'pm' : null), body: await request.clone().json().catch(() => undefined) });
       await sendWebResponse(request ? await handler(request) : new Response(null, { status: handler ? 413 : 404 }), outgoing, { signal: closed.signal });
@@ -185,7 +197,7 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
   });
   await new Promise(resolve => server.listen(port, '127.0.0.1', resolve));
   return {
-    url: `http://127.0.0.1:${server.address().port}${prefix}`, token, harness, conversations, submits, contexts, transcribes, answers, tasks, mealReads: () => mealReads,
+    url: `http://127.0.0.1:${server.address().port}${prefix}`, token, harness, conversations, submits, contexts, transcribes, answers, withdrawals, tasks, mealReads: () => mealReads,
     close: async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await conversations.dispose(); await harness.close(context); files.close(); db.close(); },
   };
 }

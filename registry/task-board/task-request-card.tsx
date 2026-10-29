@@ -34,11 +34,11 @@ export const taskMeta = (task: TaskRecord) => [taskReference(task), task.age].fi
 
 /**
  * One pill per task: viewer, explicit builder, then high risk (`deriveTaskStatus`); none renders nothing. Colours are theme roles:
- * primary (waiting on you), secondary (builder), destructive (risk). The French app's « À confirmer / À vous » pill uses the host's
- * warning-soft tokens when it defines them.
+ * primary (waiting on you), secondary (builder, sent), destructive (risk). The French app's « À confirmer / À vous » pill uses the host's
+ * warning-soft tokens when it defines them. `sent` opts into « Envoyée » (the compact card only; the board and the detail keep theirs).
  */
-export function TaskStatusPill({ task, locale = 'en', viewerAction = 'question' }: { readonly task: Pick<TaskRecord, 'waiting_on_you' | 'waiting_on' | 'risk'>; readonly locale?: TaskLocale | undefined; readonly viewerAction?: TaskViewerAction | undefined }) {
-  const status = deriveTaskStatus(task);
+export function TaskStatusPill({ task, locale = 'en', viewerAction = 'question', sent = false }: { readonly task: Pick<TaskRecord, 'waiting_on_you' | 'waiting_on' | 'risk'> & Partial<Pick<TaskRecord, 'state' | 'confirmed_at'>>; readonly locale?: TaskLocale | undefined; readonly viewerAction?: TaskViewerAction | undefined; readonly sent?: boolean | undefined }) {
+  const status = deriveTaskStatus(task, { sent });
   const label = taskStatusLabel(status, locale, viewerAction);
   if (!label) return null;
   const warning = status === 'waiting-on-viewer' && locale === 'fr';
@@ -77,8 +77,8 @@ export function TaskRequestCard({ task, variant = 'card', selected, href, onOpen
   };
   const anchor = { href, onClick: activate, 'data-task-open': task.id, 'aria-current': selected ? 'true' as const : undefined };
   const link = href ? <a {...anchor} /> : undefined;
-  const pill = <TaskStatusPill task={task} locale={locale} viewerAction={viewerAction} />;
   if (variant === 'compact') {
+    const pill = <TaskStatusPill task={task} locale={locale} viewerAction={viewerAction} sent />;
     const strings = compactStrings[locale];
     const meta = [task.screen && strings.screen(task.screen), task.captureCount !== undefined && captures(task.captureCount)].filter(Boolean).join(' · ');
     const title = link && actions ? <a {...anchor} className="underline-offset-4 hover:underline">{task.title}</a> : task.title;
@@ -89,6 +89,7 @@ export function TaskRequestCard({ task, variant = 'card', selected, href, onOpen
       {actions && <div data-task-actions="" className="mt-1 grid grid-cols-2 gap-2 *:min-h-11 *:w-full">{actions}</div>}
     </Item></div>;
   }
+  const pill = <TaskStatusPill task={task} locale={locale} viewerAction={viewerAction} />;
   return <div role="listitem" className={cn('rounded-[var(--radius-lg)] bg-card', taskTokens.card)}><TaskAttention active={task.waiting_on_you === true}>
     <Item variant="outline" className="flex-col items-stretch gap-1" data-task-card={task.id} data-selected={selected || undefined} {...(link ? { render: link } : {})}>
       <span className="flex min-h-5 min-w-0 items-center justify-between gap-2 text-[11px] text-muted-foreground"><span>{taskMeta(task)}</span>{pill}</span>
