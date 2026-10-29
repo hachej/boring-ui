@@ -22,7 +22,7 @@ The one line is resolved on the first open by `useImproveAgent` (same-origin cal
 - `useImproveAgent`, `isImproveAgent`, `ImproveAgent`, `ImproveProp`: the one-line resolver.
 - `usePmMentions`: the D9 look (header, rows, at most 6, « À vous ») over the shared `task-mentions` item's `taskMentions`.
 - `PmVoice`, `PmTranscript`: host transcription with word timings (seconds).
-- `StudioTaskBoardSeam` (`ImproveSpec.tasks`): `{ tasks, currentUser, onOpen, cardActions?, renderRequest? }`, the host's authorized `TaskRecord`s. « Mes demandes » is the `task-board` item's `TaskBoard variant="compact" filter="mine"`; `renderRequest({ entry, edit })` draws C7's card (`TaskRequestCard variant="compact"`).
+- `StudioTaskBoardSeam` (`ImproveSpec.tasks`): `{ tasks, currentUser, onOpen, cardActions?, renderRequest? }`, the host's authorized `TaskRecord`s. « Mes demandes » is the `task-board` item's `TaskBoard variant="compact" filter="mine"` for open requests, with finished ones (`done`, `closed`) folded below under « Terminées (n) », each with a muted label (the one line reads the host's `closed_reason` in `pm-task-source.tsx`); `renderRequest({ entry, edit })` draws C7's card (`TaskRequestCard variant="compact"`).
 
 ## Data and lifecycle
 

@@ -13,7 +13,7 @@ Host-owned business requests rendered from authorized records, shared by a board
 - `task-board-mentions` optional task-mentions registry adapter composes authorized ID/title search and waiting markers with the host's file search/kinds, using the existing MentionPicker and composer; a task-kind sent chip opens the same overlay. `registry/task-mentions/task-mentions.tsx`.
 - `task-board-native-present` one real native Pi Harness and AmbientChat host task/list presentation; actual loaded mount, cleanup and denied/missing reports, no dummy task file. `examples/task-board/server.mjs`, `examples/task-board/page.tsx`.
 - `task-board-mine` own requests, newest first, filtered before `limit`; `variant="compact"` stacks the C7 request card and opens through the host's shared detail path. `packages/ui/src/task-board.ts`, `registry/task-board/task-board.tsx`.
-- `task-request-card` one record, two renderings: the board card (D2) and the compact card (C7: « DEMANDE », pill, title, « Écran : … · n captures », two equal host actions); `locale` and explicit `viewerAction` choose « À vous » / « À confirmer ». `registry/task-board/task-request-card.tsx`.
+- `task-request-card` one record, two renderings: the board card (D2) and the compact card (C7: « DEMANDE », pill, title, « Écran : … · n captures », two equal host actions; `pill` replaces the derived pill on the compact card, e.g. « Mes demandes »' muted finished labels); `locale` and explicit `viewerAction` choose « À vous » / « À confirmer ». `registry/task-board/task-request-card.tsx`.
 - `task-board-compare` board-by-board screenshots at the mockup viewport beside the exported mockups. `examples/task-board/compare.mjs`.
 
 ## How to get to it (user POV)

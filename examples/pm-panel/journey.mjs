@@ -275,7 +275,18 @@ try {
       for (let wait = 0; wait < 10; wait++) { await pause(100); assert.equal(await browser.evaluate(sent), true, 'still « Envoyée » after the host is read again'); }
       if (shots && device === 'phone') await browser.screenshot(`${shots}/1-c7-envoyee-phone.png`);
       await press('[data-testid=pm-requests]');
-      await browser.until('Mes demandes', `${visible('[data-testid=pm-task-board-seam]')} && JSON.stringify([...document.querySelectorAll('[data-testid=pm-task-board-seam] [data-task-card]')].map(c => c.dataset.taskCard).sort()) === ${JSON.stringify(JSON.stringify(app.tasks.map(t => t.id).sort()))}`);
+      // Open requests on top; the three finished ones under « Terminées (3) », collapsed (decided 2026-10-29).
+      const finishedNow = () => app.tasks.filter(t => t.state === 'done' || t.state === 'closed'), openIds = app.tasks.filter(t => !finishedNow().includes(t)).map(t => t.id).sort();
+      const toggle = '[data-testid=pm-task-board-seam] [data-testid=pm-finished-toggle]';
+      await browser.until('Mes demandes', `${visible('[data-testid=pm-task-board-seam]')} && JSON.stringify([...document.querySelectorAll('[data-testid=pm-task-board-seam] [data-task-card]')].map(c => c.dataset.taskCard).sort()) === ${JSON.stringify(JSON.stringify(openIds))}`);
+      assert.deepEqual(await browser.evaluate(`[${q(toggle)}.textContent, ${q(toggle)}.getAttribute('aria-expanded')]`), ['Terminées (3)', 'false'], '« Terminées (3) », collapsed');
+      assert.ok(await browser.evaluate(`${q(toggle)}.getBoundingClientRect().height >= 44`), '« Terminées » is 44px high');
+      if (shots && device === 'phone') { await pause(200); await browser.screenshot(`${shots}/mes-demandes-1-collapsed-phone.png`); }
+      await press(toggle);
+      const outcomes = `JSON.stringify([...document.querySelectorAll('[data-testid=pm-finished] [data-task-card]')].map(c => c.querySelector('[data-task-outcome]').textContent))`;
+      await browser.until('Terminées expanded', `${q(toggle)}.getAttribute('aria-expanded') === 'true' && ${outcomes} === ${JSON.stringify(JSON.stringify(['En ligne', 'Retirée', 'Fermée']))}`);
+      assert.equal(await browser.evaluate(`!!${q('[data-testid=pm-finished] [data-testid=pm-withdraw]')}`), false, 'no « Retirer » on a finished request');
+      if (shots && device === 'phone') { await pause(200); await browser.screenshot(`${shots}/mes-demandes-2-expanded-phone.png`); }
       // « Retirer » only on what the viewer filed (`is_requester`) and nobody started; never on D-190, listed because it waited on them.
       const mine = id => `[data-testid=pm-task-board-seam] [data-task-card="${id}"]`, other = app.tasks.find(t => t.ref === 'D-190');
       assert.equal(await browser.evaluate(`!!${q(`${mine(other.id)} [data-testid=pm-withdraw]`)}`), false, 'no « Retirer » on a task the viewer did not file');
@@ -292,9 +303,9 @@ try {
       if (shots && device === 'phone') await browser.screenshot(`${shots}/3-confirmer-retrait-phone.png`);
       if (device === 'phone') {
         await press(`${mine(target.id)} [data-testid=pm-withdraw-confirm]`);
-        await browser.until('withdrawn: the card leaves « Mes demandes »', `!${q(mine(target.id))} && ${visible(mine(filed.id))}`);
+        await browser.until('withdrawn: the card moves to « Terminées » as « Retirée »', `${q(`[data-testid=pm-finished] [data-task-card="${target.id}"] [data-task-outcome]`)}?.textContent === 'Retirée' && ${q(toggle)}.textContent === 'Terminées (4)' && !${q(`[data-testid=pm-task-board-seam] [data-boring=task-board] [data-task-card="${target.id}"]`)} && ${visible(mine(filed.id))}`);
         assert.deepEqual(app.withdrawals.at(-1), { id: target.id, ref: 'D-202' }, 'POST withdraw, as the requester');
-        if (shots) { await pause(200); await browser.screenshot(`${shots}/4-apres-retrait-phone.png`); }
+        if (shots) { await pause(200); await browser.screenshot(`${shots}/4-apres-retrait-phone.png`); await browser.screenshot(`${shots}/mes-demandes-3-after-withdraw-phone.png`); }
       } else {
         // Started meanwhile (409): one muted line, and the card is read again to show its real state (no « Retirer »).
         target.state = 'working';

@@ -1,5 +1,10 @@
 # Unreleased
 
+- **« Mes demandes »: finished requests folded below (`pm-panel`, `task-board`; decided 2026-10-29).**
+  - Open requests (`waiting`, `working`, `open`) stay on top with « À confirmer », « Envoyée », « Retirer » and the card actions. Finished ones (`done`, `closed`) move below, under a collapsed « Terminées (n) » / "Finished (n)" (absent when n = 0), newest first, each with one muted label and no action: « En ligne » / "Live", « Retirée » / "Withdrawn", « Fermée » / "Closed". Studio's board is unchanged.
+  - The one line reads the host's `closed_reason` (`shipped` / `withdrawn` / `closed`, on `done`/`closed` tasks) in `pm-task-source.tsx` (`taskOutcome`): `done` without it is « En ligne », any other `closed` « Fermée ». After « Retirer » the card moves into « Terminées » as « Retirée » at once (it no longer leaves the list) and the list is read again; the withdraw POST may answer 200 with `{ task }` or an empty body.
+  - `PmText` adds `finished`, `outcomeLive`, `outcomeWithdrawn`, `outcomeClosed`; `TaskRequestCard` adds `pill` (compact only). Update `task-board` and `pm-panel` together.
+
 # Migrating to 0.4.34
 
 - **The app PM panel during a PM turn (`pm-panel`; decided 2026-10-29).**

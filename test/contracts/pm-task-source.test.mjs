@@ -49,7 +49,7 @@ test('confirmed_at and is_requester (decided 2026-10-29): « Envoyée » and « 
   assert.equal(withdrawable(toTaskRecord(host, 'alice')), false, 'never assumed');
 });
 
-test('POST withdraw: 200 withdrawn, 409 started, 404 or a network failure refused', async t => {
+test('POST withdraw: 200 withdrawn ({ task } or empty body), 409 started, 404 or a network failure refused', async t => {
   const original = globalThis.fetch;
   t.after(() => { globalThis.fetch = original; });
   served.calls = [];
@@ -57,6 +57,7 @@ test('POST withdraw: 200 withdrawn, 409 started, 404 or a network failure refuse
   assert.equal(await withdrawTask('http://app.test/apps/x/_tasks/api', 'a b'), 'withdrawn');
   assert.equal(served.calls.at(-1).url, 'http://app.test/apps/x/_tasks/api/a%20b/withdraw');
   assert.equal(served.calls.at(-1).init.method, 'POST');
+  globalThis.fetch = served(200); assert.equal(await withdrawTask('http://app.test/apps/x/_tasks/api', 'x'), 'withdrawn', 'an empty 200 body too');
   globalThis.fetch = served(409); assert.equal(await withdrawTask('http://app.test/apps/x/_tasks/api', 'x'), 'started');
   globalThis.fetch = served(404); assert.equal(await withdrawTask('http://app.test/apps/x/_tasks/api', 'x'), 'refused');
   globalThis.fetch = async () => { throw new TypeError('offline'); }; assert.equal(await withdrawTask('http://app.test/apps/x/_tasks/api', 'x'), 'refused');

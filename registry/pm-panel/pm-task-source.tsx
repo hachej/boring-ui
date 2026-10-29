@@ -33,24 +33,42 @@ export interface HostTask {
   readonly confirmed_at?: string;
   /** The viewer filed the task. `mine=1` also lists tasks only waiting on the viewer, so only `true` lets them withdraw it. */
   readonly is_requester?: boolean;
+  /** Why a `done` or `closed` task ended (the platform's field, 2026-10-29); omitted on open tasks. */
+  readonly closed_reason?: 'shipped' | 'withdrawn' | 'closed';
 }
 
-/** A host task as the one line draws it: `is_requester` stays here, in the adapter, for « Retirer » only. */
-export type HostTaskRecord = TaskRecord & { readonly is_requester?: true };
+/** A finished request's muted label in « Mes demandes »: « En ligne » (shipped or done), « Retirée » (withdrawn), « Fermée » (any other close). */
+export type TaskOutcome = 'live' | 'withdrawn' | 'closed';
+
+/**
+ * A host task as the one line draws it: `is_requester` stays here, in the adapter, for « Retirer » only; `outcome` is set on finished
+ * tasks only.
+ */
+export type HostTaskRecord = TaskRecord & { readonly is_requester?: true; readonly outcome?: TaskOutcome };
 
 const STATES: readonly TaskState[] = ['waiting', 'working', 'open', 'done', 'closed'];
+const REASONS: Readonly<Record<string, TaskOutcome>> = { shipped: 'live', withdrawn: 'withdrawn', closed: 'closed' };
+
+/** The host's `closed_reason` on a `done` or `closed` task; without it, `done` is « En ligne » and `closed` is « Fermée ». Open: undefined. */
+export function taskOutcome(state: string, reason?: string): TaskOutcome | undefined {
+  if (state !== 'done' && state !== 'closed') return undefined;
+  return (reason !== undefined && Object.hasOwn(REASONS, reason) ? REASONS[reason] : undefined) ?? (state === 'done' ? 'live' : 'closed');
+}
+
+/** « Terminées »' label for any record: the host's outcome when the one line mapped it, else from the state alone. Undefined while open. */
+export const requestOutcome = (task: TaskRecord): TaskOutcome | undefined => (task as HostTaskRecord).outcome ?? taskOutcome(task.state);
 const stamp = (value: string | number | undefined) => value === undefined ? undefined : new Date(value).toISOString();
 
 /** Every listed task is the viewer's (the host filtered them), so the viewer is their requester for « Mes demandes ». */
 export function toTaskRecord(task: HostTask, viewer: string): HostTaskRecord {
   const waiting = task.waiting_on_you === true;
   const created = stamp(task.created), updated = stamp(task.updated ?? task.updated_at), confirmed = stamp(task.confirmed_at), ref = task.ref ?? task.number;
+  const state: TaskState = waiting ? 'waiting' : STATES.includes(task.state as TaskState) ? task.state as TaskState : 'open', outcome = taskOutcome(state, task.closed_reason);
   return {
-    id: task.id, ...(ref ? { number: ref } : {}), title: task.title, ...(task.status ? { status: task.status } : {}), requesterId: viewer, waiting_on_you: waiting,
-    state: waiting ? 'waiting' : STATES.includes(task.state as TaskState) ? task.state as TaskState : 'open',
+    id: task.id, ...(ref ? { number: ref } : {}), title: task.title, ...(task.status ? { status: task.status } : {}), requesterId: viewer, waiting_on_you: waiting, state,
     ...(waiting ? { waiting_on: { who: viewer, type: 'person' as const, ...(task.question ? { question: task.question } : {}) } } : {}),
     ...(created ? { created_at: created } : {}), ...(updated ? { updated_at: updated } : {}), ...(confirmed ? { confirmed_at: confirmed } : {}),
-    ...(task.is_requester === true ? { is_requester: true as const } : {}),
+    ...(task.is_requester === true ? { is_requester: true as const } : {}), ...(outcome ? { outcome } : {}),
   };
 }
 
@@ -70,8 +88,9 @@ export async function answerTask(url: string, id: string, text: string): Promise
 }
 
 /**
- * Withdraws the viewer's own request (`POST {tasks}/<id>/withdraw`, requester only): `withdrawn` on 200; `started` on 409, once work has
- * started; `refused` otherwise (404 for a non-requester, a network failure).
+ * Withdraws the viewer's own request (`POST {tasks}/<id>/withdraw`, requester only): `withdrawn` on 200, whether its body is empty or
+ * `{ task }` (the body is not read: the list is read again); `started` on 409, once work has started; `refused` otherwise (404 for a
+ * non-requester, a network failure).
  */
 export async function withdrawTask(url: string, id: string): Promise<'withdrawn' | 'started' | 'refused'> {
   const response = await fetch(`${url}/${encodeURIComponent(id)}/withdraw`, { method: 'POST', credentials: 'same-origin' }).catch(() => undefined);
@@ -152,21 +171,28 @@ export function requestRecord(made: CreatedTask, listed: readonly HostTaskRecord
  * `spec.tasks` for the one line: read when `active`, again when the conversation grows (a PM reply may have created a task), on `refresh`
  * (the panel opens, « Mes demandes » opens), after an answer and after a withdraw refused with 409. A 403, 404 or network error is
  * « unavailable for now », never latched: the next read may answer (decided 2026-10-29). The request card is drawn from the `tasks_create`
- * result even before or without the list. A withdrawn request leaves the list; « Confirmer » shows « Envoyée » at once.
+ * result even before or without the list. A request withdrawn in this session is « Retirée » at once, before the host's `closed_reason` says
+ * so, and its chat card goes; « Confirmer » shows « Envoyée » at once.
  */
 export function useHostTasks(url: string | undefined, viewer: string | undefined, controller: ImproveSpec['controller'] | undefined, text: PmText): StudioTaskBoardSeam | undefined {
   const [read, setTasks] = useState<readonly HostTaskRecord[] | null>();
-  const [withdrawn, setWithdrawn] = useState<ReadonlySet<string>>(() => new Set());
+  // Withdrawn in this session: id → when, so the card moves to « Terminées » as « Retirée » (newest first) whatever the host says yet.
+  const [withdrawn, setWithdrawn] = useState<ReadonlyMap<string, string>>(() => new Map());
   const [refused, setRefused] = useState<ReadonlySet<string>>(() => new Set());
   // « Envoyée » at once: confirmed, nobody started yet. Kept until the host's record says so (or the answer fails).
   const [confirmed, setConfirmed] = useState<ReadonlyMap<string, string>>(() => new Map());
   const settle = useCallback((task: HostTaskRecord): HostTaskRecord => {
+    const gone = withdrawn.get(task.id);
+    if (gone !== undefined) {
+      const { waiting_on: _, is_requester: __, ...rest } = task;
+      return { ...rest, state: 'closed', waiting_on_you: false, outcome: 'withdrawn', updated_at: task.state === 'closed' ? task.updated_at ?? gone : gone };
+    }
     const at = confirmed.get(task.id);
     if (at === undefined || !task.waiting_on_you) return task;
     const { waiting_on: _, ...rest } = task;
     return { ...rest, state: 'open', waiting_on_you: false, confirmed_at: task.confirmed_at ?? at };
-  }, [confirmed]);
-  const tasks = useMemo(() => (read ?? []).filter(task => !withdrawn.has(task.id)).map(settle), [read, withdrawn, settle]);
+  }, [confirmed, withdrawn]);
+  const tasks = useMemo(() => (read ?? []).map(settle), [read, settle]);
   const entries = useSyncExternalStore(controller?.subscribe ?? noSubscribe, () => controller?.getSnapshot().view?.entries.length ?? 0, () => 0);
   const [answered, setAnswered] = useState(0);
   const [asked, setAsked] = useState(0);
@@ -189,10 +215,10 @@ export function useHostTasks(url: string | undefined, viewer: string | undefined
     if (!url) return;
     setRefused(current => { const next = new Set(current); next.delete(task.id); return next; });
     const outcome = await withdrawTask(url, task.id);
-    if (outcome === 'withdrawn') { setWithdrawn(current => new Set(current).add(task.id)); return; }
+    if (outcome !== 'refused') setAnswered(count => count + 1);
+    if (outcome === 'withdrawn') { setWithdrawn(current => new Map(current).set(task.id, new Date().toISOString())); return; }
+    // Started meanwhile (409): the list is read again, so the card shows its real state.
     setRefused(current => new Set(current).add(task.id));
-    // Started meanwhile: read again, so the card shows its real state.
-    if (outcome === 'started') setAnswered(count => count + 1);
   }, [url]);
   return useMemo(() => !url || !viewer ? undefined : {
     tasks, currentUser: viewer, refresh,
