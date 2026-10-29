@@ -1,5 +1,7 @@
 # Unreleased
 
+# Migrating to 0.4.33
+
 - **« Envoyée » and « Retirer » (`task-board`, `pm-panel`; decided 2026-10-29).**
   - `TaskRecord` adds `confirmed_at`; `deriveTaskStatus(task, { sent: true })` returns `sent` for a confirmed task still `open`, and `taskStatusLabel('sent')` reads « Envoyée » / "Sent". The compact card (C7, « Mes demandes ») asks for it; the board card and the detail are unchanged. `TaskStatusPill` takes `sent`.
   - The one line maps the host's `confirmed_at` and `is_requester` (`pm-task-source.tsx`). « Confirmer » shows « Envoyée » at once. In « Mes demandes », the requester's card has « Retirer » with a confirm step; it calls `POST _tasks/api/<id>/withdraw` (404 for a non-requester, 409 once started: one muted line, and a 409 reads the tasks again). `PmText` adds `withdraw`, `withdrawAsk`, `cancel` and `withdrawFailed`.
