@@ -2,9 +2,8 @@
 
 /native re-exports exact Pi handles, configuration, task/view types and native ToolRegistration/ToolExecutionApi/ToolExecutionResult/hooks. Use upstream defineTool, registry installation and runtime values directly. There is no parallel Boring HostOperation/RuntimeSchema/tool engine.
 
-/contracts contains only borrowed attachment and original runtime-question/delivery references. Passive attachment takes the native Harness, not a second possibly unrelated writable Registry. Host subtypes retain their native handle. Domain services keep their own signatures; no file package is required to configure an agent.
+/contracts contains only original runtime-question/delivery references. Passive attachment takes the native Harness, not a second possibly unrelated writable Registry. Host subtypes retain their native handle. Domain services keep their own signatures; no file package is required to configure an agent.
 
-`attachHarness({ harness })` preserves the exact host handle. It acquires no observers or resources, so detaching is passive and never closes the host. Use native observation APIs directly and release their subscriptions under their own owner.
 
 ## One file tool set: the guard
 
