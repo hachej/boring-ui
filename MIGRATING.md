@@ -1,5 +1,7 @@
 # Unreleased
 
+# Migrating to 0.4.40
+
 - **Native compact requests (`task-board`).** Refresh the copied block as well as package pins. Compact rows now show a short `display`/title and one localized product status, retain the original need and injected actions, prioritize current needs-you, and fold finished records. Canonical technical records are omitted unless `compactPresentation.includeTechnical` opts into a collapsed group over already-authorized data. Keep the host's native `onOpen` detail route. Operator-board presentation and server rights are unchanged.
 
 # Migrating to 0.4.39

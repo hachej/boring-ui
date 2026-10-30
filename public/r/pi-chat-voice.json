@@ -4,13 +4,13 @@
   "title": "Pi chat voice messages",
   "description": "Tap-to-record voice messages: a compatibility export of the kit's chat-react/voice recorder hook, the composer's record button and the pending voice bubble, plus useHoldToRecord. Plug it in with `voiceMessage={{ ...config, ...voiceMessagePlugin }}`; without it pi-chat has no voice button.",
   "dependencies": [
-    "@hachej/boring-ui-kit@^0.4.39",
+    "@hachej/boring-ui-kit@^0.4.40",
     "react@^19.0.0",
     "lucide-react@^1.51.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.39/r/utils.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.39/r/pi-chat.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.40/r/utils.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.40/r/pi-chat.json"
   ],
   "files": [
     {

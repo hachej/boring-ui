@@ -7,17 +7,17 @@
     "react@^19.0.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.39/r/pi-chat.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.39/r/pi-chat-markdown.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.39/r/pi-chat-slash.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.39/r/pi-chat-mentions.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.39/r/pi-chat-pickers.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.39/r/pi-chat-voice.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.39/r/pi-chat-attachments.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.39/r/pi-chat-question.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.39/r/pi-chat-approval.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.39/r/pi-chat-subagent.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.39/r/pi-artifacts.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.40/r/pi-chat.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.40/r/pi-chat-markdown.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.40/r/pi-chat-slash.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.40/r/pi-chat-mentions.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.40/r/pi-chat-pickers.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.40/r/pi-chat-voice.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.40/r/pi-chat-attachments.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.40/r/pi-chat-question.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.40/r/pi-chat-approval.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.40/r/pi-chat-subagent.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.40/r/pi-artifacts.json"
   ],
   "files": [
     {
