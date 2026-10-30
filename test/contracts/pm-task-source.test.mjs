@@ -37,6 +37,13 @@ test('the viewer\'s tasks map to TaskRecord: uuid id, D-ref number, waiting on t
   assert.deepEqual(JSON.parse(served.calls.at(-1).init.body), { text: 'Confirmer' });
 });
 
+test('a request waiting on the viewer carries its question to the detail; any other request carries none', () => {
+  const host = { id: 'x', title: 'T', state: 'waiting', waiting_on_you: true, waiting_on: { question: 'Which meal?' } };
+  assert.deepEqual(toTaskRecord(host, 'alice').questions, [{ id: 'x:waiting', text: 'Which meal?' }]);
+  assert.equal(toTaskRecord({ ...host, waiting_on_you: false }, 'alice').questions, undefined);
+  assert.equal(toTaskRecord({ ...host, waiting_on: undefined }, 'alice').questions, undefined);
+});
+
 test('confirmed_at and is_requester (decided 2026-10-29): « Envoyée » and « Retirer » read them; absent, the record is today\'s', () => {
   const host = { id: 'x', ref: 'D-5', title: 'T', state: 'open', waiting_on_you: false };
   assert.deepEqual(toTaskRecord(host, 'alice'), { id: 'x', number: 'D-5', title: 'T', requesterId: 'alice', waiting_on_you: false, state: 'open' }, 'no new field without the host\'s');

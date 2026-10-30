@@ -73,6 +73,8 @@ export function toTaskRecord(task: HostTask, viewer: string): HostTaskRecord {
   return {
     id: task.id, ...(ref ? { number: ref } : {}), title: task.title, ...(task.display ? { display: task.display } : {}), ...(task.technical === undefined ? {} : { technical: task.technical }), ...(task.status ? { status: task.status } : {}), requesterId: viewer, waiting_on_you: waiting, state,
     ...(waiting ? { waiting_on: { who: viewer, type: 'person' as const, ...(question ? { question } : {}) } } : {}),
+    // The list gives one question, not the task's questions; the detail draws this one, so a request waiting on the viewer says what it waits for.
+    ...(waiting && question ? { questions: [{ id: `${task.id}:waiting`, text: question }] } : {}),
     ...(created ? { created_at: created } : {}), ...(updated ? { updated_at: updated } : {}), ...(confirmed ? { confirmed_at: confirmed } : {}),
     ...(task.is_requester === true ? { is_requester: true as const } : {}), ...(outcome ? { outcome } : {}),
   };
