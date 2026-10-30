@@ -131,12 +131,12 @@ try {
   await ben.shot('5-ben-question');
   await ben.browser.tap(q('[data-testid=question-option]'));
   for (const side of [ana, ben]) {
-    await side.browser.until(`${side.id}: the question is answered`, `${q('[data-testid=question-card]')}?.dataset.answered === 'true'`);
+    await side.browser.until(`${side.id}: only the chosen reply remains`, `!${q('[data-testid=question-card]')} && ${rowsWith('PDF')} >= 1`);
     assert.equal(await side.browser.evaluate(`${qa('[data-testid=question-option]')}.length`), 0, 'answered: no choices left');
   }
   await ana.browser.until('the agent goes on with the answer', `${rowsWith('Parfait, j’ajoute un export PDF')} === 1 && !${q('[data-streaming="true"]')}`);
   await ben.browser.until('ben too', `${rowsWith('Parfait, j’ajoute un export PDF')} === 1 && !${q('[data-streaming="true"]')}`);
-  assert.equal(await ana.browser.evaluate(`${qa('[data-testid=question-card]')}.length`), 1, 'the question stays, once');
+  assert.equal(await ana.browser.evaluate(`${qa('[data-testid=question-card]')}.length`), 0, 'the answered prompt is not repeated');
   assert.equal(await ana.browser.evaluate(`${qa('[data-streaming]')}.length`), 0, 'no writing message left behind');
   await ana.shot('5-question-answered');
   await ben.shot('5-ben-answered');
