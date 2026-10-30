@@ -324,7 +324,7 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
     };
   }
 
-  const mutate = async (request: PublicationRequest | ResourceRenameRequest, access: ResourceAccess): Promise<PublicationResult> => {
+  const mutate = async (request: PublicationRequest | ResourceRenameRequest, access: ResourceAccess, prune = false): Promise<PublicationResult> => {
     const moving = 'from' in request ? request : undefined;
     const publication = 'changes' in request ? request : undefined;
     const digest = moving ? await renameDigest(moving) : await publicationDigest(publication!);
@@ -444,8 +444,8 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
           }
           applying = true;
           if (!together) journal.complete(operation, record, versions);
-          if (moving) await pruneEmptied(moving.from.resource.path);
-          else for (const plan of plans) if (plan.change.kind === 'delete') await pruneEmptied(plan.path);
+          if (prune && moving) await pruneEmptied(moving.from.resource.path);
+          else if (prune) for (const plan of plans) if (plan.change.kind === 'delete') await pruneEmptied(plan.path);
         } else if (moving || plans[0]!.change.kind === 'delete') {
           applying = true;
           // Like a publication, a move creates the folder it lands in: a folder renames file by file, so the first file finds none.
@@ -466,7 +466,7 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
             return refuse(result.error.message);
           }
           journal.complete(operation, record, versions);
-          await pruneEmptied(leaving);
+          if (prune) await pruneEmptied(leaving);
         } else {
           const { change, path, unchanged } = plans[0]!;
           if (change.kind === 'delete') return refuse('Invalid file replacement');
@@ -501,8 +501,8 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
   };
 
   const publish: WorkspaceResourceProvider['publication']['publish'] = async (input, context) => mutate(publicationSnapshot(input), accessSnapshot(context));
-  const rename: ResourceRenamer['rename'] = async (input, context) => mutate(renameSnapshot(input), accessSnapshot(context));
-  const remove: ResourceDeleter['delete'] = async (input, context) => mutate(deletePublication(deleteSnapshot(input)), accessSnapshot(context));
+  const rename: ResourceRenamer['rename'] = async (input, context) => { const request = renameSnapshot(input); return mutate(request, accessSnapshot(context), request.pruneEmptied === true); };
+  const remove: ResourceDeleter['delete'] = async (input, context) => { const request = deleteSnapshot(input); return mutate(deletePublication(request), accessSnapshot(context), request.pruneEmptied === true); };
 
   const lookup = async (operationId: string, context: ResourceAccess): Promise<PublicationLookupResult> => {
     const id = identifier(operationId);

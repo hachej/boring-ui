@@ -8,7 +8,7 @@
 - `workspace-embedded` `layout="embedded"`: one compact bar (History, Library, New), no sessions pane; inside a shell screen the bar uses the screen header. `registry/pi-app/workspace-bar.tsx`.
 - `workspace-placed` `PlacedAgentWorkspace`: one controller in a tab or collapsed beside the app. `registry/placed-agent/placed-agent-workspace.tsx`.
 - `workspace-library` Library: files and versions over a revision provider or a discovered endpoint. `registry/pi-app/`, `registry/file-tree/file-tree.tsx`.
-- `workspace-library-folders` the file tree renames, moves and deletes a folder through the row's menu, F2 and Delete, one file at a time; a refusal says how many files were changed, and trying again finishes. No New folder: a folder exists through its files. `packages/ui/src/file-tree.ts`, `file-tree-view.tsx`.
+- `workspace-library-folders` the file tree renames, moves and deletes a folder through the row's menu, F2 and Delete, one file at a time; a refusal says how many files were changed, and trying again finishes; a rename onto an existing folder is refused. No New folder: a folder exists through its files. `packages/ui/src/file-tree.ts`, `file-tree-view.tsx`.
 - `workspace-artifacts` artifact panel and kinds: `defaultKinds()` from `pi-app-kinds`, own kinds first. `registry/pi-app-kinds/`, `registry/pi-app/artifact-panel.tsx`.
 - `workspace-viewers` Markdown, HTML, image, PDF and code viewers loaded by kind. `registry/viewer-markdown/`, `viewer-html/`, `viewer-image/`, `viewer-pdf/`, `viewer-code/`.
 - `workspace-documents` `documents`: the Library, a file and its revisions; `DocumentSheet`. `registry/documents/`.
