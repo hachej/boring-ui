@@ -4,12 +4,12 @@
   "title": "Task board",
   "description": "Host-owned business requests: board, stacked task/file overlays and compact own-request rows. No agent or task backend required.",
   "dependencies": [
-    "@hachej/boring-ui-kit@^0.4.35",
+    "@hachej/boring-ui-kit@^0.4.36",
     "react@^19.0.0",
     "lucide-react@^1.51.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.35/r/utils.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.36/r/utils.json"
   ],
   "files": [
     {
