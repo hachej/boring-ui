@@ -4,16 +4,16 @@
   "title": "Pi agent app default kinds",
   "description": "defaultKinds({ locale, comments }): the artifact kinds the pi-app item draws with by default, in order: maquette, diagram, mock-up and records, then Markdown, HTML, SVG, CSV, image and PDF (documentKinds). Pass it as AgentWorkspace's artifactKinds (or ViewerOptions.kinds), with an app's own kinds before it. Each kind loads its viewer on first open.",
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.38/r/pi-app.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.38/r/viewer-markdown.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.38/r/viewer-html.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.38/r/viewer-image.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.38/r/viewer-pdf.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.38/r/viewer-code.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.38/r/maquette-viewer.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.38/r/diagram-viewer.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.38/r/mockup-viewer.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.38/r/record-viewer.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.39/r/pi-app.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.39/r/viewer-markdown.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.39/r/viewer-html.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.39/r/viewer-image.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.39/r/viewer-pdf.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.39/r/viewer-code.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.39/r/maquette-viewer.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.39/r/diagram-viewer.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.39/r/mockup-viewer.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.39/r/record-viewer.json"
   ],
   "files": [
     {
