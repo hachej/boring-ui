@@ -115,6 +115,26 @@ for (const body of ['empty', '{ task }']) test(`after « Retirer » (200, ${body
   assert.equal(app.finished().querySelector('[data-testid="pm-withdraw"]'), null);
 });
 
+for (const later of ['reopened', 'shipped']) test(`after « Retirer », the host's newer word wins (${later})`, async t => {
+  const tasks = structuredClone(OPEN);
+  const app = await mount(t, async (url, init) => {
+    if (init?.method !== 'POST') return Response.json({ tasks, cursor: '1' });
+    Object.assign(tasks[0], { state: 'closed' });
+    return new Response(null, { status: 200 });
+  });
+  await app.click(`[data-task-card="${id(1)}"] [data-testid="pm-withdraw"]`);
+  await app.click(`[data-task-card="${id(1)}"] [data-testid="pm-withdraw-confirm"]`);
+  await app.wait();
+  assert.deepEqual(app.openCards(), [id(2)]);
+  Object.assign(tasks[0], later === 'reopened' ? { state: 'open', updated: '2099-01-01T09:00:00Z' } : { state: 'done', closed_reason: 'shipped' });
+  await app.click('[data-testid="pm-requests-back"]'); await app.click('[data-testid="pm-requests"]'); await app.wait();
+  if (later === 'reopened') assert.ok(app.openCards().includes(id(1)), 'a request reopened after the withdraw is open again');
+  else {
+    await app.click('[data-testid="pm-finished-toggle"]');
+    assert.deepEqual(app.finishedCards().find(card => card.id === id(1))?.label, 'En ligne', 'shipped after the withdraw is « En ligne »');
+  }
+});
+
 test('the label: closed_reason first; done alone is « En ligne », any other closed « Fermée »; open has none', async () => {
   const { toTaskRecord } = await import(pathToFileURL(`${out}/panel.mjs`).href);
   const outcome = fields => toTaskRecord({ id: 'x', title: 'T', ...fields }, 'alice').outcome;

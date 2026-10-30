@@ -183,7 +183,9 @@ export function useHostTasks(url: string | undefined, viewer: string | undefined
   const [confirmed, setConfirmed] = useState<ReadonlyMap<string, string>>(() => new Map());
   const settle = useCallback((task: HostTaskRecord): HostTaskRecord => {
     const gone = withdrawn.get(task.id);
-    if (gone !== undefined) {
+    // The host has the last word once it says something newer: shipped, or reopened after the withdraw.
+    const reopened = task.outcome === undefined && Date.parse(task.updated_at ?? '') > Date.parse(gone ?? '');
+    if (gone !== undefined && task.outcome !== 'live' && !reopened) {
       const { waiting_on: _, is_requester: __, ...rest } = task;
       return { ...rest, state: 'closed', waiting_on_you: false, outcome: 'withdrawn', updated_at: task.state === 'closed' ? task.updated_at ?? gone : gone };
     }
