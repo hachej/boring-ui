@@ -9,7 +9,7 @@ export async function openFileTreeHost({ filename }) {
   const publish = (scope, operationId, changes) => storage.workspace(scope).publication.publish({ operationId, atomicity: 'all-or-nothing', changes }, access(scope));
   try {
     for (const scope of ['first', 'second']) {
-      for (const [path, text] of Object.entries({ 'docs/notes.md': `# ${scope} workspace\n`, 'first.html': '<p>First file</p>', 'second.html': '<p>Second file</p>', '.gitignore': '*.log\n', 'debug.log': 'fictional ignored log', 'node_modules/hidden.txt': 'fictional dependency', 'dist/hidden.txt': 'fictional build output' })) {
+      for (const [path, text] of Object.entries({ 'archive/one.txt': 'fictional one', 'archive/two.txt': 'fictional two', 'docs/notes.md': `# ${scope} workspace\n`, 'first.html': '<p>First file</p>', 'second.html': '<p>Second file</p>', '.gitignore': '*.log\n', 'debug.log': 'fictional ignored log', 'node_modules/hidden.txt': 'fictional dependency', 'dist/hidden.txt': 'fictional build output' })) {
         const result = await publish(scope, `seed-${scope}-${path}`, [{ kind: 'create', target: target(path), expected: { kind: 'absent' }, bytes: new TextEncoder().encode(text), mediaType: path.endsWith('.html') ? 'text/html' : path.endsWith('.md') ? 'text/markdown' : 'text/plain' }]);
         if (result.kind !== 'committed') throw new Error(`Fixture seed failed: ${result.kind}`);
       }

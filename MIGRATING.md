@@ -1,5 +1,7 @@
 # Unreleased
 
+- **Emptied folders on disk (`@hachej/boring-files`; D-825).** With `pruneEmptied: true`, a folder a rename or delete leaves empty now also disappears on disk hosts, where it used to stay listed. The 0.4.36 limit no longer stands. It is renamed aside to a provider-temporary name, deleted only if still empty, and put back if a file landed. Nothing to do.
+
 - **Native compact requests (`task-board`).** Refresh the copied block as well as package pins. Compact rows now show a short `display`/title and one localized product status, retain the original need and injected actions, prioritize current needs-you, and fold finished records. Canonical technical records are omitted unless `compactPresentation.includeTechnical` opts into a collapsed group over already-authorized data. Keep the host's native `onOpen` detail route. Operator-board presentation and server rights are unchanged.
 
 # Migrating to 0.4.39
