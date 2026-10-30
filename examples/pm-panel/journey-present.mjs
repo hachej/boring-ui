@@ -32,6 +32,8 @@ try {
     check(automatic === !item.sheet, `${item.name}: auto-open must use PM window width, not ${item.viewport}px viewport (actual ${automatic})`);
     if (!automatic) await browser.click(q('[data-testid=artifact-card][data-state=ready]'));
     await browser.until('regular artifact viewer', `!!${q('[data-testid=workspace-panel]')} && ${q('[data-testid=artifact-body]')}?.dataset.state === 'open'`, 20000);
+    await browser.until('the mock-up runs in its sandboxed frame, with its Close or Back', `!!${q('[data-testid=workspace-panel] iframe[sandbox]')} && !!${q('[data-testid=workspace-panel] [data-testid=artifact-close]')} && !${q('[data-testid=workspace-panel] [data-slot=spinner]')}`, 15000);
+    await pause(400);
     const geometry = await browser.evaluate(`(() => {
       const workspace = ${q('[data-boring=artifact-workspace]')}, panel = ${q('[data-testid=workspace-panel]')}, chat = ${q('[data-testid=workspace-chat]')};
       const rect = node => { const r = node.getBoundingClientRect(); return { x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom }; };
