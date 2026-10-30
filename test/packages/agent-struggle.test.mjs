@@ -61,10 +61,14 @@ test('report_bug by default sends an enum and a real tool name, never text the m
   assert.doesNotMatch(JSON.stringify(events), new RegExp(SECRET));
 
   events.length = 0;
-  const made = await open(t, [call('report_bug', { category: 'Ana has diabetes', tool: 'Ana_diabetes' })]);
+  const made = await open(t, [call('report_bug', { category: 'impossible', tool: 'Ana_diabetes' })]);
   await made.say('Save it');
   assert.deepEqual(kinds(events), ['report_bug']);
-  assert.ok(!('tool' in events[0]) && !('category' in events[0]), 'a tool the agent does not have and an unknown category do not leave');
+  assert.ok(!('tool' in events[0]), 'a tool the agent does not have does not leave');
+  events.length = 0;
+  const refused = await open(t, [call('report_bug', { category: 'Ana has diabetes' })]);
+  await refused.say('Save it');
+  assert.deepEqual(kinds(events), [], 'Pi refuses a category outside the enum before the tool runs');
 });
 
 test('agentText opts in to the agent\'s own text, scrubbed', async t => {
