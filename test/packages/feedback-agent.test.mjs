@@ -257,12 +257,12 @@ test('an agent without the extension has a byte-identical tool list and prompt',
   const skill = parseSkill('---\nname: fictional-release\ndescription: "Prepare a fictional release"\n---\nList the fictional changes.\n');
   async function firstRequest(withFeedback) {
     const fake = createFakeChatModel();
-    const builder = defineAgent({ id: 'builder', model: fake.model, instructions: 'You build the fictional Northwind console.', tools: [echo], skills: [skill] });
+    const builder = defineAgent({ id: 'builder', struggle: false, model: fake.model, instructions: 'You build the fictional Northwind console.', tools: [echo], skills: [skill] });
     const registry = createRegistry();
     builder.install(registry);
     if (withFeedback) {
       const feedback = createFeedbackCapability({ store, resolutions: { 'app.element@1': appElementResolution }, resolveAccess: () => agent, operationNamespace: NAMESPACE });
-      defineAgent({ id: 'reviewer', model: fake.model, extensions: [feedback.extension] }).install(registry);
+      defineAgent({ id: 'reviewer', struggle: false, model: fake.model, extensions: [feedback.extension] }).install(registry);
     }
     const harness = await Harness.open(new MemoryStorage(), { registry, models: fake.models }, context);
     try {
@@ -282,7 +282,7 @@ test('an agent without the extension has a byte-identical tool list and prompt',
   // The same capability selected on an agent does add the section and the tool.
   const fake = createFakeChatModel();
   const feedback = createFeedbackCapability({ store, resolutions: { 'app.element@1': appElementResolution }, resolveAccess: () => agent, operationNamespace: NAMESPACE });
-  const reviewer = defineAgent({ id: 'reviewer', model: fake.model, extensions: [feedback.extension] });
+  const reviewer = defineAgent({ id: 'reviewer', struggle: false, model: fake.model, extensions: [feedback.extension] });
   const registry = createRegistry();
   reviewer.install(registry);
   const harness = await Harness.open(new MemoryStorage(), { registry, models: fake.models }, context);

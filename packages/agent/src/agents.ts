@@ -8,6 +8,8 @@ import type { SelfEvolution, SelfEvolutionReport } from './self-evolving.js';
 import { NAME, isSkillArray, liveSkills, staticSkills, validSkill } from './skills.js';
 import { createDelegateTool } from './delegate.js';
 import type { DelegateOptions } from './delegate.js';
+import { REPORT_BUG_TOOL, createStruggleExtension } from './struggle.js';
+import type { StruggleOptions } from './struggle.js';
 import type { Skill, SkillSource } from './skills.js';
 
 export type { SelfEvolutionError, SelfEvolutionReport } from './self-evolving.js';
@@ -46,6 +48,11 @@ export interface AgentSpec {
    * (docs/architecture/SELF-EVOLUTION.md). Off by default: without it nothing reads `.agent/` (SELF-1).
    */
   readonly selfEvolving?: boolean;
+  /**
+   * The agent reports its own failures (`@hachej/boring-agent/struggle`): the `report_bug` tool and content-free automatic events, on by
+   * default. `{ sink, sinkTimeoutMs, agentText }` tune it (default sink: `setStruggleSink`, else one log line); `false` turns it off.
+   */
+  readonly struggle?: false | Pick<StruggleOptions, 'sink' | 'sinkTimeoutMs' | 'agentText'>;
   /**
    * The workspace instance this agent works in; names the per-workspace extension `self-evolving:<workspace>`. With `selfEvolving` and
    * no `workspace`, the agent works in a workspace per conversation: `inWorkspace(name)` gives the agent of one workspace.
@@ -100,7 +107,11 @@ export function defineAgent(spec: AgentSpec): DefinedAgent {
     ? (spec.skills.length ? [staticSkills(spec.skills, { name: skillsName }).extension] : [])
     : [liveSkills(spec.skills, { name: skillsName }).extension];
   const listed = (skills: readonly Skill[]) => Object.freeze(skills.map(skill => Object.freeze({ name: skill.name, description: skill.description.trim() })));
-  const reserved = [...tools, ...(spec.extensions ?? []).flatMap(extension => extension.tools ?? [])].map(tool => tool.name);
+  const hostTools = [...tools, ...(spec.extensions ?? []).flatMap(extension => extension.tools ?? [])].map(tool => tool.name);
+  const reports = spec.struggle !== false;
+  // A self-evolving agent may already keep its own `.agent/tools/report_bug.json`: it gets the automatic events and no tool of ours.
+  if (reports) own.push(createStruggleExtension({ ...(spec.struggle || {}), agent: spec.id, tool: !spec.selfEvolving && !hostTools.includes(REPORT_BUG_TOOL) }));
+  const reserved = hostTools;
 
   /** The agent as one native configuration: its own extensions, the host's, and with `evolution` the per-workspace one last. */
   function assemble(selected: readonly Extension[], evolution: SelfEvolution | undefined, inWorkspace?: (name: string) => DefinedAgent): DefinedAgent {

@@ -214,8 +214,8 @@ test('defineAgent maps data to native extensions, agent configuration and on-dem
   assert.throws(() => parseSkill('no front matter'), TypeError);
   assert.throws(() => staticSkills([skill, skill], { name: 'x' }), /Duplicate skill/);
   assert.throws(() => defineAgent({ id: 'Bad Id', model: fake.model }), /Invalid agent id/);
-  const writer = defineAgent({ id: 'writer', model: fake.model, instructions: 'You write fictional letters.', tools: [echo], skills: [skill] });
-  const reviewer = defineAgent({ id: 'reviewer', model: fake.model, instructions: 'You review only.' });
+  const writer = defineAgent({ id: 'writer', struggle: false, model: fake.model, instructions: 'You write fictional letters.', tools: [echo], skills: [skill] });
+  const reviewer = defineAgent({ id: 'reviewer', struggle: false, model: fake.model, instructions: 'You review only.' });
   assert.deepEqual(writer.extensions.map(extension => extension.name), ['agent.writer', 'agent.writer.skills']);
   assert.equal(reviewer.extensions.length, 0);
   const registry = createRegistry();

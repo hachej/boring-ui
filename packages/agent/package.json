@@ -69,6 +69,10 @@
       "types": "./dist/file-types.d.ts",
       "import": "./dist/file-types.js"
     },
+    "./struggle": {
+      "types": "./dist/struggle.d.ts",
+      "import": "./dist/struggle.js"
+    },
     "./ask-user": {
       "types": "./dist/ask-user.d.ts",
       "import": "./dist/ask-user.js"

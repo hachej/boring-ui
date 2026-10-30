@@ -8,6 +8,7 @@ The npm side of the kit: Pi-based agent definitions and handlers, the workspace 
 - `pkg-agent-actions` optional decision, structured extraction, native tool and result-derived reply, with native unavailable-model outcomes and deferred fallback polling/cancellation. `packages/agent/src/actions.ts`.
 
 - `pkg-agent-define` `defineAgent`, tools, extensions, delegates. `packages/agent/src/agents.ts`.
+- `pkg-agent-struggle` every `defineAgent` agent reports its own failures by default (S6): the `report_bug` tool and content-free `agent.struggle` events to the host's sink. `packages/agent/src/struggle.ts`.
 - `pkg-agent-skills-unlisted` `skillInFolder` is public; `loadUnlisted(conversationId, name)` answers `load_skill` for a skill kept out of the listing. `packages/agent/src/skills.ts`.
 - `pkg-agent-transport` chat transport and conversations handlers. `packages/agent/src/chat-transport.ts`, `conversations.ts`.
 - `pkg-agent-capabilities` file guard, approvals, `ask_user`, `present`, schedules, sandbox. `packages/agent/src/file-guard.ts`, `approval.ts`, `ask-user.ts`, `artifacts.ts`, `schedule.ts`, `sandbox.ts`.
@@ -39,6 +40,7 @@ Preconditions: `npm ci`; run from the repository root.
 
 - **All.** `npm run check` then `npm test` then `npm run verify`.
 - **Lazy action context.** `pkg-agent-action-context`: `node --test test/packages/agent-actions.test.mjs` exercises skipped preparation, awaited fallback, and fail-closed preparation through the native harness.
+- **Agent struggle.** `pkg-agent-struggle`: `node --test test/packages/agent-struggle.test.mjs`; a scripted model calls a failing tool with no app code, the sink gets one fingerprint and no content.
 - **Delegate metering.** `pkg-agent-delegate-meter`: `node --test test/packages/agent-delegate-limits.test.mjs`.
 - **Unlisted skills.** `pkg-agent-skills-unlisted`: `node --test test/packages/agent-skills-unlisted.test.mjs`.
 - **Actions.** `pkg-agent-actions`: `node --test test/packages/agent-actions.test.mjs`; `npm run test:definitions-consumer -- --actions` repeats public behavior and strict types from packed output.
