@@ -67,8 +67,11 @@ test('the list answers 403 once, then 200 on the next turn: the card appears, th
   await app.wait();
   assert.equal(calls.length, 1, 'read once');
   const reply = () => app.container.querySelector('[data-testid="pm-reply"]');
-  assert.match(reply().textContent, /DEMANDE/, 'the card is drawn from the tasks_create result after a 403');
+  assert.ok(app.card(), 'the card is drawn from the tasks_create result after a 403');
   assert.match(reply().textContent, /Protéines avant les calories/);
+  assert.doesNotMatch(reply().textContent, /DEMANDE/);
+  assert.equal(app.card().querySelectorAll('[data-slot="badge"]').length, 1);
+  assert.equal(app.card().querySelector('[data-task-status]')?.textContent, 'En préparation');
   // The next PM turn: the source is read again, and the list's record wins (waiting on the viewer: « À confirmer », Confirmer).
   await app.show([...turn, user(5, 'Merci'), { id: 6, kind: 'message', model: [assistant([{ type: 'text', text: 'Avec plaisir.' }])] }]);
   await app.wait();
@@ -81,14 +84,17 @@ test('the list answers 403 once, then 200 on the next turn: the card appears, th
   assert.match(app.container.querySelector('[data-testid="pm-task-board-seam"]')?.textContent ?? '', /Plan du jour/, '« Mes demandes » lists the host\'s records');
 });
 
-test('the list never answers: the card still appears from the tool result, « DEMANDE », its title, no pill', async t => {
+test('the list never answers: the native card keeps its title and one preparation chip, without unverified viewer actions', async t => {
   const app = await mount(t, (url, init) => new Promise((_, reject) => init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))));
   await app.show(turn);
   await app.wait();
   const reply = app.container.querySelector('[data-testid="pm-reply"]');
-  assert.match(reply.textContent, /demande/i, 'the request card');
+  assert.ok(app.card(), 'the request card remains present');
   assert.match(reply.textContent, /Protéines avant les calories/);
-  assert.doesNotMatch(reply.textContent, /À confirmer|Envoyée/, 'no pill without waiting_on_you');
+  assert.doesNotMatch(reply.textContent, /DEMANDE/);
+  assert.equal(app.card().querySelectorAll('[data-slot="badge"]').length, 1);
+  assert.equal(app.card().querySelector('[data-task-status]')?.textContent, 'En préparation');
+  assert.doesNotMatch(reply.textContent, /À confirmer|Envoyée/, 'no viewer-action claim without verified waiting_on_you');
   assert.equal(reply.querySelector('[data-testid="pm-request-confirm"]'), null);
 });
 

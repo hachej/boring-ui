@@ -3192,6 +3192,11 @@
       ],
       "files": [
         {
+          "path": "registry/task-board/compact-presentation.ts",
+          "type": "registry:lib",
+          "target": "components/task-board/compact-presentation.ts"
+        },
+        {
           "path": "registry/task-board/task-board.tsx",
           "type": "registry:component",
           "target": "components/task-board/task-board.tsx"
