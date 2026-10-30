@@ -8,9 +8,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Item } from '@/components/ui/item';
 import { TaskAttention, taskTokens } from './task-request-card';
+import type { TaskLocale } from './task-request-card';
+import { compactLabels, compactTaskStatus, compactTaskTitle, taskWaitingText } from './compact-presentation';
 
 export interface TaskDetailProps {
   readonly task: TaskRecord;
+  readonly locale?: TaskLocale | undefined;
   /** Host content placed after the title card (for example a mount report or host-authorized request actions). */
   readonly actions?: ReactNode;
   /** The host reauthorizes and resolves the original question. Rendering never supplies approval. */
@@ -25,6 +28,10 @@ export interface TaskDetailProps {
   /** @deprecated Ignored; kept for source compatibility. */
   readonly labels?: unknown;
 }
+const detailWords = {
+  en: { question: 'QUESTION FOR YOU', waiting: 'WAITING ON YOU', elsewhere: 'Reply in the conversation.', request: 'THE REQUEST', yourAnswer: 'Your answer', send: 'Send', other: 'Other…', discuss: 'Discuss in chat', ask: 'Ask in the conversation' },
+  fr: { question: 'QUESTION POUR VOUS', waiting: 'ATTEND VOTRE AVIS', elsewhere: 'Répondez dans la conversation.', request: 'LA DEMANDE', yourAnswer: 'Votre réponse', send: 'Envoyer', other: 'Autre…', discuss: 'En parler dans la conversation', ask: 'Demander dans la conversation' },
+} as const;
 const preview = (value: string) => value.length > 160 ? `${value.slice(0, 160)}…` : value;
 const sectionLabel = 'text-[11px] font-semibold tracking-[0.06em] text-muted-foreground';
 const kinds = { markdown: ['Markdown', FileIcon], mockup: ['Mockup', AppWindowIcon], capture: ['Capture', ImageIcon] } as const;
@@ -44,13 +51,16 @@ function AnsweredQuestion({ question }: { readonly question: TaskQuestion }) {
   </li>;
 }
 
-function OpenQuestion({ task, question, onAnswer, onOther, onDiscussQuestion }: Pick<TaskDetailProps, 'task' | 'onAnswer' | 'onOther' | 'onDiscussQuestion'> & { readonly question: TaskQuestion }) {
-  const [other, setOther] = useState<string | null>(null);
-  const send = () => { const text = other?.trim(); if (text) { onOther?.(task, question, text); setOther(null); } };
+function OpenQuestion({ task, question, locale = 'en', onAnswer, onOther, onDiscussQuestion }: Pick<TaskDetailProps, 'task' | 'locale' | 'onAnswer' | 'onOther' | 'onDiscussQuestion'> & { readonly question: TaskQuestion }) {
+  // Without options typing is the only way to answer, so the field is simply there.
+  const typed = !question.options?.length;
+  const [other, setOther] = useState<string | null>(typed && onOther ? '' : null);
+  const words = detailWords[locale];
+  const send = () => { const text = other?.trim(); if (text) { onOther?.(task, question, text); setOther(typed ? '' : null); } };
   const asked = [question.askedBy, question.askedAt && clock(question.askedAt)].filter(Boolean).join(' · ');
   return <TaskAttention active>
     <Item variant="outline" className="flex-col items-stretch gap-2" data-task-question={question.id}>
-      <div className="flex items-baseline justify-between gap-2"><span className={sectionLabel}>QUESTION FOR YOU</span>{asked && <span className="text-[11px] text-muted-foreground">{asked}</span>}</div>
+      <div className="flex items-baseline justify-between gap-2"><span className={sectionLabel}>{words.question}</span>{asked && <span className="text-[11px] text-muted-foreground">{asked}</span>}</div>
       <p className="text-sm">{question.text}</p>
       <div className={`flex items-center gap-2 ${taskTokens.control}`}>
         {question.options?.map((option, index) => {
@@ -58,31 +68,45 @@ function OpenQuestion({ task, question, onAnswer, onOther, onDiscussQuestion }: 
           const label = typeof option === 'string' ? option : option.label;
           return <Button key={index} variant={index === 0 ? 'default' : 'outline'} disabled={!onAnswer} onClick={() => onAnswer?.(task, question, value)}>{label}</Button>;
         })}
-        {onOther && <Button variant="outline" data-task-other={question.id} aria-expanded={other !== null} onClick={() => setOther(value => value === null ? '' : null)}>Other…</Button>}
-        {onDiscussQuestion && <Button variant="link" className="h-auto min-w-0 shrink text-center leading-tight whitespace-normal underline" data-task-discuss={question.id} onClick={() => onDiscussQuestion(task, question)}>Discuss in chat</Button>}
+        {onOther && !typed && <Button variant="outline" data-task-other={question.id} aria-expanded={other !== null} onClick={() => setOther(value => value === null ? '' : null)}>{words.other}</Button>}
+        {onDiscussQuestion && <Button variant="link" className="h-auto min-w-0 shrink text-center leading-tight whitespace-normal underline" data-task-discuss={question.id} onClick={() => onDiscussQuestion(task, question)}>{words.discuss}</Button>}
       </div>
       {other !== null && <form className={`flex gap-2 ${taskTokens.control}`} data-task-other-form={question.id} onSubmit={event => { event.preventDefault(); send(); }}>
-        <Input autoFocus aria-label="Your answer" maxLength={4096} value={other} onChange={event => setOther(event.target.value)} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); setOther(null); } }} />
-        <Button type="submit" disabled={!other.trim()}>Send</Button>
+        <Input autoFocus={!typed} aria-label={words.yourAnswer} maxLength={4096} value={other} onChange={event => setOther(event.target.value)} onKeyDown={event => { if (event.key === 'Escape' && !typed) { event.preventDefault(); setOther(null); } }} />
+        <Button type="submit" disabled={!other.trim()}>{words.send}</Button>
       </form>}
     </Item>
   </TaskAttention>;
 }
 
 /** Task detail (spec 3 §4), in order: title, the open question for the viewer, Answered, Files, « Ask in the conversation ». */
-export function TaskDetail({ task, actions, onAnswer, onOther, onDiscussQuestion, onOpenFile, onAsk }: TaskDetailProps) {
+export function TaskDetail({ task, locale = 'en', actions, onAnswer, onOther, onDiscussQuestion, onOpenFile, onAsk }: TaskDetailProps) {
   const [showAll, setShowAll] = useState(false);
   const open = task.waiting_on_you === true ? task.questions?.find(question => question.answer === undefined) : undefined;
+  const words = detailWords[locale];
+  const status = compactTaskStatus(task);
+  // Nothing openable may say it needs someone without saying what: the projected reason shows when there is no full question.
+  const reason = !open && (status === 'needs-you' || status === 'blocked') ? taskWaitingText(task) : undefined;
   const answered = task.questions?.filter(question => question.answer !== undefined).toReversed().sort((a, b) => (Date.parse(b.answeredAt ?? '') || 0) - (Date.parse(a.answeredAt ?? '') || 0)) ?? [];
   const meta = [task.screen && `Screen: ${task.screen}`, task.requester && `asked by ${task.requester}`, task.refiner && `refined by ${task.refiner}`].filter(Boolean).join(' · ');
   const folder = task.folder?.replace(/\/?$/, '/');
   return <div className="flex min-w-0 flex-col gap-2.5" data-task-detail={task.id}>
     <div className="rounded-[var(--radius-lg)] bg-card"><Item variant="outline" className="flex-col items-stretch gap-1" data-task-title-card="">
-      <h2 className="text-base font-semibold break-words">{task.title}</h2>
+      <h2 className="text-base font-semibold break-words">{compactTaskTitle(task)}</h2>
+      {compactTaskTitle(task) !== task.title.trim() && <p className="text-[13px] break-words text-muted-foreground">{task.title}</p>}
       {meta && <p className="text-xs text-muted-foreground">{meta}</p>}
     </Item></div>
     {actions}
-    {open && <div className="rounded-[var(--radius-lg)] bg-card"><OpenQuestion key={open.id} task={task} question={open} onAnswer={onAnswer} onOther={onOther} onDiscussQuestion={onDiscussQuestion} /></div>}
+    {open && <div className="rounded-[var(--radius-lg)] bg-card"><OpenQuestion key={open.id} task={task} question={open} locale={locale} onAnswer={onAnswer} onOther={onOther} onDiscussQuestion={onDiscussQuestion} /></div>}
+    {(reason || status === 'needs-you' && !open) && <div className="rounded-[var(--radius-lg)] bg-card" data-task-reason=""><TaskAttention active={status === 'needs-you'}><Item variant="outline" className="flex-col items-stretch gap-1">
+      <span className={sectionLabel}>{status === 'needs-you' ? words.waiting : compactLabels[locale].blocked}</span>
+      {reason && <p className="text-sm break-words">{reason}</p>}
+      {status === 'needs-you' && <p className="text-[13px] text-muted-foreground">{words.elsewhere}</p>}
+    </Item></TaskAttention></div>}
+    {task.spec && task.spec.trim() !== task.title.trim() && <section aria-label={words.request} className="rounded-[var(--radius-lg)] bg-card" data-task-spec=""><Item variant="outline" className="flex-col items-stretch gap-1">
+      <h3 className={sectionLabel}>{words.request}</h3>
+      <p className="text-sm break-words whitespace-pre-wrap">{task.spec}</p>
+    </Item></section>}
     {!!answered.length && <section aria-label="Answered questions" className="rounded-[var(--radius-lg)] bg-card"><Item variant="outline" className="flex-col items-stretch gap-0">
       <div className="flex items-baseline justify-between gap-2 pl-2.5"><h3 className={sectionLabel}>ANSWERED · {answered.length}</h3>
         {answered.length > 3 && <Button variant="link" size="xs" className="underline" data-task-show-answers aria-expanded={showAll} onClick={() => setShowAll(value => !value)}>{showAll ? 'Show latest' : 'Show all'}</Button>}</div>
@@ -97,6 +121,6 @@ export function TaskDetail({ task, actions, onAnswer, onOther, onDiscussQuestion
         return onOpenFile ? <Button key={file.path} variant="ghost" className="w-full justify-start" data-task-file={file.path} onClick={() => onOpenFile(task, file)}>{content}</Button> : <p key={file.path} className="flex items-center gap-2">{content}</p>;
       })}
     </Item></section>}
-    {onAsk && <Button variant="link" className="self-start underline" data-task-ask={task.id} onClick={() => onAsk(task)}>Ask in the conversation</Button>}
+    {onAsk && <Button variant="link" className="self-start underline" data-task-ask={task.id} onClick={() => onAsk(task)}>{words.ask}</Button>}
   </div>;
 }

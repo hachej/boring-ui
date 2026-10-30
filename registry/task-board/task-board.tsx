@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { MouseEvent, ReactNode } from 'react';
-import { selectTasks, taskFromUrl, taskReference, taskUrl, TASK_STATES } from '@hachej/boring-ui-kit/task-board';
-import type { TaskFile, TaskFilter, TaskRecord, TaskState } from '@hachej/boring-ui-kit/task-board';
+import { selectTasks, taskFromUrl, taskReference, taskUrl } from '@hachej/boring-ui-kit/task-board';
+import type { TaskFile, TaskFilter, TaskRecord } from '@hachej/boring-ui-kit/task-board';
 import { ChevronLeftIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -11,11 +11,12 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '../utils/utils';
-import { TaskRequestCard, TaskStatusPill, taskMeta, taskStateLabels, taskTokens } from './task-request-card';
+import { TaskRequestCard, TaskStatusPill, taskMeta, taskTokens } from './task-request-card';
 import type { TaskLocale, TaskViewerAction } from './task-request-card';
 import { TaskDetail } from './task-detail';
 import type { TaskDetailProps } from './task-detail';
-import { compactLabels, compactTaskStatus } from './compact-presentation';
+import { columnLabels, compactLabels, compactTaskStatus, TASK_COLUMNS, taskColumn } from './compact-presentation';
+import type { TaskColumn } from './compact-presentation';
 
 export { TaskRequestCard, TaskRequestCard as TaskCard, TaskStatusPill, TaskStatusChip, TaskAttention, taskMeta, taskTokens } from './task-request-card';
 export { TaskDetail } from './task-detail';
@@ -30,8 +31,7 @@ const subscribe = (changed: () => void) => {
 };
 const readSelection = () => taskFromUrl(window.location.href);
 const serverSelection = () => null;
-const BOARD_STATES = TASK_STATES.slice(0, 3);
-type TaskList = 'open' | 'done' | 'closed';
+const FOLDED = ['finished', 'technical'] as const;
 
 export interface TaskFileViewApi {
   readonly fullscreen: boolean;
@@ -52,9 +52,9 @@ export interface TaskBoardProps {
   /** Compact-only presentation, never server authorization. Supply only records the viewer may already read. */
   readonly compactPresentation?: { readonly includeTechnical?: boolean };
   readonly title?: string;
-  /** Column names, shown uppercase. */
-  readonly labels?: Readonly<Record<TaskState, string>>;
-  /** The tasks bar (« 5 open · Done 12 · Closed 1 », Mine/All). Hosts that draw it in their own header pass false. */
+  /** @deprecated Ignored: columns follow who acts next and `locale`. */
+  readonly labels?: unknown;
+  /** The tasks bar (host content, app filter, Mine/All). Hosts that draw it in their own header pass false. */
   readonly bar?: boolean;
   /** Host content at the start of the tasks bar, e.g. the collapsed Studio header's app name and « Show the app ». */
   readonly barStart?: ReactNode;
@@ -85,14 +85,16 @@ export interface TaskBoardProps {
 }
 
 /**
- * The tasks panel (spec 3 §3–§5): tasks bar, WAITING · WORKING · OPEN, and panel-scoped overlays. The task detail opens 400px wide
- * from the right over the board, which keeps its columns; a file opens 760px wide over the detail. `variant="compact"` stacks C7 cards.
+ * The one task board: columns by who acts next (needs you, blocked, in progress, recently live), finished and technical folded. The
+ * panel's own width decides the layout, so a narrow pane or phone gets the same sections stacked. The detail opens 400px wide over the
+ * board, whole-pane when narrower; a file opens 760px wide over the detail. `variant="compact"` stacks C7 cards.
  */
-export function TaskBoard({ tasks, filter, onFilterChange, currentUser, limit, variant = 'board', compactPresentation, title = 'Tasks', labels = taskStateLabels, bar = true, barStart, locale = 'en', viewerAction,
+export function TaskBoard({ tasks, filter, onFilterChange, currentUser, limit, variant = 'board', compactPresentation, title = 'Tasks', bar = true, barStart, locale = 'en', viewerAction,
   selectedTask, onSelectedTaskChange, onOpen, actions, cardActions, onAnswer, onOther, onDiscussQuestion, onAsk, onOpenFile, onShowFile, renderFile, overlayClassName, className }: TaskBoardProps) {
   const urlSelection = useSyncExternalStore(subscribe, readSelection, serverSelection);
   const [ownFilter, setOwnFilter] = useState<TaskFilter>(currentUser === undefined ? 'all' : 'mine');
-  const [list, setList] = useState<TaskList>('open');
+  const [unfolded, setUnfolded] = useState<ReadonlySet<TaskColumn>>(() => new Set());
+  const [app, setApp] = useState<string | null>(null);
   const shownFilter = filter ?? ownFilter;
   const selected = selectedTask === undefined ? onOpen ? null : urlSelection : selectedTask;
   const detail = selected === null ? undefined : tasks.find(task => task.id === selected || taskReference(task) === selected);
@@ -106,19 +108,20 @@ export function TaskBoard({ tasks, filter, onFilterChange, currentUser, limit, v
   const openFile = (task: TaskRecord, file: TaskFile) => { setFileSelection({ taskId: task.id, path: file.path }); onOpenFile?.(task, file); };
   const root = useRef<HTMLElement>(null);
   const back = useRef<HTMLButtonElement>(null);
-  const previous = useRef<{ readonly id: string; readonly state: TaskState | undefined } | null>(null);
+  const previous = useRef<string | null>(null);
   const pendingFocus = useRef<string | null>(null);
   const cardLink = (id: string) => [...root.current?.querySelectorAll<HTMLAnchorElement>('[data-task-open]') ?? []].find(candidate => candidate.dataset['taskOpen'] === id);
+  const unfold = (column: TaskColumn, open: boolean) => setUnfolded(current => { const next = new Set(current); if (open) next.add(column); else next.delete(column); return next; });
   useEffect(() => {
     if (selected !== null) back.current?.focus();
     else if (previous.current !== null) {
-      const { id, state } = previous.current, link = cardLink(id);
+      const id = previous.current, link = cardLink(id), record = tasks.find(task => task.id === id);
       if (link) link.focus();
-      else if (state === 'done' || state === 'closed') { pendingFocus.current = id; setList(state); }
+      else if (record) { pendingFocus.current = id; unfold(taskColumn(record), true); }
     }
-    previous.current = selected === null ? null : { id: detail?.id ?? selected, state: detail?.state };
-  }, [selected, detail?.id, detail?.state]);
-  useEffect(() => { if (pendingFocus.current !== null) { cardLink(pendingFocus.current)?.focus(); pendingFocus.current = null; } }, [list]);
+    previous.current = selected === null ? null : detail?.id ?? selected;
+  }, [selected, detail?.id]);
+  useEffect(() => { if (pendingFocus.current !== null) { cardLink(pendingFocus.current)?.focus(); pendingFocus.current = null; } }, [unfolded]);
   const select = (id: string | null) => {
     closeFile();
     if (selectedTask === undefined) {
@@ -131,10 +134,11 @@ export function TaskBoard({ tasks, filter, onFilterChange, currentUser, limit, v
   const href = (task: TaskRecord) => typeof window === 'undefined' ? `?task=${encodeURIComponent(task.id)}` : taskUrl(window.location.href, task.id);
   const card = (task: TaskRecord) => <TaskRequestCard key={task.id} task={task} variant={variant === 'compact' ? 'compact' : 'card'} selected={task.id === detail?.id} href={href(task)} onOpen={open}
     locale={locale} viewerAction={viewerAction} actions={variant === 'compact' ? cardActions?.(task) : undefined} />;
-  const of = (state: TaskState) => shown.filter(task => task.state === state);
-  const empty = <Empty><EmptyHeader><EmptyTitle>No requests</EmptyTitle><EmptyDescription>No tasks match this view.</EmptyDescription></EmptyHeader></Empty>;
-  const switcher = (target: TaskList, text: string) => list === target ? <span data-task-list-link={target} aria-current="page">{text}</span>
-    : <a href="#" data-task-list-link={target} className="text-foreground underline underline-offset-2" onClick={(event: MouseEvent) => { event.preventDefault(); setList(target); }}>{text}</a>;
+  const apps = [...new Set(shown.flatMap(task => task.app ? [task.app] : []))].sort();
+  const listed = app === null ? shown : shown.filter(task => task.app === app);
+  const words = columnLabels[locale];
+  const of = (column: TaskColumn) => listed.filter(task => taskColumn(task) === column).sort((a, b) => (Date.parse(b.updated_at ?? '') || 0) - (Date.parse(a.updated_at ?? '') || 0));
+  const appChip = (value: string | null, text: string) => <Badge key={text} data-task-app-filter={text} variant={app === value ? 'default' : 'secondary'} render={<a href="#" aria-current={app === value ? 'true' : undefined} onClick={(event: MouseEvent) => { event.preventDefault(); setApp(value); }} />}>{text}</Badge>;
   const chooseFilter = (next: TaskFilter) => (event: MouseEvent) => { event.preventDefault(); if (filter === undefined) setOwnFilter(next); onFilterChange?.(next); };
   if (variant === 'compact') {
     const strings = compactLabels[locale];
@@ -162,38 +166,41 @@ export function TaskBoard({ tasks, filter, onFilterChange, currentUser, limit, v
   }}>
     {bar && <nav data-task-bar aria-label="Task lists" className="flex h-13 shrink-0 items-center gap-2.5 px-3.5 text-[13px] text-muted-foreground">
       {barStart}
-      {switcher('open', `${BOARD_STATES.reduce((sum, state) => sum + of(state).length, 0)} open`)}<span aria-hidden="true">·</span>
-      {switcher('done', `Done ${of('done').length}`)}<span aria-hidden="true">·</span>
-      {switcher('closed', `Closed ${of('closed').length}`)}
+      {apps.length > 1 && <span className={cn('flex min-w-0 flex-wrap items-center gap-1.5', taskTokens.pill)} data-task-apps="">{appChip(null, locale === 'fr' ? 'Toutes' : 'All apps')}{apps.map(name => appChip(name, name))}</span>}
       {currentUser !== undefined && <span className={cn('ml-auto flex items-center gap-2.5', taskTokens.pill)} data-task-filter={shownFilter}>
         {(['mine', 'all'] as const).map(value => <Badge key={value} variant={shownFilter === value ? 'default' : 'secondary'} render={<a href="#" aria-current={shownFilter === value ? 'true' : undefined} onClick={chooseFilter(value)} />}>{value === 'mine' ? 'Mine' : 'All'}</Badge>)}
       </span>}
     </nav>}
     <div data-task-stage className="relative min-h-0 flex-1 overflow-hidden">
       <div data-task-list className="@container/task-rails h-full min-w-0 overflow-auto">
-        {list === 'open' ? <div className="grid min-w-0 content-start gap-2.5 p-3.5 @2xl/task-rails:grid-cols-3">
-          {BOARD_STATES.map(state => {
-            const column = of(state).sort((a, b) => Number(b.waiting_on_you === true) - Number(a.waiting_on_you === true));
-            const onYou = column.filter(task => task.waiting_on_you === true).length;
-            return <section key={state} data-task-column={state} aria-label={labels[state]} className={cn('flex min-w-0 flex-col gap-[7px] self-start bg-muted p-2', taskTokens.column)}>
-              <h3 className="flex min-h-6 items-center justify-between gap-2 px-0.5 pb-0.5 text-[11px] font-semibold tracking-[0.06em] text-muted-foreground"><span className="uppercase">{labels[state]} {column.length}</span>{onYou > 0 && <span className={cn('contents', taskTokens.pill)}><Badge data-task-on-you="">{onYou} on you</Badge></span>}</h3>
-              <div role="list" className="flex flex-col gap-[7px]">{column.map(card)}</div>
+        <div className="grid min-w-0 content-start gap-2.5 p-3.5 @3xl/task-rails:grid-cols-4">
+          {TASK_COLUMNS.map(column => {
+            const rows = of(column);
+            // Stacked, an empty section is noise; side by side, a column keeps its place so the board does not shift.
+            return <section key={column} data-task-column={column} aria-label={words[column]} className={cn('min-w-0 flex-col gap-[7px] self-start bg-muted p-2', rows.length ? 'flex' : 'hidden @3xl/task-rails:flex', taskTokens.column)}>
+              <h3 className="flex min-h-6 items-center gap-1.5 px-0.5 pb-0.5 text-xs font-semibold text-muted-foreground">{words[column]}<span className="font-normal">{rows.length}</span></h3>
+              <div role="list" className="flex flex-col gap-[7px]">{rows.map(card)}</div>
             </section>;
           })}
-        </div> : <section data-task-column={list} aria-label={labels[list]} className="flex max-w-xl min-w-0 flex-col gap-[7px] p-3.5">
-          <div role="list" className="flex flex-col gap-[7px]">{of(list).map(card)}</div>
-          {!of(list).length && empty}
-        </section>}
+        </div>
+        {!listed.length && empty}
+        {FOLDED.map(column => {
+          const rows = of(column);
+          return rows.length > 0 && <Collapsible key={column} data-task-group={column} className="px-3.5 pb-2" open={unfolded.has(column)} onOpenChange={open => unfold(column, open)}>
+            <CollapsibleTrigger render={<Button variant="ghost" size="sm" className="text-muted-foreground" />}>{words[column]} · {rows.length}</CollapsibleTrigger>
+            <CollapsibleContent><div role="list" aria-label={words[column]} className="grid gap-[7px] pt-1.5 @3xl/task-rails:grid-cols-4">{rows.map(card)}</div></CollapsibleContent>
+          </Collapsible>;
+        })}
       </div>
       {selected !== null && <aside aria-label="Task detail" data-task-side className={cn('absolute inset-y-0 right-0 flex w-[400px] max-w-full flex-col bg-popover text-popover-foreground', overlayClassName)} aria-live="polite">
         <Separator orientation="vertical" className="absolute inset-y-0 left-0" />
         <div className="flex h-10 shrink-0 items-center gap-2 pr-1.5 pl-3.5">
           <Button ref={back} variant="ghost" size="icon" data-task-back="" aria-label="Back to the tasks" title="Back to the tasks" onClick={() => select(null)}><ChevronLeftIcon aria-hidden="true" /></Button>
-          {detail && <><span className="text-[11px] text-muted-foreground">{taskMeta(detail)}</span><TaskStatusPill task={detail} locale={locale} viewerAction={viewerAction} /></>}
+          {detail && <><span className="text-[11px] text-muted-foreground">{[detail.app, taskMeta(detail)].filter(Boolean).join(' · ')}</span><TaskStatusPill task={detail} locale={locale} viewerAction={viewerAction} /></>}
         </div>
         <Separator />
         <div className="min-h-0 flex-1 overflow-auto p-3.5">
-          {detail ? <TaskDetail key={detail.id} task={detail} actions={actions?.(detail)} onAnswer={onAnswer} onOther={onOther} onDiscussQuestion={onDiscussQuestion} onAsk={onAsk} onOpenFile={renderFile || onOpenFile ? openFile : undefined} />
+          {detail ? <TaskDetail key={detail.id} task={detail} locale={locale} actions={actions?.(detail)} onAnswer={onAnswer} onOther={onOther} onDiscussQuestion={onDiscussQuestion} onAsk={onAsk} onOpenFile={renderFile || onOpenFile ? openFile : undefined} />
             : <Empty><EmptyHeader><EmptyTitle>Task unavailable</EmptyTitle><EmptyDescription>The host has not supplied this task.</EmptyDescription></EmptyHeader></Empty>}
         </div>
       </aside>}
