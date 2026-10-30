@@ -289,8 +289,9 @@ test('an unresponsive older-page read times out visibly and retries without acce
   await Promise.resolve(); await Promise.resolve();
   assert.equal(controller.getSnapshot().history.kind, 'loading');
   t.mock.timers.tick(15_000);
+  for (let step = 0; step < 8; step++) await Promise.resolve();
+  assert.equal(controller.getSnapshot().history.kind, 'error', 'an older-page read cannot stay loading indefinitely');
   await read;
-  assert.equal(controller.getSnapshot().history.kind, 'error');
   assert.equal(controller.getSnapshot().history.hasMore, true);
   t.mock.timers.reset();
   await controller.loadEarlier();
