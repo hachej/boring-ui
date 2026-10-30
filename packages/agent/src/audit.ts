@@ -48,7 +48,7 @@ export function createAuditExtension(options: AuditExtensionOptions): Extension 
           catch { values = { redactionFailed: true }; }
         }
         try {
-          await sink({ id: `${conversationId}:${call.id}`, at: Date.now(), user: typeof user === 'string' ? user : user(conversationId), conversationId, tool: call.name, isError: result.isError === true, ...values });
+          await sink({ id: `${conversationId}:${String(api.taskId)}:${call.id}`, at: Date.now(), user: typeof user === 'string' ? user : user(conversationId), conversationId, tool: call.name, isError: result.isError === true, ...values });
         } catch (error) {
           console.error(JSON.stringify({ level: 'error', event: 'audit-sink-failed', tool: call.name, name: error instanceof Error ? error.name : 'Error' }));
         }
