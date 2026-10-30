@@ -95,12 +95,12 @@ export function renameSnapshot(value: unknown): ResourceRenameRequest {
   const input = object(value), from = locator(input.from), to = locator(input.to);
   if (from.resource.providerId !== to.resource.providerId || JSON.stringify(from.view) !== JSON.stringify(to.view)) throw new TypeError('Rename requires one provider and view');
   if (from.resource.path === to.resource.path || from.resource.path.startsWith(`${to.resource.path}/`) || to.resource.path.startsWith(`${from.resource.path}/`)) throw new TypeError('Rename requires independent file paths');
-  return { from, to, expectedRevision: identifier(input.expectedRevision), operationId: identifier(input.operationId) };
+  return { from, to, expectedRevision: identifier(input.expectedRevision), operationId: identifier(input.operationId), ...(input.pruneEmptied === true ? { pruneEmptied: true } : {}) };
 }
 
 export function deleteSnapshot(value: unknown): ResourceDeleteRequest {
   const input = object(value);
-  return { path: locator(input.path), expectedRevision: identifier(input.expectedRevision), operationId: identifier(input.operationId) };
+  return { path: locator(input.path), expectedRevision: identifier(input.expectedRevision), operationId: identifier(input.operationId), ...(input.pruneEmptied === true ? { pruneEmptied: true } : {}) };
 }
 
 export function deletePublication(request: ResourceDeleteRequest): PublicationRequest {

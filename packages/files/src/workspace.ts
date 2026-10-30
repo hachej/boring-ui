@@ -260,6 +260,18 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
     return { kind: 'file', bytes, revision: await blobRevision(bytes) };
   }
 
+  /**
+   * A folder exists through its files: the one a move or delete left empty goes, up to the first that still holds something. Best effort and
+   * never recursive, so a file landing meanwhile stays; a file system that cannot remove a directory that way (Pi's Node one) keeps the folder.
+   */
+  const pruneEmptied = async (path: string): Promise<void> => {
+    for (let folder = path.slice(0, Math.max(0, path.lastIndexOf('/'))); folder; folder = folder.slice(0, Math.max(0, folder.lastIndexOf('/')))) {
+      const listed = await fs.listDir(absolute(folder), fsContext()).catch(() => undefined);
+      if (!listed?.ok || listed.value.length) return;
+      const gone = await fs.remove(absolute(folder), { recursive: false }, fsContext()).catch(() => undefined);
+      if (!gone?.ok) return;
+    }
+  };
   /** Once per provider, before its first operation: remove temporary files that an earlier process left behind. */
   let swept: Promise<void> | undefined;
   const sweep = () => swept ??= (async () => {
@@ -312,7 +324,7 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
     };
   }
 
-  const mutate = async (request: PublicationRequest | ResourceRenameRequest, access: ResourceAccess): Promise<PublicationResult> => {
+  const mutate = async (request: PublicationRequest | ResourceRenameRequest, access: ResourceAccess, prune = false): Promise<PublicationResult> => {
     const moving = 'from' in request ? request : undefined;
     const publication = 'changes' in request ? request : undefined;
     const digest = moving ? await renameDigest(moving) : await publicationDigest(publication!);
@@ -432,16 +444,29 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
           }
           applying = true;
           if (!together) journal.complete(operation, record, versions);
+          if (prune && moving) await pruneEmptied(moving.from.resource.path);
+          else if (prune) for (const plan of plans) if (plan.change.kind === 'delete') await pruneEmptied(plan.path);
         } else if (moving || plans[0]!.change.kind === 'delete') {
           applying = true;
+          // Like a publication, a move creates the folder it lands in: a folder renames file by file, so the first file finds none.
+          const landing = moving ? absolute(moving.to.resource.path) : '';
+          if (moving) {
+            const made = await fs.createDir(landing.slice(0, landing.lastIndexOf('/')) || '/', { recursive: true }, fsContext(access.signal));
+            if (!made.ok) {
+              if (made.error.code === 'unknown' || made.error.code === 'aborted') throw made.error;
+              return refuse(made.error.message);
+            }
+          }
+          const leaving = moving ? moving.from.resource.path : plans[0]!.path;
           const result = moving
-            ? await fs.renameFile(absolute(moving.from.resource.path), absolute(moving.to.resource.path), fsContext(access.signal))
+            ? await fs.renameFile(absolute(moving.from.resource.path), landing, fsContext(access.signal))
             : await fs.remove(absolute(plans[0]!.path), { recursive: false }, fsContext(access.signal));
           if (!result.ok) {
             if (result.error.code === 'unknown' || result.error.code === 'aborted') throw result.error;
             return refuse(result.error.message);
           }
           journal.complete(operation, record, versions);
+          if (prune) await pruneEmptied(leaving);
         } else {
           const { change, path, unchanged } = plans[0]!;
           if (change.kind === 'delete') return refuse('Invalid file replacement');
@@ -476,8 +501,8 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
   };
 
   const publish: WorkspaceResourceProvider['publication']['publish'] = async (input, context) => mutate(publicationSnapshot(input), accessSnapshot(context));
-  const rename: ResourceRenamer['rename'] = async (input, context) => mutate(renameSnapshot(input), accessSnapshot(context));
-  const remove: ResourceDeleter['delete'] = async (input, context) => mutate(deletePublication(deleteSnapshot(input)), accessSnapshot(context));
+  const rename: ResourceRenamer['rename'] = async (input, context) => { const request = renameSnapshot(input); return mutate(request, accessSnapshot(context), request.pruneEmptied === true); };
+  const remove: ResourceDeleter['delete'] = async (input, context) => { const request = deleteSnapshot(input); return mutate(deletePublication(request), accessSnapshot(context), request.pruneEmptied === true); };
 
   const lookup = async (operationId: string, context: ResourceAccess): Promise<PublicationLookupResult> => {
     const id = identifier(operationId);

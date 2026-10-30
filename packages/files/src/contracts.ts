@@ -156,12 +156,16 @@ export interface ResourceRenameRequest {
   readonly to: ResourceLocator;
   readonly expectedRevision: string;
   readonly operationId: string;
+  /** Also remove the folders this leaves empty: a folder operation in the tree, never a single-file change, since another consumer may have its cwd there. */
+  readonly pruneEmptied?: true;
 }
 
 export interface ResourceDeleteRequest {
   readonly path: ResourceLocator;
   readonly expectedRevision: string;
   readonly operationId: string;
+  /** Also remove the folders this leaves empty: a folder operation in the tree, never a single-file change, since another consumer may have its cwd there. */
+  readonly pruneEmptied?: true;
 }
 
 /** Conditional regular-file mutations; receipts and lookup use the publication journal. */

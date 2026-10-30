@@ -49,11 +49,11 @@ export interface FileTreeController {
   readonly actions: { readonly rename: boolean; readonly delete: boolean };
   /** Learn the revision of a file as its row shows it (on opening its menu, renaming, dragging): a later rename or delete is conditional on it. */
   readonly prepare: (path: string, signal?: AbortSignal) => Promise<string | undefined>;
-  /** Rename a file through the client's conditional rename. `to` is a full path; its folder must exist. */
+  /** Rename a file through the client's conditional rename. `to` is a full path; its folder must exist. A listed folder renames file by file. */
   readonly rename: (path: string, to: string) => Promise<FileMutation>;
-  /** Move a file into `folder` (`''` is the workspace root): a rename that keeps its name. */
+  /** Move a file or a listed folder into `folder` (`''` is the workspace root): a rename that keeps its name. */
   readonly move: (path: string, folder: string) => Promise<FileMutation>;
-  /** Delete a file through the client's conditional delete. */
+  /** Delete a file through the client's conditional delete. A listed folder deletes every file in it. */
   readonly remove: (path: string) => Promise<FileMutation>;
   /** Forget a settled rename or delete (its row's message). */
   readonly dismiss: (operationId: string) => void;
@@ -164,7 +164,7 @@ export function createFileTreeController({ revisionProvider }: { readonly revisi
     if (state.query) void load('', false, true);
     return settled;
   }
-  async function mutate(kind: FileMutation['kind'], path: string, to?: string): Promise<FileMutation> {
+  async function mutate(kind: FileMutation['kind'], path: string, to?: string, prune = false): Promise<FileMutation> {
     active();
     if (kind === 'rename' ? !revisionProvider.rename : !revisionProvider.delete) throw new Error(`This workspace cannot ${kind} files`);
     if (state.mutations.some(item => item.path === path && item.state.kind === 'pending')) throw new Error(`${path} is already being changed; wait for it to finish`);
@@ -179,8 +179,8 @@ export function createFileTreeController({ revisionProvider }: { readonly revisi
       else {
         const from = revisionProvider.locate(path);
         const answer = kind === 'rename' && to !== undefined
-          ? await revisionProvider.rename!({ from, to: revisionProvider.locate(to), expectedRevision: known, operationId }, lifetime.signal)
-          : await revisionProvider.delete!({ path: from, expectedRevision: known, operationId }, lifetime.signal);
+          ? await revisionProvider.rename!({ from, to: revisionProvider.locate(to), expectedRevision: known, operationId, ...(prune ? { pruneEmptied: true as const } : {}) }, lifetime.signal)
+          : await revisionProvider.delete!({ path: from, expectedRevision: known, operationId, ...(prune ? { pruneEmptied: true as const } : {}) }, lifetime.signal);
         try { result = parsePublicationResult(answer); } catch { result = unknown(operationId, 'The acknowledgement was invalid; read the folder again before retrying'); }
         if (result.kind === 'partial' || (result.kind === 'unknown' && result.operationId !== operationId)) result = unknown(operationId, 'The acknowledgement did not match its operation');
       }
@@ -190,6 +190,65 @@ export function createFileTreeController({ revisionProvider }: { readonly revisi
     }
     revisions.delete(path);
     return settle(current, result);
+  }
+
+  const isFolder = (path: string) => [...state.directories.values(), state.search].some(listing => listing.entries.some(entry => entry.path === path && entry.kind === 'directory'));
+  /** Every file under a folder, read now: a folder exists only through its files, so a retry finds what is left. */
+  async function filesIn(folder: string): Promise<string[]> {
+    const files: string[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await revisionProvider.list({ directory: folder, ...(cursor ? { cursor } : {}) }, lifetime.signal);
+      for (const entry of page.entries) { if (entry.kind === 'directory') files.push(...await filesIn(entry.path)); else files.push(entry.path); }
+      cursor = page.cursor;
+    } while (cursor);
+    return files;
+  }
+  /** Whether a path is listed in its folder, read now. */
+  async function present(path: string): Promise<boolean> {
+    let cursor: string | undefined;
+    do {
+      const page = await revisionProvider.list({ directory: parentOf(path), ...(cursor ? { cursor } : {}) }, lifetime.signal);
+      if (page.entries.some(entry => entry.path === path)) return true;
+      cursor = page.cursor;
+    } while (cursor);
+    return false;
+  }
+  /** A folder's rename, move or delete, one file at a time: providers change one file per operation. It stops at the first refusal and says how far it got. */
+  async function mutateFolder(kind: FileMutation['kind'], path: string, to?: string): Promise<FileMutation> {
+    active();
+    if (kind === 'rename' ? !revisionProvider.rename : !revisionProvider.delete) throw new Error(`This workspace cannot ${kind} files`);
+    if (state.mutations.some(item => item.path === path && item.state.kind === 'pending')) throw new Error(`${path} is already being changed; wait for it to finish`);
+    const operationId = randomUUID();
+    const current: FileMutation = { operationId, kind, path, ...(to === undefined ? {} : { to }), state: { kind: 'pending' } };
+    update({ ...state, mutations: [...state.mutations.filter(item => item.path !== path), current] });
+    let result: PublicationResult | undefined, done = 0, total = 0;
+    try {
+      // A rename onto a folder that exists would merge them: refused before anything moves.
+      if (to !== undefined && await present(to)) result = { kind: 'conflict', current: [], reason: `${nameOf(to)} already exists` };
+      else {
+        const files = await filesIn(path);
+        total = files.length;
+        for (const file of files) {
+          const finished = await mutate(kind, file, to === undefined ? undefined : `${to}${file.slice(path.length)}`, true);
+          const outcome = finished.state.kind === 'settled' ? finished.state.result : undefined;
+          // An unconfirmed file may have changed: the count would be a guess, and a blind retry a mistake.
+          if (outcome?.kind === 'unknown') { result = unknown(operationId, `At least ${done} of ${total} files of ${nameOf(path)} were changed, and one is unconfirmed; read the folder again before retrying`); break; }
+          if (outcome?.kind !== 'committed') { result = { kind: 'unavailable', reason: `${done} of ${total} files of ${nameOf(path)} were changed. Try again to change the rest.` }; break; }
+          update({ ...state, mutations: state.mutations.filter(item => item.operationId !== finished.operationId) });
+          result = outcome; done++;
+        }
+        result ??= { kind: 'unavailable', reason: `${nameOf(path)} has no files to change` };
+        // The listing leaves out ignored files, so a folder can outlive every file the tree could see: say so rather than report it gone.
+        if (result.kind === 'committed' && await present(path)) result = { kind: 'unavailable', reason: `${done} of ${total} files of ${nameOf(path)} were changed. The folder is still there: it may hold files this list does not show.` };
+      }
+    } catch (error) {
+      if (error instanceof Error && lifetime.signal.aborted) throw error;
+      result = unknown(operationId, `${done} of ${total || 'its'} files of ${nameOf(path)} were changed; read the folder again before retrying`);
+    }
+    const settled = settle(current, result);
+    update({ ...state, expanded: new Set([...state.expanded].filter(folder => folder !== path && !folder.startsWith(`${path}/`))) });
+    return settled;
   }
 
   const controller: FileTreeController = {
@@ -277,6 +336,7 @@ export function createFileTreeController({ revisionProvider }: { readonly revisi
     actions: { rename: typeof revisionProvider.rename === 'function', delete: typeof revisionProvider.delete === 'function' },
     prepare: (path, signal) => {
       try { active(); } catch (error) { return Promise.reject(error); }
+      if (isFolder(path)) return Promise.resolve(undefined);
       // A rename or delete started meanwhile waits for this read, so it uses the revision the row learned.
       const reading = (async () => {
         try {
@@ -292,16 +352,16 @@ export function createFileTreeController({ revisionProvider }: { readonly revisi
     rename: async (path, to) => {
       checkedPath(path); checkedPath(to);
       if (to === path) throw new TypeError('The new name is the current name');
-      return mutate('rename', path, to);
+      return isFolder(path) ? mutateFolder('rename', path, to) : mutate('rename', path, to);
     },
     move: async (path, folder) => {
       checkedPath(path); if (folder) checkedPath(folder);
       const to = folder ? `${folder}/${nameOf(path)}` : nameOf(path);
       if (to === path) throw new TypeError(`${nameOf(path)} is already in that folder`);
       if (folder === path || folder.startsWith(`${path}/`)) throw new TypeError('A file cannot move into itself');
-      return mutate('rename', path, to);
+      return isFolder(path) ? mutateFolder('rename', path, to) : mutate('rename', path, to);
     },
-    remove: async path => mutate('delete', checkedPath(path)),
+    remove: async path => isFolder(checkedPath(path)) ? mutateFolder('delete', path) : mutate('delete', path),
     dismiss: operationId => { if (state.mutations.some(item => item.operationId === operationId && item.state.kind === 'settled')) update({ ...state, mutations: state.mutations.filter(item => item.operationId !== operationId) }); },
     history: (path, signal) => { active(); return revisionProvider.history(path, signal ? AbortSignal.any([signal, lifetime.signal]) : lifetime.signal); },
     dispose: () => { if (state.lifecycle === 'disposed') return; lifetime.abort(); for (const load of loads.values()) load.abort(); loads.clear(); state = { ...state, lifecycle: 'disposed' }; listeners.clear(); },

@@ -66,6 +66,7 @@ export const defaultFileTreeLabels = {
   delete: 'Delete',
   deleteTitle: (name: string) => `Delete ${name}?`,
   deleteDescription: 'It is removed from this workspace for everyone who uses it.',
+  deleteFolderDescription: 'Every file in this folder is removed from this workspace for everyone who uses it.',
   cancel: 'Cancel',
   changing: 'Saving…',
   renamed: (to: string) => `Renamed to ${to}`,
@@ -133,6 +134,7 @@ export const frenchFileTreeLabels: FileTreeLabels = {
   delete: 'Supprimer',
   deleteTitle: name => `Supprimer ${name} ?`,
   deleteDescription: 'Il est retiré de cet espace pour tous ceux qui l’utilisent.',
+  deleteFolderDescription: 'Tous les fichiers de ce dossier sont retirés de cet espace pour tous ceux qui l’utilisent.',
   cancel: 'Annuler',
   changing: 'Enregistrement…',
   renamed: to => `Renommé en ${to}`,
@@ -457,7 +459,7 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
     for (const node of Array.from(nodes ?? [])) if (node.dataset.path === path) node.focus();
   };
   /** Files only: a provider renames and deletes regular files, and a row busy uploading or changing waits. */
-  const mutable = (entry: FileEntry) => entry.kind === 'file' && !temporaryPaths.has(entry.path) && uploadRows.get(entry.path)?.kind !== 'pending' && mutationRows.get(entry.path)?.state.kind !== 'pending';
+  const mutable = (entry: FileEntry) => !temporaryPaths.has(entry.path) && uploadRows.get(entry.path)?.kind !== 'pending' && mutationRows.get(entry.path)?.state.kind !== 'pending';
   /** A blob pointer's row shows the file it stands for, not the pointer's own name: it can be moved or deleted, not renamed in place. */
   const renameable = (entry: FileEntry) => !entry.blob;
   const keyboard = (event: KeyboardEvent, entry: FileEntry) => {
@@ -512,7 +514,7 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
     const Icon = kind.icon;
     const mutation = mutationRows.get(entry.path);
     const changeable = mutable(entry);
-    const draggable = changeable && can.rename;
+    const draggable = changeable && can.rename && !folder;
     const button = <Button type="button" variant={selectedPath === entry.path ? 'secondary' : 'ghost'} data-active={selectedPath === entry.path} tabIndex={-1} title={entry.path} disabled={temporary}
       className="file-tree-row-button" draggable={draggable || undefined}
       onClick={() => { focus(entry.path); if (!folder) onOpen?.(entry.path); }}>
@@ -559,8 +561,8 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
         {status?.kind === 'failed' && <Button type="button" variant="ghost" data-upload-retry aria-label={status.retryLabel} onClick={status.retry}>{status.retryLabel}</Button>}
         {mutation && mutationFailed && <Button type="button" variant="ghost" size="icon" data-mutation-dismiss aria-label={labels.dismiss(entry.path)} title={labels.dismiss(entry.path)}
           onClick={() => controller.dismiss(mutation.operationId)}><X aria-hidden="true" /></Button>}
-        {!folder && !temporary && !status && !editing && mutation?.state.kind !== 'pending' && <FileActions Actions={Actions} controller={controller} entry={entry} labels={labels}
-          onOpen={onOpen ? () => onOpen(entry.path) : undefined} onHistory={history ? () => setHistoryPath(entry.path) : undefined} onError={setUploadError}
+        {!temporary && !status && !editing && mutation?.state.kind !== 'pending' && (!folder || changeable && (can.rename || can.delete)) && <FileActions Actions={Actions} controller={controller} entry={entry} labels={labels}
+          onOpen={onOpen && !folder ? () => onOpen(entry.path) : undefined} onHistory={history && !folder ? () => setHistoryPath(entry.path) : undefined} onError={setUploadError}
           onRename={changeable && can.rename && renameable(entry) ? () => startRename(entry.path) : undefined}
           onMove={changeable && can.rename && Dialog ? () => ask('move', entry.path) : undefined}
           onDelete={changeable && can.delete ? () => ask('delete', entry.path) : undefined} />}
@@ -578,7 +580,8 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
   const paginated = visibleListing?.kind === 'ready' && visibleListing.cursor !== undefined;
   const rootDrop = dropHandlers('');
   const dialogPath = asking?.path ?? '';
-  const folders = asking?.kind === 'move' ? [...new Set(['', ...[...state.directories.values(), state.search].flatMap(listing => listing.entries.filter(entry => entry.kind === 'directory').map(entry => entry.path))])].sort() : [];
+  const dialogIsFolder = [...state.directories.values(), state.search].some(listing => listing.entries.some(entry => entry.path === dialogPath && entry.kind === 'directory'));
+  const folders = asking?.kind === 'move' ? [...new Set(['', ...[...state.directories.values(), state.search].flatMap(listing => listing.entries.filter(entry => entry.kind === 'directory').map(entry => entry.path))])].filter(folder => folder !== dialogPath && !folder.startsWith(`${dialogPath}/`)).sort() : [];
   return <section data-boring="file-tree" data-variant={variant} data-dropping={dropping || undefined} data-drop-target={dropTarget === '' ? 'true' : undefined} className={className} aria-label={labels.region}
     onDragEnter={event => { rootDrop.onDragEnter?.(event); if (upload && event.dataTransfer.types.includes('Files')) { event.preventDefault(); dragDepth.current++; setDropping(true); } }}
     onDragOver={event => { rootDrop.onDragOver?.(event); if (upload && event.dataTransfer.types.includes('Files')) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; } }}
@@ -620,7 +623,7 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
     {state.mutations.map(item => <li key={item.operationId} data-operation={item.operationId}>{item.path}: {mutationReason(item)}</li>)}</ul>
     {Dialog && <Dialog open={asking !== undefined} onOpenChange={open => { if (!open) closeAsking(); }}
       title={asking?.kind === 'move' ? labels.moveTitle(baseName(dialogPath)) : labels.deleteTitle(baseName(dialogPath))}
-      description={asking?.kind === 'move' ? labels.moveDescription : labels.deleteDescription}
+      description={asking?.kind === 'move' ? labels.moveDescription : dialogIsFolder ? labels.deleteFolderDescription : labels.deleteDescription}
       footer={asking?.kind === 'delete' ? <>
         <Button type="button" variant="outline" data-confirm="cancel" onClick={closeAsking}>{labels.cancel}</Button>
         <Button type="button" variant="destructive" data-confirm="delete" onClick={() => {
@@ -683,7 +686,7 @@ function FileActions({ Actions, controller, entry, labels, onOpen, onHistory, on
   const items: FileTreeAction[] = [];
   if (onOpen) items.push({ id: 'open', label: labels.open, icon: <FolderOpen aria-hidden="true" />, onSelect: onOpen });
   if (onHistory) items.push({ id: 'history', label: labels.history, icon: <History aria-hidden="true" />, onSelect: onHistory });
-  items.push({ id: 'download', label: labels.download, icon: <Download aria-hidden="true" />, onSelect: () => { void download(); } });
+  if (entry.kind === 'file') items.push({ id: 'download', label: labels.download, icon: <Download aria-hidden="true" />, onSelect: () => { void download(); } });
   if (onRename) items.push({ id: 'rename', label: labels.rename, icon: <Pencil aria-hidden="true" />, onSelect: onRename, ownsFocus: true });
   if (onMove) items.push({ id: 'move', label: labels.move, icon: <FolderInput aria-hidden="true" />, onSelect: onMove, ownsFocus: true });
   if (onDelete) items.push({ id: 'delete', label: labels.delete, icon: <Trash2 aria-hidden="true" />, onSelect: onDelete, destructive: true, ownsFocus: true });
