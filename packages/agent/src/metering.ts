@@ -8,7 +8,6 @@ import type { Context } from '@earendil-works/chord';
 import { AssistantEntry, UserEntry } from '@earendil-works/pi-durable';
 import type { Conversation, ConversationId, ConversationWatch, EntryRecord, Harness, Submission, SubmissionDraft, SubmissionRecord } from '@earendil-works/pi-durable';
 import type { Models, Usage } from '@earendil-works/pi-ai';
-import type { DelegateCallIds, DelegateOptions } from './delegate.js';
 import { calculateCost } from '@earendil-works/pi-ai/models';
 import { openNodeConnection, type SqliteConnection, type SqliteSettings } from '@hachej/boring-files/sqlite';
 
@@ -142,9 +141,17 @@ const runIdOf = (conversationId: number, requestId: string) => `run:${conversati
 /** The longest `message` preview a reservation carries. */
 export const MESSAGE_PREVIEW_LENGTH = 280;
 
+/** Which delegate call made a child (`DelegateCallIds`; this module stays free of the delegate tool). */
+export interface ChildCallIds { readonly callId: string; readonly taskId: number; readonly requestId: string }
+/** A `DelegateMeter`: pass the function `meterFromSink` returns as `DelegateOptions.meter`. */
+export interface ChildMeter {
+  readonly record: (event: { readonly entryId: number; readonly provider: string; readonly model: string; readonly usage: Usage }) => void | Promise<void>;
+  readonly close: (end: 'done' | 'failed' | 'cancelled' | 'timeout') => void | Promise<void>;
+}
+
 export interface MeterFromSinkOptions extends Pick<MeterOptions, 'sink' | 'price' | 'models' | 'markup' | 'onError'> {
   /** Who pays for the child, usually read from the parent's identity. */
-  readonly scope: MeteringScope | ((parent: ConversationId, child: ConversationId, ids: DelegateCallIds) => MeteringScope | Promise<MeteringScope>);
+  readonly scope: MeteringScope | ((parent: ConversationId, child: ConversationId, ids: ChildCallIds) => MeteringScope | Promise<MeteringScope>);
 }
 
 /**
@@ -152,7 +159,7 @@ export interface MeterFromSinkOptions extends Pick<MeterOptions, 'sink' | 'price
  * call's request id. A refused reservation throws, which fails the delegate call before the child runs. A rerun reattaching to the child
  * reserves and reports again: the sink is idempotent on `runId` and `usageId`.
  */
-export function meterFromSink(options: MeterFromSinkOptions): NonNullable<DelegateOptions['meter']> {
+export function meterFromSink(options: MeterFromSinkOptions): (parent: ConversationId, child: ConversationId, ids: ChildCallIds) => Promise<ChildMeter> {
   const { sink, onError } = options;
   const price = options.price ?? catalogPrice(options.models);
   const markup = options.markup ?? 1;
