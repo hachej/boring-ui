@@ -149,7 +149,7 @@ export interface PmChatProps {
   readonly preset?: PmPreset;
   readonly appName?: string;
   readonly locale?: string;
-  readonly close?: () => void;
+  readonly close?: (() => void) | undefined;
 }
 
 /** The PM, plugged anywhere: the regular chat filling its container. What the PM presents sits beside it when the container is wide enough, otherwise replaces it with Back. */
@@ -209,7 +209,7 @@ function PmWorkspace({ spec, pm, page, preset, open, close, beside = false }: { 
     {pm.problem && <p role="alert" className="m-0 px-4 text-sm">{pm.problem}</p>}
     <div hidden={strip && phone} className={cn('min-h-0 flex-1 flex-col', strip && phone ? 'hidden' : 'flex')}>
       <AgentWorkspace layout="embedded" title={spec.appName ?? spec.label ?? text.title} locale={text.locale} controller={spec.controller}
-        conversationId={spec.conversationId ?? pm.snapshot.conversationId} conversations={spec.conversations ?? spec.chatProps?.conversations}
+        conversationId={spec.conversationId ?? String(pm.snapshot.conversationId)} conversations={spec.conversations ?? spec.chatProps?.conversations}
         resources={spec.resources} artifactKinds={kinds} interactive={PM_INTERACTIVE} autoOpen={Boolean(spec.resources)} barPanels={barPanels} barOptions={{ panelsFirst: true }}
         controls={close && <Button variant="ghost" size="icon" data-testid="pm-close" aria-label={text.close} title={text.close} onClick={close}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>}
         chat={{ ...spec.chatProps, ...(mentions ? { mentions } : {}),

@@ -230,7 +230,7 @@ test('AppShellProps has the shell props, optional rail, locale and URL opt-out, 
   const program = ts.createProgram([`${root}${folder}/app-shell.tsx`], { allowImportingTsExtensions: true, jsx: ts.JsxEmit.ReactJSX, noEmit: true, skipLibCheck: true });
   const file = program.getSourceFile(`${root}${folder}/app-shell.tsx`);
   const props = file.statements.find(node => ts.isInterfaceDeclaration(node) && node.name.text === 'AppShellProps');
-  assert.deepEqual(props.members.map(member => member.name.text).sort(), ['account', 'agent', 'agentLink', 'compactNav', 'improve', 'layout', 'locale', 'nav', 'overlayBlur', 'rail', 'route', 'title']);
+  assert.deepEqual(props.members.map(member => member.name.text).sort(), ['account', 'agent', 'agentLink', 'compactNav', 'improve', 'layout', 'locale', 'nav', 'overlayBlur', 'pmHostOrigins', 'rail', 'route', 'title']);
   const rail = props.members.find(member => member.name.text === 'rail');
   assert.ok(rail.questionToken, 'rail is optional');
   assert.equal(rail.type.getText(file), "'icon' | 'hover'");
