@@ -4,7 +4,7 @@
   "title": "Markdown viewer",
   "description": "The Markdown kind: `markdownKind` (match, loader) and `MarkdownPane`, the tiptap editor with a formatting toolbar and prose styling over the kit's revisioned Markdown controller, in the viewer frame. The pane and tiptap load the first time a Markdown file opens.",
   "dependencies": [
-    "@hachej/boring-ui-kit@^0.4.37",
+    "@hachej/boring-ui-kit@^0.4.38",
     "react@^19.0.0",
     "lucide-react@^1.51.0",
     "marked@^17.0.6",
@@ -22,10 +22,10 @@
     "@tiptap/extension-floating-menu@^3.31.4"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.37/r/viewer-frame.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.37/r/markdown-editor.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.37/r/utils.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.37/r/button.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.38/r/viewer-frame.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.38/r/markdown-editor.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.38/r/utils.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.38/r/button.json"
   ],
   "files": [
     {

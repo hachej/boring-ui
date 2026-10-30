@@ -4,16 +4,16 @@
   "title": "Shared chat",
   "description": "Optional multi-party host log presentation over PiChat's generic composition seams. No agent runtime or speaking policy.",
   "dependencies": [
-    "@hachej/boring-ui-kit@^0.4.37",
+    "@hachej/boring-ui-kit@^0.4.38",
     "react@^19.0.0",
     "lucide-react@^1.51.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.37/r/pi-chat.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.37/r/pi-chat-plugins.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.37/r/pi-chat-markdown.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.37/r/pi-chat-mentions.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.37/r/utils.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.38/r/pi-chat.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.38/r/pi-chat-plugins.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.38/r/pi-chat-markdown.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.38/r/pi-chat-mentions.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.38/r/utils.json"
   ],
   "files": [
     {
