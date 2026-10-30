@@ -50,7 +50,6 @@ export const defaultFileTreeLabels = {
   binaryFile: (mediaType: string) => `Binary file (${mediaType})`,
   uploading: 'Uploading…',
   saved: 'Saved',
-  unconfirmed: 'Unconfirmed',
   checkUpload: 'Check upload status',
   uploadStatusUnavailable: 'Upload status unavailable',
   uploadFailed: (name: string) => `${name}: upload failed`,
@@ -118,7 +117,6 @@ export const frenchFileTreeLabels: FileTreeLabels = {
   binaryFile: mediaType => `Fichier binaire (${mediaType})`,
   uploading: 'Import en cours…',
   saved: 'Enregistré',
-  unconfirmed: 'Non confirmé',
   checkUpload: 'Vérifier l’import',
   uploadStatusUnavailable: 'État de l’import indisponible',
   uploadFailed: name => `${name} : échec de l’import`,
@@ -385,7 +383,7 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
     if (item.state.kind === 'pending') uploadRows.set(item.path, { kind: 'pending', size: item.size });
     else if (item.state.result.kind === 'committed') uploadRows.delete(item.path);
     else uploadRows.set(item.path, { kind: 'failed', size: item.size,
-      reason: item.state.result.kind === 'partial' ? labels.unconfirmed : item.state.result.reason,
+      reason: item.state.result.reason,
       retryLabel: item.state.result.kind === 'unknown' ? labels.checkUpload : labels.retry,
       retry: () => { void controller.retry(item.operationId).catch(error => setUploadError(error instanceof Error ? error.message : labels.uploadStatusUnavailable)); } });
   }
@@ -396,7 +394,7 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
   for (const item of state.mutations) if (item.state.kind === 'pending' || item.state.result.kind !== 'committed') mutationRows.set(item.path, item);
   const mutationReason = (item: FileMutation) => item.state.kind === 'pending' ? labels.changing
     : item.state.result.kind === 'committed' ? item.kind === 'delete' ? labels.deleted : labels.renamed(item.to ?? '')
-    : item.state.result.kind === 'conflict' ? labels.changedSince : item.state.result.kind === 'partial' ? labels.unconfirmed : item.state.result.reason;
+    : item.state.result.kind === 'conflict' ? labels.changedSince : item.state.result.reason;
   // A refusal of the name itself (empty, `..`, the same name) keeps the input open with the reason; anything else is the row's.
   const refused = (path: string) => (error: unknown) => {
     if (error instanceof TypeError) setRenaming(current => ({ ...current, path, error: error.message }));
@@ -618,7 +616,7 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
       {temporaryEntries.map(entry => renderEntry(entry, 1))}
     </SidebarMenu>
     <ul aria-label={labels.uploads} aria-live="polite" aria-relevant="additions text" className="file-tree-announcements">{state.uploads.map(upload => <li key={upload.operationId} data-operation={upload.operationId}>
-      {upload.path}: {upload.state.kind === 'pending' ? labels.uploading : upload.state.result.kind === 'committed' ? labels.saved : upload.state.result.kind === 'partial' ? labels.unconfirmed : upload.state.result.reason}
+      {upload.path}: {upload.state.kind === 'pending' ? labels.uploading : upload.state.result.kind === 'committed' ? labels.saved : upload.state.result.reason}
     </li>)}{[...localFailures].map(([path, failure]) => <li key={path}>{path}: {failure.reason}</li>)}
     {state.mutations.map(item => <li key={item.operationId} data-operation={item.operationId}>{item.path}: {mutationReason(item)}</li>)}</ul>
     {Dialog && <Dialog open={asking !== undefined} onOpenChange={open => { if (!open) closeAsking(); }}

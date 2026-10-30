@@ -41,7 +41,7 @@ function MountedDocument({ controller, cells, canView, onRegenerate, title = 'Ex
     }).catch(() => { if (active.current) setError('The layout operation failed. The draft has been retained.'); });
   };
   const status = disposed ? 'Viewer disposed' : state.readOnly ? 'Read only' : pending ? 'Keeping selected layout' : unknown ? 'Keep unconfirmed. Reconcile before keeping again.'
-    : state.save.kind === 'settled' && state.save.result.kind !== 'saved' ? state.save.result.kind === 'partial' ? 'Keep unconfirmed' : state.save.result.reason
+    : state.save.kind === 'settled' && state.save.result.kind !== 'saved' ? state.save.result.reason
       : state.dirty ? 'Layout not kept' : 'Layout kept';
   return <section data-boring="experience-document" className={className} aria-label={title}>
     <header><strong>{title}</strong><span role="status">{status}</span></header>

@@ -73,7 +73,7 @@ export type ResourceChange =
 export interface PublicationRequest {
   readonly operationId: string;
   readonly changes: NonEmpty<ResourceChange>;
-  readonly atomicity: 'all-or-nothing' | 'per-change';
+  readonly atomicity: 'all-or-nothing';
   /** Extra exact-content/absence dependencies, in addition to change targets.
    * Search/listing predicate evidence needs its separately qualified provider
    * integration; this minimal contract does not pretend to implement it.
@@ -110,20 +110,7 @@ export type PublicationOutcome =
   | PublicationRefusal
   | { readonly kind: 'unknown'; readonly operationId: string; readonly reason: string };
 
-/** Result association survives multiple changes/views and lost responses.
- * Providers validate index coverage/uniqueness and target/receipt agreement.
- */
-export interface PublicationItem {
-  readonly changeIndex: number;
-  readonly target: ResourceLocator;
-  readonly outcome: PublicationOutcome;
-}
-
-export type PublicationResult = PublicationOutcome | {
-  readonly kind: 'partial';
-  readonly operationId: string;
-  readonly items: NonEmpty<PublicationItem>;
-};
+export type PublicationResult = PublicationOutcome;
 
 export interface ProviderGuarantees {
   readonly pinnedReads: boolean;

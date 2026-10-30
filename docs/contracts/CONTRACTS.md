@@ -66,7 +66,7 @@ Declare atomic mutation-plus-receipt, conditional commit, duplicate lookup, hist
 
 ### Publication and reconciliation capability composition
 
-Reader, writer and lookup are independently injectable. Requiring a writer does not imply it supports lookup; recovery-sensitive compositions require the extra capability. Request authority/digests are host-resolved, not supplied as trusted fields by clients. Nonempty changes declare all-or-nothing or per-change intent, with direct revision/absence preconditions where applicable. Receipts discriminate valid create/replace/delete transitions; partial results bind each original change index and complete target/view. Providers must validate those associations and immutable input capture at runtime. Search/listing predicate validation remains its own qualified integration, not a claimed implementation of the basic type scaffold.
+Reader, writer and lookup are independently injectable. Requiring a writer does not imply it supports lookup; recovery-sensitive compositions require the extra capability. Request authority/digests are host-resolved, not supplied as trusted fields by clients. Nonempty changes are all-or-nothing, with direct revision/absence preconditions where applicable. Receipts discriminate valid create/replace/delete transitions; partial results bind each original change index and complete target/view. Providers must validate those associations and immutable input capture at runtime. Search/listing predicate validation remains its own qualified integration, not a claimed implementation of the basic type scaffold.
 
 ## Decisions (optional native extension)
 
