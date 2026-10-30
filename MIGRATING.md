@@ -1,5 +1,7 @@
 # Unreleased
 
+# Migrating to 0.4.38
+
 - **Shared room presented mockups (`room`, `shared-chat`, `pm-panel`).** `createRoomTurn` now relays `{ type: 'artifact', artifact }` frames and includes optional native `PresentedArtifact[]` under `artifacts` in question/settlement replies. Persist/forward that field through the host room bridge and relay artifact frames explicitly (never as text deltas). `roomView` and `createRoomSource` retain exact descriptors through history/reconnect; removed messages clear them. Refresh the copied `shared-chat` and `pm-panel` blocks as well as package pins. Pass the existing `ChatArtifactsConfig` as `SharedChat.artifacts` or in `useSharedChat`/`useSharedChatProps` options. Reuse `PmMockupProvider`, `pmArtifacts` and `PmMockupView` with a host-supplied exact-revision reader; [wiring and policy boundary](registry/README.md#room-artifact-cards). No private PM credentials, HTML bytes in the room, new read door or room-membership authorization is added. Key/reset the provider and full-view state on app/requester/controller changes. PM caches now distinguish full targets/views at the same path/revision. Unsuccessful/aborted wakes retain existing `ROOM.unanswered` semantics without settlement artifacts; durable question descriptors remain in history, but stream-only descriptors without a question/final answer are not retained. The earlier PmChat-only 0.4.37 fix does not wire Studio's actual SharedChat route.
 
 # Migrating to 0.4.37
