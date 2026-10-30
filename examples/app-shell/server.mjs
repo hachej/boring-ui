@@ -73,8 +73,12 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
   mkdirSync(join(directory, 'workspace'), { recursive: true });
   // `pmTasks`: the host's task API (`/_tasks/api`, fictional records) and a PM task tool whose result carries the new D-ref, as the one line reads them.
   // `is_requester`: the viewer filed D-202; D-190 is listed (mine=1) only because it once waited on them, so it is not theirs to withdraw.
+  // Three finished requests, one per « Terminées » label (`closed_reason`): shipped (« En ligne »), withdrawn (« Retirée »), closed (« Fermée »).
   const tasks = pmTasks ? [{ id: randomUUID(), ref: 'D-202', title: 'Plan du jour : photo du déjeuner', state: 'open', created: '2026-10-27T09:00:00Z', updated: '2026-10-27T09:00:00Z', waiting_on_you: false, is_requester: true },
-    { id: randomUUID(), ref: 'D-190', title: 'Un repère sur la jauge', state: 'open', created: '2026-10-26T09:00:00Z', updated: '2026-10-26T09:00:00Z', waiting_on_you: false, is_requester: false }] : [];
+    { id: randomUUID(), ref: 'D-190', title: 'Un repère sur la jauge', state: 'open', created: '2026-10-26T09:00:00Z', updated: '2026-10-26T09:00:00Z', waiting_on_you: false, is_requester: false },
+    { id: randomUUID(), ref: 'D-180', title: 'Graphique de la semaine', state: 'done', closed_reason: 'shipped', created: '2026-10-20T09:00:00Z', updated: '2026-10-24T09:00:00Z', waiting_on_you: false, is_requester: true },
+    { id: randomUUID(), ref: 'D-181', title: 'Rappel du dimanche soir', state: 'closed', closed_reason: 'withdrawn', created: '2026-10-21T09:00:00Z', updated: '2026-10-23T09:00:00Z', waiting_on_you: false, is_requester: true },
+    { id: randomUUID(), ref: 'D-182', title: 'Cartes repas en mode sombre', state: 'closed', closed_reason: 'closed', created: '2026-10-19T09:00:00Z', updated: '2026-10-22T09:00:00Z', waiting_on_you: false, is_requester: true }] : [];
   const answers = [], withdrawals = [];
   // `refuseTasks(true)`: the task list answers 403 until `refuseTasks(false)` (the host's list « unavailable for now »).
   let refusing = false;
@@ -155,7 +159,7 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
     if (!pmTasks || !signedIn(request) || request.method !== 'POST' || task?.is_requester !== true) return new Response(null, { status: 404 });
     if (task.state !== 'open' && !task.waiting_on_you) return new Response(null, { status: 409 });
     withdrawals.push({ id, ref: task.ref });
-    Object.assign(task, { state: 'closed', waiting_on_you: false, question: undefined, updated: '2026-10-29T08:10:00Z' });
+    Object.assign(task, { state: 'closed', closed_reason: 'withdrawn', waiting_on_you: false, question: undefined, updated: '2026-10-29T08:10:00Z' });
     return Response.json({ task });
   };
   const handlers = {

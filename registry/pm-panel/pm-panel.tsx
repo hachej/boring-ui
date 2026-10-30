@@ -2,8 +2,9 @@
 
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
-import { ChevronUpIcon, XIcon } from 'lucide-react';
+import { ChevronDownIcon, ChevronUpIcon, XIcon } from 'lucide-react';
 import type { EntryRecord } from '@earendil-works/pi-durable';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { PiChat } from '../pi-chat/pi-chat';
@@ -19,7 +20,9 @@ import { POINT_PREFACE, pointMessage } from './point-message';
 import { PmMockupProvider, PmMockupView, pmArtifacts } from './pm-mockups';
 import type { ArtifactDescriptor } from '@hachej/boring-ui-kit/chat-view';
 import { usePmMentions } from './pm-mentions';
-import { TaskBoard } from '../task-board/task-board';
+import { TaskBoard, TaskRequestCard, taskTokens } from '../task-board/task-board';
+import { selectTasks } from '@hachej/boring-ui-kit/task-board';
+import { requestOutcome } from './pm-task-source';
 import type { ImproveSpec, StudioTaskBoardSeam } from './use-pm-panel';
 import { useImproveAgent } from './use-improve-agent';
 import type { ImproveProp } from './use-improve-agent';
@@ -198,6 +201,32 @@ export function PmChat({ spec, page, screen, preset = 'desktop' }: { readonly sp
   </div></ChatTextProvider>;
 }
 
+/**
+ * « Mes demandes » (decided 2026-10-29): open requests on top, as the compact board with their actions; finished ones (`done`, `closed`)
+ * below, under « Terminées (n) », collapsed by default and absent when there are none, each with one muted label and no action.
+ */
+function PmRequests({ seam, text }: { readonly seam: StudioTaskBoardSeam; readonly text: PmText }) {
+  const [expanded, setExpanded] = useState(false);
+  const open = seam.tasks.filter(task => requestOutcome(task) === undefined);
+  const finished = selectTasks(seam.tasks.filter(task => requestOutcome(task) !== undefined), { filter: 'mine', currentUser: seam.currentUser });
+  const label = { live: text.outcomeLive, withdrawn: text.outcomeWithdrawn, closed: text.outcomeClosed } as const;
+  return <div className="flex flex-col gap-4 p-4">
+    {(open.length > 0 || finished.length === 0) && <TaskBoard tasks={open} variant="compact" filter="mine" currentUser={seam.currentUser} bar={false} title={text.requests}
+      onOpen={seam.onOpen} cardActions={seam.cardActions} locale={text.locale} viewerAction="confirmation" />}
+    {finished.length > 0 && <section data-testid="pm-finished" aria-label={text.finished(finished.length)} className="flex flex-col gap-2">
+      <Button variant="ghost" data-testid="pm-finished-toggle" aria-expanded={expanded} aria-controls="pm-finished-list" onClick={() => setExpanded(!expanded)}
+        className="min-h-11 justify-between px-1 text-sm font-semibold text-muted-foreground">
+        {text.finished(finished.length)}<ChevronDownIcon aria-hidden="true" className={cn('size-4 transition-transform', expanded && 'rotate-180')} />
+      </Button>
+      {expanded && <div id="pm-finished-list" role="list" aria-label={text.finished(finished.length)} className="flex flex-col gap-2">{finished.map(task => {
+        const outcome = requestOutcome(task)!;
+        return <TaskRequestCard key={task.id} task={task} variant="compact" locale={text.locale}
+          pill={<span className={cn('contents', taskTokens.pill)}><Badge variant={outcome === 'live' ? 'secondary' : 'outline'} data-task-outcome={outcome}>{label[outcome]}</Badge></span>} />;
+      })}</div>}
+    </section>}
+  </div>;
+}
+
 function Panel({ binding, pm, strip, full }: { readonly binding: Binding; readonly pm: ReturnType<typeof usePmPanel>; readonly strip: boolean; readonly full: boolean }) {
   const { spec, open, close: closeLayer } = binding;
   const [requests, setRequestsState] = useState(false);
@@ -270,8 +299,7 @@ function Panel({ binding, pm, strip, full }: { readonly binding: Binding; readon
         {mockup && full && !requests ? <PmMockupView artifact={mockup} text={text} onBack={() => setMockup(undefined)} /> : requests && full ? <>
           <div className="flex shrink-0 items-center py-1 pr-2 pl-2"><Button variant="ghost" data-testid="pm-requests-back" onClick={() => setRequests(false)} className="min-h-11">{text.back}</Button></div>
           <Separator />
-          <div className="min-h-0 flex-1 overflow-auto" data-testid="pm-task-board-seam">{spec.tasks && <TaskBoard tasks={spec.tasks.tasks} variant="compact" filter="mine" currentUser={spec.tasks.currentUser} bar={false} title={text.requests}
-            onOpen={spec.tasks.onOpen} cardActions={spec.tasks.cardActions} locale={text.locale} viewerAction="confirmation" className="p-4" />}</div>
+          <div className="min-h-0 flex-1 overflow-auto" data-testid="pm-task-board-seam">{spec.tasks && <PmRequests seam={spec.tasks} text={text} />}</div>
         </> : header}
         {pm.problem && <p role="alert" className="m-0 px-4 text-sm">{pm.problem}</p>}
         {/* The member never sees a raw tool error: pi-chat's trace stays, the failed step's details and orphan error notices are hidden. */}

@@ -65,12 +65,14 @@ export interface TaskRequestCardProps {
   readonly locale?: TaskLocale | undefined;
   /** Explicit host context for the French viewer label: « À vous » (question) or « À confirmer » (confirmation). */
   readonly viewerAction?: TaskViewerAction | undefined;
+  /** Compact only: replaces the derived status pill, e.g. a finished request's muted « En ligne » in « Mes demandes ». */
+  readonly pill?: ReactNode;
   /** @deprecated Ignored; kept for source compatibility. */
   readonly labels?: unknown;
 }
 
 /** One record, two renderings: the board card (D2) and the compact request card (C7). Actions remain host-authorized. */
-export function TaskRequestCard({ task, variant = 'card', selected, href, onOpen, actions, locale = 'en', viewerAction }: TaskRequestCardProps) {
+export function TaskRequestCard({ task, variant = 'card', selected, href, onOpen, actions, locale = 'en', viewerAction, pill: shownPill }: TaskRequestCardProps) {
   const activate = (event: MouseEvent<HTMLAnchorElement>) => {
     if (!onOpen || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
     event.preventDefault(); onOpen(task);
@@ -78,7 +80,7 @@ export function TaskRequestCard({ task, variant = 'card', selected, href, onOpen
   const anchor = { href, onClick: activate, 'data-task-open': task.id, 'aria-current': selected ? 'true' as const : undefined };
   const link = href ? <a {...anchor} /> : undefined;
   if (variant === 'compact') {
-    const pill = <TaskStatusPill task={task} locale={locale} viewerAction={viewerAction} sent />;
+    const pill = shownPill ?? <TaskStatusPill task={task} locale={locale} viewerAction={viewerAction} sent />;
     const strings = compactStrings[locale];
     const meta = [task.screen && strings.screen(task.screen), task.captureCount !== undefined && captures(task.captureCount)].filter(Boolean).join(' · ');
     const title = link && actions ? <a {...anchor} className="underline-offset-4 hover:underline">{task.title}</a> : task.title;
