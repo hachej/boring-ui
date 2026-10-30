@@ -1,5 +1,7 @@
 # Unreleased
 
+- **Readable request titles (`task-board`).** Refresh the copied block: compact rows no longer cut a legacy title or display after six words. Hosts should author/backfill a meaningful localized `display` of six words or fewer; until then the complete original title remains readable. Whitespace normalization is display-only. Original records, actions, product chips, operator cards and server authorization are unchanged; no props changed.
+
 # Migrating to 0.4.40
 
 - **Native compact requests (`task-board`).** Refresh the copied block as well as package pins. Compact rows now show a short `display`/title and one localized product status, retain the original need and injected actions, prioritize current needs-you, and fold finished records. Canonical technical records are omitted unless `compactPresentation.includeTechnical` opts into a collapsed group over already-authorized data. Keep the host's native `onOpen` detail route. Operator-board presentation and server rights are unchanged.
