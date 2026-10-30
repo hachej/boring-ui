@@ -6,7 +6,7 @@ import { deriveTaskStatus, taskReference, taskStatusLabel } from '@hachej/boring
 import { Badge } from '@/components/ui/badge';
 import { Item } from '@/components/ui/item';
 import { cn } from '../utils/utils';
-import { compactLabels, compactTaskStatus, compactTaskTitle } from './compact-presentation';
+import { compactLabels, compactTaskStatus, compactTaskTitle, taskAge, taskCardLine } from './compact-presentation';
 
 export type TaskLocale = 'en' | 'fr';
 export type TaskViewerAction = 'question' | 'confirmation';
@@ -89,11 +89,13 @@ export function TaskRequestCard({ task, variant = 'card', selected, href, onOpen
       {actions && <div data-task-actions="" className="mt-1 grid grid-cols-2 gap-2 *:min-h-11 *:w-full">{actions}</div>}
     </Item></div>;
   }
-  const pill = <TaskStatusPill task={task} locale={locale} viewerAction={viewerAction} />;
-  return <div role="listitem" className={cn('rounded-[var(--radius-lg)] bg-card', taskTokens.card)}><TaskAttention active={task.waiting_on_you === true}>
+  const needsYou = compactTaskStatus(task) === 'needs-you';
+  const facts = [task.app, taskAge(task)].filter(Boolean).join(' · ');
+  return <div role="listitem" className={cn('rounded-[var(--radius-lg)] bg-card', taskTokens.card)}>
     <Item variant="outline" className="flex-col items-stretch gap-1" data-task-card={task.id} data-selected={selected || undefined} {...(link ? { render: link } : {})}>
-      <span className="flex min-h-5 min-w-0 items-center justify-between gap-2 text-[11px] text-muted-foreground"><span>{taskMeta(task)}</span>{pill}</span>
-      <span className="min-w-0 text-sm break-words text-foreground">{task.display ?? task.title}</span>
+      <span data-task-title="" className="line-clamp-2 min-w-0 text-sm font-medium break-words text-foreground">{compactTaskTitle(task)}</span>
+      <span data-task-line="" className={cn('line-clamp-2 min-w-0 text-[13px] break-words', needsYou ? 'text-foreground' : 'text-muted-foreground')}>{taskCardLine(task, locale)}</span>
+      {facts && <span data-task-facts="" className="text-[11px] text-muted-foreground">{facts}</span>}
     </Item>
-  </TaskAttention></div>;
+  </div>;
 }

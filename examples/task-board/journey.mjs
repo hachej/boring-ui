@@ -55,10 +55,10 @@ try {
     }
     await browser.click('document.querySelector("[data-task-back]")');
   });
-  await step('wide host has WAITING · WORKING · OPEN and Done/Closed list links in the tasks bar', async () => {
-    assert.equal(await browser.evaluate(`getComputedStyle(${board}.querySelector('[data-task-column="waiting"]').parentElement).gridTemplateColumns.split(' ').length`), 3);
-    assert.deepEqual(await browser.evaluate(`[...${board}.querySelectorAll('[data-task-column]')].map(node => node.dataset.taskColumn)`), ['waiting', 'working', 'open']);
-    assert.equal(await browser.evaluate(`${board}.querySelector('[data-task-list-link=done]').textContent`), 'Done 12');
+  await step('wide host has its columns by who acts next, finished work folded', async () => {
+    assert.equal(await browser.evaluate(`getComputedStyle(${board}.querySelector('[data-task-column="needs-you"]').parentElement).gridTemplateColumns.split(' ').length`), 4);
+    assert.deepEqual(await browser.evaluate(`[...${board}.querySelectorAll('[data-task-column]')].map(node => node.dataset.taskColumn)`), ['needs-you', 'blocked', 'progress', 'live']);
+    assert.match(await browser.evaluate(`${board}.querySelector('[data-task-group=finished]').textContent`), /Finished/);
     await browser.screenshot('desktop-wide-light.png');
   });
   await step('keyboard opens right task overlay without squeezing kanban; choices use host callback; Back restores focus and history', async () => {
@@ -68,7 +68,7 @@ try {
     assert.equal(await browser.evaluate(`new URL(location.href).searchParams.get('task')`), 'D-201');
     assert.notEqual(await browser.evaluate(`getComputedStyle(${list}).display`), 'none');
     assert.equal(await browser.evaluate(`${board}.getBoundingClientRect().width`), widthBefore);
-    assert.equal(await browser.evaluate(`getComputedStyle(${board}.querySelector('[data-task-column="waiting"]').parentElement).gridTemplateColumns.split(' ').length`), 3);
+    assert.equal(await browser.evaluate(`getComputedStyle(${board}.querySelector('[data-task-column="needs-you"]').parentElement).gridTemplateColumns.split(' ').length`), 4);
     await browser.until('back receives overlay focus', 'document.activeElement.getAttribute("aria-label") === "Back to the tasks"');
     await browser.screenshot('desktop-detail-light.png');
     assert.match(await browser.evaluate(`${detail}.querySelector('[data-task-answer=every-card]').textContent`), /Alice: every card/);
@@ -161,7 +161,7 @@ try {
   await step('a narrow right panel on the same desktop uses a list and in-place detail', async () => {
     await browser.evaluate(`document.documentElement.classList.remove('dark')`); await pause(200);
     await browser.click(`document.querySelector('[data-panel-width]')`);
-    assert.equal(await browser.evaluate(`getComputedStyle(${board}.querySelector('[data-task-column="waiting"]').parentElement).gridTemplateColumns.split(' ').length`), 1);
+    assert.equal(await browser.evaluate(`getComputedStyle(${board}.querySelector('[data-task-column="needs-you"]').parentElement).gridTemplateColumns.split(' ').length`), 1);
     await browser.screenshot('desktop-narrow-light.png');
     await browser.click(card('D-201')); await browser.until('narrow detail', `!!${detail}`);
     assert.notEqual(await browser.evaluate(`getComputedStyle(${list}).display`), 'none');
