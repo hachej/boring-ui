@@ -138,7 +138,7 @@ const hidden = root => readdirSync(root).filter(name => name.startsWith('.boring
 
 test('on disk, deleting the last file with pruneEmptied removes the folders it empties (D-825)', async t => {
   const fixture = nested(t, 'folder/deep/last.md');
-  const result = await fixture.provider.delete({ path: located('folder/deep/last.md'), expectedRevision: await blobRevision(bytes('KEPT')), operationId: 'prune-delete', pruneEmptied: true }, access);
+  const result = await fixture.provider.deletion.delete({ path: located('folder/deep/last.md'), expectedRevision: await blobRevision(bytes('KEPT')), operationId: 'prune-delete', pruneEmptied: true }, access);
   assert.equal(result.kind, 'committed');
   assert.equal(existsSync(join(fixture.root, 'folder')), false, 'the emptied folders are gone from disk');
   assert.deepEqual(hidden(fixture.root), []);
@@ -146,7 +146,7 @@ test('on disk, deleting the last file with pruneEmptied removes the folders it e
 
 test('on disk, moving the last file with pruneEmptied removes its folders but keeps a sibling (D-825)', async t => {
   const fixture = nested(t, 'folder/deep/last.md', 'folder/stays.md');
-  const result = await fixture.provider.rename({ from: located('folder/deep/last.md'), to: located('elsewhere/last.md'), expectedRevision: await blobRevision(bytes('KEPT')), operationId: 'prune-move', pruneEmptied: true }, access);
+  const result = await fixture.provider.renaming.rename({ from: located('folder/deep/last.md'), to: located('elsewhere/last.md'), expectedRevision: await blobRevision(bytes('KEPT')), operationId: 'prune-move', pruneEmptied: true }, access);
   assert.equal(result.kind, 'committed');
   assert.equal(readFileSync(join(fixture.root, 'elsewhere/last.md'), 'utf8'), 'KEPT');
   assert.equal(existsSync(join(fixture.root, 'folder/deep')), false);
@@ -160,7 +160,7 @@ test('on disk, a file landing while a folder is being pruned survives in its fol
     if (String(from).endsWith('folder/deep')) writeFileSync(join(from, 'late.md'), 'LATE');
     return rename(from, to, context);
   };
-  const result = await fixture.provider.delete({ path: located('folder/deep/last.md'), expectedRevision: await blobRevision(bytes('KEPT')), operationId: 'prune-race', pruneEmptied: true }, access);
+  const result = await fixture.provider.deletion.delete({ path: located('folder/deep/last.md'), expectedRevision: await blobRevision(bytes('KEPT')), operationId: 'prune-race', pruneEmptied: true }, access);
   assert.equal(result.kind, 'committed');
   assert.equal(readFileSync(join(fixture.root, 'folder/deep/late.md'), 'utf8'), 'LATE');
   assert.deepEqual(readdirSync(join(fixture.root, 'folder')), ['deep'], 'nothing stays set aside');
@@ -168,6 +168,6 @@ test('on disk, a file landing while a folder is being pruned survives in its fol
 
 test('without pruneEmptied, a delete on disk leaves the folder: another consumer may have its cwd there (D-825)', async t => {
   const fixture = nested(t, 'folder/deep/last.md');
-  await fixture.provider.delete({ path: located('folder/deep/last.md'), expectedRevision: await blobRevision(bytes('KEPT')), operationId: 'no-prune' }, access);
+  await fixture.provider.deletion.delete({ path: located('folder/deep/last.md'), expectedRevision: await blobRevision(bytes('KEPT')), operationId: 'no-prune' }, access);
   assert.equal(existsSync(join(fixture.root, 'folder/deep')), true);
 });
