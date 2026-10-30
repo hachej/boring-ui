@@ -50,15 +50,51 @@ test('a failing tool, with no app code: one tool_error with a stable fingerprint
   assert.doesNotMatch(JSON.stringify(events), new RegExp(SECRET));
 });
 
-test('the agent gets report_bug by default; emails and long numbers are scrubbed', async t => {
+test('report_bug by default sends an enum and a real tool name, never text the model wrote', async t => {
   const events = capture(t);
-  const { say, agent } = await open(t, [call(`report_bug`, { summary: 'Cannot save for ana@fictional.invalid 0612345678', tried: 'save_meal twice', tool: 'save_meal', req_id: 'req-1' })]);
+  const { say, agent } = await open(t, [call('report_bug', { category: 'tool_failed', tool: 'save_meal', summary: `Ana ${SECRET}`, tried: SECRET })]);
   assert.ok(agent.extensions.some(extension => extension.tools?.some(tool => tool.name === 'report_bug')));
   await say('Save it');
   assert.deepEqual(kinds(events), ['report_bug']);
-  assert.equal(events[0].summary, 'Cannot save for [email] [number]');
+  assert.equal(events[0].category, 'tool_failed');
   assert.equal(events[0].tool, 'save_meal');
-  assert.equal(events[0].req_id, 'req-1');
+  assert.doesNotMatch(JSON.stringify(events), new RegExp(SECRET));
+
+  events.length = 0;
+  const made = await open(t, [call('report_bug', { category: 'Ana has diabetes', tool: 'Ana_diabetes' })]);
+  await made.say('Save it');
+  assert.deepEqual(kinds(events), ['report_bug']);
+  assert.ok(!('tool' in events[0]) && !('category' in events[0]), 'a tool the agent does not have and an unknown category do not leave');
+});
+
+test('agentText opts in to the agent\'s own text, scrubbed', async t => {
+  const events = capture(t);
+  const { say } = await open(t, [call('report_bug', { category: 'impossible', summary: 'Cannot save for ana@fictional.invalid 0612345678', tried: 'save_meal twice' })], { struggle: { agentText: true } });
+  await say('Save it');
+  assert.equal(events[0].summary, 'Cannot save for [email] [number]');
+  assert.equal(events[0].tried, 'save_meal twice');
+});
+
+test('a sink that never answers does not hold the agent', async t => {
+  const { say } = await open(t, [call('save_meal')], { struggle: { sink: () => new Promise(() => {}), sinkTimeoutMs: 10 } });
+  assert.equal((await say('Save it')).status, 'done');
+});
+
+test('no correction on an agreeing no; no rephrase on a different ask', async t => {
+  const events = capture(t);
+  const { say } = await open(t, [fauxAssistantMessage([fauxText('Should I change anything?')])]);
+  await say('Please review this letter');
+  await say("No, it's fine");
+  assert.deepEqual(kinds(events), []);
+  await say('Set timer for five minutes');
+  await say('Set timer for ten minutes');
+  assert.deepEqual(kinds(events), []);
+});
+
+test('a self-evolving agent gets the events and no tool of ours', async t => {
+  const { agent } = await open(t, [], { selfEvolving: true, workspace: 'one' });
+  assert.ok(agent.extensions.some(extension => extension.name === 'agent.coach.struggle'));
+  assert.ok(!agent.extensions.some(extension => extension.tools?.some(tool => tool.name === 'report_bug')));
 });
 
 test('tool_retry: the same call 3 times, once; three different calls are normal work', async t => {
