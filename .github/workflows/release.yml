@@ -163,7 +163,8 @@ jobs:
 
   github-release:
     needs: publish
-    if: needs.publish.result == 'success'
+    # always(): with reused CI the jobs before publish are skipped, and the implicit success() would skip this one too.
+    if: always() && needs.publish.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
