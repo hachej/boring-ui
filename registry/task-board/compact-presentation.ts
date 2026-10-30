@@ -10,10 +10,9 @@ export function compactTaskStatus(task: TaskRecord) {
   return 'preparation';
 }
 
-/** A display-only cap: opening the row still passes the untouched record to the host. */
+/** Hosts author concise display titles; a legacy need is never shortened by cutting its sentence. */
 export function compactTaskTitle(task: TaskRecord): string {
-  const words = (task.display?.trim() || task.title.trim()).split(/\s+/u);
-  return words.length > 6 ? `${words.slice(0, 6).join(' ')}…` : words.join(' ');
+  return (task.display?.trim() || task.title.trim()).replace(/\s+/gu, ' ');
 }
 
 export const compactLabels = {
