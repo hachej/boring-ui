@@ -1,5 +1,7 @@
 # Unreleased
 
+- **Native compact requests (`task-board`).** Refresh the copied block as well as package pins. Compact rows now show a short `display`/title and one localized product status, retain the original need and injected actions, prioritize current needs-you, and fold finished records. Canonical technical records are omitted unless `compactPresentation.includeTechnical` opts into a collapsed group over already-authorized data. Keep the host's native `onOpen` detail route. Operator-board presentation and server rights are unchanged.
+
 # Migrating to 0.4.39
 
 - **Phone PM conversation (`pm-panel`, `pi-chat`, `pi-chat-question`, `shared-chat`).** Refresh copied blocks as well as npm pins. PM replies remain visible after reopening and omit tool traces; pending questions accept plain composer text through the existing host `actions.answer` (same native question ID, host validation unchanged), keeping drafts on failures. Confirmation waits for acknowledgement and offers visible retry on outage. Initial PM acquisition and older native page reads are bounded; new native threads do not offer nonexistent older history. Answered questions stop repeating assistant prompts/status logs; shared mockup descriptors/caches retain exact targets/views/revisions. Private request lists use host short display titles, one localized status, needs-you first and collapsed technical details.
