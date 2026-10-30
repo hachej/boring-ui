@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -9,7 +9,7 @@ import { NodeExecutionEnv } from '@earendil-works/pi-durable/env/node';
 import { createWorkspaceJournal } from '@hachej/boring-files/journal';
 import { openNodeConnection } from '@hachej/boring-files/sqlite';
 import { openSqliteFileSystem } from '@hachej/boring-files/sqlite-filesystem';
-import { createWorkspaceProvider } from '@hachej/boring-files/workspace';
+import { blobRevision, createWorkspaceProvider } from '@hachej/boring-files/workspace';
 
 const identity = { providerId: 'fictional', instanceId: 'workspace', incarnation: 'one', viewId: 'view' };
 const access = { principalId: 'person', initiatorId: 'person', scopeId: 'fictional' };
@@ -125,4 +125,49 @@ test('SQLite cancellation after commit preserves the committed receipt and does 
   assert.equal((await fs.writeFile('/repo/note.md', 'LATER EDIT', BACKGROUND_CONTEXT)).ok, true);
   assert.deepEqual(await provider.publication.publish(request, access), result);
   assert.equal((await fs.readTextFile('/repo/note.md', BACKGROUND_CONTEXT)).value, 'LATER EDIT');
+});
+
+const located = path => ({ resource: { providerId: identity.providerId, path }, view: { kind: 'published' } });
+const nested = (t, ...files) => {
+  const fixture = diskFixture(t);
+  mkdirSync(join(fixture.root, 'folder/deep'), { recursive: true });
+  for (const file of files) writeFileSync(join(fixture.root, file), 'KEPT');
+  return fixture;
+};
+const hidden = root => readdirSync(root).filter(name => name.startsWith('.boring-'));
+
+test('on disk, deleting the last file with pruneEmptied removes the folders it empties (D-825)', async t => {
+  const fixture = nested(t, 'folder/deep/last.md');
+  const result = await fixture.provider.delete({ path: located('folder/deep/last.md'), expectedRevision: await blobRevision(bytes('KEPT')), operationId: 'prune-delete', pruneEmptied: true }, access);
+  assert.equal(result.kind, 'committed');
+  assert.equal(existsSync(join(fixture.root, 'folder')), false, 'the emptied folders are gone from disk');
+  assert.deepEqual(hidden(fixture.root), []);
+});
+
+test('on disk, moving the last file with pruneEmptied removes its folders but keeps a sibling (D-825)', async t => {
+  const fixture = nested(t, 'folder/deep/last.md', 'folder/stays.md');
+  const result = await fixture.provider.rename({ from: located('folder/deep/last.md'), to: located('elsewhere/last.md'), expectedRevision: await blobRevision(bytes('KEPT')), operationId: 'prune-move', pruneEmptied: true }, access);
+  assert.equal(result.kind, 'committed');
+  assert.equal(readFileSync(join(fixture.root, 'elsewhere/last.md'), 'utf8'), 'KEPT');
+  assert.equal(existsSync(join(fixture.root, 'folder/deep')), false);
+  assert.equal(readFileSync(join(fixture.root, 'folder/stays.md'), 'utf8'), 'KEPT');
+});
+
+test('on disk, a file landing while a folder is being pruned survives in its folder (D-825)', async t => {
+  const fixture = nested(t, 'folder/deep/last.md');
+  const rename = fixture.fs.renameFile.bind(fixture.fs);
+  fixture.fs.renameFile = async (from, to, context) => {
+    if (String(from).endsWith('folder/deep')) writeFileSync(join(from, 'late.md'), 'LATE');
+    return rename(from, to, context);
+  };
+  const result = await fixture.provider.delete({ path: located('folder/deep/last.md'), expectedRevision: await blobRevision(bytes('KEPT')), operationId: 'prune-race', pruneEmptied: true }, access);
+  assert.equal(result.kind, 'committed');
+  assert.equal(readFileSync(join(fixture.root, 'folder/deep/late.md'), 'utf8'), 'LATE');
+  assert.deepEqual(readdirSync(join(fixture.root, 'folder')), ['deep'], 'nothing stays set aside');
+});
+
+test('without pruneEmptied, a delete on disk leaves the folder: another consumer may have its cwd there (D-825)', async t => {
+  const fixture = nested(t, 'folder/deep/last.md');
+  await fixture.provider.delete({ path: located('folder/deep/last.md'), expectedRevision: await blobRevision(bytes('KEPT')), operationId: 'no-prune' }, access);
+  assert.equal(existsSync(join(fixture.root, 'folder/deep')), true);
 });
