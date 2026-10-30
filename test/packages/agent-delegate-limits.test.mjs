@@ -215,6 +215,28 @@ test('meterFromSink: a child\'s responses reach the sink once, under one run, an
   assert.equal(calls.at(-1)[1].status, 'done');
 });
 
+test('meterFromSink: a rerun over a finished run reports nothing; tokens that price to nothing charge the hold (D-556)', async () => {
+  const ids = { callId: 'c', taskId: 1, requestId: 'delegate:1' };
+  const usage = { input: 5, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 10, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+  const event = { entryId: 1, provider: 'fictional', model: 'm', usage };
+  const ledger = open => {
+    const calls = [];
+    return { calls, sink: {
+      reserveRun: async () => ({ reservationId: 'hold' }), openRuns: async () => open,
+      recordUsage: async input => { calls.push('usage'); return { billedMicros: input.amountMicros }; },
+      settleRun: async () => { calls.push('settle'); }, releaseRun: async input => { calls.push(input.reason); },
+    } };
+  };
+  const finished = ledger([]);
+  const replay = await meterFromSink({ sink: finished.sink, scope: { userId: 'p' }, price: () => 60 })(1, 2, ids);
+  await replay.record(event); await replay.close('done');
+  assert.deepEqual(finished.calls, [], 'a charged hold takes no replayed usage on top');
+  const running = ledger([{ runId: 'run:2:delegate:1' }]);
+  const free = await meterFromSink({ sink: running.sink, scope: { userId: 'p' }, price: () => 0 })(1, 2, ids);
+  await free.record(event); await free.close('done');
+  assert.deepEqual(running.calls, ['usage', 'fallback-charge']);
+});
+
 test('meterFromSink: a refused reservation fails the call before the child runs; a lost usage report charges the hold (D-556)', { timeout: 20000 }, async t => {
   const script = scriptedModels();
   const refused = await open({ meter: meterFromSink({ sink: { reserveRun: async () => ({ kind: 'refused', reason: 'fictional: out of credits' }) }, scope: { userId: 'p' }, price: () => 0 }) }, script);

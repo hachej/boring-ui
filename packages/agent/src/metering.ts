@@ -171,18 +171,23 @@ export function meterFromSink(options: MeterFromSinkOptions): (parent: Conversat
     const reserved = await sink.reserveRun({ ...run, kind: 'input', message: '', content: '' });
     if ('kind' in reserved) throw new MeteringRefused(reserved.reason);
     const reservation = reserved.reservationId ? { reservationId: reserved.reservationId } : {};
-    let recorded = 0, lost = false;
+    // A rerun after a crash reattaches here. A run the ledger already finished must not take the replayed usage on top of a charged hold.
+    if (sink.openRuns && !(await sink.openRuns()).some(open => open.runId === run.runId)) return { record: () => undefined, close: () => undefined };
+    let recorded = 0, lost = false, unpriced = false;
     return {
       record: async event => {
         const model = { provider: event.provider, id: event.model };
         try {
-          await sink.recordUsage({ ...run, ...reservation, usageId: `entry:${child}:${event.entryId}`, model, bucket: `model:${event.provider}/${event.model}`, usage: event.usage, amountMicros: Math.ceil(Math.max(0, price(event.usage, model)) * markup) });
+          const { billedMicros } = await sink.recordUsage({ ...run, ...reservation, usageId: `entry:${child}:${event.entryId}`, model, bucket: `model:${event.provider}/${event.model}`, usage: event.usage, amountMicros: Math.ceil(Math.max(0, price(event.usage, model)) * markup) });
           recorded++;
+          if (billedMicros === 0 && !isZero(event.usage)) unpriced = true;
         } catch (error) { lost = true; onError?.(`recordUsage failed (${run.runId})`, error); }
       },
       close: async end => {
         try {
           if (lost) await sink.releaseRun({ ...run, ...reservation, reason: 'usage-write-failed' });
+          // Tokens that priced to nothing are work it cannot account for, as in `createMeter`: the hold is charged, not settled as free.
+          else if (unpriced) await sink.releaseRun({ ...run, ...reservation, reason: 'fallback-charge' });
           else if (end === 'done' || recorded > 0) await sink.settleRun({ ...run, ...reservation, status: end === 'done' ? 'done' : 'unanswered' });
           else await sink.releaseRun({ ...run, ...reservation, reason: end === 'failed' ? 'error-before-usage' : 'cancelled' });
         } catch (error) { onError?.(`closing the child's run failed (${run.runId})`, error); }
