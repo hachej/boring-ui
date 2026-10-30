@@ -434,14 +434,31 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
           if (!together) journal.complete(operation, record, versions);
         } else if (moving || plans[0]!.change.kind === 'delete') {
           applying = true;
+          // Like a publication, a move creates the folder it lands in: a folder renames file by file, so the first file finds none.
+          const landing = moving ? absolute(moving.to.resource.path) : '';
+          if (moving) {
+            const made = await fs.createDir(landing.slice(0, landing.lastIndexOf('/')) || '/', { recursive: true }, fsContext(access.signal));
+            if (!made.ok) {
+              if (made.error.code === 'unknown' || made.error.code === 'aborted') throw made.error;
+              return refuse(made.error.message);
+            }
+          }
+          const leaving = moving ? moving.from.resource.path : plans[0]!.path;
           const result = moving
-            ? await fs.renameFile(absolute(moving.from.resource.path), absolute(moving.to.resource.path), fsContext(access.signal))
+            ? await fs.renameFile(absolute(moving.from.resource.path), landing, fsContext(access.signal))
             : await fs.remove(absolute(plans[0]!.path), { recursive: false }, fsContext(access.signal));
           if (!result.ok) {
             if (result.error.code === 'unknown' || result.error.code === 'aborted') throw result.error;
             return refuse(result.error.message);
           }
           journal.complete(operation, record, versions);
+          // A folder exists through its files: the one this left empty goes, up to the first that still holds something. Best effort.
+          for (let folder = leaving.slice(0, leaving.lastIndexOf('/') + 1).replace(/\/$/, ''); folder; folder = folder.slice(0, folder.lastIndexOf('/') + 1).replace(/\/$/, '')) {
+            const listed = await fs.listDir(absolute(folder), fsContext()).catch(() => undefined);
+            if (!listed?.ok || listed.value.length) break;
+            const gone = await fs.remove(absolute(folder), { recursive: true }, fsContext()).catch(() => undefined);
+            if (!gone?.ok) break;
+          }
         } else {
           const { change, path, unchanged } = plans[0]!;
           if (change.kind === 'delete') return refuse('Invalid file replacement');
