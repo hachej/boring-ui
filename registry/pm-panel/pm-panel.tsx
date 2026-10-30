@@ -166,7 +166,7 @@ export function pmEntries({ preset, text, mentions, renderEntry, renderRequest, 
     if (sent) return sent;
     const own = renderEntry?.(entry);
     if (own) return own;
-    if (member && callsTools(entry) && !failedRun(entry)) return undefined;
+    if (callsTools(entry) && !failedRun(entry)) return undefined;
     const reply = assistantText(entry);
     if (reply === undefined) return member && failedRun(entry) ? { inline: true, content: <p data-testid="pm-failed" className="m-0 text-sm text-muted-foreground">{text.failed}</p> } : undefined;
     // Headings stay at body size inside the panel.
@@ -181,7 +181,16 @@ export function pmEntries({ preset, text, mentions, renderEntry, renderRequest, 
  * The PM conversation for a column (Studio, desktop preset) or any host surface: the thread and the one composer, which the strip
  * replaces while pointing. `page` is the element the point layer picks in (Studio: the app's device frame).
  */
-export function PmChat({ spec, page, screen, preset = 'desktop' }: { readonly spec: ImproveSpec; readonly page: HTMLElement | null; readonly screen?: string; readonly preset?: PmPreset }) {
+export function PmChat(props: { readonly spec: ImproveSpec; readonly page: HTMLElement | null; readonly screen?: string; readonly preset?: PmPreset }) {
+  const controller = props.spec.controller;
+  const [instance, setInstance] = useState({ controller, sequence: 0 });
+  if (instance.controller !== controller) setInstance({ controller, sequence: instance.sequence + 1 });
+  return <PmChatSession key={instance.sequence} {...props} />;
+}
+
+function PmChatSession({ spec, page, screen, preset = 'desktop' }: { readonly spec: ImproveSpec; readonly page: HTMLElement | null; readonly screen?: string; readonly preset?: PmPreset }) {
+  const [mockup, setMockup] = useState<ArtifactDescriptor>();
+  const artifacts = useMemo(() => spec.chatProps?.artifacts ?? pmArtifacts(setMockup, mockup), [spec.chatProps?.artifacts, mockup]);
   const pm = usePmPanel(spec, true, page, screen, { comment: preset === 'desktop' });
   const { text } = pm;
   const mentions = usePmMentions(spec.tasks, spec.chatProps?.mentions, text);
@@ -189,16 +198,19 @@ export function PmChat({ spec, page, screen, preset = 'desktop' }: { readonly sp
   const strip = pm.state.mode === 'point' || pm.state.mode === 'navigate';
   const props = { preset, text, selections: pm.state.chips, onRemove: pm.remove, show: pm.state.show, onShow: (value: boolean) => pm.dispatch({ type: 'show', value }),
     onPoint: () => pm.dispatch({ type: 'point' }), onReturn: pm.returnToComposer, onOpenRecorder: () => pm.dispatch({ type: 'return' }), focusInput: pm.focusVersion > 0 && !strip, voice: pm.voice, meta: pm.meta, notice: pm.sent ? text.sentToPm : undefined };
-  return <ChatTextProvider value={chatTextFor(spec.chatProps?.locale ?? 'en')}><div data-testid="pm-chat" data-mode={pm.state.mode} data-preset={preset} className={cn('flex min-h-0 flex-1 flex-col',
-    '[&_[data-boring=pi-chat]]:bg-transparent [&_[data-testid=empty-state]]:hidden [&_[data-testid=transcript-scroll]>div:last-child]:flex [&_[data-testid=transcript-scroll]>div:last-child]:min-h-full [&_[data-testid=transcript-scroll]>div:last-child]:flex-col [&_[data-testid=transcript-scroll]>div:last-child]:justify-end [&_[data-boring=pi-chat]>footer]:px-3.5 [&_[data-boring=pi-chat]>footer]:pt-0 [&_[data-boring=pi-chat]>footer]:pb-3.5 [&_[data-testid=transcript]]:gap-2.5 [&_[data-testid=transcript-scroll]>div:last-child]:px-[18px] [&_[data-testid=transcript-scroll]>div:last-child]:py-4 [&_[data-testid=transcript-history]]:min-h-0 [&_[data-testid=transcript-history]>span:not([role])]:hidden [&_[data-testid=transcript-navigation]]:pointer-events-none [&_[data-testid=transcript-navigation]]:absolute [&_[data-testid=transcript-navigation]]:inset-x-0 [&_[data-testid=transcript-navigation]]:bottom-0 [&_[data-testid=transcript-navigation]_*]:pointer-events-auto')}>
+  return <ChatTextProvider value={chatTextFor(spec.chatProps?.locale ?? 'en')}><PmMockupProvider read={spec.readArtifact} text={text}><div data-testid="pm-chat" data-mode={pm.state.mode} data-preset={preset} className={cn('flex min-h-0 flex-1 flex-col',
+    '[&_[data-testid=question-option]]:min-h-11 [&_[data-testid=question-input]]:min-h-11 [&_[data-testid=question-submit]]:min-h-11 [&_[data-boring=pi-chat]]:bg-transparent [&_[data-testid=empty-state]]:hidden [&_[data-testid=transcript-scroll]>div:last-child]:flex [&_[data-testid=transcript-scroll]>div:last-child]:min-h-full [&_[data-testid=transcript-scroll]>div:last-child]:flex-col [&_[data-testid=transcript-scroll]>div:last-child]:justify-end [&_[data-boring=pi-chat]>footer]:px-3.5 [&_[data-boring=pi-chat]>footer]:pt-0 [&_[data-boring=pi-chat]>footer]:pb-3.5 [&_[data-testid=transcript]]:gap-2.5 [&_[data-testid=transcript-scroll]>div:last-child]:px-[18px] [&_[data-testid=transcript-scroll]>div:last-child]:py-4 [&_[data-testid=transcript-history]]:min-h-0 [&_[data-testid=transcript-history]>span:not([role])]:hidden [&_[data-testid=transcript-navigation]]:pointer-events-none [&_[data-testid=transcript-navigation]]:absolute [&_[data-testid=transcript-navigation]]:inset-x-0 [&_[data-testid=transcript-navigation]]:bottom-0 [&_[data-testid=transcript-navigation]_*]:pointer-events-auto')}>
     <p role="status" aria-live="polite" data-testid="pm-announce" className="sr-only">{pm.announcement}</p>
     {pm.problem && <p role="alert" className="m-0 px-4 text-sm">{pm.problem}</p>}
-    <PiChat {...withChatPlugins({ ...spec.chatProps, ...(mentions ? { mentions } : {}) })} controller={spec.controller} locale={spec.chatProps?.locale ?? 'en'} header={false} emptyLayout="docked"
+    {mockup && <PmMockupView artifact={mockup} text={text} onBack={() => setMockup(undefined)} />}
+    <div hidden={mockup !== undefined} className={cn('min-h-0 flex-1 flex-col', mockup ? 'hidden' : 'flex')}>
+    <PiChat {...withChatPlugins({ ...spec.chatProps, artifacts, ...(mentions ? { mentions } : {}) })} controller={spec.controller} locale={spec.chatProps?.locale ?? 'en'} header={false} emptyLayout="docked"
       labels={{ ...spec.chatProps?.labels, placeholder: `${text.placeholderBefore}↖${text.placeholderAfter}`, add: text.attach, send: text.send }} onFiles={spec.chatProps?.onFiles ?? imageFiles}
       sendContext={pm.sendContext} renderEntry={pmEntries({ preset, text, mentions, renderEntry: spec.chatProps?.renderEntry, renderRequest: spec.tasks?.renderRequest, edit })}
       renderComposer={composer => strip ? <PmComposer variant="strip" {...props} /> : <PmComposer {...props} composer={{ ...composer, sendBlocked: composer.sendBlocked || pm.voice.phase === 'processing' }} />} />
+    </div>
     {pm.comment && page && <PointComment comment={pm.comment} frame={page} text={text} />}
-  </div></ChatTextProvider>;
+  </div></PmMockupProvider></ChatTextProvider>;
 }
 
 /**

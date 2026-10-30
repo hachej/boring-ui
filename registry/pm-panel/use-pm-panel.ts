@@ -35,7 +35,7 @@ export interface ImproveSpec {
   readonly policy?: PrivacyPolicy;
   readonly pointVoice?: PmVoice;
   readonly tasks?: StudioTaskBoardSeam;
-  /** Reads a file the PM presented (`present`), so the app panel shows it as a mockup card and opens it in the sheet. Absent: the card shows « unavailable ». */
+  /** Reads a file the PM presented (`present`), so the app panel and PmChat show it as a mockup card and open its full view. Absent: the card shows « unavailable ». */
   readonly readArtifact?: import('./pm-mockups').PmReadArtifact;
 }
 /**
