@@ -71,7 +71,7 @@ try {
   };
   const openSheets = `document.querySelectorAll('[data-testid=app-sheet]').length`;
   const sheetButtonReset = `(() => { const b = document.querySelector('[data-testid=app-sheet] button:not([data-testid=account-improve])'); if (!b) return null; const s = getComputedStyle(b); return { appearance: s.appearance || s.webkitAppearance, background: s.backgroundColor }; })()`;
-  const pmSheet = `${q('[data-testid=pm-panel]')}?.hidden === false && ${q('[data-testid=pm-panel]')}.dataset.mode === 'sheet'`;
+  const pmSheet = `${q('[data-testid=pm-panel]')}?.hidden === false && ${q('[data-testid=pm-panel]')}.dataset.mode === 'chat'`;
   /** Nothing covers the tab bar: the element at the middle of each tab is that tab. */
   const tabsFree = () => browser.evaluate(`[...document.querySelectorAll('[data-testid=tabbar] [role=tab]')].every(tab => { const r = tab.getBoundingClientRect(); const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return tab.contains(hit); })`);
 
