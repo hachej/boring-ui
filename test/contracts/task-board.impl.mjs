@@ -187,6 +187,13 @@ test('across apps every card names its app and the bar filters by it; one app sh
   assert.equal(document.querySelectorAll('[data-task-card]').length, 2);
 });
 
+test('a board with nothing to show says so instead of failing', async t => {
+  await fixture(t, { tasks: [] });
+  assert.equal(document.querySelectorAll('[data-task-card]').length, 0);
+  assert.ok(document.querySelector('[data-task-list] [data-slot=empty]'), 'the empty state renders');
+  assert.equal(document.querySelector('[data-task-group]'), null);
+});
+
 test('French columns and an app with no label stay clean', async t => {
   await fixture(t, { locale: 'fr', tasks: [{ id: 'a', title: 'Fictif', state: 'working' }] });
   assert.equal(document.querySelector('[data-task-apps]'), null);

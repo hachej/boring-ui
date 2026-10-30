@@ -183,7 +183,7 @@ export function TaskBoard({ tasks, filter, onFilterChange, currentUser, limit, v
             </section>;
           })}
         </div>
-        {!listed.length && empty}
+        {!listed.length && <Empty><EmptyHeader><EmptyTitle>{compactLabels[locale].empty}</EmptyTitle><EmptyDescription>{compactLabels[locale].emptyDescription}</EmptyDescription></EmptyHeader></Empty>}
         {FOLDED.map(column => {
           const rows = of(column);
           return rows.length > 0 && <Collapsible key={column} data-task-group={column} className="px-3.5 pb-2" open={unfolded.has(column)} onOpenChange={open => unfold(column, open)}>

@@ -31,6 +31,9 @@ Host-owned business requests rendered from authorized records, shared by a board
 
 Preconditions: built packages, Chromium, fictional data only. Run `CHROMIUM=/path/to/chromium npm run task-board:journey`.
 
+- **Reasons.** `task-board-reason`: `node --test test/contracts/task-board.test.mjs` opens a needs-you task with a question, with only a one-line reason and with neither, plus a blocked task; each detail says what is wanted.
+- **Across apps.** `task-board-apps`: the same test gives records two `app` values, then checks the card names the app and the bar filters by it.
+
 - `task-uncut-title`: `node --test test/contracts/task-board.test.mjs test/contracts/task-display.test.mjs` covers long French/English fallbacks, empty and overlong legacy display values, whitespace, one chip and frozen original records. The compact browser fixture checks wrapping on a phone; missing display metadata must not invent a summary.
 - `task-display-title`: `node --test test/contracts/task-display.test.mjs` renders both public card variants with and without a short display title, preserving the frozen original record.
 - `task-board-status`: run `node --test test/packages/ui-task-board.test.mjs`; verify precedence, no status inferred from person names/free text, EN/FR question/confirmation wording and missing-status omission. Display fields do not change ownership or mine filtering.
