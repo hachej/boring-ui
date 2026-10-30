@@ -12,6 +12,7 @@ import { createModels } from '@earendil-works/pi-ai/models';
 import { fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from '@earendil-works/pi-ai/providers/faux';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { createDelegateTool, defineAgent } from '@hachej/boring-agent/agents';
+import { meterFromSink } from '@hachej/boring-agent/metering';
 
 const resultText = message => message.content.filter(part => part.type === 'text').map(part => part.text).join('');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -173,6 +174,66 @@ function recordingMeter() {
   };
   return { log, meter };
 }
+
+test('onChild and meter name the call: callId, taskId and the child input\'s requestId (D-556)', { timeout: 20000 }, async t => {
+  const seen = [];
+  const { lead, harness } = await open({
+    onChild: (_parent, _child, _tx, ids) => { seen.push(['onChild', ids]); },
+    meter: (_parent, _child, ids) => { seen.push(['meter', ids]); return { record: () => {}, close: () => {} }; },
+  }, scriptedModels());
+  t.after(() => harness.close(context));
+  const conversation = await lead.createConversation(harness, context);
+  assert.equal((await ask(conversation, 'ask')).status, 'done');
+  assert.deepEqual(seen.map(([from]) => from), ['onChild', 'meter']);
+  assert.deepEqual(seen[0][1], seen[1][1], 'the same ids on both');
+  const { callId, taskId, requestId } = seen[0][1];
+  assert.match(callId, /^delegate-/);
+  assert.ok(taskId !== undefined);
+  assert.equal(requestId, `delegate:${taskId}`);
+});
+
+test('meterFromSink: a child\'s responses reach the sink once, under one run, and the run settles (D-556)', { timeout: 20000 }, async t => {
+  const calls = [];
+  const sink = {
+    reserveRun: async input => { calls.push(['reserve', input]); return { reservationId: 'fictional-hold' }; },
+    recordUsage: async input => { calls.push(['usage', input]); return { billedMicros: input.amountMicros }; },
+    settleRun: async input => { calls.push(['settle', input]); },
+    releaseRun: async input => { calls.push(['release', input]); },
+  };
+  const { lead, harness } = await open({ meter: meterFromSink({ sink, scope: { userId: 'fictional-person' }, price: () => 5, markup: 2 }) }, scriptedModels());
+  t.after(() => harness.close(context));
+  const conversation = await lead.createConversation(harness, context);
+  assert.equal((await ask(conversation, 'ask')).status, 'done');
+  const [child] = await children(conversation);
+  assert.deepEqual(calls.map(([kind]) => kind), ['reserve', 'usage', 'usage', 'settle']);
+  assert.equal(new Set(calls.map(([, input]) => input.runId)).size, 1, 'one run');
+  for (const [, input] of calls) { assert.equal(input.userId, 'fictional-person'); assert.equal(input.conversationId, Number(child.id)); }
+  const usages = calls.filter(([kind]) => kind === 'usage').map(([, input]) => input);
+  assert.equal(new Set(usages.map(input => input.usageId)).size, 2);
+  assert.equal(usages[0].amountMicros, 10, 'price times markup');
+  assert.equal(usages[0].reservationId, 'fictional-hold');
+  assert.equal(calls.at(-1)[1].status, 'done');
+});
+
+test('meterFromSink: a refused reservation fails the call before the child runs; a lost usage report charges the hold (D-556)', { timeout: 20000 }, async t => {
+  const script = scriptedModels();
+  const refused = await open({ meter: meterFromSink({ sink: { reserveRun: async () => ({ kind: 'refused', reason: 'fictional: out of credits' }) }, scope: { userId: 'p' }, price: () => 0 }) }, script);
+  t.after(() => refused.harness.close(context));
+  const conversation = await refused.lead.createConversation(refused.harness, context);
+  await ask(conversation, 'ask');
+  const [result] = await delegateResults(conversation);
+  assert.equal(result?.isError, true);
+  assert.equal(script.calls.child, 0, 'the child never asked its model');
+
+  const released = [];
+  const lost = await open({ meter: meterFromSink({
+    sink: { reserveRun: async () => ({}), recordUsage: async () => { throw new Error('fictional store down'); }, settleRun: async () => { released.push('settled'); }, releaseRun: async input => { released.push(input.reason); } },
+    scope: { userId: 'p' }, price: () => 0,
+  }) }, scriptedModels());
+  t.after(() => lost.harness.close(context));
+  assert.equal((await ask(await lost.lead.createConversation(lost.harness, context), 'ask')).status, 'done', 'the ledger failing does not fail the child');
+  assert.deepEqual(released, ['usage-write-failed']);
+});
 
 test('meter gets each child model response once and is closed with done when the child ends', { timeout: 20000 }, async t => {
   const script = scriptedModels();

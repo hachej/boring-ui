@@ -10,6 +10,7 @@ The npm side of the kit: Pi-based agent definitions and handlers, the workspace 
 - `pkg-agent-define` `defineAgent`, tools, extensions, delegates. `packages/agent/src/agents.ts`.
 - `pkg-agent-transport` chat transport and conversations handlers. `packages/agent/src/chat-transport.ts`, `conversations.ts`.
 - `pkg-agent-capabilities` file guard, approvals, `ask_user`, `present`, schedules, sandbox. `packages/agent/src/file-guard.ts`, `approval.ts`, `ask-user.ts`, `artifacts.ts`, `schedule.ts`, `sandbox.ts`.
+- `pkg-agent-delegate-meter` delegate `onChild` and `meter` receive `{ callId, taskId, requestId }`; `meterFromSink` (`@hachej/boring-agent/metering`) feeds a child's spend to a `MeteringSink`. `packages/agent/src/delegate.ts`, `metering.ts`. Drive: `node --test test/packages/agent-delegate-limits.test.mjs`.
 - `pkg-agent-context` request context and mention resolver. `packages/agent/src/prompt-context.ts`, `mentions.ts`.
 - `pkg-agent-questions-delivery` optional native questions, validation and durable application-result delivery. `packages/agent/src/questions.ts`, `validation.ts`, `delivery.ts`.
 - `pkg-agent-room-metering` shared-room entries, native usage metering and per-request context; host policy remains external. `packages/agent/src/room/`, `metering.ts`.
