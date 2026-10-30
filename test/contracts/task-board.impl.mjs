@@ -183,7 +183,7 @@ test('compact public cards show one localized product chip, terminal guards and 
   assert.equal(document.querySelector('[data-task-status]'), null, 'operator card stays unchanged');
 });
 
-test('compact title is capped, actions stay authorized host intents, original open record and native detail retain the full need', async t => {
+test('compact titles are never cut mid-sentence, actions stay authorized host intents, original open record and native detail retain the full need', async t => {
   const opened = [], actions = [];
   const record = Object.freeze({ id: 'full', number: 743, title: 'Un besoin complet de plus de six mots à conserver sans aucune modification', spec: 'Full fictional specification', display: 'Choisir les repas', state: 'waiting', waiting_on_you: true, screen: 'PRIVATE_SCREEN', requester: 'PRIVATE_ACTOR', captureCount: 3 });
   const f = await fixture(t, { tasks: [record], variant: 'compact', locale: 'fr', viewerAction: 'confirmation', onOpen: task => opened.push(task) });
@@ -198,11 +198,14 @@ test('compact title is capped, actions stay authorized host intents, original op
   assert.equal(opened[0].title, record.title); assert.equal(opened[0].spec, record.spec);
   await f.render({ variant: 'board', selectedTask: 'full' });
   assert.ok(document.querySelector('[data-task-detail]').textContent.includes(record.title));
-  for (const display of [undefined, '   ', 'Un affichage beaucoup trop long pour une seule demande']) {
-    await f.act(async () => f.root.render(f.h(f.TaskRequestCard, { task: { ...record, display }, variant: 'compact' })));
+  for (const display of [undefined, '   ', 'Un affichage beaucoup trop long pour une seule demande', '  Un affichage\n  avec des espaces mais sans aucune coupure  ']) {
+    const input = Object.freeze({ ...record, display });
+    await f.act(async () => f.root.render(f.h(f.TaskRequestCard, { task: input, variant: 'compact' })));
     const title = document.querySelector('[data-task-title]').textContent;
-    assert.equal(title.split(/\s+/u).length, 6);
-    assert.ok(title.endsWith('…'));
+    assert.equal(title, (display?.trim() || record.title).replace(/\s+/gu, ' '));
+    assert.equal(document.querySelectorAll('[data-slot=badge]').length, 1);
+    assert.equal(input.display, display);
+    assert.equal(input.title, record.title);
   }
 });
 

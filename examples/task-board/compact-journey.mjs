@@ -35,6 +35,15 @@ try {
     const name = `${locale}-${width}-${dark ? 'dark' : 'light'}.png`;
     await browser.screenshot(name); results.push(name);
   }
+  await browser.send('Emulation.setDeviceMetricsOverride', { width: 375, height: 900, deviceScaleFactor: 1, mobile: true });
+  for (const locale of ['fr', 'en']) {
+    await browser.send('Page.navigate', { url: `${url}/?legacy=1&locale=${locale}${locale === 'fr' ? '&dark=1' : ''}` });
+    await browser.until('uncut legacy title', 'document.querySelector("[data-task-card=fictional-1] [data-task-title]")?.textContent.endsWith("including all original details.")');
+    assert.equal(await browser.evaluate('document.documentElement.scrollWidth <= innerWidth'), true, 'legacy title wraps without horizontal overflow');
+    assert.equal(await browser.evaluate('document.querySelector("[data-task-card=fictional-1]").querySelectorAll("[data-slot=badge]").length'), 1);
+    const name = `${locale}-375-legacy-title.png`;
+    await browser.screenshot(name); results.push(name);
+  }
   await browser.send('Page.navigate', { url: `${url}/?owner=1` });
   await browser.until('explicit owner technical group', '!!document.querySelector("[data-task-group=technical]")');
   assert.equal(await browser.evaluate('!!document.querySelector("[data-task-card=fictional-5]")'), false);
@@ -49,7 +58,7 @@ try {
   await browser.until('full original need in native detail', 'document.querySelector("[data-task-detail]")?.textContent.includes("including all original details.")');
   await browser.screenshot('original-native-detail.png');
   assert.deepEqual(browser.problems, []);
-  writeFileSync(`${evidence}/journey.json`, JSON.stringify({ screenshots: results, ownerExpansion: true, authorizedActions: true, originalNativeDetail: true, modelCalls: 0, livePosts: 0 }, null, 2) + '\n');
+  writeFileSync(`${evidence}/journey.json`, JSON.stringify({ screenshots: results, uncutLegacyTitle: true, ownerExpansion: true, authorizedActions: true, originalNativeDetail: true, modelCalls: 0, livePosts: 0 }, null, 2) + '\n');
   console.log(`PASS compact native fixture: ${results.length + 2} screenshots, 375/1280 FR/EN light/dark, owner expansion, actions and original detail`);
 } finally {
   await browser?.close(); server.closeAllConnections(); await new Promise(done => server.close(done));

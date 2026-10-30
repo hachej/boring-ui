@@ -14,7 +14,7 @@ const titles = fr ? ['Choisir les repas', 'Préparer les menus', 'Vérifier les 
 const states = ['waiting', 'working', 'working', 'done', 'closed', 'working'] as const;
 const tasks: readonly TaskRecord[] = states.map((state, i) => Object.freeze({
   id: `fictional-${i}`, number: 740 + i, title: `Fictional full original request ${i}: keep every meal and portion in the shared weekly plan, including all original details.`,
-  display: titles[i]!, spec: 'Complete fictional need, preserved as data.', state, requesterId: 'alice',
+  display: params.has('legacy') && i === 1 ? undefined : titles[i]!, spec: 'Complete fictional need, preserved as data.', state, requesterId: 'alice',
   waiting_on_you: i === 0 || i === 4, ...(i === 2 ? { status: 'verifying' } : i === 4 ? { status: 'abandoned' } : {}),
   technical: i === 5, screen: 'Fictional planner', captureCount: 2,
 }));
