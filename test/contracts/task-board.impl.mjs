@@ -60,17 +60,18 @@ async function fixture(t, props = {}, query = '?agent=pm') {
   return { render, click, run, window, root, h, act, TaskRequestCard };
 }
 
-test('board orders WAITING · WORKING · OPEN with Done/Closed list links, URL selection supports deep links, safe detail, question callback and keyboard back', async t => {
+test('columns follow who acts next, finished work folds, URL selection supports deep links, safe detail, question callback and keyboard back', async t => {
   const answers = [];
   const f = await fixture(t, { onAnswer: (...answer) => answers.push(answer) });
-  assert.deepEqual([...document.querySelectorAll('[data-task-column]')].map(node => node.dataset.taskColumn), ['waiting', 'working', 'open']);
-  assert.deepEqual([...document.querySelectorAll('[data-task-bar] > *')].map(node => node.textContent).filter(text => text !== '·'), ['3 open', 'Done 1', 'Closed 1']);
-  assert.equal(document.querySelector('[data-task-column=waiting] h3').textContent, 'Waiting 11 on you');
-  assert.equal(document.querySelector('[data-task-attention] [data-task-card=orchard]')?.dataset.taskCard, 'orchard', 'the card waiting on the viewer carries the attention edge');
-  for (const [element, token] of [[document.querySelector('[data-task-column=waiting]'), '--task-column-radius'], [document.querySelector('[role=listitem]'), '--task-card-padding-y'], [document.querySelector('[role=listitem]'), '--task-card-padding-x'], [document.querySelector('[data-task-status]').parentElement, '--task-pill-font-size'], [document.querySelector('[data-task-on-you]').parentElement, '--task-pill-height']])
+  assert.deepEqual([...document.querySelectorAll('[data-task-column]')].map(node => node.dataset.taskColumn), ['needs-you', 'blocked', 'progress', 'live']);
+  assert.match(document.querySelector('[data-task-column=needs-you] h3').textContent, /^Needs you1$/);
+  assert.deepEqual([...document.querySelectorAll('[data-task-column=progress] [data-task-card]')].map(node => node.dataset.taskCard).sort(), ['kites', 'picnic']);
+  for (const [element, token] of [[document.querySelector('[data-task-column=needs-you]'), '--task-column-radius'], [document.querySelector('[role=listitem]'), '--task-card-padding-y'], [document.querySelector('[role=listitem]'), '--task-card-padding-x']])
     assert.ok(element.className.includes(`var(${token},`), `the board reads the host token ${token}`);
-  await f.click('[data-task-list-link=done]'); assert.deepEqual([...document.querySelectorAll('[data-task-card]')].map(node => node.dataset.taskCard), ['done']);
-  await f.click('[data-task-list-link=open]');
+  assert.deepEqual([...document.querySelectorAll('[data-task-column=live] [data-task-card]')].map(node => node.dataset.taskCard), ['done']);
+  assert.equal(document.querySelector('[data-task-card=closed]'), null, 'finished work starts folded');
+  await f.click('[data-task-group=finished] button');
+  assert.ok(document.querySelector('[data-task-card=closed]'));
   await f.click('[data-task-open=orchard]');
   assert.equal(new URL(f.window.location.href).searchParams.get('task'), 'orchard');
   assert.equal(new URL(f.window.location.href).searchParams.get('agent'), 'pm');
@@ -131,11 +132,73 @@ test('deep-link alias, browser navigation and missing records remain explicit wi
   assert.equal(document.querySelector('[data-task-detail]'), null);
 });
 
-test('return from a deep-linked terminal task switches to its list before restoring keyboard focus', async t => {
-  const f = await fixture(t, {}, '?task=done');
+test('return from a deep-linked folded task unfolds its section before restoring keyboard focus', async t => {
+  const f = await fixture(t, {}, '?task=closed');
   await f.click('[data-task-side] button');
-  assert.equal(document.querySelector('[data-task-column]').dataset.taskColumn, 'done');
-  assert.equal(document.activeElement.dataset.taskOpen, 'done');
+  assert.equal(document.activeElement.dataset.taskOpen, 'closed');
+});
+
+test('a card says what is wanted or why it is stuck, and its detail says it too, even with no full question', async t => {
+  const line = id => document.querySelector(`[data-task-card=${id}] [data-task-line]`).textContent;
+  const f = await fixture(t, { tasks: [
+    { id: 'asked', title: 'Fictional asked', state: 'waiting', waiting_on_you: true, questions: [{ id: 'q', text: 'Which meal counts?' }] },
+    { id: 'oneline', title: 'Fictional one line', state: 'waiting', waiting_on_you: true, waiting_on: { who: 'you', question: 'Approve this?' } },
+    { id: 'bare', title: 'Fictional bare', state: 'waiting', waiting_on_you: true },
+    { id: 'stuck', title: 'Fictional stuck', state: 'waiting', status: 'blocked', waiting_on: { who: 'the builders', question: 'Supplier is down' } },
+    { id: 'moving', title: 'Fictional moving', state: 'working', status: 'verifying', spec: 'The full fictional need' },
+  ], onAnswer: () => {}, onOther: () => {} });
+  assert.equal(line('asked'), 'Which meal counts?');
+  assert.equal(line('oneline'), 'Approve this?');
+  assert.equal(line('bare'), 'Needs you');
+  assert.equal(line('stuck'), 'Blocked: Supplier is down');
+  assert.equal(line('moving'), 'Verification');
+  await f.click('[data-task-open=asked]');
+  assert.ok(document.querySelector('[data-task-question=q] input'), 'with no options the answer field is simply there');
+  await f.click('[data-task-back]');
+  await f.click('[data-task-open=oneline]');
+  assert.match(document.querySelector('[data-task-reason]').textContent, /Approve this\?.*Reply in the conversation/);
+  await f.click('[data-task-back]');
+  await f.click('[data-task-open=bare]');
+  assert.match(document.querySelector('[data-task-reason]').textContent, /Reply in the conversation/, 'never a needs-you card opening onto nothing');
+  await f.click('[data-task-back]');
+  await f.click('[data-task-open=stuck]');
+  assert.match(document.querySelector('[data-task-reason]').textContent, /Supplier is down/);
+  await f.click('[data-task-back]');
+  await f.click('[data-task-open=moving]');
+  assert.match(document.querySelector('[data-task-spec]').textContent, /The full fictional need/);
+  assert.equal(document.querySelector('[data-task-reason]'), null);
+});
+
+test('a shipped request stays in Recently live for a week, then folds into Finished', async t => {
+  const at = days => new Date(Date.now() - days * 86_400_000).toISOString();
+  await fixture(t, { tasks: [{ id: 'fresh', title: 'Fictional fresh', state: 'done', updated_at: at(2) }, { id: 'old', title: 'Fictional old', state: 'done', updated_at: at(9) }] });
+  assert.ok(document.querySelector('[data-task-column=live] [data-task-card=fresh]'));
+  assert.equal(document.querySelector('[data-task-card=old]'), null);
+  assert.match(document.querySelector('[data-task-group=finished]').textContent, /Finished · 1/);
+});
+
+test('across apps every card names its app and the bar filters by it; one app shows no filter', async t => {
+  const rows = [{ id: 'a', app: 'Coach Max', title: 'Fictional a', state: 'working' }, { id: 'b', app: 'Clinic', title: 'Fictional b', state: 'working' }];
+  const f = await fixture(t, { tasks: rows });
+  assert.match(document.querySelector('[data-task-card=a] [data-task-facts]').textContent, /Coach Max/);
+  await f.click('[data-task-app-filter=Clinic]');
+  assert.deepEqual([...document.querySelectorAll('[data-task-card]')].map(node => node.dataset.taskCard), ['b']);
+  await f.click('[data-task-app-filter="All apps"]');
+  assert.equal(document.querySelectorAll('[data-task-card]').length, 2);
+});
+
+test('a board with nothing to show says so instead of failing', async t => {
+  await fixture(t, { tasks: [] });
+  assert.equal(document.querySelectorAll('[data-task-card]').length, 0);
+  assert.ok(document.querySelector('[data-task-list] [data-slot=empty]'), 'the empty state renders');
+  assert.equal(document.querySelector('[data-task-group]'), null);
+});
+
+test('French columns and an app with no label stay clean', async t => {
+  await fixture(t, { locale: 'fr', tasks: [{ id: 'a', title: 'Fictif', state: 'working' }] });
+  assert.equal(document.querySelector('[data-task-apps]'), null);
+  assert.equal(document.querySelector('[data-task-column=progress]').getAttribute('aria-label'), 'En cours');
+  assert.equal(document.querySelector('[data-task-card=a] [data-task-line]').textContent, 'En préparation');
 });
 
 test('controlled selection and shared PM request card keep confirmation as a host action', async t => {
@@ -231,5 +294,6 @@ test('compact board prioritizes valid needs-you before limit, omits canonical te
   await f.render({ limit: 1, compactPresentation: undefined });
   assert.deepEqual(ids(), ['needs']);
   await f.render({ variant: 'board', limit: undefined });
-  assert.ok(ids().includes('technical'), 'operator board retains technical records');
+  assert.equal(document.querySelector('[data-task-card=technical]'), null);
+  assert.match(document.querySelector('[data-task-group=technical]').textContent, /Technique · 1/, 'the board folds technical records, it does not drop them');
 });

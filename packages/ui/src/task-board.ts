@@ -33,6 +33,8 @@ export interface TaskRecord {
   readonly id: string;
   readonly number?: number | string;
   readonly title: string;
+  /** Display name of the task's app, set by a host showing several apps; cards then carry it and the bar filters by it. */
+  readonly app?: string;
   /** Short host-authored display title; the original title remains the description. */
   readonly display?: string;
   /** Canonical host classification, never inferred from prose or an actor name. */

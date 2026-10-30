@@ -1,5 +1,6 @@
 # Unreleased
 
+- **One task board (`task-board`).** Refresh the copied block. `TaskBoard` columns are now Needs you, Blocked, In progress and Recently live, with Finished and Technical folded; the panel's width decides side by side or stacked. The bar no longer has the open, Done and Closed links, and the `labels` prop is ignored. `data-task-column` values and card markup changed; `TaskRecord.app` is new and optional. Hosts drop their own waiting-reason block, since the detail now shows the question or reason itself. `variant="compact"` is unchanged until the PM panel moves to the board.
 - **Readable request titles (`task-board`).** Refresh the copied block: compact rows no longer cut a legacy title or display after six words. Hosts should author/backfill a meaningful localized `display` of six words or fewer; until then the complete original title remains readable. Whitespace normalization is display-only. Original records, actions, product chips, operator cards and server authorization are unchanged; no props changed.
 
 # Migrating to 0.4.40
