@@ -1,5 +1,7 @@
 # Unreleased
 
+- **Agents report their own failures (`@hachej/boring-agent`; D-553, fleet standard S6).** On by default, no app code: every `defineAgent` agent gets a `report_bug` tool and emits content-free `agent.struggle` events (`tool_error`, `tool_retry`, `rephrase`, `correction`, `abandoned`, `report_bug`). **The agent's tool list and its model's tool definitions gain `report_bug`.** Events go to the sink of `setStruggleSink` (`@hachej/boring-agent/struggle`, set once by the host), else one log line. Opt out with `struggle: false`; an agent with its own `report_bug` keeps it. Conversations created before this keep their agent until reconfigured.
+
 # Migrating to 0.4.35
 
 - **Target chip (`pi-chat`; D-509).** A sent `<target>` chip no longer shows raw target values: no `title` with the JSON, and the default label is the target's `label` field, else the display keys it wraps its fields under, else « Target » (it was `key: value · …`). Queued/sending rows show the speech only; the conversation list's tooltip and automatic titles (`@hachej/boring-agent/conversations`) drop the block, and a title stored with one shows without it. New optional `targetLabel?: (target) => string | undefined` on `PiChat`, `AmbientChat` and `SharedChat` picks the chip's words from the block as sent; undefined keeps the default. Update `pi-chat`, `pi-ambient`, `shared-chat`.
