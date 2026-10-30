@@ -1,26 +1,18 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Harness, MemoryStorage, createRegistry } from '@earendil-works/pi-durable';
-import { createModels, createProvider } from '@earendil-works/pi-ai/models';
-import { createAssistantMessageEventStream } from '@earendil-works/pi-ai/utils/event-stream';
+import { createModels } from '@earendil-works/pi-ai/models';
+import { fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from '@earendil-works/pi-ai/providers/faux';
+import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { defineAgent, jsonSchemaTool } from '@hachej/boring-agent/agents';
 import { createAuditExtension } from '@hachej/boring-agent/audit';
 
-const context = {};
-const MODEL = { id: 'scripted', name: 'Scripted', provider: 'scripted', api: 'scripted-api', baseUrl: 'https://fixture.invalid', input: ['text'], reasoning: false, contextWindow: 1000, maxTokens: 100, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
-const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
 // Calls each tool once, then answers.
 function scriptedModels(calls) {
-  let turn = 0;
-  const stream = () => {
-    const events = createAssistantMessageEventStream();
-    const call = calls[turn++];
-    const message = { role: 'assistant', content: call ? [{ type: 'toolCall', id: `call-${turn}`, name: call.name, arguments: call.arguments }] : [{ type: 'text', text: 'Done.' }], api: MODEL.api, provider: MODEL.provider, model: MODEL.id, usage, stopReason: call ? 'toolUse' : 'stop', timestamp: 1 };
-    setTimeout(() => { events.push({ type: 'start', partial: message }); events.push({ type: 'done', reason: message.stopReason, message }); events.end(message); }, 1);
-    return events;
-  };
+  const faux = fauxProvider({ provider: 'fictional-faux', models: [{ id: 'm' }] });
+  faux.setResponses([...calls.map((call, index) => fauxAssistantMessage([fauxToolCall(call.name, call.arguments, { id: `call-${index}` })], { stopReason: 'toolUse' })), fauxAssistantMessage([fauxText('Done.')])]);
   const models = createModels();
-  models.setProvider(createProvider({ id: MODEL.provider, models: [MODEL], auth: { apiKey: { name: 'keyless', resolve: async () => ({ auth: {} }) } }, api: { stream, streamSimple: stream } }));
+  models.setProvider(faux.provider);
   return models;
 }
 const tools = [
@@ -28,7 +20,7 @@ const tools = [
   jsonSchemaTool({ name: 'broken', description: 'Fails.', parameters: { type: 'object', properties: {} }, execute: async () => ({ output: [{ type: 'text', text: 'no' }], isError: true }) }),
 ];
 async function run(audit) {
-  const agent = defineAgent({ id: 'audited', model: { provider: MODEL.provider, modelId: MODEL.id }, tools, extensions: [audit] });
+  const agent = defineAgent({ id: 'audited', model: { provider: 'fictional-faux', modelId: 'm' }, tools, extensions: [audit] });
   const registry = createRegistry(); agent.install(registry);
   const harness = await Harness.open(new MemoryStorage(), { registry, models: scriptedModels([{ name: 'save_meal', arguments: { secret: 'fictional-secret' } }, { name: 'broken', arguments: {} }]) }, context);
   const conversation = await agent.createConversation(harness, context);
