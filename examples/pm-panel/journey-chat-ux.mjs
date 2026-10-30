@@ -19,7 +19,12 @@ try {
  await browser.screenshot('after-connect-outage.png');
  await browser.tap(q('[data-testid=pm-connect-retry]'));
  await browser.until('composer',`!!${q('[data-testid=composer-input]')}`,15000);
- await browser.type(q('[data-testid=composer-input]'),'pm.points@1');
+ await browser.tap(q('[data-testid=pm-show]'));
+ await browser.until('point at the meal card', `!!${q('[data-testid=pm-strip]')}`,5000);
+ await browser.tap(q('[data-testid=gauge]'));
+ await browser.tap(q('[data-testid=pm-done]'));
+ await browser.evaluate(`(() => { const editor=${q('[data-testid=composer-input]')}; editor.focus(); const range=document.createRange(); range.selectNodeContents(editor); range.collapse(false); const selection=getSelection(); selection.removeAllRanges(); selection.addRange(range); })()`);
+ await browser.send('Input.insertText', { text: ' Mettez les protéines avant les calories.' });
  await browser.tap(q('[data-testid=composer-submit]'));
  await browser.until('reply',`!!${q('[data-testid=pm-reply]')}`,20000);
  await pause(500);
