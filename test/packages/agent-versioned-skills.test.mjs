@@ -153,8 +153,8 @@ test('no good version yet: no skills and a diagnostic; refresh() moves conversat
 test('defineAgent({ skills }) with a versioned source offers reload_skill', async t => {
   const { env, write } = await fixture(t);
   await write('skills/current', 'v1');
-  const agent = defineAgent({ id: 'fictional-clerk', model: { provider: 'scripted', modelId: 'scripted' }, skills: directorySkillSource(env, 'skills', { versioned: true }) });
+  const agent = defineAgent({ id: 'fictional-clerk', struggle: false, model: { provider: 'scripted', modelId: 'scripted' }, skills: directorySkillSource(env, 'skills', { versioned: true }) });
   assert.deepEqual(agent.extensions.flatMap(extension => extension.tools ?? []).map(tool => tool.name), ['load_skill', 'reload_skill']);
-  const plain = defineAgent({ id: 'fictional-clerk', model: { provider: 'scripted', modelId: 'scripted' }, skills: directorySkillSource(env, 'skills') });
+  const plain = defineAgent({ id: 'fictional-clerk', struggle: false, model: { provider: 'scripted', modelId: 'scripted' }, skills: directorySkillSource(env, 'skills') });
   assert.deepEqual(plain.extensions.flatMap(extension => extension.tools ?? []).map(tool => tool.name), ['load_skill'], 'a plain source has no reload_skill');
 });

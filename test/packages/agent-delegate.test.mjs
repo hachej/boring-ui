@@ -65,8 +65,8 @@ const parentOnly = defineTool({
 });
 
 function agents({ childTools = [lookup], onChild } = {}) {
-  const researcher = defineAgent({ id: 'researcher', model: { provider: 'fictional-faux', modelId: 'child' }, instructions: 'Answer briefly.', tools: childTools });
-  const lead = defineAgent({ id: 'lead', model: { provider: 'fictional-faux', modelId: 'parent' }, instructions: 'Delegate research.', tools: [parentOnly], delegates: [{ agent: researcher, ...(onChild ? { onChild } : {}) }] });
+  const researcher = defineAgent({ id: 'researcher', struggle: false, model: { provider: 'fictional-faux', modelId: 'child' }, instructions: 'Answer briefly.', tools: childTools });
+  const lead = defineAgent({ id: 'lead', struggle: false, model: { provider: 'fictional-faux', modelId: 'parent' }, instructions: 'Delegate research.', tools: [parentOnly], delegates: [{ agent: researcher, ...(onChild ? { onChild } : {}) }] });
   const registry = createRegistry();
   lead.install(registry); // installs the researcher's extensions too
   return { lead, registry };
