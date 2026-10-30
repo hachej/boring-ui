@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-agent",
-  "version": "0.4.34",
+  "version": "0.4.35",
   "license": "MIT",
   "private": false,
   "type": "module",
@@ -184,8 +184,8 @@
     "@earendil-works/pi-durable": "~1.4.0",
     "@earendil-works/pi-ai": "~1.4.0",
     "@earendil-works/chord": "~1.4.0",
-    "@hachej/boring-files": "^0.4.34",
-    "@hachej/boring-ui-kit": "^0.4.34",
+    "@hachej/boring-files": "^0.4.35",
+    "@hachej/boring-ui-kit": "^0.4.35",
     "typebox": "1.3.27",
     "xlsx": "^0.20.3"
   },
