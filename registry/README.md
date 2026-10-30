@@ -431,6 +431,28 @@ Errors are `{ error: { code, message, retryable } }`. Exported `ChannelRequestEr
 
 **Room source (opt-in).** `createRoomSource({ url, locale?, words?, stallMs?, fetch?, open? })` is a second `ChannelSource`, for a host that runs the room engine (`POST <app>/_room/<op>` and the same space socket; Studio's channel on pi-durable). `createChannelSocket` is untouched. It reads `_room/history` as a fold of entries (`message`, `removed`, `card`, `pin`, `question`, `action`, `system`) and keeps an entry-id cursor per conversation (`source.cursor(id)`): after a reconnect it asks for the entries after that cursor and shows each one once. A reply to an agent's question is the answer (`controller.answer(message, text)`; the question card's choices call it); a pin is a `card.kind: 'pin'`; an open wake is a writing message (`streaming: true`, « Your assistant is working… ») that the agent's answer replaces in place, and after `stallMs` (8000) without a frame it offers « Try again » (the `retry` operation). `me` answering `409 engine` means the space still runs the store engine: use `createChannelSocket`. The words (the stall line, Retry, the titles of `main` and `admin`, the labels of `try`/`later`/`validate` actions) are `words`, English and French shipped by `locale`. See [MIGRATING.md](../MIGRATING.md) and `npm run shared-chat:journey:room`.
 
+### Room artifact cards
+
+Room messages and questions may carry `artifacts?: PresentedArtifact[]` (the existing `/chat-view` descriptor type, also exported by `/shared-chat`). File descriptors retain `schema: 'boring.artifact'`, `version: 1`, human `title`, `type`, `mediaType`, full `target` and immutable `revision`; existing task descriptors remain task references, not files. `createRoomTurn` accepts only parsed successful native `present` results paired with their calls, never paths or revisions inferred from prose. Its port streams `{ type: 'artifact', artifact }` and passes accumulated descriptors in `question` and `settle`. The host forwards those fields to the existing room store and socket (`{ type: 'artifact', wakeId, artifact, conversationId? }`). Old messages need no migration. Unsuccessful/aborted submissions keep the existing `ROOM.unanswered` settlement without artifacts: native unanswered records have no answer/end-entry boundary. Already-durable question descriptors remain in question history; stream-only artifacts before an abort with no durable question/final answer are not retained. No unbounded scan borrows descriptors from a later wake. Questions retain cards before final settlement; the timeline draws each exact target/view/revision once, at its latest message. Removal/redaction suppresses that message's descriptors.
+
+`SharedChat` and `useSharedChatProps`/`useSharedChat` options accept the existing `artifacts: ChatArtifactsConfig`. Only its `Card`, `open`, `isOpen` and `kinds` apply to room descriptors; native-tool `detect`/`recognise` are not invoked again on room data. Without `Card`, no visual card is added and ordinary attachments stay file buttons. To reuse PM mockups, install/update `pm-panel` alongside `shared-chat` and compose its existing exports:
+
+```tsx
+// Inside a host component keyed by app + requester + controller binding (including its local shown state).
+const [shown, show] = useState<ArtifactDescriptor>();
+const artifacts = useMemo(() => pmArtifacts(show, shown), [shown]);
+return <PmMockupProvider read={readArtifact} text={pmTextEn}>
+  {shown ? <PmMockupView artifact={shown} text={pmTextEn} onBack={() => show(undefined)} />
+    : <SharedChat controller={controller} artifacts={artifacts} />}
+</PmMockupProvider>;
+```
+
+Import `PmMockupProvider`, `PmMockupView`, `pmArtifacts`, `PmReadArtifact` from the copied `pm-panel/pm-mockups` file and `pmTextEn`/`pmTextFr` from `pm-panel/pm-text`. `readArtifact(artifact, signal)` returns text or `undefined`. It must read the descriptor's **full target and exact revision**, not latest. The existing sandbox permits scripts only, with opaque origin and no network; the host does not inject agent HTML into its own DOM. Closing/unmounting a view does not dispose the borrowed shared controller. The [fictional host composition](../test/fixtures/shared-room-mockups.tsx) additionally closes a full view when its descriptor disappears; real hosts must do the same on removal/redaction.
+
+A descriptor is metadata, **not a grant to read bytes**. The host owns the read door and rechecks the original requester/task attachment rights on every read; room membership alone is insufficient. Do not borrow private-chat credentials or add wildcard CORS/same-origin sandbox privileges. Key/reset both the provider cache and the host's opened view on app, requester or controller changes; a mounted provider caches reads for that binding. Resource target/view/revision distinguish caches within a binding. No host authentication or Factory deployment is implemented by this seam.
+
+`CHROMIUM=<binary> node scripts/test-shared-room-mockups-browser.mjs` drives public SharedChat, all three reused PM full sandboxes at 375px/1280px, the host exact reader, a one-tap choice, native room settlement and reload. It uses fictional local rooms/bytes, not a real model or production policy.
+
 `createFakeChannelSource(seed)` uses the same source contract for fictional demos and tests. Its `emit`, `setStatus`, `sends` and `actions` controls drive live updates and inspect host calls. See the [shared conversation demo](../examples/shared-chat/README.md) and run `npm run shared-chat:journey` for phone-first browser evidence.
 
 ## Shared chat and file header

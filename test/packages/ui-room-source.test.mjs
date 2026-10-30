@@ -208,3 +208,44 @@ test('the old channel source still takes a message with a question (additive fie
   } });
   assert.equal((await source.history('main', { limit: 5 })).messages[0].question.prompt, 'Which?');
 });
+
+test('room descriptors map exactly through live duplicate frames, questions, settlement, reconnect and redaction', async t => {
+  const artifact = { schema: 'boring.artifact', version: 1, title: 'Idea A — garden', type: 'html', mediaType: 'text/html', target: { resource: { providerId: 'room-files', path: 'ideas/a.html' }, view: { kind: 'published' } }, revision: 'immutable-r1' };
+  let socket, items = [], cursor = 0;
+  const source = await createRoomSource({ url: 'https://fictional.invalid/', join: false, reconnectMs: 1,
+    fetch: async request => {
+      const op = new URL(request.url).pathname.split('/').at(-1);
+      if (op === 'me') return Response.json({ space: 'fictional', me: { id: 'person:ana', name: 'Ana', kind: 'person' } });
+      if (op === 'members') return Response.json([{ id: 'person:ana', name: 'Ana', kind: 'person' }, { id: 'agent:pm', name: 'PM', kind: 'agent' }]);
+      return Response.json({ items, cursor });
+    },
+    open: () => { socket = { readyState: 1, close() {} }; queueMicrotask(() => socket.onopen?.()); return socket; },
+  });
+  const chat = createSharedChat(source, { conversationId: 'main' });
+  t.after(() => chat.dispose());
+  await chat.connect();
+  const send = value => socket.onmessage({ data: JSON.stringify(value) });
+  const messages = () => chat.getSnapshot().shared.messages;
+  send({ type: 'wake', wakeId: '1:agent:pm', agent: 'agent:pm', conversationId: 'main' });
+  for (let i = 0; i < 2; i++) send({ type: 'artifact', wakeId: '1:agent:pm', artifact });
+  send({ type: 'artifact', wakeId: '1:agent:pm', artifact: { ...artifact, revision: '' } });
+  assert.deepEqual(messages().find(m => m.streaming).artifacts, [artifact]);
+  const question = { kind: 'question', id: 2, author: 'agent:pm', callId: 'q1', prompt: 'Which?', options: ['A', 'B'], allowFreeText: false, answered: false, artifacts: [artifact, artifact] };
+  items = [question]; cursor = 2;
+  send({ type: 'message', conversationId: 'main', item: question });
+  assert.deepEqual(messages().find(m => m.question).artifacts, [artifact]);
+  assert.equal(messages().filter(m => m.streaming).length, 0);
+  const final = { kind: 'message', id: 3, author: 'agent:pm', text: 'Selected B, no launch.', mentions: [], attachments: [], steps: [], artifacts: [artifact], mine: false, removed: false };
+  items = [question, final]; cursor = 3;
+  for (let i = 0; i < 2; i++) send({ type: 'message', conversationId: 'main', item: final });
+  assert.equal(messages().filter(m => m.id === '3').length, 1);
+  assert.deepEqual(messages().find(m => m.id === '3').artifacts, [artifact]);
+  socket.onclose();
+  await until('reconnect and history', () => chat.getSnapshot().shared.status === 'live');
+  assert.equal(messages().filter(m => m.id === '3').length, 1);
+  assert.deepEqual((await source.history('main', { limit: 10 })).messages.find(m => m.id === '3').artifacts, [artifact]);
+  send({ type: 'message', conversationId: 'main', item: { kind: 'removed', id: 4, target: 3 } });
+  assert.equal(messages().find(m => m.id === '3').artifacts, undefined);
+  send({ type: 'message', conversationId: 'main', item: { ...final, removed: true } });
+  assert.equal(messages().find(m => m.id === '3').artifacts, undefined);
+});

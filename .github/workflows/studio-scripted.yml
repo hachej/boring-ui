@@ -98,6 +98,17 @@ jobs:
         run: node scripts/retry-journey.mjs shared-chat:journey:room
         env:
           SHARED_CHAT_EVIDENCE: ${{ runner.temp }}/evidence/shared-chat-room
+      - name: Shared room exact mockup cards, full views and one-tap native choice
+        if: matrix.shard == 'workspace'
+        run: node scripts/retry-journey.mjs shared-chat:journey:mockups
+      - name: Shared room mockup evidence
+        if: always() && matrix.shard == 'workspace'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: shared-room-mockups-evidence-${{ matrix.shard }}
+          path: .cache/evidence/room-mockups/browser
+          retention-days: 7
+          if-no-files-found: error
       - name: Sandboxed HTML mock-ups, theme and element comments
         if: matrix.shard == 'documents'
         run: node scripts/retry-journey.mjs mockup:journey

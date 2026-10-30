@@ -4,7 +4,7 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ChevronRightIcon } from 'lucide-react';
 import type { ArtifactDescriptor, PresentedArtifact } from '@hachej/boring-ui-kit/chat-view';
-import { artifactVersionKey, recogniseArtifact } from '@hachej/boring-ui-kit/chat-view';
+import { recogniseArtifact } from '@hachej/boring-ui-kit/chat-view';
 import { Button } from '@/components/ui/button';
 import { InteractiveFrame } from '../viewer-frame/interactive-html';
 import { Markdown } from '../pi-chat-markdown/markdown';
@@ -17,6 +17,9 @@ import type { PmText } from './pm-text';
  * The one line reads it through the app's PM door (`{base}/resources`, see `use-improve-agent.ts`).
  */
 export type PmReadArtifact = (artifact: ArtifactDescriptor, signal: AbortSignal) => Promise<string | undefined>;
+
+/** Room agents can present the same path/revision from different providers or views. */
+const mockupKey = (artifact: ArtifactDescriptor): string => JSON.stringify([artifact.target, artifact.revision]);
 
 type Loaded = { readonly text: string } | { readonly failed: true } | undefined;
 interface Mockups { readonly read: PmReadArtifact | undefined; readonly text: PmText; readonly cache: Map<string, Promise<string | undefined>> }
@@ -32,7 +35,7 @@ export function PmMockupProvider({ read, text, children }: { readonly read: PmRe
 function useMockup(artifact: ArtifactDescriptor | undefined): Loaded {
   const context = useContext(MockupContext);
   const [loaded, setLoaded] = useState<{ readonly key: string; readonly value: Loaded }>();
-  const key = artifact ? artifactVersionKey(artifact) : undefined;
+  const key = artifact ? mockupKey(artifact) : undefined;
   useEffect(() => {
     if (!artifact || !key || !context) return;
     const read = context.read;
@@ -105,7 +108,7 @@ export function PmMockupView({ artifact, text, onBack }: { readonly artifact: Ar
 export function pmArtifacts(open: (artifact: ArtifactDescriptor) => void, shown: ArtifactDescriptor | undefined): ChatArtifactsConfig {
   return {
     open: ((artifact: PresentedArtifact) => { if (artifact.type !== 'task') open(artifact); }) as ChatArtifactsConfig['open'],
-    isOpen: ((artifact: PresentedArtifact) => shown !== undefined && artifact.type !== 'task' && artifactVersionKey(artifact) === artifactVersionKey(shown)) as NonNullable<ChatArtifactsConfig['isOpen']>,
+    isOpen: ((artifact: PresentedArtifact) => shown !== undefined && artifact.type !== 'task' && mockupKey(artifact) === mockupKey(shown)) as NonNullable<ChatArtifactsConfig['isOpen']>,
     recognise: recogniseArtifact, Card: PmArtifactCard,
   };
 }

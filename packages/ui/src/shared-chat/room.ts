@@ -1,3 +1,5 @@
+import { parsePresentedArtifact } from '../chat-artifacts.js';
+import type { PresentedArtifact } from '../chat-artifacts.js';
 import { randomUUID } from '@hachej/boring-files/platform';
 import { ChannelRequestError } from './error.js';
 import type { Card, CardAction, ChannelEvent, ChannelMessage, ChannelSource, Conversation, Member, Step } from './source.js';
@@ -54,6 +56,13 @@ const strings = (value: unknown): string[] => list(value).filter((item): item is
 const id = (value: unknown): number | undefined => typeof value === 'number' && Number.isSafeInteger(value) ? value : undefined;
 const stepStatus = (value: unknown): Step['status'] => value === 'running' || value === 'failed' ? value : 'done';
 
+const descriptorKey = (artifact: PresentedArtifact): string => JSON.stringify(artifact.type === 'task' ? artifact.subject : [artifact.target, artifact.revision]);
+const descriptors = (raw: unknown): PresentedArtifact[] => {
+  const found = new Map<string, PresentedArtifact>();
+  for (const value of list(raw)) { const artifact = parsePresentedArtifact(value); if (artifact) found.set(descriptorKey(artifact), artifact); }
+  return [...found.values()];
+};
+
 function member(raw: unknown): Member | undefined {
   if (!isObject(raw) || typeof raw.id !== 'string') return undefined;
   const kind = raw.kind === 'agent' || raw.kind === 'admin' ? raw.kind : 'person';
@@ -66,7 +75,7 @@ function member(raw: unknown): Member | undefined {
 }
 
 type Wake = { readonly id: string; readonly agent: string; readonly conversation: string };
-type Writing = { wake: Wake; segment: number; text: string; steps: Step[]; stalled: boolean; timer: ReturnType<typeof setTimeout> | undefined; at: string };
+type Writing = { wake: Wake; segment: number; text: string; steps: Step[]; artifacts: PresentedArtifact[]; stalled: boolean; timer: ReturnType<typeof setTimeout> | undefined; at: string };
 type Conv = {
   /** The messages of the conversation by entry id, ascending. */
   list: ChannelMessage[];
@@ -173,6 +182,7 @@ export async function createRoomSource(options: RoomSourceOptions): Promise<Room
       if (!speaker) return { ...base, author: 'platform:room', kind: 'system', text: str(item.text) };
       return { ...base, author: speaker, ...(typeof item.via === 'string' ? { via: item.via } : {}),
         ...(gone ? { removed: { by: '', at } } : { text: str(item.text) }), mentions: strings(item.mentions), ...(id(item.replyTo) !== undefined ? { replyTo: String(item.replyTo) } : {}),
+        ...(gone || !Array.isArray(item.artifacts) ? {} : { artifacts: descriptors(item.artifacts) }),
         ...(gone ? {} : { attachments: list(item.attachments).filter(isObject).filter(file => typeof file.path === 'string').map(file => ({ path: str(file.path) })) }),
         ...(gone ? {} : { steps: list(item.steps).filter(isObject).map((step): Step => ({ label: str(step.label), status: stepStatus(step.status) })) }),
         ...(mine ? { clientId: mine } : {}) };
@@ -181,7 +191,7 @@ export async function createRoomSource(options: RoomSourceOptions): Promise<Room
     if (item.kind === 'pin') return { ...base, author, card: { requestId: `pin:${entry}`, kind: 'pin', title: str(item.title), line: str(item.line) } };
     if (item.kind === 'question') {
       const options = strings(item.options);
-      return { ...base, author, text: str(item.prompt), question: { callId: str(item.callId), prompt: str(item.prompt), options, allowFreeText: item.allowFreeText !== false || options.length === 0, answered: item.answered === true } };
+      return { ...base, author, text: str(item.prompt), question: { callId: str(item.callId), prompt: str(item.prompt), options, allowFreeText: item.allowFreeText !== false || options.length === 0, answered: item.answered === true }, ...(Array.isArray(item.artifacts) ? { artifacts: descriptors(item.artifacts) } : {}) };
     }
     if (item.kind === 'card') {
       const card = item.card;
@@ -208,7 +218,7 @@ export async function createRoomSource(options: RoomSourceOptions): Promise<Room
     const index = c.list.findIndex(message => message.id === String(target));
     const found = c.list[index];
     if (!found || found.removed) return undefined;
-    const { text: _text, attachments: _attachments, steps: _steps, card: _card, question: _question, ...rest } = found;
+    const { text: _text, attachments: _attachments, artifacts: _artifacts, steps: _steps, card: _card, question: _question, ...rest } = found;
     c.list[index] = { ...rest, removed: { by: '', at: found.at } };
     return c.list[index];
   }
@@ -225,7 +235,7 @@ export async function createRoomSource(options: RoomSourceOptions): Promise<Room
   // ---- the writing state: an open wake draws the agent's message, in place, until its answer lands ----
   const clientIdOf = (w: Writing) => `wake:${w.wake.id}#${w.segment}`;
   const placeholder = (w: Writing): ChannelMessage => ({ id: `wake:${w.wake.id}`, conversationId: w.wake.conversation, author: w.wake.agent, at: w.at, streaming: true, clientId: clientIdOf(w),
-    ...(w.stalled ? { card: { requestId: `wake:${w.wake.id}`, kind: 'request' as const, title: text.stalled, line: '', actions: [{ id: 'retry', label: text.retry }] } } : { text: w.text }), steps: w.steps.map(step => ({ ...step })) });
+    ...(w.stalled ? { card: { requestId: `wake:${w.wake.id}`, kind: 'request' as const, title: text.stalled, line: '', actions: [{ id: 'retry', label: text.retry }] } } : { text: w.text }), steps: w.steps.map(step => ({ ...step })), ...(w.artifacts.length ? { artifacts: structuredClone(w.artifacts) } : {}) });
   function arm(w: Writing): void {
     clearTimeout(w.timer);
     w.timer = setTimeout(() => {
@@ -239,7 +249,7 @@ export async function createRoomSource(options: RoomSourceOptions): Promise<Room
     const name = str(raw.conversation, 'main'), c = conv(name);
     const found = c.writing.get(raw.id) ?? c.waiting.get(raw.id);
     if (found) return found;
-    const w: Writing = { wake: { id: raw.id, agent: raw.agent, conversation: name }, segment: 0, text: '', steps: [], stalled: false, timer: undefined, at: after() };
+    const w: Writing = { wake: { id: raw.id, agent: raw.agent, conversation: name }, segment: 0, text: '', steps: [], artifacts: [], stalled: false, timer: undefined, at: after() };
     c.writing.set(raw.id, w); arm(w);
     if (shown) emit(name, { type: 'message', message: placeholder(w) });
     return w;
@@ -255,7 +265,10 @@ export async function createRoomSource(options: RoomSourceOptions): Promise<Room
     if (!w || c.waiting.has(wakeId)) return;
     const wasStalled = w.stalled;
     w.stalled = false; arm(w);
-    if (raw.type === 'delta') {
+    if (raw.type === 'artifact') {
+      w.artifacts = descriptors([...w.artifacts, raw.artifact]);
+      emit(name, { type: 'message', message: placeholder(w) });
+    } else if (raw.type === 'delta') {
       const piece = str(raw.text);
       w.text += piece;
       emit(name, wasStalled ? { type: 'message', message: placeholder(w) } : { type: 'delta', messageId: placeholder(w).id, conversationId: name, text: piece });
@@ -352,7 +365,7 @@ export async function createRoomSource(options: RoomSourceOptions): Promise<Room
       if (!before || !sameMessage(before, stored)) emit(name, { type: 'message', message: stored });
       noteReply(c, name, stored);
       resume(c, stored);
-    } else if (raw.type === 'delta' || raw.type === 'step') frame(raw);
+    } else if (raw.type === 'delta' || raw.type === 'step' || raw.type === 'artifact') frame(raw);
     else if (raw.type === 'wake') { const name = str(raw.conversationId, 'main'); wake({ id: str(raw.wakeId, str(raw.id)), agent: str(raw.agent), conversation: name }); }
     else if (raw.type === 'presence') {
       const members = list(raw.members).filter(isObject).flatMap((m): { id: string; presence: 'here' | 'away' }[] => typeof m.id === 'string' && (m.presence === 'here' || m.presence === 'away') ? [{ id: m.id, presence: m.presence }] : []);
@@ -440,7 +453,7 @@ export async function createRoomSource(options: RoomSourceOptions): Promise<Room
         const name = str(isObject(body) ? body.conversation : undefined, input.conversationId);
         clientIds.set(entryId, input.clientId); owner.set(entryId, name);
         const c = conv(name);
-        const message = convert(name, { kind: 'message', id: entryId, author: data.author, via: data.via, text: data.text, mentions: data.mentions, replyTo: data.replyTo, attachments: data.attachments, steps: data.steps, mine: true, removed: false });
+        const message = convert(name, { kind: 'message', id: entryId, author: data.author, via: data.via, text: data.text, mentions: data.mentions, replyTo: data.replyTo, attachments: data.attachments, artifacts: data.artifacts, steps: data.steps, mine: true, removed: false });
         if (!message || 'retract' in message) throw new ChannelRequestError('invalid-response', 'Room send returned an invalid response', false);
         const stored = put(c, { ...message, clientId: input.clientId });
         noteReply(c, name, stored);

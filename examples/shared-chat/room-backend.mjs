@@ -41,7 +41,7 @@ function webSocketFrame(string) {
  * @param {{ strict?: boolean, latencyMs?: number, streamMs?: number, now?: () => number }} options
  * `latencyMs`: every door answer waits this long (shows the optimistic bubble before the host answers). `streamMs`: pause between the agent's frames.
  */
-export async function createRoomBackend({ strict = false, latencyMs = 0, streamMs = 60 } = {}) {
+export async function createRoomBackend({ strict = false, latencyMs = 0, streamMs = 60, mockups = [] } = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'fictional-room-'));
   const harness = await Harness.open(await openNodeSqliteStorage(join(directory, 'room.sqlite')), { registry: createRegistry(), models: createModels() }, context);
   const room = createRoom({ harness, context });
@@ -76,7 +76,7 @@ export async function createRoomBackend({ strict = false, latencyMs = 0, streamM
 
   async function after(ms) { await new Promise(done => { const t = setTimeout(() => { timers.delete(t); done(); }, ms); timers.add(t); }); return !closed; }
 
-  async function reply(wake, answer) {
+  async function reply(wake, answer, artifacts = []) {
     stream(wake, [{ type: 'step', wakeId: wake.id, label: 'Lire vos fichiers', status: 'running' }]);
     if (!await after(streamMs * 2)) return;
     stream(wake, [{ type: 'step', wakeId: wake.id, label: 'Lire vos fichiers', status: 'done' }, { type: 'step', wakeId: wake.id, label: 'Préparer la version', status: 'running' }]);
@@ -85,7 +85,7 @@ export async function createRoomBackend({ strict = false, latencyMs = 0, streamM
       stream(wake, [{ type: 'delta', wakeId: wake.id, text: piece }]);
     }
     if (!await after(streamMs)) return;
-    const written = await room.settle(wake.agent, wake.id, { text: answer, steps: [{ label: 'Lire vos fichiers', status: 'done' }, { label: 'Préparer la version', status: 'done' }] });
+    const written = await room.settle(wake.agent, wake.id, { text: answer, ...(artifacts.length ? { artifacts } : {}), steps: [{ label: 'Lire vos fichiers', status: 'done' }, { label: 'Préparer la version', status: 'done' }] });
     landed({ ...written, conversation: wake.conversation });
   }
   async function agentRuns(wake, cause) {
@@ -96,6 +96,14 @@ export async function createRoomBackend({ strict = false, latencyMs = 0, streamM
     }
     const said = String(cause.data.text ?? '');
     if (/lent|slow/i.test(said)) { silent.set(wake.id, { wake, cause }); return; }
+    if (/mockups/i.test(said) && mockups.length) {
+      // Fictional browser regression: exact descriptors arrive before the durable room question, never HTML bytes.
+      for (const artifact of mockups) stream(wake, [{ type: 'artifact', wakeId: wake.id, artifact }]);
+      const callId = `mockups:${wake.id}`;
+      const question = await room.question(wake.agent, wake.id, { callId, prompt: 'Which idea?', options: ['A', 'B', 'C'], allowFreeText: false, artifacts: mockups });
+      pending.set(callId, wake);
+      return landed({ ...question, conversation: wake.conversation });
+    }
     if (/format/i.test(said)) {
       const question = await room.question(wake.agent, wake.id, { callId: `q:${wake.id}`, prompt: 'Quel format voulez-vous pour l’export ?', options: ['PDF', 'CSV'], allowFreeText: true });
       pending.set(`q:${wake.id}`, wake);
@@ -107,7 +115,7 @@ export async function createRoomBackend({ strict = false, latencyMs = 0, streamM
     const wake = pending.get(callId);
     if (!wake) return;
     pending.delete(callId);
-    await reply(wake, `Parfait, j’ajoute un export ${entry.data.text}.`);
+    await reply(wake, callId.startsWith('mockups:') ? `Selected ${entry.data.text}; launch not requested.` : `Parfait, j’ajoute un export ${entry.data.text}.`, callId.startsWith('mockups:') ? mockups : []);
   }
 
   // ---- the door ----

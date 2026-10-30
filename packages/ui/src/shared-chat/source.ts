@@ -1,3 +1,5 @@
+import type { PresentedArtifact } from '../chat-artifacts.js';
+export type { PresentedArtifact } from '../chat-artifacts.js';
 /** `roleLabel` is the host's own line beside the author (« the coach »); without it the view derives one from `kind` and `role`. */
 export type Member = { id: string; name: string; kind: 'person' | 'agent' | 'admin'; role?: 'owner' | 'validator' | 'member' | 'admin' | `agent:${string}`; roleLabel?: string; avatarUrl?: string; presence?: 'here' | 'away' };
 export type Conversation = { id: string; title: string; kind: 'main' | 'admin' | 'direct' | string; members: string[] };
@@ -26,7 +28,7 @@ export const channelAvatarStates: Readonly<Record<string, AvatarState | undefine
   platform: 'blocked', fixing: 'blocked', live: 'done', declined: 'neutral',
 });
 /** `kind: 'system'` marks a host notice (« Léa joined », « Shipped: … »): a small centred line, consecutive ones collapsed into one. */
-export type ChannelMessage = { id: string; conversationId: string; author: string; at: string; via?: string; text?: string; kind?: 'system'; card?: Card; question?: Question; mentions?: string[]; replyTo?: string; attachments?: { path: string; title?: string }[]; steps?: Step[]; streaming?: boolean; removed?: { by: string; at: string }; clientId?: string;
+export type ChannelMessage = { id: string; conversationId: string; author: string; at: string; via?: string; text?: string; kind?: 'system'; card?: Card; question?: Question; mentions?: string[]; replyTo?: string; artifacts?: PresentedArtifact[]; attachments?: { path: string; title?: string }[]; steps?: Step[]; streaming?: boolean; removed?: { by: string; at: string }; clientId?: string;
   /** Set only by the controller on the sender's own copy while the host has not confirmed it yet; a host never sends it. */
   pending?: true };
 export type ChannelEvent =
