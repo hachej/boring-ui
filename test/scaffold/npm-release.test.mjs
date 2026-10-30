@@ -405,7 +405,8 @@ function runGithubRelease(t, { version, tag, exists = false, migrating = '# Unre
 test('a github-release job publishes the GitHub release only after a successful publish', () => {
   const job = workflowJob('github-release');
   assert.match(job, /^    needs: publish$/m);
-  assert.match(job, /^    if: needs\.publish\.result == 'success'$/m);
+  // always(): with reused CI the jobs before publish are skipped, and the implicit success() would skip this job too (0.4.34 to 0.4.36).
+  assert.match(job, /^    if: always\(\) && needs\.publish\.result == 'success'$/m);
   assert.match(job, /^    permissions:\n      contents: write\n    env:$/m);
   assert.match(job, /ref: \$\{\{ inputs\.commit \}\}\n {10}persist-credentials: false/, 'the notes come from the released commit');
   assert.equal((workflow.match(/contents: write/g) || []).length, 1, 'only the github-release job gets write access');
