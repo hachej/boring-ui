@@ -4,12 +4,12 @@
   "title": "Pi chat slash menu",
   "description": "The composer's `/` menu of commands and skills (and the Commands entry of the + menu). Plug it in with `slash={{ ...config, Picker: SlashPicker }}`; without it pi-chat has no `/` menu.",
   "dependencies": [
-    "@hachej/boring-ui-kit@^0.4.38",
+    "@hachej/boring-ui-kit@^0.4.39",
     "react@^19.0.0",
     "lucide-react@^1.51.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.38/r/pi-chat.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.39/r/pi-chat.json"
   ],
   "files": [
     {
