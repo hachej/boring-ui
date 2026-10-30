@@ -6,7 +6,7 @@
 // See packages/agent/README.md ("Metering") for the rules.
 import type { Context } from '@earendil-works/chord';
 import { AssistantEntry, UserEntry } from '@earendil-works/pi-durable';
-import type { Conversation, ConversationWatch, EntryRecord, Harness, Submission, SubmissionDraft, SubmissionRecord } from '@earendil-works/pi-durable';
+import type { Conversation, ConversationId, ConversationWatch, EntryRecord, Harness, Submission, SubmissionDraft, SubmissionRecord } from '@earendil-works/pi-durable';
 import type { Models, Usage } from '@earendil-works/pi-ai';
 import { calculateCost } from '@earendil-works/pi-ai/models';
 import { openNodeConnection, type SqliteConnection, type SqliteSettings } from '@hachej/boring-files/sqlite';
@@ -140,6 +140,62 @@ export interface Meter {
 const runIdOf = (conversationId: number, requestId: string) => `run:${conversationId}:${requestId}`;
 /** The longest `message` preview a reservation carries. */
 export const MESSAGE_PREVIEW_LENGTH = 280;
+
+/** Which delegate call made a child (`DelegateCallIds`; this module stays free of the delegate tool). */
+export interface ChildCallIds { readonly callId: string; readonly taskId: number; readonly requestId: string }
+/** A `DelegateMeter`: pass the function `meterFromSink` returns as `DelegateOptions.meter`. */
+export interface ChildMeter {
+  readonly record: (event: { readonly entryId: number; readonly provider: string; readonly model: string; readonly usage: Usage }) => void | Promise<void>;
+  readonly close: (end: 'done' | 'failed' | 'cancelled' | 'timeout') => void | Promise<void>;
+}
+
+export interface MeterFromSinkOptions extends Pick<MeterOptions, 'sink' | 'price' | 'models' | 'markup' | 'onError'> {
+  /** Who pays for the child, usually read from the parent's identity. */
+  readonly scope: MeteringScope | ((parent: ConversationId, child: ConversationId, ids: ChildCallIds) => MeteringScope | Promise<MeteringScope>);
+}
+
+/**
+ * `DelegateOptions.meter` over a `MeteringSink`: a child's spend goes to the same ledger as its parent's, as one run of the child under the
+ * call's request id. A refused reservation throws, which fails the delegate call before the child runs. A rerun reattaching to the child
+ * reserves and reports again: the sink is idempotent on `runId` and `usageId`.
+ */
+export function meterFromSink(options: MeterFromSinkOptions): (parent: ConversationId, child: ConversationId, ids: ChildCallIds) => Promise<ChildMeter> {
+  const { sink, onError } = options;
+  const price = options.price ?? catalogPrice(options.models);
+  const markup = options.markup ?? 1;
+  if (!(markup > 0)) throw new TypeError('markup must be a positive number');
+  return async (parent, child, ids) => {
+    if (sink.isEnabled?.() === false) return { record: () => undefined, close: () => undefined };
+    const scope = typeof options.scope === 'function' ? await options.scope(parent, child, ids) : options.scope;
+    const run: MeteringRunScope = { ...scope, conversationId: Number(child), requestId: ids.requestId, runId: runIdOf(Number(child), ids.requestId) };
+    const reserved = await sink.reserveRun({ ...run, kind: 'input', message: '', content: '' });
+    if ('kind' in reserved) throw new MeteringRefused(reserved.reason);
+    const reservation = reserved.reservationId ? { reservationId: reserved.reservationId } : {};
+    // A rerun after a crash reattaches here. A run the ledger already finished must not take the replayed usage on top of a charged hold.
+    if (sink.openRuns && !(await sink.openRuns()).some(open => open.runId === run.runId)) return { record: () => undefined, close: () => undefined };
+    let recorded = 0, lost = false, unpriced = false;
+    return {
+      record: async event => {
+        const model = { provider: event.provider, id: event.model };
+        try {
+          const { billedMicros } = await sink.recordUsage({ ...run, ...reservation, usageId: `entry:${child}:${event.entryId}`, model, bucket: `model:${event.provider}/${event.model}`, usage: event.usage, amountMicros: Math.ceil(Math.max(0, price(event.usage, model)) * markup) });
+          recorded++;
+          if (billedMicros === 0 && !isZero(event.usage)) unpriced = true;
+        } catch (error) { lost = true; onError?.(`recordUsage failed (${run.runId})`, error); }
+      },
+      close: async end => {
+        try {
+          if (lost) await sink.releaseRun({ ...run, ...reservation, reason: 'usage-write-failed' });
+          // Tokens that priced to nothing are work it cannot account for, as in `createMeter`: the hold is charged, not settled as free.
+          else if (unpriced) await sink.releaseRun({ ...run, ...reservation, reason: 'fallback-charge' });
+          else if (end === 'done' || recorded > 0) await sink.settleRun({ ...run, ...reservation, status: end === 'done' ? 'done' : 'unanswered' });
+          else await sink.releaseRun({ ...run, ...reservation, reason: end === 'failed' ? 'error-before-usage' : 'cancelled' });
+        } catch (error) { onError?.(`closing the child's run failed (${run.runId})`, error); }
+      },
+    };
+  };
+}
+
 function previewOf(content: unknown): string {
   const parts = typeof content === 'string' ? [content] : Array.isArray(content)
     ? content.map(part => part?.type === 'text' && typeof part.text === 'string' ? part.text : part?.type === 'image' ? '[image]' : '') : [];
