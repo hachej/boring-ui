@@ -480,7 +480,7 @@ test('defineAgent({ skills }) takes a SkillSource: the agent loads skills it fin
     ctx => ({ tools: turns.at(-1).calls.map(args => ({ name: 'load_skill', args })) }),
     ctx => { turns.at(-1).system = ctx.system; turns.at(-1).results = ctx.results.map(result => result.text); return 'Done.'; },
   ] } });
-  const agent = defineAgent({ id: 'fictional-clerk', model: scripted.model, instructions: 'You file fictional letters.', skills: directorySkillSource(env, 'skills') });
+  const agent = defineAgent({ id: 'fictional-clerk', struggle: false, model: scripted.model, instructions: 'You file fictional letters.', skills: directorySkillSource(env, 'skills') });
   assert.deepEqual(agent.extensions.map(extension => extension.name), ['agent.fictional-clerk.skills']);
   const registry = createRegistry();
   agent.install(registry);
