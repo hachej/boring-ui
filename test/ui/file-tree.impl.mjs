@@ -390,6 +390,43 @@ function mutable(t, overrides = {}) {
   return { ...f, listed, text, seed };
 }
 
+test('file tree renames, moves and deletes a folder with what is inside it; a refusal says how far it got and a retry finishes (D-557)', async t => {
+  const paths = f => f.controller.getSnapshot().directories.get('').entries.map(entry => entry.path);
+  const f = mutable(t);
+  await f.seed('docs/a.md', 'Fictional a'); await f.seed('docs/deep/b.md', 'Fictional b'); await f.seed('archive/keep.md', 'Fictional archive');
+  await f.controller.refresh();
+  const renamed = await f.controller.rename('docs', 'notes');
+  assert.equal(renamed.state.result.kind, 'committed');
+  assert.equal(await f.text('notes/a.md'), 'Fictional a');
+  assert.equal(await f.text('notes/deep/b.md'), 'Fictional b');
+  assert.equal(await f.text('docs/a.md'), undefined);
+  await f.controller.refresh();
+  assert.deepEqual(paths(f).sort(), ['archive', 'notes']);
+  await assert.rejects(f.controller.move('notes', 'notes/deep'), TypeError, 'a folder cannot move into itself');
+  assert.equal((await f.controller.move('notes', 'archive')).state.result.kind, 'committed');
+  assert.equal(await f.text('archive/notes/deep/b.md'), 'Fictional b');
+  await f.controller.refresh();
+  assert.equal((await f.controller.remove('archive')).state.result.kind, 'committed');
+  assert.equal(await f.text('archive/keep.md'), undefined);
+  assert.equal(await f.text('archive/notes/a.md'), undefined);
+
+  let refuse = true;
+  const g = mutable(t, { delete: request => {
+    if (refuse && request.path.resource.path.endsWith('b.md')) return Promise.resolve({ kind: 'denied', reason: 'fictional refusal' });
+    return g.store.workspace('fictional').deletion.delete(request, g.binding.identity);
+  } });
+  await g.seed('docs/a.md', 'Fictional a'); await g.seed('docs/b.md', 'Fictional b');
+  await g.controller.refresh();
+  const partial = await g.controller.remove('docs');
+  assert.equal(partial.state.result.kind, 'unavailable');
+  assert.match(partial.state.result.reason, /1 of 2 files of docs were changed/);
+  assert.equal(await g.text('docs/b.md'), 'Fictional b', 'what was refused stays');
+  refuse = false;
+  await g.controller.refresh();
+  assert.equal((await g.controller.remove('docs')).state.result.kind, 'committed');
+  assert.equal(await g.text('docs/b.md'), undefined);
+});
+
 test('file tree renames, moves and deletes files through the one client with the revision the row knows', async t => {
   assert.deepEqual(fixture(t).controller.actions, { rename: false, delete: false }, 'a client without rename/delete offers neither');
   const f = mutable(t);
