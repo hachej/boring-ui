@@ -72,6 +72,7 @@
     "./audit": {
       "types": "./dist/audit.d.ts",
       "import": "./dist/audit.js"
+    },
     "./struggle": {
       "types": "./dist/struggle.d.ts",
       "import": "./dist/struggle.js"
