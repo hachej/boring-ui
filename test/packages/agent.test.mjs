@@ -1013,11 +1013,11 @@ test('self-evolution prompt assembly (SELF-3): the host instructions first and w
   models.setProvider(createProvider({ id: MODEL.provider, models: [MODEL], auth: { apiKey: { name: 'keyless', resolve: async () => ({ auth: {} }) } }, api: { stream, streamSimple: stream } }));
   const model = { provider: 'scripted', modelId: 'scripted' };
   const skill = { name: 'house-style', description: 'House style.', body: 'Be brief.' };
-  const plain = defineAgent({ id: 'plain', model, instructions: 'HOST BASE PROMPT', skills: [skill] });
-  const evolving = defineAgent({ id: 'evolving', model, instructions: 'HOST BASE PROMPT', skills: [skill], selfEvolving: true, workspace: 'one' });
+  const plain = defineAgent({ id: 'plain', struggle: false, model, instructions: 'HOST BASE PROMPT', skills: [skill] });
+  const evolving = defineAgent({ id: 'evolving', struggle: false, model, instructions: 'HOST BASE PROMPT', skills: [skill], selfEvolving: true, workspace: 'one' });
   assert.deepEqual(evolving.extensions.map(extension => extension.name), ['agent.evolving', 'self-evolving:one']);
   // A workspace per conversation: one definition, one extension per workspace, each configuration selecting only its own.
-  const perPerson = defineAgent({ id: 'per-person', model, instructions: 'HOST BASE PROMPT', skills: [skill], selfEvolving: true });
+  const perPerson = defineAgent({ id: 'per-person', struggle: false, model, instructions: 'HOST BASE PROMPT', skills: [skill], selfEvolving: true });
   assert.equal(perPerson.reload, undefined);
   assert.deepEqual(perPerson.extensions.map(extension => extension.name), ['agent.per-person', 'agent.per-person.skills']);
   assert.equal(perPerson.inWorkspace('a'), perPerson.inWorkspace('a'), 'made once per workspace');
@@ -1749,10 +1749,10 @@ test('addExtension adds a host extension to an existing conversation: the next t
   const stamps = [];
   const stamp = defineTool({ name: 'stamp', description: 'Stamp the fictional ledger.', parameters: Type.Object({}), replay: 'safe', execute: async () => { stamps.push('stamp'); return { output: [{ type: 'text', text: 'stamped' }] }; } });
   const added = defineExtension({ name: 'fictional.stamp', tools: [stamp] });
-  const agent = defineAgent({ id: 'clerk', model: { provider: 'fictional-faux', modelId: 'scripted' }, instructions: 'Keep the ledger.', tools: [own] });
+  const agent = defineAgent({ id: 'clerk', struggle: false, model: { provider: 'fictional-faux', modelId: 'scripted' }, instructions: 'Keep the ledger.', tools: [own] });
   // Another agent shares the registry: a conversation of `clerk` must not pick up its extension.
   const audit = defineTool({ name: 'audit', description: 'Another agent\'s tool.', parameters: Type.Object({}), replay: 'safe', execute: async () => ({ output: [{ type: 'text', text: 'audited' }] }) });
-  const auditor = defineAgent({ id: 'auditor', model: { provider: 'fictional-faux', modelId: 'scripted' }, tools: [audit] });
+  const auditor = defineAgent({ id: 'auditor', struggle: false, model: { provider: 'fictional-faux', modelId: 'scripted' }, tools: [audit] });
   // The host installs its extensions in the registry every time it opens the Harness: the conversation stores names only.
   const open = async () => {
     const registry = createRegistry(); agent.install(registry); auditor.install(registry); registry.install(added);

@@ -257,7 +257,7 @@ test('an agent without the extension has a byte-identical tool list and prompt',
   const skill = parseSkill('---\nname: fictional-release\ndescription: "Prepare a fictional release"\n---\nList the fictional changes.\n');
   async function firstRequest(withFeedback) {
     const fake = createFakeChatModel();
-    const builder = defineAgent({ id: 'builder', model: fake.model, instructions: 'You build the fictional Northwind console.', tools: [echo], skills: [skill] });
+    const builder = defineAgent({ id: 'builder', struggle: false, model: fake.model, instructions: 'You build the fictional Northwind console.', tools: [echo], skills: [skill] });
     const registry = createRegistry();
     builder.install(registry);
     if (withFeedback) {
