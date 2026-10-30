@@ -24,7 +24,7 @@ Lifecycle binding includes every acquired workspace, watcher and shared transpor
 
 ### Concrete interface boundaries
 
-See [SCAFFOLD.md](SCAFFOLD.md) for compiled exports. Native tool schemas, execution APIs/results and hooks are reused directly; the initial duplicate HostOperation and agent-owned RuntimeSchema are removed. Passive AttachmentInput contains only the borrowed Harness and preserves host subtypes. A host installs extensions through its own native registry, not an unrelated registry passed to passive attachment.
+See [SCAFFOLD.md](SCAFFOLD.md) for compiled exports. Native tool schemas, execution APIs/results and hooks are reused directly; the initial duplicate HostOperation and agent-owned RuntimeSchema are removed. A host installs extensions through its own native registry.
 
 ## Submission and task
 

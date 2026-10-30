@@ -9,7 +9,6 @@ import { join } from 'node:path';
 import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node';
 import { NodeExecutionEnv } from '@earendil-works/pi-durable/env/node';
 import { createEditTool, createReadTool, createWriteTool } from '@earendil-works/pi-durable/tools';
-import { attachHarness } from '@hachej/boring-agent';
 import { createFileGuard } from '@hachej/boring-agent/file-guard';
 import { openNodeConnection } from '@hachej/boring-files/sqlite';
 import { createWorkspaceJournal } from '@hachej/boring-files/journal';
@@ -20,7 +19,7 @@ import { admitDocumentTool, createSaveNoteTool, documentToolResult, toolResultTe
 const target = { resource: { providerId: 'documents', path: 'notes.md' }, view: { kind: 'published' } };
 const access = { principalId: 'editor', initiatorId: 'alice', scopeId: 'fictional-project' };
 
-test('borrowed Harness executes a native publishing tool with actual publication and survives independent detaches', { timeout: 15000 }, async t => {
+test('a host Harness executes a native publishing tool with actual publication', { timeout: 15000 }, async t => {
   let authorized = true;
   const provider = openSqliteWorkspaces({ filename: ':memory:', providerId: 'documents', authorize: () => authorized });
   const tool = createSaveNoteTool({ target, publisher: provider.publication, operationNamespace: 'fixture-runtime-v1', replay: 'safe', resolveAccess: api => { assert.equal(api.env, undefined); return access; } });
@@ -28,31 +27,26 @@ test('borrowed Harness executes a native publishing tool with actual publication
   registry.install(defineExtension({ name: 'fixture.document', tools: [tool] }));
   const harness = await Harness.open(new MemoryStorage(), { registry, models: createModels() }, context);
   t.after(async () => { await harness.close(context); provider.close(); });
-  const first = attachHarness({ harness }), second = attachHarness({ harness });
-  assert.equal(first.harness, harness);
   const conversation = await harness.root(context);
   const independentWatch = await conversation.watch(context);
   t.after(() => independentWatch.stop());
   const taskId = await admitDocumentTool(conversation, { text: 'Fictional notes', expected: { kind: 'absent' } });
-  const saved = await documentToolResult(first.harness, conversation, taskId);
+  const saved = await documentToolResult(harness, conversation, taskId);
   assert.equal(saved.result.kind, 'committed');
   assert.equal(saved.result.receipt.operationId, JSON.stringify(['fixture-runtime-v1', taskId]));
   const read = await provider.read({ target, revision: { kind: 'latest' } }, access);
   assert.equal(new TextDecoder().decode(read.snapshot.bytes), 'Fictional notes');
   assert.deepEqual(await provider.reconciliation.lookup(saved.result.receipt.operationId, access), saved.result);
-  await first.detach();
-  await first.detach();
   const changed = Promise.withResolvers();
   independentWatch.start(() => changed.resolve());
   await conversation.configure({ instructions: 'Host still owns this conversation' }, context);
   await changed.promise;
   const staleId = await admitDocumentTool(conversation, { text: 'stale write', expected: { kind: 'revision', revision: 'stale' } });
-  assert.equal((await documentToolResult(second.harness, conversation, staleId)).result.kind, 'conflict');
+  assert.equal((await documentToolResult(harness, conversation, staleId)).result.kind, 'conflict');
   authorized = false;
   const deniedId = await admitDocumentTool(conversation, { text: 'unauthorized', expected: { kind: 'revision', revision: read.snapshot.ref.revision } });
   assert.equal((await documentToolResult(harness, conversation, deniedId)).result.kind, 'denied');
   authorized = true;
-  await second.detach();
   assert.equal(new TextDecoder().decode((await provider.read({ target, revision: { kind: 'latest' } }, access)).snapshot.bytes), 'Fictional notes');
   await conversation.configure({ instructions: 'Native API remains available after detach' }, context);
 });

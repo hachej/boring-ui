@@ -1,8 +1,6 @@
 import type { PresentationCommand, ViewerDescriptor, ViewerFeature, ViewerController, ViewerRenderer, ValueSchema, ViewerTarget } from '@hachej/boring-ui-kit';
 import type { WorkspaceProvider, RecoverableWorkspaceProvider, ExecutionEnv } from '@hachej/boring-execution';
 import type { ResourcePublisher, PublicationLookup, ResourceClient, PublicationRequest, ResourceChange, ResourceAccess, ResourceRef } from '@hachej/boring-files';
-import type { AttachmentInput, BorrowedAttachment } from '@hachej/boring-agent';
-import type { Harness, Registry } from '@hachej/boring-agent/native';
 
 interface InlineDescriptor extends ViewerDescriptor {
   readonly kind: 'counter'; readonly version: 1; readonly initial: number;
@@ -65,15 +63,6 @@ declare const trusted: ResourceAccess;
 // @ts-expect-error Browser client does not accept server authentication context.
 void client.publish?.(oneWrite, trusted);
 
-export interface HostHarness extends Harness { readonly hostMarker: 'preserved'; }
-declare const harness: HostHarness;
-export const passive: AttachmentInput<HostHarness> = { harness };
-declare const registry: Registry;
-// @ts-expect-error Passive attachment cannot pair an unrelated writable registry.
-const mismatched: AttachmentInput = { harness, registry };
-void mismatched;
-declare const attachment: BorrowedAttachment<HostHarness>;
-export const preserved: 'preserved' = attachment.harness.hostMarker;
 
 /** Host-only provenance can accompany actual provider calls, not UI intent. */
 export const authorized: ResourceAccess = { principalId: 'person', scopeId: 'app', initiatorId: 'person', authorizationRef: 'verified-by-host' };

@@ -1,17 +1,4 @@
-import type { Harness, ConversationId, TaskId } from '@earendil-works/pi-durable';
-
-/** Borrow only the native handle. A second independently supplied Registry
- * cannot prove it belongs to this Harness. The host installs native features
- * explicitly through its own registry; passive attachment needs no registry.
- */
-export interface AttachmentInput<NativeHarness extends Harness = Harness> {
-  readonly harness: NativeHarness;
-}
-
-export interface BorrowedAttachment<NativeHarness extends Harness = Harness> {
-  readonly harness: NativeHarness;
-  readonly detach: () => Promise<void>;
-}
+import type { ConversationId, TaskId } from '@earendil-works/pi-durable';
 
 /** Host services keep their own APIs. Native defineTool/ToolRegistration,
  * ToolExecutionApi and ToolExecutionResult are the tool contract; no parallel

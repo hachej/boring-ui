@@ -1,5 +1,7 @@
 # Unreleased
 
+- **`attachHarness` removed (`@hachej/boring-agent`; D-398).** It returned your harness with a no-op `detach`. Use your `Harness` directly. The types `AttachmentInput` and `BorrowedAttachment` go with it. No consumer used them.
+
 # Migrating to 0.4.36
 
 - **File tree folders (`@hachej/boring-ui-kit/file-tree`; D-557).** Folder rows get the actions menu (Rename, Move to…, Delete), F2 and Delete. `controller.rename`, `move` and `remove` accept a listed folder and work file by file: not atomic, so a refusal leaves the rest in place and says how many changed; trying again finishes. Labels add `deleteFolderDescription`. No New folder.
