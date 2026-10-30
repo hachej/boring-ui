@@ -1,5 +1,6 @@
 # Unreleased
 
+- **Studio PM mockups (`pm-panel`).** `PmChat` now shows native `present` cards, exact-revision full views and `ask_user` choices, including rounds that also contain reply text. Refresh the copied `pm-panel` registry block, not only the npm pin, and pass the current controller's `ImproveSpec.readArtifact` and chat actions. Explicit artifact/render overrides still win; controller replacement clears the previous view and cache. The app panel keeps its existing mockup support. Design choices do not grant launch consent.
 - **`attachHarness` removed (`@hachej/boring-agent`; D-398).** It returned your harness with a no-op `detach`. Use your `Harness` directly. The types `AttachmentInput` and `BorrowedAttachment` go with it. No consumer used them.
 
 # Migrating to 0.4.36
