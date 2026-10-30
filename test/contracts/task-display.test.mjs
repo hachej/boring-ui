@@ -21,6 +21,6 @@ test('both public request-card variants prefer the host display title without mu
     assert.ok(!rendered.includes(original));
     assert.equal(task.title, original);
     const fallback = renderToStaticMarkup(createElement(TaskRequestCard, { task: { ...task, display: undefined }, variant }));
-    assert.ok(fallback.includes(original));
+    assert.ok(fallback.includes(variant === 'compact' ? 'A complete original need kept for…' : original));
   }
 });

@@ -6,17 +6,11 @@ import { deriveTaskStatus, taskReference, taskStatusLabel } from '@hachej/boring
 import { Badge } from '@/components/ui/badge';
 import { Item } from '@/components/ui/item';
 import { cn } from '../utils/utils';
+import { compactLabels, compactTaskStatus, compactTaskTitle } from './compact-presentation';
 
 export type TaskLocale = 'en' | 'fr';
 export type TaskViewerAction = 'question' | 'confirmation';
 export const taskStateLabels: Readonly<Record<TaskState, string>> = { waiting: 'Waiting', working: 'Working', open: 'Open', done: 'Done', closed: 'Closed' };
-const captures = (count: number) => `${count} capture${count === 1 ? '' : 's'}`;
-/** Compact (C7) strings. French uses a non-breaking space before the colon. */
-const compactStrings = {
-  en: { label: 'REQUEST', screen: (screen: string) => `Screen: ${screen}` },
-  fr: { label: 'DEMANDE', screen: (screen: string) => `Écran : ${screen}` },
-} as const;
-
 /**
  * Task-board tokens, set by the host theme. Each falls back to the stock shadcn value, so a host without them looks unchanged.
  * `--task-pill-height` / `--task-pill-font-size` (pills), `--task-control-height` (question controls), `--task-column-radius`,
@@ -35,7 +29,7 @@ export const taskMeta = (task: TaskRecord) => [taskReference(task), task.age].fi
 /**
  * One pill per task: viewer, explicit builder, then high risk (`deriveTaskStatus`); none renders nothing. Colours are theme roles:
  * primary (waiting on you), secondary (builder, sent), destructive (risk). The French app's « À confirmer / À vous » pill uses the host's
- * warning-soft tokens when it defines them. `sent` opts into « Envoyée » (the compact card only; the board and the detail keep theirs).
+ * warning-soft tokens when it defines them. `sent` lets standalone callers opt into « Envoyée »; compact rows use their separate product status.
  */
 export function TaskStatusPill({ task, locale = 'en', viewerAction = 'question', sent = false }: { readonly task: Pick<TaskRecord, 'waiting_on_you' | 'waiting_on' | 'risk'> & Partial<Pick<TaskRecord, 'state' | 'confirmed_at'>>; readonly locale?: TaskLocale | undefined; readonly viewerAction?: TaskViewerAction | undefined; readonly sent?: boolean | undefined }) {
   const status = deriveTaskStatus(task, { sent });
@@ -80,14 +74,18 @@ export function TaskRequestCard({ task, variant = 'card', selected, href, onOpen
   const anchor = { href, onClick: activate, 'data-task-open': task.id, 'aria-current': selected ? 'true' as const : undefined };
   const link = href ? <a {...anchor} /> : undefined;
   if (variant === 'compact') {
-    const pill = shownPill ?? <TaskStatusPill task={task} locale={locale} viewerAction={viewerAction} sent />;
-    const strings = compactStrings[locale];
-    const meta = [task.screen && strings.screen(task.screen), task.captureCount !== undefined && captures(task.captureCount)].filter(Boolean).join(' · ');
-    const title = link && actions ? <a {...anchor} className="underline-offset-4 hover:underline">{task.display ?? task.title}</a> : task.display ?? task.title;
+    const status = compactTaskStatus(task);
+    const strings = compactLabels[locale];
+    const label = status === 'needs-you' && viewerAction === 'confirmation' ? strings.confirmation
+      : status === 'closed' && (task.status === 'withdrawn' || task.status === 'abandoned') ? strings.withdrawn : strings[status];
+    const pill = shownPill ?? <Badge data-task-status={status} variant={status === 'needs-you' ? 'default' : status === 'blocked' ? 'destructive' : 'secondary'}>{label}</Badge>;
+    const shortTitle = compactTaskTitle(task);
+    const title = link && actions ? <a {...anchor} className="underline-offset-4 hover:underline">{shortTitle}</a> : shortTitle;
     return <div role="listitem"><Item variant="outline" className="flex-col items-stretch gap-2" data-task-card={task.id} data-variant="compact" {...(link && !actions ? { render: link } : {})}>
-      <div className="flex min-w-0 items-center justify-between gap-2"><span className="text-xs font-semibold text-muted-foreground">{strings.label}</span>{pill}</div>
-      <div className="min-w-0 text-[15px] leading-tight font-semibold break-words">{title}</div>
-      {meta && <div className="text-[13px] text-muted-foreground">{meta}</div>}
+      <div className="flex min-w-0 items-start justify-between gap-2">
+        <span data-task-title="" className="min-w-0 text-sm font-semibold break-words">{title}</span>
+        <span className="shrink-0">{pill}</span>
+      </div>
       {actions && <div data-task-actions="" className="mt-1 grid grid-cols-2 gap-2 *:min-h-11 *:w-full">{actions}</div>}
     </Item></div>;
   }

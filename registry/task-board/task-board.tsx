@@ -7,6 +7,7 @@ import type { TaskFile, TaskFilter, TaskRecord, TaskState } from '@hachej/boring
 import { ChevronLeftIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '../utils/utils';
@@ -14,6 +15,7 @@ import { TaskRequestCard, TaskStatusPill, taskMeta, taskStateLabels, taskTokens 
 import type { TaskLocale, TaskViewerAction } from './task-request-card';
 import { TaskDetail } from './task-detail';
 import type { TaskDetailProps } from './task-detail';
+import { compactLabels, compactTaskStatus } from './compact-presentation';
 
 export { TaskRequestCard, TaskRequestCard as TaskCard, TaskStatusPill, TaskStatusChip, TaskAttention, taskMeta, taskTokens } from './task-request-card';
 export { TaskDetail } from './task-detail';
@@ -47,6 +49,8 @@ export interface TaskBoardProps {
   readonly currentUser?: string;
   readonly limit?: number;
   readonly variant?: 'board' | 'compact';
+  /** Compact-only presentation, never server authorization. Supply only records the viewer may already read. */
+  readonly compactPresentation?: { readonly includeTechnical?: boolean };
   readonly title?: string;
   /** Column names, shown uppercase. */
   readonly labels?: Readonly<Record<TaskState, string>>;
@@ -84,7 +88,7 @@ export interface TaskBoardProps {
  * The tasks panel (spec 3 §3–§5): tasks bar, WAITING · WORKING · OPEN, and panel-scoped overlays. The task detail opens 400px wide
  * from the right over the board, which keeps its columns; a file opens 760px wide over the detail. `variant="compact"` stacks C7 cards.
  */
-export function TaskBoard({ tasks, filter, onFilterChange, currentUser, limit, variant = 'board', title = 'Tasks', labels = taskStateLabels, bar = true, barStart, locale = 'en', viewerAction,
+export function TaskBoard({ tasks, filter, onFilterChange, currentUser, limit, variant = 'board', compactPresentation, title = 'Tasks', labels = taskStateLabels, bar = true, barStart, locale = 'en', viewerAction,
   selectedTask, onSelectedTaskChange, onOpen, actions, cardActions, onAnswer, onOther, onDiscussQuestion, onAsk, onOpenFile, onShowFile, renderFile, overlayClassName, className }: TaskBoardProps) {
   const urlSelection = useSyncExternalStore(subscribe, readSelection, serverSelection);
   const [ownFilter, setOwnFilter] = useState<TaskFilter>(currentUser === undefined ? 'all' : 'mine');
@@ -132,9 +136,27 @@ export function TaskBoard({ tasks, filter, onFilterChange, currentUser, limit, v
   const switcher = (target: TaskList, text: string) => list === target ? <span data-task-list-link={target} aria-current="page">{text}</span>
     : <a href="#" data-task-list-link={target} className="text-foreground underline underline-offset-2" onClick={(event: MouseEvent) => { event.preventDefault(); setList(target); }}>{text}</a>;
   const chooseFilter = (next: TaskFilter) => (event: MouseEvent) => { event.preventDefault(); if (filter === undefined) setOwnFilter(next); onFilterChange?.(next); };
-  if (variant === 'compact') return <section ref={root} data-boring="task-board" data-variant="compact" aria-label={title} className={cn('min-w-0', className)}>
-    <div data-task-list role="list" aria-label={title} className="flex flex-col gap-2">{shown.length ? shown.map(card) : empty}</div>
-  </section>;
+  if (variant === 'compact') {
+    const strings = compactLabels[locale];
+    // Filter hidden records and prioritize current viewer needs before applying the visible limit.
+    const compact = selectTasks(tasks.filter(task => task.technical !== true || compactPresentation?.includeTechnical === true), { filter: shownFilter, ...(currentUser === undefined ? {} : { currentUser }) })
+      .slice().sort((a, b) => Number(compactTaskStatus(b) === 'needs-you') - Number(compactTaskStatus(a) === 'needs-you'))
+      .slice(0, limit);
+    const ordinary = compact.filter(task => task.technical !== true && compactTaskStatus(task) !== 'closed');
+    const closed = compact.filter(task => task.technical !== true && compactTaskStatus(task) === 'closed');
+    const technical = compact.filter(task => task.technical === true);
+    const group = (kind: 'closed' | 'technical', records: readonly TaskRecord[]) => records.length > 0 && <Collapsible data-task-group={kind}>
+      <Separator />
+      <CollapsibleTrigger render={<Button variant="ghost" />}>{kind === 'closed' ? strings.finished : strings.technical} · {records.length}</CollapsibleTrigger>
+      <CollapsibleContent><div role="list" aria-label={kind === 'closed' ? strings.finished : strings.technical} className="flex flex-col gap-2">{records.map(card)}</div></CollapsibleContent>
+    </Collapsible>;
+    return <section ref={root} data-boring="task-board" data-variant="compact" aria-label={title} className={cn('flex min-w-0 flex-col gap-2', className)}>
+      <div data-task-list role="list" aria-label={title} className="flex flex-col gap-2">{ordinary.map(card)}</div>
+      {!compact.length && <Empty><EmptyHeader><EmptyTitle>{strings.empty}</EmptyTitle><EmptyDescription>{strings.emptyDescription}</EmptyDescription></EmptyHeader></Empty>}
+      {group('closed', closed)}
+      {group('technical', technical)}
+    </section>;
+  }
   return <section ref={root} data-boring="task-board" data-variant={variant} aria-label={title} className={cn('flex min-h-0 min-w-0 flex-col', className)} onKeyDown={event => {
     if (event.key === 'Escape' && selected !== null && !event.defaultPrevented) { event.preventDefault(); if (fileOpen) closeFile(); else select(null); }
   }}>

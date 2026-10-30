@@ -106,12 +106,12 @@ test('open questions precede bounded latest-three answers; full huge answers mou
   assert.equal(document.querySelector('[data-task-answered]').dataset.taskAnswered, 'answer-0', 'host answer time takes precedence over source position');
 });
 
-test('compact mine stacks the newest two own C7 request cards and uses the host open path', async t => {
+test('compact mine prioritizes needs-you among own request cards and uses the host open path', async t => {
   const opened = []; const f = await fixture(t, { filter: 'mine', currentUser: 'alice', limit: 2, variant: 'compact', onOpen: task => opened.push(task.id) });
-  assert.deepEqual([...document.querySelectorAll('[data-task-card]')].map(node => node.dataset.taskCard), ['kites', 'orchard']);
+  assert.deepEqual([...document.querySelectorAll('[data-task-card]')].map(node => node.dataset.taskCard), ['orchard', 'kites']);
   assert.equal(document.querySelectorAll('[data-variant=compact][data-task-card]').length, 2);
-  assert.match(document.body.textContent, /REQUEST/);
-  assert.match(document.body.textContent, /Screen: Garden · 2 captures/);
+  assert.doesNotMatch(document.body.textContent, /REQUEST/);
+  assert.doesNotMatch(document.body.textContent, /Screen: Garden|captures/);
   assert.doesNotMatch(document.body.textContent, /Fictional picnic/);
   await f.click('[data-task-open=orchard]'); assert.deepEqual(opened, ['orchard']);
   assert.equal(new URL(f.window.location.href).searchParams.get('task'), null);
@@ -144,25 +144,89 @@ test('controlled selection and shared PM request card keep confirmation as a hos
   assert.equal(f.window.location.search, '?agent=pm');
   await f.render({ selectedTask: 'orchard' }); assert.ok(document.querySelector('[data-task-detail=orchard]'));
   await f.act(async () => f.root.render(f.h(f.TaskRequestCard, { task: tasks[0], variant: 'compact', locale: 'fr', viewerAction: 'confirmation', actions: f.h('button', { onClick: () => answers.push('confirmed') }, 'Confirmer') })));
-  assert.match(document.body.textContent, /DEMANDE/); assert.match(document.body.textContent, /À confirmer/);
-  assert.match(document.body.textContent, /Écran\u00a0: Garden · 2 captures/);
+  assert.doesNotMatch(document.body.textContent, /DEMANDE/); assert.match(document.body.textContent, /À confirmer/);
+  assert.doesNotMatch(document.body.textContent, /Garden|captures/);
   await f.click('button'); assert.deepEqual(answers, ['confirmed']);
 });
 
-test('the compact card shows « Envoyée » while a confirmed request is still open; the board card and unconfirmed requests stay as before', async t => {
+test('compact public cards show one localized product chip, terminal guards and host override without changing operator cards', async t => {
   const f = await fixture(t);
-  const sent = { id: 'sent', number: 204, title: 'Fictional sent request', state: 'open', requesterId: 'alice', confirmed_at: '2026-10-29T08:05:00Z' };
-  const pill = async (task, variant, locale = 'fr') => {
-    await f.act(async () => f.root.render(f.h(f.TaskRequestCard, { task, variant, locale, viewerAction: 'confirmation' })));
-    const node = document.querySelector('[data-task-status]');
-    return node && `${node.dataset.taskStatus}:${node.textContent}`;
-  };
-  assert.equal(await pill(sent, 'compact'), 'sent:Envoyée');
-  assert.equal(await pill(sent, 'compact', 'en'), 'sent:Sent');
-  assert.equal(await pill({ ...sent, state: 'working' }, 'compact'), null, 'started: nothing new');
-  assert.equal(await pill({ ...sent, state: 'done' }, 'compact'), null);
-  assert.equal(await pill({ ...sent, waiting_on_you: true }, 'compact'), 'waiting-on-viewer:À confirmer', 'waiting on the viewer wins');
-  const { confirmed_at: _, ...unconfirmed } = sent;
-  assert.equal(await pill(unconfirmed, 'compact'), null, 'without confirmed_at: today\'s card');
-  assert.equal(await pill(sent, 'card'), null, 'the board card (D2) keeps its pills');
+  const base = { id: 'product', title: 'A fictional product request', state: 'working' };
+  const cases = [
+    [{}, 'preparation', 'En préparation', 'Preparing'],
+    [{ state: 'open', confirmed_at: '2026-10-29' }, 'preparation', 'En préparation', 'Preparing'],
+    [{ state: 'waiting', waiting_on_you: true, status: 'blocked' }, 'needs-you', 'À vous', 'Needs you'],
+    [{ state: 'working', waiting_on_you: true }, 'preparation', 'En préparation', 'Preparing'],
+    [{ state: 'waiting', waiting_on_you: 'true' }, 'preparation', 'En préparation', 'Preparing'],
+    [{ status: 'blocked' }, 'blocked', 'Bloquée', 'Blocked'],
+    [{ status: 'verifying' }, 'verifying', 'Vérification', 'Verification'],
+    [{ state: 'done', waiting_on_you: true }, 'live', 'En ligne', 'Live'],
+    [{ status: 'shipped' }, 'live', 'En ligne', 'Live'],
+    [{ state: 'closed', status: 'shipped', waiting_on_you: true }, 'live', 'En ligne', 'Live'],
+    [{ state: 'closed', waiting_on_you: true, status: 'blocked' }, 'closed', 'Fermée', 'Closed'],
+    [{ state: 'waiting', waiting_on_you: true, status: 'withdrawn' }, 'closed', 'Retirée', 'Withdrawn'],
+    [{ state: 'waiting', waiting_on_you: true, status: 'abandoned' }, 'closed', 'Retirée', 'Withdrawn'],
+    [{ status: 'closed', waiting_on_you: true }, 'closed', 'Fermée', 'Closed'],
+    [{ status: 'Bloquée', waiting_on: { who: 'builder', type: 'builder' }, risk: 'high' }, 'preparation', 'En préparation', 'Preparing'],
+  ];
+  for (const [fields, status, fr, en] of cases) for (const locale of ['fr', 'en']) {
+    await f.act(async () => f.root.render(f.h(f.TaskRequestCard, { task: { ...base, ...fields }, variant: 'compact', locale })));
+    const chips = document.querySelectorAll('[data-slot=badge]');
+    assert.equal(chips.length, 1, JSON.stringify(fields));
+    assert.equal(chips[0].dataset.taskStatus, status);
+    assert.equal(chips[0].textContent, locale === 'fr' ? fr : en);
+  }
+  await f.act(async () => f.root.render(f.h(f.TaskRequestCard, { task: base, variant: 'compact', pill: f.h('span', { 'data-host-pill': '' }, 'Déjà prévu') })));
+  assert.equal(document.querySelectorAll('[data-task-status]').length, 0);
+  assert.equal(document.querySelectorAll('[data-host-pill]').length, 1);
+  await f.act(async () => f.root.render(f.h(f.TaskRequestCard, { task: base, variant: 'card' })));
+  assert.equal(document.querySelector('[data-task-status]'), null, 'operator card stays unchanged');
+});
+
+test('compact title is capped, actions stay authorized host intents, original open record and native detail retain the full need', async t => {
+  const opened = [], actions = [];
+  const record = Object.freeze({ id: 'full', number: 743, title: 'Un besoin complet de plus de six mots à conserver sans aucune modification', spec: 'Full fictional specification', display: 'Choisir les repas', state: 'waiting', waiting_on_you: true, screen: 'PRIVATE_SCREEN', requester: 'PRIVATE_ACTOR', captureCount: 3 });
+  const f = await fixture(t, { tasks: [record], variant: 'compact', locale: 'fr', viewerAction: 'confirmation', onOpen: task => opened.push(task) });
+  await f.render({ cardActions: task => f.h('div', null, f.h('button', { onClick: () => actions.push(['edit', task]) }, 'Modifier'), f.h('button', { onClick: () => actions.push(['confirm', task]) }, 'Confirmer')) });
+  assert.match(document.body.textContent, /Choisir les repas/);
+  assert.doesNotMatch(document.body.textContent, /D-743|PRIVATE_|DEMANDE|REQUEST|captures/);
+  assert.equal(document.querySelectorAll('[data-slot=badge]').length, 1);
+  await f.click('[data-task-actions] button'); await f.click('[data-task-actions] button:last-child');
+  assert.deepEqual(actions.map(([intent]) => intent), ['edit', 'confirm']);
+  assert.equal(actions[0][1], record); assert.equal(actions[1][1], record);
+  await f.click('[data-task-open=full]'); assert.equal(opened[0], record);
+  assert.equal(opened[0].title, record.title); assert.equal(opened[0].spec, record.spec);
+  await f.render({ variant: 'board', selectedTask: 'full' });
+  assert.ok(document.querySelector('[data-task-detail]').textContent.includes(record.title));
+  for (const display of [undefined, '   ', 'Un affichage beaucoup trop long pour une seule demande']) {
+    await f.act(async () => f.root.render(f.h(f.TaskRequestCard, { task: { ...record, display }, variant: 'compact' })));
+    const title = document.querySelector('[data-task-title]').textContent;
+    assert.equal(title.split(/\s+/u).length, 6);
+    assert.ok(title.endsWith('…'));
+  }
+});
+
+test('compact board prioritizes valid needs-you before limit, omits canonical technical and collapses closed plus explicit owner technical', async t => {
+  const records = [
+    { id: 'working', title: 'Préparer les menus', state: 'working', updated_at: '2026-10-30' },
+    { id: 'technical', title: 'Fictional internal task', state: 'waiting', waiting_on_you: true, technical: true },
+    { id: 'closed', title: 'Une demande retirée', state: 'waiting', status: 'abandoned', waiting_on_you: true },
+    { id: 'needs', title: 'Choisir les repas', state: 'waiting', waiting_on_you: true },
+    { id: 'not-inferred', title: 'Technical builder machine', state: 'open', technical: false },
+    { id: 'stale', title: 'Une demande fermée', state: 'closed', waiting_on_you: true },
+  ];
+  const f = await fixture(t, { tasks: records, variant: 'compact', filter: 'all', locale: 'fr' });
+  const ids = () => [...document.querySelectorAll('[data-task-card]')].map(node => node.dataset.taskCard);
+  assert.deepEqual(ids(), ['needs', 'working', 'not-inferred']);
+  assert.equal(document.querySelector('[data-task-group=technical]'), null);
+  assert.equal(document.querySelector('[data-task-group=closed] button').getAttribute('aria-expanded'), 'false');
+  await f.click('[data-task-group=closed] button');
+  assert.deepEqual(ids(), ['needs', 'working', 'not-inferred', 'closed', 'stale']);
+  await f.render({ compactPresentation: { includeTechnical: true } });
+  assert.ok(!ids().includes('technical'));
+  await f.click('[data-task-group=technical] button'); assert.ok(ids().includes('technical'));
+  await f.render({ limit: 1, compactPresentation: undefined });
+  assert.deepEqual(ids(), ['needs']);
+  await f.render({ variant: 'board', limit: undefined });
+  assert.ok(ids().includes('technical'), 'operator board retains technical records');
 });

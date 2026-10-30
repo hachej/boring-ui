@@ -25,3 +25,9 @@ Optional `taskMentions({ tasks, onOpen, base? })` composes the same authorized c
 The journey checks real native opened/refused results, keyboard/history, wide/narrow/375px layouts, answered-by chips, three regular file kinds, unchanged-board/stacked-overlay geometry, back/close/fullscreen, image zoom and host themes. Screenshots, phone accessibility and `journey.json` with native results live under `.cache/evidence/d417/task-board/`; selected evidence is retained under `.agent-handoff/d417/task-board/`.
 
 The fixture uses temporary workspace SQLite plus native MemoryStorage, cleaned on shutdown: no production task API, durable task backend, credentials or live model qualification is claimed. API: [registry guide](../../registry/README.md#task-board-task-board); driving map: [Task board](../../features/task-board.md).
+
+## Compact native request fixture (no models)
+
+`CHROMIUM=/path/to/chromium node examples/task-board/compact-journey.mjs` serves the real public `TaskBoard`, `TaskRequestCard` and `TaskDetail` using the same Base UI controls and `studio-theme.css`. Fictional records only, no model calls or POST route. It captures FR/EN, light/dark at 375px and 1280px, checks one product chip per row and no overflow, drives authorized local Edit/Confirm intents, explicitly opts into collapsed technical rows and opens the unchanged full original need. Screenshots and `journey.json` are under `.cache/evidence/task-list-compact/screenshots/`.
+
+Compact callers route `onOpen(task)` to their existing native detail. The optional `compactPresentation={{ includeTechnical: true }}` is only an owner-view presentation opt-in over records already authorized by the host; it grants no server rights. Closed rows collapse in ordinary lists; canonical technical rows are omitted unless opted in. Neither changes operator-board behavior.
