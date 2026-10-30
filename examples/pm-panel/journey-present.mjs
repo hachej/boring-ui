@@ -40,6 +40,7 @@ try {
       return { window:rect(workspace), panel:rect(panel), chat:rect(chat), sheet:panel.dataset.sheet, position:getComputedStyle(panel).position, chatHidden:chat.hasAttribute('inert'), back:back?.getAttribute('aria-label'), arrow };
     })()`);
     records.push({ ...item, automatic, geometry });
+    check(!(await browser.evaluate(`${q('[data-testid=workspace-panel]')}.innerText.includes('Preview omits')`)), `${item.name}: a presented mock-up runs in the sandboxed preview, never the stripped one`);
     await browser.screenshot(`${item.name}-present.png`);
     check(geometry.sheet === String(item.sheet), `${item.name}: expected sheet=${item.sheet}`);
     if (item.sheet) {

@@ -5,9 +5,12 @@ import { useState } from 'react';
 import { AppShell } from '../../registry/app-shell/app-shell';
 import { coachAccount, coachNav } from './coach-max';
 
+// The beside journey names its fictional host page here; a real app keeps the kit's list.
+const hosts = new URLSearchParams(location.search).get('pmHosts');
+
 function App() {
   const [screen, setScreen] = useState('day');
   return <AppShell layout="screen" title="Coach Max" locale="fr" route={{ id: screen, onChange: setScreen }} account={coachAccount} nav={coachNav}
-    improve={{ agent: 'pm' }} />;
+    improve={{ agent: 'pm' }} {...(hosts ? { pmHostOrigins: [hosts] } : {})} />;
 }
 createRoot(document.getElementById('root')!).render(<App />);

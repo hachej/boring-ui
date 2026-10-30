@@ -53,6 +53,8 @@ interface Pending { readonly open: boolean; readonly close: () => void; readonly
 const PmContext = createContext<Binding | Pending | null>(null);
 const AppNameContext = createContext('');
 const defaultPolicy = createPrivacyPolicy();
+// What a mock-up the PM presents may load besides its own inline code: libraries from two public hosts, in the kit's sandboxed preview.
+const PM_INTERACTIVE = { scriptSources: ['https://cdnjs.cloudflare.com', 'https://cdn.jsdelivr.net'] };
 async function imageFiles(files: readonly File[]) {
   return Promise.all(files.map(async (file, index) => {
     if (!/^image\/(png|jpeg|gif|webp)$/.test(file.type) || file.size > 3 * 1024 * 1024) throw new Error('Joignez une image de moins de 3 Mo.');
@@ -206,14 +208,14 @@ function PmWorkspace({ spec, pm, page, preset, open, close, beside = false }: { 
     <div hidden={strip && phone} className={cn('min-h-0 flex-1 flex-col', strip && phone ? 'hidden' : 'flex')}>
       <AgentWorkspace layout="embedded" title={spec.appName ?? spec.label ?? text.title} locale={text.locale} controller={spec.controller}
         conversationId={spec.conversationId ?? pm.snapshot.conversationId} conversations={spec.conversations ?? spec.chatProps?.conversations}
-        resources={spec.resources} artifactKinds={kinds} autoOpen={Boolean(spec.resources)} barPanels={barPanels} barOptions={{ panelsFirst: true }}
+        resources={spec.resources} artifactKinds={kinds} interactive={PM_INTERACTIVE} autoOpen={Boolean(spec.resources)} barPanels={barPanels} barOptions={{ panelsFirst: true }}
         controls={close && <Button variant="ghost" size="icon" data-testid="pm-close" aria-label={text.close} title={text.close} onClick={close}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>}
         chat={{ ...spec.chatProps, ...(mentions ? { mentions } : {}),
           labels: { ...spec.chatProps?.labels, placeholder: `${text.placeholderBefore}↖${text.placeholderAfter}`, add: text.attach, send: text.send },
           onFiles: spec.chatProps?.onFiles ?? imageFiles, sendContext: pm.sendContext, replyError: spec.chatProps?.replyError ?? (() => text.failed),
           renderEntry: entry => pointMessage(entry, mentions, { preset, text }) ?? spec.chatProps?.renderEntry?.(entry),
           replyFooter: reply => { const entry = pm.snapshot.view?.entries.find(entry => String(entry.id) === reply.entryId); return <>{spec.chatProps?.replyFooter?.(reply)}{entry && spec.tasks?.renderRequest?.({ entry, edit })}</>; },
-          renderComposer: composer => strip ? <>{beside && pm.state.chips.length > 0 && <div data-testid="pm-beside-chips" className="flex flex-wrap gap-1.5 pb-2">{pm.state.chips.map(chip => <PointChipView key={chip.id} chip={chip} preset={preset} labels={text} onRemove={() => pm.remove(chip.id)} />)}</div>}<PmComposer variant="strip" {...pointProps} /></> : <PmComposer {...pointProps} composer={pm.answerComposer({ ...composer, sendBlocked: composer.sendBlocked || pm.voice.phase === 'processing', ...(uncertain ? { text: uncertain.draft.text.split(POINT_PREFACE)[0]!.trimEnd(), disabled: true } : {}) })} transcript={transcript} /> }} />
+          renderComposer: composer => strip && phone ? null : strip ? <>{beside && pm.state.chips.length > 0 && <div data-testid="pm-beside-chips" className="flex flex-wrap gap-1.5 pb-2">{pm.state.chips.map(chip => <PointChipView key={chip.id} chip={chip} preset={preset} labels={text} onRemove={() => pm.remove(chip.id)} />)}</div>}<PmComposer variant="strip" {...pointProps} /></> : <PmComposer {...pointProps} composer={pm.answerComposer({ ...composer, sendBlocked: composer.sendBlocked || pm.voice.phase === 'processing', ...(uncertain ? { text: uncertain.draft.text.split(POINT_PREFACE)[0]!.trimEnd(), disabled: true } : {}) })} transcript={transcript} /> }} />
     </div>
     {strip && phone && <PmComposer variant="strip" {...pointProps} />}
     {pm.comment && page && <PointComment comment={pm.comment} frame={page} text={text} />}

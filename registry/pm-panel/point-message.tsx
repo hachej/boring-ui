@@ -1,5 +1,5 @@
 import type { EntryRecord } from '@earendil-works/pi-durable';
-import { cn } from '../utils/utils';
+import { Bubble, BubbleContent } from '@/components/ui/bubble';
 import { marker, MARKER_PATTERN } from './point-state';
 import { PointChipView } from './inline-point-input';
 import { pmTextFr } from './pm-text';
@@ -39,11 +39,11 @@ export function pointMessage(entry: EntryRecord, mentions?: MentionsConfig, { pr
       shown.add(item.n); return chip(item);
     });
     const touch = preset === 'touch';
-    // C7: a muted bubble (16 16 4 16) with white chips, the meta line under it; D1: the accent bubble (14 14 4 14).
+    // The chat's own user bubble, the chips inside it, the meta line under it.
     return { inline: true, content: <div data-testid="pm-sent-message" data-role="user" className="flex flex-col items-end gap-1">
-      <div className={cn('rounded-pm-bubble rounded-br-pm-tail bg-pm-bubble text-pm-bubble-foreground', touch ? 'max-w-[300px] px-3.5 py-2.5 text-[15px] leading-[1.9]' : 'max-w-[80%] px-3 py-[9px] text-sm leading-[1.45]')}>
-        <p className="m-0 whitespace-pre-wrap" data-testid="pm-sent-transcript">{transcript}{selections.filter(item => !shown.has(item.n)).map(item => <span key={item.n}> {chip(item)}</span>)}</p>
-      </div>
+      <Bubble variant="muted" align="end"><BubbleContent>
+        <p className="m-0 whitespace-pre-wrap leading-[1.9]" data-testid="pm-sent-transcript">{transcript}{selections.filter(item => !shown.has(item.n)).map(item => <span key={item.n}> {chip(item)}</span>)}</p>
+      </BubbleContent></Bubble>
       {touch && (seconds !== undefined || selections.length > 0) && <p data-testid="pm-sent-meta" className="m-0 text-xs text-muted-foreground">{labels.sentMeta(seconds, selections.length)}</p>}
     </div> };
   } catch { return undefined; }
