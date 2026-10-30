@@ -1,6 +1,7 @@
 # Unreleased
 
 - **Audit extension (`@hachej/boring-agent/audit`; D-555).** New opt-in `createAuditExtension({ sink, user, redact })`: each finished tool call goes to your `sink` with who acted. Without `redact`, no argument or output value is recorded. Nothing changes unless you select it.
+- **Skills (`@hachej/boring-agent/agents`; D-564).** `skillInFolder(skill, folder)` is now exported. New `loadUnlisted(conversationId, name)` option on `staticSkills` and `liveSkills`: `load_skill` asks it for a name the conversation does not see, so a host can serve skills kept out of the listing. It wins over `visible`, so check permission in it. Additive.
 
 # Migrating to 0.4.35
 

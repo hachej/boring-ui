@@ -8,6 +8,7 @@ The npm side of the kit: Pi-based agent definitions and handlers, the workspace 
 - `pkg-agent-actions` optional decision, structured extraction, native tool and result-derived reply, with native unavailable-model outcomes and deferred fallback polling/cancellation. `packages/agent/src/actions.ts`.
 
 - `pkg-agent-define` `defineAgent`, tools, extensions, delegates. `packages/agent/src/agents.ts`.
+- `pkg-agent-skills-unlisted` `skillInFolder` is public; `loadUnlisted(conversationId, name)` answers `load_skill` for a skill kept out of the listing. `packages/agent/src/skills.ts`.
 - `pkg-agent-transport` chat transport and conversations handlers. `packages/agent/src/chat-transport.ts`, `conversations.ts`.
 - `pkg-agent-capabilities` file guard, approvals, `ask_user`, `present`, schedules, sandbox. `packages/agent/src/file-guard.ts`, `approval.ts`, `ask-user.ts`, `artifacts.ts`, `schedule.ts`, `sandbox.ts`.
 - `pkg-agent-audit` `createAuditExtension({ sink, user, redact })` (`@hachej/boring-agent/audit`): opt-in, sends each finished tool call to the host's store, attributed to the user; values only through `redact`. `packages/agent/src/audit.ts`.
@@ -39,6 +40,7 @@ Preconditions: `npm ci`; run from the repository root.
 - **All.** `npm run check` then `npm test` then `npm run verify`.
 - **Lazy action context.** `pkg-agent-action-context`: `node --test test/packages/agent-actions.test.mjs` exercises skipped preparation, awaited fallback, and fail-closed preparation through the native harness.
 - **Audit.** `pkg-agent-audit`: `node --test test/packages/agent-audit.test.mjs`.
+- **Unlisted skills.** `pkg-agent-skills-unlisted`: `node --test test/packages/agent-skills-unlisted.test.mjs`.
 - **Actions.** `pkg-agent-actions`: `node --test test/packages/agent-actions.test.mjs`; `npm run test:definitions-consumer -- --actions` repeats public behavior and strict types from packed output.
 - **Agent.** `pkg-agent-define`, `pkg-agent-transport`, `pkg-agent-capabilities`, `pkg-agent-context`, `pkg-agent-questions-delivery`, `pkg-agent-room-metering`, `pkg-agent-runs`: `npm test`, files `test/packages/agent-*.test.mjs`; background task composition is driven by `npm run workspace-demo:journey` and the native question/delivery tests.
 - **Files.** `pkg-files-workspace`: `npm test`, files `test/packages/files-*.test.mjs`.
