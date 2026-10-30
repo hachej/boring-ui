@@ -2,7 +2,7 @@
 import { Children, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode, RefObject } from 'react';
 import type { SharedChatController } from '@hachej/boring-ui-kit/shared-chat';
-import type { JsonObject } from '@earendil-works/pi-durable';
+import type { ChatFeatureProps } from '../pi-chat/session';
 import type { MentionsConfig } from '../pi-chat/config';
 import { MessageText } from '../pi-chat/message';
 import { Markdown } from '../pi-chat-markdown/markdown';
@@ -28,7 +28,7 @@ export interface TimelineApi { readonly reset: () => void; readonly reveal: (id:
 export function SharedTimeline({ controller, api, focusComposer, openFile, mentions, pendingVoice, paging, targetLabel }: {
   readonly controller: SharedChatController; readonly api: RefObject<TimelineApi | undefined>;
   readonly focusComposer: () => void; readonly openFile?: ((path: string) => void) | undefined; readonly mentions: MentionsConfig; readonly pendingVoice?: ReactNode; readonly paging?: ChatPaging | undefined;
-  readonly targetLabel?: ((target: JsonObject) => string | undefined) | undefined;
+  readonly targetLabel?: ChatFeatureProps['targetLabel'];
 }) {
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const { labels, icons } = useChatText();
@@ -140,7 +140,7 @@ function bindApi(api: RefObject<TimelineApi | undefined>, value: TimelineApi) {
 
 type RowProps = {
   readonly multi: boolean; readonly controller: SharedChatController; readonly mentions: MentionsConfig;
-  readonly openFile: ((path: string) => void) | undefined; readonly targetLabel: ((target: JsonObject) => string | undefined) | undefined; readonly onReply: (id: string) => void; readonly onReveal: (id: string) => void;
+  readonly openFile: ((path: string) => void) | undefined; readonly targetLabel: ChatFeatureProps['targetLabel']; readonly onReply: (id: string) => void; readonly onReveal: (id: string) => void;
 };
 /** A run of timeline rows as one scroller item (`useRowChunks`). Memoized, like each row: it renders again only when its own items change. */
 const TimelineChunk = memo(function TimelineChunk({ items, top, ...props }: RowProps & { readonly items: readonly SharedItem[]; readonly top: boolean }) {
