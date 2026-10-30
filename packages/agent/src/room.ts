@@ -1,9 +1,12 @@
 import { defineDoc } from '@earendil-works/pi-durable';
 import type { Conversation, ConversationId, ConversationView, Cursor, EntryId, EntryRecord, Harness, SettledSubmissionRecord, SubmissionId, Tx } from '@earendil-works/pi-durable';
-import type { Context } from '@earendil-works/chord';
+import type { Context, JsonValue } from '@earendil-works/chord';
 import { withAbortSignal } from '@earendil-works/chord/context';
 import { ASK_USER_TOOL, answerUserQuestion, askUserQuestionId } from './ask-user.js';
 import type { AskUserAnswer } from './ask-user.js';
+import { parsePresentedArtifact } from './artifact-descriptor.js';
+import type { PresentedArtifact } from './artifact-descriptor.js';
+export type { PresentedArtifact } from './artifact-descriptor.js';
 
 /**
  * A shared room on pi-durable: people and agents in one session that never runs a model. Every entry is a passive write
@@ -33,14 +36,14 @@ const isPerson = (id: string): boolean => !isAgent(id) && !id.startsWith('platfo
 export type RoomStep = { label: string; status: string };
 /** The `data` of each room entry kind. Every entry names its `author`. */
 export type RoomEntryData = {
-  'room.message': { author: string; via?: string; for?: string; text: string; mentions: string[]; replyTo?: number; attachments: { path: string }[]; steps: RoomStep[] };
+  'room.message': { author: string; via?: string; for?: string; text: string; mentions: string[]; replyTo?: number; attachments: { path: string }[]; artifacts?: PresentedArtifact[]; steps: RoomStep[] };
   /** The target stays stored and reads as « message supprimé » (CH-6). */
   'room.removed': { author: string; target: number };
   /** A request first shown here; its state lives in the cards the host passes to `roomView`. */
   'room.card': { author: string; requestId: string };
   'room.pin': { author: string; title: string; line: string; anchor: string };
   /** An agent's `ask_user`, as the room shows it. */
-  'room.question': { author: string; callId: string; prompt: string; options: string[]; allowFreeText: boolean };
+  'room.question': { author: string; callId: string; prompt: string; options: string[]; allowFreeText: boolean; artifacts?: PresentedArtifact[] };
   'room.action': { author: string; requestId: string; actionId: string };
   /** « X joined » and « X left » only; never written by an agent. */
   'room.system': { author: string; line: string };
@@ -59,10 +62,10 @@ export function roomEntries(records: readonly EntryRecord[]): RoomEntry[] {
 // ─── The view ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export type RoomItem =
-  | { kind: 'message'; id: number; author: string; via?: string; for?: string; text: string; mentions: string[]; replyTo?: number; attachments: { path: string }[]; steps: RoomStep[]; mine: boolean; removed: boolean }
+  | { kind: 'message'; id: number; author: string; via?: string; for?: string; text: string; mentions: string[]; replyTo?: number; attachments: { path: string }[]; artifacts?: PresentedArtifact[]; steps: RoomStep[]; mine: boolean; removed: boolean }
   | { kind: 'card'; id: number; author: string; requestId: string; card: RoomCard | null }
   | { kind: 'pin'; id: number; author: string; title: string; line: string; anchor: string; mine: boolean }
-  | { kind: 'question'; id: number; author: string; callId: string; prompt: string; options: string[]; allowFreeText: boolean; answered: boolean }
+  | { kind: 'question'; id: number; author: string; callId: string; prompt: string; options: string[]; allowFreeText: boolean; answered: boolean; artifacts?: PresentedArtifact[] }
   | { kind: 'system'; id: number; line: string };
 export type RoomView = { items: RoomItem[]; cursor: number | null };
 
@@ -85,6 +88,7 @@ export function roomView(entries: readonly RoomEntry[], cards: Readonly<Record<s
       items.push({
         kind: 'message', id, author: data.author, ...(data.via ? { via: data.via } : {}), ...(data.for ? { for: data.for } : {}),
         text: gone ? ROOM.removed : data.text, mentions: [...data.mentions], ...(data.replyTo !== undefined ? { replyTo: data.replyTo } : {}),
+        ...(data.artifacts ? { artifacts: gone ? [] : descriptors(data.artifacts) } : {}),
         attachments: gone ? [] : data.attachments.map(({ path }) => ({ path })), steps: gone ? [] : data.steps.map(({ label, status }) => ({ label, status })),
         mine: data.author === viewer.id || data.via === viewer.id, removed: gone,
       });
@@ -95,7 +99,7 @@ export function roomView(entries: readonly RoomEntry[], cards: Readonly<Record<s
     } else if (kind === 'room.pin') {
       items.push({ kind: 'pin', id, author: data.author, title: data.title, line: data.line, anchor: data.anchor, mine: data.author === viewer.id });
     } else if (kind === 'room.question') {
-      items.push({ kind: 'question', id, author: data.author, callId: data.callId, prompt: data.prompt, options: [...data.options], allowFreeText: data.allowFreeText, answered: answered.has(id) });
+      items.push({ kind: 'question', id, author: data.author, callId: data.callId, prompt: data.prompt, options: [...data.options], allowFreeText: data.allowFreeText, answered: answered.has(id), ...(data.artifacts ? { artifacts: descriptors(data.artifacts) } : {}) });
     } else if (kind === 'room.system') {
       items.push({ kind: 'system', id, line: data.line });
     }
@@ -172,8 +176,8 @@ const RoomWakes = defineDoc<{ open: RoomWake[] }>({ kind: 'boring.room.wakes', c
 export type RoomDraft = { [K in RoomKind]: { readonly requestId: string; readonly kind: K; readonly data: RoomEntryData[K] } }[RoomKind];
 export type RoomWrite = { readonly entry: RoomEntry; readonly duplicate: boolean; readonly decisions: readonly RoomDecision[]; readonly wakes: readonly RoomWake[] };
 export type RoomRefusal = { readonly refused: 'no-open-wake' };
-export type RoomReply = { readonly text: string; readonly steps?: readonly RoomStep[] };
-export type RoomQuestionDraft = { readonly callId: string; readonly prompt: string; readonly options: readonly string[]; readonly allowFreeText: boolean };
+export type RoomReply = { readonly text: string; readonly steps?: readonly RoomStep[]; readonly artifacts?: readonly PresentedArtifact[] };
+export type RoomQuestionDraft = { readonly callId: string; readonly prompt: string; readonly options: readonly string[]; readonly allowFreeText: boolean; readonly artifacts?: readonly PresentedArtifact[] };
 
 export interface Room {
   /** The native conversation of a room conversation name, created on first use. */
@@ -223,7 +227,7 @@ export function createRoom(options: { readonly harness: Harness; readonly contex
     const targetRecord = targetId === undefined ? undefined : await tx.entry(targetId as EntryId);
     const target = targetRecord?.conversationId === conversationId ? roomEntries([targetRecord])[0] : undefined;
     if (admit && !admit((await tx.doc(RoomWakes)).open)) return REFUSED;
-    const record = await tx.appendEntry(conversationId, { kind: draft.kind, data: draft.data });
+    const record = await tx.appendEntry(conversationId, { kind: draft.kind, data: draft.data as unknown as JsonValue });
     // A display-only write is `done` at once, as Pi's own admission would place it; `Conversation.submit` sees this record.
     await tx.createSubmission({ type: 'write', conversationId, requestId: draft.requestId, status: 'done', entry: record.id });
     const entry = roomEntries([record])[0]!;
@@ -263,11 +267,11 @@ export function createRoom(options: { readonly harness: Harness; readonly contex
     }) as Promise<RoomWrite>,
     settle: (agent, wakeId, reply) => onWake(agent, wakeId, {
       requestId: `wake:${wakeId}`, kind: 'room.message',
-      data: { author: agent, text: reply.text, mentions: [], attachments: [], steps: (reply.steps ?? []).map(({ label, status }) => ({ label, status })) },
+      data: { author: agent, text: reply.text, mentions: [], attachments: [], ...(reply.artifacts ? { artifacts: descriptors(reply.artifacts) } : {}), steps: (reply.steps ?? []).map(({ label, status }) => ({ label, status })) },
     }, true),
     question: (agent, wakeId, question) => onWake(agent, wakeId, {
       requestId: `q:${question.callId}`, kind: 'room.question',
-      data: { author: agent, callId: question.callId, prompt: question.prompt, options: [...question.options], allowFreeText: question.allowFreeText },
+      data: { author: agent, callId: question.callId, prompt: question.prompt, options: [...question.options], allowFreeText: question.allowFreeText, ...(question.artifacts ? { artifacts: descriptors(question.artifacts) } : {}) },
     }, false),
     resend: async () => {
       const at = now();
@@ -307,7 +311,7 @@ export function createRoom(options: { readonly harness: Harness; readonly contex
 
 // ─── The agent's side ──────────────────────────────────────────────────────────────────────────────────────────────
 
-export interface PendingQuestion { /** Assistant-entry-bound question ID. */ readonly callId: string; readonly prompt: string; readonly options: readonly string[]; readonly allowFreeText: boolean }
+export interface PendingQuestion { /** Assistant-entry-bound question ID. */ readonly callId: string; readonly prompt: string; readonly options: readonly string[]; readonly allowFreeText: boolean; readonly artifacts?: readonly PresentedArtifact[] }
 
 /** `ask_user` calls of the active transcript that have no tool result yet, oldest first. */
 export function pendingQuestions(entries: readonly EntryRecord[]): PendingQuestion[] {
@@ -332,8 +336,32 @@ function answerText(entry: EntryRecord | undefined): string {
     .flatMap(part => part.type === 'text' ? [part.text] : []).join('\n\n').trim();
 }
 
+/** Exact resource/view/revision identity, not a path guessed from an assistant's prose. */
+const descriptorKey = (artifact: PresentedArtifact): string => JSON.stringify(artifact.type === 'task' ? artifact.subject : [artifact.target, artifact.revision]);
+const descriptors = (values: readonly unknown[]): PresentedArtifact[] => {
+  const unique = new Map<string, PresentedArtifact>();
+  for (const value of values) { const artifact = parsePresentedArtifact(value); if (artifact) unique.set(descriptorKey(artifact), artifact); }
+  return [...unique.values()];
+};
+
+/** Only successful native present results paired with their actual invocation may project descriptors. */
+function presented(entries: readonly EntryRecord[]): PresentedArtifact[] {
+  const calls = new Map<string, string>();
+  const found: PresentedArtifact[] = [];
+  for (const entry of entries) for (const message of entry.model ?? []) {
+    if (message.role === 'assistant') for (const part of message.content) { if (part.type === 'toolCall') calls.set(part.id, part.name); }
+    if (message.role !== 'toolResult' || message.isError || message.toolName !== 'present' || calls.get(message.toolCallId) !== 'present') continue;
+    try {
+      const value: unknown = JSON.parse(message.content.flatMap(part => part.type === 'text' ? [part.text] : []).join(''));
+      const artifact = value && typeof value === 'object' ? parsePresentedArtifact((value as Record<string, unknown>)['artifact']) : undefined;
+      if (artifact) found.push(artifact);
+    } catch { /* A failed or malformed present has no descriptor, only its ordinary step. */ }
+  }
+  return descriptors(found);
+}
+
 /** Live frames of a wake's run. The room relays them and never stores them: the settled message is the truth (CH-24). */
-export type RoomFrame = { readonly type: 'text'; readonly text: string } | { readonly type: 'step'; readonly label: string; readonly status: 'running' | 'done' };
+export type RoomFrame = { readonly type: 'text'; readonly text: string } | { readonly type: 'step'; readonly label: string; readonly status: 'running' | 'done' } | { readonly type: 'artifact'; readonly artifact: PresentedArtifact };
 
 const framesOf = (entries: readonly EntryRecord[]): RoomFrame[] => entries.flatMap(entry => (entry.model ?? []).flatMap((message): RoomFrame[] => {
   if (message.role === 'toolResult') return [{ type: 'step', label: message.toolName, status: 'done' }];
@@ -397,6 +425,7 @@ export function createRoomTurn(options: { readonly conversation: Conversation; r
   async function follow(wakeId: string, known?: EntryId): Promise<() => Promise<void>> {
     const watch = await conversation.watch(context);
     const sent = new Map<number, { text: number; steps: number }>();
+    const sentArtifacts = new Set<string>();
     let from = known;
     let submission: SubmissionId | undefined;
     let live = '';
@@ -430,12 +459,17 @@ export function createRoomTurn(options: { readonly conversation: Conversation; r
           const text = (message.content ?? []).flatMap(part => part.type === 'text' && part.text ? [part.text] : []).join('\n\n');
           if (text.length > live.length && text.startsWith(live)) { frames.push({ type: 'text', text: text.slice(live.length) }); live = text; }
         }
+        const artifacts = presented(own);
+        for (const artifact of artifacts) {
+          const key = descriptorKey(artifact);
+          if (!sentArtifacts.has(key)) { frames.push({ type: 'artifact', artifact }); sentArtifacts.add(key); }
+        }
         const questions = pendingQuestions(own);
         if (frames.length && port.stream) await port.stream(wakeId, frames);
         if (!port.question) return;
         const asked = (await owed(wakeId))?.asked ?? [];
         for (const question of questions.filter(question => !asked.includes(question.callId))) {
-          await port.question(wakeId, question);
+          await port.question(wakeId, { ...question, ...(artifacts.length ? { artifacts } : {}) });
           // Asking cannot share the native commit: a crash before this acknowledgement repeats it, and `q:<callId>` absorbs that.
           await update(wakeId, (items, index) => { if (!items[index]!.asked.includes(question.callId)) items[index]!.asked.push(question.callId); });
         }
@@ -462,7 +496,14 @@ export function createRoomTurn(options: { readonly conversation: Conversation; r
       // An unanswered run is closed with the room's own line, never dropped: left open it would only wait for its resends.
       if (record.type === 'input' && record.status === 'done') {
         const entry = (await conversation.entries({ minEntryId: record.answer, maxEntryId: record.answer }, 1, undefined, context)).items[0];
-        await port.settle(wakeId, { text: answerText(entry) });
+        const entries: EntryRecord[] = [];
+        let cursor: Cursor | undefined;
+        do {
+          const page = await conversation.entries({ minEntryId: (record.entry + 1) as EntryId, maxEntryId: record.answer, order: 'ascending' }, 200, cursor, context);
+          entries.push(...page.items); cursor = page.next;
+        } while (cursor !== undefined);
+        const artifacts = presented(entries);
+        await port.settle(wakeId, { text: answerText(entry), ...(artifacts.length ? { artifacts } : {}) });
       } else if (record.type === 'input' && record.status === 'unanswered') await port.settle(wakeId, { text: ROOM.unanswered });
       await update(wakeId, (items, index) => { items.splice(index, 1); });
     })().catch(report).finally(() => delivering.delete(wakeId));

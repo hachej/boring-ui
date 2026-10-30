@@ -8,6 +8,11 @@ import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite
 import { createModels, createProvider } from '@earendil-works/pi-ai/models';
 import { createAssistantMessageEventStream } from '@earendil-works/pi-ai/utils/event-stream';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
+import { createPresentTool } from '@hachej/boring-agent/artifacts';
+import { openNodeConnection } from '@hachej/boring-files/sqlite';
+import { openSqliteFileSystem } from '@hachej/boring-files/sqlite-filesystem';
+import { createWorkspaceJournal } from '@hachej/boring-files/journal';
+import { createWorkspaceProvider } from '@hachej/boring-files/workspace';
 import { createAskUserTool } from '@hachej/boring-agent/ask-user';
 import { defineAgent } from '@hachej/boring-agent/agents';
 import { ROOM, agentsConversation, createRoom, createRoomTurn, roomView, wakeFor } from '@hachej/boring-agent/room';
@@ -64,7 +69,7 @@ function scriptedModel(script) {
         return;
       }
       const part = step.ask ? { type: 'toolCall', id: `ask-${calls.length}`, name: 'ask_user', arguments: step.ask } : { type: 'text', text: step.text };
-      const message = { role: 'assistant', content: [part], api: model.api, provider: model.provider, model: model.id, timestamp: 1, stopReason: step.ask ? 'toolUse' : 'stop',
+      const message = { role: 'assistant', content: step.calls ?? [part], api: model.api, provider: model.provider, model: model.id, timestamp: 1, stopReason: step.ask || step.calls ? 'toolUse' : 'stop',
         usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
       events.push({ type: 'start', partial: message });
       events.push({ type: 'done', reason: message.stopReason, message });
@@ -78,9 +83,9 @@ function scriptedModel(script) {
 }
 
 /** The PM's home: its own harness and its own conversation, joined to the room through a bound port. */
-async function openHome(path, room, script) {
+async function openHome(path, room, script, tools = []) {
   const model = scriptedModel(script);
-  const agent = defineAgent({ id: 'pm', model: model.ref, tools: [createAskUserTool()], instructions: 'Answer the room.' });
+  const agent = defineAgent({ id: 'pm', model: model.ref, tools: [createAskUserTool(), ...tools], instructions: 'Answer the room.' });
   const registry = createRegistry(); agent.install(registry);
   const harness = await Harness.open(await openNodeSqliteStorage(join(path, 'home.sqlite')), { registry, models: model.models }, context);
   const conversation = await agent.createConversation(harness, context);
@@ -448,4 +453,67 @@ test('a queued wake streams only its own run, not the live partial of the wake a
   await until('both settled', () => home.port.settles.length === 2);
   assert.equal(seen.a.join(''), 'Alpha');
   assert.equal(seen.b.join(''), 'Béta');
+});
+
+
+test('native present descriptors survive stream, question, final settlement, duplicate delivery and storage reopen', async t => {
+  const path = directory(t);
+  const db = openNodeConnection(join(path, 'files.sqlite'));
+  const fs = openSqliteFileSystem({ connection: db, workspace: 'room-mockups', cwd: '/workspace' });
+  const files = createWorkspaceProvider({ fs, journal: createWorkspaceJournal(db), identity: { providerId: 'room-files', instanceId: 'fictional', incarnation: fs.incarnation, viewId: 'published' } });
+  const access = { principalId: 'person:ana', scopeId: 'fictional', initiatorId: 'person:ana' };
+  const names = ['Idea A.html', 'Idea B.html', 'Idea C.html'];
+  for (const name of names) await fs.writeFile(`/workspace/${name}`, `<h1>PRIVATE HTML ${name}</h1>`, context);
+  const present = createPresentTool({ workspace: { files, root: '/workspace', access } });
+  // Still a native ToolTask: adversarial successful/failed payloads must never turn into room cards.
+  const guarded = { ...present, execute: async (args, api, ctx) => {
+    if (args.path === 'malformed') return { output: [{ type: 'text', text: JSON.stringify({ artifact: { schema: 'boring.artifact', version: 1, title: 'malformed' } }) }] };
+    if (args.path === 'failed') {
+      const result = await present.execute({ path: names[0] }, api, ctx);
+      return { ...result, isError: true };
+    }
+    return present.execute(args, api, ctx);
+  } };
+  const opened = await openRoom(path);
+  let round = 0;
+  const home = await openHome(path, opened.room, async () => {
+    if (round++ === 0) return { calls: [...names, names[0], 'malformed', 'failed'].map((name, i) => ({ type: 'toolCall', id: `present-${i}`, name: 'present', arguments: { path: name } })) };
+    if (round === 2) return { ask: { question: 'Which idea?', options: ['A', 'B', 'C'] } };
+    return { text: 'Selected B. Launch is not requested.' };
+  }, [guarded]);
+  let roomClosed = false;
+  t.after(async () => { await home.turn.close(); await home.harness.close(context); if (!roomClosed) await opened.harness.close(context); db.close(); });
+  const { wakes: [wake] } = await opened.room.write('main', { requestId: 'web:ana:ideas', kind: 'room.message', data: message('person:ana', 'Three ideas') }, alone);
+  await home.turn.wake({ wakeId: wake.id, input: 'Three fictional ideas' });
+  await until('native question before settle', async () => (await opened.room.entries('main')).some(entry => entry.kind === 'room.question'));
+  const streamed = home.port.frames.filter(frame => frame.type === 'artifact').map(frame => frame.artifact);
+  assert.equal(streamed.length, 3, 'exact descriptors stream once before ask_user, duplicates and bad results ignored');
+  assert.deepEqual(streamed.map(item => item.title), names);
+  assert.ok(streamed.every(item => item.revision && item.target.resource.providerId === 'room-files'));
+  assert.doesNotMatch(JSON.stringify(streamed), /PRIVATE HTML/);
+  const question = (await opened.room.entries('main')).find(entry => entry.kind === 'room.question');
+  assert.deepEqual(question.data.artifacts, streamed, 'the question durably retains the cards while waiting');
+  assert.equal(home.port.settles.length, 0);
+  await home.turn.close();
+  home.turn = createRoomTurn({ conversation: home.conversation, context, port: home.port });
+  await home.turn.start();
+  await until('reattached pending wake replays exact descriptors', () => home.port.frames.filter(frame => frame.type === 'artifact').length === 6);
+  assert.equal((await opened.room.entries('main')).filter(entry => entry.kind === 'room.question').length, 1, 'reattachment keeps the original durable question');
+  assert.deepEqual(home.port.frames.filter(frame => frame.type === 'artifact').slice(3).map(frame => frame.artifact), streamed);
+  assert.deepEqual(await home.turn.answer(question.data.callId, 'B'), { kind: 'answered' });
+  await until('settled', () => home.port.settles.length === 1);
+  const final = (await messages(opened.room)).at(-1);
+  assert.deepEqual(final.data.artifacts, streamed, 'final text entry alone has no tool results; scan the actual wake');
+  await home.turn.wake({ wakeId: wake.id, input: 'Three fictional ideas' });
+  await until('settled twice', () => home.port.settles.length === 2);
+  assert.equal((await messages(opened.room)).filter(entry => entry.data.author === 'agent:pm').length, 1);
+  const expected = roomView(await opened.room.entries('main'), {}, { id: 'person:ana' });
+  assert.deepEqual(expected.items.find(item => item.id === final.id).artifacts, streamed);
+  await opened.harness.close(context); roomClosed = true;
+  const reopened = await openRoom(path);
+  try {
+    assert.deepEqual(roomView(await reopened.room.entries('main'), {}, { id: 'person:ana' }), expected);
+    await reopened.room.write('main', { requestId: 'redact:final', kind: 'room.removed', data: { author: 'person:ana', target: final.id } }, alone);
+    assert.deepEqual(roomView(await reopened.room.entries('main'), {}, { id: 'person:ana' }).items.find(item => item.id === final.id).artifacts, []);
+  } finally { await reopened.harness.close(context); }
 });

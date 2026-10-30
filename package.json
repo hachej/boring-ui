@@ -32,6 +32,7 @@
     "messaging-chat:journey": "node examples/messaging-chat/journey.mjs",
     "shared-chat:journey": "node examples/shared-chat/journey.mjs",
     "shared-chat:journey:room": "node examples/shared-chat/journey-room.mjs",
+    "shared-chat:journey:mockups": "node scripts/test-shared-room-mockups-browser.mjs",
     "mockup:journey": "node examples/workspace-app/journey-mockup.mjs",
     "looks:journey": "node examples/looks-viewer/journey.mjs",
     "maquette:journey": "node examples/workspace-app/journey-maquette.mjs",

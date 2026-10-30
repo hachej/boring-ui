@@ -17,6 +17,7 @@ import { usePhone } from '../utils/use-media';
 import { BubbleTail, ClockSpacer, MessageClock as ChatMessageClock, clockRoom } from '../pi-chat/message';
 export { BubbleTail, ClockSpacer, clockRoom };
 import { useChatText, useSharedView } from './text';
+import { artifactKey, parsePresentedArtifact } from '@hachej/boring-ui-kit/chat-view';
 import { agentKind, namedMember } from './names';
 import { defaultSharedLabels } from './shared-labels';
 import type { SharedLabels } from './shared-labels';
@@ -330,6 +331,13 @@ export function SharedMessage({ shared, children, remove, canRemove, openFile, o
     <div className="flex min-w-0 items-end gap-2.5">
     <div data-testid="shared-message-content" className={`flex min-w-0 flex-1 flex-col gap-1${own ? ' [&>button]:self-end' : ''}`}>
     {message.removed ? <p className="m-0 text-sm text-muted-foreground italic">{labels.sharedRemoved}</p> : children}
+    {!message.removed && view.artifacts?.Card && message.artifacts?.map((value, index) => {
+      const descriptor = parsePresentedArtifact(value);
+      if (!descriptor) return null;
+      const config = view.artifacts!, Card = config.Card!;
+      return <Card key={index} artifact={{ state: 'ready', id: artifactKey(descriptor), title: descriptor.title, path: descriptor.type === 'task' ? undefined : descriptor.target.resource.path, own: true, descriptor }}
+        open={config.isOpen?.(descriptor as never) ?? false} onOpen={() => config.open(descriptor as never)} kinds={config.kinds} />;
+    })}
     {!message.removed && message.attachments?.map(file => <Button key={file.path} variant="outline" disabled={!openFile} onClick={() => openFile?.(file.path)} className="max-w-full justify-start"><span className="truncate">{file.title ?? file.path}</span></Button>)}
     {(copyInline || footer) && <div data-testid="message-footer" className="flex min-w-0 flex-wrap items-center gap-x-3 text-xs text-muted-foreground">
       {copyInline && <Button variant="ghost" size="sm" data-testid="message-copy" onClick={copy}>{copied ? <CheckIcon data-icon="inline-start" aria-hidden="true" /> : <CopyIcon data-icon="inline-start" aria-hidden="true" />}{copied ? labels.copied : labels.copyResponse}</Button>}
@@ -359,9 +367,25 @@ const dayOf = (at: string) => { const date = new Date(at); return Number.isFinit
  * collapse together. Each day starts with a day pill.
  */
 export function sharedItems(shared: SharedChatState, nameOf: NameOf = defaultSharedLabels.sharedName): SharedItem[] {
+  // A question retains cards while waiting; the final reply takes their place without drawing a second copy.
+  const latestArtifact = new Map<string, string>();
+  const keyOf = (value: unknown) => {
+    const artifact = parsePresentedArtifact(value);
+    return artifact ? JSON.stringify(artifact.type === 'task' ? artifact.subject : [artifact.target, artifact.revision]) : undefined;
+  };
+  for (const message of shared.messages) if (!message.removed) for (const artifact of message.artifacts ?? []) {
+    const key = keyOf(artifact); if (key) latestArtifact.set(key, message.id);
+  }
   const working = new Map(shared.messages.filter(message => message.streaming).map(message => [message.author, message.id]));
   const groups: ChannelMessage[][] = [];
-  for (const message of shared.messages) {
+  for (const original of shared.messages) {
+    const seen = new Set<string>();
+    const artifacts = original.artifacts?.filter(artifact => {
+      const key = keyOf(artifact);
+      if (!key || seen.has(key) || latestArtifact.get(key) !== original.id) return false;
+      seen.add(key); return true;
+    });
+    const message = artifacts && artifacts.length !== original.artifacts?.length ? { ...original, artifacts } : original;
     const group = groups.at(-1), previous = group?.at(-1);
     const elapsed = previous ? Date.parse(message.at) - Date.parse(previous.at) : NaN;
     const sameDay = previous !== undefined && dayOf(previous.at) === dayOf(message.at);
