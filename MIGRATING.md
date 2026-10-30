@@ -1,5 +1,7 @@
 # Unreleased
 
+# Migrating to 0.4.36
+
 - **File tree folders (`@hachej/boring-ui-kit/file-tree`; D-557).** Folder rows get the actions menu (Rename, Move to…, Delete), F2 and Delete. `controller.rename`, `move` and `remove` accept a listed folder and work file by file: not atomic, so a refusal leaves the rest in place and says how many changed; trying again finishes. Labels add `deleteFolderDescription`. No New folder.
 - **Workspace rename and delete (`@hachej/boring-files`; D-557).** A rename now creates the folder it lands in, as a publication does. With the new optional `pruneEmptied: true` (folder operations of the tree only), a rename or delete also removes a folder it leaves empty, up to the first that still holds something. Single-file changes prune nothing. Best effort: Pi's Node file system cannot remove a directory non-recursively, so on disk hosts an emptied folder stays listed.
 
