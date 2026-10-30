@@ -1,5 +1,7 @@
 # Prepare an npm release
 
+How a published release then reaches apps: [APP-RELEASE-PATH](APP-RELEASE-PATH.md).
+
 Candidate version is `0.2.0`. See the [breaking migration](../../MIGRATING.md)
 for package identities and removals. [PARTIAL.md](PARTIAL.md) records remaining
 implementation work, and [VERIFY.json](../../VERIFY.json) owns proof deferrals.
