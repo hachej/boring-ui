@@ -1270,7 +1270,11 @@ test('conversations: metadata in one native document per conversation; list, sea
   await say(first, 'Plan the lantern walk');
   await say(first, 'Add a stop at the quartz fountain');
   await say(second, 'Draft the river notice');
+  // A point-and-speak message: its leading <target> block is context, never the title (D-509).
+  const pointed = await conversations.create('fictional-target-team', { start: start(harness) });
+  await say(pointed, '<target>{"mealId":"m-fictional-42","slot":"snack"}</target>\n\nun yaourt grec');
   await conversations.flush();
+  assert.equal((await conversations.get('fictional-target-team', pointed.id)).title, 'un yaourt grec', 'the title is what the person said, without the target block');
   const one = await conversations.get(team, first.id);
   assert.equal(one.title, 'Plan the lantern walk', 'title from the first user message, not the last');
   assert.equal(one.lastMessage, 'Echo: Add a stop at the quartz fountain', 'preview of the last assistant message');

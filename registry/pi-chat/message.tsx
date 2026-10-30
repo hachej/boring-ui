@@ -3,6 +3,7 @@
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { ImageContent, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai';
+import type { JsonObject } from '@earendil-works/pi-durable';
 import { AlertCircleIcon, CircleSlashIcon, ClockIcon, FileAudioIcon, FileIcon, FileSpreadsheetIcon, FileTextIcon, ImageIcon, PauseIcon, PlayIcon, PresentationIcon } from 'lucide-react';
 import { CopyButton } from './code-block';
 import type { AnswerOutcome, ChatArtifactsConfig, ChatCards, CommandMentions } from './config';
@@ -69,6 +70,8 @@ export interface RowContext {
   readonly pieces: { readonly kinds?: MentionsConfig['kinds']; readonly mentions: boolean; readonly uploads?: boolean; readonly skills: readonly string[]; readonly openMention?: ((path: string) => void) | undefined; readonly renderMention?: ((path: string) => ReactNode | undefined) | undefined;
     readonly preview?: PreviewRead | undefined; readonly audioUrl?: AudioUrlRead | undefined } | undefined;
   readonly voiceReplay?: boolean | undefined;
+  /** The host's words for a sent target chip (`PiChat targetLabel`). */
+  readonly targetLabel?: ((target: JsonObject) => string | undefined) | undefined;
   readonly fileChanges?: boolean | undefined;
   /** Opens a file card through the host's workspace opener. */
   readonly openFile?: ((path: string) => void) | undefined;
@@ -245,12 +248,12 @@ function VoiceReplayBubble({ path, transcript, preview, audioUrl, align = 'end' 
  */
 /** `variant` picks the bubble: `muted` (the chat's user bubble) or `default` (the theme's primary, used for my own messages in a shared chat). */
 /** `decoration` sits inside the Bubble before its content (a tail); `header` and `footer` inside the content, around the text (a quote, the time). */
-export function MessageText({ text, context, align = 'end', variant = 'muted', decoration, header, footer }: { readonly text: string; readonly context: Pick<RowContext, 'pieces' | 'openFile' | 'voiceReplay'>; readonly align?: 'start' | 'end'; readonly variant?: 'muted' | 'default'; readonly decoration?: ReactNode; readonly header?: ReactNode; readonly footer?: ReactNode }) {
+export function MessageText({ text, context, align = 'end', variant = 'muted', decoration, header, footer }: { readonly text: string; readonly context: Pick<RowContext, 'pieces' | 'openFile' | 'voiceReplay' | 'targetLabel'>; readonly align?: 'start' | 'end'; readonly variant?: 'muted' | 'default'; readonly decoration?: ReactNode; readonly header?: ReactNode; readonly footer?: ReactNode }) {
   const framed = decoration !== undefined || header !== undefined || footer !== undefined;
   const wrap = (body: ReactNode) => <Bubble variant={variant} align={align}>{decoration}<BubbleContent data-testid="user-text" className={framed ? 'relative' : undefined}>{header}{body}{footer}</BubbleContent></Bubble>;
   const target = targetContent(text);
   if (target) return <>
-    <Badge variant="secondary" data-testid="message-target" title={JSON.stringify(target.target)} className="max-w-full truncate">{target.label}</Badge>
+    <Badge variant="secondary" data-testid="message-target" className="max-w-full truncate">{context.targetLabel?.(target.target) ?? target.label}</Badge>
     <MessageText text={target.speech} context={context} align={align} variant={variant} decoration={decoration} header={header} footer={footer} />
   </>;
   const feedback = feedbackContent(text);

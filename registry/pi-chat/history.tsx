@@ -7,6 +7,7 @@ import type { ReactNode } from 'react';
 import type { ChatHistoryState } from '@hachej/boring-ui-kit/native-chat';
 import { ArchiveIcon, ArchiveRestoreIcon, ArrowLeftIcon, CheckIcon, EllipsisIcon, Loader2Icon, MessageSquareIcon, PencilIcon, SearchIcon, Trash2Icon, XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { targetContent } from './rows';
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
@@ -31,6 +32,9 @@ const toMs = (value: ConversationItem['updatedAt']): number | undefined => {
 };
 
 /** Short relative time for a list row: "now", "5m", "3h", "Yesterday", "4d", then a date. */
+/** The tooltip's last message without a leading `<target>` block (point-and-speak); a preview clipped inside the block gets no tooltip. */
+const lastSaid = (text: string | null | undefined): string | undefined => !text ? undefined : text.startsWith('<target>') ? targetContent(text)?.speech || undefined : text;
+
 export function relativeTime(value: ConversationItem['updatedAt'], now = Date.now(), labels: Pick<ChatLabels, 'justNow' | 'yesterday'> = defaultChatLabels): string {
   const ms = toMs(value);
   if (ms === undefined) return '';
@@ -157,7 +161,7 @@ export function ConversationList({ conversations, onPicked, autoFocus = false, s
           <SidebarMenu>
             {group.items.map(item => {
               const active = item.id === conversations.activeId;
-              const title = item.title?.trim() || labels.untitled;
+              const title = (item.title?.startsWith('<target>') ? lastSaid(item.title) : item.title)?.trim() || labels.untitled;
               const extra = conversations.rowActions?.(item);
               // A row has room for icons only: a header action without an icon goes in the row's "…" menu.
               const extraButtons = headerActions(extra).filter(entry => entry.icon), extraMenu = [...headerActions(extra).filter(entry => !entry.icon), ...menuActions(extra)];
@@ -180,7 +184,7 @@ export function ConversationList({ conversations, onPicked, autoFocus = false, s
               }
               return <SidebarMenuItem key={item.id} className="flex items-center gap-0.5">
                 <Button type="button" variant={active ? 'secondary' : 'ghost'} data-testid="conversation-row" data-conversation-id={item.id} data-active={active ? 'true' : undefined} aria-current={active ? 'true' : undefined}
-                  title={item.lastMessage ?? undefined}
+                  title={lastSaid(item.lastMessage)}
                   onClick={() => { if (!active) conversations.onSelect(item.id); onPicked?.(); }}
                   className="h-auto min-h-10 min-w-0 flex-1 justify-start max-md:min-h-12">
                   <MessageSquareIcon data-icon="inline-start" aria-hidden="true" />

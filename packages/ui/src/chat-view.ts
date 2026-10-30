@@ -29,7 +29,8 @@ export function targetContent(text: string): { readonly target: JsonObject; read
   try {
     const target = object(JSON.parse(json));
     if (!target) return;
-    const label = Object.entries(target).map(([key, value]) => typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ? `${key}: ${value}` : key).join(' · ') || 'Target';
+    // The chip never prints raw values (ids, slots): the target's own `label`, else the display keys it wraps its fields under.
+    const label = typeof target.label === 'string' && target.label.trim() ? target.label : Object.entries(target).flatMap(([key, value]) => value !== null && typeof value === 'object' ? [key] : []).join(' · ') || 'Target';
     return { target, speech: text.slice(end + 11), label };
   } catch { return; }
 }

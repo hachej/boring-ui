@@ -99,6 +99,12 @@ export interface Conversations {
 
 const managed = (meta: Readonly<ConversationMetadata> | undefined, owner?: string): meta is Readonly<ConversationMetadata> =>
   meta !== undefined && meta.owner !== '' && meta.deletedAt === null && (owner === undefined || meta.owner === owner);
+/** What the person said: a leading `<target>{…}</target>` block (point-and-speak context) never becomes a title or a preview. */
+const spoken = (text: string | undefined): string | undefined => {
+  if (!text?.startsWith('<target>')) return text;
+  const end = text.indexOf('</target>');
+  return end < 0 ? undefined : text.slice(end + 9).trim() || undefined;
+};
 const clip = (text: string, max: number): string => { const flat = text.replace(/\s+/g, ' ').trim(); return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat; };
 
 /** The visible text of a user or assistant message: text parts only, never the `<file>` blocks mentions add. */
@@ -215,7 +221,7 @@ export function createConversations(options: ConversationsOptions): Conversation
       if (change.type !== 'entry') continue;
       const entry: EntryRecord = change.value;
       for (const message of entry.model ?? []) {
-        const text = messageText(message);
+        const text = spoken(messageText(message));
         if (text === undefined) continue;
         const item = pending.get(entry.conversationId) ?? { at: now() };
         if (message.role === 'user' && item.firstUser === undefined) item.firstUser = text;
@@ -317,7 +323,7 @@ export function createConversations(options: ConversationsOptions): Conversation
       // The preview of the fork is the last message it inherits: one bounded page of its history up to `at`.
       let last: string | undefined;
       const page = await conversation.entries({ maxEntryId: at }, 50, undefined, context);
-      for (const entry of page.items) { for (const message of [...entry.model ?? []].reverse()) { last = messageText(message); if (last !== undefined) break; } if (last !== undefined) break; }
+      for (const entry of page.items) { for (const message of [...entry.model ?? []].reverse()) { last = spoken(messageText(message)); if (last !== undefined) break; } if (last !== undefined) break; }
       const title = forkOptions.title !== undefined ? titleOf(forkOptions.title) : clip(`${source.title ?? 'New conversation'} (fork)`, 200);
       return conversation.fork(at, { ownership: { kind: 'ownerless' }, init: initial(owner, { title, lastMessage: last === undefined ? null : clip(last, previewLength) }) }, context);
     },
