@@ -155,7 +155,7 @@ async function deliveryEvidence(input: DeliveryInput, request: PublicationReques
     if (receipt.operationId !== id || receipt.argumentDigest !== digest || receipt.principalId !== input.identity.principalId
       || receipt.scopeId !== input.identity.scopeId || receipt.initiatorId !== input.identity.initiatorId || receipt.changes.length !== 1
       || change?.kind !== expected.kind || !targetMatches || !beforeMatches) result = unknown('Receipt does not match the admitted delivery');
-  } else if (result.kind === 'partial' || (result.kind === 'unknown' && result.operationId !== id)) {
+  } else if (result.kind === 'unknown' && result.operationId !== id) {
     result = unknown('Provider returned incompatible delivery evidence');
   }
   return result;

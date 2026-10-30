@@ -169,7 +169,7 @@ test('invalid paths, malformed requests, unsupported views and weak atomicity re
   const working = create('working', 'notes.md', '');
   working.changes[0].target.view = { kind: 'working', viewId: 'private' };
   assert.equal((await provider.publication.publish(working, access)).kind, 'unavailable');
-  assert.equal((await provider.publication.publish({ ...create('partial', 'notes.md', ''), atomicity: 'per-change' }, access)).kind, 'unavailable');
+  await assert.rejects(provider.publication.publish({ ...create('partial', 'notes.md', ''), atomicity: 'per-change' }, access), /Invalid atomicity/);
   assert.equal((await provider.read(latest('notes.md'), access)).kind, 'missing');
 });
 
@@ -554,7 +554,7 @@ test('a multi-file batch is rejected before any effect', async t => {
   assert.equal((await publish(batch)).kind, 'unavailable');
   for (const path of ['one.md', 'two.md']) assert.equal((await provider.read(wsLatest(path), access)).kind, 'missing');
   assert.equal((await provider.reconciliation.lookup('batch', access)).kind, 'not-found');
-  assert.equal((await publish({ ...wsCreate('weak', 'one.md', '1'), atomicity: 'per-change' })).kind, 'unavailable');
+  await assert.rejects(publish({ ...wsCreate('weak', 'one.md', '1'), atomicity: 'per-change' }), /Invalid atomicity/);
   assert.deepEqual(await names(), []);
 });
 

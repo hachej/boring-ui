@@ -1,5 +1,7 @@
 # Unreleased
 
+- **Publication `partial` and `per-change` removed (`@hachej/boring-files`; D-692).** Nothing produced them. `atomicity` is now only `all-or-nothing`, and `per-change` throws `Invalid atomicity` where it used to answer `unavailable` or refuse to dispatch. `PublicationResult` is `PublicationOutcome`; `PublicationItem` is gone. Drop any `kind === 'partial'` branch. A `partial` body from an older server is an invalid acknowledgement, which reads as `unknown`. The file tree label `unconfirmed` is gone.
+
 - **`attachHarness` removed (`@hachej/boring-agent`; D-398).** It returned your harness with a no-op `detach`. Use your `Harness` directly. The types `AttachmentInput` and `BorrowedAttachment` go with it. No consumer used them.
 
 # Migrating to 0.4.36
