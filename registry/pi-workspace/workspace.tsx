@@ -196,7 +196,7 @@ export function ArtifactWorkspace({ chat, open, panel, onClose, fullscreen: cont
       <aside onTouchStart={event => { const point = event.touches[0]; swipe.current = sheet && point && point.clientX < 32 ? { x: point.clientX, y: point.clientY } : null; }} onTouchEnd={event => { const point = event.changedTouches[0], start = swipe.current; swipe.current = null; if (point && start && point.clientX - start.x > 80 && Math.abs(point.clientY - start.y) < 60) onClose(); }} data-testid="workspace-panel" aria-label={panelLabel} data-state={entered ? 'open' : 'entering'} data-floating={floating ? 'true' : undefined} data-fullscreen={fullscreen ? 'true' : 'false'} data-sheet={sheet ? 'true' : 'false'}
         style={sheet || fullscreen || floating ? undefined : { width, minWidth: minPanel }}
         className={cn('flex min-h-0 min-w-0 flex-col overflow-hidden transition-opacity motion-reduce:transition-none', !inset && 'bg-background text-foreground',
-          sheet ? 'absolute inset-0 z-50' : fullscreen ? 'fixed inset-0 z-50' : floating ? 'flex-1' : inset ? 'relative isolate my-3 me-3 ms-0 shrink-0' : 'shrink-0',
+          sheet ? (size >= window.innerWidth - 1 ? 'fixed inset-0 z-50' : 'absolute inset-0 z-50') : fullscreen ? 'fixed inset-0 z-50' : floating ? 'flex-1' : inset ? 'relative isolate my-3 me-3 ms-0 shrink-0' : 'shrink-0',
           entered ? 'opacity-100' : 'opacity-0', dragging && 'pointer-events-none select-none')}>
         {inset && <Card aria-hidden="true" data-boring="chrome" className="pointer-events-none absolute inset-0 -z-10" />}
         {typeof panel === 'function' ? panel(api) : panel}
