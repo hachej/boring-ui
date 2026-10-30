@@ -99,14 +99,20 @@ export interface Conversations {
 
 const managed = (meta: Readonly<ConversationMetadata> | undefined, owner?: string): meta is Readonly<ConversationMetadata> =>
   meta !== undefined && meta.owner !== '' && meta.deletedAt === null && (owner === undefined || meta.owner === owner);
+/** What the person said: a leading `<target>{…}</target>` block (point-and-speak context) never becomes a title or a preview. */
+const spoken = (text: string | undefined): string | undefined => {
+  if (!text?.startsWith('<target>')) return text;
+  const end = text.indexOf('</target>');
+  return end < 0 ? undefined : text.slice(end + 9).trim() || undefined;
+};
 const clip = (text: string, max: number): string => { const flat = text.replace(/\s+/g, ' ').trim(); return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat; };
 
-/** The visible text of a user or assistant message: text parts only, never the `<file>` blocks mentions add. */
+/** The visible text of a user or assistant message: text parts only, never the `<file>` blocks mentions add nor a leading `<target>` block. */
 export function messageText(message: Message): string | undefined {
   if (message.role === 'user') {
     const text = typeof message.content === 'string' ? message.content
       : message.content.map(part => part.type === 'text' && !part.text.startsWith(MENTION_FILE_PREFIX) ? part.text : '').join(' ');
-    return text.trim() ? text : undefined;
+    return text.trim() ? spoken(text) : undefined;
   }
   if (message.role === 'assistant') {
     const text = message.content.map(part => part.type === 'text' ? part.text : '').join(' ');

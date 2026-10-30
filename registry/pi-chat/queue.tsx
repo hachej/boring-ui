@@ -9,7 +9,10 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Spinner } from '@/components/ui/spinner';
 import { TraceIcon, TraceLine, TraceTitle } from '@/components/ui/trace';
 import { Button } from '@/components/ui/button';
-import { isFileBlock, type QueuedMessage } from './rows';
+import { isFileBlock, targetContent, type QueuedMessage } from './rows';
+
+/** A pending message shows what the person said, never its leading `<target>` block's raw fields. */
+const spoken = (text: string): string => targetContent(text)?.speech ?? text;
 import { defaultChatLabels, useChatText } from './labels';
 
 export type { QueuedMessage } from './rows';
@@ -17,10 +20,10 @@ export type { QueuedMessage } from './rows';
 /** Display text of a queued submission: the text parts of its content, plus a count of images. */
 export function queuedText(item: QueuedMessage, imagesLabel: (count: number) => string = defaultChatLabels.images): string {
   const content = item.content as unknown;
-  if (typeof content === 'string') return content;
+  if (typeof content === 'string') return spoken(content);
   if (!Array.isArray(content)) return '';
   const parts = content as readonly { type?: unknown; text?: unknown }[];
-  const text = parts.flatMap(part => part?.type === 'text' && typeof part.text === 'string' && !isFileBlock(part.text) ? [part.text] : []).join('\n');
+  const text = parts.flatMap(part => part?.type === 'text' && typeof part.text === 'string' && !isFileBlock(part.text) ? [spoken(part.text)] : []).join('\n');
   const images = parts.filter(part => part?.type === 'image').length;
   return images ? `${text}${text ? '\n' : ''}${imagesLabel(images)}` : text;
 }
@@ -89,7 +92,7 @@ export function MessageQueue({ items, sending = [], withdraw, actions }: {
       {sending.map((draft, index) => <li key={`sending-${index}`} data-testid="queue-sending" className="flex min-h-10 items-center gap-1.5">
         <TraceLine status="running" className="min-w-0 flex-1">
           <TraceIcon><Spinner aria-hidden="true" /></TraceIcon>
-          <TraceTitle data-testid="queue-text">{draft.text}{draft.attachments.length ? `${draft.text ? '\n' : ''}${labels.images(draft.attachments.length)}` : ''}</TraceTitle>
+          <TraceTitle data-testid="queue-text">{spoken(draft.text)}{draft.attachments.length ? `${draft.text ? '\n' : ''}${labels.images(draft.attachments.length)}` : ''}</TraceTitle>
         </TraceLine>
         <span className="shrink-0 px-1 text-xs text-muted-foreground">{labels.sending}</span>
       </li>)}

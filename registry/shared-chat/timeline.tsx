@@ -2,6 +2,7 @@
 import { Children, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode, RefObject } from 'react';
 import type { SharedChatController } from '@hachej/boring-ui-kit/shared-chat';
+import type { ChatFeatureProps } from '../pi-chat/session';
 import type { MentionsConfig } from '../pi-chat/config';
 import { MessageText } from '../pi-chat/message';
 import { Markdown } from '../pi-chat-markdown/markdown';
@@ -24,9 +25,10 @@ export interface TimelineApi { readonly reset: () => void; readonly reveal: (id:
  * WhatsApp's room: bubbles hug the bottom, a day pill starts each day, host notices collapse into one small line, and a
  * « ↓ 3 new messages » pill appears below the list (never over it) while the reader is scrolled up.
  */
-export function SharedTimeline({ controller, api, focusComposer, openFile, mentions, pendingVoice, paging }: {
+export function SharedTimeline({ controller, api, focusComposer, openFile, mentions, pendingVoice, paging, targetLabel }: {
   readonly controller: SharedChatController; readonly api: RefObject<TimelineApi | undefined>;
   readonly focusComposer: () => void; readonly openFile?: ((path: string) => void) | undefined; readonly mentions: MentionsConfig; readonly pendingVoice?: ReactNode; readonly paging?: ChatPaging | undefined;
+  readonly targetLabel?: ChatFeatureProps['targetLabel'];
 }) {
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const { labels, icons } = useChatText();
@@ -97,7 +99,7 @@ export function SharedTimeline({ controller, api, focusComposer, openFile, menti
       {items.length > 0 && (hidden > 0 || state.history.kind === 'loading' || state.history.kind === 'error' || state.history.kind === 'ready' && state.history.hasMore) && <TranscriptHistory history={state.history} connected={!state.disposed && connected} onLoad={transcript.reveal} sentinelRef={transcript.sentinelRef} hidden={hidden} loaded={transcript.loaded} />}
       <div data-testid="transcript-bottom" className="mx-auto flex min-h-full w-full max-w-[720px] flex-col justify-end px-4 pt-4 pb-3 md:px-6">
         <MessageScrollerContent aria-label={labels.messages} aria-live="polite" data-testid="transcript" className="h-auto min-h-0 gap-0 [&>[data-local-voice]]:mt-3">
-          {chunks.map((run, index) => <TimelineChunk key={run[0]!.key} items={run} top={index === 0} multi={multi} controller={controller} mentions={mentions} openFile={stableOpen} onReply={reply} onReveal={setRevealing} />)}
+          {chunks.map((run, index) => <TimelineChunk key={run[0]!.key} items={run} top={index === 0} multi={multi} controller={controller} mentions={mentions} openFile={stableOpen} targetLabel={targetLabel} onReply={reply} onReveal={setRevealing} />)}
           {pendingVoice}
         </MessageScrollerContent>
       </div>
@@ -138,7 +140,7 @@ function bindApi(api: RefObject<TimelineApi | undefined>, value: TimelineApi) {
 
 type RowProps = {
   readonly multi: boolean; readonly controller: SharedChatController; readonly mentions: MentionsConfig;
-  readonly openFile: ((path: string) => void) | undefined; readonly onReply: (id: string) => void; readonly onReveal: (id: string) => void;
+  readonly openFile: ((path: string) => void) | undefined; readonly targetLabel: ChatFeatureProps['targetLabel']; readonly onReply: (id: string) => void; readonly onReveal: (id: string) => void;
 };
 /** A run of timeline rows as one scroller item (`useRowChunks`). Memoized, like each row: it renders again only when its own items change. */
 const TimelineChunk = memo(function TimelineChunk({ items, top, ...props }: RowProps & { readonly items: readonly SharedItem[]; readonly top: boolean }) {
@@ -146,10 +148,10 @@ const TimelineChunk = memo(function TimelineChunk({ items, top, ...props }: RowP
     {items.map((item, index) => <TimelineRow key={item.key} item={item} top={top && index === 0} {...props} />)}
   </MessageScrollerItem>;
 });
-const TimelineRow = memo(function TimelineRow({ item, top, multi, controller, mentions, openFile, onReply, onReveal }: RowProps & { readonly item: SharedItem; readonly top: boolean }) {
+const TimelineRow = memo(function TimelineRow({ item, top, multi, controller, mentions, openFile, targetLabel, onReply, onReveal }: RowProps & { readonly item: SharedItem; readonly top: boolean }) {
   const { labels } = useChatText();
   const view = useSharedView();
-  const context = useMemo(() => ({ pieces: { mentions: true, skills: [], renderMention: mentions.renderSent }, openFile }), [mentions.renderSent, openFile]);
+  const context = useMemo(() => ({ pieces: { mentions: true, skills: [], renderMention: mentions.renderSent }, openFile, targetLabel }), [mentions.renderSent, openFile, targetLabel]);
   const renderMention = (path: string, text: string) => mentions.renderSent?.(path) ?? text;
   const bubble = () => {
     const { message, author, own, first } = item;
