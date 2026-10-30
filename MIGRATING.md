@@ -1,6 +1,7 @@
 # Unreleased
 
 - **Agents report their own failures (`@hachej/boring-agent`; D-553, fleet standard S6).** On by default, no app code: every `defineAgent` agent gets a `report_bug` tool and emits content-free `agent.struggle` events (`tool_error`, `tool_retry`, `rephrase`, `correction`, `abandoned`, `report_bug`). **The agent's tool list and its model's tool definitions gain `report_bug`.** Events go to the sink of `setStruggleSink` (`@hachej/boring-agent/struggle`, set once by the host), else one log line. Opt out with `struggle: false`; an agent with its own `report_bug` keeps it. Conversations created before this keep their agent until reconfigured.
+- **Skills (`@hachej/boring-agent/agents`; D-564).** `skillInFolder(skill, folder)` is now exported. New `loadUnlisted(conversationId, name)` option on `staticSkills` and `liveSkills`: `load_skill` asks it for a name the conversation does not see, so a host can serve skills kept out of the listing. It wins over `visible`, so check permission in it. Additive.
 
 # Migrating to 0.4.35
 

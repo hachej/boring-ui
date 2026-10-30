@@ -16,6 +16,7 @@ export interface Skill {
 
 const skillFolders = new WeakMap<Skill, string>();
 
+/** Say which folder a skill's relative paths start from, for a skill built without a directory source. `load_skill` names it to the agent. */
 export function skillInFolder(skill: Skill, folder: string): Skill {
   skillFolders.set(skill, folder);
   return skill;
@@ -196,6 +197,12 @@ export interface SkillsOptions {
    * a skill that could not be read also answers as unknown (its reason still goes to `onDiagnostics`).
    */
   readonly visible?: (conversationId: ConversationId, skills: readonly Skill[]) => readonly Skill[] | Promise<readonly Skill[]>;
+  /**
+   * A `load_skill` call for a name this conversation does not see: the host may answer with a skill it keeps out of the listing, or
+   * undefined for an unknown name. It wins over `visible`, so it is the host's own permission check. Called only with a valid skill name.
+   * A skill of another name, an invalid one or a throw answers as unknown.
+   */
+  readonly loadUnlisted?: (conversationId: ConversationId, name: string) => Skill | undefined | Promise<Skill | undefined>;
   /** The listing section's text before the `- name: description` lines. Default: call load_skill first, `/<skill-name>` is explicit. */
   readonly intro?: string;
 }
@@ -465,6 +472,13 @@ function skillsExtension(live: Live, options: SkillsOptions, fs: SkillFileSystem
     const names = new Set((await visible(at(), all)).map(skill => skill.name));
     return all.filter(skill => names.has(skill.name));
   }
+  async function unlisted(conversationId: ConversationId, name: string): Promise<Skill | undefined> {
+    if (!options.loadUnlisted || !NAME.test(name)) return undefined;
+    try {
+      const found = await options.loadUnlisted(conversationId, name);
+      return found?.name === name ? validSkill(found) : undefined;
+    } catch { return undefined; }
+  }
   const parameters = fs
     ? Type.Object({ name: Type.String(), path: Type.Optional(Type.String({ description: 'A companion file of the skill, relative to its folder.' })) }, { additionalProperties: false })
     : Type.Object({ name: Type.String() }, { additionalProperties: false });
@@ -489,7 +503,7 @@ function skillsExtension(live: Live, options: SkillsOptions, fs: SkillFileSystem
           ({ known, errors } = await live.miss(context));
           shown = await seen(known, () => api.conversationId);
         }
-        const skill = shown.find(candidate => candidate.name === args.name);
+        const skill = shown.find(candidate => candidate.name === args.name) ?? await unlisted(api?.conversationId, args.name);
         if (!skill) {
           const failed = visible ? undefined : errors.find(error => error.name === args.name);
           return text(failed ? `Skill "${args.name}" could not be loaded (${failed.path}): ${failed.message}` : `Unknown skill "${args.name}". Available: ${shown.map(entry => entry.name).join(', ')}`);
