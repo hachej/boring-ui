@@ -109,13 +109,17 @@ for (const surface of ['member', 'studio']) test(`${surface} thread: the standar
 
   // Running: the standard trace (a read, a refused write, a tool still running) and pi-chat's own working line; the refusal is hidden.
   const turn = [user(1, 'Mettre les protéines en avant'), round(2, [call('a', 'tasks_list')]), result('a', 'tasks_list', '[]'), round(3, [call('w', 'write', { path: '../dehors.md' })]),
-    result('w', 'write', 'Refused: ../dehors.md is outside the workspace.', true), round(4, [{ type: 'text', text: 'Je vérifie…' }, call('x', 'mystery_tool', { secret: 'json' })])];
+    result('w', 'write', 'Refused: ../dehors.md is outside the workspace.', true), round(4, [call('x', 'mystery_tool', { secret: 'json' })])];
   await render(turn, run());
   assert.deepEqual(tools(), [['tasks_list', 'completed'], ['write', 'failed'], ['mystery_tool', 'running']]);
   assert.ok(panel().querySelector('[data-testid="agent-status"]'), 'pi-chat\'s own « working » line');
-  assert.match(panel().textContent, /Je vérifie…/, 'text alongside a running tool remains visible');
   assert.equal(panel().querySelector('[data-testid="preparing"]'), null, 'no lone « Préparation… »');
   if (surface === 'member') assert.ok([...panel().querySelectorAll('[data-testid="tool-details"]')].every(hiddenByPanel), 'the raw refusal is hidden');
+
+  // Native grouping splits at prose; a separate running activity starts collapsed, so inspect its visible summary, not its unmounted steps.
+  await render([...turn.slice(0, -1), round(4, [{ type: 'text', text: 'Je vérifie…' }, call('x', 'mystery_tool', { secret: 'json' })])], run());
+  assert.match(panel().textContent, /Je vérifie…/, 'text alongside a running tool remains visible');
+  assert.match(panel().querySelector('[data-testid="activity"][data-state="running"] [data-testid="activity-label"]')?.textContent ?? '', /mystery_tool/, 'the running tool keeps its native visible feedback');
 
   // The reply streams: its Markdown is drawn live.
   await render([...turn, result('x', 'mystery_tool', 'ok')], run([{ type: 'text', text: 'Je propose **deux pistes**' }]));
