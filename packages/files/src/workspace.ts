@@ -260,6 +260,18 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
     return { kind: 'file', bytes, revision: await blobRevision(bytes) };
   }
 
+  /**
+   * A folder exists through its files: the one a move or delete left empty goes, up to the first that still holds something. Best effort and
+   * never recursive, so a file landing meanwhile stays; a file system that cannot remove a directory that way (Pi's Node one) keeps the folder.
+   */
+  const pruneEmptied = async (path: string): Promise<void> => {
+    for (let folder = path.slice(0, Math.max(0, path.lastIndexOf('/'))); folder; folder = folder.slice(0, Math.max(0, folder.lastIndexOf('/')))) {
+      const listed = await fs.listDir(absolute(folder), fsContext()).catch(() => undefined);
+      if (!listed?.ok || listed.value.length) return;
+      const gone = await fs.remove(absolute(folder), { recursive: false }, fsContext()).catch(() => undefined);
+      if (!gone?.ok) return;
+    }
+  };
   /** Once per provider, before its first operation: remove temporary files that an earlier process left behind. */
   let swept: Promise<void> | undefined;
   const sweep = () => swept ??= (async () => {
@@ -432,6 +444,8 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
           }
           applying = true;
           if (!together) journal.complete(operation, record, versions);
+          if (moving) await pruneEmptied(moving.from.resource.path);
+          else for (const plan of plans) if (plan.change.kind === 'delete') await pruneEmptied(plan.path);
         } else if (moving || plans[0]!.change.kind === 'delete') {
           applying = true;
           // Like a publication, a move creates the folder it lands in: a folder renames file by file, so the first file finds none.
@@ -452,13 +466,7 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
             return refuse(result.error.message);
           }
           journal.complete(operation, record, versions);
-          // A folder exists through its files: the one this left empty goes, up to the first that still holds something. Best effort.
-          for (let folder = leaving.slice(0, leaving.lastIndexOf('/') + 1).replace(/\/$/, ''); folder; folder = folder.slice(0, folder.lastIndexOf('/') + 1).replace(/\/$/, '')) {
-            const listed = await fs.listDir(absolute(folder), fsContext()).catch(() => undefined);
-            if (!listed?.ok || listed.value.length) break;
-            const gone = await fs.remove(absolute(folder), { recursive: false }, fsContext()).catch(() => undefined);
-            if (!gone?.ok) break;
-          }
+          await pruneEmptied(leaving);
         } else {
           const { change, path, unchanged } = plans[0]!;
           if (change.kind === 'delete') return refuse('Invalid file replacement');

@@ -381,7 +381,7 @@ export function openSqliteFileSystem(options: SqliteFileSystemOptions): SqliteFi
     setMaxFileBytes: limit => { assertLimit(limit); maxFileBytes = limit; },
     bytes: path => { const found = row(normalize(path)); return !found ? null : found.kind === 'directory' ? undefined : bytes(normalize(path)); },
     write: (path, content) => { const absolute = normalize(path); makeDirectory(dirname(absolute), true); write(absolute, content); notify(); },
-    rename: (from, to) => { rename(normalize(from), normalize(to)); notify(); },
+    rename: (from, to) => { const target = normalize(to); makeDirectory(dirname(target), true); rename(normalize(from), target); notify(); },
     remove: path => { remove(normalize(path)); notify(); },
   });
   return fs;
