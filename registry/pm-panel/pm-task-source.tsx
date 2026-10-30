@@ -68,11 +68,11 @@ const stamp = (value: string | number | null | undefined) => value == null ? und
 export function toTaskRecord(task: HostTask, viewer: string): HostTaskRecord {
   const ended = task.state === 'done' || task.state === 'closed' || task.status === 'abandoned' || task.status === 'shipped';
   const waiting = !ended && task.waiting_on_you === true;
-  const created = stamp(task.created ?? task.created_at), updated = stamp(task.updated ?? task.updated_at), confirmed = stamp(task.confirmed_at), ref = task.ref ?? task.number;
+  const created = stamp(task.created ?? task.created_at), updated = stamp(task.updated ?? task.updated_at), confirmed = stamp(task.confirmed_at), ref = task.ref ?? task.number, question = task.question ?? task.waiting_on?.question;
   const state: TaskState = task.status === 'abandoned' ? 'closed' : task.status === 'shipped' ? 'done' : waiting ? 'waiting' : STATES.includes(task.state as TaskState) ? task.state as TaskState : 'open', outcome = taskOutcome(state, task.closed_reason ?? (task.status === 'abandoned' ? 'withdrawn' : undefined));
   return {
     id: task.id, ...(ref ? { number: ref } : {}), title: task.title, ...(task.display ? { display: task.display } : {}), ...(task.technical === undefined ? {} : { technical: task.technical }), ...(task.status ? { status: task.status } : {}), requesterId: viewer, waiting_on_you: waiting, state,
-    ...(waiting ? { waiting_on: { who: viewer, type: 'person' as const, ...((task.question ?? task.waiting_on?.question) ? { question: task.question ?? task.waiting_on?.question } : {}) } } : {}),
+    ...(waiting ? { waiting_on: { who: viewer, type: 'person' as const, ...(question ? { question } : {}) } } : {}),
     ...(created ? { created_at: created } : {}), ...(updated ? { updated_at: updated } : {}), ...(confirmed ? { confirmed_at: confirmed } : {}),
     ...(task.is_requester === true ? { is_requester: true as const } : {}), ...(outcome ? { outcome } : {}),
   };
