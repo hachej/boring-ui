@@ -11,7 +11,7 @@ import type { DelegateOptions } from './delegate.js';
 import type { Skill, SkillSource } from './skills.js';
 
 export type { SelfEvolutionError, SelfEvolutionReport } from './self-evolving.js';
-export { directorySkillSource, fileSkillSource, liveSkills, parseSkill, staticSkills } from './skills.js';
+export { directorySkillSource, fileSkillSource, liveSkills, parseSkill, skillInFolder, staticSkills } from './skills.js';
 export type { LiveSkills, LiveSkillsOptions, Skill, SkillError, SkillFileSystem, SkillListing, SkillSource, SkillsOptions, SkillVersions } from './skills.js';
 export { jsonSchemaTool } from './json-schema-tool.js';
 export type { JsonObjectSchema, JsonSchemaToolOptions } from './json-schema-tool.js';
