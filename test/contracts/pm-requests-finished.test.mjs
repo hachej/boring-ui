@@ -55,7 +55,8 @@ async function mount(t, host) {
   await act(async () => ui.render(h(App)));
   await wait();
   await click('[data-testid="workspace-bar-tasks"]');
-  await wait();
+  // The panel opens through the kit's popover, later on a loaded runner.
+  for (let tries = 0; tries < 20 && !document.querySelector('[data-testid="pm-task-board-seam"]'); tries++) await wait();
   const seam = () => document.querySelector('[data-testid="pm-task-board-seam"]');
   const finished = () => seam().querySelector('[data-testid="pm-finished"]');
   const toggle = () => seam().querySelector('[data-testid="pm-finished-toggle"]');

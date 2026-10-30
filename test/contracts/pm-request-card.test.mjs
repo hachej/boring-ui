@@ -79,7 +79,8 @@ test('the list answers 403 once, then 200 on the next turn: the card appears, th
   assert.match(reply().textContent, /Attend votre avis/);
   assert.ok(reply().querySelector('[data-testid="pm-request-confirm"]'), '« Confirmer » from the list');
   await app.act(async () => app.container.querySelector('[data-testid="workspace-bar-tasks"]').click());
-  await app.wait();
+  // The panel opens through the kit's popover, later on a loaded runner.
+  for (let tries = 0; tries < 20 && !/Plan du jour/.test(document.querySelector('[data-testid="pm-task-board-seam"]')?.textContent ?? ''); tries++) await app.wait();
   assert.match(document.querySelector('[data-testid="pm-task-board-seam"]')?.textContent ?? '', /Plan du jour/, '« Mes demandes » lists the host\'s records');
 });
 

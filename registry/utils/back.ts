@@ -14,7 +14,7 @@ const layers = new Set<Layer>();
 let ignored = 0;
 let listening = false;
 /** The layer kind the page was loaded on top of (history state survives a reload), until a layer adopts it. */
-let persisted: unknown = typeof history === 'undefined' ? undefined : (history.state as { appShell?: unknown } | null)?.appShell;
+let persisted: unknown = typeof window === 'undefined' || !window.history ? undefined : (window.history.state as { appShell?: unknown } | null)?.appShell;
 /** Layers that opened while our own `history.back()` was still pending: they push their entry once it has landed (a push in between cancels it). */
 const waiting: (() => void)[] = [];
 
@@ -36,7 +36,7 @@ export function afterStacksBack(action: () => void): void {
   const stacks = [...layers].filter(layer => layer.order === 'stack' && !layer.popped);
   if (!stacks.length) { action(); return; }
   waiting.push(action);
-  for (const layer of stacks) { layer.popped = true; layers.delete(layer); ignored += 1; history.back(); }
+  for (const layer of stacks) { layer.popped = true; layers.delete(layer); ignored += 1; window.history.back(); }
 }
 
 const topmost = (): Layer | undefined => [...layers].toSorted((a, b) => RANK[a.order] - RANK[b.order])[0];
@@ -55,7 +55,7 @@ function onPopState(): void {
   const restore = () => {
     if (!layers.has(top) || !top.popped) return;
     top.popped = false;
-    history.pushState({ appShell: top.order }, '');
+    window.history.pushState({ appShell: top.order }, '');
   };
   try { void Promise.resolve(top.close()).then(closed => { if (closed === false) restore(); }, restore); }
   catch { restore(); }
@@ -78,7 +78,7 @@ export function useBackLayer(open: boolean, close: () => unknown, order: BackOrd
       // After a reload the page still sits on the entry its layer pushed before: that one layer adopts it instead of stacking a second.
       const adopt = persisted === order;
       persisted = undefined;
-      if (!adopt) history.pushState({ appShell: order }, '');
+      if (!adopt) window.history.pushState({ appShell: order }, '');
       layers.add(layer);
     };
     if (!listening) { window.addEventListener('popstate', onPopState); listening = true; }
@@ -89,7 +89,7 @@ export function useBackLayer(open: boolean, close: () => unknown, order: BackOrd
       if (at >= 0) waiting.splice(at, 1);
       if (!started) return;
       layers.delete(layer);
-      if (!layer.popped) { ignored += 1; history.back(); }
+      if (!layer.popped) { ignored += 1; window.history.back(); }
     };
   }, [open, order]);
 }
