@@ -86,6 +86,13 @@ export interface DelegateMeter {
   readonly close: (end: DelegateEnd) => void | Promise<void>;
 }
 
+/** Which call made a child, for the host's log lines: the parent's tool call and task, and the request id of the child's input. */
+export interface DelegateCallIds {
+  readonly callId: string;
+  readonly taskId: TaskId;
+  readonly requestId: string;
+}
+
 export interface DelegateOptions {
   /**
    * The child agent, usually a `defineAgent` result (its `id` and native `agent` change). The child conversation selects exactly its
@@ -100,7 +107,7 @@ export interface DelegateOptions {
    * configured: the host copies what the child must carry from the parent (user, workspace binding, permissions) with `tx`.
    * It runs once per child (never on a replay that finds the existing child); a throw aborts the commit, so no child exists.
    */
-  readonly onChild?: (parent: ConversationId, child: ConversationId, tx: Tx) => void | Promise<void>;
+  readonly onChild?: (parent: ConversationId, child: ConversationId, tx: Tx, ids: DelegateCallIds) => void | Promise<void>;
   /** Concurrency, rate, task size and timeout limits (`DelegateLimits`). */
   readonly limits?: DelegateLimits;
   /**
@@ -109,7 +116,7 @@ export interface DelegateOptions {
    * The tool sends the handle each child model response (`DelegateModelEvent`) and closes it when the call ends. A throw fails
    * the call. The kit keeps no log.
    */
-  readonly meter?: (parent: ConversationId, child: ConversationId) => DelegateMeter | Promise<DelegateMeter>;
+  readonly meter?: (parent: ConversationId, child: ConversationId, ids: DelegateCallIds) => DelegateMeter | Promise<DelegateMeter>;
   /**
    * Names of the tools a child may have: its enabled tools become the intersection of this list with what it would otherwise
    * get, written as Pi's own tool filter (`pi.agent` `tools`) in the commit that creates it. Unset: no restriction.
@@ -146,6 +153,7 @@ export function createDelegateTool(options: DelegateOptions): ToolRegistration {
       const inherited = (await api.agent(context)).extensions.filter(isGuard);
       const agent = withGuards(child, inherited);
       const parent = api.conversationId, ledger = limits === undefined ? undefined : ledgerOf(limits);
+      const ids: DelegateCallIds = { callId: api.callId, taskId: api.taskId, requestId: `${name}:${api.taskId}` };
       let opened: { readonly id: ConversationId } | { readonly refused: string };
       try {
         opened = await api.commit(async tx => {
@@ -156,7 +164,7 @@ export function createDelegateTool(options: DelegateOptions): ToolRegistration {
           const created = await tx.createConversation({ ownership: { kind: 'task', taskId: api.taskId } });
           await configure(tx, created.id, agent);
           if (options.childTools !== undefined) await allowTools(tx, created.id, options.childTools, api);
-          await options.onChild?.(parent, created.id, tx);
+          await options.onChild?.(parent, created.id, tx, ids);
           return { id: created.id };
         }, context);
       } catch (error) { ledger?.running.delete(api.taskId); ledger?.starts.delete(api.taskId); throw error; }
@@ -165,7 +173,7 @@ export function createDelegateTool(options: DelegateOptions): ToolRegistration {
       // `end` is set where the call's outcome is known; a throw ends `cancelled` only when the call itself was aborted.
       let meter: DelegateMeter | undefined, end: DelegateEnd = 'failed', timer: ReturnType<typeof setTimeout> | undefined;
       try {
-        meter = await options.meter?.(parent, childId);
+        meter = await options.meter?.(parent, childId, ids);
         const startedAt = await api.memo('delegate.startedAt', Date.now(), context);
         const progress = childProgress(api, childId, meter);
         const details = (status: DelegateStatus, counts: Counts, error?: string): DelegateDetails => ({
@@ -175,7 +183,7 @@ export function createDelegateTool(options: DelegateOptions): ToolRegistration {
         await api.details(details('running', initial), context);
         const conversation = await api.conversation(childId, context);
         if (conversation === undefined) throw new Error(`Delegate conversation ${childId} is missing`);
-        const submission = await conversation.submit({ type: 'input', content: args.task, requestId: `${name}:${api.taskId}` }, context);
+        const submission = await conversation.submit({ type: 'input', content: args.task, requestId: ids.requestId }, context);
         // The timeout reuses the cancel path: aborting the child settles its submission `aborted`, reported below as a timeout.
         let timedOut = false;
         if (limits?.timeoutMs !== undefined) timer = setTimeout(() => { timedOut = true; conversation.abort(context).catch(() => undefined); }, Math.max(0, startedAt + limits.timeoutMs - Date.now()));

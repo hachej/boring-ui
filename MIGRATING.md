@@ -1,5 +1,6 @@
 # Unreleased
 
+- **Delegate metering (`@hachej/boring-agent`; D-556).** `onChild` and `meter` get a new last argument `{ callId, taskId, requestId }`. New `meterFromSink({ sink, scope, … })` in `@hachej/boring-agent/metering` is a ready `DelegateOptions.meter`: a child's spend goes to the same ledger. Additive.
 - **Skills (`@hachej/boring-agent/agents`; D-564).** `skillInFolder(skill, folder)` is now exported. New `loadUnlisted(conversationId, name)` option on `staticSkills` and `liveSkills`: `load_skill` asks it for a name the conversation does not see, so a host can serve skills kept out of the listing. It wins over `visible`, so check permission in it. Additive.
 
 # Migrating to 0.4.35
