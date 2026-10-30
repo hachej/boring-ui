@@ -76,7 +76,8 @@ export function useBackLayer(open: boolean, close: () => unknown, order: BackOrd
     const start = () => {
       started = true;
       // After a reload the page still sits on the entry its layer pushed before: that one layer adopts it instead of stacking a second.
-      const adopt = persisted === order;
+      // An artifact sheet pushes its own: its entry can be stale by then, and closing an adopted one could leave the page.
+      const adopt = persisted === order && order !== 'artifact';
       persisted = undefined;
       if (!adopt) window.history.pushState({ appShell: order }, '');
       layers.add(layer);

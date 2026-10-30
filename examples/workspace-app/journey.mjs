@@ -793,12 +793,12 @@ try {
     await browser.evaluate(`new Promise(requestAnimationFrame).then(() => new Promise(requestAnimationFrame))`);
     const draft = await browser.evaluate(`${source}.value`);
     await browser.evaluate(`window.__originalConfirm = window.confirm; window.__discard = false; window.__confirmations = 0; window.__backPage = document.body; window.confirm = () => { window.__confirmations++; return window.__discard; }`);
-    const marker = await browser.evaluate('history.state.boringArtifact');
+    const marker = await browser.evaluate('history.state?.appShell');
     assert.ok(marker, 'the phone sheet has a Back entry');
     const length = await browser.evaluate('history.length');
     for (let attempt = 1; attempt <= 2; attempt++) {
       await browser.evaluate('history.back()');
-      await browser.until('Back refusal restores the sheet entry', `window.__confirmations === ${attempt} && history.state?.boringArtifact === ${JSON.stringify(marker)}`, 5000);
+      await browser.until('Back refusal restores the sheet entry', `window.__confirmations === ${attempt} && history.state?.appShell === ${JSON.stringify(marker)}`, 5000);
       assert.equal(await browser.evaluate('document.body === window.__backPage'), true);
       assert.equal(await browser.evaluate(`${source}.value`), draft);
       assert.equal(await browser.evaluate('history.length'), length, 'refusal replaces, rather than accumulates, the Back entry');
