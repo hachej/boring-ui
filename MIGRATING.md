@@ -1,6 +1,9 @@
 # Unreleased
 
 - **Delegate metering (`@hachej/boring-agent`; D-556).** `onChild` and `meter` get a new last argument `{ callId, taskId, requestId }`. New `meterFromSink({ sink, scope, … })` in `@hachej/boring-agent/metering` is a ready `DelegateOptions.meter`: a child's spend goes to the same ledger. Additive.
+
+# Migrating to 0.4.35
+
 - **Target chip (`pi-chat`; D-509).** A sent `<target>` chip no longer shows raw target values: no `title` with the JSON, and the default label is the target's `label` field, else the display keys it wraps its fields under, else « Target » (it was `key: value · …`). Queued/sending rows show the speech only; the conversation list's tooltip and automatic titles (`@hachej/boring-agent/conversations`) drop the block, and a title stored with one shows without it. New optional `targetLabel?: (target) => string | undefined` on `PiChat`, `AmbientChat` and `SharedChat` picks the chip's words from the block as sent; undefined keeps the default. Update `pi-chat`, `pi-ambient`, `shared-chat`.
 - **« Mes demandes »: finished requests folded below (`pm-panel`, `task-board`; decided 2026-10-29).**
   - Open requests (`waiting`, `working`, `open`) stay on top with « À confirmer », « Envoyée », « Retirer » and the card actions. Finished ones (`done`, `closed`) move below, under a collapsed « Terminées (n) » / "Finished (n)" (absent when n = 0), newest first, each with one muted label and no action: « En ligne » / "Live", « Retirée » / "Withdrawn", « Fermée » / "Closed". Studio's board is unchanged.
