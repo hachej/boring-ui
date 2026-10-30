@@ -29,6 +29,11 @@ export interface PmVoice {
 export interface ImproveSpec {
   readonly controller: NativeChatController;
   readonly chatProps?: Omit<PiChatProps, 'controller'>;
+  /** Existing agent-page composition: History and the PM's read-only resource Library. */
+  readonly conversations?: import('../pi-chat/config').ConversationsConfig;
+  readonly conversationId?: string;
+  readonly resources?: import('../pi-app/agent-workspace').WorkspaceResources;
+  readonly artifactKinds?: readonly import('../pi-app/viewer-kinds').PanelKind[];
   readonly label?: string;
   /** The app's name in the full panel's subtitle: « Le chef de projet · {appName} ». */
   readonly appName?: string;
@@ -37,8 +42,6 @@ export interface ImproveSpec {
   readonly policy?: PrivacyPolicy;
   readonly pointVoice?: PmVoice;
   readonly tasks?: StudioTaskBoardSeam;
-  /** Reads a file the PM presented (`present`), so the app panel and PmChat show it as a mockup card and open its full view. Absent: the card shows « unavailable ». */
-  readonly readArtifact?: import('./pm-mockups').PmReadArtifact;
 }
 /**
  * The app's task board (`task-board` item): the host's authorized records. The panel draws « Mes demandes » with `TaskBoard` and the @
@@ -48,6 +51,12 @@ export interface StudioTaskBoardSeam {
   readonly tasks: readonly import('@hachej/boring-ui-kit/task-board').TaskRecord[];
   /** The viewer: « Mes demandes » and @ show the tasks they requested (`requesterId`). */
   readonly currentUser: string;
+  /** Host-owned news or notices above the existing request list; no second task store. */
+  readonly header?: import('react').ReactNode;
+  /** Host-projected unread news; when given, owns the Tasks icon's dot. */
+  readonly unread?: boolean;
+  /** Opening/closing the Tasks panel is observation only; the host owns any exact-ID acknowledgement. */
+  readonly onOpenChange?: (open: boolean) => void;
   /** Opens a task: the @ chip, a card in « Mes demandes ». */
   readonly onOpen: (task: import('@hachej/boring-ui-kit/task-board').TaskRecord) => void;
   /** Host-authorized compact card actions in « Mes demandes » (`TaskBoard cardActions`). */
@@ -76,7 +85,7 @@ const PIN_STYLES = '.box { border-style: solid; border-width: var(--pm-mark-widt
   + ' .label { box-sizing: border-box; min-width: 24px; height: 24px; padding: 0 7px; border-radius: var(--pm-radius-round); display: flex; align-items: center; justify-content: center;'
   + ' background: var(--pm-mark); color: var(--pm-mark-foreground); font-family: var(--font-sans, inherit); font-size: 12px; font-weight: 700; line-height: 1; transform: translate(-50%, -50%); }';
 /** A tap lands on the innermost node; the pick is the nearest element a person would name (a card, a gauge, a button, a field). */
-const NAMED = 'button, a[href], input, select, textarea, img, svg[role], [role=meter], [role=progressbar], [role=article], article, [role=region], [role=group], [role=listitem], li, [role=button], [role=link], [role=img], [aria-label]';
+const NAMED = 'button, a[href], input, select, textarea, summary, details, img, svg[role], [role=meter], [role=progressbar], [role=article], article, [role=region], [role=group], [role=listitem], li, [role=button], [role=link], [role=img], [aria-label]';
 function meaningful(element: Element, root: Element): Element {
   const named = element.closest(NAMED);
   return named && root.contains(named) ? named : element;
@@ -256,6 +265,7 @@ export function usePmPanel(spec: ImproveSpec, open: boolean, page: HTMLElement |
   useEffect(() => {
     if (!open || !state.show || state.mode !== 'point' || !selectionRoot) return;
     const picker = createPicker({ root: selectionRoot, policy, styles: PICK_STYLES, tap: 'pick', wheel: false, keys: 'outside-ignored',
+      onChange: current => { if (current.refusal) setProblem(text.locale === 'fr' ? 'Cet élément n’est pas accessible ici. Essayez son titre ou un autre élément.' : 'This element is not accessible here. Try its title or another element.'); },
       onPick: picked => {
       // With the comment popover open, a click on the page is a click outside it: it settles that pick and picks nothing.
       if (commentRef.current) { commentRef.current.outside(); return; }

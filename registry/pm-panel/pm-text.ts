@@ -67,9 +67,6 @@ export interface PmText {
   /** The app panel's one muted line when the PM's run ends in error without a reply: the member never sees a tool or a raw error (C7). */
   readonly failed: string;
   /** A presented mockup (C7): the card's action, the line while it loads, and the line when its file can't be read. */
-  readonly openMockup: string;
-  readonly mockupLoading: string;
-  readonly mockupUnavailable: string;
 }
 
 /** `0:14`: whole seconds, never a fraction. */
@@ -96,7 +93,6 @@ export const pmTextFr: PmText = {
   modify: 'Modifier', confirm: 'Confirmer', confirming: 'Confirmation…', confirmFailed: 'Impossible de confirmer pour le moment. Réessayez.', answerFailed: 'L’envoi de votre réponse n’a pas pu être confirmé. Votre texte est conservé. Réessayez.', failed: "Le chef de projet n'a pas pu terminer. Réessayez.",
   withdraw: 'Retirer', withdrawAsk: 'Retirer cette demande\u00a0?', cancel: 'Annuler', withdrawFailed: 'Impossible de retirer la demande.',
   finished: n => `Terminées (${n})`, outcomeLive: 'En ligne', outcomeWithdrawn: 'Retirée', outcomeClosed: 'Fermée',
-  openMockup: 'Ouvrir', mockupLoading: 'Chargement…', mockupUnavailable: "La maquette n'est pas disponible.",
 };
 
 export const pmTextEn: PmText = {
@@ -116,7 +112,6 @@ export const pmTextEn: PmText = {
   modify: 'Modify', confirm: 'Confirm', confirming: 'Confirming…', confirmFailed: 'Could not confirm right now. Try again.', answerFailed: 'Your answer could not be confirmed. Your text is kept. Try again.', failed: "The PM couldn't finish. Try again.",
   withdraw: 'Withdraw', withdrawAsk: 'Withdraw this request?', cancel: 'Cancel', withdrawFailed: "Couldn't withdraw the request.",
   finished: n => `Finished (${n})`, outcomeLive: 'Live', outcomeWithdrawn: 'Withdrawn', outcomeClosed: 'Closed',
-  openMockup: 'Open', mockupLoading: 'Loading…', mockupUnavailable: 'The mockup is not available.',
 };
 
 export const pmTextFor = (locale: string | undefined): PmText => locale?.startsWith('en') ? pmTextEn : pmTextFr;

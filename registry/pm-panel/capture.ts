@@ -1,9 +1,10 @@
-import { serializeElement } from '@hachej/boring-feedback/page';
+import { PAGE_LIMITS, serializeElement } from '@hachej/boring-feedback/page';
 import type { AppDomNode, PrivacyPolicy } from '@hachej/boring-feedback/page';
 
 /** Rasterize the policy-filtered DOM at its observed layout. Never copy HTML, URLs, media, canvas pixels or form values. */
 export function captureElement(element: Element, policy: PrivacyPolicy): { readonly mimeType: 'image/png'; readonly data: string } {
-  const snapshot = serializeElement(element, policy);
+  // Anchor metadata's 2 KiB/50-node budget is not an image budget: ordinary cards exceed it.
+  const snapshot = serializeElement(element, policy, { subtreeLimit: PAGE_LIMITS.maxNodes, maxDepth: PAGE_LIMITS.maxDepth, maxBytes: PAGE_LIMITS.maxBytes });
   if (!snapshot.root || snapshot.truncated) throw new Error('La capture de cet élément est indisponible.');
   const box = element.getBoundingClientRect();
   const canvas = element.ownerDocument.createElement('canvas');

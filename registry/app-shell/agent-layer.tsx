@@ -244,6 +244,24 @@ export function AgentLayerProvider({ agent: own, improve, locale, agentLink, app
     setShown(target);
     setSnapState(at === 'peek' && target !== 'agent' ? 'half' : at);
   }, []);
+  // Same-origin parent handshake. An accepted open is local UI intent, not a connected-agent or durable acknowledgement.
+  const hasPm = Boolean(improve);
+  useEffect(() => {
+    const ready = { boring: 'pm-ready', supported: hasPm };
+    const reveal = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin || event.source !== window.parent) return;
+      const data = event.data;
+      if (!data || typeof data !== 'object' || typeof data.requestId !== 'string' || !data.requestId || data.requestId.length > 128) return;
+      if (data.boring === 'pm-probe') window.parent.postMessage({ ...ready, requestId: data.requestId }, window.location.origin);
+      if (data.boring === 'pm-open') {
+        if (hasPm) open('improve', 'full');
+        window.parent.postMessage({ boring: 'pm-ack', requestId: data.requestId, accepted: hasPm }, window.location.origin);
+      }
+    };
+    window.addEventListener('message', reveal);
+    window.parent.postMessage(ready, window.location.origin);
+    return () => window.removeEventListener('message', reveal);
+  }, [hasPm, open]);
   const lend = useCallback((spec: AgentSpec | undefined, at?: 'peek' | 'half' | 'full') => {
     if (specs.current.agent && specs.current.agent !== lentRef.current) return;
     lentRef.current = spec;
@@ -346,7 +364,7 @@ export function AgentLayerProvider({ agent: own, improve, locale, agentLink, app
   // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when a pending item's id or phase changes (pendingKey), not on every new pending array
   }, [expanded, shown, snap, voiceSend, voice.captureSequence, voice.problem, pendingKey]);
 
-  // « Améliorer l'app » owns Back like any layer: one entry while the panel shows (sheet or strip), one more for the full panel (C7).
+  // One Back entry for the PM, one more while pointing: Back returns to chat, then closes without leaving the app.
   const improveOpen = snap !== 'closed' && shown === 'improve';
   const [pmFull, setPmFull] = useState<{ readonly full: boolean; readonly collapse: () => void }>({ full: false, collapse: () => {} });
   const onFull = useCallback((full: boolean, collapse: () => void) => setPmFull(current => current.full === full ? current : { full, collapse }), []);

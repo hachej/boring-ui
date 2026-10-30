@@ -19,7 +19,7 @@ async function bundle(name, source) {
   const outfile = `${out}/${name.replace(/\.tsx?$/, '')}.mjs`;
   const entry = source ? `${out}/${name}` : `${root}${folder}/${name}`;
   if (source) writeFileSync(entry, source);
-  await build({ entryPoints: [entry], outfile, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', alias: { '@': `${root}examples/app-shell` }, logLevel: 'silent', plugins: process.env.BEFORE_ACCOUNT_SOURCE ? [{ name: 'pre-fix-account', setup(builder) { builder.onLoad({ filter: /registry\/app-shell\/account\.tsx$/ }, () => ({ contents: readFileSync(process.env.BEFORE_ACCOUNT_SOURCE, 'utf8'), loader: 'tsx', resolveDir: `${root}registry/app-shell` })); } }] : [] });
+  await build({ entryPoints: [entry], outfile, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', alias: { '@': `${root}examples/app-shell`, '@hachej/boring-ui-kit/file-tree.css': `${root}packages/ui/styles/file-tree.css` }, logLevel: 'silent', plugins: process.env.BEFORE_ACCOUNT_SOURCE ? [{ name: 'pre-fix-account', setup(builder) { builder.onLoad({ filter: /registry\/app-shell\/account\.tsx$/ }, () => ({ contents: readFileSync(process.env.BEFORE_ACCOUNT_SOURCE, 'utf8'), loader: 'tsx', resolveDir: `${root}registry/app-shell` })); } }] : [] });
   return import(`${pathToFileURL(outfile).href}?fresh=${++bundles}`);
 }
 
@@ -304,12 +304,12 @@ for (const [width, agent, input] of [[390, 'coach', 'text'], [1280, 'agent', 'te
     assert.deepEqual(opened.replaced[0][0], { router: { fictional: 7 } }, 'replaceState keeps the host state');
     await opened.act(async () => new Promise(done => setTimeout(done, 800)));
     const find = selector => opened.window.document.querySelector(selector);
-    // « Améliorer l'app » is the PM panel (spec 2), in flow under the page, not a second chat in the agent layer.
+    // The PM is the embedded workspace beside/over the page, not a duplicate chat in the assistant layer.
     const composer = find(agent === 'improve' ? '[data-testid=pm-panel]:not([hidden]) [data-testid=composer-input]' : '[data-spec=agent] [data-testid=composer-input]');
     assert.ok(composer?.isConnected, 'the selected composer is mounted in the visible layer');
     if (agent === 'improve') {
       assert.equal(find('[data-spec=improve]'), null, 'no improve chat in the agent layer');
-      assert.equal(find('[data-testid=pm-panel]')?.dataset.mode, 'sheet', 'the sheet (C2) opens, never point mode');
+      assert.equal(find('[data-testid=pm-panel]')?.dataset.mode, 'chat', 'the regular embedded chat opens, never point mode');
     } else if (input === 'text') {
       assert.equal(opened.window.document.activeElement, composer, 'focus remains on the composer after the drawer settles');
       assert.equal(opened.latest().state, width === 1280 ? 'open' : 'full', 'composer focus promotes half to full');
@@ -374,11 +374,11 @@ for (const width of [390, 1280]) {
     assert.equal(link?.hasAttribute('rel'), false, 'no rel unless the host passes one');
     await opened.act(async () => button.dispatchEvent(new opened.window.MouseEvent('click', { bubbles: true, cancelable: true })));
     assert.deepEqual(calls, ['go'], 'the click runs onSelect');
-    // The product manager is the PM panel (spec 2): its header is ^ and × (C2), never the coach's actions.
+    // The PM uses its workspace bar, never the coach's header actions.
     await opened.act(async () => opened.latest().open('improve', 'half'));
     await opened.act(async () => new Promise(done => setTimeout(done, 50)));
     const pm = opened.window.document.querySelector('[data-testid=pm-panel]');
-    assert.ok(pm && !pm.hidden, 'the PM sheet opens');
+    assert.ok(pm && !pm.hidden, 'the embedded PM opens');
     assert.equal(pm.querySelector('[data-testid^=agent-layer-action-]'), null, 'and not the coach\'s actions');
     await opened.unmount();
 

@@ -12,7 +12,7 @@ const source = process.env.PM_SOURCE_ROOT ?? root;
 const out = `${root}.cache/pm-requests-finished-test`;
 mkdirSync(out, { recursive: true });
 await build({ stdin: { contents: `export { PmPanelProvider, ImproveLayout } from './registry/pm-panel/pm-panel'; export { useHostTasks, toTaskRecord } from './registry/pm-panel/pm-task-source'; export { pmTextFr } from './registry/pm-panel/pm-text';`, resolveDir: source, loader: 'tsx' },
-  outfile: `${out}/panel.mjs`, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent', alias: { '@': `${root}examples/app-shell` } });
+  outfile: `${out}/panel.mjs`, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent', alias: { '@': `${root}examples/app-shell`, '@hachej/boring-ui-kit/file-tree.css': `${root}packages/ui/styles/file-tree.css` } });
 
 const id = n => `0b8e2c7e-1111-4222-8333-9444555566${String(n).padStart(2, '0')}`;
 const OPEN = [
@@ -51,13 +51,12 @@ async function mount(t, host) {
   }
   // The task source reads 300 ms after a change.
   const wait = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 450)); });
-  const click = selector => act(async () => container.querySelector(selector).click());
+  const click = selector => act(async () => document.querySelector(selector).click());
   await act(async () => ui.render(h(App)));
   await wait();
-  await click('[data-testid="pm-expand"]');
-  await click('[data-testid="pm-requests"]');
+  await click('[data-testid="workspace-bar-tasks"]');
   await wait();
-  const seam = () => container.querySelector('[data-testid="pm-task-board-seam"]');
+  const seam = () => document.querySelector('[data-testid="pm-task-board-seam"]');
   const finished = () => seam().querySelector('[data-testid="pm-finished"]');
   const toggle = () => seam().querySelector('[data-testid="pm-finished-toggle"]');
   const openCards = () => [...seam().querySelectorAll('[data-boring="task-board"] [data-task-card]')].map(card => card.dataset.taskCard);
@@ -127,7 +126,7 @@ for (const later of ['reopened', 'shipped']) test(`after « Retirer », the host
   await app.wait();
   assert.deepEqual(app.openCards(), [id(2)]);
   Object.assign(tasks[0], later === 'reopened' ? { state: 'open', updated: '2099-01-01T09:00:00Z' } : { state: 'done', closed_reason: 'shipped' });
-  await app.click('[data-testid="pm-requests-back"]'); await app.click('[data-testid="pm-requests"]'); await app.wait();
+  await app.click('[data-testid="workspace-bar-tasks"]'); await app.click('[data-testid="workspace-bar-tasks"]'); await app.wait();
   if (later === 'reopened') assert.ok(app.openCards().includes(id(1)), 'a request reopened after the withdraw is open again');
   else {
     await app.click('[data-testid="pm-finished-toggle"]');

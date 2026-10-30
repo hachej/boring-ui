@@ -29,18 +29,20 @@ function Hinted({ label, trigger, narrow }: { readonly label: string; readonly t
 }
 
 /** One icon button that opens `children`: an anchored popover on a wide workspace, a bottom sheet on a phone. */
-function BarPanel({ id, label, icon: Icon, narrow, open, onOpenChange, children }: {
+function BarPanel({ id, label, icon: Icon, dot, narrow, open, onOpenChange, children }: {
   readonly id: string;
   readonly label: string;
   readonly icon: BlockIcon;
+  readonly dot?: boolean | undefined;
   readonly narrow: boolean;
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly children: ReactNode;
 }) {
-  const button = <Button variant="ghost" size="icon" data-testid={`workspace-bar-${id}`} aria-label={label} className={iconSize(narrow)}><Icon aria-hidden="true" /></Button>;
+  const content = <><Icon aria-hidden="true" />{dot && <span data-testid={`workspace-bar-${id}-dot`} aria-hidden="true" className="absolute top-1 right-1 size-2 rounded-full bg-primary" />}</>;
+  const button = <Button variant="ghost" size="icon" data-testid={`workspace-bar-${id}`} aria-label={label} data-unread={dot || undefined} className={cn('relative', iconSize(narrow))}>{content}</Button>;
   if (narrow) return <>
-    <Button variant="ghost" size="icon" data-testid={`workspace-bar-${id}`} aria-label={label} aria-haspopup="dialog" aria-expanded={open} className={iconSize(narrow)} onClick={() => onOpenChange(true)}><Icon aria-hidden="true" /></Button>
+    <Button variant="ghost" size="icon" data-testid={`workspace-bar-${id}`} aria-label={label} data-unread={dot || undefined} aria-haspopup="dialog" aria-expanded={open} className={cn('relative', iconSize(narrow))} onClick={() => onOpenChange(true)}>{content}</Button>
     <Drawer open={open} onOpenChange={onOpenChange} showSwipeHandle>
       <DrawerContent data-testid={`workspace-${id}`} aria-label={label} className="pi-chat min-h-[50dvh] max-h-[85dvh]">
         <DrawerTitle className="sr-only">{label}</DrawerTitle>
@@ -59,6 +61,11 @@ export interface WorkspaceBarPanel {
   readonly id: string;
   readonly label: string;
   readonly icon: BlockIcon;
+  /** Host-owned unread indicator; opening the panel calls `onOpen`. */
+  readonly dot?: boolean | undefined;
+  readonly onOpen?: (() => void) | undefined;
+  /** Local panel state only, including switches to another panel; not a durable acknowledgement. */
+  readonly onOpenChange?: ((open: boolean) => void) | undefined;
   readonly content: (close: () => void) => ReactNode;
 }
 
@@ -71,6 +78,8 @@ export interface WorkspaceBarProps {
   readonly library: ((onPicked: () => void) => ReactNode) | undefined;
   /** The host's own panels, after Library and before New (test ids `workspace-bar-<id>` and `workspace-<id>`). */
   readonly panels?: readonly WorkspaceBarPanel[] | undefined;
+  /** Put host panels before History and Library. Default false. */
+  readonly panelsFirst?: boolean | undefined;
   /** A phone-sized workspace: sheets instead of popovers, 44px buttons. */
   readonly narrow: boolean;
   /** The host's own controls, after New. */
@@ -78,13 +87,23 @@ export interface WorkspaceBarProps {
 }
 
 /** The bar, or only its controls in the app shell's header when the page sits in a shell screen (then nothing renders here). */
-export function WorkspaceBar({ title, subtitle, conversations, library, panels, narrow, controls }: WorkspaceBarProps) {
+export function WorkspaceBar({ title, subtitle, conversations, library, panels, panelsFirst = false, narrow, controls }: WorkspaceBarProps) {
   const { labels, icons } = useAppText();
   const slot = useScreenHeaderSlot();
   const [shown, setShown] = useState<string | null>(null);
-  const toggle = (which: string) => (open: boolean) => setShown(open ? which : current => current === which ? null : current);
-  const close = () => setShown(null);
+  const change = (next: string | null) => {
+    if (next === shown) return;
+    panels?.find(panel => panel.id === shown)?.onOpenChange?.(false);
+    panels?.find(panel => panel.id === next)?.onOpenChange?.(true);
+    setShown(next);
+  };
+  const toggle = (which: string) => (open: boolean) => change(open ? which : shown === which ? null : shown);
+  const close = () => change(null);
+  const hostPanels = panels?.map(panel => <BarPanel key={panel.id} id={panel.id} label={panel.label} icon={panel.icon} dot={panel.dot} narrow={narrow} open={shown === panel.id} onOpenChange={open => { toggle(panel.id)(open); if (open) panel.onOpen?.(); }}>
+    {panel.content(close)}
+  </BarPanel>);
   const tools = <div data-testid="workspace-bar-tools" className="flex shrink-0 items-center gap-0.5">
+    {panelsFirst && hostPanels}
     {conversations && <BarPanel id="history" label={labels.history} icon={icons.history} narrow={narrow} open={shown === 'history'} onOpenChange={toggle('history')}>
       <header className="flex shrink-0 items-center gap-2 pl-1">
         <h3 className="m-0 min-w-0 flex-1 truncate text-sm font-semibold">{labels.history}</h3>
@@ -96,9 +115,7 @@ export function WorkspaceBar({ title, subtitle, conversations, library, panels, 
     {library && <BarPanel id="library" label={labels.library} icon={icons.library} narrow={narrow} open={shown === 'library'} onOpenChange={toggle('library')}>
       <div className="min-h-0 flex-1 overflow-auto">{library(close)}</div>
     </BarPanel>}
-    {panels?.map(panel => <BarPanel key={panel.id} id={panel.id} label={panel.label} icon={panel.icon} narrow={narrow} open={shown === panel.id} onOpenChange={toggle(panel.id)}>
-      {panel.content(close)}
-    </BarPanel>)}
+    {!panelsFirst && hostPanels}
     {conversations?.onNew && <Hinted label={labels.newChat} narrow={narrow} trigger={<Button variant="ghost" size="icon" data-testid="workspace-bar-new" aria-label={labels.newChat} className={iconSize(narrow)} onClick={() => conversations.onNew?.()}><icons.newChat aria-hidden="true" /></Button>} />}
     {controls}
   </div>;

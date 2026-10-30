@@ -13,7 +13,7 @@ const source = process.env.PM_SOURCE_ROOT ?? root;
 const out = `${root}.cache/pm-request-card-test`;
 mkdirSync(out, { recursive: true });
 await build({ stdin: { contents: `export { PmPanelProvider, ImproveLayout } from './registry/pm-panel/pm-panel'; export { useHostTasks } from './registry/pm-panel/pm-task-source'; export { pmTextFr } from './registry/pm-panel/pm-text';`, resolveDir: source, loader: 'tsx' },
-  outfile: `${out}/panel.mjs`, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent', alias: { '@': `${root}examples/app-shell` } });
+  outfile: `${out}/panel.mjs`, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent', alias: { '@': `${root}examples/app-shell`, '@hachej/boring-ui-kit/file-tree.css': `${root}packages/ui/styles/file-tree.css` } });
 
 const assistant = (content, extra = {}) => ({ role: 'assistant', content, api: 'fictional', provider: 'fictional', model: 'fictional', usage: {}, stopReason: 'stop', timestamp: 1, ...extra });
 const user = (id, text) => ({ id, kind: 'message', model: [{ role: 'user', content: text, timestamp: 0 }] });
@@ -56,7 +56,7 @@ async function mount(t, fetchTasks) {
   };
   // The task source reads 300 ms after a change.
   const wait = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 450)); });
-  const card = () => container.querySelector('[data-testid="pm-reply"] [data-boring="task-card"], [data-testid="pm-reply"] [data-task-card], [data-testid="pm-reply"] [role="listitem"], [data-testid="pm-reply"] article');
+  const card = () => container.querySelector('[data-testid="transcript"] [data-task-card]');
   return { show, wait, card, container, act };
 }
 
@@ -66,7 +66,7 @@ test('the list answers 403 once, then 200 on the next turn: the card appears, th
   await app.show(turn);
   await app.wait();
   assert.equal(calls.length, 1, 'read once');
-  const reply = () => app.container.querySelector('[data-testid="pm-reply"]');
+  const reply = () => app.container.querySelector('[data-testid="transcript"]');
   assert.ok(app.card(), 'the card is drawn from the tasks_create result after a 403');
   assert.match(reply().textContent, /Protéines avant les calories/);
   assert.doesNotMatch(reply().textContent, /DEMANDE/);
@@ -78,17 +78,16 @@ test('the list answers 403 once, then 200 on the next turn: the card appears, th
   assert.ok(calls.length >= 2, 'read again on the next turn, never latched');
   assert.match(reply().textContent, /Attend votre avis/);
   assert.ok(reply().querySelector('[data-testid="pm-request-confirm"]'), '« Confirmer » from the list');
-  await app.act(async () => app.container.querySelector('[data-testid="pm-expand"]').click());
-  await app.act(async () => app.container.querySelector('[data-testid="pm-requests"]').click());
+  await app.act(async () => app.container.querySelector('[data-testid="workspace-bar-tasks"]').click());
   await app.wait();
-  assert.match(app.container.querySelector('[data-testid="pm-task-board-seam"]')?.textContent ?? '', /Plan du jour/, '« Mes demandes » lists the host\'s records');
+  assert.match(document.querySelector('[data-testid="pm-task-board-seam"]')?.textContent ?? '', /Plan du jour/, '« Mes demandes » lists the host\'s records');
 });
 
 test('the list never answers: the native card keeps its title and one preparation chip, without unverified viewer actions', async t => {
   const app = await mount(t, (url, init) => new Promise((_, reject) => init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))));
   await app.show(turn);
   await app.wait();
-  const reply = app.container.querySelector('[data-testid="pm-reply"]');
+  const reply = app.container.querySelector('[data-testid="transcript"]');
   assert.ok(app.card(), 'the request card remains present');
   assert.match(reply.textContent, /Protéines avant les calories/);
   assert.doesNotMatch(reply.textContent, /DEMANDE/);

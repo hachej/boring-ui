@@ -95,7 +95,7 @@ async function bundle(name, extra = {}) {
 }
 let freshModule = 0;
 async function bundleEntry(entry, outfile, extra) {
-  await build({ entryPoints: [entry], outfile, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', alias: { '@': `${root}examples/app-shell` }, logLevel: 'silent', ...extra });
+  await build({ entryPoints: [entry], outfile, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', alias: { '@': `${root}examples/app-shell`, '@hachej/boring-ui-kit/file-tree.css': `${root}packages/ui/styles/file-tree.css` }, logLevel: 'silent', ...extra });
   // A fresh module per call: the Back manager keeps its popstate listener on the window it first saw.
   return import(`${pathToFileURL(outfile).href}?${freshModule++}`);
 }
