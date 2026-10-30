@@ -12,6 +12,7 @@ The npm side of the kit: Pi-based agent definitions and handlers, the workspace 
 - `pkg-agent-skills-unlisted` `skillInFolder` is public; `loadUnlisted(conversationId, name)` answers `load_skill` for a skill kept out of the listing. `packages/agent/src/skills.ts`.
 - `pkg-agent-transport` chat transport and conversations handlers. `packages/agent/src/chat-transport.ts`, `conversations.ts`.
 - `pkg-agent-capabilities` file guard, approvals, `ask_user`, `present`, schedules, sandbox. `packages/agent/src/file-guard.ts`, `approval.ts`, `ask-user.ts`, `artifacts.ts`, `schedule.ts`, `sandbox.ts`.
+- `pkg-agent-audit` `createAuditExtension({ sink, user, redact })` (`@hachej/boring-agent/audit`): opt-in, sends each finished tool call to the host's store, attributed to the user; values only through `redact`. `packages/agent/src/audit.ts`.
 - `pkg-agent-delegate-meter` delegate `onChild` and `meter` receive `{ callId, taskId, requestId }`; `meterFromSink` (`@hachej/boring-agent/metering`) feeds a child's spend to a `MeteringSink`. `packages/agent/src/delegate.ts`, `metering.ts`.
 - `pkg-agent-context` request context and mention resolver. `packages/agent/src/prompt-context.ts`, `mentions.ts`.
 - `pkg-agent-questions-delivery` optional native questions, validation and durable application-result delivery. `packages/agent/src/questions.ts`, `validation.ts`, `delivery.ts`.
@@ -40,6 +41,7 @@ Preconditions: `npm ci`; run from the repository root.
 
 - **All.** `npm run check` then `npm test` then `npm run verify`.
 - **Lazy action context.** `pkg-agent-action-context`: `node --test test/packages/agent-actions.test.mjs` exercises skipped preparation, awaited fallback, and fail-closed preparation through the native harness.
+- **Audit.** `pkg-agent-audit`: `node --test test/packages/agent-audit.test.mjs`.
 - **Agent struggle.** `pkg-agent-struggle`: `node --test test/packages/agent-struggle.test.mjs`; a scripted model calls a failing tool with no app code, the sink gets one fingerprint and no content.
 - **Delegate metering.** `pkg-agent-delegate-meter`: `node --test test/packages/agent-delegate-limits.test.mjs`.
 - **Unlisted skills.** `pkg-agent-skills-unlisted`: `node --test test/packages/agent-skills-unlisted.test.mjs`.
