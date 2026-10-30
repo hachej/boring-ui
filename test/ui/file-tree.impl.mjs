@@ -399,7 +399,7 @@ test('file tree renames, moves and deletes a folder with what is inside it; a re
   assert.equal(renamed.state.result.kind, 'committed');
   assert.equal(await f.text('notes/a.md'), 'Fictional a');
   assert.equal(await f.text('notes/deep/b.md'), 'Fictional b');
-  assert.equal(await f.text('docs/a.md'), undefined);
+  assert.equal(await f.text('docs/a.md'), 'missing');
   await f.controller.refresh();
   assert.deepEqual(paths(f).sort(), ['archive', 'notes']);
   await assert.rejects(f.controller.move('notes', 'notes/deep'), TypeError, 'a folder cannot move into itself');
@@ -407,8 +407,8 @@ test('file tree renames, moves and deletes a folder with what is inside it; a re
   assert.equal(await f.text('archive/notes/deep/b.md'), 'Fictional b');
   await f.controller.refresh();
   assert.equal((await f.controller.remove('archive')).state.result.kind, 'committed');
-  assert.equal(await f.text('archive/keep.md'), undefined);
-  assert.equal(await f.text('archive/notes/a.md'), undefined);
+  assert.equal(await f.text('archive/keep.md'), 'missing');
+  assert.equal(await f.text('archive/notes/a.md'), 'missing');
 
   let refuse = true;
   const g = mutable(t, { delete: request => {
@@ -424,7 +424,7 @@ test('file tree renames, moves and deletes a folder with what is inside it; a re
   refuse = false;
   await g.controller.refresh();
   assert.equal((await g.controller.remove('docs')).state.result.kind, 'committed');
-  assert.equal(await g.text('docs/b.md'), undefined);
+  assert.equal(await g.text('docs/b.md'), 'missing');
 });
 
 test('file tree renames, moves and deletes files through the one client with the revision the row knows', async t => {
