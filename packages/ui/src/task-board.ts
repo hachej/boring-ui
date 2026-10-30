@@ -33,6 +33,10 @@ export interface TaskRecord {
   readonly id: string;
   readonly number?: number | string;
   readonly title: string;
+  /** Short host-authored display title; the original title remains the description. */
+  readonly display?: string;
+  /** Canonical host classification, never inferred from prose or an actor name. */
+  readonly technical?: boolean;
   readonly state: TaskState;
   /** Host wording such as “À essayer”, independent of the five board columns. */
   readonly status?: string;

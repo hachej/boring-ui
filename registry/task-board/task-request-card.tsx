@@ -83,7 +83,7 @@ export function TaskRequestCard({ task, variant = 'card', selected, href, onOpen
     const pill = shownPill ?? <TaskStatusPill task={task} locale={locale} viewerAction={viewerAction} sent />;
     const strings = compactStrings[locale];
     const meta = [task.screen && strings.screen(task.screen), task.captureCount !== undefined && captures(task.captureCount)].filter(Boolean).join(' · ');
-    const title = link && actions ? <a {...anchor} className="underline-offset-4 hover:underline">{task.title}</a> : task.title;
+    const title = link && actions ? <a {...anchor} className="underline-offset-4 hover:underline">{task.display ?? task.title}</a> : task.display ?? task.title;
     return <div role="listitem"><Item variant="outline" className="flex-col items-stretch gap-2" data-task-card={task.id} data-variant="compact" {...(link && !actions ? { render: link } : {})}>
       <div className="flex min-w-0 items-center justify-between gap-2"><span className="text-xs font-semibold text-muted-foreground">{strings.label}</span>{pill}</div>
       <div className="min-w-0 text-[15px] leading-tight font-semibold break-words">{title}</div>
@@ -95,7 +95,7 @@ export function TaskRequestCard({ task, variant = 'card', selected, href, onOpen
   return <div role="listitem" className={cn('rounded-[var(--radius-lg)] bg-card', taskTokens.card)}><TaskAttention active={task.waiting_on_you === true}>
     <Item variant="outline" className="flex-col items-stretch gap-1" data-task-card={task.id} data-selected={selected || undefined} {...(link ? { render: link } : {})}>
       <span className="flex min-h-5 min-w-0 items-center justify-between gap-2 text-[11px] text-muted-foreground"><span>{taskMeta(task)}</span>{pill}</span>
-      <span className="min-w-0 text-sm break-words text-foreground">{task.title}</span>
+      <span className="min-w-0 text-sm break-words text-foreground">{task.display ?? task.title}</span>
     </Item>
   </TaskAttention></div>;
 }
