@@ -2,10 +2,11 @@
 
 // The one-line app's task source (spec 2 « Mes demandes » and C7's request card): the host's same-origin task API, behind a feature
 // check. This file is the one adapter between the host's records and `TaskRecord`: the host contract's field names change here only.
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { EntryRecord } from '@earendil-works/pi-durable';
 import type { TaskRecord, TaskState } from '@hachej/boring-ui-kit/task-board';
 import { taskReference } from '@hachej/boring-ui-kit/task-board';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { TaskRequestCard } from '../task-board/task-board';
 import type { ImproveSpec, StudioTaskBoardSeam } from './use-pm-panel';
@@ -20,15 +21,19 @@ export interface HostTask {
   readonly ref?: string;
   readonly number?: string;
   readonly title: string;
+  readonly display?: string;
+  readonly technical?: boolean;
   readonly state: string;
   /** Host wording, shown as is. */
   readonly status?: string;
   readonly created?: string | number;
+  readonly created_at?: string | number;
   readonly updated?: string | number;
-  readonly updated_at?: string | number;
+  readonly updated_at?: string | number | null;
   readonly waiting_on_you?: boolean;
   /** The question, when the task waits on the viewer. */
   readonly question?: string;
+  readonly waiting_on?: { readonly question?: string };
   /** ISO time the requester answered « Confirmer »; absent until then. */
   readonly confirmed_at?: string;
   /** The viewer filed the task. `mine=1` also lists tasks only waiting on the viewer, so only `true` lets them withdraw it. */
@@ -57,19 +62,30 @@ export function taskOutcome(state: string, reason?: string): TaskOutcome | undef
 
 /** « Terminées »' label for any record: the host's outcome when the one line mapped it, else from the state alone. Undefined while open. */
 export const requestOutcome = (task: TaskRecord): TaskOutcome | undefined => (task as HostTaskRecord).outcome ?? taskOutcome(task.state);
-const stamp = (value: string | number | undefined) => value === undefined ? undefined : new Date(value).toISOString();
+const stamp = (value: string | number | null | undefined) => value == null ? undefined : new Date(value).toISOString();
 
 /** Every listed task is the viewer's (the host filtered them), so the viewer is their requester for « Mes demandes ». */
 export function toTaskRecord(task: HostTask, viewer: string): HostTaskRecord {
-  const waiting = task.waiting_on_you === true;
-  const created = stamp(task.created), updated = stamp(task.updated ?? task.updated_at), confirmed = stamp(task.confirmed_at), ref = task.ref ?? task.number;
-  const state: TaskState = waiting ? 'waiting' : STATES.includes(task.state as TaskState) ? task.state as TaskState : 'open', outcome = taskOutcome(state, task.closed_reason);
+  const ended = task.state === 'done' || task.state === 'closed' || task.status === 'abandoned' || task.status === 'shipped';
+  const waiting = !ended && task.waiting_on_you === true;
+  const created = stamp(task.created ?? task.created_at), updated = stamp(task.updated ?? task.updated_at), confirmed = stamp(task.confirmed_at), ref = task.ref ?? task.number;
+  const state: TaskState = task.status === 'abandoned' ? 'closed' : task.status === 'shipped' ? 'done' : waiting ? 'waiting' : STATES.includes(task.state as TaskState) ? task.state as TaskState : 'open', outcome = taskOutcome(state, task.closed_reason ?? (task.status === 'abandoned' ? 'withdrawn' : undefined));
   return {
-    id: task.id, ...(ref ? { number: ref } : {}), title: task.title, ...(task.status ? { status: task.status } : {}), requesterId: viewer, waiting_on_you: waiting, state,
-    ...(waiting ? { waiting_on: { who: viewer, type: 'person' as const, ...(task.question ? { question: task.question } : {}) } } : {}),
+    id: task.id, ...(ref ? { number: ref } : {}), title: task.title, ...(task.display ? { display: task.display } : {}), ...(task.technical === undefined ? {} : { technical: task.technical }), ...(task.status ? { status: task.status } : {}), requesterId: viewer, waiting_on_you: waiting, state,
+    ...(waiting ? { waiting_on: { who: viewer, type: 'person' as const, ...((task.question ?? task.waiting_on?.question) ? { question: task.question ?? task.waiting_on?.question } : {}) } } : {}),
     ...(created ? { created_at: created } : {}), ...(updated ? { updated_at: updated } : {}), ...(confirmed ? { confirmed_at: confirmed } : {}),
     ...(task.is_requester === true ? { is_requester: true as const } : {}), ...(outcome ? { outcome } : {}),
   };
+}
+
+/** Member request vocabulary is shared by the thread card and « Mes demandes », not inferred from status prose. */
+export function PmRequestStatus({ task, text }: { readonly task: TaskRecord; readonly text: PmText }) {
+  const outcome = requestOutcome(task);
+  const status = outcome === 'live' ? 'live' : outcome === 'withdrawn' ? 'withdrawn' : outcome === 'closed' ? 'closed'
+    : task.waiting_on_you === true ? 'waiting' : task.status === 'blocked' ? 'blocked' : task.status === 'verifying' ? 'verifying' : 'preparing';
+  const label = status === 'live' ? text.outcomeLive : status === 'withdrawn' ? text.outcomeWithdrawn : status === 'closed' ? text.outcomeClosed
+    : status === 'waiting' ? text.awaiting : status === 'blocked' ? text.blocked : status === 'verifying' ? text.verifying : text.preparing;
+  return <Badge data-task-status={status} variant={status === 'blocked' ? 'destructive' : 'secondary'}>{label}</Badge>;
 }
 
 /** `null`: no task source for this viewer just now (404 or 403). The hook reads again later; it never latches it (decided 2026-10-29). */
@@ -83,7 +99,7 @@ export async function readTasks(url: string, viewer: string, signal?: AbortSigna
 
 /** Answers the question the task waits on, as the viewer. « Confirmer » is such an answer. */
 export async function answerTask(url: string, id: string, text: string): Promise<void> {
-  const response = await fetch(`${url}/${encodeURIComponent(id)}/answer`, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }) });
+  const response = await fetch(`${url}/${encodeURIComponent(id)}/answer`, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }), signal: AbortSignal.timeout(15_000) });
   if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
 }
 
@@ -93,7 +109,7 @@ export async function answerTask(url: string, id: string, text: string): Promise
  * non-requester, a network failure).
  */
 export async function withdrawTask(url: string, id: string): Promise<'withdrawn' | 'started' | 'refused'> {
-  const response = await fetch(`${url}/${encodeURIComponent(id)}/withdraw`, { method: 'POST', credentials: 'same-origin' }).catch(() => undefined);
+  const response = await fetch(`${url}/${encodeURIComponent(id)}/withdraw`, { method: 'POST', credentials: 'same-origin', signal: AbortSignal.timeout(15_000) }).catch(() => undefined);
   return response?.ok ? 'withdrawn' : response?.status === 409 ? 'started' : 'refused';
 }
 
@@ -181,6 +197,9 @@ export function useHostTasks(url: string | undefined, viewer: string | undefined
   const [refused, setRefused] = useState<ReadonlySet<string>>(() => new Set());
   // « Envoyée » at once: confirmed, nobody started yet. Kept until the host's record says so (or the answer fails).
   const [confirmed, setConfirmed] = useState<ReadonlyMap<string, string>>(() => new Map());
+  const [confirming, setConfirming] = useState<ReadonlySet<string>>(() => new Set());
+  const [confirmFailed, setConfirmFailed] = useState<ReadonlySet<string>>(() => new Set());
+  const pendingConfirm = useRef(new Set<string>());
   const settle = useCallback((task: HostTaskRecord): HostTaskRecord => {
     const gone = withdrawn.get(task.id);
     // The host has the last word once it says something newer: shipped, or reopened after the withdraw.
@@ -208,9 +227,15 @@ export function useHostTasks(url: string | undefined, viewer: string | undefined
   }, [url, viewer, entries, answered, asked]);
   const confirm = useCallback(async (task: TaskRecord) => {
     if (!url) return;
-    setConfirmed(current => new Map(current).set(task.id, task.confirmed_at ?? new Date().toISOString()));
+    if (pendingConfirm.current.has(task.id)) return;
+    pendingConfirm.current.add(task.id);
+    setConfirming(current => new Set(current).add(task.id));
+    setConfirmFailed(current => { const next = new Set(current); next.delete(task.id); return next; });
     const done = await answerTask(url, task.id, text.confirm).then(() => true, () => false);
-    if (!done) setConfirmed(current => { const next = new Map(current); next.delete(task.id); return next; });
+    pendingConfirm.current.delete(task.id);
+    setConfirming(current => { const next = new Set(current); next.delete(task.id); return next; });
+    if (done) setConfirmed(current => new Map(current).set(task.id, task.confirmed_at ?? new Date().toISOString()));
+    else setConfirmFailed(current => new Set(current).add(task.id));
     setAnswered(count => count + 1);
   }, [url, text.confirm]);
   const withdraw = useCallback(async (task: HostTaskRecord) => {
@@ -232,11 +257,12 @@ export function useHostTasks(url: string | undefined, viewer: string | undefined
       const found = made && !withdrawn.has(made.id ?? '') ? requestRecord(made, tasks, viewer) : undefined;
       if (!found) return undefined;
       const task = settle(found);
-      return <TaskRequestCard task={task} variant="compact" locale={text.locale} viewerAction="confirmation" actions={task.waiting_on_you ? <>
-        <Button variant="outline" data-testid="pm-request-modify" onClick={() => edit(task.title)}>{text.modify}</Button>
-        <Button data-testid="pm-request-confirm" onClick={() => { void confirm(task); }}>{text.confirm}</Button>
+      return <TaskRequestCard task={task} variant="compact" locale={text.locale} pill={<PmRequestStatus task={task} text={text} />} actions={task.waiting_on_you ? <>
+        <Button variant="outline" data-testid="pm-request-modify" disabled={confirming.has(task.id)} onClick={() => edit(task.title)}>{text.modify}</Button>
+        <Button data-testid="pm-request-confirm" disabled={confirming.has(task.id)} aria-busy={confirming.has(task.id) || undefined} onClick={() => { void confirm(task); }}>{confirming.has(task.id) ? text.confirming : text.confirm}</Button>
+        {confirmFailed.has(task.id) && <p role="alert" data-testid="pm-confirm-failed" className="col-span-2 m-0 text-sm">{text.confirmFailed}</p>}
       </> : undefined} />;
     },
-  }, [url, tasks, viewer, text, confirm, withdraw, refused, withdrawn, settle, refresh, controller]);
+  }, [url, tasks, viewer, text, confirm, withdraw, refused, withdrawn, settle, refresh, controller, confirming, confirmFailed]);
 }
 const noSubscribe = () => () => undefined;

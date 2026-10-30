@@ -164,7 +164,9 @@ const TimelineRow = memo(function TimelineRow({ item, top, multi, controller, me
     const via = headKind === 'via' && message.via ? <ViaLine via={message.via} className="ms-auto block w-fit max-w-full pb-0.5 pe-1" /> : undefined;
     const live = traced && Boolean(message.streaming);
     const trace = traced ? <HostTrace participant={author.name} steps={message.steps ?? []} streaming={Boolean(message.streaming)} active={item.showSpinner} /> : undefined;
-    const quote = message.replyTo ? <ReplyQuote targetId={message.replyTo} quote={item.quote} onReveal={onReveal} /> : undefined;
+    const quote = message.replyTo && !item.quote?.message.question?.answered ? <ReplyQuote targetId={message.replyTo} quote={item.quote} onReveal={onReveal} /> : undefined;
+    // The person's reply already records their choice. Keep any attached mockups, not a second system-like answered card.
+    if (message.question?.answered) return null;
     if (message.question) return <article data-row-id={item.key} data-role="event" className="flex w-full min-w-0 flex-col">
       {head}{via}
       <Bubble variant="muted" align="start" data-testid="question-bubble">

@@ -89,7 +89,8 @@ test('native requests stay bounded while earlier pages accumulate in order under
   assert.deepEqual(ids(first.entries), [...ids(first.entries)].sort((a, b) => a - b));
   assert.equal(requests[0][0].maxEntryId, Math.max(...activeIds));
   assert.equal(requests[0][1], 40);
-  assert.equal(requests[0][3], context);
+  assert.equal(requests[0][3].telemetry, context.telemetry, 'bounded read preserves the parent context values');
+  assert.ok(requests[0][3].abortSignal, 'only the page read has a cancellation signal');
   await write(f.conversation, 'Fictional late append');
   await observe(controller, state => state.view?.entries.some(entry => entry.model?.some(message => message.content === 'Fictional late append')));
   await controller.loadEarlier();
@@ -139,7 +140,7 @@ test('native paging failure retains the last page and retries the identical boun
   assert.deepEqual(ids(retried.entries.slice(-40)), ids(first.entries));
   assert.deepEqual(requests[2][0], requests[1][0]);
   assert.deepEqual(requests[2][2], requests[1][2]);
-  assert.equal(requests[2][3], context);
+  assert.equal(requests[2][3].telemetry, context.telemetry);
 });
 
 test('a fork accepts inherited parent-owned records through the public native history capability', { timeout: 10000 }, async t => {
@@ -275,4 +276,28 @@ test('repeated, oversized and duplicate native pages refuse instead of looping o
   assert.equal(repeated.getSnapshot().history.kind, 'error');
   assert.deepEqual(ids(repeated.getSnapshot().history.entries), ids(first.entries));
   assert.equal(calls, 2);
+});
+
+test('an unresponsive older-page read times out visibly and retries without accepting its late result', async t => {
+  const f = await fixture(t);
+  await write(f.conversation, 'Fictional older message');
+  const stalled = deferred(); let attempts = 0;
+  const controller = f.controller({ history: { id: f.conversation.id, entries: (...args) => ++attempts === 1 ? stalled.promise : f.conversation.entries(...args) } });
+  await controller.connect();
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const read = controller.loadEarlier();
+  await Promise.resolve(); await Promise.resolve();
+  assert.equal(controller.getSnapshot().history.kind, 'loading');
+  t.mock.timers.tick(15_000);
+  await read;
+  assert.equal(controller.getSnapshot().history.kind, 'error');
+  assert.equal(controller.getSnapshot().history.hasMore, true);
+  t.mock.timers.reset();
+  await controller.loadEarlier();
+  assert.equal(attempts, 2);
+  assert.equal(controller.getSnapshot().history.kind, 'ready');
+  assert.ok(labels(controller.getSnapshot().history.entries).includes('Fictional older message'));
+  stalled.resolve({ items: [], next: undefined });
+  await Promise.resolve(); await Promise.resolve();
+  assert.ok(labels(controller.getSnapshot().history.entries).includes('Fictional older message'), 'late first read cannot replace the accepted retry');
 });

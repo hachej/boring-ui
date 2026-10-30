@@ -147,3 +147,32 @@ test('the label: closed_reason first; done alone is « En ligne », any other cl
   assert.equal(outcome({ state: 'closed', closed_reason: 'toString' }), 'closed', 'an unknown reason: « Fermée »');
   for (const state of ['open', 'working', 'waiting']) assert.equal(outcome({ state }), undefined, state);
 });
+
+
+test('member request rows use short display titles and one live chip, needs-you first, with technical rows collapsed', async t => {
+  const tasks = [
+    { ...OPEN[0], display: 'Photo du déjeuner', title: 'Je voudrais une photo de mon déjeuner chaque jour avec tous les détails', confirmed_at: '2026-10-29T08:00:00Z' },
+    { ...OPEN[1], display: 'Repère sur la jauge', status: 'verifying' },
+    { id: id(6), title: 'Choisir une piste', state: 'waiting', waiting_on_you: true, updated_at: '2026-10-20T08:00:00Z' },
+    { id: id(7), title: 'Un bouton bloqué', state: 'working', status: 'blocked' },
+    { id: id(8), title: 'Infrastructure fictive', state: 'working', technical: true },
+    { id: id(9), title: 'Ancienne demande', state: 'working', status: 'abandoned', waiting_on_you: true },
+  ];
+  const app = await mount(t, list(() => tasks));
+  assert.equal(app.openCards()[0], id(6), 'needs-you before more recent work');
+  const card = n => app.seam().querySelector(`[data-task-card="${id(n)}"]`);
+  assert.equal(card(1).querySelector('[data-task-status]')?.textContent, 'En préparation');
+  assert.equal(card(2).querySelector('[data-task-status]')?.textContent, 'Vérification');
+  assert.equal(card(6).querySelector('[data-task-status]')?.textContent, 'Attend votre avis');
+  assert.equal(card(7).querySelector('[data-task-status]')?.textContent, 'Bloqué');
+  assert.equal(card(8), null, 'technical cards are not mounted until expanded');
+  assert.doesNotMatch(card(1).textContent, /Je voudrais|D-301/);
+  for (const node of app.seam().querySelectorAll('[data-task-card]')) assert.equal(node.querySelectorAll('[data-task-status]').length, 1);
+  await app.click(`[data-task-open="${id(1)}"]`);
+  assert.match(app.seam().querySelector('[data-task-detail]')?.textContent ?? '', /Je voudrais une photo/);
+  await app.click('[data-testid="pm-request-back"]');
+  await app.click('[data-testid="pm-technical-toggle"]');
+  assert.match(card(8)?.textContent ?? '', /Infrastructure fictive/);
+  await app.click('[data-testid="pm-finished-toggle"]');
+  assert.equal(app.finishedCards().find(card => card.id === id(9))?.label, 'Retirée', 'abandoned is finished even with stale waiting flag');
+});

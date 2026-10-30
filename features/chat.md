@@ -25,6 +25,8 @@
 - `chat-remote` `useRemoteChat` connects a concrete controller to the host's chat transport, with `requestContext` and placement. `packages/ui/src/chat-react-remote.ts`, `chat-react-controller.ts`; old hook imports re-export for one release.
 - `chat-plugins` `withChatPlugins(props)` fills every missing component and card. `registry/pi-chat-plugins/chat-plugins.ts`.
 
+- `chat-history-retry` native older-page reads time out after 15 seconds, retain the prior page and permit retry; late results cannot replace accepted history. New native threads without a head boundary do not advertise nonexistent older records. `packages/ui/src/native-chat.ts`, `registry/pi-chat/pi-chat.tsx`.
+
 ## How to get to it (user POV)
 
 - Inside the agent layer, an agent workspace, the ambient bar or a bare `PiChat` page.
@@ -47,6 +49,8 @@ Preconditions: `npm run build`, Chromium; journeys use a scripted fake model unl
 - **Paging and drafts.** `chat-transcript`, `chat-composer`: `npm run test:chat-scroll` drives the 500-row long-chat example; `npm run draft-recovery:journey` checks reload recovery.
 - **Headless session and recovery.** `chat-session`, `chat-connection-status`: `node --test test/packages/ui-chat-session.test.mjs test/ui/ambient-position.test.mjs` drives public send/restore/queue/upload/paste/pickers (including overlapping feedback with actual native unknown admission) and compact/expanded Ambient errors/status, short-label overrides and host-renderer precedence. `npm run staged-chat:journey` and `npm run ambient:journey:scripted` drive the browser controls.
 - **Proof.** Transcript ARIA snapshot and screenshot per ID, plus the stored conversation read again after reload.
+
+- `chat-history-retry`: `node --test test/packages/ui-native-chat-history.test.mjs test/ui/chat-earlier-records.test.mjs` exercises timeout, retry, late results, empty/new threads and persisted history through public controllers and chat.
 
 ## Gotchas
 

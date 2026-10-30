@@ -127,7 +127,7 @@ export function QuestionCard({ call, result, answer, questionId, live = false }:
         {state === 'answered' ? <CheckIcon role="img" aria-label={labels.answered} /> : state === 'sent' ? <Spinner aria-label={labels.waitingForAgent} /> : <CircleSlashIcon role="img" aria-label={labels.notAnswered} />}
       </ItemMedia>
       <ItemContent className="min-w-0">
-        <ItemDescription data-testid="question-text" className={wrap}>{question.question || labels.askedQuestion}</ItemDescription>
+        {state === 'failed' && <ItemDescription data-testid="question-text" className={wrap}>{question.question || labels.askedQuestion}</ItemDescription>}
         {values ? <div className="flex min-w-0 flex-col gap-2">{question.items.map((item, i) => <div key={i} data-testid="question-answer-item" className="flex min-w-0 flex-col gap-1">
           <ItemDescription className={wrap}>{item.question}</ItemDescription>
           {values[i] === labels.skipped

@@ -1,6 +1,6 @@
 import type { Context } from '@earendil-works/chord';
 import { awaitWithContext, withCancel } from '@earendil-works/chord/context';
-import type { Conversation, ConversationView, ConversationWatch, Cursor, EntryId, EntryRecord, InputSubmissionDraft, Submission, SubmissionRecord, Tx, WatchEnd } from '@earendil-works/pi-durable';
+import type { Conversation, ConversationView, ConversationWatch, Cursor, EntryId, EntryRecord, Page, InputSubmissionDraft, Submission, SubmissionRecord, Tx, WatchEnd } from '@earendil-works/pi-durable';
 import type { ImageContent } from '@earendil-works/pi-ai';
 import type { ChatSource } from './pi.js';
 import { randomUUID } from '@hachej/boring-files/platform';
@@ -320,7 +320,12 @@ export function createNativeChatController(options: NativeChatOptions) {
         try {
           if (!current()) return;
           if (historySource?.id !== conversation.id) throw new Error('History conversation identity changed');
-          const page = await readHistory({ maxEntryId: scan.maxEntryId }, 40, scan.cursor === undefined ? undefined : structuredClone(scan.cursor), context);
+          // Bound only this read, never the borrowed conversation or its running task. A late page cannot publish after timeout.
+          const reading = withCancel(context);
+          const timer = setTimeout(() => reading.cancel(new Error('Conversation history read timed out')), 15_000);
+          let page: Page<EntryRecord, Cursor>;
+          try { page = await awaitWithContext(readHistory({ maxEntryId: scan.maxEntryId }, 40, scan.cursor === undefined ? undefined : structuredClone(scan.cursor), reading.context), reading.context); }
+          finally { clearTimeout(timer); reading.cancel(); }
           if (!current()) return;
           if (historySource?.id !== conversation.id) throw new Error('History conversation identity changed');
           if (page.items.length > 40 || !page.items.length && page.next !== undefined) throw new Error('History page did not respect its bounds');

@@ -126,15 +126,14 @@ const answeredResult = (id, answer) => ({ role: 'toolResult', toolCallId: id, to
 const OWNER_QUESTION = 'Pour la première version, sans accès automatique aux plateformes pour l’instant, quel périmètre valides-tu ?';
 const OWNER_ANSWER = 'Attendre les accès pour inclure la découverte automatique dès la première version';
 
-test('an answered question is a quiet recap: the answer outweighs the question, one answered signal, no badge', async t => {
+test('an answered question shows the chosen answer, not the repeated prompt or status text', async t => {
   const page = await chat(t, { locale: 'fr' });
   await page.write([assistant([call('owner-1', 'ask_user', { question: OWNER_QUESTION, options: ['Commencer sans', OWNER_ANSWER] })]), answeredResult('owner-1', OWNER_ANSWER)]);
   const card = page.container.querySelector('[data-testid=question-card]');
   assert.equal(card.dataset.state, 'answered');
   const question = card.querySelector('[data-testid=question-text]'), answer = card.querySelector('[data-testid=question-answer]');
-  assert.equal(question.textContent, OWNER_QUESTION);
+  assert.equal(question, null, 'the prompt no longer repeats after choosing');
   assert.equal(answer.textContent, OWNER_ANSWER);
-  assert.equal(question.closest('[data-slot]').dataset.slot, 'item-description', 'the question is the muted description');
   assert.equal(answer.closest('[data-slot]').dataset.slot, 'item-title', 'the answer is the title');
   assert.equal(card.dataset.slot, 'item', 'a stock Item');
   assert.equal(card.querySelector('[data-slot=item-media] svg')?.getAttribute('aria-label'), 'Répondu');

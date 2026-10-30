@@ -1,6 +1,9 @@
 /** Spec 1 §9 and spec 2's strings, character for character: FR for the app, EN for Studio. */
 export interface PmText {
   readonly locale: 'fr' | 'en';
+  readonly connecting: string;
+  readonly connectionFailed: string;
+  readonly retry: string;
   readonly placeholderBefore: string;
   readonly placeholderAfter: string;
   readonly hintIdle: string;
@@ -31,6 +34,12 @@ export interface PmText {
   readonly close: string;
   readonly review: string;
   readonly requests: string;
+  readonly awaiting: string;
+  readonly preparing: string;
+  readonly verifying: string;
+  readonly blocked: string;
+  readonly inProgress: string;
+  readonly technical: string;
   readonly back: string;
   readonly subtitle: (app: string) => string;
   /** Click to comment (desktop, spec 1 §3b). */
@@ -42,6 +51,9 @@ export interface PmText {
   /** The request card's two answers (C7): « Modifier » goes back to the composer, « Confirmer » is the viewer's answer to the task. */
   readonly modify: string;
   readonly confirm: string;
+  readonly confirming: string;
+  readonly confirmFailed: string;
+  readonly answerFailed: string;
   /** The requester withdraws a request nobody started (« Mes demandes », decided 2026-10-29): the action, its confirm step and its error line. */
   readonly withdraw: string;
   readonly withdrawAsk: string;
@@ -68,7 +80,7 @@ export const clock = (seconds: number): string => {
 const captures = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 export const pmTextFr: PmText = {
-  locale: 'fr',
+  locale: 'fr', connecting: 'Connexion…', connectionFailed: 'La conversation est momentanément indisponible. Réessayez.', retry: 'Réessayer',
   placeholderBefore: 'Décrivez le problème, ou ', placeholderAfter: ' pour me le montrer.',
   hintIdle: 'Touchez ce que vous voulez montrer', hintRec: 'Parlez et touchez ce que vous montrez', hintRecShort: 'Parlez et touchez',
   mode: 'Mode', select: 'Sélectionner', navigate: 'Naviguer', done: 'Terminer', doneLabel: 'Terminer : relire dans le composer', speak: 'Parler',
@@ -78,16 +90,17 @@ export const pmTextFr: PmText = {
   mentionHeader: query => `TÂCHES · ${query}`, onYou: 'À vous',
   added: (n, kind, label) => `Élément ${n} ajouté : ${kind} · ${label}`, removed: n => `Élément ${n} retiré`,
   title: "Améliorer l'app", openPanel: 'Ouvrir le panneau', close: 'Fermer', review: 'Relisez, puis envoyez', requests: 'Mes demandes', back: '‹ Retour',
+  awaiting: 'Attend votre avis', preparing: 'En préparation', verifying: 'Vérification', blocked: 'Bloqué', inProgress: 'En cours', technical: 'Technique',
   subtitle: app => `Le chef de projet · ${app}`,
   commentOn: (kind, label) => `Commenter ${kind} · ${label}`, commentPlaceholder: 'Votre commentaire…', addToMessage: 'Ajouter au message', sendToPm: 'Envoyer au PM', sentToPm: 'Envoyé au PM',
-  modify: 'Modifier', confirm: 'Confirmer', failed: "Le chef de projet n'a pas pu terminer. Réessayez.",
+  modify: 'Modifier', confirm: 'Confirmer', confirming: 'Confirmation…', confirmFailed: 'Impossible de confirmer pour le moment. Réessayez.', answerFailed: 'La réponse n’a pas été envoyée. Votre texte est conservé. Réessayez.', failed: "Le chef de projet n'a pas pu terminer. Réessayez.",
   withdraw: 'Retirer', withdrawAsk: 'Retirer cette demande\u00a0?', cancel: 'Annuler', withdrawFailed: 'Impossible de retirer la demande.',
   finished: n => `Terminées (${n})`, outcomeLive: 'En ligne', outcomeWithdrawn: 'Retirée', outcomeClosed: 'Fermée',
   openMockup: 'Ouvrir', mockupLoading: 'Chargement…', mockupUnavailable: "La maquette n'est pas disponible.",
 };
 
 export const pmTextEn: PmText = {
-  locale: 'en',
+  locale: 'en', connecting: 'Connecting…', connectionFailed: 'The conversation is temporarily unavailable. Try again.', retry: 'Try again',
   placeholderBefore: 'Describe the problem, or ', placeholderAfter: ' to show me',
   hintIdle: 'Tap what you want to show', hintRec: 'Speak and tap what you show', hintRecShort: 'Speak and tap',
   mode: 'Mode', select: 'Select', navigate: 'Navigate', done: 'Done', doneLabel: 'Done: reread in the composer', speak: 'Speak',
@@ -97,9 +110,10 @@ export const pmTextEn: PmText = {
   mentionHeader: query => `TASKS · ${query}`, onYou: 'On you',
   added: (n, kind, label) => `Item ${n} added: ${kind} · ${label}`, removed: n => `Item ${n} removed`,
   title: 'Improve the app', openPanel: 'Open the panel', close: 'Close', review: 'Review, then send', requests: 'My requests', back: '‹ Back',
+  awaiting: 'Needs your input', preparing: 'In preparation', verifying: 'Verification', blocked: 'Blocked', inProgress: 'In progress', technical: 'Technical',
   subtitle: app => `The project lead · ${app}`,
   commentOn: (kind, label) => `Comment on ${kind} · ${label}`, commentPlaceholder: 'Your comment…', addToMessage: 'Add to message', sendToPm: 'Send to the PM', sentToPm: 'Sent to the PM',
-  modify: 'Modify', confirm: 'Confirm', failed: "The PM couldn't finish. Try again.",
+  modify: 'Modify', confirm: 'Confirm', confirming: 'Confirming…', confirmFailed: 'Could not confirm right now. Try again.', answerFailed: 'Your answer was not sent. Your text is kept. Try again.', failed: "The PM couldn't finish. Try again.",
   withdraw: 'Withdraw', withdrawAsk: 'Withdraw this request?', cancel: 'Cancel', withdrawFailed: "Couldn't withdraw the request.",
   finished: n => `Finished (${n})`, outcomeLive: 'Live', outcomeWithdrawn: 'Withdrawn', outcomeClosed: 'Closed',
   openMockup: 'Open', mockupLoading: 'Loading…', mockupUnavailable: 'The mockup is not available.',

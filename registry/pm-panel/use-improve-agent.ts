@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRemoteChat } from '@hachej/boring-ui-kit/chat-react';
 import { connectRevisionProvider } from '@hachej/boring-files/revision';
 import type { RevisionProvider } from '@hachej/boring-files/revision';
@@ -61,18 +61,20 @@ function artifactReader(endpoint: string): PmReadArtifact {
 }
 
 /** Resolves `{ agent }` once `active` (the first open), then keeps the controller. `undefined` while connecting or offline (`problem`). */
-export function useImproveAgent(value: ImproveProp | undefined, active: boolean, defaults: { readonly appName?: string; readonly locale?: string }): { readonly spec: ImproveSpec | undefined; readonly problem: string | undefined } {
+export function useImproveAgent(value: ImproveProp | undefined, active: boolean, defaults: { readonly appName?: string; readonly locale?: string }): { readonly spec: ImproveSpec | undefined; readonly problem: string | undefined; readonly retry: () => void } {
   const agent = isImproveAgent(value) ? value : undefined;
   const base = agent ? agent.base ?? `api/${encodeURIComponent(agent.agent)}` : undefined;
   const [door, setDoor] = useState<{ readonly base: string; readonly door: Door }>();
   const [requested, setRequested] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const retry = useCallback(() => { setDoor(undefined); setAttempt(value => value + 1); }, []);
   if (active && agent && !requested) setRequested(true);
   useEffect(() => {
     if (!base || !requested) return;
     const abort = new AbortController();
-    openDoor(base, abort.signal).then(result => setDoor({ base, door: result }), (error: unknown) => { if (!abort.signal.aborted) setDoor({ base, door: { error: error instanceof Error ? error.message : String(error) } }); });
+    openDoor(base, AbortSignal.any([abort.signal, AbortSignal.timeout(15_000)])).then(result => setDoor({ base, door: result }), (error: unknown) => { if (!abort.signal.aborted) setDoor({ base, door: { error: error instanceof Error ? error.message : String(error) } }); });
     return () => abort.abort();
-  }, [base, requested]);
+  }, [base, requested, attempt]);
   const open = door && door.base === base && 'identity' in door.door ? door.door : undefined;
   const remote = useRemoteChat({ conversationId: open?.conversationId, endpoint: id => new URL(`${appUrl(base ?? '')}/chat?conversation=${encodeURIComponent(String(id))}`), fetch: sameOrigin, identity: open?.identity });
   const ready = remote.status === 'ready' ? remote : undefined;
@@ -92,5 +94,5 @@ export function useImproveAgent(value: ImproveProp | undefined, active: boolean,
     } },
   } : undefined, [agent, value, ready, tasks, readArtifact, defaults.appName, defaults.locale]);
   const problem = door && 'error' in door.door ? door.door.error : remote.status === 'offline' ? remote.error : undefined;
-  return { spec, problem };
+  return { spec, problem, retry };
 }

@@ -550,10 +550,8 @@ test('PiChat renders and operates the host shared conversation', { timeout: 6000
       assert.ok(open.querySelector('[data-testid=question-reply]'), 'free text is allowed: Reply');
       assert.match(open.querySelector('[data-testid=question-prompt]').textContent, /Which format\?/);
       const done = box.querySelector('[data-shared-message=q-2] [data-testid=question-card]');
-      assert.equal(done.dataset.answered, 'true');
-      assert.equal(done.querySelector('[data-testid=question-option]'), null, 'answered: no choices');
-      assert.equal(done.querySelector('[data-testid=question-reply]'), null);
-      assert.match(done.querySelector('[data-testid=question-answered]').textContent, /Answered/);
+      assert.equal(done, null, 'an answered card does not repeat the prompt or show an Answered log');
+      assert.doesNotMatch(box.textContent, /Which size\?|Answered/);
       await act(async () => open.querySelector('[data-testid=question-reply]').click());
       assert.ok(box.querySelector('[data-testid=composer-reply]'), 'Reply puts the composer on the question');
       await act(async () => [...open.querySelectorAll('[data-testid=question-option]')].find(button => button.textContent === 'CSV').click());
