@@ -133,7 +133,7 @@ export function createFileTreeController({ revisionProvider }: { readonly revisi
     if (!attempt) throw new Error('Unknown upload operation');
     let result: PublicationResult;
     try { result = parsePublicationResult(input); } catch { return unknown(operationId, 'The upload acknowledgement was invalid; check its status'); }
-    if (result.kind === 'partial' || (result.kind === 'unknown' && result.operationId !== operationId)) return unknown(operationId, 'The upload acknowledgement did not match its operation');
+    if (result.kind === 'unknown' && result.operationId !== operationId) return unknown(operationId, 'The upload acknowledgement did not match its operation');
     if (result.kind !== 'committed') return result;
     const receipt = result.receipt, change = receipt.changes[0], expected = attempt.request.changes[0], identity = revisionProvider.identity;
     if (receipt.operationId !== operationId || receipt.argumentDigest !== attempt.digest || !receipt.evidenceRef
@@ -182,7 +182,7 @@ export function createFileTreeController({ revisionProvider }: { readonly revisi
           ? await revisionProvider.rename!({ from, to: revisionProvider.locate(to), expectedRevision: known, operationId, ...(prune ? { pruneEmptied: true as const } : {}) }, lifetime.signal)
           : await revisionProvider.delete!({ path: from, expectedRevision: known, operationId, ...(prune ? { pruneEmptied: true as const } : {}) }, lifetime.signal);
         try { result = parsePublicationResult(answer); } catch { result = unknown(operationId, 'The acknowledgement was invalid; read the folder again before retrying'); }
-        if (result.kind === 'partial' || (result.kind === 'unknown' && result.operationId !== operationId)) result = unknown(operationId, 'The acknowledgement did not match its operation');
+        if (result.kind === 'unknown' && result.operationId !== operationId) result = unknown(operationId, 'The acknowledgement did not match its operation');
       }
     } catch (error) {
       result = error instanceof PublicationNotDispatchedError && error.operationId === operationId ? unavailableResult(`${nameOf(path)} was not changed: the request was not sent`)

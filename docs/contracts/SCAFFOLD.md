@@ -42,7 +42,7 @@ ChatSource remains the exact trusted in-process ConversationWatch binding. The [
 
 ## Resource intent and evidence
 
-PublicationRequest contains a stable request ID, a nonempty change list, explicit all-or-nothing/per-change intent, and optional exact revision/absence preconditions. The authenticated boundary snapshots mutable bytes and computes/checks the canonical argument digest. The caller supplies neither trusted digest nor approval authority. ResourceAccess carries host-resolved identity/policy separately; ResourceClient cannot accept it as browser authority.
+PublicationRequest contains a stable request ID, a nonempty change list, all-or-nothing intent, and optional exact revision/absence preconditions. The authenticated boundary snapshots mutable bytes and computes/checks the canonical argument digest. The caller supplies neither trusted digest nor approval authority. ResourceAccess carries host-resolved identity/policy separately; ResourceClient cannot accept it as browser authority.
 
 An atomic request must be refused before effects when the provider cannot meet it; never silently downgrade it. Per-change partial results retain operation ID, input index, full target/view and each observed outcome. Runtime validation checks complete/unique index coverage, digest and target/receipt agreement. A committed change is create/replace/delete with valid before/after references, not two null values.
 

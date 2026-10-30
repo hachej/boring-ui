@@ -76,7 +76,6 @@ export function decodeCall(input: ReturnType<typeof envelope>): ResourceCall {
     return change.kind === 'delete' ? change : { ...change, bytes: bytes(change.bytes) };
   });
   const request = publicationSnapshot({ ...value, changes });
-  if (request.atomicity !== 'all-or-nothing') throw new TypeError('Remote per-change publication is not qualified');
   return { kind: 'publish', value: request };
 }
 
@@ -138,7 +137,6 @@ function outcomeAgreement(result: PublicationOutcome, operationId: string, selec
 
 export function publicationResult(value: unknown, operationId: string, selected: ResourceIdentity, request?: PublicationRequest, digest?: string): PublicationResult {
   const result = parsePublicationResult(value);
-  if (result.kind === 'partial') throw new TypeError('Remote partial receipts are not qualified');
   outcomeAgreement(result, operationId, selected, request?.changes, digest);
   return result;
 }

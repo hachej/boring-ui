@@ -79,7 +79,7 @@ function change(value: unknown): ResourceChange {
 export function publicationSnapshot(value: unknown): PublicationRequest {
   const input = object(value);
   if (!Array.isArray(input.changes) || !input.changes.length) throw new TypeError('Publication requires changes');
-  if (input.atomicity !== 'all-or-nothing' && input.atomicity !== 'per-change') throw new TypeError('Invalid atomicity');
+  if (input.atomicity !== 'all-or-nothing') throw new TypeError('Invalid atomicity');
   const [first, ...rest] = input.changes;
   const changes: NonEmpty<ResourceChange> = [change(first), ...rest.map(change)];
   const targets = changes.map(item => JSON.stringify(item.target.resource) + JSON.stringify(item.target.view));
@@ -169,15 +169,5 @@ function publicationOutcome(value: unknown): PublicationOutcome {
 
 /** Parse transport/provider output before treating it as acknowledgement. */
 export function parsePublicationResult(value: unknown): PublicationResult {
-  const input = object(value);
-  if (input.kind !== 'partial') return publicationOutcome(input);
-  if (!Array.isArray(input.items) || !input.items.length) throw new TypeError('Partial publication requires items');
-  const items = input.items.map(value => {
-    const item = object(value);
-    if (typeof item.changeIndex !== 'number' || !Number.isSafeInteger(item.changeIndex) || item.changeIndex < 0) throw new TypeError('Invalid change index');
-    return { changeIndex: item.changeIndex, target: locator(item.target), outcome: publicationOutcome(item.outcome) };
-  });
-  const [first, ...rest] = items;
-  if (!first || new Set(items.map(item => item.changeIndex)).size !== items.length) throw new TypeError('Invalid partial publication coverage');
-  return { kind: 'partial', operationId: identifier(input.operationId), items: [first, ...rest] };
+  return publicationOutcome(object(value));
 }

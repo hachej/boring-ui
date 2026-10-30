@@ -116,7 +116,7 @@ export function createTextBuffer(options: TextBufferOptions) {
     let outcome: PublicationResult;
     try { outcome = parsePublicationResult(value); }
     catch { outcome = unknown(current, 'Publication returned a malformed acknowledgement'); }
-    if (outcome.kind === 'partial' || (outcome.kind === 'unknown' && outcome.operationId !== current.request.operationId)) {
+    if (outcome.kind === 'unknown' && outcome.operationId !== current.request.operationId) {
       outcome = unknown(current, 'Publication returned an outcome for a different operation or atomicity');
     }
     let result: SaveResult;

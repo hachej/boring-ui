@@ -362,11 +362,11 @@ test('a provider cannot disclose a read or receipt for another actor or selected
   assert.equal((await remote.lookup('secret')).kind, 'unknown');
 });
 
-test('per-change requests never dispatch and partial acknowledgements remain unqualified', async t => {
+test('per-change requests never dispatch and a partial acknowledgement reads as unknown', async t => {
   const { handler, client } = fixture(t);
   let calls = 0;
   const remote = client({ fetch: request => { calls++; return handler(request); } });
-  await assert.rejects(remote.publish({ ...create('partial', 'notes.md', Uint8Array.of(1)), atomicity: 'per-change' }), PublicationNotDispatchedError);
+  await assert.rejects(remote.publish({ ...create('partial', 'notes.md', Uint8Array.of(1)), atomicity: 'per-change' }), /Invalid atomicity/);
   assert.equal(calls, 0);
   assert.equal((await client().read(latest('notes.md'))).kind, 'missing');
   const partial = client({ fetch: async request => {
@@ -465,7 +465,7 @@ test('local publication preparation reports non-dispatch without asserting the o
   await assert.rejects(client.publish(create('aborted-new', 'other.md', Uint8Array.of(1)), aborted.signal),
     error => error.name === 'PublicationNotDispatchedError' && error.operationId === 'aborted-new');
   assert.equal(calls, 2);
-  await assert.rejects(client.publish({ ...first, atomicity: 'per-change' }), error => error.name === 'PublicationNotDispatchedError');
+  await assert.rejects(client.publish({ ...first, atomicity: 'per-change' }), /Invalid atomicity/);
   assert.equal(calls, 2);
 });
 

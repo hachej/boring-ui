@@ -75,7 +75,7 @@ function MountedHtmlViewer({ components, controller, title = 'HTML document', cl
     }).catch(() => { if (active.current) setError('The document operation failed. Your source has been retained.'); });
   };
   const status = disposed ? 'Viewer disposed' : snapshot.readOnly ? 'Read only' : pending ? 'Saving selected source' : unknown ? 'Save unconfirmed. Reconcile before saving again.' : snapshot.save.kind === 'settled' && snapshot.save.result.kind !== 'saved'
-    ? snapshot.save.result.kind === 'partial' ? 'Save unconfirmed' : snapshot.save.result.reason
+    ? snapshot.save.result.reason
     : snapshot.dirty ? 'Unsaved changes' : 'Saved';
   return <section data-boring="html-viewer" className={['boring-html-viewer', className].filter(Boolean).join(' ')} aria-label={title}>
     {header && <header><strong>{title}</strong><span role="status">{status}</span></header>}

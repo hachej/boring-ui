@@ -71,7 +71,6 @@ export function createResourceClient(options: ResourceClientOptions): ResourceCl
         const captured = publicationSnapshot(request);
         let digest: string;
         try {
-          if (captured.atomicity !== 'all-or-nothing') throw new TypeError('Remote per-change publication is not qualified');
           digest = await publicationDigest(captured);
         } catch { throw new PublicationNotDispatchedError(captured.operationId); }
         try {

@@ -328,7 +328,6 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
     const moving = 'from' in request ? request : undefined;
     const publication = 'changes' in request ? request : undefined;
     const digest = moving ? await renameDigest(moving) : await publicationDigest(publication!);
-    if (publication && publication.atomicity !== 'all-or-nothing') return { kind: 'unavailable', reason: 'This provider accepts all-or-nothing publication only' };
     if (publication && publication.changes.length !== 1 && !batch) return { kind: 'unavailable', reason: 'This provider cannot apply a multi-file batch atomically; only a single-file change is accepted' };
     const changes: readonly ResourceChange[] = moving ? [{ kind: 'delete', target: { ...moving.from, revision: moving.expectedRevision } }] : publication!.changes;
     const expectations: ResourceExpectation[] = [
