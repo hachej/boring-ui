@@ -456,7 +456,7 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
           for (let folder = leaving.slice(0, leaving.lastIndexOf('/') + 1).replace(/\/$/, ''); folder; folder = folder.slice(0, folder.lastIndexOf('/') + 1).replace(/\/$/, '')) {
             const listed = await fs.listDir(absolute(folder), fsContext()).catch(() => undefined);
             if (!listed?.ok || listed.value.length) break;
-            const gone = await fs.remove(absolute(folder), { recursive: true }, fsContext()).catch(() => undefined);
+            const gone = await fs.remove(absolute(folder), { recursive: false }, fsContext()).catch(() => undefined);
             if (!gone?.ok) break;
           }
         } else {
