@@ -211,6 +211,11 @@
       ],
       "files": [
         {
+          "path": "registry/utils/back.ts",
+          "type": "registry:lib",
+          "target": "components/utils/back.ts"
+        },
+        {
           "path": "registry/utils/use-draggable.ts",
           "type": "registry:hook",
           "target": "components/utils/use-draggable.ts"
@@ -3036,6 +3041,21 @@
           "path": "registry/pm-panel/point-state.ts",
           "type": "registry:lib",
           "target": "components/pm-panel/point-state.ts"
+        },
+        {
+          "path": "registry/pm-panel/use-point-page.ts",
+          "type": "registry:hook",
+          "target": "components/pm-panel/use-point-page.ts"
+        },
+        {
+          "path": "registry/pm-panel/point-frames.ts",
+          "type": "registry:hook",
+          "target": "components/pm-panel/point-frames.ts"
+        },
+        {
+          "path": "registry/pm-panel/pm-host-theme.ts",
+          "type": "registry:hook",
+          "target": "components/pm-panel/pm-host-theme.ts"
         },
         {
           "path": "registry/pm-panel/capture.ts",

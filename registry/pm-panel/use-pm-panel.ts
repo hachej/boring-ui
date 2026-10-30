@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react';
-import { MASKED_NAME, accessibleNameOf, anchorOf, createOverlay, createPicker, createPrivacyPolicy } from '@hachej/boring-feedback/page';
+import { createPrivacyPolicy } from '@hachej/boring-feedback/page';
 import type { PrivacyPolicy, SpeechSegment } from '@hachej/boring-feedback/page';
 import { useVoiceAttempt } from '@hachej/boring-ui-kit/chat-react/voice';
 import { appendToDraft, voiceRefusalLabel } from '@hachej/boring-ui-kit/chat-text';
@@ -11,11 +11,12 @@ import type { ComposerProps } from '../pi-chat/composer';
 import { derive, waitingPart } from '@hachej/boring-ui-kit/chat-view';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { frenchChatLabels } from '../pi-chat/labels-fr';
-import { feedbackLabels, feedbackLabelsFr } from '../feedback/feedback-labels';
 import type { PointChip } from './point-state';
 import { alignedTranscript, createPointState, marker, pointReducer, renumberText } from './point-state';
 import { pmTextFor } from './pm-text';
-import { captureElement } from './capture';
+import { useAppFrame } from './point-frames';
+import { usePins, usePointPage } from './use-point-page';
+import type { PointPick, PointPin } from './use-point-page';
 import { POINT_PREFACE } from './point-message';
 
 export interface PmTranscript { readonly text: string; readonly segments?: readonly SpeechSegment[] }
@@ -78,33 +79,7 @@ interface CaptureBatch {
 }
 const defaultPolicy = createPrivacyPolicy();
 const NOTHING = new Error('nothing heard');
-/** The picker's overlay is the pin layer's host only while picking; pins are drawn by the overlay below (corner pins, the element's radius). */
-const PICK_STYLES = '.box[data-tone="pinned"] { display: none; } .label { display: none; } .box[data-tone="hover"] { border-width: var(--pm-mark-width); } @media (hover: none) { .box[data-tone="hover"] { display: none; } }';
-/** Pins: a circle centred on the element's top-right corner, accent fill, contrasting number (spec R3); the accent outline (35% app, 60% Studio) and a light fill. Every value is a theme token. */
-const PIN_STYLES = '.box { border-style: solid; border-width: var(--pm-mark-width); border-color: color-mix(in srgb, var(--pm-mark) var(--pm-mark-line), transparent); background: color-mix(in srgb, var(--pm-mark) 6%, transparent); }'
-  + ' .label { box-sizing: border-box; min-width: 24px; height: 24px; padding: 0 7px; border-radius: var(--pm-radius-round); display: flex; align-items: center; justify-content: center;'
-  + ' background: var(--pm-mark); color: var(--pm-mark-foreground); font-family: var(--font-sans, inherit); font-size: 12px; font-weight: 700; line-height: 1; transform: translate(-50%, -50%); }';
-/** A tap lands on the innermost node; the pick is the nearest element a person would name (a card, a gauge, a button, a field). */
-const NAMED = 'button, a[href], input, select, textarea, summary, details, img, svg[role], [role=meter], [role=progressbar], [role=article], article, [role=region], [role=group], [role=listitem], li, [role=button], [role=link], [role=img], [aria-label]';
-function meaningful(element: Element, root: Element): Element {
-  const named = element.closest(NAMED);
-  return named && root.contains(named) ? named : element;
-}
-const HEADING = 'h1, h2, h3, h4, h5, h6, [role=heading]';
-/**
- * Spec 1 §3's label for an element without an accessible name: its own heading, its visible text, then the nearest heading around it.
- * Read through the privacy policy, like the name and the capture: text the capture masks never becomes a label (the kind stands in).
- */
-function labelOf(element: Element, root: Element, policy: PrivacyPolicy): string | undefined {
-  const readable = (node: Element | null) => { const name = node ? accessibleNameOf(node, policy) : MASKED_NAME; return name === MASKED_NAME ? undefined : name; };
-  const own = readable(element.querySelector(HEADING)) ?? readable(element);
-  if (own) return own;
-  for (let around = element.parentElement; around && root.contains(around); around = around.parentElement) {
-    const heading = readable(around.querySelector(HEADING));
-    if (heading) return heading;
-  }
-  return undefined;
-}
+const noPins: readonly PointPin[] = [];
 function keepMarkers(controller: NativeChatController, chips: readonly PointChip[]) {
   const text = controller.getSnapshot().draft.text;
   const missing = chips.filter(chip => !text.includes(marker(chip.number))).map(chip => marker(chip.number)).join(' ');
@@ -129,8 +104,8 @@ export interface PmComment {
   readonly transcribe: ((audio: Blob, signal: AbortSignal) => Promise<string>) | undefined;
 }
 
-/** `comment`: a click in `point.idle` opens the comment popover at the pin (the desktop preset, spec 1 §3b). */
-export function usePmPanel(spec: ImproveSpec, open: boolean, page: HTMLElement | null, screen = (typeof document === 'undefined' ? '' : document.title) || 'app', { comment: commenting = false }: { readonly comment?: boolean } = {}) {
+/** `comment`: a click in `point.idle` opens the comment popover at the pin (the desktop preset, spec 1 §3b). `sibling`: the app is in a sibling frame under this name, and picks there come back as chips. */
+export function usePmPanel(spec: ImproveSpec, open: boolean, page: HTMLElement | null, screen = (typeof document === 'undefined' ? '' : document.title) || 'app', { comment: commenting = false, sibling }: { readonly comment?: boolean; readonly sibling?: string | undefined } = {}) {
   const text = pmTextFor(spec.chatProps?.locale);
   const [announcement, setAnnouncement] = useState('');
   const [state, dispatch] = useReducer(pointReducer, undefined, createPointState);
@@ -259,47 +234,27 @@ export function usePmPanel(spec: ImproveSpec, open: boolean, page: HTMLElement |
   const [sentNotice, setSentNotice] = useState(0);
   const commentingRef = useRef(commenting);
   useLayoutEffect(() => { commentingRef.current = commenting; });
-  const selectedElements = useRef(new Map<string, Element>());
   const anchors = useRef(new Map<string, import('@hachej/boring-feedback/page').AppElementAnchor>());
-  const selectionRoot = page?.closest('[data-pm-layout]') ?? page;
-  useEffect(() => {
-    if (!open || !state.show || state.mode !== 'point' || !selectionRoot) return;
-    const picker = createPicker({ root: selectionRoot, policy, styles: PICK_STYLES, tap: 'pick', wheel: false, keys: 'outside-ignored',
-      onChange: current => { if (current.refusal) setProblem(text.locale === 'fr' ? 'Cet élément n’est pas accessible ici. Essayez son titre ou un autre élément.' : 'This element is not accessible here. Try its title or another element.'); },
-      onPick: picked => {
-      // With the comment popover open, a click on the page is a click outside it: it settles that pick and picks nothing.
-      if (commentRef.current) { commentRef.current.outside(); return; }
-      const element = meaningful(picked, selectionRoot);
-      // Tapping an already picked element removes that pick.
-      for (const [id, chosen] of selectedElements.current) if (chosen === element) { removeRef.current(id); return; }
-      if (latest.current.state.chips.length >= 20) { setProblem('20 éléments maximum par message.'); return; }
-      const capture = anchorOf(element, policy, { root: selectionRoot });
-      if (capture.kind !== 'captured') { setProblem('Cet élément ne peut pas être joint.'); return; }
-      try {
-        const anchor = capture.anchor, image = captureElement(element, policy), box = element.getBoundingClientRect();
-        const id = `pm-${++sequence.current}`, number = latest.current.state.nextNumber;
-        const words = text.locale === 'en' ? feedbackLabels : feedbackLabelsFr;
-        const role = anchor.signals.role ?? element.localName, unknown = words.element(undefined, undefined), named = words.element(role, undefined);
-        const kind = named === unknown ? (text.locale === 'en' ? 'Text' : 'Texte') : named;
-        const name = anchor.signals.name ?? labelOf(element, selectionRoot, policy) ?? kind;
-        const label = name.length > 40 ? `${name.slice(0, 39)}…` : name;
-        const controller = latest.current.spec.controller;
-        controller.setAttachments([...controller.getSnapshot().draft.attachments, { id, name: `${marker(number)} @ ${kind} · ${label} · capture jointe`, content: { type: 'image', ...image } }]);
-        selectedElements.current.set(id, element); anchors.current.set(id, anchor);
-        const attempt = coreRef.current.current()[0];
-        const recordingNow = attempt?.phase === 'recording' || attempt?.phase === 'starting';
-        const at = recordingNow ? (attempt.offset ?? 0) + (attempt.capture.progress()?.elapsedMs ?? 0) / 1000 : null;
-        dispatch({ type: 'pick', chip: { id, kind, label, screen, at, box: [box.x, box.y, box.width, box.height] } });
-        // While recording the voice is the comment: the click only pins.
-        if (commentingRef.current && !recordingNow) { setCommentText(''); setCommentAt({ id, element }); }
-        setAnnouncement(text.added(number, kind, label));
-        setProblem(undefined);
-      } catch { setProblem('La capture de cet élément est indisponible. Réessayez.'); }
-    } });
-    void picker.start();
-    return () => picker.dispose();
-  }, [open, state.show, state.mode, policy, selectionRoot, page, screen, text]);
-  const sequence = useRef(0);
+  const receivePick = (pick: PointPick, element?: Element) => {
+    const number = latest.current.state.nextNumber, controller = latest.current.spec.controller;
+    controller.setAttachments([...controller.getSnapshot().draft.attachments, { id: pick.id, name: `${marker(number)} @ ${pick.kind} · ${pick.label} · capture jointe`, content: { type: 'image', ...pick.image } }]);
+    anchors.current.set(pick.id, pick.anchor);
+    const attempt = coreRef.current.current()[0];
+    const recordingNow = attempt?.phase === 'recording' || attempt?.phase === 'starting';
+    const at = recordingNow ? (attempt.offset ?? 0) + (attempt.capture.progress()?.elapsedMs ?? 0) / 1000 : null;
+    dispatch({ type: 'pick', chip: { id: pick.id, kind: pick.kind, label: pick.label, screen: pick.screen, at, box: pick.box } });
+    // While recording the voice is the comment: the click only pins.
+    if (element && commentingRef.current && !recordingNow) { setCommentText(''); setCommentAt({ id: pick.id, element }); }
+    setAnnouncement(text.added(number, pick.kind, pick.label));
+    setProblem(undefined);
+  };
+  const picking = open && state.show && state.mode === 'point';
+  const pins = usePins(state.chips, open && state.mode !== 'full');
+  usePointPage({ picking: picking && !sibling, pins: sibling ? noPins : pins, page, screen, policy, text,
+    // With the comment popover open, a click on the page is a click outside it: it settles that pick and picks nothing.
+    intercept: () => { if (!commentRef.current) return false; commentRef.current.outside(); return true; },
+    onPick: receivePick, onUnpick: id => removeRef.current(id), onProblem: setProblem });
+  const appFrame = useAppFrame({ enabled: sibling !== undefined, app: sibling ?? '', picking, pins, onPick: receivePick, onUnpick: id => removeRef.current(id), onProblem: setProblem, onDone: () => returnRef.current() });
   // Messages sent from the popover: the app panel stays on the strip when they are admitted (no C7).
   const quietTexts = useRef(new Set<string>());
   useEffect(() => {
@@ -310,29 +265,15 @@ export function usePmPanel(spec: ImproveSpec, open: boolean, page: HTMLElement |
   // Native attachment remove controls also remove the corresponding marker and pin.
   useEffect(() => {
     for (const chip of state.chips) if (!pendingBatch.current?.ids.includes(chip.id) && !snapshot.draft.attachments.some(attachment => attachment.id === chip.id) && snapshot.send.kind !== 'submitting' && snapshot.send.kind !== 'unknown' && snapshot.send.kind !== 'validating') {
-      dispatch({ type: 'remove', id: chip.id }); selectedElements.current.delete(chip.id); anchors.current.delete(chip.id);
+      dispatch({ type: 'remove', id: chip.id }); anchors.current.delete(chip.id);
     }
   }, [snapshot.draft.attachments, snapshot.send.kind, state.chips]);
-  useEffect(() => {
-    // Pins stay while the page is visible (strip and review); the full panel covers the page. A pin shows only on its own screen.
-    if (!open || state.mode === 'full' || !state.chips.length || !selectionRoot) return;
-    // Mounted beside the picked area (never inside it), so the pins read the host surface's theme tokens.
-    const overlay = createOverlay({ document: selectionRoot.ownerDocument, styles: PIN_STYLES, labels: 'corner', shape: 'element', mount: selectionRoot.parentElement ?? selectionRoot.ownerDocument.body, ...(page ? { clip: page } : {}) });
-    const elements = new Map<Element, string[]>();
-    for (const chip of state.chips) {
-      const element = selectedElements.current.get(chip.id);
-      if (!element?.isConnected || !element.getClientRects().length) continue;
-      elements.set(element, [...(elements.get(element) ?? []), String(chip.number)]);
-    }
-    overlay.draw([...elements].map(([element, numbers]) => ({ element, label: numbers.join(' '), tone: 'hover' as const })));
-    return () => overlay.dispose();
-  }, [open, state.mode, state.chips, selectionRoot, screen, page]);
   const completeBatch = useCallback((batch: CaptureBatch) => {
     if (!mounted.current || latest.current.spec.controller !== batch.controller || pendingBatch.current !== batch) return;
     pendingBatch.current = undefined;
     dispatch({ type: 'sent', ids: batch.ids });
     if (latest.current.speech === batch.speech) { setDictated(undefined); setSpeech({ text: '' }); }
-    for (const id of batch.ids) { selectedElements.current.delete(id); anchors.current.delete(id); }
+    for (const id of batch.ids) anchors.current.delete(id);
   }, []);
   const sendContext = useMemo(() => {
     const context = {};
@@ -373,7 +314,7 @@ export function usePmPanel(spec: ImproveSpec, open: boolean, page: HTMLElement |
       const other = state.chips.find(value => value.id === image.id);
       return other && other.number > chip.number ? { ...image, name: image.name.replace(marker(other.number), marker(other.number - 1)) } : image;
     }));
-    dispatch({ type: 'remove', id }); selectedElements.current.delete(id); anchors.current.delete(id);
+    dispatch({ type: 'remove', id }); anchors.current.delete(id);
     setAnnouncement(text.removed(chip.number));
   };
   const commentId = commentAt?.id;
@@ -431,7 +372,7 @@ export function usePmPanel(spec: ImproveSpec, open: boolean, page: HTMLElement |
 
   // The meta line under the draft (spec 1 §5): dictated time and captures, « Écrit · n captures » without dictation, nothing with neither.
   const meta = dictated !== undefined || state.chips.length ? text.meta(dictated, state.chips.length) : undefined;
-  return { state, dispatch, voice, recording, problem, liveText, sendContext, dictated, snapshot, remove, returnToComposer, focusVersion, text, meta, announcement, comment, sent: sentNotice > 0, quietSend, answerComposer };
+  return { state, dispatch, voice, recording, problem, liveText, sendContext, dictated, snapshot, remove, returnToComposer, focusVersion, text, meta, announcement, comment, sent: sentNotice > 0, quietSend, answerComposer, canPoint: sibling === undefined || appFrame };
 }
 
 export type PmPanelState = ReturnType<typeof usePmPanel>;

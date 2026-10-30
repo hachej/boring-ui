@@ -23,6 +23,8 @@ export interface PmText {
   readonly remove: string;
   readonly show: string;
   readonly showTitle: string;
+  /** « Montrer » when no app frame stands beside a standalone PM. */
+  readonly showUnavailable: string;
   readonly meta: (seconds: number | undefined, captures: number) => string;
   readonly sentMeta: (seconds: number | undefined, captures: number) => string;
   readonly mentionHeader: (query: string) => string;
@@ -81,7 +83,7 @@ export const pmTextFr: PmText = {
   placeholderBefore: 'Décrivez le problème, ou ', placeholderAfter: ' pour me le montrer.',
   hintIdle: 'Touchez ce que vous voulez montrer', hintRec: 'Parlez et touchez ce que vous montrez', hintRecShort: 'Parlez et touchez',
   mode: 'Mode', select: 'Sélectionner', navigate: 'Naviguer', done: 'Terminer', doneLabel: 'Terminer : relire dans le composer', speak: 'Parler',
-  recorder: "Ouvrir l'enregistreur", attach: 'Joindre un fichier', dictate: 'Dicter', send: 'Envoyer', remove: 'Retirer', show: 'Montrer', showTitle: 'Montrer',
+  recorder: "Ouvrir l'enregistreur", attach: 'Joindre un fichier', dictate: 'Dicter', send: 'Envoyer', remove: 'Retirer', show: 'Montrer', showTitle: 'Montrer', showUnavailable: 'Ouvrez l’app à côté pour montrer',
   meta: (seconds, n) => seconds === undefined ? `Écrit · ${captures(n, 'capture', 'captures')}` : `Dicté · ${clock(seconds)} · ${captures(n, 'capture', 'captures')} · modifiable`,
   sentMeta: (seconds, n) => seconds === undefined ? `Écrit · ${captures(n, 'capture', 'captures')}` : `Dicté · ${clock(seconds)} · ${captures(n, 'capture', 'captures')}`,
   mentionHeader: query => `TÂCHES · ${query}`, onYou: 'À vous',
@@ -100,7 +102,7 @@ export const pmTextEn: PmText = {
   placeholderBefore: 'Describe the problem, or ', placeholderAfter: ' to show me',
   hintIdle: 'Tap what you want to show', hintRec: 'Speak and tap what you show', hintRecShort: 'Speak and tap',
   mode: 'Mode', select: 'Select', navigate: 'Navigate', done: 'Done', doneLabel: 'Done: reread in the composer', speak: 'Speak',
-  recorder: 'Open the recorder', attach: 'Attach a file', dictate: 'Dictate', send: 'Send', remove: 'Remove', show: 'Montrer', showTitle: 'Montrer: point at the app',
+  recorder: 'Open the recorder', attach: 'Attach a file', dictate: 'Dictate', send: 'Send', remove: 'Remove', show: 'Montrer', showTitle: 'Montrer: point at the app', showUnavailable: 'Open the app beside this panel to point',
   meta: (seconds, n) => seconds === undefined ? `Written · ${captures(n, 'capture', 'captures')}` : `Dictated · ${clock(seconds)} · ${captures(n, 'capture', 'captures')} · editable`,
   sentMeta: (seconds, n) => seconds === undefined ? `Written · ${captures(n, 'capture', 'captures')}` : `Dictated · ${clock(seconds)} · ${captures(n, 'capture', 'captures')}`,
   mentionHeader: query => `TASKS · ${query}`, onYou: 'On you',
