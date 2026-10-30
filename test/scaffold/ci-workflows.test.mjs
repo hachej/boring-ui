@@ -22,7 +22,7 @@ function script(job, name) {
 }
 const journeys = [
   'test:design', 'test:viewer-chrome', 'app-shell:journey', 'app-shell:journey:workspace', 'app-shell:journey:voice', 'workspace-app:journey',
-  'shared-chat:journey', 'shared-chat:journey:room', 'mockup:journey', 'draft-recovery:journey', 'file-tree:journey', 'canvas:journey:commands',
+  'shared-chat:journey', 'shared-chat:journey:room', 'shared-chat:journey:mockups', 'mockup:journey', 'draft-recovery:journey', 'file-tree:journey', 'canvas:journey:commands',
   'canvas:journey:proposals', 'canvas:journey:remote', 'board:journey', 'task-list:journey', 'task-board:journey', 'morning:journey',
   'studio:journey:correctness', 'studio:journey:scripted', 'workspace-demo:journey', 'ambient:journey:scripted',
 ];
@@ -50,7 +50,7 @@ test('browser matrix preserves every journey command and scopes every evidence a
   for (const match of job.matchAll(/uses: actions\/upload-artifact@[^\n]+\n        with:\n          name: (.+)/g)) {
     assert.ok(match[1].includes('${{ matrix.shard }}'), match[1]);
   }
-  for (const path of ['shadcn-first', 'feat-board-viewer', 'canvas-browser', 'canvas-proposals-browser', 'canvas-remote-browser', 'task-list-browser', 'morning-browser', 'draft-recovery-browser', 'file-tree-browser', 'library']) assert.ok(job.includes(path), path);
+  for (const path of ['shadcn-first', 'feat-board-viewer', 'canvas-browser', 'canvas-proposals-browser', 'canvas-remote-browser', 'task-list-browser', 'morning-browser', 'draft-recovery-browser', 'file-tree-browser', 'library', 'room-mockups/browser']) assert.ok(job.includes(path), path);
   assert.match(job, /key: chromium-headless-shell-1243-playwright-/);
   assert.equal((job.match(/run: npm run build/g) ?? []).length, 1);
 });
