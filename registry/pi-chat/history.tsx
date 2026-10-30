@@ -261,7 +261,7 @@ export function TranscriptHistory({ history, connected, onLoad, sentinelRef, hid
   if (history.kind === 'disabled' && hidden === 0) return null;
   const exhausted = hidden === 0 && history.kind === 'ready' && !history.hasMore;
   return <div ref={sentinelRef} data-testid="transcript-history" className="flex min-h-8 shrink-0 items-center justify-center text-xs text-muted-foreground">
-    <Button variant="ghost" data-testid="transcript-history-load" className="sr-only focus:not-sr-only" disabled={!connected || history.kind === 'loading' || exhausted} onClick={onLoad}>{labels.loadEarlierMessages}</Button>
+    {!exhausted && <Button variant="ghost" data-testid="transcript-history-load" className={history.kind === 'error' ? undefined : 'sr-only focus:not-sr-only'} disabled={!connected || history.kind === 'loading'} onClick={onLoad}>{labels.loadEarlierMessages}</Button>}
     {history.kind === 'loading' && <Loader2Icon className="size-4 animate-spin motion-reduce:animate-none" aria-label={labels.loadingShort} />}
     {history.kind === 'error' && <span role="alert">{labels.historyFailed}</span>}
     {exhausted && <span>{labels.beginning}</span>}

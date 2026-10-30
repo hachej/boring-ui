@@ -51,7 +51,11 @@ for (const width of [375, 1280]) test(`public SharedChat reuses PM cards/full sa
   assert.equal(source.sends.length, 1);
   assert.equal(source.sends[0].text, 'B'); assert.equal(source.sends[0].replyTo, '2');
   await act(async () => source.emit({ type: 'message', message: { ...question, question: { ...question.question, answered: true } } }));
-  assert.ok(container.querySelector('[data-testid=question-answered]'));
+  assert.equal(container.querySelector('[data-testid=question-answered]'), null, 'no system-like Answered log');
+  assert.equal(container.querySelector('[data-testid=question-prompt]'), null, 'no repeated prompt after choosing');
+  assert.match(container.textContent, /B/, 'the person’s actual reply stays');
+  assert.equal(container.querySelector('[data-testid=reply-quote]'), null, 'no assistant prompt quote on the answer');
+  assert.equal(container.querySelectorAll('[data-testid=pm-mockup]').length, 3, 'answered questions retain their mockups');
   const final = { id: '3', conversationId: 'main', author: 'agent:pm', at: '2026-10-30T12:01:00Z', text: 'Selected B; launch not requested.', artifacts: descriptors };
   await act(async () => { source.emit({ type: 'message', message: final }); source.emit({ type: 'message', message: final }); });
   assert.equal(container.querySelectorAll('[data-testid=pm-mockup]').length, 3, 'question/final/replay never duplicate the cards');

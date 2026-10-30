@@ -186,9 +186,9 @@ export default [
       await history.create();
       assert.equal(await history.count(), before + 1);
       await history.select(current);
-      // Earlier records load inline; the sessions pane remains the conversation picker.
+      // This fresh thread is already at its beginning: do not offer a nonexistent older page.
       await browser.evaluate(`${q('[data-testid=transcript-scroll]')}.scrollTop = 0`);
-      await browser.until('earlier records reached the beginning inline', `${q('[data-testid=transcript-history]')}?.innerText.includes('Start of conversation') && ${q('[data-testid=transcript-history-load]')}?.disabled`, 10000);
+      await browser.until('fresh thread has no older page control', `!${q('[data-testid=transcript-history-load]')} && (!${q('[data-testid=transcript-history]')} || ${q('[data-testid=transcript-history]')}.innerText.includes('Start of conversation'))`, 10000);
       assert.equal(await browser.evaluate(`!!${q('[data-testid=history]')}`), false, 'no separate history panel');
       assert.equal(await browser.evaluate(`/ENTER-OK/.test(${logText}) && !!${q('[data-testid=transcript] article[data-role=assistant]')}`), true, 'the ordinary transcript remains visible');
     },

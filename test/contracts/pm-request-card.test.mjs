@@ -73,7 +73,7 @@ test('the list answers 403 once, then 200 on the next turn: the card appears, th
   await app.show([...turn, user(5, 'Merci'), { id: 6, kind: 'message', model: [assistant([{ type: 'text', text: 'Avec plaisir.' }])] }]);
   await app.wait();
   assert.ok(calls.length >= 2, 'read again on the next turn, never latched');
-  assert.match(reply().textContent, /À confirmer/);
+  assert.match(reply().textContent, /Attend votre avis/);
   assert.ok(reply().querySelector('[data-testid="pm-request-confirm"]'), '« Confirmer » from the list');
   await app.act(async () => app.container.querySelector('[data-testid="pm-expand"]').click());
   await app.act(async () => app.container.querySelector('[data-testid="pm-requests"]').click());
@@ -90,4 +90,23 @@ test('the list never answers: the card still appears from the tool result, « DE
   assert.match(reply.textContent, /Protéines avant les calories/);
   assert.doesNotMatch(reply.textContent, /À confirmer|Envoyée/, 'no pill without waiting_on_you');
   assert.equal(reply.querySelector('[data-testid="pm-request-confirm"]'), null);
+});
+
+
+test('confirmation shows busy, keeps the question on outage, and succeeds as En préparation', async t => {
+  let reject, resolve;
+  const app = await mount(t, async (_url, init) => init?.method === 'POST' ? new Promise((yes, no) => { resolve = yes; reject = no; }) : Response.json(listed));
+  await app.show(turn); await app.wait();
+  const confirm = () => app.container.querySelector('[data-testid="pm-request-confirm"]');
+  await app.act(async () => confirm().click());
+  assert.equal(confirm()?.disabled, true, 'busy control remains present until acknowledgement');
+  assert.equal(confirm()?.getAttribute('aria-busy'), 'true');
+  await app.act(async () => reject(new TypeError('offline')));
+  assert.equal(confirm()?.disabled, false, 'retry is actionable');
+  assert.match(app.card().querySelector('[role="alert"]')?.textContent ?? '', /Impossible de confirmer/);
+  await app.act(async () => confirm().click());
+  await app.act(async () => resolve(new Response(null, { status: 200 })));
+  assert.equal(confirm(), null);
+  assert.equal(app.card().querySelector('[data-task-status]')?.textContent, 'En préparation');
+  assert.doesNotMatch(app.card().textContent, /Envoyée/);
 });

@@ -20,9 +20,10 @@ import { POINT_PREFACE, pointMessage } from './point-message';
 import { PmMockupProvider, PmMockupView, pmArtifacts } from './pm-mockups';
 import type { ArtifactDescriptor } from '@hachej/boring-ui-kit/chat-view';
 import { usePmMentions } from './pm-mentions';
-import { TaskBoard, TaskRequestCard, taskTokens } from '../task-board/task-board';
+import { TaskDetail, TaskRequestCard, taskTokens } from '../task-board/task-board';
+import type { TaskRecord } from '@hachej/boring-ui-kit/task-board';
 import { selectTasks } from '@hachej/boring-ui-kit/task-board';
-import { requestOutcome } from './pm-task-source';
+import { PmRequestStatus, requestOutcome } from './pm-task-source';
 import type { ImproveSpec, StudioTaskBoardSeam } from './use-pm-panel';
 import { useImproveAgent } from './use-improve-agent';
 import type { ImproveProp } from './use-improve-agent';
@@ -49,7 +50,7 @@ export { useImproveAgent, isImproveAgent } from './use-improve-agent';
 export type { ImproveAgent, ImproveProp } from './use-improve-agent';
 
 interface Binding { readonly spec: ImproveSpec; readonly open: boolean; readonly close: () => void; readonly onFull?: ((full: boolean, collapse: () => void) => void) | undefined }
-interface Pending { readonly open: boolean; readonly close: () => void; readonly problem: string | undefined; readonly title: string }
+interface Pending { readonly open: boolean; readonly close: () => void; readonly problem: string | undefined; readonly retry: () => void; readonly text: PmText }
 async function imageFiles(files: readonly File[]) {
   return Promise.all(files.map(async (file, index) => {
     if (!/^image\/(png|jpeg|gif|webp)$/.test(file.type) || file.size > 3 * 1024 * 1024) throw new Error('Joignez une image de moins de 3 Mo.');
@@ -67,8 +68,8 @@ const PmContext = createContext<Binding | Pending | null>(null);
  */
 export function PmPanelProvider({ spec, open, close, appName, locale, onFull, children }: { readonly spec?: ImproveProp | undefined; readonly open: boolean; readonly close: () => void; readonly appName?: string | undefined; readonly locale?: string | undefined; readonly onFull?: ((full: boolean, collapse: () => void) => void) | undefined; readonly children: ReactNode }) {
   const resolved = useImproveAgent(spec, open, { ...(appName ? { appName } : {}), ...(locale ? { locale } : {}) });
-  const title = pmTextFor(locale).title;
-  const value = useMemo<Binding | Pending | null>(() => resolved.spec ? { spec: resolved.spec, open, close, onFull } : spec ? { open, close, problem: resolved.problem, title } : null, [resolved.spec, resolved.problem, spec, open, close, onFull, title]);
+  const text = pmTextFor(locale);
+  const value = useMemo<Binding | Pending | null>(() => resolved.spec ? { spec: resolved.spec, open, close, onFull } : spec ? { open, close, problem: resolved.problem, retry: resolved.retry, text } : null, [resolved.spec, resolved.problem, resolved.retry, spec, open, close, onFull, text]);
   return <PmContext.Provider value={value}>{children}</PmContext.Provider>;
 }
 
@@ -98,9 +99,10 @@ function BoundLayout({ binding: bound, children, navigation, screen }: { readonl
     {/* Mounted on the first open, then kept: the picks, pins and recording survive × (spec 2, draft persistence). */}
     {binding && opened && <PanelSession key={instance.sequence} binding={binding} page={page} screen={screen} report={report} />}
     {pending?.open && <section data-feedback-ignore="" data-testid="pm-panel" data-mode="connecting" className="flex shrink-0 flex-col gap-1.5 rounded-t-pm-sheet bg-background px-3 pt-2 pb-6 shadow-pm-sheet">
-      <div className="flex items-center"><h2 className="m-0 min-w-0 flex-1 truncate text-[13px] font-pm-title">{pending.title}</h2>
-        <Button variant="ghost" size="icon" aria-label="Fermer" data-testid="pm-close" onClick={pending.close} className="min-h-9 min-w-9"><XIcon className="size-4" aria-hidden="true" /></Button></div>
-      <p role={pending.problem ? 'alert' : 'status'} className="m-0 px-1 text-sm text-muted-foreground">{pending.problem ?? 'Connexion…'}</p>
+      <div className="flex items-center"><h2 className="m-0 min-w-0 flex-1 truncate text-[13px] font-pm-title">{pending.text.title}</h2>
+        <Button variant="ghost" size="icon" aria-label={pending.text.close} data-testid="pm-close" onClick={pending.close} className="min-h-9 min-w-9"><XIcon className="size-4" aria-hidden="true" /></Button></div>
+      <p role={pending.problem ? 'alert' : 'status'} className="m-0 px-1 text-sm text-muted-foreground">{pending.problem ? pending.text.connectionFailed : pending.text.connecting}</p>
+      {pending.problem && <Button variant="outline" onClick={pending.retry} data-testid="pm-connect-retry">{pending.text.retry}</Button>}
     </section>}
     {/* The tab bar shows under the strip and works normally; the sheet sits at the bottom instead of it. */}
     <div data-pm-navigation="" hidden={Boolean(bound?.open && !strip)} className="shrink-0">{navigation}</div>
@@ -204,10 +206,10 @@ function PmChatSession({ spec, page, screen, preset = 'desktop' }: { readonly sp
     {pm.problem && <p role="alert" className="m-0 px-4 text-sm">{pm.problem}</p>}
     {mockup && <PmMockupView artifact={mockup} text={text} onBack={() => setMockup(undefined)} />}
     <div hidden={mockup !== undefined} className={cn('min-h-0 flex-1 flex-col', mockup ? 'hidden' : 'flex')}>
-    <PiChat {...withChatPlugins({ ...spec.chatProps, artifacts, ...(mentions ? { mentions } : {}) })} controller={spec.controller} locale={spec.chatProps?.locale ?? 'en'} header={false} emptyLayout="docked"
+    <PiChat {...withChatPlugins({ ...spec.chatProps, artifacts, ...(mentions ? { mentions } : {}) })} controller={spec.controller} locale={spec.chatProps?.locale ?? 'en'} presentation="natural" header={false} emptyLayout="docked"
       labels={{ ...spec.chatProps?.labels, placeholder: `${text.placeholderBefore}↖${text.placeholderAfter}`, add: text.attach, send: text.send }} onFiles={spec.chatProps?.onFiles ?? imageFiles}
       sendContext={pm.sendContext} renderEntry={pmEntries({ preset, text, mentions, renderEntry: spec.chatProps?.renderEntry, renderRequest: spec.tasks?.renderRequest, edit })}
-      renderComposer={composer => strip ? <PmComposer variant="strip" {...props} /> : <PmComposer {...props} composer={{ ...composer, sendBlocked: composer.sendBlocked || pm.voice.phase === 'processing' }} />} />
+      renderComposer={composer => strip ? <PmComposer variant="strip" {...props} /> : <PmComposer {...props} composer={pm.answerComposer({ ...composer, sendBlocked: composer.sendBlocked || pm.voice.phase === 'processing' })} />} />
     </div>
     {pm.comment && page && <PointComment comment={pm.comment} frame={page} text={text} />}
   </div></PmMockupProvider></ChatTextProvider>;
@@ -219,22 +221,50 @@ function PmChatSession({ spec, page, screen, preset = 'desktop' }: { readonly sp
  */
 function PmRequests({ seam, text }: { readonly seam: StudioTaskBoardSeam; readonly text: PmText }) {
   const [expanded, setExpanded] = useState(false);
-  const open = seam.tasks.filter(task => requestOutcome(task) === undefined);
-  const finished = selectTasks(seam.tasks.filter(task => requestOutcome(task) !== undefined), { filter: 'mine', currentUser: seam.currentUser });
+  const [technical, setTechnical] = useState(false);
+  const [selected, setSelected] = useState<string>();
+  const tasks = selectTasks(seam.tasks, { filter: 'mine', currentUser: seam.currentUser });
+  const visible = tasks.filter(task => !task.technical);
+  const open = visible.filter(task => requestOutcome(task) === undefined).sort((a, b) => Number(b.waiting_on_you === true) - Number(a.waiting_on_you === true));
+  const finished = visible.filter(task => requestOutcome(task) !== undefined);
+  const internal = tasks.filter(task => task.technical);
+  const detail = tasks.find(task => task.id === selected);
+  const openTask = (task: TaskRecord) => { setSelected(task.id); seam.onOpen(task); };
   const label = { live: text.outcomeLive, withdrawn: text.outcomeWithdrawn, closed: text.outcomeClosed } as const;
+  const card = (task: TaskRecord) => {
+    const outcome = requestOutcome(task);
+    return <TaskRequestCard key={task.id} task={task} variant="compact" locale={text.locale} href="#" onOpen={openTask}
+      actions={outcome ? undefined : seam.cardActions?.(task)} pill={outcome
+        ? <span className={cn('contents', taskTokens.pill)}><Badge variant={outcome === 'live' ? 'secondary' : 'outline'} data-task-outcome={outcome}>{label[outcome]}</Badge></span>
+        : <PmRequestStatus task={task} text={text} />} />;
+  };
+  if (detail) return <div className="flex flex-col gap-4 p-4">
+    <Button variant="ghost" data-testid="pm-request-back" className="self-start" onClick={() => setSelected(undefined)}>{text.back}</Button>
+    <TaskDetail task={detail} actions={requestOutcome(detail) ? undefined : seam.cardActions?.(detail)} />
+    {detail.spec && <Markdown text={detail.spec} />}
+    {detail.history?.map((item, index) => <p key={item.id ?? index} className="m-0 text-sm">{item.note}</p>)}
+  </div>;
   return <div className="flex flex-col gap-4 p-4">
-    {(open.length > 0 || finished.length === 0) && <TaskBoard tasks={open} variant="compact" filter="mine" currentUser={seam.currentUser} bar={false} title={text.requests}
-      onOpen={seam.onOpen} cardActions={seam.cardActions} locale={text.locale} viewerAction="confirmation" />}
+    <section data-boring="task-board" className="flex flex-col gap-3" aria-label={text.requests}>
+      <h3 className="m-0 text-sm font-semibold">{text.requests}</h3>
+      {([true, false] as const).map(waiting => {
+        const group = open.filter(task => (task.waiting_on_you === true) === waiting);
+        return group.length > 0 && <section key={String(waiting)} className="flex flex-col gap-2" aria-label={waiting ? text.awaiting : text.inProgress}>
+          <h4 className="m-0 text-xs text-muted-foreground">{waiting ? text.awaiting : text.inProgress}</h4>
+          {group.map(card)}
+        </section>;
+      })}
+    </section>
     {finished.length > 0 && <section data-testid="pm-finished" aria-label={text.finished(finished.length)} className="flex flex-col gap-2">
       <Button variant="ghost" data-testid="pm-finished-toggle" aria-expanded={expanded} aria-controls="pm-finished-list" onClick={() => setExpanded(!expanded)}
         className="min-h-11 justify-between px-1 text-sm font-semibold text-muted-foreground">
         {text.finished(finished.length)}<ChevronDownIcon aria-hidden="true" className={cn('size-4 transition-transform', expanded && 'rotate-180')} />
       </Button>
-      {expanded && <div id="pm-finished-list" role="list" aria-label={text.finished(finished.length)} className="flex flex-col gap-2">{finished.map(task => {
-        const outcome = requestOutcome(task)!;
-        return <TaskRequestCard key={task.id} task={task} variant="compact" locale={text.locale}
-          pill={<span className={cn('contents', taskTokens.pill)}><Badge variant={outcome === 'live' ? 'secondary' : 'outline'} data-task-outcome={outcome}>{label[outcome]}</Badge></span>} />;
-      })}</div>}
+      {expanded && <div id="pm-finished-list" role="list" aria-label={text.finished(finished.length)} className="flex flex-col gap-2">{finished.map(card)}</div>}
+    </section>}
+    {internal.length > 0 && <section className="flex flex-col gap-2">
+      <Button variant="ghost" data-testid="pm-technical-toggle" aria-expanded={technical} onClick={() => setTechnical(!technical)} className="min-h-11 justify-between">{text.technical} ({internal.length})<ChevronDownIcon aria-hidden="true" /></Button>
+      {technical && <div role="list" className="flex flex-col gap-2">{internal.map(card)}</div>}
     </section>}
   </div>;
 }
@@ -317,10 +347,10 @@ function Panel({ binding, pm, strip, full }: { readonly binding: Binding; readon
         {/* The member never sees a raw tool error: pi-chat's trace stays, the failed step's details and orphan error notices are hidden. */}
         <div hidden={aside} className={cn('min-h-0 flex-1 flex-col [&_[data-testid=tool-details]]:hidden [&_[data-testid=tool-error]]:hidden', aside ? 'hidden' : 'flex',
           full ? '[&_[data-boring=pi-chat]>footer]:px-4 [&_[data-boring=pi-chat]>footer]:pb-6 [&_[data-testid=transcript]]:gap-3.5 [&_[data-testid=transcript]]:text-[15px] [&_[data-testid=transcript-scroll]>div:last-child]:p-4 [&_[data-testid=transcript-history]]:min-h-0 [&_[data-testid=transcript-history]>span:not([role])]:hidden [&_[data-testid=transcript-navigation]]:pointer-events-none [&_[data-testid=transcript-navigation]]:absolute [&_[data-testid=transcript-navigation]]:inset-x-0 [&_[data-testid=transcript-navigation]]:bottom-0 [&_[data-testid=transcript-navigation]_*]:pointer-events-auto [&_[data-testid=question-option]]:min-h-11 [&_[data-testid=question-input]]:min-h-11 [&_[data-testid=question-submit]]:min-h-11'
-            : '[&_[data-testid=transcript]]:hidden [&_[data-boring=pi-chat]>.relative]:hidden [&_[data-boring=pi-chat]>footer]:p-0')}>
-          <PiChat {...withChatPlugins({ ...spec.chatProps, artifacts, ...(mentions ? { mentions } : {}) })} controller={spec.controller} locale={spec.chatProps?.locale ?? 'fr'} header={false} emptyLayout="docked" keyboardInset={false} replyError={spec.chatProps?.replyError ?? (() => text.failed)}
+            : 'min-h-64 [&_[data-boring=pi-chat]>footer]:p-0')}>
+          <PiChat {...withChatPlugins({ ...spec.chatProps, artifacts, ...(mentions ? { mentions } : {}) })} controller={spec.controller} locale={spec.chatProps?.locale ?? 'fr'} presentation="natural" header={false} emptyLayout="docked" keyboardInset={false} replyError={spec.chatProps?.replyError ?? (() => text.failed)}
             labels={{ ...spec.chatProps?.labels, placeholder: `${text.placeholderBefore}↖${text.placeholderAfter}`, add: text.attach, send: text.send }} onFiles={spec.chatProps?.onFiles ?? imageFiles}
-            sendContext={submit} renderEntry={renderEntry} renderComposer={composer => <PmComposer {...pointProps} composer={{ ...composer, sendBlocked: composer.sendBlocked || pm.voice.phase === 'processing' || pm.snapshot.send.kind === 'validating' || pm.snapshot.send.kind === 'submitting', ...(uncertain ? { text: uncertain.draft.text.split(POINT_PREFACE)[0]!.trimEnd(), disabled: true } : {}) }} transcript={transcript} />} />
+            sendContext={submit} renderEntry={renderEntry} renderComposer={composer => <PmComposer {...pointProps} composer={pm.answerComposer({ ...composer, sendBlocked: composer.sendBlocked || pm.voice.phase === 'processing' || pm.snapshot.send.kind === 'validating' || pm.snapshot.send.kind === 'submitting', ...(uncertain ? { text: uncertain.draft.text.split(POINT_PREFACE)[0]!.trimEnd(), disabled: true } : {}) })} transcript={transcript} />} />
         </div>
       </div>
     </PmMockupProvider></ChatTextProvider>

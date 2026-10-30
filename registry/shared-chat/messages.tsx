@@ -213,13 +213,13 @@ export function QuestionCard({ message, answer, onReply, own = false }: { readon
     void answer(message, option).catch(error => setError(error instanceof Error ? error.message : labels.actionFailedShort)).finally(() => setBusy(undefined));
   };
   const open = !question.answered;
+  if (!open) return null;
   return <section data-testid="question-card" data-answered={question.answered ? 'true' : undefined} aria-label={question.prompt} className="flex min-w-0 flex-col text-start">
     <div className="flex min-w-0 items-baseline gap-3">
       <p data-testid="question-prompt" className="m-0 min-w-0 flex-1 whitespace-pre-wrap">{question.prompt}</p>
       <MessageClock at={message.at} tone={own ? 'primary' : 'muted'} floating={false} />
     </div>
     {error && <p role="alert" className="m-0 text-destructive">{error}</p>}
-    {!open && <p data-testid="question-answered" className="m-0 flex items-center gap-1 text-xs text-muted-foreground"><CheckIcon aria-hidden="true" className="size-3" />{labels.sharedAnswered}</p>}
     {open && (question.options.length > 0 || question.allowFreeText) && <div role="group" aria-label={question.prompt} className="mt-2 flex min-w-0 flex-col gap-1.5">
       {question.options.map((option, index) => <Button key={`${index}:${option}`} data-testid="question-option" variant="outline" className="min-h-11 min-w-0 justify-start" disabled={busy !== undefined} aria-busy={busy === option || undefined} onClick={() => run(option)}><span className="truncate">{option}</span></Button>)}
       {question.allowFreeText && <Button data-testid="question-reply" variant="ghost" className="min-h-11 min-w-0 justify-start" onClick={() => onReply(message.id)}><ReplyIcon data-icon="inline-start" aria-hidden="true" /><span className="truncate">{labels.sharedReply}</span></Button>}
@@ -302,10 +302,10 @@ export function SharedMessage({ shared, children, remove, canRemove, openFile, o
     return () => document.removeEventListener('pointerdown', outside);
   }, [actionsOpen]);
   const { message, author, own } = shared;
-  const replyable = Boolean(onReply && ((author.kind === 'agent' && !message.via) || message.card));
+  const replyable = !message.question?.answered && Boolean(onReply && ((author.kind === 'agent' && !message.via) || message.card));
   const removable = Boolean(remove && canRemove?.(message));
   // An answer: the app agent's own message (not a person's, not a card, not a host notice).
-  const answer = !own && author.kind === 'agent' && !message.via && !message.card && message.kind !== 'system' && !message.removed;
+  const answer = !own && author.kind === 'agent' && !message.via && !message.card && !message.question?.answered && message.kind !== 'system' && !message.removed;
   const plain = view.answerStyle === 'plain' && answer;
   const copyable = answer && Boolean(message.text) && view.answerActions?.includes('copy') === true;
   const copy = () => { void copyText(message.text ?? '').then(() => { setCopied(true); clearTimeout(copiedTimer.current); copiedTimer.current = setTimeout(() => setCopied(false), 1500); }, () => setError(labels.copyFailed)); };

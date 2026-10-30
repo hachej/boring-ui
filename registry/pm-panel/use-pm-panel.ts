@@ -7,6 +7,8 @@ import { useVoiceAttempt } from '@hachej/boring-ui-kit/chat-react/voice';
 import { appendToDraft, voiceRefusalLabel } from '@hachej/boring-ui-kit/chat-text';
 import type { VoiceMessageHandle, VoiceMessageConfig } from '../pi-chat/config';
 import type { PiChatProps } from '../pi-chat/pi-chat';
+import type { ComposerProps } from '../pi-chat/composer';
+import { derive, waitingPart } from '@hachej/boring-ui-kit/chat-view';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { frenchChatLabels } from '../pi-chat/labels-fr';
 import { feedbackLabels, feedbackLabelsFr } from '../feedback/feedback-labels';
@@ -134,6 +136,30 @@ export function usePmPanel(spec: ImproveSpec, open: boolean, page: HTMLElement |
   useLayoutEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useLayoutEffect(() => { latest.current = { spec, state, open, dictated, speech }; });
   const snapshot = useSyncExternalStore(spec.controller.subscribe, spec.controller.getSnapshot, spec.controller.getSnapshot);
+  const [answering, setAnswering] = useState(false);
+  const pendingAnswer = useRef(false);
+  const question = useMemo(() => {
+    const part = waitingPart(derive(snapshot.view, { mode: 'expert', renderEntry: undefined, renderTool: undefined, groupTool: undefined }).rows);
+    return part?.kind === 'question' ? part : undefined;
+  }, [snapshot.view]);
+  // In a PM conversation the plain composer answers its pending native question, rather than queuing behind the durable wait.
+  const answerComposer = (composer: ComposerProps): ComposerProps => {
+    const answer = spec.chatProps?.actions?.answer;
+    if (!question?.questionId || !answer || snapshot.draft.attachments.length || state.chips.length) return composer;
+    const id = question.questionId;
+    return { ...composer, working: false, sendBlocked: composer.sendBlocked || answering, onSend: () => {
+      const value = spec.controller.getSnapshot().draft.text;
+      if (!value.trim() || pendingAnswer.current || composer.sendBlocked) return;
+      pendingAnswer.current = true; setAnswering(true); setProblem(undefined);
+      let timer: ReturnType<typeof setTimeout>;
+      const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('Answer timed out')), 15_000); });
+      void Promise.race([Promise.resolve().then(() => answer(id, value.trim())), timeout]).then(outcome => {
+        if (outcome.kind !== 'answered') throw new Error('Answer refused');
+        if (latest.current.spec.controller === spec.controller && spec.controller.getSnapshot().draft.text === value) spec.controller.setText('');
+      }).catch(() => { if (mounted.current && latest.current.spec.controller === spec.controller) setProblem(text.answerFailed); })
+        .finally(() => { clearTimeout(timer); pendingAnswer.current = false; if (mounted.current) setAnswering(false); });
+    } };
+  };
   const policy = spec.policy ?? defaultPolicy;
   const voiceConfig = spec.pointVoice ?? spec.voice;
   const core = useVoiceAttempt<{ readonly controller: NativeChatController; readonly config: PmVoice; readonly offset: number; readonly priorSpeech: PmTranscript }>({
@@ -395,7 +421,7 @@ export function usePmPanel(spec: ImproveSpec, open: boolean, page: HTMLElement |
 
   // The meta line under the draft (spec 1 §5): dictated time and captures, « Écrit · n captures » without dictation, nothing with neither.
   const meta = dictated !== undefined || state.chips.length ? text.meta(dictated, state.chips.length) : undefined;
-  return { state, dispatch, voice, recording, problem, liveText, sendContext, dictated, snapshot, remove, returnToComposer, focusVersion, text, meta, announcement, comment, sent: sentNotice > 0, quietSend };
+  return { state, dispatch, voice, recording, problem, liveText, sendContext, dictated, snapshot, remove, returnToComposer, focusVersion, text, meta, announcement, comment, sent: sentNotice > 0, quietSend, answerComposer };
 }
 
 export type PmPanelState = ReturnType<typeof usePmPanel>;

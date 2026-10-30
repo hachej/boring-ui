@@ -4,6 +4,8 @@ Host-owned business requests rendered from authorized records, shared by a board
 
 ## Sub-features
 
+- `task-display-title` cards prefer the host's localized `display` while retaining the original `title` for expanded details. `TaskRecord.technical` carries explicit host classification, never inferred from prose or actor names. Neither field changes authorization or ownership. `packages/ui/src/task-board.ts`, `registry/task-board/task-request-card.tsx`.
+
 - `task-board-status` explicit viewer/builder/high-risk/sent/none semantics (`sent`: `confirmed_at` and `open`, only when asked with `{ sent: true }`, which the compact card does: « Envoyée » / « Sent », secondary role; the board card and the detail keep theirs) and EN/FR labels; `TaskStatusPill` renders one pill per task from the theme's primary/secondary/destructive roles (French viewer pill: the host's warning-soft role). `packages/ui/src/task-board.ts`, `registry/task-board/task-request-card.tsx`.
 - `task-board-columns` tasks bar « 5 open · Done 12 · Closed 1 » (Done/Closed links switch to those lists) with Mine (default when the viewer is known) / All pills; WAITING · WORKING · OPEN columns with counts and « 1 on you »; `id · age` cards, the viewer's card with a 2px primary edge. The container selects three columns or one. `registry/task-board/task-board.tsx`, `registry/task-board/task-request-card.tsx`.
 - `task-board-bar-start` optional `barStart` content at the start of the tasks bar (the collapsed Studio header's app name and « Show the app »). `registry/task-board/task-board.tsx`.
@@ -25,6 +27,7 @@ Host-owned business requests rendered from authorized records, shared by a board
 
 Preconditions: built packages, Chromium, fictional data only. Run `CHROMIUM=/path/to/chromium npm run task-board:journey`.
 
+- `task-display-title`: `node --test test/contracts/task-display.test.mjs` renders both public card variants with and without a short display title, preserving the frozen original record.
 - `task-board-status`: run `node --test test/packages/ui-task-board.test.mjs`; verify precedence, no status inferred from person names/free text, EN/FR question/confirmation wording and missing-status omission. Display fields do not change ownership or mine filtering.
 - `task-board-columns`: compare the wide stage with the same desktop's Narrow panel, then the 375px phone. Click Done 12 / Closed 1 and back to « 5 open »; toggle Mine/All (D-202 is Sam's).
 - `task-board-bar-start`: open `?layout=ambient`; the app name and « Show the app » start the tasks bar.

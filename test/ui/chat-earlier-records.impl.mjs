@@ -59,6 +59,36 @@ test('transcript history loads real persisted native records without restoring t
     await act(async () => root.render(null));
     assert.equal(controller.getSnapshot().disposed, false, 'presentation borrows the native controller');
   });
+  await t.test('a failed native read offers a visible retry that restores the older records', async () => {
+    let attempts = 0;
+    const retryController = createNativeChatController({ identity: { runtimeId: 'fictional', scopeId: 'fictional', principalId: 'alice' }, conversation, context,
+      history: { id: conversation.id, entries: (...args) => ++attempts === 1 ? Promise.reject(new Error('Fictional outage')) : conversation.entries(...args) } });
+    try {
+      await retryController.connect();
+      await act(async () => root.render(createElement(PiChat, { controller: retryController, header: false })));
+      await act(async () => element.querySelector('[data-testid=transcript-history-load]').click());
+      const retry = element.querySelector('[data-testid=transcript-history-load]');
+      assert.equal(retry.disabled, false);
+      assert.equal(retry.classList.contains('sr-only'), false, 'a phone user can see and tap Retry');
+      assert.ok(element.querySelector('[data-testid=transcript-history] [role=alert]'));
+      await act(async () => retry.click());
+      assert.match(element.querySelector('[data-testid=transcript]').textContent, /Archived fictional notebook/);
+      assert.equal(attempts, 2);
+      assert.equal(element.querySelector('[data-testid=transcript-history-load]'), null, 'exhausted history offers no more loading button');
+    } finally { await act(async () => root.render(null)); await retryController.dispose(); }
+  });
+  await t.test('a new native thread has no earlier-message control, even after its first message', async () => {
+    const fresh = await harness.createConversation({ ownership: { kind: 'ownerless' }, agent: { model: fake.model } }, context);
+    const freshController = createNativeChatController({ identity: { runtimeId: 'fictional', scopeId: 'fictional', principalId: 'alice' }, conversation: fresh, context });
+    try {
+      await freshController.connect();
+      await act(async () => root.render(createElement(PiChat, { controller: freshController, header: false })));
+      assert.equal(element.querySelector('[data-testid=transcript-history-load]'), null);
+      await act(async () => fresh.submit({ type: 'write', entry: { kind: 'fictional.note', model: [{ role: 'user', content: 'First fictional message', timestamp: 0 }] } }, context));
+      assert.match(element.querySelector('[data-testid=transcript]').textContent, /First fictional message/);
+      assert.equal(element.querySelector('[data-testid=transcript-history-load]'), null, 'no archive exists behind the current native context');
+    } finally { await act(async () => root.render(null)); await freshController.dispose(); }
+  });
   await t.test('a partial active-row batch announces only the messages actually revealed', async () => {
     controller.clearHistory();
     await act(async () => {
