@@ -4,7 +4,7 @@
 // (opening one closes any other) and Back closes it (the Back manager's `sheet` layer). The agent layer is not an AppSheet.
 import type { ReactNode } from 'react';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer';
-import { useBackLayer } from './back';
+import { useBackLayer } from '../utils/back';
 import { useExclusiveSheet } from './use-exclusive-sheet';
 
 /** A modal bottom sheet with a title. The scrim, Escape, a swipe down and Back close it. */

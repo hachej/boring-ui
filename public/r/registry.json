@@ -1607,11 +1607,6 @@
           "target": "components/app-shell/agent-link.ts"
         },
         {
-          "path": "registry/app-shell/back.ts",
-          "type": "registry:lib",
-          "target": "components/app-shell/back.ts"
-        },
-        {
           "path": "registry/app-shell/use-visual-viewport.ts",
           "type": "registry:hook",
           "target": "components/app-shell/use-visual-viewport.ts"

@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import { ChevronDownIcon, ListTodoIcon, XIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
 import { AgentWorkspace } from '../pi-app/agent-workspace';
 import type { WorkspaceBarPanel } from '../pi-app/workspace-bar';
 import { defaultKinds } from '../pi-app-kinds/pi-app-kinds';
@@ -112,7 +113,8 @@ function PanelSession({ binding, page, screen, report }: { readonly binding: Bin
   useEffect(() => { onFull?.(strip, collapse); }, [strip, collapse, onFull]);
   useEffect(() => () => { onFull?.(false, collapse); }, [onFull, collapse]);
   return <section hidden={!binding.open} data-feedback-ignore="" data-testid="pm-panel" data-mode={strip ? pm.state.mode : 'chat'}
-    className={cn('min-h-0 min-w-0 bg-background md:static md:w-[26rem] md:shrink-0 md:border-l', binding.open && 'flex flex-col', strip ? 'shrink-0' : 'absolute inset-0 z-40')}>
+    className={cn('min-h-0 min-w-0 bg-background md:relative md:w-[26rem] md:shrink-0', binding.open && 'flex flex-col', strip ? 'shrink-0' : 'absolute inset-0 z-40')}>
+    <Separator orientation="vertical" className="absolute inset-y-0 left-0 hidden md:block" />
     <PmWorkspace spec={binding.spec} pm={pm} page={page} preset="touch" open={binding.open} close={binding.close} />
   </section>;
 }

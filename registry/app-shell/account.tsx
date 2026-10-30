@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { useAgentLayer } from './agent-layer';
-import { afterBack } from './back';
+import { afterBack } from '../utils/back';
 import { Switch } from '@/components/ui/switch';
 import { DropdownMenuCheckboxItem } from '@/components/ui/dropdown-menu';
 import { SHEET_ROW } from './app-sheet';

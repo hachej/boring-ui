@@ -6,7 +6,7 @@
 import { useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { XIcon } from 'lucide-react';
+import { CircleIcon, XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -39,7 +39,7 @@ function BarPanel({ id, label, icon: Icon, dot, narrow, open, onOpenChange, chil
   readonly onOpenChange: (open: boolean) => void;
   readonly children: ReactNode;
 }) {
-  const content = <><Icon aria-hidden="true" />{dot && <span data-testid={`workspace-bar-${id}-dot`} aria-hidden="true" className="absolute top-1 right-1 size-2 rounded-full bg-primary" />}</>;
+  const content = <><Icon aria-hidden="true" />{dot && <CircleIcon data-testid={`workspace-bar-${id}-dot`} aria-hidden="true" className="absolute top-1 right-1 size-2 fill-primary stroke-none" />}</>;
   const button = <Button variant="ghost" size="icon" data-testid={`workspace-bar-${id}`} aria-label={label} data-unread={dot || undefined} className={cn('relative', iconSize(narrow))}>{content}</Button>;
   if (narrow) return <>
     <Button variant="ghost" size="icon" data-testid={`workspace-bar-${id}`} aria-label={label} data-unread={dot || undefined} aria-haspopup="dialog" aria-expanded={open} className={cn('relative', iconSize(narrow))} onClick={() => onOpenChange(true)}>{content}</Button>

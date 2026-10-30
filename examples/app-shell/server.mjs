@@ -145,7 +145,9 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
     '/api/pm/library': async request => {
       if (!pmTasks || !signedIn(request)) return new Response(null, { status: 403 });
       if (request.method === 'POST' && !request.headers.has('x-boring-catalog') && (await request.clone().json()).kind !== 'read') return new Response(null, { status: 403 });
-      return resources(new Request(request, { headers: { ...Object.fromEntries(request.headers), authorization: `Bearer ${token}` } }));
+      const headers = new Headers(request.headers);
+      headers.set('authorization', `Bearer ${token}`);
+      return resources(new Request(request, { headers }));
     },
     '/_tasks/api': async request => !pmTasks ? new Response(null, { status: 404 }) : !signedIn(request) || refusing ? new Response(null, { status: 403 })
       : Response.json({ tasks: new URL(request.url).searchParams.get('mine') === '1' ? tasks : [], cursor: String(tasks.length + answers.length) }),

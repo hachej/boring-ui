@@ -37,7 +37,7 @@ import { NoteBubble, useComposerFeedback } from '../feedback/feedback-session';
 import { feedbackLabelsFr } from '../feedback/feedback-labels';
 import { CommentBanner, useCommenting, usePointing } from '../feedback/point-mode';
 import { cn } from '../utils/utils';
-import { useBackLayer } from './back';
+import { useBackLayer } from '../utils/back';
 import { parseAgentLink } from './agent-link';
 import { closeShellLayer, registerAgentLayerCloser } from './shell-layer';
 import { appShellText } from './text';

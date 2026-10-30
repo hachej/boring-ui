@@ -7,7 +7,7 @@
 // (`useScreenHeader`). The AgentLayer is mounted once, here.
 // Host concern: Pi has no layout; the screen on show travels as the agent's context (useAgentContext -> createPromptContext).
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { afterStacksBack } from './back';
+import { afterStacksBack } from '../utils/back';
 import type { ReactNode } from 'react';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
