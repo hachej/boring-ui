@@ -108,19 +108,20 @@ export function TaskBoard({ tasks, filter, onFilterChange, currentUser, limit, v
   const openFile = (task: TaskRecord, file: TaskFile) => { setFileSelection({ taskId: task.id, path: file.path }); onOpenFile?.(task, file); };
   const root = useRef<HTMLElement>(null);
   const back = useRef<HTMLButtonElement>(null);
-  const previous = useRef<string | null>(null);
+  const previous = useRef<{ readonly id: string; readonly column: TaskColumn | undefined } | null>(null);
+  const detailColumn = detail && taskColumn(detail);
   const pendingFocus = useRef<string | null>(null);
   const cardLink = (id: string) => [...root.current?.querySelectorAll<HTMLAnchorElement>('[data-task-open]') ?? []].find(candidate => candidate.dataset['taskOpen'] === id);
   const unfold = (column: TaskColumn, open: boolean) => setUnfolded(current => { const next = new Set(current); if (open) next.add(column); else next.delete(column); return next; });
   useEffect(() => {
     if (selected !== null) back.current?.focus();
     else if (previous.current !== null) {
-      const id = previous.current, link = cardLink(id), record = tasks.find(task => task.id === id);
+      const { id, column } = previous.current, link = cardLink(id);
       if (link) link.focus();
-      else if (record) { pendingFocus.current = id; unfold(taskColumn(record), true); }
+      else if (column) { pendingFocus.current = id; unfold(column, true); }
     }
-    previous.current = selected === null ? null : detail?.id ?? selected;
-  }, [selected, detail?.id]);
+    previous.current = selected === null ? null : { id: detail?.id ?? selected, column: detailColumn };
+  }, [selected, detail?.id, detailColumn]);
   useEffect(() => { if (pendingFocus.current !== null) { cardLink(pendingFocus.current)?.focus(); pendingFocus.current = null; } }, [unfolded]);
   const select = (id: string | null) => {
     closeFile();
@@ -186,10 +187,10 @@ export function TaskBoard({ tasks, filter, onFilterChange, currentUser, limit, v
         {!listed.length && <Empty><EmptyHeader><EmptyTitle>{compactLabels[locale].empty}</EmptyTitle><EmptyDescription>{compactLabels[locale].emptyDescription}</EmptyDescription></EmptyHeader></Empty>}
         {FOLDED.map(column => {
           const rows = of(column);
-          return rows.length > 0 && <Collapsible key={column} data-task-group={column} className="px-3.5 pb-2" open={unfolded.has(column)} onOpenChange={open => unfold(column, open)}>
-            <CollapsibleTrigger render={<Button variant="ghost" size="sm" className="text-muted-foreground" />}>{words[column]} · {rows.length}</CollapsibleTrigger>
+          return rows.length > 0 && <div key={column} className="px-3.5 pb-2"><Collapsible data-task-group={column} open={unfolded.has(column)} onOpenChange={open => unfold(column, open)}>
+            <CollapsibleTrigger render={<Button variant="ghost" size="sm" />}>{words[column]} · {rows.length}</CollapsibleTrigger>
             <CollapsibleContent><div role="list" aria-label={words[column]} className="grid gap-[7px] pt-1.5 @3xl/task-rails:grid-cols-4">{rows.map(card)}</div></CollapsibleContent>
-          </Collapsible>;
+          </Collapsible></div>;
         })}
       </div>
       {selected !== null && <aside aria-label="Task detail" data-task-side className={cn('absolute inset-y-0 right-0 flex w-[400px] max-w-full flex-col bg-popover text-popover-foreground', overlayClassName)} aria-live="polite">

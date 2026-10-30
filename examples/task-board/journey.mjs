@@ -161,7 +161,7 @@ try {
   await step('a narrow right panel on the same desktop uses a list and in-place detail', async () => {
     await browser.evaluate(`document.documentElement.classList.remove('dark')`); await pause(200);
     await browser.click(`document.querySelector('[data-panel-width]')`);
-    assert.equal(await browser.evaluate(`getComputedStyle(${board}.querySelector('[data-task-column="waiting"]').parentElement).gridTemplateColumns.split(' ').length`), 1);
+    assert.equal(await browser.evaluate(`getComputedStyle(${board}.querySelector('[data-task-column="needs-you"]').parentElement).gridTemplateColumns.split(' ').length`), 1);
     await browser.screenshot('desktop-narrow-light.png');
     await browser.click(card('D-201')); await browser.until('narrow detail', `!!${detail}`);
     assert.notEqual(await browser.evaluate(`getComputedStyle(${list}).display`), 'none');
