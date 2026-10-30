@@ -197,7 +197,7 @@
     "@earendil-works/pi-durable": "1.4.0",
     "@earendil-works/pi-ai": "1.4.0",
     "@earendil-works/chord": "1.4.0",
-    "undici": "7.29.1",
+    "undici": "7.30.1",
     "agents": {
       "@modelcontextprotocol/sdk": "1.32.1"
     }
