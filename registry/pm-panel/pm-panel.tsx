@@ -178,6 +178,7 @@ export function PmStandalone({ spec, appName, locale, hostOrigins = PM_HOST_ORIG
 /** Wiring only: the regular agent page, with the existing point composer and a host Tasks panel. */
 function PmWorkspace({ spec, pm, page, preset, open, close, beside = false }: { readonly spec: ImproveSpec; readonly pm: ReturnType<typeof usePmPanel>; readonly page: HTMLElement | null; readonly preset: PmPreset; readonly open: boolean; readonly close?: (() => void) | undefined; readonly beside?: boolean }) {
   const { text } = pm;
+  const files = spec.resources ? { resources: spec.resources } : { resources: undefined };
   // On a phone the chat gives the page its screen while pointing. A PM beside the app's frame covers nothing.
   const phone = usePhone() && !beside;
   const strip = pm.state.mode === 'point' || pm.state.mode === 'navigate';
@@ -210,7 +211,7 @@ function PmWorkspace({ spec, pm, page, preset, open, close, beside = false }: { 
     <div hidden={strip && phone} className={cn('min-h-0 flex-1 flex-col', strip && phone ? 'hidden' : 'flex')}>
       <AgentWorkspace layout="embedded" title={spec.appName ?? spec.label ?? text.title} locale={text.locale} controller={spec.controller}
         conversationId={spec.conversationId ?? String(pm.snapshot.conversationId)} conversations={spec.conversations ?? spec.chatProps?.conversations}
-        resources={spec.resources} artifactKinds={kinds} interactive={PM_INTERACTIVE} autoOpen={Boolean(spec.resources)} barPanels={barPanels} barOptions={{ panelsFirst: true }}
+        {...files} artifactKinds={kinds} interactive={PM_INTERACTIVE} autoOpen={Boolean(spec.resources)} barPanels={barPanels} barOptions={{ panelsFirst: true }}
         controls={close && <Button variant="ghost" size="icon" data-testid="pm-close" aria-label={text.close} title={text.close} onClick={close}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>}
         chat={{ ...spec.chatProps, ...(mentions ? { mentions } : {}),
           labels: { ...spec.chatProps?.labels, placeholder: `${text.placeholderBefore}↖${text.placeholderAfter}`, add: text.attach, send: text.send },
