@@ -28,6 +28,4 @@ The fixture uses temporary workspace SQLite plus native MemoryStorage, cleaned o
 
 ## Compact native request fixture (no models)
 
-`CHROMIUM=/path/to/chromium node examples/task-board/compact-journey.mjs` serves the real public `TaskBoard`, `TaskRequestCard` and `TaskDetail` using the same Base UI controls and `studio-theme.css`. Fictional records only, no model calls or POST route. It captures FR/EN, light/dark at 375px and 1280px, checks one product chip per row and no overflow, drives authorized local Edit/Confirm intents, explicitly opts into collapsed technical rows and opens the unchanged full original need. Screenshots and `journey.json` are under `.cache/evidence/task-list-compact/screenshots/`.
 
-Compact callers route `onOpen(task)` to their existing native detail. The optional `compactPresentation={{ includeTechnical: true }}` is only an owner-view presentation opt-in over records already authorized by the host; it grants no server rights. Closed rows collapse in ordinary lists; canonical technical rows are omitted unless opted in. Neither changes operator-board behavior.

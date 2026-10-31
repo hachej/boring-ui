@@ -1,5 +1,7 @@
 # Unreleased
 
+- **One board in the PM too (`task-board`, `pm-panel`).** « Mes demandes » is the regular `TaskBoard`. `TaskBoard`'s `variant`, `compactPresentation` and `cardActions` are removed: use the board as it is and pass per-task actions through `actions`, which draws them in the detail. `TaskRequestCard variant="compact"` stays for a request inside a conversation. `StudioTaskBoardSeam` adds optional `answer(task, text)`, which the detail's question calls. The tasks bar draws only when it holds something, and app filters scroll on one line.
+
 # Migrating to 0.4.42
 
 - **One pluggable PM (`pm-panel`, `pi-app`, `pi-workspace`, `app-shell`).** `PmChat` is the same regular `AgentWorkspace layout="embedded"` that AppShell hosts: Tasks, History, Library, New and close; desktop docks beside the app, phone replaces it except while pointing. There is no natural/WhatsApp reply renderer, grabber or intermediate sheet. Direct hosts pass `ImproveSpec.conversations`, `conversationId`, `resources` and optional `artifactKinds`; a chat-only host needs no fake filesystem. The one-line resolver uses the actual read-only `api/pm/library` discovery/catalog/read route, not POST-only `api/pm/resources`.

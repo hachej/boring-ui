@@ -14,7 +14,7 @@ import { compactLabels, compactTaskStatus, compactTaskTitle, taskWaitingText } f
 export interface TaskDetailProps {
   readonly task: TaskRecord;
   readonly locale?: TaskLocale | undefined;
-  /** Host content placed after the title card (for example a mount report or host-authorized request actions). */
+  /** Host content after the question and the request (for example a mount report or host-authorized request actions). */
   readonly actions?: ReactNode;
   /** The host reauthorizes and resolves the original question. Rendering never supplies approval. */
   readonly onAnswer?: ((task: TaskRecord, question: TaskQuestion, value: string) => void) | undefined;
@@ -96,7 +96,6 @@ export function TaskDetail({ task, locale = 'en', actions, onAnswer, onOther, on
       {compactTaskTitle(task) !== task.title.trim() && <p className="text-[13px] break-words text-muted-foreground">{task.title}</p>}
       {meta && <p className="text-xs text-muted-foreground">{meta}</p>}
     </Item></div>
-    {actions}
     {open && <div className="rounded-[var(--radius-lg)] bg-card"><OpenQuestion key={open.id} task={task} question={open} locale={locale} onAnswer={onAnswer} onOther={onOther} onDiscussQuestion={onDiscussQuestion} /></div>}
     {(reason || status === 'needs-you' && !open) && <div className="rounded-[var(--radius-lg)] bg-card" data-task-reason=""><TaskAttention active={status === 'needs-you'}><Item variant="outline" className="flex-col items-stretch gap-1">
       <span className={sectionLabel}>{status === 'needs-you' ? words.waiting : compactLabels[locale].blocked}</span>
@@ -107,6 +106,7 @@ export function TaskDetail({ task, locale = 'en', actions, onAnswer, onOther, on
       <h3 className={sectionLabel}>{words.request}</h3>
       <p className="text-sm break-words whitespace-pre-wrap">{task.spec}</p>
     </Item></section>}
+    {actions}
     {!!answered.length && <section aria-label="Answered questions" className="rounded-[var(--radius-lg)] bg-card"><Item variant="outline" className="flex-col items-stretch gap-0">
       <div className="flex items-baseline justify-between gap-2 pl-2.5"><h3 className={sectionLabel}>ANSWERED · {answered.length}</h3>
         {answered.length > 3 && <Button variant="link" size="xs" className="underline" data-task-show-answers aria-expanded={showAll} onClick={() => setShowAll(value => !value)}>{showAll ? 'Show latest' : 'Show all'}</Button>}</div>
@@ -120,6 +120,10 @@ export function TaskDetail({ task, locale = 'en', actions, onAnswer, onOther, on
         const content = <><Icon aria-hidden="true" /><span className="min-w-0 flex-1 truncate text-start text-[13px] font-normal">{name}</span>{label && <span className="text-[11px] font-normal text-muted-foreground">{label}</span>}</>;
         return onOpenFile ? <Button key={file.path} variant="ghost" className="w-full justify-start" data-task-file={file.path} onClick={() => onOpenFile(task, file)}>{content}</Button> : <p key={file.path} className="flex items-center gap-2">{content}</p>;
       })}
+    </Item></section>}
+    {!!task.history?.length && <section aria-label="Task history" className="rounded-[var(--radius-lg)] bg-card" data-task-history=""><Item variant="outline" className="flex-col items-stretch gap-1">
+      <h3 className={sectionLabel}>HISTORY</h3>
+      {task.history.map((item, index) => <p key={item.id ?? index} className="text-[13px] break-words text-muted-foreground">{item.note}</p>)}
     </Item></section>}
     {onAsk && <Button variant="link" className="self-start underline" data-task-ask={task.id} onClick={() => onAsk(task)}>{words.ask}</Button>}
   </div>;

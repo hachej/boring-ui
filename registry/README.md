@@ -1431,7 +1431,7 @@ function Tasks({ tasks }: { tasks: readonly TaskRecord[] }) {
 }
 function RecentRequests({ tasks, open }: { tasks: readonly TaskRecord[]; open: (id: string) => void }) {
   return <TaskBoard tasks={tasks} filter="mine" currentUser="alice" limit={2}
-    variant="compact" onOpen={task => open(task.id)} />;
+    onOpen={task => open(task.id)} />;
 }
 // The PM's request card (C7) is the same record's compact rendering:
 // <TaskRequestCard task={request} variant="compact" locale="fr" viewerAction="confirmation"
@@ -1444,8 +1444,6 @@ function RecentRequests({ tasks, open }: { tasks: readonly TaskRecord[]; open: (
 | `filter`, `onFilterChange`, `currentUser`, `limit` | `mine` (exact host-resolved requester identity; the uncontrolled default when `currentUser` is set), `all`, `waiting-on-me` (waiting with `waiting_on_you`); filter before newest-first limit. No user means All and no Mine/All pills |
 | `bar`, `barStart` | The tasks bar (« 5 open · Done 12 · Closed 1 », Mine/All; Done/Closed switch the list). `bar={false}` when the host draws it; `barStart` adds host content at its start |
 | `locale`, `viewerAction` | `en` (default) or `fr` for pills and compact cards; explicit `question` (À vous) or `confirmation` (À confirmer) |
-| `variant`, `cardActions(task)` | `board` (default) or `compact`: title-first rows with one FR/EN product chip and optional authorized host actions. Supply compact `onOpen` to the host detail route (compact does not mount local detail) |
-| `compactPresentation` | Compact-only `{ includeTechnical?: boolean }`: default omits `technical === true`; explicit true adds a collapsed technical group. Closed rows always collapse, valid needs-you first before limit, newest-first within priority. Presentation only, never grants server rights |
 | `selectedTask`, `onSelectedTaskChange` | Optional controlled router selection, ID / `D-<number>` alias or null. Otherwise `?task=` with native pushState/back/forward, preserving other query/hash state |
 | `onOpen(task)` | Delegate navigation to one host detail/present path; when supplied, no additional local detail opens |
 | `actions(task)`, `onAnswer(task, question, value)` | Host actions slot in detail and host-authorized question callback. Question options are strings or `{ label, value }`; no callback shows inert option chips |

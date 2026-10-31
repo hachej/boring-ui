@@ -60,7 +60,9 @@ export interface StudioTaskBoardSeam {
   readonly onOpenChange?: (open: boolean) => void;
   /** Opens a task: the @ chip, a card in « Mes demandes ». */
   readonly onOpen: (task: import('@hachej/boring-ui-kit/task-board').TaskRecord) => void;
-  /** Host-authorized compact card actions in « Mes demandes » (`TaskBoard cardActions`). */
+  /** Answers the question a task waits on, as the viewer (« Confirmer » or their own words). */
+  readonly answer?: (task: import('@hachej/boring-ui-kit/task-board').TaskRecord, text: string) => void;
+  /** Host-authorized actions in a request's detail (« Retirer »; `TaskBoard actions`). */
   readonly cardActions?: (task: import('@hachej/boring-ui-kit/task-board').TaskRecord) => import('react').ReactNode;
   /** The request card under a PM reply (C7, `TaskRequestCard variant="compact"`), or undefined when that reply carries no request. `edit` puts the request text back in the composer (« Modifier »). */
   readonly renderRequest?: (context: { readonly entry: import('@earendil-works/pi-durable').EntryRecord; readonly edit: (text: string) => void }) => import('react').ReactNode;
