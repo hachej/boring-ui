@@ -4,27 +4,27 @@
   "title": "Shared PM composer and in-app panel",
   "description": "« Améliorer l'app »: the embedded AgentWorkspace chat, History, read-only Library and host Tasks panel, with the shared pointing strip, numbered pins and timestamped chips. Docked beside the app on desktop and full screen on phones; PmChat gives Studio the same component.",
   "dependencies": [
-    "@hachej/boring-ui-kit@^0.4.40",
-    "@hachej/boring-feedback@^0.4.40",
-    "@hachej/boring-files@^0.4.40",
+    "@hachej/boring-ui-kit@^0.4.41",
+    "@hachej/boring-feedback@^0.4.41",
+    "@hachej/boring-files@^0.4.41",
     "@earendil-works/pi-durable@~1.4.0",
     "lucide-react@^1.51.0",
     "react@^19.0.0",
     "react-dom@^19.0.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.40/r/pi-app.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.40/r/pi-app-kinds.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.40/r/pi-chat.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.40/r/pi-chat-markdown.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.40/r/pi-chat-plugins.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.40/r/pi-chat-voice.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.40/r/feedback.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.40/r/task-board.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.40/r/task-mentions.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.40/r/utils.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.40/r/pi-artifacts.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.40/r/viewer-frame.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.41/r/pi-app.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.41/r/pi-app-kinds.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.41/r/pi-chat.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.41/r/pi-chat-markdown.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.41/r/pi-chat-plugins.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.41/r/pi-chat-voice.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.41/r/feedback.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.41/r/task-board.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.41/r/task-mentions.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.41/r/utils.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.41/r/pi-artifacts.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.41/r/viewer-frame.json"
   ],
   "files": [
     {
