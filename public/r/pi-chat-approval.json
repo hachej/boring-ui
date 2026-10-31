@@ -4,13 +4,13 @@
   "title": "Pi chat approval card",
   "description": "The Approve / Deny card for host tools wrapped with `requireApproval`. Plug it in with `cards={{ approval: ApprovalCard }}`; without it pi-chat shows a \"waiting for your answer\" notice with no answer UI.",
   "dependencies": [
-    "@hachej/boring-ui-kit@^0.4.44",
+    "@hachej/boring-ui-kit@^0.4.45",
     "react@^19.0.0",
     "lucide-react@^1.51.0",
     "@earendil-works/pi-ai@~1.4.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.44/r/pi-chat.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.45/r/pi-chat.json"
   ],
   "files": [
     {
