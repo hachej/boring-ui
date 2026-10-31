@@ -4,13 +4,13 @@
   "title": "HTML source and passive preview",
   "description": "Exact HTML source editing with a reconstructed passive preview and borrowed controller. Browser security qualification remains separate.",
   "dependencies": [
-    "@hachej/boring-ui-kit@^0.4.43",
-    "@hachej/boring-files@^0.4.43",
+    "@hachej/boring-ui-kit@^0.4.44",
+    "@hachej/boring-files@^0.4.44",
     "react@^19.0.0",
     "react-dom@^19.0.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.43/r/button.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.44/r/button.json"
   ],
   "files": [
     {
