@@ -1,5 +1,7 @@
 # Unreleased
 
+- **A PM in a host's frame (`pm-panel`, `pi-workspace`, `pi-app`).** `ArtifactWorkspace` adds an optional `contained`: the sheet covers the workspace, never the window; `AgentWorkspace layout="embedded"` sets it, so its bar stays above the viewer. `PmChat` adds an optional `title`; `?pm=standalone` in a frame reads « PM ». A framed PM posts `{ boring: 'pm-pointing', picking }` and `{ boring: 'pm-picked' }` to its parent. The door reads `resources.endpoint` from the descriptor (fallback `{base}/resources`): a host must serve revision discovery there. No change needed in an app.
+
 # Migrating to 0.4.43
 
 - **One board in the PM too (`task-board`, `pm-panel`).** « Mes demandes » is the regular `TaskBoard`. `TaskBoard`'s `variant`, `compactPresentation` and `cardActions` are removed: use the board as it is and pass per-task actions through `actions`, which draws them in the detail. `TaskRequestCard variant="compact"` stays for a request inside a conversation. `StudioTaskBoardSeam` adds optional `answer(task, text)`, which the detail's question calls. The tasks bar draws only when it holds something, and app filters scroll on one line.

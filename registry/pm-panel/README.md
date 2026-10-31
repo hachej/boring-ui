@@ -9,7 +9,7 @@ The PM uses the regular `AgentWorkspace layout="embedded"`: Tasks, History, Libr
   page={pointableAppElement} screen="Ma journée" />
 ```
 
-`resources` is the existing `AgentWorkspace` contract: `{ endpoint, fetch, identity }`. The one-line resolver uses authenticated, page-relative `api/pm/agent`, `api/pm/conversations`, `api/pm/chat` and **`api/pm/library`**, as Studio does. The Library is read-only and the real service lists `documents/`. `api/pm/resources` is POST-only, not revision discovery. Dictation stays at `api/host/transcribe`; tasks stay at `_tasks/api`. No host route is added.
+`resources` is the existing `AgentWorkspace` contract: `{ endpoint, fetch, identity }`. The one-line resolver uses authenticated, page-relative `api/pm/agent`, `api/pm/conversations`, `api/pm/chat` and the revision route `api/pm/agent` names in `resources.endpoint`, as Studio does. The Library is read-only and the real service lists `documents/`. Dictation stays at `api/host/transcribe`; tasks stay at `_tasks/api`. No host route is added.
 
 A direct chat-only `ImproveSpec` can omit resources and conversations; absent capabilities are not fabricated. For the complete PM, supply both. Artifacts use existing kinds/viewers and `ArtifactWorkspace`: beside chat when the container fits them, otherwise a sheet confined to that PM window with Back to chat. No `PmMockupView`, `pmArtifacts` or `readArtifact` adapter remains.
 
@@ -56,3 +56,7 @@ node --test test/contracts/pm-*.test.mjs
 ```
 
 All fixtures are fictional/scripted. Screenshots and raw local evidence stay under `.cache/evidence/pm-one/`; local proof is not a kit release, Studio adoption, deployed-app fix or real-phone-hardware qualification.
+
+## In a host's frame
+
+`?pm=standalone` in a frame: the bar reads « PM », since the host already names the app, and it stays above the viewer at every width. The PM tells the page holding the frames, with no content: `{ boring: 'pm-pointing', picking }` when pointing starts or stops and `{ boring: 'pm-picked' }` when a pick lands. A host showing one frame at a time (a phone) shows the app, then comes back.
