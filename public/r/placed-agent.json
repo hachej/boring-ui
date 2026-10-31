@@ -9,10 +9,10 @@
     "lucide-react@^1.51.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.45/r/pi-app.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.45/r/pi-ambient.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.45/r/app-shell.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.45/r/utils.json"
+    "@boring-ui/pi-app",
+    "@boring-ui/pi-ambient",
+    "@boring-ui/app-shell",
+    "@boring-ui/utils"
   ],
   "files": [
     {
