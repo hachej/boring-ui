@@ -15,7 +15,7 @@ import { TaskRequestCard, TaskStatusPill, taskMeta, taskTokens } from './task-re
 import type { TaskLocale, TaskViewerAction } from './task-request-card';
 import { TaskDetail } from './task-detail';
 import type { TaskDetailProps } from './task-detail';
-import { columnLabels, compactLabels, compactTaskStatus, TASK_COLUMNS, taskColumn } from './compact-presentation';
+import { columnLabels, compactLabels, TASK_COLUMNS, taskColumn } from './compact-presentation';
 import type { TaskColumn } from './compact-presentation';
 
 export { TaskRequestCard, TaskRequestCard as TaskCard, TaskStatusPill, TaskStatusChip, TaskAttention, taskMeta, taskTokens } from './task-request-card';

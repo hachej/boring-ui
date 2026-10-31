@@ -1,7 +1,5 @@
 # Unreleased
 
-# Migrating to 0.4.43
-
 - **One board in the PM too (`task-board`, `pm-panel`).** « Mes demandes » is the regular `TaskBoard`. `TaskBoard`'s `variant`, `compactPresentation` and `cardActions` are removed: use the board as it is and pass per-task actions through `actions`, which draws them in the detail. `TaskRequestCard variant="compact"` stays for a request inside a conversation. `StudioTaskBoardSeam` adds optional `answer(task, text)`, which the detail's question calls. The tasks bar draws only when it holds something, and app filters scroll on one line.
 
 # Migrating to 0.4.42
