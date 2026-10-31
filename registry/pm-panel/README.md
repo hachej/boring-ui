@@ -3,7 +3,7 @@
 The PM uses the regular `AgentWorkspace layout="embedded"`: Tasks, History, Library, New and close. No PM-specific chat chrome or full-page requirement. The host supplies its theme tokens; the retained point/voice composer is the only specialized conversation control.
 
 ```tsx
-<AppShell {...app} improve={{ agent: 'pm' }} />
+<AppShell {...app} panel={pmPanel({ agent: 'pm' })} />
 // Or, inside any sized container (including Studio):
 <PmChat spec={{ controller, conversations, conversationId, resources, chatProps: { actions, locale: 'fr' } }}
   page={pointableAppElement} screen="Ma journée" />
@@ -32,16 +32,7 @@ The host owns exact-ID acknowledgements; open state is not a durable receipt. Wi
 
 ## Opening from a host frame
 
-Existing URL: `?agent=improve` (consumed once before shell history entries). For any later open, including after the person closed it, use the same-origin parent protocol:
-
-```ts
-frame.contentWindow.postMessage({ boring: 'pm-probe', requestId: 'probe-1' }, appOrigin);
-// app -> parent: { boring: 'pm-ready', supported: true, requestId: 'probe-1' }
-frame.contentWindow.postMessage({ boring: 'pm-open', requestId: 'open-1' }, appOrigin);
-// app -> parent: { boring: 'pm-ack', accepted: true, requestId: 'open-1' }
-```
-
-The app also announces `{ boring: 'pm-ready', supported: boolean }` when support mounts/changes. A request ID must be nonempty and at most 128 characters. The app requires both `event.origin === location.origin` and `event.source === window.parent`; replies target that exact origin. The parent must likewise check origin and `event.source === frame.contentWindow`. Cross-origin frames deliberately do not support this protocol. `accepted` means local open intent, not an authenticated/connected PM or a durable task acknowledgement. No microphone, conversation selection or permission is granted.
+`?agent=improve` opens the PM on arrival (consumed once before shell history entries).
 
 ## Evidence
 

@@ -48,10 +48,9 @@ try {
     check(geometry.sheet === String(item.sheet), `${item.name}: expected sheet=${item.sheet}`);
     if (item.viewport !== 390) check(geometry.lineWidth >= 1, `${item.name}: a visible line separates the PM from the app`);
     if (item.sheet) {
-      const covers = item.viewport === 390 ? { x: 0, y: 0, width: 390, height: 900 } : geometry.window;
-      check(['x','y','width','height'].every(key => Math.abs(covers[key] - geometry.panel[key]) < 1), `${item.name}: sheet must cover the PM window, and the whole screen on a phone (${JSON.stringify(geometry)})`);
+      check(['x','y','width','height'].every(key => Math.abs(geometry.window[key] - geometry.panel[key]) < 1), `${item.name}: sheet must cover the PM window, under its bar (${JSON.stringify(geometry)})`);
       check(geometry.chatHidden, `${item.name}: viewer replaces chat`);
-      if (item.viewport !== 390) check(await browser.evaluate(`(() => { const bar = ${q('[data-testid=workspace-bar-history]')}, panel = ${q('[data-testid=workspace-panel]')}; return !!bar && bar.getBoundingClientRect().bottom <= panel.getBoundingClientRect().top + 1; })()`), `${item.name}: the PM's bar stays above the viewer`);
+      check(await browser.evaluate(`(() => { const bar = ${q('[data-testid=workspace-bar-history]')}, panel = ${q('[data-testid=workspace-panel]')}; return !!bar && bar.getBoundingClientRect().bottom <= panel.getBoundingClientRect().top + 1; })()`), `${item.name}: the PM's bar stays above the viewer`);
       check(geometry.back === 'Retour à la discussion' && geometry.arrow, `${item.name}: sheet close is an accessible Back action at any viewport`);
     } else check(geometry.chat.right <= geometry.panel.x + 1 && !geometry.chatHidden && geometry.chat.width >= 360, `${item.name}: chat and present remain side by side`);
     writeFileSync(`${evidence}/geometry.json`, JSON.stringify({ records, failures }, null, 2));

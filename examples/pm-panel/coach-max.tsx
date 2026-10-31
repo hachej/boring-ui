@@ -1,5 +1,5 @@
 // The fictional « Coach Max » app of the row C boards (Alice, « Déjeuner 520 kcal · 32 g »…): the app's own markup, not the kit's.
-// Shared by the fixture page (host-wired PM) and the one-line app (`improve={{ agent: 'pm' }}`).
+// Shared by the fixture page (host-wired PM) and the one-line app (`panel={pmPanel({ agent: 'pm' })}`).
 import type { CSSProperties, ReactNode } from 'react';
 import { useScreenHeader } from '../../registry/app-shell/header';
 import { Input } from '../app-shell/components/ui/input';

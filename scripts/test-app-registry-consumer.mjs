@@ -26,6 +26,7 @@ visit('pi-app');
 visit('pi-app-kinds');
 // The app shell too: a strict regression in the shell fails here, not only in the monorepo fixture check.
 visit('app-shell');
+visit('pm-panel');
 visit('file-tree');
 // The documents screen: its Library, revisions and sheet, installed and checked strictly with the rest of the closure.
 visit('documents');
@@ -78,7 +79,7 @@ async function testStyle(style) {
     // The documented app setup (registry/README.md, APP_SETUP), then the blocks, which declare no shadcn component of their own.
     addAppComponents(directory, [...SHADCN_BUILTINS], installer, run);
     run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', `${registry}/theme.json`, '--cwd', directory, '--yes'], installer);
-    run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', `${registry}/pi-app.json`, `${registry}/pi-app-kinds.json`, `${registry}/file-tree.json`, `${registry}/app-shell.json`, `${registry}/documents.json`, `${registry}/highlights.json`, `${registry}/task-board.json`, `${registry}/task-mentions.json`, '--cwd', directory, '--yes'], installer);
+    run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', `${registry}/pi-app.json`, `${registry}/pi-app-kinds.json`, `${registry}/file-tree.json`, `${registry}/app-shell.json`, `${registry}/pm-panel.json`, `${registry}/documents.json`, `${registry}/highlights.json`, `${registry}/task-board.json`, `${registry}/task-mentions.json`, '--cwd', directory, '--yes'], installer);
     for (const [name, item] of closure) for (const file of item.files ?? []) {
       assert.ok(existsSync(join(directory, 'src', file.target)), `the CLI must create ${file.target} (${name})`);
       const text = readFileSync(join(directory, 'src', file.target), 'utf8');

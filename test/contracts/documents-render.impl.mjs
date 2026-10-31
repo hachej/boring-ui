@@ -29,6 +29,7 @@ async function load() {
   writeFileSync(entry, [
     `export { AppShell } from '${root}registry/app-shell/app-shell.tsx';`,
     `export { useAgentLayer } from '${root}registry/app-shell/agent-layer.tsx';`,
+    `export { pmPanel } from '${root}registry/pm-panel/pm-panel.tsx';`,
     `export { useShellLayer } from '${root}registry/app-shell/shell-layer.ts';`,
     `export { Documents } from '${root}registry/documents/documents.tsx';`,
     `export { Revisions } from '${root}registry/documents/revisions.tsx';`,
@@ -115,7 +116,7 @@ async function mount(t, { width, screen, agent, improve, layout = 'workspace' })
   const unmount = () => act(async () => reactRoot.unmount());
   // React may finish work scheduled by the unmount a macrotask later: the globals stay until it has.
   t.after(async () => { await unmount(); await new Promise(done => setTimeout(done, 50)); await restore(); });
-  await act(async () => reactRoot.render(h(shell.AppShell, { layout, title: 'Fiches', nav, route: { id: 'docs', onChange() {} }, ...(agent ? { agent } : {}), ...(improve ? { improve } : {}) })));
+  await act(async () => reactRoot.render(h(shell.AppShell, { layout, title: 'Fiches', nav, route: { id: 'docs', onChange() {} }, ...(agent ? { agent } : {}), ...(improve ? { panel: shell.pmPanel(improve) } : {}) })));
   const q = selector => window.document.querySelector(selector);
   const settle = async ready => { for (let n = 0; n < 200 && !ready(); n++) await act(async () => new Promise(done => setTimeout(done, 10))); };
   const click = async element => act(async () => element.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true })));

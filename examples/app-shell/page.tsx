@@ -13,6 +13,7 @@ import { ActivityIcon, ArchiveIcon, CalendarDaysIcon, CalendarPlusIcon, Clipboar
 import { createFeedbackSession } from '@hachej/boring-feedback/ui';
 import { createPrivacyPolicy } from '@hachej/boring-feedback/page';
 import { connectRevisionProvider } from '@hachej/boring-files/revision';
+import { pmPanel } from '../../registry/pm-panel/pm-panel';
 import { AppShell, ListDetail, useAgentContext, useAgentLayer, readAgentContext, useScreenHeader } from '../../registry/app-shell/index.ts';
 import type { RevisionProvider } from '@hachej/boring-files/revision';
 import { AgentTargetMode } from '../../registry/agent-target/agent-target.tsx';
@@ -215,7 +216,7 @@ function App() {
   // The app's router: a tab switch replaces the URL (a hash here) and adds no history entry.
   const onChange = (id: string) => { window.__routes.push(id); history.replaceState(history.state, '', `#${id}`); setRoute(id); };
   return <div id="app-root" className="contents">
-    <AppShell {...rail} layout="screen" title="Forme" nav={nav} agent={agent} improve={improve} account={account} route={{ id: route, onChange }} />
+    <AppShell {...rail} layout="screen" title="Forme" nav={nav} agent={agent} panel={pmPanel(improve)} account={account} route={{ id: route, onChange }} />
     {docs && <DocumentSheet provider={docs} path={spec} onClose={() => setSpec(undefined)} onShowAll={() => onChange('fiches')} locale="fr" />}
   </div>;
 }
@@ -282,7 +283,7 @@ function RedactionApp() {
   const improve = { controller: manager.controller, ...(feedback ? { feedback } : {}), chatProps: { locale: 'fr', showHistory: false, showConnectionStatus: false, actions: manager.actions, labels: { title: 'Chef de produit' } } };
   const account = { name: 'Camille Martin', email: 'camille@example.invalid', menu: [{ label: 'Réglages', onSelect: () => window.__did.push('settings') }, { label: 'Nouveautés', onSelect: () => window.__did.push('news') }] };
   return <div id="app-root" className="contents">
-    <AppShell {...rail} {...compactNav} layout="workspace" title="Cabinet" nav={nav} improve={improve} account={account} route={{ id: NAV_IDS.includes(hash) ? hash : 'consultations', onChange }} />
+    <AppShell {...rail} {...compactNav} layout="workspace" title="Cabinet" nav={nav} panel={pmPanel(improve)} account={account} route={{ id: NAV_IDS.includes(hash) ? hash : 'consultations', onChange }} />
   </div>;
 }
 
@@ -306,7 +307,7 @@ function PmApp() {
   const improve = { controller: manager.controller, ...(feedback ? { feedback } : {}), chatProps: { locale: 'fr', showHistory: false, showConnectionStatus: false, actions: manager.actions, labels: { title: 'Chef de produit' } } };
   const account = { name: 'Camille Martin', email: 'camille@example.invalid', menu: [{ label: 'Réglages', onSelect: () => window.__did.push('settings') }] };
   return <div id="app-root" className="contents">
-    <AppShell {...rail} layout="chat" title="Atelier" nav={nav} improve={improve} account={account} route={{ id: 'atelier', onChange: () => {} }} />
+    <AppShell {...rail} layout="chat" title="Atelier" nav={nav} panel={pmPanel(improve)} account={account} route={{ id: 'atelier', onChange: () => {} }} />
   </div>;
 }
 

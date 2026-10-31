@@ -250,7 +250,7 @@ async function oneLayerAt(t, width) {
   let latest;
   const { createElement: h, useLayoutEffect } = await import('react');
   // The probe and the shell come from one bundle, so they share the layer's context.
-  const shell = await bundle('shell-entry.tsx', `export { AppShell } from '${root}${folder}/app-shell.tsx';\nexport { useAgentLayer } from '${root}${folder}/agent-layer.tsx';\n`);
+  const shell = await bundle('shell-entry.tsx', `export { pmPanel } from '${root}registry/pm-panel/pm-panel.tsx';\nexport { AppShell } from '${root}${folder}/app-shell.tsx';\nexport { useAgentLayer } from '${root}${folder}/agent-layer.tsx';\n`);
   const Probe = () => { const api = shell.useAgentLayer(); useLayoutEffect(() => { latest = api; }); return null; };
   const window = dom(t, width);
   const { createRoot } = await import('react-dom/client');
@@ -260,7 +260,7 @@ async function oneLayerAt(t, width) {
   const reactRoot = createRoot(container);
   const shellNav = [{ id: 'Jour', label: 'Jour', icon: Icon, render: () => h(Probe) }, { id: 'Semaine', label: 'Semaine', icon: Icon, render: () => null }];
   const agent = { controller: idleController };
-  await act(async () => reactRoot.render(h(shell.AppShell, { layout: 'screen', title: 'Forme', nav: shellNav, route: { id: 'Jour', onChange() {} }, agent, improve: agent, locale: 'fr' })));
+  await act(async () => reactRoot.render(h(shell.AppShell, { layout: 'screen', title: 'Forme', nav: shellNav, route: { id: 'Jour', onChange() {} }, agent, panel: shell.pmPanel(agent), locale: 'fr' })));
   await act(async () => latest.open('agent', 'half'));
   assert.equal(latest.showing, 'agent', `${width}: the coach shows`);
   await act(async () => latest.open('improve', 'half'));
@@ -271,9 +271,31 @@ async function oneLayerAt(t, width) {
 }
 
 // The layer's header actions: one layer open (its header is the drawer's on a phone, the dock's on a wide screen), the probe reads the layer's API.
+test('a panel that is not the product manager takes the shell\'s panel place', async t => {
+  const { createElement: h, act, useLayoutEffect } = await import('react');
+  const { createRoot } = await import('react-dom/client');
+  const shell = await bundle('shell-entry.tsx', `export { AppShell } from '${root}${folder}/app-shell.tsx';\nexport { useAgentLayer } from '${root}${folder}/agent-layer.tsx';\n`);
+  const window = dom(t, 1280);
+  const container = window.document.createElement('div');
+  window.document.body.append(container);
+  const reactRoot = createRoot(container);
+  t.after(() => act(async () => reactRoot.unmount()));
+  let latest, opened;
+  const Probe = () => { const api = shell.useAgentLayer(); useLayoutEffect(() => { latest = api; }); return null; };
+  const panel = { config: 'fictional', label: 'Mon outil', Provider: ({ open, children }) => { opened = open; return children; }, Layout: ({ children }) => h('div', { 'data-testid': 'own-layout' }, children) };
+  await act(async () => reactRoot.render(h(shell.AppShell, { layout: 'screen', title: 'Forme', nav: [{ id: 'Jour', label: 'Jour', icon: Icon, render: () => h(Probe) }], route: { id: 'Jour', onChange() {} }, panel, locale: 'fr' })));
+  assert.ok(window.document.querySelector('[data-testid=own-layout] [data-testid=screen-Jour]'), 'the panel\'s layout wraps the screen');
+  assert.equal(opened, false);
+  await act(async () => latest.open('improve', 'half'));
+  assert.equal(opened, true, 'the shell opens the panel');
+  await act(async () => reactRoot.render(h(shell.AppShell, { layout: 'screen', title: 'Forme', nav: [{ id: 'Jour', label: 'Jour', icon: Icon, render: () => h(Probe) }], route: { id: 'Jour', onChange() {} }, locale: 'fr' })));
+  assert.equal(window.document.querySelector('[data-testid=own-layout]'), null, 'without a panel the screen stands alone');
+  assert.ok(window.document.querySelector('[data-testid=screen-Jour]'));
+});
+
 async function openedLayer(t, width, specs, { search = '', state = null, strict = false } = {}) {
   const { createElement: h, useLayoutEffect, act, StrictMode } = await import('react');
-  const shell = await bundle('shell-entry.tsx', `export { AppShell } from '${root}${folder}/app-shell.tsx';\nexport { useAgentLayer } from '${root}${folder}/agent-layer.tsx';\n`);
+  const shell = await bundle('shell-entry.tsx', `export { pmPanel } from '${root}registry/pm-panel/pm-panel.tsx';\nexport { AppShell } from '${root}${folder}/app-shell.tsx';\nexport { useAgentLayer } from '${root}${folder}/agent-layer.tsx';\n`);
   let latest;
   const Probe = () => { const api = shell.useAgentLayer(); useLayoutEffect(() => { latest = api; }); return null; };
   const window = dom(t, width);
@@ -286,7 +308,7 @@ async function openedLayer(t, width, specs, { search = '', state = null, strict 
   window.document.body.append(container);
   const reactRoot = createRoot(container);
   const nav = [{ id: 'Jour', label: 'Jour', icon: Icon, render: () => h(Probe) }];
-  const app = h(shell.AppShell, { layout: 'screen', title: 'Forme', nav, route: { id: 'Jour', onChange() {} }, ...specs, locale: 'fr' });
+  const app = h(shell.AppShell, { layout: 'screen', title: 'Forme', nav, route: { id: 'Jour', onChange() {} }, ...specs, ...(specs.panel ? { panel: shell.pmPanel(specs.panel) } : {}), locale: 'fr' });
   await act(async () => reactRoot.render(strict ? h(StrictMode, null, app) : app));
   t.after(() => act(async () => reactRoot.unmount()));
   return { window, replaced, latest: () => latest, act, unmount: () => act(async () => reactRoot.unmount()) };
@@ -295,7 +317,7 @@ async function openedLayer(t, width, specs, { search = '', state = null, strict 
 for (const [width, agent, input] of [[390, 'coach', 'text'], [1280, 'agent', 'text'], [390, 'coach', 'voice'], [390, 'improve', 'text']]) {
   test(`agent URL at ${width}: ${agent}/${input} opens once, preserves other URL data and state, and never starts the microphone`, async t => {
     const spec = { ...agentWith(), voice: { transcribe: async () => 'Fictional dictation' } };
-    const opened = await openedLayer(t, width, { agent: spec, improve: agentWith() }, { search: `?keep=hello%20world&agent=${agent}&open=half&input=${input}#jour`, state: { router: { fictional: 7 } }, strict: true });
+    const opened = await openedLayer(t, width, { agent: spec, panel: agentWith() }, { search: `?keep=hello%20world&agent=${agent}&open=half&input=${input}#jour`, state: { router: { fictional: 7 } }, strict: true });
     assert.equal(opened.latest().showing, agent === 'improve' ? 'improve' : 'agent');
     assert.equal(opened.latest().state, width === 1280 ? 'open' : input === 'voice' ? 'full' : 'half');
     assert.equal(opened.window.location.search, '?keep=hello+world');
@@ -361,7 +383,7 @@ for (const width of [390, 1280]) {
       { id: 'go', label: 'Ouvrir la boutique', icon: Icon, onSelect: () => calls.push('go') },
       { id: 'wa', label: 'Discuter avec Max sur WhatsApp', icon: Icon, href: '/whatsapp/open?app=fitness', onSelect: () => calls.push('wa') },
     ] };
-    const opened = await openedLayer(t, width, { agent, improve: agentWith() });
+    const opened = await openedLayer(t, width, { agent, panel: agentWith() });
     const header = await headerOf(opened, 'agent');
     const button = header.querySelector('[data-testid=agent-layer-action-go]');
     assert.equal(button?.tagName, 'BUTTON');
@@ -422,7 +444,7 @@ test('the phone overflow of the layer header is a link when the third action has
 test('the screen header follows an action whose href, target or rel changes alone (the change key covers them)', async t => {
   const { createElement: h, act, useState } = await import('react');
   const { createRoot } = await import('react-dom/client');
-  const shell = await bundle('screen-header-entry.tsx', `export { AppShell } from '${root}${folder}/app-shell.tsx';\nexport { useScreenHeader } from '${root}${folder}/header.tsx';\n`);
+  const shell = await bundle('screen-header-entry.tsx', `export { pmPanel } from '${root}registry/pm-panel/pm-panel.tsx';\nexport { AppShell } from '${root}${folder}/app-shell.tsx';\nexport { useScreenHeader } from '${root}${folder}/header.tsx';\n`);
   const window = dom(t, 390);
   const Screen = ({ href, target, rel }) => { shell.useScreenHeader({ actions: [{ id: 'go', label: 'Ouvrir', icon: Icon, href, target, rel, onSelect() {} }] }); return null; };
   const Host = () => {
@@ -445,7 +467,7 @@ test('the screen header follows an action whose href, target or rel changes alon
 test('the screen header: `leading` renders right after the sidebar trigger and before the title; `titleFace: sans` and `dense` change the title face and the row height; defaults are unchanged', async t => {
   const { createElement: h, act } = await import('react');
   const { createRoot } = await import('react-dom/client');
-  const shell = await bundle('screen-header-entry.tsx', `export { AppShell } from '${root}${folder}/app-shell.tsx';\nexport { useScreenHeader } from '${root}${folder}/header.tsx';\n`);
+  const shell = await bundle('screen-header-entry.tsx', `export { pmPanel } from '${root}registry/pm-panel/pm-panel.tsx';\nexport { AppShell } from '${root}${folder}/app-shell.tsx';\nexport { useScreenHeader } from '${root}${folder}/header.tsx';\n`);
   const window = dom(t, 1280);
   const Screen = ({ spec }) => { shell.useScreenHeader(spec); return null; };
   const container = window.document.createElement('div');
@@ -546,7 +568,7 @@ test('one layer at a time on a wide screen: opening the agent closes the product
 
 for (const width of [390, 1280]) test(`the agent layer's chat at ${width} lists the agent's conversations over a relative, per-agent endpoint (useConversations from pi-chat): History, new, rename`, async t => {
   const { createElement: h, useLayoutEffect, useMemo, useState, act } = await import('react');
-  const shell = await bundle('conversations-entry.tsx', `export { AppShell } from '${root}${folder}/app-shell.tsx';\nexport { useAgentLayer } from '${root}${folder}/agent-layer.tsx';\nexport { useConversations } from '${root}registry/pi-chat/use-conversations.ts';\n`);
+  const shell = await bundle('conversations-entry.tsx', `export { pmPanel } from '${root}registry/pm-panel/pm-panel.tsx';\nexport { AppShell } from '${root}${folder}/app-shell.tsx';\nexport { useAgentLayer } from '${root}${folder}/agent-layer.tsx';\nexport { useConversations } from '${root}registry/pi-chat/use-conversations.ts';\n`);
   const window = dom(t, width);
   const requests = [];
   const rows = [{ id: 1, title: 'Fictional week plan', lastMessage: 'Plan the week', updatedAt: 1, archived: false }, { id: 2, title: 'Fictional groceries', lastMessage: null, updatedAt: 2, archived: false }];
@@ -657,7 +679,7 @@ test('a message-mode microphone refusal at peek reveals its problem and survives
 
 test('useAgentLayer exposes the same app controller while closed, never the product manager controller', async t => {
   const improve = new Proxy(idleController, {});
-  const opened = await openedLayer(t, 390, { agent: agentWith(), improve: { controller: improve } });
+  const opened = await openedLayer(t, 390, { agent: agentWith(), panel: { controller: improve } });
   assert.equal(opened.latest().agent, idleController, 'page content borrows the app controller without opening chat');
   assert.equal(opened.latest().state, 'closed');
   await opened.act(async () => opened.latest().open('improve'));
