@@ -41,7 +41,7 @@ export function PointChipView({ chip, preset = 'touch', labels = pmTextFr, onRem
   const touch = preset === 'touch';
   return <span data-testid={sent ? 'pm-inline-selection' : 'pm-chip'} data-n={chip.number} data-dense="" title={`${chip.screen} · ${chip.kind} · ${chip.label}`}
     className={cn('inline-flex max-w-full items-center gap-1 rounded-pm-round align-middle text-xs leading-normal',
-      touch ? cn('py-px pl-0.5 ring-1 ring-inset ring-pm-line', sent ? 'bg-background pr-2' : 'bg-muted pr-1.5') : cn('px-2 py-px', sent ? 'bg-background' : 'bg-muted'))}>
+      touch ? cn('py-px pl-0.5 ring-1 ring-inset ring-pm-line', sent ? 'bg-background text-foreground pr-2' : 'bg-muted pr-1.5') : cn('px-2 py-px', sent ? 'bg-background text-foreground' : 'bg-muted'))}>
     {touch ? <span aria-hidden="true" className="inline-flex size-[18px] shrink-0 items-center justify-center rounded-pm-round bg-pm-mark text-[10px] font-bold text-pm-mark-foreground">{chip.number}</span>
       : <span aria-hidden="true">{marker(chip.number)}</span>}
     <span className="sr-only">{chip.number} </span>

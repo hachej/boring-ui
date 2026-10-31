@@ -211,6 +211,11 @@
       ],
       "files": [
         {
+          "path": "registry/utils/back.ts",
+          "type": "registry:lib",
+          "target": "components/utils/back.ts"
+        },
+        {
           "path": "registry/utils/use-draggable.ts",
           "type": "registry:hook",
           "target": "components/utils/use-draggable.ts"
@@ -1602,11 +1607,6 @@
           "target": "components/app-shell/agent-link.ts"
         },
         {
-          "path": "registry/app-shell/back.ts",
-          "type": "registry:lib",
-          "target": "components/app-shell/back.ts"
-        },
-        {
           "path": "registry/app-shell/use-visual-viewport.ts",
           "type": "registry:hook",
           "target": "components/app-shell/use-visual-viewport.ts"
@@ -2992,8 +2992,10 @@
       "name": "pm-panel",
       "type": "registry:block",
       "title": "Shared PM composer and in-app panel",
-      "description": "« Améliorer l'app »: one PmComposer (touch and desktop presets, FR/EN strings) with « Montrer », the point strip, numbered pins and timestamped chips; AppShell improve composes the in-flow sheet, strip and the full panel, and PmChat gives Studio the same conversation. Pins and chips come from the public feedback picker; the request card and « Mes demandes » render through StudioTaskBoardSeam (D-417).",
+      "description": "« Améliorer l'app »: the embedded AgentWorkspace chat, History, read-only Library and host Tasks panel, with the shared pointing strip, numbered pins and timestamped chips. Docked beside the app on desktop and full screen on phones; PmChat gives Studio the same component.",
       "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.41/r/pi-app.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.41/r/pi-app-kinds.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.41/r/pi-chat.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.41/r/pi-chat-markdown.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.41/r/pi-chat-plugins.json",
@@ -3036,6 +3038,21 @@
           "target": "components/pm-panel/point-state.ts"
         },
         {
+          "path": "registry/pm-panel/use-point-page.ts",
+          "type": "registry:hook",
+          "target": "components/pm-panel/use-point-page.ts"
+        },
+        {
+          "path": "registry/pm-panel/point-frames.ts",
+          "type": "registry:hook",
+          "target": "components/pm-panel/point-frames.ts"
+        },
+        {
+          "path": "registry/pm-panel/pm-host-theme.ts",
+          "type": "registry:hook",
+          "target": "components/pm-panel/pm-host-theme.ts"
+        },
+        {
           "path": "registry/pm-panel/capture.ts",
           "type": "registry:lib",
           "target": "components/pm-panel/capture.ts"
@@ -3074,11 +3091,6 @@
           "path": "registry/pm-panel/use-improve-agent.ts",
           "type": "registry:hook",
           "target": "components/pm-panel/use-improve-agent.ts"
-        },
-        {
-          "path": "registry/pm-panel/pm-mockups.tsx",
-          "type": "registry:component",
-          "target": "components/pm-panel/pm-mockups.tsx"
         }
       ]
     },

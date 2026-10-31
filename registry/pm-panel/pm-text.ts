@@ -23,6 +23,8 @@ export interface PmText {
   readonly remove: string;
   readonly show: string;
   readonly showTitle: string;
+  /** « Montrer » when no app frame stands beside a standalone PM. */
+  readonly showUnavailable: string;
   readonly meta: (seconds: number | undefined, captures: number) => string;
   readonly sentMeta: (seconds: number | undefined, captures: number) => string;
   readonly mentionHeader: (query: string) => string;
@@ -67,9 +69,6 @@ export interface PmText {
   /** The app panel's one muted line when the PM's run ends in error without a reply: the member never sees a tool or a raw error (C7). */
   readonly failed: string;
   /** A presented mockup (C7): the card's action, the line while it loads, and the line when its file can't be read. */
-  readonly openMockup: string;
-  readonly mockupLoading: string;
-  readonly mockupUnavailable: string;
 }
 
 /** `0:14`: whole seconds, never a fraction. */
@@ -84,7 +83,7 @@ export const pmTextFr: PmText = {
   placeholderBefore: 'Décrivez le problème, ou ', placeholderAfter: ' pour me le montrer.',
   hintIdle: 'Touchez ce que vous voulez montrer', hintRec: 'Parlez et touchez ce que vous montrez', hintRecShort: 'Parlez et touchez',
   mode: 'Mode', select: 'Sélectionner', navigate: 'Naviguer', done: 'Terminer', doneLabel: 'Terminer : relire dans le composer', speak: 'Parler',
-  recorder: "Ouvrir l'enregistreur", attach: 'Joindre un fichier', dictate: 'Dicter', send: 'Envoyer', remove: 'Retirer', show: 'Montrer', showTitle: 'Montrer',
+  recorder: "Ouvrir l'enregistreur", attach: 'Joindre un fichier', dictate: 'Dicter', send: 'Envoyer', remove: 'Retirer', show: 'Montrer', showTitle: 'Montrer', showUnavailable: 'Ouvrez l’app à côté pour montrer',
   meta: (seconds, n) => seconds === undefined ? `Écrit · ${captures(n, 'capture', 'captures')}` : `Dicté · ${clock(seconds)} · ${captures(n, 'capture', 'captures')} · modifiable`,
   sentMeta: (seconds, n) => seconds === undefined ? `Écrit · ${captures(n, 'capture', 'captures')}` : `Dicté · ${clock(seconds)} · ${captures(n, 'capture', 'captures')}`,
   mentionHeader: query => `TÂCHES · ${query}`, onYou: 'À vous',
@@ -96,7 +95,6 @@ export const pmTextFr: PmText = {
   modify: 'Modifier', confirm: 'Confirmer', confirming: 'Confirmation…', confirmFailed: 'Impossible de confirmer pour le moment. Réessayez.', answerFailed: 'L’envoi de votre réponse n’a pas pu être confirmé. Votre texte est conservé. Réessayez.', failed: "Le chef de projet n'a pas pu terminer. Réessayez.",
   withdraw: 'Retirer', withdrawAsk: 'Retirer cette demande\u00a0?', cancel: 'Annuler', withdrawFailed: 'Impossible de retirer la demande.',
   finished: n => `Terminées (${n})`, outcomeLive: 'En ligne', outcomeWithdrawn: 'Retirée', outcomeClosed: 'Fermée',
-  openMockup: 'Ouvrir', mockupLoading: 'Chargement…', mockupUnavailable: "La maquette n'est pas disponible.",
 };
 
 export const pmTextEn: PmText = {
@@ -104,7 +102,7 @@ export const pmTextEn: PmText = {
   placeholderBefore: 'Describe the problem, or ', placeholderAfter: ' to show me',
   hintIdle: 'Tap what you want to show', hintRec: 'Speak and tap what you show', hintRecShort: 'Speak and tap',
   mode: 'Mode', select: 'Select', navigate: 'Navigate', done: 'Done', doneLabel: 'Done: reread in the composer', speak: 'Speak',
-  recorder: 'Open the recorder', attach: 'Attach a file', dictate: 'Dictate', send: 'Send', remove: 'Remove', show: 'Montrer', showTitle: 'Montrer: point at the app',
+  recorder: 'Open the recorder', attach: 'Attach a file', dictate: 'Dictate', send: 'Send', remove: 'Remove', show: 'Montrer', showTitle: 'Montrer: point at the app', showUnavailable: 'Open the app beside this panel to point',
   meta: (seconds, n) => seconds === undefined ? `Written · ${captures(n, 'capture', 'captures')}` : `Dictated · ${clock(seconds)} · ${captures(n, 'capture', 'captures')} · editable`,
   sentMeta: (seconds, n) => seconds === undefined ? `Written · ${captures(n, 'capture', 'captures')}` : `Dictated · ${clock(seconds)} · ${captures(n, 'capture', 'captures')}`,
   mentionHeader: query => `TASKS · ${query}`, onYou: 'On you',
@@ -116,7 +114,6 @@ export const pmTextEn: PmText = {
   modify: 'Modify', confirm: 'Confirm', confirming: 'Confirming…', confirmFailed: 'Could not confirm right now. Try again.', answerFailed: 'Your answer could not be confirmed. Your text is kept. Try again.', failed: "The PM couldn't finish. Try again.",
   withdraw: 'Withdraw', withdrawAsk: 'Withdraw this request?', cancel: 'Cancel', withdrawFailed: "Couldn't withdraw the request.",
   finished: n => `Finished (${n})`, outcomeLive: 'Live', outcomeWithdrawn: 'Withdrawn', outcomeClosed: 'Closed',
-  openMockup: 'Open', mockupLoading: 'Loading…', mockupUnavailable: 'The mockup is not available.',
 };
 
 export const pmTextFor = (locale: string | undefined): PmText => locale?.startsWith('en') ? pmTextEn : pmTextFr;

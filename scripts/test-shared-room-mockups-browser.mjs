@@ -15,7 +15,7 @@ try {
   const bundle = await build({ entryPoints: ['test/fixtures/shared-room-mockups-browser.tsx'], bundle: true, write: false, format: 'esm', platform: 'browser', jsx: 'automatic', metafile: true, alias: { '@': new URL('../examples/app-shell', import.meta.url).pathname }, define: { 'process.env.NODE_ENV': '"production"' } });
   assert.ok(Object.keys(bundle.metafile.inputs).every(path => !/pi-durable|packages\/(agent|execution)\/|node:fs/.test(path)), 'public browser bundle has no agent/kernel/server FS');
   writeFileSync(`${evidence}/bundle.json`, JSON.stringify(bundle.metafile, null, 2));
-  const css = await buildTailwind({ extraDirectories: ['registry/pm-panel'], extraFiles: ['test/fixtures/shared-room-mockups.tsx'] });
+  const css = await buildTailwind({ extraFiles: ['test/fixtures/shared-room-mockups.tsx'] });
   backend = await createRoomBackend({ mockups: descriptors, streamMs: 20 });
   server = createServer(async (request, response) => {
     if (await backend.handle(request, response)) return;
@@ -41,16 +41,18 @@ try {
     browser = await launch(url, { evidence });
     await browser.send('Emulation.setDeviceMetricsOverride', { width, height: 844, deviceScaleFactor: 1, mobile: width < 600 });
     await browser.reload();
-    await browser.until('three shared cards and native choice', `${qa('[data-testid=pm-mockup]')}.length === 3 && ${qa('[data-testid=question-option]')}.length === 3`);
-    assert.deepEqual(await browser.evaluate(`${qa('[data-testid=pm-mockup-title]')}.map(e => e.textContent)`), descriptors.map(artifact => artifact.title));
+    await browser.until('three standard cards and native choice', `${qa('[data-testid=artifact-card]')}.length === 3 && ${qa('[data-testid=question-option]')}.length === 3`);
+    assert.deepEqual(await browser.evaluate(`${qa('[data-testid=artifact-title]')}.map(e => e.textContent)`), descriptors.map(artifact => artifact.title));
     assert.equal(await browser.evaluate('document.documentElement.scrollWidth <= innerWidth'), true, 'no phone overflow');
     await browser.screenshot(`${width}-cards.png`);
     for (let i = 0; i < 3; i++) {
-      await browser.click(`${qa('[data-testid=pm-mockup-open]')}[${i}]`);
-      await browser.until('exact full sandbox', `!!${q('[data-testid=pm-mockup-full-run-frame]')}?.srcdoc.includes(${JSON.stringify(descriptors[i].title)})`);
-      assert.equal(await browser.evaluate(`${q('[data-testid=pm-mockup-full-run-frame]')}.getAttribute('sandbox')`), 'allow-scripts');
+      await browser.click(`${qa('[data-testid=artifact-card]')}[${i}]`);
+      await browser.until('exact artifact sandbox', `!!${q('[data-testid=artifact-run-frame]')}?.srcdoc.includes(${JSON.stringify(descriptors[i].title)})`);
+      assert.equal(await browser.evaluate(`${q('[data-testid=artifact-run-frame]')}.getAttribute('sandbox')`), 'allow-scripts');
+      assert.equal(await browser.evaluate(`${q('[data-testid=artifact-run-frame]')}.getAttribute('sandbox').includes('allow-same-origin')`), false);
       await browser.screenshot(`${width}-full-${i}.png`);
-      await browser.click(q('[data-testid=pm-mockup-back]'));
+      await browser.click(q('[data-testid=artifact-close]'));
+      await browser.until('returns to shared chat', `!${q('[data-testid=workspace-panel]')}`);
     }
     report.widths.push(width);
     assert.deepEqual(browser.problems, []);
@@ -60,9 +62,9 @@ try {
   await browser.until('native choice', `${qa('[data-testid=question-option]')}.length === 3`);
   await browser.click(`${qa('[data-testid=question-option]')}[1]`);
   await browser.until('native settlement', 'document.body.innerText.includes("Selected B; launch not requested.")');
-  assert.equal(await browser.evaluate(`${qa('[data-testid=pm-mockup]')}.length`), 3, 'question/final dedup');
+  assert.equal(await browser.evaluate(`${qa('[data-testid=artifact-card]')}.length`), 3, 'question/final dedup');
   await browser.reload();
-  await browser.until('history retains cards', `${qa('[data-testid=pm-mockup]')}.length === 3 && document.body.innerText.includes("Selected B; launch not requested.")`);
+  await browser.until('history retains cards', `${qa('[data-testid=artifact-card]')}.length === 3 && document.body.innerText.includes("Selected B; launch not requested.")`);
   const entries = await backend.entries();
   assert.ok(entries.some(entry => entry.kind === 'room.message' && entry.data.text === 'B' && entry.data.replyTo));
   assert.deepEqual(entries.findLast(entry => entry.kind === 'room.message' && entry.data.author === 'agent:pm').data.artifacts, descriptors);

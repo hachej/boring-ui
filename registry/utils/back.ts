@@ -3,18 +3,18 @@
 // other way removes its entry, so the history stays as it was. Hosts: the AgentLayer (order `agent`) and, later, sheets and stacks.
 import { useEffect, useLayoutEffect, useRef } from 'react';
 
-/** The fixed priority of Back: `point` is handled first, then an open `sheet`, then the `agent` layer, then the `stack`, then the browser. */
-export type BackOrder = 'point' | 'sheet' | 'agent' | 'stack';
-const RANK: Readonly<Record<BackOrder, number>> = { point: 0, sheet: 1, agent: 2, stack: 3 };
+/** Local Back priority: pointing, artifact view, sheet, assistant/PM, pushed screen, then browser. */
+export type BackOrder = 'point' | 'artifact' | 'sheet' | 'agent' | 'stack';
+const RANK: Readonly<Record<BackOrder, number>> = { point: 0, artifact: 1, sheet: 2, agent: 3, stack: 4 };
 
-interface Layer { readonly order: BackOrder; readonly close: () => void; popped: boolean }
+interface Layer { readonly order: BackOrder; readonly close: () => unknown; popped: boolean }
 
 const layers = new Set<Layer>();
 /** `popstate` events caused by our own `history.back()`, which must not close anything. */
 let ignored = 0;
 let listening = false;
 /** The layer kind the page was loaded on top of (history state survives a reload), until a layer adopts it. */
-let persisted: unknown = typeof history === 'undefined' ? undefined : (history.state as { appShell?: unknown } | null)?.appShell;
+let persisted: unknown = typeof window === 'undefined' || !window.history ? undefined : (window.history.state as { appShell?: unknown } | null)?.appShell;
 /** Layers that opened while our own `history.back()` was still pending: they push their entry once it has landed (a push in between cancels it). */
 const waiting: (() => void)[] = [];
 
@@ -36,7 +36,7 @@ export function afterStacksBack(action: () => void): void {
   const stacks = [...layers].filter(layer => layer.order === 'stack' && !layer.popped);
   if (!stacks.length) { action(); return; }
   waiting.push(action);
-  for (const layer of stacks) { layer.popped = true; layers.delete(layer); ignored += 1; history.back(); }
+  for (const layer of stacks) { layer.popped = true; layers.delete(layer); ignored += 1; window.history.back(); }
 }
 
 const topmost = (): Layer | undefined => [...layers].toSorted((a, b) => RANK[a.order] - RANK[b.order])[0];
@@ -50,8 +50,15 @@ function onPopState(): void {
   const top = topmost();
   if (!top) return;
   // The entry is already gone: the layer closes without calling `history.back()` again.
+  if (top.popped) return;
   top.popped = true;
-  top.close();
+  const restore = () => {
+    if (!layers.has(top) || !top.popped) return;
+    top.popped = false;
+    window.history.pushState({ appShell: top.order }, '');
+  };
+  try { void Promise.resolve(top.close()).then(closed => { if (closed === false) restore(); }, restore); }
+  catch { restore(); }
 }
 
 /**
@@ -59,7 +66,7 @@ function onPopState(): void {
  * topmost open layer. Any other close (the effect ends because `open` became false or the component unmounted) calls `history.back()`
  * once, and that `popstate` is ignored. `close` may change between renders.
  */
-export function useBackLayer(open: boolean, close: () => void, order: BackOrder): void {
+export function useBackLayer(open: boolean, close: () => unknown, order: BackOrder): void {
   const latest = useRef(close);
   useLayoutEffect(() => { latest.current = close; });
   useEffect(() => {
@@ -69,9 +76,10 @@ export function useBackLayer(open: boolean, close: () => void, order: BackOrder)
     const start = () => {
       started = true;
       // After a reload the page still sits on the entry its layer pushed before: that one layer adopts it instead of stacking a second.
-      const adopt = persisted === order;
+      // An artifact sheet pushes its own: its entry can be stale by then, and closing an adopted one could leave the page.
+      const adopt = persisted === order && order !== 'artifact';
       persisted = undefined;
-      if (!adopt) history.pushState({ appShell: order }, '');
+      if (!adopt) window.history.pushState({ appShell: order }, '');
       layers.add(layer);
     };
     if (!listening) { window.addEventListener('popstate', onPopState); listening = true; }
@@ -82,7 +90,7 @@ export function useBackLayer(open: boolean, close: () => void, order: BackOrder)
       if (at >= 0) waiting.splice(at, 1);
       if (!started) return;
       layers.delete(layer);
-      if (!layer.popped) { ignored += 1; history.back(); }
+      if (!layer.popped) { ignored += 1; window.history.back(); }
     };
   }, [open, order]);
 }

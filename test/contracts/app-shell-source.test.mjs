@@ -95,7 +95,7 @@ async function bundle(name, extra = {}) {
 }
 let freshModule = 0;
 async function bundleEntry(entry, outfile, extra) {
-  await build({ entryPoints: [entry], outfile, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', alias: { '@': `${root}examples/app-shell` }, logLevel: 'silent', ...extra });
+  await build({ entryPoints: [entry], outfile, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', alias: { '@': `${root}examples/app-shell`, '@hachej/boring-ui-kit/file-tree.css': `${root}packages/ui/styles/file-tree.css` }, logLevel: 'silent', ...extra });
   // A fresh module per call: the Back manager keeps its popstate listener on the window it first saw.
   return import(`${pathToFileURL(outfile).href}?${freshModule++}`);
 }
@@ -230,7 +230,7 @@ test('AppShellProps has the shell props, optional rail, locale and URL opt-out, 
   const program = ts.createProgram([`${root}${folder}/app-shell.tsx`], { allowImportingTsExtensions: true, jsx: ts.JsxEmit.ReactJSX, noEmit: true, skipLibCheck: true });
   const file = program.getSourceFile(`${root}${folder}/app-shell.tsx`);
   const props = file.statements.find(node => ts.isInterfaceDeclaration(node) && node.name.text === 'AppShellProps');
-  assert.deepEqual(props.members.map(member => member.name.text).sort(), ['account', 'agent', 'agentLink', 'compactNav', 'improve', 'layout', 'locale', 'nav', 'overlayBlur', 'rail', 'route', 'title']);
+  assert.deepEqual(props.members.map(member => member.name.text).sort(), ['account', 'agent', 'agentLink', 'compactNav', 'improve', 'layout', 'locale', 'nav', 'overlayBlur', 'pmHostOrigins', 'rail', 'route', 'title']);
   const rail = props.members.find(member => member.name.text === 'rail');
   assert.ok(rail.questionToken, 'rail is optional');
   assert.equal(rail.type.getText(file), "'icon' | 'hover'");

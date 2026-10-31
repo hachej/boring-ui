@@ -35,7 +35,7 @@ async function fixture(t, options = {}) {
   }
   globalThis.MediaRecorder = Recorder;
   const id = ++bundles, outfile = `${out}/target-${id}.mjs`;
-  await build({ entryPoints: [`${out}/entry.tsx`], outfile, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', alias: { '@': `${project}examples/app-shell` }, logLevel: 'silent', plugins: process.env.BEFORE_TARGET_SOURCE ? [{ name: 'before-target', setup(builder) { builder.onLoad({ filter: /registry\/agent-target\/agent-target\.tsx$/ }, () => ({ contents: readFileSync(process.env.BEFORE_TARGET_SOURCE, 'utf8'), loader: 'tsx', resolveDir: `${project}registry/agent-target` })); } }] : [] });
+  await build({ entryPoints: [`${out}/entry.tsx`], outfile, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', alias: { '@': `${project}examples/app-shell`, '@hachej/boring-ui-kit/file-tree.css': `${project}packages/ui/styles/file-tree.css` }, logLevel: 'silent', plugins: process.env.BEFORE_TARGET_SOURCE ? [{ name: 'before-target', setup(builder) { builder.onLoad({ filter: /registry\/agent-target\/agent-target\.tsx$/ }, () => ({ contents: readFileSync(process.env.BEFORE_TARGET_SOURCE, 'utf8'), loader: 'tsx', resolveDir: `${project}registry/agent-target` })); } }] : [] });
   const { AgentLayerProvider, AgentTargetMode, useAgentLayer } = await import(pathToFileURL(outfile).href);
   const { Harness, MemoryStorage, createRegistry } = await import('@earendil-works/pi-durable');
   const { BACKGROUND_CONTEXT: context } = await import('@earendil-works/chord/context');

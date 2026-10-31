@@ -4,7 +4,7 @@
 // closes the agent and product manager layers, and opening either of those closes it. Its Back is the shared Back manager's `sheet` layer
 // (`useBackLayer`), so the browser's Back closes it first. Host concern: Pi has no layers; this is the shell's own presentation rule.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { useBackLayer } from './back';
+import { useBackLayer } from '../utils/back';
 
 /** The shell's agent and product manager layers share one close; the agent layer registers it while mounted. */
 const agentClosers = new Set<() => void>();

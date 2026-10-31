@@ -5,7 +5,8 @@
 ## Sub-features
 
 - `workspace-page` default three-column layout: sessions, chat, artifact panel. `registry/pi-app/agent-workspace.tsx`.
-- `workspace-embedded` `layout="embedded"`: one compact bar (History, Library, New), no sessions pane; inside a shell screen the bar uses the screen header. `registry/pi-app/workspace-bar.tsx`.
+- `workspace-embedded` `layout="embedded"`: one compact bar (History, Library, New), no sessions pane; inside a shell screen the bar uses the screen header. Host `barPanels` supply content/dot/open-state observation; `barOptions.panelsFirst` leads with those panels and `newChat: false` places New inside History. Defaults are unchanged. `registry/pi-app/workspace-bar.tsx`.
+- `workspace-chat-only`: omit both resource props for a real chat-only workspace, without a fake filesystem or file endpoint. No Library or automatic file viewer is offered.
 - `workspace-placed` `PlacedAgentWorkspace`: one controller in a tab or collapsed beside the app. `registry/placed-agent/placed-agent-workspace.tsx`.
 - `workspace-library` Library: files and versions over a revision provider or a discovered endpoint. `registry/pi-app/`, `registry/file-tree/file-tree.tsx`.
 - `workspace-library-folders` the file tree renames, moves and deletes a folder through the row's menu, F2 and Delete, one file at a time; a refusal says how many files were changed, and trying again finishes; a rename onto an existing folder is refused. No New folder: a folder exists through its files. `packages/ui/src/file-tree.ts`, `file-tree-view.tsx`.
@@ -25,7 +26,8 @@ Preconditions: `npm run build`, Chromium.
 
 - **Folders.** `workspace-library-folders`: `node --test test/ui/file-tree.mjs` renames, moves and deletes a folder against a fictional sqlite workspace, with a refusal halfway and a retry.
 - **Page.** `workspace-page`, `workspace-library`, `workspace-artifacts`: `npm run workspace-app:journey`.
-- **Embedded.** `workspace-embedded`: `npm run app-shell:journey:workspace`; the bar buttons `workspace-bar-history`, `workspace-bar-library`, `workspace-bar-new` sit in the shell header.
+- **Embedded.** `workspace-embedded`: `npm run app-shell:journey:workspace`; the bar buttons `workspace-bar-history`, `workspace-bar-library`, `workspace-bar-new` sit in the shell header. `node examples/pm-panel/journey.mjs` drives the optional host-first Tasks panel and New inside History.
+- **Chat only.** `workspace-chat-only`: `node --test test/contracts/pm-panel-thread.test.mjs` mounts both PM placements without resources and drives the actual regular workspace and native-question composer.
 - **Placed.** `workspace-placed`: `npm run app-shell:journey:placed` (wide: floats as ambient; phone: lent to the layer at peek).
 - **Viewers.** `workspace-viewers`: `npm run mockup:journey`, `npm run diagram:journey`, `npm run records:journey`.
 - **Documents.** `workspace-documents`: `npm run app-shell:journey:documents`.

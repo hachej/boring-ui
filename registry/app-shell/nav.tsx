@@ -9,7 +9,7 @@ import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupConte
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { afterBack } from './back';
+import { afterBack } from '../utils/back';
 import { NavUser } from './account';
 import { useAgentLayer } from './agent-layer';
 import type { AgentSpec } from './agent-layer';

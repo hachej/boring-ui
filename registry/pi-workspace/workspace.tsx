@@ -1,6 +1,7 @@
 'use client';
 
 import { PHONE_BELOW } from '../utils/use-media';
+import { useBackLayer } from '../utils/back';
 import { readFlag, writeFlag, readPersisted, writePersisted } from '../utils/persisted';
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -144,19 +145,7 @@ export function ArtifactWorkspace({ chat, open, panel, onClose, fullscreen: cont
       if (target) { let frames = 30; const retry = () => { if (document.activeElement === target || document.activeElement !== document.body || frames-- <= 0) return; target.focus({ preventScroll: true }); requestAnimationFrame(retry); }; requestAnimationFrame(retry); }
     };
   }, [open]);
-  useEffect(() => {
-    if (!open || !sheet) return;
-    const key = `artifact-${Math.random()}`;
-    const history = window.history;
-    const enter = () => history.pushState({ ...history.state, boringArtifact: key }, '');
-    enter();
-    const back = () => {
-      if (history.state?.boringArtifact === key) return;
-      void Promise.resolve(closeRef.current()).then(closed => { if (closed === false) enter(); });
-    };
-    window.addEventListener('popstate', back);
-    return () => { window.removeEventListener('popstate', back); if (history.state?.boringArtifact === key) history.back(); };
-  }, [open, sheet]); // The mounted sheet keeps its own Back entry, independent of renders.
+  useBackLayer(open && sheet, onClose, 'artifact');
 
   const max = Math.max(minPanel, size - minChat);
   const initial = defaultWidth === undefined ? size - 420 : defaultWidth <= 1 ? size * defaultWidth : defaultWidth;
@@ -207,7 +196,7 @@ export function ArtifactWorkspace({ chat, open, panel, onClose, fullscreen: cont
       <aside onTouchStart={event => { const point = event.touches[0]; swipe.current = sheet && point && point.clientX < 32 ? { x: point.clientX, y: point.clientY } : null; }} onTouchEnd={event => { const point = event.changedTouches[0], start = swipe.current; swipe.current = null; if (point && start && point.clientX - start.x > 80 && Math.abs(point.clientY - start.y) < 60) onClose(); }} data-testid="workspace-panel" aria-label={panelLabel} data-state={entered ? 'open' : 'entering'} data-floating={floating ? 'true' : undefined} data-fullscreen={fullscreen ? 'true' : 'false'} data-sheet={sheet ? 'true' : 'false'}
         style={sheet || fullscreen || floating ? undefined : { width, minWidth: minPanel }}
         className={cn('flex min-h-0 min-w-0 flex-col overflow-hidden transition-opacity motion-reduce:transition-none', !inset && 'bg-background text-foreground',
-          sheet || fullscreen ? 'fixed inset-0 z-50' : floating ? 'flex-1' : inset ? 'relative isolate my-3 me-3 ms-0 shrink-0' : 'shrink-0',
+          sheet ? (size >= window.innerWidth - 1 ? 'fixed inset-0 z-50' : 'absolute inset-0 z-50') : fullscreen ? 'fixed inset-0 z-50' : floating ? 'flex-1' : inset ? 'relative isolate my-3 me-3 ms-0 shrink-0' : 'shrink-0',
           entered ? 'opacity-100' : 'opacity-0', dragging && 'pointer-events-none select-none')}>
         {inset && <Card aria-hidden="true" data-boring="chrome" className="pointer-events-none absolute inset-0 -z-10" />}
         {typeof panel === 'function' ? panel(api) : panel}

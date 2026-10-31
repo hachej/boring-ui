@@ -25,6 +25,7 @@ import { openNodeConnection } from '@hachej/boring-files/sqlite';
 import { createWorkspaceJournal } from '@hachej/boring-files/journal';
 import { createWorkspaceProvider } from '@hachej/boring-files/workspace';
 import { createRevisionHandler } from '@hachej/boring-files/revision-handler';
+import { createResourceHandler } from '@hachej/boring-files/remote';
 import { sendWebResponse, webRequest } from '@hachej/boring-files/node-http';
 import { readFiles, writeFiles } from '../../shared/workspace-tools.mjs';
 import { buildTailwind } from '../../lab/studio/tailwind.mjs';
@@ -139,8 +140,15 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
       transcribes.push({ language: new URL(request.url).searchParams.get('language'), bytes: (await request.arrayBuffer()).byteLength });
       return Response.json(pmTranscript);
     },
-    // The files the PM presents, read by the panel through the door (`{base}/resources`, the same revision route as `/api/resources`).
-    '/api/pm/resources': createRevisionHandler({ resolve: async request => pmTasks && signedIn(request) ? { provider: files, access: person } : null }),
+    // Match the actual PM door: resources is POST-only; Library serves revision discovery, catalog and reads without writes.
+    '/api/pm/resources': createResourceHandler({ authenticate: async request => pmTasks && signedIn(request) ? person : null, reader: files }),
+    '/api/pm/library': async request => {
+      if (!pmTasks || !signedIn(request)) return new Response(null, { status: 403 });
+      if (request.method === 'POST' && !request.headers.has('x-boring-catalog') && (await request.clone().json()).kind !== 'read') return new Response(null, { status: 403 });
+      const headers = new Headers(request.headers);
+      headers.set('authorization', `Bearer ${token}`);
+      return resources(new Request(request, { headers }));
+    },
     '/_tasks/api': async request => !pmTasks ? new Response(null, { status: 404 }) : !signedIn(request) || refusing ? new Response(null, { status: 403 })
       : Response.json({ tasks: new URL(request.url).searchParams.get('mine') === '1' ? tasks : [], cursor: String(tasks.length + answers.length) }),
   };

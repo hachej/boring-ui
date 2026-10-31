@@ -165,7 +165,7 @@ try {
     await browser.until('the account sheet', `!!${q('[data-testid=account-improve]')}`);
     await pause(700);
     await tap('[data-testid=account-improve]');
-    await browser.until('the PM panel as a sheet', `${q('[data-testid=pm-panel]')}?.hidden === false && ${q('[data-testid=pm-panel]')}.dataset.mode === 'sheet'`);
+    await browser.until('the PM panel as a sheet', `${q('[data-testid=pm-panel]')}?.hidden === false && ${q('[data-testid=pm-panel]')}.dataset.mode === 'chat'`);
     assert.equal(await browser.evaluate(`!!${q(LAYER)}`), false, 'the agent layer stays out of it');
     await settle();
     await tap('[data-testid=pm-close]');

@@ -37,7 +37,7 @@ import { NoteBubble, useComposerFeedback } from '../feedback/feedback-session';
 import { feedbackLabelsFr } from '../feedback/feedback-labels';
 import { CommentBanner, useCommenting, usePointing } from '../feedback/point-mode';
 import { cn } from '../utils/utils';
-import { useBackLayer } from './back';
+import { useBackLayer } from '../utils/back';
 import { parseAgentLink } from './agent-link';
 import { closeShellLayer, registerAgentLayerCloser } from './shell-layer';
 import { appShellText } from './text';
@@ -346,7 +346,7 @@ export function AgentLayerProvider({ agent: own, improve, locale, agentLink, app
   // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when a pending item's id or phase changes (pendingKey), not on every new pending array
   }, [expanded, shown, snap, voiceSend, voice.captureSequence, voice.problem, pendingKey]);
 
-  // « Améliorer l'app » owns Back like any layer: one entry while the panel shows (sheet or strip), one more for the full panel (C7).
+  // One Back entry for the PM, one more while pointing: Back returns to chat, then closes without leaving the app.
   const improveOpen = snap !== 'closed' && shown === 'improve';
   const [pmFull, setPmFull] = useState<{ readonly full: boolean; readonly collapse: () => void }>({ full: false, collapse: () => {} });
   const onFull = useCallback((full: boolean, collapse: () => void) => setPmFull(current => current.full === full ? current : { full, collapse }), []);

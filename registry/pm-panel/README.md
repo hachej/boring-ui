@@ -1,47 +1,58 @@
-# PM composer and panel
+# One pluggable PM
 
-« Améliorer l'app » (specs `/home/ubuntu/projects/_work/pm-spec`, boards C1–C7 and D1, D7, D7b, D8, D9). Install the `pm-panel` registry item; the app's theme defines the `--pm-*` tokens (the registry theme has defaults).
+The PM uses the regular `AgentWorkspace layout="embedded"`: Tasks, History, Library, New and close. No PM-specific chat chrome or full-page requirement. The host supplies its theme tokens; the retained point/voice composer is the only specialized conversation control.
 
 ```tsx
-<AppShell {...app} improve={{ agent: 'pm' }} />  // the one line: the kit opens api/pm/{agent,conversations,chat} (#854), dictation POST api/host/transcribe, requests _tasks/api — all relative to the page
-<AppShell {...app} improve={pm} />
-// pm: ImproveSpec — the host's remote NativeChatController, appName, optional pointVoice transcription and the task records (`tasks`).
-<PmChat spec={pm} page={appFrameElement} screen="My day" preset="desktop" /> // Studio's conversation column
+<AppShell {...app} improve={{ agent: 'pm' }} />
+// Or, inside any sized container (including Studio):
+<PmChat spec={{ controller, conversations, conversationId, resources, chatProps: { actions, locale: 'fr' } }}
+  page={pointableAppElement} screen="Ma journée" />
 ```
 
-The one line is resolved on the first open by `useImproveAgent` (same-origin calls as the signed-in person; the host door owns authentication). A host `ImproveSpec` adds what one line cannot: task mentions and the task-board seam.
+`resources` is the existing `AgentWorkspace` contract: `{ endpoint, fetch, identity }`. The one-line resolver uses authenticated, page-relative `api/pm/agent`, `api/pm/conversations`, `api/pm/chat` and **`api/pm/library`**, as Studio does. The Library is read-only and the real service lists `documents/`. `api/pm/resources` is POST-only, not revision discovery. Dictation stays at `api/host/transcribe`; tasks stay at `_tasks/api`. No host route is added.
 
-## Exports
+A direct chat-only `ImproveSpec` can omit resources and conversations; absent capabilities are not fabricated. For the complete PM, supply both. Artifacts use existing kinds/viewers and `ArtifactWorkspace`: beside chat when the container fits them, otherwise a sheet confined to that PM window with Back to chat. No `PmMockupView`, `pmArtifacts` or `readArtifact` adapter remains.
 
-- `PmComposer`, `PmComposerProps`, `PmPreset`, `PointerIcon`: the one composer (`touch` | `desktop`), compose and strip variants. No router or backend.
-- `PmChat`: thread plus composer for a column; the strip replaces the composer while pointing. With the desktop preset (and in the app panel at web width without a coarse pointer) a click in `point.idle` opens `PointComment`, the click-to-comment popover (spec 1 §3b): Enter sends that one pick straight to the PM, « Ajouter au message » keeps it in the draft.
-- `usePmPanel`, `PmPanelState`: picks, pins, recording, merge, meta line, Esc and send context. One per controller instance.
-- `PmPanelProvider`, `ImproveLayout`, `ImproveSpec`: AppShell's in-flow layout (sheet, strip, full panel).
-- `pmEntries`, `pointMessage`, `PointChipView`: the thread's renderers (sent chips, PM reply, request card).
-- `pmTextFr`, `pmTextEn`, `pmTextFor`, `PmText`: spec strings.
-- `useImproveAgent`, `isImproveAgent`, `ImproveAgent`, `ImproveProp`: the one-line resolver.
-- `usePmMentions`: the D9 look (header, rows, at most 6, « À vous ») over the shared `task-mentions` item's `taskMentions`.
-- `PmVoice`, `PmTranscript`: host transcription with word timings (seconds).
-- `StudioTaskBoardSeam` (`ImproveSpec.tasks`): `{ tasks, currentUser, onOpen, cardActions?, renderRequest? }`, the host's authorized `TaskRecord`s. « Mes demandes » is the `task-board` item's `TaskBoard variant="compact" filter="mine"` for open requests, with finished ones (`done`, `closed`) folded below under « Terminées (n) », each with a muted label (the one line reads the host's `closed_reason` in `pm-task-source.tsx`); `renderRequest({ entry, edit })` draws C7's card (`TaskRequestCard variant="compact"`).
+## Pointing and tasks
 
-## Data and lifecycle
+`PmComposer`, `usePmPanel`, `PointComment`, `pointMessage`, `PointChipView` and localized `pmTextFor` retain Montrer, the select/navigate strip, voice while pointing, numbered pins, atomic review chips and `pm.points@1` send context. Native summary/details targets remain separate, and policy-filtered image capture uses bounded page budgets instead of the tiny anchor metadata budget. Captures never copy media URLs, canvas pixels or form values. Metadata is an untrusted observation, never approval.
 
-The public feedback picker (`tap: 'pick'`) owns event interception; labels and captures pass its privacy policy. Images are native message attachments. `pm.points@1` text metadata references each screenshot by zero-based native image index and carries selections, screen, anchor, speech segments and timing. It is untrusted observation, never an approval or grant. Image rendering deliberately excludes media URLs, existing canvas pixels and form values.
+`ImproveSpec.tasks` (`StudioTaskBoardSeam`) takes the existing `{ tasks, currentUser, onOpen, cardActions?, renderRequest?, refresh? }`. Tasks uses existing `PmRequests`: needs-you first, one status chip, Terminées folded. `renderRequest({ entry, edit })` composes through pi-chat's reply footer without replacing native replies. Optional news integration:
 
-The host must provide the kit's authenticated remote-chat watch/history/submit/submission-lookup contract, stable shared PM conversation identity and normal revocation/ownership policy. Factory #854 currently blocks that door's watch. Transcription is a separate host capability, not a call to the PM door. Task search/present and durable request decisions also stay with the host.
+```tsx
+tasks: {
+  ...existingTasks,
+  header: <NewsCard {...hostProps} />,
+  unread: hostProjectedUnread,
+  onOpenChange: open => hostTasksPanelChanged(open),
+}
+```
 
-Closing releases local microphone/selection resources, not admitted work. Unknown admission shows a read-only draft preview and reconciles the original native request. Cleanup is batch-scoped and instance-fenced. Multiple dictations retain a cumulative timing timeline. The inline editor is bounded, supports atomic removal and preserves the stock IME guard.
+The host owns exact-ID acknowledgements; open state is not a durable receipt. Without `unread`, the kit retains its viewer-local shipped-request dot. Closing a viewer releases local UI/capture resources, never admitted work or another consumer's controller. Back goes pointing → chat → closed, not through a deleted intermediate sheet.
+
+## Opening from a host frame
+
+Existing URL: `?agent=improve` (consumed once before shell history entries). For any later open, including after the person closed it, use the same-origin parent protocol:
+
+```ts
+frame.contentWindow.postMessage({ boring: 'pm-probe', requestId: 'probe-1' }, appOrigin);
+// app -> parent: { boring: 'pm-ready', supported: true, requestId: 'probe-1' }
+frame.contentWindow.postMessage({ boring: 'pm-open', requestId: 'open-1' }, appOrigin);
+// app -> parent: { boring: 'pm-ack', accepted: true, requestId: 'open-1' }
+```
+
+The app also announces `{ boring: 'pm-ready', supported: boolean }` when support mounts/changes. A request ID must be nonempty and at most 128 characters. The app requires both `event.origin === location.origin` and `event.source === window.parent`; replies target that exact origin. The parent must likewise check origin and `event.source === frame.contentWindow`. Cross-origin frames deliberately do not support this protocol. `accepted` means local open intent, not an authenticated/connected PM or a durable task acknowledgement. No microphone, conversation selection or permission is granted.
 
 ## Evidence
 
-After `npm ci && npm run build`, set `CHROMIUM` to a Chromium binary:
+See [feature map](../../features/pm-panel.md). After building, set `CHROMIUM` and serialize heavy runs:
 
 ```sh
-node --test test/contracts/pm-point-state.test.mjs test/contracts/pm-composer.test.mjs
 node examples/pm-panel/journey.mjs
-node examples/pm-panel/journey-faults.mjs
+node examples/pm-panel/journey-annotate.mjs
+PM_CASE=rows node examples/pm-panel/journey-annotate.mjs
+node examples/pm-panel/journey-present.mjs
+node --test test/contracts/pm-*.test.mjs
 ```
 
-The example server is `node examples/pm-panel/server.mjs`. The browser journey writes `.agent-handoff/pm-panel/screenshots/`. Use the resource-scoped command in the task brief for heavy runs. The six fault regressions were demonstrated failing before correction. The original public AppShell journey also fails against pre-feature source (`PM_BEFORE=1`).
-
-Board comparisons: `node examples/pm-panel/journey-boards.mjs` and `journey-studio.mjs` write `.agent-handoff/pm-panel/compare/<board>.png`.
+All fixtures are fictional/scripted. Screenshots and raw local evidence stay under `.cache/evidence/pm-one/`; local proof is not a kit release, Studio adoption, deployed-app fix or real-phone-hardware qualification.

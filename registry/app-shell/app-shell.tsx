@@ -6,8 +6,8 @@
 // untouched, below the same sidebar, account menu and header; there is no shell agent (the page is the chat). The shell imports nothing from pi-app: a layout C app installs the `pi-app` item itself. One header per screen
 // (`useScreenHeader`). The AgentLayer is mounted once, here.
 // Host concern: Pi has no layout; the screen on show travels as the agent's context (useAgentContext -> createPromptContext).
-import { useEffect, useState } from 'react';
-import { afterStacksBack } from './back';
+import { useEffect, useState, useSyncExternalStore } from 'react';
+import { afterStacksBack } from '../utils/back';
 import type { ReactNode } from 'react';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,7 @@ import { AccountAvatar, AccountChoices } from './account';
 import type { AccountSpec } from './account';
 import { AgentDockLayout, AgentLayer, AgentLayerProvider } from './agent-layer';
 import type { AgentSpec } from './agent-layer';
-import { ImproveLayout } from '../pm-panel/pm-panel';
+import { ImproveLayout, PmStandalone } from '../pm-panel/pm-panel';
 import type { ImproveProp } from '../pm-panel/pm-panel';
 import { ScreenActiveContext, useAgentContext } from './agent-context';
 import { useIsCompact } from './compact';
@@ -41,6 +41,8 @@ export interface AppShellProps {
   readonly agentLink?: false;
   /** The product manager: « Améliorer l'app » in the account menu, the PM panel and the point layer. One line: `improve={{ agent: 'pm' }}` (the kit opens the app's PM door); or a host `ImproveSpec`. */
   readonly improve?: ImproveProp;
+  /** With `improve`, `?pm=standalone` shows only the PM. These parent origins may give it their tokens (default: `PM_HOST_ORIGINS`, Studio). */
+  readonly pmHostOrigins?: readonly string[];
   readonly account?: AccountSpec;
   /** The language of the shell's own words and the layer's (« Se déconnecter », « Plus », « Ouvrir l’assistant »…). The agent's `chatProps.locale` wins when it sets one; else this; else English. */
   readonly locale?: AppShellLocale;
@@ -115,11 +117,16 @@ function Shell({ compactNav, layout, rail, title, nav, agent, improve, account, 
   </SidebarProvider>;
 }
 
+const never = () => () => {};
+const standaloneAddress = () => new URLSearchParams(window.location.search).get('pm') === 'standalone';
+
 export function AppShell(props: AppShellProps) {
   const { layout, rail = 'icon', compactNav = 'tabs', agent, improve, title, nav, account, route } = props;
   if (layout === 'chat' && agent) throw new Error('AppShell layout "chat" takes no `agent`: the page is the chat (use `improve` for the product manager)');
   const text = appShellText((agent ?? (improve && 'chatProps' in improve ? improve : undefined))?.chatProps?.locale ?? props.locale);
   useOverlayBlur(props.overlayBlur ?? true);
+  const standalone = useSyncExternalStore(never, standaloneAddress, () => false);
+  if (standalone && improve) return <PmStandalone spec={improve} appName={title} locale={props.locale} hostOrigins={props.pmHostOrigins} />;
   return <AgentLayerProvider agent={agent} improve={improve} locale={props.locale} agentLink={props.agentLink} appName={props.title}>
     <HeaderProvider><Shell compactNav={compactNav} layout={layout} rail={rail} title={title} nav={nav} agent={agent} account={account} route={route} improve={Boolean(improve)} text={text} /></HeaderProvider>
   </AgentLayerProvider>;

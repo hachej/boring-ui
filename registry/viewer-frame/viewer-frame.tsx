@@ -38,27 +38,27 @@ export interface ViewerFrameProps {
   /** What is shown, for example the file name. */
   readonly title: string;
   /** Type, version, path, size: short facts under the title. */
-  readonly subtitle?: ReactNode;
+  readonly subtitle?: ReactNode | undefined;
   /** Saved, Unsaved, Saving, Changed elsewhere, Read-only. */
   readonly status?: ViewerStatus | undefined;
   /** Keep a quiet saved acknowledgement visible, for autosaving editors. */
   readonly showSavedStatus?: boolean | undefined;
   /** Opaque identifiers handed to `onShare` so the host can build a link to this exact thing. */
-  readonly target?: unknown;
+  readonly target?: unknown | undefined;
   readonly revision?: string | undefined;
   /** Leading header content, for example Back before the file title. */
-  readonly headerStart?: ReactNode;
+  readonly headerStart?: ReactNode | undefined;
   /** Viewer-specific controls that stay visible: a mode toggle, Save while there are edits, zoom steps, a version switcher when there are several. */
-  readonly controls?: ReactNode;
+  readonly controls?: ReactNode | undefined;
   /**
    * The one control that matters most here (Comment on a version to try, for example), kept in the bar at every width. With the compact
    * header a phone folds `controls` into the "…" menu; this one stays beside it, so the main action is one tap away. Test id `<testId>-main`.
    */
-  readonly mainControl?: ReactNode;
+  readonly mainControl?: ReactNode | undefined;
   /** Viewer-specific secondary actions, listed in the "…" menu after the standard ones. */
-  readonly menu?: readonly ViewerMenuItem[];
+  readonly menu?: readonly ViewerMenuItem[] | undefined;
   /** Viewer-specific native dropdown groups, before the standard secondary actions. */
-  readonly menuContent?: ReactNode;
+  readonly menuContent?: ReactNode | undefined;
   /**
    * The host's actions for this bar, after the window's (`ViewerWindow.actions`): `header` ones as buttons beside Share, `menu` ones at the
    * end of the "…" menu. Test ids `<testId>-<id>`.
@@ -68,19 +68,19 @@ export interface ViewerFrameProps {
   readonly labels?: Partial<ViewerLabels> | undefined;
   readonly icons?: Partial<ViewerIcons> | undefined;
   /** Each standard action appears only when its handler is supplied. Share is always visible; Reload, Copy, Download and Open in new tab live in the "…" menu. */
-  readonly onRefresh?: () => unknown;
-  readonly onShare?: ViewerShare;
-  readonly onCopy?: () => unknown;
-  readonly onDownload?: () => unknown;
-  readonly onOpenInNewTab?: () => unknown;
-  readonly onClose?: () => unknown;
+  readonly onRefresh?: (() => unknown) | undefined;
+  readonly onShare?: ViewerShare | undefined;
+  readonly onCopy?: (() => unknown) | undefined;
+  readonly onDownload?: (() => unknown) | undefined;
+  readonly onOpenInNewTab?: (() => unknown) | undefined;
+  readonly onClose?: (() => unknown) | undefined;
   /** Prefix of the `data-testid` of the bar and its actions (`viewer-share`, `viewer-more`, and `viewer-refresh` for the menu's Reload, ...). */
-  readonly testId?: string;
-  readonly titleTestId?: string;
+  readonly testId?: string | undefined;
+  readonly titleTestId?: string | undefined;
   /** Quiet one-row bar with secondary actions in the menu. False retains the former visible Share/fullscreen/close layout. */
-  readonly compactHeader?: boolean;
-  readonly className?: string;
-  readonly children?: ReactNode;
+  readonly compactHeader?: boolean | undefined;
+  readonly className?: string | undefined;
+  readonly children?: ReactNode | undefined;
 }
 
 

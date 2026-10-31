@@ -31,6 +31,8 @@ export interface PmComposerProps {
   readonly onShow: (show: boolean) => void;
   /** Compose only: « Montrer » enters the strip without recording. */
   readonly onPoint?: () => void;
+  /** Compose only: `false` while there is no page to point at (a standalone PM with no app frame beside it). */
+  readonly canPoint?: boolean;
   readonly onReturn?: () => void;
   readonly onOpenRecorder?: () => void;
   readonly focusInput?: boolean;
@@ -121,12 +123,12 @@ function Strip({ preset = 'touch', text = pmTextFr, show, onShow, onReturn, onOp
   </div>;
 }
 
-function Compose({ preset = 'touch', text = pmTextFr, composer, selections = noSelections, onRemove, show, onPoint, onShow, focusInput, voice, transcript, meta }: PmComposerProps) {
+function Compose({ preset = 'touch', text = pmTextFr, composer, selections = noSelections, onRemove, show, onPoint, canPoint = true, onShow, focusInput, voice, transcript, meta }: PmComposerProps) {
   if (!composer) throw new Error('PmComposer needs composer props outside strip mode');
   const touch = preset === 'touch';
   const recording = voice?.phase === 'starting' || voice?.phase === 'recording';
   const point = () => { if (onPoint) onPoint(); else onShow(!show); };
-  const montrer = <Button variant="ghost" size="icon" disabled={composer.disabled || composer.sendBlocked} aria-pressed={false} onClick={point} data-testid="pm-show" aria-label={text.show} title={text.showTitle}
+  const montrer = <Button variant="ghost" size="icon" disabled={composer.disabled || composer.sendBlocked || !canPoint} aria-pressed={false} onClick={point} data-testid="pm-show" aria-label={text.show} title={canPoint ? text.showTitle : text.showUnavailable}
     className={touch ? 'min-h-10 min-w-10' : 'min-h-[34px] min-w-[34px]'}><PointerIcon className={touch ? 'size-4' : 'size-[15px]'} /></Button>;
   const mic = voice && !recording && <Button variant={touch ? 'ghost' : 'default'} size="icon" data-testid="pm-mic" aria-label={text.dictate} title={text.dictate} onClick={voice.start}
     disabled={composer.disabled || !voice.canStart || voice.phase !== 'idle'} className={touch ? 'min-h-10 min-w-10' : 'min-h-9 min-w-9'} style={touch ? undefined : micScope}>
