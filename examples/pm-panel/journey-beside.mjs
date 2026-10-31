@@ -57,6 +57,8 @@ try {
 
   // A host that is not on the list gets no style.
   await browser.send('Page.navigate', { url: hostUrl });
+  await until('pm', 'the PM beside the app', `!!${q('[data-testid=workspace-bar-history]')}`, 30000);
+  assert.equal(await inFrame('pm', `!!${q('[data-testid=workspace-bar-tasks]')}`), false, 'the host owns the one way to the tasks');
   await until('pm', 'standalone PM', `!!${q('[data-testid=pm-standalone]')} && !!${q('[data-testid=composer-input]')}`, 30000);
   await pause(500);
   assert.notEqual(await inFrame('pm', primary), tokens['--primary'], 'an unlisted parent must not style the PM');
