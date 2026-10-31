@@ -1,5 +1,7 @@
 # Unreleased
 
+# Migrating to 0.4.45
+
 - **A host can end a framed PM's pointing (`pm-panel`).** The frame takes `{ boring: 'pm-end-pointing' }` from its parent. No change needed in an app.
 
 # Migrating to 0.4.44
