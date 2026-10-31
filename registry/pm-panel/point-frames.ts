@@ -19,9 +19,10 @@ function siblings(): readonly Window[] {
   for (let index = 0; index < frames.length; index++) { const frame = frames[index]; if (frame && frame !== window) found.push(frame); }
   return found;
 }
+const hostOrigin = () => window.location.ancestorOrigins?.[0] ?? (document.referrer ? new URL(document.referrer).origin : undefined);
 /** To the page holding the frames: no content, only that pointing started, stopped or landed. A phone shows one frame at a time and switches on this. */
 function tellHost(boring: 'pm-pointing' | 'pm-picked', picking?: boolean): void {
-  const parent = window.location.ancestorOrigins?.[0] ?? (document.referrer ? new URL(document.referrer).origin : undefined);
+  const parent = hostOrigin();
   if (parent) window.parent.postMessage({ boring, ...(picking === undefined ? {} : { picking }) }, parent);
 }
 const post = (target: Window, app: string, message: ToApp | ToPm) => target.postMessage({ channel: CHANNEL, app, message }, window.location.origin);
@@ -51,6 +52,8 @@ export function useAppFrame({ enabled, app, picking, pins, onPick, onUnpick, onP
   useEffect(() => {
     if (!enabled) return;
     const listen = (event: MessageEvent) => {
+      // A host showing one frame at a time ends pointing once it comes back: « touch what you want » would point at nothing.
+      if (event.source === window.parent && event.origin === hostOrigin() && (event.data as { boring?: unknown } | null)?.boring === 'pm-end-pointing') { latest.current.onDone(); return; }
       const got = received<ToPm>(event, app);
       if (!got) return;
       const { message, source } = got, current = latest.current;

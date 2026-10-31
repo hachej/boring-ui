@@ -59,4 +59,4 @@ All fixtures are fictional/scripted. Screenshots and raw local evidence stay und
 
 ## In a host's frame
 
-`?pm=standalone` in a frame: the bar reads « PM », since the host already names the app, and it stays above the viewer at every width. The PM tells the page holding the frames, with no content: `{ boring: 'pm-pointing', picking }` when pointing starts or stops and `{ boring: 'pm-picked' }` when a pick lands. A host showing one frame at a time (a phone) shows the app, then comes back.
+`?pm=standalone` in a frame: the bar reads « PM », since the host already names the app, and it stays above the viewer at every width. The PM tells the page holding the frames, with no content: `{ boring: 'pm-pointing', picking }` when pointing starts or stops and `{ boring: 'pm-picked' }` when a pick lands. A host showing one frame at a time (a phone) shows the app, then comes back and posts `{ boring: 'pm-end-pointing' }` to the frame, which ends pointing.
