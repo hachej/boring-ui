@@ -606,7 +606,6 @@ export function AgentWorkspace({ layout = 'default', barPanels, barOptions, pane
     library={libraryController ? onPicked => libraryTree(path => { openFile(path); onPicked(); }, onPicked) : undefined} panels={barPanels} {...barOptions}
     controls={<><BlockActions actions={chat.headerActions} testId="chat-action" menuLabel={chatText.labels.moreActions} />{hostControls}</>} />;
   const docked_chat = <div data-testid="workspace-center" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-    {bar}
     {attachmentFailure?.tree === fileTree && attachmentFailure?.reasons.map((reason, index) => <p key={index} role="alert" className="m-0 px-4 py-2 text-sm">{reason}</p>)}
     {fileTree && <UploadNotice controller={fileTree} onOpen={revealLibrary} />}
     {chatTop}
@@ -632,7 +631,9 @@ export function AgentWorkspace({ layout = 'default', barPanels, barOptions, pane
     ...(libraryInPane ? { libraryContent: (onPicked: () => void) => libraryTree(path => { openFile(path); onPicked(); }) } : {}),
   };
   return <AppTextProvider value={text}><ChatTextProvider value={chatText}><div ref={root} data-boring="agent-workspace" data-layout={layout} data-sessions={!hasNavigation ? undefined : narrow ? (drawer ? 'drawer' : 'closed') : docked ? 'docked' : 'hidden'}
-    className={cn('pi-chat relative flex h-full min-h-0 min-w-0 flex-1 overflow-hidden', className)}>
+    className={cn('pi-chat relative flex h-full min-h-0 min-w-0 flex-1 overflow-hidden', embedded && 'flex-col', className)}>
+    {/* Above the viewer as well as the chat: what opens in an embedded workspace stays inside its window. */}
+    {bar}
     <DockLayout storageKey={`${storageKey}.dock`} minMain={SESSIONS_WIDTH + 480}>
     {/* eslint-disable-next-line react-hooks/refs -- the functions built here read refs only when a request, an event or an effect calls them, never during render */}
     {hasNavigation && (docked || (narrow && drawer)) && (sessions ? sessions(sessionProps) : <SessionsPane {...sessionProps} />)}

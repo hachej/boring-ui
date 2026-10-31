@@ -114,8 +114,8 @@ function PanelSession({ binding, page, screen, report }: { readonly binding: Bin
   useEffect(() => () => { onFull?.(false, collapse); }, [onFull, collapse]);
   return <section hidden={!binding.open} data-feedback-ignore="" data-testid="pm-panel" data-mode={strip ? pm.state.mode : 'chat'}
     className={cn('min-h-0 min-w-0 bg-background md:relative md:w-[26rem] md:shrink-0', binding.open && 'flex flex-col', strip ? 'shrink-0' : 'absolute inset-0 z-40')}>
-    <Separator orientation="vertical" className="absolute inset-y-0 left-0 hidden md:block" />
     <PmWorkspace spec={binding.spec} pm={pm} page={page} preset="touch" open={binding.open} close={binding.close} />
+    <Separator orientation="vertical" className="absolute inset-y-0 left-0 z-50 hidden w-px md:block" />
   </section>;
 }
 
