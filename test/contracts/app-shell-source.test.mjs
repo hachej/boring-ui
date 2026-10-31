@@ -65,7 +65,7 @@ test('the item imports only React, its declared packages and the app setup shadc
   for (const name of files) {
     for (const [, imported] of source(name).matchAll(/\bfrom\s+['"]([^'"]+)['"]/g)) {
       if (imported.startsWith('./')) { assert.ok(files.some(file => file.replace(/\.tsx?$/, '') === imported.slice(2)), `${name} imports missing ${imported}`); continue; }
-      if (/^\.\.\/(?:pi-chat(?:-[a-z]+)?|feedback|utils|dock|pm-panel)\//.test(imported)) continue;
+      if (/^\.\.\/(?:pi-chat(?:-[a-z]+)?|feedback|utils|dock)\//.test(imported)) continue;
       const ui = /^@\/components\/ui\/([\w-]+)$/.exec(imported);
       if (ui) { assert.ok(SHADCN_BUILTINS.includes(ui[1]), `${name}: ${imported} is not in the app setup`); continue; }
       if (imported === '@/hooks/use-mobile') { assert.ok(SHADCN_BUILTINS.includes('sidebar'), 'use-mobile comes with the sidebar'); continue; }
@@ -230,7 +230,7 @@ test('AppShellProps has the shell props, optional rail, locale and URL opt-out, 
   const program = ts.createProgram([`${root}${folder}/app-shell.tsx`], { allowImportingTsExtensions: true, jsx: ts.JsxEmit.ReactJSX, noEmit: true, skipLibCheck: true });
   const file = program.getSourceFile(`${root}${folder}/app-shell.tsx`);
   const props = file.statements.find(node => ts.isInterfaceDeclaration(node) && node.name.text === 'AppShellProps');
-  assert.deepEqual(props.members.map(member => member.name.text).sort(), ['account', 'agent', 'agentLink', 'compactNav', 'improve', 'layout', 'locale', 'nav', 'overlayBlur', 'pmHostOrigins', 'rail', 'route', 'title']);
+  assert.deepEqual(props.members.map(member => member.name.text).sort(), ['account', 'agent', 'agentLink', 'compactNav', 'layout', 'locale', 'nav', 'overlayBlur', 'panel', 'rail', 'route', 'title']);
   const rail = props.members.find(member => member.name.text === 'rail');
   assert.ok(rail.questionToken, 'rail is optional');
   assert.equal(rail.type.getText(file), "'icon' | 'hover'");

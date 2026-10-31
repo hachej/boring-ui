@@ -1557,7 +1557,6 @@
         "@boring-ui/pi-chat-plugins",
         "@boring-ui/pi-chat-voice",
         "@boring-ui/dock",
-        "@boring-ui/pm-panel",
         "@boring-ui/feedback",
         "@boring-ui/utils",
         "@boring-ui/button"
@@ -1660,6 +1659,11 @@
           "path": "registry/app-shell/use-exclusive-sheet.ts",
           "type": "registry:hook",
           "target": "components/app-shell/use-exclusive-sheet.ts"
+        },
+        {
+          "path": "registry/app-shell/shell-panel.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/shell-panel.tsx"
         },
         {
           "path": "registry/app-shell/compact.ts",

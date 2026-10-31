@@ -50,7 +50,7 @@ export function AccountAvatar({ account, size }: { readonly account: AccountSpec
 }
 
 /** The compact account sheet's content. Every choice closes the sheet first (`done`). */
-export function AccountChoices({ account, improve, text, done }: { readonly account: AccountSpec | undefined; readonly improve: boolean; readonly text: AppShellText; readonly done: () => void }) {
+export function AccountChoices({ account, improve, text, done }: { readonly account: AccountSpec | undefined; readonly improve: string | undefined; readonly text: AppShellText; readonly done: () => void }) {
   const layer = useAgentLayer();
   const choose = (action: () => void) => () => { done(); afterBack(action); };
   return <div data-testid="account-menu" className="flex flex-col" style={{ '--app-shell-row-radius': 'calc(var(--radius) + 4px)' } as CSSProperties}>
@@ -59,7 +59,7 @@ export function AccountChoices({ account, improve, text, done }: { readonly acco
       <div className="min-w-0"><p className="m-0 truncate font-medium">{account.name}</p>{account.email && <p className="m-0 truncate text-xs text-muted-foreground">{account.email}</p>}</div>
     </div>}
     {/* C1: the first item, 52px on the muted fill, the speech bubble with a plus (icon 20), 15/650. */}
-    {improve && <Button variant="secondary" size="lg" data-testid="account-improve" className={`${SHEET_ROW} h-13`} style={IMPROVE_ROW} onClick={choose(() => layer.open('improve'))}><MessageSquarePlusIcon data-icon="inline-start" className="size-5" aria-hidden="true" /><span className="text-[0.9375rem] font-pm-title">{text.improve}</span></Button>}
+    {improve && <Button variant="secondary" size="lg" data-testid="account-improve" className={`${SHEET_ROW} h-13`} style={IMPROVE_ROW} onClick={choose(() => layer.open('improve'))}><MessageSquarePlusIcon data-icon="inline-start" className="size-5" aria-hidden="true" /><span className="text-[0.9375rem] font-pm-title">{improve}</span></Button>}
     {account?.menu.map(entry => <Button key={entry.label} variant="ghost" size="lg" className={SHEET_ROW} onClick={choose(entry.onSelect)}>{entry.label}</Button>)}
     {account?.theme && <ThemeSwitch theme={account.theme} text={text} />}
     {account?.signOut && <Button variant="ghost" size="lg" data-testid="account-sign-out" className={SHEET_ROW} onClick={choose(account.signOut)}><LogOutIcon data-icon="inline-start" aria-hidden="true" />{text.signOut}</Button>}
@@ -67,7 +67,7 @@ export function AccountChoices({ account, improve, text, done }: { readonly acco
 }
 
 /** The expanded sidebar footer: avatar, name and a dropdown with the same entries as the compact sheet. */
-export function NavUser({ account, improve, text }: { readonly account: AccountSpec | undefined; readonly improve: boolean; readonly text: AppShellText }) {
+export function NavUser({ account, improve, text }: { readonly account: AccountSpec | undefined; readonly improve: string | undefined; readonly text: AppShellText }) {
   const layer = useAgentLayer();
   if (!account && !improve) return null;
   return <SidebarMenu><SidebarMenuItem>
@@ -81,7 +81,7 @@ export function NavUser({ account, improve, text }: { readonly account: AccountS
         <ChevronsUpDownIcon className="ml-auto size-4" aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuContent side="right" align="end" sideOffset={4} className="app-shell w-56 min-w-56">
-        {improve && <DropdownMenuItem className="pointer-coarse:min-h-11" data-testid="account-improve" onClick={() => layer.open('improve')}><MessageSquarePlusIcon className="size-4" aria-hidden="true" />{text.improve}</DropdownMenuItem>}
+        {improve && <DropdownMenuItem className="pointer-coarse:min-h-11" data-testid="account-improve" onClick={() => layer.open('improve')}><MessageSquarePlusIcon className="size-4" aria-hidden="true" />{improve}</DropdownMenuItem>}
         {account?.menu.map(entry => <DropdownMenuItem key={entry.label} className="pointer-coarse:min-h-11" onClick={entry.onSelect}>{entry.label}</DropdownMenuItem>)}
         {account?.theme && <DropdownMenuCheckboxItem checked={darkOn(account.theme)} closeOnClick data-testid="account-theme" className="pointer-coarse:min-h-11" onCheckedChange={on => account.theme?.onChange(on ? 'dark' : 'light')}><MoonIcon aria-hidden="true" />{text.darkMode}</DropdownMenuCheckboxItem>}
         {account?.signOut && <><DropdownMenuSeparator /><DropdownMenuItem className="pointer-coarse:min-h-11" data-testid="account-sign-out" onClick={account.signOut}><LogOutIcon className="size-4" aria-hidden="true" />{text.signOut}</DropdownMenuItem></>}

@@ -22,7 +22,7 @@ import type { TaskRecord } from '@hachej/boring-ui-kit/task-board';
 import { selectTasks } from '@hachej/boring-ui-kit/task-board';
 import { requestOutcome } from './pm-task-source';
 import type { ImproveSpec, StudioTaskBoardSeam } from './use-pm-panel';
-import { useImproveAgent } from './use-improve-agent';
+import { isImproveAgent, useImproveAgent } from './use-improve-agent';
 import type { ImproveProp } from './use-improve-agent';
 import { pmTextFor } from './pm-text';
 import type { PmPreset } from './pm-composer';
@@ -173,6 +173,22 @@ export function PmStandalone({ spec, appName, locale, hostOrigins = PM_HOST_ORIG
   return <main data-testid="pm-standalone" className="app-shell flex h-dvh min-h-0 flex-col overflow-hidden bg-background text-foreground">
     <PmChat spec={spec} appName={appName} siblingApp={appName} preset="touch" title={window.parent === window ? undefined : 'PM'} {...(locale ? { locale } : {})} />
   </main>;
+}
+
+interface PmPanelConfig { readonly spec: ImproveProp; readonly hostOrigins?: readonly string[] | undefined }
+function PmShellProvider({ config, ...rest }: { readonly config: unknown; readonly open: boolean; readonly close: () => void; readonly appName?: string | undefined; readonly locale?: string | undefined; readonly onFull?: ((full: boolean, collapse: () => void) => void) | undefined; readonly children: ReactNode }) {
+  return <PmPanelProvider spec={(config as PmPanelConfig).spec} {...rest} />;
+}
+function PmShellPage({ config, appName, locale }: { readonly config: unknown; readonly appName: string; readonly locale?: string | undefined }) {
+  const { spec, hostOrigins } = config as PmPanelConfig;
+  return <PmStandalone spec={spec} appName={appName} locale={locale} hostOrigins={hostOrigins} />;
+}
+const PM_PAGE = { matches: () => new URLSearchParams(window.location.search).get('pm') === 'standalone', Page: PmShellPage };
+
+/** The product manager in `AppShell`'s `panel`: « Améliorer l'app » in the account menu, the PM panel and the point layer; `?pm=standalone` shows only the PM. One line: `pmPanel({ agent: 'pm' })` (the kit opens the app's PM door), or a host `ImproveSpec`. `hostOrigins`: the parent origins that may give the standalone PM their tokens (default: `PM_HOST_ORIGINS`, Studio). */
+export function pmPanel(spec: ImproveProp, options?: { readonly hostOrigins?: readonly string[] | undefined }) {
+  const host = isImproveAgent(spec) ? undefined : spec;
+  return { config: { spec, hostOrigins: options?.hostOrigins } satisfies PmPanelConfig, Provider: PmShellProvider, Layout: ImproveLayout, page: PM_PAGE, locale: host?.chatProps?.locale, identity: host?.controller };
 }
 
 /** Wiring only: the regular agent page, with the existing point composer and a host Tasks panel. */

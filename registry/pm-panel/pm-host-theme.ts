@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 
-/** The parents whose style a standalone PM takes without any app change. A preview host is added with `AppShell`'s `pmHostOrigins`. */
+/** The parents whose style a standalone PM takes without any app change. A preview host is added with `pmPanel`'s `hostOrigins`. */
 export const PM_HOST_ORIGINS: readonly string[] = ['https://studio.senecaapp.ai'];
 
 const TOKEN = /^--(?:background|foreground|card(?:-foreground)?|popover(?:-foreground)?|primary(?:-foreground)?|secondary(?:-foreground)?|muted(?:-foreground)?|accent(?:-foreground)?|destructive|border|input|ring|radius|font-sans|pm-[a-z0-9-]+)$/;

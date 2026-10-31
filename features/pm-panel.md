@@ -1,6 +1,6 @@
 # One PM: the regular embedded agent workspace
 
-`AppShell improve={{ agent: 'pm' }}` and `PmChat` compose the same existing `AgentWorkspace layout="embedded"`. Hosts supply tokens, identity, conversations and optional resources; Pi still owns execution. There is no PM-specific reply bubble, grabber or intermediate sheet.
+`AppShell panel={pmPanel({ agent: 'pm' })}` and `PmChat` compose the same existing `AgentWorkspace layout="embedded"`. Hosts supply tokens, identity, conversations and optional resources; Pi still owns execution. There is no PM-specific reply bubble, grabber or intermediate sheet.
 
 ## Sub-features
 
@@ -28,7 +28,7 @@
 - `pm-task-mentions`: retain the existing task-mentions picker over host-authorized task records.
 - `pm-mockups`: the workspace's existing default artifact kinds/viewers open presented files through `resources`. Standalone `pm-mockups` exports remain for the separately documented shared-room consumer, not a second PM workspace.
 - `pm-back`: one shell history entry for the PM, another while pointing: Back returns to chat, then closes without leaving the app. No obsolete full→sheet step.
-- `pm-open-signal`: existing `?agent=improve` opens on arrival and is consumed before Back entries. A same-origin parent may send `{ boring: 'pm-open' }`; other origins/sources are refused. No conversation selection, microphone or execution grant.
+- `pm-open-signal`: existing `?agent=improve` opens on arrival and is consumed before Back entries.
 
 ## How to get to it (user POV)
 

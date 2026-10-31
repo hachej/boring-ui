@@ -18,7 +18,7 @@ body{font-family:system-ui,-apple-system,sans-serif}
 :root[data-pm-theme=studio]{--background:#faf5ff;--foreground:#3b0764;--card:#faf5ff;--card-foreground:#3b0764;--popover:#faf5ff;--popover-foreground:#3b0764;--primary:#7e22ce;--primary-foreground:#faf5ff;--secondary:#f3e8ff;--secondary-foreground:#3b0764;--muted:#f3e8ff;--muted-foreground:#6b21a8;--accent:#e9d5ff;--accent-foreground:#3b0764;--border:#d8b4fe;--input:#d8b4fe;--ring:#a855f7;--pm-mark:#7e22ce;--pm-mark-foreground:#faf5ff;--pm-mic-foreground:#7e22ce;--radius:0.9rem}
 :root.dark[data-pm-theme=studio]{--background:#1e1230;--foreground:#f3e8ff;--card:#1e1230;--card-foreground:#f3e8ff;--popover:#2e1647;--popover-foreground:#f3e8ff;--primary:#d8b4fe;--primary-foreground:#3b0764;--secondary:#3b1d54;--secondary-foreground:#f3e8ff;--muted:#3b1d54;--muted-foreground:#d8b4fe;--accent:#581c87;--accent-foreground:#f3e8ff;--border:#6b21a8;--input:#6b21a8;--pm-mark:#d8b4fe;--pm-mark-foreground:#3b0764;--pm-mic-foreground:#d8b4fe}`;
 
-/** `oneLine`: the app whose only PM code is `improve={{ agent: 'pm' }}`, served through the fake PM door (#854) under a host prefix, with the host's task API. */
+/** `oneLine`: the app whose only PM code is `panel={pmPanel({ agent: 'pm' })}`, served through the fake PM door (#854) under a host prefix, with the host's task API. */
 export async function startPmPanel({ oneLine = false } = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'fictional-pm-panel-'));
   const originals = process.env.PM_BEFORE ? new Map(['app-shell.tsx', 'agent-layer.tsx', 'nav.tsx'].map(name => [name, execFileSync('git', ['show', `f81113dc9:registry/app-shell/${name}`], { encoding: 'utf8' })])) : undefined;

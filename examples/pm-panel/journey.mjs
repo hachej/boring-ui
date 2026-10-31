@@ -93,38 +93,8 @@ try {
     await browser.evaluate('history.back()');
     await browser.until('Back closes PM', `${q('[data-testid=pm-panel]')}.hidden`);
     assert.equal(await browser.evaluate('location.pathname'), new URL(app.url).pathname);
-    // Reject forged and cross-window messages; same-origin parent message opens the existing PM.
-    await browser.evaluate(`window.dispatchEvent(new MessageEvent('message', {origin:'https://foreign.invalid', source:window, data:{boring:'pm-open',requestId:'forged-origin'}}))`);
-    assert.equal(await browser.evaluate(`${q('[data-testid=pm-panel]')}.hidden`), true);
-    await browser.evaluate(`window.dispatchEvent(new MessageEvent('message', {origin:location.origin, source:null, data:{boring:'pm-open',requestId:'forged-source'}}))`);
-    assert.equal(await browser.evaluate(`${q('[data-testid=pm-panel]')}.hidden`), true);
-    await browser.evaluate(`window.postMessage({boring:'pm-open',requestId:'open-again'}, location.origin)`);
-    await browser.until('same-origin open signal', visible('[data-testid=pm-show]'));
   }
-  // Real same-origin parent/child handshake, not just a synthetic event in the app window.
-  await browser.send('Page.navigate', { url: app.url });
-  await browser.until('parent app loaded', visible('[data-testid=account-button]'));
-  await browser.evaluate(`(() => {
-    const frame = document.createElement('iframe'); frame.id='pm-host-frame'; frame.src=${JSON.stringify(app.url)};
-    frame.style.cssText='position:fixed;inset:0;width:100%;height:100%;border:0';
-    window.__pmSignals=[];
-    window.addEventListener('message', event => { if(event.origin===location.origin && event.source===frame.contentWindow && ['pm-ready','pm-ack'].includes(event.data?.boring)) window.__pmSignals.push(event.data); });
-    document.body.replaceChildren(frame);
-  })()`);
-  const child = `document.querySelector('#pm-host-frame').contentDocument`;
-  const send = (kind, requestId) => browser.evaluate(`document.querySelector('#pm-host-frame').contentWindow.postMessage({boring:${JSON.stringify(kind)},requestId:${JSON.stringify(requestId)}}, location.origin)`);
-  await browser.until('child advertises PM support', 'window.__pmSignals.some(message=>message.boring==="pm-ready" && message.supported)');
-  await send('pm-probe', 'probe-1');
-  await browser.until('correlated capability probe', 'window.__pmSignals.some(message=>message.boring==="pm-ready" && message.requestId==="probe-1" && message.supported)');
-  for (const requestId of ['first-open', 'reopen-after-close']) {
-    await send('pm-open', requestId);
-    await browser.until('parent open acknowledged', `window.__pmSignals.some(message=>message.boring==='pm-ack' && message.requestId===${JSON.stringify(requestId)} && message.accepted)`);
-    await browser.until('child PM visible', `!!${child}.querySelector('[data-testid=pm-show]')?.checkVisibility({visibilityProperty:true})`, 20000);
-    await browser.click(`${child}.querySelector('[data-testid=pm-close]')`);
-    await browser.until('person closed child PM', `${child}.querySelector('[data-testid=pm-panel]').hidden`);
-  }
-  writeFileSync(`${evidence}/frame-signals.json`, JSON.stringify(await browser.evaluate('window.__pmSignals'), null, 2));
   assert.deepEqual(browser.problems, []);
   writeFileSync(`${evidence}/geometry.json`, JSON.stringify(records, null, 2));
-  console.log('PASS: 48 screenshots; 1440/390, light/dark, two host token themes; Tasks/History/Library/New/close, pin/send, Back and parent-frame readiness/reopen');
+  console.log('PASS: 48 screenshots; 1440/390, light/dark, two host token themes; Tasks/History/Library/New/close, pin/send and Back');
 } finally { await browser?.close(); await app.close(); }

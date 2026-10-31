@@ -3,6 +3,7 @@
 import { createRoot } from 'react-dom/client';
 import { useEffect, useState } from 'react';
 import { AppShell } from '../../registry/app-shell/app-shell';
+import { pmPanel } from '../../registry/pm-panel/pm-panel';
 import { useRemoteChat } from '../../registry/pi-chat/use-remote-chat';
 import { RequestCard, TASKS, TASKS_EN, VIEWER, confirmed } from './tasks';
 import { coachAccount, coachNav, note } from './coach-max';
@@ -27,7 +28,7 @@ function Ready({ remote }: { readonly remote: Extract<ReturnType<typeof useRemot
   const [tasks, setTasks] = useState(TASKS);
   return <AppShell layout="screen" title="Coach Max" locale="fr" route={{ id: screen, onChange: setScreen }}
     account={coachAccount} nav={coachNav}
-    improve={{ controller: remote.controller, appName: 'Coach Max', chatProps: { actions: remote.actions, showHistory: false },
+    panel={pmPanel({ controller: remote.controller, appName: 'Coach Max', chatProps: { actions: remote.actions, showHistory: false },
       pointVoice: { transcribe: async () => { if (controls.__holdTranscription) await new Promise<void>(resolve => { controls.__releaseTranscription = resolve; }); if ((window as unknown as { __failVoice?: boolean }).__failVoice) throw new Error('Fictional refusal'); return { text: words, segments: query.has('untimed') ? undefined : segments }; } },
       tasks: { tasks, currentUser: VIEWER, onOpen: task => note('__presented', task.id),
         renderRequest: ({ edit }) => <RequestCard task={tasks[0]!} onConfirm={id => { note('__confirmed', id); setTasks(current => confirmed(current, id)); }} onModify={text => { note('__modify', text); edit(text); }} /> },
