@@ -68,7 +68,7 @@ function CompactView({ onAnswer }: { readonly onAnswer: (text: string) => void }
     <div role="list" data-compact-card=""><TaskRequestCard task={card} variant="compact" locale="fr" viewerAction="confirmation" actions={<>
       <Button variant="outline" onClick={() => onAnswer('Fictional request: modifier')}>Modifier</Button><Button onClick={() => { setConfirmed(true); onAnswer('Fictional request: confirmer'); }}>Confirmer</Button></>} /></div>
     <section className="flex flex-col gap-3" aria-label="Mes demandes"><h2 className="text-sm font-semibold">Mes demandes</h2>
-      <TaskBoard tasks={[confirmation, ...tasks]} filter="mine" currentUser="alice" limit={2} variant="compact" locale="fr" viewerAction="confirmation" onOpen={task => onAnswer(`Open ${task.id}`)} /></section>
+      <TaskBoard tasks={[confirmation, ...tasks]} filter="mine" currentUser="alice" limit={2} locale="fr" viewerAction="confirmation" onOpen={task => onAnswer(`Open ${task.id}`)} /></section>
   </main>;
 }
 

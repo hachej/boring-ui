@@ -100,7 +100,7 @@ async function testStyle(style) {
   import { TaskBoard, TaskRequestCard, TaskStatusChip } from './components/task-board/task-board';
   import type { TaskRecord } from '@hachej/boring-ui-kit/task-board';
   export function OwnRequests({ tasks }: { readonly tasks: readonly TaskRecord[] }) {
-    return <><TaskBoard tasks={tasks} filter="mine" currentUser="fictional-person" limit={2} variant="compact" />
+    return <><TaskBoard tasks={tasks} filter="mine" currentUser="fictional-person" limit={2} />
       {tasks[0] && <><TaskRequestCard task={tasks[0]} actions={<button>Confirm</button>} /><TaskStatusChip task={tasks[0]} /></>}</>;
   }
   import { useEffect, useState } from 'react';

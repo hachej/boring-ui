@@ -107,19 +107,15 @@ test('open questions precede bounded latest-three answers; full huge answers mou
   assert.equal(document.querySelector('[data-task-answered]').dataset.taskAnswered, 'answer-0', 'host answer time takes precedence over source position');
 });
 
-test('compact mine prioritizes needs-you among own request cards and uses the host open path', async t => {
-  const opened = []; const f = await fixture(t, { filter: 'mine', currentUser: 'alice', limit: 2, variant: 'compact', onOpen: task => opened.push(task.id) });
-  assert.deepEqual([...document.querySelectorAll('[data-task-card]')].map(node => node.dataset.taskCard), ['orchard', 'kites']);
-  assert.equal(document.querySelectorAll('[data-variant=compact][data-task-card]').length, 2);
-  assert.doesNotMatch(document.body.textContent, /REQUEST/);
-  assert.doesNotMatch(document.body.textContent, /Screen: Garden|captures/);
-  assert.doesNotMatch(document.body.textContent, /Fictional picnic/);
-  await f.click('[data-task-open=orchard]'); assert.deepEqual(opened, ['orchard']);
-  assert.equal(new URL(f.window.location.href).searchParams.get('task'), null);
-  assert.equal(document.querySelector('[data-task-side]'), null);
-  await f.render({ currentUser: undefined }); assert.match(document.body.textContent, /No requests/);
+test('the bar shows only when it holds something; many apps scroll on one line; history stays in the detail', async t => {
+  const f = await fixture(t, { filter: 'all' });
+  assert.equal(document.querySelector('[data-task-bar]'), null, 'no filter and one app: no empty band above the board');
+  await f.render({ tasks: [{ id: 'a', title: 'One', state: 'working', app: 'First' }, { id: 'b', title: 'Two', state: 'working', app: 'Second' }] });
+  assert.match(document.querySelector('[data-task-apps]').className, /overflow-x-auto/);
+  assert.doesNotMatch(document.querySelector('[data-task-apps]').className, /flex-wrap/);
+  await f.render({ tasks: [{ id: 'a', title: 'One', state: 'working', history: [{ note: 'HISTORY_SENTINEL' }] }], selectedTask: 'a' });
+  assert.match(document.querySelector('[data-task-history]').textContent, /HISTORY_SENTINEL/);
 });
-
 test('deep-link alias, browser navigation and missing records remain explicit without exposing filtered-out data', async t => {
   const f = await fixture(t, {}, '?task=D-201&agent=pm');
   assert.equal(document.querySelector('[data-task-detail]').dataset.taskDetail, 'orchard');
@@ -249,18 +245,13 @@ test('compact public cards show one localized product chip, terminal guards and 
 test('compact titles are never cut mid-sentence, actions stay authorized host intents, original open record and native detail retain the full need', async t => {
   const opened = [], actions = [];
   const record = Object.freeze({ id: 'full', number: 743, title: 'Un besoin complet de plus de six mots à conserver sans aucune modification', spec: 'Full fictional specification', display: 'Choisir les repas', state: 'waiting', waiting_on_you: true, screen: 'PRIVATE_SCREEN', requester: 'PRIVATE_ACTOR', captureCount: 3 });
-  const f = await fixture(t, { tasks: [record], variant: 'compact', locale: 'fr', viewerAction: 'confirmation', onOpen: task => opened.push(task) });
-  await f.render({ cardActions: task => f.h('div', null, f.h('button', { onClick: () => actions.push(['edit', task]) }, 'Modifier'), f.h('button', { onClick: () => actions.push(['confirm', task]) }, 'Confirmer')) });
+  const f = await fixture(t, { tasks: [record], locale: 'fr', selectedTask: 'full' });
+  assert.ok(document.querySelector('[data-task-detail]').textContent.includes(record.title));
+  await f.act(async () => f.root.render(f.h(f.TaskRequestCard, { task: record, variant: 'compact', locale: 'fr', viewerAction: 'confirmation', onOpen: task => opened.push(task),
+    actions: f.h('button', { onClick: () => actions.push(record) }, 'Confirmer') })));
   assert.match(document.body.textContent, /Choisir les repas/);
   assert.doesNotMatch(document.body.textContent, /D-743|PRIVATE_|DEMANDE|REQUEST|captures/);
-  assert.equal(document.querySelectorAll('[data-slot=badge]').length, 1);
-  await f.click('[data-task-actions] button'); await f.click('[data-task-actions] button:last-child');
-  assert.deepEqual(actions.map(([intent]) => intent), ['edit', 'confirm']);
-  assert.equal(actions[0][1], record); assert.equal(actions[1][1], record);
-  await f.click('[data-task-open=full]'); assert.equal(opened[0], record);
-  assert.equal(opened[0].title, record.title); assert.equal(opened[0].spec, record.spec);
-  await f.render({ variant: 'board', selectedTask: 'full' });
-  assert.ok(document.querySelector('[data-task-detail]').textContent.includes(record.title));
+  await f.click('[data-task-actions] button'); assert.equal(actions[0], record);
   for (const display of [undefined, '   ', 'Un affichage beaucoup trop long pour une seule demande', '  Un affichage\n  avec des espaces mais sans aucune coupure  ']) {
     const input = Object.freeze({ ...record, display });
     await f.act(async () => f.root.render(f.h(f.TaskRequestCard, { task: input, variant: 'compact' })));
@@ -272,28 +263,9 @@ test('compact titles are never cut mid-sentence, actions stay authorized host in
   }
 });
 
-test('compact board prioritizes valid needs-you before limit, omits canonical technical and collapses closed plus explicit owner technical', async t => {
-  const records = [
-    { id: 'working', title: 'Préparer les menus', state: 'working', updated_at: '2026-10-30' },
-    { id: 'technical', title: 'Fictional internal task', state: 'waiting', waiting_on_you: true, technical: true },
-    { id: 'closed', title: 'Une demande retirée', state: 'waiting', status: 'abandoned', waiting_on_you: true },
-    { id: 'needs', title: 'Choisir les repas', state: 'waiting', waiting_on_you: true },
-    { id: 'not-inferred', title: 'Technical builder machine', state: 'open', technical: false },
-    { id: 'stale', title: 'Une demande fermée', state: 'closed', waiting_on_you: true },
-  ];
-  const f = await fixture(t, { tasks: records, variant: 'compact', filter: 'all', locale: 'fr' });
-  const ids = () => [...document.querySelectorAll('[data-task-card]')].map(node => node.dataset.taskCard);
-  assert.deepEqual(ids(), ['needs', 'working', 'not-inferred']);
-  assert.equal(document.querySelector('[data-task-group=technical]'), null);
-  assert.equal(document.querySelector('[data-task-group=closed] button').getAttribute('aria-expanded'), 'false');
-  await f.click('[data-task-group=closed] button');
-  assert.deepEqual(ids(), ['needs', 'working', 'not-inferred', 'closed', 'stale']);
-  await f.render({ compactPresentation: { includeTechnical: true } });
-  assert.ok(!ids().includes('technical'));
-  await f.click('[data-task-group=technical] button'); assert.ok(ids().includes('technical'));
-  await f.render({ limit: 1, compactPresentation: undefined });
-  assert.deepEqual(ids(), ['needs']);
-  await f.render({ variant: 'board', limit: undefined });
+test('technical records fold, never drop', async t => {
+  const f = await fixture(t, { tasks: [{ id: 'technical', title: 'Fictional internal task', state: 'waiting', waiting_on_you: true, technical: true }, { id: 'closed', title: 'Une demande retirée', state: 'waiting', status: 'abandoned', waiting_on_you: true }], filter: 'all', locale: 'fr' });
   assert.equal(document.querySelector('[data-task-card=technical]'), null);
-  assert.match(document.querySelector('[data-task-group=technical]').textContent, /Technique · 1/, 'the board folds technical records, it does not drop them');
+  assert.match(document.querySelector('[data-task-group=technical]').textContent, /Technique · 1/);
+  assert.match(document.querySelector('[data-task-group=finished]').textContent, /Terminées · 1/);
 });

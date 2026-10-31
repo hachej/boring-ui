@@ -35,8 +35,7 @@ try {
 
     await press('[data-testid=workspace-bar-tasks]');
     await browser.until('existing requests panel', visible('[data-testid=pm-task-board-seam]'));
-    await browser.until('finished fold', visible('[data-testid=pm-finished-toggle]'));
-    assert.equal(await browser.evaluate(`${q('[data-testid=pm-finished-toggle]')}.getAttribute('aria-expanded')`), 'false');
+    await browser.until('the board', visible('[data-testid=pm-task-board-seam] [data-boring=task-board]'));
     await browser.screenshot(`${label}-tasks.png`);
     await browser.press('Escape'); await pause(350);
 

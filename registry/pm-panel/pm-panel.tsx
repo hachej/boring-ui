@@ -2,8 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
-import { ChevronDownIcon, ListTodoIcon, XIcon } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { ListTodoIcon, XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { AgentWorkspace } from '../pi-app/agent-workspace';
@@ -11,7 +10,6 @@ import type { WorkspaceBarPanel } from '../pi-app/workspace-bar';
 import { defaultKinds } from '../pi-app-kinds/pi-app-kinds';
 import { ChatTextProvider } from '../pi-chat/labels';
 import { chatTextFor } from '../pi-chat/locale';
-import { Markdown } from '../pi-chat-markdown/markdown';
 import { cn } from '../utils/utils';
 import { usePhone } from '../utils/use-media';
 import { PmComposer } from './pm-composer';
@@ -19,10 +17,10 @@ import { PointComment } from './point-comment';
 import { usePmPanel } from './use-pm-panel';
 import { POINT_PREFACE, pointMessage } from './point-message';
 import { usePmMentions } from './pm-mentions';
-import { TaskDetail, TaskRequestCard, taskTokens } from '../task-board/task-board';
+import { TaskBoard } from '../task-board/task-board';
 import type { TaskRecord } from '@hachej/boring-ui-kit/task-board';
 import { selectTasks } from '@hachej/boring-ui-kit/task-board';
-import { PmRequestStatus, requestOutcome } from './pm-task-source';
+import { requestOutcome } from './pm-task-source';
 import type { ImproveSpec, StudioTaskBoardSeam } from './use-pm-panel';
 import { useImproveAgent } from './use-improve-agent';
 import type { ImproveProp } from './use-improve-agent';
@@ -194,7 +192,7 @@ function PmWorkspace({ spec, pm, page, preset, open, close, beside = false }: { 
   const tasksLabel = text.locale === 'fr' ? 'Tâches' : 'Tasks';
   const barPanels: readonly WorkspaceBarPanel[] = [{ id: 'tasks', label: tasksLabel, icon: ListTodoIcon, dot: spec.tasks?.unread ?? ships.some(ship => !seen.includes(ship)), onOpenChange: spec.tasks?.onOpenChange, onOpen: () => {
     refreshTasks?.(); setSeen(ships); try { localStorage.setItem(seenKey, JSON.stringify(ships)); } catch { /* viewer storage is optional */ }
-  }, content: () => <div data-testid="pm-task-board-seam" className="min-h-0 flex-1 overflow-auto">{spec.tasks ? <>{spec.tasks.header}<PmRequests seam={spec.tasks} text={text} /></> : <p role="status" className="p-4 text-sm text-muted-foreground">{text.connectionFailed}</p>}</div> }];
+  }, content: () => <div data-testid="pm-task-board-seam" className="flex min-h-0 flex-1 flex-col">{spec.tasks ? <>{spec.tasks.header}<PmRequests seam={spec.tasks} text={text} /></> : <p role="status" className="p-4 text-sm text-muted-foreground">{text.connectionFailed}</p>}</div> }];
   useEffect(() => {
     if (!pm.focusVersion || !open || strip) return;
     const input = root.current?.querySelector<HTMLElement>('[data-testid=composer-input]');
@@ -225,52 +223,11 @@ function PmWorkspace({ spec, pm, page, preset, open, close, beside = false }: { 
   </div></ChatTextProvider>;
 }
 
+/** « Mes demandes »: the one board, the viewer's own tasks. The panel's width stacks it; the detail is where a request is answered or withdrawn. */
 function PmRequests({ seam, text }: { readonly seam: StudioTaskBoardSeam; readonly text: PmText }) {
-  const [expanded, setExpanded] = useState(false);
-  const [technical, setTechnical] = useState(false);
-  const [selected, setSelected] = useState<string>();
-  const tasks = selectTasks(seam.tasks, { filter: 'mine', currentUser: seam.currentUser });
-  const visible = tasks.filter(task => !task.technical);
-  const open = visible.filter(task => requestOutcome(task) === undefined).sort((a, b) => Number(b.waiting_on_you === true) - Number(a.waiting_on_you === true));
-  const finished = visible.filter(task => requestOutcome(task) !== undefined);
-  const internal = tasks.filter(task => task.technical);
-  const detail = tasks.find(task => task.id === selected);
-  const openTask = (task: TaskRecord) => { setSelected(task.id); seam.onOpen(task); };
-  const label = { live: text.outcomeLive, withdrawn: text.outcomeWithdrawn, closed: text.outcomeClosed } as const;
-  const card = (task: TaskRecord) => {
-    const outcome = requestOutcome(task);
-    return <TaskRequestCard key={task.id} task={task} variant="compact" locale={text.locale} href="#" onOpen={openTask}
-      actions={outcome ? undefined : seam.cardActions?.(task)} pill={outcome
-        ? <span className={cn('contents', taskTokens.pill)}><Badge variant={outcome === 'live' ? 'secondary' : 'outline'} data-task-outcome={outcome}>{label[outcome]}</Badge></span>
-        : <PmRequestStatus task={task} text={text} />} />;
-  };
-  if (detail) return <div className="flex flex-col gap-4 p-4">
-    <Button variant="ghost" data-testid="pm-request-back" className="self-start" onClick={() => setSelected(undefined)}>{text.back}</Button>
-    <TaskDetail task={detail} actions={requestOutcome(detail) ? undefined : seam.cardActions?.(detail)} />
-    {detail.spec && <Markdown text={detail.spec} />}
-    {detail.history?.map((item, index) => <p key={item.id ?? index} className="m-0 text-sm">{item.note}</p>)}
-  </div>;
-  return <div className="flex flex-col gap-4 p-4">
-    <section data-boring="task-board" className="flex flex-col gap-3" aria-label={text.requests}>
-      <h3 className="m-0 text-sm font-semibold">{text.requests}</h3>
-      {([true, false] as const).map(waiting => {
-        const group = open.filter(task => (task.waiting_on_you === true) === waiting);
-        return group.length > 0 && <section key={String(waiting)} className="flex flex-col gap-2" aria-label={waiting ? text.awaiting : text.inProgress}>
-          <h4 className="m-0 text-xs text-muted-foreground">{waiting ? text.awaiting : text.inProgress}</h4>
-          {group.map(card)}
-        </section>;
-      })}
-    </section>
-    {finished.length > 0 && <section data-testid="pm-finished" aria-label={text.finished(finished.length)} className="flex flex-col gap-2">
-      <Button variant="ghost" data-testid="pm-finished-toggle" aria-expanded={expanded} aria-controls="pm-finished-list" onClick={() => setExpanded(!expanded)}
-        className="min-h-11 justify-between px-1 text-sm font-semibold text-muted-foreground">
-        {text.finished(finished.length)}<ChevronDownIcon aria-hidden="true" className={cn('size-4 transition-transform', expanded && 'rotate-180')} />
-      </Button>
-      {expanded && <div id="pm-finished-list" role="list" aria-label={text.finished(finished.length)} className="flex flex-col gap-2">{finished.map(card)}</div>}
-    </section>}
-    {internal.length > 0 && <section className="flex flex-col gap-2">
-      <Button variant="ghost" data-testid="pm-technical-toggle" aria-expanded={technical} onClick={() => setTechnical(!technical)} className="min-h-11 justify-between">{text.technical} ({internal.length})<ChevronDownIcon aria-hidden="true" /></Button>
-      {technical && <div role="list" className="flex flex-col gap-2">{internal.map(card)}</div>}
-    </section>}
-  </div>;
+  const [selected, setSelected] = useState<string | null>(null);
+  const answer = (task: TaskRecord, _question: unknown, value: string) => seam.answer?.(task, value);
+  return <TaskBoard tasks={seam.tasks} filter="mine" currentUser={seam.currentUser} bar={false} title={text.requests} locale={text.locale} selectedTask={selected}
+    onSelectedTaskChange={id => { setSelected(id); const task = seam.tasks.find(each => each.id === id); if (task) seam.onOpen(task); }}
+    actions={task => requestOutcome(task) ? undefined : seam.cardActions?.(task)} onAnswer={answer} onOther={answer} className="min-h-0 flex-1" />;
 }

@@ -71,7 +71,7 @@ export function toTaskRecord(task: HostTask, viewer: string): HostTaskRecord {
   const created = stamp(task.created ?? task.created_at), updated = stamp(task.updated ?? task.updated_at), confirmed = stamp(task.confirmed_at), ref = task.ref ?? task.number, question = task.question ?? task.waiting_on?.question;
   const state: TaskState = task.status === 'abandoned' ? 'closed' : task.status === 'shipped' ? 'done' : waiting ? 'waiting' : STATES.includes(task.state as TaskState) ? task.state as TaskState : 'open', outcome = taskOutcome(state, task.closed_reason ?? (task.status === 'abandoned' ? 'withdrawn' : undefined));
   return {
-    id: task.id, ...(ref ? { number: ref } : {}), title: task.title, ...(task.display ? { display: task.display } : {}), ...(task.technical === undefined ? {} : { technical: task.technical }), ...(task.status ? { status: task.status } : {}), requesterId: viewer, waiting_on_you: waiting, state,
+    id: task.id, ...(ref ? { number: ref } : {}), title: task.title, ...(task.display ? { display: task.display } : {}), ...(task.technical === undefined ? {} : { technical: task.technical }), ...(outcome === 'withdrawn' ? { status: 'withdrawn' } : task.status ? { status: task.status } : {}), requesterId: viewer, waiting_on_you: waiting, state,
     ...(waiting ? { waiting_on: { who: viewer, type: 'person' as const, ...(question ? { question } : {}) } } : {}),
     ...(created ? { created_at: created } : {}), ...(updated ? { updated_at: updated } : {}), ...(confirmed ? { confirmed_at: confirmed } : {}),
     ...(task.is_requester === true ? { is_requester: true as const } : {}), ...(outcome ? { outcome } : {}),
@@ -206,14 +206,18 @@ export function useHostTasks(url: string | undefined, viewer: string | undefined
     const reopened = task.outcome === undefined && Date.parse(task.updated_at ?? '') > Date.parse(gone ?? '');
     if (gone !== undefined && task.outcome !== 'live' && !reopened) {
       const { waiting_on: _, is_requester: __, ...rest } = task;
-      return { ...rest, state: 'closed', waiting_on_you: false, outcome: 'withdrawn', updated_at: task.state === 'closed' ? task.updated_at ?? gone : gone };
+      return { ...rest, state: 'closed', status: 'withdrawn', waiting_on_you: false, outcome: 'withdrawn', updated_at: task.state === 'closed' ? task.updated_at ?? gone : gone };
     }
     const at = confirmed.get(task.id);
     if (at === undefined || !task.waiting_on_you) return task;
     const { waiting_on: _, ...rest } = task;
     return { ...rest, state: 'open', waiting_on_you: false, confirmed_at: task.confirmed_at ?? at };
   }, [confirmed, withdrawn]);
-  const tasks = useMemo(() => (read ?? []).map(settle), [read, settle]);
+  // The board answers a task's question: a requester's waiting request offers « Confirmer », anyone can answer in their own words.
+  const tasks = useMemo(() => (read ?? []).map(settle).map((task): HostTaskRecord => {
+    const question = task.waiting_on_you ? task.waiting_on?.question : undefined;
+    return question ? { ...task, questions: [{ id: 'waiting', text: question, ...(task.is_requester ? { options: [text.confirm] } : {}) }] } : task;
+  }), [read, settle, text.confirm]);
   const entries = useSyncExternalStore(controller?.subscribe ?? noSubscribe, () => controller?.getSnapshot().view?.entries.length ?? 0, () => 0);
   const [answered, setAnswered] = useState(0);
   const [asked, setAsked] = useState(0);
@@ -225,13 +229,13 @@ export function useHostTasks(url: string | undefined, viewer: string | undefined
     const timer = setTimeout(() => { readTasks(url, viewer, abort.signal).then(setTasks, () => { if (!abort.signal.aborted) setTasks(current => current ?? null); }); }, 300);
     return () => { clearTimeout(timer); abort.abort(); };
   }, [url, viewer, entries, answered, asked]);
-  const confirm = useCallback(async (task: TaskRecord) => {
+  const confirm = useCallback(async (task: TaskRecord, answer?: string) => {
     if (!url) return;
     if (pendingConfirm.current.has(task.id)) return;
     pendingConfirm.current.add(task.id);
     setConfirming(current => new Set(current).add(task.id));
     setConfirmFailed(current => { const next = new Set(current); next.delete(task.id); return next; });
-    const done = await answerTask(url, task.id, text.confirm).then(() => true, () => false);
+    const done = await answerTask(url, task.id, answer ?? text.confirm).then(() => true, () => false);
     pendingConfirm.current.delete(task.id);
     setConfirming(current => { const next = new Set(current); next.delete(task.id); return next; });
     if (done) setConfirmed(current => new Map(current).set(task.id, task.confirmed_at ?? new Date().toISOString()));
@@ -248,7 +252,7 @@ export function useHostTasks(url: string | undefined, viewer: string | undefined
     setRefused(current => new Set(current).add(task.id));
   }, [url]);
   return useMemo(() => !url || !viewer ? undefined : {
-    tasks, currentUser: viewer, refresh,
+    tasks, currentUser: viewer, refresh, answer: (task: TaskRecord, value: string) => { void confirm(task, value); },
     // No task route in the one line: a card is the request, its answer happens in the PM chat.
     onOpen: () => undefined,
     cardActions: (task: TaskRecord) => withdrawable(task) || refused.has(task.id) ? <WithdrawAction key={task.id} task={task} failed={refused.has(task.id)} text={text} onWithdraw={withdraw} /> : undefined,

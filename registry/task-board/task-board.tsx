@@ -48,9 +48,6 @@ export interface TaskBoardProps {
   readonly onFilterChange?: ((filter: TaskFilter) => void) | undefined;
   readonly currentUser?: string;
   readonly limit?: number;
-  readonly variant?: 'board' | 'compact';
-  /** Compact-only presentation, never server authorization. Supply only records the viewer may already read. */
-  readonly compactPresentation?: { readonly includeTechnical?: boolean };
   readonly title?: string;
   /** @deprecated Ignored: columns follow who acts next and `locale`. */
   readonly labels?: unknown;
@@ -66,10 +63,8 @@ export interface TaskBoardProps {
   readonly onSelectedTaskChange?: ((id: string | null) => void) | undefined;
   /** Optional host navigation/present path, particularly for compact lists inside the PM panel. */
   readonly onOpen?: ((task: TaskRecord) => void) | undefined;
-  /** Host content under the detail's title card. */
+  /** Host content in the detail, after the question and the request. */
   readonly actions?: ((task: TaskRecord) => ReactNode) | undefined;
-  /** Host-authorized compact card actions (« Modifier », « Confirmer »). */
-  readonly cardActions?: ((task: TaskRecord) => ReactNode) | undefined;
   readonly onAnswer?: TaskDetailProps['onAnswer'];
   readonly onOther?: TaskDetailProps['onOther'];
   readonly onDiscussQuestion?: TaskDetailProps['onDiscussQuestion'];
@@ -87,10 +82,10 @@ export interface TaskBoardProps {
 /**
  * The one task board: columns by who acts next (needs you, blocked, in progress, recently live), finished and technical folded. The
  * panel's own width decides the layout, so a narrow pane or phone gets the same sections stacked. The detail opens 400px wide over the
- * board, whole-pane when narrower; a file opens 760px wide over the detail. `variant="compact"` stacks C7 cards.
+ * board, whole-pane when narrower; a file opens 760px wide over the detail.
  */
-export function TaskBoard({ tasks, filter, onFilterChange, currentUser, limit, variant = 'board', compactPresentation, title = 'Tasks', bar = true, barStart, locale = 'en', viewerAction,
-  selectedTask, onSelectedTaskChange, onOpen, actions, cardActions, onAnswer, onOther, onDiscussQuestion, onAsk, onOpenFile, onShowFile, renderFile, overlayClassName, className }: TaskBoardProps) {
+export function TaskBoard({ tasks, filter, onFilterChange, currentUser, limit, title = 'Tasks', bar = true, barStart, locale = 'en', viewerAction,
+  selectedTask, onSelectedTaskChange, onOpen, actions, onAnswer, onOther, onDiscussQuestion, onAsk, onOpenFile, onShowFile, renderFile, overlayClassName, className }: TaskBoardProps) {
   const urlSelection = useSyncExternalStore(subscribe, readSelection, serverSelection);
   const [ownFilter, setOwnFilter] = useState<TaskFilter>(currentUser === undefined ? 'all' : 'mine');
   const [unfolded, setUnfolded] = useState<ReadonlySet<TaskColumn>>(() => new Set());
@@ -133,48 +128,27 @@ export function TaskBoard({ tasks, filter, onFilterChange, currentUser, limit, v
   };
   const open = (task: TaskRecord) => { if (onOpen) onOpen(task); else select(task.id); };
   const href = (task: TaskRecord) => typeof window === 'undefined' ? `?task=${encodeURIComponent(task.id)}` : taskUrl(window.location.href, task.id);
-  const card = (task: TaskRecord) => <TaskRequestCard key={task.id} task={task} variant={variant === 'compact' ? 'compact' : 'card'} selected={task.id === detail?.id} href={href(task)} onOpen={open}
-    locale={locale} viewerAction={viewerAction} actions={variant === 'compact' ? cardActions?.(task) : undefined} />;
+  const card = (task: TaskRecord) => <TaskRequestCard key={task.id} task={task} selected={task.id === detail?.id} href={href(task)} onOpen={open}
+    locale={locale} viewerAction={viewerAction} />;
   const apps = [...new Set(shown.flatMap(task => task.app ? [task.app] : []))].sort();
   const listed = app === null ? shown : shown.filter(task => task.app === app);
   const words = columnLabels[locale];
   const of = (column: TaskColumn) => listed.filter(task => taskColumn(task) === column).sort((a, b) => (Date.parse(b.updated_at ?? '') || 0) - (Date.parse(a.updated_at ?? '') || 0));
   const appChip = (value: string | null, text: string) => <Badge key={text} data-task-app-filter={text} variant={app === value ? 'default' : 'secondary'} render={<a href="#" aria-current={app === value ? 'true' : undefined} onClick={(event: MouseEvent) => { event.preventDefault(); setApp(value); }} />}>{text}</Badge>;
   const chooseFilter = (next: TaskFilter) => (event: MouseEvent) => { event.preventDefault(); if (filter === undefined) setOwnFilter(next); onFilterChange?.(next); };
-  if (variant === 'compact') {
-    const strings = compactLabels[locale];
-    // Filter hidden records and prioritize current viewer needs before applying the visible limit.
-    const compact = selectTasks(tasks.filter(task => task.technical !== true || compactPresentation?.includeTechnical === true), { filter: shownFilter, ...(currentUser === undefined ? {} : { currentUser }) })
-      .slice().sort((a, b) => Number(compactTaskStatus(b) === 'needs-you') - Number(compactTaskStatus(a) === 'needs-you'))
-      .slice(0, limit);
-    const ordinary = compact.filter(task => task.technical !== true && compactTaskStatus(task) !== 'closed');
-    const closed = compact.filter(task => task.technical !== true && compactTaskStatus(task) === 'closed');
-    const technical = compact.filter(task => task.technical === true);
-    const group = (kind: 'closed' | 'technical', records: readonly TaskRecord[]) => records.length > 0 && <Collapsible data-task-group={kind}>
-      <Separator />
-      <CollapsibleTrigger render={<Button variant="ghost" />}>{kind === 'closed' ? strings.finished : strings.technical} · {records.length}</CollapsibleTrigger>
-      <CollapsibleContent><div role="list" aria-label={kind === 'closed' ? strings.finished : strings.technical} className="flex flex-col gap-2">{records.map(card)}</div></CollapsibleContent>
-    </Collapsible>;
-    return <section ref={root} data-boring="task-board" data-variant="compact" aria-label={title} className={cn('flex min-w-0 flex-col gap-2', className)}>
-      <div data-task-list role="list" aria-label={title} className="flex flex-col gap-2">{ordinary.map(card)}</div>
-      {!compact.length && <Empty><EmptyHeader><EmptyTitle>{strings.empty}</EmptyTitle><EmptyDescription>{strings.emptyDescription}</EmptyDescription></EmptyHeader></Empty>}
-      {group('closed', closed)}
-      {group('technical', technical)}
-    </section>;
-  }
-  return <section ref={root} data-boring="task-board" data-variant={variant} aria-label={title} className={cn('flex min-h-0 min-w-0 flex-col', className)} onKeyDown={event => {
+  return <section ref={root} data-boring="task-board" aria-label={title} className={cn('flex min-h-0 min-w-0 flex-col', className)} onKeyDown={event => {
     if (event.key === 'Escape' && selected !== null && !event.defaultPrevented) { event.preventDefault(); if (fileOpen) closeFile(); else select(null); }
   }}>
-    {bar && <nav data-task-bar aria-label="Task lists" className="flex h-13 shrink-0 items-center gap-2.5 px-3.5 text-[13px] text-muted-foreground">
+    {bar && (barStart || apps.length > 1 || currentUser !== undefined) && <nav data-task-bar aria-label="Task lists" className="flex h-13 shrink-0 items-center gap-2.5 px-3.5 text-[13px] text-muted-foreground">
       {barStart}
-      {apps.length > 1 && <span className={cn('flex min-w-0 flex-wrap items-center gap-1.5', taskTokens.pill)} data-task-apps="">{appChip(null, locale === 'fr' ? 'Toutes' : 'All apps')}{apps.map(name => appChip(name, name))}</span>}
+      {apps.length > 1 && <span className={cn('flex min-w-0 items-center gap-1.5 overflow-x-auto [scrollbar-width:none] *:shrink-0', taskTokens.pill)} data-task-apps="">{appChip(null, locale === 'fr' ? 'Toutes' : 'All apps')}{apps.map(name => appChip(name, name))}</span>}
       {currentUser !== undefined && <span className={cn('ml-auto flex items-center gap-2.5', taskTokens.pill)} data-task-filter={shownFilter}>
         {(['mine', 'all'] as const).map(value => <Badge key={value} variant={shownFilter === value ? 'default' : 'secondary'} render={<a href="#" aria-current={shownFilter === value ? 'true' : undefined} onClick={chooseFilter(value)} />}>{value === 'mine' ? 'Mine' : 'All'}</Badge>)}
       </span>}
     </nav>}
     <div data-task-stage className="relative min-h-0 flex-1 overflow-hidden">
       <div data-task-list className="@container/task-rails h-full min-w-0 overflow-auto">
-        <div className="grid min-w-0 content-start gap-2.5 p-3.5 @3xl/task-rails:grid-cols-4">
+        {!!listed.length && <div className="grid min-w-0 content-start gap-2.5 p-3.5 @3xl/task-rails:grid-cols-4">
           {TASK_COLUMNS.map(column => {
             const rows = of(column);
             // Stacked, an empty section is noise; side by side, a column keeps its place so the board does not shift.
@@ -183,7 +157,7 @@ export function TaskBoard({ tasks, filter, onFilterChange, currentUser, limit, v
               <div role="list" className="flex flex-col gap-[7px]">{rows.map(card)}</div>
             </section>;
           })}
-        </div>
+        </div>}
         {!listed.length && <Empty><EmptyHeader><EmptyTitle>{compactLabels[locale].empty}</EmptyTitle><EmptyDescription>{compactLabels[locale].emptyDescription}</EmptyDescription></EmptyHeader></Empty>}
         {FOLDED.map(column => {
           const rows = of(column);
