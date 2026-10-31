@@ -1653,6 +1653,11 @@
           "target": "components/app-shell/use-exclusive-sheet.ts"
         },
         {
+          "path": "registry/app-shell/shell-panel.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/shell-panel.tsx"
+        },
+        {
           "path": "registry/app-shell/compact.ts",
           "type": "registry:hook",
           "target": "components/app-shell/compact.ts"
@@ -1666,11 +1671,6 @@
           "path": "registry/app-shell/use-dictation.ts",
           "type": "registry:hook",
           "target": "components/app-shell/use-dictation.ts"
-        },
-        {
-          "path": "registry/app-shell/agent-slot.ts",
-          "type": "registry:lib",
-          "target": "components/app-shell/agent-slot.ts"
         }
       ]
     },

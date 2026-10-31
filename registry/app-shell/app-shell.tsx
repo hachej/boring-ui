@@ -6,7 +6,7 @@
 // untouched, below the same sidebar, account menu and header; there is no shell agent (the page is the chat). The shell imports nothing from pi-app: a layout C app installs the `pi-app` item itself. One header per screen
 // (`useScreenHeader`). The AgentLayer is mounted once, here.
 // Host concern: Pi has no layout; the screen on show travels as the agent's context (useAgentContext -> createPromptContext).
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { afterStacksBack } from '../utils/back';
 import type { ReactNode } from 'react';
 import { SidebarProvider } from '@/components/ui/sidebar';
@@ -15,7 +15,8 @@ import { AccountAvatar, AccountChoices } from './account';
 import type { AccountSpec } from './account';
 import { AgentDockLayout, AgentLayer, AgentLayerProvider } from './agent-layer';
 import type { AgentSpec } from './agent-layer';
-import type { AgentSlot, AgentSlotLayoutProps } from './agent-slot';
+import { NoPanelLayout } from './shell-panel';
+import type { ShellPanel } from './shell-panel';
 import { ScreenActiveContext, useAgentContext } from './agent-context';
 import { useIsCompact } from './compact';
 import { HeaderProvider, ScreenHeader } from './header';
@@ -38,8 +39,8 @@ export interface AppShellProps {
   readonly agent?: AgentSpec;
   /** Consume agent/open/input launch parameters on mount (default). `false` leaves the URL and layer untouched. */
   readonly agentLink?: false;
-  /** A second agent beside the page, offered as « Améliorer l'app » in the account menu (`agent-slot.ts`). Absent: no such entry. */
-  readonly improve?: AgentSlot;
+  /** A panel beside the app, opened from the account menu. The product manager is `pmPanel` from the Factory's `platform-ui/pm-panel`. */
+  readonly panel?: ShellPanel;
   readonly account?: AccountSpec;
   /** The language of the shell's own words and the layer's (« Se déconnecter », « Plus », « Ouvrir l’assistant »…). The agent's `chatProps.locale` wins when it sets one; else this; else English. */
   readonly locale?: AppShellLocale;
@@ -69,14 +70,6 @@ function ShellContext({ name }: { readonly name: string }): null {
   return null;
 }
 
-/** The page and, on a phone, the tab bar below it. A slot's `Layout` replaces this one. */
-function PlainLayout({ children, navigation }: AgentSlotLayoutProps) {
-  return <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:flex-row">
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{children}</div>
-    <div className="shrink-0 md:hidden">{navigation}</div>
-  </div>;
-}
-
 function ScreenBody({ item }: { readonly item: NavItem }): ReactNode { return item.render(); }
 
 /** Every screen stays mounted; the ones not on show are `hidden` and do not register a header or a context. */
@@ -88,7 +81,9 @@ function Screens({ items, activeId, scrolls, slot }: { readonly items: readonly 
   </div>;
 }
 
-function Shell({ compactNav, layout, rail, title, nav, agent, improve, Layout, account, route, text }: { readonly Layout: AgentSlot['Layout']; readonly compactNav: NonNullable<AppShellProps['compactNav']>; readonly rail: NonNullable<AppShellProps['rail']>; readonly layout: AppShellProps['layout']; readonly title: string; readonly nav: readonly NavItem[]; readonly agent: AgentSpec | undefined; readonly improve: boolean; readonly account: AccountSpec | undefined; readonly route: AppShellProps['route']; readonly text: AppShellText }) {
+function Shell({ compactNav, layout, rail, title, nav, agent, panel, account, route, text }: { readonly compactNav: NonNullable<AppShellProps['compactNav']>; readonly rail: NonNullable<AppShellProps['rail']>; readonly layout: AppShellProps['layout']; readonly title: string; readonly nav: readonly NavItem[]; readonly agent: AgentSpec | undefined; readonly panel: ShellPanel | undefined; readonly account: AccountSpec | undefined; readonly route: AppShellProps['route']; readonly text: AppShellText }) {
+  const improve = panel ? panel.label ?? text.improve : undefined;
+  const Layout = panel?.Layout ?? NoPanelLayout;
   const compact = useIsCompact();
   const sheet = compact && compactNav === 'sheet';
   const [accountOpen, setAccountOpen] = useState(false);
@@ -122,12 +117,16 @@ function Shell({ compactNav, layout, rail, title, nav, agent, improve, Layout, a
   </SidebarProvider>;
 }
 
+const never = () => () => {};
+
 export function AppShell(props: AppShellProps) {
-  const { layout, rail = 'icon', compactNav = 'tabs', agent, improve, title, nav, account, route } = props;
-  if (layout === 'chat' && agent) throw new Error('AppShell layout "chat" takes no `agent`: the page is the chat (`improve` may fill the agent slot)');
-  const text = appShellText((agent ?? improve?.spec)?.chatProps?.locale ?? props.locale);
+  const { layout, rail = 'icon', compactNav = 'tabs', agent, panel, title, nav, account, route } = props;
+  if (layout === 'chat' && agent) throw new Error('AppShell layout "chat" takes no `agent`: the page is the chat (use `panel` for the product manager)');
+  const text = appShellText(agent?.chatProps?.locale ?? (panel?.locale as AppShellLocale | undefined) ?? props.locale);
   useOverlayBlur(props.overlayBlur ?? true);
-  return <AgentLayerProvider agent={agent} improve={improve} locale={props.locale} agentLink={props.agentLink} appName={props.title}>
-    <HeaderProvider><Shell compactNav={compactNav} layout={layout} rail={rail} title={title} nav={nav} agent={agent} account={account} route={route} improve={Boolean(improve)} Layout={improve?.Layout ?? PlainLayout} text={text} /></HeaderProvider>
+  const alone = useSyncExternalStore(never, () => panel?.page?.matches() ?? false, () => false);
+  if (alone && panel?.page) return <panel.page.Page config={panel.config} appName={title} locale={props.locale} />;
+  return <AgentLayerProvider agent={agent} panel={panel} locale={props.locale} agentLink={props.agentLink} appName={props.title}>
+    <HeaderProvider><Shell compactNav={compactNav} layout={layout} rail={rail} title={title} nav={nav} agent={agent} account={account} route={route} panel={panel} text={text} /></HeaderProvider>
   </AgentLayerProvider>;
 }

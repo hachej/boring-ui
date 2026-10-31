@@ -46,6 +46,7 @@ const idleController = new Proxy({ getSnapshot: () => IDLE, subscribe: () => () 
 const { createContext, createElement, useContext } = await import('react');
 const SlotOpen = createContext(false);
 const stubSlot = {
+  config: null,
   Provider: ({ open, children }) => createElement(SlotOpen.Provider, { value: open }, children),
   Layout: ({ children, navigation }) => createElement('div', null, children,
     createElement('section', { 'data-testid': 'pm-panel', 'data-mode': 'chat', hidden: !useContext(SlotOpen) }, createElement('textarea', { 'data-testid': 'composer-input' })), navigation),
@@ -268,7 +269,7 @@ async function oneLayerAt(t, width) {
   const reactRoot = createRoot(container);
   const shellNav = [{ id: 'Jour', label: 'Jour', icon: Icon, render: () => h(Probe) }, { id: 'Semaine', label: 'Semaine', icon: Icon, render: () => null }];
   const agent = { controller: idleController };
-  await act(async () => reactRoot.render(h(shell.AppShell, { layout: 'screen', title: 'Forme', nav: shellNav, route: { id: 'Jour', onChange() {} }, agent, improve: agent, locale: 'fr' })));
+  await act(async () => reactRoot.render(h(shell.AppShell, { layout: 'screen', title: 'Forme', nav: shellNav, route: { id: 'Jour', onChange() {} }, agent, panel: stubSlot, locale: 'fr' })));
   await act(async () => latest.open('agent', 'half'));
   assert.equal(latest.showing, 'agent', `${width}: the coach shows`);
   await act(async () => latest.open('improve', 'half'));
@@ -279,6 +280,28 @@ async function oneLayerAt(t, width) {
 }
 
 // The layer's header actions: one layer open (its header is the drawer's on a phone, the dock's on a wide screen), the probe reads the layer's API.
+test('a panel that is not the product manager takes the shell\'s panel place', async t => {
+  const { createElement: h, act, useLayoutEffect } = await import('react');
+  const { createRoot } = await import('react-dom/client');
+  const shell = await bundle('shell-entry.tsx', `export { AppShell } from '${root}${folder}/app-shell.tsx';\nexport { useAgentLayer } from '${root}${folder}/agent-layer.tsx';\n`);
+  const window = dom(t, 1280);
+  const container = window.document.createElement('div');
+  window.document.body.append(container);
+  const reactRoot = createRoot(container);
+  t.after(() => act(async () => reactRoot.unmount()));
+  let latest, opened;
+  const Probe = () => { const api = shell.useAgentLayer(); useLayoutEffect(() => { latest = api; }); return null; };
+  const panel = { config: 'fictional', label: 'Mon outil', Provider: ({ open, children }) => { opened = open; return children; }, Layout: ({ children }) => h('div', { 'data-testid': 'own-layout' }, children) };
+  await act(async () => reactRoot.render(h(shell.AppShell, { layout: 'screen', title: 'Forme', nav: [{ id: 'Jour', label: 'Jour', icon: Icon, render: () => h(Probe) }], route: { id: 'Jour', onChange() {} }, panel, locale: 'fr' })));
+  assert.ok(window.document.querySelector('[data-testid=own-layout] [data-testid=screen-Jour]'), 'the panel\'s layout wraps the screen');
+  assert.equal(opened, false);
+  await act(async () => latest.open('improve', 'half'));
+  assert.equal(opened, true, 'the shell opens the panel');
+  await act(async () => reactRoot.render(h(shell.AppShell, { layout: 'screen', title: 'Forme', nav: [{ id: 'Jour', label: 'Jour', icon: Icon, render: () => h(Probe) }], route: { id: 'Jour', onChange() {} }, locale: 'fr' })));
+  assert.equal(window.document.querySelector('[data-testid=own-layout]'), null, 'without a panel the screen stands alone');
+  assert.ok(window.document.querySelector('[data-testid=screen-Jour]'));
+});
+
 async function openedLayer(t, width, specs, { search = '', state = null, strict = false } = {}) {
   const { createElement: h, useLayoutEffect, act, StrictMode } = await import('react');
   const shell = await bundle('shell-entry.tsx', `export { AppShell } from '${root}${folder}/app-shell.tsx';\nexport { useAgentLayer } from '${root}${folder}/agent-layer.tsx';\n`);
@@ -303,7 +326,7 @@ async function openedLayer(t, width, specs, { search = '', state = null, strict 
 for (const [width, agent, input] of [[390, 'coach', 'text'], [1280, 'agent', 'text'], [390, 'coach', 'voice'], [390, 'improve', 'text']]) {
   test(`agent URL at ${width}: ${agent}/${input} opens once, preserves other URL data and state, and never starts the microphone`, async t => {
     const spec = { ...agentWith(), voice: { transcribe: async () => 'Fictional dictation' } };
-    const opened = await openedLayer(t, width, { agent: spec, improve: stubSlot }, { search: `?keep=hello%20world&agent=${agent}&open=half&input=${input}#jour`, state: { router: { fictional: 7 } }, strict: true });
+    const opened = await openedLayer(t, width, { agent: spec, panel: stubSlot }, { search: `?keep=hello%20world&agent=${agent}&open=half&input=${input}#jour`, state: { router: { fictional: 7 } }, strict: true });
     assert.equal(opened.latest().showing, agent === 'improve' ? 'improve' : 'agent');
     assert.equal(opened.latest().state, width === 1280 ? 'open' : input === 'voice' ? 'full' : 'half');
     assert.equal(opened.window.location.search, '?keep=hello+world');
@@ -369,7 +392,7 @@ for (const width of [390, 1280]) {
       { id: 'go', label: 'Ouvrir la boutique', icon: Icon, onSelect: () => calls.push('go') },
       { id: 'wa', label: 'Discuter avec Max sur WhatsApp', icon: Icon, href: '/whatsapp/open?app=fitness', onSelect: () => calls.push('wa') },
     ] };
-    const opened = await openedLayer(t, width, { agent, improve: stubSlot });
+    const opened = await openedLayer(t, width, { agent, panel: stubSlot });
     const header = await headerOf(opened, 'agent');
     const button = header.querySelector('[data-testid=agent-layer-action-go]');
     assert.equal(button?.tagName, 'BUTTON');
@@ -665,7 +688,7 @@ test('a message-mode microphone refusal at peek reveals its problem and survives
 
 test('useAgentLayer exposes the same app controller while closed, never the product manager controller', async t => {
   const improve = new Proxy(idleController, {});
-  const opened = await openedLayer(t, 390, { agent: agentWith(), improve: { controller: improve } });
+  const opened = await openedLayer(t, 390, { agent: agentWith(), panel: { ...stubSlot, identity: improve } });
   assert.equal(opened.latest().agent, idleController, 'page content borrows the app controller without opening chat');
   assert.equal(opened.latest().state, 'closed');
   await opened.act(async () => opened.latest().open('improve'));

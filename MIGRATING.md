@@ -1,9 +1,10 @@
 # Unreleased
 
 - **Platform blocks moved to boring-factory's `platform-ui/` (`pm-panel`, `task-board`, `task-mentions`, `requests-board`, `feedback`, `feedback-preview`).** They leave this registry, and `@hachej/boring-ui-kit/task-board` leaves the kit. Published versions keep them, so an app on its pinned copies changes nothing.
-- **`AppShell improve` is now a generic `AgentSlot` (`app-shell`).** It takes `{ Provider, Layout, spec? }` (`agent-slot.ts`); `improve={{ agent: 'pm' }}` and `pmHostOrigins` come from `platform-ui/shell`. `AgentSpec.feedback` is removed: no app used it. A composer's annotate toggle remains `chatProps.feedback`.
+- **`pmPanel` moved with the PM (`platform-ui/pm-panel`). `AgentSpec.feedback` is removed:** no app used it. A composer's annotate toggle remains `chatProps.feedback`.
 - **`PiChat sentContent` (`pi-chat`).** A host's card for a sent text; the built-in page-comments card moved out with `feedback`.
 - **`voice-input` moved to `pi-chat-voice`.**
+- **`AppShell` has a general panel place (`app-shell`, `pm-panel`).** `AppShell` no longer imports the product manager. Replace `improve={{ agent: 'pm' }}` with `panel={pmPanel({ agent: 'pm' })}`, with `import { pmPanel } from '@/components/pm-panel/pm-panel'`; `improve={spec}` becomes `panel={pmPanel(spec)}`, and `pmHostOrigins={origins}` becomes `pmPanel(spec, { hostOrigins: origins })`. `app-shell` no longer installs `pm-panel`: an app that uses it adds the item. Any other panel is an object of the `ShellPanel` shape.
 
 # Migrating to 0.4.45
 

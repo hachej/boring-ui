@@ -1,16 +1,16 @@
-// The shell's agent slot, filled with the least that proves its contract: a panel beside the page that the account menu opens and closes.
+// The shell's panel place, filled with the least that proves its contract: a panel beside the page that the account menu opens and closes.
 // The real one (the PM) lives in boring-factory's platform-ui, and its journeys there.
 import { createContext, useContext } from 'react';
 import { Button } from '@/components/ui/button';
-import type { AgentSlot, AgentSlotLayoutProps, AgentSlotProviderProps } from '../../registry/app-shell/agent-slot';
+import type { ShellPanel, ShellPanelLayoutProps, ShellPanelProviderProps } from '../../registry/app-shell/shell-panel';
 
 const Panel = createContext<{ readonly open: boolean; readonly close: () => void } | null>(null);
 
-function Provider({ open, close, children }: AgentSlotProviderProps) {
+function Provider({ open, close, children }: ShellPanelProviderProps) {
   return <Panel.Provider value={{ open, close }}>{children}</Panel.Provider>;
 }
 
-function Layout({ children, navigation, screen }: AgentSlotLayoutProps) {
+function Layout({ children, navigation, screen }: ShellPanelLayoutProps) {
   const panel = useContext(Panel);
   return <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:flex-row">
     <div data-screen={screen} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{children}</div>
@@ -21,4 +21,4 @@ function Layout({ children, navigation, screen }: AgentSlotLayoutProps) {
   </div>;
 }
 
-export const stubSlot: AgentSlot = { Provider, Layout };
+export const stubPanel: ShellPanel = { config: null, Provider, Layout };

@@ -127,7 +127,7 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
   const signedIn = request => request.headers.get('sec-fetch-site') === 'same-origin';
   const pmStart = init => agents.pm.createConversation(harness, context, { init });
   const door = {
-    '/api/pm/agent': async request => signedIn(request) && request.method === 'GET' ? Response.json({ agent: 'pm', identity: { runtimeId: 'app', ...person } }) : new Response(null, { status: 403 }),
+    '/api/pm/agent': async request => signedIn(request) && request.method === 'GET' ? Response.json({ agent: 'pm', identity: { runtimeId: 'app', ...person }, resources: { endpoint: 'api/pm/library' } }) : new Response(null, { status: 403 }),
     '/api/pm/conversations': createConversationsHandler({ conversations, authenticate: async request => signedIn(request) ? { owner: agents.pm.id, start: pmStart } : null }),
     '/api/pm/chat': createChatTransportHandler({ authenticate: async request => {
       const id = Number(new URL(request.url).searchParams.get('conversation'));
