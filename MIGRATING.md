@@ -1,5 +1,7 @@
 # Unreleased
 
+# Migrating to 0.4.46
+
 - **`AppShell` has a general panel place (`app-shell`, `pm-panel`).** `AppShell` no longer imports the product manager. Replace `improve={{ agent: 'pm' }}` with `panel={pmPanel({ agent: 'pm' })}`, with `import { pmPanel } from '@/components/pm-panel/pm-panel'`; `improve={spec}` becomes `panel={pmPanel(spec)}`, and `pmHostOrigins={origins}` becomes `pmPanel(spec, { hostOrigins: origins })`. `app-shell` no longer installs `pm-panel`: an app that uses it adds the item. Any other panel is an object of the `ShellPanel` shape.
 
 # Migrating to 0.4.45
