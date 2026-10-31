@@ -127,9 +127,7 @@ export const view = createRoot(document.getElementById('root')!); view.render(<A
   if (!shared) assert.deepEqual(inputs.filter(path => /src\/components\/(pi-chat-question|pi-chat-approval|pi-chat-subagent|pi-artifacts)\/|(question|approval|subagent|run|artifact)-card\.tsx$/.test(path)), [], 'the core-only pi-chat bundle carries no reply card (pi-chat-question, pi-chat-approval, pi-chat-subagent, pi-artifacts)');
   // D-257 step 4: viewers are their own items, loaded by kind; the core chat bundle carries none of them, nor their editors or pdf.js.
   assert.deepEqual(inputs.filter(path => /src\/components\/(viewer-[\w-]+|viewers|maquette-viewer|diagram-viewer|mockup-viewer|record-viewer|looks-viewer|board-viewer)\/|node_modules\/(pdfjs-dist|@tiptap)\/|boring-ui-kit\/dist\/(markdown-editor|html-viewer)/.test(path)), [], 'the pi-chat bundle carries no viewer item');
-  const feedbackInputs = inputs.filter(path => /@hachej\/boring-feedback\//.test(path));
-  assert.ok(feedbackInputs.some(path => path.endsWith('/dist/format/report.js')), 'sent comments use the installed real formatter');
-  assert.deepEqual(feedbackInputs.filter(path => !/@hachej\/boring-feedback\/dist\/format\//.test(path)), [], 'format presentation imports no capture, UI, store or agent feature');
+  assert.deepEqual(inputs.filter(path => /@hachej\/boring-feedback\//.test(path)), [], 'the chat imports nothing of feedback');
   assertConsumerTypeFiles(inputs.map(path => resolve(directory, path)).join('\n'), directory);
   assert.deepEqual(inputs.filter(path => /@hachej\/boring-agent|pi-durable\/dist\/(storage|env)|sqlite|node:/.test(path)), [], 'browser bundle holds no agent, storage or Node code');
   console.log(`PASS: real pinned shadcn installation of ${itemName} alone over HTTP with its ${closure.size - 1} registry dependencies, strict declarations of the copied chat and the moved hook, and a browser bundle; ${shared ? 'fictional DOM flow also executed (not live-service qualification)' : 'type and bundle evidence only'}`);
