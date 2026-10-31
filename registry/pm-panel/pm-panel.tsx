@@ -148,6 +148,8 @@ export interface PmChatProps {
   readonly appName?: string;
   readonly locale?: string;
   readonly close?: (() => void) | undefined;
+  /** The bar's title, instead of the app's name (a host that already shows it). */
+  readonly title?: string | undefined;
 }
 
 /** The PM, plugged anywhere: the regular chat filling its container. What the PM presents sits beside it when the container is wide enough, otherwise replaces it with Back. */
@@ -160,21 +162,21 @@ export function PmChat({ spec, appName, locale, close, ...rest }: PmChatProps) {
   return <PmChatSession key={instance.sequence} spec={resolved.spec} close={close} {...rest} />;
 }
 
-function PmChatSession({ spec, page = null, siblingApp, screen, preset = 'desktop', close }: Omit<PmChatProps, 'spec' | 'appName' | 'locale'> & { readonly spec: ImproveSpec }) {
+function PmChatSession({ spec, page = null, siblingApp, screen, preset = 'desktop', close, title }: Omit<PmChatProps, 'spec' | 'appName' | 'locale'> & { readonly spec: ImproveSpec }) {
   const pm = usePmPanel(spec, true, page, screen, { comment: preset === 'desktop' && siblingApp === undefined, sibling: siblingApp });
-  return <div data-testid="pm-chat" data-mode={pm.state.mode} className="flex min-h-0 min-w-0 flex-1 flex-col"><PmWorkspace spec={spec} page={page} pm={pm} preset={preset} open close={close} beside={siblingApp !== undefined} /></div>;
+  return <div data-testid="pm-chat" data-mode={pm.state.mode} className="flex min-h-0 min-w-0 flex-1 flex-col"><PmWorkspace spec={spec} page={page} pm={pm} preset={preset} open close={close} beside={siblingApp !== undefined} title={title} /></div>;
 }
 
 /** `?pm=standalone`: only the PM, full frame, for a host's column beside the app's frame. Same origin and session as the app, no route of its own. */
 export function PmStandalone({ spec, appName, locale, hostOrigins = PM_HOST_ORIGINS }: { readonly spec: ImproveProp; readonly appName: string; readonly locale?: string | undefined; readonly hostOrigins?: readonly string[] | undefined }) {
   usePmHostTheme(hostOrigins);
   return <main data-testid="pm-standalone" className="app-shell flex h-dvh min-h-0 flex-col overflow-hidden bg-background text-foreground">
-    <PmChat spec={spec} appName={appName} siblingApp={appName} preset="touch" {...(locale ? { locale } : {})} />
+    <PmChat spec={spec} appName={appName} siblingApp={appName} preset="touch" title={window.parent === window ? undefined : 'PM'} {...(locale ? { locale } : {})} />
   </main>;
 }
 
 /** Wiring only: the regular agent page, with the existing point composer and a host Tasks panel. */
-function PmWorkspace({ spec, pm, page, preset, open, close, beside = false }: { readonly spec: ImproveSpec; readonly pm: ReturnType<typeof usePmPanel>; readonly page: HTMLElement | null; readonly preset: PmPreset; readonly open: boolean; readonly close?: (() => void) | undefined; readonly beside?: boolean }) {
+function PmWorkspace({ spec, pm, page, preset, open, close, beside = false, title }: { readonly title?: string | undefined; readonly spec: ImproveSpec; readonly pm: ReturnType<typeof usePmPanel>; readonly page: HTMLElement | null; readonly preset: PmPreset; readonly open: boolean; readonly close?: (() => void) | undefined; readonly beside?: boolean }) {
   const { text } = pm;
   const files = spec.resources ? { resources: spec.resources } : { resources: undefined };
   // On a phone the chat gives the page its screen while pointing. A PM beside the app's frame covers nothing.
@@ -207,7 +209,7 @@ function PmWorkspace({ spec, pm, page, preset, open, close, beside = false }: { 
     <p role="status" aria-live="polite" data-testid="pm-announce" className="sr-only">{pm.announcement}</p>
     {pm.problem && <p role="alert" className="m-0 px-4 text-sm">{pm.problem}</p>}
     <div hidden={strip && phone} className={cn('min-h-0 flex-1 flex-col', strip && phone ? 'hidden' : 'flex')}>
-      <AgentWorkspace layout="embedded" title={spec.appName ?? spec.label ?? text.title} locale={text.locale} controller={spec.controller}
+      <AgentWorkspace layout="embedded" title={title ?? spec.appName ?? spec.label ?? text.title} locale={text.locale} controller={spec.controller}
         conversationId={spec.conversationId ?? String(pm.snapshot.conversationId)} conversations={spec.conversations ?? spec.chatProps?.conversations}
         {...files} artifactKinds={kinds} interactive={PM_INTERACTIVE} autoOpen={Boolean(spec.resources)} barPanels={barPanels} barOptions={{ panelsFirst: true }}
         controls={close && <Button variant="ghost" size="icon" data-testid="pm-close" aria-label={text.close} title={text.close} onClick={close}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>}

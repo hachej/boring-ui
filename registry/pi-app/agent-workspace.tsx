@@ -638,7 +638,7 @@ export function AgentWorkspace({ layout = 'default', barPanels, barOptions, pane
     {/* eslint-disable-next-line react-hooks/refs -- the functions built here read refs only when a request, an event or an effect calls them, never during render */}
     {hasNavigation && (docked || (narrow && drawer)) && (sessions ? sessions(sessionProps) : <SessionsPane {...sessionProps} />)}
     <DockMain><ArtifactWorkspace open={panelOpen && !(panelLibrary && narrow)} onClose={close} panelLabel={text.labels.artifactPanel} labels={{ resize: text.labels.resizePanel, floatHint: text.labels.floatHint }} fullscreen={fullscreen} onFullscreenChange={setFullscreen} storageKey={`${storageKey}.panel-width`} {...(panelWidth === undefined ? {} : { defaultWidth: panelWidth })}
-      sheetBelow={artifactSheetBelow} {...(floatBelow === undefined || libraryOpen ? {} : { floatBelow })}
+      sheetBelow={artifactSheetBelow} contained={embedded} {...(floatBelow === undefined || libraryOpen ? {} : { floatBelow })}
       chat={layout => <WorkspaceCenter libraryOpen={libraryOpen} floating={layout.floating} chat={docked_chat}
         floatingChat={floatingChat && chatProps ? floatingChat(chatProps, layout.dock) : undefined}
         // With the Library in the pane, the center holds only the chat (no second, hidden toggle or tree).
