@@ -1,5 +1,6 @@
 {
   "exceptions": [
+    { "id": "audience-screen", "reason": "The Audience screen moved unchanged from the app template, where it passes the app design check; its plain record rows and thread dialog use the shadcn dialog and app tokens." },
     { "id": "mockup-compiler-input", "reason": "Pinned upstream Tailwind CSS is compiler input for opaque sandbox documents only, never a host stylesheet or control skin. build-tailwind.mjs reproduces this exact generated file; host theme values still come from computed CSS variables." },
     { "id": "editor-document", "reason": "Markdown document typography, syntax and proposal diff presentation are content, not shadcn controls. Editor toolbars and menus are not exempt." },
     { "id": "pdf-document", "reason": "The browser PDF renderer owns the embedded document's appearance. The pane's toolbar and frame are not exempt." },
@@ -8,6 +9,8 @@
     { "id": "theme-definition", "reason": "The optional registry theme defines defaults; the fictional browser fixture defines a host theme. Only these theme definitions may contain visual literals." }
   ],
   "allow": [
+    { "file": "registry/audience/confirm-send.tsx", "rules": ["radius"], "pattern": "^rounded-md$", "exception": "audience-screen" },
+    { "file": "registry/audience/inbox-panel.tsx", "rules": ["radius", "border-width", "primitive"], "pattern": ".*", "exception": "audience-screen" },
     { "file": "registry/pm-panel/pm-host-theme.ts", "rules": ["border-width"], "pattern": "^border$", "exception": "theme-definition" },
     { "file": "registry/mockup-viewer/mockup-tailwind.ts", "rules": ["color", "font", "motion", "radius"], "pattern": ".*", "exception": "mockup-compiler-input" },
     { "file": "registry.json#theme", "rules": ["color", "radius", "font", "shadow", "border-width", "motion"], "pattern": ".*", "exception": "theme-definition" },

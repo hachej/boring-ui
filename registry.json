@@ -3224,6 +3224,62 @@
           "target": "components/task-board/task-detail.tsx"
         }
       ]
+    },
+    {
+      "name": "audience",
+      "type": "registry:component",
+      "title": "Audience",
+      "description": "The owner's Audience tab: landing visits, outreach links, access requests and usage totals, with the Outreach and Inbox panels. Totals only; the host decides what may be sent.",
+      "dependencies": [
+        "react@^19.0.0",
+        "react-dom@^19.0.0",
+        "lucide-react@^1.51.0"
+      ],
+      "registryDependencies": [
+        "@boring-ui/utils"
+      ],
+      "files": [
+        {
+          "path": "registry/audience/audience-labels.ts",
+          "type": "registry:lib",
+          "target": "components/audience/audience-labels.ts"
+        },
+        {
+          "path": "registry/audience/audience-model.ts",
+          "type": "registry:lib",
+          "target": "components/audience/audience-model.ts"
+        },
+        {
+          "path": "registry/audience/audience.tsx",
+          "type": "registry:component",
+          "target": "components/audience/audience.tsx"
+        },
+        {
+          "path": "registry/audience/confirm-send.tsx",
+          "type": "registry:component",
+          "target": "components/audience/confirm-send.tsx"
+        },
+        {
+          "path": "registry/audience/inbox-panel.tsx",
+          "type": "registry:component",
+          "target": "components/audience/inbox-panel.tsx"
+        },
+        {
+          "path": "registry/audience/outreach-labels.ts",
+          "type": "registry:lib",
+          "target": "components/audience/outreach-labels.ts"
+        },
+        {
+          "path": "registry/audience/outreach-model.ts",
+          "type": "registry:lib",
+          "target": "components/audience/outreach-model.ts"
+        },
+        {
+          "path": "registry/audience/outreach-panel.tsx",
+          "type": "registry:component",
+          "target": "components/audience/outreach-panel.tsx"
+        }
+      ]
     }
   ]
 }

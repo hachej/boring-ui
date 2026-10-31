@@ -13,3 +13,4 @@ examples/hosts/cloudflare/public/
 demos/workspace/cloudflare/public/
 .wrangler/
 .dev.vars
+packages/ui/styles/blocks.css

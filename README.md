@@ -60,7 +60,7 @@ npm i @hachej/boring-ui-kit @hachej/boring-agent @hachej/boring-files \
 Then add UI blocks to a React app that has shadcn set up (`components.json`, Base UI `base-nova` style). Blocks import the app's shadcn components through its `ui` alias and use its tokens, so the app installs those components once, first ([what the app needs](registry/README.md#what-the-app-needs-first)):
 
 ```sh
-npx shadcn@4.23.0 add alert attachment avatar badge bubble button card checkbox collapsible dialog drawer dropdown-menu empty input input-group item label message message-scroller native-select popover progress scroll-area separator sidebar spinner switch table textarea toggle toggle-group tooltip trace
+npx shadcn@4.23.0 add alert attachment avatar badge bubble button card checkbox collapsible dialog drawer dropdown-menu empty field input input-group item label message message-scroller native-select popover progress scroll-area separator sidebar spinner switch table textarea toggle toggle-group tooltip trace
 npx boring-ui-blocks add https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.8/r/pi-app.json
 ```
 

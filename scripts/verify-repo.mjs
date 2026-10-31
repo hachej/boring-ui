@@ -37,6 +37,8 @@ for (const directory of readdirSync(join(root, 'packages'), { withFileTypes: tru
   for (const target of Object.values(manifest.exports ?? {})) {
     const file = typeof target === 'string' ? target : target?.import;
     if (typeof file !== 'string' || !file.startsWith('./dist/')) continue;
+    // The kit's compiled blocks come from registry/ and shadcn/ (scripts/build-blocks.mjs), not from src/.
+    if (manifest.name === '@hachej/boring-ui-kit' && /^\.\/dist\/(?:blocks|ui)\//.test(file)) continue;
     const sourceBase = join(packageRoot, 'src', file.slice('./dist/'.length).replace(/\.js$/, ''));
     const source = candidates(sourceBase).find((path) => knownSources.has(path));
     if (source) roots.add(source);

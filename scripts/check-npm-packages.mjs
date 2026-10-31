@@ -15,7 +15,7 @@ export function checkPackage(manifest, paths, versions, { release = false } = {}
   if (manifest.name === '@hachej/boring-ui-kit' && !files.has('THIRD_PARTY_NOTICES.md')) errors.push('Missing embedded icon license notices');
   const agentNotices = manifest.name === '@hachej/boring-agent' ? ['NOTICE', 'licenses/Apache-2.0.txt', 'THIRD_PARTY_NOTICES.md'] : [];
   for (const path of agentNotices) if (!files.has(path)) errors.push(`Missing ${path}`);
-  const isTreeStyles = path => manifest.name === '@hachej/boring-ui-kit' && path === 'styles/file-tree.css';
+  const isTreeStyles = path => manifest.name === '@hachej/boring-ui-kit' && /^styles\/(?:file-tree|blocks)\.css$/.test(path);
   const isRegistryFile = path => manifest.name === '@hachej/boring-ui-kit' && /^r\/[\w.-]+\.json$/.test(path);
   // The kit's one command (`boring-ui-blocks`: installed blocks, design rule and generated shadcn ui checks; update).
   const isKitBin = path => manifest.name === '@hachej/boring-ui-kit' && path === 'bin/boring-ui-blocks.mjs';
@@ -25,7 +25,7 @@ export function checkPackage(manifest, paths, versions, { release = false } = {}
   }
   function target(value) {
     if (typeof value === 'string') {
-      if (!value.startsWith('./') || (!value.startsWith('./dist/') && !isTreeStyles(value.slice(2))) || value.split('/').includes('..') || !files.has(value.slice(2))) errors.push(`Missing or invalid export target: ${value}`);
+      if (!value.startsWith('./') || (!value.startsWith('./dist/') && !isTreeStyles(value.slice(2))) || value.split('/').includes('..') || !(value.includes('*') ? [...files].some(file => new RegExp(`^${value.slice(2).replace(/[.]/g, '\\.').replace('*', '.+')}$`).test(file)) : files.has(value.slice(2)))) errors.push(`Missing or invalid export target: ${value}`);
     } else if (value && typeof value === 'object') {
       for (const child of Object.values(value)) target(child);
     } else errors.push('Invalid export target');

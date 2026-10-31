@@ -83,7 +83,7 @@ export function PlacedAgentWorkspace(props: PlacedAgentWorkspaceProps) {
 
   // The phone hand-off: the same controller becomes the shell's agent while collapsed. Lending is one effect (so a new spec never closes the
   // drawer) and taking it back another (so only leaving the collapsed mode does).
-  const spec = useMemo<AgentSpec | undefined>(() => controller ? { controller, chatProps: { ...chatProps, ...(locale ? { locale } : {}) },
+  const spec = useMemo<AgentSpec | undefined>(() => controller ? { controller: controller as AgentSpec['controller'], chatProps: { ...chatProps, ...(locale ? { locale } : {}) },
     headerActions: [{ id: 'expand', label: text.expand, icon: Maximize2Icon, onSelect: expand }] } : undefined, [controller, chatProps, locale, text.expand, expand]);
   const lent = mode === 'ambient' && drawer && Boolean(spec);
   const lend = loan?.lend;
@@ -99,8 +99,8 @@ export function PlacedAgentWorkspace(props: PlacedAgentWorkspaceProps) {
   const floating = mode === 'ambient' && !drawer && controller;
   return <PlacedContext.Provider value={api}>
     <div data-testid="placed-agent" data-mode={mode} hidden={mode === 'ambient'} inert={mode === 'ambient'} className={cn('h-full min-h-0 min-w-0 flex-1', mode === 'ambient' ? 'hidden' : 'flex')}>
-      <AgentWorkspace {...rest} {...(controller ? { controller } : {})} {...(chat ? { chat } : {})} {...(locale ? { locale } : {})} storageKey={storageKey} opened={opened} onOpenedChange={setOpened} controls={barControls} />
+      <AgentWorkspace {...rest} controller={controller} {...(chat ? { chat } : {})} {...(locale ? { locale } : {})} storageKey={storageKey} opened={opened} onOpenedChange={setOpened} controls={barControls} />
     </div>
-    {floating && createPortal(<AmbientChat key={rest.conversationId} {...chatProps} controller={controller} variant="surface" defaultState="expanded" storageKey={`${storageKey}.ambient`} storage="local" onDock={expand} />, document.body)}
+    {floating && createPortal(<AmbientChat key={rest.conversationId} {...chatProps} controller={controller as AgentSpec['controller']} variant="surface" defaultState="expanded" storageKey={`${storageKey}.ambient`} storage="local" onDock={expand} />, document.body)}
   </PlacedContext.Provider>;
 }

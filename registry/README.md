@@ -26,7 +26,7 @@ Blocks are written against an app that already has shadcn set up. They import it
 2. **These shadcn components**, the one kit-wide list (`SHADCN_BUILTINS` in `scripts/check-registry-blocks.mjs`; the check keeps this command equal to it and fails on any block import outside it):
 
    ```sh
-   npx shadcn@4.23.0 add alert attachment avatar badge bubble button card checkbox collapsible dialog drawer dropdown-menu empty input input-group item label message message-scroller native-select popover progress scroll-area separator sidebar spinner switch table textarea toggle toggle-group tooltip trace
+   npx shadcn@4.23.0 add alert attachment avatar badge bubble button card checkbox collapsible dialog drawer dropdown-menu empty field input input-group item label message message-scroller native-select popover progress scroll-area separator sidebar spinner switch table textarea toggle toggle-group tooltip trace
    ```
 
    Installing all of them once is simplest; an app that adds only some blocks can add only the components those blocks import (`grep -rho "@/components/ui/[a-z-]*" components/<block>`). Blocks never restyle them: they pass layout classes only, so the app's own shadcn theme decides how every control looks.

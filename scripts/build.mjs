@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
+import { buildBlocks } from './build-blocks.mjs';
 
 const compiler = createRequire(import.meta.url).resolve('typescript/bin/tsc');
 
@@ -36,7 +37,11 @@ export function build(root, { stdio = 'inherit' } = {}) {
   cleanOutputs(root);
   const result = spawnSync(process.execPath, [compiler, '--build', '--force', resolve(root, 'tsconfig.json')], { cwd: root, stdio });
   if (result.error) throw result.error;
-  if (result.status === 0) syncRegistryArchive(root);
+  if (result.status === 0) {
+    syncRegistryArchive(root);
+    // Isolated fixtures have no shadcn sources and no registry to compile.
+    if (existsSync(resolve(root, 'shadcn'))) buildBlocks(root);
+  }
   return result.status ?? 1;
 }
 

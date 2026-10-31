@@ -38,7 +38,7 @@ const local = (dependency) => dependency.startsWith(namespace) ? dependency.slic
  * The shadcn components (Base UI `base-nova` style) the blocks import through the app's `ui` alias. The app installs them once, before any
  * block (APP_SETUP); no item lists them. Fixed: a new one is a decision, not a convenience, and it lands with its README command.
  */
-export const SHADCN_BUILTINS = Object.freeze(['alert', 'attachment', 'avatar', 'badge', 'bubble', 'button', 'card', 'checkbox', 'collapsible', 'dialog', 'drawer', 'dropdown-menu', 'empty', 'input', 'input-group', 'item', 'label', 'message', 'message-scroller', 'native-select', 'popover', 'progress', 'scroll-area', 'separator', 'sidebar', 'spinner', 'switch', 'table', 'textarea', 'toggle', 'toggle-group', 'tooltip', 'trace']);
+export const SHADCN_BUILTINS = Object.freeze(['alert', 'attachment', 'avatar', 'badge', 'bubble', 'button', 'card', 'checkbox', 'collapsible', 'dialog', 'drawer', 'dropdown-menu', 'empty', 'field', 'input', 'input-group', 'item', 'label', 'message', 'message-scroller', 'native-select', 'popover', 'progress', 'scroll-area', 'separator', 'sidebar', 'spinner', 'switch', 'table', 'textarea', 'toggle', 'toggle-group', 'tooltip', 'trace']);
 /** The hooks the shadcn components above install under the app's `hooks` alias (sidebar's use-mobile) that blocks may import too. */
 export const SHADCN_HOOKS = Object.freeze(['use-mobile']);
 /** The app's one-time shadcn setup, quoted verbatim in registry/README.md. */
