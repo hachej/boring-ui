@@ -192,7 +192,8 @@ function PmWorkspace({ spec, pm, page, preset, open, close, beside = false, titl
   const [seen, setSeen] = useState<readonly string[]>(() => { try { const value: unknown = JSON.parse(localStorage.getItem(seenKey) ?? '[]'); return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []; } catch { return []; } });
   const ships = spec.tasks ? selectTasks(spec.tasks.tasks, { filter: 'mine', currentUser: spec.tasks.currentUser }).filter(task => !task.technical && requestOutcome(task) === 'live').map(task => `${task.id}:${task.updated_at ?? ''}`) : [];
   const tasksLabel = text.locale === 'fr' ? 'Tâches' : 'Tasks';
-  const barPanels: readonly WorkspaceBarPanel[] = [{ id: 'tasks', label: tasksLabel, icon: ListTodoIcon, dot: spec.tasks?.unread ?? ships.some(ship => !seen.includes(ship)), onOpenChange: spec.tasks?.onOpenChange, onOpen: () => {
+  // Beside the app in a host's frame, the host owns the one way to the tasks (Julien, 2026-10-31: no second icon).
+  const barPanels: readonly WorkspaceBarPanel[] = beside ? [] : [{ id: 'tasks', label: tasksLabel, icon: ListTodoIcon, dot: spec.tasks?.unread ?? ships.some(ship => !seen.includes(ship)), onOpenChange: spec.tasks?.onOpenChange, onOpen: () => {
     refreshTasks?.(); setSeen(ships); try { localStorage.setItem(seenKey, JSON.stringify(ships)); } catch { /* viewer storage is optional */ }
   }, content: () => <div data-testid="pm-task-board-seam" className="flex min-h-0 flex-1 flex-col">{spec.tasks ? <>{spec.tasks.header}<PmRequests seam={spec.tasks} text={text} /></> : <p role="status" className="p-4 text-sm text-muted-foreground">{text.connectionFailed}</p>}</div> }];
   useEffect(() => {
