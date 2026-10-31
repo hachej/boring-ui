@@ -19,6 +19,11 @@ function siblings(): readonly Window[] {
   for (let index = 0; index < frames.length; index++) { const frame = frames[index]; if (frame && frame !== window) found.push(frame); }
   return found;
 }
+/** To the page holding the frames: no content, only that pointing started, stopped or landed. A phone shows one frame at a time and switches on this. */
+function tellHost(boring: 'pm-pointing' | 'pm-picked', picking?: boolean): void {
+  const parent = window.location.ancestorOrigins?.[0] ?? (document.referrer ? new URL(document.referrer).origin : undefined);
+  if (parent) window.parent.postMessage({ boring, ...(picking === undefined ? {} : { picking }) }, parent);
+}
 const post = (target: Window, app: string, message: ToApp | ToPm) => target.postMessage({ channel: CHANNEL, app, message }, window.location.origin);
 function received<T>(event: MessageEvent, app: string): { readonly message: T; readonly source: Window } | undefined {
   const source = event.source as Window | null;
@@ -51,7 +56,7 @@ export function useAppFrame({ enabled, app, picking, pins, onPick, onUnpick, onP
       const { message, source } = got, current = latest.current;
       setFrame(source);
       if (message.type === 'here') post(source, app, { type: 'state', picking: current.picking, pins: current.pins });
-      else if (message.type === 'pick') current.onPick(message.pick);
+      else if (message.type === 'pick') { current.onPick(message.pick); tellHost('pm-picked'); }
       else if (message.type === 'unpick') current.onUnpick(message.id);
       else if (message.type === 'problem') current.onProblem(message.message);
       else if (message.type === 'done') current.onDone();
@@ -61,6 +66,7 @@ export function useAppFrame({ enabled, app, picking, pins, onPick, onUnpick, onP
     return () => window.removeEventListener('message', listen);
   }, [enabled, app]);
   useEffect(() => { if (enabled && frame) post(frame, app, { type: 'state', picking, pins }); }, [enabled, frame, app, picking, pins]);
+  useEffect(() => { if (enabled && window.parent !== window) tellHost('pm-pointing', picking); }, [enabled, picking]);
   useEffect(() => {
     if (!enabled || !frame) return;
     const release = () => post(frame, app, { type: 'state', picking: false, pins: [] });

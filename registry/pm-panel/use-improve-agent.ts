@@ -15,7 +15,7 @@ import { pmTextFor } from './pm-text';
  * (the viewer's latest, created when there is none) and `{base}/chat?conversation=` (the native chat wire). Dictation is the host's, not
  * the agent's: `POST api/host/transcribe?language=` (audio body, answers `{ text, segments? }`). The viewer's requests are the host's task
  * API, `_tasks/api` (see `pm-task-source.tsx`; a 404 or 403 is « unavailable for now », read again later). The files the PM presents
- * (`present`) and the read-only Library use the door's existing revision route, `{base}/library`.
+ * (`present`) and the read-only Library use the revision route its descriptor names (`resources.endpoint`).
  * Every path is relative to the page, like the app's own `api()` calls: the host may serve the app under a prefix (`/apps/<app>/`,
  * `/preview/<sha>/`).
  */
@@ -30,7 +30,7 @@ export const isImproveAgent = (value: ImproveProp | undefined): value is Improve
 /** A path of the app, resolved like the app's own requests: against the page (`document.baseURI`), never the origin's root. */
 const appUrl = (path: string) => new URL(path, document.baseURI).href;
 
-type Door = { readonly identity: ChatIdentity; readonly conversationId: string; readonly files: RevisionProvider } | { readonly error: string };
+type Door = { readonly identity: ChatIdentity; readonly conversationId: string; readonly files: RevisionProvider; readonly filesEndpoint: string } | { readonly error: string };
 const sameOrigin = (request: Request) => fetch(new Request(request, { credentials: 'same-origin' }));
 
 async function openDoor(path: string, signal: AbortSignal): Promise<Door> {
@@ -39,13 +39,15 @@ async function openDoor(path: string, signal: AbortSignal): Promise<Door> {
   const descriptor = await json(await fetch(`${base}/agent`, { credentials: 'same-origin', signal }));
   const identity = (descriptor['identity'] ?? descriptor) as ChatIdentity;
   if (typeof identity?.runtimeId !== 'string' || typeof identity.scopeId !== 'string' || typeof identity.principalId !== 'string') throw new Error('The agent door returned no chat identity');
-  const files = await connectRevisionProvider({ endpoint: `${base}/library`, fetch: sameOrigin, signal });
+  const declared = (descriptor['resources'] as { readonly endpoint?: unknown } | undefined)?.endpoint;
+  const filesEndpoint = typeof declared === 'string' ? appUrl(declared) : `${base}/resources`;
+  const files = await connectRevisionProvider({ endpoint: filesEndpoint, fetch: sameOrigin, signal });
   const listed = await json(await fetch(`${base}/conversations`, { credentials: 'same-origin', signal }));
   const rows = (Array.isArray(listed['conversations']) ? listed['conversations'] : []) as { readonly id: string | number; readonly archived?: boolean; readonly updatedAt?: number }[];
   const latest = rows.filter(row => !row.archived).sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0];
-  if (latest) return { identity, files, conversationId: String(latest.id) };
+  if (latest) return { identity, files, filesEndpoint, conversationId: String(latest.id) };
   const created = await json(await fetch(`${base}/conversations?op=create`, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: '{}', signal }));
-  return { identity, files, conversationId: String(created['conversationId']) };
+  return { identity, files, filesEndpoint, conversationId: String(created['conversationId']) };
 }
 
 /** Resolves `{ agent }` once `active` (the first open), then keeps the controller. `undefined` while connecting or offline (`problem`). */
@@ -70,7 +72,7 @@ export function useImproveAgent(value: ImproveProp | undefined, active: boolean,
   const conversations = useConversations({ endpoint: open && base ? appUrl(`${base}/conversations`) : undefined, fetch: sameOrigin, activeId: conversationId, onSelect: select });
   const remote = useRemoteChat({ conversationId, endpoint: id => new URL(`${appUrl(base ?? '')}/chat?conversation=${encodeURIComponent(String(id))}`), fetch: sameOrigin, identity: open?.identity });
   const ready = remote.status === 'ready' ? remote : undefined;
-  const resources = useMemo(() => open && base ? { endpoint: appUrl(`${base}/library`), fetch: sameOrigin, identity: open.files.identity } : undefined, [open, base]);
+  const resources = useMemo(() => open && base ? { endpoint: open.filesEndpoint, fetch: sameOrigin, identity: open.files.identity } : undefined, [open, base]);
   const tasks = useHostTasks(open ? appUrl('_tasks/api') : undefined, open?.identity.principalId, ready?.controller, pmTextFor(defaults.locale));
   const spec = useMemo<ImproveSpec | undefined>(() => !agent ? value as ImproveSpec | undefined : ready ? {
     controller: ready.controller, ...(conversationId ? { conversationId } : {}), ...(conversations ? { conversations } : {}), ...(resources ? { resources } : {}), ...(defaults.appName ? { appName: defaults.appName } : {}), ...(tasks ? { tasks } : {}),
