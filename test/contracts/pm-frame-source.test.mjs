@@ -14,6 +14,7 @@ test('a framed PM names itself in the bar and tells its host about pointing', ()
   const frames = read('registry/pm-panel/point-frames.ts');
   assert.match(frames, /tellHost\('pm-pointing', picking\)/);
   assert.match(frames, /tellHost\('pm-picked'\)/);
+  assert.match(frames, /event\.source === window\.parent && event\.origin === hostOrigin\(\) && .*'pm-end-pointing'/);
 });
 
 test('the door reads the resource address from the descriptor', () => {
