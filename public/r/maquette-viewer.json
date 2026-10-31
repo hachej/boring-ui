@@ -8,7 +8,7 @@
     "lucide-react@^1.51.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.42/r/diagram-viewer.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.43/r/diagram-viewer.json"
   ],
   "files": [
     {
