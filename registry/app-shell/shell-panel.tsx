@@ -1,7 +1,7 @@
 'use client';
 
 // The shell's panel place: a second agent or tool beside the app, opened from the account menu. The shell knows only this shape, so an app
-// plugs in what it wants (the product manager is `pmPanel` from the `pm-panel` item) and an app without one installs nothing more.
+// plugs in what it wants (the product manager is `pmPanel` from the Factory's `platform-ui/pm-panel`) and an app without one installs nothing more.
 import type { ComponentType, ReactNode } from 'react';
 
 export interface ShellPanelProviderProps {

@@ -14,13 +14,10 @@ Harness for every file: the example journeys (`npm run <name>:journey`, headless
 | Feature | Covers | File |
 | --- | --- | --- |
 | App shell | layouts, navigation, headers, list and detail, account | [app-shell.md](app-shell.md) |
-| PM panel (partial) | shared PM composer, local pointing, timed chips and task mentions | [pm-panel.md](pm-panel.md) |
 | Agent layer | the shell's agent drawer and dock, voice, launch links, context | [agent-layer.md](agent-layer.md) |
 | Chat | `pi-chat`, composer features, cards, mentions, conversations | [chat.md](chat.md) |
 | Agent workspace | `pi-app`, embedded and placed workspaces, Library, viewers | [agent-workspace.md](agent-workspace.md) |
 | Ambient agent | the floating bar over an existing site, notifications | [ambient.md](ambient.md) |
 | Shared chat | the room: people and agents in one conversation | [shared-chat.md](shared-chat.md) |
-| Feedback | comment mode, pins, reports | [feedback.md](feedback.md) |
 | Packages | agent, files, execution, ui kit and the `boring-ui-blocks` CLI | [packages.md](packages.md) |
 | Viewer utilities | shared phone breakpoint, media/keyboard viewport and local layout persistence | [viewer-utilities.md](viewer-utilities.md) |
-| Task board | business requests, responsive detail, compact own-request rows and shared request cards | [task-board.md](task-board.md) |

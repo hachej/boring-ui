@@ -8,7 +8,6 @@
     { "id": "theme-definition", "reason": "The optional registry theme defines defaults; the fictional browser fixture defines a host theme. Only these theme definitions may contain visual literals." }
   ],
   "allow": [
-    { "file": "registry/pm-panel/pm-host-theme.ts", "rules": ["border-width"], "pattern": "^border$", "exception": "theme-definition" },
     { "file": "registry/mockup-viewer/mockup-tailwind.ts", "rules": ["color", "font", "motion", "radius"], "pattern": ".*", "exception": "mockup-compiler-input" },
     { "file": "registry.json#theme", "rules": ["color", "radius", "font", "shadow", "border-width", "motion"], "pattern": ".*", "exception": "theme-definition" },
     { "file": "registry/app-shell/app-shell.tsx", "rules": ["shadcn-restyle"], "pattern": "^SidebarProvider className changes appearance: app-shell h-dvh min-h-0 overflow-hidden$", "exception": "layout" },

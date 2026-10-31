@@ -54,7 +54,7 @@ const staticValueImport = /^\s*(?:import\s+(?!type\b)(?:[^'";]*?\sfrom\s*)?|expo
 /** The npm packages the core chat may declare: the borrowed native chat, the Pi types it renders, React, icons and the shadcn runtime. */
 export const CORE_PACKAGES = Object.freeze(['@hachej/boring-ui-kit', '@hachej/boring-files', '@hachej/boring-feedback', 'react', 'react-dom', '@base-ui/react', '@earendil-works/pi-durable', '@earendil-works/chord', '@earendil-works/pi-ai', '@modelcontextprotocol/sdk', 'lucide-react', '@shadcn/react', 'zod']);
 /** The core chat's size: its listed files and their lines (26 files and 4110 lines after D-257 step 4, from 38 files and ~5.4k before; 4330 lines with the `messaging` message style). */
-export const CORE_BUDGET = Object.freeze({ files: 26, lines: 4330 });
+export const CORE_BUDGET = Object.freeze({ files: 24, lines: 4330 });
 /** The card modules that live in their optional items, never in the core chat (D-257 step 3). */
 export const CORE_EXCLUDED_FILES = Object.freeze(['question-card', 'approval-card', 'subagent-card', 'run-card', 'artifact-card', 'artifact']);
 const packageName = (dependency) => dependency.replace(/(.)@[^@]*$/, '$1');

@@ -39,7 +39,7 @@ export interface AppShellProps {
   readonly agent?: AgentSpec;
   /** Consume agent/open/input launch parameters on mount (default). `false` leaves the URL and layer untouched. */
   readonly agentLink?: false;
-  /** A panel beside the app, opened from the account menu. The product manager: `panel={pmPanel({ agent: 'pm' })}` from the `pm-panel` item. */
+  /** A panel beside the app, opened from the account menu. The product manager is `pmPanel` from the Factory's `platform-ui/pm-panel`. */
   readonly panel?: ShellPanel;
   readonly account?: AccountSpec;
   /** The language of the shell's own words and the layer's (« Se déconnecter », « Plus », « Ouvrir l’assistant »…). The agent's `chatProps.locale` wins when it sets one; else this; else English. */

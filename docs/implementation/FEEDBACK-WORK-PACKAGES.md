@@ -81,7 +81,7 @@ Every package follows `AGENTS.md`:
 - **Adoption step A:** `npm run feedback:scenario` checks annotation only
   (point, note, Copy report) in an application outside the monorepo, installed
   from packed tarballs. It also runs against a real app. See
-  [FEEDBACK-SCENARIO.md](FEEDBACK-SCENARIO.md).
+  FEEDBACK-SCENARIO.md.
 
 ```
 WP0 contracts + verifier ─┬─ WP1 format ── WP4 store ─────────────────────────────┐

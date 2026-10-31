@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "baseUrl": ".",
     "paths": { "@/components/ui/*": ["./examples/app-shell/components/ui/*"], "@/lib/utils": ["./examples/app-shell/lib/utils.ts"], "@/hooks/*": ["./examples/app-shell/hooks/*"] }
   },
   "files": [],

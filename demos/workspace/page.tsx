@@ -10,7 +10,7 @@ import { Dock, DockLayout, DockMain, useDock } from '../../registry/dock/dock.ts
 import { ArtifactWorkspace } from '../../registry/pi-workspace/workspace.tsx';
 import { AmbientChat } from '../../registry/pi-ambient/ambient.tsx';
 import { useRemoteChat } from '../../registry/pi-chat/use-remote-chat.ts';
-import { VoiceInput } from '../../registry/feedback/voice-input.tsx';
+import { VoiceInput } from '../../registry/pi-chat-voice/voice-input.tsx';
 import { useRevisionAttachments } from '../../registry/pi-app/use-revision-attachments.ts';
 import { useConversations } from '../../registry/pi-chat/use-conversations.ts';
 import { useHistoryColumn } from '../../registry/pi-app/history-column.tsx';

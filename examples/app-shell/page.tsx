@@ -10,10 +10,8 @@ import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIcon, ArchiveIcon, CalendarDaysIcon, CalendarPlusIcon, ClipboardListIcon, DatabaseIcon, HomeIcon, MessageCircleIcon, MessagesSquareIcon, Share2Icon, MicIcon, MoonIcon, MoonStarIcon, PlusIcon, TargetIcon, UsersIcon, UploadIcon } from 'lucide-react';
-import { createFeedbackSession } from '@hachej/boring-feedback/ui';
-import { createPrivacyPolicy } from '@hachej/boring-feedback/page';
+import { stubPanel } from './stub-slot';
 import { connectRevisionProvider } from '@hachej/boring-files/revision';
-import { pmPanel } from '../../registry/pm-panel/pm-panel';
 import { AppShell, ListDetail, useAgentContext, useAgentLayer, readAgentContext, useScreenHeader } from '../../registry/app-shell/index.ts';
 import type { RevisionProvider } from '@hachej/boring-files/revision';
 import { AgentTargetMode } from '../../registry/agent-target/agent-target.tsx';
@@ -47,7 +45,6 @@ const authorized = (request: Request) => { const headers = new Headers(request.h
 const endpoint = (agent: string) => (id: string) => new URL(`/api/chat?agent=${agent}&conversation=${id}`, location.href);
 
 const englishKinds = defaultKinds(), frenchKinds = defaultKinds({ locale: 'fr' });
-const policy = createPrivacyPolicy({ routeOf: ({ pathname }) => pathname });
 const ROWS = Array.from({ length: 40 }, (_, index) => ({ day: `Jour ${index + 1}`, steps: 6000 + ((index * 937) % 5000) }));
 
 // What the test reads back: every `onChange` of the shell, and what the account menu and the actions did.
@@ -131,18 +128,6 @@ const DASHBOARD = [
 ];
 const EMPTY = [{ id: 'accueil', label: 'Accueil', icon: HomeIcon, render: () => <p className="m-0 p-4">Bienvenue</p> }];
 
-/** The product manager's point-mode session over the app's own root (the layer itself is outside it, so it is never picked). */
-function useManagerFeedback(mounted: boolean) {
-  const [session, setSession] = useState(undefined);
-  useEffect(() => {
-    if (!mounted) return;
-    const created = createFeedbackSession({ app: 'forme', build: 'dev', root: document.getElementById('app-root'), policy });
-    setSession(created);
-    return () => created.dispose();
-  }, [mounted]);
-  return session;
-}
-
 function App() {
   // One workspace provider for Documents and retained voice uploads.
   const [docs, setDocs] = useState<RevisionProvider>();
@@ -170,7 +155,6 @@ function App() {
   const manager = useRemoteChat({ conversationId: conversations.pm, endpoint: endpoint('pm'), fetch: authorized, identity, requestContext: readAgentContext });
   const [route, setRoute] = useState(() => location.hash.slice(1));
   const waiting = (!noAgent && coach.status !== 'ready') || manager.status !== 'ready' || (send === 'message' && !docs);
-  const feedback = useManagerFeedback(!waiting);
   if (waiting) return <p role="status" data-testid="connecting" className="p-4 text-sm text-muted-foreground">Connexion…</p>;
   // A test seam: a send that fails the way an unconfirmed earlier submission does (the controller throws).
   if (!window.__sendWrapped && coach.status === 'ready') {
@@ -184,7 +168,6 @@ function App() {
   const seeSheet = docs ? [{ id: 'spec', label: 'Voir la fiche', icon: ClipboardListIcon, onSelect: () => setSpec('fiche-produit.md') }] : [];
   const agent = noAgent ? undefined : {
     controller: coach.controller,
-    ...(feedback ? { feedback } : {}),
     // Three actions: the first two in the title row, the third (a link) in « … ».
     headerActions: [
       ...seeSheet,
@@ -205,7 +188,6 @@ function App() {
       return window.__transcript ?? (send === 'message' ? 'Je mange une salade' : 'Combien de pas hier ?');
     }, send } }),
   };
-  const improve = { controller: manager.controller, ...(seeSheet.length ? { headerActions: seeSheet } : {}), chatProps: { ...common, actions: manager.actions, labels: { title: 'Chef de produit' } } };
   const nav = [...(app === 'empty' ? EMPTY : query.get('nav') === 'dashboard' ? DASHBOARD : FITNESS), ...(docs ? [{ id: 'fiches', label: 'Fiches', icon: ClipboardListIcon, render: () => <Documents provider={docs} locale="fr" /> }] : [])];
   const account = {
     name: 'Camille Martin', email: 'camille@example.invalid',
@@ -216,7 +198,7 @@ function App() {
   // The app's router: a tab switch replaces the URL (a hash here) and adds no history entry.
   const onChange = (id: string) => { window.__routes.push(id); history.replaceState(history.state, '', `#${id}`); setRoute(id); };
   return <div id="app-root" className="contents">
-    <AppShell {...rail} layout="screen" title="Forme" nav={nav} agent={agent} panel={pmPanel(improve)} account={account} route={{ id: route, onChange }} />
+    <AppShell {...rail} layout="screen" title="Forme" nav={nav} agent={agent} panel={stubPanel} account={account} route={{ id: route, onChange }} />
     {docs && <DocumentSheet provider={docs} path={spec} onClose={() => setSpec(undefined)} onShowAll={() => onChange('fiches')} locale="fr" />}
   </div>;
 }
@@ -266,7 +248,6 @@ const NAV_IDS = ['consultations', 'archives'];
 function RedactionApp() {
   const manager = useRemoteChat({ conversationId: conversations.pm, endpoint: endpoint('pm'), fetch: authorized, identity, requestContext: readAgentContext });
   const [hash, setHash] = useState(() => location.hash.slice(1));
-  const feedback = useManagerFeedback(manager.status === 'ready');
   if (manager.status !== 'ready') return <p role="status" data-testid="connecting" className="p-4 text-sm text-muted-foreground">Connexion…</p>;
   // The app's router: the URL is a hash and is only ever replaced; the shell's Back layer owns the one history entry of an open detail.
   const go = (next: string) => { history.replaceState(history.state, '', `#${next}`); setHash(next); };
@@ -280,10 +261,9 @@ function RedactionApp() {
         : <ConsultationList selected={selected} onSelect={id => go(String(id))} /> } : {}) },
     { id: 'archives', label: 'Archives', icon: ArchiveIcon, render: () => <Archives /> },
   ];
-  const improve = { controller: manager.controller, ...(feedback ? { feedback } : {}), chatProps: { locale: 'fr', showHistory: false, showConnectionStatus: false, actions: manager.actions, labels: { title: 'Chef de produit' } } };
   const account = { name: 'Camille Martin', email: 'camille@example.invalid', menu: [{ label: 'Réglages', onSelect: () => window.__did.push('settings') }, { label: 'Nouveautés', onSelect: () => window.__did.push('news') }] };
   return <div id="app-root" className="contents">
-    <AppShell {...rail} {...compactNav} layout="workspace" title="Cabinet" nav={nav} panel={pmPanel(improve)} account={account} route={{ id: NAV_IDS.includes(hash) ? hash : 'consultations', onChange }} />
+    <AppShell {...rail} {...compactNav} layout="workspace" title="Cabinet" nav={nav} panel={stubPanel} account={account} route={{ id: NAV_IDS.includes(hash) ? hash : 'consultations', onChange }} />
   </div>;
 }
 
@@ -298,16 +278,14 @@ function PmApp() {
   useEffect(() => { if (items?.length && !items.some(item => item.id === selected)) setSelected(items[0].id); }, [items, selected]);
   const active = items?.some(item => item.id === selected) ? selected : undefined;
   const chat = useRemoteChat({ conversationId: active, endpoint: id => new URL(`/api/chat?agent=writer&conversation=${id}`, location.href), fetch: authorized, identity });
-  const feedback = useManagerFeedback(manager.status === 'ready' && Boolean(revisionProvider));
   if (manager.status !== 'ready' || !revisionProvider) return <p role="status" data-testid="connecting" className="p-4 text-sm text-muted-foreground">Connexion…</p>;
   const nav = [{ id: 'atelier', label: 'Atelier', icon: MessagesSquareIcon, render: () => <main data-testid="app" data-conversation={active} className="flex h-full min-h-0">
     <AgentWorkspace artifactKinds={englishKinds} conversationId={active} controller={chat.status === 'ready' ? chat.controller : undefined} conversations={listed} revisionProvider={revisionProvider} layout={query.has('embedded') ? 'embedded' : 'default'}
       chat={{ labels: { title: 'Writer' }, ...(chat.status === 'ready' ? { actions: chat.actions } : {}) }} connecting={<p role="status" className="p-4 text-sm text-muted-foreground">Connecting…</p>} />
   </main> }];
-  const improve = { controller: manager.controller, ...(feedback ? { feedback } : {}), chatProps: { locale: 'fr', showHistory: false, showConnectionStatus: false, actions: manager.actions, labels: { title: 'Chef de produit' } } };
   const account = { name: 'Camille Martin', email: 'camille@example.invalid', menu: [{ label: 'Réglages', onSelect: () => window.__did.push('settings') }] };
   return <div id="app-root" className="contents">
-    <AppShell {...rail} layout="chat" title="Atelier" nav={nav} panel={pmPanel(improve)} account={account} route={{ id: 'atelier', onChange: () => {} }} />
+    <AppShell {...rail} layout="chat" title="Atelier" nav={nav} panel={stubPanel} account={account} route={{ id: 'atelier', onChange: () => {} }} />
   </div>;
 }
 

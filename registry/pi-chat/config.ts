@@ -7,6 +7,9 @@ import type { ApprovalDecision, ArtifactDetect, ArtifactRecognise, ChatArtifact,
 import type { BlockAction } from '../button/actions';
 import type { ChatLabels } from './labels';
 
+/** A host's look for one sent text: its card and the words around it, or nothing to keep the plain bubble. */
+export type SentContent = (text: string, align: 'start' | 'end') => { readonly before: string; readonly node: ReactNode; readonly after: string } | undefined;
+
 /*
  * Composer features the host switches on by configuration. Each prop is optional: leave it out and the composer has
  * no menu, no button and no keyboard trigger for it. The current model and thinking level are read from the native

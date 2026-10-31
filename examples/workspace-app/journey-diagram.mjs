@@ -25,25 +25,15 @@ const block = id => `[data-testid=maquette-screen] [data-testid=maquette-block][
 const scheme = value => browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value }] });
 const shoot = async name => { for (const value of ['light', 'dark']) { await scheme(value); await pause(250); await browser.screenshot(`${name}-${value}.png`); } await scheme('light'); };
 const desktop = async () => { await browser.emulate('desktop'); await browser.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false }); await pause(300); };
-const notes = () => browser.evaluate(`${qa('[data-testid=feedback-point-count]')}.map(e => e.textContent).join('')`);
 
 const app = await startWorkspaceApp({ directory: mkdtempSync(join(tmpdir(), 'boring-diagram-')) });
 let browser;
 try {
-  browser = await launch(`${insecureUrl(app.url)}?feedback`, { evidence });
+  browser = await launch(`${insecureUrl(app.url)}`, { evidence });
   await browser.until('the chat is live', `!!${INPUT} && !${INPUT}.disabled`, 20000);
   await desktop();
   const send = async text => { await browser.type(INPUT, text); await browser.press('Enter'); };
   const openMenu = async tap => { await (tap ? browser.tap : browser.click)(q('[data-testid=artifact-more]')); await browser.until('the menu', `!!${q('[role=menu]')}`, 5000); await pause(200); };
-  /** Pins a note on a block: a tap (phone) or click (desktop) on `selector`, the note typed in the pin, Enter. */
-  const pin = async (tap, selector, words) => {
-    await (tap ? browser.tap : browser.click)(q(selector));
-    await browser.until('the note pin', `!!${q('[data-testid=feedback-bubble-input]')}`, 5000);
-    await browser.type(q('[data-testid=feedback-bubble-input]'), words);
-    await browser.press('Enter');
-    await browser.until('the note kept', `!${q('[data-testid=feedback-bubble]')}`, 5000);
-  };
-
   await step('desktop 1440: the presented diagram opens in the panel with its path highlighted', async () => {
     await send('Make the booking diagram and present it.');
     await browser.until('the card names the built-in kind', `${q('[data-testid=artifact-card][data-state=ready]')}?.dataset.artifactKind === 'Diagram'`, 30000);
@@ -81,67 +71,6 @@ try {
     await shoot('desktop-how-it-works');
     await browser.press('Escape');
     await browser.until('dialog closed', `!${q('[data-testid=maquette-how]')}`, 5000);
-  });
-
-  await step('desktop 1440: the comment icon enters point mode; two clicks pin two notes on blocks; the icon again is Done', async () => {
-    assert.equal(await browser.evaluate(`${q('[data-testid=maquette-comment]')}?.getAttribute('aria-label')`), 'Comment on this screen');
-    await browser.click(q('[data-testid=maquette-comment]'));
-    await browser.until('point mode', `!!${q('[data-testid=feedback-point-bar]')}`, 5000);
-    await pin(false, `${block('4')} button`, 'Say "Book a place" here');
-    await pin(false, `${block('0')} h4`, 'A friendlier heading');
-    assert.match(await notes(), /2/, 'two notes taken');
-    await shoot('desktop-point-mode-2-pins');
-    await browser.click(q('[data-testid=maquette-comment]'));
-    await browser.until('markers on the two blocks', `${qa('[data-testid=maquette-pin]')}.length === 2`, 5000);
-    await shoot('desktop-pins');
-  });
-
-  await step('phone 390: point mode in the sheet keeps the two pins; Done shows them as small numbers', async () => {
-    await browser.emulate('phone');
-    await pause(400);
-    if (!(await browser.evaluate(`!!${WALK}`))) await browser.tap(qa('[data-testid=artifact-card][data-state=ready]') + '.at(-1)');
-    await browser.until('the mock-up in the sheet', `${q('[data-testid=workspace-panel]')}?.dataset.sheet === 'true' && !!${WALK}`, 10000);
-    await openMenu(true);
-    await browser.tap(q('[data-testid=maquette-how-open]'));
-    await browser.until('How it works', `!!${q('[data-testid=maquette-how] [data-testid=diagram]')}`, 5000);
-    await browser.until('vertical on a phone', `${q('[data-testid=maquette-how] [data-testid=diagram]')}.dataset.layout === 'vertical'`, 5000);
-    assert.ok(await browser.evaluate(noOverflow), 'How it works never scrolls the page');
-    await shoot('phone-how-it-works');
-    await browser.press('Escape');
-    await browser.until('dialog closed', `!${q('[data-testid=maquette-how]')}`, 5000);
-    await browser.tap(q('[data-testid=maquette-comment]'));
-    await browser.until('point mode on the phone', `!!${q('[data-testid=feedback-point-bar]')}`, 5000);
-    assert.match(await notes(), /2/, 'the two notes are kept');
-    assert.ok(await browser.evaluate(noOverflow), 'no horizontal scroll while pointing');
-    await shoot('phone-point-mode-2-pins');
-    await browser.tap(q('[data-testid=maquette-comment]'));
-    await browser.until('markers', `${qa('[data-testid=maquette-pin]')}.length === 2`, 5000);
-    await shoot('phone-pins');
-  });
-
-  await step('phone 390: the next message shows the page-comments card with both element labels and notes', async () => {
-    await browser.tap(q('[data-testid=artifact-close]'));
-    await browser.until('the chat again', `!!${INPUT} && !!${q('[data-testid=feedback-count]')}`, 10000);
-    // On a phone Enter is a new line: the send button sends.
-    await browser.type(INPUT, 'Two changes on the class list');
-    await browser.tap(q('[data-testid=composer-submit]'));
-    await browser.until('the reply', `/Noted: the class list button/.test(document.body.textContent)`, 30000);
-    const card = q('[data-role=user] [data-testid=message-feedback]');
-    await browser.until('the sent page comments card', `${card}?.checkVisibility()`);
-    assert.equal(await browser.evaluate(`${card}.querySelector('[data-slot=card-title]').innerText`), '2 comments on the page');
-    assert.equal(await browser.evaluate(`${card}.getAttribute('aria-label')`), '2 comments on the page');
-    const sent = await browser.evaluate(`[...${card}.querySelectorAll('[data-testid=message-feedback-note]')].map(note => {
-      const target = note.querySelector('[data-slot=card-description]'), text = note.querySelector('p');
-      return { target: target.innerText, text: text.innerText, visible: target.checkVisibility() && text.checkVisibility() };
-    })`);
-    assert.deepEqual(sent, [
-      { target: '«Wheel throwing, beginners» span element', text: 'Say "Book a place" here', visible: true },
-      { target: '«Book a class» heading', text: 'A friendlier heading', visible: true },
-    ]);
-    assert.ok(await browser.evaluate(noOverflow), 'no horizontal scroll with the sent note');
-    await shoot('phone-sent-note');
-    await desktop();
-    await shoot('desktop-sent-note');
   });
 
   assert.deepEqual(misses, [], 'every prompt had a scripted answer');

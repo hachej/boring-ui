@@ -7,8 +7,6 @@ import type { JsonObject } from '@earendil-works/pi-durable';
 import { AlertCircleIcon, CircleSlashIcon, ClockIcon, FileAudioIcon, FileIcon, FileSpreadsheetIcon, FileTextIcon, ImageIcon, PauseIcon, PlayIcon, PresentationIcon } from 'lucide-react';
 import { CopyButton } from './code-block';
 import type { AnswerOutcome, ChatArtifactsConfig, ChatCards, CommandMentions } from './config';
-import { feedbackContent } from './feedback-content';
-import { SentFeedback } from './sent-feedback';
 import { ActivityBlock } from './activity';
 import type { ActivityState } from './activity';
 import { Shimmer } from './shimmer';
@@ -17,7 +15,7 @@ import { thumbnail } from './composer';
 import { ImageViewer } from './image-viewer';
 import { displayName, fileKind, isUploadPath, isVoicePath, mentionKind, pieces, visibleParts } from '@hachej/boring-ui-kit/chat-text';
 import type { FileKind, Piece } from '@hachej/boring-ui-kit/chat-text';
-import type { AudioUrlRead, MentionsConfig, PreviewRead } from './config';
+import type { AudioUrlRead, MentionsConfig, PreviewRead, SentContent } from './config';
 import { voiceClock } from './config';
 import { Spinner } from '@/components/ui/spinner';
 import { isFileBlock, segments, targetContent, waits } from './rows';
@@ -70,6 +68,8 @@ export interface RowContext {
   readonly pieces: { readonly kinds?: MentionsConfig['kinds']; readonly mentions: boolean; readonly uploads?: boolean; readonly skills: readonly string[]; readonly openMention?: ((path: string) => void) | undefined; readonly renderMention?: ((path: string) => ReactNode | undefined) | undefined;
     readonly preview?: PreviewRead | undefined; readonly audioUrl?: AudioUrlRead | undefined } | undefined;
   readonly voiceReplay?: boolean | undefined;
+  /** A host's own card for a sent text (`PiChat sentContent`). */
+  readonly sentContent?: SentContent | undefined;
   /** The host's words for a sent target chip (`PiChat targetLabel`). */
   readonly targetLabel?: ((target: JsonObject) => string | undefined) | undefined;
   readonly fileChanges?: boolean | undefined;
@@ -248,7 +248,7 @@ function VoiceReplayBubble({ path, transcript, preview, audioUrl, align = 'end' 
  */
 /** `variant` picks the bubble: `muted` (the chat's user bubble) or `default` (the theme's primary, used for my own messages in a shared chat). */
 /** `decoration` sits inside the Bubble before its content (a tail); `header` and `footer` inside the content, around the text (a quote, the time). */
-export function MessageText({ text, context, align = 'end', variant = 'muted', decoration, header, footer }: { readonly text: string; readonly context: Pick<RowContext, 'pieces' | 'openFile' | 'voiceReplay' | 'targetLabel'>; readonly align?: 'start' | 'end'; readonly variant?: 'muted' | 'default'; readonly decoration?: ReactNode; readonly header?: ReactNode; readonly footer?: ReactNode }) {
+export function MessageText({ text, context, align = 'end', variant = 'muted', decoration, header, footer }: { readonly text: string; readonly context: Pick<RowContext, 'sentContent' | 'pieces' | 'openFile' | 'voiceReplay' | 'targetLabel'>; readonly align?: 'start' | 'end'; readonly variant?: 'muted' | 'default'; readonly decoration?: ReactNode; readonly header?: ReactNode; readonly footer?: ReactNode }) {
   const framed = decoration !== undefined || header !== undefined || footer !== undefined;
   const wrap = (body: ReactNode) => <Bubble variant={variant} align={align}>{decoration}<BubbleContent data-testid="user-text" className={framed ? 'relative' : undefined}>{header}{body}{footer}</BubbleContent></Bubble>;
   const target = targetContent(text);
@@ -256,11 +256,11 @@ export function MessageText({ text, context, align = 'end', variant = 'muted', d
     <Badge variant="secondary" data-testid="message-target" className="max-w-full truncate">{context.targetLabel?.(target.target) ?? target.label}</Badge>
     <MessageText text={target.speech} context={context} align={align} variant={variant} decoration={decoration} header={header} footer={footer} />
   </>;
-  const feedback = feedbackContent(text);
-  if (feedback) return <>
-    {feedback.before && <MessageText text={feedback.before} context={context} align={align} variant={variant} />}
-    <SentFeedback report={feedback.report} align={align} />
-    {feedback.after && <MessageText text={feedback.after} context={context} align={align} variant={variant} />}
+  const hosted = context.sentContent?.(text, align);
+  if (hosted) return <>
+    {hosted.before && <MessageText text={hosted.before} context={context} align={align} variant={variant} />}
+    {hosted.node}
+    {hosted.after && <MessageText text={hosted.after} context={context} align={align} variant={variant} />}
   </>;
   const open = context.pieces?.openMention;
   const render = context.pieces?.renderMention;

@@ -147,10 +147,6 @@
     "./mark-store": {
       "types": "./dist/mark-store.d.ts",
       "import": "./dist/mark-store.js"
-    },
-    "./task-board": {
-      "types": "./dist/task-board.d.ts",
-      "import": "./dist/task-board.js"
     }
   },
   "peerDependencies": {

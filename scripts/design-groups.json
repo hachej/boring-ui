@@ -72,8 +72,7 @@
         "registry/pi-chat-question/question-card.tsx",
         "registry/pi-artifacts/artifact-card.tsx",
         "registry/pi-chat/code-block.tsx",
-        "registry/pi-chat/conversation-files.tsx",
-        "registry/feedback/feedback-card.tsx"
+        "registry/pi-chat/conversation-files.tsx"
       ],
       "selector": "[data-testid=approval-card], [data-testid=question-card], [data-testid=artifact-card], [data-testid=code-block], [data-testid=message-file]"
     },
