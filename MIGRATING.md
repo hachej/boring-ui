@@ -1,5 +1,10 @@
 # Unreleased
 
+- **Platform blocks moved to boring-factory's `platform-ui/` (`pm-panel`, `task-board`, `task-mentions`, `requests-board`, `feedback`, `feedback-preview`).** They leave this registry, and `@hachej/boring-ui-kit/task-board` leaves the kit. Published versions keep them, so an app on its pinned copies changes nothing.
+- **`AppShell improve` is now a generic `AgentSlot` (`app-shell`).** It takes `{ Provider, Layout, spec? }` (`agent-slot.ts`); `improve={{ agent: 'pm' }}` and `pmHostOrigins` come from `platform-ui/shell`. `AgentSpec.feedback` is removed: no app used it. A composer's annotate toggle remains `chatProps.feedback`.
+- **`PiChat sentContent` (`pi-chat`).** A host's card for a sent text; the built-in page-comments card moved out with `feedback`.
+- **`voice-input` moved to `pi-chat-voice`.**
+
 # Migrating to 0.4.45
 
 - **A host can end a framed PM's pointing (`pm-panel`).** The frame takes `{ boring: 'pm-end-pointing' }` from its parent. No change needed in an app.

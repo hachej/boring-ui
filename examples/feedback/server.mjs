@@ -79,16 +79,6 @@ export function placeholderAgent() {
   return { definition, models };
 }
 
-/** The browser bundle. In development the WP8 transform stamps `data-source` on the page's elements, so picker labels and pins carry it. */
-export async function buildBrowser({ source = true } = {}) {
-  const development = source ? await (async () => {
-    const { feedbackSourcePlugin } = await import('@hachej/boring-feedback/source');
-    return { jsxDev: true, absWorkingDir: root, plugins: [feedbackSourcePlugin({ root, mode: 'development' })], define: { 'process.env.NODE_ENV': '"development"' } };
-  })() : { define: { 'process.env.NODE_ENV': '"production"' } };
-  const bundle = await build({ entryPoints: [here('./browser.jsx')], bundle: true, write: false, outdir: here('./out'), format: 'esm', platform: 'browser', jsx: 'automatic', logLevel: 'silent', ...development });
-  return bundle.outputFiles.find(file => file.path.endsWith('.js')).text;
-}
-
 async function readJson(request) {
   const reader = request.body?.getReader();
   if (!reader) return undefined;
@@ -236,11 +226,8 @@ export async function startFeedbackApp({ directory, port = 0, protection = 'prot
     return Response.json({ conversationId: String((await conversationOf(person)).id) });
   }
 
-  const script = assets ? await buildBrowser({ source }) : '';
-  const styles = assets ? await (async () => {
-    const item = JSON.parse(readFileSync(join(root, 'registry.json'), 'utf8')).items.find(entry => entry.name === 'feedback');
-    return [await buildTailwind(), registryCss(item), readFileSync(here('./host.css'), 'utf8')].join('\n');
-  })() : '';
+  const script = '';
+  const styles = '';
   const html = (person, outside) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Fernhill Studio settings (fictional)</title><link rel="stylesheet" href="/styles.css"></head><body><div id="root"></div>
 <script>window.__FEEDBACK__=${JSON.stringify({ token: person.token, person: person.display, identity: { runtimeId: 'feedback-demo', ...person.access }, app: APP, build: buildId, outside })}</script>

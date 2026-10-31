@@ -106,7 +106,6 @@
     "test:html-consumer": "node scripts/test-editor-consumer.mjs --html",
     "test:artifact-viewer-consumer": "node scripts/test-artifact-viewer-consumer.mjs",
     "test:html-registry-consumer": "node scripts/test-registry-consumer.mjs --html",
-    "test:feedback-registry-consumer": "node scripts/test-feedback-registry-consumer.mjs",
     "test:experience-consumer": "node scripts/test-experience-consumer.mjs",
     "test:remote-files-consumer": "node scripts/test-remote-files-consumer.mjs",
     "test:projection-consumer": "npm run build && node scripts/test-projection-consumer.mjs",
@@ -126,9 +125,6 @@
     "release:preflight": "npm run check && npm run typecheck && node scripts/release-preflight.mjs",
     "release:version": "node scripts/release-version.mjs",
     "file-tree:journey": "node examples/file-tree/journey.mjs && node examples/file-tree/journey-library.mjs",
-    "requests:journey": "node examples/workspace-app/journey-requests.mjs",
-    "task-board": "node examples/task-board/server.mjs",
-    "task-board:journey": "node examples/task-board/journey.mjs",
     "windows": "node examples/windows/server.mjs",
     "windows:journey": "node examples/windows/journey.mjs"
   },

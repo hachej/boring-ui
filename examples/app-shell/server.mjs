@@ -184,8 +184,7 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
 
   const bundle = await build({ entryPoints: [pageFile], plugins: browserPlugins, bundle: true, write: false, outdir: here('./out'), format: 'esm', platform: 'browser', jsx: 'automatic',
     alias: { '@': here('.') }, define: { 'process.env.NODE_ENV': '"production"' }, logLevel: 'silent' });
-  const css = [await buildTailwind({ extraDirectories: ['examples/app-shell', 'examples/pm-panel', 'registry/pm-panel', 'registry/task-board', 'registry/task-mentions', 'registry/app-shell', 'registry/agent-target', 'registry/documents'], extraCss: SIDEBAR_TOKENS }), BASE, ...bundle.outputFiles.filter(file => file.path.endsWith('.css')).map(file => file.text),
-    readFileSync(here('../../registry/feedback/feedback.css'), 'utf8'),
+  const css = [await buildTailwind({ extraDirectories: ['examples/app-shell', 'registry/app-shell', 'registry/agent-target', 'registry/documents'], extraCss: SIDEBAR_TOKENS }), BASE, ...bundle.outputFiles.filter(file => file.path.endsWith('.css')).map(file => file.text),
     'html,body,#root{min-height:100%;margin:0}body{background:var(--background);color:var(--foreground);font:15px/1.5 ui-sans-serif,system-ui,sans-serif}',
     themeCss,
     // The app's own rule for AppShell overlayBlur={false} (an item's CSS stays inside .app-shell; overlays are portalled outside it).

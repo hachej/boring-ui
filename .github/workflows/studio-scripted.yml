@@ -180,17 +180,6 @@ jobs:
         run: node scripts/retry-journey.mjs ambient:journey:scripted
         env:
           AMBIENT_EVIDENCE: ${{ runner.temp }}/evidence/ambient
-      - name: Shared task board, task mentions and native host presentation
-        if: matrix.shard == 'workspace'
-        run: node scripts/retry-journey.mjs task-board:journey
-      - name: Task board evidence
-        if: always() && matrix.shard == 'workspace'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: task-board-evidence-${{ matrix.shard }}
-          path: .cache/evidence/d417/task-board
-          if-no-files-found: error
-          retention-days: 7
       - name: Canvas command evidence
         if: always() && matrix.shard == 'documents'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

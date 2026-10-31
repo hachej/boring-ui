@@ -12,7 +12,6 @@ mkdirSync(out, { recursive: true });
 writeFileSync(join(out, 'entry.tsx'), `export { ArtifactPanel } from '${root}registry/pi-app/artifact-panel.tsx';
 export { createMockupKind, mockupKind } from '${root}registry/mockup-viewer/mockup-kind.tsx';
 export { compileMockup } from '${root}registry/mockup-viewer/mockup-compile.ts';
-export { useComposerFeedback, usePointComments } from '${root}registry/feedback/feedback-session.tsx';
 export { defaultKinds } from '${root}registry/pi-app-kinds/pi-app-kinds.ts';`);
 await build({ entryPoints: [join(out, 'entry.tsx')], outfile: join(out, 'kit.mjs'), bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
 // Imported once the first test's DOM globals exist: Base UI decides at load time whether it runs in a browser.
@@ -126,45 +125,5 @@ async function commented(t) {
 }
 const PICK = { type: 'mockup:pick', selector: ':root > :nth-child(2) > :nth-child(1) > :nth-child(1)', rect: { x: 10, y: 20, w: 100, h: 40 } };
 
-test('a frame pick pins through the real feedback session and sends the file and structural selector', async t => {
-  const page = await commented(t);
-  await page.click('[data-testid=mockup-comment]');
-  assert.equal(page.session.getSnapshot().mode, 'point');
-  await page.message(PICK);
-  assert.ok(page.session.getSnapshot().bubble);
-  await page.act(async () => { page.session.setBubbleText('Make the action clearer'); page.session.saveBubble(); });
-  assert.equal(page.session.getSnapshot().notes[0].feedbackId, 'mockup:booking.mockup.html#element=' + PICK.selector);
-  await page.click('[data-testid=mockup-comment]');
-  const sent = await page.composer.current.attach('Please change this');
-  assert.equal(sent.kind, 'ok');
-  assert.match(sent.text, /Make the action clearer/);
-  assert.match(sent.text, /mockup:booking\.mockup\.html#element=:root/);
-});
 
-test('forged senders, invalid selectors, oversized messages, wrong origins and suspended picks cannot create notes', async t => {
-  const page = await commented(t);
-  await page.click('[data-testid=mockup-comment]');
-  await page.message(PICK, page.window);
-  await page.message(PICK, undefined, 'https://hostile.invalid');
-  await page.message({ ...PICK, selector: '#private-canary' });
-  await page.message({ ...PICK, selector: 'x'.repeat(5000) });
-  await page.message({ ...PICK, rect: { ...PICK.rect, x: Infinity } });
-  assert.equal(page.session.getSnapshot().notes.length, 0);
-  await page.act(async () => page.session.setUseToggle(true));
-  await page.message(PICK);
-  assert.equal(page.session.getSnapshot().notes.length, 0);
-  await page.act(async () => page.session.setUseToggle(false));
-  await page.message(PICK);
-  assert.equal(page.session.getSnapshot().notes.length, 1);
-});
 
-test('proxy layout updates keep the note and element identity', async t => {
-  const page = await commented(t);
-  await page.click('[data-testid=mockup-comment]');
-  await page.message(PICK);
-  const bubble = page.session.getSnapshot().bubble;
-  await page.message({ ...PICK, type: 'mockup:layout', rect: { ...PICK.rect, y: 60 } });
-  assert.equal(page.session.getSnapshot().bubble.element, bubble.element);
-  assert.equal(bubble.element.style.top, '60px');
-  assert.equal(page.session.getSnapshot().notes.length, 1);
-});

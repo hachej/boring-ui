@@ -61,11 +61,11 @@ test('the item pins no shadcn style: kit items, tokens and classes only', () => 
 });
 
 test('the item imports only React, its declared packages and the app setup shadcn components', () => {
-  const allowed = new Set(['react', 'react-dom', 'lucide-react', '@base-ui/react/drawer', '@hachej/boring-feedback/page', '@hachej/boring-feedback/ui', '@hachej/boring-ui-kit/native-chat', '@hachej/boring-ui-kit/voice-capture', '@hachej/boring-ui-kit/chat-text', '@hachej/boring-ui-kit/chat-react/voice']);
+  const allowed = new Set(['react', 'react-dom', 'lucide-react', '@base-ui/react/drawer', '@hachej/boring-ui-kit/native-chat', '@hachej/boring-ui-kit/voice-capture', '@hachej/boring-ui-kit/chat-text', '@hachej/boring-ui-kit/chat-react/voice']);
   for (const name of files) {
     for (const [, imported] of source(name).matchAll(/\bfrom\s+['"]([^'"]+)['"]/g)) {
       if (imported.startsWith('./')) { assert.ok(files.some(file => file.replace(/\.tsx?$/, '') === imported.slice(2)), `${name} imports missing ${imported}`); continue; }
-      if (/^\.\.\/(?:pi-chat(?:-[a-z]+)?|feedback|utils|dock|pm-panel)\//.test(imported)) continue;
+      if (/^\.\.\/(?:pi-chat(?:-[a-z]+)?|utils|dock)\//.test(imported)) continue;
       const ui = /^@\/components\/ui\/([\w-]+)$/.exec(imported);
       if (ui) { assert.ok(SHADCN_BUILTINS.includes(ui[1]), `${name}: ${imported} is not in the app setup`); continue; }
       if (imported === '@/hooks/use-mobile') { assert.ok(SHADCN_BUILTINS.includes('sidebar'), 'use-mobile comes with the sidebar'); continue; }
@@ -143,7 +143,6 @@ test('the French words of the shell and of the chat and feedback labels use the 
   const checked = [
     ...frTable(source('text.ts'), 'text.ts').flatMap(declaration => literals(source('text.ts'), declaration)),
     ...literals(readFileSync(`${root}registry/pi-chat/labels-fr.ts`, 'utf8'), parse('labels-fr.ts', readFileSync(`${root}registry/pi-chat/labels-fr.ts`, 'utf8'))),
-    ...frTable(readFileSync(`${root}registry/feedback/feedback-labels.ts`, 'utf8'), 'feedback-labels.ts').flatMap(declaration => literals(readFileSync(`${root}registry/feedback/feedback-labels.ts`, 'utf8'), declaration)),
   ];
   assert.ok(checked.length > 100, 'the French tables are found');
   // Spec 2 writes « Améliorer l'app » with a straight apostrophe (round 7: follow the spec); every other French string keeps ’.
@@ -230,7 +229,7 @@ test('AppShellProps has the shell props, optional rail, locale and URL opt-out, 
   const program = ts.createProgram([`${root}${folder}/app-shell.tsx`], { allowImportingTsExtensions: true, jsx: ts.JsxEmit.ReactJSX, noEmit: true, skipLibCheck: true });
   const file = program.getSourceFile(`${root}${folder}/app-shell.tsx`);
   const props = file.statements.find(node => ts.isInterfaceDeclaration(node) && node.name.text === 'AppShellProps');
-  assert.deepEqual(props.members.map(member => member.name.text).sort(), ['account', 'agent', 'agentLink', 'compactNav', 'improve', 'layout', 'locale', 'nav', 'overlayBlur', 'pmHostOrigins', 'rail', 'route', 'title']);
+  assert.deepEqual(props.members.map(member => member.name.text).sort(), ['account', 'agent', 'agentLink', 'compactNav', 'improve', 'layout', 'locale', 'nav', 'overlayBlur', 'rail', 'route', 'title']);
   const rail = props.members.find(member => member.name.text === 'rail');
   assert.ok(rail.questionToken, 'rail is optional');
   assert.equal(rail.type.getText(file), "'icon' | 'hover'");

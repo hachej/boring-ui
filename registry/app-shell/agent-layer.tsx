@@ -15,7 +15,6 @@ import * as BaseDrawerParts from '@base-ui/react/drawer';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import type { FeedbackSession } from '@hachej/boring-feedback/ui';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { useChatVoice } from '@hachej/boring-ui-kit/chat-react/voice';
 import type { ChatVoiceHandle as Voice } from '@hachej/boring-ui-kit/chat-react/voice';
@@ -33,9 +32,6 @@ import { voiceClock } from '../pi-chat/config';
 import { withChatPlugins } from '../pi-chat-plugins/chat-plugins';
 import { PendingVoiceBubble, VoiceMessageButton } from '../pi-chat-voice/voice-message';
 import { chatTextFor } from '../pi-chat/locale';
-import { NoteBubble, useComposerFeedback } from '../feedback/feedback-session';
-import { feedbackLabelsFr } from '../feedback/feedback-labels';
-import { CommentBanner, useCommenting, usePointing } from '../feedback/point-mode';
 import { cn } from '../utils/utils';
 import { useBackLayer } from '../utils/back';
 import { parseAgentLink } from './agent-link';
@@ -44,9 +40,7 @@ import { appShellText } from './text';
 import type { AppShellLocale, AppShellText } from './text';
 import { useVisualViewport } from './use-visual-viewport';
 import { AgentContextProvider } from './agent-context';
-import { PmPanelProvider } from '../pm-panel/pm-panel';
-import { isImproveAgent } from '../pm-panel/pm-panel';
-import type { ImproveProp } from '../pm-panel/pm-panel';
+import type { AgentSlot, AgentSlotProviderProps } from './agent-slot';
 import { HeaderActions } from './header-actions';
 import type { ScreenHeaderAction } from './header-actions';
 
@@ -59,8 +53,6 @@ export interface AgentSpec {
   readonly chatProps?: Omit<PiChatProps, 'controller'>;
   /** Push-to-talk. `message` retains audio plus transcript; `auto` sends text only; `draft` (default) fills the composer. */
   readonly voice?: VoiceMessageConfig & { readonly send?: 'auto' | 'draft' | 'message' };
-  /** Point mode (the product manager, in practice). */
-  readonly feedback?: FeedbackSession;
   /** Host actions in the layer's title row (before the dock controls, or the snap and close controls when compact), as the screen header's. Two shown, the rest in « … ». Not at peek. */
   readonly headerActions?: readonly ScreenHeaderAction[];
 }
@@ -115,7 +107,7 @@ export function isOverlayEvent(details: { readonly reason: string; readonly even
 
 interface Internal extends Omit<AgentLayerApi, 'agent'> {
   readonly agent: AgentSpec | undefined;
-  readonly improve: ImproveProp | undefined;
+  readonly improve: AgentSlot | undefined;
   readonly snap: Snap;
   readonly setSnap: (snap: Snap) => void;
   /** Whether the wide layout's dock is floating over the app (reported by the panel); with `expanded` it gives the chats' placement. */
@@ -171,9 +163,8 @@ const LoanContext = createContext<LoanContextValue | null>(null);
  */
 export function useAgentLoan(): (AgentLoan & { readonly compact: boolean }) | null { return useContext(LoanContext); }
 
-/** `improve` as the host wrote it: its own spec, or nothing to read for the one line `{ agent }` (the PM panel resolves that). */
-const hostSpec = (improve: ImproveProp | undefined) => improve && !isImproveAgent(improve) ? improve : undefined;
-const controllerOf = (spec: AgentSpec | ImproveProp | undefined) => spec && 'controller' in spec ? spec.controller : undefined;
+const controllerOf = (spec: AgentSpec | AgentSlot | undefined) => spec && 'controller' in spec ? spec.controller : spec && 'spec' in spec ? spec.spec?.controller : undefined;
+const NoSlot = ({ children }: AgentSlotProviderProps) => children;
 
 /** The layer's state and controls. */
 export function useAgentLayer(): AgentLayerApi {
@@ -208,8 +199,8 @@ function useMeasuredPeek(probe: RefObject<HTMLDivElement | null>): { readonly pe
   return { peekPoint: `${px}px`, tabbar };
 }
 
-/** Places the layer in the app. `agent` is the one assistant; `improve` is the product manager. Either may be absent. */
-export function AgentLayerProvider({ agent: own, improve, locale, agentLink, appName, children }: { readonly agent?: AgentSpec | undefined; readonly improve?: ImproveProp | undefined; readonly locale?: AppShellLocale | undefined; readonly agentLink?: false | undefined; readonly appName?: string | undefined; readonly children: ReactNode }): ReactElement {
+/** Places the layer in the app. `agent` is the one assistant; `improve` is the agent slot (`agent-slot.ts`). Either may be absent. */
+export function AgentLayerProvider({ agent: own, improve, locale, agentLink, appName, children }: { readonly agent?: AgentSpec | undefined; readonly improve?: AgentSlot | undefined; readonly locale?: AppShellLocale | undefined; readonly agentLink?: false | undefined; readonly appName?: string | undefined; readonly children: ReactNode }): ReactElement {
   const compact = usePhone();
   const expanded = !compact;
   const [snap, setSnapState] = useState<Snap>('closed');
@@ -353,6 +344,7 @@ export function AgentLayerProvider({ agent: own, improve, locale, agentLink, app
   useBackLayer(improveOpen, close, 'agent');
   useBackLayer(improveOpen && pmFull.full, pmFull.collapse, 'sheet');
   const state: AgentLayerState = snap === 'closed' ? 'closed' : expanded ? 'open' : snap;
+  const SlotProvider = improve?.Provider ?? NoSlot;
   const value = useMemo<Internal>(() => ({
     state, showing: snap === 'closed' ? null : shown, open, close, talkAbout, talkRecording, expanded, agent, improve, snap, setSnap, dockFloating, setDockFloating, showAgent, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, restoreFocus,
   }), [state, snap, shown, open, close, talkAbout, talkRecording, expanded, agent, improve, setSnap, dockFloating, showAgent, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide]);
@@ -360,14 +352,14 @@ export function AgentLayerProvider({ agent: own, improve, locale, agentLink, app
   // The shell's z-scale (tabs 20, peek 30, drawer and panel 40, other sheets 50, point bar 60) as custom properties; `display: contents` keeps the box tree unchanged.
   const scale = { '--app-shell-z-tabs': Z.tabs, '--app-shell-z-peek': Z.peek, '--app-shell-z-layer': Z.layer, '--app-shell-z-sheet': Z.sheet, '--app-shell-z-point': Z.point } as CSSProperties;
   return <AgentContextProvider>
-    <LayerContext.Provider value={value}><LoanContext.Provider value={loan}><PmPanelProvider spec={improve} open={improveOpen} close={close} appName={appName} locale={locale} onFull={onFull}>
+    <LayerContext.Provider value={value}><LoanContext.Provider value={loan}><SlotProvider open={improveOpen} close={close} appName={appName} locale={locale} onFull={onFull}>
       <div data-app-shell="" className="contents" style={scale}>
         <div ref={probe} aria-hidden="true" className="pointer-events-none invisible fixed top-0 left-0 w-0" style={{ height: 'var(--app-shell-tabbar, 0px)' }} />
         {children}
         {/* eslint-disable-next-line react-hooks/refs -- reads the "ever opened" latch set above in this same render */}
         {host && opened.current && createPortal(<Chats showing={shown} />, host)}
       </div>
-    </PmPanelProvider></LoanContext.Provider></LayerContext.Provider>
+    </SlotProvider></LoanContext.Provider></LayerContext.Provider>
   </AgentContextProvider>;
 }
 
@@ -461,19 +453,9 @@ function VoiceProblem() {
 function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly visible: boolean; readonly role: Which }) {
   const layer = useInternal();
   const locale = spec.chatProps?.locale ?? layer.locale;
-  // One annotate toggle: pins on desktop, point mode (which hides the layer while the person taps the app) on touch and compact screens.
-  const feedback = useComposerFeedback(spec.feedback);
-  const pointing = usePointing(spec.feedback);
-  // The pin's mic uses the shell's transcription: this agent's own, else the coach's.
-  const transcribe = (spec.voice ?? layer.agent?.voice)?.transcribe;
-  const fr = locale === 'fr';
   return <div data-spec={role} hidden={!visible} className={cn('min-h-0 min-w-0 flex-1', visible ? 'flex flex-col' : 'hidden')}>
-    <PiChat {...withChatPlugins(spec.chatProps ?? {})} {...(locale ? { locale } : {})} controller={spec.controller} keyboardInset={false} placement={layer.expanded && !layer.dockFloating ? 'docked' : 'floating'} {...(feedback ? { feedback } : {})}
+    <PiChat {...withChatPlugins(spec.chatProps ?? {})} {...(locale ? { locale } : {})} controller={spec.controller} keyboardInset={false} placement={layer.expanded && !layer.dockFloating ? 'docked' : 'floating'}
       {...(role === 'agent' && spec.voice ? { voiceMessage: { transcribe: spec.voice.transcribe, Bubble: PendingVoiceBubble }, tools: <>{spec.chatProps?.tools}<TalkButton /></>, composerRecording: layer.voice.phase === 'starting' || layer.voice.phase === 'recording' ? <TalkButton /> : undefined, pendingVoice: layer.voice.pending } : {})} />
-    {/* The note editor of ordinary feedback lives inside the layer, in the modal's focus tree; while pointing the layer steps aside and AgentLayer renders it. */}
-    {/* In the flow, inside the visible content box: the popup is transformed (a fixed element would be placed against its off-screen bottom). */}
-    {spec.feedback && visible && !pointing && <div className="shrink-0 px-2 pb-2 empty:hidden">
-      <NoteBubble session={spec.feedback} {...(transcribe ? { transcribe } : {})} {...(fr ? { labels: feedbackLabelsFr } : {})} /></div>}
   </div>;
 }
 
@@ -516,16 +498,16 @@ function Header({ text, title, compactSnap, closeRef, controls, className, ...re
 
 function useTitle(): { text: AppShellText; title: string } {
   const layer = useInternal();
-  const spec = layer.showing === 'improve' ? hostSpec(layer.improve) : layer.agent;
+  const spec = layer.showing === 'improve' ? layer.improve?.spec : layer.agent;
   const text = appShellText(spec?.chatProps?.locale ?? layer.locale);
-  const title = layer.showing === 'improve' ? text.improve : (spec?.chatProps?.labels?.title ?? text.assistant);
+  const title = layer.showing === 'improve' ? text.improve : (layer.agent?.chatProps?.labels?.title ?? text.assistant);
   return { text, title };
 }
 
 const toSnap = (point: number | string | null, peekPoint: string): Snap | null =>
   point === peekPoint ? 'peek' : point === HALF ? 'half' : point === FULL ? 'full' : null;
 
-function CompactSheet({ pointing }: { readonly pointing: boolean }) {
+function CompactSheet() {
   const layer = useInternal();
   const { snap, agent, voice } = layer;
   const hasPeek = Boolean(agent);
@@ -536,7 +518,7 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
   // Set while the layer closes; cleared when it opens again (a close is final until the trigger or a choice opens the layer).
   const closing = useRef(false);
   useEffect(() => { if (snap !== 'closed') closing.current = false; }, [snap]);
-  const open = snap !== 'closed' && layer.showing !== 'improve' && !pointing;
+  const open = snap !== 'closed' && layer.showing !== 'improve';
   const peek = snap === 'peek';
   const points = useMemo(() => hasPeek ? [layer.peekPoint, HALF, FULL] : [HALF, FULL], [hasPeek, layer.peekPoint]);
   const value = peek ? layer.peekPoint : snap === 'full' ? FULL : HALF;
@@ -713,24 +695,9 @@ export function AgentDockLayout({ children }: { readonly children: ReactNode }):
   </DockLayout>;
 }
 
-/** The layer itself: the drawer on a phone (the wide dock is `AgentDockLayout`). Placed once by the shell, for point mode on both. */
+/** The layer itself: the drawer on a phone (the wide dock is `AgentDockLayout`). Placed once by the shell. */
 export function AgentLayer(): ReactElement | null {
   const layer = useInternal();
-  const pointingAgent = usePointing(layer.agent?.feedback);
-  const session = pointingAgent ? layer.agent?.feedback : undefined;
-  const commentingAgent = useCommenting(layer.agent?.feedback);
-  const commenting = commentingAgent ? layer.agent?.feedback : undefined;
-  // Back ends pointing first (the `point` priority), like Done: the notes wait for the next message. The layer keeps its own history entry underneath.
-  useBackLayer(session !== undefined, () => { void session?.done(); }, 'point');
   if (!layer.agent && !layer.improve) return null;
-  const pointed = layer.agent;
-  const transcribe = (pointed?.voice ?? layer.agent?.voice)?.transcribe;
-  const locale = pointed?.chatProps?.locale ?? layer.locale;
-  // Comment mode shows its banner either way: on a phone (point mode) above the tab bar, outside the layer, while the compact sheet steps
-  // aside; on a wide screen at the top, the dock beside the app. The note bubble is here only while pointing (else inside the layer).
-  return <>
-    {!layer.expanded && <CompactSheet pointing={session !== undefined} />}
-    {commenting && <CommentBanner session={commenting} bottomOffset={`${layer.tabbar}px`} className="z-[60]" {...(locale === 'fr' ? { labels: feedbackLabelsFr } : {})} />}
-    {session && <NoteBubble session={session} {...(transcribe ? { transcribe } : {})} {...(locale === 'fr' ? { labels: feedbackLabelsFr } : {})} />}
-  </>;
+  return layer.expanded ? null : <CompactSheet />;
 }

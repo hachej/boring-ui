@@ -619,7 +619,7 @@ try {
   });
 
   // The PM panel replaced the improve chat inside the layer (its « ← » back to the coach, the shared dock and header actions); it is covered by examples/pm-panel/journey.mjs.
-  await step("10 « Améliorer l'app » opens the PM panel beside the coach, whose draft survives; the annotate toggle lives on the coach", async () => {
+  await step("10 « Améliorer l'app » opens the PM panel beside the coach, whose draft survives", async () => {
     await tap(TRIGGER); await browser.until('half', `${snap} === 'half'`); await settle();
     await browser.evaluate(`(() => { const t = ${q(INPUT)}; t.focus(); })()`);
     await send('Input.insertText', { text: 'brouillon du coach' });
@@ -635,30 +635,6 @@ try {
     await browser.until('PM closed', `${q('[data-testid=pm-panel]')}.hidden`);
     await tap(TRIGGER); await browser.until('half again', `${snap} === 'half'`); await settle();
     assert.equal(await browser.evaluate(`${q('[data-spec=agent] ' + INPUT)}.value`), 'brouillon du coach', 'the draft survived');
-    // Point mode: the ONE annotate toggle (a phone: point mode) hides the sheet, the point bar sits above the tab bar, a pick, « Terminé » brings it back with the count chip.
-    assert.deepEqual(await browser.evaluate(`(() => { const form = ${q('[data-spec=agent] [data-testid=composer]')}; const toggles = [...form.querySelectorAll('[data-testid=composer-annotate]')]; const r = toggles[0]?.getBoundingClientRect();
-      return { toggles: toggles.length, label: toggles[0]?.getAttribute('aria-label'), size: r ? [Math.round(r.width), Math.round(r.height)] : null, words: /Retour|Feedback|Montrer dans|question générale|Terminé/i.test(form.innerText),
-        gone: ['composer-feedback', 'composer-point', 'feedback-bar', 'feedback-chip', 'feedback-general', 'feedback-count'].filter(id => document.querySelector('[data-testid=' + id + ']')) }; })()`),
-      { toggles: 1, label: 'Annoter', size: [44, 44], words: false, gone: [] }, 'exactly one annotate control, 44px, and no Feedback block');
-    await tap('[data-spec=agent] [data-testid=composer-annotate]');
-    await browser.until('point bar, sheet hidden', `!!${q('[data-testid=feedback-point-bar]')} && !${q(LAYER)}`, 8000);
-    await pause(500);
-    const bar = await browser.evaluate(rect('[data-testid=feedback-point-bar]'));
-    const tabs = await browser.evaluate(rect('[data-testid=tabbar]'));
-    assert.ok(bar.bottom <= tabs.y + 1, `the point bar is above the tab bar: ${JSON.stringify({ bar, tabs })}`);
-    await browser.screenshot('phone-point-bar.png');
-    await tap('[data-testid=screen-progres] li:nth-child(3)');
-    await browser.until('a bubble', `!!${q('[data-testid=feedback-bubble]')}`, 8000);
-    await browser.until('the field is focused', `document.activeElement === ${q('[data-testid=feedback-bubble-input]')}`, 8000);
-    await browser.send('Input.insertText', { text: 'Plus de détails ici.' });
-    await browser.evaluate(`document.activeElement.blur()`);
-    await tap('[data-testid=feedback-point-done]');
-    await browser.until('the sheet is back with the count chip', `${snap} === 'half' && !!${q('[data-spec=agent]')} && !${q('[data-testid=feedback-point-bar]')} && ${q('[data-spec=agent] [data-testid=feedback-count]')}?.dataset.count === '1'`, 8000);
-    assert.match(await browser.evaluate(`${q('[data-spec=agent] [data-testid=feedback-count]')}.innerText`), /1 note/);
-    assert.equal(await browser.evaluate(`${q('[data-spec=agent] [data-testid=composer-annotate]')}.disabled`), false, 'notes waiting for Send do not block annotating');
-    await settle();
-    await tap('[data-spec=agent] [data-testid=feedback-count-clear]');
-    await browser.until('the chip is removed', `!${q('[data-spec=agent] [data-testid=feedback-count]')}`, 5000);
     await browser.evaluate(`${q('[data-testid=agent-layer-close]')}.click()`);
     await browser.until('closed', `!${q(LAYER)}`);
   });
@@ -693,7 +669,7 @@ try {
     await browser.until('closed', `!${q(LAYER)}`);
   });
 
-  await step('review 6: the chat keeps its DOM while the layer is closed and while pointing', async () => {
+  await step('review 6: the chat keeps its DOM while the layer is closed ', async () => {
     await tap(TRIGGER); await browser.until('half', `${snap} === 'half'`); await settle();
     await browser.evaluate(`window.__chatNode = ${q('[data-spec=agent] [data-boring=pi-chat]')}; 0`);
     await browser.evaluate(`${q('[data-testid=agent-layer-close]')}.click()`);
@@ -704,24 +680,7 @@ try {
     assert.equal(await browser.evaluate(`${q('[data-spec=agent] [data-boring=pi-chat]')} === window.__chatNode`), true, 'the same chat element came back');
   });
 
-  await step('review 3: Back during point mode ends pointing and keeps the page and the layer', async () => {
-    const href = await browser.evaluate('location.href');
-    await tap('[data-spec=agent] [data-testid=composer-annotate]');
-    await browser.until('pointing', `!!${q('[data-testid=feedback-point-bar]')}`, 8000);
-    assert.equal(await browser.evaluate('history.state?.appShell'), 'point');
-    await browser.evaluate('history.back()');
-    await browser.until('pointing ended', `!${q('[data-testid=feedback-point-bar]')} && ${snap} === 'half'`, 8000);
-    assert.equal(await browser.evaluate('location.href'), href, 'still on the page');
-    assert.equal(await browser.evaluate('history.state?.appShell'), 'agent', 'the layer keeps its entry');
-    await settle();
-  });
-
-  await step('review 5: on a phone the annotate toggle is always point mode (no pins inside the sheet)', async () => {
-    await tap('[data-spec=agent] [data-testid=composer-annotate]');
-    await browser.until('point mode', `!!${q('[data-testid=feedback-point-bar]')}`, 8000);
-    assert.equal(await browser.evaluate(`['feedback-general', 'feedback-general-bubble', 'feedback-bar'].some(id => !!document.querySelector('[data-testid=' + id + ']'))`), false, 'no general question, no Feedback bar');
-    await tap('[data-testid=feedback-point-done]');
-    await browser.until('back to the sheet', `!${q('[data-testid=feedback-point-bar]')} && ${snap} === 'half'`, 8000);
+  await step('the visual viewport returns to full height', async () => {
     await pause(400);
     await browser.evaluate(`window.__vv.set(844)`);
   });
@@ -742,7 +701,7 @@ try {
     await browser.evaluate(`window.__breakSend = false`);
   });
 
-  await step("round c 4: the account sheet then « Améliorer l'app » keeps the page (no about:blank); then point mode on the coach", async () => {
+  await step("round c 4: the account sheet then « Améliorer l'app » keeps the page (no about:blank); then the coach", async () => {
     await browser.send('Page.navigate', { url: app.url });
     await live();
     const href = await browser.evaluate('location.href');
@@ -758,13 +717,6 @@ try {
     await browser.until('PM closed', `${q('[data-testid=pm-panel]')}.hidden`);
     await tap(TRIGGER); await browser.until('half', `${snap} === 'half'`); await settle();
     assert.equal(await browser.evaluate('history.state?.appShell'), 'agent', 'the layer owns its entry');
-    await tap('[data-spec=agent] [data-testid=composer-annotate]');
-    await browser.until('pointing', `!!${q('[data-testid=feedback-point-bar]')}`, 8000);
-    await pause(600);
-    assert.equal(await browser.evaluate('location.href'), href, 'still on the page while pointing');
-    await tap('[data-testid=feedback-point-done]');
-    await browser.until('back to the sheet', `!${q('[data-testid=feedback-point-bar]')} && ${snap} === 'half'`, 8000);
-    assert.equal(await browser.evaluate('location.href'), href);
     await browser.evaluate('history.back()');
     await browser.until('closed by Back', `${snap} === null`);
     assert.equal(await browser.evaluate('location.href'), href, 'one Back closed the layer and nothing more');
@@ -1028,59 +980,6 @@ try {
     await browser.emulate('desktop');
     await browser.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
     await browser.send('Page.navigate', { url: app.url }); await live();
-  });
-
-  await step('expanded 1280x800: the annotate toggle arms pins (the comment banner at the top), not point mode: hover, click, a pin with a field and a mic, the count chip, Esc exits (and does not close the panel), Send attaches the note', async () => {
-    await browser.click(q('[data-testid=nav-progres]'));
-    await browser.until('Progrès on show', `${q('[data-testid=header-title]')}.textContent === 'Progrès' && !${q('[data-testid=screen-progres]')}.hidden`);
-    await browser.click(q('[data-testid=nav-agent]'));
-    await browser.until('the coach in the panel', `${q(LAYER)}?.dataset.state === 'open' && ${q('[data-testid=agent-layer-title]')}?.textContent === 'Coach'`);
-    await pause(500);
-    const IMPROVE = '[data-spec=agent]';
-    const found = await browser.evaluate(`(() => { const form = ${q(IMPROVE + ' [data-testid=composer]')}; const toggles = [...form.querySelectorAll('[data-testid=composer-annotate]')]; const r = toggles[0]?.getBoundingClientRect();
-      return { toggles: toggles.length, label: toggles[0]?.getAttribute('aria-label'), size: r ? [Math.round(r.width), Math.round(r.height)] : null, words: /Retour|Feedback|Montrer dans|question générale|Terminé/i.test(form.innerText),
-        gone: ['composer-feedback', 'composer-point', 'feedback-bar', 'feedback-chip', 'feedback-general', 'feedback-count'].filter(id => document.querySelector('[data-testid=' + id + ']')) }; })()`);
-    assert.deepEqual(found, { toggles: 1, label: 'Annoter', size: [44, 44], words: false, gone: [] }, 'exactly one stock native pointer Toggle and no Feedback block');
-    await browser.click(q(IMPROVE + ' [data-testid=composer-annotate]'));
-    await browser.until('annotating', `${q(IMPROVE + ' [data-testid=composer-annotate]')}.getAttribute('aria-pressed') === 'true'`);
-    assert.equal(await browser.evaluate(`${q('[data-testid=feedback-point-bar]')}?.dataset.feedbackPointBar`), 'top', 'pins, not point mode: the comment banner sits at the top');
-    assert.equal(await browser.evaluate(`!!${q('[data-testid=feedback-bar]')}`), false, 'no Feedback bar');
-    await browser.screenshot('desktop-comment-banner.png');
-    assert.equal(await browser.evaluate(`${q(LAYER)}?.dataset.state`), 'open', 'the panel stays open: the page is visible beside it');
-    const item = '[data-testid=screen-progres] li:nth-child(3)';
-    const at = await center(item);
-    await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y });
-    await browser.until('a hover label', `[...document.querySelectorAll('[data-feedback-overlay]')].some(host => host.shadowRoot.querySelector('.label[data-tone=hover]'))`, 5000);
-    await browser.screenshot('desktop-annotate-hover.png');
-    for (const type of ['mousePressed', 'mouseReleased']) await browser.send('Input.dispatchMouseEvent', { type, x: at.x, y: at.y, button: 'left', clickCount: 1 });
-    await browser.until('the pin', `!!${q('[data-testid=feedback-bubble-input]')}`, 8000);
-    const pin = await browser.evaluate(`(() => { const f = ${q('[data-testid=feedback-bubble-input]')}.getBoundingClientRect(), m = ${q('[data-testid=feedback-bubble-mic]')}?.getBoundingClientRect(), b = ${q('[data-testid=feedback-bubble]')}.getBoundingClientRect();
-      return { mic: m ? [Math.round(m.width), Math.round(m.height)] : null, inside: !!m && m.left >= f.left && m.right <= f.right && m.bottom <= f.bottom + 1, hint: ${q('[data-testid=feedback-bubble-hint]')}?.textContent, general: !!${q('[data-testid=feedback-bubble-general]')},
-        inViewport: b.left >= 0 && b.top >= 0 && b.right <= innerWidth && b.bottom <= innerHeight, buttons: [...${q('[data-testid=feedback-bubble]')}.querySelectorAll('button')].map(x => Math.round(x.getBoundingClientRect().height)) }; })()`);
-    assert.deepEqual(pin.mic, [44, 44], 'pin controls are not header icons: the held microphone keeps its 44px target');
-    assert.ok(pin.inside, `the native mic stays inside the field: ${JSON.stringify(pin)}`);
-    assert.equal(pin.hint, undefined, 'no Alt hint: the banner\'s switch lets the app be used');
-    assert.equal(pin.general, false);
-    assert.equal(pin.inViewport, true, 'the pin is inside the viewport');
-    assert.ok(pin.buttons.every(height => height >= 44), `44px controls in the pin: ${pin.buttons}`);
-    await browser.type(q('[data-testid=feedback-bubble-input]'), 'Montrer les pas de la semaine.');
-    await browser.screenshot('desktop-annotate-pin.png');
-    await browser.press('Enter');
-    await browser.until('the count chip', `${q(IMPROVE + ' [data-testid=feedback-count]')}?.dataset.count === '1'`, 5000);
-    await browser.press('Escape');
-    await browser.until('annotating off', `${q(IMPROVE + ' [data-testid=composer-annotate]')}.getAttribute('aria-pressed') === 'false'`, 5000);
-    await pause(400);
-    assert.equal(await browser.evaluate(`${q(LAYER)}?.dataset.state`), 'open', 'Esc ended annotating only: the panel is still open');
-    assert.equal(await browser.evaluate(`${q(IMPROVE + ' [data-testid=feedback-count]')}.dataset.count`), '1', 'the note waits for Send');
-    const before = app.submits.length;
-    await browser.click(q(IMPROVE + ' [data-testid=composer-submit]'));
-    for (let i = 0; i < 100 && app.submits.length === before; i++) await pause(100);
-    const sent = JSON.stringify(app.submits.at(-1)?.body);
-    assert.ok(app.submits.length > before && sent.includes('Montrer les pas de la semaine.'), `Send attached the pending note: ${sent?.slice(0, 300)}`);
-    await browser.until('the count chip is gone', `!${q(IMPROVE + ' [data-testid=feedback-count]')}`, 5000);
-    await browser.screenshot('desktop-annotate-sent.png');
-    await browser.press('Escape');
-    await browser.until('closed', `${q(LAYER)}?.dataset.state === 'closed'`);
   });
 
   await step('expanded: icon actions (and one labelled) and « … » in a dropdown; the one-screen template has a sidebar with no nav list', async () => {

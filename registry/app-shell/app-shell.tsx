@@ -6,7 +6,7 @@
 // untouched, below the same sidebar, account menu and header; there is no shell agent (the page is the chat). The shell imports nothing from pi-app: a layout C app installs the `pi-app` item itself. One header per screen
 // (`useScreenHeader`). The AgentLayer is mounted once, here.
 // Host concern: Pi has no layout; the screen on show travels as the agent's context (useAgentContext -> createPromptContext).
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useState } from 'react';
 import { afterStacksBack } from '../utils/back';
 import type { ReactNode } from 'react';
 import { SidebarProvider } from '@/components/ui/sidebar';
@@ -15,8 +15,7 @@ import { AccountAvatar, AccountChoices } from './account';
 import type { AccountSpec } from './account';
 import { AgentDockLayout, AgentLayer, AgentLayerProvider } from './agent-layer';
 import type { AgentSpec } from './agent-layer';
-import { ImproveLayout, PmStandalone } from '../pm-panel/pm-panel';
-import type { ImproveProp } from '../pm-panel/pm-panel';
+import type { AgentSlot, AgentSlotLayoutProps } from './agent-slot';
 import { ScreenActiveContext, useAgentContext } from './agent-context';
 import { useIsCompact } from './compact';
 import { HeaderProvider, ScreenHeader } from './header';
@@ -39,10 +38,8 @@ export interface AppShellProps {
   readonly agent?: AgentSpec;
   /** Consume agent/open/input launch parameters on mount (default). `false` leaves the URL and layer untouched. */
   readonly agentLink?: false;
-  /** The product manager: « Améliorer l'app » in the account menu, the PM panel and the point layer. One line: `improve={{ agent: 'pm' }}` (the kit opens the app's PM door); or a host `ImproveSpec`. */
-  readonly improve?: ImproveProp;
-  /** With `improve`, `?pm=standalone` shows only the PM. These parent origins may give it their tokens (default: `PM_HOST_ORIGINS`, Studio). */
-  readonly pmHostOrigins?: readonly string[];
+  /** A second agent beside the page, offered as « Améliorer l'app » in the account menu (`agent-slot.ts`). Absent: no such entry. */
+  readonly improve?: AgentSlot;
   readonly account?: AccountSpec;
   /** The language of the shell's own words and the layer's (« Se déconnecter », « Plus », « Ouvrir l’assistant »…). The agent's `chatProps.locale` wins when it sets one; else this; else English. */
   readonly locale?: AppShellLocale;
@@ -72,6 +69,14 @@ function ShellContext({ name }: { readonly name: string }): null {
   return null;
 }
 
+/** The page and, on a phone, the tab bar below it. A slot's `Layout` replaces this one. */
+function PlainLayout({ children, navigation }: AgentSlotLayoutProps) {
+  return <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:flex-row">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{children}</div>
+    <div className="shrink-0 md:hidden">{navigation}</div>
+  </div>;
+}
+
 function ScreenBody({ item }: { readonly item: NavItem }): ReactNode { return item.render(); }
 
 /** Every screen stays mounted; the ones not on show are `hidden` and do not register a header or a context. */
@@ -83,7 +88,7 @@ function Screens({ items, activeId, scrolls, slot }: { readonly items: readonly 
   </div>;
 }
 
-function Shell({ compactNav, layout, rail, title, nav, agent, improve, account, route, text }: { readonly compactNav: NonNullable<AppShellProps['compactNav']>; readonly rail: NonNullable<AppShellProps['rail']>; readonly layout: AppShellProps['layout']; readonly title: string; readonly nav: readonly NavItem[]; readonly agent: AgentSpec | undefined; readonly improve: boolean; readonly account: AccountSpec | undefined; readonly route: AppShellProps['route']; readonly text: AppShellText }) {
+function Shell({ compactNav, layout, rail, title, nav, agent, improve, Layout, account, route, text }: { readonly Layout: AgentSlot['Layout']; readonly compactNav: NonNullable<AppShellProps['compactNav']>; readonly rail: NonNullable<AppShellProps['rail']>; readonly layout: AppShellProps['layout']; readonly title: string; readonly nav: readonly NavItem[]; readonly agent: AgentSpec | undefined; readonly improve: boolean; readonly account: AccountSpec | undefined; readonly route: AppShellProps['route']; readonly text: AppShellText }) {
   const compact = useIsCompact();
   const sheet = compact && compactNav === 'sheet';
   const [accountOpen, setAccountOpen] = useState(false);
@@ -106,28 +111,23 @@ function Shell({ compactNav, layout, rail, title, nav, agent, improve, account, 
     {(!compact || sheet) && <AppSidebar rail={sheet ? 'icon' : rail} title={title} items={nav} activeId={active.id} onChange={choose} agent={agent} account={account} improve={improve} text={text} />}
     <AgentDockLayout>
       <div data-slot="sidebar-inset" className="relative flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden bg-background">
-      <ImproveLayout screen={active.label}navigation={compact && !sheet ? <TabBar items={nav} activeId={active.id} onChange={choose} text={text} /> : undefined}>
+      <Layout screen={active.label} navigation={compact && !sheet ? <TabBar items={nav} activeId={active.id} onChange={choose} text={text} /> : undefined}>
         <ShellContext name={active.label} />
         <ScreenHeader fallbackTitle={active.label} compact={compact} avatar={avatar} menu={sheet} text={text} slotRef={setSlot} />
         <Screens items={nav} activeId={active.id} scrolls={layout === 'screen'} slot={slot} />
-      </ImproveLayout>
+      </Layout>
       </div>
     </AgentDockLayout>
     <AgentLayer />
   </SidebarProvider>;
 }
 
-const never = () => () => {};
-const standaloneAddress = () => new URLSearchParams(window.location.search).get('pm') === 'standalone';
-
 export function AppShell(props: AppShellProps) {
   const { layout, rail = 'icon', compactNav = 'tabs', agent, improve, title, nav, account, route } = props;
-  if (layout === 'chat' && agent) throw new Error('AppShell layout "chat" takes no `agent`: the page is the chat (use `improve` for the product manager)');
-  const text = appShellText((agent ?? (improve && 'chatProps' in improve ? improve : undefined))?.chatProps?.locale ?? props.locale);
+  if (layout === 'chat' && agent) throw new Error('AppShell layout "chat" takes no `agent`: the page is the chat (`improve` may fill the agent slot)');
+  const text = appShellText((agent ?? improve?.spec)?.chatProps?.locale ?? props.locale);
   useOverlayBlur(props.overlayBlur ?? true);
-  const standalone = useSyncExternalStore(never, standaloneAddress, () => false);
-  if (standalone && improve) return <PmStandalone spec={improve} appName={title} locale={props.locale} hostOrigins={props.pmHostOrigins} />;
   return <AgentLayerProvider agent={agent} improve={improve} locale={props.locale} agentLink={props.agentLink} appName={props.title}>
-    <HeaderProvider><Shell compactNav={compactNav} layout={layout} rail={rail} title={title} nav={nav} agent={agent} account={account} route={route} improve={Boolean(improve)} text={text} /></HeaderProvider>
+    <HeaderProvider><Shell compactNav={compactNav} layout={layout} rail={rail} title={title} nav={nav} agent={agent} account={account} route={route} improve={Boolean(improve)} Layout={improve?.Layout ?? PlainLayout} text={text} /></HeaderProvider>
   </AgentLayerProvider>;
 }

@@ -30,8 +30,6 @@ visit('file-tree');
 // The documents screen: its Library, revisions and sheet, installed and checked strictly with the rest of the closure.
 visit('documents');
 visit('highlights');
-visit('task-board');
-visit('task-mentions');
 // The kit's tokens, which this token-less app installs once in its setup; no block depends on them.
 visit('theme');
 const styles = [process.env.BORING_CONSUMER_STYLE ?? 'base-nova'];
@@ -96,13 +94,6 @@ async function testStyle(style) {
     // A consumer page: only the block, its hooks and the host's own routes.
     writeFileSync(join(directory, 'src/page.tsx'), `export { ReportWorkspace } from './local-file-check';
   export { Highlights } from './components/highlights/highlights';
-  export { taskMentions } from './components/task-mentions/task-mentions';
-  import { TaskBoard, TaskRequestCard, TaskStatusChip } from './components/task-board/task-board';
-  import type { TaskRecord } from '@hachej/boring-ui-kit/task-board';
-  export function OwnRequests({ tasks }: { readonly tasks: readonly TaskRecord[] }) {
-    return <><TaskBoard tasks={tasks} filter="mine" currentUser="fictional-person" limit={2} />
-      {tasks[0] && <><TaskRequestCard task={tasks[0]} actions={<button>Confirm</button>} /><TaskStatusChip task={tasks[0]} /></>}</>;
-  }
   import { useEffect, useState } from 'react';
   import { createRoot } from 'react-dom/client';
   import { AgentWorkspace, useConversations, useRemoteChat } from './components/pi-app/agent-workspace';

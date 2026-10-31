@@ -42,6 +42,14 @@ const IDLE = Object.freeze({ identity: { runtimeId: 'app', scopeId: 'fictional-t
   connection: { kind: 'idle' }, send: { kind: 'idle' }, history: { kind: 'disabled' }, draft: { text: '', attachments: [] }, disposed: false, stop: 'idle', view: undefined });
 // Every other method of the controller is a no-op (the chat's mount calls a few; nothing here sends).
 const idleController = new Proxy({ getSnapshot: () => IDLE, subscribe: () => () => {} }, { get: (target, key) => key in target ? target[key] : () => Promise.resolve() });
+// The shell's agent slot, filled with the least that proves its contract: a panel the layer opens and closes.
+const { createContext, createElement, useContext } = await import('react');
+const SlotOpen = createContext(false);
+const stubSlot = {
+  Provider: ({ open, children }) => createElement(SlotOpen.Provider, { value: open }, children),
+  Layout: ({ children, navigation }) => createElement('div', null, children,
+    createElement('section', { 'data-testid': 'pm-panel', 'data-mode': 'chat', hidden: !useContext(SlotOpen) }, createElement('textarea', { 'data-testid': 'composer-input' })), navigation),
+};
 const agentWith = chatProps => ({ controller: idleController, ...(chatProps ? { chatProps } : {}) });
 
 async function render(t, props, { width = 390 } = {}) {
@@ -295,7 +303,7 @@ async function openedLayer(t, width, specs, { search = '', state = null, strict 
 for (const [width, agent, input] of [[390, 'coach', 'text'], [1280, 'agent', 'text'], [390, 'coach', 'voice'], [390, 'improve', 'text']]) {
   test(`agent URL at ${width}: ${agent}/${input} opens once, preserves other URL data and state, and never starts the microphone`, async t => {
     const spec = { ...agentWith(), voice: { transcribe: async () => 'Fictional dictation' } };
-    const opened = await openedLayer(t, width, { agent: spec, improve: agentWith() }, { search: `?keep=hello%20world&agent=${agent}&open=half&input=${input}#jour`, state: { router: { fictional: 7 } }, strict: true });
+    const opened = await openedLayer(t, width, { agent: spec, improve: stubSlot }, { search: `?keep=hello%20world&agent=${agent}&open=half&input=${input}#jour`, state: { router: { fictional: 7 } }, strict: true });
     assert.equal(opened.latest().showing, agent === 'improve' ? 'improve' : 'agent');
     assert.equal(opened.latest().state, width === 1280 ? 'open' : input === 'voice' ? 'full' : 'half');
     assert.equal(opened.window.location.search, '?keep=hello+world');
@@ -361,7 +369,7 @@ for (const width of [390, 1280]) {
       { id: 'go', label: 'Ouvrir la boutique', icon: Icon, onSelect: () => calls.push('go') },
       { id: 'wa', label: 'Discuter avec Max sur WhatsApp', icon: Icon, href: '/whatsapp/open?app=fitness', onSelect: () => calls.push('wa') },
     ] };
-    const opened = await openedLayer(t, width, { agent, improve: agentWith() });
+    const opened = await openedLayer(t, width, { agent, improve: stubSlot });
     const header = await headerOf(opened, 'agent');
     const button = header.querySelector('[data-testid=agent-layer-action-go]');
     assert.equal(button?.tagName, 'BUTTON');
