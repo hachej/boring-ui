@@ -8,9 +8,9 @@
     "react-dom@^19.0.0"
   ],
   "registryDependencies": [
-    "@boring-ui/pi-chat",
-    "@boring-ui/utils",
-    "@boring-ui/dock"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.46/r/pi-chat.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.46/r/utils.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.46/r/dock.json"
   ],
   "files": [
     {

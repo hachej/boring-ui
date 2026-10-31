@@ -10,7 +10,7 @@
     "react-dom@^19.0.0"
   ],
   "registryDependencies": [
-    "@boring-ui/button"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.46/r/button.json"
   ],
   "files": [
     {

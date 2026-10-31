@@ -11,14 +11,14 @@
     "lucide-react@^1.51.0"
   ],
   "registryDependencies": [
-    "@boring-ui/pi-chat",
-    "@boring-ui/pi-chat-plugins",
-    "@boring-ui/pi-artifacts",
-    "@boring-ui/pi-workspace",
-    "@boring-ui/viewer-frame",
-    "@boring-ui/utils",
-    "@boring-ui/button",
-    "@boring-ui/file-tree"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.46/r/pi-chat.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.46/r/pi-chat-plugins.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.46/r/pi-artifacts.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.46/r/pi-workspace.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.46/r/viewer-frame.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.46/r/utils.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.46/r/button.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.46/r/file-tree.json"
   ],
   "files": [
     {

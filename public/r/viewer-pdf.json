@@ -10,8 +10,8 @@
     "pdfjs-dist@6.4.299"
   ],
   "registryDependencies": [
-    "@boring-ui/viewer-frame",
-    "@boring-ui/viewer-image"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.46/r/viewer-frame.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.46/r/viewer-image.json"
   ],
   "files": [
     {

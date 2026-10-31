@@ -11,10 +11,10 @@
     "tldraw@5.5.2"
   ],
   "registryDependencies": [
-    "@boring-ui/maquette-viewer",
-    "@boring-ui/mockup-viewer",
-    "@boring-ui/pi-artifacts",
-    "@boring-ui/utils"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.46/r/maquette-viewer.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.46/r/mockup-viewer.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.46/r/pi-artifacts.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.46/r/utils.json"
   ],
   "files": [
     {

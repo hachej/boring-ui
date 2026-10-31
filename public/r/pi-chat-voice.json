@@ -9,8 +9,8 @@
     "lucide-react@^1.51.0"
   ],
   "registryDependencies": [
-    "@boring-ui/utils",
-    "@boring-ui/pi-chat"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.46/r/utils.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.46/r/pi-chat.json"
   ],
   "files": [
     {

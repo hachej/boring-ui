@@ -9,11 +9,11 @@
     "lucide-react@^1.51.0"
   ],
   "registryDependencies": [
-    "@boring-ui/pi-chat",
-    "@boring-ui/pi-chat-plugins",
-    "@boring-ui/pi-chat-markdown",
-    "@boring-ui/pi-chat-mentions",
-    "@boring-ui/utils"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.46/r/pi-chat.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.46/r/pi-chat-plugins.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.46/r/pi-chat-markdown.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.46/r/pi-chat-mentions.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.46/r/utils.json"
   ],
   "files": [
     {

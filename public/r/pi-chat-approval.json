@@ -10,7 +10,7 @@
     "@earendil-works/pi-ai@~1.4.0"
   ],
   "registryDependencies": [
-    "@boring-ui/pi-chat"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.46/r/pi-chat.json"
   ],
   "files": [
     {
