@@ -4,14 +4,14 @@
   "title": "Task mentions",
   "description": "Optional authorized task catalog for the existing PM composer, composed with host file search.",
   "dependencies": [
-    "@hachej/boring-ui-kit@^0.4.43",
+    "@hachej/boring-ui-kit@^0.4.44",
     "react@^19.0.0",
     "lucide-react@^1.51.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.43/r/task-board.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.43/r/pi-chat.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.43/r/pi-chat-mentions.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.44/r/task-board.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.44/r/pi-chat.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.44/r/pi-chat-mentions.json"
   ],
   "files": [
     {

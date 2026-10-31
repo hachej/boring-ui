@@ -4,13 +4,13 @@
   "title": "Pi chat Markdown",
   "description": "Markdown for the chat's assistant replies: safe token-by-token rendering (raw HTML shown as text, no images fetched, http(s) links only), code blocks, tables, task lists and /command buttons. Plug it in with `renderText={markdownText}`; without it pi-chat shows replies as plain text.",
   "dependencies": [
-    "@hachej/boring-ui-kit@^0.4.43",
+    "@hachej/boring-ui-kit@^0.4.44",
     "react@^19.0.0",
     "marked@^17.0.6",
     "entities@^8.1.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.43/r/pi-chat.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.44/r/pi-chat.json"
   ],
   "files": [
     {
